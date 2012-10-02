@@ -1,3 +1,19 @@
+[[GLE_JRNLDET.AGRN]]
+rem --- recal/display tots when entering a grid row
+gosub calc_grid_tots
+gosub disp_totals
+[[GLE_JRNLDET.AGRE]]
+rem --- recal/display tots when leaving a grid row
+gosub calc_grid_tots
+gosub disp_totals
+[[GLE_JRNLDET.ADGE]]
+rem --- set default value for memo lines to the description entered in the header
+
+callpoint!.setTableColumnAttribute("GLE_JRNLDET.GL_POST_MEMO","DFLT",callpoint!.getHeaderColumnData("GLE_JRNLHDR.DESCRIPTION"))
+[[GLE_JRNLDET.AGCL]]
+rem --- set preset val for batch_no
+
+callpoint!.setTableColumnAttribute("GLE_JRNLDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[GLE_JRNLDET.AUDE]]
 rem --- recal/display tots after deleting a grid row
 gosub calc_grid_tots
@@ -18,7 +34,6 @@ callpoint!.setStatus("MODIFIED-REFRESH")
 [[GLE_JRNLDET.DEBIT_AMT.AVEC]]
 gosub calc_grid_tots
 gosub disp_totals
-
 [[GLE_JRNLDET.CREDIT_AMT.AVAL]]
 rem set debit amt to zero (since entering credit), then recalc/display hdr disp columns
                     
@@ -52,7 +67,6 @@ calc_grid_tots:
 		user_tpl.tot_cr$=str(tcr)
 		user_tpl.tot_units$=str(tunits)
 		user_tpl.tot_bal$=str(tbal)
-
 	endif
 return
 
@@ -77,4 +91,4 @@ disp_totals:
 	units!.setValue(num(user_tpl.tot_units$))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.UNITS",user_tpl.tot_units$)
 
-	return
+return
