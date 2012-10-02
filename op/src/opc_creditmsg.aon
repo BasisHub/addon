@@ -1,0 +1,154 @@
+rem --- Order/Invoice Messages
+
+rem --- AddonSoftware Version 8.0.0 - 27Jul2009
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+	setesc std_error
+	seterr std_error
+
+	enter hdr_det$,callpoint!,UserObj!
+
+	rem hdr_det$		H=Header, D=Detail (input)
+	rem callpoint!		callpoint object (input)
+
+rem --- Use statements, declares, init variables
+
+    use ::sys/prog/bao_callpoint.bbj::Callpoint
+    
+    declare Callpoint callpoint!
+
+	backordered$=""
+	credit$=""
+
+rem --- Get Translator Object
+
+    use ::bbtranslator.bbj::BBTranslator
+    declare BBTranslator Translate!
+    Translate! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+
+rem --- Default action button to disabled
+
+	credit_action = 0
+	
+rem --- Set Backordered field message
+
+	if callpoint!.getDevObject("msg_printed") = "Y"
+		backordered$=backordered$+Translate!.getTranslation("AON_PRINTED")+";"
+	endif
+
+	if callpoint!.getDevObject("msg_backorder") = "Y"
+		backordered$=backordered$+Translate!.getTranslation("AON_BACKORDER")+";"
+	endif
+
+	if callpoint!.getDevObject("msg_quote") = "Y"
+		backordered$=backordered$+Translate!.getTranslation("AON_QUOTE")+";"
+	endif
+
+	if callpoint!.getDevObject("msg_credit_memo") = "Y"
+		backordered$=backordered$+Translate!.getTranslation("AON_CREDIT_MEMO")+";"
+	endif
+
+rem --- Set Credit field message
+
+	if callpoint!.getDevObject("msg_exceeded") = "Y"
+		credit$=credit$+Translate!.getTranslation("AON_CREDIT_LIMIT_EXCEEDED")+";"
+	endif
+
+	if callpoint!.getDevObject("msg_hold") = "Y"
+		credit_action = 1
+		credit$=credit$+Translate!.getTranslation("AON_CREDIT_HOLD")+";"
+	endif
+
+	if callpoint!.getDevObject("msg_released") = "Y"
+		credit$=Translate!.getTranslation("AON_ORDER_IS_RELEASED")+";"
+	endif
+
+	if 	callpoint!.getDevObject("msg_credit_okay") = "Y"
+		credit$=Translate!.getTranslation("AON_CREDIT_IS_OKAY")+";"
+	endif
+
+rem --- Now set the 2 fields in the header
+
+	if len(backordered$)>0 backordered$=backordered$(1,len(backordered$)-1)
+	if len(credit$)>0 credit$=credit$(1,len(credit$)-1)
+	
+	if hdr_det$="H"
+		callpoint!.setColumnData("<<DISPLAY>>.BACKORDERED", backordered$)
+		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", credit$)
+	else
+		backord_disp!=UserObj!.getItem(num(callpoint!.getDevObject("backord_disp")))
+		credit_disp!=UserObj!.getItem(num(callpoint!.getDevObject("credit_disp")))
+		backord_disp!.setText(backordered$)
+		credit_disp!.setText(credit$)
+		callpoint!.setHeaderColumnData("<<DISPLAY>>.BACKORDERED", backordered$)
+		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", credit$)
+	endif
+
+rem --- Enable/Disable Credit Action button
+
+	if hdr_det$ = "H"
+		callpoint!.setOptionEnabled("CRAT",credit_action)
+	endif
+
+	callpoint!.setStatus("REFRESH")
+		
+rem --- Done processing
+
+	goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    exit
+    
+rem #endinclude std_end.src
+
+    end

@@ -381,6 +381,15 @@ print "Det:AWRI"; rem debug
 
 rem --- Commit inventory
 
+rem --- Turn off the print flag in the header?
+
+	if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow()) = "Y" or
+:	   callpoint!.getGridRowModifyStatus(callpoint!.getValidationRow()) ="Y" or
+:	   callpoint!.getGridRowDeleteStatus(callpoint!.getValidationRow()) = "Y"
+		callpoint!.setHeaderColumnData("OPE_INVHDR.PRINT_STATUS","N")
+		callpoint!.setDevObject("msg_printed","N")
+	endif
+
 rem --- Is this row deleted?
 
 	if callpoint!.getGridRowModifyStatus( callpoint!.getValidationRow() ) <> "Y" then 
@@ -1052,10 +1061,7 @@ disp_grid_totals: rem --- Get order totals and display, save header totals
 rem ==========================================================================
 	gosub calc_grid_totals
 
-	tamt! = UserObj!.getItem(user_tpl.ord_tot_obj)
-	tamt!.setValue(ttl_ext_price)
 	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_SALES", str(ttl_ext_price))
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(ttl_ext_price))
 	discamt! = UserObj!.getItem(num(callpoint!.getDevObject("disc_amt_disp")))
 	discamt!.setValue(disc_amt)
 
@@ -1070,6 +1076,9 @@ rem ==========================================================================
 	subamt!.setValue(sub_tot)
 	netamt! = UserObj!.getItem(num(callpoint!.getDevObject("net_sales_disp")))
 	netamt!.setValue(net_sales)
+	tamt! = UserObj!.getItem(user_tpl.ord_tot_obj)
+	tamt!.setValue(net_sales)
+
 	taxamt! = UserObj!.getItem(num(callpoint!.getDevObject("tax_amt_disp")))
 	taxamt!.setValue(ttl_tax)
 
@@ -1081,8 +1090,15 @@ rem	costamt!.setValue(ttl_ext_cost)
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
 	callpoint!.setHeaderColumnData("OPE_INVHDR.TAX_AMOUNT", str(ttl_tax))
+	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(net_sales))
 
 	callpoint!.setStatus("REFRESH")
+
+	cm$=callpoint!.getDevObject("msg_credit_memo")
+
+	if cm$="Y" and ttl_ext_price>=0 callpoint!.setDevObject("msg_credit_memo","N")
+	if cm$<>"Y" and ttl_ext_price<0 callpoint!.setDevObject("msg_credit_memo","Y")
+	call user_tpl.pgmdir$+"opc_creditmsg.aon","D",callpoint!,UserObj!
 
 	return
 
@@ -1609,6 +1625,7 @@ rem ==========================================================================
 		msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
 		gosub disp_message
 		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
+		callpoint!.setDevObject("msg_exceeded","Y")
 		user_tpl.credit_limit_warned = 1
 	endif
 

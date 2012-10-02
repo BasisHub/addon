@@ -406,6 +406,15 @@ rem --- Enable the Recalc Price button, Additional Options, Lots
 [[OPE_ORDDET.AWRI]]
 rem --- Commit inventory
 
+rem --- Turn off the print flag in the header?
+
+	if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow()) = "Y" or
+:	   callpoint!.getGridRowModifyStatus(callpoint!.getValidationRow()) ="Y" or
+:	   callpoint!.getGridRowDeleteStatus(callpoint!.getValidationRow()) = "Y"
+		callpoint!.setHeaderColumnData("OPE_ORDHDR.PRINT_STATUS","N")
+		callpoint!.setDevObject("msg_printed","N")
+	endif
+
 rem --- Is this row deleted?
 
 	if callpoint!.getGridRowModifyStatus( callpoint!.getValidationRow() ) <> "Y" then 
@@ -1078,13 +1087,9 @@ rem ==========================================================================
 
 	gosub calc_grid_totals
 
-	tamt! = UserObj!.getItem(user_tpl.ord_tot_obj)
-	tamt!.setValue(ttl_ext_price)
 	callpoint!.setHeaderColumnData("OPE_ORDHDR.TOTAL_SALES", str(ttl_ext_price))
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(ttl_ext_price))
 	discamt! = UserObj!.getItem(num(callpoint!.getDevObject("disc_amt_disp")))
 	discamt!.setValue(disc_amt)
-rem	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	sub_tot = num(callpoint!.getHeaderColumnData("<<DISPLAY>>.SUBTOTAL"))
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	sub_tot = ttl_ext_price - disc_amt
@@ -1095,6 +1100,8 @@ rem	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	subamt!.setValue(sub_tot)
 	netamt! = UserObj!.getItem(num(callpoint!.getDevObject("net_sales_disp")))
 	netamt!.setValue(net_sales)
+	tamt! = UserObj!.getItem(user_tpl.ord_tot_obj)
+	tamt!.setValue(net_sales)
 
 	taxamt! = UserObj!.getItem(num(callpoint!.getDevObject("tax_amt_disp")))
 	taxamt!.setValue(ttl_tax)
@@ -1107,8 +1114,15 @@ rem	costamt!.setValue(ttl_ext_cost)
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
 	callpoint!.setHeaderColumnData("OPE_ORDHDR.TAX_AMOUNT", str(ttl_tax))
+	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(net_sales))
 
 	callpoint!.setStatus("REFRESH")
+
+	cm$=callpoint!.getDevObject("msg_credit_memo")
+
+	if cm$="Y" and ttl_ext_price>=0 callpoint!.setDevObject("msg_credit_memo","N")
+	if cm$<>"Y" and ttl_ext_price<0 callpoint!.setDevObject("msg_credit_memo","Y")
+	call user_tpl.pgmdir$+"opc_creditmsg.aon","D",callpoint!,UserObj!
 
 	return
 
@@ -1694,6 +1708,7 @@ rem ==========================================================================
 			gosub disp_message
 			callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
 			callpoint!.setHeaderColumnData("OPE_ORDHDR.CREDIT_FLAG","C")
+			callpoint!.setDevObject("msg_exceeded","Y")
 			user_tpl.credit_limit_warned = 1
 		endif
 	endif
