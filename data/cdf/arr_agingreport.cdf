@@ -1,3 +1,13 @@
+[[ARR_AGINGREPORT.AGEDATE_FUT_FROM.AVAL]]
+gosub calc_dates1
+[[ARR_AGINGREPORT.AGEDATE_CUR_FROM.AVAL]]
+gosub calc_dates1
+[[ARR_AGINGREPORT.AGEDATE_90_FROM.AVAL]]
+gosub calc_dates4
+[[ARR_AGINGREPORT.AGEDATE_60_FROM.AVAL]]
+gosub calc_dates3
+[[ARR_AGINGREPORT.AGEDATE_30_FROM.AVAL]]
+gosub calc_dates2
 [[ARR_AGINGREPORT.REPORT_SEQUENCE.AVAL]]
 gosub set_selections
 [[ARR_AGINGREPORT.REPORT_OPTION.AVAL]]
@@ -13,9 +23,7 @@ endif
 [[ARR_AGINGREPORT.FIXED_PERIODS.AVAL]]
 rem --- Recalc dates if fixed periods
 if callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")="Y"
-	cal_date=1
-	gosub set_date_seq
-	gosub calc_dates
+	gosub calc_dates_fixed
 	callpoint!.setStatus("REFRESH")
 else
 	if callpoint!.getColumnData("ARR_AGINGREPORT.UPDATE_AGING")="Y"
@@ -26,104 +34,123 @@ else
 endif
 [[ARR_AGINGREPORT.AREC]]
 gosub set_selections
-cal_date=1
-gosub set_date_seq
-gosub calc_dates
+gosub calc_dates_fixed
 [[ARR_AGINGREPORT.DAYS_IN_PER.AVAL]]
-cal_date=1
-gosub set_date_seq
-gosub calc_dates
+gosub calc_dates_fixed
 callpoint!.setStatus("REFRESH")
 [[ARR_AGINGREPORT.REPORT_DATE.AVAL]]
-cal_date=1
-gosub set_date_seq
-gosub calc_dates
+gosub calc_dates_fixed
 callpoint!.setStatus("REFRESH")
 [[ARR_AGINGREPORT.<CUSTOM>]]
-set_date_seq:rem --- Set Sequence of Date Columns
-
-rem	date_seq$=
-rem :		pad("ARR_AGINGREPORT.AGEDATE_FUT_FROM",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_CUR_FROM",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_CUR_THRU",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_30_FROM",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_30_THRU",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_60_FROM",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_60_THRU",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_90_FROM",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_90_THRU",40)+
-rem :		pad("ARR_AGINGREPORT.AGEDATE_120_THRU",40)
-
-	return
-
-calc_dates:rem --- Calculate Aging Dates
+calc_dates_fixed:rem --- Calculate Aging Dates
 
 	fixed_periods$=callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")
 	days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
 	if days_in_per=0 days_in_per=30
 	start_date$=callpoint!.getColumnData("ARR_AGINGREPORT.REPORT_DATE")
 
-	switch cal_date
-		case 1
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM",start_date$)
-		case 2
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_CUR_THRU",new_date$)
-		case 3
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_THRU")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM",new_date$)
-		case 4
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_30_THRU",new_date$)
-		case 5
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_30_THRU")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM",new_date$)
-		case 6
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_60_THRU",new_date$)
-		case 7
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_60_THRU")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_60_FROM",new_date$)
-		case 8
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_60_FROM")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_90_THRU",new_date$)
-		case 9
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_90_THRU")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_90_FROM",new_date$)
-		case 10
-			prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_90_FROM")
-			if fixed_periods$="Y"
-				new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
-			endif
-			callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_120_THRU",new_date$)
-		break
-	swend
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM",start_date$)
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM")
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_CUR_THRU",new_date$)
+	prev_date$=new_date$
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM",new_date$)
 
-	return
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM")
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_30_THRU",new_date$)
+	prev_date$=new_date$
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM",new_date$)
+
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM")
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_60_THRU",new_date$)
+	prev_date$=new_date$
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_60_FROM",new_date$)
+
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_60_FROM")
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_90_THRU",new_date$)
+	prev_date$=new_date$
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_90_FROM",new_date$)
+
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_90_FROM")
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_120_THRU",new_date$)
+
+return
+
+calc_dates1: 
+	days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
+	if days_in_per=0 days_in_per=30
+	err_stat$="N"
+
+	last_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_THRU")
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM")
+	gosub check_dates
+	if err_stat$="Y" goto date_abend
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_30_THRU",new_date$)
+	prev_date$=date(jul(new_date$,"%Yd%Mz%Dz")-days_in_per+1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM",prev_date$)
+calc_dates2:
+	days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
+	if days_in_per=0 days_in_per=30
+
+	last_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_30_THRU")
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM")
+	gosub check_dates
+	if err_stat$="Y" goto date_abend
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_60_THRU",new_date$)
+	prev_date$=date(jul(new_date$,"%Yd%Mz%Dz")-days_in_per+1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_60_FROM",prev_date$)
+calc_dates3:
+	days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
+	if days_in_per=0 days_in_per=30
+
+	last_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_60_THRU")
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_60_FROM")
+	gosub check_dates
+	if err_stat$="Y" goto date_abend
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_90_THRU",new_date$)
+	prev_date$=date(jul(new_date$,"%Yd%Mz%Dz")-days_in_per+1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_90_FROM",prev_date$)
+calc_dates4:
+	days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
+	if days_in_per=0 days_in_per=30
+
+	last_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_90_THRU")
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_90_FROM")
+	gosub check_dates
+	if err_stat$="Y" goto date_abend
+	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_120_THRU",new_date$)
+
+	callpoint!.setStatus("REFRESH")
+date_abend:
+	if err_stat$="Y"
+		callpoint!.setStatus("ABORT-REFRESH")
+	endif
+return
+
+check_dates: rem Check validity of entered FROM dates against THRU dates
+	if prev_date$>last_date$
+		err_stat$="Y"
+		out1$=date(jul(prev_date$,"%Yd%Mz%Dz"):"%Mz/%Dz/%Yd")
+		out2$=date(jul(last_date$,"%Yd%Mz%Dz"):"%Mz/%Dz/%Yd")
+		msg_id$="ENTRY_FROM_TO"
+		dim msg_tokens$[2]
+		msg_tokens$[1]=out1$
+		msg_tokens$[2]=out2$
+		gosub disp_message
+	endif
+return
 
 set_selections: rem --- Enable/Disable Selection columns based on entries
 dim ctl_name$[6]
