@@ -1,3 +1,7 @@
+[[IVE_PRICECHG.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVE_PRICECHG.BEND]]
 rem --- remove software lock on batch, if batching
 

@@ -9,7 +9,7 @@ dim ivs_defaults$:fnget_tpl$("IVS_DEFAULTS")
 can_delete$=""
 ivm02_key$=""
 
-read (ivm02_dev,key=firm_id$+callpoint!.getColumnData("IVC_BUYCODE.BUYER_CODE"),knum=3,dom=*next)
+read (ivm02_dev,key=firm_id$+callpoint!.getColumnData("IVC_BUYCODE.BUYER_CODE"),knum="AO_BUYER_VEND_WH",dom=*next)
 ivm02_key$=key(ivm02_dev,end=*next)
 if pos(firm_id$+callpoint!.getColumnData("IVC_BUYCODE.BUYER_CODE")=ivm02_key$)=1
 	can_delete$="N"
@@ -22,7 +22,7 @@ endif
 if can_delete$="N"
 	msg_id$="IV_NO_DELETE"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="This Buyer Code is either the default, or is used on one or more Inventory items."
+	msg_tokens$[1]=Translate!.getTranslation("AON_THIS_BUYER_CODE_IS_EITHER_THE_DEFAULT,_OR_IS_USED_ON_ONE_OR_MORE_INVENTORY_ITEMS.")
 	gosub disp_message
 	callpoint!.setStatus("ABORT")
 endif

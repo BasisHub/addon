@@ -31,16 +31,16 @@ rem ==========================================================================
 
     switch credit_action 
 		case 1
-			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", "Order will be Held")
+			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", Translate!.getTranslation("AON_ORDER_WILL_BE_HELD"))
 			break
 		case 2
-			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", "Customer's Orders will be Held")
+			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", Translate!.getTranslation("AON_CUSTOMER'S_ORDERS_WILL_BE_HELD"))
 			break
 		case 3
-			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", "Order will be Released")
+			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", Translate!.getTranslation("AON_ORDER_WILL_BE_RELEASED"))
 			break
 		case 4
-			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", "Order will be Deleted")
+			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", Translate!.getTranslation("AON_ORDER_WILL_BE_DELETED"))
 			break
 		case default
 	swend

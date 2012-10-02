@@ -1,3 +1,7 @@
+[[IVX_BEGBALS.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVX_BEGBALS.ARAR]]
 rem --- open param file to get iv current period/year
 num_files=1

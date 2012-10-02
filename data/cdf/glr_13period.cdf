@@ -13,11 +13,11 @@ attr_rpts_col$[1,fnstr_pos("MAXL",attr_def_col_str$[0,0],5)]="1"
 attr_rpts_col$[1,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="C"
 
 attr_rpts_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="REPT_NO"
-attr_rpts_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Report"
+attr_rpts_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_REPORT")
 attr_rpts_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 
 attr_rpts_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DESC"
-attr_rpts_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Description"
+attr_rpts_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DESCRIPTION")
 attr_rpts_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="225"
 
 for curr_attr=1 to def_rpts_cols
@@ -111,7 +111,7 @@ endif
 [[GLR_13PERIOD.ACUS]]
 rem process custom event -- used in this pgm to select/de-select checkboxes in grid
 rem see basis docs notice() function, noticetpl() function, notify event, grid control notify events for more info
-rem this routine is executed when callbacks have been set to run a "custom event"
+rem this routine is executed when callbacks have been set to run a 'custom event'
 rem analyze gui_event$ and notice$ to see which control's callback triggered the event, and what kind
 rem of event it is... in this case, we're toggling checkboxes on/off in form grid control
 

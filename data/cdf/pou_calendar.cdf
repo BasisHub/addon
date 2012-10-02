@@ -10,12 +10,12 @@ rem --- Retrieve first/last date scheduled
     call stbl("+DIR_PGM")+"poc_firstlast.aon",pom_calendar_dev,fattr(pom_calendar$),firm_id$,begdate$,enddate$,status
 
     if begdate$="" 
-	begdate$="None"	
+	begdate$=Translate!.getTranslation("AON_NONE")	
     else
 	begdate$=fndate$(begdate$)
     endif
     if enddate$="" 
-	enddate$="None"
+	enddate$=Translate!.getTranslation("AON_NONE")
     else
 	callpoint!.setColumnData("POU_CALENDAR.PURGE_THROUGH",enddate$)
 	enddate$=fndate$(enddate$)

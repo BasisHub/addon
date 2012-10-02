@@ -321,59 +321,9 @@ callpoint!.setTableColumnAttribute("POE_RECDET.PO_LINE_CODE","DFLT",str(callpoin
 
 callpoint!.setDevObject("po_rows","")
 [[POE_RECDET.ITEM_ID.AINV]]
-rem --- remember row/column we're on so we can force focus when we return from synonym lookup
+rem --- Item synonym processing
 
-if cvs(callpoint!.getUserInput(),3)<>""
-
-	declare BBjStandardGrid grid!
-	grid! = util.getGrid(Form!)
-	return_to_row = grid!.getSelectedRow()
-	return_to_col = grid!.getSelectedColumn()
-
-	rem --- see if they entered a synonym, if so, display (if only one of them), if no match, or more than one match, launch bam_inquiry on synonym file
-
-	ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
-	dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
-
-	read (ivm_itemsyn_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)
-	read_count=0
-	found_count=0
-	found_item$=""
-
-	while read_count<2
-		read record (ivm_itemsyn_dev,end=*break)ivm_itemsyn$
-		if ivm_itemsyn.firm_id$=firm_id$ and ivm_itemsyn.item_synonym$=callpoint!.getUserInput()
-			found_count=found_count+1
-			found_item$=ivm_itemsyn.item_id$
-		endif
-		read_count=read_count+1
-	wend
-
-	if found_count=1
-		callpoint!.setUserInput(found_item$)
-		callpoint!.setStatus("")
-	else
-		call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMSYN","PRIMARY",key_tpl$,table_chans$[all],rd_stat$
-		dim return_key$:key_tpl$
-
-		dim search_defs$[2]
-		search_defs$[0]="IVM_ITEMSYN.ITEM_SYNONYM"
-		search_defs$[1]=callpoint!.getRawUserInput()
-		search_defs$[2]="A"
-
-		call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"IVM_ITEMSYN","LOOKUP",
-:			table_chans$[all],firm_id$,"PRIMARY",return_key$,filter_defs$[all],search_defs$[all]
-		if cvs(return_key$,3)<>""
-			callpoint!.setUserInput(return_key.item_id$)	
-			callpoint!.setStatus("")
-		else
-			callpoint!.setStatus("ABORT")
-		endif
-		util.forceEdit(Form!, return_to_row, return_to_col)
-	endif
-else
-	callpoint!.setStatus("ABORT")
-endif
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
 [[POE_RECDET.AGRE]]
 
 rem --- check data to see if o.k. to leave row (only if the row isn't marked as deleted)

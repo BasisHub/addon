@@ -54,7 +54,7 @@ rem --- Validate Check Number
 if num(callpoint!.getColumnData("APR_CHECKS.CHECK_NO")) = 0 then
 	msg_id$="ENTRY_INVALID"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="Check Number"
+	msg_tokens$[1]=Translate!.getTranslation("AON_CHECK_NUMBER")
 	msg_opt$=""
 	gosub disp_message
 	callpoint!.setStatus("ABORT")

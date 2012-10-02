@@ -1,3 +1,7 @@
+[[IVR_PRICELIST.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVR_PRICELIST.BSHO]]
 rem "open params file and be sure inventory param rec exists
 

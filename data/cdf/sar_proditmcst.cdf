@@ -1,3 +1,7 @@
+[[SAR_PRODITMCST.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAR_PRODITMCST.ASVA]]
 rem --- Check selected level against allowable level
 	allow=pos(user_tpl.high_level$=user_tpl.sa_levels$)
@@ -36,7 +40,7 @@ readrecord(sas_params_chn,key=firm_id$+"SA00")sas_params$
 if sas_params.by_customer$<>"Y"
 	msg_id$="INVALID_SA"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="Customer"
+	msg_tokens$[1]=Translate!.getTranslation("AON_CUSTOMER")
 	gosub disp_message
 	bbjAPI!=bbjAPI()
 	rdFuncSpace!=bbjAPI!.getGroupNamespace()
@@ -75,7 +79,7 @@ endif
 	if sas01a.by_customer$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Customer"
+		msg_tokens$[1]=Translate!.getTranslation("AON_CUSTOMER")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()

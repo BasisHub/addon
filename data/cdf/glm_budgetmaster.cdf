@@ -20,7 +20,7 @@ if callpoint!.getRecordStatus()<>"M"
 :	cvs(callpoint!.getColumnData("GLM_BUDGETMASTER.AMTPCT_VAL"),3)<>"" and 
 :	cvs(callpoint!.getColumnData("GLM_BUDGETMASTER.REVISION_SRC"),3)<>"" and
 :	cvs(callpoint!.getColumnData("GLM_BUDGETMASTER.REV_TITLE"),3)<>""
-		prompt$="Do you want to Create a Budget Revision?"
+		prompt$=Translate!.getTranslation("AON_DO_YOU_WANT_TO_CREATE_A_BUDGET_REVISION?")
 		call pgmdir$+"adc_yesno.aon",0,prompt$,0,answer$,fkey
 		     
 		if answer$="YES" 

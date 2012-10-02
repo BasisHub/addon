@@ -26,7 +26,7 @@ rem " --- See if they want to print
 		call stbl("+DIR_PGM")+"glr_bankmaster.aon",gl_account$
 	endif
 
-rem " --- If balanced, see if they want to remove paid transactions
+rem --- If balanced, see if they want to remove paid transactions
 
 	if balanced$="Y"
 		msg_id$="REMOVE_PAID"
@@ -34,7 +34,7 @@ rem " --- If balanced, see if they want to remove paid transactions
 		msg_opt$=""
 		gosub disp_message
 		if msg_opt$="Y"
-rem " --- Remove Paid Checks"           
+rem --- Remove Paid Checks
 			read (glt05_dev,key=firm_id$+gl_acct$,dom=*next)
 			while 1
 				dim glt05a$:user_tpl.glt05_tpl$
@@ -46,7 +46,7 @@ rem " --- Remove Paid Checks"
 				remove (glt05_dev,key=glt05a.firm_id$+glt05a.gl_account$+glt05a.check_no$,dom=*next)
 			wend
 
-rem " --- Remove Paid Transactions"
+rem --- Remove Paid Transactions
 			read (glt15_DEV,key=firm_id$+gl_acct$,dom=*next)
 			while 1
 				dim glt15a$:user_tpl.glt15_tpl$
@@ -144,7 +144,7 @@ rem - Set up disabled controls
 	dctl$[6]="<<DISPLAY>>.NO_TRANS"
 	gosub disable_ctls
 [[GLM_BANKMASTER.<CUSTOM>]]
-check_date: rem " --- Check Statement Ending Date"
+check_date: rem --- Check Statement Ending Date
 
 	status=0
 	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",pgm(-2),"GL","","",status
@@ -158,14 +158,14 @@ check_date: rem " --- Check Statement Ending Date"
 	nextgl=currentgl+1
 	if stmtyear<priorgl and stmtyear>nextgl
 		dim message$[1]
-		message$[0]="Date is not in prior, current or next G/L year."
-		message$[1]="       Press <Enter> to Continue"
+		message$[0]=Translate!.getTranslation("AON_DATE_IS_NOT_IN_PRIOR,_CURRENT_OR_NEXT_G/L_YEAR.")
+		message$[1]=Translate!.getTranslation("AON________PRESS_<ENTER>_TO_CONTINUE")
 		call stbl("+DIR_PGM")+ "adc.stdmessage.aon",2,message$[all],1,0,0,v$,v3
 		status=1
 	endif
 	return
 
-calc_totals: rem " --- Calculate Totals for Summary Information
+calc_totals: rem --- Calculate Totals for Summary Information
 
 	glt05_dev=user_tpl.glt05_dev
 	glt15_dev=user_tpl.glt15_dev
@@ -179,7 +179,7 @@ calc_totals: rem " --- Calculate Totals for Summary Information
 	statement_amt=num(callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT"))
 	callpoint!.setColumnData("<<DISPLAY>>.STMT_AMT",str(statement_amt))
 
-rem " --- Find Outstanding Checks"           
+rem --- Find Outstanding Checks
 	read (glt05_dev,key=firm_id$+gl_acct$,dom=*next)
 	while 1
 		dim glt05a$:user_tpl.glt05_tpl$
@@ -191,7 +191,7 @@ rem " --- Find Outstanding Checks"
 		out_checks_amt=out_checks_amt+glt05a.check_amount,out_checks=out_checks+1
 	wend
 
-rem " --- Find Outstanding Transactions"
+rem --- Find Outstanding Transactions
 	read (glt15_DEV,key=firm_id$+gl_acct$,dom=*next)
 	while 1
 		dim glt15a$:user_tpl.glt15_tpl$
@@ -203,7 +203,7 @@ rem " --- Find Outstanding Transactions"
 		out_trans_amt=out_trans_amt+glt15a.trans_amt,out_trans=out_trans+1
 	wend
 
-rem " --- Setup display variables
+rem --- Setup display variables
 
 	callpoint!.setColumnData("<<DISPLAY>>.CHECKS_OUT",str(out_checks_amt))
 	callpoint!.setColumnData("<<DISPLAY>>.NO_CHECKS",str(out_checks))

@@ -16,7 +16,7 @@ if list!.size()<>0
 		db!.addItem(db$)
 	next i
 else
-	db!.addItem("(none)")
+	db!.addItem(Translate!.getTranslation("AON_(NONE)"))
 endif
 [[ADX_BUILDSPROC.<CUSTOM>]]
 rem fnget_control.src
@@ -67,11 +67,11 @@ endif
 
 db!=fnget_control!("DATABASE")
 if db!.getSelectedIndex()<0
-	x=msgbox("No Database Selected")
+	x=msgbox(Translate!.getTranslation("AON_NO_DATABASE_SELECTED"))
 	callpoint!.setStatus("ABORT")
 else
-	if pos("(none)"=db!.getItemAt(db!.getSelectedIndex()))<>0
-		x=msgbox("No Database Selected")
+	if pos(Translate!.getTranslation("AON_(NONE)")=db!.getItemAt(db!.getSelectedIndex()))<>0
+		x=msgbox(Translate!.getTranslation("AON_NO_DATABASE_SELECTED"))
 		callpoint!.setStatus("ABORT")
 	else
 		callpoint!.setColumnData("ADX_BUILDSPROC.DATABASE",db!.getItemAt(db!.getSelectedIndex()))

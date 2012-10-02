@@ -1,3 +1,7 @@
+[[IVC_ITEMLOOKUP.ASVA]]
+rem --- set find_item only if OK is clicked
+
+callpoint!.setDevObject("find_item",callpoint!.getDevObject("selected_item"))
 [[IVC_ITEMLOOKUP.BEND]]
 rem --- since files were forced open on new channels, close to keep tidy
 
@@ -12,7 +16,7 @@ rem --- since files were forced open on new channels, close to keep tidy
 	gosub open_tables
 	
 [[IVC_ITEMLOOKUP.SEARCH_KEY.AVAL]]
-rem --- set search key/file according to user's selection in the "search by" listbutton.
+rem --- set search key/file according to user's selection in the 'search by' listbutton.
 rem --- and search text entered here.
 rem --- load/display grid
 
@@ -21,7 +25,7 @@ switch pos(search_by$="ISTV")
 	case 1; rem by item
 		search_dev=fnget_dev("@IVM_ITEMMAST")
 		dim searchrec$:fnget_tpl$("@IVM_ITEMMAST")
-		search_knum=0
+		search_knum$="PRIMARY"
 		search_text$=callpoint!.getUserInput()
 		search_field$="ITEM_ID"
 		gosub load_and_display_grid
@@ -29,7 +33,7 @@ switch pos(search_by$="ISTV")
 	case 2; rem by synonym
 		search_dev=fnget_dev("@IVM_ITEMSYN")
 		dim searchrec$:fnget_tpl$("@IVM_ITEMSYN")
-		search_knum=0
+		search_knum$="PRIMARY"
 		search_text$=callpoint!.getUserInput()
 		search_field$="ITEM_SYNONYM"
 		gosub load_and_display_grid
@@ -37,7 +41,7 @@ switch pos(search_by$="ISTV")
 	case 3; rem by product type
 		search_dev=fnget_dev("@IVM_ITEMMAST")
 		dim searchrec$:fnget_tpl$("@IVM_ITEMMAST")
-		search_knum=2
+		search_knum$="AO_PROD_ITEM"
 		search_text$=callpoint!.getUserInput()
 		search_field$="PRODUCT_TYPE"
 		gosub load_and_display_grid
@@ -60,6 +64,21 @@ swend
 [[IVC_ITEMLOOKUP.ARER]]
 rem --- set default search type to I (by item)
 callpoint!.setColumnData("IVC_ITEMLOOKUP.SEARCH_BY","I")
+
+dflt_meth!=callpoint!.getDevObject("default_meth")
+if dflt_meth!<>null() callpoint!.setColumnData("IVC_ITEMLOOKUP.SEARCH_BY",dflt_meth!)
+
+dflt_start!=callpoint!.getDevObject("default_start")
+if dflt_start!<>null! 
+	callpoint!.setColumnData("IVC_ITEMLOOKUP.SEARCH_KEY",dflt_start!)
+	search_dev=fnget_dev("@IVM_ITEMSYN")
+	dim searchrec$:fnget_tpl$("@IVM_ITEMSYN")
+	search_knum$="PRIMARY"
+	search_text$=dflt_start!
+	search_field$="ITEM_SYNONYM"
+	gosub load_and_display_grid
+endif
+
 callpoint!.setStatus("REFRESH")
 [[IVC_ITEMLOOKUP.AWIN]]
 rem --- open files
@@ -118,15 +137,15 @@ rem ---  Set up grid
 	ctlw_pos = fnstr_pos("CTLW", attr_def_col_str$[0,0], 5)
 	
 	attr_grid_col$[1,dvar_pos]="SEARCH_KEY"
-	attr_grid_col$[1,labs_pos]="Search Key"
+	attr_grid_col$[1,labs_pos]=Translate!.getTranslation("AON_SEARCH_KEY")
 	attr_grid_col$[1,ctlw_pos]="125"
 
 	attr_grid_col$[2,dvar_pos]="ITEM_NO"
-	attr_grid_col$[2,labs_pos]="Item"
+	attr_grid_col$[2,labs_pos]=Translate!.getTranslation("AON_ITEM")
 	attr_grid_col$[2,ctlw_pos]="125"	
 
 	attr_grid_col$[3,dvar_pos]="DESC"
-	attr_grid_col$[3,labs_pos]="Description"
+	attr_grid_col$[3,labs_pos]=Translate!.getTranslation("AON_DESCRIPTION")
 	attr_grid_col$[3,ctlw_pos]="125"	
 	
 	for curr_attr=1 to def_grid_cols
@@ -155,22 +174,22 @@ rem --- Create Item Information window
 	infoWin!=form!.addChildWindow(15000, w.x, w.y, w.w, w.h, "", $00000800$, cxt)
 	SysGUI!.setContext(cxt)
 
-	infoWin!.addGroupBox(15999,5,5,415,220,"Inventory Detail",$$)
+	infoWin!.addGroupBox(15999,5,5,415,220,Translate!.getTranslation("AON_INVENTORY_DETAIL"),$$)
 	
-	infoWin!.addStaticText(15001,10,25,75,15,"Product Type:",$8000$)
+	infoWin!.addStaticText(15001,10,25,75,15,Translate!.getTranslation("AON_PRODUCT_TYPE:"),$8000$)
 
-	infoWin!.addStaticText(15003,10,65,75,15,"Unit of Sale:",$8000$)
-	infoWin!.addStaticText(15004,10,85,75,15,"Weight:",$8000$)
+	infoWin!.addStaticText(15003,10,65,75,15,Translate!.getTranslation("AON_UNIT_OF_SALE:"),$8000$)
+	infoWin!.addStaticText(15004,10,85,75,15,Translate!.getTranslation("AON_WEIGHT:"),$8000$)
 
 	infoWin!.addStaticText(15005,200,25,75,15,"",$8000$)
-	infoWin!.addStaticText(15006,200,45,75,15,"Last Receipt:",$8000$)
-	infoWin!.addStaticText(15007,200,65,75,15,"Last Issue:",$8000$)
-	infoWin!.addStaticText(15008,200,85,75,15,"Lot/Serialized?:",$8000$)
+	infoWin!.addStaticText(15006,200,45,75,15,Translate!.getTranslation("AON_LAST_RECEIPT:"),$8000$)
+	infoWin!.addStaticText(15007,200,65,75,15,Translate!.getTranslation("AON_LAST_ISSUE:"),$8000$)
+	infoWin!.addStaticText(15008,200,85,75,15,Translate!.getTranslation("AON_LOT/SERIALIZED?:"),$8000$)
 
-	infoWin!.addStaticText(15009,10,125,75,15,"On hand:",$8000$)
-	infoWin!.addStaticText(15010,10,145,75,15,"Committed:",$8000$)
-	infoWin!.addStaticText(15011,10,165,75,15,"Available:",$8000$)
-	infoWin!.addStaticText(15012,10,185,75,15,"On Order:",$8000$)
+	infoWin!.addStaticText(15009,10,125,75,15,Translate!.getTranslation("AON_ON_HAND:"),$8000$)
+	infoWin!.addStaticText(15010,10,145,75,15,Translate!.getTranslation("AON_COMMITTED:"),$8000$)
+	infoWin!.addStaticText(15011,10,165,75,15,Translate!.getTranslation("AON_AVAILABLE:"),$8000$)
+	infoWin!.addStaticText(15012,10,185,75,15,Translate!.getTranslation("AON_ON_ORDER:"),$8000$)
 
 	rem --- above are labels, now add static text fields for data
 	callpoint!.setDevObject("prod_tp",  str(15101))
@@ -252,7 +271,7 @@ rem --- Get the control ID of the event
 		switch notice.code
 			case 19; rem grid_key_press
 			case 14; rem grid_mouse_up
-				callpoint!.setDevObject("find_item",firm_id$+gridSearch!.getCellText(curr_row,1))
+				callpoint!.setDevObject("selected_item",firm_id$+gridSearch!.getCellText(curr_row,1))
 				gosub get_inventory_detail		
 			break
 		swend
@@ -267,7 +286,7 @@ load_and_display_grid:
 
 	vectSearch!=SysGUI!.makeVector()
 	
-	read (search_dev,key=firm_id$+cvs(search_text$,3),knum=search_knum,dom=*next)
+	read (search_dev,key=firm_id$+cvs(search_text$,3),knum=search_knum$,dom=*next)
 
 	while 1 
 		read record (search_dev,end=*break) searchrec$		
@@ -340,7 +359,7 @@ rem --- get/display Inventory Detail info
 	read record (ivs_params_dev,key=firm_id$+"IV00",dom=*next)ivs_params$
 	ls$=ivs_params.lotser_flag$
 
-	read (ivm_itemwhse_dev,key=callpoint!.getDevObject("find_item"),knum=2,dom=*next)
+	read (ivm_itemwhse_dev,key=callpoint!.getDevObject("selected_item"),knum="AO_ITEM_WH",dom=*next)
 	on_hand=0
 	committed=0
 	available=0
@@ -348,7 +367,7 @@ rem --- get/display Inventory Detail info
 
 	while 1
 		read record(ivm_itemwhse_dev,end=*break)ivm_itemwhse$
-		if pos(ivm_itemwhse.firm_id$+ivm_itemwhse.item_id$=callpoint!.getDevObject("find_item"))<>1 then break
+		if pos(ivm_itemwhse.firm_id$+ivm_itemwhse.item_id$=callpoint!.getDevObject("selected_item"))<>1 then break
 		on_hand=on_hand+ivm_itemwhse.qty_on_hand
 		committed=committed+ivm_itemwhse.qty_commit
 		on_order=on_order+ivm_itemwhse.qty_on_order
@@ -357,7 +376,7 @@ rem --- get/display Inventory Detail info
 
 	infoWin!=callpoint!.getDevObject("infoWin")
 
-	read record (ivm_itemmast_dev,key=callpoint!.getDevObject("find_item"),dom=*next)ivm_itemmast$
+	read record (ivm_itemmast_dev,key=callpoint!.getDevObject("selected_item"),dom=*next)ivm_itemmast$
 	
 	w!=infoWin!.getControl( num( callpoint!.getDevObject("prod_tp") ) )
 	w!.setText(ivm_itemmast.product_type$)
@@ -367,10 +386,10 @@ rem --- get/display Inventory Detail info
 	w!.setText(ivm_itemmast.weight$)
 	switch pos(ivm_itemmast.alt_sup_flag$="AS")
 		case 1
-			as_prompt$="Alternate:"
+			as_prompt$=Translate!.getTranslation("AON_ALTERNATE:")
 		break
 		case 2
-			as_prompt$="Superseded:"
+			as_prompt$=Translate!.getTranslation("AON_SUPERSEDED:")
 		break
 		case default
 			as_prompt$=""
@@ -386,10 +405,10 @@ rem --- get/display Inventory Detail info
 	w!.setText(func.formatDate(ivm_itemmast.lstiss_date$))
 	switch pos(ls$="LS")
 		case 1
-			ls_text$="Lotted"
+			ls_text$=Translate!.getTranslation("AON_LOTTED")
 		break
 		case 2
-			ls_text$="Serialized"
+			ls_text$=Translate!.getTranslation("AON_SERIALIZED")
 		break
 		case default
 			ls_text$=""

@@ -6,7 +6,7 @@ ivs_defaults=fnget_dev("IVS_DEFAULTS")
 dim ivs_defaults$:fnget_tpl$("IVS_DEFAULTS")
 item_type$ = callpoint!.getColumnData("IVC_TYPECODE.ITEM_TYPE")
 
-read (ivm01_dev,key=firm_id$+item_type$,knum=7,dom=*next)
+read (ivm01_dev,key=firm_id$+item_type$,knum="AO_ITMTYPE_ITEM",dom=*next)
 k$="", k$=key(ivm01_dev,err=*next)
 if pos(firm_id$+item_type$=k$)=1
 	msg_id$="IV_TYPE_IN_USE"

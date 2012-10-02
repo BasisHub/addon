@@ -1,3 +1,9 @@
+[[OPE_ORDDET.ITEM_ID.AINV]]
+print "Det:ITEM_ID.AINV"; rem debug
+
+rem --- Check for item synonyms
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
 [[OPE_ORDDET.WAREHOUSE_ID.BINP]]
 print "Det:WAREHOUSE_ID.BINP"; rem debug
 
@@ -308,7 +314,7 @@ rem --- Set values based on line type
 	file$ = "OPC_LINECODE"
 	dim linecode_rec$:fnget_tpl$(file$)
 	line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
-
+	print "---Line code: """, line_code$, """"; rem debug
 	find record(fnget_dev(file$), key=firm_id$+line_code$) linecode_rec$
 
 rem --- If line type is Memo, clear the extended price
@@ -1220,7 +1226,7 @@ rem ==========================================================================
 	userObj!.getItem(user_tpl.avail_type).setText(avail$[6])
 
 	if user_tpl.line_dropship$ = "Y" then
-		userObj!.getItem(user_tpl.dropship_flag).setText("**Dropship**")
+		userObj!.getItem(user_tpl.dropship_flag).setText(Translate!.getTranslation("AON_**DROPSHIP**"))
 	else
 		userObj!.getItem(user_tpl.dropship_flag).setText("")
 	endif
@@ -1228,10 +1234,10 @@ rem ==========================================================================
  	if good_item$="Y"
  		switch pos(ivm01a.alt_sup_flag$="AS")
  			case 1
- 				userObj!.getItem(user_tpl.alt_super).setText("Alternate: "+cvs(ivm01a.alt_sup_item$,3))
+ 				userObj!.getItem(user_tpl.alt_super).setText(Translate!.getTranslation("AON_ALTERNATE:_")+cvs(ivm01a.alt_sup_item$,3))
  			break
  			case 2
- 				userObj!.getItem(user_tpl.alt_super).setText("Superseded: "+cvs(ivm01a.alt_sup_item$,3))
+ 				userObj!.getItem(user_tpl.alt_super).setText(Translate!.getTranslation("AON_SUPERSEDED:_")+cvs(ivm01a.alt_sup_item$,3))
  			break
  			case default
  				userObj!.getItem(user_tpl.alt_super).setText("")
@@ -1250,7 +1256,7 @@ manual_price_flag: rem --- Set manual price flag
 rem ==========================================================================
 
 	if callpoint!.getColumnData("OPE_ORDDET.MAN_PRICE") = "Y" then 
-		userObj!.getItem(user_tpl.manual_price).setText("**Manual Price**")
+		userObj!.getItem(user_tpl.manual_price).setText(Translate!.getTranslation("AON_**MANUAL_PRICE**"))
 	else
 		userObj!.getItem(user_tpl.manual_price).setText("")
 	endif
@@ -1459,7 +1465,7 @@ rem ===========================================================================
 			user_tpl.item_wh_failed = 1
 			
 			if cvs(item$, 2) <> "" and cvs(wh$, 2) <> "" then
-				find record (ivm02_dev, key=firm_id$+wh$+item$, knum=0, dom=*endif) ivm02a$
+				find record (ivm02_dev, key=firm_id$+wh$+item$, knum="PRIMARY", dom=*endif) ivm02a$
 				user_tpl.item_wh_failed = 0
 			endif
 
@@ -1556,6 +1562,7 @@ rem ==========================================================================
 lot_ser_check: rem --- Check for lotted item
                rem      IN: item_id$
                rem     OUT: lotted$ - Y/N
+               rem          DevObject "inventoried"
 rem ==========================================================================
 
 	lotted$="N"
@@ -1621,7 +1628,7 @@ rem ==========================================================================
 		dim msg_tokens$[1]
 		msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
 		gosub disp_message
-		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", "*** Over Credit Limit ***")
+		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
 		user_tpl.credit_limit_warned = 1
 	endif
 

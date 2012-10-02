@@ -1,3 +1,7 @@
+[[SAR_CUSTSIC.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAR_CUSTSIC.BFMC]]
 rem --- open files
 	num_files=2
@@ -12,8 +16,8 @@ rem --- open files
 rem --- create list for available levels
 
 	ldat_list$=pad("SIC",20)+"~"+"C ;"
-	if pos(sas01a.sic_code_lev$="PI") ldat_list$=ldat_list$+pad("Product",20)+"~"+"P ;"
-	if pos(sas01a.sic_code_lev$="I") ldat_list$=ldat_list$+pad("Item",20)+"~"+"I ;"
+	if pos(sas01a.sic_code_lev$="PI") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_PRODUCT"),20)+"~"+"P ;"
+	if pos(sas01a.sic_code_lev$="I") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_ITEM"),20)+"~"+"I ;"
 
 	callpoint!.setTableColumnAttribute("SAR_CUSTSIC.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_CUSTSIC.ASVA]]

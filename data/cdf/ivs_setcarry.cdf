@@ -79,18 +79,18 @@ format_grid:
 	num_rpts_rows=num(user_tpl.gridABCRows$)
 	dim attr_col$[def_abc_cols,len(attr_def_col_str$[0,0])/5]
 	attr_col$[1,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="LEVEL"
-	attr_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="ABC Level"
+	attr_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_ABC_LEVEL")
 	attr_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="5"
 	attr_col$[1,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="C"
 
 	attr_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PERCENT"
-	attr_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Percent"
+	attr_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_PERCENT")
 	attr_col$[2,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 	attr_col$[2,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m2$
 
 	attr_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="FACTOR"
-	attr_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Factor"
+	attr_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_FACTOR")
 	attr_col$[3,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 	attr_col$[3,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$

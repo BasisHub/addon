@@ -15,7 +15,7 @@ readrecord(gls01_dev,key=firm_id$+"GL00",dom=std_missing_params)gls01a$
 
 rem create list for column zero of grid -- column type drop-down
 more=1
-ldat_list$=pad("(none)",20)+"~"+"  ;"
+ldat_list$=pad(Translate!.getTranslation("AON_(NONE)"),20)+"~"+"  ;"
 read(glm18_dev,key="",dom=*next)
 while more
 	readrecord(glm18_dev,end=*break)glm18a$

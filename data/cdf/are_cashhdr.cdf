@@ -178,7 +178,7 @@ while more_dtl
 wend
 
 if gl_applied
-	Form!.getControl(num(user_tpl.GLind_id$)).setText("* includes GL distributions")
+	Form!.getControl(num(user_tpl.GLind_id$)).setText(Translate!.getTranslation("AON_*_INCLUDES_GL_DISTRIBUTIONS"))
 	Form!.getControl(num(user_tpl.GLstar_id$)).setText("*")
 else
 	Form!.getControl(num(user_tpl.GLind_id$)).setText("")
@@ -311,9 +311,9 @@ find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 rem --- add custom controls, checkboxes and grids
 UserObj!=SysGUI!.makeVector()
 nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
-OA_chkbox!=Form!.addCheckBox(nxt_ctlID,555,52,200,20,"Show On-Account and Credits?",$04$)
-zbal_chkbox!=Form!.addCheckBox(nxt_ctlID+1,555,72,200,20,"Show zero-balance invoices?",$$)
-asel_chkbox!=Form!.addCheckBox(nxt_ctlID+2,555,92,200,20,"Auto-select by Invoice?",$$)
+OA_chkbox!=Form!.addCheckBox(nxt_ctlID,555,52,200,20,Translate!.getTranslation("AON_SHOW_ON-ACCOUNT_AND_CREDITS?"),$04$)
+zbal_chkbox!=Form!.addCheckBox(nxt_ctlID+1,555,72,200,20,Translate!.getTranslation("AON_SHOW_ZERO-BALANCE_INVOICES?"),$$)
+asel_chkbox!=Form!.addCheckBox(nxt_ctlID+2,555,92,200,20,Translate!.getTranslation("AON_AUTO-SELECT_BY_INVOICE?"),$$)
 gridInvoice!=Form!.addGrid(nxt_ctlID+3,5,160,700,210)
 Form!.addStaticText(nxt_ctlID+4,450,140,200,20,"")
 Form!.addStaticText(nxt_ctlID+5,550,118,20,20,"")
@@ -688,7 +688,7 @@ gl_distribution:
 	user_tpl.gl_applied$=str(-gl_applied);rem added 5/16/07.ch
 	callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))-glapp))
 	callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_APPLIED"))+glapp))
-	Form!.getControl(num(user_tpl.GLind_id$)).setText("* includes GL distributions")
+	Form!.getControl(num(user_tpl.GLind_id$)).setText(Translate!.getTranslation("AON_*_INCLUDES_GL_DISTRIBUTIONS"))
 	Form!.getControl(num(user_tpl.GLstar_id$)).setText("*")
 	callpoint!.setStatus("REFRESH")
 return
@@ -1264,52 +1264,52 @@ format_grids:
 	attr_inv_col$[1,fnstr_pos("MAXL",attr_def_col_str$[0,0],5)]="1"
 	attr_inv_col$[1,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="C"
 	attr_inv_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="INVOICE"
-	attr_inv_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Invoice"
+	attr_inv_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_INVOICE")
 	attr_inv_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="70"
 	attr_inv_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="INV_DATE"
-	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Inv Date"
+	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_INV_DATE")
 	attr_inv_col$[3,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 	attr_inv_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="70"
 	attr_inv_col$[4,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DUE_DATE"
-	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Due Date"
+	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DUE_DATE")
 	attr_inv_col$[4,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 	attr_inv_col$[4,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="70"
 	attr_inv_col$[5,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="INV_AMOUNT"
-	attr_inv_col$[5,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Inv Amount"
+	attr_inv_col$[5,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_INV_AMOUNT")
 	attr_inv_col$[5,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[5,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="75"
 	attr_inv_col$[5,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[5,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[6,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="CURR_BAL"
-	attr_inv_col$[6,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Opening Bal"
+	attr_inv_col$[6,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_OPENING_BAL")
 	attr_inv_col$[6,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[6,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="75"
 	attr_inv_col$[6,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[6,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[7,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="AVAIL_DISC"
-	attr_inv_col$[7,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Avail Disc"
+	attr_inv_col$[7,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_AVAIL_DISC")
 	attr_inv_col$[7,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[7,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="70"
 	attr_inv_col$[7,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[7,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[8,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DISC_DATE"
-	attr_inv_col$[8,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Disc Date"
+	attr_inv_col$[8,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DISC_DATE")
 	attr_inv_col$[8,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 	attr_inv_col$[8,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="70"
 	attr_inv_col$[9,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="APPLY"
-	attr_inv_col$[9,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Applied"
+	attr_inv_col$[9,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_APPLIED")
 	attr_inv_col$[9,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[9,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="75"
 	attr_inv_col$[9,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[9,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[10,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DISC"
-	attr_inv_col$[10,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Disc Amt"
+	attr_inv_col$[10,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DISC_AMT")
 	attr_inv_col$[10,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[10,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="75"
 	attr_inv_col$[10,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[10,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[11,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="BALANCE"
-	attr_inv_col$[11,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="End Balance"
+	attr_inv_col$[11,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_END_BALANCE")
 	attr_inv_col$[11,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[11,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="75"
 	attr_inv_col$[11,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$

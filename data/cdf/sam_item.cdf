@@ -1,3 +1,7 @@
+[[SAM_ITEM.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAM_ITEM.ITEM_ID.AVAL]]
 rem --- Enable/Disable Summary button
 	prod_type$=callpoint!.getColumnData("SAM_ITEM.PRODUCT_TYPE")
@@ -19,7 +23,7 @@ rem --- Calculate and display summary info
 
 rem --- Start progress meter
 	task_id$=info(3,0)
-	Window_Name$="Summarizing"
+	Window_Name$=Translate!.getTranslation("AON_SUMMARIZING")
 	Progress! = bbjapi().getGroupNamespace()
 	Progress!.setValue("+process_task",task_id$+"^C^"+Window_Name$+"^CNC-IND^"+str(n)+"^")
 
@@ -94,7 +98,7 @@ rem --- Check for parameter record
 	if sas01a.by_product$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Product"
+		msg_tokens$[1]=Translate!.getTranslation("AON_PRODUCT")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()

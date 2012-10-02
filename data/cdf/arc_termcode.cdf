@@ -9,12 +9,12 @@ rem --- Inits
 	gosub open_tables
 
 	arm_custdet_dev = num(open_chans$[1])
-	terms_code_knum = 3
+	terms_code_knum$ = "AO_TERMS_CUST"
 	terms_code$ = callpoint!.getColumnData("ARC_TERMCODE.AR_TERMS_CODE")
 
 rem --- Check if code is used by a customer
 
-	read(arm_custdet_dev,key=firm_id$+terms_code$,knum=terms_code_knum,dom=*next)
+	read(arm_custdet_dev,key=firm_id$+terms_code$,knum=terms_code_knum$,dom=*next)
 	k$ = key(arm_custdet_dev,end=bdel_check_default)
 
 	if k$(1,2) = firm_id$ and k$(3,2) = terms_code$ then 

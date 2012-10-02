@@ -64,3 +64,4 @@ rem --- Disable date for initial sreen show
 	temp_stbl$=stbl("DEF_ACCT_DATE",acctdate$)
 	gosub disable_fields
 
+rem --- test comment

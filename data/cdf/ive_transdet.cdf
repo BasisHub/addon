@@ -1,3 +1,7 @@
+[[IVE_TRANSDET.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
 [[IVE_TRANSDET.AGRN]]
 print "after grid row entry (AGRN)"; rem debug
 
@@ -627,6 +631,16 @@ rem --- Check the transaction qty
 [[IVE_TRANSDET.AGRE]]
 print "after grid row exit (AGRE)"; rem debug
 
+rem --- Is this row deleted?
+
+	this_row = callpoint!.getValidationRow()
+	print "row", this_row; rem debug
+	
+	if callpoint!.getGridRowDeleteStatus(this_row) = "Y" then 
+		print "row is deleted, exitting"; rem debug
+		break; rem --- exit callpoint
+	endif
+
 rem --- Check for Lot/Serial number entry
 	item_id$=callpoint!.getColumnData("IVE_TRANSDET.ITEM_ID")
 	if cvs(item_id$,3) <> ""
@@ -639,16 +653,6 @@ rem --- Check for Lot/Serial number entry
 				callpoint!.setFocus(num(callpoint!.getValidationRow()),"IVE_TRANSDET.LOTSER_NO")
 			endif
 		endif
-	endif
-
-rem --- Is this row deleted?
-
-	this_row = callpoint!.getValidationRow()
-	print "row", this_row; rem debug
-	
-	if callpoint!.getGridRowDeleteStatus(this_row) = "Y" then 
-		print "row is deleted, exitting"; rem debug
-		break; rem --- exit callpoint
 	endif
 
 rem --- Tests to make sure trans qty is correct
@@ -845,7 +849,6 @@ rem --- Commit inventory
 		print "done committing"; rem debug
 
 	endif
-
 [[IVE_TRANSDET.ITEM_ID.AVAL]]
 print "in ITEM_ID After Column Validation (AVAL)"; rem debug
 

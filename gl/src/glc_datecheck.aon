@@ -26,6 +26,12 @@ rem --- status = 103: The date falls into a closed fiscal year
     seterr std_error
     enter when$,verify$,period$,year$,status
 
+rem --- Get Translator Object
+
+    use ::bbtranslator.bbj::BBTranslator
+    declare BBTranslator Translate!
+    Translate! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+
 rem --- Initialize arguments in case of an early exit
 
     status=0
@@ -35,13 +41,13 @@ rem --- Initialize arguments in case of an early exit
 
 rem --- Retrieve the program path
 
+    pgmdir$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
 
 rem --- Parameters
 
@@ -68,9 +74,10 @@ rem --- Initializations
     year$=apyear$
     next_apperiod=apperiod+1
     next_apyear=apyear
+
     if next_apperiod>total_pers 
-       next_apperiod=1
-       next_apyear=apyear+1
+        next_apperiod=1
+        next_apyear=apyear+1
     endif
 
 rem --- Posting to GL?
@@ -81,9 +88,9 @@ rem --- Posting to GL?
 rem --- Is this date same as the last one verified?
 
     if yyyymmdd$=glcontrol.trns_date$
-       period$=glcontrol.period$
-       year$=glcontrol.year$
-       goto std_exit
+        period$=glcontrol.period$
+        year$=glcontrol.year$
+        goto std_exit
     endif
 
 rem --- Initialize locked period flags based on fiscal calendar
@@ -91,10 +98,12 @@ rem --- Initialize locked period flags based on fiscal calendar
     locked$(1,mp)="YYYYYYYYYYYYY"
     p=0
     y=mp*2
+
     for x=mp+1 to y
         p=p+1
         locked$(x,1)=field(glcontrol$,"locked_flag_"+str(p:"00"))
     next x
+
     year1=glyear-1
     year2=glyear
     year3=glyear+1
@@ -105,6 +114,7 @@ rem --- Initialize locked period flags based on fiscal calendar
     locked$(mp+1,mp)=locked$(1,mp)
     p=0
     y=mp*3
+
     for x=(mp*2)+1 to y
         p=p+1
         locked$(x,1)=field(glcontrol$,"locked_flag_"+str(p:"00"))
@@ -114,6 +124,7 @@ determine_period: rem --- Determine which period/year that date falls into
 
     period=0
     year=year1
+
     for m=1 to total_pers
         begdate$=field(glcontrol$,"pri_per_beg_"+str(m:"00"))
         enddate$=field(glcontrol$,"pri_per_end_"+str(m:"00"))
@@ -121,8 +132,10 @@ determine_period: rem --- Determine which period/year that date falls into
         period=m
         break
     next m
+
     if period goto range_check
     year=year2
+
     for m=1 to total_pers
         begdate$=field(glcontrol$,"cur_per_beg_"+str(m:"00"))
         enddate$=field(glcontrol$,"cur_per_end_"+str(m:"00"))
@@ -130,8 +143,10 @@ determine_period: rem --- Determine which period/year that date falls into
         period=m
         break
     next m
+
     if period goto range_check
     year=year3
+
     for m=1 to total_pers
         begdate$=field(glcontrol$,"nxt_per_beg_"+str(m:"00"))
         enddate$=field(glcontrol$,"nxt_per_end_"+str(m:"00"))
@@ -144,18 +159,19 @@ range_check: rem --- Does date fall into 3 year GL range?
 
     period$=str(period:"00")
     year$=str(year:"0000")
+
     if period=0 
-       status=101
-       goto use_application
+        status=101
+        goto use_application
     endif
 
 rem --- Does date fall into the current application period?
 
-    if period=apperiod and year=apyear goto use_application
+    if period=apperiod and year=apyear then goto use_application
 
 rem --- Does date fall into the next application period?
 
-    if period=next_apperiod and year=next_apyear goto use_next_application
+    if period=next_apperiod and year=next_apyear then goto use_next_application
 
 rem --- Does date occur after end of the next application period?
 
@@ -236,31 +252,33 @@ message: rem --- Display warning/error message if verification requested
 
     if status=0 or verify$<>"Y" goto done
     dim message$[1]
-    part1$="The current "+glcontrol.system_id$(9)+" period is "+str(apperiod)+
-:          " ("+fndate$(glcontrol.app_per_beg$)+" to "+fndate$(glcontrol.app_per_end$)+")."
-    part2$="The "+fndate$(yyyymmdd$)+" date "
+    part1$=Translate!.getTranslation("AON_THE_CURRENT_")+glcontrol.system_id$(9)+Translate!.getTranslation("AON__PERIOD_IS_")+str(apperiod)+
+:       " ("+fndate$(glcontrol.app_per_beg$)+Translate!.getTranslation("AON__TO_")+fndate$(glcontrol.app_per_end$)+")."
+    part2$=Translate!.getTranslation("AON_THE_")+fndate$(yyyymmdd$)+Translate!.getTranslation("AON__DATE_")
+
     switch status
-           case 1
-                part2$=part2$+"occurs prior to the current period."
-           break
-           case 2
-                part2$=part2$+"occurs after the next period."
-           break
-           case 3 
-                part1$="The current GL period is "+str(glperiod)+" ("+fndate$(glcontrol.gl_per_beg$)+
-:                      " to "+fndate$(glcontrol,gl_per_end$)+")."
-                part2$=part2$+"falls into a prior GL period."
-           break
-           case 101 
-                part2$=part2$+"is not in the prior, current or next GL year."
-           break
-           case 102
-                part2$=part2$+"falls into a locked GL period."
-           break
-           case 103 
-                part2$=part2$+"falls into a closed fiscal year."
-           break
+        case 1
+            part2$=part2$+Translate!.getTranslation("AON_OCCURS_PRIOR_TO_THE_CURRENT_PERIOD.")
+            break
+        case 2
+            part2$=part2$+Translate!.getTranslation("AON_OCCURS_AFTER_THE_NEXT_PERIOD.")
+            break
+        case 3 
+            part1$=Translate!.getTranslation("AON_THE_CURRENT_GL_PERIOD_IS_")+str(glperiod)+" ("+fndate$(glcontrol.gl_per_beg$)+
+:               Translate!.getTranslation("AON__TO_")+fndate$(glcontrol,gl_per_end$)+")."
+            part2$=part2$+Translate!.getTranslation("AON_FALLS_INTO_A_PRIOR_GL_PERIOD.")
+            break
+        case 101 
+            part2$=part2$+Translate!.getTranslation("AON_IS_NOT_IN_THE_PRIOR,_CURRENT_OR_NEXT_GL_YEAR.")
+            break
+        case 102
+            part2$=part2$+Translate!.getTranslation("AON_FALLS_INTO_A_LOCKED_GL_PERIOD.")
+            break
+        case 103 
+            part2$=part2$+Translate!.getTranslation("AON_FALLS_INTO_A_CLOSED_FISCAL_YEAR.")
+            break
     swend
+
     message$[0]=part1$+$0A$+part2$
     dim msg_tokens$[1]
     msg_tokens$[1]=part1$+$0a$+part2$
@@ -273,9 +291,9 @@ done: rem --- All done
     glcontrol.period$=period$
     glcontrol.year$=year$
     if status 
-       glcontrol.trns_date$=""
-       glcontrol.period$=""
-       glcontrol.year$=""
+        glcontrol.trns_date$=""
+        glcontrol.period$=""
+        glcontrol.year$=""
     endif
     let x$=stbl("+GLCONTROL",glcontrol$)
     goto std_exit
@@ -298,21 +316,21 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
+:       str(err),rd_err_text$,rd_err_act$
 
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
 
-std_error_exit:
-    
+std_error_exit: 
+
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-    
-std_error_release:
+
+std_error_release: 
 
     status=999
     if pgm(-1)<>pgm(-2) exit 

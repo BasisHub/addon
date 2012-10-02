@@ -1,3 +1,7 @@
+[[SAM_PRODITMCST.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAM_PRODITMCST.CUSTOMER_ID.AVAL]]
 rem --- Enable/Disable Summary button
 	prod_type$=callpoint!.getColumnData("SAM_PRODITMCST.PRODUCT_TYPE")
@@ -33,7 +37,7 @@ rem --- Calculate and display summary info
 
 rem --- Start progress meter
 	task_id$=info(3,0)
-	Window_Name$="Summarizing"
+	Window_Name$=Translate!.getTranslation("AON_SUMMARIZING")
 	Progress! = bbjapi().getGroupNamespace()
 	Progress!.setValue("+process_task",task_id$+"^C^"+Window_Name$+"^CNC-IND^"+str(n)+"^")
 
@@ -41,11 +45,11 @@ rem --- Start progress meter
 	dim sam_tpl$:fnget_tpl$("SAM_PRODITMCST")
 	dim qty[13],cost[13],sales[13]
 
-	read(sam_dev,key=trip_key$,knum="ALT_KEY_01",dom=*next)
+	read(sam_dev,key=trip_key$,knum="AO_PRD_ITM_CST",dom=*next)
 	while 1
 		sam_key$=key(sam_dev,end=*break)
 		if pos(trip_key$=sam_key$)<>1 break
-		read record(sam_dev,knum="ALT_KEY_01",key=sam_key$)sam_tpl$
+		read record(sam_dev,knum="AO_PRD_ITM_CST",key=sam_key$)sam_tpl$
 
 		Progress!.getValue("+process_task_"+task_id$,err=*next);break
 
@@ -114,7 +118,7 @@ rem --- Check for parameter record
 	if sas01a.by_customer$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Customer"
+		msg_tokens$[1]=Translate!.getTranslation("AON_CUSTOMER")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()

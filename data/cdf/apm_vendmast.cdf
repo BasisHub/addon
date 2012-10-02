@@ -85,7 +85,7 @@ if cvs(vendor_id$,3)<>""
 		ivm01_dev=num(open_chans$[1])
 		
 		iv_key$=""
-		read(ivm01_dev,key=firm_id$+vendor_id$,knum=3,dom=*next)
+		read(ivm01_dev,key=firm_id$+vendor_id$,knum="AO_VEND_ITEM",dom=*next)
 		iv_key$=key(ivm01_dev,end=*next)
 		if pos(firm_id$+vendor_id$=iv_key$)=1 can_delete$="N"
 	endif

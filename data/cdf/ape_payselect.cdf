@@ -64,57 +64,57 @@ rem ==========================================================================
 	attr_inv_col$[1,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="C"
 
 	attr_inv_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PYMNT_GRP"
-	attr_inv_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Payment Group"
+	attr_inv_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_PAYMENT_GROUP")
 	attr_inv_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 
 	attr_inv_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="AP_TYPE"
-	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="A/P Type"
+	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_A/P_TYPE")
 	attr_inv_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 
 	attr_inv_col$[4,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="VEND_ID"
-	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Vendor"
+	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_VENDOR")
 	attr_inv_col$[4,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 
 	attr_inv_col$[5,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="VEND_NAME"
-	attr_inv_col$[5,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Name"
+	attr_inv_col$[5,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_NAME")
 	attr_inv_col$[5,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="150"
 
 	attr_inv_col$[6,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="INVOICE_NO"
-	attr_inv_col$[6,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Invoice"
+	attr_inv_col$[6,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_INVOICE")
 	attr_inv_col$[6,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 
 	attr_inv_col$[7,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DUE_DATE"
-	attr_inv_col$[7,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Due Date"
+	attr_inv_col$[7,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DUE_DATE")
 	attr_inv_col$[7,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[7,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="5"
 	attr_inv_col$[7,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 
 	attr_inv_col$[8,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DISC_DATE"
-	attr_inv_col$[8,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Discount Date"
+	attr_inv_col$[8,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DISCOUNT_DATE")
 	attr_inv_col$[8,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[8,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="5"
 	attr_inv_col$[8,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 
 	attr_inv_col$[9,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="AMT_DUE"
-	attr_inv_col$[9,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Amount Due"
+	attr_inv_col$[9,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_AMOUNT_DUE")
 	attr_inv_col$[9,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[9,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[9,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
 
 	attr_inv_col$[10,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DISC_AMT"
-	attr_inv_col$[10,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Disc Amt"
+	attr_inv_col$[10,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DISC_AMT")
 	attr_inv_col$[10,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[10,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[10,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
 
 	attr_inv_col$[11,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PYMNT_AMT"
-	attr_inv_col$[11,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Payment"
+	attr_inv_col$[11,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_PAYMENT")
 	attr_inv_col$[11,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[11,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[11,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
 
 	attr_inv_col$[12,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="RETEN_AMT"
-	attr_inv_col$[12,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Retention"
+	attr_inv_col$[12,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_RETENTION")
 	attr_inv_col$[12,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[12,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[12,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
@@ -900,7 +900,7 @@ endif
 rem --- Process custom event
 rem --- Select/de-select checkboxes in grid and edit payment and discount amounts
 
-rem This routine is executed when callbacks have been set to run a "custom event".
+rem This routine is executed when callbacks have been set to run a 'custom event'.
 rem Analyze gui_event$ and notice$ to see which control's callback triggered the event, and what kind of event it is.
 rem See basis docs notice() function, noticetpl() function, notify event, grid control notify events for more info.
 

@@ -1,4 +1,4 @@
-[[GLE_ALLOCDET.AGCL]]
-rem --- Set Batch number
+[[GLE_ALLOCDET.BWRI]]
+rem SET BATCH NUMBER FIELD TO THE SAME VALUE AS IS IN THE HEADER REC
 
-callpoint!.setTableColumnAttribute("GLE_ALLOCDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+callpoint!.setColumnData("GLE_ALLOCDET.BATCH_NO",stbl("+BATCH_NO"))

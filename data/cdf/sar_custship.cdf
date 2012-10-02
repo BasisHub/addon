@@ -1,3 +1,7 @@
+[[SAR_CUSTSHIP.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAR_CUSTSHIP.BFMC]]
 rem --- open files
 	num_files=2
@@ -11,9 +15,9 @@ rem --- open files
 
 rem --- create list for available levels
 
-	ldat_list$=pad("Customer",20)+"~"+"C;"
-	if pos(sas01a.shipto_lev$="SI") ldat_list$=ldat_list$+pad("Customer Ship-To",20)+"~"+"S;"
-	if pos(sas01a.shipto_lev$="I") ldat_list$=ldat_list$+pad("Item",20)+"~"+"I;"
+	ldat_list$=pad(Translate!.getTranslation("AON_CUSTOMER"),20)+"~"+"C;"
+	if pos(sas01a.shipto_lev$="SI") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_CUSTOMER_SHIP-TO"),20)+"~"+"S;"
+	if pos(sas01a.shipto_lev$="I") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_ITEM"),20)+"~"+"I;"
 
 	callpoint!.setTableColumnAttribute("SAR_CUSTSHIP.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_CUSTSHIP.ASVA]]
@@ -33,7 +37,7 @@ rem --- Check selected level against allowable level
 	if sas01a.by_shipto$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Ship-To"
+		msg_tokens$[1]=Translate!.getTranslation("AON_SHIP-TO")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()
@@ -69,7 +73,7 @@ readrecord(sas_params_chn,key=firm_id$+"SA00")sas_params$
 if sas_params.by_shipto$<>"Y"
 	msg_id$="INVALID_SA"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="Ship-To"
+	msg_tokens$[1]=Translate!.getTranslation("AON_SHIP-TO")
  	gosub disp_message
 	bbjAPI!=bbjAPI()
 	rdFuncSpace!=bbjAPI!.getGroupNamespace()

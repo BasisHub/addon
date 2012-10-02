@@ -189,34 +189,34 @@ num_rpts_rows=num(user_tpl.gridCreditRows$)
 dim attr_credit_col$[def_credit_cols,len(attr_def_col_str$[0,0])/5]
 
 attr_credit_col$[1,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="CR_DATE"
-attr_credit_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Date"
+attr_credit_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DATE")
 attr_credit_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="80"
 attr_credit_col$[1,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="D"
 attr_credit_col$[1,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 attr_credit_col$[1,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=stbl("+DATE_MASK")
 
 attr_credit_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="CUST_NO"
-attr_credit_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Customer"
+attr_credit_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_CUSTOMER")
 attr_credit_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 attr_credit_col$[2,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=str(callpoint!.getDevObject("custmask"))
 
 attr_credit_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="CUST_NAME"
-attr_credit_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Name"
+attr_credit_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_NAME")
 attr_credit_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="250"
 
 attr_credit_col$[4,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="ORDER"
-attr_credit_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Order"
+attr_credit_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_ORDER")
 attr_credit_col$[4,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 
 attr_credit_col$[5,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="ORD_DATE"
-attr_credit_col$[5,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Order Date"
+attr_credit_col$[5,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_ORDER_DATE")
 attr_credit_col$[5,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="80"
 attr_credit_col$[5,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="D"
 attr_credit_col$[5,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"
 attr_credit_col$[5,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=stbl("+DATE_MASK")
 
 attr_credit_col$[6,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="SHIP_DATE"
-attr_credit_col$[6,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Ship Date"
+attr_credit_col$[6,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_SHIP_DATE")
 attr_credit_col$[6,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="80"
 attr_credit_col$[6,fnstr_pos("CTYP",attr_def_col_str$[0,0],5)]="D"
 attr_credit_col$[6,fnstr_pos("STYP",attr_def_col_str$[0,0],5)]="1"

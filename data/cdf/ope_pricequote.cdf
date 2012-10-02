@@ -1,3 +1,7 @@
+[[OPE_PRICEQUOTE.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[OPE_PRICEQUOTE.WAREHOUSE_ID.AVAL]]
 rem --- Fill arrays
 cust_id$=callpoint!.getColumnData("OPE_PRICEQUOTE.CUSTOMER_ID")
@@ -17,7 +21,7 @@ if cvs(callpoint!.getColumnData("OPE_PRICEQUOTE.ITEM_ID"),2) <>"" then
 :		"VIEW",
 :		table_chans$[all],
 :		key_pfx$,
-:		"ALT_KEY_02",
+:		"AO_ITEM_WH",
 :		""
 endif
 [[OPE_PRICEQUOTE.<CUSTOM>]]
@@ -55,10 +59,10 @@ build_arrays:
 		description$=cvs(ivcprice.code_desc$,2)
 
 rem --- Method for pricing
-		x$=" (Unknown Pricing Method)"
-		if ivcprice.iv_price_mth$="C" x$=" (Mark-Up Over Cost)"
-		if ivcprice.iv_price_mth$="L" x$=" (Mark-Down From List)"
-		if ivcprice.iv_price_mth$="M" x$=" (Margin Over Cost)"
+		x$=Translate!.getTranslation("AON__(UNKNOWN_PRICING_METHOD)")
+		if ivcprice.iv_price_mth$="C" x$=Translate!.getTranslation("AON__(MARK-UP_OVER_COST)")
+		if ivcprice.iv_price_mth$="L" x$=Translate!.getTranslation("AON__(MARK-DOWN_FROM_LIST)")
+		if ivcprice.iv_price_mth$="M" x$=Translate!.getTranslation("AON__(MARGIN_OVER_COST)")
 		description$=description$+x$
 
 rem --- Display pricing table"
@@ -85,9 +89,9 @@ rem --- Display Contract Price"
 		while 1
 			readrecord(ivm06_dev,key=firm_id$+cust_id$+item$,dom=*break)ivm06a$
 			description$=cvs(ivm06a.code_desc$,2)
-			if cvs(ivm06a.from_date$,2)="" from_date$="First Date" else from_date$=fndate$(ivm06a.from_date$)
-			if cvs(ivm06a.thru_date$,2)="" thru_date$="Last Date" else thru_date$=fndate$(ivm06a.thru_date$)
-			description$=description$+" (From "+from_date$+" Through "+thru_date$+")"
+			if cvs(ivm06a.from_date$,2)="" from_date$=Translate!.getTranslation("AON_FIRST_DATE") else from_date$=fndate$(ivm06a.from_date$)
+			if cvs(ivm06a.thru_date$,2)="" thru_date$=Translate!.getTranslation("AON_LAST_DATE") else thru_date$=fndate$(ivm06a.thru_date$)
+			description$=description$+Translate!.getTranslation("AON__(FROM_")+from_date$+Translate!.getTranslation("AON__THROUGH_")+thru_date$+")"
 			callpoint!.setColumnData("<<DISPLAY>>.CONTRACT_DESC",description$)
 			for x=1 to 10
 				callpoint!.setColumnData("OPE_PRICEQUOTE.CONTRACT_QTY_"+str(x:"00"),str(nfield(ivm06a$,"BREAK_QTY_"+str(x:"00"))))
@@ -116,16 +120,18 @@ determine_price:
 return
 [[OPE_PRICEQUOTE.ITEM_ID.AVAL]]
 rem --- Validate Warehouse for this Item
+
 ivm01_dev=fnget_dev("IVM_ITEMMAST")
-dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
-readrecord(ivm01_dev,key=firm_id$+callpoint!.getUserInput())ivm01a$
 ivm02_dev=fnget_dev("IVM_ITEMWHSE")
+dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
 dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
-valid_wh$="Y"
+
+valid_wh$="N"
 while 1
+	readrecord(ivm01_dev,key=firm_id$+callpoint!.getUserInput(),dom=*break)ivm01a$
 	readrecord(ivm02_dev,key=firm_id$+callpoint!.getColumnData("OPE_PRICEQUOTE.WAREHOUSE_ID")+
-:			callpoint!.getUserInput(),dom=*next)ivm02a$;break
-	valid_wh$="N"
+:			callpoint!.getUserInput(),dom=*break)ivm02a$
+	valid_wh$="Y"
 	break
 wend
 if valid_wh$="N"

@@ -77,8 +77,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		if cvs(callpoint!.getColumnData("POE_REQDET.ITEM_ID"),3)="" or
 :		num(callpoint!.getColumnData("POE_REQDET.CONV_FACTOR"))<=0 or
 :		num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
-:		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0 or
-:		cvs(callpoint!.getColumnData("POE_REQDET.REQD_DATE"),3)="" 
+:		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0
 			ok_to_write$="N"
 			focus_column$="POE_REQDET.ITEM_ID"
 		endif
@@ -86,16 +85,14 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="N" 
 		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
-:		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0 or
-:		cvs(callpoint!.getColumnData("POE_REQDET.REQD_DATE"),3)="" 	
+:		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0
 			ok_to_write$="N"
 			focus_column$="POE_REQDET.ORDER_MEMO"
 		endif
 	endif
 
 	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="O" 
-		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
-:		cvs(callpoint!.getColumnData("POE_REQDET.REQD_DATE"),3)="" 	
+		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_REQDET.ORDER_MEMO"
 		endif
@@ -150,59 +147,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 endif
 [[POE_REQDET.ITEM_ID.AINV]]
-rem --- remember row/column we're on so we can force focus when we return from synonym lookup
-
-if cvs(callpoint!.getUserInput(),3)<>""
-
-	declare BBjStandardGrid grid!
-	grid! = util.getGrid(Form!)
-	return_to_row = grid!.getSelectedRow()
-	return_to_col = grid!.getSelectedColumn()
-
-	rem --- see if they entered a synonym, if so, display (if only one of them), if no match, or more than one match, launch bam_inquiry on synonym file
-
-	ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
-	dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
-
-	read (ivm_itemsyn_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)
-	read_count=0
-	found_count=0
-	found_item$=""
-
-	while read_count<2
-		read record (ivm_itemsyn_dev,end=*break)ivm_itemsyn$
-		if ivm_itemsyn.firm_id$=firm_id$ and ivm_itemsyn.item_synonym$=callpoint!.getUserInput()
-			found_count=found_count+1
-			found_item$=ivm_itemsyn.item_id$
-		endif
-		read_count=read_count+1
-	wend
-
-	if found_count=1
-		callpoint!.setUserInput(found_item$)
-		callpoint!.setStatus("")
-	else
-		call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMSYN","PRIMARY",key_tpl$,table_chans$[all],rd_stat$
-		dim return_key$:key_tpl$
-
-		dim search_defs$[2]
-		search_defs$[0]="IVM_ITEMSYN.ITEM_SYNONYM"
-		search_defs$[1]=callpoint!.getRawUserInput()
-		search_defs$[2]="A"
-
-		call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"IVM_ITEMSYN","LOOKUP",
-:			table_chans$[all],firm_id$,"PRIMARY",return_key$,filter_defs$[all],search_defs$[all]
-		if cvs(return_key$,3)<>""
-			callpoint!.setUserInput(return_key.item_id$)	
-			callpoint!.setStatus("ACTIVATE")
-		else
-			callpoint!.setStatus("ABORT")
-		endif
-		util.forceEdit(Form!, return_to_row, return_to_col)
-	endif
-else
-	callpoint!.setStatus("ABORT")
-endif
+rem --- Item synonym processing
+ 
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
+     
 [[POE_REQDET.AGCL]]
 rem print 'show';rem debug
 
@@ -346,7 +294,7 @@ validate_whse_item:
 	
 	if change_flag and cvs(item_id$,2)<>"" then
 rem	if cvs(item_id$,2)<>"" then
-		read record (ivm_itemwhse_dev,key=firm_id$+whse$+item_id$,knum=0,dom=missing_warehouse) ivm_itemwhse$
+		read record (ivm_itemwhse_dev,key=firm_id$+whse$+item_id$,knum="PRIMARY",dom=missing_warehouse) ivm_itemwhse$
 		ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 		dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
 		read record(ivm_itemmast_dev,key=firm_id$+item_id$)ivm_itemmast$

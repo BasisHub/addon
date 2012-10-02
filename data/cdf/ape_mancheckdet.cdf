@@ -61,7 +61,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 
 				call stbl("+DIR_SYP")+"bac_key_template.bbj",
 :					"APE_MANCHECKDET",
-:					"ALT_KEY_01",
+:					"AO_VEND_INV",
 :					ape22_key1_tmpl$,
 :					table_chans$[all],
 :					status$
@@ -78,7 +78,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 					endif
 
 					dim ape22_key$:ape22_key1_tmpl$
-					read (ape22_dev1, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, knum=1, dom=*next)
+					read (ape22_dev1, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, knum="AO_VEND_INV", dom=*next)
 					ape22_key$ = key(ape22_dev1, end=*next)
 
 					if pos(firm_id$+ap_type$+vendor_id$+apt01a.ap_inv_no$ = ape22_key$) = 1 and
@@ -258,7 +258,7 @@ rem --- Look for Open Invoice
 
 	call stbl("+DIR_SYP")+"bac_key_template.bbj",
 :		"APE_MANCHECKDET",
-:		"ALT_KEY_01",
+:		"AO_VEND_INV",
 :		ape22_key1_tmpl$,
 :		table_chans$[all],
 :		status$
@@ -286,7 +286,7 @@ rem --- Look for Open Invoice
 		print "---not select for pay; not on hold..."; rem debug
 
 		dim ape22_key$:ape22_key1_tmpl$
-		read (ape22_dev1, key=firm_id$+ap_type$+vendor_id$+invoice_no$, knum=1, dom=*next)
+		read (ape22_dev1, key=firm_id$+ap_type$+vendor_id$+invoice_no$, knum="AO_VEND_INV", dom=*next)
 		ape22_key$ = key(ape22_dev1, end=*next)
 
 		if pos(firm_id$+ap_type$+vendor_id$+apt01a.ap_inv_no$ = ape22_key$) = 1 and

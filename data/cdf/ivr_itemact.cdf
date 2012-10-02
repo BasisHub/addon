@@ -1,3 +1,7 @@
+[[IVR_ITEMACT.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVR_ITEMACT.<CUSTOM>]]
 #include std_missing_params.src
 [[IVR_ITEMACT.ARAR]]

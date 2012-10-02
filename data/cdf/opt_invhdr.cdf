@@ -274,8 +274,8 @@ rem --- Set variables for called forms (OPE_ORDLSDET)
 rem --- Set up Lot/Serial button (and others) properly
 
 	switch pos(ivs01a.lotser_flag$="LS")
-		case 1; callpoint!.setOptionText("LENT","Lot Entry"); break
-		case 2; callpoint!.setOptionText("LENT","Serial Entry"); break
+		case 1; callpoint!.setOptionText("LENT",Translate!.getTranslation("AON_LOT_ENTRY")); break
+		case 2; callpoint!.setOptionText("LENT",Translate!.getTranslation("AON_SERIAL_ENTRY")); break
 		case default; break
 	swend
 
@@ -334,7 +334,7 @@ rem ==========================================================================
 			callpoint!.setColumnData("<<DISPLAY>>.SSTATE",custship_tpl.state_code$)
 			callpoint!.setColumnData("<<DISPLAY>>.SZIP",custship_tpl.zip_code$)
 		else
-			callpoint!.setColumnData("<<DISPLAY>>.SNAME","Same")
+			callpoint!.setColumnData("<<DISPLAY>>.SNAME",Translate!.getTranslation("AON_SAME"))
 			callpoint!.setColumnData("<<DISPLAY>>.SADD1","")
 			callpoint!.setColumnData("<<DISPLAY>>.SADD2","")
 			callpoint!.setColumnData("<<DISPLAY>>.SADD3","")

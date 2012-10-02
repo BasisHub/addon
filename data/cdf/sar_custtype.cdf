@@ -1,3 +1,7 @@
+[[SAR_CUSTTYPE.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAR_CUSTTYPE.BFMC]]
 rem --- open files
 	num_files=2
@@ -11,9 +15,9 @@ rem --- open files
 
 rem --- create list for available levels
 
-	ldat_list$=pad("Customer Type",20)+"~"+"C ;"
-	if pos(sas01a.customer_lev$="PI") ldat_list$=ldat_list$+pad("Product",20)+"~"+"P ;"
-	if pos(sas01a.customer_lev$="I") ldat_list$=ldat_list$+pad("Item",20)+"~"+"I ;"
+	ldat_list$=pad(Translate!.getTranslation("AON_CUSTOMER_TYPE"),20)+"~"+"C ;"
+	if pos(sas01a.customer_lev$="PI") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_PRODUCT"),20)+"~"+"P ;"
+	if pos(sas01a.customer_lev$="I") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_ITEM"),20)+"~"+"I ;"
 
 	callpoint!.setTableColumnAttribute("SAR_CUSTTYPE.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_CUSTTYPE.ASVA]]
@@ -33,7 +37,7 @@ rem --- Check selected level against allowable level
 	if sas01a.by_customer_type$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Cust Type"
+		msg_tokens$[1]=Translate!.getTranslation("AON_CUST_TYPE")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()
@@ -69,7 +73,7 @@ readrecord(sas_params_chn,key=firm_id$+"SA00")sas_params$
 if sas_params.by_customer_type$<>"Y"
 	msg_id$="INVALID_SA"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="Cust Type"
+	msg_tokens$[1]=Translate!.getTranslation("AON_CUST_TYPE")
 	gosub disp_message
 	bbjAPI!=bbjAPI()
 	rdFuncSpace!=bbjAPI!.getGroupNamespace()

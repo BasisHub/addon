@@ -1,3 +1,7 @@
+[[SAR_WAREHSE.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAR_WAREHSE.BFMC]]
 rem --- open files
 	num_files=2
@@ -11,9 +15,9 @@ rem --- open files
 
 rem --- create list for available levels
 
-	ldat_list$=pad("Warehouse",20)+"~"+"W;"
-	if pos(sas01a.whse_lev$="PI") ldat_list$=ldat_list$+pad("Product",20)+"~"+"P;"
-	if pos(sas01a.whse_lev$="I") ldat_list$=ldat_list$+pad("Item",20)+"~"+"I;"
+	ldat_list$=pad(Translate!.getTranslation("AON_WAREHOUSE"),20)+"~"+"W;"
+	if pos(sas01a.whse_lev$="PI") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_PRODUCT"),20)+"~"+"P;"
+	if pos(sas01a.whse_lev$="I") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_ITEM"),20)+"~"+"I;"
 
 	callpoint!.setTableColumnAttribute("SAR_WAREHSE.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_WAREHSE.ASVA]]
@@ -54,7 +58,7 @@ readrecord(sas_params_chn,key=firm_id$+"SA00")sas_params$
 if sas_params.by_whse$<>"Y"
 	msg_id$="INVALID_SA"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="Warehouse"
+	msg_tokens$[1]=Translate!.getTranslation("AON_WAREHOUSE")
 	gosub disp_message
 	bbjAPI!=bbjAPI()
 	rdFuncSpace!=bbjAPI!.getGroupNamespace()
@@ -76,7 +80,7 @@ user_tpl.high_level$=sas_params.whse_lev$
 	if sas01a.by_whse$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Warehouse"
+		msg_tokens$[1]=Translate!.getTranslation("AON_WAREHOUSE")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()

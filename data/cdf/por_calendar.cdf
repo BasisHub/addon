@@ -41,13 +41,13 @@ rem --- Retrieve first/last date scheduled
     call stbl("+DIR_PGM")+"poc_firstlast.aon",pom_calendar_dev,fattr(pom_calendar$),firm_id$,begdate$,enddate$,status
 
     if begdate$="" 
-	begdate$="None"
+	begdate$=Translate!.getTranslation("AON_NONE")
     else	
 	callpoint!.setDevObject("begdt",begdate$(1,6))
 	begdate$=fndate$(begdate$)
     endif
     if enddate$="" 
-	enddate$="None"
+	enddate$=Translate!.getTranslation("AON_NONE")
     else
 	callpoint!.setDevObject("enddt",enddate$(1,6))
 	enddate$=fndate$(enddate$)

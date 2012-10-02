@@ -1,3 +1,7 @@
+[[IVC_LOTLOOKUP.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVC_LOTLOOKUP.AWIN]]
 rem --- open files
 
@@ -67,11 +71,11 @@ rem ---  Set up grid
 	ctlw_pos = fnstr_pos("CTLW", attr_def_col_str$[0,0], 5)
 	
 	attr_grid_col$[1,dvar_pos]="LOT NO"
-	attr_grid_col$[1,labs_pos]="Lot/Serial No"
+	attr_grid_col$[1,labs_pos]=Translate!.getTranslation("AON_LOT/SERIAL_NO")
 	attr_grid_col$[1,ctlw_pos]="125"
 
 	attr_grid_col$[2,dvar_pos]="STATUS"
-	attr_grid_col$[2,labs_pos]="Status"
+	attr_grid_col$[2,labs_pos]=Translate!.getTranslation("AON_STATUS")
 	attr_grid_col$[2,ctlw_pos]="125"	
 	
 	for curr_attr=1 to def_grid_cols
@@ -100,19 +104,19 @@ rem --- Create Lot Information window
 	lotWin!=form!.addChildWindow(15000, w.x, w.y, w.w, w.h, "", $00000800$, cxt)
 	SysGUI!.setContext(cxt)
 
-	lotWin!.addGroupBox(15999,5,5,380,220,"Lot/Serial Information",$$)
+	lotWin!.addGroupBox(15999,5,5,380,220,Translate!.getTranslation("AON_LOT/SERIAL_INFORMATION"),$$)
 	
-	lotWin!.addStaticText(15001,10,25,75,15,"Vendor:",$8000$)
-	lotWin!.addStaticText(15002,10,45,75,15,"Comment:",$8000$)
-	lotWin!.addStaticText(15003,10,65,75,15,"Received:",$8000$)
-	lotWin!.addStaticText(15009,175,65,75,15,"Issued:",$8000$)
+	lotWin!.addStaticText(15001,10,25,75,15,Translate!.getTranslation("AON_VENDOR:"),$8000$)
+	lotWin!.addStaticText(15002,10,45,75,15,Translate!.getTranslation("AON_COMMENT:"),$8000$)
+	lotWin!.addStaticText(15003,10,65,75,15,Translate!.getTranslation("AON_RECEIVED:"),$8000$)
+	lotWin!.addStaticText(15009,175,65,75,15,Translate!.getTranslation("AON_ISSUED:"),$8000$)
 
-	lotWin!.addStaticText(15004,10,105,75,15,"Cost:",$8000$)
-	lotWin!.addStaticText(15005,175,105,75,15,"Location:",$8000$)
+	lotWin!.addStaticText(15004,10,105,75,15,Translate!.getTranslation("AON_COST:"),$8000$)
+	lotWin!.addStaticText(15005,175,105,75,15,Translate!.getTranslation("AON_LOCATION:"),$8000$)
 
-	lotWin!.addStaticText(15006,10,145,75,15,"On hand:",$8000$)
-	lotWin!.addStaticText(15007,10,165,75,15,"Committed:",$8000$)
-	lotWin!.addStaticText(15008,10,185,75,15,"Available:",$8000$)
+	lotWin!.addStaticText(15006,10,145,75,15,Translate!.getTranslation("AON_ON_HAND:"),$8000$)
+	lotWin!.addStaticText(15007,10,165,75,15,Translate!.getTranslation("AON_COMMITTED:"),$8000$)
+	lotWin!.addStaticText(15008,10,185,75,15,Translate!.getTranslation("AON_AVAILABLE:"),$8000$)
 
 	callpoint!.setDevObject("vendor_id",  str(15101))
 	callpoint!.setDevObject("comment_id", str(15102))
@@ -235,16 +239,16 @@ rem --- Position ivm-07 file
 		
 		switch pos(ivm_lsmaster.closed_flag$=" CL")
 			case 1
-				desc$="Open"
+				desc$=Translate!.getTranslation("AON_OPEN")
 			break
 			case 2
-				desc$="Closed"
+				desc$=Translate!.getTranslation("AON_CLOSED")
 			break
 			case 3
-				desc$="Locked"
+				desc$=Translate!.getTranslation("AON_LOCKED")
 			break
 			case default
-				desc$="not found"
+				desc$=Translate!.getTranslation("AON_NOT_FOUND")
 			break
 		swend		
 		
@@ -285,9 +289,9 @@ rem ==========================================================================
 
 	get_lot$=callpoint!.getDevObject("selected_lot")
 
-	rem --- added knum=0 to below, because if user typed their own lot#, Barista validation logic would
-	rem --- have used knum=3...
-	read (ivm_lsmaster_dev,key=firm_id$+whse_id$+item_id$+cvs(get_lot$,3),knum=0,dom=*next)
+	rem --- added knum="PRIMARY" to below, because if user typed their own lot#, Barista validation logic would
+	rem --- have used knum="AO_ITEM_WH_LOT"...
+	read (ivm_lsmaster_dev,key=firm_id$+whse_id$+item_id$+cvs(get_lot$,3),knum="PRIMARY",dom=*next)
 
 	lotWin!=callpoint!.getDevObject("lotInfo")	
 
@@ -312,7 +316,7 @@ rem ==========================================================================
 		
 		if callpoint!.getDevObject("ap_installed") = "Y"
 			vendor$=ivm_lsmaster.vendor_id$
-			disp_vendor$="(unknown)"
+			disp_vendor$=Translate!.getTranslation("AON_(UNKNOWN)")
 
 			if cvs(vendor$,2)<>""
 				find record (apm_vendmast_dev,key=firm_id$+vendor$,dom=*next) apm_vendmast$

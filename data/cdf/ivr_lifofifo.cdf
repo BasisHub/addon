@@ -1,3 +1,7 @@
+[[IVR_LIFOFIFO.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVR_LIFOFIFO.<CUSTOM>]]
 #include std_missing_params.src
 [[IVR_LIFOFIFO.BSHO]]

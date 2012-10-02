@@ -1,3 +1,7 @@
+[[IVR_COSTCHGBYPCT.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVR_COSTCHGBYPCT.ASVA]]
 rem --- Percent change can't be zero
 

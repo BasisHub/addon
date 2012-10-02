@@ -1,3 +1,7 @@
+[[IVM_COPYITEM.OLD_ITEM.AVAL]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVM_COPYITEM.NEW_ITEM_ID.AVAL]]
 rem --- Make sure new Item doesn't exist
 

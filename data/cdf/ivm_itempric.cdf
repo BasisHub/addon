@@ -1,3 +1,7 @@
+[[IVM_ITEMPRIC.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVM_ITEMPRIC.BWRI]]
 rem --- make sure each qty > previous one
 ok$="Y"

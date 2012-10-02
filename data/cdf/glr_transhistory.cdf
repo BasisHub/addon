@@ -6,9 +6,9 @@ rem --- Check for Ending Period before Beginning Period
 :			str(num(callpoint!.getColumnData("GLR_TRANSHISTORY.END_GL_PER")):"00")
 	if num(endper$)<>0
 		if begper$>endper$
-			begper$=begper$(5,2)+"/"+begper$(1,4)
-			endper$=endper$(5,2)+"/"+endper$(1,4)
-			callpoint!.setMessage("ENTRY_FROM_TO:Beginning Period/Year "+begper$+";Ending Period/Year "+endper$)
+			begper$="Beginning Period/Year "+begper$(5,2)+"/"+begper$(1,4)
+			endper$="Ending Period/Year "+endper$(5,2)+"/"+endper$(1,4)
+			callpoint!.setMessage("ENTRY_FROM_TO:"+begper$+";"+endper$)
 			callpoint!.setStatus("ABORT")
 		endif
 	endif

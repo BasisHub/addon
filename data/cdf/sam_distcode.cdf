@@ -1,3 +1,7 @@
+[[SAM_DISTCODE.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAM_DISTCODE.PRODUCT_TYPE.AVAL]]
 rem --- Enable/Disable Summary button
 	dist_code$=callpoint!.getColumnData("SAM_DISTCODE.AR_DIST_CODE")
@@ -33,7 +37,7 @@ rem --- Calculate and display summary info
 
 rem --- Start progress meter
 	task_id$=info(3,0)
-	Window_Name$="Summarizing"
+	Window_Name$=Translate!.getTranslation("AON_SUMMARIZING")
 	Progress! = bbjapi().getGroupNamespace()
 	Progress!.setValue("+process_task",task_id$+"^C^"+Window_Name$+"^CNC-IND^"+str(n)+"^")
 
@@ -112,7 +116,7 @@ rem --- Check for parameter record
 	if sas01a.by_dist_code$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Dist Code"
+		msg_tokens$[1]=Translate!.getTranslation("AON_DIST_CODE")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()

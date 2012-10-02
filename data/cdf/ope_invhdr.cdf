@@ -99,7 +99,7 @@ rem --- Check for printing in next batch and set
 	endif
 
 	dim msg_tokens$[1]
-	msg_tokens$[1] = "invoice"
+	msg_tokens$[1] = Translate!.getTranslation("AON_INVOICE")
 	gosub disp_message
 [[OPE_INVHDR.AREC]]
 rem --- clear availability
@@ -215,6 +215,8 @@ rem --- Is record deleted?
 
 rem --- Is flag down?
 
+	print "---Should BREX be run? ", iff(user_tpl.do_end_of_form, "yes", "no"); rem debug
+
 	if !user_tpl.do_end_of_form then
 		user_tpl.do_end_of_form = 1
 		break; rem --- exit callpoint
@@ -250,7 +252,7 @@ rem --- Credit action
 		gosub do_credit_action
 	endif
 
-rem --- Does the total of lot/serial# match the qty ordered for each detail line?
+rem --- Does the total of lot/serial# match the qty shipped for each detail line?
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	ordHelp!.setLotSerialFlag( user_tpl.lotser_flag$ )
@@ -265,23 +267,23 @@ rem --- Does the total of lot/serial# match the qty ordered for each detail line
 
 	rem --- Detail loop
 
-		if recs!.size() then
+		if recs!.size() then 
 			for row=0 to recs!.size()-1
 				gridrec$ = recs!.getItem(row)
 
 				if ordHelp!.isLottedSerial(gridrec.item_id$) then
 					lot_ser_total = ordHelp!.totalLotSerialAmount( gridrec.internal_seq_no$ )
 
-					if lot_ser_total <> gridrec.qty_ordered then
+					if lot_ser_total <> gridrec.qty_shipped then
 						if user_tpl.lotser_flag$ = "L" then
-							lot_ser$ = "lots"
+							lot_ser$ = Translate!.getTranslation("AON_LOTS")
 						else
-							lot_ser$ = "serial numbers"
+							lot_ser$ = Translate!.getTranslation("AON_SERIAL_NUMBERS")
 						endif
 					
 						msg_id$ = "OP_ITEM_LS_TOTAL"
 						dim msg_tokens$[3]
-						msg_tokens$[0] = str(gridrec.qty_ordered)
+						msg_tokens$[0] = str(gridrec.qty_shipped)
 						msg_tokens$[1] = cvs(gridrec.item_id$, 2)
 						msg_tokens$[2] = lot_ser$
 						msg_tokens$[3] = str(lot_ser_total)
@@ -343,7 +345,7 @@ rem --- Make order into an invoice
 
 	if locked then
 		user_tpl.do_end_of_form = 0
-		callpoint!.setStatus("ABORT;NEWREC")
+		callpoint!.setStatus("NEWREC")
 		break; rem --- exit callpoint
 	endif
 [[OPE_INVHDR.SLSPSN_CODE.AVAL]]
@@ -515,6 +517,46 @@ rem --- Disable buttons
 [[OPE_INVHDR.BDEL]]
 print "Hdr:BDEL"; rem debug
 
+rem --- Invoice History Header, set to void
+
+	file_name$      = "OPT_INVHDR"
+	opt_invhdr_dev  = fnget_dev(file_name$)
+	opt_invhdr_tpl$ = fnget_tpl$(file_name$)
+	dim opt_invhdr_rec$:opt_invhdr_tpl$
+
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+	opt_invhdr_rec$ = util.copyFields(opt_invhdr_tpl$, callpoint!)
+	opt_invhdr_rec.invoice_type$ = "V"
+
+	opt_invhdr_rec$ = field(opt_invhdr_rec$)
+	if cvs(opt_invhdr_rec.ar_inv_no$,2)<>""
+		write record (opt_invhdr_dev) opt_invhdr_rec$
+		print "---Wrote Invoice History header..."; rem debug
+	endif
+
+rem --- Has a record been written
+
+	file_name$      = "OPE_INVHDR"
+	ope_invhdr_dev  = fnget_dev(file_name$)
+	ope_invhdr_tpl$ = fnget_tpl$(file_name$)
+	dim ope_invhdr_rec$:ope_invhdr_tpl$
+	start_block = 1
+	found = 0
+
+	if start_block then
+		read record (ope_invhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ope_invhdr_rec$
+		found = 1
+	endif
+
+	if !found then		
+		print "---Break out of BDEL"; rem debug
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("NEWREC")
+		break; rem --- exit callpoint
+	endif
+
 rem --- Retain Order?
 
 	msg_id$ = "OP_RETAIN_ORDER"
@@ -528,32 +570,8 @@ rem --- Retain Order?
 		gosub disp_message
 		reprint$ = msg_opt$
 
-	rem --- Invoice History Header, set to void
-
-		file_name$      = "OPT_INVHDR"
-		opt_invhdr_dev  = fnget_dev(file_name$)
-		opt_invhdr_tpl$ = fnget_tpl$(file_name$)
-		dim opt_invhdr_rec$:opt_invhdr_tpl$
-
-		cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-		order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
-
-		read record (opt_invhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*next) opt_invhdr_rec$
-		ope_invhdr_rec$ = util.copyFields(opt_invhdr_tpl$, callpoint!)
-		opt_invhdr_rec.invoice_type$ = "V"
-
-		opt_invhdr_rec$ = field(opt_invhdr_rec$)
-		write record (opt_invhdr_dev) opt_invhdr_rec$
-		print "---Wrote Invoice History header..."; rem debug
-
 	rem --- Reset Invoice record to Order
 
-		file_name$      = "OPE_INVHDR"
-		ope_invhdr_dev  = fnget_dev(file_name$)
-		ope_invhdr_tpl$ = fnget_tpl$(file_name$)
-		dim ope_invhdr_rec$:ope_invhdr_tpl$
-
-		read record (ope_invhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ope_invhdr_rec$
 		ope_invhdr_rec$ = util.copyFields(ope_invhdr_tpl$, callpoint!)
 
 		ope_invhdr_rec.ar_inv_no$ = ""
@@ -606,6 +624,7 @@ rem --- Retain Order?
 
 	rem --- All Done
 
+		print "---Break out of BDEL"; rem debug
 		user_tpl.do_end_of_form = 0
 		callpoint!.setStatus("NEWREC")
 		break; rem --- exit callpoint
@@ -673,7 +692,7 @@ rem --- Remove committments for detail records by calling ATAMO
 		remove (creddate_dev, key=firm_id$+ord_date$+cust$+ord$, err=*next)	
 	endif
 [[OPE_INVHDR.BPRK]]
-rem --- Is previous record not a quote and not void?
+rem --- Previous record must be an invoice
 
 	file_name$ = "OPE_INVHDR"
 	ope01_dev = fnget_dev(file_name$)
@@ -686,7 +705,7 @@ rem --- Is previous record not a quote and not void?
 			read record (ope01_dev, key=p_key$) ope01a$
 
 			if ope01a.firm_id$ = firm_id$ then 
-				if ope01a.invoice_type$ <> "P" and ope01a.invoice_type$ <> "V" then
+				if ope01a.invoice_type$ = "S" and ope01a.ordinv_flag$ = "I" then
 					user_tpl.first_read = 0
 					break
 				else
@@ -708,7 +727,7 @@ rem --- Is previous record not a quote and not void?
 		endif
 	wend
 [[OPE_INVHDR.BNEK]]
-rem --- Is next record not a quote and not void?
+rem --- Next record must be an invoice 
 
 	file_name$ = "OPE_INVHDR"
 	ope01_dev = fnget_dev(file_name$)
@@ -720,7 +739,7 @@ rem --- Is next record not a quote and not void?
 			read record (ope01_dev, dir=0, end=*endif) ope01a$
 
 			if ope01a.firm_id$ = firm_id$ then
-				if ope01a.invoice_type$ <> "P" and ope01a.invoice_type$ <> "V" then
+				if ope01a.invoice_type$ = "S" and ope01a.ordinv_flag$ = "I" then
 					user_tpl.first_read = 0
 					break
 				else
@@ -846,6 +865,19 @@ rem --- Check Print flag
 		break; rem --- exit callpoint
 	endif
 
+rem --- Check for order, force to an Invoice
+
+	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "O" then
+
+		gosub make_invoice
+
+		if locked then
+			user_tpl.do_end_of_form = 0
+			rem callpoint!.setStatus("NEWREC")
+			break; rem --- exit callpoint
+		endif
+	endif
+
 rem --- Show customer data
 	
 	cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
@@ -874,11 +906,11 @@ rem --- Display order total
 rem --- Backorder and Credit Hold
 
 	if callpoint!.getColumnData("OPE_INVHDR.BACKORD_FLAG") = "B" then
-		callpoint!.setColumnData("<<DISPLAY>>.BACKORDERED", "Backorder")
+		callpoint!.setColumnData("<<DISPLAY>>.BACKORDERED", Translate!.getTranslation("AON_BACKORDER"))
 	endif
 
 	if callpoint!.getColumnData("OPE_INVHDR.CREDIT_FLAG") = "C" then
-		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", "Credit Hold")
+		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_CREDIT_HOLD"))
 	endif
 
 rem --- Enable buttons
@@ -931,7 +963,8 @@ rem --- Do we need to create a new order number?
 
 	if cvs(order_no$, 2) = "" then 
 
-		rem --- Option on order no field to assign a new sequence on null must be cleared
+	rem --- Option on order no field to assign a new sequence on null must be cleared
+
 		call stbl("+DIR_SYP")+"bas_sequences.bbj","ORDER_NO",order_no$,table_chans$[all]
 		
 		if order_no$ = "" then
@@ -959,12 +992,6 @@ rem --- Does order exist?
 	if start_block then
 		find record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$
 		found = 1
-	endif
-
-	rem debug
-	if found then 
-		print "---Invoice found"
-		print "---Invoice Type: ", ope01a.invoice_type$
 	endif
 
 rem --- A new record must be the next sequence
@@ -1000,6 +1027,19 @@ rem --- Existing record
 			break; rem --- exit from callpoint			
 		endif		
 
+	rem --- Check for order, force to an Invoice
+
+		if ope01a.invoice_type$ = "O" then
+
+			gosub make_invoice
+
+			if locked then
+				user_tpl.do_end_of_form = 0
+				rem callpoint!.setStatus("NEWREC")
+				break; rem --- exit callpoint
+			endif
+		endif
+
 	rem --- Set Codes
 	        
 		user_tpl.price_code$   = ope01a.price_code$
@@ -1011,13 +1051,18 @@ rem --- New record, set default
 	else
 
 		call stbl("+DIR_SYP")+"bas_sequences.bbj", "INVOICE_NO", invoice_no$, table_chans$[all]
+
+		if invoice_no$ = "" then
+			callpoint!.setStatus("ABORT")
+		endif
+
 		callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", invoice_no$)
 
       cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
 		order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 		callpoint!.setColumnData("OPE_INVHDR.INVOICE_TYPE","S")
 
-		rem --- Set default invoice type in OrderHelper object
+	rem --- Set default invoice type in OrderHelper object
 
 		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 		ordHelp!.setInv_type("S")
@@ -1197,7 +1242,7 @@ rem ==========================================================================
          gosub disp_message
       endif  
    
-		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", "*** Credit Limit Exceeded ***") 
+		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_CREDIT_LIMIT_EXCEEDED_***")) 
 		user_tpl.credit_limit_warned = 1
    endif
 
@@ -1227,7 +1272,7 @@ rem ==========================================================================
 			callpoint!.setColumnData("<<DISPLAY>>.SSTATE",custship_tpl.state_code$)
 			callpoint!.setColumnData("<<DISPLAY>>.SZIP",custship_tpl.zip_code$)
 		else
-			callpoint!.setColumnData("<<DISPLAY>>.SNAME","Same")
+			callpoint!.setColumnData("<<DISPLAY>>.SNAME",Translate!.getTranslation("AON_SAME"))
 			callpoint!.setColumnData("<<DISPLAY>>.SADD1","")
 			callpoint!.setColumnData("<<DISPLAY>>.SADD2","")
 			callpoint!.setColumnData("<<DISPLAY>>.SADD3","")
@@ -1308,7 +1353,7 @@ locked:
 	dim msg_tokens$[1]
 
 	if callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS")="B" then 
-		msg_tokens$[1]=" by Batch Print"
+		msg_tokens$[1]=Translate!.getTranslation("AON__BY_BATCH_PRINT")
 		gosub disp_message
 
 		if msg_opt$="Y"
@@ -1367,6 +1412,7 @@ rem ==========================================================================
 	ope_prntlist.customer_id$ = cust_id$
 	ope_prntlist.order_no$    = order_no$
 
+	ope_prntlist$ = field(ope_prntlist$)
 	write record (ope_prntlist_dev) ope_prntlist$
 	print "---Added to print batch"; rem debug
 	print "---order:", ope_prntlist.order_no$
@@ -1946,6 +1992,8 @@ rem ==========================================================================
 		
 		if inv_no$ = "" then
 			callpoint!.setStatus("ABORT")
+			locked = 1
+			print "---No to new invoice number"; rem debug
 		else
 			callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", inv_no$)
 			callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "I")
@@ -2084,6 +2132,8 @@ get_disk_rec: rem --- Get disk record, update with current form data
               rem          order_no$
 rem ==========================================================================
 
+	print "in: get_disk_rec..."; rem debug
+
 	file_name$  = "OPE_ORDHDR"
 	ordhdr_dev  = fnget_dev(file_name$)
 	ordhdr_tpl$ = fnget_tpl$(file_name$)
@@ -2092,11 +2142,27 @@ rem ==========================================================================
 	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
 	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 
-	read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ordhdr_rec$
+	found = 0
+	start_block = 1
+
+	if start_block then
+		read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ordhdr_rec$
+		found = 1
+	endif
 
 rem --- Copy in any form data that's changed
 
 	ordhdr_rec$ = util.copyFields(ordhdr_tpl$, callpoint!)
+
+rem debug --- This is a Barista kludge
+
+	if !found then 
+		write record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ordhdr_rec$
+		callpoint!.setStatus("SETORIG")
+	endif
+
+	print "---Record found: ", iff(found, "yes", "no"); rem debug
+	print "out"; rem debug
 
 	return
 [[OPE_INVHDR.ASHO]]
@@ -2172,7 +2238,7 @@ rem                 = 1 -> user_tpl.hist_ord$ = "N"
 
 rem --- Open needed files
 
-	num_files=40
+	num_files=41
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
@@ -2214,6 +2280,7 @@ rem --- Open needed files
 	open_tables$[38]="OPC_TAXCODE",  open_opts$[38]="OTA"
 	open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
 	open_tables$[40]="ARC_TERMCODE", open_opts$[40]="OTA"
+	open_tables$[41]="IVM_ITEMSYN",open_opts$[41]="OTA"
 	
 gosub open_tables
 
@@ -2467,8 +2534,8 @@ rem --- Set variables for called forms (OPE_ORDLSDET)
 rem --- Set up Lot/Serial button (and others) properly
 
 	switch pos(ivs01a.lotser_flag$="LS")
-		case 1; callpoint!.setOptionText("LENT","Lot Entry"); break
-		case 2; callpoint!.setOptionText("LENT","Serial Entry"); break
+		case 1; callpoint!.setOptionText("LENT",Translate!.getTranslation("AON_LOT_ENTRY")); break
+		case 2; callpoint!.setOptionText("LENT",Translate!.getTranslation("AON_SERIAL_ENTRY")); break
 		case default; break
 	swend
 
@@ -2519,14 +2586,14 @@ rem --- Create Inventory Availability window
 	cxt    = SysGUI!.getAvailableContext()
 
 	mwin! = child!.addChildWindow(15000, 0, 10, child!.getWidth(), 75, "", $00000800$, cxt)
-	mwin!.addGroupBox(15999, 0, 5, grid!.getWidth(), 65, "Inventory Availability", $$)
+	mwin!.addGroupBox(15999, 0, 5, grid!.getWidth(), 65, Translate!.getTranslation("AON_INVENTORY_AVAILABILITY"), $$)
 
-	mwin!.addStaticText(15001,15,25,75,15,"On Hand:",$$)
-	mwin!.addStaticText(15002,15,40,75,15,"Committed:",$$)
-	mwin!.addStaticText(15003,215,25,75,15,"Available:",$$)
-	mwin!.addStaticText(15004,215,40,75,15,"On Order:",$$)
-	mwin!.addStaticText(15005,415,25,75,15,"Warehouse:",$$)
-	mwin!.addStaticText(15006,415,40,75,15,"Type:",$$)
+	mwin!.addStaticText(15001,15,25,75,15,Translate!.getTranslation("AON_ON_HAND:"),$$)
+	mwin!.addStaticText(15002,15,40,75,15,Translate!.getTranslation("AON_COMMITTED:"),$$)
+	mwin!.addStaticText(15003,215,25,75,15,Translate!.getTranslation("AON_AVAILABLE:"),$$)
+	mwin!.addStaticText(15004,215,40,75,15,Translate!.getTranslation("AON_ON_ORDER:"),$$)
+	mwin!.addStaticText(15005,415,25,75,15,Translate!.getTranslation("AON_WAREHOUSE:"),$$)
+	mwin!.addStaticText(15006,415,40,75,15,Translate!.getTranslation("AON_TYPE:"),$$)
 
 rem --- Save controls in the global userObj! (vector)
 

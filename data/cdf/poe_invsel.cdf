@@ -120,7 +120,7 @@ if pos(".AVAL"=event$)<>0
 	if foundone
 		read record (pot_rechdr_dev,key=firm_id$+pot_recdet.po_no$+pot_recdet.receiver_no$,dom=*next)pot_rechdr$
 		find record (apc_termscode_dev,key=firm_id$+"C"+pot_rechdr.ap_terms_code$,dom=*next)apc_termscode$
-		disp_info$="Ordered: "+fndate$(pot_rechdr.ord_date$)+", Received: "+fndate$(pot_rechdr.recpt_date$)+", Terms: "+pot_rechdr.ap_terms_code$+"("+cvs(apc_termscode.code_desc$,3)+")"
+		disp_info$=Translate!.getTranslation("AON_ORDERED:_")+fndate$(pot_rechdr.ord_date$)+Translate!.getTranslation("AON_,_RECEIVED:_")+fndate$(pot_rechdr.recpt_date$)+Translate!.getTranslation("AON_,_TERMS:_")+pot_rechdr.ap_terms_code$+"("+cvs(apc_termscode.code_desc$,3)+")"
 		callpoint!.setColumnData("POE_INVSEL.TOTAL_AMOUNT",str(line_tot))
 rem		callpoint!.setColumnData("<<DISPLAY>>.DISP_REC_INFO",disp_info$)
 		callpoint!.setStatus("REFRESH"); rem --- tabbing to new grid row wasn't working until this was rem'd ?

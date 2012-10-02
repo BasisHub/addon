@@ -14,9 +14,15 @@ rem ==========================================================================
         field private BBjString fileDesc$
         field private BBjString fileTmpl$
         field private BBjTemplatedString fileRec!
+        field private BBjString key$
         field private BBjInt channel%
         field private BBjInt eof% = -1
-        field private static HashMap openFiles!
+        field private BBjNumber notFound
+        
+        field private static HashMap openFiles! = new HashMap()
+        
+    rem --- Constants
+        
         field private static BBjNumber START_BLOCK = 1
         field private static BBjNumber TRUE = 1
         field private static BBjNumber FALSE = 0
@@ -36,14 +42,17 @@ rem ==========================================================================
             #setBaristaTables()
 
             found = 0
-            alias$ = p_alias$
+            alias$ = cvs( p_alias$, 2 )
             
             while !found
+            
+            rem --- Get table data by alias
+            
                 if #START_BLOCK then
                     read (#ddmTablesChan%, key=pad(p_alias$, 16), dom=*endif ) *, file_desc$, file_name$, file_path$
                     found = 1
                     #fileName$ = file_name$
-                    #fileAlias$ = file_alias$
+                    #fileAlias$ = alias$
                     #fileDesc$ = file_desc$
                     
                     if pos( "[" = file_path$ ) = 1 and pos( "]" = file_path$ ) = len(file_path$) then
@@ -55,6 +64,8 @@ rem ==========================================================================
                     endif
                 endif
                 
+            rem --- If this is a data file name, lookup the alias and retry
+                
                 if !found then
                     file_name$ = alias$
                     read (#ddmTablesChan%, knum=2, key=pad(file_name$, 30, $00$), dom=*next)
@@ -63,7 +74,7 @@ rem ==========================================================================
                     eof = 0
                     
                     if pos(pad(file_name$, 30, $00$) = k$) = 1 then
-                        alias$ = k$(31,16)
+                        alias$ = cvs( k$(31,16), 2 )
                     else
                         throw "FileObject: could not find """ + file_name$ + """ in ddm_tables.bat", 11
                     endif
@@ -74,16 +85,18 @@ rem ==========================================================================
                 endif
             wend
             
+        rem --- Get the table template and setup record object
+            
             found = 0
             
             if #START_BLOCK then
-                read (#ddmTableTplsChan%, key=pad(p_alias$, 16), dom=*endif ) *, *, file_tmpl$
+                read (#ddmTableTplsChan%, key=pad(alias$, 16), dom=*endif ) *, *, file_tmpl$
                 found = 1
                 #fileTmpl$ = file_tmpl$
             endif
             
             if !found then
-                throw "FileObject: could not find template for """ + p_alias$ + """ in ddm_table_tpls.bat", 11
+                throw "FileObject: could not find template for """ + alias$ + """ in ddm_table_tpls.bat", 11
             endif
             
             #fileRec! = BBjAPI().makeTemplatedString(#fileTmpl$)
@@ -96,15 +109,10 @@ rem ==========================================================================
     
         method public static FileObject getInstance(BBjString p_alias$)
         
-            declare FileObject this_file!
-            this_file! = new FileObject( p_alias$ )
-            
-            if #openFiles! = null() then #openFiles! = new HashMap()
-            
             if #openFiles!.containsKey( p_alias$ ) then
                 methodret cast( FileObject, #openFiles!.get( p_alias$ ) )
             else
-                methodret #openFile( this_file! )
+                methodret #openFile( new FileObject( p_alias$ ) )
             endif
             
         methodend
@@ -181,15 +189,17 @@ rem ==========================================================================
         methodend
     
     rem ==========================================================================
-    rem --- Read a record
+    rem --- Get a record
     rem ==========================================================================
         
-        method public BBjTemplatedString readRecord(BBjString p_key$)
+        method public BBjTemplatedString getRecord(BBjString p_key$)
             
             found = 0
             #eof% = -1
             
-            if #START_BLOCK then
+            if p_key$ = #key$ then
+                methodret #fileRec!
+            else
                 rem the follow syntax is legal but throws a warning when type-checking
                 read record (#channel%, key=p_key$, dom=*endif) #fileRec!
                 found = 1
@@ -198,78 +208,70 @@ rem ==========================================================================
             if found then
                 methodret #fileRec!
             else
-                throw "FileObject: cannot file key " + p_key$, 11
+                methodret null()
             endif
             
         methodend
 
     rem ==========================================================================
-    rem --- Read a string field
+    rem --- Get a string field with a key
     rem ==========================================================================
     
-        method public BBjString readStringField(BBjString p_key$, BBjString p_field$)
+        method public BBjString getStringField(BBjString p_key$, BBjString p_field$)
         
-            declare BBjTemplatedString rec!
-            rec! = #readRecord(p_key$)
             #eof% = -1
-            methodret rec!.getFieldAsString(p_field$)
-        
-        methodend
-
-    rem ==========================================================================
-    rem --- Read a number field
-    rem ==========================================================================
-    
-        method public BBjNumber readNumberField(BBjString p_key$, BBjString p_field$)
-        
-            declare BBjTemplatedString rec!
-            rec! = #readRecord(p_key$)
-            #eof% = -1
-            methodret rec!.getFieldAsNumber(p_field$)
-        
+            #getRecord(p_key$)
+            methodret #getStringField(p_field$)
+            
         methodend
         
     rem ==========================================================================
-    rem --- Get a string field from the current record
+    rem --- Get a string field from current record
     rem ==========================================================================
-    
+        
         method public BBjString getStringField(BBjString p_field$)
         
-            if #eof% = #TRUE or #fileRec! = null() then
-                methodret ""
-            else
-                got_field = 0
+            declare BBjString fld$
+        
+            if #fileRec! <> null() then
                 fld$ = #fileRec!.getFieldAsString(p_field$, err=*endif)
-                got_field = 1
+                #notFound = #FALSE
+                methodret fld$
             endif
             
-            if got_field then
-                methodret fld$
-            else
-                throw "FileObject: Could not find """ + p_field$ + """ in record", 47
-            endif
+            #notFound = #TRUE
+            methodret ""
+            
+        methodend
+
+    rem ==========================================================================
+    rem --- Get a number field with a key
+    rem ==========================================================================
+    
+        method public BBjNumber getNumberField(BBjString p_key$, BBjString p_field$)
         
+            #eof% = -1
+            #getRecord(p_key$)
+            #getNumberField(p_field$)
+            
         methodend
         
     rem ==========================================================================
-    rem --- Get a number field from the current record
+    rem --- Get a number field from current record
     rem ==========================================================================
-    
+        
         method public BBjNumber getNumberField(BBjString p_field$)
         
-            if #eof% = #TRUE or #fileRec! = null() then
-                methodret 0
-            else
-                got_field = 0
+            declare BBjNumber fld
+        
+            if #fileRec! <> null() then
                 fld = #fileRec!.getFieldAsNumber(p_field$, err=*endif)
-                got_field = 1
+                #notFound = #FALSE
+                methodret fld
             endif
             
-            if got_field then
-                methodret fld
-            else
-                throw "FileObject: Could not find """ + p_field$ + """ in record", 47
-            endif
+            #notFound = #TRUE
+            methodret 0
             
         methodend
         
@@ -404,6 +406,10 @@ rem ==========================================================================
         method private void setChannel(BBjInt p_chan%)
             #channel% = p_chan%
         methodend
+        
+        method public BBjNumber notFound()
+            methodret #notFound
+        methodend
     
     classend
 
@@ -422,17 +428,25 @@ rem ==========================================================================
     
     firm_id$ = "01"
     vend_id$ = "000100"
-    rec! = vendMast!.readRecord(firm_id$ + vend_id$)
+    rec! = vendMast!.getRecord(firm_id$ + vend_id$)
     print "Record for " + firm_id$ + vend_id$ + ":"
     print rec!.getString()
+    print "Is """, vend_id$, """ missing?", vendMast!.notFound()
     print "Vendor name from rec!: ", rec!.getFieldAsString("vendor_name")
-    print "Vendor name from object (read): ", vendMast!.readStringField(firm_id$ + vend_id$, "vendor_name")
-    print "Vendor name from object (get): ", vendMast!.getStringField("vendor_name")
+    print "Vendor name from object with key: ", vendMast!.getStringField(firm_id$ + vend_id$, "vendor_name")
+    print "Vendor name from ojbect w/o key: " , vendMast!.getStringField("vendor_name")
+    print "Try to find ""foo"" ", vendMast!.getStringField("foo")
+    print "Is ""foo"" missing?", vendMast!.notFound()
+    vend_id$="123456"
+    print "Look for vendor """, vend_id$, """"
+    rec! = vendMast!.getRecord(firm_id$ + vend_id$)
+    print "Is rec! null?", rec! = null()
+    print "Is """, vend_id$, """ missing?", vendMast!.notFound()
     
 rem --- Test a loop using only the object
 
     print ""
-    input "Loop using only the vendMast! object, press <enter> ", *
+    rem input "Loop using only the vendMast! object, press <enter> ", *
     
     vendMast!.partialRead(firm_id$)
     
@@ -444,7 +458,7 @@ rem --- Test a loop using only the object
 rem --- Another way using rec!
 
     print ""
-    input "Loop using the rec! object, press <enter> ", *
+    rem input "Loop using the rec! object, press <enter> ", *
 
     vendMast!.partialRead(firm_id$)
     
@@ -458,7 +472,7 @@ rem --- Another way using rec!
 rem --- Yet another way using rec$
 
     print ""
-    input "Loop using traditional reads, press <enter> ", *
+    rem input "Loop using traditional reads, press <enter> ", *
 
     dim rec$:vendMast!.getTmpl()
     read (vendMast!.getChannel(), key=firm_id$, dom=*next)
@@ -468,6 +482,55 @@ rem --- Yet another way using rec$
         if rec.firm_id$ <> firm_id$ then break
         print "Vendor: ", rec.vendor_id$, ", ", rec.vendor_name$
     wend
+
+rem --- Simple class to list vendors
+
+    class public VendorList
+    
+        field private BBjString firmId$
+        field private FileObject vendMast!
+        
+        method public VendorList(BBjString p_firm_id$)
+        
+            #firmId$ = p_firm_id$
+            #vendMast! = FileObject.getInstance("APM_VENDMAST")
+            
+        methodend
+        
+        method public void listIt()
+        
+            #vendMast!.partialRead(#firmId$)
+            
+            while #vendMast!.readNext() <> null()
+                if #vendMast!.getStringField("firm_id") <> #firmId$ then break
+                print "Vendor: ", #vendMast!.getStringField("vendor_id"), ", ", #vendMast!.getStringField("vendor_name")
+            wend
+            
+        methodend
+        
+        method public BBjInt getChan()
+            methodret #vendMast!.getChannel()
+        methodend
+    
+    classend
+    
+rem --- now list firm one and two
+
+    declare VendorList firmOne!
+    declare VendorList firmTwo!
+    
+    firmOne! = new VendorList("01")
+    firmTwo! = new VendorList("02")
+    
+    print 'lf',"List firm 01 from object:"
+    firmOne!.listIt()
+    
+    print 'lf',"List firm 02 from object:"
+    firmTwo!.listIt()
+    
+    print "These should be the same:"
+    print firmOne!.getChan()
+    print firmTwo!.getChan()
 
     escape
     

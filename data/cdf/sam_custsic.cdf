@@ -1,3 +1,7 @@
+[[SAM_CUSTSIC.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SAM_CUSTSIC.ITEM_ID.AVAL]]
 rem --- Enable/Disable Summary button
 	sic_code$=callpoint!.getColumnData("SAM_CUSTSIC.SIC_CODE")
@@ -33,7 +37,7 @@ rem --- Calculate and display summary info
 
 rem --- Start progress meter
 	task_id$=info(3,0)
-	Window_Name$="Summarizing"
+	Window_Name$=Translate!.getTranslation("AON_SUMMARIZING")
 	Progress! = bbjapi().getGroupNamespace()
 	Progress!.setValue("+process_task",task_id$+"^C^"+Window_Name$+"^CNC-IND^"+str(n)+"^")
 

@@ -24,11 +24,11 @@ rem ==========================================================================
 	dim attr_inv_col$[ def_inv_cols, len(attr_def_col_str$[0,0]) / 5 ]
 
 	attr_inv_col$[1,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PRINTER_NAME"
-	attr_inv_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Printer Name"
+	attr_inv_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_PRINTER_NAME")
 	attr_inv_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="150"
 
 	attr_inv_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="CLIENT_SERVER"
-	attr_inv_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Where?"
+	attr_inv_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_WHERE?")
 	attr_inv_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="30"
 
 	for curr_attr=1 to def_inv_cols
@@ -102,7 +102,7 @@ rem --- Double-click on grid
 					user_tpl.last_grid_row = user_tpl.last_grid_row - 1
 				else
 					grid!.setCellText(user_tpl.last_grid_row, 0, printer_name$)
-					grid!.setCellText(user_tpl.last_grid_row, 1, "Client")
+					grid!.setCellText(user_tpl.last_grid_row, 1, Translate!.getTranslation("AON_CLIENT"))
 					user_tpl.last_grid_row = user_tpl.last_grid_row + 1
 				endif
 			endif
@@ -122,7 +122,7 @@ rem --- Double-click on grid
 						user_tpl.last_grid_row = user_tpl.last_grid_row - 1	
 					else				
 						grid!.setCellText(user_tpl.last_grid_row, 0, printer_name$)
-						grid!.setCellText(user_tpl.last_grid_row, 1, "Server")
+						grid!.setCellText(user_tpl.last_grid_row, 1, Translate!.getTranslation("AON_SERVER"))
 						user_tpl.last_grid_row = user_tpl.last_grid_row + 1
 					endif
 				endif

@@ -1,3 +1,7 @@
+[[IVE_COUNT_ENTRY.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVE_COUNT_ENTRY.PI_CYCLECODE.BINQ]]
 rem --- Restrict lookup to printed cycles
 
@@ -168,8 +172,9 @@ rem --- Get record if this isn't a lotted/serial item
 				else
 					gosub display_record
 				endif
-			endif
 
+			endif
+	
 		endif
 
 	endif
@@ -255,6 +260,8 @@ print "in check_item_whse"; rem debug
 
 	if user_tpl.this_item_lot_ser then
 		callpoint!.setColumnEnabled("IVE_COUNT_ENTRY.LOTSER_NO", 1)
+	else
+		callpoint!.setColumnEnabled("IVE_COUNT_ENTRY.LOTSER_NO", 0)
 	endif
 
 	whse_file$ = "IVM_ITEMWHSE"
@@ -262,7 +269,7 @@ print "in check_item_whse"; rem debug
 	itemwhse_dev = fnget_dev(whse_file$)
 
 	failed = 1
-	find record (itemwhse_dev, knum=0, key=firm_id$+whse$+item$, dom=check_item_whse_missing) itemwhse_rec$
+	find record (itemwhse_dev, knum="PRIMARY", key=firm_id$+whse$+item$, dom=check_item_whse_missing) itemwhse_rec$
 	failed = 0
 
 	rem if !user_tpl.this_item_lot_ser then
@@ -386,7 +393,7 @@ rem ==========================================================================
 :       itemwhse_rec.location$ +
 :       itemwhse_rec.item_id$
 
-	find (itemwhse_dev, knum=1, key=k$, dom=item_in_cycle_end)
+	find (itemwhse_dev, knum="AO_WH_CYCLE_LOC", key=k$, dom=item_in_cycle_end)
 	found = 1
 
 item_in_cycle_end:

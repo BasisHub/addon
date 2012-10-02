@@ -24,3 +24,5 @@ gosub disable_fields
 
 rem --- for reasons I don't understand, this field, tho' not marked display only, would not wake up;
 rem --- so am doing it forcibly here.
+
+callpoint!.setColumnData("<<DISPLAY>>.DISP_AUDIT_NUM",callpoint!.getColumnData("GLM_AUDITCONTROL.AUDIT_NUMBER"))

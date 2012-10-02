@@ -71,7 +71,7 @@ while more
 	codes!.addItem(glm18a.record_id$+glm18a.amt_or_units$)
 wend
 
-codeList!.insertItem(0,"(none)")
+codeList!.insertItem(0,Translate!.getTranslation("AON_(NONE)"))
 
 for x=1 to 4
 	wk_id$=callpoint!.getTableColumnAttribute("<<DISPLAY>>.BUD_CD_"+str(x),"CTLI")

@@ -1,3 +1,7 @@
+[[IVE_TRANSFER.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVE_TRANSFER.AOPT-LOTS]]
 rem --- Call the lot lookup window and set default lot
 
@@ -53,7 +57,7 @@ rem --- Get Batch information
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("IVE_TRANSFER.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[IVE_TRANSFER.AWRI]]
-print "in AWRI (After Record Write)"; rem debug
+print "debug - in AWRI (After Record Write)"; rem debug
 
 rem --- Commit inventory
 
@@ -61,13 +65,13 @@ rem --- Commit inventory
 	prev_qty = user_tpl.prev_qty
 	curr_qty = num( callpoint!.getColumnData("IVE_TRANSFER.TRANS_QTY") )
 
-	print "Previous qty (from disk):", disk_qty; rem debug
-	print "Previous qty:", prev_qty; rem debug
-	print "Current qty :", curr_qty; rem debug
+	print "debug - Previous qty (from disk):", disk_qty; rem debug
+	print "debug - Previous qty:", prev_qty; rem debug
+	print "debug - Current qty :", curr_qty; rem debug
 
 	if prev_qty <> curr_qty then 
 
-		print "need to commit qty..."; rem debug
+		print "debug - need to commit qty..."; rem debug
 	
 		rem --- Initialize
 		status = 999
@@ -82,7 +86,7 @@ rem --- Commit inventory
 :			status
 		if status then goto std_exit
 
-		print "just initialised ivc_itemupdate..."; rem debug
+		print "debug - just initialised ivc_itemupdate..."; rem debug
 
 		rem --- From warehouse: uncommit previous qty, if any
 		action$ = "UC"
@@ -96,16 +100,16 @@ rem --- Commit inventory
 
 	endif
 [[IVE_TRANSFER.ADIS]]
-print "in ADIS (After Record Display)"; rem debug
+print "debug - in ADIS (After Record Display)"; rem debug
 
-rem --- Get "previous" qty
+rem --- Get 'previous' qty
 
 	user_tpl.prev_qty = num( callpoint!.getColumnData("IVE_TRANSFER.TRANS_QTY") )
 
 rem --- Set/display item data (avail comes from item if no lot/serial)
 
 	item$ = callpoint!.getColumnData("IVE_TRANSFER.ITEM_ID")
-	print "Item: ", item$; rem debug
+	print "debug - Item: ", item$; rem debug
 	gosub get_item
 
 rem --- Get from-whse data, calculate available
@@ -125,7 +129,7 @@ rem --- Get lot/serial# if necessary (avail comes from lots if present)
 
 	endif
 [[IVE_TRANSFER.ADEL]]
-print "in ADEL (After Delete)"; rem debug
+print "debug - in ADEL (After Delete)"; rem debug
 
 rem --- Uncommit inventory
 
@@ -133,7 +137,7 @@ rem --- Uncommit inventory
 
 	if qty then 
 
-		print "need to uncommit qty..."; rem debug
+		print "debug - need to uncommit qty..."; rem debug
 	
 		rem --- Initialize
 		status = 999
@@ -154,7 +158,7 @@ rem --- Uncommit inventory
 
 	endif
 [[IVE_TRANSFER.AREC]]
-print "in AREC (After New Record)"; rem debug
+print "debug - in AREC (After New Record)"; rem debug
 
 rem --- Do record inits here
 
@@ -165,11 +169,11 @@ rem	util.disableField(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 	user_tpl.this_item_is_lot_ser% = 0
 	user_tpl.item_is_serial% = 0
 [[IVE_TRANSFER.TRANS_QTY.BINP]]
-print "in TRANS_QTY.BINP"; rem debug
+print "debug - in TRANS_QTY.BINP"; rem debug
 [[IVE_TRANSFER.INV_XFER_NO.BINP]]
-print "in INV_XREF_NO.BINP"; rem debug
+print "debug - in INV_XREF_NO.BINP"; rem debug
 [[IVE_TRANSFER.TRANS_QTY.AVAL]]
-print "in TRANS_QTY.AVAL"; rem debug
+print "debug - in TRANS_QTY.AVAL"; rem debug
 
 rem --- Is qty valid?
 
@@ -177,7 +181,7 @@ rem --- Is qty valid?
 	gosub check_qty
 	if !(failed) then gosub display_ext
 [[IVE_TRANSFER.LOTSER_NO.AVAL]]
-print "in LOTSRE_NO.AVAL"; rem debug
+print "debug - in LOTSRE_NO.AVAL"; rem debug
 
 rem --- Validate entered lot/serial#
 
@@ -193,7 +197,7 @@ rem --- Validate entered lot/serial#
 		gosub display_ext
 	endif
 [[IVE_TRANSFER.ITEM_ID.AVAL]]
-print "in ITEM_ID.AVAL"; rem debug
+print "debug - in ITEM_ID.AVAL"; rem debug
 
 rem --- Get item data (sets available)
 
@@ -214,7 +218,7 @@ rem --- Check item against both warehouses, if entered
 		endif
 	endif
 
-	rem --- We check "from whse" second so that ivm02a$ is set correctly
+	rem --- We check 'from whse' second so that ivm02a$ is set correctly
 	if from_whse$ <> "" then
 		whse$ = from_whse$
 		gosub check_item_whse
@@ -262,7 +266,7 @@ rem --- If both warehouses are entered, they can't match
 		gosub disp_message
 	endif
 [[IVE_TRANSFER.BWRI]]
-print "in BWRI (Before Write)"; rem debug
+print "debug - in BWRI (Before Write)"; rem debug
 
 rem --- Do all data validation here
 
@@ -322,7 +326,7 @@ rem --- Check trans qty against available
 		goto bwri_end
 	endif
 
-rem --- Get "previous" or disk qty to test against
+rem --- Get 'previous' or disk qty to test against
 
 	rem getColumnDiskData() does not seem to work yet
 	disk_qty = num( callpoint!.getColumnDiskData("IVE_TRANSFER.TRANS_QTY") )
@@ -339,7 +343,7 @@ rem --- If both warehouses are entered, they can't match
 		gosub disp_message
 	endif
 [[IVE_TRANSFER.BSHO]]
-rem print 'show',"in BSHO"; rem debug
+rem print 'show',"debug - in BSHO"; rem debug
 
 rem --- Inits
 
@@ -397,7 +401,7 @@ rem --- Set IV flags
 	user_tpl.ls$ = iff( pos(ivs01a.lotser_flag$ = "LS"), "Y", "N" )
 	user_tpl.lf$ = iff( pos(ivs01a.lifofifo$    = "LF"), "Y", "N" )
 
-	print "Lots/Serial#? (from params): ", ivs01a.lotser_flag$
+	print "debug - Lots/Serial#? (from params): ", ivs01a.lotser_flag$
 
 	if ivs01a.lotser_flag$ = "S" then user_tpl.serialized% = 1
 
@@ -453,7 +457,7 @@ get_item: rem --- Get item master record
           rem     OUT: ivm01a$ (item mast record)
 rem ===========================================================================
 
-	print "in get_item()"; rem debug
+	print "debug - in get_item()"; rem debug
 	item_file$ = "IVM_ITEMMAST"
 	dim ivm01a$:fnget_tpl$(item_file$)
 
@@ -483,7 +487,7 @@ check_qty: rem --- Is qty valid?
            rem     OUT: failed = true/false
 rem ===========================================================================
 
-	print "in check_qty()..."; rem debug
+	print "debug - in check_qty()..."; rem debug
 	failed = 0
 
 	rem --- Quantity can't be negative or zero
@@ -558,7 +562,7 @@ rem ===========================================================================
 	endif
 
 	if items$[1] <> "" and items$[2] <> "" and refs[0] then
-		print "entering ivc_itemupdt.aon..."; rem debug
+		print "debug - entering ivc_itemupdt.aon..."; rem debug
 		call user_tpl.pgmdir$ + "ivc_itemupdt.aon",
 :			action$,	
 :			chan[all],

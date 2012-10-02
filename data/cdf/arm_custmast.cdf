@@ -5,7 +5,7 @@ rem  --- Check for Open AR Invoices
 	read(user_tpl.art01_dev,key=firm_id$+"  "+cust$,dom=*next)
 	art01_key$=key(user_tpl.art01_dev,end=check_op_ord)
 	if pos(firm_id$+"  "+cust$=art01_key$)<>1 goto check_op_ord
-	delete_msg$="Open Invoices exist - Customer deletion not allowed"
+	delete_msg$=Translate!.getTranslation("AON_OPEN_INVOICES_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
 	goto done_checking	
 check_op_ord:
 	if user_tpl.op_installed$<>"Y" goto done_checking
@@ -19,13 +19,13 @@ check_op_ord:
 	read (ope01_dev,key=firm_id$+"  "+cust$,dom=*next)
 	ope01_key$=key(ope01_dev,end=check_op_inv)
 	if pos(firm_id$+"  "+cust$=ope01_key$)<>1 goto check_op_inv
-	delete_msg$="Open Orders exist - Customer deletion not allowed"
+	delete_msg$=Translate!.getTranslation("AON_OPEN_ORDERS_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
 	goto done_checking	
 check_op_inv:
 	read (opt01_dev,key=firm_id$+"  "+cust$,dom=*next)
 	opt01_key$=key(opt01_dev,end=done_checking)              
 	if pos(firm_id$+"  "+cust$=opt01_key$)<>1 goto done_checking
-	delete_msg$="Historical Invoices exist - Customer deletion not allowed"
+	delete_msg$=Translate!.getTranslation("AON_HISTORICAL_INVOICES_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
 done_checking:
 	if delete_msg$<>""
 		callpoint!.setMessage("NO_DELETE:"+delete_msg$)

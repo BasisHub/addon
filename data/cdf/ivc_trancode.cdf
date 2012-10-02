@@ -8,17 +8,35 @@ else
 endif
 [[IVC_TRANCODE.BDEL]]
 rem -- don't allow delete of trans code if it's in use in ive_transhdr
-ive01_dev=fnget_dev("IVE_TRANSHDR")
+
+	files=1,begfile=1,endfile=files
+	dim files$[files],options$[files],chans$[files],templates$[files]
+	files$[1]="IVE_TRANSHDR",options$[1]="OTA"
+
+	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:                                 chans$[all],templates$[all],table_chans$[all],batch,status$
+
+ive01_dev=num(chans$[1])
 k$=""
-read (ive01_dev,key=firm_id$+callpoint!.getColumnData("IVC_TRANCODE.TRANS_CODE"),knum=1,dom=*next)
+read (ive01_dev,key=firm_id$+callpoint!.getColumnData("IVC_TRANCODE.TRANS_CODE"),knum="AO_TRANCD_TRNO",dom=*next)
 k$=key(ive01_dev,end=*next)
 if pos(firm_id$+callpoint!.getColumnData("IVC_TRANCODE.TRANS_CODE")=k$)=1
 	dim msg_tokens$[1]
-	msg_tokens$[1]="This Transaction Code is referenced by one or more open Transaction Entries."
+	msg_tokens$[1]=Translate!.getTranslation("AON_THIS_TRANSACTION_CODE_IS_REFERENCED_BY_ONE_OR_MORE_OPEN_TRANSACTION_ENTRIES.")
 	msg_id$="IV_NO_DELETE"
 	gosub disp_message
 	callpoint!.setStatus("ABORT")
 endif
+
+rem --- now close trans hdr file to avoid err 0 if someone tries to run register
+	files=1,begfile=1,endfile=files
+	dim files$[files],options$[files],chans$[files],templates$[files]
+	files$[1]="IVE_TRANSHDR",options$[1]="C"
+
+	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:                                 chans$[all],templates$[all],table_chans$[all],batch,status$
+
+
 [[IVC_TRANCODE.BREC]]
 rem --- re-enable Post to G/L flag (unless GL not installed)
 	if user_tpl.gl_installed$="Y"
@@ -73,10 +91,10 @@ return
 #include std_missing_params.src
 [[IVC_TRANCODE.BSHO]]
 rem --- Open/Lock Files
-	files=2,begfile=1,endfile=files
+	files=1,begfile=1,endfile=files
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="IVS_PARAMS",options$[1]="OTA"
-	files$[2]="IVE_TRANSHDR",options$[2]="OTA"
+
 	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                 chans$[all],templates$[all],table_chans$[all],batch,status$
 	if status$<>"" then

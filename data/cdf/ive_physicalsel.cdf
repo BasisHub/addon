@@ -85,7 +85,7 @@ asva_end:
 [[IVE_PHYSICALSEL.ACUS]]
 rem --- Process custom event -- used in this section to select/de-select checkboxes in grid
 rem --- See basis docs notice() function, noticetpl() function, notify event, grid control notify events for more info
-rem --- This routine is executed when callbacks have been set to run a "custom event"
+rem --- This routine is executed when callbacks have been set to run a 'custom event'
 rem --- Analyze gui_event$ and notice$ to see which control's callback triggered the event, and what kind
 rem --- of event it is.  In this case, we're toggling checkboxes on/off in form grid control
 
@@ -170,11 +170,11 @@ rem ==========================================================================
 	attr_inv_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 
 	attr_inv_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PI_CYCLECODE"
-	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Cycle"
+	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_CYCLE")
 	attr_inv_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 
 	attr_inv_col$[4,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DESCRIPTION"
-	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Description"
+	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DESCRIPTION")
 	attr_inv_col$[4,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="150"
 
 	for curr_attr=1 to def_inv_cols

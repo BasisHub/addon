@@ -145,12 +145,12 @@ rem --- Disable fields and set minimums by trans type
 rem --- Memo or Credit Card#?
 
 	if cashcode_rec.trans_type$ = "C" then 
-		util.changeText(Form!, "Credit Card or ABA No", "ABA No")
-		util.changeText(Form!, "Credit Card No", "ABA No")
+		util.changeText(Form!, Translate!.getTranslation("AON_CREDIT_CARD_OR_ABA_NO"), Translate!.getTranslation("AON_ABA_NO"))
+		util.changeText(Form!, Translate!.getTranslation("AON_CREDIT_CARD_NO"), Translate!.getTranslation("AON_ABA_NO"))
 	else
 		if cashcode_rec.trans_type$ = "P" then
-			util.changeText(Form!, "Credit Card or ABA No", "Credit Card No")
-			util.changeText(Form!, "ABA No", "Credit Card No")
+			util.changeText(Form!, Translate!.getTranslation("AON_CREDIT_CARD_OR_ABA_NO"), Translate!.getTranslation("AON_CREDIT_CARD_NO"))
+			util.changeText(Form!, Translate!.getTranslation("AON_ABA_NO"), Translate!.getTranslation("AON_CREDIT_CARD_NO"))
 		endif
 	endif
 

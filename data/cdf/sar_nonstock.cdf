@@ -11,8 +11,8 @@ rem --- open files
 
 rem --- create list for available levels
 
-	ldat_list$=pad("Product",20)+"~"+"P;"
-	if pos(sas01a.nonstock_lev$="N") ldat_list$=ldat_list$+pad("Non Stock Item",20)+"~"+"N;"
+	ldat_list$=pad(Translate!.getTranslation("AON_PRODUCT"),20)+"~"+"P;"
+	if pos(sas01a.nonstock_lev$="N") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_NON_STOCK_ITEM"),20)+"~"+"N;"
 
 	callpoint!.setTableColumnAttribute("SAR_NONSTOCK.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_NONSTOCK.ASVA]]
@@ -53,7 +53,7 @@ readrecord(sas_params_chn,key=firm_id$+"SA00")sas_params$
 if sas_params.by_nonstock$<>"Y"
 	msg_id$="INVALID_SA"
 	dim msg_tokens$[1]
-	msg_tokens$[1]="Non-Stock"
+	msg_tokens$[1]=Translate!.getTranslation("AON_NON-STOCK")
 	gosub disp_message
 	bbjAPI!=bbjAPI()
 	rdFuncSpace!=bbjAPI!.getGroupNamespace()
@@ -75,7 +75,7 @@ user_tpl.high_level$=sas_params.nonstock_lev$
 	if sas01a.by_nonstock$<>"Y"
 		msg_id$="INVALID_SA"
 		dim msg_tokens$[1]
-		msg_tokens$[1]="Non-Stock"
+		msg_tokens$[1]=Translate!.getTranslation("AON_NON-STOCK")
 		gosub disp_message
 		bbjAPI!=bbjAPI()
 		rdFuncSpace!=bbjAPI!.getGroupNamespace()

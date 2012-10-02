@@ -1,3 +1,7 @@
+[[IVR_TRANSHIST.ITEM_ID.AINV]]
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[IVR_TRANSHIST.TRAN_HST_PO.AVAL]]
 if callpoint!.getUserInput()="N"
 	callpoint!.setColumnData("IVR_TRANSHIST.TRAN_HST_ALL","N")

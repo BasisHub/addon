@@ -158,11 +158,11 @@ rem ==========================================================================
 	attr_inv_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 
 	attr_inv_col$[3,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PI_CYCLECODE"
-	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Cycle"
+	attr_inv_col$[3,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_CYCLE")
 	attr_inv_col$[3,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
 
 	attr_inv_col$[4,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="DESCRIPTION"
-	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Description"
+	attr_inv_col$[4,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_DESCRIPTION")
 	attr_inv_col$[4,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="150"
 
 	for curr_attr=1 to def_inv_cols

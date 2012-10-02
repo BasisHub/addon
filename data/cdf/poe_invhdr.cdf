@@ -294,14 +294,14 @@ callpoint!.setStatus("REFRESH")
 rem --- see if in apt-01 (open invoices)
 
 callpoint!.setDevObject("adjust_flag","0")
-Form!.getControl(num(callpoint!.getDevObject("inv_adj_label"))).setText("(Invoice)")
+Form!.getControl(num(callpoint!.getDevObject("inv_adj_label"))).setText(Translate!.getTranslation("AON_(INVOICE)"))
 
 apt01_dev=fnget_dev("APT_INVOICEHDR")
 while 1
 	find(apt01_dev,key=firm_id$+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+
 :		callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getUserInput(),dom=*break)
 		callpoint!.setDevObject("adjust_flag","1")
-		Form!.getControl(num(callpoint!.getDevObject("inv_adj_label"))).setText("(Adjustment)")
+		Form!.getControl(num(callpoint!.getDevObject("inv_adj_label"))).setText(Translate!.getTranslation("AON_(ADJUSTMENT)"))
 		callpoint!.setColumnEnabled("POE_INVHDR.NET_INV_AMT",0)
 	break
 wend

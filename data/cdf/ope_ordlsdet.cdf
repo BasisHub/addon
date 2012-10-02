@@ -213,9 +213,9 @@ rem --- Warn that selected lot/serial#'s does not match order qty
 		msg_tokens$[1] = str(lot_qty)
 
 		if callpoint!.getDevObject("lotser_flag") = "L" then 
-			msg_tokens$[2] = "Lot numbers"
+			msg_tokens$[2] = Translate!.getTranslation("AON_LOT_NUMBERS")
 		else
-			msg_tokens$[2] = "Serial numbers"
+			msg_tokens$[2] = Translate!.getTranslation("AON_SERIAL_NUMBERS")
 		endif
 
 		msg_tokens$[3] = str(callpoint!.getDevObject("ord_qty"))
@@ -378,8 +378,8 @@ rem --- Inits
 rem --- Set Lot/Serial button up properly
 
 	switch pos(callpoint!.getDevObject("lotser_flag")="LS")
-		case 1; callpoint!.setOptionText("LLOK","Lot Lookup"); break
-		case 2; callpoint!.setOptionText("LLOK","Serial Lookup"); break
+		case 1; callpoint!.setOptionText("LLOK",Translate!.getTranslation("AON_LOT_LOOKUP")); break
+		case 2; callpoint!.setOptionText("LLOK",Translate!.getTranslation("AON_SERIAL_LOOKUP")); break
 		case default; callpoint!.setOptionEnabled("LLOK",0); break
 	swend
 
@@ -421,7 +421,7 @@ rem --- Set data for the lookup form
 
 rem --- See if there are any open lots
 
-	read (lsmast_dev, key=firm_id$+wh$+item$+" ", knum=4, dom=*next)
+	read (lsmast_dev, key=firm_id$+wh$+item$+" ", knum="AO_WH_ITM_FLAG", dom=*next)
 	lsmast_key$=key(lsmast_dev, end=*next)
 
 	if pos(firm_id$+wh$+item$+" " = lsmast_key$) = 1 then
@@ -462,9 +462,9 @@ rem --- See if there are any open lots
 			committedNow! = cast(HashMap, callpoint!.getDevObject("committed_now"))
 
 			if callpoint!.getDevObject("lotser_flag") = "S" then
-				lot_ser$ = "Serial Number"
+				lot_ser$ = Translate!.getTranslation("AON_SERIAL_NUMBER")
 			else
-				lot_ser$ = "Lot"
+				lot_ser$ = Translate!.getTranslation("AON_LOT")
 			endif
 
 			if committedNow!.containsKey(ls_no$) then

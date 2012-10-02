@@ -199,8 +199,8 @@ if k$(1,len(apt02_key$))=apt02_key$ and cvs(callpoint!.getColumnData("APE_RECURR
 	ctl_name$="APE_RECURRINGHDR.NET_INV_AMT"
 	ctl_stat$="D"
 	gosub disable_fields
-	Form!.getControl(num(user_tpl.open_inv_textID$)).setText("Adjust Open Invoice: "+$0A$+fndate$(apt02a.accting_date$)+
-:		", for "+str(num(apt02a.gl_post_amt$):user_tpl.amt_msk$))
+	Form!.getControl(num(user_tpl.open_inv_textID$)).setText(Translate!.getTranslation("AON_ADJUST_OPEN_INVOICE:_")+$0A$+fndate$(apt02a.accting_date$)+
+:		Translate!.getTranslation("AON_,_FOR_")+str(num(apt02a.gl_post_amt$):user_tpl.amt_msk$))
 	callpoint!.setStatus("ABLEMAP-REFRESH-ACTIVATE")
 else
 	rem not in ape-03 or apt-02; set up defaults

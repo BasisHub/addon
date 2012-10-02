@@ -27,7 +27,7 @@ list!=Form!.getControl(listID)
 
 if bm$="Y"
 	dim bill_no$(code_len)
-	bill_no$(1)="Bill Number"
+	bill_no$(1)=Translate!.getTranslation("AON_BILL_NUMBER")
 	bill_no$(desc_len,1)="~"
 	bill_no$(desc_len+1,1)="B"
 	bill_no$(code_len,1)=";"
@@ -36,7 +36,7 @@ endif
 
 if op$="Y"
 	dim cust_no$(code_len)
-	cust_no$(1)="Customer ID"
+	cust_no$(1)=Translate!.getTranslation("AON_CUSTOMER_ID")
 	cust_no$(desc_len,1)="~"
 	cust_no$(desc_len+1,1)="C"
 	cust_no$(code_len,1)=";"
