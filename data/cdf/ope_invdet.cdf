@@ -41,6 +41,14 @@ rem --- Enable repricing, options, lots
 	gosub enable_repricing
 	gosub enable_addl_opts
 	gosub able_lot_button
+
+rem --- Force focus on Item ID when Warehouse Code entry is skipped
+
+	if callpoint!.getDevObject("skipWHCode") = "Y" then
+		callpoint!.setDevObject("skipWHCode","N"); rem --- skip warehouse code entry only once
+		callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_INVDET.ITEM_ID")
+		break
+	endif
 [[OPE_INVDET.AOPT-ADDL]]
 rem --- Additional Options
 
@@ -270,7 +278,12 @@ rem --- Force focus on Warehouse when Line Code entry is skipped
 
 	if callpoint!.getDevObject("skipLineCode") = "Y" then
 		callpoint!.setDevObject("skipLineCode","N"); rem --- skip line code entry only once
-		callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_INVDET.WAREHOUSE_ID")
+		if  callpoint!.getDevObject("skipWHCode") = "Y" then
+			callpoint!.setDevObject("skipWHCode","N")
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_INVDET.ITEM_ID")
+		else
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_INVDET.WAREHOUSE_ID")
+		endif
 
 		rem --- initialize detail line for default line_code
 		line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
@@ -762,6 +775,9 @@ rem --- Set defaults for new record
 
 	rem --- For new lines may want to skip line code entry the first time.
 	callpoint!.setDevObject("skipLineCode",user_tpl.skip_ln_code$)
+
+	rem --- For new lines may want to skip warehouse code entry the first time.
+	callpoint!.setDevObject("skipWHCode",user_tpl.skip_whse$)
 
 	rem --- Is the default line code for dropships?
 	file$ = "OPC_LINECODE"

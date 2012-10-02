@@ -127,8 +127,15 @@ rem --- fill listbox for use with Op Sequence
 		dim bmm08a$:fattr(bmm08a$)
 		read record (bmm08_dev,key=firm_id$+bmm03a.op_code$,dom=*next)bmm08a$
 		ops_lines!.addItem(bmm03a.internal_seq_no$)
-		ops_items!.addItem(bmm03a.op_code$)
-		ops_list!.addItem(bmm03a.op_code$+" - "+bmm08a.code_desc$)
+		op_code_list$=op_code_list$+bmm03a.op_code$
+		work_var=pos(bmm03a.op_code$=op_code_list$,len(bmm03a.op_code$),0)
+		if work_var>1
+			work_var$=bmm03a.op_code$+"("+str(work_var)+")"
+		else
+			work_var$=bmm03a.op_code$
+		endif
+		ops_items!.addItem(work_var$)
+		ops_list!.addItem(work_var$+" - "+bmm08a.code_desc$)
 	wend
 
 	if ops_lines!.size()>0

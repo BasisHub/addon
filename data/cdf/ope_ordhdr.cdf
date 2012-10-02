@@ -1202,9 +1202,10 @@ rem --- Check for a POS record by station
 	station$ = stbl("OPE_DEF_STATION", err=*next)
 
 	file$ = "OPM_POINTOFSALE"
+	pointofsale_dev=fnget_dev(file$)
 	dim pointofsale_rec$:fnget_tpl$(file$)
 
-	find record (fnget_dev(file$), key=firm_id$+pad(station$, 16), dom=no_pointofsale) pointofsale_rec$
+	find record (pointofsale_dev, key=firm_id$+pad(station$, 16), dom=no_pointofsale) pointofsale_rec$
 	goto end_pointofsale
 
 no_pointofsale: rem --- Should we create a default record?
@@ -1226,7 +1227,7 @@ rem --- Create a default POS record
 	sysinfo$=stbl("+SYSINFO")
 
 	pointofsale_rec.firm_id$         = firm_id$
-	pointofsale_rec.default_station$ = pad(station$, 16)
+	pointofsale_rec.pos_station$ = pad(station$, 16)
 	pointofsale_rec.skip_whse$       = "N"
 	pointofsale_rec.val_ctr_prt$     = sysinfo.printer_id$
 	pointofsale_rec.val_rec_prt$     = sysinfo.printer_id$

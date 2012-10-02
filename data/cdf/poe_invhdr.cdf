@@ -116,23 +116,31 @@ callpoint!.setDevObject("multi_dist",aps01a.multi_dist$)
 callpoint!.setDevObject("dflt_dist_cd", aps01a.ap_dist_code$)
 callpoint!.setDevObject("retention",aps01a.ret_flag$)
 
+rem --- See if GL is installed or linked to PO
+	read record(pos01_dev,key=firm_id$+"PO00",dom=*next)pos01a$
+	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
+	if info$[20]="N" or pos01a.post_to_gl$<>"Y"
+		callpoint!.setDevObject("gl_installed","N")
+	else
+		callpoint!.setDevObject("gl_installed","Y")
+	endif
+
 rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user to set it up first
-gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$
-if cvs(gls01a.current_per$,2)=""
-	msg_id$="GL_PARAM_ERR"
-	dim msg_tokens$[1]
-	msg_opt$=""
-	gosub disp_message
-	gosub remove_process_bar
-	release
-endif
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$
+	if cvs(gls01a.current_per$,2)=""
+		msg_id$="GL_PARAM_ERR"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		gosub remove_process_bar
+		release
+	endif
 
-callpoint!.setDevObject("units_flag",gls01a.units_flag$)
-callpoint!.setDevObject("gl_year",gls01a.current_year$)
-callpoint!.setDevObject("gl_per",gls01a.current_per$)
-callpoint!.setDevObject("gl_tot_pers",gls01a.total_pers$)
-
+	callpoint!.setDevObject("units_flag",gls01a.units_flag$)
+	callpoint!.setDevObject("gl_year",gls01a.current_year$)
+	callpoint!.setDevObject("gl_per",gls01a.current_per$)
+	callpoint!.setDevObject("gl_tot_pers",gls01a.total_pers$)
 
 call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_INVSEL","PRIMARY",poe_invsel_key_tpl$,table_chans$[all],status$
 callpoint!.setDevObject("poe_invsel_key",poe_invsel_key_tpl$)
@@ -188,7 +196,9 @@ rem --- only enable invoice detail button if we've already written some poe_invd
 rem --- also re-initialize the "deleted" flag
 
 if cvs(callpoint!.getColumnData("POE_INVHDR.AP_INV_NO"),2)<>""then
-	callpoint!.setOptionEnabled("GDIS",1)
+	if callpoint!.getDevObject("gl_installed")="Y"
+		callpoint!.setOptionEnabled("GDIS",1)
+	endif
 endif
 
 poe_invdet=fnget_dev("POE_INVDET")
@@ -250,7 +260,9 @@ if gridVect!.size()
 	endif
 endif
 
-callpoint!.setOptionEnabled("INVD",1)
+if callpoint!.getDevObject("gl_installed")="Y"
+	callpoint!.setOptionEnabled("INVD",1)
+endif
 callpoint!.setOptionEnabled("GDIS",1)
 
 rem --- also need final check of balance -- invoice amt - invsel amt - gl dist amt (invsel should already equal invdet)

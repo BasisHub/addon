@@ -8,7 +8,7 @@ rem --- All Rights Reserved
 
 	seterr std_error
 	setesc std_error
-	enter action$,printer_dev,bill_no$,page_no,pdate$,OutVect!,Translate!,status
+	enter action$,printer_dev,bill_no$,page_no,pdate$,OutVect!,Translate!,status,columns,BrkVect!
 
 rem --- Retrieve the program path
 
@@ -24,7 +24,7 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-	num_files=6
+	num_files=7
     dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="BMM_BILLMAST",open_opts$[1]="OTA"
 	open_tables$[2]="BMM_BILLMAT",open_opts$[2]="OTA"
@@ -32,6 +32,7 @@ rem --- Open/Lock files
 	open_tables$[4]="IVM_ITEMMAST",open_opts$[4]="OTA"
 	open_tables$[5]="IVS_PARAMS",open_opts$[5]="OTA"
 	open_tables$[6]="BMM_BILLOPER",open_opts$[6]="OTA"
+	open_tables$[7]="BMC_OPCODES",open_opts$[7]="OTA"
 
 	gosub open_tables
 
@@ -41,11 +42,13 @@ rem --- Open/Lock files
 	ivm01_dev=num(open_chans$[4])
 	ivs01a_dev=num(open_chans$[5])
 	bmm03_dev=num(open_chans$[6])
+	bmc_opcodes=num(open_chans$[7])
 	
 rem --- Dimension string templates
 
 	dim bmm01a$:open_tpls$[1],bmm02a$:open_tpls$[2],bms01a$:open_tpls$[3]
 	dim ivm01a$:open_tpls$[4],ivs01a$:open_tpls$[5],bmm03a$:open_tpls$[6]
+	dim bmc_opcodes$:open_tpls$[7]
 
 rem --- Retrieve parameter records
 
@@ -67,12 +70,21 @@ rem --- Parameters
 rem --- Init Data
 
         more=1
-        pbufwidth=85
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","PRIMARY",bmm02a_key_tpl$,rd_table_chans$[all],status$
-        dim bmm02a_key$:bmm02a_key_tpl$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","AO_OPSEQ_BILL",bmm02a_altkey02_tpl$,rd_table_chans$[all],status$
-        dim bmm02a_altkey$:bmm02a_altkey02_tpl$
+		gosub heading
 
+rem --- Build list of Op Codes/internal_seq_no/occurrence used for this Bill
+		op_code_len=len(bmm03a.op_code$)
+		read (bmm03_dev,key=firm_id$+bill_no$,dom=*next)
+
+		while 1
+			read record (bmm03_dev,end=*break) bmm03a$
+			if pos(firm_id$+bill_no$=bmm03a$)<>1 break
+			if bmm03a.line_type$="S"
+				occ=pos(bmm03a.op_code$=opcodes$,op_code_len+12+2,0)
+				opcodes$=opcodes$+bmm03a.op_code$+bmm03a.internal_seq_no$+str(occ:"00")
+			endif
+		wend
+		
 rem --- Read
 
         if pos("D"=action$) then
@@ -80,7 +92,133 @@ rem --- Read
         endif
         findrecord (bmm01_dev,key=firm_id$+bill_no$,dom=std_exit) bmm01a$
 
+rem --- Add op_int_seq_ref to memo lines following 'S' lines
+
+		read (bmm02_dev,key=firm_id$+bill_no$,dom=*next)
+		seq_ref$=""
+		
+		while 1
+			read record (bmm02_dev,end=*break) bmm02a$
+			if pos(firm_id$+bill_no$=bmm02a$)<>1 break
+			if bmm02a.line_type$="M"
+				bmm02a.op_int_seq_ref$=seq_ref$
+				write record (bmm02_dev) bmm02a$
+				continue
+			endif
+			seq_ref$=bmm02a.op_int_seq_ref$
+		wend
+		
+rem --- Detail
+
+		sql_prep$="select firm_id, bill_no, material_seq "
+		sql_prep$=sql_prep$+"from bmm_billmat where firm_id = '"+firm_id$+"' and bill_no = '"+bill_no$+"' "
+		sql_prep$=sql_prep$+"order by op_int_seq_ref, material_seq"
+		sql_chan=sqlunt
+		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+		sqlprep(sql_chan)sql_prep$
+		dim read_tpl$:sqltmpl(sql_chan)
+		sqlexec(sql_chan)
+
+rem --- Main Loop Starts
+    while more
+
+		read_tpl$ = sqlfetch(sql_chan,end=*break)
+		read record (bmm02_dev,key=read_tpl.firm_id$+read_tpl.bill_no$+read_tpl.material_seq$) bmm02a$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Page break
+		if last_seq_ref$="" last_seq_ref$=bmm02a.op_int_seq_ref$
+		if last_seq_ref$<>bmm02a.op_int_seq_ref$
+			BrkVect!.addItem(str(OutVect!.size()/(columns)))
+			last_seq_ref$=bmm02a.op_int_seq_ref$
+			gosub heading
+		endif
+
+        if pos(bmm01a.firm_id$+bmm01a.bill_no$=bmm02a.firm_id$+bmm02a.bill_no$+bmm02a.material_seq$)<>1 then break
+        if cvs(bmm02a.effect_date$,3)<>"" and bmm02a.effect_date$>pdate$ then continue
+        if cvs(bmm02a.obsolt_date$,3)<>"" and bmm02a.obsolt_date$<=pdate$ then continue
+
+        if bmm02a.line_type$<>"S" then
+            xwk=fnblank(1)
+            OutVect!.addItem(bmm02a.ext_comments$)
+            xwk=fnblank(3)
+            continue
+        endif
+
+rem --- Standard Item
+
+        r0$=" "
+        find (bmm01_dev,key=firm_id$+bmm02a.item_id$,dom=addl_reads)
+        r0$="*"
+
+addl_reads: rem --- Additional Reads
+
+        find record (ivm01_dev,key=firm_id$+bmm02a.item_id$,dom=*next) ivm01a$
+        ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+		dim bmm03a$:fattr(bmm03a$)
+		find record (bmm03_dev,key=firm_id$+bmm02a.bill_no$+bmm02a.op_int_seq_ref$,knum="AO_BILL_OPSEQ",dom=*next)bmm03a$
+		dim bmc_opcodes$:fattr(bmc_opcodes$)
+		find record (bmc_opcodes,key=firm_id$+bmm03a.op_code$,dom=*next) bmc_opcodes$
+		
+rem --- Print Detail
+
+        OutVect!.addItem(bmm03a.internal_seq_no$)
+        OutVect!.addItem(bmm02a.item_id$(1,p[0]))
+        OutVect!.addItem(bmm02a.unit_measure$)
+        OutVect!.addItem(str(fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor):m2$)+$00$+"R")
+        OutVect!.addItem(fill(13,"_"))
+		out_desc$=""
+		x=pos(bmm03a.op_code$+bmm02a.op_int_seq_ref$=opcodes$,op_code_len+12+2)
+		if x>0
+			occ=num(opcodes$(x+15,2))+1
+			if occ>1
+				out_desc$=bmm03a.op_code$+"("+str(occ)+") "+bmc_opcodes.code_desc$
+			else
+				out_desc$=bmm03a.op_code$+" "+bmc_opcodes.code_desc$
+			endif
+		endif
+		OutVect!.addItem("  "+out_desc$)
+        OutVect!.addItem("    "+ivm01a.item_desc$)
+        xwk=fnblank(3)
+
+rem --- Serial/Lot Numbers
+
+        if ivm01a.lotser_item$<>"Y" or ivs01a.lotser_flag$="N" then continue
+        if ivs01a.lotser_flag$="S" then
+            x$=Translate!.getTranslation("AON_SERIAL_NUMBER:_")
+        else
+            x$=Translate!.getTranslation("AON_LOT_NUMBER:_")
+        endif
+        if ivs01a.lotser_flag$="L" and bmm02a.qty_required>5 then bmm02a.qty_required=5
+        for i=1 to bmm02a.qty_required
+            xwk=fnblank(1)
+            OutVect!.addItem(x$+fill(30,"_"))
+            xwk=fnblank(3)
+        next i
+
+rem --- Main Loop Ends
+    wend
+
+rem --- Totals
+
+    xwk=fnblank(5)
+    xwk=fnblank(2)
+    OutVect!.addItem(Translate!.getTranslation("AON_ASSEMBLED___________"))
+    xwk=fnblank(2)
+
+    xwk=fnblank(2)
+    OutVect!.addItem(Translate!.getTranslation("AON_CHECKED_____________"))
+    xwk=fnblank(2)
+
+    xwk=fnblank(2)
+    OutVect!.addItem(Translate!.getTranslation("AON_PACKED______________"))
+    xwk=fnblank(2)
+
+rem --- End
+    goto std_exit
+
 rem --- Heading
+	heading:
         out_action$="FORMAT"
         find record (ivm01_dev,key=firm_id$+bill_no$,dom=*next) ivm01a$
         OutVect!.addItem(Translate!.getTranslation("AON_BILL_NUMBER:_")+cvs(bill_no$,1+2))
@@ -129,89 +267,8 @@ rem --- top dashed lines are just visually confusing...
         OutVect!.addItem(fill(15,"_"))
 		xvk=fnblank(5)
 
-rem --- Detail
-
-        read (bmm02_dev,key=firm_id$+bill_no$,dom=*next)
-        first_time$="Y"
-
-rem --- Main Loop Starts
-    while more
-
-        bmm02a_altkey$=key(bmm02_dev,knum="AO_OPSEQ_BILL",end=*break)
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        if first_time$="Y" then let first_time$="N",t0$=bmm02a_altkey.op_int_seq_ref$
-        read record (bmm02_dev,key=bmm02a_altkey$,knum="AO_OPSEQ_BILL") bmm02a$
-        if pos(bmm01a.firm_id$+bmm01a.bill_no$=bmm02a.firm_id$+bmm02a.bill_no$+bmm02a.material_seq$)<>1 then break
-        if cvs(bmm02a.effect_date$,3)<>"" and bmm02a.effect_date$>pdate$ then continue
-        if cvs(bmm02a.obsolt_date$,3)<>"" and bmm02a.obsolt_date$<=pdate$ then continue
-
-        if bmm02a.line_type$<>"S" then
-            xwk=fnblank(1)
-            OutVect!.addItem(bmm02a.ext_comments$)
-            xwk=fnblank(3)
-            continue
-        endif
-
-rem --- Standard Item
-
-        r0$=" "
-        find (bmm01_dev,key=firm_id$+bmm02a.item_id$,dom=addl_reads)
-        r0$="*"
-
-addl_reads: rem --- Additional Reads
-
-        find record (ivm01_dev,key=firm_id$+bmm02a.item_id$,dom=*next) ivm01a$
-        ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
-		dim bmm03a$:fattr(bmm03a$)
-		find record (bmm03_dev,key=firm_id$+bmm02a.bill_no$+bmm02a.op_int_seq_ref$,knum="AO_BILL_OPSEQ",dom=*next)bmm03a$
+	return
 		
-rem --- Print Detail
-
-        OutVect!.addItem(bmm03a.op_seq$)
-        OutVect!.addItem(bmm02a.item_id$(1,p[0]))
-        OutVect!.addItem(bmm02a.unit_measure$)
-        OutVect!.addItem(str(fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor):m2$)+$00$+"R")
-        OutVect!.addItem(fill(13,"_"))
-        xwk=fnblank(1)
-        OutVect!.addItem("    "+ivm01a.item_desc$)
-        xwk=fnblank(3)
-
-rem --- Serial/Lot Numbers
-
-        if ivm01a.lotser_item$<>"Y" or ivs01a.lotser_flag$="N" then continue
-        if ivs01a.lotser_flag$="S" then
-            x$=Translate!.getTranslation("AON_SERIAL_NUMBER:_")
-        else
-            x$=Translate!.getTranslation("AON_LOT_NUMBER:_")
-        endif
-        if ivs01a.lotser_flag$="L" and bmm02a.qty_required>5 then bmm02a.qty_required=5
-        for i=1 to bmm02a.qty_required
-            xwk=fnblank(1)
-            OutVect!.addItem(x$+fill(30,"_"))
-            xwk=fnblank(3)
-        next i
-
-rem --- Main Loop Ends
-    wend
-
-rem --- Totals
-
-    xwk=fnblank(5)
-    xwk=fnblank(2)
-    OutVect!.addItem(Translate!.getTranslation("AON_ASSEMBLED___________"))
-    xwk=fnblank(2)
-
-    xwk=fnblank(2)
-    OutVect!.addItem(Translate!.getTranslation("AON_CHECKED_____________"))
-    xwk=fnblank(2)
-
-    xwk=fnblank(2)
-    OutVect!.addItem(Translate!.getTranslation("AON_PACKED______________"))
-    xwk=fnblank(2)
-
-rem --- End
-    goto std_exit
-
 open_tables:rem --- Open Tables
 
     call stbl("+DIR_SYP")+"bac_open_tables.bbj",
@@ -260,7 +317,10 @@ rem --- Miscellaneous functions
 
 rem --- Format inventory item description
 
-        def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
 
 rem --- Date/time handling functions
 

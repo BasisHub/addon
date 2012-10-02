@@ -850,6 +850,15 @@ rem --- Capture current totals so we can tell later if they were changed in the 
 		callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
 	endif
 [[OPE_INVHDR.BDEL]]
+rem --- Display more meaningful deletion message
+
+	msg_id$="OP_CONFIRM_DEL_INV"
+	gosub disp_message
+	if msg_opt$="N"
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
 rem --- Set table variables
 	file_name$ = "OPE_PRNTLIST"
 	prntlist_dev = fnget_dev(file_name$)

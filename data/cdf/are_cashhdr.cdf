@@ -339,6 +339,7 @@ gridInvoice!.setColumnEditable(0,1)
 gridInvoice!.setColumnEditable(8,1)
 gridInvoice!.setColumnEditable(9,1)
 gridInvoice!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
+gridInvoice!.setTabActionSkipsNonEditableCells(1)
 [[ARE_CASHHDR.AWRI]]
 newrec$="Y"
 gosub update_cashhdr_cashdet_cashbal

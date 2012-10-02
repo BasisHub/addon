@@ -107,6 +107,13 @@ launch_cred_maint:
 	cust_no$=gridCredit!.getCellText(curr_row,1)
 	cust$=cust_no$
 
+	if cvs(cust$,2)=""
+		msg_id$="OP_CRED_NO_CUST"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		goto dont_launch
+	endif
+
 	callpoint!.setDevObject("tick_date",gridCredit!.getCellText(curr_row,0))
 	callpoint!.setDevObject("order",gridCredit!.getCellText(curr_row,3))
 	callpoint!.setDevObject("ord_date",gridCredit!.getCellText(curr_row,4))
@@ -199,6 +206,8 @@ launch_cred_maint:
 	else
 		callpoint!.setOptionEnabled("CRED",1)
 	endif
+
+dont_launch:
 
 return
 
@@ -407,7 +416,14 @@ rem --- Dimension string templates
 rem --- Check Parameters
 
 	read record (ars01c_dev,key=firm_id$+"AR01",dom=std_missing_params)ars01c$
-	if ars01c.sys_install$<>"Y" release
+	if ars01c.sys_install$<>"Y"
+		msg_id$="OP_NOCREDIT"
+		gosub disp_message
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
 
 rem --- get customer mask
 

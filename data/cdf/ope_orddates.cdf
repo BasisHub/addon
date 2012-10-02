@@ -1,7 +1,8 @@
-[[OPE_ORDDATES.DEF_STATION.AVAL]]
+[[OPE_ORDDATES.ASVA]]
 rem --- Set STBL
+	ignore$ = stbl("OPE_DEF_STATION",callpoint!.getColumnData("OPE_ORDDATES.DEF_STATION"))
+[[OPE_ORDDATES.DEF_STATION.AVAL]]
 
-	ignore$ = stbl("OPE_DEF_STATION", callpoint!.getUserInput())
 [[OPE_ORDDATES.DEF_SHIP.AVAL]]
 rem --- Set STBL
 

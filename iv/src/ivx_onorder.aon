@@ -18,6 +18,7 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=50
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
     
@@ -93,6 +94,7 @@ rem --- Position warehouse file
 
         x$=Translate!.getTranslation("AON_CLEARING_CURRENT_ON-ORDER_QUANTITIES")
         x=3+p[0]
+		file_name$="IVM_ITEMWHSE"
         gosub Update_Screen
         read (ivm02_dev,key=firm_id$,dom=*next)
 
@@ -100,17 +102,20 @@ rem --- Clear ivm-02 On Order
         while more
             ivm02a_key$=key(ivm02_dev,end=*break)
             if pos(firm_id$=ivm02a_key$)<>1 break
-            call pgmdir$+"adc_progress.aon","S","","","",ivm02a.warehouse_id$+" "+ivm02a.item_id$,0,0,1,meter_num,status
+			total_recs=total_recs+1
+            if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","",ivm02a.warehouse_id$+" "+ivm02a.item_id$,0,0,1,meter_num,status
             extract record (ivm02_dev,key=ivm02a_key$) ivm02a$
             ivm02a.qty_on_order=0
             write record (ivm02_dev,key=ivm02a_key$) ivm02a$
         wend
-
+		call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+		
 rem --- Purchase Orders
 
         if po$="Y" then
             x$=Translate!.getTranslation("AON_PURCHASE_ORDER_ON-ORDER_QUANTITIES")
             x=3+p[0]
+			file_name$="POE_PODET"
             gosub Update_Screen
             read (poe12_dev,key=firm_id$,knum="ITEM_PO",dom=*next)
         
@@ -118,14 +123,16 @@ rem --- Read next PO record; use knum=ITEM_PO, po's by item
             while more
                 read record(poe12_dev,end=*break)poe12a$
                 if pos(firm_id$=poe12a$)<>1 break
+				total_recs=total_recs+1
+				if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","",poe12a.item_id$,0,poe12_dev,1,meter_num,status
                 if cvs(poe12a.item_id$,3)="" then continue
-                call pgmdir$+"adc_progress.aon","S","","","",poe12a.item_id$,0,poe12_dev,1,meter_num,status
                 ivm02a_key$=ivm02a.firm_id$+poe12a.warehouse_id$+poe12a.item_id$
                 extract record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
                 ivm02a.qty_on_order=ivm02a.qty_on_order+((poe12a.qty_ordered-poe12a.qty_received)*poe12a.conv_factor)
                 ivm02a$=field(ivm02a$)
                 write record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$) ivm02a$
             wend
+			call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
         endif
         
 rem --- Work Orders
@@ -133,6 +140,7 @@ rem --- Work Orders
         if sf$="Y" then
             x$=Translate!.getTranslation("AON_WORK_ORDER_ON-ORDER_QUANTITIES")
             x=7
+			file_name$="SFE_WOMASTR"
             gosub Update_Screen
             read (sfe01_dev,key=firm_id$,dom=*next)
 
@@ -140,23 +148,25 @@ rem --- Read next work order
             while more
                 sfe01a_key$=key(sfe01_dev,end=*break)
                 if pos(firm_id$=sfe01a_key$)<>1 break
-                call pgmdir$+"adc_progress.aon","S","","","",sfe01a.wo_no$,0,sfe01_dev,1,meter_num,status
+				total_recs=total_recs+1
+                if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","",sfe01a.wo_no$,0,sfe01_dev,1,meter_num,status
                 read record (sfe01_dev) sfe01a$
 
 rem --- Is it open?
 
                 if sfe01a.wo_category$<>"I" continue
                 if pos(sfe01a.wo_status$="CPQ")>0 continue
-                if sfe01a.sch_prd_qty<=sfe01a.qty_cls_todt continue
+                if sfe01a.sch_prod_qty<=sfe01a.qty_cls_todt continue
 
 rem --- Update warehouse
 
                 ivm02a_key$=sfe01a.firm_id$+sfe01a.warehouse_id$+sfe01a.item_id$
                 extract record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
-                ivm02a.qty_on_order=ivm02a.qty_on_order+(sfe01a.sch_prd_qty-sfe01a.qty_cls_todt)
+                ivm02a.qty_on_order=ivm02a.qty_on_order+(sfe01a.sch_prod_qty-sfe01a.qty_cls_todt)
                 ivm02a$=field(ivm02a$)                
                 write record (ivm02_dev,key=ivm02a_key$) ivm02a$
             wend
+			call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
         endif
         
 done: rem --- All done
@@ -166,7 +176,8 @@ done: rem --- All done
 
 Update_Screen: rem --- Update screen
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,0,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N",file_name$,"","","",0,0,1,meter_num,status
+	total_recs=0
     return
     
 disp_message:rem --- Display Message Dialog

@@ -659,8 +659,15 @@ rem --- read thru selected sales order and build list of lines for which line co
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
 			read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
 			order_lines!.addItem(ope_orddet.internal_seq_no$)
-			order_items!.addItem(ope_orddet.item_id$)
-			order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+cvs(ope_orddet.item_id$,3)+" "+cvs(ivm_itemmast.display_desc$,3))
+			item_list$=item_list$+ope_orddet.item_id$
+			work_var=pos(ope_orddet.item_id$=item_list$,len(ope_orddet.item_id$),0)
+			if work_var>1
+				work_var$=cvs(ope_orddet.item_id$,2)+"("+str(work_var)+")"
+			else
+				work_var$=cvs(ope_orddet.item_id$,2)
+			endif
+			order_items!.addItem(work_var$)
+			order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 		endif
 	wend
 

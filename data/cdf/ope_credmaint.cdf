@@ -1,6 +1,6 @@
 [[OPE_CREDMAINT.ARER]]
 rem --- Set dates to CCYYMMDD
-	tick_date$=callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE")
+	tick_date$=pad(callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE"),8)
 	tick_date$=tick_date$(5,4)+tick_date$(1,4)
 	callpoint!.setColumnData("OPE_CREDMAINT.REV_DATE",tick_date$)
 	callpoint!.setDevObject("old_tick_date",tick_date$)
@@ -259,12 +259,14 @@ update_tickler: rem --- Modify Tickler date
 	callpoint!.setDevObject("old_tick_date",tick_date$)
 	ord$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_NO")
 	cust_no$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
-	ope03a.firm_id$=firm_id$
-	ope03a.rev_date$=tick_date$
-	ope03a.customer_id$=cust_no$
-	ope03a.order_no$=ord$
-	ope03a$=field(ope03a$)
-	writerecord(ope03_dev)ope03a$
+	if cvs(cust_no$,2)<>""
+		ope03a.firm_id$=firm_id$
+		ope03a.rev_date$=tick_date$
+		ope03a.customer_id$=cust_no$
+		ope03a.order_no$=ord$
+		ope03a$=field(ope03a$)
+		writerecord(ope03_dev)ope03a$
+	endif
 	callpoint!.setDevObject("tick_date",tick_date$)
 return
 

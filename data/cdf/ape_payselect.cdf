@@ -275,9 +275,11 @@ rem ==========================================================================
 
 		rem --- Not checked -> checked
 
-			if gridInvoices!.getCellState(row_no,0) = 0 then 
+			if gridInvoices!.getCellState(row_no,0) = 0 then
+				vend$ = gridInvoices!.getCellText(row_no,3)
+				gosub strip_dashes
 				read record (apm01_dev, key=firm_id$+
-:					gridInvoices!.getCellText(row_no,3), dom=*next) apm01a$
+:					vend$, dom=*next) apm01a$
 
 rem --- Following lines removed to allow payment of open invoices for a held vendor
 rem				if apm01a.hold_flag$="Y" then
@@ -288,7 +290,7 @@ rem				endif
 
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
-:					gridInvoices!.getCellText(row_no,3)+
+:					vend$+
 :					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
 
 				if apt01a.hold_flag$="Y" then
@@ -341,11 +343,12 @@ rem				endif
 		rem --- Checked -> not checked
 
 			else
-
 				rem --- re-initialize
+				vend$ = gridInvoices!.getCellText(row_no,3)
+				gosub strip_dashes
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
-:					gridInvoices!.getCellText(row_no,3)+
+:					vend$+
 :					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
 				
 				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
@@ -590,9 +593,11 @@ rem ==========================================================================
 			row_no = curr_row-1
 
 		rem --- set as checked
-			if on_value$="Y" then 
+			if on_value$="Y" then
+				vend$ = gridInvoices!.getCellText(row_no,3)
+				gosub strip_dashes
 				read record (apm01_dev, key=firm_id$+
-:					gridInvoices!.getCellText(row_no,3), dom=*next) apm01a$
+:					vend$, dom=*next) apm01a$
 
 rem --- Following lines removed to allow payment of open invoices for a held vendor
 rem				if apm01a.hold_flag$="Y" then
@@ -603,7 +608,7 @@ rem				endif
 
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
-:					gridInvoices!.getCellText(row_no,3)+
+:					vend$+
 :					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
 
 				if apt01a.hold_flag$="Y" then
@@ -657,9 +662,11 @@ rem				endif
 
 			else
 				rem --- re-initialize
+				vend$ = gridInvoices!.getCellText(row_no,3)
+				gosub strip_dashes
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
-:					gridInvoices!.getCellText(row_no,3)+
+:					vend$+
 :					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
 
 				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
@@ -977,6 +984,7 @@ rem --- Misc other init
 	gridInvoices!.setColumnEditable(10,1)
 	gridInvoices!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
 	gridInvoices!.setTabAction(gridInvoices!.GRID_NAVIGATE_GRID)
+	gridInvoices!.setTabActionSkipsNonEditableCells(1)
 
 	gosub create_reports_vector
 	gosub fill_grid
@@ -1068,9 +1076,11 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 				endif
 
 				if disc_amt<>0 or inv_amt<>0 then 
-					if gridInvoices!.getCellState(curr_row,0)=0 then 
+					if gridInvoices!.getCellState(curr_row,0)=0 then
+						vend$ = gridInvoices!.getCellText(row_no,3)
+						gosub strip_dashes
 						read record(apm01_dev, key=firm_id$+
-:							gridInvoices!.getCellText(curr_row,3), dom=*next) apm01a$
+:							vend$, dom=*next) apm01a$
 
 rem --- Following lines removed to allow payment of open invoices for a held vendor
 rem						if apm01a.hold_flag$="Y" then 
@@ -1083,7 +1093,7 @@ rem						endif
 
 						read record(apt01_dev, key=firm_id$+
 :							gridInvoices!.getCellText(curr_row,2)+
-:							gridInvoices!.getCellText(curr_row,3)+
+:							vend$+
 :							gridInvoices!.getCellText(curr_row,5), dom=*next) apt01a$
 
 						if apt01a.hold_flag$="Y" then 
@@ -1158,9 +1168,11 @@ rem						endif
 						curr_row=x
 					endif
 				else
-					if gridInvoices!.getCellState(curr_row,0)=0 then 
+					if gridInvoices!.getCellState(curr_row,0)=0 then
+						vend$ = gridInvoices!.getCellText(row_no,3)
+						gosub strip_dashes
 						read record (apm01_dev, key=firm_id$+
-:							gridInvoices!.getCellText(curr_row,3), dom=*next) apm01a$
+:							vend$, dom=*next) apm01a$
 
 rem --- Following lines removed to allow payment of open invoices for a held vendor
 rem						if apm01a.hold_flag$="Y" then 
@@ -1173,7 +1185,7 @@ rem						endif
 
 						read record (apt01_dev, key=firm_id$+
 :							gridInvoices!.getCellText(curr_row,2)+
-:							gridInvoices!.getCellText(curr_row,3)+
+:							vend$+
 :							gridInvoices!.getCellText(curr_row,5), dom=*next) apt01a$
 
 						if apt01a.hold_flag$="Y" then 

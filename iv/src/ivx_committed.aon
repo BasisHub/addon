@@ -18,6 +18,7 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=50
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
     
@@ -129,12 +130,10 @@ rem --- Verify no IV transactions/transfers & no L/S Materials Issues
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,0,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","IVM_ITEMWHSE","","","",0,0,1,meter_num,status
 
 rem --- Clear ivm-02 Committed
 
-    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-    
     read (ivm02_dev,key=firm_id$,dom=*next)
     while more
         read record (ivm02_dev,end=*break)ivm02a$
@@ -142,13 +141,17 @@ rem --- Clear ivm-02 Committed
         ivm02a.qty_commit=0
         ivm02a$=field(ivm02a$)
         write record (ivm02_dev) ivm02a$
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+		total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
     wend
 
+	call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
+	
 rem --- Clear ivm-07 Committed
 
     if ivm07_dev<>0 then
-        call pgmdir$+"adc_progress.aon","S","","","",blanks$,0,0,1,meter_num,status
+        call pgmdir$+"adc_progress.aon","N","IVM_LSMASTER","","","",0,0,1,meter_num,status
+		total_recs=0
         read (ivm07_dev,key=firm_id$,dom=*next)
         while more
             read record (ivm07_dev,end=*break)ivm07a$
@@ -156,14 +159,17 @@ rem --- Clear ivm-07 Committed
             ivm07a.qty_commit=0
             ivm07a$=field(ivm07a$)
             write record (ivm07_dev) ivm07a$
-            call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+			total_recs=total_recs+1
+            if mod(total_recs,milestone)=0 call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         wend
+		call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
     endif
     
 rem --- Rebuild From ope-11 Committed
 
     if op$="Y" 
-        call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        call stbl("+DIR_PGM")+"adc_progress.aon","N","OPE_ORDDET","","","",0,0,1,meter_num,status
+		total_recs=0
 
         read (ope11_dev,key=firm_id$,dom=*next)
 
@@ -171,6 +177,8 @@ rem --- Rebuild From ope-11 Committed
         while more
             read record (ope11_dev,end=*break)ope11a$
             if ope11a.firm_id$<>firm_id$ then break
+			total_recs=total_recs+1
+			if mod(total_recs,milestone)=0 call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
             find record (ope01_dev,key=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$,dom=*continue) ope01a$; rem "Check header records for quotes
             if ope01a.invoice_type$="P" then quote$="Y" else quote$="N"
             find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
@@ -185,12 +193,14 @@ rem --- Rebuild From ope-11 Committed
                 endif
             endif                            
         wend
+		call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
     endif
     
 rem --- Rebuild From ope-21 Committed
 
     if op$="Y" 
-        call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        call stbl("+DIR_PGM")+"adc_progress.aon","N","OPE_ORDLSDET","","","",0,0,1,meter_num,status
+		total_recs=0
         dim t[2]
         dim ope11a$:fattr(ope11a$)
         read (ope21_dev,key=firm_id$,dom=*next)
@@ -199,10 +209,11 @@ rem --- Rebuild From ope-21 Committed
         while more
             read record (ope21_dev,end=*break)ope21a$
             if ope21a.firm_id$<>firm_id$ then break
-            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+			total_recs=total_recs+1
+			if mod(total_recs,milestone)=0 call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
             rem --- make sure this ord lsdet rec has corres. ord det rec... if not, remove
             if pos(ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+
-:               ope21a.orddet_seq_ref$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$
+:               ope21a.orddet_seq_ref$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+
 :               ope11a.internal_seq_no$)<>1 
                     found=0
                     find record (ope11_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$,dom=*next) ope11a$;found=1
@@ -220,12 +231,14 @@ rem --- Rebuild From ope-21 Committed
                 write record (ivm07_dev) ivm07a$
             endif
         wend
+		call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
     endif
     
 rem --- Rebuild From Shop Floor Committed
 
     if wo$="Y" then
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        call pgmdir$+"adc_progress.aon","N","SFE_WOMATISD","","","",0,0,1,meter_num,status
+		total_recs=0
 
         rem ---  Skip sfe-14 (sfe_wolsissu) since rebuild doesn't run if there are any l/s material issues (re gosub entryfiles)
 
@@ -234,7 +247,8 @@ rem --- Rebuild From Shop Floor Committed
         while 1
             read record (sfe25_dev,end=*break)sfe25a$
             if sfe25a$.firm_id$<>firm_id$ then break
-            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+			total_recs=total_recs+1
+            if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
             found=0
             read record (sfe01_dev,key=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$,dom=*next) sfe01a$;found=1
             if !found then
@@ -264,13 +278,18 @@ rem --- Rebuild From Shop Floor Committed
                 endif
             endif
         wend
+		call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
 
+        call pgmdir$+"adc_progress.aon","N","SFE_WOMATDTL","","","",0,0,1,meter_num,status
+		total_recs=0
+		
         rem --- sfe-23 (sfe_womatdtl) Main Read
         read (sfe23_dev,key=firm_id$,dom=*next)
         while more
             read record (sfe23_dev,end=*break)sfe23a$
             if sfe23a$.firm_id$<>firm_id$ then break
-            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+			total_recs=total_recs+1
+            if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
             found=0
             read record (sfe01_dev,key=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$,dom=*next) sfe01a$;found=1
             if !found
@@ -284,6 +303,7 @@ rem --- Rebuild From Shop Floor Committed
                 endif
             endif
         wend
+		call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
     endif
 
 done: rem --- Done

@@ -884,8 +884,15 @@ rem --- read thru selected sales order and build list of lines for which line co
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
 			read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
 			order_lines!.addItem(ope_orddet.internal_seq_no$)
-			order_items!.addItem(ope_orddet.item_id$)
-			order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+cvs(ope_orddet.item_id$,3)+" "+cvs(ivm_itemmast.display_desc$,3))
+			item_list$=item_list$+ope_orddet.item_id$
+			work_var=pos(ope_orddet.item_id$=item_list$,len(ope_orddet.item_id$),0)
+			if work_var>1
+				work_var$=cvs(ope_orddet.item_id$,2)+"("+str(work_var)+")"
+			else
+				work_var$=cvs(ope_orddet.item_id$,2)
+			endif
+			order_items!.addItem(work_var$)
+			order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 		endif
 	wend
 
@@ -975,34 +982,42 @@ return
 
 validate_dates: rem --- validate dates
 
-	bad_date = 0
+	bad_date$ = ""
+	order_date$=Translate!.getTranslation("AON_ORDER_DATE")
+	reqd_date$=Translate!.getTranslation("AON_REQUIRED")+" "+Translate!.getTranslation("AON_DATE")
+	prom_date$=Translate!.getTranslation("AON_PROMISED")+" "+Translate!.getTranslation("AON_DATE")
+	nb4_date$=Translate!.getTranslation("AON_NOT_BEFORE")+" "+Translate!.getTranslation("AON_DATE")
+	after$=Translate!.getTranslation("AON_IS_AFTER")
+	before$=Translate!.getTranslation("AON_IS_BEFORE")
 
 	if ord_date$<>"" and req_date$<>"" and ord_date$>req_date$ then
-		bad_date = 1
+		bad_date$ = order_date$+" "+after$+" "+reqd_date$
 	endif
 
 	if ord_date$<>"" and promise_date$<>"" and ord_date$>promise_date$ then
-		bad_date = 1
+		bad_date$ = order_date$+" "+after$+" "+prom_date$
 	endif
 
 	if ord_date$<>"" and not_b4_date$<>"" and ord_date$>not_b4_date$ then
-		bad_date = 1
+		bad_date$ = order_date$+" "+after$+" "+nb4_date$
 	endif
 
 	if req_date$<>"" and promise_date$<>"" and req_date$<promise_date$ then
-		bad_date = 1
+		bad_date$ = reqd_date$+" "+before$+" "+prom_date$
 	endif
 
 	if req_date$<>"" and not_b4_date$<>"" and req_date$<not_b4_date$ then
-		bad_date = 1
+		bad_date$ = reqd_date$+" "+before$+" "+nb4_date$
 	endif
 
 	if promise_date$<>"" and not_b4_date$<>"" and promise_date$<not_b4_date$ then
-		bad_date = 1
+		bad_date$ = prom_date$+" "+before$+" "+nb4_date$
 	endif
 
-	if bad_date then
-		msg_id$="INVALID_DATE"
+	if bad_date$ <> ""
+		msg_id$="INVALID_PO_DATE"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=bad_date$
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
