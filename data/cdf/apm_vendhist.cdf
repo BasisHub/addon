@@ -1,3 +1,9 @@
+[[APM_VENDHIST.BSHO]]
+if user_tpl.multi_dist$="Y"
+	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",1)
+else
+	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",-1)
+endif
 [[APM_VENDHIST.BTBL]]
 rem --- Retrieve parameter data
 
@@ -12,12 +18,6 @@ rem -- store info needed for validation, etc., in user_tpl$
 	user_tpl.multi_dist$=aps01a.multi_dist$
 	user_tpl.ret_flag$=aps01a.ret_flag$
  	user_tpl.dflt_ap_type$=aps01a.ap_type$
-
-if user_tpl.multi_dist$="Y"
-	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",1)
-else
-	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",-1)
-endif
 
 rem --- disable access to AP Type if not using multi types
 

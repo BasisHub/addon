@@ -12,19 +12,19 @@ rem --- open files
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APM_VENDMAST", open_opts$[1]="OTA"
 	open_tables$[2]="IVM_LSMASTER", open_opts$[2]="OTA"
-	open_tables$[3]="APS_PARAMS",   open_opts$[3]="OTA"
+	rem open_tables$[3]="APS_PARAMS",   open_opts$[3]="OTA"
 	open_tables$[4]="IVS_PARAMS",   open_opts$[4]="OTA"
 
 	gosub open_tables
 
 	apm_vendmast_dev=num(open_chans$[1]); dim apm_vendmast$:open_tpls$[1]
 	ivm_lsmaster_dev=num(open_chans$[2]); dim ivm_lsmaster$:open_tpls$[2]
-	aps_params_dev=num(open_chans$[3]);   dim aps_params$:open_tpls$[3]
+	rem aps_params_dev=num(open_chans$[3]);   dim aps_params$:open_tpls$[3]
 	ivs_params_dev=num(open_chans$[4]);   dim ivs_params$:open_tpls$[4]
 
 rem --- Retrieve parameter records
 
-    find record (aps_params_dev,key=firm_id$+"AP00",err=std_missing_params) aps_params$
+    rem find record (aps_params_dev,key=firm_id$+"AP00",err=std_missing_params) aps_params$
     find record (ivs_params_dev,key=firm_id$+"IV00",err=std_missing_params) ivs_params$
 
 rem --- Parameters

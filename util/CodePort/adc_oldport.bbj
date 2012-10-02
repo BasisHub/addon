@@ -7,32 +7,34 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 rem  
-rem --- This overlay performs the initializations for the program
-rem --- conversion process and then runs adx_codeportfile to get
-rem --- the name of the next source program to convert.
-rem 
-
-
-pro5lst: 
-    let description$="Creating source listing from program executable..."
-    gosub display_step
-    let tmpfile$=outputdir$+basename$+txt$
-    call "_label",pathname$,tmpfile$,status$,1
-    let command$=pro5lst$+" -w1024 "+tmpfile$
-    let x=scall(command$)
-    let tmpfile$=outputdir$+newname1$,txtfile$=basename$+txt$
-    erase outputdir$+newname1$,err=rename_tmpfile
-    rename_tmpfile: rename outputdir$+basename$,tmpfile$
-    rem let txtfile$=outputdir$+basename$+txt$
-    gosub display_done
-
-gosub load_sourcecode
-gosub replace_code
+rem --- This overlay does initial conversion on a v6 program (to make it like v7)
+rem --- and then feeds into adx_codeportconv. 
+ 
+rem --- Incoming is filename from srcFiles! -- XXX.XX format for v6, basename$=xxx_xx
+rem --- Calls _label util (converts line number references to labels), output to the outputdir$ as xxx_xx.lbl - this is still compiled code
+rem --- Then execute bbjlst on xxx_xx.lbl, output as xxx_xx.lst
+rem --- Manipulate the text to make it look like a v7 pgm.
+rem --- This  becomes the input to adx_codeportconv.bbj
+    
+    rd_meter_data$="Calling _label utility and then creating source listing from v6 program executable..."+basename$
+    rd_meter_action$="LST"
+    gosub disp_meter
+    let lblfile$=outputdir$+basename$+lbl$
+    call "_label",source_dir$+filename$,lblfile$,status$,1
+    lstfile$=outputdir$+basename$+lst$
+    erase lstfile$,err=*next
+    let command$="bbjlst -w1024 -xlst "+$22$+lblfile$+$22$
+    let x=scall(command$)  
+    
+    repfile$=filedir$+"replacements_oldport.ini"
+    gosub switch_replacements
+    gosub load_sourcecode
+    gosub replace_code
 
 rem --- Source Code changes
-    erase tmpfile$
-    string tmpfile$
-    open (txt_dev)tmpfile$
+    erase lstfile$
+    string lstfile$
+    open (txt_dev)lstfile$
     for i=1 to numlines
         rec$=lines$[i]
  
@@ -69,11 +71,11 @@ rem --- Source Code changes
 
 rem --- Make standard code blocks
     gosub load_sourcecode
-    erase tmpfile$
-    string tmpfile$
+    erase lstfile$
+    string lstfile$
     newnum=8700,arraynum=1
     dim temparray$[100]
-    open (txt_dev)tmpfile$
+    open (txt_dev)lstfile$
         for i=1 to numlines
             rec$=lines$[i]   
             
@@ -123,9 +125,9 @@ rem --- Make standard code blocks
 
 
 rem --- Add labels to source code 
-    erase tmpfile$
-    string tmpfile$
-    open (txt_dev)tmpfile$
+    erase lstfile$
+    string lstfile$
+    open (txt_dev)lstfile$
     for i=1 to numlines
         label$=""
         let rec$=lines$[i]
@@ -167,13 +169,16 @@ rem --- Add labels to source code
     next i
     close(txt_dev)
 
-rem --- Recompile program
-pro5cpl$=fnglobal$("+PRO5CPL","c:/basis/vpro5/pro5cpl.exe")
+rem --- Recompile program - save in outputdir$ as xxx_xx.lbl, which will be fed back to bbjlst in adx_codeportconv
 
-command$=pro5cpl$+" -m1024 -k -xbbx "+tmpfile$
-a=scall(command$)
-erase tmpfile$
-goto the_end
+    rd_meter_data$="Recompiling v6 listing after modifying to v7 standards..."+basename$
+    rd_meter_action$="LST"
+    gosub disp_meter
+   
+    erase lblfile$,err=*next
+    command$="bbjcpl -m1024 -xlbl "+$22$+lstfile$+$22$
+    a=scall(command$)
+    goto the_end
 
 
 rem --- Subroutines
@@ -356,10 +361,11 @@ return
 rem --- Load source listing
 load_sourcecode:
     dim lines$[9999]
-    let description$="Loading source listing..."
-    gosub display_step
+    rd_meter_data$="Loading source listing..."+basename$
+    rd_meter_action$="LST"
+    gosub disp_meter
     let txt_dev=unt,numlines=0
-    open (txt_dev)tmpfile$
+    open (txt_dev)lstfile$
 
     rem --- Top of source code read loop
     next_txt: 
@@ -372,17 +378,17 @@ load_sourcecode:
         goto next_txt
 
     load_sourcecode_exit: 
-        gosub display_done
         let original=numlines
     close (txt_dev)
 return
 
 rem --- Search and replace code as indicated in replacements.ini
 replace_code: 
-    let description$="Replacing code fragments as required..."
-    gosub display_step
+    rd_meter_data$="Replacing code fragments as required..."
+    rd_meter_action$="LST"
+    gosub disp_meter   
     for x=1 to numlines
-        let rec$=lines$[x]
+        let rec$=lines$[x]        
         for y=1 to replacements
             replacement_test: 
             let p=pos(oldcode$[y]=rec$),l=len(oldcode$[y])
@@ -394,7 +400,6 @@ replace_code:
         let lines$[x]=rec$
     next x
     rem --- Search and replace completed
-    gosub display_done
 return 
 
 rem --- Insert a blank line at line
@@ -415,30 +420,17 @@ delete_line:
     let lines$[numlines]="",numlines=numlines-1
 return
 
-rem --- Display message
-display_message: 
-    print fndatestamp$(0),message$
-    print (log_dev)fndatestamp$(0),message$,cr$
-return 
+disp_meter:rem --- Display Progress Meter
 
-rem --- Display step
-display_step: 
-    let message$=description$
-    gosub display_message
-return 
-
-rem --- Display step completion
-display_done: 
-    let message$=description$+"completed"
-    gosub display_message
-return 
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",rdSysGUI!,rdForm!,rdMeterWin!,rd_meter_title$,rd_meter_total_recs,rd_meter_proc_recs,rd_meter_data$,rd_meter_action$
+    print (log_dev)fndatestamp$(0),rd_meter_data$,cr$
+    return
 
 switch_replacements:
-rem --- now that we've gone from v6 to v7, and are about to go from v7 to v8,
-rem --- switch from replacements_oldport.ini to replacements.ini file 
+rem --- at beginning of pgm, switch to use v6 replacements (replacements_oldport.ini)
+rem --- at end, prior to passing control to adx_codeportconv, switch to v7 replacements (replacements.ini)
     dim oldcode$[999],newcode$[999]
     functions$=""
-    repfile$=filedir$+"replacements.ini"
     close (rep_dev)
     open (rep_dev)repfile$
 rem --- Load code replacement table
@@ -455,8 +447,10 @@ next_code_replacement:
     goto next_code_replacement
 
 load_replacements_exit:
-    let functions$=functions$+"fnitem$fnglobal(fnglobal$fnstr_pos("
-    let functions$=functions$+"fnget_table$fnget_rec_data$fnget_fld_data$"
+    if pos("oldport"=repfile$)=0
+        let functions$=functions$+"fnitem$fnglobal(fnglobal$fnstr_pos("
+        let functions$=functions$+"fnget_table$fnget_rec_data$fnget_fld_data$"
+    endif
 return
 
 rem --- Functions
@@ -482,10 +476,8 @@ def fnprogramname$(q$)
 fnend
 rem --- Exit to Codeport
 the_end: 
-    p=pos("."=tmpfile$,-1)
-    pathname$=tmpfile$(1,p)+"bbx"
-    bbxfile$=pathname$
     pgmdir$=outputdir$
+    repfile$=filedir$+"replacements.ini"
     gosub switch_replacements
     run "adx_codeportconv.bbj"
 finished: 

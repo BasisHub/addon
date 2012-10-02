@@ -24,7 +24,9 @@ if bal<>0
 	dim msg_tokens$[1]
 	msg_tokens$[1]=str(bal:m0$)
 	gosub disp_message
-	callpoint!.setStatus("ABORT")
+	if pos("PASSVALID"=msg_opt$)=0
+		callpoint!.setStatus("ABORT")
+	endif
 endif
 [[GLE_JRNLHDR.ADIS]]
 rem --- perform date validation

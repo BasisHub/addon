@@ -1,0 +1,109 @@
+rem before write
+rem This trigger assumes that it is being used in a non-modified Barista and Addon
+rem Version 6 environment. If there have been any modifications to these systems,
+rem be sure to thoroughly examine this trigger and test changes.
+
+	setopts $080872202c2e$
+
+	seterr throw_error
+
+rem ---  Get the Trigger object from the BBj File System
+
+    td! = BBjAPI().getFileSystem().getTriggerData()
+
+	aon_dir$=stbl("+V6DATA",err=std_exit)
+	wkdir$=stbl("+DIR_BRD",err=std_exit)
+
+rem --- Open v6 AP Vendor Master and Cross Reference tables
+
+	apm01_dev=unt
+	open (apm01_dev,err=throw_error) aon_dir$+"APM-01"
+	apm04_dev=unt
+	open (apm04_dev,err=throw_error) aon_dir$+"APM-04"
+
+	apm01_rec$="firm_id:C(2),vendor_id:c(6*=10),name:c(30),add1:c(24),add2:c(24),add3:c(24),"
+	apm01_rec$=apm01_rec$+"zip_code:c(9),phone:c(10),ext:c(4),contact:c(20),alt_sequence:c(10),"
+	apm01_rec$=apm01_rec$+"date_open:c(3),hold_flag:c(1),fed_no:c(15),vend_1099:c(1),"
+	apm01_rec$=apm01_rec$+"vend_acct:c(10),fax:c(10),fob:c(15),ship_via:c(15),reserved:c(20*=10)"
+	dim apm01_rec$:apm01_rec$
+	apm04a_rec$="firm_id:c(2),code:c(1),alt_sequence:c(10),vendor_id:c(6)"
+	dim apm04a_rec$:apm04a_rec$
+	apm04b_rec$="firm_id:c(2),code:c(1),zip_code:c(9),vendor_id:c(6)"
+	dim apm04b_rec$:apm04b_rec$
+	
+rem --- Set data in output record
+
+	tpl_dev=unt
+	open (tpl_dev,err=throw_error) wkdir$+"ddm_table_tpls.dat"
+	read (tpl_dev,key=pad("APM_VENDMAST",16),dom=throw_error) *,*,vend_rec$
+	dim vend_rec$:vend_rec$
+	vend_rec$=td!.getWriteBuffer()
+
+rem --- Read old vendor record and write new v6 apm-01 and apm-04 recs
+
+	read record (apm01_dev,key=vend_rec$(1,8),dom=*next) apm01_rec$
+
+	remove (apm04_dev,key=apm01_rec.firm_id$+"A"+apm01_rec.alt_sequence$+apm01_rec.vendor_id$,dom=*next)
+	apm04a_rec.firm_id$=vend_rec.firm_id$
+	apm04a_rec.code$="A"
+	apm04a_rec.alt_sequence$=vend_rec.alt_sequence$
+	apm04a_rec.vendor_id$=vend_rec.vendor_id$
+	apm04a_rec$=field(apm04a_rec$)
+	write (apm04_dev,key=apm04a_rec$) apm04a_rec$
+
+	remove (apm04_dev,key=apm01_rec.firm_id$+"B"+apm01_rec.zip_code$+apm01_rec.vendor_id$,dom=*next)
+	apm04b_rec.firm_id$=vend_rec.firm_id$
+	apm04b_rec.code$="B"
+	apm04b_rec.zip_code$=vend_rec.zip_code$
+	apm04b_rec.vendor_id$=vend_rec.vendor_id$
+	apm04b_rec$=field(apm04b_rec$)
+	write (apm04_dev,key=apm04b_rec$) apm04b_rec$
+
+	apm01_rec.firm_id$=vend_rec.firm_id$
+	apm01_rec.vendor_id$=vend_rec.vendor_id$
+	apm01_rec.name$=vend_rec.vendor_name$
+	apm01_rec.add1$=vend_rec.addr_line_1$
+	apm01_rec.add2$=vend_rec.addr_line_2$
+	apm01_rec.add3$=vend_rec.city$ + vend_rec.state_code$
+	apm01_rec.zip_code$=vend_rec.zip_code$
+	apm01_rec.phone$=vend_rec.phone_no$
+	apm01_rec.ext$=vend_rec.phone_exten$
+	apm01_rec.contact$=vend_rec.contact_name$
+	apm01_rec.alt_sequence$=vend_rec.alt_sequence$
+	apm01_rec.date_open$=fnpackdate$(vend_rec.opened_date$)
+	apm01_rec.hold_flag$=vend_rec.hold_flag$
+	apm01_rec.fed_no$=vend_rec.federal_id$
+	apm01_rec.vend_1099$=vend_rec.vendor_1099$
+	apm01_rec.vend_acct$=vend_rec.vendor_acct$
+	apm01_rec.fax$=vend_rec.fax_no$
+	apm01_rec.fob$=vend_rec.fob$
+	apm01_rec.ship_via$=vend_rec.ap_ship_via$
+
+	write record(apm01_dev,key=apm01_rec$(1,8))apm01_rec$
+	
+	goto std_exit
+
+rem --- Functions
+
+	rem --- Pack CCYYMMDD into a 3 character version 6 date format
+	def fnpackdate$(q$)
+		if len(q$)<> 8 or cvs(q$,3)=""
+			return "   "
+		endif
+		m1$=chr(num(q$(5,2))+32)
+		d1$=chr(num(q$(7,2))+32)
+		if q$(1,2)="19"
+			y1$=chr(num(q$(3,2))+32)
+		else
+			y1$=chr(num(q$(3,2))+132)
+		endif
+		q1$=y1$+m1$+d1$
+		return q1$
+	fnend
+
+throw_error:
+
+	throw lst(pgm(tcb(5))) , err
+	goto std_exit
+	
+std_exit:

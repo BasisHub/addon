@@ -1,3 +1,5 @@
+[[IVE_TRANSFER.ARAR]]
+	callpoint!.setDevObject("qty_ok","")
 [[IVE_TRANSFER.ITEM_ID.AINV]]
 rem --- Item synonym processing
 
@@ -168,6 +170,8 @@ rem	util.disableField(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 	user_tpl.prev_qty = 0
 	user_tpl.this_item_is_lot_ser% = 0
 	user_tpl.item_is_serial% = 0
+
+	callpoint!.setDevObject("qty_ok","")
 [[IVE_TRANSFER.TRANS_QTY.BINP]]
 print "debug - in TRANS_QTY.BINP"; rem debug
 [[IVE_TRANSFER.INV_XFER_NO.BINP]]
@@ -505,9 +509,17 @@ rem ===========================================================================
 	endif
 
 	rem --- Qty can't be more than available
+	if callpoint!.getDevObject("qty_ok")<>"Y"
 	if qty > user_tpl.avail then
-		callpoint!.setMessage("IV_QTY_OVER_AVAIL:" + str(user_tpl.avail))
-		failed = 1
+		msg_id$ = "IV_QTY_OVER_AVAIL"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(user_tpl.avail)
+		gosub disp_message
+		if pos("PASSVALID"=msg_opt$)=0
+			failed = 1
+		else
+			callpoint!.setDevObject("qty_ok","Y")
+		endif
 		goto check_qty_end
 	endif
 

@@ -59,6 +59,12 @@ validate_margin:
 	endif
 return
 
+remove_process_bar: rem -- remove process bar
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+return
+
 #include std_missing_params.src
 [[IVC_PRICCODE.BSHO]]
 num_files=2
@@ -69,13 +75,29 @@ gosub open_tables
 ars_params_chn=num(open_chans$[1]),ars_params_tpl$=open_tpls$[1]
 ivs_params_chn=num(open_chans$[2]),ivs_params_tpl$=open_tpls$[2]
 
-rem --- Dimension miscellaneous string templates
-
-	dim ars01a$:ars_params_tpl$,ivs01a$:ivs_params_tpl$
-
+rem --- check to see if main AR param rec (firm/AR/00) exists; if not, tell user to set it up first
+	dim ars01a$:ars_params_tpl$
 	ars01a_key$=firm_id$+"AR00"
-	ivs01a_key$=firm_id$+"IV00"
-	find record (ars_params_chn,key=ars01a_key$,err=std_missing_params) ars01a$
-	find record (ivs_params_chn,key=ivs01a_key$,err=std_missing_params) ivs01a$
+	find record (ars_params_chn,key=ars01a_key$,err=*next) ars01a$
+	if cvs(ars01a.current_per$,2)=""
+		msg_id$="AR_PARAM_ERR"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		gosub remove_process_bar
+		release
+	endif
 
+rem --- check to see if main IV param rec (firm/IV/00) exists; if not, tell user to set it up first
+	dim ivs01a$:ivs_params_tpl$
+	ivs01a_key$=firm_id$+"IV00"
+	find record (ivs_params_chn,key=ivs01a_key$,err=*next) ivs01a$
+	if cvs(ivs01a.warehouse_id$,2)=""
+		msg_id$="IV_PARAM_ERR"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		gosub remove_process_bar
+		release
+	endif
 	precision num(ivs01a.precision$)

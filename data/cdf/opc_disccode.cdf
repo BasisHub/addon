@@ -25,6 +25,15 @@ rem --- Open/Lock files
 	endif
 	ads01_dev=num(chans$[1])
 	dim ars01a$:templates$[1]
-rem --- Retrieve parameter data/see if IV is installed
+
+rem --- check to see if main AR param rec (firm/AR/00) exists; if not, tell user to set it up first
 	ars01a_key$=firm_id$+"AR00"
- 	find record (ads01_dev,key=ars01a_key$,ERR=std_missing_params) ars01a$
+	find record (ads01_dev,key=ars01a_key$,err=*next) ars01a$
+	if cvs(ars01a.current_per$,2)=""
+		msg_id$="AR_PARAM_ERR"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		gosub remove_process_bar
+		release
+	endif

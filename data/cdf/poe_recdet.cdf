@@ -552,7 +552,7 @@ endif
 callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)
 
-callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.PO_LINE_CODE")
+rem callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.PO_LINE_CODE"); rem shouldn't need now that Barista bug 3999 fixed
 [[POE_RECDET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 rem --- this code was already here... is it right?

@@ -357,10 +357,10 @@ rem --- Loop Starting
             l=l9+1
         endif
         if poe01a.ap_terms_code$<>t2$ then gosub terms_break
+        gosub shipto_break;rem --- loads dropship or warehouse address into a$
 
         find record (poe11_dev,key=firm_id$ + req_no$ + internal_seq_no$,dom=*continue) poe11a$
 
-        rem *** if poe11a.warehouse_id$ <> t3$ gosub shipto_break
         if poe11a.po_line_code$ <> t4$ gosub line_code_break
 
 rem --- Print detail
@@ -487,15 +487,15 @@ report_heading: rem --- Report Heading
     tmp=fntext(70,168,n$(71),textfont!,page!)    
     tmp=fntext(70,180,n$(106,35),textfont!,page!)
 
-    rem --- Ship From Address
+    rem --- Ship To Address
     tmp=fnbox(285,126,50,96,page!)
-    tmp=fntext2(285,132,48,132,Translate!.getTranslation("AON_SHIP-FROM"),boldfont!,right_justify,page!)
-    tmp=fntext(340,132,shipfrom$,textfont!,page!)
-    tmp=fntext(340,144,s$(1,35),textfont!,page!)
-    tmp=fntext(340,156,s$(35,shipflen),textfont!,page!)
-    tmp=fntext(340,168,s$(71,shipflen),textfont!,page!)    
-    tmp=fntext(340,180,s$(106,shipflen),textfont!,page!)
-
+    tmp=fntext2(285,132,48,132,Translate!.getTranslation("AON_SHIP-TO"),boldfont!,right_justify,page!)
+    tmp=fntext(340,132,ship_to$,textfont!,page!)
+    tmp=fntext(340,144,a$(1,shipflen),textfont!,page!)
+    tmp=fntext(340,156,a$(36,shipflen),textfont!,page!)
+    tmp=fntext(340,168,a$(71,shipflen),textfont!,page!)    
+    tmp=fntext(340,180,a$(106,shipflen),textfont!,page!)
+    tmp=fntext(340,204,drop_ship$,textfont!,page!)
 
     rem --- Terms
     tmp=fnbox(20,222,550,24,page!)
@@ -661,7 +661,7 @@ print_total: rem --- Total
 
         gosub print_tot
 
-        if l+footcnt > l9 then gosub print_continued
+        if l+footcnt+shipfrom > l9 then gosub print_continued
         
         if nomsg_flg = 0
 
@@ -670,6 +670,18 @@ print_total: rem --- Total
                 gosub text_only
             next dlx
         
+        endif
+        
+        rem --- tack ship-from at end of PO Req, if used
+        if cvs(s$,3)<>""
+            gen_text$="";rem blank before
+            gosub text_only
+            gen_text$=Translate!.getTranslation("AON_SHIP_FROM:_")+shipfrom$
+            gosub text_only
+            for sx=1 to len(s$) step 35
+                gen_text$=s$(sx,35)
+                gosub text_only
+            next sx
         endif
 
         tmp=fnbox(440,664,130,24,page!)
@@ -712,20 +724,46 @@ vendor_break: rem --- Vendor Break
     call "adc_address.aon",n$,24,3,9,35
     return
 
+shipto_break: rem --- Ship-To Break
+
+    if poe01a.dropship$="Y"
+        drop_ship$="*** DROPSHIP ***"
+        ship_to$=poe01a.ds_name$
+        a$=poe01a.ds_addr_line_1$+poe01a.ds_addr_line_2$+poe01a.ds_addr_line_3$+poe01a.ds_city$+poe01a.ds_state_cd$+poe01a.ds_zip_code$
+    else
+        drop_ship$=""
+        dim ivm10c$:fattr(ivm10c$)
+        ivm10c.firm_id$=firm_id$,ivm10c.record_id_c$="C",ivm10c.warehouse_id$=poe11a.warehouse_id$,ivm10c.short_name$=nf$
+        t3$=poe11a.warehouse_id$
+        if cvs(poe11a.warehouse_id$,2)="" 
+            ivm10c.warehouse_id$=poe01a.warehouse_id$
+            t3$=poe01a.warehouse_id$;
+        endif
+        ivm10c_key$=firm_id$+"C"+ivm10c.warehouse_id$
+        find record (ivm10c_dev,key=ivm10c_key$,dom=*next) ivm10c$
+
+        ship_to$=ivm10c.short_name$
+        a$= ivm10c.addr_line_1$ + ivm10c.addr_line_2$ + ivm10c.addr_line_3$ + ivm10c.city$ + ivm10c.state_code$ + ivm10c.zip_code$
+    endif
+    
+    call "adc_address.aon",a$,24,4,9,35
+
+    return
+
 shipfrom_break: rem --- Ship-From Break
 
     dim apm05a_key$(10),apm05a$:fattr(apm05a$),s$(140)
     apm05a_key$=poe01a.firm_id$ + poe01a.vendor_id$ + poe01a.purch_addr$
     t1$=poe01a.vendor_id$+poe01a.purch_addr$
-    shipfrom$="SAME"
+    shipfrom$=""
+    shipfrom=0
     if cvs(poe01a.purch_addr$,2)="" return
     apm05a.name$=nf$
     find record (apm05_dev,key=apm05a_key$,dom=*next) apm05a$
 
-rem --- 
-
     s$= apm05a.addr_line_1$ + apm05a.addr_line_2$ + apm05a.city$ + apm05a.state_code$ + apm05a.zip_code$
-    shipfrom$=poe01a.purch_addr$+" "+apm05a.name$
+    shipfrom$=apm05a.name$
+    shipfrom=4
     call pgmdir$+"adc_address.aon",s$,24,3,9,35
 
     return

@@ -6,8 +6,7 @@ rem --- Recalculate totals
 	gosub calculate_tax
 	gosub disp_totals
 
-rem --- Unremark this next line if we ever get around to fixing bug 4797 which blocks 4753 which this line should solve
-rem	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
+	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
 [[OPE_ORDHDR.DISCOUNT_AMT.AVAL]]
 rem --- Discount Amount cannot exceed Total Sales Amount
 
@@ -295,20 +294,17 @@ rem --- Check Ship-to's
 
 rem --- Check to see if we need to go to the totals tab
 
-rem --- This is going to need help from Sam to figure out how to focus on the Totals tab.
-rem	if pos(callpoint!.getDevObject("totals_warn")="24")>0
-rem		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0 then
-rem			callpoint!.setMessage("OP_TOTALS_TAB")
-rem			focusme! = util.forceFocus(callpoint!, "OPE_ORDHDR.SLSPSN_CODE")
-
-rem			focusme!.focus()
-rem			forceFocus(Callpoint callpoint!, BBjString data_name$)
-rem			getControl(Callpoint callpoint!, BBjString data_name$)
-rem			callpoint!.setFocus("OPE_ORDHDR.SLSPSN_CODE")
-rem			callpoint!.setStatus("ABORT")
-rem			break
-rem		endif
-rem	endif
+rem --- Force focus on the Totals tab
+goto no_warn;rem jpb Work on this for bug 4717
+	if pos(callpoint!.getDevObject("totals_warn")="24")>0
+		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0 then
+			callpoint!.setMessage("OP_TOTALS_TAB")
+			callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+no_warn:
 [[OPE_ORDHDR.CUSTOMER_ID.AVAL]]
 print "CUSTOMER_ID:AVAL"; rem debug
 	
@@ -318,7 +314,7 @@ print "CUSTOMER_ID:AVAL"; rem debug
 	custdet_dev = fnget_dev("ARM_CUSTDET")
 	dim custdet_tpl$:fnget_tpl$("ARM_CUSTDET")
 
-	find record (custdet_dev, key=firm_id$+cust_id$+"  ") custdet_tpl$
+	find record (custdet_dev, key=firm_id$+cust_id$+"  ",dom=*next) custdet_tpl$
 
 rem --- Set customer in OrderHelper object
 
@@ -1291,7 +1287,7 @@ rem ==========================================================================
 
 	custmast_dev = fnget_dev("ARM_CUSTMAST")
 	dim custmast_tpl$:fnget_tpl$("ARM_CUSTMAST")
-	find record (custmast_dev, key=firm_id$+cust_id$) custmast_tpl$
+	find record (custmast_dev, key=firm_id$+cust_id$,dom=*next) custmast_tpl$
 
 	callpoint!.setColumnData("<<DISPLAY>>.BADD1",  custmast_tpl.addr_line_1$)
 	callpoint!.setColumnData("<<DISPLAY>>.BADD2",  custmast_tpl.addr_line_2$)
@@ -1311,7 +1307,7 @@ rem ==========================================================================
 	custdet_dev = fnget_dev("ARM_CUSTDET")
 	dim custdet_tpl$:fnget_tpl$("ARM_CUSTDET")
 
-	find record (custdet_dev, key=firm_id$+cust_id$+"  ") custdet_tpl$
+	find record (custdet_dev, key=firm_id$+cust_id$+"  ",dom=*next) custdet_tpl$
 
 	user_tpl.balance = custdet_tpl.aging_future+
 :		custdet_tpl.aging_cur+
@@ -1526,14 +1522,15 @@ rem ==========================================================================
 			ope01_dev = fnget_dev("OPE_ORDHDR")
 			dim ope01a$:fnget_tpl$("OPE_ORDHDR")
 			call stbl("+DIR_PGM")+"adc_copyfile.aon",opt01a$,ope01a$,status
-
 			ope01a.ar_inv_no$      = ""
 			ope01a.backord_flag$   = ""
 			ope01a.comm_amt        = ope01a.comm_amt*line_sign
 			ope01a.customer_po_no$ = ""
 			ope01a.discount_amt    = ope01a.discount_amt*line_sign
+			callpoint!.setDevObject("disc_amt",str(ope01a.discount_amt))
 			ope01a.expire_date$    = ""
 			ope01a.freight_amt     = ope01a.freight_amt*line_sign
+			callpoint!.setDevObject("frt_amt",str(ope01a.freight_amt))
 			ope01a.invoice_date$   = user_tpl.def_ship$
 			ope01a.invoice_type$   = "S"
 			ope01a.lock_status$ = "N"

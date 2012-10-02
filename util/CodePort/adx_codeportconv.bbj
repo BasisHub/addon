@@ -7,6 +7,20 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 rem 
+
+rem --- If converting version 7, we should be coming into this program with a bbxfile$ (tokenized bbx pgm) of source_dir$+xxx_xx.bbx.
+rem --- This program will call the _label utility on bbxfile$, resulting in a file in outputdir$ with a .lbl extension (still tokanized)
+
+rem --- If converting v6, we've already called adc_oldport, which calls the _label utility, then calls bbjlst, creating lstfile$ of outputdir$+xxx_xx.lst,
+rem --- It massages that text to look like a v7 program.  Finally, it re-compiles using bbjcpl, saving back into the xxx_xx.lbl file. 
+
+rem --- Given the v6 or 7 tokenized .lbl file, this program uses bbjlst, making a new listfile w/ line numbers removed, saving to outputdir$ as xxx_xx.lst (lstfile$).
+
+rem --- From there, this program opens/reads xxx_xx.lst and loads it into a lines$[] array for further text manipulation
+rem --- Control then continues on into adx_codeportlbls and adx_codeporterrs programs, 
+rem ---     where lines$[] array is finally saved as source in outputdir$ as newfile$ (xxx_xx plus the extension specified in the option entry form).
+rem --- Before moving on to next program or at the end, lblfile$ and lstfile$ are removed from outputdir$, leaving only the new source file.
+
 rem --- Initializations
     dim iolists$[99],resets$[99]
     let iolists=0,resets=0
@@ -33,9 +47,10 @@ rem --- parameter record is read.
 
 rem --- Convert program
 convert_program: 
-    rem --- Convert line number references to labels
-    gosub convert_linenumbers
-    rem --- Convert program from executable to source listing
+
+    rem --- Convert line number references to labels for v7 files (already done in adc_oldport.bbj if converting v6)
+    if source_version=7 then gosub convert_linenumbers
+    rem --- Convert program from executable to source listing, removing line numbers
     gosub bbjlst
     rem --- Load source listing
     gosub load_sourcecode
@@ -87,51 +102,42 @@ rem --- Run the next overlay
 next_overlay: 
     run "adx_codeportlbls.bbj",err=the_end
 
-rem --- Convert line number references to labels
+rem --- Convert line number references to labels for v7 files (bbxfile$ is tokenized .bbx file, lblfile$ is still tokenized - but now in outputdir$)
 convert_linenumbers: 
-    let message$="Converting "+pathname$+"..."
-    gosub display_message
-    let description$="Converting line number references to labels..."
-    gosub display_step
-    let tmpfile$=pgmdir$+basename$+tmp$
-    call "_label",pathname$,tmpfile$,status$,1
-    gosub display_done
+    let rd_meter_data$="Calling _label utility for v7 executable..."+basename$
+    gosub disp_meter
+    let lblfile$=outputdir$+basename$+lbl$   
+    call "_label",bbxfile$,lblfile$,status$,1 
 return
 
 
-rem --- Convert program from executable to source listing
+rem --- Convert v6 or v7 program from executable to source listing (saved with .lst extension as lstfile$)
 bbjlst: 
-    let description$="Creating source listing from program executable..."
-    gosub display_step
-    rem --- let command$=pro5lst$+" -w1024 -l "+tmpfile$
-    command$="bbjlst.exe -w1024 -l "+tmpfile$
+    let rd_meter_data$="Creating source listing from v7 program executable..."+basename$
+    gosub disp_meter 
+    lstfile$=outputdir$+basename$+lst$
+    erase lstfile$,err=*next    
+    command$="bbjlst -w1024 -l -xlst "+$22$+lblfile$+$22$
     let x=scall(command$)
-    let tmpfile$=pgmdir$+basename$,txtfile$=basename$+txt$
-    erase pgmdir$+basename$+txt$,err=rename_tmpfile
-    rename_tmpfile: rename tmpfile$,txtfile$
-    let txtfile$=pgmdir$+basename$+txt$,tmpfile$=tmpfile$+tmp$
-    gosub display_done
 return
 
 
 rem --- Load source listing
+rem --- executed twice; first time right after doing the bbjlst, 2nd time after converting to lower case
+rem --- continuation lines should be found first time thru, so shouldn't find any after doing lower case routine
 load_sourcecode:
     dim lines$[9999]
-    let description$="Loading source listing..."
-    gosub display_step
+    let rd_meter_data$="Loading source listing..."+lstfile$
+    gosub disp_meter
     let txt_dev=unt,numlines=0
-    open (txt_dev)txtfile$
+    open (txt_dev)lstfile$
 
     rem --- Top of source code read loop
     next_txt: 
         read (txt_dev,end=load_sourcecode_exit)rec$
-        let rec$=cvs(rec$,2)
         if rec$="" then goto next_txt
-        let l=len(rec$),linenum=0
-        if l<7 then goto store_line
-        if l>5 then let linenum=num(rec$(1,5),err=store_line)
-        if linenum then if rec$(6,1)<>":" then goto store_line
-        let rec$=cvs(rec$(7),2)
+        if rec$(1,1)<>":" then goto store_line        
+        rec$=rec$(2)
         let lines$[numlines]=lines$[numlines]+rec$
     goto next_txt
 
@@ -142,54 +148,46 @@ load_sourcecode:
         goto next_txt
 
     load_sourcecode_exit: 
-        gosub display_done
         let original=numlines
+      
 return
 
 rem --- Convert to lower case
 lower_case: 
-    let description$="Performing case conversion..."
-    gosub display_step
+    let rd_meter_data$="Performing case conversion..."+lstfile$
+    gosub disp_meter   
     close (txt_dev)
-    erase txtfile$
-    string txtfile$
-    open (txt_dev)txtfile$
+    erase lstfile$
+    string lstfile$
+    open (txt_dev)lstfile$
     for x=1 to numlines
-        let rec$=str(100000+x:"000000-")+lines$[x]
+        rec$=lines$[x]
         for i=1 to len(rec$)
             if mod(pos($22$=rec$(1,i),1,0),2)=0 rec$(i,1)=cvs(rec$(i,1),8)
         next i
         write (txt_dev)rec$
     next x
-    close (txt_dev)
+    close (txt_dev) 
     gosub load_sourcecode
-
-    rem --- Strip line numbers from each line and store it
-    for x=1 to numlines
-        let lines$[x]=lines$[x](8)
-    next x
-    rem --- Delete the EXECUTE'd lines
-    rem delete 100000,199999
-    gosub display_done
 return 
 
 rem --- Replace standard sections with temporary #include's
 std_includes: 
-    let description$="Replacing standard program sections with #include's..."
+    let rd_meter_data$="Replacing standard program sections with #include's..."
     let action=2,options$[1]=basename$
     gosub modify_code
 return 
 
 rem --- Remove any existing date functions
 replace_functions: 
-    let description$="Replacing standard date handling functions..."
+    let rd_meter_data$="Replacing standard date handling functions..."
     let action=3
     gosub modify_code
 return
 
 rem --- Formatting comments
 format_comments: 
-    let description$="Formatting comment lines..."
+    let rd_meter_data$="Formatting comment lines..."
     let action=4,options$[1]=basename$
     gosub modify_code
 return 
@@ -197,35 +195,35 @@ return
 rem --- Update copyright
 update_copyright: 
     let action=2
-    let description$="Updating program copyright..."
+    let rd_meter_data$="Updating program copyright..."
     gosub initializations
 return 
 
 rem --- Move labels to separate line (except rem's)
 move_labels: 
-    let description$="Moving labels..."
+    let rd_meter_data$="Moving labels..."
     let action=6
     gosub modify_code
 return 
 
 rem --- Process simple LET statements
     let_statements: 
-    let description$="Processing simple LET statements..."
+    let rd_meter_data$="Processing simple LET statements..."
     let action=7
     gosub modify_code
 return 
 
 rem --- Indent code where necessary
 indent_code: 
-    let description$="Indenting code as necessary..."
+    let rd_meter_data$="Indenting code as necessary..."
     let action=8
     gosub modify_code
 return 
 
 rem --- Storing IOLIST's
 store_iolists: 
-    let description$="Storing IOLIST's..."
-    gosub display_step
+    let rd_meter_data$="Storing IOLIST's..."
+    gosub disp_meter
     for x=1 to numlines
         let rec$=cvs(lines$[x],8),stored=0
         if pos(": iolist"=rec$)=0 or pos("sys01"=rec$) then continue
@@ -234,13 +232,12 @@ store_iolists:
         next z
         if stored=0 then let iolists=iolists+1,iolists$[iolists]=rec$
     next x
-    gosub display_done
 return
 
 rem --- Check code for channel references not using an IOLIST
 channel_references: 
-    let description$="Checking for channel references..."
-    gosub display_step
+    let rd_meter_data$="Checking for channel references..."
+    gosub disp_meter
     for x=1 to numlines
         let rec$=cvs(lines$[x],1+2+8)
         dev_check: 
@@ -257,7 +254,6 @@ channel_references:
         if b=0 then let iolists=iolists+1,iolists$[iolists]=fnerror$(x$+"a: Channel reference",x)
         if cvs(rec$,2)<>"" then goto dev_check
     next x
-    gosub display_done
 return 
 
 rem --- Parse IOLIST's (Not implemented/Reserved for future use)
@@ -268,56 +264,56 @@ rem --- Insert initialization code
 program_initializations: 
     let action=0
     if basename$(3,1)="c" then let action=1
-    let description$="Inserting program initialization code..."
+    let rd_meter_data$="Inserting program initialization code..."
     gosub initializations
 return 
 
 rem --- Replace IOLIST's with record/template processing
 iolist_references: 
-    let description$="Replacing iolist's with record/template processing..."
+    let rd_meter_data$="Replacing iolist's with record/template processing..."
     let action=9
     gosub modify_code
 return 
 
 rem --- Remove IOLIST lines
 remove_iolists: 
-    let description$="Removing IOLIST statements..."
+    let rd_meter_data$="Removing IOLIST statements..."
     let action=10
     gosub modify_code
 return 
 
 rem --- Combine labels with previous comment where possible
 combine_labels: 
-    let description$="Building combined paragraphs..."
+    let rd_meter_data$="Building combined paragraphs..."
     let action=11
     gosub modify_code
 return 
 
 rem --- Remove the then clause from if statements
 remove_thens: 
-    let description$="Removing the THEN clause from IF statements..."
+    let rd_meter_data$="Removing the THEN clause from IF statements..."
     let action=12
     gosub modify_code
 return 
 
 rem --- Perform final formatting
 final_indenting: 
-    let description$="Performing final formatting..."
+    let rd_meter_data$="Performing final formatting..."
     let action=13
     gosub modify_code
 return 
 
 rem --- Remove any extra blank lines
 remove_blanklines: 
-    let description$="Removing extraneous blank lines..."
+    let rd_meter_data$="Removing extraneous blank lines..."
     let action=14
     gosub modify_code
 return 
 
 rem --- Search and replace code as indicated in replacements.ini
 replace_code: 
-    let description$="Replacing code fragments as required..."
-    gosub display_step
+    let rd_meter_data$="Replacing code fragments as required..."
+    gosub disp_meter
     for x=1 to numlines
         let rec$=lines$[x]
         for y=1 to replacements
@@ -331,14 +327,13 @@ replace_code:
         let lines$[x]=rec$
     next x
     rem --- Search and replace completed
-    gosub display_done
 return 
 
 rem --- Replace #include's with actual code
 replace_includes: 
     if replace_includes=0 then goto replace_includes_skipped
-    let description$="Replacing #include's with actual code...",lowest=1
-    gosub display_step
+    let rd_meter_data$="Replacing #include's with actual code...",lowest=1
+    gosub disp_meter
     replace_pass: 
     let includes=0
     for x=1 to numlines
@@ -376,14 +371,13 @@ replace_includes:
         gosub delete_line
         next_insert_rem: 
     next x
-    gosub display_done
     replace_includes_skipped: 
 return 
 
 rem --- Remove any reset statements (RESET, CLEAR, BEGIN and START)
 remove_resets: 
-    let description$="Searching for reset verbs..."
-    gosub display_step
+    let rd_meter_data$="Searching for reset verbs..."
+    gosub disp_meter
     for line=1 to numlines
         let rec$=cvs(lines$[line],1+2)
         let l=len(rec$)
@@ -398,23 +392,21 @@ remove_resets:
         gosub delete_line
         let line=max(1,line-1)
     next line
-    gosub display_done
+
 return 
 
 rem --- Call adc_codeportconv.bbx to perform the requested action
 modify_code: 
-    gosub display_step
-    call "adc_codeportconv.bbj",action,lines$[all],options$[all],numlines
-    gosub display_done
+    gosub disp_meter
+    call "adc_codeportconv.bbj",action,lines$[all],options$[all],numlines,custom_lines! 
 return 
 
 rem --- Call adc_codeportint.bbx to perform initializations
 initializations: 
-    gosub display_step
-    let options$[1]=basename$,options$[2]=newname$,options$[3]=when$
+    gosub disp_meter
+    let options$[1]=basename$,options$[2]=newfile$,options$[3]=when$
     let options$[4]=utility$,options$[5]=version$,options$[6]=arguments$
     call "adc_codeportinit.bbj",action,options$[all],lines$[all],numlines,iolists$[all],iolists
-    gosub display_done
 return 
 
 rem --- Display range of LINES$ (debugging tool)
@@ -425,23 +417,11 @@ listlines:
     escape 
 return 
 
-rem --- Display message
-display_message: 
-    print fndatestamp$(0),message$
-    print (log_dev)fndatestamp$(0),message$,cr$
-return 
+disp_meter:rem --- Display Progress Meter
 
-rem --- Display step
-display_step: 
-    let message$=description$
-    gosub display_message
-return 
-
-rem --- Display step completion
-display_done: 
-    let message$=description$+"completed"
-    gosub display_message
-return 
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",rdSysGUI!,rdForm!,rdMeterWin!,rd_meter_title$,rd_meter_total_recs,rd_meter_proc_recs,rd_meter_data$,rd_meter_action$
+    print (log_dev)fndatestamp$(0),rd_meter_data$,cr$
+    return
 
 rem --- Insert a blank line at LINE
 insert_line: 

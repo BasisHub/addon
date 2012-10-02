@@ -11,14 +11,31 @@ rem --- This overlay performs the initializations for the program
 rem --- conversion process and then runs adx_codeportfile to get
 rem --- the name of the next source program to convert.
 rem 
-begin 
-rem --- Initialize title bar
-    let version$="v1.1.5",utility$=PGM(-2)
-    let title$="CodePort - Program Conversion Utility "+version$
-rem ---     let icon$=fnglobal$("+ADDONICON","images/addon_logo_16.ico")
-rem ---     print 'minicon'(icon$,0),'title'(title$)
-    print 'show',title$
 
+rem    setesc std_error
+    seterr std_error
+    
+rem --- Retrieve user selections from Option Entry form
+
+    source_version=num(option!.getOptionData("ADDON_VERSION"))
+    overwrite_ok=pos(option!.getOptionData("PROMPT_OVRWRT")="NY")-1
+    source_dir$=option!.getOptionData("SOURCE_DIR")
+    outputdir$=option!.getOptionData("TARGET_DIR")
+    arguments$=option!.getOptionData("OPTION_ARGS")
+    source_ext$=option!.getOptionData("SOURCE_EXT")
+    
+    srcFiles!=callpoint!.getDevObject("srcFiles");rem srcFiles! built in the ASVA of the option entry form - it's the list of files selected for porting
+    
+    keepfiles=0;rem this used to be an option "keep temporary work files?" -- no one ever says "yes," so forcing to "no" and no longer asking
+    replace_includes=1;rem this used to be an option "replace #includes with actual code?" -- no one ever says "no," so forcing to "yes" and no longer asking
+    
+    tmp_dir$=source_dir$
+    gosub standardize_path
+    source_dir$=tmp_dir$
+    tmp_dir$=outputdir$
+    gosub standardize_path
+    outputdir$=tmp_dir$
+    
 rem --- Retrieve directory paths from the config file
     let logdir$=fnglobal$("+CODEPORT_LOGS","")
     let filedir$=fnglobal$("+CODEPORT_FILES","")
@@ -35,16 +52,35 @@ rem --- Create and open log file
     string logfile$
     let log_dev=unt
     open (log_dev)logfile$
+    
+rem --- set up/init progress meter
+    rd_meter_data$="Converting version "+str(source_version)
+    rd_meter_total_recs=srcFiles!.size()
+    rd_meter_action$="WIN-LST-OK"
+    rd_meter_title$="CodePort"
+    gosub disp_meter
+    
+    if keepfiles<1 xwk$="Not retaining" else xwk$="Retaining"
+    rd_meter_data$=xwk$+" temporary work files"
+    rd_meter_action$="LST"
+    gosub disp_meter
+    
+    if replace_includes<1 xwk$="Not replacing" else xwk$="Replacing"
+    rd_meter_data$=xwk$+" #includes with actual code"
+    rd_meter_action$="LST"
+    gosub disp_meter 
 
-rem --- Parameters
-parameters: 
-    let pro5lst$=fnglobal$("+PRO5LST","C:/basis/vpro5/pro5lst.exe")
-    REM --- Initializations
+    if overwrite_ok<1 xwk$="Do not overwrite" else xwk$="Overwrite"
+    rd_meter_data$=xwk$+" without prompting"
+    rd_meter_action$="LST"
+    gosub disp_meter    
+
+rem --- Initializations
+
     dim oldcode$[999],newcode$[999],options$[10]
     let sysref$=$22$+"sy",cr$=$0d$
     let fornext=4,whilewend=6
-    let keepfiles=1,replace_includes=0,filelist=0
-    let tmp$=".tmp",txt$=".txt",src$=".src"
+    let tmp$=".tmp",txt$=".txt",src$=".src",lst$=".lst",lbl$=".lbl",bbx$=".bbx"
 
 rem --- Replacements for obsolete xref files/records
 rem --- xreffile$ = List of xref files
@@ -77,70 +113,6 @@ rem --- xrefindx$ = List of corresponding secondary index files
     let xrefindx$=xrefindx$+"sfe-01 sfe-01 sfe-01 sfm-01 sym-19 sym-49 "
     gosub iolist_format
 
-rem --- Startup notification
-    let message$=title$
-    gosub display_message
-    let message$="Program conversion initiated using "+utility$
-    gosub display_message
-
-rem --- Which version is being converted to 8?
-get_version:
-    let title$="Which Addon version(6/7) you want to convert to Addon 8?"
-    let default$="7"
-    call "user_selections.bbj",title$,default$,filedir$,source_version$
-    let source_version=num(source_version$,err=get_version)
-    if source_version<>6 then 
-        if  source_version<>7 then 
-            a=msgbox("Invalid version.. Try again")
-            goto get_version
-        endif
-    endif
-
-rem --- Keep temp files?
-    let prompt$="Retain temporary work files?"
-    let x=msgbox(prompt$,3+32+256,title$)
-    if x=2 then goto the_end
-    let message$="Retaining temporary work files"
-    if x=7 then let keepfiles=0,message$="Not retaining temporary work files"
-    gosub display_message
-
-rem --- Replace #includes with actual code?
-    let prompt$="Replace #include's with actual code?"
-    let x=msgbox(prompt$,3+32,title$)
-    if x=2 then goto the_end
-    if x=6 then let replace_includes=1
-    let message$="Not replacing #includes with actual code"
-    if x=6 then let message$="r"+message$(6)
-    gosub display_message
-
-rem --- Single program or file list?
-single_program: 
-    let prompt$="Convert single program?"
-    let x=msgbox(prompt$,3+32,title$)
-    if x=2 then goto the_end
-    if x=7 then goto get_filelist
-    let message$="Converting a single program"
-    gosub display_message
-    goto open_replacements
-
-rem --- Get the name of the filelist to be used
-get_filelist: 
-    let title$="Select folder to be used",STATUS=1
-    let filters$="All files (*.*)"+$0A$+"*.*"
-    pathname$=fileopen(title$,pgmdir$,"","",filters$,1)
-    if pathname$="::BAD::" then goto get_filelist
-    if pathname$="::CANCEL::" then goto single_program
-    let status=0
-
-rem --- Open filelist
-    let lstfile$=pathname$
-    let temp_pathname$=pathname$
-    let lst_dev=unt
-    open (lst_dev,err=get_filelist)lstfile$
-    let filelist=1
-    let message$="Using file list "+$22$+lstfile$+$22$
-    gosub display_message
-
 rem --- Open replacements.ini file
 open_replacements:
     if source_version=6 then let repfile$=filedir$+"replacements_oldport.ini"
@@ -152,8 +124,9 @@ open_replacements:
 rem --- Load code replacement table
 load_replacements: 
     if repfile=0 then goto missing_replacements
-    let description$="Loading code replacement table..."
-    gosub display_step
+    rd_meter_data$="Loading code replacement table..."
+    rd_meter_action$="LST"
+    gosub disp_meter 
 next_code_replacement: 
     read (rep_dev,end=load_replacements_exit)rec$
     let rec$=cvs(rec$,2)
@@ -168,7 +141,9 @@ next_code_replacement:
 
 rem --- Done loading replacements
 load_replacements_exit: 
-    gosub display_done
+    rd_meter_data$="Done loading code replacement table..."
+    rd_meter_action$="LST"
+    gosub disp_meter 
     if source_version=6 then goto next_overlay
     let functions$=functions$+"fnitem$fnglobal(fnglobal$fnstr_pos("
     let functions$=functions$+"fnget_table$fnget_rec_data$fnget_fld_data$"
@@ -176,14 +151,18 @@ load_replacements_exit:
 
 rem --- Missing code replacement file
     missing_replacements: 
-    let message$="missing replacements.ini file "+$22$+repfile$+$22$
-    gosub display_message
-    let message$="NO code replacements will be performed"
-    gosub display_message
+    rd_meter_data$="Missing replacements.ini file "+$22$+repfile$+$22$
+    rd_meter_action$="LST"
+    gosub disp_meter
+    rd_meter_data$="NO code replacements will be performed"
+    rd_meter_action$="LST"
+    gosub disp_meter
 
 rem --- Run next overlay
 next_overlay: 
-    let pgmdir1$=pgmdir$
+
+    filenum=-1
+    pgmdir1$=pgmdir$
     run "adx_codeportfile.bbj",err=the_end
 
 rem --- Convert xref files/records to IOLIST format
@@ -202,23 +181,20 @@ iolist_format:
     next x
 return 
 
-rem --- Display message
-display_message: 
-    print fndatestamp$(0),message$
-    print (log_dev)fndatestamp$(0),message$,cr$
-return 
+standardize_path:
+    if pos(tmp_dir$(len(tmp_dir$),1)="\/")=0 then tmp_dir$=tmp_dir$+"/"
+    while pos("\"=tmp_dir$)
+        tmp_dir$(pos("\"=tmp_dir$),1)="/"    
+    wend
 
-rem --- Display step
-display_step: 
-    let message$=description$
-    gosub display_message
-return 
 
-rem --- Display step completion
-display_done: 
-    let message$=description$+"completed"
-    gosub display_message
-return 
+return
+
+disp_meter:rem --- Display Progress Meter
+
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",rdSysGUI!,rdForm!,rdMeterWin!,rd_meter_title$,rd_meter_total_recs,rd_meter_proc_recs,rd_meter_data$,rd_meter_action$
+    print (log_dev)fndatestamp$(0),rd_meter_data$,cr$
+    return
 
 rem --- Functions
     def fndatestamp$(q)=DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
@@ -229,6 +205,30 @@ rem --- Return string value of passed STBL variable
         globalstr_exit: 
         return q1$
     fnend
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                               str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src    
 
 rem --- Exit utility
 the_end: 

@@ -1,3 +1,81 @@
+[[POE_INVSEL.AGRN]]
+rem --- enable/disable Invoice Detail button
+
+	gosub able_invoice_detail_button
+[[POE_INVSEL.BDGX]]
+rem --- disable Invoice Detail button
+	callpoint!.setOptionEnabled("INVB",0)
+[[POE_INVSEL.AOPT-INVB]]
+pfx$=firm_id$+callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+dim dflt_data$[3,1]
+dflt_data$[1,0]="AP_TYPE"
+dflt_data$[1,1]=callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")
+dflt_data$[2,0]="VENDOR_ID"
+dflt_data$[2,1]=callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")
+dflt_data$[3,0]="AP_INV_NO"
+dflt_data$[3,1]=callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+call stbl("+DIR_SYP")+"bam_run_prog.bbj","POE_INVDET",stbl("+USER_ID"),"MNT",pfx$,table_chans$[all],"",dflt_data$[all]
+
+rem --- re-align invsel w/ invdet based on changes user may have made in invdet
+rem --- corresponds to 6000 logic from old POE.EC
+
+poe_invsel_dev=fnget_dev("POE_INVSEL")
+poe_invdet_dev=fnget_dev("POE_INVDET")
+
+dim poe_invsel$:fnget_tpl$("POE_INVSEL")
+dim poe_invdet$:fnget_tpl$("POE_INVDET")
+
+other=0
+dim x$:str(callpoint!.getDevObject("poe_invsel_key"))
+last$=""
+
+ky$=firm_id$+callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+read (poe_invsel_dev,key=ky$,dom=*next)
+
+while 1
+	read record (poe_invsel_dev,end=*break)poe_invsel$
+	if pos(ky$=poe_invsel$)<>1 then break
+	if cvs(poe_invsel.po_no$,3)="" then let x$=poe_invsel.firm_id$+poe_invsel.ap_type$+poe_invsel.vendor_id$+poe_invsel.ap_inv_no$+poe_invsel.line_no$
+	tot_invsel=0,last$=poe_invsel.firm_id$+poe_invsel.ap_type$+poe_invsel.vendor_id$+poe_invsel.ap_inv_no$,last_seq$=poe_invsel.line_no$
+	read (poe_invdet_dev,key=ky$,dom=*next)
+	while 1
+		read record (poe_invdet_dev,end=*break)poe_invdet$
+		if pos(ky$=poe_invdet$)<>1 then break
+		if cvs(poe_invdet.po_no$,3)="" then other=1; continue
+		if poe_invdet.po_no$<>poe_invsel.po_no$ then continue
+		if cvs(poe_invsel.receiver_no$,3)<>"" and poe_invsel.receiver_no$<>poe_invdet.receiver_no$ then continue
+		tot_invsel=tot_invsel+round(num(poe_invdet.unit_cost$)*num(poe_invdet.qty_received$),2)
+	wend
+	poe_invsel.total_amount$=str(tot_invsel)
+	poe_invsel$=field(poe_invsel$)
+	write record (poe_invsel_dev)poe_invsel$
+wend
+
+if other
+	read (poe_invdet_dev,key=ky$,dom=*next)
+	while 1
+		read record (poe_invdet_dev,end=*break)poe_invdet$
+		if pos(ky$=poe_invdet$)<>1 then break
+		if cvs(poe_invdet.po_no$,3)<>"" then continue
+		tot_other=tot_other+num(poe_invdet.unit_cost$)
+	wend
+	dim poe_invsel$:fattr(poe_invsel$)
+	if cvs(x$,3)="" then x$=last$+str(num(last_seq$)+1:"000")
+	poe_invsel.firm_id$=x.firm_id$
+	poe_invsel.ap_type$=x.ap_type$
+	poe_invsel.vendor_id$=x.vendor_id$
+	poe_invsel.ap_inv_no$=x.ap_inv_no$
+	poe_invsel.line_no$=x.line_no$
+	find record (poe_invsel_dev,key=x$,dom=*next)poe_invsel$
+	poe_invsel.total_amount$=str(tot_other)
+	poe_invsel$=field(poe_invsel$)
+	write record (poe_invsel_dev)poe_invsel$
+endif
+
+callpoint!.setStatus("RECORD:["+ky$+"]")
+[[POE_INVSEL.AREC]]
+rem --- Make sure new grid row is enabled
+util.enableGridRow(Form!,num(callpoint!.getValidationRow()))
 [[POE_INVSEL.AGDR]]
 rem --- don't allow change on existing invsel row... user can delete/add
 util.disableGridRow(Form!,num(callpoint!.getValidationRow()))
@@ -25,6 +103,10 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or
 endif
 [[POE_INVSEL.AGRE]]
 gosub receiver_already_selected
+
+rem --- enable/disable Invoice Detail button
+
+	gosub able_invoice_detail_button
 [[POE_INVSEL.AGCL]]
 rem print 'show';rem debug
 
@@ -134,7 +216,7 @@ endif
 return
 
 write_poe_invdet:
-	
+
 	poe_invdet_dev=fnget_dev("POE_INVDET")
 	dim poe_invdet$:fnget_tpl$("POE_INVDET")
 
@@ -164,8 +246,10 @@ write_poe_invdet:
 	poe_invdet.qty_received$=pot_recdet.qty_received$
 	poe_invdet.receipt_cost$=pot_recdet.unit_cost$
 	if poc_linecode.line_type$="O" then let poe_invdet.qty_received$="1"
-print "writing poe_invdet: ",poe_invdet$
 	write record (poe_invdet_dev)poe_invdet$
+
+	rem --- enable Invoice Detail button
+	callpoint!.setOptionEnabled("INVB",1)
 return
 
 calc_grid_tots:
@@ -195,6 +279,20 @@ rem --- get context and ID of display controls, and redisplay w/ amts from calc_
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.DIST_BAL",str(dist_bal))
 return
 
+able_invoice_detail_button: rem --- enable/disable Invoice Detail button
+
+	poe_invdet=fnget_dev("POE_INVDET")
+	k$=""
+	invdet_key$=callpoint!.getHeaderColumnData("POE_INVHDR.FIRM_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")+
+:		callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+	read (poe_invdet,key=invdet_key$,dom=*next)
+	k$=key(poe_invdet,end=*next)
+	if pos(invdet_key$=k$)=1
+		callpoint!.setOptionEnabled("INVB",1)
+	else
+		callpoint!.setOptionEnabled("INVB",0)
+	endif
+return
 
 rem #include fndate.src
 

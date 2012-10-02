@@ -3,9 +3,17 @@ rem --- Discount Amount cannot exceed Total Sales Amount
 
 	disc_amt = num(callpoint!.getUserInput())
 	total_sales = num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
-	if disc_amt > total_sales then
-		disc_amt = total_sales
-		callpoint!.setUserInput(str(disc_amt))
+
+	if total_sales > 0
+		if disc_amt > total_sales then
+			disc_amt = total_sales
+			callpoint!.setUserInput(str(disc_amt))
+		endif
+	else
+		if disc_amt < total_sales then
+			disc_amt = total_sales
+			callpoint!.setUserInput(str(disc_amt))
+		endif
 	endif
 
 rem --- Recalculate Tax Amount and Totals
@@ -21,8 +29,7 @@ rem --- Recalculate Tax Amount and Totals
 	gosub calculate_tax
 	gosub disp_totals
 
-rem --- Unremark this next line if we ever get around to fixing bug 4797 which blocks 4753 which this line should solve
-rem	callpoint!.setFocus("OPE_INVHDR.DISCOUNT_AMT")
+	callpoint!.setFocus("OPE_INVHDR.DISCOUNT_AMT")
 [[OPE_INVHDR.FREIGHT_AMT.BINP]]
 rem --- Now we've been on the Totals tab
 
@@ -1229,7 +1236,7 @@ rem --- Display customer
 	custdet_dev = fnget_dev("ARM_CUSTDET")
 	dim custdet_tpl$:fnget_tpl$("ARM_CUSTDET")
 
-	find record (custdet_dev, key=firm_id$+cust_id$+"  ") custdet_tpl$
+	find record (custdet_dev, key=firm_id$+cust_id$+"  ",dom=*next) custdet_tpl$
 
 rem --- Set customer in OrderHelper object
 
@@ -1284,7 +1291,7 @@ rem ==========================================================================
 
 	custmast_dev = fnget_dev("ARM_CUSTMAST")
 	dim custmast_tpl$:fnget_tpl$("ARM_CUSTMAST")
-	find record (custmast_dev, key=firm_id$+cust_id$) custmast_tpl$
+	find record (custmast_dev, key=firm_id$+cust_id$,dom=*next) custmast_tpl$
 
 	callpoint!.setColumnData("<<DISPLAY>>.BADD1",  custmast_tpl.addr_line_1$)
 	callpoint!.setColumnData("<<DISPLAY>>.BADD2",  custmast_tpl.addr_line_2$)
@@ -1304,7 +1311,7 @@ rem ==========================================================================
 	custdet_dev = fnget_dev("ARM_CUSTDET")
 	dim custdet_tpl$:fnget_tpl$("ARM_CUSTDET")
 
-	find record (custdet_dev, key=firm_id$+cust_id$+"  ") custdet_tpl$
+	find record (custdet_dev, key=firm_id$+cust_id$+"  ",dom=*next) custdet_tpl$
 
 	user_tpl.balance = custdet_tpl.aging_future+
 :		custdet_tpl.aging_cur+
@@ -1469,18 +1476,19 @@ on_invoice:
 
 	msg_id$="ORD_ON_REG"
 	gosub disp_message
-
-	locked=1
-	callpoint!.setStatus("ABORT")
-
+	if pos("PASSVALID"=msg_opt$)=0
+		locked=1
+		callpoint!.setStatus("ABORT")
+	endif
 	goto end_lock
 
 update_stat:
 
 	msg_id$="INVOICE_IN_UPDATE"
 	gosub disp_message
-	locked=1
-
+	if pos("PASSVALID"=msg_opt$)=0
+		locked=1
+	endif
 
 end_lock:
 
@@ -1700,8 +1708,10 @@ rem ==========================================================================
 			ope01a.comm_amt        = ope01a.comm_amt*line_sign
 			ope01a.customer_po_no$ = ""
 			ope01a.discount_amt    = ope01a.discount_amt*line_sign
+			callpoint!.setDevObject("disc_amt",str(ope01a.discount_amt))
 			ope01a.expire_date$    = ""
 			ope01a.freight_amt     = ope01a.freight_amt*line_sign
+			callpoint!.setDevObject("frt_amt",str(ope01a.freight_amt))
 			ope01a.invoice_date$   = user_tpl.def_ship$
 			ope01a.invoice_type$   = "S"
 			ope01a.lock_status$ = "N"
@@ -2120,7 +2130,7 @@ rem ==========================================================================
 	custmast_dev = fnget_dev("ARM_CUSTMAST")
 	dim custmast_tpl$:fnget_tpl$("ARM_CUSTMAST")
 	cust_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	find record (custmast_dev, key=firm_id$+cust_id$) custmast_tpl$
+	find record (custmast_dev, key=firm_id$+cust_id$,dom=*next) custmast_tpl$
 
 	callpoint!.setDevObject("tax_amount",   callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT"))
 	callpoint!.setDevObject("freight_amt",  callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))

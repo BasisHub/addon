@@ -507,6 +507,18 @@ rem --- Dimension miscellaneous string templates
 	dim ivs01a$:open_tpls$[1],ivs01d$:open_tpls$[2],gls01a$:open_tpls$[3],ars01a$:open_tpls$[4]
 	dim ivm02a$:open_tpls$[5],ivs10n$:open_tpls$[6]
 
+rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user to set it up first
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$
+	if cvs(gls01a.current_per$,2)=""
+		msg_id$="GL_PARAM_ERR"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		gosub remove_process_bar
+		release
+	endif
+
 rem --- init/parameters
 
 	disable_str$=""
@@ -515,8 +527,6 @@ rem --- init/parameters
 
 	ivs01a_key$=firm_id$+"IV00"
 	find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-	gls01a_key$=firm_id$+"GL00"
-	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 
 	dir_pgm1$=stbl("+DIR_PGM",err=*next)
 	call dir_pgm1$+"adc_application.aon","AR",info$[all]
@@ -663,6 +673,7 @@ rem --- additional file opens, depending on which apps are installed, param valu
 		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :	                                 	chans$[all],templates$[all],table_chans$[all],batch,status$
 		if status$<>"" then
+			remove_process_bar:
 			bbjAPI!=bbjAPI()
 			rdFuncSpace!=bbjAPI!.getGroupNamespace()
 			rdFuncSpace!.setValue("+build_task","OFF")
@@ -681,8 +692,18 @@ rem --- Distribute GL by item?
 
 	di$="N"
 	if ar$="Y"
+		rem --- check to see if main AR param rec (firm/AR/00) exists; if not, tell user to set it up first
 		ars01a_key$=firm_id$+"AR00"
-		find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+		find record (ars01_dev,key=ars01a_key$,err=*next) ars01a$
+		if cvs(ars01a.current_per$,2)=""
+			msg_id$="AR_PARAM_ERR"
+			dim msg_tokens$[1]
+			msg_opt$=""
+			gosub disp_message
+			gosub remove_process_bar
+			release
+		endif
+
 		di$=ars01a.dist_by_item$
 		if gl$="N" di$="N"
 	endif

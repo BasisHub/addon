@@ -198,73 +198,73 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	ok_to_write$="Y"
 
-	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)=""
+	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)=""
 		ok_to_write$="N"
 		focus_column$="POE_PODET.PO_LINE_CODE"
 		translate$="AON_LINE_CODE"
 	endif
 
-	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" 
+	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" 
 		ok_to_write$="N"
 		focus_column$="POE_PODET.WAREHOUSE_ID"
 		translate$="AON_WAREHOUSE"
 	endif
 
-	if ok_to_write$<>"Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="SD")<>0 
-		if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.ITEM_ID"),3)=""
+	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="SD")<>0 
+		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.ITEM_ID"),3)=""
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ITEM_ID"
 			translate$="AON_ITEM"
 		endif
-		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))<=0
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))<=0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.CONV_FACTOR"
 			translate$="AON_CONVERSION_FACTOR"
 		endif
-		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
-		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.QTY_ORDERED"
 			translate$="AON_QUANTITY_ORDERED"
 		endif
 	endif
 
-	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="N" 
-		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
+	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="N" 
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
-		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.QTY_ORDERED"
 			translate$="AON_QUANTITY_ORDERED"
 		endif
 	endif
 
-	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="O" 
-		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
+	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="O" 
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
 	endif
 
-	if ok_to_write$<>"Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="NOV")<>0 
-		if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),3)="" 
+	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="NOV")<>0 
+		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ORDER_MEMO"
 			translate$="AON_MEMO"
 		endif
 	endif
 
-	if ok_to_write$<>"Y" and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
-		if ok_to_write$<>"Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="DSNO")<>0
-			if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF"),3)="" 
+	if ok_to_write$="Y" and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
+		if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="DSNO")<>0
+			if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF"),3)="" 
 				ok_to_write$="N"
 				focus_column$="POE_PODET.SO_INT_SEQ_REF"
 				translate$="AON_SO_SEQ_NO"
@@ -375,7 +375,12 @@ callpoint!.setColumnData("POE_PODET.NOT_B4_DATE",callpoint!.getHeaderColumnData(
 callpoint!.setColumnData("POE_PODET.REQD_DATE",callpoint!.getHeaderColumnData("POE_POHDR.REQD_DATE"))
 callpoint!.setColumnData("POE_PODET.PROMISE_DATE",callpoint!.getHeaderColumnData("POE_POHDR.PROMISE_DATE"))
 
-callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_PODET.PO_LINE_CODE")
+rem forced focus removed when bug 3999 fixed.CAH callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_PODET.PO_LINE_CODE")
+
+rem --- Make sure new grid row is enabled
+util.enableGridRow(Form!,num(callpoint!.getValidationRow()))
+
+callpoint!.setStatus("REFGRID")
 [[POE_PODET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 rem --- this code was already here... is it right?

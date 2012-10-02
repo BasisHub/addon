@@ -161,29 +161,6 @@ rem --- Has a valid whse/item been entered?
 		warn  = 1
 		gosub check_item_whse
 	endif
-[[OPE_ORDDET.LINE_CODE.AVEC]]
-print "Det:LINE_CODE:AVEC"; rem debug
-
-rem --- Display totals
-	
-	gosub disp_grid_totals
-[[OPE_ORDDET.UNIT_PRICE.AVEC]]
-rem --- Display totals
-	
-	gosub disp_grid_totals
-[[OPE_ORDDET.QTY_SHIPPED.AVEC]]
-rem --- Display totals
-	
-	gosub disp_grid_totals
-
-[[OPE_ORDDET.QTY_BACKORD.AVEC]]
-rem --- Display totals
-	
-	gosub disp_grid_totals
-[[OPE_ORDDET.EXT_PRICE.AVEC]]
-rem --- Display totals
-	
-	gosub disp_grid_totals
 [[OPE_ORDDET.QTY_ORDERED.AVEC]]
 print "Det:QTY_ORDERED.AVEC"; rem debug
 
@@ -192,10 +169,6 @@ rem --- Enable buttons
 	gosub able_lot_button
 	gosub enable_repricing
 	gosub enable_addl_opts
-
-rem --- Display totals
-	
-	gosub disp_grid_totals
 [[OPE_ORDDET.QTY_ORDERED.AVAL]]
 print "Det:QTY_ORDERED.AVAL"; rem debug
 
@@ -348,7 +321,9 @@ rem --- Set product types for certain line types
 [[OPE_ORDDET.EXT_PRICE.AVAL]]
 rem --- Round 
 
-	callpoint!.setUserInput( str(round( num(callpoint!.getUserInput()), 2)) )
+	if num(callpoint!.getUserInput()) <> num(callpoint!.getColumnData("OPE_ORDDET.EXT.PRICE"))
+		callpoint!.setUserInput( str(round( num(callpoint!.getUserInput()), 2)) )
+	endif
 [[OPE_ORDDET.WAREHOUSE_ID.AVEC]]
 print "Det:WAREHOUSE_ID.AVEC"; rem debug
 
@@ -703,6 +678,8 @@ rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 		action$="CO"
 		gosub uncommit_iv
 	endif
+
+	gosub calculate_discount
 [[OPE_ORDDET.AREC]]
 rem --- Backorder is zero and disabled on a new record
 
@@ -746,9 +723,9 @@ rem --- Buttons start disabled
 	callpoint!.setOptionEnabled("RCPR",0)
 	callpoint!.setOptionEnabled("ADDL",0)
 
-rem --- Force focus on Line Code since Barista is skipping it
+rem --- Force focus on Line Code since Barista is skipping it (rem'd since Barista bug 3999 fixed)
 
-	callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE")
+rem	callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE")
 [[OPE_ORDDET.BDEL]]
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
@@ -756,8 +733,18 @@ rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 		action$="UC"
 		gosub uncommit_iv
 	endif
+
+	gosub calculate_discount
 [[OPE_ORDDET.AGRN]]
 rem (Fires regardles of new or existing row.  Use callpoint!.getRecordMode() to distinguish the two)
+
+rem --- Disable Line Code if existing record
+
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) = ""
+		callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE", 0)
+	else
+		callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE", 1)
+	endif
 
 rem --- Disable by line type (Needed because Barista is skipping Line Code)
 
@@ -871,6 +858,13 @@ rem --- Has customer credit been exceeded?
 		gosub credit_exceeded
 	endif
 
+	if callpoint!.getGridRowNewStatus(this_row) = "Y" or
+:		callpoint!.getGridRowModifyStatus(this_row) = "Y"
+
+		gosub calculate_discount
+
+	endif
+
 rem --- Check for minimum line extension
 
 	commit_flag$    = callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")
@@ -956,7 +950,9 @@ print "Det:UNIT_PRICE:AVAL"; rem debug
 rem --- Set Manual Price flag and round price
 	round_precision = num(callpoint!.getDevObject("precision"))
 	unit_price = round(num(callpoint!.getUserInput()),round_precision)
-	callpoint!.setUserInput(str(unit_price))
+	if num(callpoint!.getUserInput()) <> num(callpoint!.getColumnData("OPE_ORDDET.UNIT_PRICE"))
+		callpoint!.setUserInput(str(unit_price))
+	endif
 
 	if pos(user_tpl.line_type$="SP") and 
 :		user_tpl.prev_unitprice 		and 
@@ -1032,7 +1028,7 @@ rem --- recalc quantities and extended price
 	print "---Prev   :", user_tpl.prev_shipqty
 	print "---Ordered:", ordqty
 
-	if shipqty > ordqty then 
+	if shipqty > ordqty then
 		callpoint!.setUserInput(str(user_tpl.prev_shipqty))
 		msg_id$="SHIP_EXCEEDS_ORD"
 		gosub disp_message
@@ -1090,7 +1086,7 @@ rem ==========================================================================
 disp_grid_totals: rem --- Get order totals and display, save header totals
 rem ==========================================================================
 
-	gosub calc_grid_totals
+	gosub calculate_discount
 
 	callpoint!.setHeaderColumnData("OPE_ORDHDR.TOTAL_SALES", str(ttl_ext_price))
 	discamt! = UserObj!.getItem(num(callpoint!.getDevObject("disc_amt_disp")))
@@ -1132,7 +1128,33 @@ rem	costamt!.setValue(ttl_ext_cost)
 	return
 
 rem ==========================================================================
-calc_grid_totals: rem --- Roll thru all detail line, totaling ext_price
+calculate_discount: rem --- Calculate Discount Amount
+rem ==========================================================================
+
+	disc_code$=callpoint!.getDevObject("disc_code")
+
+	file_name$ = "OPC_DISCCODE"
+	disccode_dev = fnget_dev(file_name$)
+	dim disccode_rec$:fnget_tpl$(file_name$)
+
+	find record (disccode_dev, key=firm_id$+disc_code$, dom=*next) disccode_rec$
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	if ordHelp!.getInv_type() = "" then
+		ttl_ext_price = 0
+	else
+		ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
+	endif
+
+	disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
+	callpoint!.setHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
+
+	gosub calc_grid_totals
+
+	return
+
+rem ==========================================================================
+calc_grid_totals: rem --- Roll thru all detail lines, totaling ext_price
                   rem     OUT: ttl_ext_price
 rem ==========================================================================
 
@@ -1150,20 +1172,6 @@ rem ==========================================================================
 		ttl_taxable = ordHelp!.totalTaxable( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
 	endif
 
-rem --- Calculate Discount Amount
-	disc_code$=callpoint!.getDevObject("disc_code")
-
-	file_name$ = "OPC_DISCCODE"
-	disccode_dev = fnget_dev(file_name$)
-	dim disccode_rec$:fnget_tpl$(file_name$)
-
-	find record (disccode_dev, key=firm_id$+disc_code$, dom=*next) disccode_rec$
-	new_disc_per = disccode_rec.disc_percent
-
-	disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
-	callpoint!.setHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
-
-rem	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable)
 
@@ -1629,7 +1637,7 @@ rem ==========================================================================
 	qty_ord  = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
 	gosub lot_ser_check
 
-	if lotted$ = "Y" and qty_ord <> 0 and callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE")<>"P" then
+	if lotted$ = "Y" and callpoint!.getDevObject("inventoried")="Y" and qty_ord <> 0 and callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE")<>"P" then
 		callpoint!.setOptionEnabled("LENT",1)
 	else
 		callpoint!.setOptionEnabled("LENT",0)
@@ -1672,10 +1680,13 @@ disp_ext_amt: rem --- Calculate and display the extended amount
               rem     OUT: ext_price set
 rem ==========================================================================
 
+	previous_ext_price = num(callpoint!.getColumnData("OPE_ORDDET.EXT_PRICE"))
 	callpoint!.setColumnData("OPE_ORDDET.EXT_PRICE", str(round(qty_shipped * unit_price, 2)) )
 	rem print "---Ext price set to", qty_shipped * unit_price; rem debug
 	gosub check_if_tax
-	callpoint!.setStatus("MODIFIED")
+	if previous_ext_price <> round(qty_shipped * unit_price, 2)
+		callpoint!.setStatus("MODIFIED")
+	endif
 	rem --- gosub disp_grid_totals --- can't go here because the status of MODIFIED hasn't taken effect
 
 	return

@@ -8,10 +8,24 @@ gosub open_tables
 gls01_dev=num(open_chans$[1])
 rem --- Dimension string templates
 	dim gls01a$:open_tpls$[1]
+
+rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user to set it up first
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$  
+	if cvs(gls01a.current_per$,2)=""
+		msg_id$="GL_PARAM_ERR"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		rem - remove process bar
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
+
 rem --- Retrieve parameter data
 	dim info$[20]
-	gls01a_key$=firm_id$+"GL00"
-	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$  
 	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
 	gl$=info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]

@@ -83,17 +83,35 @@ if gl$="Y"
 		release
 	endif
 endif
-rem --- Retrieve parameter data
-               
+
+rem --- check to see if main AP param rec (firm/AP/00) exists; if not, tell user to set it up first
 aps01a_key$=firm_id$+"AP00"
-find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
+if cvs(aps01a.current_per$,2)=""
+	msg_id$="AP_PARAM_ERR"
+	dim msg_tokens$[1]
+	msg_opt$=""
+	gosub disp_message
+	gosub remove_process_bar
+	release
+endif
 
 callpoint!.setDevObject("multi_types",aps01a.multi_types$)
 callpoint!.setDevObject("multi_dist",aps01a.multi_dist$)
 callpoint!.setDevObject("retention",aps01a.ret_flag$)
 
+rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user to set it up first
 gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$
+if cvs(gls01a.current_per$,2)=""
+	msg_id$="GL_PARAM_ERR"
+	dim msg_tokens$[1]
+	msg_opt$=""
+	gosub disp_message
+	gosub remove_process_bar
+	release
+endif
+
 callpoint!.setDevObject("units_flag",gls01a.units_flag$)
 callpoint!.setDevObject("gl_year",gls01a.current_year$)
 callpoint!.setDevObject("gl_per",gls01a.current_per$)
@@ -345,6 +363,7 @@ if callpoint!.getDevObject("retention")="N"
 endif
 callpoint!.setOptionEnabled("INVD",0)
 callpoint!.setOptionEnabled("GDIS",0)
+callpoint!.setOptionEnabled("INVB",0)
 [[POE_INVHDR.<CUSTOM>]]
 vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")

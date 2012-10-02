@@ -41,7 +41,7 @@ gosub update_header_tots
 callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)
 
-callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_REQDET.PO_LINE_CODE")
+rem callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_REQDET.PO_LINE_CODE"); rem no longer needed since Barista bug 3999 fixed
 [[POE_REQDET.UNIT_COST.AVAL]]
 gosub update_header_tots
 callpoint!.setDevObject("cost_this_row",num(callpoint!.getUserInput()))
