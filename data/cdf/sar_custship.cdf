@@ -26,7 +26,7 @@ rem --- Check selected level against allowable level
 		rdFuncSpace!.setValue("+build_task","OFF")
 		release
 	endif
-[[SAR_CUSTSHIP.12_PER_REPORT.AVAL]]
+[[SAR_CUSTSHIP.TWLVE_PER_REPORT.AVAL]]
 x$=callpoint!.getUserInput()
 if x$="N" then
 	callpoint!.setColumnData("SAR_CUSTSHIP.MTD","Y")

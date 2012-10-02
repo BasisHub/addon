@@ -43,7 +43,7 @@ rem --- Init Data
 rem --- Headings and print positions
 
     headings=5
-    dim headings$[headings],o[14]
+    dim headings$[headings]
     width=132
     page=0
     l9=59
@@ -55,103 +55,63 @@ rem --- Headings and print positions
     columns$[0,0]="Seq",                  columns$[0,1]="C",columns$[0,2]="7"
     columns$[1,0]="Cd",                   columns$[1,1]="C",columns$[1,2]="8"
     columns$[2,0]="Wh",                   columns$[2,1]="C",columns$[2,2]="6"
-    columns$[3,0]="Item",                 columns$[3,1]="C",columns$[3,2]="26"
-    columns$[4,0]="Date Received",        columns$[4,1]="C",columns$[4,2]="4"
-    columns$[5,0]="Date Required",        columns$[5,1]="C",columns$[5,2]="4"
-    columns$[6,0]="Date Promised",        columns$[6,1]="C",columns$[6,2]="4"
-    columns$[7,0]="Variance Req/Rec",     columns$[7,1]="N",columns$[7,2]="1",columns$[7,3]=mvar$
-    columns$[8,0]="Variance Prom/Rec",    columns$[8,1]="N",columns$[8,2]="1",columns$[8,3]=mvar$
-rem --- Print positions
-
-    o[1]=o[0]+3
-    o[2]=o[1]+3
-    o[3]=o[2]+4
-    o[4]=o[3]+3
-    o[5]=o[4]+3
-    o[6]=o[5]+itemlen+1
-    o[7]=o[6]+desclen+1
-    o[8]=o[7]+9
-    o[9]=o[8]+9
-    o[10]=o[9]+10
-    o[11]=o[10]+mvar+2
-    if o[11]+7>=width
-        o[11]=width-mvar
-        o[10]=o[11]-mvar
-        o[9]=o[10]-mvar
-        o[8]=o[9]-mvar
-    endif
+    columns$[3,0]="Item",                 columns$[3,1]="C",columns$[3,2]="20"
+    columns$[4,0]="Date Received",        columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Date Required",        columns$[5,1]="C",columns$[5,2]="10"
+    columns$[6,0]="Date Promised",        columns$[6,1]="C",columns$[6,2]="10"
+    columns$[7,0]="Variance Req/Rec",     columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=mvar$
+    columns$[8,0]="Variance Prom/Rec",    columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=mvar$
 
 rem --- Position files
-
  
     call pgmdir$+"adc_progress.aon","N","","","","",0,pot04a_dev,1,meter_num,status
 
-rem --- Init Read
-    dim pot44a_key$:pot14a_key_alttpl$
-    
-    p44_key$=firm_id$+vendfrom$
-    read (pot14_dev2,knum=3,key=p44_key$,dom=*next)
-    if vendfrom$<>"" p44_key$=firm_id$+vendfrom$+datefrom$
-      read (pot14_dev2,knum=3,key=p44_key$,dom=*next)
-    endif
+rem --- Build sql statement
+
+    sql_prep$="select pot_rechdr.vendor_id, pot_rechdr.po_no, "
+    sql_prep$=sql_prep$+"pot_rechdr.receiver_no, pot_recdet.po_line_no "
+    sql_prep$=sql_prep$+"from pot_rechdr, pot_recdet "
+
+    where_clause$="where pot_rechdr.firm_id = '"+firm_id$+"'"
+    where_clause$=where_clause$+" AND pot_recdet.firm_id = '"+firm_id$+"' AND pot_rechdr.po_no = pot_recdet.po_no"
+    where_clause$=where_clause$+" AND pot_rechdr.receiver_no = pot_recdet.receiver_no"
+    if vendfrom$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id >= '" +vendfrom$+ "'"
+    if vendthru$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id <= '" +vendthru$+ "'"
+    if itemfrom$<>"" where_clause$=where_clause$+" AND pot_recdet.item_id >= '" +itemfrom$+ "'"
+    if itemthru$<>"" where_clause$=where_clause$+" AND pot_recdet.item_id <= '" +itemthru$+ "'"
+    if datefrom$<>"" where_clause$=where_clause$+" AND pot_rechdr.recpt_date >= '" + datefrom$+ "'"
+    if datethru$<>"" where_clause$=where_clause$+" AND pot_rechdr.recpt_date <= '" + datethru$+ "'"
+    if whsefor$<>"" where_clause$=where_clause$+" AND pot_recdet.warehouse_id = '"+whsefor$+ "'"
+    order_by$=" order by pot_rechdr.vendor_id, pot_rechdr.recpt_date, pot_rechdr.po_no, pot_rechdr.receiver_no,pot_recdet.po_line_no"
+
+    sql_prep$=sql_prep$ + where_clause$ + order_by$
+    sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
 
 rem --- Read through Sort file
 
     while more
 
-        pot44a_key$=key(pot14_dev2,end=*break)
-        if pot44a_key.firm_id$<>firm_id$ break
-        read (pot14_dev2); rem "Move ptr
+        read_tpl$=sqlfetch(sql_chan,err=*break)
+        read record (pot04a_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*break) pot04a$
+        read record (pot14_dev2,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$+read_tpl.po_line_no$) pot14a$
 
-rem --- Valid Vendor/Receipt Date?
-
-        if vendfrom$<>"" and pot44a_key.vendor_id$>vendthru$ break
-        if datefrom$="" or pot44a_key.recpt_date$>=datefrom$
-            if datethru$="" or pot44a_key.recpt_date$<=datethru$
-                vendor$=pot44a_key.vendor_id$
-                ponum$=pot44a_key.po_no$
-                receiver$=pot44a_key.receiver_no$
-                linenum$=pot44a_key.po_line_no$
-            else
-rem --- Skip to next vendor
-                p44_key$=pot44a_key.firm_id$+pot44a_key.vendor_id$+$FF$
-                read (pot14_dev2,key=p44_key$,dom=*next)
-                break
-
-            endif
-        else
-
-rem --- Skip to first receipt date for vendor
-
-            p44_key$=pot44a_key.firm_id$+pot44a_key.vendor_id$+datefrom$
-            read (pot14_dev2,key=p44_key$,dom=*next)
-            continue
-            
-        endif
-
-rem --- Get Header & assign variables
-
-        if pot44a_key.firm_id$+pot44a_key.vendor_id$+pot44a_key.recpt_date$+pot44a_key.po_no$+pot44a_key.receiver_no$<>prevk$(1,28)
-            prevk$(1)=pot44a_key$
-            p04_key$=firm_id$+vendor$+ponum$+receiver$
-            find record (pot04a_dev,key=p04_key$,dom=*break) pot04a$
-            dim rcptdate$(8),orddate$(8)
-            if pot04a.recpt_date$<>"" rcptdate$=pot04a.recpt_date$
-            if pot04a.ord_date$<>"" orddate$=pot04a.ord_date$
-        endif
+        vendor$=pot04a.vendor_id$
+        ponum$=pot04a.po_no$
+        receiver$=pot04a.receiver_no$
+        linenum$=pot14a.po_line_no$
+        dim rcptdate$(8),orddate$(8)
+        if pot04a.recpt_date$<>"" rcptdate$=pot04a.recpt_date$
+        if pot04a.ord_date$<>"" orddate$=pot04a.ord_date$
 
 rem --- Get detail
 
-        p14a_key$=pot04a.firm_id$+pot04a.vendor_id$+pot04a.po_no$+pot04a.receiver_no$+linenum$
-        find record (pot14a_dev,key=p14a_key$,dom=*break) pot14a$
         whse$=pot14a.warehouse_id$
         item$=pot14a.item_id$
-
-rem --- Valid Whse/Item?
-
-        if whsefor$<>"" if whse$<>whsefor$ continue
-        if itemfrom$<>"" if item$<itemfrom$ continue
-        if itemthru$<>"" if item$>itemthru$ continue
 
 rem --- Valid line type (ie S or N)?
 
@@ -248,11 +208,11 @@ done: rem --- All Done
 
     gosub pototals
     gosub vendtotals
-    qwk = fnblank(5)
-    OutVect!.addItem("    Total For Report")
+    qwk = fnblank(3)
+    OutVect!.addItem("Total For Report")
+    qwk = fnblank(3)
     OutVect!.addItem(str(rptreqvar:mvar$))
     OutVect!.addItem(str(rptpromvar:mvar$))
-    OutVect!.addItem("")
     call pgmdir$+"adc_progress.aon","D","","","","",0,poe04_dev,0,0,status
     goto std_exit
 
@@ -280,7 +240,7 @@ assignheads: rem --- Assign headings variables
     if itemthru$="" headings$[4]=headings$[4]+" -- To Item: Last" else headings$[4]=headings$[4]+" -- To Item: "+ itemt$
     if whsefor$=""  headings$[5]="All Warehouses"  else headings$[5]="For Warehouse " + whsefor$+" "+cvs(whsename$,2)
 
-    return
+return
 
 newvendor: rem --- New Vendor
 
@@ -295,7 +255,6 @@ newvendor: rem --- New Vendor
 
 brnch2:
 
-  
     OutVect!.addItem(fnmask$(vendor$(1,vendlen),vendomask$))
     OutVect!.addItem(" ")
     OutVect!.addItem(" ")
@@ -303,7 +262,7 @@ brnch2:
     qwk=fnblank(5)
     
     l=l+1
-    return
+return
 
 newpo: rem --- New PO
 
@@ -322,32 +281,32 @@ newpo: rem --- New PO
     qwk = fnblank(5)
 
     l=l+1
-    return
+
+return
 
 vendtotals: rem --- Print Vendor total
 
-    
-    qwk = fnblank(5)
-    OutVect!.addItem("    Total For Vendor ")
-    OutVect!.addItem(fnmask$(prevvend$(1,vendlen),vendomask$))
+    qwk = fnblank(3)
+    OutVect!.addItem("Total For Vendor "+fnmask$(prevvend$(1,vendlen),vendomask$))
+    qwk = fnblank(3)
     OutVect!.addItem(str(vendreqvar:mvar$))
     OutVect!.addItem(str(vendpromvar:mvar$))
-    
+    qwk = fnblank(9)    
     l=l+1
-    return
+
+return
 
 pototals: rem --- Print PO total
 
-
-    qwk = fnblank(5)
-    OutVect!.addItem("    Total For PO # ")
-    OutVect!.addItem(prevpo$)
+    qwk = fnblank(3)
+    OutVect!.addItem("Total For PO # "+prevpo$)
+    qwk = fnblank(3)
     OutVect!.addItem(str(po_reqvar:mvar$))
     OutVect!.addItem(str(po_promvar:mvar$))
-
-    
+    qwk = fnblank(9)
     l=l+1
-    return
+
+return
 
 getlinetype: rem --- Get Line Type
 
@@ -356,7 +315,7 @@ getlinetype: rem --- Get Line Type
     let linetype$=pom02a.line_type$
 
 brnch3:
-    return
+return
 
 rem --- Print data line
 
@@ -377,9 +336,9 @@ printline:
     OutVect!.addItem(str(reqvari:mvar$))
     OutVect!.addItem(str(promvari:mvar$))
 
-
     let l=l+1
-    return
+
+return
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)

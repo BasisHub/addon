@@ -117,7 +117,7 @@ if trans_type$ = "M" then
 				ape22a$=field(ape22a$)
 				writerecord(ape22_dev1,key=ape22a_key$)ape22a$
 				ape02_key$=firm_id$+ape22a.ap_type$+callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")+ape22a.vendor_id$
-				callpoint!.setStatus("RECORD:"+ape02_key$)
+				callpoint!.setStatus("RECORD:["+ape02_key$+"]")
 				gosub calc_tots
 				callpoint!.setColumnData("<<DISPLAY>>.DISP_TOT_INV",str(tinv))
 			   callpoint!.setColumnData("<<DISPLAY>>.DISP_TOT_DISC",str(tdisc))

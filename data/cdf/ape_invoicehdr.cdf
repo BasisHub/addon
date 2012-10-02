@@ -262,8 +262,9 @@ rem --- get disc % assoc w/ terms in this rec, and disp distributed bal
 	endif
 [[APE_INVOICEHDR.AP_TERMS_CODE.AVAL]]
 rem re-calc due and discount dates based on terms code
-	terms_cd$=callpoint!.getUserInput()
-	if terms_cd$="" callpoint!.setUserInput("  ")		
+
+if callpoint!.getUserInput()<>callpoint!.getColumnData("APE_INVOICEHDR.AP_TERMS_CODE")
+	terms_cd$=callpoint!.getUserInput()	
 	invdate$=callpoint!.getColumnData("APE_INVOICEHDR.INVOICE_DATE")
 	tmp_inv_date$=callpoint!.getColumnData("APE_INVOICEHDR.INVOICE_DATE")
 	gosub calculate_due_and_discount
@@ -487,7 +488,7 @@ if user_tpl.multi_types$="N"
 	gosub disable_fields
 endif
 if user_tpl.multi_dist$="N" 
-	ctl_name$="APE_INVOICEHDR.AP_DIST_CD"
+	ctl_name$="APE_INVOICEHDR.AP_DIST_CODE"
 	ctl_stat$="I"
 	gosub disable_fields
 endif

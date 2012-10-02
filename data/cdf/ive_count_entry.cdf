@@ -1,3 +1,28 @@
+[[IVE_COUNT_ENTRY.PI_CYCLECODE.BINQ]]
+rem --- Restrict lookup to printed cycles
+
+	alias_id$ = "IVC_PHYSCODE"
+	inq_mode$ = "LOOKUP"
+	key_pfx$  = firm_id$
+	key_id$   = "PRIMARY"
+
+	dim filter_defs$[1,1]
+	filter_defs$[1,0] = "IVC_PHYSCODE.PHYS_INV_STS"
+	filter_defs$[1,1] = "='2'"
+
+	call stbl("+DIR_SYP")+"bam_inquiry.bbj",
+:		gui_dev,
+:		Form!,
+:		alias_id$,
+:		inq_mode$,
+:		table_chans$[all],
+:		key_pfx$,
+:		key_id$,
+:		selected_key$,
+:		filter_defs$[all],
+:		search_defs$[all]
+
+	callpoint!.setStatus("ABORT")
 [[IVE_COUNT_ENTRY.COUNT_STRING.BINP]]
 rem --- Serial number's count defaults to one
 
@@ -268,7 +293,7 @@ print "in read_display"; rem debug
 	dim physical_rec$:fnget_tpl$(file_name$)
 	physical_dev = fnget_dev(file_name$)
 
-	if util.hasRecords(physical_dev) then 
+	if func.hasRecords(physical_dev) then 
 		while 1
 			read record (physical_dev, end=read_display_eof) physical_rec$
 			gosub display_record
@@ -512,7 +537,7 @@ rem print 'show',"BSHO"; rem debug
 
 rem --- Inits
 
-	use ::ado_util.src::util
+	use ::ado_func.src::func
 
 	dim user_tpl$:"amt_mask:c(1*), ls:c(1), lotser_flag:c(1), this_item_lot_ser:u(1)," +
 :                "entered_flag:c(1), lotser_item:c(1), freeze_qty:n(1*), prev_cycle:c(2)"
@@ -538,7 +563,7 @@ rem --- Get IV params, set mask, lot/serial
 
 	find record (params_dev, key=firm_id$+"IV00", dom=std_missing_params) params_rec$ 
 	user_tpl.amt_mask$ = params_rec.amount_mask$
-	if pos(params_rec.lotser_flag$ = "LS") then ls$="Y" else ls$ = "N"
+	if pos(params_rec.lotser_flag$ = "LS") then ls$ = "Y" else ls$ = "N"
 	user_tpl.ls$ = ls$
 	user_tpl.lotser_flag$ = params_rec.lotser_flag$
 

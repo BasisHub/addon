@@ -1,0 +1,175 @@
+rem --- Retrieve/Update Vendor/Item Information
+rem --- Program poc_itemvend v8.0.0 30Mar2009 (poc_ua)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/27/2007 10:35:40)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+rem --- action$ (input): R/W for retrieve or write
+rem --- type$ (input): R for req, P for PO, Q for QA recpt, C for PO recpt
+rem --- vendor_id$ (input)
+rem --- ord_date$ (input)
+rem --- item_id$ (input)
+rem --- conv factor (input)
+rem --- unit cost (input)
+rem --- qty (input -- req qty if requisition, ordered qty if PO, QA recpt or PO recpt)
+rem --- iv_prec$ (input): IV precision from iv params rec
+rem --- status flag
+rem --- if writing, we're writing back ivm05.last_po_cost, ivm05.last_po_date and then it only writes back if P, Q or C type
+
+    seterr std_error
+    setesc std_error
+    enter action$,type$,vendor_id$,ord_date$,item_id$,conv_factor,unit_cost,qty,iv_prec$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="IVM_ITEMVEND",open_opts$[1]="OTA"
+	
+	gosub open_tables
+
+	ivm_itemvend_dev=num(open_chans$[1])	
+	dim ivm_itemvend$:open_tpls$[1]
+
+rem --- Initializations
+
+    precision num(iv_prec$)
+    ivm_itemvend.firm_id$=firm_id$
+    ivm_itemvend.vendor_id$=vendor_id$
+    ivm_itemvend.item_id$=item_id$
+    ivm_itemvend.prisec_flag$="S"
+    when$=ord_date$
+    qty=qty*conv_factor
+
+rem --- Retrieve current record
+
+    find record (ivm_itemvend_dev,key=ivm_itemvend.firm_id$+ivm_itemvend.vendor_id$+ivm_itemvend.item_id$,dom=done) ivm_itemvend$
+
+    if action$<>"W" 
+
+rem --- Reassign cost if record exists
+
+        if ivm_itemvend.last_po_cost>0 then let unit_cost=ivm_itemvend.last_po_cost*conv_factor
+        if ivm_itemvend.unit_cost_01>0 and qty>=ivm_itemvend.break_qty_01 then let unit_cost=ivm_itemvend.unit_cost_01*conv_factor
+        if ivm_itemvend.unit_cost_02>0 and qty>=ivm_itemvend.break_qty_02 then let unit_cost=ivm_itemvend.unit_cost_02*conv_factor
+        if ivm_itemvend.unit_cost_03>0 and qty>=ivm_itemvend.break_qty_03 then let unit_cost=ivm_itemvend.unit_cost_03*conv_factor
+
+    else
+
+rem --- Update last PO date
+
+        if conv_factor then let ivm_itemvend.last_po_cost=unit_cost/conv_factor
+        if when$>ivm_itemvend.last_po_date$ then let ivm_itemvend.last_po_date$=when$
+        if pos(type$="PQC") then write record (ivm_itemvend_dev,key=ivm_itemvend.firm_id$+ivm_itemvend.vendor_id$+ivm_itemvend.item_id$) ivm_itemvend$
+
+    endif
+
+done: rem --- All done
+
+    goto std_exit
+    
+open_tables: rem --- Call open table routine	
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+		status=912
+		goto std_exit
+	endif
+
+	return
+    
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

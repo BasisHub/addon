@@ -9,6 +9,17 @@ rem --- All Rights Reserved
     setesc std_error
     seterr std_error
 
+    rem --- Document initializations
+	OutVect!=bbjAPI().getSysGui().makeVector()
+	HdrVect!=bbjAPI().getSysGui().makeVector()
+	BrkVect!=bbjAPI().getSysGui().makeVector()
+	TotVect!=bbjAPI().getSysGui().makeVector()
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -30,9 +41,10 @@ rem --- Init data
     width=132
     when$=sysinfo.system_date$
     dim vendor$(6),prevvend$(6),headings$[headings]
-    headings$[0]=n1$
-    headings$[1]=n3$
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$+" "
     headings1len=len(headings$[1])
+    headings$[headings]="[HEADER]"
     dim lf$(60,$0A$)
     printbtot$="N"
     printvtot$="N"
@@ -44,39 +56,40 @@ rem --- Init data
     therearebuyers=1; rem "Used to print sel criteria when no poe-17
     more=1
 
-rem --- Open printer
+rem --- Headings and print positions
+rem --- because of the non-columnar nature of this report, it has been converted to DocOut
+rem --- using a single column, and print lines are built by constructing pbuf$, then an entire
+rem --- line is added to OutVect! (OutVect!.addItem(pbuf$))
 
-    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-    if v1=1 goto std_exit
+    dim columns$[0,10]
+    columns$[0,0]="  ",columns$[0,1]="C",columns$[0,2]=str(width)
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,poe06_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","","","","",0,poe_ordhdr_dev,1,meter_num,status
 
 rem --- Init Read
 
-    dim poe06a_key$:poe06_key_tpl$
-    read (poe06_dev,key=firm_id$,dom=*next)
+    read (poe_ordhdr_dev,key=firm_id$,dom=*next)
 
     while more; rem --- Main Read
 
-        poe06a_key$=key(poe06_dev,end=*break)
+        poe06a_key$=key(poe_ordhdr_dev,end=*break)
         if pos(firm_id$=poe06a_key$)<>1 break
-        read record (poe06_dev,end=*break) poe06a$
-        buyer$=poe06a.buyer_code$
-        vendor$=poe06a.vendor_id$
-        review$="Through Review Date: "+fndate$(poe06a.cycle_date$)
-        comment$=poe06a.rep_comments$
-        call pgmdir$+"adc_progress.aon","S","","","","",0,poe06_dev,1,meter_num,status
+        read record (poe_ordhdr_dev,end=*break) poe_ordhdr$
+        buyer$=poe_ordhdr.buyer_code$
+        vendor$=poe_ordhdr.vendor_id$
+        review$="Through Review Date: "+fndate$(poe_ordhdr.cycle_date$)
+        comment$=poe_ordhdr.rep_comments$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,poe_ordhdr_dev,1,meter_num,status
         gosub testbreaks
         printptot$="N"
         prevprodtype$=""
         previtem$=""
 
 rem --- Init detail ptr
-
-        p06_key$=poe06a.firm_id$+poe06a.buyer_code$+poe06a.vendor_id$
-        read (poe16_dev,key=p06_key$,dom=*next)
+        p06_key$=poe_ordhdr.firm_id$+poe_ordhdr.buyer_code$+poe_ordhdr.vendor_id$
+        read (poe_orddet_dev,key=p06_key$,dom=*next)
 
         while more; rem --- Line item details
 
@@ -84,42 +97,46 @@ rem --- Init detail ptr
             dim eoq$(0),safety$(0),max$(0),lead$(0),weight$(0),cost$(0),sugg$(0)
             dim annualusage$(0),avgusage$(0),extension$(0)
 
-            poe16a_key$=key(poe16_dev,end=*break)
+            poe16a_key$=key(poe_orddet_dev,end=*break)
             if pos(p06_key$=poe16a_key$)<>1 break
-            read record (poe16_dev) poe16a$
-            prodtype$=poe16a.product_type$
+            read record (poe_orddet_dev) poe_orddet$
+            prodtype$=poe_orddet.product_type$
 
             gosub testprod; rem TESTBREAK
 
-            itemnum$=poe16a.item_id$
-            whse$=poe16a.warehouse_id$
-            stocklevel$=poe16a.stock_level$
-            if poe16a.usage_is_est$="Y" estimated$="**"
-            annualusage$=str(poe16a.annual_usage:m2$)
-            avgusage$=str(poe16a.avg_usage:m2$)
-            avail$=str(poe16a.qty_avail:m2$)
-            onorder$=str(poe16a.qty_on_order:m2$)
+            itemnum$=poe_orddet.item_id$
+            whse$=poe_orddet.warehouse_id$
+            stocklevel$=poe_orddet.stock_level$
+            if poe_orddet.usage_is_est$="Y" estimated$="**"
+            annualusage$=str(poe_orddet.annual_usage:m2$)
+            avgusage$=str(poe_orddet.avg_usage:m2$)
+            avail$=str(poe_orddet.qty_avail:m2$)
+            onorder$=str(poe_orddet.qty_on_order:m2$)
 
             if stocklevel$<>"I"
 
-                if suggonly$="Y" if itemnum$<>prevwitem$
+            	if suggonly$="Y" 
 
-                    csugg=0
-                    p16_key$=poe16a_key.firm_id$+poe16a_key.buyer_code$+poe16a_key.vendor_id$+poe16a_key.product_type$+poe16a_key.item_id$
-                    find record (poe26a_dev,key=p16_key$+"  ",dom=*continue) poe26a$
-                    if poe26a.sugg_ord_qty=0 continue
-                    csugg=poe26a.sugg_ord_qty
-                    prevminusannuse=minusannuse
-                    prevminusavguse=minusavguse
-                    prevminusavail=minusavail
-                    prevminusonord=minusonord
-                    minusannuse=0
-                    minusavguse=0
-                    minusavail=0
-                    minusonord=0
-                    prevwitem$=itemnum$
+                	if itemnum$<>prevwitem$
 
-                endif
+						csugg=0
+						p16_key$=poe_orddet.firm_id$+poe_orddet.buyer_code$+poe_orddet.vendor_id$+poe_orddet.product_type$+poe_orddet.item_id$
+						find record (poe_ordtot_dev,key=p16_key$,dom=*continue) poe_ordtot$
+						if poe_ordtot.sugg_ord_qty=0 continue
+						csugg=poe_ordtot.sugg_ord_qty
+						prevminusannuse=minusannuse
+						prevminusavguse=minusavguse
+						prevminusavail=minusavail
+						prevminusonord=minusonord
+						minusannuse=0
+						minusavguse=0
+						minusavail=0
+						minusonord=0
+						prevwitem$=itemnum$
+
+					endif
+
+				endif
 
                 sugg=num(poe_orddet.sugg_ord_qty$)
 
@@ -128,34 +145,38 @@ rem --- Skip whse detail if NOT INCLUDEWHS$
                 if includewhse$<>"Y"
 
                     gosub newitem
-                    read (poe16_dev,key=p16_key$+$FF$,dom=*continue)
+                    read (poe_orddet_dev,key=p16_key$+$FF$,dom=*continue)
 
                 endif
 
 rem --- Accum amts to subtract from total line for sugg=0 'W' items
 
-                if suggonly$="Y" if sugg=0
+                if suggonly$="Y" 
 
-                    minusannuse=minusannuse+poe16a.annual_usage
-                    minusavguse=minusavguse+poe16a.avg_usage
-                    minusavail=minusavail+poe16a.qty_avail
-                    minusonord=minusonord+poe16a.qty_on_order
-                    if itemnum$<>previtem$ gosub newitem
-                    continue
+                	if sugg=0
 
-                endif
+						minusannuse=minusannuse+poe_orddet.annual_usage
+						minusavguse=minusavguse+poe_orddet.avg_usage
+						minusavail=minusavail+poe_orddet.qty_avail
+						minusonord=minusonord+poe_orddet.qty_on_order
+						if itemnum$<>previtem$ gosub newitem
+						continue
 
-                linepoint$=str(poe16a.line_point:m2$)
-                ordpoint$=str(poe16a.order_point:m2$)
-                eoq$=str(poe16a.eoq:m2$)
-                safety$=str(poe16a.safety_stock:m2$)
-                max$=str(poe16a.maximum_qty:m2$)
-                lead$=str(poe16a.lead_time:m9$)
+					endif
+
+				endif
+
+                linepoint$=str(poe_orddet.line_point:m2$)
+                ordpoint$=str(poe_orddet.order_point:m2$)
+                eoq$=str(poe_orddet.eoq:m2$)
+                safety$=str(poe_orddet.safety_stock:m2$)
+                max$=str(poe_orddet.maximum_qty:m2$)
+                lead$=str(poe_orddet.lead_time:m9$)
                 sugg$=str(sugg:m2$)
-                weight$=str(poe16a.weight:m6$)
-                cost$=str(poe16a.est_unit_cst:m3$)
-                extension$=str(poe16a.extended_amt:m1$)
-                   
+                weight$=str(poe_orddet.weight:m6$)
+                cost$=str(poe_orddet.est_unit_cst:m3$)
+                extension$=str(poe_orddet.extended_amt:m1$)
+
             else
 
 rem --- Check suggested qty of total for stocked by 'I'
@@ -168,20 +189,20 @@ rem --- Check suggested qty of total for stocked by 'I'
                 prevminusavguse=0
                 prevminusavail=0
                 prevminusonord=0
-                find record (poe26a_dev,key=p06_key$+prodtype$+itemnum$+"  ",dom=testinclude) poe26a$
-                sugg=poe26a.sugg_ord_qty
+                find record (poe_ordtot_dev,key=p06_key$+prodtype$+itemnum$,dom=testinclude) poe_ordtot$
+                sugg=poe_ordtot.sugg_ord_qty
 
 testinclude:
 
                 if includewhse$<>"Y"
                     gosub newitem
-                    read (poe16_dev,key=p16_key$+$FF$,dom=*continue)
+                    read (poe_orddet_dev,key=p16_key$+$FF$,dom=*continue)
                 endif
 
 rem --- Skip all whses for items by 'I' w/no sugg qty
 
                 if suggonly$="Y" if sugg=0 
-                    read (poe16_dev,key=p16_key$+$FF$,dom=*continue)
+                    read (poe_orddet_dev,key=p16_key$+$FF$,dom=*continue)
                 endif
 
             endif
@@ -193,21 +214,26 @@ rem --- Test for new item
 rem --- Print
 
             if l+1>l9 printvtot$="N"; gosub newvendor
-            print (printer_dev) @(o[0]),whse$," ",
-:                               @(o[1]),annualusage$,
-:                               @(o[2]),avgusage$,
-:                               @(o[3]),safety$,
-:                               @(o[4]),lead$,
-:                               @(o[5]),avail$,
-:                               @(o[6]),onorder$,
-:                               @(o[7]),ordpoint$,
-:                               @(o[8]),max$,
-:                               @(o[9]),eoq$,
-:                               @(o[10]),linepoint$,
-:                               @(o[11]),cost$,
-:                               @(o[12]),sugg$,
-:                               @(o[13]),weight$,
-:                               @(o[14]),extension$
+
+            dim pbuf$(width)
+            pbuf$(o[0]+1)=whse$
+            pbuf$(o[1]+1)=annualusage$
+            pbuf$(o[2]+1)=avgusage$
+            pbuf$(o[3]+1)=safety$
+            pbuf$(o[4]+1)=lead$
+            pbuf$(o[5]+1)=avail$
+            pbuf$(o[6]+1)=onorder$
+            pbuf$(o[7]+1)=ordpoint$
+            pbuf$(o[8]+1)=max$
+            pbuf$(o[9]+1)=eoq$
+            pbuf$(o[10]+1)=linepoint$
+            pbuf$(o[11]+1)=cost$
+            pbuf$(o[12]+1)=sugg$
+            pbuf$(o[13]+1)=weight$
+            pbuf$(o[14]+1)=extension$
+            OutVect!.addItem(pbuf$)
+
+         rem ---     print (printer_dev) @(o[0]),whse$," ",@(o[1]),annualusage$,@(o[2]),avgusage$,@(o[3]),safety$,rem				@(o[4]),lead$,@(o[5]),avail$,@(o[6]),onorder$,@(o[7]$,@(o[8]),max$,rem				@(o[9]),eoq$,@(o[10]),linepoint$,@(o[11]),cost$,@(o[12]),sugg$,@(o[13]),weight$,rem				@(o[14]),extension$
             l=l+1
             if stocklevel$="W" gosub dosurplus
 
@@ -226,44 +252,57 @@ done: rem --- Done
     gosub vendtotals
     gosub buyertotals
     gosub printfooter
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,status
-    run pgmdir$+"pou_ba.bbx"
+
+	next_overlay$=stbl("+DIR_PGM")+"pou_repselupdate.aon"
+	goto std_exit
+
 
 report_heading: rem --- Report Heading
 
-    if page gosub printfooter
+rem    if page gosub printfooter ...only printing footer once at end
     l=headings+1
+    page=1
     if review$<>fill(30) and pos(review$=headings$[1])=0 headings$[1]=headings$[1](1,headings1len)+" "+review$
-    headings$[2]=buyerhead$
-    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
+rem    headings$[2]=buyerhead$
+rem    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
     if status exitto std_exit
     if comment$=fill(30) return
     comment$=cvs(comment$,3); rem "Strip leading & trailing spaces
-    print (printer_dev) @(fncenter(comment$,width)),comment$
+
+    dim pbuf$(width)
+    pbuf$(fncenter(comment$,width))=comment$
+    OutVect!.addItem(pbuf$)
+
+    rem    print (printer_dev) @(fncenter(comment$,width)),comment$
     l=l+1
     return
 
 newvendor: rem --- New Vendor
 
     if printvtot$="Y" gosub vendtotals
-    if dopagebrk$="Y" dopagebrk$="N"; gosub report_heading
+    if dopagebrk$="Y" 
+    	dopagebrk$="N"
+    	BrkVect!.addItem(str(OutVect!.size()))
+    	HdrVect!.addItem(buyerhead$)
+    	gosub report_heading
+    endif
     if l+12>l9 gosub report_heading
     gosub vaddress
     dim vendline$(132),targettype$(10)
     vendline$(1)="Vendor: "+fnmask$(vendor$(1,vendlen),vendomask$)
     vendline$(17)=name$
     if pos(" "<>vendor$)=0 vendline$(17)="No Stocking Vendor"
-    if apm06a.purch_addr$<>"  " vendline$(48)="Addr: "+apm06a.purch_addr$
-    if apm06a.pri_rev_date$=fill(8) prirev$="None" else prirev$=fndate$(apm06a.pri_rev_date$)
-    if apm06a.nxt_rev_date$=fill(8) nxtrev$="None" else nxtrev$=fndate$(apm06a.nxt_rev_date$)
+    if apm_vendrepl.purch_addr$<>"  " vendline$(48)="Addr: "+apm_vendrepl.purch_addr$
+    if apm_vendrepl.pri_rev_date$=fill(8) prirev$="None" else prirev$=fndate$(apm_vendrepl.pri_rev_date$)
+    if apm_vendrepl.nxt_rev_date$=fill(8) nxtrev$="None" else nxtrev$=fndate$(apm_vendrepl.nxt_rev_date$)
 
-    action=pos(apm06a.pur_tgt_type$="NDWU")
+    action=pos(apm_vendrepl.pur_tgt_type$="NDWU")
     type_none=1
     type_dollars=2
     type_weight=3
     type_units=4
-    
-    switch action
+
+        switch action
         case type_none
             targettype$="N None"
             break
@@ -279,60 +318,61 @@ newvendor: rem --- New Vendor
          case default
             break
     swend
-    
-    if apm06a.lstrec_date$=fill(8) lastrcpt$="None" else lastrcpt$=fndate$(apm06a.lstrec_date$)
+
+    if apm_vendrepl.lstrec_date$=fill(8) lastrcpt$="None" else lastrcpt$=fndate$(apm_vendrepl.lstrec_date$)
     vendline$(59)="Next Review: "+nxtrev$
     vendline$(83)="Target Type: "+targettype$
-    vendline$(107)="Target Units: "+str(apm06a.pur_tgt_unit:m2$)
-    if apm06a.lstrec_date$=fill(8) lastrcpt$="None" else lastrcpt$=fndate$(apm06a.lstrec_date$)
+    vendline$(107)="Target Units: "+str(apm_vendrepl.pur_tgt_unit:m2$)
+    if apm_vendrepl.lstrec_date$=fill(8) lastrcpt$="None" else lastrcpt$=fndate$(apm_vendrepl.lstrec_date$)
 
-    print (printer_dev)""
-    print (printer_dev) @(0),vendline$
-    print (printer_dev) @(16),addr1$,
-:                       @(57),"Prior Review: ",prirev$,
-:                       @(83),"Cycle Days: ",apm06a.rev_days:"##0",
-:                       @(105),"Target Weight: ",apm06a.pur_targ_lbs:m6$
+rem	dim pbuf$(width)
+rem	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(1)=vendline$
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(17)=addr1$,pbuf$(58)="Prior Review: "+prirev$,pbuf$(84)="Cycle Days: "+str(apm_vendrepl.rev_days:"##0"),pbuf$(106)="Target Weight: "+str(apm_vendrepl.pur_targ_lbs:m6$)
+	OutVect!.addItem(pbuf$)
+ 	dim pbuf$(width)
+    pbuf$(17)=addr2$,pbuf$(58)="Last Receipt: "+lastrcpt$,pbuf$(105)="Target Dollars: "+str(apm_vendrepl.pur_targ_amt:m1$)
+	OutVect!.addItem(pbuf$)
+   	if cvs(addr3$,3)<>""
+   		dim pbuf$(width)
+   		pbuf$(17)=addr3$
+   		OutVect!.addItem(pbuf$)
+   	endif
+   	dim pbuf$(width)
+   	pbuf$(1)="Contact: "+contact$,pbuf$(58)="Phone:  "+phone$,pbuf$(91)="Fax:  "+fax$
+	OutVect!.addItem(pbuf$)
+   	dim pbuf$(width)
+   	pbuf$(1)=dashes$
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+    pbuf$(h[1]+1)="Act Annl",pbuf$(h[2]+1)="Wgt Per",pbuf$(h[3]+1)="Safety",pbuf$(h[4]+1)="Lead",pbuf$(h[6]+1)="On",pbuf$(h[7]+1)="Order",pbuf$(h[8]+1)="Max",pbuf$(h[10]+1)="Line",pbuf$(h[11]+1)="Unit",pbuf$(h[12]+1)="Suggested",pbuf$(h[13]+1)="Total"
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+    pbuf$(h[0]+1)="Whs",pbuf$(h[1]+1)="Usage",pbuf$(h[2]+1)="Usage",pbuf$(h[3]+1)="Stock",pbuf$(h[4]+1)="Time",pbuf$(h[5]+1)="Avail",pbuf$(h[6]+1)="Order",pbuf$(h[7]+1)="Point",pbuf$(h[8]+1)="Qty",pbuf$(h[9]+1)="EOQ",pbuf$(h[10]+1)="Point",pbuf$(h[11]+1)="Cost",pbuf$(h[12]+1)="Order Qty",pbuf$(h[13]+1)="Weight",pbuf$(h[14]+1)="Extension"
+	OutVect!.addItem(pbuf$)
+   	dim pbuf$(width)
+   	pbuf$(1)=dashes$
+	OutVect!.addItem(pbuf$)
 
-    print (printer_dev) @(16),addr2$,
-:                       @(57),"Last Receipt: ",lastrcpt$,
-:                       @(104),"Target Dollars: ",apm06a.pur_targ_amt:m1$
+	rem    print (printer_dev)""
+rem   print (printer_dev) @(0),vendline$
+rem    print (printer_dev) @(16),addr1$,@(57),"Prior Review: ",prirev$,@(83),"Cycle Days: ",apm_vendrepl.rev_days:"##0",@(105),"Target Weight: ",apm_vendrepl.pur_targ_lbs:m6$
 
-    if pos(" "<>addr3$)<>0 print (printer_dev)@(16),addr3$; let l=l+1
+rem    print (printer_dev) @(16),addr2$,@(57),"Last Receipt: ",lastrcpt$,@(104),"Target Dollars: ",apm_vendrepl.pur_targ_amt:m1$
 
-    print (printer_dev) @(0),"Contact: ",contact$,
-:                       @(57),"Phone:  ",phone$,
-:                       @(90),"Fax:  ",fax$
+rem    if pos(" "<>addr3$)<>0 print (printer_dev)@(16),addr3$; let l=l+1
 
-    print (printer_dev)dashes$
+rem    print (printer_dev) @(0),"Contact: ",contact$,@(57),"Phone:  ",phone$,@(90),"Fax:  ",fax$
 
-    print (printer_dev) @(h[1]),"Act Annl",
-:                       @(h[2]),"Wgt Per",
-:                       @(h[3]),"Safety",
-:                       @(h[4]),"Lead",
-:                       @(h[6]),"On",
-:                       @(h[7]),"Order",
-:                       @(h[8]),"Max",
-:                       @(h[10]),"Line",
-:                       @(h[11]),"Unit",
-:                       @(h[12]),"Suggested",
-:                       @(h[13]),"Total"
+rem    print (printer_dev)dashes$
 
-    print (printer_dev) @(h[0]),"Whs",
-:                       @(h[1]),"Usage",
-:                       @(h[2]),"Usage",
-:                       @(h[3]),"Stock",
-:                       @(h[4]),"Time",
-:                       @(h[5]),"Avail",
-:                       @(h[6]),"Order",
-:                       @(h[7]),"Point",
-:                       @(h[8]),"Qty",
-:                       @(h[9]),"EOQ",
-:                       @(h[10]),"Point",
-:                       @(h[11]),"Cost",
-:                       @(h[12]),"Order Qty",
-:                       @(h[13]),"Weight",
-:                       @(h[14]),"Extension"
-    print (printer_dev)dashes$
+rem    print (printer_dev) @(h[1]),"Act Annl",@(h[2]),"Wgt Per",@(h[3]),"Safety",@(h[4]),"Lead",@(h[6]),"On",@(h[7]),"Order",@(h[8]),"Max",@(h[10]),"Line",@(h[11]),"Unit",@(h[12]),"Suggested",@(h[13]),"Total"
+
+rem    print (printer_dev) @(h[0]),"Whs",@(h[1]),"Usage",@(h[2]),"Usage",@(h[3]),"Stock",@(h[4]),"Time",@(h[5]),"Avail",@(h[6]),"Order",@(h[7]),"Point",@(h[8]),"Qty",@(h[9]),"EOQ",@(h[10]),"Point",@(h[11]),"Cost",@(h[12]),"Order Qty",@(h[13]),"Weight",@(h[14]),"Extension"
+rem    print (printer_dev)dashes$
     l=l+9
     printvtot$="Y"
     prevvend$=vendor$
@@ -344,27 +384,27 @@ vaddress: rem --- Get Vendor's address etc
 
     ap01_key$=firm_id$+vendor$
     ap06_key$=firm_id$+vendor$+buyer$
-    read record (apm01_dev,key=ap01_key$,dom=*next) apm01a$
-    read record (apm06_dev,key=ap06_key$,dom=brnch4) apm06a$
+    read record (apm_vendmast_dev,key=ap01_key$,dom=*next) apm_vendmast$
+    read record (apm_vendrepl_dev,key=ap06_key$,dom=brnch4) apm_vendrepl$
 
-    if apm06a.purch_addr$="  "
+    if apm_vendrepl.purch_addr$="  "
         gosub useapm01addr
         return
     endif
 
 brnch4:
-        ap05_key$=firm_id$+vendor$+apm06a.purch_addr$
-        read record (apm05_dev,key=ap05_key$,dom=brnch5) apm05a$
-        apm01a.vendor_name$=apm05a.name$
-        apm01a.addr_line_1$=apm05a.addr_line_1$
-        apm01a.addr_line_2$=apm05a.addr_line_2$
-        apm01a.city$=apm05a.city$
-        apm01a.state_code$=apm05a.state_code$
-        apm01a.zip_code$=apm05a.zip_code$
-        apm01a.phone_no$=apm05a.phone_no$
-        apm01a.phone_exten$=apm05a.phone_exten$
-        apm01a.fax_no$=apm05a.fax_no$
-        apm01a.contact_name$=apm05a.contact_name$
+        ap05_key$=firm_id$+vendor$+apm_vendrepl.purch_addr$
+        read record (apm_vendaddr_dev,key=ap05_key$,dom=brnch5) apm_vendaddr$
+        apm_vendmast.vendor_name$=apm_vendaddr.name$
+        apm_vendmast.addr_line_1$=apm_vendaddr.addr_line_1$
+        apm_vendmast.addr_line_2$=apm_vendaddr.addr_line_2$
+        apm_vendmast.city$=apm_vendaddr.city$
+        apm_vendmast.state_code$=apm_vendaddr.state_code$
+        apm_vendmast.zip_code$=apm_vendaddr.zip_code$
+        apm_vendmast.phone_no$=apm_vendaddr.phone_no$
+        apm_vendmast.phone_exten$=apm_vendaddr.phone_exten$
+        apm_vendmast.fax_no$=apm_vendaddr.fax_no$
+        apm_vendmast.contact_name$=apm_vendaddr.contact_name$
 
 brnch5:
         gosub useapm01addr
@@ -373,21 +413,21 @@ brnch5:
 
 useapm01addr:
 
-    name$=apm01a.vendor_name$
-    addr1$=apm01a.addr_line_1$
-    addr2$=apm01a.addr_line_2$
-    addr3$=cvs(apm01a.city$,51)+", "+apm01a.state_code$
-    call stbl("+DIR_SYP")+"bac_getmask.bbj","P",cvs(apm01a.zip_code$,2),"",postal_mask$
-    postal$=cvs(apm01a.zip_code$,2)
+    name$=apm_vendmast.vendor_name$
+    addr1$=apm_vendmast.addr_line_1$
+    addr2$=apm_vendmast.addr_line_2$
+    addr3$=cvs(apm_vendmast.city$,51)+", "+apm_vendmast.state_code$
+    call stbl("+DIR_SYP")+"bac_getmask.bbj","P",cvs(apm_vendmast.zip_code$,2),"",postal_mask$
+    postal$=cvs(apm_vendmast.zip_code$,2)
     postal$=str(postal$:postal_mask$,err=*next)
     zip$=postal$
-    call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.phone_no$,2),"",phone_mask$
-    phone$=cvs(apm01a.phone_no$,2)
+    call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm_vendmast.phone_no$,2),"",phone_mask$
+    phone$=cvs(apm_vendmast.phone_no$,2)
     phone$=str(phone$:phone_mask$,err=*next)
-    call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.fax_no$,2),"",fax_mask$
-    fax$=cvs(apm01a.fax_no$,2)
+    call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm_vendmast.fax_no$,2),"",fax_mask$
+    fax$=cvs(apm_vendmast.fax_no$,2)
     fax$=str(fax$:fax_mask$,err=*next)
-    contact$=apm01a.contact_name$
+    contact$=apm_vendmast.contact_name$
     if pos(" "<>addr3$)>0 addr3$=cvs(addr3$,2)+"  "+zip$ else addr2$=cvs(addr2$,2)+"  "+zip$
     return
 
@@ -395,15 +435,19 @@ newprodtype: rem --- New Product Type
 
     if printptot$="Y" gosub prodtotals
     dim prodtots[2]
-    ivm10a.code_desc$="**Not On File**"
+    proddesc$="**Not On File**"
     iv10_key$=firm_id$+"A"+prodtype$
-    find record (ivm10a_dev,key=iv10_key$,dom=brnch3) ivm10a$
-    proddesc$=ivm10a.code_desc$
+    find record (ivc_prodcode_dev,key=iv10_key$,dom=brnch3) ivc_prodcode$
+    proddesc$=ivc_prodcode.code_desc$
 
 brnch3:
     if l+2>l9 printvtot$="N"; gosub newvendor
-    print (printer_dev) ""
-    print (printer_dev) @(0),"Product: ",prodtype$," ",proddesc$
+   	dim pbuf$(width)
+   	pbuf$(1)="Product: "+prodtype$+" "+proddesc$
+	OutVect!.addItem(pbuf$)
+
+    rem    print (printer_dev) ""
+rem    print (printer_dev) @(0),"Product: ",prodtype$," ",proddesc$
     l=l+2
     printptot$="Y"
     prevprodtype$=prodtype$
@@ -416,17 +460,20 @@ newitem: rem --- New Item
     prevminusavguse=0
     prevminusavail=0
     prevminusonord=0
-rem dim itemdesc$(desclen)
-rem ivm01a.item_desc$="** Not on File **"
     iv01_key$=firm_id$+itemnum$
-    find record (ivm01a_dev,key=iv01_key$,dom=*next) ivm01a$
-    ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+    find record (ivm_itemmast_dev,key=iv01_key$,dom=*next) ivm_itemmast$
+    itemdesc$=fnitem$(ivm_itemmast.item_desc$,desclen[1],desclen[2],desclen[3])
 
     if suggonly$<>"Y" or sugg<>0 or csugg<>0
-    
+
         if l+1>l9 printptot$="N"; gosub newprodtype
-        print (printer_dev) estimated$,"  ",itemnum$(1,itemlen),"  ",itemdesc$,
-:                           @(50),"Stocked by: ",stocklevel$
+
+                dim pbuf$(width)
+        pbuf$(1)=estimated$+"  "+itemnum$(1,itemlen)+"  "+itemdesc$
+        pbuf$(51)="Stocked by: "+stocklevel$
+        OutVect!.addItem(pbuf$)
+
+        rem        print (printer_dev) estimated$,"  ",itemnum$(1,itemlen),"  ",itemdesc$,@(50),"Stocked by: ",stocklevel$
         l=l+1
         printtotline$="Y"
 
@@ -436,21 +483,33 @@ rem ivm01a.item_desc$="** Not on File **"
     return
 
 printfooter: rem --- Print the 'footers' here
+rem -- for docout version, just printing this once on its own page at end of report
 
-    if l<l9 print (printer_dev)lf$(1,l9-l)
-    print (printer_dev) dashes$
+rem    if l<l9 print (printer_dev)lf$(1,l9-l)
 
-    print (printer_dev) @(0),"** Indicates period usage is estimated",
-:                       @(40),"M - Suggested Buy Based on Maximum",
-:                       @(85),"R - Suggested Buy Based on Reorder Point"
-    
-    print (printer_dev) @(0),"O - Indicates On Hand Greater than Max",
-:                       @(40),"E - Suggested Buy Rounded to EOQ Amount",
-:                       @(85),"Y - Suggested Buy Limited to One Year's Usage"
-    
-    print (printer_dev) @(0),"U - Indicates Unusual Monthly Usage   ",
-:                       @(40),"L - Suggested Buy Based on Line Point",
-:                       @(85),"2 - Suggested Buy Increased 1/2 Month's Usage"
+	BrkVect!.addItem(str(OutVect!.size()))
+	HdrVect!.addItem("Report Legend:")
+
+    dim pbuf$(width)
+    pbuf$(1)=dashes$
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(1)="** Indicates period usage is estimated",pbuf$(41)="M - Suggested Buy Based on Maximum",pbuf$(86)="R - Suggested Buy Based on Reorder Point"
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)    
+    pbuf$(1)="O - Indicates On Hand Greater than Max",pbuf$(41)="E - Suggested Buy Rounded to EOQ Amount",pbuf$(86)="Y - Suggested Buy Limited to One Year's Usage"
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(1)="U - Indicates Unusual Monthly Usage   ",pbuf$(41)="L - Suggested Buy Based on Line Point",pbuf$(86)="2 - Suggested Buy Increased 1/2 Month's Usage"
+    OutVect!.addItem(pbuf$)
+
+    rem    print (printer_dev) dashes$
+
+rem    print (printer_dev) @(0),"** Indicates period usage is estimated",@(40),"M - Suggested Buy Based on Maximum",@(85),"R - Suggested Buy Based on Reorder Point"
+
+rem        print (printer_dev) @(0),"O - Indicates On Hand Greater than Max",@(40),"E - Suggested Buy Rounded to EOQ Amount",@(85),"Y - Suggested Buy Limited to One Year's Usage"
+
+rem        print (printer_dev) @(0),"U - Indicates Unusual Monthly Usage   ",@(40),"L - Suggested Buy Based on Line Point",@(85),"2 - Suggested Buy Increased 1/2 Month's Usage"
     return
 
 testbreaks: rem --- Test for Breaks
@@ -466,7 +525,7 @@ testbreaks: rem --- Test for Breaks
         if vendor$<>prevvend$ gosub newvendor
     else
         gosub testprod
-    fi
+    endif
     return
 
 testprod:
@@ -477,9 +536,11 @@ newbuyer: rem --- New Buyer
 
     dim buyertots[2],buyerhead$(30),r0$(30)
     iv10_key$=firm_id$+"F"+buyer$
-    find record (ivm10f_dev,key=iv10_key$,dom=*next) ivm10f$
-    buyerhead$="Buyer Code: "+buyer$+" "+r0$(7,20)
+    find record (ivc_buycode_dev,key=iv10_key$,dom=*next) ivc_buycode$
+    buyerhead$="Buyer Code: "+buyer$+" "+ivc_buycode.code_desc$
     buyerhead$=buyerhead$(1,pos(" "<>buyerhead$,-1))
+	HdrVect!.addItem(buyerhead$)
+    BrkVect!.addItem(str(OutVect!.size()))
     gosub report_heading
     printbtot$="Y"
     prevbuyer$=buyer$
@@ -488,90 +549,89 @@ newbuyer: rem --- New Buyer
 
 buyertotals: rem --- Print buyer totals
 
+	BrkVect!.addItem(str(OutVect!.size()))
+	HdrVect!.addItem(buyerhead$)
     gosub report_heading
-    print (printer_dev) @(h[12]),"Suggested",
-:                       @(h[13]),"Total"
 
-    print (printer_dev) @(h[12]),"Order Qty",
-:                       @(h[13]),"Weight",
-:                       @(h[14]),"Extension"
+    dim pbuf$(width)
+	pbuf$(h[12]+1)="Suggested",pbuf$(h[13]+1)="Total"
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(h[12]+1)="Order Qty",pbuf$(h[13]+1)="Weight",pbuf$(h[14]+1)="Extension"
+	OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(1)=dashes$
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(o[12]-20)="Total For Buyer "+prevbuyer$,pbuf$(o[12]+1)=str(buyertots[0]:m2$),pbuf$(o[13])=str(buyertots[1]:"#"+m6$),pbuf$(o[14])=str(buyertots[2]:"#"+m1$)
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    OutVect!.addItem(pbuf$)
 
-    print (printer_dev) @(h[12]),dashes$(1,132-h[12])
-    print (printer_dev) @(o[12]-21),"Total For Buyer ",prevbuyer$,
-:                       @(o[12]),buyertots[0]:m2$,
-:                       @(o[13]-1),buyertots[1]:"#"+m6$,
-:                       @(o[14]-1),buyertots[2]:"#"+m1$
+rem    print (printer_dev) @(h[12]),"Suggested",@(h[13]),"Total"
 
-    print (printer_dev)""
+rem    print (printer_dev) @(h[12]),"Order Qty",@(h[13]),"Weight",@(h[14]),"Extension"
+
+rem    print (printer_dev) @(h[12]),dashes$(1,132-h[12])
+rem    print (printer_dev) @(o[12]-21),"Total For Buyer ",prevbuyer$,@(o[12]),buyertots[0]:m2$,@(o[13]-1),buyertots[1]:"#"+m6$,@(o[14]-1),buyertots[2]:"#"+m1$
+
+rem    print (printer_dev)""
     l=l+5
 
 rem --- Print selection critera for this buyer
 
-    print (printer_dev) "Selection Criteria:",
-:                   @(hsel[1]),"Beg",
-:                   @(hsel[2]),"End",
-:                   @(hsel[3]),"Beg",
-:                   @(hsel[4]),"End",
-:                   @(hsel[5]),"Beg",
-:                   @(hsel[6]),"End",
-:                   @(hsel[7]),"Beg",
-:                   @(hsel[8]),"End"
+    dim pbuf$(width)
+    pbuf$(1)="Selection Criteria:",pbuf$(hsel[1]+1)="Beg",pbuf$(hsel[2]+1)="End",pbuf$(hsel[3]+1)="Beg",pbuf$(hsel[4]+1)="End",pbuf$(hsel[5]+1)="Beg",pbuf$(hsel[6]+1)="End",pbuf$(hsel[7]+1)="Beg",pbuf$(hsel[8]+1)="End"
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(hsel[0]+1)="Seq",pbuf$(hsel[1]+1)="Buyer",pbuf$(hsel[2]+1)="Buyer",pbuf$(hsel[3]+1)="Vendor",pbuf$(hsel[4]+1)="Vendor",pbuf$(hsel[5]+1)="Date",pbuf$(hsel[6]+1)="Date",pbuf$(hsel[7]+1)="Whs",pbuf$(hsel[8]+1)="Whs",pbuf$(hsel[9]+1)="Comment"
+    OutVect!.addItem(pbuf$)
 
-    print (printer_dev) @(hsel[0]),"Seq",
-:                   @(hsel[1]),"Buyer",
-:                   @(hsel[2]),"Buyer",
-:                   @(hsel[3]),"Vendor",
-:                   @(hsel[4]),"Vendor",
-:                   @(hsel[5]),"Date",
-:                   @(hsel[6]),"Date",
-:                   @(hsel[7]),"Whs",
-:                   @(hsel[8]),"Whs",
-:                   @(hsel[9]),"Comment"
-    
+
+rem    print (printer_dev) "Selection Criteria:",@(hsel[1]),"Beg",@(hsel[2]),"End",@(hsel[3]),"Beg",@(hsel[4]),"End",@(hsel[5]),"Beg",@(hsel[6]),"End",@(hsel[7]),"Beg",@(hsel[8]),"End"
+
+rem    print (printer_dev) @(hsel[0]),"Seq",@(hsel[1]),"Buyer",@(hsel[2]),"Buyer",@(hsel[3]),"Vendor",@(hsel[4]),"Vendor",@(hsel[5]),"Date",@(hsel[6]),"Date",@(hsel[7]),"Whs",@(hsel[8]),"Whs",@(hsel[9]),"Comment"
+
     l=l+2
     dim w0$(4),w1$(75)
 
-    p07_key$=firm_id$+prevbuyer$
-    read (poe17_dev,key=p07_key$,dom=*next)
-
+    p17_key$=firm_id$+prevbuyer$
+    read (poe_repxref_dev,key=p17_key$,dom=*next)
+    
     while more
 
         if !therearebuyers
 
-            poe07a_key$=key(poe07_dev,end=*break)
+            poe07a_key$=key(poe_repsel_dev,end=*break)
             if pos(firm_id$=poe07a_key$)<>1 break
 
         else
 
-            poe17a_key$=key(poe17_dev,end=*break)
-            if pos(p07_key$=poe17a_key$)<>1 break
-            read (poe17_dev)
-            poe07a_key$=poe17_key.firm_id$+poe17_key.sequence_no$
+            poe17a_key$=key(poe_repxref_dev,end=*break)
+            if pos(p17_key$=poe17a_key$)<>1 break
+            read record (poe_repxref_dev) poe_repxref$
+            poe07a_key$=poe_repxref.firm_id$+poe_repxref.sequence_num$
 
         endif
 
-        read record (poe07_dev,key=poe07a_key$,dom=*continue) poe07a$
-        seqnum$=str(poe07a.sequence_no$:"00")
-        comment$=poe07a.rep_comments$
-        if poe07a.beg_buyer$=fill(3) buyerfrom$="First" else buyerfrom$=poe07a.beg_buyer$
-        if poe07a.end_buyer$=fill(3) buyerthru$="Last" else buyerthru$=poe07a.end_buyer$
-        if poe07a.begin_vend$=fill(6) vendfrom$="First" else vendfrom$=fnmask$(poe07a.begin_vend$,vendomask$)
-        if poe07a.ending_vend$=fill(6) vendthru$="Last" else vendthru$=fnmask$(poe07a.ending_vend$,vendomask$)
-        if poe07a.from_whse$=fill(2) whsfrom$="First" else whsfrom$=poe07a.from_whse$
-        if poe07a.thru_whse$=fill(2) whsthru$="Last" else whsthru$=poe07a.thru_whse$
-        if poe07a.begrev_date$=fill(8) datefrom$="First" else datefrom$=fndate$(poe07a.begrev_date$)
-        if poe07a.revendor_date$=fill(8) datethru$="Last" else datethru$=fndate$(poe07a.revendor_date$)
+        read record (poe_repsel_dev,key=poe07a_key$,dom=*continue) poe_repsel$
+        seqnum$=str(poe_repsel.sequence_num$:"00")
+        comment$=poe_repsel.rep_comments$
+        if poe_repsel.beg_buyer$=fill(3) buyerfrom$="First" else buyerfrom$=poe_repsel.beg_buyer$
+        if poe_repsel.end_buyer$=fill(3) buyerthru$="Last" else buyerthru$=poe_repsel.end_buyer$
+        if poe_repsel.begin_vend$=fill(6) vendfrom$="First" else vendfrom$=fnmask$(poe_repsel.begin_vend$,vendomask$)
+        if poe_repsel.ending_vend$=fill(6) vendthru$="Last" else vendthru$=fnmask$(poe_repsel.ending_vend$,vendomask$)
+        if poe_repsel.from_whse$=fill(2) whsfrom$="First" else whsfrom$=poe_repsel.from_whse$
+        if poe_repsel.thru_whse$=fill(2) whsthru$="Last" else whsthru$=poe_repsel.thru_whse$
+        if poe_repsel.begrev_date$=fill(8) datefrom$="First" else datefrom$=fndate$(poe_repsel.begrev_date$)
+        if poe_repsel.endrev_date$=fill(8) datethru$="Last" else datethru$=fndate$(poe_repsel.endrev_date$)
         if l+1>l9 gosub report_heading
-        print (printer_dev) @(hsel[0]),seqnum$,
-:                           @(hsel[1]),buyerfrom$,
-:                           @(hsel[2]),buyerthru$,
-:                           @(hsel[3]),vendfrom$,
-:                           @(hsel[4]),vendthru$,
-:                           @(hsel[5]),datefrom$,
-:                           @(hsel[6]),datethru$,
-:                           @(hsel[7]),whsfrom$,
-:                           @(hsel[8]),whsthru$,
-:                           @(hsel[9]),comment$
+
+        dim pbuf$(width)
+    	pbuf$(hsel[0]+1)=seqnum$,pbuf$(hsel[1]+1)=buyerfrom$,pbuf$(hsel[2]+1)=buyerthru$,pbuf$(hsel[3]+1)=vendfrom$,pbuf$(hsel[4]+1)=vendthru$,pbuf$(hsel[5]+1)=datefrom$,pbuf$(hsel[6]+1)=datethru$,pbuf$(hsel[7]+1)=whsfrom$,pbuf$(hsel[8]+1)=whsthru$,pbuf$(hsel[9]+1)=comment$
+    	OutVect!.addItem(pbuf$)
+
+        rem        print (printer_dev) @(hsel[0]),seqnum$,@(hsel[1]),buyerfrom$,@(hsel[2]),buyerthru$,@(hsel[3]),vendfrom$,@(hsel[4]),vendthru$,@(hsel[5]),datefrom$,@(hsel[6]),datethru$,@(hsel[7]),whsfrom$,@(hsel[8]),whsthru$,@(hsel[9]),comment$
         l=l+1
 
     wend
@@ -583,29 +643,34 @@ vendtotals: rem --- Print Vendor Totals
     if printtotline$="Y" gosub totalline
     printtotline$="N"
     vendtotwt$=str(vendtots[1]:"#"+m6$)
-    minimumwt$=str(apm06.pur_targ_lbs:"#"+m6$)
-    totwtdiff$=str(vendtots[1]-apm06.pur_targ_lbs:"#"+m6$)
+    minimumwt$=str(apm_vendrepl.pur_targ_lbs:"#"+m6$)
+    totwtdiff$=str(vendtots[1]-apm_vendrepl.pur_targ_lbs:"#"+m6$)
     if printptot$="Y" gosub prodtotals
     if l+4>l9 printvtot$="N"; gosub newvendor
 
-    print (printer_dev)""
-    print (printer_dev) @(o[12]-20-vendlen),"Total For Vendor ",fnmask$(prevvend$(1,vendlen),vendomask$),
-:                       @(o[12]),vendtots[0]:m2$,
-:                       @(o[13]-1),vendtotwt$,
-:                       @(o[14]-1),vendtots[2]:"#"+m1$
+    dim pbuf$(width)
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(o[12]-19-vendlen)="Total For Vendor "+fnmask$(prevvend$(1,vendlen),vendomask$),pbuf$(o[12]+1)=str(vendtots[0]:m2$),pbuf$(o[13])=vendtotwt$,pbuf$(o[14])=str(vendtots[2]:"#"+m1$)
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(o[12]-16)="Target Minimum ",pbuf$(o[12]+1)=str(apm_vendrepl.pur_tgt_unit:m2$),pbuf$(o[13])=minimumwt$,pbuf$(o[14])=str(apm_vendrepl.pur_targ_amt:"#"+m1$)
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(o[12]-12)="Over/Under",pbuf$(o[12]+1)=str(vendtots[1]-apm_vendrepl.pur_tgt_unit:m2$),pbuf$(o[13])=totwtdiff$,pbuf$(o[14])=str(vendtots[2]-apm_vendrepl.pur_targ_amt:"#"+m1$)
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	OutVect!.addItem(pbuf$)
 
-    print (printer_dev) @(o[12]-17),"Target Minimum ",
-:                       @(o[12]),apm06.pur_tgt_unit:m2$,
-:                       @(o[13]-1),minimumwt$,
-:                       @(o[14]-1),apm06.pur_targ_amt:"#"+m1$
+rem    print (printer_dev)""
+rem    print (printer_dev) @(o[12]-20-vendlen),"Total For Vendor ",fnmask$(prevvend$(1,vendlen),vendomask$),@(o[12]),vendtots[0]:m2$,@(o[13]-1),vendtotwt$,@(o[14]-1),vendtots[2]:"#"+m1$
 
-    print (printer_dev) ""
-    print (printer_dev) @(o[12]-13),"Over/Under",
-:                       @(o[12]),vendtots[1]-apm06.pur_tgt_unit:m2$,
-:                       @(o[13]-1),totwtdiff$,
-:                       @(o[14]-1),vendtots[2]-apm06.pur_targ_amt:"#"+m1$
+rem    print (printer_dev) @(o[12]-17),"Target Minimum ",@(o[12]),apm_vendrepl.pur_tgt_unit:m2$,@(o[13]-1),minimumwt$,@(o[14]-1),apm_vendrepl.pur_targ_amt:"#"+m1$
 
-    print (printer_dev) ""
+rem    print (printer_dev) ""
+rem    print (printer_dev) @(o[12]-13),"Over/Under",@(o[12]),vendtots[1]-apm_vendrepl.pur_tgt_unit:m2$,@(o[13]-1),totwtdiff$,@(o[14]-1),vendtots[2]-apm_vendrepl.pur_targ_amt:"#"+m1$
+
+rem    print (printer_dev) ""
     l=l+6
     dim vendtots[2]
     printvtot$="N"
@@ -617,11 +682,15 @@ prodtotals: rem --- Print product type Subtotal
     if printtotline$="Y" gosub totalline
     printtotline$="N"
     totprodwt$=str(prodtots[1]:"#"+m6$)
-    print (printer_dev) ""
-    print (printer_dev) @(o[12]-29),"Total For Product Type ",prevprodtype$,
-:                       @(o[12]),prodtots[0]:m2$,
-:                       @(o[13]-1),totprodwt$,
-:                       @(o[14]-1),prodtots[2]:"#"+m1$
+
+    	dim pbuf$(width)
+	OutVect!.addItem(pbuf$)
+	dim pbuf$(width)
+	pbuf$(o[12]-28)="Total For Product Type "+prevprodtype$,pbuf$(o[12]+1)=str(prodtots[0]:m2$),pbuf$(o[13])=totprodwt$,pbuf$(o[14])=str(prodtots[2]:"#"+m1$)
+	OutVect!.addItem(pbuf$)	
+
+rem    print (printer_dev) ""
+rem    print (printer_dev) @(o[12]-29),"Total For Product Type ",prevprodtype$,@(o[12]),prodtots[0]:m2$,@(o[13]-1),totprodwt$,@(o[14]-1),prodtots[2]:"#"+m1$
 
     l=l+2
     printptot$="N"
@@ -634,27 +703,32 @@ dosurplus: rem --- Print surplus of other whses for items stocked by 'W'
     surplus$(o[1])="Surplus Other Whses: "
     col=4
     p36_key$=firm_id$(1,2)+itemnum$
-    read record (poe36_dev,key=p36_key$,dom=*next) poe36a$
+    read record (poe_repsurp_dev,key=p36_key$,dom=*next) poe_repsurp$
 
 readpoe36:
 
     while more
 
-        poe36a_key$=key(poe36_dev,end=printsurplus)
+        poe36a_key$=key(poe_repsurp_dev,end=*break)
         if pos(p36_key$=poe36a_key$)<>1 break
         if col>12 break
-        read record (poe36_dev) poe36a$
-        if poe36a_key.warehouse_id$<>whse$
-            surplus$(o[col])=poe36a_key.warehouse_id$+": "+str(poe36a.surplus_qty:m2$)
+        read record (poe_repsurp_dev) poe_repsurp$
+        if poe_repsurp.warehouse_id$<>whse$
+            surplus$(o[col])=poe_repsurp.warehouse_id$+": "+str(poe_repsurp.surplus_qty:m2$)
             col=col+2
         endif
 
-    endif
+    wend
 
 printsurplus:
 
     if col>4
-        print (printer_dev)surplus$
+
+        	dim pbuf$(width)
+    	pbuf$(1)=surplus$
+		OutVect!.addItem(pbuf$)
+
+rem        print (printer_dev)surplus$
         let l=l+1
     endif
     return
@@ -667,38 +741,31 @@ totalline: rem --- Print total line
     dim tsugg$(0),tweight$(0),tcost$(0),tannualusage$(0),tavgusage$(0)
     dim textension$(0)
 
-    p26a_key$=firm_id$+prevbuyer$+prevvend$+prevprodtype$+previtem$+" "
-    find record (poe26a_dev,key=p26a_key$,dom=nototal) poe26a$
-    let tstocklevel$=poe26a.stock_level$,adjustcodes$=poe26a.adjust_code$,textension$=str(poe26a.extended_amt:m1$)
-    let tavail$=str(poe26a.qty_avail-prevminusavail:m2$),tweight$=str(poe26a.weight:m6$)
-    let tonorder$=str(poe26a.qty_on_order-prevminusonord:m2$),tsugg$=str(poe26a.sugg_ord_qty:m2$)
-    let tannualusage$=str(poe26a.annual_usage-prevminusannuse:m2$)
-    let tavgusage$=str(poe26a.avg_usage-prevminusavguse:m2$)
+    p26a_key$=firm_id$+prevbuyer$+prevvend$+prevprodtype$+previtem$
+    find record (poe_ordtot_dev,key=p26a_key$,dom=nototal) poe_ordtot$
+    let tstocklevel$=poe_ordtot.stock_level$,textension$=str(poe_ordtot.extended_amt:m1$)
+    for x=1 to 8
+    	adjustcodes$(x)=field(poe_ordtot$,"ADJUST_CODE_"+str(x:"00"))
+    next x
+    let tavail$=str(poe_ordtot.qty_avail-prevminusavail:m2$),tweight$=str(poe_ordtot.weight:m6$)
+    let tonorder$=str(poe_ordtot.qty_on_order-prevminusonord:m2$),tsugg$=str(poe_ordtot.sugg_ord_qty:m2$)
+    let tannualusage$=str(poe_ordtot.annual_usage-prevminusannuse:m2$)
+    let tavgusage$=str(poe_ordtot.avg_usage-prevminusavguse:m2$)
     if tstocklevel$<>"W"
 
-        let tlinepoint$=str(poe26a.line_point:m2$),tordpoint$=str(poe26a.order_point:m2$),teoq$=str(poe26a.eoq:m2$)
-        let tsafety$=str(poe26a.safety_stock:m2$),tmax$=str(poe26a.maximum_qty:m2$),tlead$=str(poe26a.lead_time:m9$)
-        let tcost$=str(poe26a.est_unit_cst:m3$)
+        let tlinepoint$=str(poe_ordtot.line_point:m2$),tordpoint$=str(poe_ordtot.order_point:m2$),teoq$=str(poe_ordtot.eoq:m2$)
+        let tsafety$=str(poe_ordtot.safety_stock:m2$),tmax$=str(poe_ordtot.maximum_qty:m2$),tlead$=str(poe_ordtot.lead_time:m9$)
+        let tcost$=str(poe_ordtot.est_unit_cst:m3$)
 
     endif
 
-    print (printer_dev) @(0),adjustcodes$,
-:                       @(o[1]),tannualusage$,
-:                       @(o[2]),tavgusage$,
-:                       @(o[3]),tsafety$,
-:                       @(o[4]),tlead$,
-:                       @(o[5]),tavail$,
-:                       @(o[6]),tonorder$,
-:                       @(o[7]),tordpoint$,
-:                       @(o[8]),tmax$,
-:                       @(o[9]),teoq$,
-:                       @(o[10]),tlinepoint$,
-:                       @(o[11]),tcost$,
-:                       @(o[12]),tsugg$,
-:                       @(o[13]),tweight$,
-:                       @(o[14]),textension$
+    dim pbuf$(width)
+    pbuf$(1)=adjustcodes$,pbuf$(o[1]+1)=tannualusage$,pbuf$(o[2]+1)=tavgusage$,pbuf$(o[3]+1)=tsafety$,pbuf$(o[4]+1)=tlead$,pbuf$(o[5]+1)=tavail$,pbuf$(o[6]+1)=tonorder$,pbuf$(o[7]+1)=tordpoint$,pbuf$(o[8]+1)=tmax$,pbuf$(o[9]+1)=teoq$,pbuf$(o[10]+1)=tlinepoint$,pbuf$(o[11]+1)=tcost$,pbuf$(o[12]+1)=tsugg$,pbuf$(o[13]+1)=tweight$,pbuf$(o[14]+1)=textension$
+    OutVect!.addItem(pbuf$)
 
-    let tsugg=poe26a.sugg_ord_qty,tweight=poe26a.weight,textension=poe26a.extended_amt
+rem    print (printer_dev) @(0),adjustcodes$,@(o[1]),tannualusage$,@(o[2]),tavgusage$,@(o[3]),tsafety$,@(o[4]),tlead$,@(o[5]),tavail$,@(o[6]),tonorder$,@(o[7]),tordpoint$,@(o[8]),tmax$,@(o[9]),teoq$,@(o[10]),tlinepoint$,@(o[11]),tcost$,@(o[12]),tsugg$,@(o[13]),tweight$,@(o[14]),textension$
+
+    let tsugg=poe_ordtot.sugg_ord_qty,tweight=poe_ordtot.weight,textension=poe_ordtot.extended_amt
     let buyertots[0]=buyertots[0]+tsugg,buyertots[1]=buyertots[1]+tweight
     let buyertots[2]=buyertots[2]+textension,vendtots[0]=vendtots[0]+tsugg
     let vendtots[1]=vendtots[1]+tweight,vendtots[2]=vendtots[2]+textension
@@ -708,7 +775,12 @@ totalline: rem --- Print total line
     return
 
 nototal:
-    print (printer_dev) @(1),"*** Total Line Not On File ***"
+
+    dim pbuf$(width)
+    pbuf$(2)="*** Total Line Not On File ***"
+    OutVect!.addItem(pbuf$)
+
+rem    print (printer_dev) @(1),"*** Total Line Not On File ***"
     gosub donetotal
     return
 
@@ -716,13 +788,28 @@ donetotal:
     let printtotline$="N",l=l+1
     return
 
+    rem --- Line Feed: Determine number of cells to add to OutVect!
+
+line_feed:
+    tmp=mod(OutVect!.size(),columns+1)
+    if tmp then xwk = fnblank (columns+1-tmp)
+    return
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+
+	def fnblank(q0)
+		for q1=1 to q0
+			OutVect!.addItem("")
+		next q1
+		return q1
+	fnend
+
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
 rem --- Functions used to retrieve form values
 
     def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
     def fnget_table$(q0$)=rd_alias_id$
 
 rem --- Miscellaneous functions
@@ -766,8 +853,7 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
-    call STBL("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+    call STBL("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),                                str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
@@ -791,8 +877,7 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),                                   str(err:"000"),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)

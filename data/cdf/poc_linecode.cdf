@@ -1,7 +1,7 @@
 [[POC_LINECODE.LINE_TYPE.AVAL]]
 rem - don't use gl accounts if GL not installed
 
-if gl$<>"Y"  then
+if callpoint!.getDevObject("gl_installed")<>"Y"  then
 	callpoint!.setColumnData("POC_LINECODE.GL_EXP_ACCT","")
 	callpoint!.setColumnData("POC_LINECODE.GL_PPV_ACCT","")
 	ctl_name$="POC_LINECODE.GL_EXP_ACCT"
@@ -72,3 +72,4 @@ dim info$[20]
 
 call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
 gl$=info$[20]
+callpoint!.setDevObject("gl_installed",gl$)

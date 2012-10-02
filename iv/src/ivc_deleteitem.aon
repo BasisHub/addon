@@ -6,154 +6,173 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-rem --- action$       : Action Code (input)
-rem ---                 I=Delete Item and Warehouse(s)
-rem ---                 W=Delete Warehouse Only
-rem --- params$[n]    : Parameter information (input)
-rem ---               : [0]=Firm ID             [4]=PO Installed (Y/N)
-rem ---               : [1]=Warehouse ID        [5]=WO Installed (Y/N)
-rem ---               : [2]=Item Number         [6]=BM Installed (Y/N)
-rem ---               : [3]=OP Installed (Y/N)  [7]=AP Installed (Y/N)
-rem --- params[n]     : Parameter information (input)
-rem ---               : [0]=# of Periods [1]=Current Period [2]=Current Year
-rem --- status        : 0=No Error (returned)
-
-rem --- This program may need to pass rd_table_chans$[]
+rem  action$         : Action Code (in)
+rem                    I=Delete Item and Warehouse(s)
+rem                    W=Delete Warehouse Only
+rem  whse$           : Warehouse ID, or "" if action$ = "I" (in)
+rem  item$           : Item ID (in)
+rem  rd_table_chan$[]: Barista table channel info, do not modify (in/out)
+rem  status          : 0=No Error (out)
 
     seterr std_error
     setesc std_error
-    enter action$,params$[all],params[all],status
+    enter action$, whse$, item$, rd_table_chans$[all], status
 
 rem --- Retrieve the program path
 
-    pgmdir$=stbl("+DIR_PGM",err=*next)
+	pgmdir$=""
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+	sypdir$=""
+	sypdir$=stbl("+DIR_SYP",err=*next)
 
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
     firm_id$=sysinfo.firm_id$
 
-rem --- Open/Lock files
+rem --- Open files
 
-    files=15,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="ivs_params",ids$[1]="IVS_PARAMS"
-    files$[2]="bmm-01",ids$[2]="BMM_BILLMAST"
-    files$[3]="bmm-02",ids$[3]="BMM_BILLMAT"
-    files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
-    files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
-    files$[7]="ivm-05",ids$[7]="IVM_ITEMVEND"
-    files$[8]="ivm-09",ids$[8]="IVM_ITEMCMTS"
-    files$[9]="ivm-12",ids$[9]="IVM_ITEMACT"
-    files$[10]="ivm-14",ids$[10]="IVM_ITEMSYN"
-    files$[11]="ivm-24",ids$[11]="IVX_ITEMSYN"
-    files$[12]="ope-11",ids$[12]="OPE_ORDDET"
-    files$[13]="poe-11",ids$[13]="POE_REQDET"
-    files$[14]="sfe-01",ids$[14]="SFE_WOMASTR"
-    files$[15]="sfe-22",ids$[15]="SFE_WOMATL"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-    ivs01_dev=channels[1]
-    bmm01_dev=channels[2]
-    bmm02_dev=channels[3]
-    ivm01_dev=channels[4]
-    ivm02_dev=channels[5]
-    ivm05_dev=channels[7]
-    ivm09_dev=channels[8]
-    ivm12_dev=channels[9]
-    ivm14_dev=channels[10]
-    ivm24_dev=channels[11]
-    ope11_dev=channels[12]
-    poe11_dev=channels[13]
-    sfe01_dev=channels[14]
-    sfe22_dev=channels[15]
+	num_files = 15
+	open_beg  = 1
+	open_end  = num_files
+	
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+    open_tables$[1]="IVS_PARAMS",   open_opts$[1]="OTA"
+    open_tables$[2]="BMM_BILLMAST", open_opts$[2]="OTA"
+    open_tables$[3]="BMM_BILLMAT",  open_opts$[3]="OTA"
+    open_tables$[4]="IVM_ITEMMAST", open_opts$[4]="OTA"
+    open_tables$[5]="IVM_ITEMWHSE", open_opts$[5]="OTA"
+	open_tables$[6]="GLS_PARAMS",   open_opts$[6]="OTA"
+    open_tables$[7]="IVM_ITEMVEND", open_opts$[7]="OTA"
+    open_tables$[8]="IVM_ITEMCMTS", open_opts$[8]="OTA"
+    open_tables$[9]="IVM_ITEMACT",  open_opts$[9]="OTA"
+    open_tables$[10]="IVM_ITEMSYN", open_opts$[10]="OTA"
+	rem open_tables$[11]="", open_opts$[11]="OTA"
+    open_tables$[12]="OPE_ORDDET",  open_opts$[12]="OTA"
+    open_tables$[13]="POE_REQDET",  open_opts$[13]="OTA"
+    open_tables$[14]="SFE_WOMASTR", open_opts$[14]="OTA"
+    open_tables$[15]="SFE_WOMATL",  open_opts$[15]="OTA"
+	
+	gosub open_tables
+	
+    ivs01_dev = num(open_chans$[1])
+    bmm01_dev = num(open_chans$[2])
+    bmm02_dev = num(open_chans$[3])
+    ivm01_dev = num(open_chans$[4])
+    ivm02_dev = num(open_chans$[5])
+	gls01_dev = num(open_chans$[6])
+    ivm05_dev = num(open_chans$[7])
+    ivm09_dev = num(open_chans$[8])
+    ivm12_dev = num(open_chans$[9])
+    ivm14_dev = num(open_chans$[10])
+    ope11_dev = num(open_chans$[12])
+    poe11_dev = num(open_chans$[13])
+    sfe01_dev = num(open_chans$[14])
+    sfe22_dev = num(open_chans$[15])
 
 rem --- Dimension string templates
 
-    dim bmm01a$:templates$[2],bmm02a$:templates$[3],ivm01a$:templates$[4]
-    dim ivm02a$:templates$[5],ivm05a$:templates$[7]
-    dim ivm09a$:templates$[8],ivm12a$:templates$[9],ivm14a$:templates$[10]
-    dim ivm24a$:templates$[11],ope11a$:templates$[12],poe11a$:templates$[13]
-    dim sfe01a$:templates$[14],sfe22a$:templates$[15],ivs01a$:templates$[1]
+	dim ivs01a$:open_tpls$[1]
+    dim ivm02a$:open_tpls$[5]
+	dim gls01a$:open_tpls$[6]
+	dim ivm05a$:open_tpls$[7]
+    dim ivm09a$:open_tpls$[8]
+	dim ivm12a$:open_tpls$[9]
+	dim ivm14a$:open_tpls$[10]
 
 rem --- Retrieve parameter records
 
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    find record (ivs01_dev,key=firm_id$+"IV00",err=std_missing_params) ivs01a$
+	find record (gls01_dev,key=firm_id$+"GL00",err=std_missing_params) gls01a$	
 
 rem --- Parameters
 
-    firm_id$=params$[0]
-    whse$=params$[1]
-    item$=params$[2]
-    op$=params$[3]
-    po$=params$[4]
-    wo$=params$[5]
-    bm$=params$[6]
-    ap$=params$[7]
+	call pgmdir$+"adc_application.aon","AP",info$[all]
+	ap$=info$[20]
+	call pgmdir$+"adc_application.aon","BM",info$[all]
+	bm$=info$[20]
+	call pgmdir$+"adc_application.aon","OP",info$[all]
+	op$=info$[20]
+	call pgmdir$+"adc_application.aon","PO",info$[all]
+	po$=info$[20]
+	call pgmdir$+"adc_application.aon","SF",info$[all]
+	wo$=info$[20]
 
 rem --- Initializations
+	
+	no_of_periods  = num(gls01a.total_pers$)
+	current_period = num(gls01a.current_per$)
+	current_year   = num(gls01a.current_year$)
 
-    m1$=str(params[1]:"00")
-    y1$=str(params[2]:"0000")
-    m2=params[1]+1
-    y2=params[2]
-    if m2>params[0] m2=1,y2=y2+1
+    m1$=str(current_period:"00")
+    y1$=str(current_year:"0000")
+    m2=current_period+1
+    y2=current_year
+    if m2>no_of_periods then m2=1,y2=y2+1
     m2$=str(m2:"00")
     y2$=str(y2:"0000")
-    status=0
 
 rem --- Position warehouse xref
 
     status=0
-    first$=firm_id$+item$+whse$
-    k$=first$
-    find record (ivm01_dev,key=firm_id$+item$,dom=done) ivm01a$
-    dim ivm02a$:fattr(ivm02a$)
-    read record (ivm02_dev,key=firm_id$+item$,knum=2,dom=*next)
+    find record (ivm01_dev,key=firm_id$+item$,dom=done) 
+    read (ivm02_dev,key=firm_id$+item$+whse$,knum=2,dir=0,dom=*next)
 
 rem --- Quantity on hand, on order or committed?
+
     while 1
         dim ivm02a$:fattr(ivm02a$)
         read record (ivm02_dev,end=*break) ivm02a$
-        if ivm02a.firm_id$<>firm_id$ break
-        if ivm02a.item_id$<>item$ break
-        if ivm02a.select_phys$="Y" status=1
-        if ivm02a.qty_on_hand<>0 or ivm02a.qty_on_order<>0 or ivm02a.qty_commit<>0 status=2
-        if status<>0 break
+        if ivm02a.firm_id$<>firm_id$ then break
+        if ivm02a.item_id$<>item$ then break
+		if whse$<>"" and ivm02a.warehouse_id$<>whse$ then break
+		
+        if ivm02a.select_phys$="Y" then status=1
+        if ivm02a.qty_on_hand<>0 or ivm02a.qty_on_order<>0 or ivm02a.qty_commit<>0 then status=2
+        if status<>0 then break
 
 rem --- Open Orders?
 
-        if op$<>"Y" goto check_reqs
-        read(ope11_dev,key=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,knum=1,dom=*next)
+        if op$<>"Y" then goto check_reqs
+		
+        read (ope11_dev,key=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,knum=1,dom=*next)
         ope11_key$=key(ope11_dev,end=check_reqs)
-        if pos(firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$=ope11_key$)=1 status=3
-        if status<>0 break
+		
+        if pos(firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$=ope11_key$)=1 then 
+			status=3
+			break
+		endif
 
 check_reqs: rem --- Requisitions?
 
-        if po$<>"Y" goto check_wo
-        read(poe11_dev,key=firm_id$+"S"+ivm02a.item_id$,knum=1,dom=*next)
+        if po$<>"Y" then goto check_wo
+		
+        read (poe11_dev,key=firm_id$+"S"+ivm02a.item_id$,knum=1,dom=*next)
         poe11_key$=key(poe11_dev,end=check_wo)
-        if pos(firm_id$+"S"+ivm02a.item_id$=poe11_key$)=1 status=4
-        if status<>0 break
+		
+        if pos(firm_id$+"S"+ivm02a.item_id$=poe11_key$)=1 then 
+			status=4
+			break
+		endif
 
 check_wo: rem --- Work Orders?
 
         if wo$<>"Y" goto check_activity
-        read(sfe01_dev,key=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,knum=3,dom=*next)
-        sfe01_key$=key(sfe_01,end=check_activity)
-        if pos(firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$=sfe01_key$)=1
+		
+        read (sfe01_dev,key=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,knum=3,dom=*next)
+        sfe01_key$=key(sfe01_dev,end=check_activity)
+		
+        if pos(firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$=sfe01_key$)=1 then 
             status=5
             break
         endif
+		
         read(sfe22_dev,key=firm_id$+"  "+ivm02a.warehouse_id$+ivm02a.item_id$,knum=1,dom=*next)
         sfe22_key$=key(sfe22_dev,end=check_activity)
-        if pos(firm_id$+"  "+ivm02a.warehouse_id$+ivm02a.item_id$=sfe22_key$)=1
+		
+        if pos(firm_id$+"  "+ivm02a.warehouse_id$+ivm02a.item_id$=sfe22_key$)=1 then 
             status=6
             break
         endif
@@ -164,17 +183,19 @@ check_activity: rem --- Current or next period activity?
         m$=m1$
         x=9
         gosub activity
-        if status<>0 break
+        if status<>0 then break
+		
         y$=y2$
         m$=m2$
         x=10
         gosub activity
-        if status<>0 break
+        if status<>0 then break
 
 rem --- Loop back for next warehouse
 
     wend
-    if status<>0 goto set_err_msg
+	
+    if status<>0 then goto set_err_msg
 
 rem --- Check Bill of Materials
 
@@ -189,7 +210,7 @@ check_mats:
 
     read(bmm02_dev,key=firm_id$+ivm02a.item_id$,knum=1,dom=*next)
     bmm02_key$=key(bmm02_dev,end=set_err_msg)
-    if pos(firm_id$+ivm02a.item_id$=bmm02_key$)<>1 status=8
+    if pos(firm_id$+ivm02a.item_id$=bmm02_key$)<>1 then status=8
 
 set_err_msg: rem --- Set message when STATUS<>0
 
@@ -211,19 +232,22 @@ set_err_msg: rem --- Set message when STATUS<>0
 
 delete_item: rem --- Position warehouse xref
 
+	read (ivm02_dev,key=firm_id$+item$+whse$,knum=2,dom=*next)
+
     while 1
-        dim ivm02a$:fattr(ivm02a$)
-        read record (ivm02_dev,key=firm_id$+item$,knum=2,dom=*next)
-        readrecord(ivm02_dev,end=*break) ivm02a$
-        if ivm02a.firm_id$<>firm_id$ break
-        if ivm02a.item_id$<>item$ break
-        remove (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$)
+        read record (ivm02_dev,end=*break) ivm02a$
+        if ivm02a.firm_id$<>firm_id$ then break
+        if ivm02a.item_id$<>item$ then break
+		if whse$<>"" and ivm02a.warehouse_id$<>whse$ then break
+        remove (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,dom=*next)
 
 rem --- Remove ivm-12 Activity
+
         read (ivm12_dev,key=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,dom=*next)
+		
         while 1
             k$=key(ivm12_dev,end=*break)
-            if pos(firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$=k$)<>1 break
+            if pos(firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$=k$)<>1 then break
             remove (ivm12_dev,key=k$,dom=*next)
         wend
 
@@ -233,30 +257,33 @@ rem --- Loop back for next warehouse
 
 rem --- Position vendor xref
 
-    if action$="W" goto done
-    read(ivm05_dev,key=firm_id$+item$,knum=1,dom=*next)
+    if action$="W" then goto done
+	
+	if ap$="Y" then
+		read (ivm05_dev,key=firm_id$+item$,knum=1,dom=*next)
 
 rem --- Read next ivm-05 vendor record
 
-    while 1
-        k$=key(ivm05_dev,end=*break)
-        if pos(firm_id$+item$=k$)<>1 break
-        dim ivm05a$:fattr(ivm05a$)
-        read record (ivm05_dev,key=k$) ivm05a$
-        remove (ivm05_dev,key=firm_id$+ivm05a.vendor_id$+ivm05a.item_id$)
-    wend
+		while 1
+			read record (ivm05_dev,end=*break) ivm05a$
+			if ivm05a.firm_id$<>firm_id$ then break
+			if ivm05a.item_id$<>item$ then break
+			remove (ivm05_dev,key=firm_id$+ivm05a.vendor_id$+item$,dom=*next)
+		wend
+	
+	endif
 
 rem --- Position synonyms file
 
     read (ivm14_dev,key=firm_id$+item$,knum=1,dom=*next)
 
 rem --- Read next synonym
+
     while 1
-        k$=key(ivm14_dev,end=*break)
-        if pos(firm_id$+item$=k$)<>1 break
-        dim ivm14a$:fattr(ivm14a$)
-        read record (ivm14_dev,key=k$) ivm14a$
-        remove (ivm14_dev,key=firm_id$+ivm14a.item_synonym$+ivm14a.item_id$)
+        read record (ivm14_dev,end=*break) ivm14a$
+		if ivm14a.firm_id$<>firm_id$ then break
+		if ivm14a.item_id$<>item$ then break
+        remove (ivm14_dev,key=firm_id$+ivm14a.item_synonym$+item$,dom=*next)
     wend
 
 rem --- Remove ivm-09 comments
@@ -264,12 +291,12 @@ rem --- Remove ivm-09 comments
     read (ivm09_dev,key=firm_id$+item$,dom=*next)
 
 rem --- Read next comment
+
     while 1
-        dim ivm09a$:fattr(ivm09a$)
-        readrecord(ivm09_dev,end=*break) ivm09a$
-        if ivm09a.firm_id$<>firm_id$ break
-        if ivm09a.item_id$<>item$ break
-        remove (ivm09_dev,key=firm_id$+item$+ivm09a.sequence_num$)
+        read record (ivm09_dev,end=*break) ivm09a$
+        if ivm09a.firm_id$<>firm_id$ then break
+        if ivm09a.item_id$<>item$ then break
+        remove (ivm09_dev,key=firm_id$+item$+ivm09a.sequence_num$,dom=*next)
     wend
 
 rem --- Remove ivm-01 item master
@@ -282,28 +309,63 @@ done: rem --- All done
 
 activity: rem --- Current or Next Period Activity?
 
-    dim ivm12a$:fattr(ivm12a$)
-    ivm12_key$=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$+y$+m$
-    find record (ivm12_dev,key=ivm12_key$,dom=*next) ivm12a$
-    if ivm12a.beg_balance<>0 or
-:      ivm12a.qty_received<>0 or
-:      ivm12a.qty_built<>0 or
-:      ivm12a.qty_sold<>0 or
-:      ivm12a.qty_issued<>0 or
-:      ivm12a.qty_adjust<>0 or
-:      ivm12a.qty_xfer_in<>0 or
-:      ivm12a.qty_xfer_out<>0 or
-:      ivm12a.qty_returned<>0
-        status=x
-    endif
+	start_block=1
+	
+	if start_block then
+		ivm12_key$=firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$+y$+m$
+		find record (ivm12_dev,key=ivm12_key$,dom=*endif) ivm12a$
+		
+		if ivm12a.beg_balance<>0 or
+:			ivm12a.qty_received<>0 or
+:			ivm12a.qty_built<>0 or
+:			ivm12a.qty_sold<>0 or
+:			ivm12a.qty_issued<>0 or
+:			ivm12a.qty_adjust<>0 or
+:			ivm12a.qty_xfer_in<>0 or
+:			ivm12a.qty_xfer_out<>0 or
+:			ivm12a.qty_returned<>0
+:		then
+			status=x
+		endif
+	endif
+	
     return
+	
+open_tables: rem --- Open tables
+	
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		gosub disp_message
+		status=912
+		goto std_exit
+	endif
+
+	return
+
+disp_message: rem --- Display a message
+	
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		rd_table_chans$[all]
+
+	return
 
 rem #include std_error.src
-
-disp_message:rem --- Display Message Dialog
-
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
-	return
 
 std_error: rem --- Standard error handler (01Apr2006)
 

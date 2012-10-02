@@ -1,3 +1,16 @@
+[[IVC_ITEMLOOKUP.BEND]]
+rem --- since files were forced open on new channels, close to keep tidy
+
+	num_files=5
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	
+	open_tables$[1]="IVM_ITEMSYN",   open_opts$[1]="@C"
+	open_tables$[2]="IVM_ITEMWHSE",   open_opts$[2]="@C"
+	open_tables$[3]="IVS_PARAMS",   open_opts$[3]="@C"
+	open_tables$[4]="IVM_ITEMMAST",   open_opts$[4]="@C"	
+	open_tables$[5]="IVM_ITEMMAST",   open_opts$[5]="@C"
+	gosub open_tables
+	
 [[IVC_ITEMLOOKUP.SEARCH_KEY.AVAL]]
 rem --- set search key/file according to user's selection in the "search by" listbutton.
 rem --- and search text entered here.
@@ -6,24 +19,24 @@ rem --- load/display grid
 search_by$=callpoint!.getColumnData("IVC_ITEMLOOKUP.SEARCH_BY")
 switch pos(search_by$="ISTV")
 	case 1; rem by item
-		search_dev=fnget_dev("IVM_ITEMMAST")
-		dim searchrec$:fnget_tpl$("IVM_ITEMMAST")
+		search_dev=fnget_dev("@IVM_ITEMMAST")
+		dim searchrec$:fnget_tpl$("@IVM_ITEMMAST")
 		search_knum=0
 		search_text$=callpoint!.getUserInput()
 		search_field$="ITEM_ID"
 		gosub load_and_display_grid
 	break
 	case 2; rem by synonym
-		search_dev=fnget_dev("IVM_ITEMSYN")
-		dim searchrec$:fnget_tpl$("IVM_ITEMSYN")
+		search_dev=fnget_dev("@IVM_ITEMSYN")
+		dim searchrec$:fnget_tpl$("@IVM_ITEMSYN")
 		search_knum=0
 		search_text$=callpoint!.getUserInput()
 		search_field$="ITEM_SYNONYM"
 		gosub load_and_display_grid
 	break
 	case 3; rem by product type
-		search_dev=fnget_dev("IVM_ITEMMAST")
-		dim searchrec$:fnget_tpl$("IVM_ITEMMAST")
+		search_dev=fnget_dev("@IVM_ITEMMAST")
+		dim searchrec$:fnget_tpl$("@IVM_ITEMMAST")
 		search_knum=2
 		search_text$=callpoint!.getUserInput()
 		search_field$="PRODUCT_TYPE"
@@ -37,7 +50,7 @@ switch pos(search_by$="ISTV")
 		sql_prep$=sql_prep$+"INNER JOIN ivm_itemmast on ivm_itemvend.firm_id = ivm_itemmast.firm_id "
 		sql_prep$=sql_prep$+"AND ivm_itemvend.item_id = ivm_itemmast.item_id "
 		sql_prep$=sql_prep$+"WHERE ivm_itemvend.firm_id = '" + firm_id$ + "' "
-		sql_prep$=sql_prep$+"AND apm_vendmast.vendor_name like '%" + callpoint!.getRawUserInput() + "%' "
+		sql_prep$=sql_prep$+"AND apm_vendmast.vendor_name like '" + callpoint!.getRawUserInput() + "%' "
 		sql_prep$=sql_prep$+"ORDER BY apm_vendmast.vendor_name"
 		gosub load_and_display_grid_sql		
 	break
@@ -52,18 +65,27 @@ callpoint!.setStatus("REFRESH")
 rem --- open files
 
 	use ::ado_util.src::util
+	use ::ado_func.src::func
 
-	num_files=4
+rem --- opening possible search files with force flag (N=force open on another channel) so use of knums won't mess up reads on these files 
+rem --- 	that might be going on in in calling programs
+rem --- also... saving channel # of first ivm_itemmast open, so I can distinguish 'main' open from extra open for searching by product type, etc. (i.e. different knum)
+rem --- the "@" in the open flags is a special prefix used by Barista; since I'm not sure if these files are already open or not, the "@" marks them in
+rem --- 	rd_table_chans$[ ], so I can do fnget_dev/fnget_tpl using the @ prefix on the alias,
+rem --- 	and I can call open_tables to close these files when done, using "@C" flags, so Barista knows which one to close, i.e., the file(s) I forced 
+rem ---	open rather than one that might have already been open on another channel.
+ 
+	num_files=5
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="IVM_ITEMMAST", open_opts$[1]="OTA"
-	open_tables$[2]="IVM_ITEMVEND", open_opts$[2]="OTA"
-	open_tables$[3]="IVM_ITEMSYN",   open_opts$[3]="OTA"
+	open_tables$[1]="IVM_ITEMMAST", open_opts$[1]="@NTA"
+	open_tables$[2]="IVM_ITEMSYN",   open_opts$[2]="@NTA"
+	open_tables$[3]="IVM_ITEMWHSE",   open_opts$[3]="@NTA"
+	open_tables$[4]="IVS_PARAMS",   open_opts$[4]="@NTA"
+	open_tables$[5]="IVM_ITEMMAST",   open_opts$[5]="@NTA"	
 
 	gosub open_tables
 
-	ivm_itemmast_dev=num(open_chans$[1]); dim ivm_itemmast$:open_tpls$[1]
-	ivm_itemvend_dev=num(open_chans$[2]); dim ivm_itemvend$:open_tpls$[2]
-	ivm_itemsyn_dev=num(open_chans$[3]);   dim ivm_itemsyn$:open_tpls$[3]
+	callpoint!.setDevObject("ivm_itemmast_dev",open_chans$[1])
 
 rem ---  Set up grid
 
@@ -140,7 +162,7 @@ rem --- Create Item Information window
 	infoWin!.addStaticText(15003,10,65,75,15,"Unit of Sale:",$8000$)
 	infoWin!.addStaticText(15004,10,85,75,15,"Weight:",$8000$)
 
-	infoWin!.addStaticText(15005,200,25,75,15,"Alt/Super:",$8000$)
+	infoWin!.addStaticText(15005,200,25,75,15,"",$8000$)
 	infoWin!.addStaticText(15006,200,45,75,15,"Last Receipt:",$8000$)
 	infoWin!.addStaticText(15007,200,65,75,15,"Last Issue:",$8000$)
 	infoWin!.addStaticText(15008,200,85,75,15,"Lot/Serialized?:",$8000$)
@@ -150,9 +172,40 @@ rem --- Create Item Information window
 	infoWin!.addStaticText(15011,10,165,75,15,"Available:",$8000$)
 	infoWin!.addStaticText(15012,10,185,75,15,"On Order:",$8000$)
 
-	rem --- above labels, now data (sample only -- need to fix)
-	rem callpoint!.setDevObject("vendor_id",  str(15101))
-	rem infoWin!.addStaticText(15101,95,25,175,15,"",$0000$)
+	rem --- above are labels, now add static text fields for data
+	callpoint!.setDevObject("prod_tp",  str(15101))
+	infoWin!.addStaticText(15101,95,25,75,15,"",$0000$)
+
+	callpoint!.setDevObject("unit_sale",str(15103))
+	infoWin!.addStaticText(15103,95,65,75,15,"",$0000$)
+
+	callpoint!.setDevObject("weight",str(15104))
+	infoWin!.addStaticText(15104,95,85,75,15,"",$0000$)
+
+	callpoint!.setDevObject("alt_super_prompt",str(15005))
+	callpoint!.setDevObject("alt_super",str(15105))
+	infoWin!.addStaticText(15105,285,25,75,15,"",$0000$)
+
+	callpoint!.setDevObject("last_receipt",str(15106))
+	infoWin!.addStaticText(15106,285,45,75,15,"",$0000$)
+
+	callpoint!.setDevObject("last_issue",str(15107))
+	infoWin!.addStaticText(15107,285,65,75,15,"",$0000$)
+
+	callpoint!.setDevObject("lot_ser",str(15108))
+	infoWin!.addStaticText(15108,285,85,75,15,"",$0000$)
+
+	callpoint!.setDevObject("on_hand",str(15109))
+	infoWin!.addStaticText(15109,95,125,75,15,"",$0000$)
+
+	callpoint!.setDevObject("committed",str(15110))
+	infoWin!.addStaticText(15110,95,145,75,15,"",$0000$)
+
+	callpoint!.setDevObject("available",str(15111))
+	infoWin!.addStaticText(15111,95,165,75,15,"",$0000$)
+
+	callpoint!.setDevObject("on_order",str(15112))
+	infoWin!.addStaticText(15112,95,185,75,15,"",$0000$)
 
 	callpoint!.setDevObject("infoWin",infoWin!)			
 
@@ -180,7 +233,7 @@ rem --- Get the control ID of the event
 
 	gridSearch!=callpoint!.getDevObject("gridSearch")
 	wctl=gridSearch!.getID()
-	
+
 	rem --- This is a grid event
 
 	if ctl_ID=wctl
@@ -199,8 +252,9 @@ rem --- Get the control ID of the event
 		switch notice.code
 			case 19; rem grid_key_press
 			case 14; rem grid_mouse_up
-				callpoint!.setDevObject("find_item",gridSearch!.getCellText(curr_row,1))				
-				break
+				callpoint!.setDevObject("find_item",firm_id$+gridSearch!.getCellText(curr_row,1))
+				gosub get_inventory_detail		
+			break
 		swend
 	endif
 [[IVC_ITEMLOOKUP.<CUSTOM>]]
@@ -209,7 +263,7 @@ load_and_display_grid:
 	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
 
-rem --- Position search file	
+	rem --- Position search file	
 
 	vectSearch!=SysGUI!.makeVector()
 	
@@ -275,6 +329,82 @@ return
 get_inventory_detail:
 rem --- get/display Inventory Detail info
 
+	ivs_params_dev=fnget_dev("@IVS_PARAMS")
+	ivm_itemwhse_dev=fnget_dev("@IVM_ITEMWHSE")
+	ivm_itemmast_dev=num(callpoint!.getDevObject("ivm_itemmast_dev"))
+
+	dim ivs_params$:fnget_tpl$("@IVS_PARAMS")
+	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
+	dim ivm_itemwhse$:fnget_tpl$("@IVM_ITEMWHSE")
+
+	read record (ivs_params_dev,key=firm_id$+"IV00",dom=*next)ivs_params$
+	ls$=ivs_params.lotser_flag$
+
+	read (ivm_itemwhse_dev,key=callpoint!.getDevObject("find_item"),knum=2,dom=*next)
+	on_hand=0
+	committed=0
+	available=0
+	on_order=0
+
+	while 1
+		read record(ivm_itemwhse_dev,end=*break)ivm_itemwhse$
+		if ivm_itemwhse.firm_id$<>firm_id$ or ivm_itemwhse.item_id$<>callpoint!.getDevObject("find_item") then break
+		on_hand=on_hand+ivm_itemwhse.qty_on_hand
+		committed=committed+ivm_itemwhse.qty_commit
+		on_order=on_order+ivm_itemwhse.qty_on_order
+	wend
+	available=on_hand-committed
+
+	infoWin!=callpoint!.getDevObject("infoWin")
+
+	read record (ivm_itemmast_dev,key=callpoint!.getDevObject("find_item"),dom=*next)ivm_itemmast$
+	
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("prod_tp") ) )
+	w!.setText(ivm_itemmast.product_type$)
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("unit_sale") ) )
+	w!.setText(ivm_itemmast.unit_of_sale$)
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("weight") ) )
+	w!.setText(ivm_itemmast.weight$)
+	switch pos(ivm_itemmast.alt_sup_flag$="AS")
+		case 1
+			as_prompt$="Alternate:"
+		break
+		case 2
+			as_prompt$="Superseded:"
+		break
+		case default
+			as_prompt$=""
+		break
+	swend
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("alt_super_prompt") ) )	
+	w!.setText(as_prompt$)
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("alt_super") ) )
+	w!.setText(ivm_itemmast.alt_sup_item$)
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("last_receipt") ) )
+	w!.setText(func.formatDate(ivm_itemmast.lstrec_date$))
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("last_issue") ) )
+	w!.setText(func.formatDate(ivm_itemmast.lstiss_date$))
+	switch pos(ls$="LS")
+		case 1
+			ls_text$="Lotted"
+		break
+		case 2
+			ls_text$="Serialized"
+		break
+		case default
+			ls_text$=""
+		break
+	swend
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("lot_ser") ) )	
+	w!.setText(ls_text$)
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("on_hand") ) )	
+	w!.setText(str(on_hand))
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("committed") ) )	
+	w!.setText(str(committed))
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("available") ) )	
+	w!.setText(str(available))
+	w!=infoWin!.getControl( num( callpoint!.getDevObject("on_order") ) )	
+	w!.setText(str(on_order))
 
 return
 

@@ -7,7 +7,7 @@ rem --- Check selected level against allowable level
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[SAR_ITEM.12_PER_REPORT.AVAL]]
+[[SAR_ITEM.TWLVE_PER_REPORT.AVAL]]
 x$=callpoint!.getUserInput()
 if x$="N" then
 	callpoint!.setColumnData("SAR_ITEM.MTD","Y")

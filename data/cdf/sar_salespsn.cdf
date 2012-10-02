@@ -55,7 +55,7 @@ user_tpl.high_level$=sas_params.salespsn_lev$
 		rdFuncSpace!.setValue("+build_task","OFF")
 		release
 	endif
-[[SAR_SALESPSN.12_PER_REPORT.AVAL]]
+[[SAR_SALESPSN.TWLVE_PER_REPORT.AVAL]]
 x$=callpoint!.getUserInput()
 if x$="N" then
 	callpoint!.setColumnData("SAR_SALESPSN.MTD","Y")

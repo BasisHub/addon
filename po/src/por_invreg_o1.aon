@@ -1,6 +1,6 @@
 rem --- Purchase Order Invoice Register (Purchase Price Variance)
-rem --- Program por_invreg_o1.aon v8.0.0 25Jul2007 (por_eb)
-rem --- Created by adx_codeport.bbx v1.1.5 (07/25/2007 11:41:10)
+rem --- Program por_invreg_o1 v8.0.0 23Jun2009 (por_eb)
+rem --- Created by adx_codeport.bbj v1.1.5 (06/23/2009 05:57:57)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
@@ -21,18 +21,10 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
-rem --- Assign form input values to local variables
-
-    table$=fnget_table$("")
-    det_level$=fnget_fld_data$(table$,"detail_level")
-    phase$=fnget_fld_data$(table$,"phase")
-
 rem --- Initializations
 
-    precision num(ivs01a.precision$)
+    precision i[1]
     dim o[11]
-    headings$[2]="Purchase Price Variance"
-    headings$[3]=""
     headings=3
     done=0
     vendor=0
@@ -44,39 +36,34 @@ rem --- Initializations
     xm2=12
     xm3=12
     dw=max(i[3]+i[4]+i[5],40)
-    more=1
 
 rem --- Resize masks if needed
 
-    m1$=ivs01a.amount_mask$
-    m2$=ivs01a.unit_mask$
-    m3$=ivs01a.cost_mask$
     o[0]=0
     o[1]=m0+1
     o[2]=o[1]+12
     o[3]=o[2]+8
     o[4]=max(o[0]+m0+31,o[3]+9)
+l620:
+    o[11]=width-m1
+    o[10]=o[11]-m1
+    o[9]=o[10]-m3
+    o[8]=o[9]-m1-1
+    o[7]=o[8]-m3
+    o[6]=o[7]-m2-3
+    o[5]=o[6]-9
+    po=o[9]-o[7]
+    iv=o[11]-o[9]
+    if o[5]>o[4]+12 if o[5]>o[3]+i[0] goto l700
+    xm1=xm1-1
+    xm2=xm2-1
+    xm3=xm3-1
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,10,xm1
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,9,xm2
+    call pgmdir$+"adc_sizemask.aon",m3$,m3,6,xm3
+    goto l620
 
-    while more
-        o[11]=width-m1
-        o[10]=o[11]-m1
-        o[9]=o[10]-m3
-        o[8]=o[9]-m1-1
-        o[7]=o[8]-m3
-        o[6]=o[7]-m2-3
-        o[5]=o[6]-9
-        po=o[9]-o[7]
-        iv=o[11]-o[9]
-        if o[5]>o[4]+12 if o[5]>o[3]+i[0] break
-        xm1=xm1-1
-        xm2=xm2-1
-        xm3=xm3-1
-        call pgmdir$+"adc_sizemask.aon",m1$,m1,10,xm1
-        call pgmdir$+"adc_sizemask.aon",m2$,m2,9,xm2
-        call pgmdir$+"adc_sizemask.aon",m3$,m3,6,xm3
-    wend
-
-rem --- Subheadings
+l700: rem --- Subheadings
 
     dim po$(po-1,"-"),iv$(iv-1,"-")
     x$=" PO "
@@ -87,287 +74,275 @@ rem --- Subheadings
 
 rem --- Position file
 
-    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
     read (poe05_dev,key=firm_id$,dom=*next)
 
-    while more; rem --- Read next header
+l1000: rem --- Read next header
 
-        poe05a_key$=key(poe05_dev,end=*break)
-        if pos(firm_id$=poe05a_key$)<>1 break
-        read record (poe05_dev) poe05a$
-        x$=fnmask$(poe05a.vendor_id$,m0$)+" "+poe05a.ap_inv_no$
-        if aptype x$=poe05a.ap_type$+" "+x$
-
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+    k$=key(poe05_dev,end=done)
+    if pos(firm_id$=k$)<>1 goto done
+    read record (poe05_dev) poe05a$
+    x$=fnmask$(poe05a.vendor_id$(1,p[0]),m0$)+" "+poe05a.ap_inv_no$
+    if aptype x$=poe05a.ap_type$+" "+x$
 
 rem --- Position poe-25 PO Detail
 
-        additional=0
-        invamt=0
-        invqty=0
-        p05_key$=poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$
-        read (poe25_dev,key=p05_key$,dom=*next)
+    additional=0
+    invamt=0
+    invqty=0
+    read (poe25_dev,key=poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$,dom=*next)
 
-        while more; rem --- Read next PO Detail record
+l1500: rem --- Read next PO Detail record
 
-            poe25a_key$=key(poe25_dev,end=*break)
-            if pos(poe05a.firm_id$=poe25a_key$)<>1 break
-            read record (poe25_dev) poe25a$
+    k$=key(poe25_dev,end=l2500)
+    if pos(poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$=k$)<>1 goto l2500
+    read record (poe25_dev) poe25a$
 
 rem --- Retrieve line code
 
-            gosub ret_line_code
-            if pos(pom02a.line_type$="MV") continue
+    gosub l6400
+    if pos(pom02a.line_type$="MV") goto l2400
 
 rem --- Calculate variance
 
-            qty=poe25a.qty_received
-            if pom02a.line_type$="O" qty=1
-            precision 2
-            po_extension=poe25a.receipt_cost*qty
-            iv_extension=poe25a.unit_cost*qty
-            precision num(ivs01a.precision$)
-            variance=iv_extension-po_extension
+    qty=poe25a.qty_received
+    if pom02a.line_type$="O" qty=1
+    precision 2
+    po_extension=round(poe25a.receipt_cost*qty,2)
+    iv_extension=round(poe25a.unit_cost*qty,2)
+    precision i[1]
+    variance=iv_extension-po_extension
 
 rem --- Accumulate totals needed for landed cost
 
-            if pos(r3$(55,1)="QC")<>0
+    if pos(pos01a.land_method$="QC")=0 goto l1900
+    if pom02a.land_cst_flg$<>"Y" goto l1900
+    if cvs(poe25a.po_no$,3)="" goto l1850
+    invamt=invamt+iv_extension
+    invqty=invqty+qty
+    goto l1900
+l1850:
+    additional=additional+iv_extension
 
-                if pom02a.land_cst_flg$<>"Y"
+l1900: rem --- Retrieve receipt detail record
 
-                    if cvs(poe25a.po_no$,2)<>""
+    if poe25a.unit_cost=poe25a.receipt_cost then goto l2400
+    dim l0$(25),l1$(64),l2$(32),l3$(22),l4$(40),l[12],description$(dw)
+    received$=""
+    find record (pot14_dev,key=firm_id$+poe25a.po_no$+poe25a.receiver_no$+poe25a.po_int_seq_ref$,dom=l2000) pot14a$
+    if pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_No$ then goto l2000
+    dim pot04a$:fattr(pot04a$)
+    find record (pot04_dev,key=pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$,dom=l2000) pot04a$
+    if cvs(pot04a.recpt_date$,3)<>"" received$=fndate$(pot04a.recpt_date$)
 
-                        invamt=invamt+iv_extension
-                        invqty=invqty+qty
+l2000: rem --- Retrieve inventory item
 
-                    else
+    dim s0$(22),s1$(60),s2$(64),s3$(40),s4$(21),s6$(g[4]*6),s[12]
+    description$(1)=poe25a.order_memo$
+    if pom02a.line_type$<>"S" goto l2100
+    dim ivm01a$:fattr(ivm01a$)
+    find record (ivm01_dev,key=firm_id$+pot14a.item_id$,dom=*next) ivm01a$
+    description$(1)=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
 
-                        additional=additional+iv_extension
+l2100: rem --- Level breaks?
 
-                    fi
+    if t0$<>poe25a.vendor_id$ gosub l6000
+    if t1$<>poe25a.ap_inv_no$ gosub l6200
+    if l+2>l9 gosub report_heading
+    l=l+2
+    vendor=vendor+variance
+    report=report+variance
+    on pos(pom02a.line_type$="SNO") goto l2400,l2200,l2200,l2300
 
-                endif
+l2200: rem --- Standard or Non-stock line
 
-            endif
+    dim pbuf$(width)
+    pbuf$(o[1]+1)=poe25a.po_no$+"-"+poe25a.po_int_seq_ref$
+    pbuf$(o[2]+1)=poe25a.receiver_no$
+    pbuf$(o[3]+1)=ivm01a.item_id$(1,i[0])
+    pbuf$(o[5]+1)=received$
+    pbuf$(o[6]+1)=str(poe25a.qty_received:m2$)+" "+pot14a.unit_measure$
+    pbuf$(o[7]+1)=str(poe25a.receipt_cost:m3$)
+    pbuf$(o[8]+1)=str(po_extension:m1$)
+    pbuf$(o[9]+1)=str(poe25a.unit_cost:m3$)
+    pbuf$(o[10]+1)=str(iv_extension:m1$)
+    pbuf$(o[11]+1)=str(variance:m1$)
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(o[3]+1)=description$
+    OutVect!.addItem(pbuf$)
+    goto l2400
 
-rem --- Retrieve receipt detail record
+l2300: rem --- Other line
+    
+    dim pbuf$(width)
+    pbuf$(o[1]+1)=poe25a.po_no$+"-"+poe25a.po_int_seq_ref$
+    pbuf$(o[2]+1)=poe25a.receiver_no$
+    pbuf$(o[5]+1)=received$
+    pbuf$(o[7]+1)=str(poe25a.receipt_cost:m3$)
+    pbuf$(o[8]+1)=str(po_extension:m1$)
+    pbuf$(o[9]+1)=str(poe25a.unit_cost:m3$)
+    pbuf$(o[10]+1)=str(iv_extension:m1$)
+    pbuf$(o[11]+1)=str(variance:m1$)
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(o[3]+1)=description$
+    OutVect!.addItem(pbuf$)
 
-            if poe25a.unit_cost=poe25a.receipt_cost continue
-            dim l0$(25),l1$(64),l2$(32),l3$(22),l4$(40),l[12],description$(dw)
-            pot14a_key$=firm_id$+poe25a.vendor_id$+poe25a.po_no$+poe25a.receiver_no$+poe25a.po_line_no$
-            received$=""
-            find record (pot14_dev,key=pot14a_key$,dom=ret_inv_item) pot14a$
-            if pot14a_key$<>firm_id$+pot04a.firm_id$+pot04a.vendor_id$+pot04a.po_no$+pot04a.receiver_no$
+l2400: rem --- Loop back for next line item
 
-                pot04a_key$=pot14a_key$
-                find record (pot04_dev,key=pot04a_key$,dom=ret_inv_item) pot04a$
-                if cvs(pot04a.recpt_date$,2)<>"" received$=fndate$(pot04a.recpt_date$)
+    goto l1500
 
-            endif
+l2500: rem --- Done with price variances. Update landed cost?
 
-ret_inv_item: rem --- Retrieve inventory item
+    if pos(pos01a.land_method$="QC")=0 goto l3900
+    if pos01a.land_method$="Q" if invqty=0 goto l3900
+    if pos01a.land_method$="C" if invamt=0 goto l3900
 
-            dim s0$(22),s1$(60),s2$(64),s3$(40),s4$(21),s6$(g[4]*6),s[12]
-            description$(1)=poe25a.order_memo$
+rem --- Position detail file for landed cost pass
 
-            if pom02a.line_type$<>"S"
+    read (poe25_dev,key=poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$,dom=*next)
 
-                ivm01a_key$=firm_id$+pot14a.item_id$
-                ivm01a.code_desc$=nf$
-                ivm01a.gl_exp_acct$=""
-                find record (ivm01_dev,key=ivm01a_key$,dom=*next) ivm01a$
-                description$(1)=ivm01a.description$
+l3000: rem --- Read next detail
 
-            endif
-
-rem --- Level breaks?
-
-            if t0$<>poe25a.vendor_id$ gosub vend_brk
-            if t1$<>poe25a.ap_inv_no$ gosub inv_brk
-            if l+2>l9 gosub report_heading
-            l=l+2
-            vendor=vendor+variance
-            report=report+variance
-
-            action=pos(pom02a.line_type$="SNO")
-            std_line=1
-            non_stock_line=2
-            other_line=3
-
-            switch action
-
-                case std_line; rem --- Standard line
-                case non_stock_line; rem --- Non-stock line
-
-                    print (printer_dev) @(o[1]),poe25a.po_no$,"-",poe25a.po_line_no$,
-:                                       @(o[2]),poe25a.receiver_no$,
-:                                       @(o[3]),ivm01a.item_id$,
-:                                       @(o[5]),received$,
-:                                       @(o[6]),poe25a.qty_received:m2$," ",pot14a.unit_measure$,
-:                                       @(o[7]),poe25a.receipt_cost:m3$,
-:                                       @(o[8]),po_extension:m1$,
-:                                       @(o[9]),poe25a.unit_cost:m3$,
-:                                       @(o[10]),iv_extension:m1$,
-:                                       @(o[11]),variance:m1$
-
-                    print (printer_dev)@(o[3]),ivm01a.description$
-                    continue
-
-                case other_line; rem --- Other line
-
-                    print (printer_dev) @(o[1]),poe25a.po_no$,"-",poe25a.po_line_no$,
-:                                       @(o[2]),poe25a.receiver_no$,
-:                                       @(o[5]),received$,
-:                                       @(o[7]),poe25a.receipt_cost:m3$,
-:                                       @(o[8]),po_extension:m1$,
-:                                       @(o[9]),poe25a.unit_cost:m3$,
-:                                       @(o[10]),iv_extension:m1$,
-:                                       @(o[11]),variance:m1$
-
-                    print (printer_dev)@(o[3]),ivm01a.description$
-                    break
-
-                case default
-                    continue
-            swend
-
-        wend;   rem --- Loop back for next line item
-
-rem --- Done with price variances. Update landed cost?
-
-        if pos(r3$(55,1)="QC")=0 continue
-        if r3$(55,1)="Q" if invqty=0 continue
-        if r3$(55,1)="C" if invamt=0 continue
-
-rem --- Postion detail file for landed cost pass
-
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        read (poe25_dev,key=p05_key$,dom=*next)
-
-        while more; rem --- Read next detail
-
-            poe25a_key$=key(poe25_dev,end=*break)
-            if pos(p05_key$=poe25a_key$)<>1 break
-            read record (poe25_dev) poe25a$
-            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+    k$=key(poe25_dev,end=l3900)
+    if pos(poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$=k$)<>1 goto l3900
+    read record (poe25_dev) poe25a$
 
 rem --- Retrieve line code
 
-            if cvs(poe25a.po_no$,2)="" continue
-            gosub ret_line_code
-            if pos(poe25a.line_type$="MV") continue
-            if pom02a.land_cst_flg$<>"Y" continue
+    if cvs(poe25a.po_no$,3)="" goto l3800
+    gosub l6400
+    if pos(pom02a.line_type$="MV") goto l3800
+    if pom02a.land_cst_flg$<>"Y" goto l3800
 
 rem --- Retrieve detail record
 
-            dim l0$(25),l1$(64),l2$(32),l3$(22),l4$(40),l[12]
-            pot14a_key$=firm_id$+poe25a.vendor_id$+poe25a.po_no$+poe25a.receiver_no$+poe25a.po_line_no$
-            find record (pot14_dev,key=pot14a_key$,dom=*continue) pot14a$
-            if pot14a.conv_factor=0 if pos(pom02a.line_type$="ON") pot14a.conv_factor=1 else continue
+    dim l0$(25),l1$(64),l2$(32),l3$(22),l4$(40),l[12]
+    find record (pot14_dev,key=firm_id$+poe25a.po_no$+poe25a.receiver_no$+poe25a.po_int_seq_ref$,dom=l3800) pot14a$
+    if pot14a.conv_factor=0 then if pos(pom02a.line_type$="ON") pot14a.conv_factor=1 else goto l3800
 
 rem --- Calculate allocation
 
-            cost=poe25a.unit_cost
-            qty=poe25a.qty_received
-            if qty=0 if pom02a.line_type$="O" qty=1 else continue
-            precision 2
-            iv_extension=qty*cost
-            precision num(ivs01a.precision$)
-            if r3$(55,1)="C" percent=(iv_extension*100)/invamt
-            if r3$(55,1)="Q" percent=(qty*100)/invqty
-            amount=additional*percent/100
-            landed=(iv_extension+amount)/qty
+    cost=poe25a.unit_cost
+    qty=poe25a.qty_received
+    if qty=0 if pom02a.line_type$="O" qty=1 else goto l3800
+    precision 2
+    iv_extension=qty*cost
+    precision i[1]
+    if pos01a.land_method$="C" percent=(iv_extension*100)/invamt
+    if pos01a.land_method$="Q" percent=(qty*100)/invqty
+    amount=additional*percent/100
+    landed=(iv_extension+amount)/qty
 
 rem --- Write work file record
 
-            dim u0$(24),u[1]
-            pow17a_key$=firm_id$+pot14a.item_id$
-            pow17a.landed_cost=landed/pot14a.conv_factor
-            write record (pow17_dev,key=pow17a_key$) pow17a$
+    dim u0$(24),u[1]
+    dim pow17a$:fattr(pow17a$)
+    pow17a.firm_id$=firm_id$
+    pow17a.warehouse_id$=pot14a.warehouse_id$
+    pow17a.item_id$=pot14a.item_id$
+    pow17a.landed_cost=landed/pot14a.conv_factor
+    write record (pow17_dev,key=pow17a.firm_id$+pow17a.warehouse_id$+pow17a.item_id$) pow17a$
 
-        wend;   rem --- Loop back for next detail
+l3800: rem --- Loop back for next detail
 
-    wend;   rem --- Loop back for next header
+    goto l3000
+
+l3900: rem --- Loop back for next header
+
+    goto l1000
 
 done: rem --- All done
 
     done=1
-    gosub vend_brk
+    gosub l6000
     if l+2>l9 gosub report_heading
-    print (printer_dev)""
+    dim pbuf$(width);OutVect!.addItem(pbuf$)
     total$="Register"
     total=report
-    gosub print_variance
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
-    update$="pou_ea.aon"
-    if gl$<>"Y" run update$,err=std_exit
-    run pgmdir$+"glr_recap.aon"
+    gosub l6800
+
+rem --- Run next overlay
+
+    update$="pou_invreg.aon" 
+    if errors then update$="";rem don't allow update if errors
+    overlay$=update$
+    if gl$="Y" overlay$=pgmdir$+"glr_recap.aon"
+    
+    out_action$="PRT-PDF"
+    next_overlay$=overlay$
+    goto std_exit
 
 report_heading: rem --- Report Heading
 
     l=headings+3
-    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
-    if status exitto std_exit
-    print (printer_dev) @(o[7]),po$,
-:                       @(o[9]),iv$
-    print (printer_dev) @(o[0]),"Vendor",
-:                       @(o[1]),"PO #",
-:                       @(o[2]),"Rec #",
-:                       @(o[3]),"Item",
-:                       @(o[4]),"Invoice",
-:                       @(o[5]),"Received",
-:                       @(o[6]+m2-9),"Quantity UM",
-:                       @(o[7]+m3-5),"Cost",
-:                       @(o[8]+m1-10),"Extension",
-:                       @(o[9]+m3-5),"Cost",
-:                       @(o[10]+m1-10),"Extension",
-:                       @(o[11]+m1-9),"Variance"
+rem    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
+rem    if status exitto std_exit
+
+    HdrVect!.addItem("Purchase Price Variance")
+    BrkVect!.addItem(str(OutVect!.size()))
+
+    dim pbuf$(width)
+    pbuf$(o[7]+1)=po$
+    pbuf$(o[9]+1)=iv$
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(o[0]+1)="Vendor"
+    pbuf$(o[1]+1)="PO #"
+    pbuf$(o[2]+1)="Rec #"
+    pbuf$(o[3]+1)="Item"
+    pbuf$(o[4]+1)="Invoice"
+    pbuf$(o[5]+1)="Received"
+    pbuf$(o[6]+m2-9+1)="Quantity UM"
+    pbuf$(o[7]+m3-5+1)="Cost"
+    pbuf$(o[8]+m1-10+1)="Extension"
+    pbuf$(o[9]+m3-5+1)="Cost"
+    pbuf$(o[10]+m1-10+1)="Extension"
+    pbuf$(o[11]+m1-9+1)="Variance"
+    OutVect!.addItem(pbuf$)
     return
 
-vend_brk: rem --- Vendor Break
+l6000: rem --- Vendor Break
 
-    if t0$<>""
-
-        total$="Vendor "+vendor$
-        total=vendor
-        if vendor<>0 gosub print_variance
-
-    endif
-    if done return
+    if t0$="" goto l6100
+    total$="Vendor "+vendor$
+    total=vendor
+    if vendor<>0 gosub l6800
+l6100:
+    if done goto l6190
     dim b0$(8),b1$(30),vendor$(31+m0)
     t0$=poe25a.vendor_id$
-    apm01a_key$=firm_id$+t0$
-    apm01a$=nf$
     vendor=0
-    find record (apm01_dev,key=apm01a_key$,dom=*next) apm01a$
-    vendor$(1)=fnmask$(apm01a.vendor_id$,m0$)+" "+apm01a.vendor_name$
+    find record (apm01_dev,key=firm_id$+t0$,dom=*next) apm01a$
+    vendor$(1)=fnmask$(apm01a.vendor_id$(1,p[0]),m0$)+" "+apm01a.vendor_name$
+l6190:
     return
 
-inv_brk: rem --- Invoice Break
+l6200: rem --- Invoice Break
 
     if l+5>l9 gosub report_heading
-    print (printer_dev)""
-    print (printer_dev) @(o[0]),vendor$,
-:                       @(o[4]),poe25a.ap_inv_no$
-    print (printer_dev) ""
+    dim pbuf$(width);OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+    pbuf$(o[0]+1)=vendor$
+    pbuf$(o[4]+1)=poe25a.ap_inv_no$
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width);OutVect!.addItem(pbuf$)
     let t1$=poe25a.ap_inv_no$,l=l+3
     return
 
-ret_line_code: rem --- Retrieve line code
-
-    if firm_id$+poe25a.po_line_code$<>y0$ return
-    let pom02a_key$=firm_id$+poe25a.po_no$,pom02a.code_desc$=""
-    find record (pom02_dev,key=pom02a_key$,dom=*next) pom02a$
+l6400: rem --- Retrieve line code
+    if pom02a.firm_id$+pom02a.po_line_code$=firm_id$+poe25a.po_line_code$ then goto l6490
+    find record (pom02_dev,key=firm_id$+poe25a.po_line_code$,dom=*next) pom02a$
+l6490:
     return
-
 rem --- Print total line
-
-print_variance:
-
+l6800:
     if l+1>l9 gosub report_heading
     let l=l+1,total$="Purchase Price Variance Total For "+cvs(total$,2)
-    print (printer_dev) @(o[11]-len(total$)),total$,
-:                       @(o[11]),total:m1$
+    dim pbuf$(width)
+    pbuf$(o[11]-len(total$)+1)=total$
+    pbuf$(o[11]+1)=str(total:m1$)
+    OutVect!.addItem(pbuf$)
     return
 
 rem #include std_functions.src
@@ -375,6 +350,8 @@ rem --- Standard AddonSoftware functions (01Mar2006)
 rem --- Functions used to retrieve form values
 
     def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
     def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
 :                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
     def fnget_table$(q0$)=rd_alias_id$
@@ -382,6 +359,31 @@ rem --- Functions used to retrieve form values
 rem --- Miscellaneous functions
 
     def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)
+        q$=cvs(q$,4)
+        if len(cvs(q$,2))<>9 and len(cvs(q$,2))<>6 return q$
+        if len(cvs(q$,2))=9
+            q1$="[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$
+            if q1<>0
+                if q$(6,4)="0000" return q$(1,5)
+            return q$(1,5)+"-"+q$(6,4)
+            endif
+        endif
+        if len(cvs(q$,2))=6
+            q1$="[a-zA-Z][0-9][a-zA-Z][0-9][a-zA-Z][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$ else return q$(1,3)+" "+q$(4,3)
+        endif
+    fnend
 
 rem --- Date/time handling functions
 
@@ -391,7 +393,10 @@ rem --- Date/time handling functions
         if q1$="" q1$=q$
         return q1$
     fnend
-    
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
     def fnmask$(q1$,q2$)
@@ -407,17 +412,38 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         return str(q1$:q2$)
     fnend
 
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
 rem #endinclude std_functions.src
 
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
-escape; rem error
+
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
-    call pgmdir$+"adc_error.aon",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
@@ -441,8 +467,8 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
@@ -460,8 +486,9 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-    run pgmdir$+"ads_process_end.aon",err=*next
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
 

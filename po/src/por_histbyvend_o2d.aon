@@ -101,135 +101,80 @@ rem --- Position files
 
     call pgmdir$+"adc_progress.aon","N","","","","",0,pot14_dev,1,meter_num,status
 
-rem --- Sorts
+rem --- Build sql statement
+
+    sql_prep$="select pot_rechdr.firm_id, pot_rechdr.vendor_id, pot_rechdr.po_no, "
+    sql_prep$=sql_prep$+"pot_rechdr.receiver_no, "
+    sql_prep$=sql_prep$+"apm_vendmast.alt_sequence "
+    sql_prep$=sql_prep$+"from pot_rechdr, apm_vendmast "
+
+    where_clause$="where pot_rechdr.firm_id = '"+firm_id$+"' AND "
+    where_clause$=where_clause$+"pot_rechdr.firm_id = apm_vendmast.firm_id AND "
+    where_clause$=where_clause$+"pot_rechdr.vendor_id = apm_vendmast.vendor_id"
+    if vendfrom$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id >= '" +vendfrom$+ "'"
+    if vendthru$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id <= '" +vendthru$+ "'"
+    if altfrom$<>"" where_clause$=where_clause$+" AND apm_vendmast.alt_sequence >= '" +altfrom$+ "'" 
+    if altthru$<>"" where_clause$=where_clause$+" AND apm_vendmast.alt_sequence <= '" +altthru$+ "'"
+    if datefrom$<>"" where_clause$=where_clause$+ " AND pot_rechdr.recpt_date >= '" + datefrom$+ "'"
+    if datethru$<>"" where_clause$=where_clause$+ " AND pot_rechdr.recpt_date <= '" + datethru$+ "'"
+
+    order_by$=" order by pot_rechdr.vendor_id,pot_rechdr.recpt_date,pot_rechdr.po_no,pot_rechdr.receiver_no"
+    if printseq$="A"
+        order_by$=" order by apm_vendmast.alt_sequence,pot_rechdr.vendor_id,pot_rechdr.recpt_date,pot_rechdr.po_no,pot_rechdr.receiver_no"
+    endif
+
+    sql_prep$=sql_prep$ + where_clause$ + order_by$
+    sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
 rem --- Sorts
     
     while more
-    
-        action=pos(printseq$="AN")
-        sortbyalt=1
-        sortbyvend=2
-        keybyvend=3
+        read_tpl$=sqlfetch(sql_chan,err=*break)
         
-       dim pota_key$:pot04a_key_alttpl$ ; rem pot-04 key by vend/rec date
-       dim apm04a_key$:apm01a_key_alphtpl$ ; rem apm-01 key by alt seq
-        switch action
-
-            case sortbyalt; rem --- Sort by alternate sequence
-
-                if initializing$<>"N"
-                    initializing$="N"
-                    ap04_key$=firm_id$+altfrom$
-                    read (apm01_dev2,knum=2,key=ap04_key$,dom=*next)
-                endif
-
-rem --- Find a vendor/recDate record using alt seq
-
-                while more
-
-                    apm04a_key$=key(apm01_dev2,knum=2,end=done)
-                    if apm04a_key.firm_id$<>firm_id$ goto done
-                    if altthru$<>"" and apm04a_key.alt_sequence$(1,len(altthru$))>altthru$ goto done
-                    k04b_key$=apm04a_key.firm_id$+apm04a_key.vendor_id$
-                    read (apm01_dev2); rem "Move ptr
-                    read (pot04_dev2,KNUM=1,key=k04b_key$+datefrom$,dom=*next)
-                    pota_key$=key(pot04_dev2,knum=1,end=*continue)
-                    if datethru$<>"" if pota_key.recpt_date$>datethru$ continue
-                    if pota_key.firm_id$+pota_key.vendor_id$<>k04b_key$ continue
-                    dim k$:fattr(pota_key$)
-                    k$=pota_key$.firm_id$+pota_key.vendor_id$+pota_key.po_no$+pota_key.receiver_no$; break
-
-                wend
-
-                break
-
-            case sortbyvend; rem --- Read by vendor
-                
-                if initializing$<>"N"
-                    initializing$="N"
-                    pota_key$=firm_id$+vendfrom$
-                    read (pot04_dev2,knum=1,key=pota_key$,dom=*next)
-                    if vendfrom$<>"" pota_key$=firm_id$+vendfrom$+datefrom$  
-                      read(pot04_dev2,knum=1,key=pota_key$,dom=*next)  
-                    endif
-                endif
-
-rem --- Read through req headers
-
-                pota_key$=key(pot04_dev2,knum=1,end=done)
-                if pota_key.firm_id$<>firm_id$ goto done
-                read (pot04_dev2,end=done); rem "Move ptr
-                if vendthru$<>"" if pota_key.vendor_id$>vendthru$ goto done
-                dim k$:fattr(pota_key$)
-                k$=pota_key.firm_id$+pota_key.vendor_id$+pota_key.po_no$+pota_key.receiver_no$
-                break
-
-            case default   
-                goto done
-
-        swend
-
-        
-        while more
-
-            if k.firm_id$<>firm_id$ continue
-            find record (pot04a_dev,key=k$,dom=*break) pot04a$
-            read (pot14_dev,key=k$,dom=*next) ; rem trip read for later details
-
-rem --- Test Ranges
-
-            if datefrom$<>"" and pot04a.recpt_date$<datefrom$ and printseq$<>"A" continue
-            if datethru$<>"" and pot04a.recpt_date$>datethru$ and printseq$<>"A" continue
+        find record (pot04a_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*break) pot04a$
+        read (pot14_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*next) ; rem trip read for later details
 
 rem --- Header passed tests
 
-            gosub testbreaks
-            call pgmdir$+"adc_progress.aon","S","","","","",0,pot14_dev,1,meter_num,status
+        gosub testbreaks
+        call pgmdir$+"adc_progress.aon","S","","","","",0,pot14_dev,1,meter_num,status
 
 rem --- Get detail
 
-            dim pot14a_key$:pot14a_key_tpl$
+        dim pot14a_key$:pot14a_key_tpl$
           
-            while more
+        while more
           
-                pot14a_key$=key(pot14_dev,end=*break)
-                if pot14a_key.firm_id$+pot14a_key.vendor_id$+pot14a_key.receiver_no$<>pot04a.firm_id$+
-:                   pot04a.vendor_id$+pot04a.receiver_no$ break
+            pot14a_key$=key(pot14_dev,end=*break)
+            if pot14a_key.firm_id$+pot14a_key.receiver_no$<>pot04a.firm_id$+
+:               pot04a.receiver_no$ break
 
-                    read record (pot14_dev,key=pot14a_key$) pot14a$
+            read record (pot14_dev,key=pot14a_key$) pot14a$
 
 rem --- Print detail
 
-                gosub printdetail
+            gosub printdetail
 
 rem --- Accumulate totals; then get next detail
 
-                dim rcptdate$(8); rem "Only print Recpt date on 1st detail
-                potot=potot+extension
-                vendtot=vendtot+extension
-                rcpttot=rcpttot+extension
-                grandtot=grandtot+extension
-                extension=0
-                extension$=""
-
-            wend
+            dim rcptdate$(8); rem "Only print Recpt date on 1st detail
+            potot=potot+extension
+            vendtot=vendtot+extension
+            rcpttot=rcpttot+extension
+            grandtot=grandtot+extension
+            extension=0
+            extension$=""
+         wend
 
 rem --- Done w/detail for this PO
 
-            gosub rcpttotals
- rem           read (pot14_dev2,key=pot14a_key.firm_id$+pot14a_key.vendor_id$+pot14a_key.recpt_date$+pot44a_key.po_no$+pot44a_key.receiver_no$+$FF$,dom=*next); rem "Move ptr to next recpt
-
-rem --- Loop up for next header record via sort files
-
-            if printseq$<>"A" break
+        gosub rcpttotals
 
 rem --- See if there's another po for vend before getting next alt seq
-
-            pota_key$=key(pot04a_dev,end=*continue)
-            if pota_key.vendor_id$<>vendor$ break
-            k$=pota_key$
-        wend
         
     wend
       
@@ -263,7 +208,7 @@ printdetail: rem --- Set up variables
     location$=pot14a.location$
     unitcost$=str(pot14a.unit_cost:m3$)
     wonum$=pot14a.wo_no$
-    woseq$=pot14a.sequence_no$
+    woseq$=pot14a.wo_seq_ref$
     custnum$=pot14a.customer_id$
 
 rem --- Get Drop Ship flag & Line Type
@@ -292,7 +237,7 @@ brnch2: rem --- Get extension
 rem --- Get Vendor's Part #
 
     dim vpartnum$(20)
-    find record (ivm05a_dev,key=pot14a.firm_id$+pot14a.vendor_id$+itemnum$,dom=*next) ivm05a$
+    find record (ivm05a_dev,key=pot14a.firm_id$+pot04a.vendor_id$+itemnum$,dom=*next) ivm05a$
 
 rem --- Format common part of print line
 
@@ -624,24 +569,26 @@ rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
 
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
-    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
-    if pos("RETRY"=rd_err_act$) retry
+	rd_err_text$=""
+	if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+	call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+	if pos("EXIT"=rd_err_act$) goto std_error_exit
+	if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+	if pos("RETRY"=rd_err_act$) retry
+
 std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
+	
+	master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=std_error_release)
+	if cvs(sysinfo.user_id$,2)=master_user$ escape
+	
 std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
+
+	status=999
+	if pgm(-1)<>pgm(-2) exit 
+	release
 
 rem #endinclude std_error.src
 
@@ -649,21 +596,24 @@ rem #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
 
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+	rd_err_text$=""
+	if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+	pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+	call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+
 std_missing_params_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
+	
+	master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+	if cvs(sysinfo.user_id$,2)=master_user$ escape
+	
 std_missing_params_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
+
+	status=999
+	if pgm(-1)<>pgm(-2) exit 
+	release
 
 rem #endinclude std_missing_params.src
 

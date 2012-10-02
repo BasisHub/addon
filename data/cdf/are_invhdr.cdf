@@ -1,3 +1,12 @@
+[[ARE_INVHDR.ARAR]]
+if callpoint!.getColumnData("ARE_INVHDR.PRINT_STATUS") = "Y" then
+	msg_id$="OP_REPRINT_INVOICE"
+	gosub disp_message
+	if msg_opt$="Y"
+		callpoint!.setColumnData("ARE_INVHDR.PRINT_STATUS", "N")
+		callpoint!.setStatus("MODIFIED")
+	endif
+endif
 [[ARE_INVHDR.ADEL]]
 rem --- hdr/dtl have been deleted; now write back header w/ "V" flag
 are_invhdr_dev=fnget_dev("ARE_INVHDR")

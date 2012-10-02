@@ -81,7 +81,7 @@ endif
 [[APM_VENDHIST.AP_DIST_CODE.BINP]]
 if user_tpl$.multi_dist$<>"Y" 
 
-	callpoint!.setColumnData("APM_VENDHIST.DIST_CODE","  ")
+	callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE","  ")
 	callpoint!.setStatus("REFRESH")
 
 endif

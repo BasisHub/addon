@@ -9,7 +9,7 @@ rem --- All Rights Reserved
     setesc std_error
     seterr std_error
 
-	rem --- Retrieve the program path
+rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
@@ -19,34 +19,27 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO")
     firm_id$=sysinfo.firm_id$
 
-rem --- Ready to close?
-
-	repeat
-	    call pgmdir$+"adc_yesno.aon",0,"Are you ready to close this period",0,v$,v3
-	    if v$="NO" or v3=4 then goto std_exit
-    until v$="YES" and v3=0
-
-	rem --- Open/Lock files
+rem --- Open/Lock files
 
     files=30,begfile=3,endfile=12
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[2]="apm-06",ids$[2]="APM_VENDREPL"
 
-	    files$[3]="ivm-01",ids$[3]="IVM_ITEMMAST"
+    files$[3]="ivm-01",ids$[3]="IVM_ITEMMAST"
     files$[4]="ivm-02",ids$[4]="IVM_ITEMWHSE"
-	files$[6]="ivm-12",ids$[6]="IVM_ITEMACT"
+    files$[6]="ivm-12",ids$[6]="IVM_ITEMACT"
     files$[10]="aps_params",ids$[10]="APS_PARAMS"
     files$[11]="gls_params",ids$[11]="GLS_PARAMS"
     files$[12]="ivs_params",ids$[12]="IVS_PARAMS"
 
-		files$[25]="ivm-07",ids$[25]="IVM_LSMASTER"
-	files$[27]="ivm-17",ids$[27]="IVM_LSACT"
+    files$[25]="ivm-07",ids$[25]="IVM_LSMASTER"
+    files$[27]="ivm-17",ids$[27]="IVM_LSACT"
     files$[28]="ivt-01",ids$[28]="IVT_LSTRANS"
 
     call pgmdir$+"adc_fileopen.aon",1,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_update
 
-	    ivm01_dev=channels[3]
+    ivm01_dev=channels[3]
     ivm02_dev=channels[4]
     ivm12_dev=channels[6]
     aps01a_dev=channels[10]
@@ -55,12 +48,12 @@ rem --- Ready to close?
 
 rem --- Dimension string templates
 
-	dim ivm01a$:templates$[3]
-	dim ivm02a$:templates$[4]
-	dim ivm12a$:templates$[6]
-	dim aps01a$:templates$[10]
-	dim gls01a$:templates$[11]
-	dim ivs01a$:templates$[12]
+    dim ivm01a$:templates$[3]
+    dim ivm02a$:templates$[4]
+    dim ivm12a$:templates$[6]
+    dim aps01a$:templates$[10]
+    dim gls01a$:templates$[11]
+    dim ivs01a$:templates$[12]
 
 rem --- Retrieve parameter records
 
@@ -71,45 +64,58 @@ rem --- Retrieve parameter records
     ivs01a_key$=firm_id$+"IV00"
     find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
 
-  rem --- Parameters
+rem --- Parameters
 
     n2$="IV"
     apflag$="N"
     find record (ivs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ivs01a$
     find record (gls01a_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
 
-	    call pgmdir$+"adc_application.aon","AP",info$[all]
+    call pgmdir$+"adc_application.aon","AP",info$[all]
     apflag$=info$[20]
 
-	    if apflag$="N" then
+    if apflag$="N" then
         find record (aps01a_dev,key=firm_id$+"AP00",dom=*endif) aps01a$
         apflag$=aps01a.use_replen$
         if apflag$=" " then apflag$="N"
     endif
 
-
     total_periods  = num(gls01a.total_pers$)
     current_period = num(ivs01a.current_per$)
     current_year   = num(ivs01a.current_year$)
 
+    call pgmdir$+"adc_perioddates.aon",gls01a_dev,current_period,current_year,begdate$,
+:                                      enddate$,status
+
+rem --- Get user approval to proceed
+
+    msg_id$="CLOSE_PERIOD"
+    dim msg_tokens$[2]
+    msg_tokens$[0]=str(current_period)
+    msg_tokens$[1]=fndate$(begdate$)
+    msg_tokens$[2]=fndate$(enddate$)
+    gosub disp_message
+    if msg_opt$="N" goto std_exit_no_update
+
 rem --- Init Data
 
     precision num(ivs01a.precision$)
-	more=1
+    more=1
 
-		call "ivc_itemupdt.aon::init",channs[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+    call "ivc_itemupdt.aon::init",channs[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+	if status = 999 then goto std_exit_no_update
 
 rem --- Check on Lot/Serial Flag
 
     ls$="N"
     if pos(ivs01a.lotser_flag$="LS") then
         call pgmdir$+"adc_fileopen.aon",1,25,28,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto std_exit_no_update
         ivm07_dev=channels[25]
         ivm17_dev=channels[27]
         ivt01_dev=channels[28]
-		dim ivm07a$:templates$[25]
-		dim ivm17a$:templates$[27]
+        dim ivm07a$:templates$[25]
+        dim ivm17a$:templates$[27]
         ls$=ivs01a.lotser_flag$
     endif
 
@@ -117,20 +123,23 @@ rem --- Check on Replenishment
 
     if apflag$="Y" then
         call pgmdir$+"adc_fileopen.aon",1,2,2,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+		if status = 999 then goto std_exit_no_update
         if status then apflag$="N"
         apm06_dev=channels[2]
-		dim apm06a$:templates$[2]
+        dim apm06a$:templates$[2]
     endif
 
 rem --- Determine Period Limits
 
     call pgmdir$+"adc_perioddates.aon",gls01a_dev,current_period,current_year,start_date$,end_date$,status
+	if status = 999 then goto std_exit_no_update
     call pgmdir$+"adc_daydates.aon",end_date$,when$,1
-	refs$[0]=when$
+    refs$[0]=when$
 
 rem --- Process ivm-02
 
-	call pgmdir$+"adc_progress.aon","N","","","Updating","",0,0,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","","","Updating","",0,0,1,meter_num,status
+	if status = 999 then goto std_exit_no_update
     read (ivm02_dev, key=firm_id$, dom=*next)
 
 rem --- Main Read
@@ -140,92 +149,111 @@ rem --- Main Read
         ivm02_key$ = key(ivm02_dev, end=*break)
         if pos(firm_id$ = ivm02_key$) <> 1 then break
 
-				read record (ivm02_dev) ivm02a$
-		item$ = ivm02a.item_id$
-		whse$ = ivm02a.warehouse_id$
+        read record (ivm02_dev) ivm02a$
+        item$ = ivm02a.item_id$
+        whse$ = ivm02a.warehouse_id$
 
-				read record (ivm01_dev,key=firm_id$+item$, dom=*continue) ivm01a$
-		call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        read record (ivm01_dev,key=firm_id$+item$, dom=*continue) ivm01a$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+		if status = 999 then exitto std_exit_no_update
 
-				items$[0]=firm_id$
-		items$[1]=whse$
-		items$[2]=item$
+        items$[0]=firm_id$
+        items$[1]=whse$
+        items$[2]=item$
 
-		rem --- Check for Serial Numbers
+rem --- Check for Serial Numbers
 
-		if ls$<>"N" and ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then 
+        if ls$<>"N" and ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then 
 
-			read (ivm07_dev, key=firm_id$+whse$+item$, dom=*next)
+            read (ivm07_dev, key=firm_id$+whse$+item$, dom=*next)
 
-	        while more
-	            ivm07_key$ = key(ivm07_dev,end=*break)
-	            if pos(firm_id$+whse$+item$ = ivm07_key$) <> 1 then break
+            while more
+                ivm07_key$ = key(ivm07_dev,end=*break)
+                if pos(firm_id$+whse$+item$ = ivm07_key$) <> 1 then break
 
-								read record (ivm07_dev) ivm07a$
-				find record (ivm17_dev, key=ivm07_key$+ivs01a.current_year$+ivs01a.current_per$, dom=*continue) ivm17a$
-				call pgmdir$+"ivc_periodqty.aon","END",ivm17a$,balance
-				items$[3]=ivm17a.lotser_no$
-				refs$[10]=ivm07a.ls_location$
-				refs$[11]=ivm07a.ls_comments$
-				refs[0]=balance
-				refs[1]=ivm07a.unit_cost
-				call  pgmdir$+"ivc_itemupdt.aon","BB",channs[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
-	        wend
+                read record (ivm07_dev) ivm07a$
+                find record (ivm17_dev, key=ivm07_key$+ivs01a.current_year$+ivs01a.current_per$, dom=*continue) ivm17a$
+                call pgmdir$+"ivc_periodqty.aon","END",ivm17a$,ignore[all],balance,status
+                if status = 999 then exitto std_exit_no_update
+                items$[3]=ivm17a.lotser_no$
+                refs$[10]=ivm07a.ls_location$
+                refs$[11]=ivm07a.ls_comments$
+                refs[0]=balance
+                refs[1]=ivm07a.unit_cost
+                call  pgmdir$+"ivc_itemupdt.aon","BB",channs[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+				if status = 999 then exitto std_exit_no_update
+            wend
 
-		else
+        else
 
 rem --- Regular inventory
 
-	        find record (ivm12_dev, key=firm_id$+whse$+item$+ivs01a.current_per$+ivs01a.current_year$, dom=*continue) ivm12a$
-	        call pgmdir$+"ivc_periodqty.aon","END",ivm12a$,balance
-	        items$[3]=""
-	        refs$[10]=""
-	        refs$[11]=""
-	        refs[0]=balance
-	        refs[1]=ivm02a.unit_cost
-			call  pgmdir$+"ivc_itemupdt.aon","BB",channs[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+            find record (ivm12_dev, key=firm_id$+whse$+item$+ivs01a.current_year$+ivs01a.current_per$, dom=*continue) ivm12a$
+            call pgmdir$+"ivc_periodqty.aon","END",ivm12a$,ignore[all],balance,status
+			if status = 999 then exitto std_exit_no_update
+            items$[3]=""
+            refs$[10]=""
+            refs$[11]=""
+            refs[0]=balance
+            refs[1]=ivm02a.unit_cost
+            call  pgmdir$+"ivc_itemupdt.aon","BB",channs[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+			if status = 999 then exitto std_exit_no_update
 
-		endif
+        endif
 
-	wend
+    wend
 
 rem --- Update Replenishment File - Year End Only
 
     if apflag$="Y" and current_period=total_periods then
         read (apm06_dev,key=firm_id$,dom=*next)
 
-		while more
+        while more
             apm06a_key$ = key(apm06_dev, end=*break)
             if pos(firm_id$=apm06a_key$) <> 1 then break
 
-			            extract record (apm06_dev, key=apm06a_key$) apm06a$
+            extract record (apm06_dev, key=apm06a_key$) apm06a$
             apm06a.ytd_rec_amt  = apm06a.nyr_rec_amt
-			apm06a.nyr_rec_amt  = 0
+            apm06a.nyr_rec_amt  = 0
             apm06a.ytd_rec_lbs  = apm06a.nyr_rec_lbs
-			apm06a.nyr_rec_lbs  = 0
+            apm06a.nyr_rec_lbs  = 0
             apm06a.ytd_rec_unts = apm06a.nyr_rec_unts
-			apm06a.nyr_rec_unts = 0
-			apm06a$ = field(apm06a$)
+            apm06a.nyr_rec_unts = 0
+            apm06a$ = field(apm06a$)
             write record (apm06_dev) apm06a$
         wend
     endif
 
 rem --- Increment Period
 
-	current_period=current_period+1
+    current_period=current_period+1
 
-		if current_period>total_periods then
-		current_period=1
-		current_year=current_year+1
-	endif
+    if current_period>total_periods then
+        current_period=1
+        current_year=current_year+1
+    endif
 
-		extract record (ivs01a_dev, key=firm_id$+n2$+"00") ivs01a$
-	ivs01a.current_per$  = str(current_period:"00")
-	ivs01a.current_year$ = str(current_year)
-	ivs01a$ = field(ivs01a$)
-	write record (ivs01a_dev, key=firm_id$+n2$+"00") ivs01a$
+    extract record (ivs01a_dev, key=firm_id$+n2$+"00") ivs01a$
+    ivs01a.current_per$  = str(current_period:"00")
+    ivs01a.current_year$ = str(current_year)
+    ivs01a$ = field(ivs01a$)
+    write record (ivs01a_dev, key=firm_id$+n2$+"00") ivs01a$
 
-	    goto std_exit
+    goto std_exit
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem --- Date function
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
 
 rem #include std_error.src
 
@@ -234,7 +262,7 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
-    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),   str(err:"000"),rd_err_text$,rd_err_act$
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
@@ -258,7 +286,7 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),                                   str(err:"000"),rd_err_text$,rd_err_act$
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),str(err:"000"),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
@@ -275,10 +303,18 @@ rem #endinclude std_missing_params.src
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-    rem run pgmdir$+"ads_process_end.aon",err=*next
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,ignore_status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

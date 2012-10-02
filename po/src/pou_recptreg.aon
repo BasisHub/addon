@@ -1,0 +1,694 @@
+rem --- Purchase Order Receipt Register Update
+rem --- Program pou_recptreg v8.0.0 11Jun2009 (pou_da)
+rem --- Created by adx_codeport.bbj v1.1.5 (06/11/2009 11:40:58)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+    
+    next_overlay$=""
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    
+rem --- Lot/serial number differences?
+
+    if lotser<>0
+        msg_id$="PO_LOTSER_DIF"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=str(lotser)
+        gosub disp_message
+        goto std_exit_no_update
+    endif
+
+rem --- Any unreleased work orders?
+
+    if wo<>0 
+        msg_id$="PO_UNREL_WO"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=str(wo)
+        gosub disp_message
+        goto std_exit_no_update
+    endif
+    
+rem --- Get user approval to update
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+    
+rem --- Open/Lock Files
+
+    files=25,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="poe-02",ids$[1]="POE_POHDR"
+    files$[2]="poe-12",ids$[2]="POE_PODET"
+    files$[3]="pot-04",ids$[3]="POT_RECHDR"
+    files$[4]="pot-14",ids$[4]="POT_RECDET"
+    files$[5]="apm-06",ids$[5]="APM_VENDREPL"
+    files$[6]="ivm-05",ids$[6]="IVM_ITEMVEND"
+    files$[7]="ivm-12",ids$[7]="IVM_ITEMACT"
+    files$[8]="ivt-04",ids$[8]="IVT_ITEMTRAN"
+    
+    call pgmdir$+"adc_fileopen.aon",action,begfile,8,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    poe02_dev=channels[1]
+    poe12_dev=channels[2]
+    pot04_dev=channels[3]
+    pot14_dev=channels[4]
+    apm06_dev=channels[5]
+    ivm05_dev=channels[6]
+    ivm12_dev=channels[7]
+    ivt04_dev=channels[8]
+    
+    dim poe02a$:templates$[1],poe12a$:templates$[2],
+:       pot04a$:templates$[3],pot14a$:templates$[4],apm06a$:templates$[5],
+:       ivm05a$:templates$[6],ivm12a$:templates$[7],ivt04a$:templates$[8]    
+
+rem --- Initializations
+
+    precision i[1]
+
+    dim a0$(22),a1$(160),a[8],b0$(8),b1$(195),y0$(4),y1$(32),message$[2]
+    dim flippeda0$(22),flippedw0$(25)
+    dim s0$(15),s1$(160),s[8],r0$(18),r1$(48),r2$(32),r3$(22),r4$(40),r[12]
+    dim w0$(25),w1$(48),w2$(32),w3$(22),w4$(40),w[12],z0$(32),z1$(11*g[4])
+    dim files[44],params[10],params$[10],item$[3],refs$[20],refs[20]
+    dim glfiles[20],glparams$[20],glparams[20],w$[10],tpls$[10]
+    
+    call pgmdir$+"ivc_itemupdt.aon::init",files[all],ivs01a$,item$[all],refs$[all],refs[all],rd_table_chans$[all],ignore_status
+    
+    if replenishment$="Y" call pgmdir$+"adc_perioddates.aon",gls01_dev,num(gls01a.total_pers$),num(ivs01a.current_year$),x1$,yearend$,status
+    qty=0
+    cost=0
+    po_extension=0
+
+rem --- Additional File Opens
+
+    if ls$="N" goto l620
+    
+    files$[9]="ivm-07",ids$[9]="IVM_LSMASTER"
+    files$[10]="ivm-17",ids$[10]="IVM_LSACT"
+    files$[11]="ivt-01",ids$[11]="IVT_LSTRANS"
+    files$[12]="ivt-03",ids$[12]="IVX_LSVEND"
+        
+    call pgmdir$+"adc_fileopen.aon",action,9,12,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+
+    if status goto std_exit
+
+    ivm07_dev=channels[9]
+    ivm17_dev=channels[10]
+    ivt01_dev=channels[11]
+    ivt03_dev=channels[12]
+
+    dim ivm07a$:templates$[9],ivm17a$:templates$[10],ivt01a$:templates$[11],ivt03a$:templates$[12]        
+
+l620:
+    if gl$="N" goto l630
+    
+    files$[13]="glt-04",ids$[13]="GLE_DAILYDETAIL"
+    
+    call pgmdir$+"adc_fileopen.aon",action,13,13,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+
+    if status goto std_exit
+    
+    glt04_dev=channels[13]
+    
+    dim glt04a$:templates$[13]
+
+    
+l630:
+    if sf$="N" goto l675
+    
+    files$[14]="sfe-13",ids$[14]="SFE_WOMATHDR"
+    files$[15]="sfe-15",ids$[15]="SFE_WOMATISH"
+    files$[16]="sfe-22",ids$[16]="SFE_WOMATL"
+    files$[17]="sfe-23",ids$[17]="SFE_WOMATDTL"
+    files$[18]="sfe-25",ids$[18]="SFE_WOMATISD"
+    files$[19]="sfe-32",ids$[19]="SFE_WOSUBCNT"
+    files$[20]="sfm-07",ids$[20]="SFX_WOTRANXR"
+    files$[21]="sft-21",ids$[21]="SFT_OPNMATTR"
+    files$[22]="sft-31",ids$[22]="SFT_OPNSUBTR"
+    
+    call pgmdir$+"adc_fileopen.aon",action,14,22,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+
+    if status goto std_exit
+    
+    sfe13_dev=channels[14]
+    sfe15_dev=channels[15]
+    sfe22_dev=channels[16]
+    sfe23_dev=channels[17]
+    sfe25_dev=channels[18]
+    sfe32_dev=channels[19]
+    sfm07_dev=channels[20]
+    sft21_dev=channels[21]
+    sft31_dev=channels[22]
+    
+    dim sfe13a$:templates$[14],sfe15a$:templates$[15],
+:       sfe22a$:templates$[16],sfe23a$:templates$[17],sfe25a$:templates$[18],
+:       sfe32a$:templates$[19],sfm07a$:templates$[20],
+:       sft21a$:templates$[21],sft31a$:templates$[22]
+
+    if ls$="Y"     
+        files$[23]="sfe-14",ids$[23]="SFE_WOLSISSU"
+        call pgmdir$+"adc_fileopen.aon",action,23,23,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+
+        if status goto std_exit
+    
+        sfe14_dev=channels[23]
+    
+        dim sfe14a$:templates$[23]
+    endif
+
+l675: rem --- done file opens
+
+rem --- Position file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,poe04_dev,1,meter_num,status
+    exit_ctl=1
+    read (poe04_dev,key=firm_id$,dom=*next)
+
+l1000: rem --- Read next receipt header
+
+    read record (poe04_dev,end=done) poe04a$
+    if pos(firm_id$=poe04a$)<>1 goto done
+    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+    if poe04a.firm_id$+poe04a.vendor_id$=apm01a.firm_id$+apm01a.vendor_id$ then goto l1100
+    dim apm01a$:fattr(apm01a$)
+    apm01a.firm_id$=poe04a.firm_id$
+    apm01a.vendor_id$=poe04a.vendor_id$
+    find record (apm01_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
+
+l1100: rem --- Initializations for current receipt
+
+    x1$=poe04a.ord_date$
+    x2$=poe04a.recpt_date$
+    received$=x2$
+    when$=x2$
+    leadtime=0
+    call pgmdir$+"adc_daydates.aon",x1$,x2$,leadtime
+    leadtime=max(0,leadtime)
+    deleted=1
+    read (poe14_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
+
+l1200: rem --- Read next receipt detail
+
+    k$=key(poe14_dev,end=l3500)
+    if pos(poe04a.firm_id$+poe04a.receiver_no$=k$)<>1 goto l3500
+    read record (poe14_dev) poe14a$
+
+    onorder=poe14a.qty_ordered-(poe14a.qty_prev_rec+poe14a.qty_received)
+    if poe14a.conv_factor=0 then poe14a.conv_factor=1
+
+rem --- Determine line type
+
+    if firm_id$+poe14a.po_line_code$=pom02a.firm_id$+pom02a.po_line_code$ then goto l1350
+    dim pom02a$:fattr(pom02a$)
+    pom02a.firm_id$=firm_id$
+    pom02a.po_line_code$=poe14a.po_line_code$
+    find record (pom02_dev,key=pom02a.firm_id$+pom02a.po_line_code$,dom=l3000) pom02a$
+
+l1350: rem --- Branch based on line type
+
+    if pos(pom02a.line_type$="MOV") goto l2900
+    if pom02a.line_type$="N" goto l1700
+
+rem --- Retrieve inventory item
+
+    dim c0$(22),c1$(60),c2$(64),c6$(6*g[4]),c[12],d0$(24),d1$(64),d[20]
+    dim ivm01a$:fattr(ivm01a$)
+    dim ivm02a$:fattr(ivm02a$)
+    ivm01a.firm_id$=firm_id$
+    ivm01a.item_id$=poe14a.item_id$
+    ivm02a.firm_id$=firm_id$
+    ivm02a.warehouse_id$=poe14a.warehouse_id$
+    ivm02a.item_id$=poe14a.item_id$
+    code$=""
+    description$=""
+    find record (ivm01_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=l3000) ivm01a$
+    find record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,dom=l3000) ivm02a$
+    buyer$=ivm01a.buyer_code$
+    stocking$=ivm01a.vendor_id$
+    code$=ivm02a.ar_dist_code$
+    description$=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
+    if ivm01a.stock_level$="W" buyer$=ivm02a.buyer_code$,stocking$=ivm02a.vendor_id$
+
+l1700: rem --- Calculate extension and branch based on line type
+
+    precision 2
+    po_extension=poe14a.unit_cost*poe14a.qty_received
+    iv_extension=0
+    if pom02a.line_type$="S" iv_extension=ivm02a.unit_cost*poe14a.qty_received*poe14a.conv_factor
+    precision i[1]
+    on pos(pom02a.line_type$="SN") goto l3000,l1800,l2300
+
+l1800: rem --- Update Inventory
+
+    lineqty=poe14a.qty_received*poe14a.conv_factor
+    linecost=poe14a.unit_cost/poe14a.conv_factor
+    qty=lineqty
+    cost=linecost
+    if ls$="Y" if ivm01a.lotser_item$+ivm01a.inventoried$="YY" goto l1850
+    if qty<>0 gosub l6100
+    goto l2200
+
+l1850: rem --- Position lot/serial file
+
+    dim u0$(28),u1$(20),u[1]
+    read (poe24_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
+
+l1900: rem --- Update Lotted/Serialized Inventory
+
+    read record (poe24_dev,end=l2000) poe24a$
+    if pos(poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$=poe24a$)<>1 goto l2000
+    item$[3]=poe24a.lotser_no$
+    qty=poe24a.qty_received
+    cost=poe24a.unit_cost
+    if qty<>0 gosub l6100
+    goto l1900
+
+l2000: rem --- Done with lot/serial number entries
+
+    item$[3]=""
+    qty=0
+    cost=linecost
+    gosub l6100
+    qty=lineqty
+    cost=linecost
+
+l2200: rem --- Update Replenishment
+
+    if pom02a.dropship$="Y" goto l2800
+    if replenishment$<>"Y" goto l2300
+    if poe04a.vendor_id$<>stocking$ goto l2300
+    dim u0$(11),u1$(32),u[11]
+    dim apm06a$:fattr(apm06a$)
+    apm06a.firm_id$=firm_id$
+    apm06a.vendor_id$=poe04a.vendor_id$
+    apm06a.buyer_code$=buyer$
+    find record (apm06_dev,key=apm06a.firm_id$+apm06a.vendor_id$+apm06a.buyer_code$,dom=*next) apm06a$
+    if received$>yearend$
+        apm06a.nyr_rec_amt=apm06a.nyr_rec_amt+po_extension
+        apm06a.nyr_rec_lbs=apm06a.nyr_rec_lbs+(qty*ivm01a.weight)
+        apm06a.nyr_rec_unit=apm06a.nyr_rec_init+qty
+    else
+        apm06a.ytd_rec_amt=apm06a.ytd_rec_amt+po_extension
+        apm06a.ytd_rec_lbs=apm06a.ytd_rec_lbs+(qty*ivm01a.weight)
+        apm06a.ytd_rec_unts=apm06a.ytd_rec_unts+qty   
+    endif
+    if received$>cvs(apm06a.lstrec_date$,2) apm06a.lstrec_date$=received$
+    write record (apm06_dev,key=apm06a.firm_id$+apm06a.vendor_id$+apm06a.buyer_code$) apm06a$
+
+l2300: rem --- Update Work Orders
+
+    goto l2800;rem skipping sf update for Dist release CAH
+
+    if sf$<>"Y" goto l2800
+    if cvs(w2$(1,7),2)="" goto l2800
+    if a1$(134,1)<>"Y" and poe14a.qty_received=0 goto l2800
+    if pom02a.line_type$="S" if d1$(60,1)<>"Y" goto l2800
+    dim t0$(75),t1$(141),t[11]
+    t0$(1)=firm_id$+"  "+w2$(1,7)
+    find record (sfe01_dev,key=t0$(1,11),dom=l2800) sfe01a$
+    if cvs(t0$(28,3),2)="" t0$(28,3)=received$
+    if received$>t0$(28,3) t0$(28,3)=received$
+    write record (sfe01_dev,key=t0$(1,11)) sfe01a$
+
+rem --- Update link to WO subcontract line/Generate transaction detail
+
+    oldwo$=w2$(1,10)
+    newwo$=oldwo$
+    call pgmdir$+"poc_wa.bbx",sfe22_dev,sfe32_dev,firm_id$,w0$(16),"C",y1$,oldwo$,newwo$,i[1],status
+    if pom02a.line_type$="S" goto l2800
+    dim l0$(18),l1$(39),l[11]
+    l0$(1)=t0$(1,11)+received$+"S"
+    channel=sft31_dev
+    gosub l6000
+    if status goto l2800
+    l1$(1)=w2$(8,3)+w0$(3,6)+w0$(16)+w4$
+    l[0]=poe14a.qty_received*poe14a.conv_factor
+    l[1]=poe14a.unit_cost/poe14a.conv_factor
+    l[2]=po_extension
+    write record (sft31_dev,key=l0$) sft31a$
+    write record (sfm07_dev,key=l0$) sfm07a$
+    goto l2800
+
+l2800: rem --- Generate GL Recap Postings
+
+    if gl$="N" goto l2900
+    glfiles[1]=arm10_dev
+    glfiles[2]=sfe01_dev
+    glfiles[3]=sfm10_dev
+    glfiles[4]=glm01_dev
+    glfiles[5]=glt04_dev
+    glfiles[6]=glt14_dev
+    w$[0]=poe14a$
+    glparams$[0]=gl$
+    glparams$[1]=poe04a.recpt_date$
+    glparams$[2]=apm01a.vendor_id$
+    glparams$[3]=m0$
+    glparams$[4]=gls01a$
+    glparams$[5]=description$
+    glparams$[6]=pom02a$
+    glparams$[7]=ivm01a$
+    glparams$[8]=distcode$
+    glparams$[9]=code$
+    glparams$[10]=firm_id$
+    glparams$[11]=sf$
+    glparams[0]=po_extension
+    glparams[1]=g[4]
+    glparams[2]=i[0]
+    glparams$[12]=ivs01a.cost_method$
+    glparams[3]=iv_extension
+    if cvs(poe14a$,3)<>"" then tpls$[0]=fattr(poe14a$)
+    if cvs(gls01a$,3)<>"" then tpls$[1]=fattr(gls01a$)
+    if cvs(pom02a$,3)<>"" then tpls$[2]=fattr(pom02a$)
+    if cvs(ivm01a$,3)<>"" then tpls$[3]=fattr(ivm01a$)
+    if cvs(arm10d$,3)<>"" then tpls$[4]=fattr(arm10d$)
+    if cvs(sfe01a$,3)<>"" then tpls$[5]=fattr(sfe01a$)
+    if cvs(sfm10a$,3)<>"" then tpls$[6]=fattr(sfm10a$)
+    call pgmdir$+"poc_recglpost.aon",glfiles[all],w$[all],w[all],glparams$[all],glparams[all],tpls$[all],status
+    if status goto std_exit
+
+l2900: rem --- Update Receipt History & X-refs
+rem --- note: poe-14 contains 12-char sales order line ref, pot-14 contains (old) 3-char sales order line#
+rem --- need to decide if we just skip putting line# in pot-14; if we can't, we need to add it, or change
+rem --- current line# to the 12-char one, which in turn has dataport implications
+
+    if pom02a.line_type$="M" and pos01a.m_line_hist$<>"Y" goto l3000; rem "Don't retain message lines in history
+    if pom02a.line_type$="V" and pos01a.v_line_hist$<>"Y" goto l3000; rem "Don't retain vendor part lines in history
+    dim pot14a$:fattr(pot14a$)
+    call stbl("+DIR_PGM")+"adc_copyfile.aon",poe14a$,pot14a$,status 
+    pot14a.po_int_seq_ref$=poe14a.internal_seq_no$
+    pot14a$=field(pot14a$)
+    write record (pot14_dev,key=pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$) pot14a$
+
+l3000: rem --- Remove receipt detail
+
+remove (poe14_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
+
+rem --- Remove Receipt Lot/Serial Detail
+
+    read (poe24_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
+l3120:
+    k$=key(poe24_dev,end=l3200)
+    if pos(poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$=k$)<>1 goto l3200
+    remove (poe24_dev,key=k$)
+
+    goto l3120
+
+l3200: rem --- Update PO detail
+
+    dim poe12a$:fattr(poe12a$)
+    poe12a.firm_id$=firm_id$
+    poe12a.po_no$=poe14a.po_no$
+    poe12a.internal_seq_no$=poe14a.internal_seq_no$
+    if pos(pom02a.line_type$="SNO") if onorder<=0 goto l3300
+    if poe04a.rec_complete$="Y" goto l3300
+    if pos(pom02a.line_type$="MV") if deleted goto l3300
+    find record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=l3400) poe12a$
+    poe12a.qty_received=poe12a.qty_received+poe14a.qty_received
+    deleted=0
+    write record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$) poe12a$
+    goto l3400
+
+l3300: rem --- Remove PO detail
+
+    if pom02a.line_type$<>"S" goto l3350
+    find record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=l3400) poe12a$
+    qty=-(poe12a.qty_ordered*poe12a.conv_factor-(poe14a.qty_prev_rec+poe14a.qty_received)*poe14a.conv_factor)
+    action$="OO"
+    if qty<>0 gosub l6200
+l3350: remove (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=*next)
+
+l3400: rem --- Loop back for next detail
+
+    goto l1200
+
+l3500: rem --- Done with detail lines - Remove receipt header
+
+    dim pot04a$:fattr(pot04a$)
+    call stbl("+DIR_PGM")+"adc_copyfile.aon",poe04a$,pot04a$,status      
+    write record (pot04_dev,key=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$) pot04a$
+remove (poe04_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
+
+rem --- Done with details - Update PO Header
+
+    dim poe02a$:fattr(poe02a$)
+    poe02a.firm_id$=firm_id$
+    poe02a.po_no$=poe04a.po_no$
+    gosub l6300
+    if lines then poe04a.rec_complete$="N"
+    if poe04a.rec_complete$="Y" or lines=0 goto l3700
+    find record (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=l3900) poe02a$
+    poe02a.recpt_date$=poe04a.recpt_date$
+    write record (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$) poe02a$
+    goto l3900
+
+l3700: rem --- Received complete - Delete PO
+
+remove (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=*next)
+
+l3900: rem --- Loop back for next header
+
+    goto l1000
+
+done: rem --- All done
+
+rem --- escape gosub 11000; rem "ACS60 CLEAR PO080
+
+    goto std_exit
+
+l6000: rem --- Find next available sequence number for SFT files
+rem --- bypassing until sf mods are made
+
+    let x=len(l0$)-2,l0$(x)="001",status=0
+    read (channel,key=l0$(1,x-1)+$ff$,dom=*next)
+    let k$=keyp(channel,end=l6090)
+    if pos(l0$(1,x-1)=k$)<>1 goto l6090
+    if k$(16,3)="999" goto l6080
+    let l0$(x)=str(num(k$(16,3))+1:"000")
+    goto l6090
+l6080:
+    let status=2
+l6090:
+    return
+
+l6100: rem --- Update inventory with receipt quantity
+
+    let action$="RC"
+    gosub l6200
+
+    return
+
+l6200: rem --- Call standard inventory update program
+
+    let item$[0]=firm_id$,item$[1]=poe14a.warehouse_id$,item$[2]=poe14a.item_id$
+    let ref3$=poe14a.internal_seq_no$,refs$[0]=poe04a.recpt_date$,refs$[1]=poe04a.vendor_id$,refs$[2]=poe14a.po_no$
+    let refs$[3]=poe14a.receiver_no$,refs$[4]="",refs$[5]=ref3$,refs$[6]=poe14a.po_line_code$
+    let refs$[8]=ivacct$,refs$[9]="",refs$[10]="",refs$[11]=""
+    let refs$[12]=poe04a.dropship$,refs[0]=qty,refs[1]=cost,refs[2]=ivm02a.cur_price
+    let refs[3]=leadtime,refs[4]=cost,refs[5]=0
+
+    call pgmdir$+"ivc_itemupdt.aon",action$,files[all],ivs01a$,item$[all],refs$[all],refs[all],rd_table_chans$[all],ignore_status
+
+    return
+
+rem --- Verify PO Has No Detail In poe-12
+l6300:
+    let lines=0
+    read (poe12_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=*next)
+    let poe12k$=key(poe12_dev,end=l6390)
+    if pos(poe02a.firm_id$+poe02a.po_no$=poe12k$)<>1 goto l6390
+    let lines=1
+l6390:
+    return
+    
+rem --- Standard G/L Posting Routine
+glpost:
+    if gl$<>"Y" goto l6990
+    call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,glt14_dev,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
+l6990:
+    return
+        
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+    return
+    
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)
+        q$=cvs(q$,4)
+        if len(cvs(q$,2))<>9 and len(cvs(q$,2))<>6 return q$
+        if len(cvs(q$,2))=9
+            q1$="[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$
+            if q1<>0
+                if q$(6,4)="0000" return q$(1,5)
+            return q$(1,5)+"-"+q$(6,4)
+            endif
+        endif
+        if len(cvs(q$,2))=6
+            q1$="[a-zA-Z][0-9][a-zA-Z][0-9][a-zA-Z][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$ else return q$(1,3)+" "+q$(4,3)
+        endif
+    fnend
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

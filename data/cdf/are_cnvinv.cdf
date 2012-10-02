@@ -50,8 +50,8 @@ read(art_invhdr_dev,key=invhdr_key$,dom=*next)
 readrecord(art_invhdr_dev,end=*next)art01a$
 if art01a.firm_id$=firm_id$ and art01a.customer_id$=callpoint!.getColumnData("ARE_CNVINV.CUSTOMER_ID") and
 :                       art01a.ar_inv_no$=callpoint!.getUserInput()
-		rd_msg_id$="AR_INV_USED"
-		dim rd_msg_tokens$[1]
+		msg_id$="AR_INV_USED"
+		dim msg_tokens$[1]
 		gosub disp_message
 		callpoint!.setUserInput("")
 		callpoint!.setStatus("REFRESH-ABORT")                           

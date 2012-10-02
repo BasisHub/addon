@@ -34,7 +34,7 @@ rem --- Retrieve sysinfo data
           firm_id$=sysinfo.firm_id$
 
           call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECHDR","PRIMARY",pot04a_key_pritpl$,rd_table_chans$[all],status$
-          call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","ITEM_WHSE_VENDOR",pot14a_key_itemtpl$,rd_table_chans$[all],status$
+          call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","ITEM_WHSE",pot14a_key_itemtpl$,rd_table_chans$[all],status$
 
 rem --- Headings and print positions
 
@@ -50,21 +50,22 @@ rem --- Headings and print positions
         dim columns$[9,10]
         columns=9
             columns$[0,0]="Item",                  columns$[0,1]="C",columns$[0,2]="7"
-            columns$[1,0]="wh Vendor",             columns$[1,1]="C",columns$[1,2]="40"
+            columns$[1,0]="W/H Vendor",             columns$[1,1]="C",columns$[1,2]="40"
             columns$[2,0]="PO^Number",             columns$[2,1]="C",columns$[2,2]="10"
             columns$[3,0]="Date^Required",         columns$[3,1]="C",columns$[3,2]="10"
             columns$[4,0]="Date^Received",         columns$[4,1]="C",columns$[4,2]="10"
             columns$[5,0]="UM",                    columns$[5,1]="C",columns$[5,2]="5"
             columns$[6,0]="Quantity^Ordered",      columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m2$,columns$[6,10]="T"
             columns$[7,0]="Quantity^Received",     columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$,columns$[7,10]="T"
-            columns$[8,0]="Unit^Cost",             columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m3$,columns$[8,10]="T"
+            columns$[8,0]="Unit^Cost",             columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m3$,columns$[8,10]=""
             columns$[9,0]="Extension",             columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m1$,columns$[9,10]="T"
 
 rem --- Position files
 
 
         call pgmdir$+"adc_progress.aon","N","","","","",0,pot14a_dev,1,meter_num,status
-        first$=firm_id$+"S"+begitem$+begwhse$
+        first$=firm_id$+begitem$
+        if begitem$<>"" first$=first$+begwhse$
 
         dim pot24a_key$:pot14a_key_itemtpl$
         read (pot14_dev2,knum=1,key=first$,dom=*next)
@@ -75,52 +76,48 @@ rem --- Get next sort record
         pot24a_key$=key(pot14_dev2,knum=1,end=*break)
         item$=pot24a_key.item_id$
         whse$=pot24a_key.warehouse_id$
-        vendor$=pot24a_key.vendor_id$
-rem     recptdate$=pot24a_key.recpt_date$
         ponum$=pot24a_key.po_no$
         receiver$=pot24a_key.receiver_no$
         linenum$=pot24a_key.po_line_no$
         product$=""
+        dim pot04a$:fattr(pot04a$)
+        read record (pot04a_dev,key=firm_id$+ponum$+receiver$,dom=*next)pot04a$
+        vendor$=pot04a.vendor_id$
         find record (ivm01a_dev,key=firm_id$+item$,dom=brnch1) ivm01a$
         product$=ivm01a.product_type$
 
 brnch1: rem --- Valid Item/Wh/Product/Type?
 
+        if pot24a_key.firm_id$<>firm_id$ break
         if enditem$<>"" if item$>enditem$ break
-        if begwhse$="" or whse$>=begwhse$
+        if begwhse$<>"" if whse$<begwhse$ goto this_item_first_whse
+        if endwhse$<>"" if whse$>endwhse$ goto next_item
 
-            if endwhse$="" or whse$<=endwhse$
+        read (pot14_dev2,key=pot24a_key$)                
+        if begprod$<>"" if product$<begprod$ continue
+        if endprod$<>"" if product$>endprod$ continue
+        if type$<>"" if ivm01a.item_type$<>type$ continue
+        call pgmdir$+"adc_progress.aon","S","","","","",0,pot14a_dev,1,meter_num,status
+        goto breaks
 
-                read (pot14_dev2,key=pot24a_key$)
-                if begprod$<>"" if product$<begprod$ continue
-                if endprod$<>"" if product$>endprod$ continue
-                if type$<>"" if ivm01a.item_type$<>type$ continue
-                call pgmdir$+"adc_progress.aon","S","","","","",0,pot14a_dev,1,meter_num,status
+this_item_first_whse: rem --- Skip to beginning whse for this item
 
-            endif
-            
-        else
+        read (pot14_dev2,key=firm_id$+pot24a_key.item_id$+begwhse$,knum=1,dom=*continue)
+        continue
 
-rem --- Skip to beginning whse for this item
+next_item: rem --- Skip to next item
 
-            read (pot14_dev2,key=pot24a_key.firm_id$+pot24a_key.line_type$+pot24a_key.item_id$+begwhse$,knum=1,dom=*continue)
-            continue
+        read (pot14_dev2,key=firm_id$+pot24a_key.item_id$+$FF$,knum=1,dom=*continue)
+        continue
 
-rem --- Skip to next item
-
-            read (pot14_dev2,key=pot24a_key.firm_id$+pot24a_key.line_type$+pot24a_key.item_id$+$FF$,knum=1,dom=*continue)
-            continue
-
-        endif
-
-rem --- Breaks?
+breaks: rem --- Breaks?
 
         if vendor$<>lastvend$ gosub vendbreak
         if item$<>lastitem$ gosub itembreak
 
 rem --- Retrieve history detail
 
-        pot14a_key$=firm_id$+vendor$+ponum$+receiver$+linenum$
+        pot14a_key$=firm_id$+ponum$+receiver$+linenum$
         find record (pot14a_dev,key=pot14a_key$,dom=*continue) pot14a$
         required$=pot14a.reqd_date$
         unitmeas$=pot14a.unit_measure$
@@ -136,7 +133,7 @@ rem --- Print detail line
         if l+needed>l9 
         if h9$<>"" gosub item_subheading
                             OutVect!.addItem("")
-                            OutVect!.addItem(whse$+"  "+fnmask$(vendor$(1,vendlen),vendomask$)+"  "+vendname$)
+                            OutVect!.addItem(whse$+"   "+fnmask$(vendor$(1,vendlen),vendomask$)+"  "+vendname$)
                             OutVect!.addItem(ponum$)
 
         if required$<>fill(8) 
@@ -160,8 +157,8 @@ rem --- Accumulate totals
                         reporttot[2]=reporttot[2]+qtyrec
                         reporttot[3]=reporttot[3]+unitcost
                         reporttot[4]=reporttot[4]+extension
-                        if pos(pot14a.vendor_id$+pot14a.po_no$+pot14a.po_line_no$=totaledpo$,16)=0 then
-                            totaledpo$=totaledpo$+pot14a.vendor_id$+pot14a.po_no$+pot14a.po_line_no$
+                        if pos(pot14a.po_no$+pot14a.po_line_no$=totaledpo$,10)=0 then
+                            totaledpo$=totaledpo$+pot14a.po_no$+pot14a.po_line_no$
                             itemtot[1]=itemtot[1]+qtyord,reporttot[1]=reporttot[1]+qtyord
                         endif
 
@@ -224,8 +221,9 @@ itembreak: rem --- Item Break
     dim itemtot[4]
     lastitem$=item$
 
+    dim ivm01a$:fattr(ivm01a$)
+    ivm01a.item_desc$="(Not on file)"
     find record (ivm01a_dev,key=firm_id$+lastitem$,dom=*next) ivm01a$
-rem ***        h9$=lastitem$(1,itemlen)+" "+fnitem$(ivm01a.item_desc$,desclen[1],desclen[2],desclen[3])
     h9$=lastitem$
     h8$=ivm01a.item_desc$
     totaledpo$=""
@@ -249,7 +247,7 @@ printtot: rem --- Print total line
        qwk=fnblank(4)
        OutVect!.addItem(str(total[1]:m2$))
        OutVect!.addItem(str(total[2]:m2$))
-       OutVect!.addItem(str(total[3]:m3$))
+       OutVect!.addItem("")
        OutVect!.addItem(str(total[4]:m1$))
        qwk=fnblank(10)
        return

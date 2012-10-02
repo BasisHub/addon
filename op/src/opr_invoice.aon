@@ -1,0 +1,178 @@
+rem --- Batch Invoice Printing
+rem --- Program opr_invoice v8.0.0 12Jun2009 (opr_ga)
+rem --- Created by adx_codeport.bbj v1.1.5 (06/12/2009 11:58:46)
+
+rem --- AddonSoftware Version 8.0.0 - 12Jun2009
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- o9$ = return program
+rem --- o9  = 1 - batch print from opr_ga.bbx p3$(65,10)
+rem --- o9  = 2 - on demand print from ope_ce.bbx p3$(94,10) or opm_mm p3$(104,10)
+rem --- o9  = 3 - historical invoice print from opm_ml.bbx
+rem ---           ope01_dev = opt01_dev
+rem ---           ope11_dev = opt11_dev
+rem ---           ope21_dev = opt21_dev
+rem ---           ope31_dev = opt31_dev
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+	pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- For type checking
+
+	use ::sys/prog/bao_option.bbj::Option
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
+    
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:       ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    ars01a_dev=channels[1]
+    ivs01a_dev=channels[2]
+
+rem --- Dimension string templates
+
+    dim ars01a$:templates$[1]
+    dim ivs01a$:templates$[2]
+
+rem --- Assign form input values to local variables
+
+    declare Option option!
+
+    message$ = option!.getOptionData("pick_text"); rem p7$
+    restart$ = option!.getOptionData("pick_check"); rem p6$
+    cust_id$ = option!.getOptionData("customer_id"); rem p5$
+
+rem --- Retrieve parameter records
+
+    find record (ars01a_dev, key=firm_id$+"AR00", err=std_missing_params) ars01a$
+    find record (ivs01a_dev, key=firm_id$+"IV00", err=std_missing_params) ivs01a$
+
+rem --- Initialize Data
+
+    n1$=sysinfo.firm_name$
+    n2$="AR"
+    n4$=sysinfo.task_desc$
+
+    dim p[5]
+    dim i[3]
+
+    i[0] = ivs01a.item_id_len
+    i[1] = ivs01a.vendor_prd_len
+    i[2] = num(ivs01a.precision$)
+    i[3] = ivs01a.ls_no_len
+
+    p[0] = num(ars01a.customer_size$)
+    p[1] = num(ars01a.max_customer_len$)
+    p[2] = num(ars01a.zip_length$)
+    p[3] = num(ivs01a.desc_len_01$)
+    p[4] = num(ivs01a.desc_len_02$)
+    p[5] = num(ivs01a.desc_len_03$)
+    
+    desclen = p[3] + p[4] + p[5]
+
+    call pgmdir$+"adc_getmask.aon","","AR","I","",m0$,0,m0
+    call pgmdir$+"adc_getmask.aon","","AR","A","",m1$,0,m1
+    call pgmdir$+"adc_getmask.aon","","AR","U","",m2$,0,m2
+    call pgmdir$+"adc_getmask.aon","","AR","R","",m3$,0,m3
+
+rem --- Run Overlay
+
+    o9$ = ""
+    o9 = 1
+
+rem prog$ = p3$(65,10)
+    prog$ = "opr_invoice_o1.aon"
+    run pgmdir$+prog$, err=*next
+    
+    msg_id$="PROG_NOT_FOUND"
+    dim msg_tokens$[1]
+    msg_tokens$[1] = prog$
+    gosub disp_message
+    goto std_exit
+
+disp_message: rem --- Display Message Dialog
+
+    call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

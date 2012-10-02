@@ -66,8 +66,8 @@ rem --- Headings and print positions
     columns$[0,0]="Vendor",             columns$[0,1]="C",columns$[0,2]="25"
     columns$[1,0]="PO Number",          columns$[1,1]="C",columns$[1,2]="8"
     columns$[2,0]="Receiver",           columns$[2,1]="C",columns$[2,2]="8"
-    columns$[3,0]="Order^Date",         columns$[3,1]="C",columns$[3,2]="4"
-    columns$[4,0]="Receipt^Date",       columns$[4,1]="C",columns$[4,2]="8"
+    columns$[3,0]="Order^Date",         columns$[3,1]="C",columns$[3,2]="6"
+    columns$[4,0]="Receipt^Date",       columns$[4,1]="C",columns$[4,2]="6"
     columns$[5,0]="Terms^Code",         columns$[5,1]="C",columns$[5,2]="4"
     columns$[6,0]="P.Addr^Code",        columns$[6,1]="C",columns$[6,2]="6"
     columns$[7,0]="Ship-To^Whse",       columns$[7,1]="C",columns$[7,2]="6"
@@ -82,167 +82,113 @@ rem --- Position files
 
     call pgmdir$+"adc_progress.aon","N","","","","",0,pot14_dev,1,meter_num,status
 
+rem --- Build sql statement
+
+    sql_prep$="select pot_rechdr.firm_id, pot_rechdr.vendor_id, pot_rechdr.po_no, "
+    sql_prep$=sql_prep$+"pot_rechdr.receiver_no, "
+    sql_prep$=sql_prep$+"apm_vendmast.alt_sequence "
+    sql_prep$=sql_prep$+"from pot_rechdr, apm_vendmast "
+
+    where_clause$="where pot_rechdr.firm_id = '"+firm_id$+"' AND "
+    where_clause$=where_clause$+"pot_rechdr.firm_id = apm_vendmast.firm_id AND "
+    where_clause$=where_clause$+"pot_rechdr.vendor_id = apm_vendmast.vendor_id"
+    if vendfrom$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id >= '" +vendfrom$+ "'"
+    if vendthru$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id <= '" +vendthru$+ "'"
+    if altfrom$<>"" where_clause$=where_clause$+" AND apm_vendmast.alt_sequence >= '" +altfrom$+ "'" 
+    if altthru$<>"" where_clause$=where_clause$+" AND apm_vendmast.alt_sequence <= '" +altthru$+ "'"
+    if datefrom$<>"" where_clause$=where_clause$+ " AND pot_rechdr.recpt_date >= '" + datefrom$+ "'"
+    if datethru$<>"" where_clause$=where_clause$+ " AND pot_rechdr.recpt_date <= '" + datethru$+ "'"
+
+    order_by$=" order by pot_rechdr.vendor_id,pot_rechdr.recpt_date,pot_rechdr.po_no,pot_rechdr.receiver_no"
+    if printseq$="A"
+        order_by$=" order by apm_vendmast.alt_sequence,pot_rechdr.vendor_id,pot_rechdr.recpt_date,pot_rechdr.po_no,pot_rechdr.receiver_no"
+    endif
+
+    sql_prep$=sql_prep$ + where_clause$ + order_by$
+    sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
 rem --- Sorts
     
     while more
+        read_tpl$=sqlfetch(sql_chan,err=*break)
     
-        action=pos(printseq$="AN")
-        sortbyalt=1
-        sortbyvend=2
-        keybyvend=3
-        
-       dim pota_key$:pot04a_key_alttpl$ ; rem pot-04 key by vend/rec date
-       dim apm04a_key$:apm01a_key_alphtpl$ ; rem apm-01 key by alt seq
-        switch action
-
-            case sortbyalt; rem --- Sort by alternate sequence
-
-                if initializing$<>"N"
-                    initializing$="N"
-                    ap04_key$=firm_id$+altfrom$
-                    read (apm01_dev2,knum=2,key=ap04_key$,dom=*next)
-                endif
-
-rem --- Find a vendor/recDate record using alt seq
-
-                while more
-
-                    apm04a_key$=key(apm01_dev2,knum=2,end=done)
-                    if apm04a_key.firm_id$<>firm_id$ goto done
-                    if altthru$<>"" and apm04a_key.alt_sequence$(1,len(altthru$))>altthru$ goto done
-                    k04b_key$=apm04a_key.firm_id$+apm04a_key.vendor_id$
-                    read (apm01_dev2); rem "Move ptr
-                    read (pot04_dev2,KNUM=1,key=k04b_key$+datefrom$,dom=*next)
-                    pota_key$=key(pot04_dev2,knum=1,end=*continue)
-                    if datethru$<>"" if pota_key.recpt_date$>datethru$ continue
-                    if pota_key.firm_id$+pota_key.vendor_id$<>k04b_key$ continue
-                    dim k$:fattr(pota_key$)
-                    k$=pota_key$.firm_id$+pota_key.vendor_id$+pota_key.po_no$+pota_key.receiver_no$; break
-
-                wend
-
-                break
-
-            case sortbyvend; rem --- Read by vendor
-
-                if initializing$<>"N"
-                    initializing$="N"
-                    pota_key$=firm_id$+vendfrom$
-                    read (pot04_dev2,knum=1,key=pota_key$,dom=*next)
-                    if vendfrom$<>"" pota_key$=firm_id$+vendfrom$+datefrom$  
-                      read(pot04_dev2,knum=1,key=pota_key$,dom=*next)  
-                    endif
-                endif
-
-rem --- Read through req headers
-
-                pota_key$=key(pot04_dev2,knum=1,end=done)
-                if pota_key.firm_id$<>firm_id$ goto done
-                read (pot04_dev2,end=done); rem "Move ptr
-                if vendthru$<>"" if pota_key.vendor_id$>vendthru$ goto done
-                dim k$:fattr(pota_key$)
-                k$=pota_key.firm_id$+pota_key.vendor_id$+pota_key.po_no$+pota_key.receiver_no$
-                break
-
-            case default   
-                goto done
-
-        swend
-
-        
-        while more
-
-            if k.firm_id$<>firm_id$ continue
-            find record (pot04a_dev,key=k$,dom=*break) pot04a$
-            read (pot14_dev,key=k$,dom=*next) ; rem trip read for later details
-            
-rem --- Test Ranges
-
-            if datefrom$<>"" and pot04a.recpt_date$<datefrom$ and printseq$<>"A" continue
-            if datethru$<>"" and pot04a.recpt_date$>datethru$ and printseq$<>"A" continue
+        read record (pot04a_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*break) pot04a$
+        read (pot14_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*next) ; rem trip read for later details
 
 rem --- Assign variables
 
-            dim rcptdate$(8),orddate$(8)
-            if pot04a.recpt_date$<>fill(8) rcptdate$=fndate$(pot04a.recpt_date$)
-            if pot04a.ord_date$<>fill(8) orddate$=fndate$(pot04a.ord_date$)
-            if ponum$=pot04a.po_no$ ponum_prnt$="" else ponum_prnt$=pot04a.po_no$
-            ponum$=pot04a.po_no$
-            receiver$=pot04a.receiver_no$
-            terms$=pot04a.ap_terms_code$
-            paddrcode$=pot04a.purch_addr$
-            ship2whs$=pot04a.warehouse_id$
-            freight$=pot04a.po_frt_terms$
-            shipvia$=pot04a.ap_ship_via$
-            acknow$=pot04a.acknowledge$
+        dim rcptdate$(8),orddate$(8)
+        if pot04a.recpt_date$<>fill(8) rcptdate$=fndate$(pot04a.recpt_date$)
+        if pot04a.ord_date$<>fill(8) orddate$=fndate$(pot04a.ord_date$)
+        if ponum$=pot04a.po_no$ ponum_prnt$="" else ponum_prnt$=pot04a.po_no$
+        ponum$=pot04a.po_no$
+        receiver$=pot04a.receiver_no$
+        terms$=pot04a.ap_terms_code$
+        paddrcode$=pot04a.purch_addr$
+        ship2whs$=pot04a.warehouse_id$
+        freight$=pot04a.po_frt_terms$
+        shipvia$=pot04a.ap_ship_via$
+        acknow$=pot04a.acknowledge$
 
 rem --- Test breaks
 
-            if pot04a.vendor_id$<>vendor$
-                if printvtot$="Y" gosub vendtotals
-                gosub newvendor
-            endif
+        if pot04a.vendor_id$<>vendor$
+            if printvtot$="Y" gosub vendtotals
+            gosub newvendor
+        endif
 
-            call pgmdir$+"adc_progress.aon","S","","","","",0,pot14_dev,1,meter_num,status
+        call pgmdir$+"adc_progress.aon","S","","","","",0,pot14_dev,1,meter_num,status
 
 rem --- Calculate Order Value, Receipt Value and Fill Ratio
 
-            po_oval=0
-            po_rval=0
-            ratio=0
+        po_oval=0
+        po_rval=0
+        ratio=0
 
 rem --- Get detail numerics and accumulate column buckets
-            dim pot14a_key$:pot14a_key_tpl$
+        dim pot14a_key$:pot14a_key_tpl$
           
-            while more
+        while more
           
-                pot14a_key$=key(pot14_dev,end=*break)
-                if pot14a_key.firm_id$+pot14a_key.vendor_id$+pot14a_key.receiver_no$<>pot04a.firm_id$+
-:                   pot04a.vendor_id$+pot04a.receiver_no$ break
+            pot14a_key$=key(pot14_dev,end=*break)
+            if pot14a_key.firm_id$+pot14a_key.receiver_no$<>pot04a.firm_id$+
+:               pot04a.receiver_no$ break
 
-                    read record (pot14_dev,key=pot14a_key$) pot14a$
-                    gosub getlinetype
-                    if pos(linetype$="SNO")=0 continue
-                    precision 2
-                    ordval=(pot14a.unit_cost*pot14a.qty_ordered)
-                    rcptval=(pot14a.unit_cost*pot14a.qty_received)
-                    precision ivprecision
+                read record (pot14_dev,key=pot14a_key$) pot14a$
+                gosub getlinetype
+                if pos(linetype$="SNO")=0 continue
+                precision 2
+                ordval=(pot14a.unit_cost*pot14a.qty_ordered)
+                rcptval=(pot14a.unit_cost*pot14a.qty_received)
+                precision ivprecision
 
 rem --- Accumulate totals; then get next detail
 
-                    po_oval=po_oval+ordval
-                    if ponum_prnt$<>""
-                        vendoval=vendoval+ordval
-                        grandoval=grandoval+ordval
-                    endif
+                po_oval=po_oval+ordval
+                if ponum_prnt$<>""
+                    vendoval=vendoval+ordval
+                    grandoval=grandoval+ordval
+                endif
 
 rem "Don't accum OrdVal tots if samePO#
 
-                    po_rval=po_rval+rcptval
-                    vendrval=vendrval+rcptval
-                    grandrval=grandrval+rcptval
+                po_rval=po_rval+rcptval
+                vendrval=vendrval+rcptval
+                grandrval=grandrval+rcptval
                     
-                endif
+            endif
                 
-            wend
+        wend
 
 rem --- Done w/detail for this PO
 
-            if po_oval>0 ratio=po_rval*100/po_oval
-            gosub printline
+        if po_oval>0 ratio=po_rval*100/po_oval
+        gosub printline
 
-rem --- Loop up for next header record via sort files
-
-            if printseq$<>"A" break
-
-rem --- See if there's another po for vend before getting next alt seq
-
-
-            pota_key$=key(pot04a_dev,end=*continue)
-            if pota_key.vendor_id$<>vendor$ break
-            k$=pota_key$
-        wend
-        
     wend
 
 done: rem --- All Done
@@ -256,7 +202,6 @@ done: rem --- All Done
     OutVect!.addItem(str(grandoval))
     OutVect!.addItem(str(grandrval))
     OutVect!.addItem(str(grandratio:mratio$))
-
     goto std_exit
 
 set_linecount: rem --- Set the line count
@@ -267,10 +212,10 @@ set_linecount: rem --- Set the line count
 
 assignheads: rem --- Assign headings variables
 
-    if printseq$="A" vendf$=vendfrom$ else if vendfrom$<>"" vendf$=fnmask$(vendfrom$(1,vendlen),vendomask$)
-    if vendfrom$="" vendf$="First"
+    if printseq$="A" vendf$=altfrom$ else if vendfrom$<>"" vendf$=fnmask$(vendfrom$(1,vendlen),vendomask$)
+    if printseq$="A" if altfrom$="" vendf$="First" fi; else if vendfrom$="" vendf$="First"
     if printseq$="A" vendt$=vendthru$ else if vendthru$<>"" vendt$=fnmask$(vendthru$(1,vendlen),vendomask$)
-    if vendthru$="" vendt$="Last"
+    if printseq$="A" if altthru$="" vendt$="Last" fi; else if vendthru$="" vendt$="Last"
     if datefrom$="" datef$="First" else datef$=fndate$(datefrom$)
     if datethru$="" datet$="Last" else datet$=fndate$(datethru$)
 

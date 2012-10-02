@@ -1,4 +1,4 @@
-[[OPC_LINECODE.DIST_CODE.AVAL]]
+[[OPC_LINECODE.AR_DIST_CODE.AVAL]]
 rem --- Either fill or blank out 3 G/L display fields
 	dist_code$=callpoint!.getUserInput()
 	if user_tpl.gl$="Y"
@@ -37,7 +37,7 @@ rem --- Maybe disable Product Type
 [[OPC_LINECODE.DROPSHIP.AVAL]]
 rem --- Check Distribution Code
 	if line_type$="S" and callpoint!.getUserInput()="N"
-		callpoint!.setColumnData("OPC_LINECODE.DIST_CODE","")
+		callpoint!.setColumnData("OPC_LINECODE.AR_DIST_CODE","")
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPC_LINECODE.BSHO]]
@@ -54,13 +54,14 @@ rem --- setup for G/L Parameter
 	user_tpl.dist_dev=arc_dist_dev
 	user_tpl.dist_tpl$=arc_dist_tpl$
 [[OPC_LINECODE.ARAR]]
-rem --- re-enable all fields
+rem --- Re-enable all fields
+
 	dim dctl$[7],dmap$[7]
 	dctl$[1]="GL_REV_ACCT"
 	dctl$[2]="TAXABLE_FLAG"
 	dctl$[3]="DROPSHIP"
 	dctl$[4]="PRODUCT_TYPE"
-	dctl$[5]="DIST_CODE"
+	dctl$[5]="AR_DIST_CODE"
 	dctl$[6]="PROD_TYPE_PR"
 	dctl$[7]="MESSAGE_TYPE"
 	line_type$=callpoint!.getColumnData("OPC_LINECODE.LINE_TYPE")
@@ -102,15 +103,17 @@ rem --- re-enable all fields
 		dmap$[4]="I"
 	endif
 	gosub disable_ctls
+
 rem --- Either fill or blank out 3 G/L display fields
+
 	if user_tpl.gl$="Y"
-		if cvs(rec_data.dist_code$,2)=""
+		if cvs(rec_data.ar_dist_code$,2)=""
 			callpoint!.setColumnData("<<DISPLAY>>.GL_COGS_ACCT","")
 			callpoint!.setColumnData("<<DISPLAY>>.GL_INV_ACCT","")
 			callpoint!.setColumnData("<<DISPLAY>>.GL_SLS_ACCT","")
 		else
 			dim dist_tpl$:user_tpl.dist_tpl$
-			read record (user_tpl.dist_dev,key=firm_id$+"D"+rec_data.dist_code$,dom=*next) dist_tpl$
+			read record (user_tpl.dist_dev,key=firm_id$+"D"+rec_data.ar_dist_code$,dom=*next) dist_tpl$
 			callpoint!.setColumnData("<<DISPLAY>>.GL_SLS_ACCT",dist_tpl.gl_sls_acct$)
 			callpoint!.setColumnData("<<DISPLAY>>.GL_INV_ACCT",dist_tpl.gl_inv_acct$)
 			callpoint!.setColumnData("<<DISPLAY>>.GL_COGS_ACCT",dist_tpl.gl_cogs_acct$)
@@ -123,7 +126,7 @@ rem --- re-enable all fields
 	dctl$[2]="TAXABLE_FLAG"
 	dctl$[3]="DROPSHIP"
 	dctl$[4]="PRODUCT_TYPE"
-	dctl$[5]="DIST_CODE"
+	dctl$[5]="AR_DIST_CODE"
 	dctl$[6]="PROD_TYPE_PR"
 	dctl$[7]="MESSAGE_TYPE"
 	gosub disable_ctls

@@ -52,8 +52,7 @@ if edlen>0
 	if edlen >5 reject$="Y"
 	 
 	for x = 1 to edlen
-		if pos(edits$(x,1)="SUDP-CF$")=0
-		reject$="Y"
+		if pos(edits$(x,1)="SUDP-CF$")=0 reject$="Y"
 	next x
 	if reject$<>"" 
 		MSG_ID$="GL_FIN_EDIT"
@@ -62,4 +61,3 @@ if edlen>0
 		callpoint!.setStatus("ABORT-REFRESH")
 	endif
 endif
-

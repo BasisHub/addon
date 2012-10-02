@@ -1,0 +1,143 @@
+rem --- adx_set_printer.aon
+rem --- Set Barista default printer from user defaults
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+    
+rem --- Get user ID from program args
+	
+	if argc > 1
+		for curr_argv= 1  to argc - 1
+			temp_argv$ = argv(curr_argv)
+			if pos("-u"=temp_argv$) = 1 then user$ = stbl("+USER_ID",temp_argv$(3))
+		next curr_argv
+	endif
+
+	call stbl("+DIR_SYP")+"bas_process_beg.bbj",stbl("+USER_ID"),rd_table_chans$[all]
+	
+rem --- Retrieve the program path
+
+	pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+	sypdir$=""
+	sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+	firm_id$=sysinfo.firm_id$
+
+rem --- Open File(s)
+	
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADM_USERDEFAULTS", open_opts$[1]="OTA"
+	open_tables$[2]="ADS_SYSINFO",      open_opts$[2]="OTA"
+
+	gosub open_tables
+
+	userdefault_dev = num(open_chans$[1])
+	sysinfo_dev     = num(open_chans$[2])
+	
+	dim userdefault_rec$:open_tpls$[1]
+	dim sysinfo_rec$:open_tpls$[2]
+    
+rem --- Get this user's defaults
+
+	user$ = stbl("+USER_ID",err=std_exit)
+	find record (userdefault_dev, key=firm_id$+pad(user$, 16), dom=std_exit) userdefault_rec$
+	printer$ = userdefault_rec.default_printer$
+
+rem --- Set Baritsa default printer
+
+	if printer$ <> "" then
+		extract record (sysinfo_dev, key=pad(user$, 16), dom=std_exit) sysinfo_rec$
+		sysinfo_rec.printer_id$ = printer$
+		sysinfo_rec$ = field(sysinfo_rec$)
+		write record (sysinfo_dev) sysinfo_rec$
+	endif
+
+rem  --- Only display message if running stand-alone
+
+	if pos("DEFAULT_PRINTER"=sysinfo.menu_option_id$)<>0 then 
+		msg_id$ = "AD_PRINTER_UPDATE"
+		gosub disp_message
+	endif
+
+rem --- Finished
+
+	goto std_exit
+
+open_tables: rem -----<Open Tables
+
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message: rem --- Display Message Dialog
+
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		rd_table_chans$[all]
+
+	return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),err_text$,err_act$
+    if pos("EXIT"=err_act$) goto std_error_exit
+    if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+    if pos("RETRY"=err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+	
+    run sypdir$+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end
+

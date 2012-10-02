@@ -22,8 +22,8 @@ rem --- [1] = Warehouse ID (optional)
 rem --- [2] = Inventory Item Number
 rem --- [3] = Lot/Serial Number
 rem --- PERIOD$[n] : Period Range (input)
-rem --- [0] = Beginning Period/Year (YYYYMM)
-rem --- [1] = Ending Period/Year (YYYYMM)
+rem --- [0] = Beginning Year/Period (YYYYMM)
+rem --- [1] = Ending Year/Period (YYYYMM)
 rem --- ACTIVITY[n]: Warehouse Activity (returned)
 rem --- [0] to [12] = IVM-12/17 numerics
 rem --- STATUS     : Status Code (returned)
@@ -51,8 +51,11 @@ rem --- Retrieve miscellaneous templates
     files=2,begfile=1,endfile=files
     dim ids$[files],templates$[files]
     ids$[1]="IVM_ITEMWHSE"; rem ivm-02
-    if pos(action$="L")=0 ids$[2]="IVM_ITEMACT"; rem ivm-12
-    if pos(action$="L")<>0 ids$[2]="IVM_LSACT"; rem ivm-17
+    if pos(action$="L")=0 then 
+		ids$[2]="IVM_ITEMACT"; rem ivm-12
+    else
+		ids$[2]="IVM_LSACT"; rem ivm-17
+	endif
 
     call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
     if status goto std_exit
@@ -63,23 +66,25 @@ rem --- Dimension string templates
 
 rem --- Initializations
 
-    keylen=30
-    period=25
-    if pos("L"=action$)>0 keylen=50,period=45
-    more=1
-    dim b0$(keylen),b[12]
-    firm_id$=item$[0]
-    warehouse$=item$[1]
-    item$=item$[2]
+    firm_id$   = item$[0]
+    warehouse$ = item$[1]
+    item$      = item$[2]
+	begyear$   = period$[0](1,4)
+	begper$    = period$[0](5,2)
+	endyear$   = period$[1](1,4)
+	endper$    = period$[1](5,2)
     status=0
-    if pos("L"=action$)>0 lotser$=item$[3]
+	more=1
+
+    if pos("L"=action$) then lotser$=item$[3]
+	
     for x=0 to 12
         activity[x]=0
     next x
 
 rem --- Single Warehouse
 
-    if pos("A"=action$)<=0 then
+    if pos("A"=action$)=0 then
         gosub position_activity_file
         goto std_exit
     endif
@@ -92,51 +97,53 @@ rem --- All Warehouses
 
     while more
         k$=key(ivm02_dev,knum=2,end=*break)
-        if pos(firm_id$+item$=k$)<>1 goto done
-        read (ivm02_dev)
-        warehouse$=k$(23,2)
+        if pos(firm_id$+item$=k$)<>1 then break
+        read record (ivm02_dev) ivm02a$
+        warehouse$=ivm02a.warehouse_id$
         gosub position_activity_file
     wend
 
-done: rem --- All done
+rem --- All done
 
     goto std_exit
 
 position_activity_file: rem --- Position activity file to beginning period/year
 
-    b0$(1)=firm_id$+warehouse$
-    b0$(5)=item$
-    b0$(period)=period$[0]
     first=1
-    if pos("L"=action$)>0 b0$(25,20)=lotser$
-    flag=0
-    read record (ivm12_dev,key=b0$,dom=read_activity_record) ivm12a$
-    flag=1
 
-read_activity_record: rem --- Read activity record(s) and accumulate totals
+	if pos("L"=action$) then
+		read (ivm12_dev, key=firm_id$+warehouse$+item$+lotser$+begyear$+begper$, dir=0, dom=*next) 
+	else
+		read (ivm12_dev, key=firm_id$+warehouse$+item$+begyear$+begper$, dir=0, dom=*next) 
+	endif
+
+rem --- Read activity record(s) and accumulate totals
 
     while more
-        if flag=0
-            k$=key(ivm12_dev,end=*break)
-            if pos(b0$(1,keylen-6)=k$)<>1 then break
-            if k$(keylen-5)>period$[1] then break
-            read record (ivm12_dev) ivm12a$
-        endif
-
+		read record (ivm12_dev, end=*break) ivm12a$
+		if ivm12a$.firm_id$ <> firm_id$ then break
+		if ivm12a$.warehouse_id$ <> warehouse$ then break
+		if ivm12a$.item_id$ <> item$ then break
+		if ivm12a$.year$ > endyear$ or (ivm12a$.year$ = endyear$ and ivm12a.period$ > endper$) then break
+		if pos("L"=action$) and ivm12a.lotser_no$ <> lotser$ then break
+		
         dim names$:"name[100]:c(40*)"
         names$=fattr(ivm12a$,"")
         startx=1
+		
         while names.name$[startx] <> "BEG_BALANCE"
             startx=startx+1
         wend
-        for x=0 to 12
+		
+        for x=1 to 12
             name$=names.name$[x+startx]
             activity[x]=activity[x]+nfield(ivm12a$,name$)
         next x
-        if first activity[0]=activity[0]+ivm12a.beg_balance
-        if pos("T"=action$)=0 first=0
-        flag=0
+		
+        if first then activity[0]=activity[0]+ivm12a.beg_balance
+        if pos("T"=action$)=0 then first=0
     wend
+	
     return
 
 rem #include std_error.src

@@ -1,0 +1,238 @@
+rem --- Generate PO Receipt General Ledger Postings
+rem --- Program poc_ga v8.0.0 19Dec2007 (poc_ga)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/19/2007 10:57:28)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+    seterr std_error
+    setesc std_error
+    enter channels[all],w$[all],w[all],params$[all],params[all],tpls$[all],status
+
+rem w$[0] contains entire poe14a rec; remainder of w$[ ] and w[ ] empty
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Parameters
+
+    dim g[4],i[1]
+    arm10_dev=channels[1]
+    sfe01_dev=channels[2],sfm10_dev=channels[3]
+    glm01_dev=channels[4]
+    glt04_dev=channels[5],glt14_dev=channels[6]
+    dim poe14a$:tpls$[0]
+    dim gls01a$:tpls$[1]
+    dim pom02a$:tpls$[2]
+    dim ivm01a$:tpls$[3]
+    poe14a$=w$[0]
+    gls01a$=params$[4]
+    pom02a$=params$[6]
+    ivm01a$=params$[7]
+    gl$=params$[0]
+    when$=params$[1],vendor$=params$[2],mask$=params$[3]
+    description$=params$[5]
+    distcode$=params$[8],code$=params$[9]
+    firm_id$=params$[10]
+    sf$=params$[11],iv_extension=params[3]
+    extension=params[0]
+    g[4]=params[1],i[0]=params[2],method$=params$[12]
+
+rem --- Initializations
+
+    dim s[11]
+    memo$=poe14a.item_id$
+    ref1$=fnmask$(vendor$,m0$),invamount=extension
+
+rem --- Branch based on line code
+
+  
+    action = pos(pom02a.line_type$="SNVMO")
+
+    switch action
+    case 1
+        accnt_numbers: rem --- Account numbers for Standard Lines
+            ivacct$=ivm01a.gl_inv_acct$(1,g[4])
+            poacct$=ivm01a.gl_pur_acct$(1,g[4])
+            ppvacct$=ivm01a.gl_ppv_acct$(1,g[4])
+            memo$=memo$+" "+description$
+            ref2$="PO "+poe14a.po_no$
+            ref3$="ISN "+fnisn$(poe14a.internal_seq_no$)
+            if method$="S"
+                invamount=iv_extension
+                ppvamount=extension-iv_extension
+            endif
+
+        retrieve_distribution: rem --- Retrieve distribution code record
+
+            if distcode$<>"Y" then break
+            dim arm10d$:tpls$[4]
+        
+            arm10d.firm_id$      = firm_id$
+            arm10d.record_id_id$ = "D"
+            arm10d.ar_dist_code$ = code$
+
+            find record (arm10_dev,key=(arm10d.firm_id$+arm10d.record_id_id$+arm10d.ar_dist_code$),dom=*next) arm10d$
+            ivacct$=arm10d.gl_inv_acct$
+            poacct$=arm10d.gl_purc_acct$
+            ppvacct$=arm10d.gl_ppv_acct$
+            params$[7](1,10)=ivacct$
+
+            break
+    case 2
+        accnt_nonstock: rem --- Account numbers for Non-Stock
+
+            if sf$="Y" then 
+                if cvs(poe14a.wo_no$,2)<>"" then 
+                    memo$=memo$+" "+poe14a.order_memo$
+                    ref2$=poe14a.po_no$+fnisn$(poe14a.internal_seq_no$),ref3$="WO "+poe14a.wo_no$
+
+rem --- Get WIP/Purchases account for work order receipts
+
+                    dim sfe01a$:tpls$[5],sfm10a$:tpls$[6]
+
+                    sfe01a.firm_id$ = firm_id$
+                    sfe01a.wo_location$ = "  "
+                    sfe01a.wo_no$ = poe14a.wo_no$
+
+                    find record (sfe01_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$),dom=*next) sfe01a$
+                   
+                    sfm10a.firm_id$     = firm_id$
+                    sfm10a.record_id_a$ = "A"
+                    sfm10a.wo_type$     = sfe01a.wo_type$
+
+
+                    find record (sfm10_dev,key=(sfm10a.firm_id$+sfm10a.record_id_a$+sfm10a.wo_type$),dom=*next) sfm10a$
+                    ivacct$=sfm10a.gil_wip_acct$
+                    poacct$=sfm10a.gil_pur_acct$
+                    break
+                endif
+
+            endif    
+
+    case default
+
+            status=0
+            goto std_exit
+    swend
+
+rem --- Generate GL Recap Postings
+
+    account$=ivacct$
+    amount=invamount,units=0
+    if gls01a.units_flag$="Y" then let units=poe14a.qty_received
+    gosub glpost
+    account$=poacct$
+    amount=-extension,units=-units
+    gosub glpost
+
+rem --- Generate Purchase Price Variance posting for standard costing
+
+    if method$="S" then 
+        if ppvamount<>0 then 
+            account$=ppvacct$
+            amount=ppvamount,units=-units
+            gosub glpost
+        endif    
+    endif
+
+done: rem --- All done
+
+    status=0
+    goto std_exit
+
+glpost: rem --- Standard G/L Posting Routine
+    if gl$="Y" then 
+        call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,not_used,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
+    endif
+
+    return
+
+rem --- misc functions
+
+    def fnisn$(q$)=q$(7)
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

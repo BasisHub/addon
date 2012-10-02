@@ -2,6 +2,7 @@
 rem --- open files
 
 	use ::ado_util.src::util
+	use ::ado_func.src::func
 
 	num_files=4
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -323,8 +324,8 @@ rem ==========================================================================
 		
 		w!=lotWin!.getControl( num( callpoint!.getDevObject("comment_id") ) )
 		w!.setText(ivm_lsmaster.ls_comments$)
-		receipt$=fn_date$(fnlatest$(ivm_lsmaster.lstrec_date$,ivm_lsmaster.lstblt_date$))
-		issue$=fn_date$(fnlatest$(ivm_lsmaster.lstsal_date$,ivm_lsmaster.lstiss_date$))
+		receipt$=func.formatDate(func.latestDate(ivm_lsmaster.lstrec_date$,ivm_lsmaster.lstblt_date$))
+		issue$=func.formatDate(func.latestDate(ivm_lsmaster.lstsal_date$,ivm_lsmaster.lstiss_date$))
 		w!=lotWin!.getControl( num( callpoint!.getDevObject("receipt_id") ) )
 		w!.setText(receipt$)
 		w!=lotWin!.getControl( num( callpoint!.getDevObject("issued_id") ) )
@@ -343,28 +344,6 @@ rem ==========================================================================
 	wend
 
 return
-
-rem ==========================================================================
-rem --- Functions
-rem ==========================================================================
-
-rem --- Return the later of two dates
-
-	def fnlatest$(q1$,q2$)
-		q3$=""
-		if cvs(q1$,2)<>"" then let q3$=q1$
-		if cvs(q2$,2)<>"" then if q2$>q3$ then let q3$=q2$
-		return q3$
-	fnend
-
-rem --- Format date from YYYYMMDD to MM/DD/YY
-
-    def fn_date$(q$)
-        q1$=""
-        q1$=date( jul( num(q$(1,4)), num(q$(5,2)), num(q$(7,2)),err=*next ),err=*next )
-        if q1$="" then q1$=q$
-        return q1$
-    fnend
 
 rem ==========================================================================
 #include std_missing_params.src

@@ -49,36 +49,12 @@ rem --- Get key templates
 rem --- Headings and print positions
 
     headings=6
-    dim headings$[headings],o[14]
+    dim headings$[headings]
     width=132
     page=0
     l9=59
     l=l9+1
     gosub assignheads
-
-positions:
-    o[1]=o[0]+3
-    o[2]=o[1]+3
-    o[3]=o[2]+4
-    o[4]=o[3]+3
-    o[5]=o[4]+3
-    o[6]=o[5]+21
-    o[7]=o[6]+9
-    o[8]=o[7]+9
-    o[9]=o[8]+3
-    o[10]=o[9]+m2
-    o[11]=o[10]+m2
-    o[12]=o[11]+m1
-    o[13]=o[12]+m1
-    o[14]=o[13]+m1
-    if o[14]+8>=width
-        o[14]=width-mpcnt
-        o[13]=o[14]-m1
-        o[12]=o[13]-m1
-        o[11]=o[12]-m1
-        o[10]=o[11]-m2
-        o[9]=o[10]-m2
-    endif
 
 rem --- Columns
 
@@ -102,55 +78,89 @@ rem --- Progress bar
 
     call pgmdir$+"adc_progress.aon","N","","","","",0,pot04a_dev,1,meter_num,status
 
+rem --- Build sql statement
+
+    sql_prep$="select pot_rechdr.vendor_id, pot_rechdr.po_no, "
+    sql_prep$=sql_prep$+"pot_rechdr.receiver_no, pot_recdet.po_line_no "
+    sql_prep$=sql_prep$+"from pot_rechdr, pot_recdet "
+
+    where_clause$="where pot_rechdr.firm_id = '"+firm_id$+"'"
+    where_clause$=where_clause$+" AND pot_recdet.firm_id = '"+firm_id$+"' AND pot_rechdr.po_no = pot_recdet.po_no"
+    where_clause$=where_clause$+" AND pot_rechdr.receiver_no = pot_recdet.receiver_no"
+rem    where_clause$=where_clause$+" AND poc_linecode.firm_id = '"+firm_id$+"'"
+rem    where_clause$=where_clause$+" AND poc_linecode.po_line_code = pot_recdet.po_linecode"
+rem    where_clause$=where_clause$+" AND (poc_linecode.po_line_type = 'S' OR poc_linecode.po_line_type = 'N')"
+    if vendfrom$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id >= '" +vendfrom$+ "'"
+    if vendthru$<>"" where_clause$=where_clause$+" AND pot_rechdr.vendor_id <= '" +vendthru$+ "'"
+    if itemfrom$<>"" where_clause$=where_clause$+" AND pot_recdet.item_id >= '" +itemfrom$+ "'"
+    if itemthru$<>"" where_clause$=where_clause$+" AND pot_recdet.item_id <= '" +itemthru$+ "'"
+    if datefrom$<>"" where_clause$=where_clause$+" AND pot_rechdr.recpt_date >= '" + datefrom$+ "'"
+    if datethru$<>"" where_clause$=where_clause$+" AND pot_rechdr.recpt_date <= '" + datethru$+ "'"
+    if whsefor$<>"" where_clause$=where_clause$+" AND pot_recdet.warehouse_id = '"+whsefor$+ "'"
+    order_by$=" order by pot_rechdr.vendor_id, pot_rechdr.recpt_date, pot_rechdr.po_no, pot_rechdr.receiver_no,pot_recdet.po_line_no"
+
+    sql_prep$=sql_prep$ + where_clause$ + order_by$
+    sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
 rem --- Init Read
 
-    p44_key$=firm_id$+vendfrom$+datefrom$
-    read (pot14_dev2,key=p44_key$,dom=*next)
+rem    p44_key$=firm_id$+vendfrom$+datefrom$
+rem    read (pot14_dev2,key=p44_key$,dom=*next)
 
 rem --- Read through Sort file
 
     while more
-
-        pot14_key$=key(pot14_dev2,end=*break)
-        if pot14_key.firm_id$<>firm_id$ break
-        read (pot14_dev2,key=pot14_key$); rem "Move ptr
+        read_tpl$=sqlfetch(sql_chan,err=*break)
+        read record (pot04a_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*break) pot04a$
+        read record (pot14_dev2,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$+read_tpl.po_line_no$) pot14a$
+        pot14_key.firm_id$=firm_id$
+        pot14_key.po_no$=pot14a.po_no$
+        pot14_key.receiver_no$=pot14a.receiver_no$
+        pot14_key.po_line_no$=pot14a.po_line_no$
+rem        pot14_key$=key(pot14_dev2,end=*break)
+rem        if pot14_key.firm_id$<>firm_id$ break
+rem        read (pot14_dev2,key=pot14_key$); rem "Move ptr
 
 rem --- Valid Vendor/Receipt Date?
 
-        if vendthru$<>"" and pot14_key.vendor_id$>vendthru$ break
-        if datefrom$="" or pot14_key.recpt_date$>=datefrom$
+rem        if vendthru$<>"" and pot14_key.vendor_id$>vendthru$ break
+rem        if datefrom$="" or pot14_key.recpt_date$>=datefrom$
 
-            if datethru$="" or pot14_key.recpt_date$<=datethru$
+rem            if datethru$="" or pot14_key.recpt_date$<=datethru$
 
-                vendor$=pot14_key.vendor_id$
-                ponum$=pot14_key.po_no$
-                recnum$=pot14_key.receiver_no$
-                linenum$=pot14_key.po_line_no$
+        vendor$=pot04a.vendor_id$
+        ponum$=pot14_key.po_no$
+        recnum$=pot14_key.receiver_no$
+        linenum$=pot14_key.po_line_no$
 
-            else
+rem            else
 
                 rem --- Skip to next vendor
 
-                read (pot14_dev2,key=pot14_key.firm_id$+pot14_key.vendor_id$+$FF$,dom=*next)
-                continue
+rem                read (pot14_dev2,key=pot14_key.firm_id$+pot14_key.vendor_id$+$FF$,dom=*next)
+rem                continue
 
-            endif
+rem            endif
 
-        else
+rem        else
 rem --- Skip to first receipt date for vendor
 
         
-            read (pot14_dev2,key=pot14_key.firm_id$+pot14_key.vendor_id$+datefrom$,dom=*next)
-            continue
+rem            read (pot14_dev2,key=pot14_key.firm_id$+pot14_key.vendor_id$+datefrom$,dom=*next)
+rem            continue
 
-        endif
+rem        endif
 
 rem --- Get Header & assign variables
 
-        if pot14_key.firm_id$+pot14_key.vendor_id$+pot14_key.po_no$+pot14_key.receiver_no$<>prevk$
+        if pot14_key.firm_id$+pot14_key.po_no$+pot14_key.receiver_no$<>prevk$
 
             prevk$(1)=pot14_key$
-            p04_key$=firm_id$+vendor$+ponum$+recnum$
+            p04_key$=firm_id$+ponum$+recnum$
             find record (pot04a_dev,key=p04_key$,dom=*continue) pot04a$
             dim rcptdate$(8),orddate$(8)
             if pot04a.recpt_date$<>fill(8) rcptdate$=fndate$(pot04a.recpt_date$)
@@ -160,16 +170,16 @@ rem --- Get Header & assign variables
 
 rem --- Get detail
 
-        p14_key$=p04_key$+linenum$
-        find record (pot14a_dev,key=p14_key$,dom=*continue) pot14a$
+rem        p14_key$=p04_key$+linenum$
+rem        find record (pot14a_dev,key=p14_key$,dom=*continue) pot14a$
         whse$=pot14a.warehouse_id$
         item$=pot14a.item_id$
 
 rem --- Valid Whse/Item?
 
-        if whsefor$<>"" if whse$<>whsefor$ continue
-        if itemfrom$<>"" if item$<itemfrom$ continue
-        if itemthru$<>"" if item$>itemthru$ continue
+rem        if whsefor$<>"" if whse$<>whsefor$ continue
+rem        if itemfrom$<>"" if item$<itemfrom$ continue
+rem        if itemthru$<>"" if item$>itemthru$ continue
 
 rem --- Valid line type (ie S or N)?
 

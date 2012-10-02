@@ -36,8 +36,11 @@ rem --- Check total quantity from all lines against ordered quantity
 		if msg_opt$="N" callpoint!.setStatus("ABORT")
 	endif
 [[OPE_ORDLSDET.<CUSTOM>]]
-
-check_avail: rem --- check for available quantity
+rem ==========================================================================
+check_avail: rem --- Check for available quantity
+             rem      IN: line_qty 
+	         rem          lot_qty 
+rem ==========================================================================
 
 	wh$    = callpoint!.getDevObject("wh")
 	item$  = callpoint!.getDevObject("item")
@@ -45,9 +48,10 @@ check_avail: rem --- check for available quantity
 
 	lsmast_dev=num(callpoint!.getDevObject("lsmast_dev"))
 	dim lsmast_tpl$:callpoint!.getDevObject("lsmast_tpl")
+	start_block = 1
 
-	repeat
-		read record(lsmast_dev, key=firm_id$+wh$+item$+ls_no$, dom=*break) lsmast_tpl$
+	if start_block then
+		read record(lsmast_dev, key=firm_id$+wh$+item$+ls_no$, dom=*endif) lsmast_tpl$
 
 		if lot_qty >= 0 and lot_qty > lsmast_tpl.qty_on_hand - lsmast_tpl.qty_commit
 			dim msg_tokens$[1]
@@ -56,7 +60,33 @@ check_avail: rem --- check for available quantity
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
 		endif
-	until 1
+	endif
+
+return
+
+rem ==========================================================================
+valid_quantities: rem --- Validate Quantities
+                  rem       IN: qty_shipped
+                  rem           qty_ordered
+rem ==========================================================================
+
+rem --- Serial numbers can only have a quantity of 1 or -1
+
+	if callpoint!.getDevObject("lotser_flag") = "S" and abs(qty_shipped) <> 1 then 
+		msg_id$ = "IV_SERIAL_ONE"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	else
+
+rem --- Ship Qty must be <= Order Qty
+
+		if abs(qty_ordered) < abs(qty_shipped) then 
+			msg_id$ = "SHIP_EXCEEDS_ORD"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+		endif
+
+	endif
 
 return
 [[OPE_ORDLSDET.BSHO]]
@@ -110,49 +140,27 @@ rem --- Set the detail grid to the data selected in the lookup
 	endif
 [[OPE_ORDLSDET.QTY_SHIPPED.AVAL]]
 rem --- Check if Serial and validate quantity
-if callpoint!.getDevObject("lotser_flag")="S"
-	if abs(num(callpoint!.getUserInput()))<>1
-		msg_id$="IV_SERIAL_ONE"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	endif
-endif
 
-rem --- Ship Qty must be <= Order Qty
-if abs(num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED")))<abs(num(callpoint!.getUserInput()))
-	msg_id$="SHIP_EXCEEDS_ORD"
-	gosub disp_message
-	callpoint!.setStatus("ABORT")
-endif
+	qty_shipped = num(callpoint!.getUserInput())
+	qty_ordered = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"))
+
+	gosub valid_quantities
 [[OPE_ORDLSDET.QTY_ORDERED.AVAL]]
 rem --- Check if Serial and validate quantity
 
-	if callpoint!.getDevObject("lotser_flag")="S"
-		if abs(num(callpoint!.getUserInput()))<>1
-			msg_id$="IV_SERIAL_ONE"
-			gosub disp_message
-			callpoint!.setStatus("ABORT")
-		endif
-	endif
+	qty_shipped = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_SHIPPED"))
+	qty_ordered = num(callpoint!.getUserInput())
 
-rem --- Ship Qty must be <= Order Qty
-
-	if abs(num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_SHIPPED")))>abs(num(callpoint!.getUserInput()))
-		msg_id$="SHIP_EXCEEDS_ORD"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	endif
+	gosub valid_quantities
 
 rem --- Now check for Sales Line quantity
 
-		line_qty=num(callpoint!.getDevObject("ord_qty"))
-		lot_qty=num(callpoint!.getUserInput())
-		gosub check_avail
-[[OPE_ORDLSDET.LOTSER_NO.BINP]]
-rem --- call the lot lookup window and set default lot, lot location, lot comment and qty
-rem --- save current row/column so we'll know where to set focus when we return from lot lookup
+	line_qty = num(callpoint!.getDevObject("ord_qty"))
+	lot_qty  = qty_ordered
+
+	gosub check_avail
 [[OPE_ORDLSDET.LOTSER_NO.AVAL]]
-rem --- validate open lot number
+rem --- Validate open lot number
 
 	wh$    = callpoint!.getDevObject("wh")
 	item$  = callpoint!.getDevObject("item")

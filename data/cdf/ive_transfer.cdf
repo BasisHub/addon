@@ -179,8 +179,7 @@ rem --- Call the lot lookup window and set default lot
 	endif
 
 	rem --- Bring focus back to this field
-	thisControl! = fnget_control!("IVE_TRANSFER.LOTSER_NO")
-	thisControl!.focus()
+	util.forceFocus(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 
 lotser_no_binp_exit:
 [[IVE_TRANSFER.ITEM_ID.AVAL]]
@@ -585,21 +584,6 @@ rem ===========================================================================
 :		ivm01a.inventoried$ = "Y" )
 
 return
-
-rem ===========================================================================
-rem #include fnget_control.src
-rem ===========================================================================
-
-def fnget_control!(ctl_name$)
-
-	ctlContext = num( callpoint!.getTableColumnAttribute(ctl_name$,"CTLC") )
-	ctlID      = num( callpoint!.getTableColumnAttribute(ctl_name$,"CTLI") )
-
-	return SysGUI!.getWindow(ctlContext).getControl(ctlID)
-
-fnend
-
-rem #endinclude fnget_control.src
 
 rem ===========================================================================
 #include std_missing_params.src

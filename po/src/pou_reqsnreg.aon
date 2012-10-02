@@ -1,0 +1,384 @@
+rem --- Purchase Requisition Register Update
+rem --- Program pou_reqsnreg.aon v8.0.0 05Dec2007 (pou_aa)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 11:20:31)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+	next_overlay$=""
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+	num_files=17,open_beg=1,open_end=num_files
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+	open_tables$[1]="APS_PARAMS", open_opts$[1]="OTA"
+	open_tables$[2]="IVM_ITEMMAST", open_opts$[2]="OTA"
+	open_tables$[3]="IVM_ITEMWHSE", open_opts$[3]="OTA"
+	open_tables$[4]="IVS_PARAMS", open_opts$[4]="OTA"
+	open_tables$[5]="POE_REQHDR", open_opts$[5]="OTA"
+	open_tables$[6]="POE_POHDR", open_opts$[6]="OTA"
+	open_tables$[7]="POE_LINKED", open_opts$[7]="OTA"
+	open_tables$[8]="POE_REQDET", open_opts$[8]="OTA"
+	open_tables$[9]="POE_PODET", open_opts$[9]="OTA"
+	open_tables$[10]="POE_REQPRINT", open_opts$[10]="OTA"
+	open_tables$[11]="POE_POPRINT", open_opts$[11]="OTA"
+	open_tables$[12]="POC_LINECODE", open_opts$[12]="OTA"
+	open_tables$[13]="SFE_WOMATL", open_opts$[13]="OTA"
+	open_tables$[14]="SFE_WOSUBCNT", open_opts$[14]="OTA"
+	open_tables$[15]="POW_REQREGALT", open_opts$[15]="OTA"
+	open_tables$[16]="POW_REQREGVEN", open_opts$[16]="OTA"
+	open_tables$[17]="POW_REQREGREQ", open_opts$[17]="OTA"
+
+	gosub open_tables
+
+	aps_params_dev=num(open_chans$[1])
+	ivm_itemmast_dev=num(open_chans$[2])
+	ivm_itemwhse_dev=num(open_chans$[3])
+	ivs_params_dev=num(open_chans$[4])
+	poe_reqhdr_dev=num(open_chans$[5])
+	poe_pohdr_dev=num(open_chans$[6])
+	poe_linked_dev=num(open_chans$[7])
+	poe_reqdet_dev=num(open_chans$[8])
+	poe_podet_dev=num(open_chans$[9])
+	poe_reqprint_dev=num(open_chans$[10])
+	poe_poprint_dev=num(open_chans$[11])
+	poc_linecode_dev=num(open_chans$[12])
+	sfe_womatl_dev=num(open_chans$[13])
+	sfe_wosubcnt_dev=num(open_chans$[14])
+	pow_reqregalt_dev=num(open_chans$[15])
+	pow_reqregven_dev=num(open_chans$[16])
+	pow_reqregreq_dev=num(open_chans$[17])
+
+	dim aps_params$:open_tpls$[1]
+	dim ivm_itemmast$:open_tpls$[2]
+	dim ivm_itemwhse$:open_tpls$[3]
+	dim ivs_params$:open_tpls$[4]
+	dim poe_reqhdr$:open_tpls$[5]
+	dim poe_pohdr$:open_tpls$[6]
+	dim poe_linked$:open_tpls$[7]
+	dim poe_reqdet$:open_tpls$[8]
+	dim poe_podet$:open_tpls$[9]
+	dim poe_reqprint$:open_tpls$[10]
+	dim poe_poprint$:open_tpls$[11]
+	dim poc_linecode$:open_tpls$[12]
+	dim sfe_womatl$:open_tpls$[13]
+	dim sfe_wosubcnt$:open_tpls$[14]
+	dim pow_reqregalt$:open_tpls$[15]
+	dim pow_reqregven$:open_tpls$[16]
+	dim pow_reqregreq$:open_tpls$[17]
+
+rem --- Retrieve parameter records
+
+    find record (aps_params_dev,key=firm_id$+"AP00",err=std_missing_params) aps_params$
+    find record (ivs_params_dev,key=firm_id$+"IV00",err=std_missing_params) ivs_params$
+
+rem --- Initializations
+
+    dim files[20],item$[3],channels[99],params[10],params$[10],refs[20],refs$[20]
+    files[1]=pos10_dev
+    files[2]=poc_linecode_dev,files[3]=poe_reqhdr_dev
+    files[4]=poe_reqdet_dev
+    files[5]=poe_reqprint_dev,files[6]=poe31_dev
+    files[7]=poe41_dev
+    channels[1]=ivm_itemmast_dev,channels[2]=ivm_itemwhse_dev
+    files[13]=poe_linked_dev
+    more=1
+
+    rem --- Initialize Atamo for subsequent calls
+
+call pgmdir$+"ivc_itemupdt.aon::init",channels[all],ivs01a$,item$[all],refs$[all],refs[all],rd_table_chans$[all],status
+
+rem --- Run Update?
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Position file
+
+
+    if sequence$="A" then powork_dev=pow_reqregalt_dev;dim powork$:fattr(pow_reqregalt$)
+    if sequence$="V" then powork_dev=pow_reqregven_dev;dim powork$:fattr(pow_reqregven$)
+    if sequence$="R" then powork_dev=pow_reqregreq_dev;dim powork$:fattr(pow_reqregreq$)
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,powork_dev,1,meter_num,ignore_status
+
+    read (powork_dev,key=firm_id$,dom=*next)
+
+rem --- Get next sort record
+
+    while more
+
+        k$=key(powork_dev,end=done)
+        if pos(firm_id$=k$)<>1 then goto done
+        read record (powork_dev)powork$
+
+		poe_reqhdr.firm_id$=powork.firm_id$
+		poe_reqhdr.req_no$=powork.req_no$
+		poe_reqhdr.vendor_id$=powork.vendor_id$
+
+rem --- Read requisition header
+
+rem unrem for live...        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+        find record (poe_reqhdr_dev,key=poe_reqhdr.firm_id$+poe_reqhdr.vendor_id$+poe_reqhdr.req_no$,knum=1,dom=*continue) poe_reqhdr$
+
+
+rem --- Create purchase order from requisition
+
+		dim source_rec$:fattr(poe_reqhdr$)
+		source_rec$=poe_reqhdr$
+		dim dest_rec$:fattr(poe_pohdr$)
+		gosub copy_fields
+		poe_pohdr$=dest_rec$
+
+        rem --- Get next PO Number
+
+		call stbl("+DIR_SYP")+"bas_sequences.bbj","PO_NO",seq_id$,rd_table_chans$[all]
+
+        poe_pohdr.firm_id$=poe_reqhdr.firm_id$
+        poe_pohdr.po_no$=seq_id$
+		poe_pohdr$=field(poe_pohdr$)
+        write record (poe_pohdr_dev) poe_pohdr$
+
+        rem --- Create PO Print record        
+
+        poe_poprint.firm_id$ = poe_pohdr.firm_id$
+        poe_poprint.vendor_id$ = poe_pohdr.vendor_id$
+        poe_poprint.po_no$ = poe_pohdr.po_no$
+		poe_poprint$=field(poe_poprint$)
+        write record (poe_poprint_dev) poe_poprint$
+
+rem --- Position detail file
+
+        read (poe_reqdet_dev,key=poe_reqhdr.firm_id$+poe_reqhdr.req_no$,dom=*next)
+
+        while more
+
+                    read record (poe_reqdet_dev) poe_reqdet$
+            if pos(firm_id$=poe_reqdet$)<>1 then break
+            if poe_reqdet.req_no$<>poe_reqhdr.req_no$ then break
+            dim poe_podet$:fattr(poe_podet$)
+
+            rem --- Copy all common fields from requisition to po detail  
+
+			dim source_rec$:fattr(poe_reqdet$)
+			source_rec$=poe_reqdet$
+			dim dest_rec$:fattr(poe_podet$)
+			gosub copy_fields
+			poe_podet$=dest_rec$
+
+            rem --- Now put in the po# and copy req qty to qty ordered
+
+            poe_podet.po_no$=poe_pohdr.po_no$
+            poe_podet.qty_ordered=poe_podet.req_qty
+            poe_podet$=field(poe_podet$)        
+            write record (poe_podet_dev) poe_podet$
+
+rem --- Read line code
+
+            if firm_id$+poe_podet.po_line_code$<>poc_linecode.firm_id$+poc_linecode.po_line_code$
+
+                poc_linecode.firm_id$=firm_id$
+                poc_linecode.po_line_code$=poe_podet.po_line_code$
+                poc_linecode.code_desc$=""
+                poc_linecode.line_type$=""
+                poc_linecode.dropship$=""
+                poc_linecode.lead_tim_flg$=""
+                poc_linecode.land_cst_flg$=""
+                poc_linecode.add_options$=""
+
+				find record (poc_linecode_dev,key=poc_linecode.firm_id$+poc_linecode.po_line_code$,dom=*next) poc_linecode$
+
+            endif
+
+            rem --- Update inventory?
+
+            if poc_linecode.line_type$="S"
+                item$[0]=firm_id$
+                item$[1]=poe_podet.warehouse_id$,item$[2]=poe_podet.item_id$,refs[0]=poe_podet.qty_ordered
+                action$="OO"
+                call pgmdir$+"ivc_itemupdt.aon",action$,channels[all],ivs_params$,item$[all],refs$[all],refs[all],rd_table_chans$[all],status
+
+            endif
+
+            rem --- Update work order?
+
+            if sf$<>"N" and pos(poc_linecode.line_type$="NS")<>0 and cvs(poe_podet.wo_no$,2)<>""
+escape;rem logic not yet exercised - poc_wa not ready
+                oldwo$=poe_podet.wo_no$+poe_podet.wo_seq_ref$
+                newwo$=oldwo$,po$=poe_podet.po_no$+poe_podet.internal_seq_no$
+                call pgmdir$+"poc_wa.bbx",sfe22_dev,sfe32_dev,firm_id$,po$,"P",poc_linecode.code_desc$,oldwo$,newwo$,i[1],status
+
+            endif
+
+            rem --- Update PO to OP link
+
+            if cvs(poe_pohdr.customer_id$+poe_pohdr.order_no$,2)<>""
+
+				dim poe_linked$:fattr(poe_linked$)
+				poe_linked.firm_id$=firm_id$
+				poe_linked.po_no$=poe_pohdr.po_no$
+				poe_linked.poedet_seq_ref$=poe_podet.internal_seq_no$
+				poe_linked.customer_id$=poe_pohdr.customer_id$
+				poe_linked.order_no$=poe_pohdr.order_no$
+				poe_linked.opedet_seq_ref$=poe_podet.so_int_seq_ref$
+				poe_linked$=field(poe_linked$)
+                write record (poe_linked_dev) poe_linked$
+
+            endif
+
+            rem --- Loop back for next detail
+
+        wend
+
+    rem --- Delete requisition source
+
+		sf_installed$="N"
+        dtl_tpl$=fattr(poe_reqdet$)
+        hdr_pri_key$=poe_reqhdr.firm_id$+poe_reqhdr.req_no$
+        hdr_alt_key1$=poe_reqhdr.firm_id$+poe_reqhdr.vendor_id$+poe_reqhdr.req_no$
+        call pgmdir$+"poc_deletepo.aon","R",files[all],sf_installed$,ivs_params$,hdr_pri_key$,hdr_alt_key1$,dtl_tpl$,status
+
+    rem --- Loop back for next record
+
+    wend
+
+done: rem --- All done
+
+    goto std_exit
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #endinclude std_functions.src
+
+copy_fields:
+
+	field_list$=fattr(source_rec$,"")
+	fields=pos($0A$=field_list$,1,0)
+	dim fields$:"name["+str(fields)+"]:c(16*)"
+	fields$=field_list$
+	for x=1 to fields
+		field dest_rec$,fields.name$[x]=field(source_rec$,fields.name$[x]),err=*next
+	next x
+return
+
+
+open_tables: rem --- Call open table routine	
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+		status=912
+		goto std_exit
+	endif
+
+	return
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+
+	rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+	msg_id$="UPDATE_COMPLETE"
+	gosub disp_message
+
+std_exit_no_update:
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status    
+    run pgmdir$+"bas_process_end.aon",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

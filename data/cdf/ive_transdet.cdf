@@ -23,7 +23,7 @@ rem --- Read the lot/Serial# record, if found
 	dim ls_rec$:fnget_tpl$(ls_file$)
 	user_tpl.ls_found = 0
 
-	find record(fnget_dev(ls_file$),key=firm_id$+whse$+item$+ls_no$,dom=ls_not_found) ls_rec$
+	find record (fnget_dev(ls_file$), key=firm_id$+whse$+item$+ls_no$, dom=ls_not_found) ls_rec$
 	user_tpl.ls_found = 1
 	print "lot ", ls_no$, " found"; rem debug
 
@@ -56,14 +56,18 @@ print "in LOTSER_NO.BINP"; rem debug
 
 rem --- Should user enter a lot of look it up?
 
-	rem --- Receipts and negatice Adjustments require new lot entry
+	rem --- Receipts and negative Adjustments require new lot entry
 
 	trans_qty = num( callpoint!.getColumnData("IVE_TRANSDET.TRANS_QTY") )
-	if user_tpl.trans_type$ = "R" or (user_tpl.trans_type$ = "A" and trans_qty > 0 ) then break; rem --- exit callpoint
+	if user_tpl.trans_type$ = "R" or (user_tpl.trans_type$ = "A" and trans_qty < 0 ) then 
+		print "Trans Type: ", user_tpl.trans_type$
+		print "Receipt or negative Adjustment, exitting..."
+		break; rem --- exit callpoint
+	endif
 
-rem --- call the lot lookup window and set default lot, lot location, lot comment and qty
+rem --- Call the lot lookup window and set default lot, lot location, lot comment and qty
 
-	rem --- save current row/column so we'll know where to set focus when we return from lot lookup
+	rem --- Save current row/column so we'll know where to set focus when we return from lot lookup
 
 	declare BBjStandardGrid grid!
 	grid! = util.getGrid(Form!)
@@ -91,6 +95,7 @@ rem --- call the lot lookup window and set default lot, lot location, lot commen
 
 	rem --- Call the lookup form
 
+	print "Launching Lot Lookup..."; rem debug
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :	                       "IVC_LOTLOOKUP",
 :	                       stbl("+USER_ID"),
@@ -107,16 +112,15 @@ rem --- call the lot lookup window and set default lot, lot location, lot commen
 		callpoint!.setColumnData( "IVE_TRANSDET.LS_LOCATION", str(callpoint!.getDevObject("selected_lot_loc")) )
 		callpoint!.setColumnData( "IVE_TRANSDET.LS_COMMENTS", str(callpoint!.getDevObject("selected_lot_cmt")) )
 		rem user_tpl.avail = num( callpoint!.getDevObject("selected_lot_avail") )
-		callpoint!.setStatus("MODIFIED-REFRESH")
+		rem callpoint!.setStatus("MODIFIED-REFRESH")
+		callpoint!.setStatus("REFRESH")
 		rem callpoint!.setStatus("REFGRID")
+		print "Set Lot, Location, and Comment"; rem debug
 	endif
 
 	rem --- return focus to where we were (lot number)
 	util.forceEdit(Form!, return_to_row, return_to_col)
 	
-[[IVE_TRANSDET.BWRI]]
-print "before record write (BWRI)"; rem debug
-
 [[IVE_TRANSDET.BUDE]]
 print "before record undelete (BUDE)"; rem debug
 
@@ -182,25 +186,22 @@ rem --- Display defaults for this row
 
 	if user_tpl.multi_whse$ <> "Y" then
 		callpoint!.setColumnData("IVE_TRANSDET.WAREHOUSE_ID",user_tpl.warehouse_id$)
+		print "Set default warehouse"; rem debug
 	endif
 
 	if user_tpl.gl$ = "Y" and user_tpl.trans_post_gl$ = "Y" then
 		callpoint!.setColumnData("IVE_TRANSDET.GL_ACCOUNT",user_tpl.trans_adj_acct$)
+		print "Set default GL account"; rem debug
 	endif
 
-	callpoint!.setStatus("MODIFIED-REFRESH")
+	callpoint!.setStatus("REFRESH")
+	rem callpoint!.setStatus("MODIFIED-REFRESH")
 	rem callpoint!.setStatus("REFGRID")
-[[IVE_TRANSDET.ARAR]]
-print "after array transfer (ARAR)"; rem debug
-[[IVE_TRANSDET.AGDR]]
-print "after grid display row (AGDR)"; rem debug
-[[IVE_TRANSDET.AGDS]]
-print "after grid display (AGDS)"; rem debug
 [[IVE_TRANSDET.AGCL]]
 print "after grid clear (AGCL)"; rem debug
 
 	rem --- We'll be using the "util" object throughout.
-	rem --- The "use" just needs to be earlier than the first invocation.
+	rem --- It doesn't matter where the "use" statement is
 	use ::ado_util.src::util
 [[IVE_TRANSDET.TRANS_QTY.BINP]]
 print "in TRANS_QTY.BINP"; rem debug
@@ -211,7 +212,9 @@ rem --- Serialized receipt or issue must be 1
 		if user_tpl.this_item_lot_or_ser and user_tpl.serialized then
 			if num( callpoint!.getColumnData("IVE_TRANSDET.TRANS_QTY") ) = 0 then
 				callpoint!.setColumnData("IVE_TRANSDET.TRANS_QTY","1")
-				callpoint!.setStatus("MODIFIED-REFRESH")
+				print "Set quantity to one because this item is serialized"; rem debug
+				rem callpoint!.setStatus("MODIFIED-REFRESH")
+				callpoint!.setStatus("REFRESH")
 			endif
 		endif
 	endif
@@ -236,16 +239,18 @@ calc_ext_cost: rem --- Calculate and display extended cost
 rem ==========================================================================
 
 	callpoint!.setColumnData("IVE_TRANSDET.TOTAL_COST", str(unit_cost * trans_qty) )
-	callpoint!.setStatus("MODIFIED-REFRESH")
+	print "Updated total cost"; rem debug
+	callpoint!.setStatus("REFRESH")
+	rem callpoint!.setStatus("MODIFIED-REFRESH")
 	rem callpoint!.setStatus("REFGRID")
 
 return
 
 rem ==========================================================================
 get_whse_item: rem --- Get warehouse and item records and display
-               rem ---  IN: item$ = the current item ID
-               rem ---    : whse$ = the current warehouse
-               rem --- OUT: default values set and displayed,
+               rem      IN: item$ = the current item ID
+               rem          whse$ = the current warehouse
+               rem     OUT: default values set and displayed,
                rem          fields disable/enabled
 rem ==========================================================================
 
@@ -259,11 +264,11 @@ rem ==========================================================================
 
 		file_name$ = "IVM_ITEMMAST"
 		dim ivm01a$:fnget_tpl$(file_name$)
-		find record(fnget_dev(file_name$),key=firm_id$+item$) ivm01a$
+		find record (fnget_dev(file_name$), key=firm_id$+item$) ivm01a$
 
 		file_name$ = "IVM_ITEMWHSE"
 		dim ivm02a$:fnget_tpl$(file_name$)
-		find record(fnget_dev(file_name$),key=firm_id$+whse$+item$,dom=no_whse_rec) ivm02a$
+		find record (fnget_dev(file_name$), key=firm_id$+whse$+item$, dom=no_whse_rec) ivm02a$
 
 		rem --- Set header display values to warehouse
 
@@ -364,7 +369,7 @@ return
 
 rem ==========================================================================
 test_qty: rem --- Test whether the transaction quantity is valid
-          rem ---  IN: trans_qty
+          rem      IN: trans_qty
 rem ==========================================================================
 
 	failed = 0
@@ -487,10 +492,10 @@ return
 
 rem ==========================================================================
 set_display_fields: rem --- Set the values of the header display fields
-                    rem     IN: loc$    = location
-                    rem         qoh$    = quantity on hand
-                    rem         commit$ = committed qty
-                    rem         avail$  = available qty
+                    rem      IN: loc$    = location
+                    rem          qoh$    = quantity on hand
+                    rem          commit$ = committed qty
+                    rem          avail$  = available qty
 rem ==========================================================================
 
 	rem --- Get the header controls
@@ -510,6 +515,8 @@ rem ==========================================================================
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.QTY_ON_HAND", qoh$)
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.QTY_COMMIT", commit$)
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.QTY_AVAIL", avail$)
+
+	callpoint!.setStatus("REFRESH")
 
 return
 
@@ -598,7 +605,7 @@ rem --- Commit inventory
 
 	rem --- Has this row changed?
 
-	if callpoint!.getGridRowModifyStatus(this_row)<>"Y"
+	if callpoint!.getGridRowModifyStatus(this_row) <> "Y" then
 		print "row not modified, exitting"; rem debug
 		break; rem --- exit callpoint
 	endif
@@ -651,10 +658,11 @@ rem --- Commit inventory
 
 	rem --- Has there been any change?
 
-	if	curr_whse$   <> prior_whse$ or 
-:		curr_item$   <> prior_item$ or 
-:		curr_qty     <> prior_qty   or
-:     curr_lotser$ <> prior_lotser$
+	if (curr_whse$   <> "" and curr_item$ <> "") and 
+:		(curr_whse$   <> prior_whse$   or 
+:		 curr_item$   <> prior_item$   or 
+:		 curr_qty     <> prior_qty     or
+:      curr_lotser$ <> prior_lotser$) 
 :	then
 
 		rem --- Initialize inventory item update
@@ -662,7 +670,10 @@ rem --- Commit inventory
 		print "initializing ATAMO..."
 		status = 999
 		call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-		if status then goto std_exit
+		if status then 
+			callpoint!.setStatus("EXIT")
+			break; rem --- exit callpoint
+		endif
 
 		rem --- Items or warehouses are different: uncommit previous
 
@@ -688,7 +699,10 @@ rem --- Commit inventory
 				endif
 				
 				call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then escape; rem problem uncommitting previous qty
+				if status then 
+					callpoint!.setStatus("EXIT")
+					break; rem --- exit callpoint
+				endif
 
 			endif
 
@@ -701,7 +715,10 @@ rem --- Commit inventory
 			refs[0]   = curr_qty 
 
 			call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-			if status then escape; rem problem committing 
+			if status then 
+				callpoint!.setStatus("EXIT")
+				break; rem --- exit callpoint
+			endif
 
 		endif
 
@@ -721,7 +738,10 @@ rem --- Commit inventory
 			refs[0]   = curr_qty - prior_qty
 
 			call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-			if status then escape; rem problem committing 
+			if status then 
+				callpoint!.setStatus("EXIT")
+				break; rem --- exit callpoint
+			endif
 
 		endif
 
@@ -729,7 +749,7 @@ rem --- Commit inventory
 
 	endif
 [[IVE_TRANSDET.BGDR]]
-print "before grid display row (BGDR)"; rem debug
+
 [[IVE_TRANSDET.ITEM_ID.AVAL]]
 print "in ITEM_ID After Column Validation (AVAL)"; rem debug
 

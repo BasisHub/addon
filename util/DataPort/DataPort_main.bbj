@@ -167,6 +167,23 @@ while 1
 wend
 close (int_seq_xref)
 
+rem --- read field_translations into hash map
+
+field_translations! = new java.util.HashMap()
+dim field_translations$:"fieldname:c(16*=124),old_value:c(16*=124),new_value:c(16*=)"
+field_translations = unt
+open (field_translations)filedir$+"field_translations"
+while 1
+   read (field_translations,end=*break)field_translations$
+   if len(field_translations$) then
+      keyval$ = cvs(field_translations.fieldname$,7)+"."+cvs(field_translations.old_value$,3)
+      dataval$ = cvs(field_translations.new_value$,7)
+      field_translations!.put(keyval$,dataval$)
+   endif
+wend
+close (field_translations)
+
+
 rd_meter_data$="DataPort Start Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")
 rd_meter_proc_recs=rd_meter_total_recs
 rd_meter_action$="LST"
@@ -293,11 +310,11 @@ next_ddm04:
        if rd_col_occurs$="YES" or rd_occur_adj>0 then
           rd_col_occurs_sfx$="_"+str(rd_curr_occur+rd_occur_adj:"00")
        endif
-	   
-	   rem --- Remove slashes from data name
+
+	   	   rem --- Remove slashes from data name
 	   data_name$ = ddm04.data_name$
 	   s_pos = pos("/" = data_name$)
-	   
+
 	   while s_pos
 	      data_name$ = data_name$(1, s_pos-1) + data_name$(s_pos+1)
 		  s_pos = pos("/" = data_name$)
@@ -314,8 +331,7 @@ next_ddm04:
          endif
        endif    
        if rd_col_occurs$="YES" or rd_occur_adj>0
-         if rd_curr_occur+rd_occur_adj=rd_col_occurs and datatype$="C" or
-:           datatype$<>"C"
+         if rd_curr_occur+rd_occur_adj=rd_col_occurs and datatype$="C" or			datatype$<>"C"
            if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E"
              if rd_temp_seg$(len(rd_temp_seg$),1)<>"*"
                rd_temp_seg$=rd_temp_seg$+"*"
@@ -392,27 +408,26 @@ end_ddm04:
     lock (old_file)
     print "   Copying data from  "+ddm03.file_name$+ddm03.record_id$
     print(log_dev)"   Copying data from    "+ddm03.file_name$+ddm03.record_id$
-    
-next_rec:
+
+    next_rec:
     readrecord(old_file,end=eof)old_rec$
     if source_version=6 and datafile$="ARM-10" and old_rec$(1,3)="01G" goto next_rec
     if pos("00"=old_rec$)=1 goto next_rec
     if record_id_field$<>"" and field(old_rec$,record_id_field$,err=*continue)<>ddm03.record_id$ then
        goto next_rec
     endif
-    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) +
-:                     field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
+    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) +					  field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
        goto next_rec
     endif
-    for field=1 to fields
+
+    rem --- start field loop
+
+        for field=1 to fields
 
 rem --- Check for and warn if PO detail files contain Drop Ship information
 
         if new_datafile$="poe-11" or new_datafile$="poe-12"
-            if cvs(old_fieldlist.name$[field],3)="CUSTOMER_NBR" or
-:              cvs(old_fieldlist.name$[field],3)="ORDER_NUMBER" or
-:              cvs(old_fieldlist.name$[field],3)="LINE_NUMBER" or
-:              cvs(old_fieldlist.name$[field],3)="SHIPTO_NBR"
+            if cvs(old_fieldlist.name$[field],3)="CUSTOMER_NBR" or	           cvs(old_fieldlist.name$[field],3)="ORDER_NUMBER" or			   cvs(old_fieldlist.name$[field],3)="LINE_NUMBER" or			   cvs(old_fieldlist.name$[field],3)="SHIPTO_NBR"
                 if cvs(field(old_rec$,old_fieldlist.name$[field],err=*continue),3)<>""
                     if new_datafile$="poe-11"
                         print (err_dev)"There is Drop Ship information in Requisition "+old_rec.req_number$+" in line "+old_rec.po_line_nbr$+" - "+cvs(old_fieldlist.name$[field],3)+"="+cvs(field(old_rec$,old_fieldlist.name$[field]),3)+"."
@@ -512,6 +527,11 @@ rem --- Set blank Credit Hold (Y;N;E) field values to N
             if cvs(value$,2)="" value$="N"
         endif
 
+        rem --- set Stocking Level to "W" for all items
+		if cvs(new_fieldlist.name$[field],3)="STOCK_LEVEL"
+			value$="W"
+		endif
+
 rem --- Call custom program - Note - there is no CALL/ENTER list, so all variables will be 
 rem     available. Common usages for this would be things like data conversion, since value$
 rem     holds the data in the field coming in, and old_fieldlist.name$[field] is the variable
@@ -525,11 +545,23 @@ rem --- Check value of new field for blanks if part of primary key
         if pos(new_fieldlist.name$[field]+$0a$=key_temp$)>0
             if cvs(value$,2)=""
                 if pos(new_fieldlist.name$[field]+$0a$=blank_fields$)=0
-                    blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
-                    print (err_dev) "field "+new_fieldlist.name$[field]+" has a blank value."
-                endif    
+                	if field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))=null()
+	                    blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
+	                    print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" has a blank value and no translation specified." 
+	                endif
+ 				endif    
             endif
         endif
+
+rem --- if this field.value is listed in flat file "field_translations" then translate to new value
+
+		translate_value!=field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))
+		if translate_value!<>null()
+			translate_value$=str(translate_value!)
+			value$=translate_value$
+		endif
+
+ rem --- date formatting
 
         attr$=fattr(old_rec$,old_fieldlist.name$[field])
         fld_sep$=attr$(3,1)
@@ -584,11 +616,19 @@ rem --- Check value of new field for blanks if part of primary key
            case default; escape; rem ' should never get here
         swend
 
-        rem 'replace non-print characters with spaces
+        rem --- replace non-print characters with spaces
+
         value$=cvs(value$,16)
 
-        field new_rec$,new_fieldlist.name$[field]=value$
-    next field
+		rem --- probably need logic here to read ddm_elements, and make sure that 
+		rem --- delimited elements that are marked as left/space padded actually get padded
+		rem --- right now, padding doesn't happen, but isn't causing widespread problem (CAH; Apr09)
+
+		        field new_rec$,new_fieldlist.name$[field]=value$
+
+            next field
+
+    rem --- final misc processing prior to writing new record    
 
     if addr_lines then gosub reformat_address
 
@@ -606,6 +646,7 @@ rem --- Check value of new field for blanks if part of primary key
     new_rec$=field(new_rec$)
 
 write_record:
+
     if keysize then
        k$=xkgen(new_rec$,xfin$,0)
        if len(k$)>keysize then
@@ -752,7 +793,7 @@ rem    gosub make_printplus
         print "   Blank values for elements in primary keys exist. See error file for details."
     endif
     while len(blank_fields$)>0
-        print (err_dev)"Element "+blank_fields$(1,pos($0a$=blank_fields$)-1)+" has a blank value."
+        print (err_dev)"Element "+blank_fields$(1,pos($0a$=blank_fields$)-1)+" has a blank value with no translation specified."
         print (err_dev)"  Consider converting to a non-blank value and re-running DataPort."
         blank_fields$=blank_fields$(pos($0a$=blank_fields$)+1)
     wend
@@ -938,14 +979,34 @@ read_dflt_hdr:
     new_rec.ar_terms_code$=sys01_3$(60,2)
     new_rec.ar_dist_code$=sys01_3$(62,2)
     new_rec.customer_inv_his$=sys01_3$(78,1)
+    gosub check_blank_codes
     new_rec$=field(new_rec$)
     writerecord(new_file)new_rec$
     goto read_dflt_hdr
 
+    check_blank_codes:
+rem --- translate any codes from custdflt if listed in flat file "field_translations" 
+
+	tmp$=fattr(new_rec$,"")
+	tmp=pos($0A$=tmp$,1,0)
+	dim tmp_fieldlist$:"name["+str(tmp)+"]:c(20*)"
+	tmp_fieldlist$=tmp$
+
+		for field=1 to tmp
+		value$=field(new_rec$,tmp_fieldlist.name$[field])
+		translate_value!=field_translations!.get(tmp_fieldlist.name$[field]+"."+cvs(value$,3))
+		if translate_value!<>null()
+			translate_value$=str(translate_value!)
+			field new_rec$,tmp_fieldlist.name$[field]=translate_value$
+		endif
+	next field
+
+		return
+
 no_cust_default:
     masks_dev=unt
     open (masks_dev)stbl("+DIR_BRA")+"ads_masks.dat"
-    comp_id$=stbl("+DEFAULT_ASC_COMP_ID")
+    comp_id$=stbl("+AON_APPCOMPANY")
 
     rem --- Get templates for masks"
 
@@ -958,6 +1019,7 @@ no_cust_default:
     open (old_file)source_folder$+"/"+cvs("sys-01",version_cvs)
     while 1
         read(old_file,end=*break)a0$,a1$,a2$,a3$,a4$,a5$,a6$,a7$,a8$,a9$,a10$
+
         if len(a0$)<>6 continue
         if num(a0$(1,2),err=*continue)=0 continue
         if a0$(5,2)<>"00" continue
@@ -977,7 +1039,7 @@ no_cust_default:
                             if id$(id,1)="#" id$(id,1)="0"
                         endif
                         if pos(a0$(3,2)="ARAPPR",2)
-                            if id$(id,1)="#" id$(id,1)="U"
+                            if id$(id,1)="0" id$(id,1)="U"
                         endif
                     next id
                 endif
@@ -1044,8 +1106,8 @@ no_cust_default:
                 if cvs(a9$,3)<>""
                     writerecord(masks_dev)ads_masks$
                 endif
-    
-                dim ads_masks$:fattr(ads_masks$)
+
+                    dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
                 ads_masks.asc_comp_id$=comp_id$
                 ads_masks.asc_prod_id$=pad(a0$(3,2),3)
@@ -1300,6 +1362,7 @@ check_fieldlist:
 return; rem ' set_new_fieldname
 
 reformat_address:
+
     if addr_lines=5 then
        address$=pad(old_rec.addr_line_1$,24)+pad(old_rec.addr_line_2$,24)+pad(old_rec.addr_line_3$,24)+pad(old_rec.addr_line_4$,24)+pad(old_rec.addr_line_5$,24)
     endif
@@ -1322,7 +1385,7 @@ reformat_address:
            if len(string1$)=2 then
               break
            endif
-           if len(string$)>2 and string1$(len(string1$)-2,1)<>" " then
+           if len(string1$)>2 and string1$(len(string1$)-2,1)<>" " then
               city$(1)=""
               break
            endif
@@ -1357,8 +1420,8 @@ reformat_address:
 
     new_rec.addr_line_1$=address$(1,24)
     new_rec.addr_line_2$=address$(25,24)
+    if pos("ADDR_LINE_3"=fattr(new_rec$))<>0 then new_rec.addr_line_3$=address$(49,24)
     if addr_lines=5 then
-       new_rec.addr_line_3$=address$(49,24)
        new_rec.addr_line_4$=address$(73,24)
     endif
     new_rec.city$=city$
@@ -1367,30 +1430,13 @@ return; rem ' reformat_address
 
 disp_meter:rem --- Display Progress Meter
 
-    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
-:        rdSysGUI!,
-:        rdWindow!,
-:        rdMeterWin!,
-:        rd_meter_title$,
-:        rd_meter_total_recs,
-:        rd_meter_proc_recs,
-:        rd_meter_data$,
-:        rd_meter_action$
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",	   rdSysGUI!,	   rdWindow!,	   rdMeterWin!,	   rd_meter_title$,	   rd_meter_total_recs,	   rd_meter_proc_recs,	   rd_meter_data$,      rd_meter_action$
 
     return
 
 open_tables:rem --- Open Tables
 
-    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:       open_beg,
-:	open_end,
-:	open_tables$[all],
-:	open_opts$[all],
-:	open_chans$[all],
-:	open_tpls$[all],
-:	table_chans$[all],
-:	open_batch,
-:	open_status$
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",	   open_beg,	   open_end,	   open_tables$[all],	   open_opts$[all],	   open_chans$[all],	   open_tpls$[all],	   table_chans$[all],	   open_batch,	   open_status$
 
     if open_status$<>""
         msg_id$="ENTRY_OPEN_ERROR"

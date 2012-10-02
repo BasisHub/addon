@@ -1,0 +1,230 @@
+rem --- Item Price Calculation
+rem --- Program opc_pricing.aon v8.0.0 12Dec2007 (opc_pc)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/12/2007 10:44:30)
+
+rem --- AddonSoftware Version 8.0.0 - 28Mar2009
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+    rem --- Enter variables
+    rem channels[n] : [1] = ivm-01
+    rem             : [2] = ivm-02
+    rem             : [3] = ivm-06
+    rem             : [4] = ivm-10
+    rem             : [5] = ars_params
+    rem             : [6] = ivs_params
+    rem firm_id$    : Firm ID
+    rem whs$        : Warehouse ID
+    rem item$       : Inventory Item Number
+    rem listcd$     : List Price Code
+    rem cust$       : Customer Number
+    rem date$       : Date Ordered
+    rem priccd$     : Pricing Code
+    rem ordqty      : Quantity Ordered
+    rem type_price$ : Type Of Pricing (Returned)
+    rem               C = Mark-Up From Cost
+    rem               L = Mark-Down List Price
+    rem               M = Margin Over Cost
+    rem               N = None
+    rem               P = Prior Price Code
+    rem               X = Contract
+    rem price       : Price (Returned)
+    rem disc        : Discount (Returned)
+    rem status      : 0=No Error (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter channels[all],firm_id$,whs$,item$,listcd$,cust$,date$,priccd$,ordqty,type_price$,price,disc,status
+
+rem --- Retrieve the program path
+
+	pgmdir$=""
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Set channels
+
+    ivm01_dev=channels[1]
+	ivm02_dev=channels[2]
+	ivm06_dev=channels[3]
+    ivm10_dev=channels[4]
+	ars01_dev=channels[5]
+	ivs01_dev=channels[6]
+
+rem --- retrieve templates
+
+    files=6,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="IVM_ITEMMAST"
+    ids$[2]="IVM_ITEMWHSE"
+    ids$[3]="IVM_ITEMPRIC"
+    ids$[4]="IVC_PRICCODE"
+    ids$[5]="ARS_PARAMS"
+    ids$[6]="IVS_PARAMS"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension string templates
+
+    dim ivm01a$:templates$[1]
+	dim ivm02a$:templates$[2]
+	dim ivm06a$:templates$[3]
+	dim ivm10e$:templates$[4]
+	dim ars01a$:templates$[5]
+	dim ivs01a$:templates$[6]
+
+rem --- Retrieve parameter records
+
+    find record (ars01_dev, key=firm_id$+"AR00", err=std_missing_params) ars01a$
+    find record (ivs01_dev, key=firm_id$+"IV00", err=std_missing_params) ivs01a$
+
+rem --- Initialize Data
+    more=1
+    type_price$="N"
+    price=0
+	disc=0
+	status=0
+
+rem --- Get Item Class
+
+    while more
+        read record (ivm01_dev, key=firm_id$+item$, dom=*break) ivm01a$
+
+rem --- Get Item's Warehouse Cost & Prices
+
+        read record (ivm02_dev, key=firm_id$+whs$+item$, dom=*break) ivm02a$
+    
+rem --- Use Current List Price
+
+        price=ivm02a.cur_price
+
+rem --- Use Prior List Price
+
+        if cvs(listcd$,2)<>"" and listcd$=ivm02a.pri_price_cd$ and ivm02a.pri_price<>0 then 
+            price=ivm02a.pri_price
+            type_price$="P"
+            break
+        endif
+
+rem --- Use Contract Pricing
+
+        if ivm06_dev>0 then
+            find record (ivm06_dev, key=firm_id$+cust$+item$, dom=*endif) ivm06a$
+            
+			if (cvs(ivm06a.from_date$,2)="" or date$>=ivm06a.from_date$) and (cvs(ivm06a.thru_date$,2)="" or date$<=ivm06a.thru_date$) then 
+                if abs(ordqty)>=nfield(ivm06a$,"break_qty_01") then
+                    for x=1 to 10
+                        if nfield(ivm06a$,"break_qty_"+str(x:"00"))>0 and abs(ordqty)>=nfield(ivm06a$,"break_qty_"+str(x:"00")) then 
+							price=nfield(ivm06a$,"unit_price_"+str(x:"00"))
+						endif
+                    next x
+					
+                    type_price$="X"
+                    break
+                endif
+			endif
+        endif
+
+rem --- Use Pricing Table
+
+        if ordqty=0 then break
+        find record (ivm10_dev, key=firm_id$+"E"+ivm01a.item_class$+priccd$, dom=*break) ivm10e$
+		
+        if (ivm10e.break_qty_01=0 and ivm10e.break_disc_01=0) or abs(ordqty)<ivm10e.break_qty_01 then 
+			price=ivm02a.cur_price
+			break
+		endif
+		
+        for x=1 to 10
+            if nfield(ivm10e$,"break_qty_"+str(x:"00"))>0 and abs(ordqty)>=nfield(ivm10e$,"break_qty_"+str(x:"00")) then 
+				perc=nfield(ivm10e$,"break_disc_"+str(x:"00"))
+			endif
+        next x
+		
+        type_price$=ivm10e.iv_price_mth$
+		
+        on pos(type_price$="CML") goto bad_print_type, mark_up_cost, margin_over_cost, mark_down_list_price
+
+bad_print_type:
+			
+		break
+
+mark_up_cost: rem --- Mark-Up From Cost
+
+        price = ivm02a.unit_cost + ivm02a.unit_cost * (perc / 100)
+        if ivm02a.cur_price=0 then break
+        disc = 100 - 100 * (price / ivm02a.cur_price)
+        break
+
+margin_over_cost: rem --- Margin Over Cost
+
+        if perc>=100 then break; rem --- No such thing as 100% margin unless cost=0
+        price = ivm02a.unit_cost * 100 / (100 - perc)
+        if ivm02a.cur_price=0 then break
+        disc=100 - 100 * (price / ivm02a.cur_price)
+        break
+
+mark_down_list_price: rem --- Mark-Down List Price
+
+        price = ivm02a.cur_price - ivm02a.cur_price * (perc/100)
+        disc = perc
+        break
+    wend
+
+rem --- All Done
+
+    if price=0 then let type_price$="N"
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

@@ -11,10 +11,12 @@ gosub validate_cmt_lines
 [[OPS_PARAMS.AREA]]
 rem --- if not posting to GL, set 'print sales GL detail' flag to N as well
 
-if user_tpl.gl_post$="N" then callpoint!.setColumnData("OPS_PARAMS.PRT_GL_DET","N")
-ctl_name$="PRT_GL_DET"
-ctl_stat$="D"
-gosub disable_fields
+if user_tpl.gl_post$="N" then 
+	callpoint!.setColumnData("OPS_PARAMS.PRT_GL_DET","N")
+	ctl_name$="PRT_GL_DET"
+	ctl_stat$="D"
+	gosub disable_fields
+endif
 [[OPS_PARAMS.BSHO]]
 num_files=2
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -52,11 +54,14 @@ rem --- Retrieve parameter/application data
 	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$  
 
 	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
-	gl$=info$[20],gl_post$=info$[9]
+	gl$=info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
 	ap$=info$[20],br$=info$[9]
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
+	gl_post$=info$[9]
+	if gl$<>"Y" gl_post$="N"
 
 	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_installed:c(1),gl_post:c(1),"+
 :                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1)"

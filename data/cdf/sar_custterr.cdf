@@ -54,7 +54,7 @@ callpoint!.setStatus("REFRESH")
 dim user_tpl$:"sa_levels:c(4),high_level:c(1)"
 user_tpl.sa_levels$="TCPI"
 user_tpl.high_level$=sas_params.customer_lev$
-[[SAR_CUSTTERR.12_PER_REPORT.AVAL]]
+[[SAR_CUSTTERR.TWLVE_PER_REPORT.AVAL]]
 x$=callpoint!.getUserInput()
 if x$="N" then
 	callpoint!.setColumnData("SAR_CUSTTERR.MTD","Y")

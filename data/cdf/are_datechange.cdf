@@ -70,13 +70,9 @@ dim user_tpl$:"art_invhdr_tpl:c("+str(len(open_tpls$[1]))+"*),art_invhdr_chn:n(3
 user_tpl.art_invhdr_chn=num(open_chans$[1])
 user_tpl.art_invhdr_tpl$=open_tpls$[1]
 [[ARE_DATECHANGE.AR_INV_NO_VER.AVAL]]
-rem if rec_data$[1,0](1,1)="A" or fnget_rec$(callpoint.callpoint_dvar$)="" or fnget_rec$(callpoint.callpoint_dvar$)<>fnget_rec_orig$(callpoint.callpoint_dvar$)
 	msg_id$="AR_INV_NO"
 	dim msg_tokens$[1]
 	msg_opt$=""
-	are_datechange_dev=fnget_dev("ARE_DATECHANGE")
-	read record(are_datechange_dev,key=firm_id$+"  "+callpoint!.getColumnData("ARE_DATECHANGE.CUSTOMER_ID")+
-:		callpoint!.getUserInput(),dom=*next);goto invalid_inv
 	dim art_invhdr$:user_tpl.art_invhdr_tpl$
 	firm_id$=callpoint!.getColumnData("ARE_DATECHANGE.FIRM_ID")
 	ar_type$=callpoint!.getColumnData("ARE_DATECHANGE.AR_TYPE")
@@ -92,9 +88,9 @@ rem if rec_data$[1,0](1,1)="A" or fnget_rec$(callpoint.callpoint_dvar$)="" or fn
 	callpoint!.setColumnData("ARE_DATECHANGE.INVOICE_TYPE",art_invhdr.invoice_type$)
 	callpoint!.setColumnData("ARE_DATECHANGE.INV_DUE_DATE",art_invhdr.inv_due_date$)
 	callpoint!.setStatus("ABLEMAP-REFRESH")
-rem endif
+
 invalid_inv:
 	if msg_id$<>"" then
 		gosub disp_message
+		escape
 	endif
-

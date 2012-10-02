@@ -1,0 +1,252 @@
+rem --- Delete Requisition, Purchase Order or Receipt
+rem --- Program poc_deletepo.aon v8.0.0 18Dec2007 (poc_ea)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/18/2007 03:09:32)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- type$         : record type (input)
+rem ---               : R=requisition/P=purchase order
+rem ---               : Q=qa receiver/C=po receiver
+rem --- channels[n]   : channel numbers (input)
+rem ---               : [1]  = pos-10 (not used)   			[2]  = pom-02
+rem ---               : [3]  = poe-01/02/03/04     			[4]  = poe-11/12/13/14
+rem ---               : [5]  = poe-21/22/23/24     			[6]  = poe-31/32/33/34 (not used)
+rem ---               : [7]  = poe-41/42/43/44 (not used)   [8]  = poe-51/52/53/54 (not used)
+rem ---               : [9]  = ivm-01              			[10] = ivm-02
+rem ---               : [11] = sfe-22              			[12] = sfe-32
+rem ---               : [13] = poe-08              			[14] = poe-63
+rem --- sf$	          : sf installed? (input)
+rem --- ivs_params$   : IV parameters (input)
+rem --- hdr_pri_key$  : header primary key -- firm/po or firm/req  (input)
+rem --- hdr_alt_key1$ : header alt key -- used for po/req to remove print record (input)
+rem --- dtl_tpl$      : detail record template (input)
+rem --- status        : 0=no error (returned)
+
+
+    seterr std_error
+    setesc std_error
+    enter type$,channels[all],sf$,ivs_params$,hdr_pri_key$,hdr_alt_key1$,dtl_tpl$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock Files
+
+    poc_linecode_dev=channels[2],poe_hdr_dev=channels[3];rem --- poe-01/02/03/04
+    poe_det_dev=channels[4];rem --- poe-11/12/13/14
+    poe_print_or_lot_dev=channels[5];rem --- poe-21/22, or poe-23/24
+    ivm_itemmast_dev=channels[9]
+    ivm_itemwhse_dev=channels[10]
+    sfe_womatl_dev=channels[11],sfe_wosubcnt_dev=channels[12]
+    poe_linked_dev=channels[13]
+    poe_qarejdet_dev=channels[14]
+
+rem --- Parameters
+
+    keylen=18
+    if pos(type$="QC") then let keylen=25
+    places=num(ivs_params.precision$)
+
+rem --- Initializations
+
+    dim w0$(keylen),w[12]
+    dim files[99],item$[6],params$[20],params[20],refs[20],refs$[20]
+    dim poe_det$:dtl_tpl$
+    more=1
+    files[1]=ivm_itemmast_dev
+    files[2]=ivm_itemwhse_dev
+    
+rem --- retrieve template for poc_linecode file
+
+	num_files=1,open_beg=1,open_end=num_files
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+	open_tables$[1]="POC_LINECODE", open_opts$[1]="T"
+	
+	gosub open_tables
+	
+	dim poc_linecode$:open_tpls$[1]
+    
+    
+rem --- Initialize Atamo for subsequent calls
+
+call pgmdir$+"ivc_itemupdt.aon::init",files[all],ivs01a$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status    
+
+rem --- Position detail file
+
+    read (poe_det_dev,key=hdr_pri_key$,dom=*next)
+
+    while more
+
+      	k$=key(poe_det_dev,end=*break)
+        if pos(hdr_pri_key$=k$)<>1 then break
+        read record (poe_det_dev) poe_det$
+        remove (poe_det_dev,key=k$,dom=*break)
+        remove (poe_linked_dev,key=(poe_det.firm_id$ + poe_det.po_no$ + poe_det.internal_seq_no$),err=*next)
+
+        if poe_det.firm_id$+poe_det.po_line_code$<>(poc_linecode.firm_id$ + poc_linecode.po_line_code$)
+        	dim poc_linecode$:fattr(poc_linecode$)
+            poc_linecode.firm_id$ = poe_det.firm_id$
+            poc_linecode.po_line_code$ = poe_det.po_line_code$
+            find record (poc_linecode_dev,key=poc_linecode.firm_id$ + poc_linecode.po_line_code$,dom=*next) poc_linecode$
+        endif
+
+rem --- Reduce quantity on-order
+
+        if poc_linecode.line_type$ = "S"  
+
+            if type$="P"
+escape;rem not yet exercised
+                item$[0]=firm_id$
+                item$[1]=poe_det.warehouse_id$,item$[2]=poe_det.item_id$,refs[0]=-(poe_det.qty_ordered - poe_det.qty_received)*poe_det.conv_factor                
+                action$="OO"
+                call pgmdir$+"ivc_itemupdt.aon",action$,files[all],ivs_params$,item$[all],refs$[all],refs[all],rd_table_chans$[all],status                
+            endif
+
+rem --- Delete lot/serial file
+
+            if pos(type$="QC")<>0 then
+escape;rem not yet exercised            
+                channel=poe_print_or_lot_dev; rem "poe-23 or poe-24
+                if channel gosub remove_record
+            endif
+
+         endif
+
+rem --- Delete rejection detail file
+
+        if type$="Q" then 
+escape;rem not yet exercised                    
+            channel=poe_qarejdet_dev
+            if channel gosub remove_record
+        endif
+
+rem --- Remove any existing work order link
+
+        if sf$<>"Y" then continue
+escape;rem not yet exercised; poc_wa.bbx not renamed/debugged        	
+        if pos(poc_linecode.line_type$="NS")=0 then continue
+        if pos(type$="RP")=0 then continue
+        if cvs(poe_det.wo_no$,2)="" then continue
+        po$=(poe_det.po_no$ + poe_det.internal_seq_no$)
+        oldwo$=(poe_det.wo_no$ + poe_det.wo_seq_ref$),newwo$=""
+        poc_linecode_tpl$=fattr(poc_linecode$)
+        call pgmdir$+"poc_wa.bbx",sfe_womatl_dev,sfe_wosubcnt_dev,firm_id$,po$,type$,poc_linecode$,poc_linecode_tpl$,oldwo$,newwo$,places,status
+
+rem --- Loop back for next detail
+
+    wend
+
+
+rem --- Remove print record
+
+    if pos(type$<>"QC") then 
+        remove (poe_print_or_lot_dev,key=hdr_alt_key1$,dom=*next)
+    endif
+
+rem --- Remove header
+
+    remove (poe_hdr_dev,key=hdr_pri_key$);rem add dom for production
+
+rem --- All done
+
+    goto std_exit
+
+remove_record:
+
+rem --- Remove Record
+
+    read (channel,key=hdr_pri_key$,dom=*next)
+    
+    while more
+        k$=key(channel,end=*break)
+        if pos(hdr_pri_key$=k$)<>1 then break
+        remove (channel,key=k$)
+    wend
+
+    return
+    
+open_tables: rem --- Call open table routine	
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+		status=912
+		goto std_exit
+	endif
+
+return
+    
+    
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

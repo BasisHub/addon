@@ -36,7 +36,7 @@ rem --- Enable/Disable fields
 
 	if user_tpl.dist_by_item$="Y"
 		ctl_name$="IVS_DEFAULTS.GL_COGS_ACCT"
-		ctl_stat$="D"
+		ctl_stat$="I"
 		gosub disable_fields
 		ctl_name$="IVS_DEFAULTS.GL_COGS_ADJ"
 		gosub disable_fields
@@ -66,6 +66,6 @@ rem --- Enable/Disable fields
 		ctl_name$="IVS_DEFAULTS.GL_PUR_ACCT"
 		gosub disable_fields
 		ctl_name$="IVS_DEFAULTS.AR_DIST_CODE"
-		ctl_stat$="D"
+		ctl_stat$="I"
 		gosub disable_fields
 	endif

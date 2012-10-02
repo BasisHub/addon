@@ -7,7 +7,7 @@ rem --- Enable key fields
 	ctl_name$="SAM_DISTCODE.YEAR"
 	ctl_stat$=""
 	gosub disable_fields
-	ctl_name$="SAM_DISTCODE.DIST_CODE"
+	ctl_name$="SAM_DISTCODE.AR_DIST_CODE"
 	ctl_stat$=""
 	gosub disable_fields
 	ctl_name$="SAM_DISTCODE.PRODUCT_TYPE"
@@ -89,8 +89,8 @@ syspgmdir$=stbl("+DIR_SYP",err=*next)
 key_pfx$=firm_id$
 if cvs(callpoint!.getColumnData("SAM_DISTCODE.YEAR"),2) <>"" then
 	key_pfx$=key_pfx$+callpoint!.getColumnData("SAM_DISTCODE.YEAR")
-	if cvs(callpoint!.getColumnData("SAM_DISTCODE.DIST_CODE"),2) <>"" then
-		key_pfx$=key_pfx$+callpoint!.getColumnData("SAM_DISTCODE.DIST_CODE")
+	if cvs(callpoint!.getColumnData("SAM_DISTCODE.AR_DIST_CODE"),2) <>"" then
+		key_pfx$=key_pfx$+callpoint!.getColumnData("SAM_DISTCODE.AR_DIST_CODE")
 		if cvs(callpoint!.getColumnData("SAM_DISTCODE.PRODUCT_TYPE"),2) <>"" then
 			key_pfx$=key_pfx$+callpoint!.getColumnData("SAM_DISTCODE.PRODUCT_TYPE")
 			if cvs(callpoint!.getColumnData("SAM_DISTCODE.ITEM_ID"),2) <>"" then
@@ -119,7 +119,7 @@ dim sam_tpl$:sam_tpl$
 while 1
 	readrecord(fnget_dev("SAM_DISTCODE"),key=rd_key$,dom=*break)sam_tpl$
 	callpoint!.setColumnData("SAM_DISTCODE.YEAR",rd_key.year$)
-	callpoint!.setColumnData("SAM_DISTCODE.DIST_CODE",rd_key.dist_code$)
+	callpoint!.setColumnData("SAM_DISTCODE.AR_DIST_CODE",rd_key.ar_dist_code$)
 	callpoint!.setColumnData("SAM_DISTCODE.PRODUCT_TYPE",rd_key.product_type$)
 	callpoint!.setColumnData("SAM_DISTCODE.ITEM_ID",rd_key.item_id$)
 	For x=1 to 13
@@ -131,7 +131,7 @@ while 1
 	ctl_name$="SAM_DISTCODE.YEAR"
 	ctl_stat$="D"
 	gosub disable_fields
-	ctl_name$="SAM_DISTCODE.DIST_CODE"
+	ctl_name$="SAM_DISTCODE.AR_DIST_CODE"
 	ctl_stat$="D"
 	gosub disable_fields
 	ctl_name$="SAM_DISTCODE.PRODUCT_TYPE"
