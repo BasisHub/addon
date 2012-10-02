@@ -1,3 +1,25 @@
+[[SFR_WOTRANSHIST.BILL_NO.AVAL]]
+rem --- Validate against BOM_BILLMAST
+
+	bmm_billmast=fnget_dev("BMM_BILLMAST")
+	found=0
+	bill$=callpoint!.getUserInput()
+	while 1
+		find (bmm_billmast,key=firm_id$+bill$,dom=*break)
+		found=1
+		break
+	wend
+
+	if found=0 and cvs(bill$,3)<>""
+		msg_id$="INPUT_ERR_DATA"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+[[SFR_WOTRANSHIST.BFMC]]
+rem --- Set Custom Query for BOM Item Number
+
+	callpoint!.setTableColumnAttribute("SFR_WOTRANSHIST.BILL_NO_1","IDEF","BOM_LOOKUP")
+	callpoint!.setTableColumnAttribute("SFR_WOTRANSHIST.BILL_NO_2","IDEF","BOM_LOOKUP")
 [[SFR_WOTRANSHIST.REPORT_SEQ.AVAL]]
 rem ---- If By Bill and a whse hasn't been entered, default whse
 
@@ -9,7 +31,6 @@ if callpoint!.getUserInput()="B"
 		callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID",whse$,1)
 	endif
 endif
-
 [[SFR_WOTRANSHIST.<CUSTOM>]]
 #include std_missing_params.src
 [[SFR_WOTRANSHIST.BSHO]]
@@ -71,35 +92,14 @@ rem           (form builds list w/o regards to the params)
 			wend
 		endif
 
+	if bm$="Y"
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="BMM_BILLMAST",open_opts$[1]="OTA"
+		gosub open_tables
+	endif
 [[SFR_WOTRANSHIST.AREC]]
 rem --- Set default Warehouse
 
 	whse$=callpoint!.getDevObject("dflt_whse")
 	callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID",whse$,1)
-
-rem --- Set initial values for descriptions
-
-	callpoint!.setColumnData("<<DISPLAY>>.BEG_DESC","First",1)
-	callpoint!.setColumnData("<<DISPLAY>>.END_DESC","Last",1)
-[[SFR_WOTRANSHIST.RPT_BILL_NO.AVAL]]
-rem --- Set descriptions
-
-	ivm_itemmast=fnget_dev("IVM_ITEMMAST")
-	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
-	item$=callpoint!.getUserInput()
-	read record (ivm_itemmast,key=firm_id$+item$,dom=*next) ivm_itemmast$
-
-	if num(callpoint!.getControlID()) = num(callpoint!.getControl("RPT_BILL_NO_1").getID()) then
-		if cvs(item$,2)<>""
-			callpoint!.setColumnData("<<DISPLAY>>.BEG_DESC",ivm_itemmast.item_desc$,1)
-		else
-			callpoint!.setColumnData("<<DISPLAY>>.BEG_DESC","First",1)
-		endif
-	endif
-	if num(callpoint!.getControlID()) = num(callpoint!.getControl("RPT_BILL_NO_2").getID()) then
-		if cvs(item$,2)<>""
-			callpoint!.setColumnData("<<DISPLAY>>.END_DESC",ivm_itemmast.item_desc$,1)
-		else
-			callpoint!.setColumnData("<<DISPLAY>>.END_DESC","Last",1)
-		endif
-	endif

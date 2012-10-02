@@ -1,15 +1,6 @@
 [[SFE_WOMATISD.AGCL]]
 rem --- set preset val for batch_no
 	callpoint!.setTableColumnAttribute("SFE_WOMATISD.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-[[SFE_WOMATISD.REQUIRE_DATE.BINP]]
-rem --- Enable lot/serial button
-	gosub able_lot_button
-[[SFE_WOMATISD.QTY_ISSUED.BINP]]
-rem --- Enable lot/serial button
-	gosub able_lot_button
-[[SFE_WOMATISD.ITEM_ID.AVEC]]
-rem --- Enable lot/serial button
-	gosub able_lot_button
 [[SFE_WOMATISD.BDGX]]
 rem --- Disable detail-only buttons
 	callpoint!.setOptionEnabled("LENT",0)
@@ -265,10 +256,10 @@ rem --- Delete lot/serial and inventory commitments. Must do this before sfe_wom
 
 		found=0
 		sfe_womatdtl_key$=firm_loc_wo$+sfe_womatisd.womatdtl_seq_ref$
-		readrecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next)sfe_womatdtl$; found=1
+		extractrecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next)sfe_womatdtl$; found=1
 		if found then
 			sfe_womatdtl.qty_ordered=sfe_womatdtl.tot_qty_iss
-			writerecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$)sfe_womatdtl$
+			writerecord(sfe_womatdtl_dev)sfe_womatdtl$
 		endif
 	else
 		rem --- Retaining committments, so only delete additional committments made after WO was released
@@ -315,16 +306,19 @@ rem --- Were commitments retained during delete? No if sfe_womatdtl.qty_ordered=
 	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
 	firm_loc_wo$=callpoint!.getDevObject("firm_loc_wo")
 	sfe_womatdtl_key$=firm_loc_wo$+sfe_womatisd.womatdtl_seq_ref$
-	readrecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next)sfe_womatdtl$
+	extractrecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next)sfe_womatdtl$
 	if sfe_womatdtl.qty_ordered=sfe_womatisd.tot_qty_iss then
 		rem --- Undelete inventory commitments (recommit)
 		sfe_womatdtl.qty_ordered=sfe_womatisd.qty_ordered
-		writerecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$)sfe_womatdtl$
+		writerecord(sfe_womatdtl_dev)sfe_womatdtl$
 
 		items$[1]=sfe_womatisd.warehouse_id$
 		items$[2]=sfe_womatisd.item_id$
 		refs[0]=max(0,sfe_womatisd.qty_ordered-sfe_womatisd.tot_qty_iss)
 		call stbl("+DIR_PGM")+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+	else
+		rem --- remove extract lock
+		find(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next)
 	endif
 
 rem --- Init DISPLAY columns
@@ -434,17 +428,13 @@ rem --- Init DISPLAY columns
 	gosub init_display_cols
 [[SFE_WOMATISD.BGDR]]
 rem --- Init DISPLAY columns
-
-	qty_ordered=num(callpoint!.getColumnData("SFE_WOMATISD.QTY_ORDERED"))
-	tot_qty_iss=num(callpoint!.getColumnData("SFE_WOMATISD.TOT_QTY_ISS"))
-	callpoint!.setColumnData("<<DISPLAY>>.QTY_REMAIN",str(qty_ordered-tot_qty_iss),1)
-
-	qty_issued=num(callpoint!.getColumnData("SFE_WOMATISD.QTY_ISSUED"))
-	issue_cost=num(callpoint!.getColumnData("SFE_WOMATISD.ISSUE_COST"))
-	callpoint!.setColumnData("<<DISPLAY>>.VALUE",str(qty_issued*issue_cost),1)
+	gosub init_display_cols
 [[SFE_WOMATISD.AGRN]]
 rem --- Init DISPLAY columns
 	gosub init_display_cols
+
+rem --- Enable lot/serial button
+	gosub able_lot_button
 [[SFE_WOMATISD.ADGE]]
 
 rem --- Set precision

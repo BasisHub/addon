@@ -1,3 +1,20 @@
+[[SFR_SCHEDWO.SCHED_FLAG.AVAL]]
+rem --- Set default Start and Completion Date for Manual
+
+	if cvs(callpoint!.getColumnData("SFR_SCHEDWO.SCHED_FLAG"),2)<>"M" and
+:		callpoint!.getUserInput()="M"
+		ivm_itemwhse=fnget_dev("IVM_ITEMWHSE")
+		dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
+		read record (ivm_itemwhse,key=firm_id$+callpoint!.getDevObject("default_wh")+
+:			callpoint!.getDevObject("item_id"),dom=*next)ivm_itemwhse$
+		new_date$=""
+		leadtime=ivm_itemwhse.lead_time
+		call stbl("+DIR_PGM")+"adc_daydates.aon",stbl("+SYSTEM_DATE"),new_date$,leadtime
+		if new_date$<>"N"
+			callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE",stbl("+SYSTEM_DATE"),1)
+			callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE",new_date$,1)
+		endif
+	endif
 [[SFR_SCHEDWO.BSHO]]
 rem --- set default DevObjects
 
@@ -60,11 +77,3 @@ rem ========================================================
 	endif
 
 	return
-[[SFR_SCHEDWO.ESTSTT_DATE.AVAL]]
-rem --- Estimated Start Date
-
-	start_date$=callpoint!.getUserInput()
-	if pos(" "<>callpoint!.getDevObject("order_no"))=0
-		call "adc_daydates.aon",start_date$,ret_date$,leadtime
-		if ret_date$<>"N" callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE",ret_date$,1)
-	endif

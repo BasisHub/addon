@@ -191,7 +191,6 @@ rem --- confirm ready to port selected files?
 			callpoint!.setDevObject("source_folder",callpoint!.getColumnData("ADX_DATAPORT.SOURCE_DIR"))
 			callpoint!.setDevObject("destin_folder",callpoint!.getColumnData("ADX_DATAPORT.TARGET_DIR"))
 			callpoint!.setDevObject("vectPort",vectPort!)
-			callpoint!.setDevObject("port_masks",callpoint!.getColumnData("ADX_DATAPORT.PORT_MASKS"))
 		else
 			callpoint!.setStatus("ABORT")
 		endif

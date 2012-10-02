@@ -1,3 +1,25 @@
+[[SFR_WORDJOBSTAT.BILL_NO.AVAL]]
+rem --- Validate against BOM_BILLMAST
+
+	bmm_billmast=fnget_dev("BMM_BILLMAST")
+	found=0
+	bill$=callpoint!.getUserInput()
+	while 1
+		find (bmm_billmast,key=firm_id$+bill$,dom=*break)
+		found=1
+		break
+	wend
+
+	if found=0 and cvs(bill$,3)<>""
+		msg_id$="INPUT_ERR_DATA"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+[[SFR_WORDJOBSTAT.BFMC]]
+rem --- Set Custom Query for BOM Item Number
+
+	callpoint!.setTableColumnAttribute("SFR_WORDJOBSTAT.BILL_NO_1", "IDEF", "BOM_LOOKUP")
+	callpoint!.setTableColumnAttribute("SFR_WORDJOBSTAT.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[SFR_WORDJOBSTAT.BSHO]]
 rem --- will open and read shop floor param to see if BOM and/or OP are installed
 rem --- then will build list for the report sequence listbutton accordingly
@@ -30,6 +52,11 @@ if bm$="Y"
 	bill_no$(desc_len+1,1)="B"
 	bill_no$(code_len,1)=";"
 	list!.addItem(bill_no$(1,desc_len-1))
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="BMM_BILLMAST",open_opts$[1]="OTA"
+	gosub open_tables
+
 endif
 
 if op$="Y"

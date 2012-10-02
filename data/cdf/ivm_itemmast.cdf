@@ -1,3 +1,11 @@
+[[IVM_ITEMMAST.PRODUCT_TYPE.AVAL]]
+rem --- Set SA Level if new record
+	if callpoint!.getRecordMode()="A"
+		ivm10_dev=fnget_dev("IVC_PRODCODE")
+		dim ivm10a$:fnget_tpl$("IVC_PRODCODE")
+		read record (ivm10_dev,key=firm_id$+"A"+callpoint!.getUserInput()) ivm10a$
+		callpoint!.setColumnData("IVM_ITEMMAST.SA_LEVEL",ivm10a.sa_level$,1)
+	endif
 [[IVM_ITEMMAST.AOPT-BOMU]]
 rem --- Display Where Used from BOMs
 

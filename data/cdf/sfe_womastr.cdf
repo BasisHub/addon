@@ -1,3 +1,25 @@
+[[SFE_WOMASTR.AOPT-LSNO]]
+rem --- launch sfe_wolotser form to assign lot/serial numbers
+rem --- should only be enabled if on an inventory type WO, if item is lotted/serialized, and if params have LS set.
+
+	key_pfx$=firm_id$+callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")+callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+
+	dim dflt_data$[3,1]
+	dflt_data$[1,0]="SFE_WOLOTSER.FIRM_ID"
+	dflt_data$[1,1]=firm_id$
+	dflt_data$[2,0]="SFE_WOLOTSER.WO_LOCATION"
+	dflt_data$[2,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
+	dflt_data$[3,0]="SFE_WOLOTSER.WO_NO"
+	dflt_data$[3,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"SFE_WOLOTSER",
+:		stbl("+USER_ID"),
+:		access$,
+:		key_pfx$,
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
 [[SFE_WOMASTR.AOPT-DRPT]]
 rem --- WO Detail Report (Hard Copy)
 
@@ -13,29 +35,6 @@ rem --- WO Detail Report (Hard Copy)
 
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		"SFR_WOHARDCOPY",
-:		stbl("+USER_ID"),
-:		access$,
-:		key_pfx$,
-:		table_chans$[all],
-:		"",
-:		dflt_data$[all]
-[[SFE_WOMASTR.AOPT-LSNO]]
-rem --- launch sfe_wolotser if on an inventory type WO, if item is lotted/serialized, and if params have LS set.
-rem --- tests not in place yet, form hooked up, but no design, callpoint code, etc., done on it yet
-rem --- also, if on a closed WO, allow access? v6 not only allows access, but mods to lot/ser; I'm thinking access, but grid disabled if it's a closed WO
-
-	key_pfx$=firm_id$+callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")+callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
-
-	dim dflt_data$[3,1]
-	dflt_data$[1,0]="FIRM_ID"
-	dflt_data$[1,1]=firm_id$
-	dflt_data$[2,0]="WO_LOCATION"
-	dflt_data$[2,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
-	dflt_data$[3,0]="WO_NO"
-	dflt_data$[3,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
-
-	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
-:		"SFE_WOLOTSER",
 :		stbl("+USER_ID"),
 :		access$,
 :		key_pfx$,
@@ -228,9 +227,12 @@ rem --- Open tables
 	num_files=6
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
-	if bm$<>"Y"
+	if bm$="Y"
 		call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
 		bm$=info$[20]
+	endif
+
+	if bm$<>"Y"
 		open_tables$[1]="SFC_OPRTNCOD",open_opts$[1]="OTA"
 	else
 		open_tables$[1]="BMC_OPCODES",open_opts$[1]="OTA"
@@ -242,7 +244,7 @@ rem --- Open tables
 	endif
 
 	callpoint!.setDevObject("bm",bm$)
-	x$=stbl("bm",bm$)
+	x$=stbl("bm",bm$);rem for downstream rpt when callpoint! object not defined
 
 	gosub open_tables
 
@@ -294,14 +296,58 @@ rem --- alter control label and prompt for Bill No vs. Item ID depending on whet
 	if bm$="Y"
 		lbl_ctl!.setText(Translate!.getTranslation("AON_BILL_NUMBER:","Bill Number:",1))
 		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID","PROM",Translate!.getTranslation("AON_ENTER_BILL_NUMBER","Enter a valid Bill of Materials number",1))
+		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID", "IDEF", "BOM_LOOKUP")
 	else
 		lbl_ctl!.setText(Translate!.getTranslation("AON_INVENTORY_ITEM_ID:","Inventory Item ID:",1))
 		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID","PROM",Translate!.getTranslation("AON_ENTER_INVENTORY_ITEM_ID","Enter a valid Inventory Item ID",1))
 	endif
 [[SFE_WOMASTR.WO_NO.AVAL]]
+rem --- Do we need to create a new work order number?
+
+	new_seq$ = "N"
+	wo_no$ = callpoint!.getUserInput()
+
+	if cvs(wo_no$, 2) = "" then 
+
+	rem --- Option on work order no field to assign a new sequence on null must be cleared
+
+		call stbl("+DIR_SYP")+"bas_sequences.bbj","WO_NO",wo_no$,table_chans$[all]
+		
+		if wo_no$ = "" then
+			callpoint!.setStatus("ABORT")
+			break; rem --- exit callpoint
+		else
+			callpoint!.setUserInput(wo_no$)
+			new_seq$ = "Y"
+		endif
+	endif
+
+rem --- Does order exist?
+
+	sfe01_dev = fnget_dev("SFE_WOMASTR")
+	dim sfe01a$:fnget_tpl$("SFE_WOMASTR")
+
+	wo_loc$=sfe01a.wo_location$
+	found = 0
+	start_block = 1
+
+	if start_block then
+		find record (sfe01_dev, key=firm_id$+wo_loc$+wo_no$, dom=*endif)
+		found = 1
+	endif
+
+rem --- A new record must be the next sequence
+
+	if found = 0 and new_seq$ = "N"  and callpoint!.getDevObject("wo_no") = "" then
+		msg_id$ = "SF_NEW_ORD_USE_SEQ"
+		gosub disp_message	
+		callpoint!.setFocus("SFE_WOMASTR.WO_NO")
+		break; rem --- exit from callpoint
+	endif
+
 rem --- put WO number and loc in DevObject
 
-	callpoint!.setDevObject("wo_no",callpoint!.getUserInput())
+	callpoint!.setDevObject("wo_no",wo_no$)
 	callpoint!.setDevObject("wo_loc",callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION"))
 [[SFE_WOMASTR.OPENED_DATE.AVAL]]
 rem --- need to see if date has been changed; if so, prompt to change in sfe-02/22/23 as well
@@ -709,6 +755,7 @@ rem --- Release/Commit the Work Order
 rem --- Schedule the Work Order
 
 	callpoint!.setDevObject("order_no",callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"))
+	callpoint!.setDevObject("item_id",callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"))
 
 	dim dflt_data$[3,1]
 	dflt_data$[1,0]="SCHED_FLAG"
@@ -726,39 +773,44 @@ rem --- Schedule the Work Order
 :		"",
 :		dflt_data$[all]
 
-	start_date$=callpoint!.getDevObject("start_date")
-	comp_date$=callpoint!.getDevObject("comp_date")
-	sched_method$=callpoint!.getDevObject("sched_method")
-	callpoint!.setColumnData("SFE_WOMASTR.ESTSTT_DATE",start_date$,1)
-	callpoint!.setColumnData("SFE_WOMASTR.ESTCMP_DATE",comp_date$,1)
-	callpoint!.setColumnData("SFE_WOMASTR.SCHED_FLAG",sched_method$,1)
-	callpoint!.setStatus("MODIFIED")
+	if callpoint!.getDevObject("sched_method")<>""
+		start_date$=callpoint!.getDevObject("start_date")
+		comp_date$=callpoint!.getDevObject("comp_date")
+		sched_method$=callpoint!.getDevObject("sched_method")
+		callpoint!.setColumnData("SFE_WOMASTR.ESTSTT_DATE",start_date$,1)
+		callpoint!.setColumnData("SFE_WOMASTR.ESTCMP_DATE",comp_date$,1)
+		callpoint!.setColumnData("SFE_WOMASTR.SCHED_FLAG",sched_method$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
 [[SFE_WOMASTR.ORDER_NO.AVAL]]
 rem --- Validate Open Sales Order
 
-	if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
+	if cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"),2)
 		callpoint!.setColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF","",1)
 	endif
 
-	ope_ordhdr=fnget_dev("OPE_ORDHDR")
-	dim ope_ordhdr$:fnget_tpl$("OPE_ORDHDR")
-	cust$=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
-	order$=callpoint!.getUserInput()
-	found_ord$="N"
-	while 1
-		read (ope_ordhdr,key=firm_id$+ope_ordhdr.ar_type$+cust$+order$,dom=*break)
-		found_ord$="Y"
-		break
-	wend
+	if cvs(callpoint!.getUserInput(),2)<>""
+		ope_ordhdr=fnget_dev("OPE_ORDHDR")
+		dim ope_ordhdr$:fnget_tpl$("OPE_ORDHDR")
+		cust$=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+		order$=callpoint!.getUserInput()
+		found_ord$="N"
+		while 1
+			read (ope_ordhdr,key=firm_id$+ope_ordhdr.ar_type$+cust$+order$,dom=*break)
+			found_ord$="Y"
+			break
+		wend
 
-	if found_ord$="N"
-		msg_id$="SF_INVALID_SO_ORD"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-		break
+		if found_ord$="N"
+			msg_id$="SF_INVALID_SO_ORD"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+
+		gosub build_ord_line
+
 	endif
-
-	gosub build_ord_line
 [[SFE_WOMASTR.CUSTOMER_ID.AVAL]]
 rem --- Disable Order info if Customer not entered
 
@@ -789,9 +841,11 @@ rem --- Set default values
 		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE",ivm_itemmast.unit_of_sale$,1)
 	endif
 	if callpoint!.getDevObject("lotser")<>"N" and ivm_itemmast.lotser_item$+ivm_itemmast.inventoried$="YY"
-		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","Y",1)
+		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","Y")
+		callpoint!.setOptionEnabled("LSNO",1)
 	else
-		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","N",1)
+		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","N")
+		callpoint!.setOptionEnabled("LSNO",0)
 	endif
 
 	if callpoint!.getDevObject("bm")="Y"
@@ -815,6 +869,22 @@ rem --- Set default values
 		callpoint!.setColumnData("SFE_WOMASTR.SCH_PROD_QTY",bmm_billmast.std_lot_size$,1)
 		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE",bmm_billmast.unit_measure$,1)
 		callpoint!.setColumnData("SFE_WOMASTR.BILL_REV",bmm_billmast.bill_rev$,1)
+	endif
+
+rem --- Set default Completion Date
+
+	if cvs(callpoint!.getColumnData("SFE_WOMASTR.ESTCMP_DATE"),2)="" and
+:		callpoint!.getColumnData("SFE_WOMASTR.SCHED_FLAG")="M"
+		ivm_itemwhse=fnget_dev("IVM_ITEMWHSE")
+		dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
+		read record (ivm_itemwhse,key=firm_id$+callpoint!.getDevObject("default_wh")+
+:			callpoint!.getUserInput(),dom=*next)ivm_itemwhse$
+		new_date$=""
+		leadtime=ivm_itemwhse.lead_time
+		call stbl("+DIR_PGM")+"adc_daydates.aon",stbl("+SYSTEM_DATE"),new_date$,leadtime
+		if new_date$<>"N"
+			callpoint!.setColumnData("SFE_WOMASTR.ESTCMP_DATE",new_date$,1)
+		endif
 	endif
 [[SFE_WOMASTR.WO_STATUS.AVAL]]
 rem --- Only allow changes to status if P or Q
@@ -1085,8 +1155,15 @@ rem --- Build Sequence list button
 		dim ivm01a$:fattr(ivm01a$)
 		read record (ivm01_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm01a$
 		ops_lines!.addItem(ope11a.internal_seq_no$)
-		ops_items!.addItem(ope11a.item_id$)
-		ops_list!.addItem(cvs(ope11a.item_id$,3)+" - "+ivm01a.item_desc$)
+		item_list$=item_list$+ope11a.item_id$
+		work_var=pos(ope11a.item_id$=item_list$,len(ope11a.item_id$),0)
+		if work_var>1
+			work_var$=cvs(ope11a.item_id$,2)+"("+str(work_var)+")"
+		else
+			work_var$=cvs(ope11a.item_id$,2)
+		endif
+		ops_items!.addItem(work_var$)
+		ops_list!.addItem(work_var$+" - "+ivm01a.item_desc$)
 	wend
 
 	if ops_lines!.size()>0

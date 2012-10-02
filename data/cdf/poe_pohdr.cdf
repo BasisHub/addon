@@ -144,11 +144,13 @@ else
 			poe_reqdet_dev=fnget_dev("POE_REQDET")
 			poe_pohdr_dev=fnget_dev("POE_POHDR")
 			poe_podet_dev=fnget_dev("POE_PODET")
+			poc_linecode_dev=fnget_dev("POC_LINECODE")
 
 			dim poe_reqhdr$:fnget_tpl$("POE_REQHDR")
 			dim poe_reqdet$:fnget_tpl$("POE_REQDET")
 			dim poe_pohdr$:fnget_tpl$("POE_POHDR")
 			dim poe_podet$:fnget_tpl$("POE_PODET")
+			dim poc_linecode$:fnget_tpl$("POC_LINECODE")
 
 			po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
 			
@@ -168,17 +170,27 @@ else
 				poe_reqdet$=field(poe_reqdet$)
 				write record (poe_reqdet_dev)poe_reqdet$
 			wend
-			rem --- old version called poc_wa if shop floor was installed and requisition was retained --- that logic not enabled/tested here
-			rem --- from v7 poe_bb.bbx:
-			rem  IF SF$="N" OR RETAIN_REQ$="N" THEN GOTO RESET_PO_NO
-			rem  READ (POE11_DEV,KEY=B0$,DOM=4630)
-			rem  READ (POE11_DEV,END=RESET_PO_NO)IOL=POE11A
-			rem  IF W0$(1,15)<>B0$ THEN GOTO RESET_PO_NO
-			rem  IF CVS(W2$(1,7),2)="" THEN GOTO 4690
-			rem  FIND (POM02_DEV,KEY=N0$+W1$(1,2),DOM=4690)IOL=POM02A
-			rem  IF POS(Y1$(21,1)="NS")=0 THEN GOTO 4690
-			rem  CALL "poc_wa.bbx",SFE22_DEV,SFE32_DEV,N0$,W0$(9),"R",Y1$,W2$(1,10),W2$(1,10),I[1],STATUS
-			rem  GOTO 4630
+
+			if callpoint!.getDevObject("SF_installed")="Y"
+				sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+				sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+				read (poe_reqdet_dev,key=firm_id$+poe_reqhdr.req_no$,dom=*next)
+				while 1
+					read record (poe_reqdet_dev,end=*break)poe_reqdet$
+					if pos(firm_id$+poe_reqhdr.req_no$=poe_reqdet$)<>1 break
+					if cvs(poe_reqdet.wo_no$,2)="" continue
+					find record(poc_linecode_dev,key=firm_id$+poe_reqdet.po_line_code$,dom=*continue)poc_linecode$
+					if pos(poc_linecode.line_type$="NS")=0 continue
+					req_no$=poe_reqdet.req_no$
+					req_seq$=poe_reqdet.internal_seq_no$
+					line_type$=poc_linecode.line_type$
+					old_wo$=poe_reqdet.wo_no$
+					old_woseq$=poe_reqdet.wk_ord_seq_ref$
+					new_wo$=old_wo$
+					new_woseq$=old_woseq$
+					call "poc_requpdate.aon",def_womatl_dev,sfe_wosubcnt_dev,req_no$,req_seq$,"R",line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+				wend
+			endif
 		endif
 	endif
 
@@ -402,7 +414,6 @@ if req_no$<>"" and valid_req
 
 		rem --- write the po and podet recs, plus the print rec and poe_linked rec (if dropship)
 		rem --- also call atamo to adjust on order qty for S line types
-		rem --- also calls poc_wa (not yet implemented).
 
 		status = 999
 		call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs_params$,items$[all],refs$[all],refs[all],table_chans$[all],status
@@ -460,12 +471,16 @@ if req_no$<>"" and valid_req
 			rem --- Update work order?
 
 			if callpoint!.getDevObject("SF_installed")<>"N" and pos(poc_linecode.line_type$="NS")<>0 and cvs(poe_podet.wo_no$,2)<>""
-				rem logic not yet exercised - poc_wa not yet debugged
 				sfe_womatl_dev=fnget_dev("SFE_WOMATL")
 				sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
-				oldwo$=poe_podet.wo_no$+poe_podet.wk_ord_seq_ref$
-				newwo$=oldwo$,po$=poe_podet.po_no$+poe_podet.internal_seq_no$
-				rem call stbl("+DIR_PGM")+"poc_wa.bbx",sfe_womatl_dev,sfe_wosubcnt_dev,firm_id$,po$,"P",poc_linecode.code_desc$,oldwo$,newwo$,i[1],status
+				old_wo$=poe_podet.wo_no$
+				old_woseq$=poe_podet.wk_ord_seq_ref$
+				new_wo$=old_wo$
+				new_woseq$=old_woseq$
+				po_no$=poe_podet.po_no$
+				po_seq$=poe_podet.internal_seq_no$
+				call stbl("+DIR_PGM")+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:					po_no$,po_seq$,"P",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
 			endif
 
 			rem --- Update PO to OP link
@@ -492,6 +507,8 @@ if req_no$<>"" and valid_req
 		files[3]=poe_reqhdr_dev
     		files[4]=poe_reqdet_dev
     		files[5]=poe_reqprint_dev
+		files[11]=fnget_dev("SFE_WOMATL")
+		files[12]=fnget_dev("SFE_WOSUBCNT")
 		files[13]=poe_linked_dev
 	
 		sf_installed$=str(callpoint!.getDevObject("SF_installed"))

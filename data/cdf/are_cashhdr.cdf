@@ -41,7 +41,7 @@ if !header_exists then
 		are_cashbal_exists=0
 		dim are31a$:fnget_tpl$("ARE_CASHBAL")	
 		are_cashbal_key$=are11a.firm_id$+are11a.ar_type$+are11a.reserved_key_01$+are11a.customer_id$+are11a.ar_inv_no$
-		readrecord(are_cashbal_dev,key=are_cashbal_key$,dom=*next)are31a$; are_cashbal_exists=1
+		extractrecord(are_cashbal_dev,key=are_cashbal_key$,dom=*next)are31a$; are_cashbal_exists=1; rem Advisory Locking
 		if are_cashbal_exists then
 			are31a.apply_amt$=str(num(are31a.apply_amt)-num(are11a.apply_amt$))
 			are31a.discount_amt$=str(num(are31a.discount_amt$)-num(are11a.discount_amt$))
@@ -489,20 +489,23 @@ update_cashhdr_cashdet_cashbal:
 		old_pay=0,old_disc=0
 rem --- cashhdr, are-01
 		update_are01=0
-		readrecord(are_cashhdr_dev,key=are01a.firm_id$+are01a.batch_no$+are01a.ar_type$+are01a.reserved_key_01$+
-:			are01a.receipt_date$+are01a.customer_id$+are01a.cash_rec_cd$+are11a.ar_check_no$+are01a.reserved_key_02$,
-:			dom=*next)are01a$; update_are01=1
+		are01_key$=are01a.firm_id$+are01a.batch_no$+are01a.ar_type$+are01a.reserved_key_01$+
+:			are01a.receipt_date$+are01a.customer_id$+are01a.cash_rec_cd$+are11a.ar_check_no$+are01a.reserved_key_02$
+		extractrecord(are_cashhdr_dev,key=are01_key$,dom=*next)are01a$; update_are01=1; rem Advisory Locking
 		are01a.payment_amt$=callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT")
 		are01a.cash_check$=callpoint!.getColumnData("ARE_CASHHDR.CASH_CHECK")
 		are01a.aba_no$=callpoint!.getColumnData("ARE_CASHHDR.ABA_NO")
 		are01a$=field(are01a$)
 		rem --- Barista needs to create new header records re bug 6028
-		if update_are01 then writerecord(are_cashhdr_dev)are01a$
+		if update_are01 then 
+			writerecord(are_cashhdr_dev)are01a$
+			extractrecord(are_cashhdr_dev,key=are01_key$)are01a$
+		endif
 		apply_amt=num(pymt_dist$(updt_loop+20,10))
 		disc_amt=num(pymt_dist$(updt_loop+30,10))
 rem --- cashdet, are-11
-		readrecord(are_cashdet_dev,key=are11a.firm_id$+are11a.ar_type$+are11a.reserved_key_01$+are11a.receipt_date$+
-:			are11a.customer_id$+are11a.cash_rec_cd$+are11a.ar_check_no$+are11a.reserved_key_02$+are11a.ar_inv_no$,dom=*next)are11a$
+		extractrecord(are_cashdet_dev,key=are11a.firm_id$+are11a.ar_type$+are11a.reserved_key_01$+are11a.receipt_date$+
+:			are11a.customer_id$+are11a.cash_rec_cd$+are11a.ar_check_no$+are11a.reserved_key_02$+are11a.ar_inv_no$,dom=*next)are11a$; rem Advisory Locking
 		if num(are11a.apply_amt)<>0 or num(are11a.discount_amt$)<>0
 			old_pay=num(are11a.apply_amt$)
 			old_disc=num(are11a.discount_amt$)
@@ -518,14 +521,13 @@ rem --- cashdet, are-11
 :				are11a.customer_id$+are11a.cash_rec_cd$+are11a.ar_check_no$+are11a.reserved_key_02$+are11a.ar_inv_no$,dom=*next)
 		endif
 rem --- cashbal, are-31
-		readrecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
-:			are31a.ar_inv_no$,dom=*next)are31a$
+		extractrecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
+:			are31a.ar_inv_no$,dom=*next)are31a$; rem Advisory Locking
 		are31a.apply_amt$=str(num(are31a.apply_amt)-old_pay+num(are11a.apply_amt$))
 		are31a.discount_amt$=str(num(are31a.discount_amt$)-old_disc+num(are11a.discount_amt$))
 		if num(are31a.apply_amt$)<>0 or num(are31a.discount_amt$)<>0
 			are31a$=field(are31a$)
-			writerecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+
-:				are31a.customer_id$+are31a.ar_inv_no$)are31a$
+			writerecord(are_cashbal_dev)are31a$
 		else
 			remove(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
 :				are31a.ar_inv_no$,dom=*next)
@@ -642,13 +644,13 @@ rem ---  so delete are-11 and 31 manually here.
 :				are11a.customer_id$+are11a.cash_rec_cd$+are11a.ar_check_no$+are11a.reserved_key_02$+are11a.ar_inv_no$)
 		
 			rem --- cashbal, are-31
-			readrecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
-:				are31a.ar_inv_no$)are31a$
+			extractrecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
+:				are31a.ar_inv_no$)are31a$; rem Advisory Locking
 			are31a.apply_amt$=str(num(are31a.apply_amt)-del_pay)
 			are31a.discount_amt$=str(num(are31a.discount_amt$)-del_disc)
 			if num(are31a.apply_amt$)<>0 or num(are31a.discount_amt$)<>0
-				are31a$=field(are31a$);writerecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+
-:					are31a.customer_id$+are31a.ar_inv_no$)are31a$
+				are31a$=field(are31a$)
+				writerecord(are_cashbal_dev)are31a$
 			else
 				remove(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
 :					are31a.ar_inv_no$)

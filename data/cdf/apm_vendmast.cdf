@@ -58,7 +58,8 @@ rem --- from AP Types file (apc_typecode)
 			apm02a.ap_dist_code$=dflt_ap_dist_code$
 			apm02a.payment_grp$=dflt_payment_grp$
 			apm02a.ap_terms_code$=dflt_ap_terms_code$
-
+			apm02a$=field(apm02a$)
+			extract record (apm02_dev,key=apm02a.firm_id$+apm02a.vendor_id$+apm02a.ap_type$,dom=*next)dummy$;rem Advisory Locking
 			write record (apm02_dev)apm02a$
 		endif
 

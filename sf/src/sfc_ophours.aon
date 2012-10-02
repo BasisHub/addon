@@ -13,6 +13,7 @@ rem --- All Rights Reserved
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
+	dir_syp$=stbl("+DIR_SYP")
 
 rem --- Retrieve sysinfo data
 
@@ -22,40 +23,53 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
+rem --- Open File(s)
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="SFM_OPCALNDR",open_opts$[1]="OTA"
+
+    gosub open_tables
+	
+	sfm04_dev=num(open_chans$[1])
+	dim sfm04a$:open_tpls$[1]
+
 rem --- Init Data
 
     flag$=""
     v0=0
+	more=1
 
 rem --- Check Validity Of From Date
 
     v$=v0$
-    x$="",x0=0
+    x$=""
+	x0=0
 
     call pgmdir$+"adc_daydates.aon",v$,x$,x0
-
-    if v$<>"N"
+	if v$="N" goto done_exit
 
     rem --- Check Validity Of Through Date
 
-        v$=v1$
-        x$="",x0=0
-        call pgmdir$+"adc_daydates.aon",v$,x$,x0
-        if v$<>"N"
+	v$=v1$
+	x$=""
+	x0=0
+	call pgmdir$+"adc_daydates.aon",v$,x$,x0
+	if v$="N" goto done_exit
 
-        rem --- Check Forward Or Backward Calc
+rem --- Check Forward Or Backward Calc
 
-            v$=v0$
-            w$=v1$
-            if v0$>v1$ then gosub calc_back else gosub cal_fwd
-
-        endif
+	v$=v0$
+	w$=v1$
+	if v0$>v1$
+		gosub calc_back
+	else
+		gosub calc_fwd
+	endif
 
 done: rem --- Done - Successful
 
-        goto std_exit
-
-    endif
+	goto std_exit
 
 done_exit: rem --- Done - Unsuccessful
 
@@ -73,26 +87,32 @@ calc_back: rem --- Calculate Backwards
     dim hrsperday[31]
 
     while more
-        find record (sfm04_dev,key=firm_id$+op$+str(f_yr)+str(f_mth:"00"),dom=oper_dt_nt_sched) sfm04a$
+		dim sfm04a$:fattr(sfm04a$)
+		flag=1
+        find record (sfm04_dev,key=firm_id$+op$+str(f_yr:"0000")+str(f_mth:"00"),dom=*break) sfm04a$
+		flag=0
         for x=f_day to 1 step -1
             n=n+1
-            hrsperday[n]=num(FIELD(sfm04a$,"hrs_per_day_"+str(x:"00")))
-            if hrsperday[n]<0 then exitto oper_dt_nt_sched
+            hrsperday[n]=num(field(sfm04a$,"hrs_per_day_"+str(x:"00")))
+            if hrsperday[n]<0
+				flag=1
+				break
+			endif
             if w$(1,6)=sfm04a.year$+sfm04a.month$ and num(w$(7,2))>x
-                flg=1
                 break
             endif
             v0=v0-hrsperday[n]
         next x
-        if flg then return
+		if flag=1 break
         x$=""
-        call pgmdir$+"adc_daydates.aon",str(f_yr)+str(f_mth:"00")+"01",x$,-1
+        call pgmdir$+"adc_daydates.aon",str(f_yr:"0000")+str(f_mth:"00")+"01",x$,-1
         f_yr=num(x$(1,4))
         f_mth=num(x$(5,2))
         f_day=num(x$(7,2))
         if w$(1,6)>x$(1,6) then break
     wend
 
+	if flag=1 goto oper_dt_nt_sched
     return
 
 oper_dt_nt_sched: rem --- Operation Date Not Scheduled
@@ -100,20 +120,33 @@ oper_dt_nt_sched: rem --- Operation Date Not Scheduled
     flag$="Y"
     return
 
-cal_fwd: rem --- Calculate Forwards
+calc_fwd: rem --- Calculate Forwards
 
     f_yr=num(v$(1,4))
     f_mth=num(v$(5,2))
     f_day=num(v$(7,2))
 
+	n=0
     flg=0
+	dim hrsperday[31]
+	
     while more
-        find record (sfm04_dev,key=firm_id$+op$+str(f_yr)+str(f_mth:"00"),dom=dt_nt_sched) sfm04a$
-        if sfm04a.days_in_mth=0 then break
+		dim sfm04a$:fattr(sfm04a$)
+		flag=1
+        find record (sfm04_dev,key=firm_id$+op$+str(f_yr)+str(f_mth:"00"),dom=*break) sfm04a$
+		flag=0
+		n=0
+        if sfm04a.days_in_mth=0 
+			flag=1
+			break
+		endif
         for x=f_day to sfm04a.days_in_mth
             n=n+1
-            hrsperday[n]=num(FIELD(sfm04a$,"hrs_per_day_"+str(x:"00")))
-            if hrsperday[n]<0 then break
+            hrsperday[n]=num(field(sfm04a$,"hrs_per_day_"+str(x:"00")))
+            if hrsperday[n]<0
+				flag=1
+				break
+			endif
             if w$(1,6)<sfm04a.year$+sfm04a.month$
                 flg=1
                 break
@@ -124,144 +157,49 @@ cal_fwd: rem --- Calculate Forwards
             endif
             v0=v0+hrsperday[n]
         next x
-        if flg then return
+        if flg=1 then break
         f_mth=f_mth+1
         f_day=1
         if f_mth>12 then let f_yr=f_yr+1,f_mth=1
     wend
+
+	if flag=1 goto dt_nt_sched
+	
+	return
 
 dt_nt_sched: rem --- Date Not Scheduled
 
     flag$="Y"
     return
 
-rem #include std_functions.src
-rem --- Standard AddonSoftware functions (01Mar2006)
-rem --- Functions used to retrieve form values
+open_tables:rem -----<Open Tables
 
-    def FNA$(Q$,Q2$)=STR(MOD((ASC(Q$)-32)*POS(" "<>Q2$(2,1)),100):"00")
-    def FNC$(Q1$)=FNA$(Q1$(2),Q1$)+FNA$(Q1$(3),Q1$)+FNA$(Q1$(1),Q1$)
-    def FNM$(Q$)=Q$(5,2)+Q$(1,4)
+    call dir_syp$+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],table_chans$[all],open_batch,open_status$
 
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
 
+    return
 
-    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
-    def fnget_table$(q0$)=rd_alias_id$
+disp_message:rem --- Display Message Dialog
 
-rem --- Miscellaneous functions
+    call dir_syp$+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-    def fncenter(q$,q)=int((q-len(q$))/2)
+    return
 
-rem --- Format inventory item description
-
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
-
-rem " --- FNYEAR_YY21$ Convert Numeric Year to 21st Century 2-Char Year"
-    def fnyear_yy21$(q)=fnyy_yy21$(str(mod(Q,100):"00"))
-
-rem " --- Convert 2-Char Year to 21st Century 2-Char Year" 
-
-    def fnyy_yy21$(q1$)
-    let q9=10,q9=num(STBL("+Y2K_UPPER_LIMIT",err=*next),err=*next)
-    if num(q1$(1,2),err=*next)<q9 then let q1$(1,1)=chr(int(num(q1$(1,2))/10)+65)
-    return q1$
-    fnend
-
-    def fnyy_year(q1$)
-    let q=num(fnyy21_yy$(q1$)),q9=10,q9=num(STBL("+Y2K_UPPER_LIMIT",err=*next),err=*next)
-    if q<q9 then let q=q+100
-    return q
-    fnend
-
-
-rem --- Date/time handling functions
-
-    def fnyy$(q$)=q$(3,2)
-    def fnclock$(q$)=date(0:"%hz:%mz %p")
-    def fntime$(q$)=date(0:"%Hz%mz")
-
-
-rem #include fndate.src
-
-
-rem #endinclude fndate.src
-
-
-rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
-
-    def fnmask$(q1$,q2$)
-        if q2$="" q2$=fill(len(q1$),"0")
-        return str(-num(q1$,err=*next):q2$,err=*next)
-        q=1
-        q0=0
-        while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
-        wend
-        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
-        return str(q1$:q2$)
-    fnend
-
-rem --- fnbasename$: Strip path and optionally the suffix from a file name
-
-    def fnbasename$(q$,q0$)
-        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
-        if q then q$=q$(q+1)
-        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
-
-rem --- fnglobal: Return numeric value of passed stbl variable
-
-    def fnglobal(q$,q1)
-        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
-        return q1
-    fnend
-
-rem --- fnglobal$: Return string value of passed STBL variable
-
-    def fnglobal$(q$,q1$)
-        q1$=stbl(q$,err=*next)
-        return q1$
-    fnend
-
-rem #endinclude std_functions.src
-
-rem #include std_error.src
-
-std_error: rem --- Standard error handler (01Apr2006)
-
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
-    if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
-
-rem #endinclude std_error.src
 rem #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    call stbl("+DIR_PGM",err=std_missing_params_exit)+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
@@ -275,10 +213,41 @@ std_missing_params_release:
 
 rem #endinclude std_missing_params.src
 
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP",err=std_error_exit)+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),str(err:"000"),err_text$,err_act$
+    if pos("EXIT"=err_act$) goto std_error_exit
+    if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+    if pos("RETRY"=err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
 rem #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
 
+rem --- Close File(s)
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="SFM_OPCALNDR",open_opts$[1]="C"
+
+    gosub open_tables
+	
     exit
 rem #endinclude std_exit.src
 

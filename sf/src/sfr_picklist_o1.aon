@@ -1,0 +1,659 @@
+rem --- Work Order Pick Slip - Printing
+rem --- Program sfr_bb v8.0.0 04Jan2008 (sfr_bb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 02:45:55)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    precision ivs01_precision
+
+rem --- Set document Directory
+
+    docdir$=stbl("+DOC_DIR_PDF",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open the printer
+
+    textfont!  = new java.awt.Font("Times New Roman",java.awt.Font.PLAIN,10)
+    boldfont!  = new java.awt.Font("Times New Roman",java.awt.Font.BOLD,10)
+    largefont! = new java.awt.Font("Arial",java.awt.Font.BOLD,26)
+
+    requestAttributes!=new javax.print.attribute.HashPrintRequestAttributeSet()
+    requestAttributes!.add(javax.print.attribute.standard.MediaSizeName.NA_LETTER)
+    requestAttributes!.add(javax.print.attribute.standard.OrientationRequested.PORTRAIT)
+
+    units=javax.print.attribute.standard.MediaPrintableArea.INCH
+    x!=new java.lang.Float(0.0).floatValue()
+    y!=new java.lang.Float(0.0).floatValue()
+    w!=new java.lang.Float(8.5).floatValue()
+    h!=new java.lang.Float(10.5).floatValue()
+    a!=new javax.print.attribute.standard.MediaPrintableArea(x!,y!,w!,h!,units)
+
+    requestAttributes!.add(a!)
+
+    left_justify=0
+    right_justify=1
+    center_justify=2
+
+    myAPI!=BBjAPI()
+    myBBjPrinter!=myAPI!.getBBjPrinter(1,err=*next)
+    if myBBjPrinter!=null()
+        msg_id$="AD_NOPRINTER"
+        gosub disp_message
+        goto std_exit
+    endif
+
+    myBBjPDFPrinter!=BBjAPI()
+
+    myBBjPrinter!.setAttributes(requestAttributes!)
+    docPrint!=myBBjPrinter!.getForm(0)
+
+rem --- Init Data
+
+    stepnum=1
+    more=1
+    backtomain=0
+	if sort_seq$="L"
+		key_num$="PRIMARY"
+	else
+		key_num$="MATERIAL_SEQ"
+	endif
+
+rem --- Background
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sfe04c_dev,1,meter_num,ignore_status
+
+rem --- Init Read
+
+    read (sfe04c_dev,key=firm_id$,dom=*next)
+
+rem --- Main Read
+
+    while more
+        
+        stepnum=1
+		flag=0;rem flag 0 means we're all done, 1 means don't print it, 2 means print it
+
+        while more
+
+			old_op_step$=""
+            read record (sfe04c_dev,end=*break) sfe04c$
+            if pos(firm_id$=sfe04c$)<>1
+                break
+            endif
+
+        rem --- Get Work Order
+
+            read record (sfe13a_dev,key=sfe04c.firm_id$+sfe04c.wo_location$+sfe04c.wo_no$,dom=*continue) sfe13a$
+            read record (sfe01a_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$,dom=*continue) sfe01a$
+			gosub get_op_seqs
+			flag=2
+            find (sfe04d_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$,dom=*break)
+			flag=1
+        wend
+
+        if flag=0 then break
+		if flag=1 then continue
+		
+rem --- Find Customer
+
+		dim arm01a$:fattr(arm01a$)
+		arm01a.customer_name$=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+		if pos(" "<> sfe01a.customer_id$)<>0
+			find record (arm01a_dev,key=firm_id$+sfe01a.customer_id$,dom=*next) arm01a$
+		endif
+
+rem --- Find Warehouse
+
+		ivm10c.short_name$=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+		find record (ivm10c_dev,key=firm_id$+"C"+sfe13a.warehouse_id$,dom=*next) ivm10c$
+
+rem --- Type
+
+		sfm10a.code_desc$=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+		find record (sfm10a_dev,key=firm_id$+"A"+sfe13a.firm_id$,dom=*next) sfm10a$
+
+rem --- Category
+
+        if sfe13a.wo_category$="I" then let z2$=Translate!.getTranslation("AON_INVENTORY")
+        if sfe13a.wo_category$="N" then let z2$=Translate!.getTranslation("AON_NON-STOCK")
+        if sfe13a.wo_category$="R" then let z2$=Translate!.getTranslation("AON_RECURRING")
+        h=0
+
+rem --- call bac_documents.bbj to get back a barista document ID
+
+		new_doc_id$=""
+		pdf_doc$=""
+		call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,"","","I","PDF",docdir$,
+:			"pdf",option!.getAlias(),"S",sfe01a.wo_no$,rd_table_chans$[all],"DOC_ID"
+
+    rem --- Details Here
+
+        read (sfw13a_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$,knum=key_num$,dom=*next)
+        head_comm$=""
+        gosub get_wo_hdr_cmnts
+
+        dim sfw13a$:fattr(sfw13a$)
+        while more
+			read record (sfw13a_dev,end=*break) sfw13a$
+            if sfw13a.firm_id$+sfw13a.wo_location$+sfw13a.wo_no$<>sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$ then break
+            read_recs=read_recs+1
+			if mod(read_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            op_step$=sfw13a.oper_seq_ref$
+
+            read record (sfe23a_dev,key=sfw13a.firm_id$+sfw13a.wo_location$+sfw13a.wo_no$+sfw13a.material_seq$,knum="AO_DISP_SEQ",dom=*continue) sfe23a$
+            ivm01a.item_desc$=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+            find record (ivm01a_dev,key=firm_id$+sfe23a.item_id$,dom=*next) ivm01a1$
+            dx$=ivm01a1.item_desc$
+            find record (ivm02a_dev,key=firm_id$+sfe23a.warehouse_id$+sfe23a.item_id$,dom=*next) ivm02a$
+            ivm02a.qty_on_hand=ivm02a.qty_on_hand-(sfe23a.qty_ordered-sfe23a.tot_qty_iss)
+            gosub details
+            stepnum=stepnum+1
+        wend
+    wend
+
+rem --- All done
+
+    if recs=0
+        docPrint!.cancel()
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    docPrint!.preview()
+
+    msg_id$="AON_UPDT_SF_PICK"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+	if msg_opt$<>"Y" then goto std_exit
+
+    read (sfe04c_dev,key=firm_id$,dom=*next)
+
+    while more
+
+		read record (sfe04c_dev,end=*break) sfe04c$
+        if pos(firm_id$=sfe04c$)=0 break
+        read record (sfe13a_dev,key=sfe04c.firm_id$+sfe04c.wo_location$+sfe04c.wo_no$,dom=*continue) sfe13a$
+		sfe15a.firm_id$=firm_id$
+		sfe15a.wo_location$=sfe13a.wo_location$
+		sfe15a.wo_no$=sfe13a.wo_no$
+		sfe15a.wo_type$=sfe13a.wo_type$
+		sfe15a.wo_category$=sfe13a.wo_category$
+		sfe15a.unit_measure$=sfe13a.unit_measure$
+		sfe15a.warehouse_id$=sfe13a.warehouse_id$
+		sfe15a.item_id$=sfe13a.item_id$
+        write record (sfe15a_dev) sfe15a$
+
+    rem --- Remove Committed and Create Issue
+
+        read (sfw13a_dev,key=sfe15a.firm_id$+sfe15a.wo_location$+sfe15a.wo_no$,knum="PRIMARY",dom=*next)
+
+        while more
+
+			read record (sfw13a_dev,end=*break) sfw13a$
+            if sfw13a.firm_id$+sfw13a.wo_location$+sfw13a.wo_no$<>sfe15a.firm_id$+sfe15a.wo_location$+sfe15a.wo_no$ then break
+            sfe23a_key$=sfw13a.firm_id$+sfw13a.wo_location$+sfw13a.wo_no$+sfw13a.material_seq$
+            read record (sfe23a_dev,key=sfe23a_key$,knum="AO_DISP_SEQ",dom=*continue) sfe23a$
+
+        rem --- Renumber Issue Sequence to Match Pick List
+
+            sfe25a.firm_id$=sfe23a.firm_id$
+            sfe25a.wo_location$=sfe23a.wo_location$
+            sfe25a.wo_no$=sfe23a.wo_no$
+            sfe25a.material_seq$=sfe23a.material_seq$
+            sfe25a.internal_seq_no$=sfe23a.internal_seq_no$
+			sfe25a.unit_measure$=sfe23a.unit_measure$
+			sfe25a.womatdtl_seq_ref$=sfe23a.internal_seq_no$
+			sfe25a.warehouse_id$=sfe23a.warehouse_id$
+			sfe25a.item_id$=sfe23a.item_id$
+			sfe25a.require_date$=sfe23a.require_date$
+			sfe25a.qty_ordered=sfe23a.qty_ordered
+			sfe25a.tot_qty_iss=sfe23a.tot_qty_iss
+			sfe25a.unit_cost=sfe23a.unit_cost
+			sfe25a.qty_issued=sfe23a.qty_issued
+			sfe25a.issue_cost=sfe23a.issue_cost
+			sfe25a$=field(sfe25a$)
+            write record (sfe25a_dev) sfe25a$
+
+        wend
+
+        remove (sfe04c_dev,key=firm_id$+sfe04c.wo_location$+sfe04c.wo_no$)
+
+    wend
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+	
+	goto std_exit
+	
+report_heading: rem --- Report Heading
+
+rem --- create pdf file
+
+    while pdf_doc$ = ""
+        prtr_dev = unt
+        pdf_doc$ = docdir$ + new_doc_id$ + ".pdf"
+        start_block = 1
+
+        if start_block
+            open (prtr_dev,err=*endif)pdf_doc$
+            close (prtr_dev)
+            erase pdf_doc$
+        endif
+
+        docPDF! = myBBjPDFPrinter!.getBBjPDFForm(pdf_doc$, requestAttributes!)
+    wend
+
+    first_page=0
+    lines=0
+    page=page+1
+	recs=recs+1
+
+    pagePDF!=docPDF!.createPage()
+    pagePrint!=docPrint!.createPage(err=std_error)
+    page!=pagePrint!
+
+	desc1$=""
+	desc2$=""
+    find record (ivm01a_dev,key=firm_id$+sfe13a.item_id$,dom=*next) ivm01a2$
+    if sfe13a.wo_category$="I" then let desc1$=fnitem$(ivm01a2.item_desc$,desclen[1],desclen[2],desclen[3])
+    if sfe13a.wo_category$<>"I" then let desc1$=sfe01a.description_01$,desc2$=sfe01a.description_02$
+    old_op_step$=op_step$
+
+	while 1
+		tmp=fntext2(0,10,568,10,"PICK LIST",largefont!,center_justify,page!)
+
+		tmp=fntext2(0,40,65,40,Translate!.getTranslation("AON_WORK_ORDER:"),textfont!,right_justify,page!)
+		tmp=fntext2(70,40,50,40,sfe13a.wo_no$,textfont!,left_justify,page!)
+		tmp=fntext(150,40,Translate!.getTranslation("AON_TYPE:_")+sfe13a.wo_type$+" "+sfm10a.code_desc$,textfont!,page!)
+		tmp=fntext(400,40,Translate!.getTranslation("AON_CATEGORY:_")+sfe13a.wo_category$+" "+z2$,textfont!,page!)
+		tmp=fntext2(0,52,65,52,Translate!.getTranslation("AON_OP_STEP:"),textfont!,right_justify,page!)
+		op_step_out$=op_step$
+		if cvs(op_step$,3)<>""
+			if ops_lines!.size()
+				for x=0 to ops_lines!.size()-1
+					if op_step$=ops_lines!.getItem(x)
+						op_step_out$=ops_list!.getItem(x)
+					endif
+				next x
+			endif
+		endif
+		tmp=fntext(70,52,op_step_out$,textfont!,page!)
+		
+		if sfe13a.wo_category$="I" then
+			tmp=fntext2(0,64,65,64,Translate!.getTranslation("AON_BILL_NUMBER:"),textfont!,right_justify,page!)
+			tmp=fntext(70,64,sfe13a.item_id$,textfont!,page!)
+		endif
+
+		tmp=fntext2(0,76,65,76,Translate!.getTranslation("AON_DESCRIPTION:"),textfont!,right_justify,page!)
+		tmp=fntext(70,76,cvs(desc1$,2),textfont!,page!)
+		tmp2=fntext2(400,76,80,76,Translate!.getTranslation("AON_OPEN_DATE:"),textfont!,right_justify,page!)
+		tmp=fntext(485,76,fndate$(sfe01a.opened_date$),textfont!,page!)
+		tmp=fntext(20,88,desc2$,textfont!,page!)
+		tmp2=fntext2(400,88,80,88,Translate!.getTranslation("AON_START_DATE:"),textfont!,right_justify,page!)
+		tmp=fntext(485,88,fndate$(sfe01a.eststt_date$),textfont!,page!)
+		tmp=fntext2(0,100,65,100,Translate!.getTranslation("AON_DRAWING_#:"),textfont!,right_justify,page!)
+		tmp=fntext2(70,100,65,100,sfe01a.drawing_no$,textfont!,left_justify,page!)
+		tmp=fntext(200,100,Translate!.getTranslation("AON_REV:_")+sfe01a.drawing_no$,textfont!,page!)
+		tmp2=fntext2(400,100,80,100,Translate!.getTranslation("AON_COMPLETION_DATE:"),textfont!,right_justify,page!)
+		tmp=fntext(485,100,fndate$(sfe01a.estcmp_date$),textfont!,page!)
+
+		if pos(" "<>sfe01a.customer_id$)>0 then
+			tmp=fntext2(0,112,65,112,Translate!.getTranslation("AON_CUSTOMER:"),textfont!,right_justify,page!)
+			tmp=fntext(70,112,fnmask$(sfe01a.customer_id$,custmask$)+" "+arm01a.customer_name$,textfont!,page!)
+			tmp=fntext(300,112,Translate!.getTranslation("AON_ORDER:_")+sfe01a.order_no$+"-"+sfe01a.sls_ord_seq_ref$,textfont!,page!)
+		endif
+		tmp=fntext2(0,124,65,124,Translate!.getTranslation("AON_WAREHOUSE:"),textfont!,right_justify,page!)
+		tmp=fntext2(70,124,50,124,sfe13a.warehouse_id$+" "+ivm10c.short_name$,textfont!,left_justify,page!)
+		tmp=fntext(400,124,Translate!.getTranslation("AON_PRODUCTION_QTY:_")+str(sfe01a.sch_prod_qty-sfe01a.qty_cls_todt:m2$),textfont!,page!)
+		tmp=fnline(0,140,560,140,page!)
+		tmp=fntext2(25,148,30,148,Translate!.getTranslation("AON_LOCATION"),textfont!,left_justify,page!)
+		tmp=fntext2(60,148,35,148,Translate!.getTranslation("AON_REQ'D"),textfont!,right_justify,page!)
+		tmp=fntext2(100,148,35,148,Translate!.getTranslation("AON_PICKED"),textfont!,right_justify,page!)
+		tmp=fntext2(140,148,70,148,Translate!.getTranslation("AON_ITEM"),textfont!,left_justify,page!)
+		tmp=fntext2(320,148,55,148,Translate!.getTranslation("AON_ON_HAND"),textfont!,right_justify,page!)
+		tmp=fntext2(380,148,55,148,Translate!.getTranslation("AON_COM'D"),textfont!,right_justify,page!)
+		tmp=fntext2(440,148,55,148,Translate!.getTranslation("AON_AVAIL"),textfont!,right_justify,page!)
+		tmp=fntext2(500,148,55,148,Translate!.getTranslation("AON_ON_ORD"),textfont!,right_justify,page!)
+
+		line_no=148
+
+		if head_comm$<>""
+			line_no=line_no+12
+			for x=1 to len(head_comm$) step len(sfe22b.ext_comments$)
+				line_no=line_no+12
+				tmp=fntext(40,line_no,head_comm$(x,len(sfe22b.ext_comments$)),text_font!,page!)
+			next x
+		endif
+		break
+    wend
+    return
+
+details: rem --- Details
+
+    x1=0
+    if ivs01a.lotser_flag$="S" and (ivm01a1.lotser_item$+ivm01a1.inventoried$)="YY" then let x1=sfe23a.qty_ordered-sfe23a.tot_qty_iss,x9$=Translate!.getTranslation("AON_SERIAL_#:")
+    if ivs01a.lotser_flag$="L" and (ivm01a1.lotser_item$+ivm01a1.inventoried$)="YY" then let x1=5,x9$=Translate!.getTranslation("AON_LOT_#:")
+    if line_no>l9 or op_step$<>old_op_step$ then gosub report_heading
+	line_no=line_no+24
+
+	tmp=fntext2(25,line_no,30,line_no,ivm02a.location$,textfont!,left_justify,page!)
+	tmp=fntext2(60,line_no,35,line_no,str(sfe23a.qty_ordered-sfe23a.tot_qty_iss:m2$),textfont!,right_justify,page!)
+	tmp=fnline(100,line_no+12,135,line_no+12,page!)
+	tmp2=fntext2(140,line_no,50,line_no,sfe23a.item_id$,textfont!,left_justify,page!)
+	tmp2=fntext2(320,line_no,55,line_no,str(ivm02a.qty_on_hand:m2$),textfont!,right_justify,page!)
+	tmp2=fntext2(380,line_no,55,line_no,str(ivm02a.qty_commit:m2$),textfont!,right_justify,page!)
+	tmp2=fntext2(440,line_no,55,line_no,str(ivm02a.qty_on_hand-qty_commit:m2$),textfont!,right_justify,page!)
+	tmp2=fntext2(500,line_no,55,line_no,str(ivm02a.qty_on_order:m2$),textfont!,right_justify,page!)
+
+    read record (sfe22b_dev,key=(sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$)+sfe23a.material_seq$,dom=*next) sfe22b$
+    dim desc$(60)
+    desc$(1)=fnitem$(dx$,desclen[1],desclen[2],desclen[3])
+	tmp=fntext(195,line_no,desc$,textfont!,page!)
+
+    gosub material
+
+    if pos(ivs01a.lotser_flag$="LS")=0 then
+        return
+    endif
+    if (ivm01a1.lotser_item$+ivm01a1.inventoried$)<>"YY" then
+        return
+    endif
+
+    for x=1 to x1
+		line_no=line_no+24
+        if line_no>l9 then gosub report_heading
+		tmp2=fntext2(50,line_no,40,line_no,x9$,textfont!,right_justify,page!)
+		tmp=fnline(95,line_no+12,195,line_no+12,page!)
+    next x
+
+    return
+
+material: rem --- Get comments for this material
+
+    dim sfe22b_key$:sfe22b_key_tpl$
+    while more
+        sfe22b_key$=key(sfe22b_dev,end=*break)
+        if pos(sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$=sfe22b_key$)<>1 then break
+		dim sfe22b$:fattr(sfe22b$)
+        read record (sfe22b_dev) sfe22b$
+        if sfe22b.line_type$<>"M" then break 
+        if line_no+1>l9 then gosub report_heading
+		line_no=line_no+12
+		tmp=fntext(40,line_no,sfe22b.ext_comments$,text_font!,page!)
+    wend
+    return
+
+get_wo_hdr_cmnts: rem --- Get header comments for this Work Order
+
+    read (sfe22b_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$,dom=*next)
+    while more
+        sfe22b_key$=key(sfe22b_dev,end=*break)
+        if pos(sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$=sfe22b_key$)<>1 then break
+		dim sfe22b$:fattr(sfe22b$)
+        read record (sfe22b_dev) sfe22b$
+        if sfe22b.line_type$<>"M" then break
+		head_comm$=head_comm$+sfe22b.ext_comments$		
+    wend
+    return
+
+get_op_seqs: rem --- create vector for use with Op Sequence
+
+	SysGUI!=BBjAPI()
+	ops_lines!=SysGUI!.makeVector()
+	ops_list!=SysGUI!.makeVector()
+	op_code_list$=""
+
+	read(sfe02_dev,key=firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
+	while 1
+		read record (sfe02_dev,end=*break) sfe02a$
+		if pos(firm_id$+sfe01a.wo_location$+sfe01a.wo_no$=sfe02a$)<>1 break
+		if sfe02a.line_type$<>"S" continue
+		dim op_code$:fattr(op_code$)
+		read record (op_code,key=firm_id$+sfe02a.op_code$,dom=*next)op_code$
+		ops_lines!.addItem(sfe02a.internal_seq_no$)
+		op_code_list$=op_code_list$+sfe02a.op_code$
+		work_var=pos(sfe02a.op_code$=op_code_list$,len(sfe02a.op_code$),0)
+		if work_var>1
+			work_var$=sfe02a.op_code$+"("+str(work_var)+")"
+		else
+			work_var$=sfe02a.op_code$
+		endif
+		ops_list!.addItem(work_var$+" - "+op_code.code_desc$)
+	wend
+	
+	return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem --- fntext: Form Text command
+
+    def fntext(tmp_x,tmp_y,tmp_text$,tmp_font!,page!)
+        tmp_text$=cvs(tmp_text$,3)
+        tmp!.destroy(err=*next)
+        tmp!=page!.newParagraph()
+        tmp!.setHorizontalFill(1)
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setText(tmp_text$)
+        tmp!.setFont(tmp_font!)
+        page!.add(tmp!)
+        return(1)
+    fnend
+
+rem --- fntext2: Form Text command
+
+    def fntext2(tmp_x,tmp_y,tmp_x2,tmp_y2,tmp_text$,tmp_font!,tmp_just,page!)
+        tmp_text$=cvs(tmp_text$,3)
+        tmp!.destroy(err=*next)
+        tmp!=page!.newParagraph()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
+        if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
+        if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
+        tmp!.setText(tmp_text$)
+        tmp!.setFont(tmp_font!)
+        page!.add(tmp!)
+        return(1)
+    fnend
+
+rem --- fnbox: Form Box command
+
+    def fnbox(tmp_x,tmp_y,tmp_w,tmp_h,page!)
+        tmp!=page!.newFrame()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setWidth(tmp_w)
+        tmp!.setHeight(tmp_h)
+        page!.add(tmp!)
+        return(1)
+    fnend
+
+rem --- fnline: Form Line command
+
+    def fnline(tmp_x,tmp_y,tmp_w,tmp_h,page!)
+        tmp!=page!.newLine()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setWidth(tmp_w)
+        tmp!.setHeight(tmp_h)
+        page!.add(tmp!)
+        return(1)
+    fnend
+
+rem --- fnframe: Form Frame command
+
+    def fnframe(tmp_x,tmp_y,tmp_x2,tmp_y2,page!)
+        tmp!=page!.newFrame()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmpdim!=new java.awt.Dimension(tmp_x2,tmp_y2)
+        tmp!.setSize(tmpdim!)
+        page!.add(tmp!)
+        return(1)
+    fnend
+
+rem --- fnlogo: Put logo on page
+
+    def fnlogo(page!)
+        logo!=page!.newImage()
+        logo!.setURL(logofile$,err=*next)
+        logo!.setPosition(new java.awt.Point(0,0))
+        logo!.setWidth(185)
+        logo!.setHeight(68)
+        page!.add(logo!)
+        return(1)
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    release
+
+rem #endinclude std_end.src
+
+    end

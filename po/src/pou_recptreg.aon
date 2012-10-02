@@ -323,37 +323,45 @@ l2200: rem --- Update Replenishment
 
 l2300: rem --- Update Work Orders
 
-    goto l2800;rem skipping sf update for Dist release CAH
-
     if sf$<>"Y" goto l2800
-    if cvs(w2$(1,7),2)="" goto l2800
-    if a1$(134,1)<>"Y" and poe14a.qty_received=0 goto l2800
-    if pom02a.line_type$="S" if d1$(60,1)<>"Y" goto l2800
-    dim t0$(75),t1$(141),t[11]
-    t0$(1)=firm_id$+"  "+w2$(1,7)
-    find record (sfe01_dev,key=t0$(1,11),dom=l2800) sfe01a$
-    if cvs(t0$(28,3),2)="" t0$(28,3)=received$
-    if received$>t0$(28,3) t0$(28,3)=received$
-    write record (sfe01_dev,key=t0$(1,11)) sfe01a$
+    if cvs(poe14a.wo_no$,2)="" goto l2800
+    if poe04a.rec_complete$<>"Y" and poe14a.qty_received=0 goto l2800
+    if pom02a.line_type$="S" if ivm02a.special_order$<>"Y" goto l2800
+	dim sfe01a$:fattr(sfe01a$)
+    find record (sfe01_dev,key=firm_id$+sfe01a.wo_location$+poe14a.wo_no$,dom=l2800) sfe01a$
+    if cvs(sfe01a.lstact_date$,2)="" sfe01a.lstact_date$=received$
+    if received$>sfe01a.lstact_date$ sfe01a.lstact_date$=received$
+	sfe01a$=field(sfe01a$)
+    write record (sfe01_dev) sfe01a$
 
 rem --- Update link to WO subcontract line/Generate transaction detail
 
-    oldwo$=w2$(1,10)
-    newwo$=oldwo$
-    call pgmdir$+"poc_wa.bbx",sfe22_dev,sfe32_dev,firm_id$,w0$(16),"C",y1$,oldwo$,newwo$,i[1],status
+    old_wo$=poe14a.wo_no$
+	old_woseq$=poe14a.wk_ord_seq_ref$
+	new_wo$=old_wo$
+	new_woseq$=old_woseq$
+	po_no$=poe14a.po_no$
+	po_seq$=poe14a.internal_seq_no$
+	call stbl("+DIR_PGM")+"poc_requpdate.aon",sfe22_dev,sfe32_dev,
+:		po_no$,po_seq$,"C",pom02a.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
     if pom02a.line_type$="S" goto l2800
-    dim l0$(18),l1$(39),l[11]
-    l0$(1)=t0$(1,11)+received$+"S"
+	dim sft31a$:fattr(sft31a$)
+	sft31a.firm_id$=firm_id$
+	sft31a.wo_location$=sfe01a.wo_location$
+	sft31a.wo_no$=sfe01a.wo_no$
+	sft31a.trans_date$=received$
     channel=sft31_dev
     gosub l6000
     if status goto l2800
-    l1$(1)=w2$(8,3)+w0$(3,6)+w0$(16)+w4$
-    l[0]=poe14a.qty_received*poe14a.conv_factor
-    l[1]=poe14a.unit_cost/poe14a.conv_factor
-    l[2]=po_extension
-    write record (sft31_dev,key=l0$) sft31a$
-    write record (sfm07_dev,key=l0$) sfm07a$
-    goto l2800
+	sft31a.subcont_seq_ref$=poe14a.wk_ord_seq_ref$
+	sft31a.vendor_id$=poe04a.vendor_id$
+	sft31a.po_no$=poe14a.po_no$
+	sft31a.pur_ord_seq_ref$=poe14a.internal_seq_no$
+	sft31a.desc$=poe14a.order_memo$
+    sft31a.units=poe14a.qty_received*poe14a.conv_factor
+    sft31a.unit_cost=poe14a.unit_cost/poe14a.conv_factor
+    sft31a.ext_cost=po_extension
+    write record (sft31_dev) sft31a$
 
 l2800: rem --- Generate GL Recap Postings
 
@@ -477,8 +485,6 @@ l3900: rem --- Loop back for next header
 
 done: rem --- All done
 
-rem --- escape gosub 11000; rem "ACS60 CLEAR PO080
-
 	if gl$="Y"
 		call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
 		call pgmdir$+"glc_ctlupdate.aon",status
@@ -491,12 +497,14 @@ rem --- escape gosub 11000; rem "ACS60 CLEAR PO080
 l6000: rem --- Find next available sequence number for SFT files
 rem --- bypassing until sf mods are made
 
-    let x=len(l0$)-2,l0$(x)="001",status=0
-    read (channel,key=l0$(1,x-1)+$ff$,dom=*next)
-    let k$=keyp(channel,end=l6090)
-    if pos(l0$(1,x-1)=k$)<>1 goto l6090
-    if k$(16,3)="999" goto l6080
-    let l0$(x)=str(num(k$(16,3))+1:"000")
+	seq_mask$=fill(len(sft31a.trans_seq$),"0")
+    sft31a.trans_seq$=str(1:seq_mask$)
+	status=0
+    read (channel,key=firm_id$+sfe01a.wo_location$+sfe01a.wo_no$+received$+$ff$,dom=*next)
+    k$=keyp(channel,end=l6090)
+    if pos(firm_id$+sfe01a.wo_location$+sfe01a.wo_no$+received$=k$)<>1 goto l6090
+    if k$(len(k$)-len(seq_mask$)+1)=fill(len(seq_mask$),"9") goto l6080
+    sft31a.trans_seq$=str(num(k$(len(k$)-len(seq_mask$)+1))+1:seq_mask$)
     goto l6090
 l6080:
     let status=2
@@ -565,7 +573,10 @@ rem --- Miscellaneous functions
 
 rem --- Format inventory item description
 
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
 
 rem --- Format zip/postal code
 

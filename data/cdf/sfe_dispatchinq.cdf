@@ -237,7 +237,6 @@ rem ==========================================================================
 		gridDispatch!.setCellText(0,0,vectDispatch!)
 	else
 		gridDispatch!.clearMainGrid()
-		gridDispatch!.setColumnStyle(0, SysGUI!.GRID_STYLE_UNCHECKED)
 		gridDispatch!.setNumRows(0)
 	endif
 

@@ -164,7 +164,7 @@ period_end: rem --- Roll Month to Date Sales Total
        ops10s.firm_id$=firm_id$
        ops10s.record_id_s$="S"
        k$=ops10s.firm_id$+ops10s.record_id_s$
-       read record (ops10_dev,key=k$,dom=*proceed) ops10s$
+       extract record (ops10_dev,key=k$,dom=*next) ops10s$; rem Advisory Locking
        ops10s.mtd_sales=ops10s.nmtd_sales
        ops10s.mtd_returns=ops10s.nmtd_returns
        ops10s.mtd_tax=ops10s.nmtd_tax
@@ -180,7 +180,7 @@ period_end: rem --- Roll Month to Date Sales Total
        ops10s.nxt_mtd_disc=0
        ops10s.nmtd_cashsl=0
        ops10s$=field(ops10s$)
-       write record (ops10_dev,key=k$) ops10s$
+       write record (ops10_dev) ops10s$
     endif 
 
 rem --- Roll Month to Date Cash Totals
@@ -190,7 +190,7 @@ rem --- Roll Month to Date Cash Totals
        ars10c.firm_id$=firm_id$
        ars10c.record_id_c$="C"
        k$=ars10c.firm_id$+ars10c.record_id_c$
-       read record (ars10_dev,key=k$,dom=*proceed) ars10c$
+       extract record (ars10_dev,key=k$,dom=*next) ars10c$; rem Advisory Locking
        ars10c.mtd_cash=ars10c.nxt_mtd_cash
        ars10c.mtd_csh_disc=ars10c.nmtd_cash_ds
        ars10c.mtd_csh_gl=ars10c.nmtd_cashgl
@@ -198,7 +198,7 @@ rem --- Roll Month to Date Cash Totals
        ars10c.nmtd_cash_ds=0
        ars10c.nmtd_cashgl=0
        ars10c$=field(ars10c$)
-       write record (ars10_dev,key=k$) ars10c$
+       write record (ars10_dev) ars10c$
     endif
 
 rem --- Start progress meter and position customer master file
@@ -210,8 +210,8 @@ rem --- Read next Customer Master (arm-01) record
 
     while morecustomers
           arm01_key$=key(arm01_dev,end=*break)
-          if pos(firm_id$=arm01_key$)<>1 break
-          read record (arm01_dev,key=arm01_key$) arm01a$
+          if pos(firm_id$=arm01_key$)<>1 then read(arm01_dev); break
+          extract record (arm01_dev,key=arm01_key$) arm01a$; rem Advisory Locking
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
           rem --- Update Customer Sales and Payments Summary (arm-06) record
@@ -220,7 +220,7 @@ rem --- Read next Customer Master (arm-01) record
           arm06a.firm_id$=arm01a.firm_id$
           arm06a.customer_id$=arm01a.customer_id$
           arm06_key$=arm01_key$
-          find record (arm06_dev,key=arm06_key$,dom=*next) arm06a$ 
+          extract record (arm06_dev,key=arm06_key$,dom=*next) arm06a$; rem Advisory Locking
           if period=total_periods
              arm06a.pyr_sales=arm06a.ytd_sales
              arm06a.pri_ytd_cost=arm06a.ytd_cost
@@ -253,11 +253,11 @@ rem --- Read next Customer Master (arm-01) record
           arm06a.mtd_high_crd=arm06a.nmtd_high_cr
           arm06a.nmtd_high_cr=0
           arm06a$=field(arm06a$)
-          write record (arm06_dev,key=arm06_key$) arm06a$
+          write record (arm06_dev) arm06a$
 
           rem --- If this isn't a temporary customer we're done
 
-          if arm01a.retain_cust$<>"N" continue
+          if arm01a.retain_cust$<>"N" then read(arm01_dev); continue
 
           rem --- Perform checks to see if this temporary customer can be deleted
           rem --- Start with the Invoice Header (art-01) file
@@ -265,7 +265,7 @@ rem --- Read next Customer Master (arm-01) record
           keyprefix$=firm_id$+artype$+arm01a.customer_id$
           read (art01_dev,key=keyprefix$,dom=*next)
           k$=key(art01_dev,end=*next)
-          if pos(keyprefix$=k$)=1 continue
+          if pos(keyprefix$=k$)=1 then read(arm01_dev); continue
 
           rem --- Check the Customer Sales Analysis (sam-01) file if sales analysis is installed
 
@@ -283,7 +283,7 @@ rem --- Read next Customer Master (arm-01) record
                 year$=str(num(sam01_key$(3,4))+1:"0000")
                 k$=firm_id$+year$+arm01a.customer_id$
           wend 
-          if found continue
+          if found then read(arm01_dev); continue
 
           rem --- Check Open Order (ope-01) file if Sales Order Processing is installed
 
@@ -293,7 +293,7 @@ rem --- Read next Customer Master (arm-01) record
              read (ope01_dev,key=keyprefix$,dom=*proceed)
              k$=key(ope01_dev,end=*proceed)
           endif
-          if pos(keyprefix$=k$)=1 continue
+          if pos(keyprefix$=k$)=1 then read(arm01_dev); continue
 
           rem --- Check Invoice History (ope-01) file if Sales Order Processing is installed
 
@@ -303,7 +303,7 @@ rem --- Read next Customer Master (arm-01) record
              read (opt01_dev,key=keyprefix$,dom=*proceed)
              k$=key(opt01_dev,end=*proceed)
           endif
-          if pos(keyprefix$=k$)=1 continue
+          if pos(keyprefix$=k$)=1 then read(arm01_dev); continue
 
           rem --- Remove temporary customer
 
@@ -415,7 +415,7 @@ rem --- Increment the period (and maybe the year) in the AR Parameter Record
        current_period=1
        current_year=current_year+1
     endif
-    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    extract record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$; rem Advisory Locking
     ars01a.current_per$=str(current_period:"00")
     ars01a.current_year$=str(current_year:"0000")
     write record (ars01_dev,key=ars01a_key$) ars01a$

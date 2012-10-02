@@ -171,7 +171,7 @@ rem --- Vendor
             if apw01a.check_date$>prior_g8$ and apw01a.check_date$<=g8$ apm02a.cur_cal_pmts=apm02a.cur_cal_pmts+ape04a.invoice_amt
             if apw01a.check_date$>g8$ apm02a.nxt_cyr_pmts=apm02a.nxt_cyr_pmts+ape04a.invoice_amt
             apm02a$=field(apm02a$)
-            write record (apm02_dev,key=firm_id$+ape04a.vendor_id$+ape04a.ap_type$) apm02a$
+            write record (apm02_dev) apm02a$
             break
         wend
 
@@ -270,9 +270,10 @@ rem --- All done
 update_open_invoice: rem --- update open invoice
 
     apt01_key$=firm_id$+ape04a.ap_type$+ape04a.vendor_id$+ape04a.ap_inv_no$
-    find record (apt01_dev,key=apt01_key$,dom=invoice_not_found) apt01a$
+    extract record (apt01_dev,key=apt01_key$,dom=invoice_not_found) apt01a$;rem Advisory Locking
     apt01a.selected_for_pay$="N"
-    write record (apt01_dev,key=apt01_key$) apt01a$
+    apt01a$=field(apt01a$)
+    write record (apt01_dev) apt01a$
     t[0]=apt01a.invoice_amt
     t[1]=apt01a.discount_amt
     t[2]=apt01a.retention
@@ -299,6 +300,8 @@ rem --- Initialize new detail
     apt11a.vendor_id$=ape04a.vendor_id$
     apt11a.ap_inv_no$=ape04a.ap_inv_no$
     apt11a.sequence_num$=str(lastseq+1:"00")
+    
+    extract record (apt11_dev,key=apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$+apt11a.sequence_num$,dom=*next)xwk$;rem Advisory Locking
 
 rem --- Write detail
 
@@ -307,7 +310,8 @@ rem --- Write detail
     apt11a.trans_date$=apw01a.check_date$
     apt11a.trans_amt=(-ape04a.invoice_amt)-ape04a.discount_amt
     apt11a.trans_disc=-ape04a.discount_amt
-    write record (apt11_dev,key=firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$+apt11a.sequence_num$) apt11a$
+    apt11a$=field(apt11a$)
+    write record (apt11_dev) apt11a$
     t[0]=t[0]+apt11a.trans_amt
     t[1]=t[1]+apt11a.trans_disc
     t[2]=t[2]+apt11a.trans_ret
@@ -326,8 +330,10 @@ update_bank_rec: rem --- Update glt-05
         glt05a.paid_code$="V"
         glt05a.bnk_chk_date$=apt05a.check_date$
         glt05a.description$="VOID"
+        
+        extract record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$,dom=*next)xwk$;rem Advisory Locking
         glt05a$=field(glt05a$)
-        write record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$) glt05a$
+        write record (glt05_dev) glt05a$
         if len(x9$)>7 x9$=x9$(8) else x9$=""
     wend
 
@@ -344,10 +350,10 @@ rem --- Detail
     let glt05a.description$=apm01a.vendor_name$
     let q$=glt05a.description$
     let glt05a.check_amount=apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention
-    find record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$,dom=*next) glt05a$;
-:      let glt05a.check_amount=glt05a.check_amount+apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention,glt05a.description$=q$
+    extract record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$,dom=*next) glt05a$;
+:      let glt05a.check_amount=glt05a.check_amount+apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention,glt05a.description$=q$;rem Advisory Locking
     glt05a$=field(glt05a$)
-    write record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$) glt05a$
+    write record (glt05_dev) glt05a$
 
     return
 
@@ -369,7 +375,10 @@ rem --- Miscellaneous functions
 
 rem --- Format inventory item description
 
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
 
 rem --- Date/time handling functions
 

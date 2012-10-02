@@ -187,6 +187,9 @@ rem =========================================================
 	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
 	dim sfe_wosubcnt$:fnget_tpl$("SFE_WOSUBCNT")
 
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",sfe22_key_tpl$,rd_table_chans$[all],status$
+	dim sfe22_prev_key$:sfe22_key_tpl$
+
 	all_bills$=new_bill$
 	curr_bill$=new_bill$
 	subs$=""
@@ -488,7 +491,7 @@ do_subcontracts:
 
 		if sfe_wosubcnt.line_type$="S"
 			sfe_wosubcnt.unit_measure$=bmm_billsub.unit_measure$	
-			sfe_wosubcnt.description$=bmm_billsub.ext_comments$(10,len(sfe_wosubcnt.description$))
+			sfe_wosubcnt.description$=bmm_billsub.ext_comments$(1,len(sfe_wosubcnt.description$))
 			sfe_wosubcnt.oper_seq_ref$=""
 			sfe_wosubcnt.units=SfUtils.netSubQuantityRequired(bmm_billsub.qty_required,bmm_billsub.alt_factor,bmm_billsub.divisor)
 			sfe_wosubcnt.unit_cost=sfe_wosubcnt.units*bmm_billsub.unit_cost
@@ -663,8 +666,15 @@ rem --- fill listbox for use with Op Sequence
 		dim op_code$:fattr(op_code$)
 		read record (op_code,key=firm_id$+sfe02a.op_code$,dom=*next)op_code$
 		ops_lines!.addItem(sfe02a.internal_seq_no$)
-		ops_items!.addItem(sfe02a.op_code$)
-		ops_list!.addItem(sfe02a.op_code$+" - "+op_code.code_desc$)
+		op_code_list$=op_code_list$+sfe02a.op_code$
+		work_var=pos(sfe02a.op_code$=op_code_list$,len(sfe02a.op_code$),0)
+		if work_var>1
+			work_var$=sfe02a.op_code$+"("+str(work_var)+")"
+		else
+			work_var$=sfe02a.op_code$
+		endif
+		ops_items!.addItem(work_var$)
+		ops_list!.addItem(work_var$+" - "+op_code.code_desc$)
 	wend
 
 	if ops_lines!.size()>0
@@ -691,4 +701,4 @@ rem --- fill listbox for use with Op Sequence
 [[SFE_WOMATL.ITEM_ID.AINV]]
 rem --- Item synonym processing
 
-	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"

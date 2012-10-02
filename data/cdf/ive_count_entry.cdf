@@ -327,15 +327,15 @@ print "in display_record"; rem debug
 	callpoint!.setColumnData("IVE_COUNT_ENTRY.LOCATION", physical_rec.location$)
 	callpoint!.setColumnData("IVE_COUNT_ENTRY.ITEM_ID", physical_rec.item_id$)
 	callpoint!.setColumnData("IVE_COUNT_ENTRY.LOTSER_NO", physical_rec.lotser_no$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.FREEZE_QTY", physical_rec.freeze_qty$)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.FREEZE_QTY", str(physical_rec.freeze_qty))
 	callpoint!.setColumnData("IVE_COUNT_ENTRY.COUNT_STRING", physical_rec.count_string$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT", physical_rec.act_phys_cnt$)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT", str(physical_rec.act_phys_cnt))
 
 	callpoint!.setStatus("REFRESH")
 
 	user_tpl.entered_flag$ = physical_rec.entered_flag$
 	user_tpl.lotser_item$  = physical_rec.lotser_item$
-	user_tpl.freeze_qty$   = physical_rec.freeze_qty$
+	user_tpl.freeze_qty   = physical_rec.freeze_qty
 
 	rem count$ = physical_rec.count_string$
 	rem gosub parse_count
@@ -373,7 +373,7 @@ find_record_new:
 print "record not found"; rem debug
 		user_tpl.entered_flag$ = "Y"
 		user_tpl.lotser_item$  = iff(user_tpl.this_item_lot_ser = 1, "Y", "N")
-		user_tpl.freeze_qty$   = "1"
+		user_tpl.freeze_qty   = "1"
 	endif
 
 	return
@@ -414,8 +414,8 @@ print "in write_record"; rem debug
 	physical_rec.entered_flag$ = user_tpl.entered_flag$
 	physical_rec.lotser_item$  = user_tpl.lotser_item$
 	physical_rec.count_string$ = callpoint!.getColumnData("IVE_COUNT_ENTRY.COUNT_STRING")
-	physical_rec.freeze_qty$   = user_tpl.freeze_qty$
-	physical_rec.act_phys_cnt$ = callpoint!.getColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT")
+	physical_rec.freeze_qty   = user_tpl.freeze_qty
+	physical_rec.act_phys_cnt = num(callpoint!.getColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT"))
 
 	physical_rec$ = field(physical_rec$)
 	write record (physical_dev) physical_rec$
@@ -505,7 +505,7 @@ print "in parse_count"; rem debug
 	until count$ = ""
 
 count_display:
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT", str(total:user_tpl.amt_mask$))
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT", str(total))
 	callpoint!.setStatus("REFRESH")
 	
 	goto parse_count_end

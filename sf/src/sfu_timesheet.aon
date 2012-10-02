@@ -1,395 +1,218 @@
 rem --- Work Order Time Sheet Update
-rem --- Program sfu_ba v8.0.0 14Jan2008 (sfu_ba)
+rem --- Program sfu_timesheet v8.0.0 14Jan2008 (wou_ba)
 rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/14/2008 10:42:55)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
-        setesc std_error
-        seterr std_error
+    setesc std_error
+    seterr std_error
 
-        next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-        OutVect!=null()
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    OutVect!=null()
 
 rem --- Retrieve the program path
 
-        pgmdir$=stbl("+DIR_PGM",err=*next)
+    pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
 
-rem --- Open/Lock files
+rem --- Get user approval to update
 
-        files=19,begfile=1,endfile=files
-        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-        files$[1]="sfe-01",ids$[1]="SFE_WOMASTR"
-        files$[2]="sfm-01",ids$[2]="SFM_EMPLMAST"
-        files$[3]="sfm-07",ids$[3]="SFX_WOTRANXR"
-        files$[4]="sfm-10",ids$[4]="SFC_WOTYPECD"
-        files$[5]="sfs_params",ids$[5]="SFS_PARAMS"
-        files$[6]="sft-01",ids$[6]="SFT_OPNOPRTR"
-        files$[7]="ivs_params",ids$[7]="IVS_PARAMS"
-
-    call pgmdir$+"adc_fileopen.aon",action,begfile,7,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-
-        sfe01a_dev=channels[1]
-        sfm01a_dev=channels[2]
-        sfm07a_dev=channels[3]
-        sfm10a_dev=channels[4]
-        sfs01a_dev=channels[5]
-        sft01a_dev=channels[6]
-        ivs01a_dev=channels[7]
-
-rem --- Dimension string templates
-
-    dim sfe01a$:templates$[1],sfm01a$:templates$[2],sfm07a$:templates$[3],
-:       sfm10a$:templates$[4],sfs01a$:templates$[5],sft01a$:templates$[6],
-:       ivs01a$:templates$[7]
-   
-rem --- Retrieve parameter records
-
-        ivs01a_key$=firm_id$+"IV00"
-        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-        sfs01a_key$=firm_id$+"SF00"
-        find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
-
-rem --- Parameters
-
-        dim p[4],a[2],g[4]
-        rem pr$="N"  
-        bm$=sfs01a.po_interface$
-        pr$=sfs01a.pr_interface$
-        if pr$="Y" then 
-            call pgmdir$+"adc_application.aon","PR",info$[all]
-            pr$=info$[20]
-        endif
-        call pgmdir$+"adc_application.aon","SF",info$[all]
-        gl$=info$[9]
-
-rem --- Additional File Opens
-
-        if pos(sfs01a.time_entry_s$="DEW")=0 then goto std_exit
-
-        if sfs01a.time_entry_s$="D" then let files$[8]="sfe-11",ids$[8]="SFE_TIMEDATE"
-        if sfs01a.time_entry_s$="E" then let files$[8]="sfe-21",ids$[8]="SFE_TIMEEMPL"
-        if sfs01a.time_entry_s$="W" then let files$[8]="sfe-31",ids$[8]="SFE_TIMEWO"
-        rem options$[8]="L"
-
-        if gl$="Y" then 
-            files$[9]="glm-01",ids$[9]="GLM_ACCT"
-            files$[10]="gls_params",ids$[10]="GLS_PARAMS"
-            files$[11]="glt-04",ids$[11]="GLE_DAILYDETAIL"
-        endif
-
-        if pr$="Y" then 
-            files$[12]="prs_params",ids$[12]="PRS_PARAMS"
-            files$[13]="prs_period",ids$[13]="PRS_PERIOD"
-            files$[14]="pre-02",ids$[14]="PRE_DAYTIME"
-            files$[15]="prm-01",ids$[15]="PRM_EMPLMAST"
-            files$[16]="prm-02",ids$[16]="PRM_EMPLPAY"
-            files$[17]="prm-10",ids$[17]="PRC_PAYCODE"
-        endif
-
-        if bm$="Y" then 
-            files$[18]="bmm-08",ids$[18]="BMC_OPCODES"
-        endif
-
-        call pgmdir$+"adc_fileopen.aon",action,8,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status then goto std_exit
-
-        timesheet_dev=channels[8];dim timesheet$:templates$[8]
-        if gl$="Y" then 
-            glm01_dev=channels[9]
-            gls01a_dev=channels[10]
-            glt04_dev=channels[11]
-            dim glm01a$:templates$[9],gls01a$:templates$[10],glt04a$:templates$[11]
-        endif
-        if pr$="Y" then 
-            prs01a_dev=channels[12]
-            prs01b_dev=channels[13]
-            pre02_dev=channels[14]
-            prm01_dev=channels[15]
-            prm02_dev=channels[16]
-            prm10_dev=channels[17]
-        dim prs01a$:templates$[12],prs01b$:templates$[13],pre02a$:templates$[14],
-:           prm01a$:templates$[15],prm02a$:templates$[16],prm10a$:templates$[17]
-        endif
-        if bm$="Y" then 
-            bmm08_dev=channels[18];dim bmm08a$:templates$[18]
-        endif
-
-rem --- Parameters
-
-        if pr$="Y" then 
-            find record (prs01a_dev,key=firm_id$+"PR00",dom=std_missing_params) prs01a$
-            find record (prs01b_dev,key=firm_id$+"PR01",dom=payroll_defined) prs01b$
-        endif
-        if gl$="Y" then 
-            gls01a_key$=firm_id$+"GL00"
-            find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-        endif
-
-        p[0]=num(prs01a.empl_no_len$)
-        p[1]=num(prs01a.max_empl_no$),p[2]=num(sfs01a.def_ovd_rate$)
-        p[3]=num(ivs01a.precision$)
-        g[4]=num(gls01a.max_acct_len$)
-        ivs01_precision=p[3]
-        if pr$="Y" then let prs01_precision=num(prs01a.precision$)
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
 
 rem --- Initializations
 
-        dim j$(80,"-"),b[5]
-        t$=sfs01a.time_entry_s$
-        m0=len(prs01a.empl_output$)
-        more=1
-        dim message$[1]
+    if pr$="Y" then 
+        rem --- Get PR parameters
+        find record (prs01b_dev,key=firm_id$+"PR01",dom=payroll_defined) prs01b$
 
-rem --- Options
-
-        msg_id$="AON_UPDT_QUERY"
-        dim x$:stbl("+SYSINFO_TPL")
+        rem --- Generate payroll entries?
+        msg_id$="SF_GEN_PR_ENTRIES"
         dim msg_tokens$[1]
-        x$=stbl("+SYSINFO")                                                            
-        msg_tokens$[1]=x.task_desc$
+        msg_tokens$[1]=fndate$(prs01b.pay_end_date$)
         gosub disp_message
-        if msg_opt$<>"Y" then goto std_exit
-        if pr$<>"N" then 
-            print @(22,3),"Current Pay Period Ending Date: ",fndate$(prs01b.pay_end_date$),
-            v4$="Generate Payroll Entries From These Time Sheets?"
-            x$="Not "
-            call pgmdir$+"adc_yesno.aon",0,v4$,0,v$,v3
-            if v3=4 goto std_exit
-            if v$="YES" then let x$=""
-            v4$=x$+"Generating Payroll Entries"
-            message$[0]=v4$+" (<Enter>=Continue)"
-            call pgmdir$+"adc_stdmessage.aon",2,message$[all],0,22,-1,v$,v3
-            p8$=v$
-        endif
 
-        call pgmdir$+"adc_progress.aon","N","","","","",0,timesheet_dev,1,meter_num,ignore_status
-
-rem --- Disallow 'M'enu option in Error Routine
-
-        exit_ctrl=1
-
-rem --- Initial Read
-
-        precision ivs01_precision
-        read (timesheet_dev,key=firm_id$,dom=*next)
-
-rem --- Main Read
-
-    while more
-        k0$=key(timesheet_dev,end=done)
-        if pos(firm_id$=k0$)<>1 then break
-        read record (timesheet_dev,key=k0$) timesheet$
-        if timesheet.sequence_num$ ="00" then 
-             remove (timesheet_dev,key=k0$)
-             continue
-        endif
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
-        
-rem --- Post To Payroll
-        if p8$="YES" then 
-            precision prs01_precision
-            find record (prm01_dev,key=firm_id$+timesheet.employee_no$,dom=work_order_transaction) prm01a$
-            find record (prm10_dev,key=firm_id$+"A"+timesheet.pay_code$,dom=*next) prm10a$
-            if prm10a.prem_factor=0 then let prm10a.prem_factor=1
-            if sfs01a.pay_actstd$="A" then 
-                prm10a.pay_units=timesheet.hrs
-            else
-                prm10a.pay_units=prm10a.calc_rtamt*prm10a.prem_factor; rem "Pay code rate
-                find record (prm02_dev,key=prm01a.firm_id$+prm01a.employee_no$+timesheet.title_code$,dom=work_order_transaction) prm02a$
-                if prm01a.hrlysalary$="S" and prm02a.std_hrs<>0 then let prm02a.std_rate=prm02a.std_rate/prm02a.std_hrs
-                if prm10a.calc_rtamt<>0 prm02a.std_rate=prm10a.calc_rtamt; rem " Override by pay code
-                if prm10a.prem_factor<>0 prm02a.std_rate=prm02a.std_rate*prm10a.prem_factor; rem "Premium rate
-                prm10a.pay_units=prm02a.std_rate; rem "Employee rate
-            endif
-
-rem --- Build It
-
-            pre02a.firm_id$ = firm_id$
-            pre02a.employee_no$=timesheet.employee_no$
-
-            d9=1
-        while more
-            if d9>999 then 
-                message$[0]="More Than 999 Entries For Employee "+fnmask$(timesheet.employee_no$,prs01a.empl_output$)+" (<Enter>=Continue)"
-                call pgmdir$+"adc_stdmessage.aon",2,message$[all],0,22,-1,v$,v3
-                goto work_order_transaction
-            else
-                pre02a.pr_time_seq$=str(d9:"000")
-                find record (pre02_dev,key=(pre02a.firm_id$+pre02a.employee_no$+pre02a.pr_time_seq$),dom=*break) pre02a$
-                d9=d9+1
-            endif
-        wend
-rem --- Build It & Check It
-
-            pre02a.trans_date$=timesheet.trans_date$
-            pre02a.pay_code$ = timesheet.pay_code$
-            pre02a.title_code$ = timesheet.title_code$ + prm01a.dept_code$
-            pre02a.dept_code$ = pre02a.pr_job_no$
-
-            pre02a.rate = prm10a.pay_units
-            pre02a.units = (timesheet.hrs+timesheet.setup_time),pre02a.extended_amt=round(pre02a.rate*pre02a.units,2)
-            write record (pre02_dev,key=(pre02a.firm_id$+pre02a.employee_no$+pre02a.pr_time_seq$)) pre02a$
-        endif
-work_order_transaction: rem --- Work Order Transaction
-
-        precision ivs01_precision
-        w9=1
-        sft01a.firmid$=firm_id$
-        sft01a.wo_location$="  "
-        sft01a.wo_no$=timesheet.wo_no$
-        sft01a.trans_date$=timesheet.trans_date$
-        sft01a.record_id_o$="O"
-        sft01a.trans_seq$=str(w9:"000")
-
-        
-        sft01a.op_seq$=timesheet.op_seq$
-        sft01a.op_code$=timesheet.op_code$
-        sft01a.employee_no$=timesheet.employee_no$
-
-        while more
-            find (sft01_dev,key=(sft01a.firmid$+sft01a.wo_location$+sft01a.wo_no$+sft01a.trans_date$+sft01a.record_id_o$+sft01a.trans_seq$),dom=*break)
-            w9=w9+1
-            sft01a.trans_seq$=str(w9:"000")
-        wend
-        sft01a.units=timesheet.hrs 
-        sft01a.unit_cost=timesheet.direct_rate+timesheet.ovhd_rate
-        sft01a.ext_cost=timesheet.extended_amt
-        sft01a.direct_rate=timesheet.direct_rate
-        sft01a.ovhd_rate=timesheet.ovhd_rate
-        sft01a.complete_qty=timesheet.complete_qty
-        sft01a.setup_time=timesheet.setup_time
-        
-        precision 2
-        
-        sft01a.ext_cost=sft01a.ext_cost*1
-        precision ivs01_precision
-        write record (sft01_dev,key=(sft01a.firmid$+sft01a.wo_location$+sft01a.wo_no$+sft01a.trans_date$+sft01a.record_id_o$+sft01a.trans_seq$)) sft01a$
-
-rem --- Transaction Cross Reference
-
-        dim crossref$(18)
-        sfm07a.firm_id$=sft01a.firm_id$
-        sfm07a.wo_location$=sft01a.wo_location$
-        sfm07a.wo_no$=sft01a.wo_no$
-        sfm07a.trans_date$=sft01a.trans_date$
-        sfm07a.record_id$=sft01a.record_id_o$
-        sfm07a.trans_seq$=sft01a.trans_seq$
-        crossref$=sfm07a.firm_id$+sfm07a.wo_location$+sfm07a.wo_no$+sfm07a.trans_date$+sfm07a.record_id$+sfm07a.trans_seq$
-        write record (sfm07_dev,key=crossref$) sfm07a$
-
-rem --- Update Header
-
-        extract record (sfe01_dev,key=firm_id$+"  "+timesheet.wo_no$) sfe01a$
-        if pos(" "<>sfe01a.act_st_date$)=0 then let sfe01a.act_st_date$=timesheet.trans_date$
-        if sfe01a.lstact_date$<timesheet.trans_date$ then let sfe01a.lstact_date$=timesheet.trans_date$
-        write record (sfe01_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)) sfe01a$
-
-rem --- Find WO Type
-
-        if gl$<>"Y" then 
-             remove (timesheet_dev,key=k0$)
-             continue
-        endif
-        if sfm10a.wo_type$<>sfe01a.wo_type$ then 
-            find record (sfm10_dev,key=firm_id$+"A"+sfe01a.wo_type$) sfm10a$
-        endif
-rem --- Retrieve employee name
-
-        if p8$="YES" then 
-            find record (sfm01_dev,key=firm_id$+timesheet.employee_no$,dom=*next) sfm01a$
-            emp$=cvs(sfm01a.empl_surname$,2)+", "+cvs(sfm01a.empl_givname$,2)
+        if msg_opt$="Y" then
+            p8$="YES"
+            msg_id$="SF_GEN_PR_YES"
         else
-            find record (prm01_dev,key=firm_id$+timesheet.employee_no$,dom=*next) prm01a$
-            emp$=cvs(prm01a.empl_surname$,2)+", "+cvs(prm01a.empl_givname$,2)
+            p8$="NO"
+            msg_id$="SF_GEN_PR_NO"
         endif
-        gosub calc_transaction
+        gosub disp_message
+        if msg_opt$="C" then goto std_exit_no_update
+    endif
 
-rem --- Generate G/L Postings
+    precision ivs01_precision
 
-        precision 2
-        account$=sfm10a.gl_wip_acct$
-        memo$=emp$,ref1$=fnmask$(timesheet.employee_no$,prs01a.empl_output$)
-        total=trans_total
-        ref2$="WO "+timesheet.wo_no$
-        ref3$="Step "+timesheet.op_seq$
-        amount=total,units=0,when$=timesheet.trans_date$
-        gosub glpost
-        account$=sfm10a.gl_dir_lib$
-        amount=-direct_total,units=timesheet.hrs
-        gosub glpost
-        account$=sfm10a.gl_ovh_lab$
-        amount=-(total+amount),units=timesheet.hrs
-        gosub glpost
-        precision ivs01_precision
+rem --- Start progress meter and position header file
 
-rem --- Remove Timesheet Record
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,timesheet_dev,1,meter_num,status
+    read (timesheet_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
 
-        remove (timesheet_dev,key=k0$)
+rem --- Main Read (header file)
 
+    while 1
+        header_primary_key$=key(timesheet_dev,knum="PRIMARY",end=*break)
+        header_batch_key$=key(timesheet_dev,knum="BATCH_KEY",end=*break)
+        if pos(firm_id$+batch_no$=header_batch_key$)<>1 then break
+        read record (timesheet_dev) timesht$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        
+        rem --- Process detail records
+        read (timesheetdet_dev,key=header_batch_key$,knum="BATCH_KEY",dom=*next)
+        while 1
+            detail_primary_key$=key(timesheetdet_dev,knum="PRIMARY",end=*break)
+            detail_batch_key$=key(timesheetdet_dev,knum="BATCH_KEY",end=*break)
+            if pos(header_batch_key$=detail_batch_key$)<>1 then break
+            read record (timesheetdet_dev) timeshtdet$
+        
+            rem --- Post To Payroll
+            if p8$="YES" then 
+                precision prs01_precision
+                find record (empcode_dev,key=firm_id$+timeshtdet.employee_no$,dom=*endif) ecode$
+                
+goto skip1; rem --- Now using timeshtdet.direct_rate for pay rate, so can skip this.
+                dim prm10a$:fattr(prm10a$)
+                find record (prm10_dev,key=firm_id$+"A"+timeshtdet.pay_code$,dom=*next) prm10a$
+                if prm10a.prem_factor=0 then let prm10a.prem_factor=1
+                if sfs01a.pay_actstd$="A" then 
+                    prm10a.pay_units=timeshtdet.direct_rate
+                else
+                    prm10a.pay_units=prm10a.calc_rtamt*prm10a.prem_factor; rem "Pay code rate
+                    dim prm02a$:fattr(prm02a$)
+                    find record (prm02_dev,key=ecode.firm_id$+ecode.employee_no$+timeshtdet.title_code$,dom=*endif) prm02a$
+                    if ecode.hrlysalary$="S" and prm02a.std_hrs<>0 then let prm02a.std_rate=prm02a.std_rate/prm02a.std_hrs
+                    if prm10a.calc_rtamt<>0 prm02a.std_rate=prm10a.calc_rtamt; rem " Override by pay code
+                    if prm10a.prem_factor<>0 prm02a.std_rate=prm02a.std_rate*prm10a.prem_factor; rem "Premium rate
+                    if prm02a.std_rate<>0 prm10a.pay_units=prm02a.std_rate; rem "Employee rate
+                endif
+skip1: rem --- Now using timeshtdet.direct_rate for pay rate, so can skip this.
+
+                rem --- Build PRE_DAYTIME (pre-02)
+                dim pre02a$:fattr(pre02a$)
+                pre02a.firm_id$=firm_id$
+                pre02a.employee_no$=timeshtdet.employee_no$
+                pre02a.pay_code$=timeshtdet.pay_code$
+                pre02a.title_code$=timeshtdet.title_code$
+                pre02a.dept_code$=ecode.dept_code$; rem --- why isn't dept_code set in Time Sheet Entry?
+                pre02a.trans_date$=timeshtdet.trans_date$
+                pre02a.pr_job_no$=timeshtdet.wo_no$
+                rem pre02a.rate=prm10a.pay_units; rem --- Now using timeshtdet.direct_rate
+                pre02a.rate=timeshtdet.direct_rate
+                pre02a.units=timeshtdet.hrs+timeshtdet.setup_time
+                pre02a.extended_amt=round(pre02a.rate*pre02a.units,2)
+            
+                rem --- Get next available pr_time_seq for this employee
+                next_seq_no=1
+                pr_time_seq_mask$=fill(len(pre02a.pr_time_seq$),"0")
+                pre02_trip$=pre02a.firm_id$+pre02a.employee_no$
+                read (pre02_dev,key=pre02_trip$+$ff$,dom=*next)
+                previous_key$=""
+                previous_key$=keyp(pre02_dev,end=*next)
+                if pos(pre02_trip$=previous_key$)=1 then
+                    next_seq_no=num(previous_key$(1+len(pre02_trip$)),err=*next)+1
+                endif
+                max_entries=999
+                if next_seq_no>max_entries then 
+                    msg_id$="SF_MAX_EMPL_ENTRY"
+                    dim msg_tokens$[2]
+                    msg_tokens$[1]=str(max_entries)
+                    msg_tokens$[2]=fnmask$(employee_no$(1,p[0]),m0$)
+                    gosub disp_message
+                else
+                    pre02a.pr_time_seq$=str(next_seq_no:pr_time_seq_mask$)
+
+                    rem --- Write PRE_DAYTIME (pre-02) record
+                    write record (pre02_dev) pre02a$
+                endif
+            endif
+        
+            rem --- Work Order Transaction
+            precision ivs01_precision
+            dim sft01a$:fattr(sft01a$)
+            sft01a.firm_id$=firm_id$
+            sft01a.wo_location$="  "
+            sft01a.wo_no$=timeshtdet.wo_no$
+            sft01a.trans_date$=timeshtdet.trans_date$
+            sft01a.oper_seq_ref$=timeshtdet.oper_seq_ref$
+            sft01a.op_code$=timeshtdet.op_code$
+            sft01a.employee_no$=timeshtdet.employee_no$
+            sft01a.units=timeshtdet.hrs 
+            sft01a.unit_cost=timeshtdet.direct_rate+timeshtdet.ovhd_rate
+            sft01a.ext_cost=round(timeshtdet.extended_amt,2)
+            sft01a.direct_rate=timeshtdet.direct_rate
+            sft01a.ovhd_rate=timeshtdet.ovhd_rate
+            sft01a.complete_qty=timeshtdet.complete_qty
+            sft01a.setup_time=timeshtdet.setup_time
+
+            rem --- Get next available trans_seq for this WO operation transaction
+            next_seq_no=1
+            trans_seq_mask$=fill(len(sft01a.trans_seq$),"0")
+            sft01_trip$=sft01a.firm_id$+sft01a.wo_location$+sft01a.wo_no$+sft01a.trans_date$
+            read (sft01a_dev,key=sft01_trip$+$ff$,dom=*next)
+            previous_key$=""
+            previous_key$=keyp(sft01a_dev,end=*next)
+            if pos(sft01_trip$=previous_key$)=1 then
+                next_seq_no=num(previous_key$(1+len(sft01_trip$)),err=*next)+1
+            endif
+            sft01a.trans_seq$=str(next_seq_no:trans_seq_mask$)
+
+            rem --- Write SFT_OPNOPRTR (sft-01) record
+            write record (sft01a_dev) sft01a$
+
+            rem --- Transaction Cross Reference
+            rem --- SFX_WOTRANXR (sfm-07) has been replaced by a database view vw_sfx_wotranxr
+
+            rem --- Update WO master SFE_WOMASTR (sfe-01)
+            extract record (sfe01a_dev,key=firm_id$+"  "+timeshtdet.wo_no$) sfe01a$
+            if pos(" "<>sfe01a.act_st_date$)=0 then let sfe01a.act_st_date$=timeshtdet.trans_date$
+            if sfe01a.lstact_date$<timeshtdet.trans_date$ then let sfe01a.lstact_date$=timeshtdet.trans_date$
+            write record (sfe01a_dev) sfe01a$
+
+            rem --- Remove timesheet detail record (uses PRIMARY key), and reset file pointer for BATCH_KEY
+            remove (timesheetdet_dev,key=detail_primary_key$)
+            read (timesheetdet_dev,key=detail_batch_key$,knum="BATCH_KEY",dom=*next)
+
+        rem --- Loop back for next detail record
+        wend
+
+        rem --- Remove timesheet header record (uses PRIMARY key), and reset file pointer for BATCH_KEY
+        remove (timesheet_dev,key=header_primary_key$)
+        read (timesheet_dev,key=header_batch_key$,knum="BATCH_KEY",dom=*next)
+
+    rem --- Loop back for next header record
     wend
 
 done: rem --- Finished
 
-        if gl$="Y" then call pgmdir$+"glc_ctlupdate.aon",status
-        call pgmdir$+"adc_batchdelete.aon",status
-        goto std_exit
+    if gl$="Y"
+        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+        call pgmdir$+"glc_ctlupdate.aon",status
+        call pgmdir$+"glc_ctldelete.aon",status
+    endif
+    call pgmdir$+"adc_batchdelete.aon",err=*next,status
+    goto std_exit
 
 payroll_defined: rem --- Payroll Period Must Be Defined
 
-        dim message$[1]
-        message$[0]="PR Period Must Be Defined For Time Sheet Update (<Enter>=Continue)"
-        call pgmdir$+"adc_stdmessage.aon",1,message$[all],0,22,-1,v$,v3
-        goto std_exit
+    msg_id$="SF_PR_PERIOD_REQ"
+    gosub disp_message
+    goto std_exit_no_update
 
-calc_transaction: rem --- Calculate Transaction Direct & Overhead Totals
-
-        direct_hrs=round(timesheet.direct_rate*timesheet.hrs,2)
-        direct_set=round(timesheet.direct_rate*timesheet.setup_time,2)
-        direct_total=direct_hrs+direct_set
-        oh_hrs=round(timesheet.extended_amt*timesheet.hrs,2)
-        oh_set=round(timesheet.extended_amt*timesheet.setup_time,2)
-        oh_total=oh_hrs+oh_set
-        trans_total=direct_total+oh_total
-        return
-
-glpost: rem --- Standard G/L Posting Routine
-
-        if gl$="Y" then 
-            call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,reserved,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
-        endif
-        return
-
-rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
-rem --- Functions used to retrieve form values
-
-    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
-    def fnget_table$(q0$)=rd_alias_id$
-
-rem --- Miscellaneous functions
-
-    def fncenter(q$,q)=int((q-len(q$))/2)
-
-rem --- Format inventory item description
-
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
 
 rem --- Date/time handling functions
 
@@ -399,10 +222,6 @@ rem --- Date/time handling functions
         if q1$="" q1$=q$
         return q1$
     fnend
-    
-    def fnyy$(q$)=q$(3,2)
-    def fnclock$(q$)=date(0:"%hz:%mz %p")
-    def fntime$(q$)=date(0:"%Hz%mz")
 
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
@@ -419,37 +238,14 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         return str(q1$:q2$)
     fnend
 
-rem --- fnbasename$: Strip path and optionally the suffix from a file name
-
-    def fnbasename$(q$,q0$)
-        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
-        if q then q$=q$(q+1)
-        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
-
-rem --- fnglobal: Return numeric value of passed stbl variable
-
-    def fnglobal(q$,q1)
-        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
-        return q1
-    fnend
-
-rem --- fnglobal$: Return string value of passed STBL variable
-
-    def fnglobal$(q$,q1$)
-        q1$=stbl(q$,err=*next)
-        return q1$
-    fnend
-
-rem #endinclude std_functions.src
-
 rem #include disp_message.src
 
-disp_message:rem --- Display Message Dialog
+disp_message: rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
-return
-	
+
+    return
+
 rem #endinclude disp_message.src
 
 rem #include std_error.src
@@ -458,51 +254,44 @@ std_error: rem --- Standard error handler (01Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
 
 rem #endinclude std_error.src
-rem #include std_missing_params.src
-
-std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
-
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
-
-rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

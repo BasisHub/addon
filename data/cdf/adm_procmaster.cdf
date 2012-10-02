@@ -68,7 +68,7 @@ if numrecs>0
 		gridrec$=recVect!.getItem(reccnt)
 		if cvs(gridrec$,3)<> "" 
 			while 1
-				readrecord(glm06_dev,key=firm_id$+gridrec$.process_id$ +gridrec.sequence_no$, dom=*break)glm06a$	
+				extractrecord(glm06_dev,key=firm_id$+gridrec$.process_id$ +gridrec.sequence_no$, dom=*break)glm06a$; rem Advisory Locking
 				glm06a.process_alias$=gridrec.dd_table_alias$
 				glm06a.process_program$=gridrec.program_name$
 				glm06a$=field(glm06a$)

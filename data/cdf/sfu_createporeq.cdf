@@ -30,9 +30,9 @@ rem --- Exit if SF is not interfaced with PO
 		break
 	endif
 [[SFU_CREATEPOREQ.ASVA]]
-rem --- Ensure that at least one status option (Open/Closed) is checked
+rem --- Ensure that at least one status option (Open/Planned) is checked
 
-if callpoint!.getColumnData("SFU_CREATEPOREQ.OPEN")="N" AND callpoint!.getColumnData("SFU_CREATEPOREQ.CLOSED")="N"
+if callpoint!.getColumnData("SFU_CREATEPOREQ.OPEN")="N" AND callpoint!.getColumnData("SFU_CREATEPOREQ.PLANNED")="N"
 	msg_id$="SF_STATUS_REQUIRED"
 	gosub disp_message
 	callpoint!.setStatus("ABORT")

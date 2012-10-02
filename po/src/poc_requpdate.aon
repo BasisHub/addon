@@ -1,0 +1,197 @@
+rem --- Update Work Order Material/Subcontract Lines
+rem --- Program converted from poc_wa, 10Sep2012
+rem --- Created by Codeport Utility (09/10/2012 12:13:48)
+
+rem --- AddonSoftware
+rem --- Copyright (c) 1981-2011 AddonSoftware
+rem --- All Rights Reserved
+
+rem -------------- Errors, Warnings and Conversion Information ---------------------
+
+rem --------------------------------------------------------------------------------
+
+rem --- sfe22_dev   : sfe-22 channel number (input)
+rem --- sfe32_dev   : sfe-32 channel number (input)
+rem --- po_no$      : Requisition/PO Number (input
+rem --- po_seq$     : Req/PO line number (input)
+rem --- type$       : Source type (input) R=Requisition/P=Purchase Order
+rem --- line_type$  : Line item line code (input)
+rem --- old_wo$     : Old work order (input)
+rem --- old_woseq$  : Old work order line number (input)
+rem --- new_wo$     : New work order (input)
+rem --- new_woseq$  : New work order line number (input)
+rem --- status      : 0=No error (returned)
+
+    seterr std_error
+    setesc std_error
+    enter sfe22_dev,sfe32_dev,po_no$,po_seq$,type$,line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open files
+
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="SFE_WOMATL",     open_opts$[1]="T"
+	open_tables$[2]="SFE_WOSUBCNT",   open_opts$[2]="T"
+	
+    gosub open_tables
+
+rem --- Dimension string templates
+
+	dim sfe22a$:open_tpls$[1]
+	dim sfe32a$:open_tpls$[2]
+
+rem --- Branch based on line code
+
+    if line_type$="N" goto non_stock
+
+rem --- Remove link to work order materials line
+
+	if old_wo$<>new_wo$ or old_woseq$<>new_woseq$
+		dim sfe22a$:fattr(sfe22a$)
+		while 1
+			extract record (sfe22_dev,key=firm_id$+sfe22a.wo_location$+old_wo$+old_woseq$,knum="AO_MAT_SEQ",dom=*break) sfe22a$
+			sfe22a.po_no$=""
+			sfe22a.pur_ord_seq_ref$=""
+			sfe22a.po_status$=""
+			sfe22a$=field(sfe22a$)
+			write record (sfe22_dev) sfe22a$
+			break
+		wend
+	endif
+
+rem --- Add link to work order materials line
+
+	dim sfe22a$:fattr(sfe22a$)
+    extract record (sfe22_dev,key=firm_id$+sfe22a.wo_location$+new_wo$+new_woseq$,knum="AO_MAT_SEQ",dom=done) sfe22a$
+	sfe22a.po_no$=po_no$
+	sfe22a.pur_ord_seq_ref$=po_seq$
+	sfe22a.po_status$=type$
+	sfe22a$=field(sfe22a$)
+    write record (sfe22_dev) sfe22a$
+    goto done
+
+non_stock: rem --- Remove link to work order subcontract line
+
+    if old_wo$<>new_wo$ or old_woseq$<>new_woseq$
+		dim sfe32a$:fattr(sfe32a$)
+		while 1
+			extract record (sfe32_dev,key=firm_id$+sfe32a.wo_location$+old_wo$+old_woseq$,knum="AO_SUBCONT_SEQ",dom=*break) sfe32a$
+			sfe32a.po_no$=""
+			sfe32a.pur_ord_seq_ref$=""
+			sfe32a.po_status$=""
+			sfe32a$=field(sfe32a$)
+			write record (sfe32_dev) sfe32a$
+			break
+		wend
+	endif
+
+rem --- Add line to work order subcontract line
+
+	dim sfe32a$:fattr(sfe32a$)
+    extract record (sfe32_dev,key=firm_id$+sfe32a.wo_location$+new_wo$+new_woseq$,knum="AO_SUBCONT_SEQ",dom=done) sfe32a$
+	sfe32a.po_no$=po_no$
+	sfe32a.pur_ord_seq_ref$=po_seq$
+	sfe32a.po_status$=type$
+    write record (sfe32_dev,key=a0$) sfe32a$
+
+done: rem --- End of logic
+
+	goto std_exit
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

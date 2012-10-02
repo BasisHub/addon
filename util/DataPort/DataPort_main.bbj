@@ -49,7 +49,6 @@ rem --- initialization
     source_folder$ = callpoint!.getDevObject("source_folder")
     destin_folder$ = callpoint!.getDevObject("destin_folder")
     vectPort! = callpoint!.getDevObject("vectPort")
-	port_masks$ = callpoint!.getDevObject("port_masks")
 	
     dictfile$=stbl("+DIR_BRD")
     dictpgm$=stbl("+DIR_SYP")
@@ -308,6 +307,7 @@ close (po_files)
 
 rem --- read sequence_no into hash map
 
+seq_no_files! = new java.util.HashMap()
 sequence_no! = new java.util.HashMap()
 sequence_no_tpl$="seq_no_id:c(16*=124),v6_file:c(16*=124),v6_field:c(16*=124),v6_element_no:c(16*=124),v7_file:c(16*=124),v7_field:c(16*=124),v7_element_no:c(16*=)"
 dim sequence_no$:sequence_no_tpl$
@@ -319,6 +319,12 @@ while 1
       keyval$ = cvs(sequence_no.seq_no_id$,3)
       dataval$ = cvs(sequence_no$,3)
       sequence_no!.put(keyval$,dataval$)
+      if source_version=6
+          old_file$=cvs(sequence_no.v6_file$,11)
+      else
+          old_file$=cvs(sequence_no.v7_file$,11)
+      endif
+      seq_no_files!.put(old_file$,"n")
    endif
 wend
 close (sequence_no)
@@ -370,7 +376,7 @@ next_file:
 :   pos(cvs(datafile$,8)="glt-05;",7) or
 :   pos(cvs(datafile$,8)="ivm-03;ivm-08;",7) or
 :   pos(cvs(datafile$,8)="poe-31;poe-32;poe-33;poe-34;poe-41;poe-42;po3-43;poe-44;poe-52;poe-53;poe-54;pot-24;pot-34;pot-35;pot-44;",7) or
-:   pos(cvs(datafile$,8)="sym-59;sym-69;sys-60;",7) or
+:   pos(cvs(datafile$,8)="sym-04;sym-49;sym-59;sym-69;sys-60;",7) or
 :   pos(cvs(datafile$,8)="woe-03;wom-07;",7) then
         print "Skipped: ",datafile$
         print (log_dev)"Skipped: ",datafile$
@@ -382,7 +388,14 @@ next_file:
 
     if cvs(datafile$,8)="sys-01" then
        normalize_sys01=1
+       do_make_masks=1
     endif; rem ' sys-01
+
+    rem --- Does this file contain sequence numbers that need to be processed separately later?
+    if seq_no_files!.containsKey(cvs(datafile$,8)) then
+        seq_no_files!.put(cvs(datafile$,8),"y")
+        do_sequence_numbers=1
+    endif
 
     rem --- Split old header/detail files into separate files
     switch pos(cvs(datafile$,8)="woe-11;woe-21;woe-31;",7)
@@ -468,6 +481,26 @@ next_ddm03:
        if cvs(ddm03.file_name$,3)<>cvs(datafile$,3) then
           goto next_file
        endif
+    endif
+    rem --- Open/create ARS_CUSTDFLT and ARS_PARAMS for ARS-01A record
+    if ddm03.file_name$="ARS-01" and ddm03.record_id$="A" then
+        rem --- Add ARS_CUSTDFLT to file_xref! HashMap for ARS-01A key
+        file_xref!.put("ARS-01A","ARS_CUSTDFLT")
+        gosub get_new_template
+        ars_custdflt_dev=new_file
+        dim ars_custdflt_rec$:fattr(new_rec$)
+        rem --- Reset ARS_PARAMS to file_xref! HashMap for ARS-01A key
+        file_xref!.put("ARS-01A","ARS_PARAMS")
+    endif
+    rem --- Open/create opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) for version 6 ARM-10G records
+    if source_version=6 and ddm03.file_name$="ARM-10" and ddm03.record_id$="G" then
+        rem --- Add opm-04A (OPC_MSG_HDR) to file_xref! HashMap for ARM-10G key
+        file_xref!.put("ARM-10G","opm-04A")
+        gosub get_new_template
+        opm04_dev=new_file
+        dim opm04_rec$:fattr(new_rec$)
+        rem --- Reset opm-14A (OPC_MSG_DET) to file_xref! HashMap for ARM-10G key
+        file_xref!.put("ARM-10G","opm-14A")
     endif
     gosub get_new_template
     rd_gen_table_tpl$=""
@@ -612,7 +645,6 @@ end_ddm04:
 
     next_rec:
     readrecord(old_file,end=eof)old_rec$
-    if source_version=6 and datafile$="ARM-10" and old_rec$(1,3)="01G" goto next_rec
     if pos("00"=old_rec$)=1 goto next_rec
     if record_id_field$<>"" and field(old_rec$,record_id_field$,err=*continue)<>ddm03.record_id$ then
        goto next_rec
@@ -620,11 +652,22 @@ end_ddm04:
     if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) + field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
        goto next_rec
     endif
+if copy_sys01 and file_normalization$(1,4)="AR00" then
+    rem --- Write ARS_CUSTDFLT for ARS-01A records
+    gosub write_ars_custdflt_recs
+endif
+    if source_version=6 and datafile$="ARM-10" and record_id_field$="RECORD_ID_G" then
+        rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) records from version 6 ARM-10G records
+        opm14_dev=new_file
+        dim opm14_rec$:fattr(new_rec$)
+        gosub write_opc_msg_recs
+        goto next_rec
+    endif
 	thisFirm$=""
 
-    rem --- start field loop
+rem --- start field loop
 
-        for field=1 to fields
+    for field=1 to fields
 
 rem --- Retrieve value$ if applicable
 
@@ -799,7 +842,7 @@ rem --- if this field.value is listed in flat file "field_translations" then tra
             value$=translate_value$
         endif
 
- rem --- date formatting
+rem --- date formatting
 
         attr$=fattr(old_rec$,old_fieldlist.name$[field])
         fld_sep$=attr$(3,1)
@@ -854,19 +897,26 @@ rem --- if this field.value is listed in flat file "field_translations" then tra
            case default; escape; rem ' should never get here
         swend
 
-        rem --- replace non-print characters with spaces
+rem --- replace non-print characters with spaces
 
         value$=cvs(value$,16)
 
-        rem --- probably need logic here to read ddm_elements, and make sure that 
-        rem --- delimited elements that are marked as left/space padded actually get padded
-        rem --- right now, padding doesn't happen, but isn't causing widespread problem (CAH; Apr09)
+rem --- Field terminators can result in short character fields that need to be padded.
+        rem --- Get length of character fields from string template.
+        if hta(fattr(new_rec$,new_fieldlist.name$[field]))(1,2)="01" then
+            fieldlen$=hta(fattr(new_rec$,new_fieldlist.name$[field]))(19,4)
+            fieldlen=dec(ath(fieldlen$))
+            rem --- Pad field as necessary
+            if len(value$)<fieldlen then
+                value$=pad(value$, fieldlen)
+            endif
+        endif
 
-                field new_rec$,new_fieldlist.name$[field]=value$
+        field new_rec$,new_fieldlist.name$[field]=value$
 
-            next field
+    next field
 
-    rem --- final misc processing prior to writing new record    
+rem --- final misc processing prior to writing new record    
 
     if addr_lines then gosub reformat_address
 
@@ -1010,14 +1060,9 @@ end_read_normalize_xref:
        goto end_read_loop
     endif; rem ' normalize_sys01
 
-rem --- Now go populate masks and sequences
-
-	if port_masks$="Y"
-		if source_version=6 gosub version6_files
-		if source_version=7 gosub version7_files
-		gosub make_masks
-		gosub set_sequence_numbers
-    endif
+rem --- Now go populate masks and sequences as needed
+    if do_make_masks then gosub make_masks
+	if do_sequence_numbers then gosub set_sequence_numbers
     
     if temp_vend_ok$="N"
         rd_meter_data$="Temporary vendor records found not ported. See error file."
@@ -1099,354 +1144,72 @@ rem --- Done
 
     release
 
-version7_files:
+write_opc_msg_recs: rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) records from version 6 ARM-10G records
 
-    ops10_dev=unt
-    open (ops10_dev,err=endof_v7cash_sales)source_folder$+"/"+cvs("ops-10",version_cvs)
-    
-    new_file=unt
-    datafile$=cvs("ars_mtdcash",8)
-    table_alias$="ARS_MTDCASH"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v7cash_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$) then goto start_v7cash
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
-
-get_v7cash_template:
-
-    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
-    dim ids$[1],templates$[1]
-    ids$[1]="ARS_MTDCASH"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for ARS_MTDCASH. File skipped."
-        print (err_dev) "Could not find v8 template file for ARS_MTDCASH. File skipped."
-        goto start_v7cash
+    rem --- Write opm-04 (OPC_MSG_HDR) record
+    rec=5
+    if old_rec.record_id$="1" then
+        rec=0
+        opm04_rec.firm_id$=old_rec.firm_id$
+        opm04_rec.message_code$=old_rec.message_code$
+        opm04_rec.code_desc$=old_rec.code_desc$
+        opm04_rec$=field(opm04_rec$)
+        writerecord(opm04_dev)opm04_rec$
     endif
-    dim new_rec$:templates$[1]
-    while 1
-        k$=key(ops10_dev,end=*break)
-        if k$(3,1)<>"C" 
-            read(ops10_dev)
-            continue
-        endif    
-        dim ops10[6]
-        read(ops10_dev,key=k$)ops10_0$,ops10[all]
-        new_rec.firm_id$=k$(1,2)
-        new_rec.record_id_c$="C"
-        new_rec.mtd_cash=ops10[0]
-        new_rec.mtd_csh_disc=ops10[1]
-        new_rec.mtd_csh_gl=ops10[2]
-        new_rec.nxt_mtd_cash=ops10[3]
-        new_rec.nmtd_cash_ds=ops10[4]
-        new_rec.nmtd_cashgl=ops10[5]
-        new_rec$=field(new_rec$)
-        writerecord(new_file)new_rec$
-    wend
-    
-start_v7cash:
 
-    new_file=unt
-    datafile$=cvs("ops_mtdsales",8)
-    table_alias$="OPS_MTDSALES"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v7sales_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$) then goto endof_v7cash_sales
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
-
-get_v7sales_template:
-
-    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
-    dim ids$[1],templates$[1]
-    ids$[1]="OPS_MTDSALES"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for OPS_MTDSALES. File skipped."
-        print (err_dev) "Could not find v8 template file for OPS_MTDSALES. File skipped."
-        goto endof_v7cash_sales
-    endif
-    dim new_rec$:templates$[1]
-    read(ops10_dev,key="",dom=*next)
-    while 1
-        k$=key(ops10_dev,end=*break)
-        if k$(3,1)<>"S" 
-            read(ops10_dev)
-            continue
-        endif   
-        dim ops10[15]
-        read(ops10_dev,key=k$)ops10_0$,ops10[all]
-        new_rec.firm_id$=k$(1,2)
-        new_rec.record_id_s$="S"
-        new_rec.mtd_sales=ops10[0]
-        new_rec.mtd_returns=ops10[1]
-        new_rec.mtd_tax=ops10[2]
-        new_rec.mtd_freight=ops10[3]
-        new_rec.mtd_cost=ops10[4]
-        new_rec.mtd_discount=ops10[5]
-        new_rec.mtd_csh_sale=ops10[6]
-        new_rec.nmtd_sales=ops10[8]
-        new_rec.nmtd_returns=ops10[9]
-        new_rec.nmtd_tax=ops10[10]
-        new_rec.nxt_mtd_frgt=ops10[11]
-        new_rec.nxt_mtd_cost=ops10[12]
-        new_rec.nxt_mtd_disc=ops10[13]
-        new_rec.nmtd_cashsl=ops10[14]
-        new_rec$=field(new_rec$)
-        writerecord(new_file)new_rec$
-    wend
-
-endof_v7cash_sales:
+    rem --- Write opm-14(OPC_MSG_DET) records
+    write_opm14_recs=0
+    for i=5 to 1 step -1
+        opm14_rec.firm_id$=old_rec.firm_id$
+        opm14_rec.message_code$=old_rec.message_code$
+        opm14_rec.message_seq$=str(i+rec:"00")
+        opm14_rec.message_text$=field(old_rec$,"MESSAGE_TEXT_"+str(i:"00"))
+        rem --- Skip trailing blank message lines
+        if cvs(opm14_rec.message_text$,2)<>"" or write_opm14_recs then
+            write_opm14_recs=1
+            opm14_rec$=field(opm14_rec$)
+            writerecord(opm14_dev)opm14_rec$
+        endif
+    next i
 
     return
-    
-version6_files:
 
-    ars10_dev=unt
-    open (ars10_dev,err=endof_v6cash_sales)source_folder$+"/"+cvs("ars-10",version_cvs)
-    
-    new_file=unt
-    datafile$=cvs("ars_mtdcash",8)
-    table_alias$="ARS_MTDCASH"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v6cash_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$) then goto start_v6cash
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
+write_ars_custdflt_recs: rem --- Write ARS_CUSTDFLT for ARS-01A records
 
-get_v6cash_template:
+    rem --- Init ARS_CUSTDFLT record
+    ars_custdflt_rec.firm_id$=old_rec.firm_id$
+    ars_custdflt_rec.record_id_d$="D"
+    ars_custdflt_rec.disc_code$=old_rec.disc_code$
+    ars_custdflt_rec.territory$=old_rec.territory$
+    ars_custdflt_rec.slspsn_code$=old_rec.slspsn_code$
+    ars_custdflt_rec.tax_code$=old_rec.tax_code$
+    ars_custdflt_rec.ar_terms_code$=old_rec.terms_code$
+    ars_custdflt_rec.ar_dist_code$=old_rec.dist_code$
+    ars_custdflt_rec.customer_inv_his$=old_rec.cust_inv_his$
 
-    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
-    dim ids$[1],templates$[1]
-    ids$[1]="ARS_MTDCASH"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for ARS_MTDCASH. File skipped."
-        print (err_dev) "Could not find v8 template file for ARS_MTDCASH. File skipped."
-        goto start_v6cash
-    endif
-    dim new_rec$:templates$[1]
-    while 1
-        k$=key(ars10_dev,end=*break)
-        if k$(3,1)<>"C" 
-            read(ars10_dev)
-            continue
-        endif    
-        dim ars10[6]
-        read(ars10_dev,key=k$)ars10_0$,ars10[all]
-        new_rec.firm_id$=k$(1,2)
-        new_rec.record_id_c$="C"
-        new_rec.mtd_cash=ars10[0]
-        new_rec.mtd_csh_disc=ars10[1]
-        new_rec.mtd_csh_gl=ars10[2]
-        new_rec.nxt_mtd_cash=ars10[3]
-        new_rec.nmtd_cash_ds=ars10[4]
-        new_rec.nmtd_cashgl=ars10[5]
-        new_rec$=field(new_rec$)
-        writerecord(new_file)new_rec$
-    wend
-    
-start_v6cash:
-
-    new_file=unt
-    datafile$=cvs("ops_mtdsales",8)
-    table_alias$="OPS_MTDSALES"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v6sales_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$) then goto endof_v6cash_sales
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
-
-get_v6sales_template:
-
-    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
-    dim ids$[1],templates$[1]
-    ids$[1]="OPS_MTDSALES"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for OPS_MTDSALES. File skipped."
-        print (err_dev) "Could not find v8 template file for OPS_MTDSALES. File skipped."
-        goto endof_v6cash_sales
-    endif
-    dim new_rec$:templates$[1]
-    read(ars10_dev,key="",dom=*next)
-    while 1
-        k$=key(ars10_dev,end=*break)
-        if k$(3,1)<>"S" 
-            read(ars10_dev)
-            continue
-        endif   
-        dim ars10[15]
-        read(ars10_dev,key=k$)ars10_0$,ars10[all]
-        new_rec.firm_id$=k$(1,2)
-        new_rec.record_id_s$="S"
-        new_rec.mtd_sales=ars10[0]
-        new_rec.mtd_returns=ars10[1]
-        new_rec.mtd_tax=ars10[2]
-        new_rec.mtd_freight=ars10[3]
-        new_rec.mtd_cost=ars10[4]
-        new_rec.mtd_discount=ars10[5]
-        new_rec.mtd_csh_sale=ars10[6]
-        new_rec.nmtd_sales=ars10[8]
-        new_rec.nmtd_returns=ars10[9]
-        new_rec.nmtd_tax=ars10[10]
-        new_rec.nxt_mtd_frgt=ars10[11]
-        new_rec.nxt_mtd_cost=ars10[12]
-        new_rec.nxt_mtd_disc=ars10[13]
-        new_rec.nmtd_cashsl=ars10[14]
-        new_rec$=field(new_rec$)
-        writerecord(new_file)new_rec$
-    wend
-
-endof_v6cash_sales:
-
-    arm10_dev=unt
-    open (arm10_dev,err=end_of_msgs)source_folder$+"/"+cvs("arm-10",version_cvs)
-
-    new_file=unt
-    datafile$=cvs("opm-04",8)
-    table_alias$="OPC_MSG_HDR"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_opm04_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$) then goto start_msg_det
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
-get_opm04_template:
-    dim ids$[1],templates$[1]
-    ids$[1]="OPC_MSG_HDR"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for OPC_MSG_HDR. OP Messages skipped."
-        print (err_dev) "Could not find v8 template file for OPC_MSG_HDR. OP Messages skipped."
-        goto end_of_msgs
-    endif
-    dim new_rec$:templates$[1]
-read_msg_hdr:
-    read(arm10_dev,end=start_msg_det)arm10a_0$,arm10a_1$
-    if arm10a_0$(3,1)<>"G" goto read_msg_hdr
-    if arm10a_0$(6,1)<>"1" goto read_msg_hdr
-    new_rec.firm_id$=arm10a_0$(1,2)
-    new_rec.message_code$=arm10a_0$(4,2)
-    new_rec.code_desc$=arm10a_0$(7,20)
-    new_rec$=field(new_rec$)
-    writerecord(new_file)new_rec$
-    goto read_msg_hdr
-
-start_msg_det:
-    close (new_file)
-    new_file=unt
-    datafile$=cvs("opm-14",8)
-    table_alias$="OPC_MSG_DET"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_opm14_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$) then goto end_of_msgs
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
-get_opm14_template:
-    dim ids$[1],templates$[1]
-    ids$[1]="OPC_MSG_DET"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for OPC_MSG_DET. OP Message details skipped."
-        print (err_dev) "Could not find v8 template file for OPC_MSG_DET. OP Message details skipped."
-        goto end_of_msgs
-    endif
-    dim new_rec$:templates$[1]
-    read(arm10_dev,key="",dom=*next)
-
-    while 1
-        read(arm10_dev,end=*break)arm10a_0$,arm10a_1$
-        if arm10a_0$(3,1)<>"G" continue
-        dim second$(200)
-        k$=key(arm10_dev,end=*next)
-        if pos(arm10a_0$(1,5)=k$)=1
-            read(arm10_dev)*,second$
-        endif
-        msg$=pad(arm10a_1$,200)+pad(second$,200)
-        for x=1 to 400 step 40
-            if pos(" "<>msg$(x))<>0
-                new_rec.firm_id$=arm10a_0$(1,2)
-                new_rec.message_code$=arm10a_0$(4,2)
-                new_rec.message_seq$=str(((x-1)/40)+1:"00")
-                new_rec.message_text$=msg$(x,40)
-                new_rec$=field(new_rec$)
-                writerecord(new_file)new_rec$
-            endif
-        next x
-    wend
-end_of_msgs:
-    close (new_file,err=*next)
-    new_file=0
-return
-
-make_masks:
-
-rem --- First try to create the ars_custdflt record"
-
-    sys01_dev=unt
-    open (sys01_dev,err=no_masks)source_folder$+"/"+cvs("sys-01",version_cvs)
-
-    new_file=unt
-    datafile$=cvs("ars_custdflt",8)
-    table_alias$="ARS_CUSTDFLT"
-    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_custdflt_template
-    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
-    if len(status$)
-        print "   Could not create the customer default table. Data skipped."
-        print (err_dev) "Could not create the customer default table. Data skipped."
-        goto no_cust_default
-    endif
-    new_file=unt
-    open (new_file)destin_folder$+"/"+datafile$
-get_custdflt_template:
-    dim ids$[1],templates$[1]
-    ids$[1]="ARS_CUSTDFLT"
-    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
-    if status 
-        print "   Could not find v8 template file for ARS_CUSTDFLT. Data skipped."
-        print (err_dev) "Could not find v8 template file for ARS_CUSTDFLT. Data skipped."
-        goto no_cust_default
-    endif
-    dim new_rec$:templates$[1]
-read_dflt_hdr:
-    read(sys01_dev,end=no_cust_default)sys01_0$,sys01_1$,sys01_2$,sys01_3$
-    if len(sys01_0$)<>6 goto read_dflt_hdr
-    if pos("AR00"=sys01_0$(3))<>1 goto read_dflt_hdr
-    new_rec.firm_id$=sys01_0$(1,2)
-    new_rec.record_id_d$="D"
-    new_rec.disc_code$=sys01_3$(50,2)
-    new_rec.territory$=sys01_3$(52,3)
-    new_rec.slspsn_code$=sys01_3$(55,3)
-    new_rec.tax_code$=sys01_3$(58,2)
-    new_rec.ar_terms_code$=sys01_3$(60,2)
-    new_rec.ar_dist_code$=sys01_3$(62,2)
-    new_rec.customer_inv_his$=sys01_3$(78,1)
-    gosub check_blank_codes
-    new_rec$=field(new_rec$)
-    writerecord(new_file)new_rec$
-    goto read_dflt_hdr
-
-    check_blank_codes:
-rem --- translate any codes from custdflt if listed in flat file "field_translations" 
-
-    tmp$=fattr(new_rec$,"")
+    rem --- Translate ARS_CUSTDFLT codes listed in field_translations file
+    tmp$=fattr(ars_custdflt_rec$,"")
     tmp=pos($0A$=tmp$,1,0)
     dim tmp_fieldlist$:"name["+str(tmp)+"]:c(20*)"
     tmp_fieldlist$=tmp$
 
-        for field=1 to tmp
-        value$=field(new_rec$,tmp_fieldlist.name$[field])
+    for field=1 to tmp
+        value$=field(ars_custdflt_rec$,tmp_fieldlist.name$[field])
         translate_value!=field_translations!.get(tmp_fieldlist.name$[field]+"."+cvs(value$,3))
         if translate_value!<>null()
             translate_value$=str(translate_value!)
-            field new_rec$,tmp_fieldlist.name$[field]=translate_value$
+            field ars_custdflt_rec$,tmp_fieldlist.name$[field]=translate_value$
         endif
     next field
 
-        return
+    rem --- Write ARS_CUSTDFLT record
+    ars_custdflt_rec$=field(ars_custdflt_rec$)
+    writerecord(ars_custdflt_dev)ars_custdflt_rec$
 
-no_cust_default:
+    return
+
+make_masks:
+
     masks_dev=unt
     open (masks_dev)stbl("+DIR_BRA")+"ads_masks.dat"
     comp_id$=stbl("+AON_APPCOMPANY")
@@ -1642,7 +1405,7 @@ rem --- although flat file sequence_no could probably be modified to contain all
     while sequence_iterator!.hasNext()
         sequence_id$ = str(sequence_iterator!.next())
         sequence_no$=sequence_no!.get(sequence_id$)
-    
+        
         old_file=unt
         if source_version=6
             old_file$=cvs(sequence_no.v6_file$,version_cvs)
@@ -1651,6 +1414,7 @@ rem --- although flat file sequence_no could probably be modified to contain all
             old_file$=cvs(sequence_no.v7_file$,version_cvs)
             old_element_no=num(sequence_no.v7_element_no$)
         endif
+        if seq_no_files!.get(cvs(old_file$,11))<>"y" then continue; rem --- Skip if this file wasn't processed
         open (old_file,err=*continue)source_folder$+"/"+old_file$
 
         if len(firms$)>0

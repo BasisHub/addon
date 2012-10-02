@@ -302,7 +302,10 @@ rem ========================================================
 [[SFE_WOSUBCNT.BSHO]]
 rem --- Disable grid if Closed Work Order or Recurring or PO not installed
 
-	if callpoint!.getDevObject("wo_status")="C" or callpoint!.getDevObject("wo_category")="R" or callpoint!.getDevObject("po")<>"Y"
+	if callpoint!.getDevObject("wo_status")="C" or
+:		callpoint!.getDevObject("wo_category")="R" or
+:		callpoint!.getDevObject("po")<>"Y" or
+:		(callpoint!.getDevObject("wo_category")="I" and callpoint!.getDevObject("bm")="Y")
 		opts$=callpoint!.getTableAttribute("OPTS")
 		callpoint!.setTableAttribute("OPTS",opts$+"BID")
 
@@ -337,8 +340,15 @@ rem --- fill listbox for use with Op Sequence
 		dim op_code$:fattr(op_code$)
 		read record (op_code,key=firm_id$+sfe02a.op_code$,dom=*next)op_code$
 		ops_lines!.addItem(sfe02a.internal_seq_no$)
-		ops_items!.addItem(sfe02a.op_code$)
-		ops_list!.addItem(sfe02a.op_code$+" - "+op_code.code_desc$)
+		op_code_list$=op_code_list$+sfe02a.op_code$
+		work_var=pos(sfe02a.op_code$=op_code_list$,len(sfe02a.op_code$),0)
+		if work_var>1
+			work_var$=sfe02a.op_code$+"("+str(work_var)+")"
+		else
+			work_var$=sfe02a.op_code$
+		endif
+		ops_items!.addItem(work_var$)
+		ops_list!.addItem(work_var$+" - "+op_code.code_desc$)
 	wend
 
 	if ops_lines!.size()>0

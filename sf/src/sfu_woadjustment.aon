@@ -8,130 +8,97 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
-        setesc std_error
-        seterr std_error
+	setesc std_error
+	seterr std_error
 
-        next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-        OutVect!=null()
-        update$=""
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	OutVect!=null()
+	update$=""
 
 rem --- Retrieve the program path
 
-         pgmdir$=stbl("+DIR_PGM",err=*next)
+	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
 
+rem --- Get user approval to update
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+escape;rem not ready to update yet. jpb
 
 rem --- Open/Lock files
 
-        files=13,begfile=1,endfile=files
-        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-        files$[1]="glm-01",ids$[1]="GLM_ACCT"
-        files$[2]="gls_params",ids$[2]="GLS_PARAMS"
-        files$[3]="glt-04",ids$[3]="GLE_DAILYDETAIL"
-        files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
-        files$[5]="sfe-01",ids$[5]="SFE_WOMASTR"
-        files$[6]="sfe-12",ids$[6]="SFE_WOOPRADJ"
-        files$[7]="sfe-42",ids$[7]="SFE_WOSUBADJ"
 REM remove references to this file                files$[8]="sfm-07",ids$[8]="SFX_WOTRANXR"; rem --- SFX_WOTRANXR (sfm-07) has been replaced by a database view vw_sfx_wotranxr
-        files$[9]="sfm-10",ids$[9]="SFC_WOTYPECD"
-        files$[10]="sfs_params",ids$[10]="SFS_PARAMS"
-        files$[11]="sft-01",ids$[11]="SFT_OPNOPRTR"
-        files$[12]="sft-31",ids$[12]="SFT_OPNSUBTR"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        glm01_dev=channels[1]
-        gls01a_dev=channels[2]
-        glt04_dev=channels[3]
-        ivs01a_dev=channels[4]
-        sfe01_dev=channels[5]
-        sfe12_dev=channels[6]
-        sfe42_dev=channels[7]
+
 REM remove references to this file         sfm07_dev=channels[8]; rem --- SFX_WOTRANXR (sfm-07) has been replaced by a database view vw_sfx_wotranxr
-        sfm10_dev=channels[9]
-        sfs01a_dev=channels[10]
-        sft01_dev=channels[11]
-        sft31_dev=channels[12]
 
 rem --- Dimension string templates
 
-    dim glm01a$:templates$[1],gls01a$:templates$[2],glt04a$:templates$[3],
-:       ivs01a$:templates$[4],
-:       sfe01a$:templates$[5],sfe12a$:templates$[6],
-:       sfe42a$:templates$[7],sfm07a$:templates$[8],sfm10a$:templates$[9],
-:       sfs01a$:templates$[10],sft01a$:templates$[11],sft31a$:templates$[12]
-
+rem :       sfm07a$:templates$[8]
 
 rem --- Retrieve parameter records
 
-        gls01a_key$=firm_id$+"GL00"
-        find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-        ivs01a_key$=firm_id$+"IV00"
-        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-        sfs01a_key$=firm_id$+"SF00"
-        find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+	ivs01a_key$=firm_id$+"IV00"
+	find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+	sfs01a_key$=firm_id$+"SF00"
+	find record (sfs01_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
 
 rem --- Init Data
 
-        lm$="Labor Cost Adjustment"
-        sm$="Subcontract Cost Adjustment"
-        cm$="Closed Cost Adjustment"
-        full$=""
-        precision 4
-        more=1
+	lm$=Translate!.getTranslation("AON_LABOR_COST_ADJUSTMENT")
+	sm$=Translate!.getTranslation("AON_SUBCONTRACT_COST_ADJUSTMENT")
+	cm$=Translate!.getTranslation("AON_CLOSED_COST_ADJUSTMENT")
+	full$=""
 
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",sft01_key_tpl$,rd_table_chans$[all],status$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNSUBTR","PRIMARY",sft31_key_tpl$,rd_table_chans$[all],status$
+	more=1
 
-rem --- Additional File Opens
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",wot01_key_tpl$,rd_table_chans$[all],status$
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNSUBTR","PRIMARY",wot31_key_tpl$,rd_table_chans$[all],status$
+
 rem --- Assign Adjustment and Transaction Channels
 
-        sfadj_dev=sfe12_dev
-        dim sfadja$:templates$[6]
-        field_a1=sfadja.new_dir_rate
-        field_a2=sfadja.new_ovr_rate
-        field_a3=sfadja.new_set_hrs
-        field_a4=sfadja.new_qty_comp
+	sfadj_dev=woe12_dev
+	dim sfadja$:fattr(woe12a$)
+	field_a1=sfadja.new_dir_rate
+	field_a2=sfadja.new_ovr_rate
+	field_a3=sfadja.new_set_hrs
+	field_a4=sfadja.new_qty_comp
 
-        wotran_dev=sft01_dev
-        dim sftran$:templates$[11]
-        dim wotran_key$:sft01_key_tpl$
-        record_id_flag=0; rem 0 = processing Operations; 1 = processing subcontracts
-        field_w3=sftran.direct_rate
-        field_w4=sftran.ovhd_rate
-        field_w5=sftran.complete_qty
-        field_w6=sftran.setup_time
+	wotran_dev=wot01_dev
+	dim sftran$:fattr(wot01a$)
+	dim wotran_key$:wot01_key_tpl$
+	record_id_flag=0; rem 0 = processing Operations; 1 = processing subcontracts
+	field_w3=sftran.direct_rate
+	field_w4=sftran.ovhd_rate
+	field_w5=sftran.complete_qty
+	field_w6=sftran.setup_time
 
-    
-    if gl$="Y" then 
-        files$[8]="glm-01"
-        files$[9]="glt-04"
-        call pgmdir$+"adc_fileopen.aon",1,8,10,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status then goto std_exit
-        glm01_dev=channels[8]
-        glt04_dev=channels[9]
-    endif
-rem --- Background
+    if gl$="Y"
+		files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="GLE_DAILYDETAIL",open_opts$="OTA"
 
-        print @(0,3),'ce',
+		gosub open_tables
 
-rem --- Options
+		glt04_dev=channels[1]
+		dim glt04a$:templates$[1]
+	endif
 
-        v4$="Are you ready to update the "+sysinfo.task_desc$
-        call pgmdir$+"adc_yesno.aon",0,v4$,0,v$,v3
-        if v$<>"YES" then goto std_exit
-        exit_ctrl=1
-
-        call pgmdir$+"adc_progress.aon","N","","","","",0,sfadj_dev,1,meter_num,ignore_status
-
+	call pgmdir$+"adc_progress.aon","N","","","","",0,sfadj_dev,1,meter_num,ignore_status
 
 rem --- Initial File Read
     while more
@@ -151,22 +118,22 @@ rem --- Find Original Transaction
             extract record (wotran_dev,key=k$,dom=remove_record) sftran$
 
 rem --- Find Header(S)
-            find record (sfe01_dev,key=sfadja.firm_id$+sfadja.wo_location+sfadja.wo_no$) sfe01a$
+            find record (woe01_dev,key=sfadja.firm_id$+sfadja.wo_location+sfadja.wo_no$) woe01a$
             if num(sfadja.new_wo_no$)=0 then sfadja.new_wo_no$=sfadja.wo_no$
             if pos(" "=sfadja.new_trn_date$)<>0 then sfadja.new_trn_date$=sfadja.trans_date$
-            wo_type$=sfe01a.wo_type$
-            wo_no$=sfe01a.wo_no$
+            wo_type$=woe01a.wo_type$
+            wo_no$=woe01a.wo_no$
             if sfadja.new_wo_no$<>sfadja.wo_no$ then 
-                find record (sfe01_dev,key=firm_id$+"  "+sfadja.new_wo_no$,dom=*next) sfe01a$
+                find record (woe01_dev,key=firm_id$+"  "+sfadja.new_wo_no$,dom=*next) woe01a$
             endif
 
 rem --- Find The Distribution
 
-            find record (sfm10_dev,key=firm_id$+"A"+sfe01a.wo_type$) sfm10a$
-            dim sfm10a_copy$:templates$[9]
+            find record (wom10_dev,key=firm_id$+"A"+woe01a.wo_type$) wom10a$
+            dim wom10a_copy$:fattr(wom10a$)
 
-            if wo_type$<>sfe01a.wo_type$ then 
-                find record (sfm10_dev,key=firm_id$+"A"+wo_type$,dom=*next) sfm10a_copy$
+            if wo_type$<>woe01a.wo_type$ then 
+                find record (wom10_dev,key=firm_id$+"A"+wo_type$,dom=*next) wom10a_copy$
             endif
             k$=key(sfadj_dev,end=*break)
             remove (sfadj_dev,key=k$,dom=*next)
@@ -174,27 +141,27 @@ rem --- Find The Distribution
 rem --- Back Out Distribution
 
             when$=sfadja.trans_date$
-            ref1$="WO "+sfe01a.wo_no$,ref2$="Seq "+sfadja.trans_seq$
+            ref1$=Translate!.getTranslation("AON_WO_")+woe01a.wo_no$,ref2$=Translate!.getTranslation("AON_SEQ_")+sfadja.trans_seq$
             ref3$=fndate$(sfadja.new_trn_date$)
             memo$=cm$
-            account$=sfm10a.gl_wip_acct$
+            account$=wom10a.gl_wip_acct$
             amount=-sftran.ext_cost,units=0
             gosub glpost
             if record_id_flag=0 then record_id$="O" else record_id$="S"
             switch pos(record_id$="OS")-1
                 case 0
 labor_1: rem --- Labor
-                    account$=sfm10a.gl_dir_lab$
+                    account$=wom10a.gl_dir_lab$
                     amount=(sftran.wo_units+field_w6)*field_w3,memo$=lm$
                     amount1=amount*1
                     gosub glpost
-                    account$=sfm10a.gl_ovh_lab$
+                    account$=wom10a.gl_ovh_lab$
                     amount=sftran.ext_cost-amount1
                     gosub glpost
                     break
                  case 1
 subcontracts_1: rem --- Subcontracts
-                    account$=sfm10a.gl_pur_acct$
+                    account$=wom10a.gl_pur_acct$
                     amount=sftran.ext_cost,memo$=sm$
                     gosub glpost
                     break
@@ -206,24 +173,24 @@ rem --- Remove Record
 rem --- Add It Back In
 
             when$=sfadja.new_trn_date$
-            ref1$="WO "+wo_no$,ref3$=fndate$(sfadja.trans_date$)
-            account$=sfm10a_copy.gl_wip_acct
+            ref1$=Translate!.getTranslation("AON_WO_")+wo_no$,ref3$=fndate$(sfadja.trans_date$)
+            account$=wom10a_copy.gl_wip_acct
             amount=(sfadja.new_units+field_a3)*(field_a1+field_a2),units=0,memo$=cm$
             gosub glpost
             switch pos(record_id$="OS")-1
                 case 0
 rem --- Labor
-                    account$=sfm10a_copy.gl_dir_lab
+                    account$=wom10a_copy.gl_dir_lab
                     amount=((-sfadja.new_units)-field_a3)*field_a1,memo$=lm$
                     gosub glpost
-                    account$=sfm10a_copy.gl_ovh_lab
+                    account$=wom10a_copy.gl_ovh_lab
                     amount=((-sfadja.new_units)-field_a3)*field_a2
                     gosub glpost
                     break
                 
 rem --- Subcontracts
                 case 1
-                    account$=sfm10a_copy.gl_pur_acct
+                    account$=wom10a_copy.gl_pur_acct
                     amount=(-sfadja.new_units)*field_a1,memo$=sm$
                     gosub glpost
              swend
@@ -257,7 +224,7 @@ rem --- Update The Transactions
 rem --- Add transaction to wot-01 or wot-31
                 pos1$=(sftran.firm_id$+sftran.wo_location$+sftran.wo_no$+sftran.trans_date$)
                 if pos(pos1$=full$,15)>0 then continue
-                if wotran_dev=sft31_dev then
+                if wotran_dev=wot31_dev then
                     dim k2$:templates$[12]
                 else
                     dim k2$:templates$[11]
@@ -303,7 +270,7 @@ rem --- Summary posting when no free records exist
                     k2$=k2.firm_id$+k2.wo_location$+k2.wo_no$+k2.trans_date$+"999"
                     extract record (wotran_dev,key=k2$) sftran$
                     if record_id$="S" then 
-                        sftran.reserved_str$="Summary Transaction"
+                        sftran.reserved_str$=Translate!.getTranslation("AON_SUMMARY_TRANSACTION")
                         sftran.wo_units=sftran.wo_units+sfadja.new_units
                         sftran.ext_cost=sftran.ext_cost+sfadja.new_units*field_a1
                         if sftran.wo_units<>0 then 
@@ -338,31 +305,31 @@ rem --- Summary posting when no free records exist
 rem --- Update The Last Activity Date
 
             if sfadja.wo_no$<>sfadja.new_wo_no$ or sfadja.trans_date$<>sfadja.new_trn_date$ then 
-                extract record (sfe01_dev,key=firm_id$+"  "+sfadja.new_wo_no$,dom=remove_record) sfe01a$
-                if pos(" "<>sfe01a.act_st_date$)=0 then 
-                    sfe01a.act_st_date$=sfadja.new_trn_date$
+                extract record (woe01_dev,key=firm_id$+"  "+sfadja.new_wo_no$,dom=remove_record) woe01a$
+                if pos(" "<>woe01a.act_st_date$)=0 then 
+                    woe01a.act_st_date$=sfadja.new_trn_date$
                 endif
-                if sfe01a.lstact_date$<sfadja.new_trn_date$ then 
-                    sfe01a.lstact_date$=sfadja.new_trn_date$
+                if woe01a.lstact_date$<sfadja.new_trn_date$ then 
+                    swo01a.lstact_date$=sfadja.new_trn_date$
                 endif
-                write record (sfe01_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)) sfe01a$
+                write record (woe01_dev,key=(woe01a.firm_id$+woe01a.wo_location$+woe01a.wo_no$)) woe01a$
             endif
 remove_record: rem --- Remove Record
             remove (sfadj_dev,key=k$,dom=remove_record)
         wend
 done: rem --- Overlay
 
-        if sfadj_dev<>sfe42_dev then break
-        sfadj_dev=sfe42_dev
-        dim sfadja$:templates$[5]
+        if sfadj_dev<>woe42_dev then break
+        sfadj_dev=woe42_dev
+        dim sfadja$:fattr(woe42a$)
         field_a1=sfadja.new_unit_cst
         field_a2=sfadja.reserved_num_1
         field_a3=sfadja.reserved_num_2
         field_a4=sfadja.reserved_num_3
 
-        wotran_dev=sft31_dev
+        wotran_dev=wot31_dev
         dim sftran$:templates$[12]
-        dim wotran_key$:sft31_key_tpl$
+        dim wotran_key$:wot31_key_tpl$
         record_id_flag=1; rem 0 = processing Operations; 1 = processing subcontracts
         field_w3=sftran.reserved_num_1
         field_w4=sftran.reserved_num_2
@@ -385,6 +352,35 @@ glpost:
     endif
     return
 
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
 rem --- Functions used to retrieve form values
@@ -402,7 +398,10 @@ rem --- Miscellaneous functions
 
 rem --- Format inventory item description
 
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
 
 rem --- Date/time handling functions
 
@@ -504,9 +503,23 @@ rem #endinclude std_missing_params.src
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

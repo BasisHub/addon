@@ -1,3 +1,31 @@
+[[APM_VENDHIST.ARAR]]
+rem --- Get correct Open Invoice amount
+
+	apt_invhdr=fnget_dev("APT_INVOICEHDR")
+	dim apt_invhdr$:fnget_tpl$("APT_INVOICEHDR")
+	apt_invdet=fnget_dev("APT_INVOICEDET")
+	dim apt_invdet$:fnget_tpl$("APT_INVOICEDET")
+	vendor_id$=callpoint!.getColumnData("APM_VENDHIST.VENDOR_ID")
+	ap_type$=callpoint!.getColumnData("APM_VENDHIST.AP_TYPE")
+	open_invs=0
+
+rem --- Main process
+
+	read(apt_invhdr,key=firm_id$+ap_type$+vendor_id$,dom=*next)
+	while 1
+		read record (apt_invhdr,end=*break) apt_invhdr$
+		if pos(firm_id$+ap_type$+vendor_id$=apt_invhdr$)<>1 break
+		open_invs=open_invs+apt_invhdr.invoice_amt
+		hdr_key$=firm_id$+ap_type$+vendor_id$+apt_invhdr.ap_inv_no$
+		read(apt_invdet,key=hdr_key$,dom=*next)
+		while 1
+			read record(apt_invdet,end=*break) apt_invdet$
+			if apt_invdet.firm_id$+apt_invdet.ap_type$+apt_invdet.vendor_id$+apt_invdet.ap_inv_no$<>hdr_key$ break
+			open_invs=open_invs+(apt_invdet.trans_amt+apt_invdet.trans_disc)
+		wend
+	wend
+
+	callpoint!.setColumnData("APM_VENDHIST.OPEN_INVS",str(open_invs),1)
 [[APM_VENDHIST.ARNF]]
 rem --- initialize new record
 	if user_tpl.multi_dist$<>"Y"

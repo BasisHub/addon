@@ -46,6 +46,8 @@ dim glm18a$:glm18_tpl$
 glm18a.record_id$=callpoint!.getColumnData("GLM_BUDGETMASTER.BUDGET_CODE")
 glm18a.actbud$="B"
 glm18a.amt_or_units$=callpoint!.getColumnData("GLM_BUDGETMASTER.AMT_OR_UNITS")
+glm18_key$=glm18a.record_id$+glm18a.actbud$+glm18a.amt_or_units$
+extractrecord(glm18_dev,key=glm18_key$,dom=*next)x$; rem Advisory Locking
 glm18a.description$=callpoint!.getColumnData("GLM_BUDGETMASTER.DESCRIPTION")
 glm18a.rev_title$=callpoint!.getColumnData("GLM_BUDGETMASTER.REV_TITLE")
 glm18a$=field(glm18a$)

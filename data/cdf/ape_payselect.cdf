@@ -821,7 +821,7 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 				apt01_key$=firm_id$+vectInvoicesMaster!.getItem(row+3)+
 :								   vend$+
 :								   vectInvoicesMaster!.getItem(row+6)
-				read record (apt01_dev, key=apt01_key$) apt01a$
+				extract record (apt01_dev, key=apt01_key$) apt01a$; rem Advisory Locking
 				orig_inv_amt   = num(vectInvoicesMaster!.getItem(row+16))
 				disc_to_take = num(vectInvoicesMaster!.getItem(row+10))
 				amt_to_pay   = num(vectInvoicesMaster!.getItem(row+11))
@@ -848,6 +848,7 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 					ape04a.orig_inv_amt  = orig_inv_amt
 
 					ape04a$=field(ape04a$)
+					extract record (ape04_dev, key=apt01_key$, dom=*next) dummy$; rem Advisory Locking
 					write record (ape04_dev) ape04a$
 				endif
 
@@ -909,7 +910,12 @@ rem --- See if Check Printing has already been started
 	endif
 
 rem --- See if we need to clear out ape-04 (computer checks)
+rem --- NOTE: For Advisory Locking, replaced call to adc_clearpartial.aon with 
+rem ---       REMOVE of ape-04 recs within the loop that resets apt01a.selected_for_pay$ 
+rem ---       flag in guard against getting ape04 and apt01 out of sync if fail on 
+rem ---       EXTRACT of apt01
 
+	
 	while 1
 		read(ape04_dev,key=firm_id$,dom=*next)
 		ape04_key$=key(ape04_dev,end=*break)
@@ -921,14 +927,15 @@ rem --- See if we need to clear out ape-04 (computer checks)
 		gosub disp_message
 
 		if msg_opt$="Y" then
-			call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",ape04_dev,firm_id$,status
+			rem call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",ape04_dev,firm_id$,status; rem REMd for Advisory Locking
 			read(apt01_dev,key=firm_id$,dom=*next)
 			more=1
 
 			while more
 				apt01_key$=key(apt01_dev,end=*break)
 				if pos(firm_id$=apt01_key$)<>1 then break
-				read record (apt01_dev, key=apt01_key$) apt01a$
+				extract record (apt01_dev, key=apt01_key$, err=*break) apt01a$; rem Advisory Locking
+				remove (ape04_dev,key=apt01_key$,dom=*next, err=*break); rem Advisory Locking
 				apt01a.selected_for_pay$="N"
 				apt01a$=field(apt01a$)
 				write record (apt01_dev) apt01a$

@@ -1,0 +1,432 @@
+rem --- Work Order Cost Adjustments Update
+rem --- Program sfu_ga v8.0.0 15Jan2008 (sfu_ga)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/15/2008 01:29:49)
+
+rem Program sfu_ga.bbx v7.1.0 01Oct2005 Pick Screen
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+	setesc std_error
+	seterr std_error
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	OutVect!=null()
+	update$=""
+
+rem --- Retrieve the program path
+
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
+
+rem --- Get user approval to update
+
+	msg_id$="AON_UPDT_QUERY"
+	dim x$:stbl("+SYSINFO_TPL")
+	dim msg_tokens$[1]
+	x$=stbl("+SYSINFO")                                                            
+	msg_tokens$[1]=x.task_desc$
+	gosub disp_message
+	if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Init Data
+
+	lm$=Translate!.getTranslation("AON_LABOR_COST_ADJUSTMENT")
+	sm$=Translate!.getTranslation("AON_SUBCONTRACT_COST_ADJUSTMENT")
+	cm$=Translate!.getTranslation("AON_CLOSED_COST_ADJUSTMENT")
+	full$=""
+
+	more=1
+
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",wot01_key_tpl$,rd_table_chans$[all],status$
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNSUBTR","PRIMARY",wot31_key_tpl$,rd_table_chans$[all],status$
+
+rem --- Assign Adjustment and Transaction Channels
+
+	sfadj_dev=woe12_dev
+	dim sfadja$:fattr(woe12a$)
+
+	wotran_dev=wot01_dev
+	dim sftran$:fattr(wot01a$)
+	dim wotran_key$:wot01_key_tpl$
+	record_id_flag=0; rem 0 = processing Operations; 1 = processing subcontracts
+
+	if gl$="Y"
+		files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="GLE_DAILYDETAIL",open_opts$="OTA"
+
+		gosub open_tables
+
+		glt04_dev=channels[1]
+		dim glt04a$:templates$[1]
+	endif
+
+	call pgmdir$+"adc_progress.aon","N","","","","",0,sfadj_dev,1,meter_num,ignore_status
+
+rem --- Initial File Read
+	while more
+
+		read (sfadj_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
+
+rem --- Main Read
+		while more
+
+			read record (sfadj_dev,end=*break) sfadja$
+			if pos(firm_id$=sfadja$)<>1 break
+			if batch_no$<>sfadja.batch_no$ break
+			call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+
+rem --- setup field_ transactions
+			switch record_id_flag
+				case 0
+					field_a1=sfadja.new_dir_rate
+					field_a2=sfadja.new_ovr_rate
+					field_a3=sfadja.new_set_hrs
+					field_a4=sfadja.new_qty_comp
+					break
+				case 1
+					field_a1=sfadja.new_unit_cst
+					field_a2=0
+					field_a3=0
+					field_a4=0
+					break
+			swend
+			
+rem --- Find Original Transaction
+			k$=firm_id$+sfadja.wo_location$+sfadja.wo_no$+sfadja.trans_date$+sfadja.trans_seq$
+			extract record (wotran_dev,key=k$,dom=remove_record) sftran$
+
+rem --- Find Header(S)
+			find record (woe01_dev,key=sfadja.firm_id$+sfadja.wo_location$+sfadja.wo_no$) woe01a$
+			if num(sfadja.new_wo_no$)=0 then sfadja.new_wo_no$=sfadja.wo_no$
+			if pos(" "=sfadja.new_trn_date$)<>0 then sfadja.new_trn_date$=sfadja.trans_date$
+			wo_type$=woe01a.wo_type$
+			wo_no$=woe01a.wo_no$
+			if sfadja.new_wo_no$<>sfadja.wo_no$
+				find record (woe01_dev,key=firm_id$+"  "+sfadja.new_wo_no$,dom=*next) woe01a$
+			endif
+
+rem --- Find The Distribution
+
+			find record (wom10_dev,key=firm_id$+"A"+woe01a.wo_type$) wom10a$
+			dim wom10a_copy$:fattr(wom10a$)
+
+			if wo_type$<>woe01a.wo_type$ then 
+				find record (wom10_dev,key=firm_id$+"A"+wo_type$,dom=*next) wom10a_copy$
+			endif
+			remove (sfadj_dev,key=k$,dom=*next)
+
+rem --- Update The Transactions
+
+			newwo$=""
+			if sfadja.wo_no$<>sfadja.new_wo_no$ or sfadja.trans_date$<>sfadja.new_trn_date$ then 
+				newwo$="Y"
+				remove (wotran_dev,key=k$)
+				sftran.wo_no$=sfadja.new_wo_no$
+				sftran.trans_date$=sfadja.new_trn_date$
+			endif
+			sftran.units=sfadja.new_units
+			sftran.unit_cost=field_a1+field_a2
+			sftran.ext_cost=(sftran.units+field_a3)*sftran.unit_cost
+			if record_id_flag=0 then 
+				sftran.direct_rate=field_a1
+				sftran.ovhd_rate=field_a2
+				sftran.complete_qty=field_a4
+				sftran.setup_time=field_a3
+			endif
+			if newwo$<>"Y" then 
+				write record (wotran_dev,key=sftran_key$) sftran$
+			else
+rem --- Add transaction to wot-01 or wot-31
+				seq_mask$=fill(len(sftran.trans_seq$),"0")
+				pos1$=(sftran.firm_id$+sftran.wo_location$+sftran.wo_no$+sftran.trans_date$)
+				if pos(pos1$=full$,len(pos1$))>0 then continue
+				k2$=pos1$+$ff$
+				read (wotran_dev,key=k2$,dom=*next)
+				wotran_key$=keyp(wotran_dev,end=free_sequences)
+				v2=1
+				if pos(k2$(1,len(pos1$))=wotran_key$)=1 then v2=num(wotran_key.tran_key$)+1
+				flag=0
+				if v2<1000 then 
+					k2$=k2$(1,len(pos1$))+str(v2:seq_mask$)
+				else
+free_sequences: rem --- Any free sequences left between 000 and 999
+				v2=-1
+					while more
+						v2=v2+1
+						k2$=k2$(1,len(pos1$))+str(v2:seq_mask$)
+						if v2>999 then 
+							flag = 1
+							break
+						endif
+						read (wotran_dev,key=k2$,dom=*break)
+					wend
+				endif
+rem --- Write record using free sequence number
+				if flag = 0 then
+					sftran.firm_id$=firm_id$
+rem jpb I think this has already been established when finding the original transaction
+rem	jpb				sftran.wo_location$=k2.wo_location$
+rem jpb					sftran.wo_no$=k2.wo_no$
+rem jpb					sftran.trans_date$=k2.trans_date$
+					sftran$=field(sftran$)
+					write record (wotran_dev) sftran$
+				else
+					full$=full$+k2$(1,len(pos1$))
+rem --- Summary posting when no free records exist
+					k2$=k2$(1,len(pos1$))+"999"
+					extract record (wotran_dev,key=k2$) sftran$
+					if record_id_flag=1 then 
+rem jpb                        sftran.reserved_str$=Translate!.getTranslation("AON_SUMMARY_TRANSACTION")
+						sftran.wo_units=sftran.wo_units+sfadja.new_units
+						sftran.ext_cost=sftran.ext_cost+sfadja.new_units*field_a1
+						if sftran.wo_units<>0 then 
+							sftran.unit_cost=sftran.ext_cost/sftran.wo_units 
+						else 
+							sftran.unit_cost=0
+						endif
+					endif
+					if record_id_flag=0 then 
+						sftran.employee_no$=""
+						w0=sftran.wo_units+sfadja.new_units
+						w2=sftran.ext_cost+sfadja.new_units*(field_a1+field_a2)
+						if w0<>0 then 
+							w1=w2/w0
+							w3=(field_w3*sftran.wo_units+field_a1*sfadja.new_units)/w0
+							w4=(field_w4*sftran.wo_units+field_a2*sfadja.new_units)/w0 
+						else 
+							w1=0,w2=0,w3=0,w4=0
+						endif
+						sftran.wo_units=w0
+						sftran.unit_cost=w1
+						sftran.ext_cost=w2
+						field_w3=w3
+						field_w4=w4
+					endif
+					write record (wotran_dev) sftran$
+				endif
+			endif
+rem --- Update The Last Activity Date
+
+			if sfadja.wo_no$<>sfadja.new_wo_no$ or sfadja.trans_date$<>sfadja.new_trn_date$ then 
+				extract record (woe01_dev,key=firm_id$+woe01a.wo_location$+sfadja.new_wo_no$,dom=remove_record) woe01a$
+				if pos(" "<>woe01a.act_st_date$)=0
+					woe01a.act_st_date$=sfadja.new_trn_date$
+				endif
+				if woe01a.lstact_date$<sfadja.new_trn_date$ then 
+					woe01a.lstact_date$=sfadja.new_trn_date$
+				endif
+				write record (woe01_dev) woe01a$
+			endif
+remove_record: rem --- Remove Record
+            remove (sfadj_dev,key=k$,dom=*break)
+        wend
+done: rem --- Overlay
+
+		if sfadj_dev=woe42_dev then break
+		sfadj_dev=woe42_dev
+		dim sfadja$:fattr(woe42a$)
+		field_a1=0
+		field_a2=0
+		field_a3=0
+		field_a4=0
+
+		wotran_dev=wot31_dev
+		dim sftran$:fattr(wot31a$)
+		dim wotran_key$:wot31_key_tpl$
+		record_id_flag=1; rem 0 = processing Operations; 1 = processing subcontracts
+		field_w3=0
+		field_w4=0
+		field_w5=0
+		field_w6=0
+
+	wend
+
+	if gl$="Y"
+		call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+		call pgmdir$+"glc_ctlupdate.aon",status
+		call pgmdir$+"glc_ctldelete.aon",status
+	endif
+	call pgmdir$+"adc_batchdelete.aon",status
+	goto std_exit
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+	def fnglobal(q$,q1)
+		q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+		return q1
+	fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+	def fnglobal$(q$,q1$)
+		q1$=stbl(q$,err=*next)
+		return q1$
+	fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

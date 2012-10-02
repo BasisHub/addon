@@ -38,14 +38,14 @@ rem --- Start progress meter and position header file
 rem --- Read next Invoice Header (are-05) record
 
     while moreheaders
-          read record (are05_dev,end=*break) are05a$
-          if are05a.firm_id$<>firm_id$ or are05a.batch_no$<>batch_no$ then break
+          extract record (are05_dev,end=*break) are05a$; rem Advisory Locking
+          if are05a.firm_id$<>firm_id$ or are05a.batch_no$<>batch_no$ then read(are05_dev); break
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
           are05a_key$=are05a.firm_id$+are05a.ar_inv_no$
 
 rem --- Skip unprinted invoices
 
-          if are05a.print_status$<>"Y" continue
+          if are05a.print_status$<>"Y" then read(are05_dev); continue
 
 rem --- Skip voided invoices
 
@@ -118,12 +118,12 @@ rem --- Update Customer Detail (arm-02) record
           arm02a.customer_id$=are05a.customer_id$
           arm02a.ar_type$=ar_type$
           k$=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$ 
-          find record (arm02_dev,key=k$,dom=*next) arm02a$
+          extract record (arm02_dev,key=k$,dom=*next) arm02a$; rem Advisory Locking
           arm02a.aging_cur=arm02a.aging_cur+extension
           balance=arm02a.aging_future+arm02a.aging_cur+arm02a.aging_30+
 :                 arm02a.aging_60+arm02a.aging_90+arm02a.aging_120
           arm02a$=field(arm02a$)
-          write record (arm02_dev,key=k$) arm02a$
+          write record (arm02_dev) arm02a$
 
 rem --- Generate due date and discount date based on terms
 
@@ -151,7 +151,7 @@ rem --- Initialize Invoice Header (art-01) record and attempt to retrieve it
           art01a_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+
 :                     art01a.ar_inv_no$+art01a.sequence_00$
           invoice$=art01a.firm_id$+ar_type$+art01a.customer_id$+art01a.ar_inv_no$
-          read record (art01_dev,key=art01a_key$,dom=update_invoice) art01a$
+          extract record (art01_dev,key=art01a_key$,dom=update_invoice) art01a$; rem Advisory Locking
 
 rem --- This invoice already exists so either the header record needs to
 rem --- be adjusted (if the current amount is zero) or a detail record for
@@ -162,7 +162,7 @@ rem --- the adjustment needs to be created.
           art01a.invoice_amt=extension
           art01a.disc_allowed=(art01a.invoice_amt*arm10a.disc_percent)/100
           art01a$=field(art01a$)
-          write record (art01_dev,key=art01a_key$) art01a$
+          write record (art01_dev) art01a$
           goto customer_payment
 
           detail_adjustment: rem --- Create/update a detail record for the adjustment
@@ -174,7 +174,7 @@ rem --- the adjustment needs to be created.
           while moredetail
                 art11a_key$=key(art11_dev,end=*break)
                 if pos(invoice$=art11a_key$)<>1 break
-                read record (art11_dev,key=art11a_key$) art11a$
+                extract record (art11_dev,key=art11a_key$) art11a$; rem Advisory Lockint
                 sequence=num(art11a.sequence_num$)
                 if art11a.trans_type$=" "
                    gosub update_detail
@@ -189,7 +189,7 @@ rem --- If we're out of sequence numbers create a consolidation record
           if sequence>99
              invoice_type$=" "
              art11a_key$=invoice$+"99" 
-             find record (art11_dev,key=art11a_key$) art11a$
+             extract record (art11_dev,key=art11a_key$) art11a$; rem Advisory Locking
              gosub update_detail
              goto customer_payment
           endif 
@@ -213,12 +213,12 @@ rem --- Create a new invoice detail record for this transaction
           gosub update_detail
           goto customer_payment
 
-          update_invoice: rem --- Update the Invoice Header (art-01) record
+          update_invoice: rem --- Update the Invoice Header (art-01) with new record
 
           art01a.invoice_amt=art01a.invoice_amt+extension
           art01a.disc_allowed=art01a.disc_allowed+((art01a.invoice_amt*arm10a.disc_percent)/100)
           art01a$=field(art01a$)
-          write record (art01_dev,key=art01a_key$) art01a$
+          write record (art01_dev) art01a$
 
           customer_payment: rem --- Update the Customer Payment (arm-06) record
 
@@ -226,7 +226,7 @@ rem --- Create a new invoice detail record for this transaction
           arm06a.firm_id$=firm_id$
           arm06a.customer_id$=are05a.customer_id$
           arm06a_key$=arm06a.firm_id$+arm06a.customer_id$
-          read record (arm06_dev,key=arm06a_key$,dom=*next) arm06a$
+          extract record (arm06_dev,key=arm06a_key$,dom=*next) arm06a$; rem Advisory Locking
 
 rem --- Update Last Invoice Date, Sales and High Credit
 
@@ -241,7 +241,7 @@ rem --- Update Last Invoice Date, Sales and High Credit
           if art01a.invoice_date$>enddate$ 
 :            if arm06a.nmtd_high_cr<balance arm06a.nmtd_high_cr=balance
           arm06a$=field(arm06a$)
-          write record (arm06_dev,key=arm06a.firm_id$+arm06a.customer_id$) arm06a$
+          write record (arm06_dev) arm06a$
 
 rem --- Delete Invoice Header (are-05) record and loop back for the next one
 
@@ -267,7 +267,7 @@ update_detail: rem --- Create or update an invoice detail record
     art11a.trans_amt=art11a.trans_amt+extension
     art11a.adjdisc_amt=0
     art11a$=field(art11a$)
-    write record (art11_dev,key=art11a_key$) art11a$
+    write record (art11_dev) art11a$
     return
 
 disp_message:rem --- Display Message Dialog

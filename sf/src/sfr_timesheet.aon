@@ -1,636 +1,593 @@
 rem --- Work Order Time Sheet Register
-rem --- Program sfr_ca v8.0.0 04Jan2008 (sfr_ca)
+rem --- Program sfr_timesheet v8.0.0 04Jan2008 (wor_ca)
 rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:02:37)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
-        setesc std_error
-        seterr std_error
-
-rem --- Document initializations
-
-        OutVect!=bbjAPI().getSysGui().makeVector()
-        HdrVect!=bbjAPI().getSysGui().makeVector()
-        BrkVect!=bbjAPI().getSysGui().makeVector()
-        TotVect!=bbjAPI().getSysGui().makeVector()
-        rep_date$=date(0:"%Mz/%Dz/%Yd")
-        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-        rep_time$=date(0:"%hz:%mz %p")
-        rep_time_stamp$=date(0:"%Hz%mz%sz")
-        rep_prog$=pgm(-2)
+    setesc std_error
+    seterr std_error
 
 rem --- Retrieve the program path
 
-        pgmdir$=stbl("+DIR_PGM",err=*next)
+    pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- See if batching
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
+                
+rem --- Get user approval to proceed
+
+	msg_id$="AON_RUN_QUERY"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=sysinfo.task_desc$
+	gosub disp_message
+	if msg_opt$<>"Y" then goto std_exit_no_report
 
 rem --- Open/Lock files
 
-        files=19,begfile=1,endfile=files
-        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-        files$[1]="bms_params",ids$[1]="BMS_PARAMS"
-        files$[2]="glm-01",ids$[2]="GLM_ACCT"
-        files$[3]="gls_params",ids$[3]="GLS_PARAMS"
-        files$[4]="glt-04",ids$[4]="GLE_DAILYDETAIL"
-        files$[5]="ivm-01",ids$[5]="IVM_ITEMMAST"
-        files$[6]="ivs_params",ids$[6]="IVS_PARAMS"
-        files$[7]="prs_params",ids$[7]="PRS_PARAMS"
-        files$[8]="sfe-01",ids$[8]="SFE_WOMASTR"
-        files$[9]="sfe-02",ids$[9]="SFE_WOOPRTN"
-        files$[10]="sfe-11",ids$[10]="SFE_TIMEDATE"
-        files$[11]="sfe-21",ids$[11]="SFE_TIMEEMPL"
-        files$[12]="sfe-31",ids$[12]="SFE_TIMEWO"
-        files$[13]="sfm-10",ids$[13]="SFC_WOTYPECD"
-        files$[14]="sfs_params",ids$[14]="SFS_PARAMS"
-        files$[15]="sfw-11",ids$[15]="SFW_TIMESORT",options$[15]="C"
-        files$[16]="prm-01",ids$[16]="PRM_EMPLMAST"
-        files$[17]="sfm-01",ids$[17]="SFM_EMPLMAST"
-        files$[18]="glm-01",ids$[18]="GLM_ACCT"
-        files$[19]=glw11$,ids$[19]="GLW_DAILYDETAIL",options$[19]="CL"
+	num_files=8
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
+	open_tables$[3]="SFC_WOTYPECD",open_opts$[3]="OTA"
+	open_tables$[4]="SFE_WOMASTR",open_opts$[4]="OTA"
+	open_tables$[5]="SFE_WOOPRTN",open_opts$[5]="OTA"
+    open_tables$[6]="SFT_OPNOPRTR",open_opts$[6]="OTA"
+    open_tables$[7]="SFW_TIMESORT",open_opts$[7]="OTAIL"
+	open_tables$[8]="IVM_ITEMMAST",open_opts$[8]="OTA"
 
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        bms01a_dev=channels[1]
-        glm01a_dev=channels[2]
-        gls01a_dev=channels[3]
-        glt04a_dev=channels[4]
-        ivm01a_dev=channels[5]
-        ivs01a_dev=channels[6]
-        prs01a_dev=channels[7]
-        sfe01a_dev=channels[8]
-        sfe02a_dev=channels[9]
-        sfe11a_dev=channels[10]
-        sfe21a_dev=channels[11]
-        sfe31a_dev=channels[12]
-        sfm10a_dev=channels[13]
-        sfs01a_dev=channels[14]
-        sfw11a_dev=channels[15]
-        glm01_dev=channels[18]
-        glw11_dev=channels[19]
+	gosub open_tables
+
+	sfs01a_dev=num(open_chans$[1])
+	ivs01a_dev=num(open_chans$[2])
+    sfm10a_dev=num(open_chans$[3])
+    sfe01a_dev=num(open_chans$[4])
+    wooprtn_dev=num(open_chans$[5])
+    sft01a_dev=num(open_chans$[6])
+    sfw11a_dev=num(open_chans$[7])
+    ivm01a_dev=num(open_chans$[8])
 
 rem --- Dimension string templates
+
+    dim sfs01a$:open_tpls$[1],ivs01a$:open_tpls$[2],sfm10a$:open_tpls$[3],
+:       sfe01a$:open_tpls$[4],wooprtn$:open_tpls$[5],sft01a$:open_tpls$[6],
+:       sfw11a$:open_tpls$[7],ivm01a$:open_tpls$[8]
     
-    dim bms01a$:templates$[1],glm01a$:templates$[2],gls01a$:templates$[3],
-:       glt04a$:templates$[4],ivm01a$:templates$[5],ivs01a$:templates$[6],
-:       prs01a$:templates$[7],sfe01a$:templates$[8],sfe02a$:templates$[9],
-:       sfe11a$:templates$[10],sfe21a$:templates$[11],sfe31a$:templates$[12],
-:       sfm10a$:templates$[13],sfs01a$:templates$[14],sfw11a$:templates$[15],
-:       glm01a$:templates$[18], glw11a$:templates$[19]
+rem --- Get SF parameters
+	read record (sfs01a_dev,key=firm_id$+"SF00",dom=std_missing_params) sfs01a$
+	bm$=sfs01a.bm_interface$
+	pr$=sfs01a.pr_interface$
+	gl$=sfs01a.post_to_gl$
+    dim p[2]
+    p[0]=num(sfs01a.empl_no_len$)
+    p[1]=num(sfs01a.max_empl_no$)
+    p[2]=num(sfs01a.def_ovd_rate$)
 
-        if sfs01a.pr_interface$="Y" then 
-            empcode_dev=channels[16]
-            dim ecode$:templates$[16]
-        else    
-            empcode_dev=channels[17]
-            dim ecode$:templates$[17]
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","I","",m0$,0,m0
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","A","",m1$,0,m1
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,m2
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","R","",m3$,0,m3
+
+	if bm$="Y"
+		call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
+		bm$=info$[20]
+	endif
+
+	if gl$="Y"
+		gl$="N"
+		status=0
+		source$=pgm(-2)
+		call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"SF",glw11$,gl$,status
+		if status<>0 goto std_exit
+	endif
+
+	if pr$="Y"
+		call stbl("+DIR_PGM")+"adc_application.aon","PR",info$[all]
+		pr$=info$[20]
+	endif
+
+rem --- Get IV parameters
+    find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    ivs01_precision=num(ivs01a.precision$)
+    dim desc[3]
+    desc[1]=num(ivs01a.desc_len_01$)
+    desc[2]=num(ivs01a.desc_len_02$)
+    desc[3]=num(ivs01a.desc_len_03$)
+
+
+rem --- Additional file opens
+	num_files=12
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    switch (BBjAPI().TRUE)
+        case sfs01a.time_entry_s$ = "D"
+            rem --- enter time sheets by date
+            open_tables$[1]="SFE_TIMEDATE",open_opts$[1]="OTA"
+            open_tables$[2]="SFE_TIMEDATEDET",open_opts$[2]="OTA"
+            break
+        case sfs01a.time_entry_s$ = "E"
+            rem --- enter time sheets by employee
+            open_tables$[1]="SFE_TIMEEMPL",open_opts$[1]="OTA"
+            open_tables$[2]="SFE_TIMEEMPLDET",open_opts$[2]="OTA"
+            break
+        case sfs01a.time_entry_s$ = "W"
+            rem --- enter time sheets by work order
+            open_tables$[1]="SFE_TIMEWO",open_opts$[1]="OTA"
+            open_tables$[2]="SFE_TIMEWODET",open_opts$[2]="OTA"
+            break
+        case default
+            rem --- parameter not set, or unknown value
+            break
+    swend
+
+    rem --- Lock if not bathing
+    if num(batch_no$)=0 then 
+        open_opts$[1]=open_opts$[1]+"L"
+        open_opts$[2]=open_opts$[2]+"L"
+    endif
+
+	if gl$="Y" then
+		open_tables$[3]="GLS_PARAMS",open_opts$[3]="OTA"
+        open_tables$[4] ="GLM_ACCT",open_opts$[4] = "OA"
+        open_tables$[5] ="GLW_DAILYDETAIL",open_opts$[5] = "OA"
+        open_tables$[6] ="GLE_DAILYDETAIL",open_opts$[6] = "OA"
+	endif
+    
+	if pr$="Y" then
+		open_tables$[7]="PRS_PARAMS",open_opts$[7]="OTA"
+		open_tables$[8]="PRM_EMPLMAST",open_opts$[8]="OTA"
+		open_tables$[9]="PRC_PAYCODE",open_opts$[9]="OTA"
+		open_tables$[10]="PRS_PERIOD",open_opts$[10]="OTA"
+		open_tables$[11]="PRE_DAYTIME",open_opts$[11]="OTA"
+		if sfs01a.pay_actstd$<>"A" then open_tables$[12]="PRM_EMPLPAY",open_opts$[12]="OTA"
+	else
+		open_tables$[8]="SFM_EMPLMAST",open_opts$[8]="OTA"
+	endif
+
+	gosub open_tables
+    
+    timesheet_dev=num(open_chans$[1])
+    timesheetdet_dev=num(open_chans$[2])
+    empcode_dev=num(open_chans$[8])
+    dim timesht$:open_tpls$[1],timeshtdet$:open_tpls$[2],ecode$:open_tpls$[8]
+
+	if gl$="Y" then
+		gls01a_dev=num(open_chans$[3])
+        glm01_dev=num(open_chans$[4])
+        glw11_dev=num(open_chans$[5])
+        glt04_dev=num(open_chans$[6])
+		dim gls01a$:open_tpls$[3]
+    
+        rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+	endif
+
+	if pr$="Y" then
+		prs01a_dev=num(open_chans$[7])
+		prm10_dev=num(open_chans$[9])
+		prs01b_dev=num(open_chans$[10])
+		pre02_dev=num(open_chans$[11])
+		dim prs01a$:open_tpls$[7],prm10a$:open_tpls$[9],prs01b$:open_tpls$[10],pre02a$:open_tpls$[11]
+        if sfs01a.pay_actstd$<>"A" then
+            prm02_dev=num(open_chans$[12])
+            dim prm02a$:open_tpls$[12]
         endif
+	endif
 
-rem --- Retrieve parameter records
+rem --- Initializations
 
-        bms01a_key$=firm_id$+"BM00"
-        find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
-        gls01a_key$=firm_id$+"GL00"
-        find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-        ivs01a_key$=firm_id$+"IV00"
-        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-        prs01a_key$=firm_id$+"PR00"
-        find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
-        sfs01a_key$=firm_id$+"SF00"
-        find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
-
-rem --- Parameters
-
-        n1$=sysinfo.firm_name$,n2$="SF",n3$=sysinfo.task_desc$,source$=pgm(-2)
-        find record (sfs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) sfs01a$
-        find record (gls01a_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
-        find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
-        if sfs01a.pr_interface$="Y" then find record (prs01a_dev,key=firm_id$+"PR00",dom=std_missing_params) prs01a$
-        if  sfs01a.pr_interface$="Y"
-            sfs01a.empl_input$=prs01a.empl_input$
-            sfs01a.empl_no_len$=prs01a.empl_no_len$
-        endif
-        if sfs01a.bm_interface$="Y" then find record (bms01a_dev,key=firm_id$+"BM00",dom=std_missing_params) bms01a$
-        dim p[4],g[4],desc[3],arrfield$[6]
-
+    dim g[4]
+	if gl$="Y" then
+        rem --- Get GL parameters
+		find record (gls01a_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
         g[0]=num(gls01a.total_pers$)
         g[1]=num(gls01a.current_per$)
         g[2]=num(gls01a.current_year$)
         g[3]=num(gls01a.acct_length$)
         g[4]=num(gls01a.max_acct_len$)
-        p[0]=num(sfs01a.empl_no_len$)
-        p[1]=num(sfs01a.max_empl_no$)
+	endif
+
+	if pr$="Y" then
+        rem --- Get PR parameters
+		find record (prs01a_dev,key=firm_id$+"PR00",dom=std_missing_params) prs01a$
+        p[1]=num(prs01a.max_empl_no$)
         p[2]=num(sfs01a.def_ovd_rate$)
-        p[3]=num(ivs01a.precision$)
-        ivs01_precision=p[3]
+        prs01_precision=num(prs01a.precision$)
 
-        if gl$<>"N"
-            gl$="N"
-            status=0
-            call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
-            if status<>0 then goto std_exit
-        endif
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","PR","I","",m0$,0,m0
+    endif
 
-        files$[19]=glw11$,ids$[19]="GLW_DAILYDETAIL",options$[19]="CL"
-
-        call pgmdir$+"adc_fileopen.aon",action,19,19,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        glw11_dev=channels[19]
-        desc[1]=num(ivs01a.desc_len_01$)
-        desc[2]=num(ivs01a.desc_len_02$)
-        desc[3]=num(ivs01a.desc_len_03$)
-
-rem --- Init Data
-
-        h0=132
-        h=0,headings=2,when$=sysinfo.system_date$,clock$="",l9=59,l=l9+1
-        dim j$(132,"-")
-        dim a[11],a1$(32),u[6],headings$[headings+1]
-        headings$[0]=n1$
-        headings$[1]=n3$
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","A","",m1$,0,m1
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,m2
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","O","",m4$,0,m4
-        m0$=sfs01a.empl_output$,m0=len(m0$)
-        m3$=m2$
-		m3=m2
-        m9=130-m1*3-m2-m3*2-2
-        x=pos("#"=m1$); if x=0 then let m9$=m1$ else if x=1 then let m9$="##"+m1$ else let m9$=m1$(1,x-1)+"##"+m1$(x)
-        p9$=sfs01a.time_entry_s$
-        errors=0
-
-rem -Column Heading
-
-    dim columns$[12,10]
-        columns = 12
-        columns$[0,0]="Seq  Work Order",    columns$[0,1]="C",columns$[0,2]="20"
-        columns$[1,0]="Date",               columns$[1,1]="C",columns$[1,2]="8"
-        columns$[2,0]="Step^Code",          columns$[2,1]="C",columns$[2,2]="8"
-        columns$[3,0]="Op^Cd",              columns$[3,1]="C",columns$[3,2]="4"
-        columns$[4,0]="Pay^Cd",             columns$[4,1]="C",columns$[4,2]="6"
-        columns$[5,0]="Ttl^Cde",            columns$[5,1]="C",columns$[5,2]="8"
-        columns$[6,0]="Complt^Qty",         columns$[6,1]="C",columns$[6,2]="8"
-        columns$[7,0]="Run Hrs^Setup",      columns$[7,1]="N",columns$[7,2]="8",columns$[7,10]="T"
-        columns$[8,0]="Direct^Rate",        columns$[8,1]="N",columns$[8,2]="8"
-        columns$[9,0]="Direct^Total",       columns$[9,1]="N",columns$[9,2]="8",columns$[9,10]="T"
-        columns$[10,0]="Ov'hd^Rate",        columns$[10,1]="N",columns$[10,2]="8"
-        columns$[11,0]="Ov'hd^Total",       columns$[11,1]="N",columns$[11,2]="8",columns$[11,10]="T"
-        columns$[12,0]="Expense^Total",     columns$[12,1]="N",columns$[12,2]="8",columns$[12,10]="T"
-
-
-rem --- Get field attribs
-
-        if p9$="D" then let timesheet_dev=sfe11a_dev;dim timesht$:templates$[11]
-        if p9$="E" then let timesheet_dev=sfe21a_dev;dim timesht$:templates$[12]
-        if p9$="W" then let timesheet_dev=sfe31a_dev;dim timesht$:templates$[13]
-
-        wk$=FATTR(timesht$,"TRANS_DATE")
-        gldate=dec(wk$(8,2))+1
-        p0=dec(wk$(10,2))
-        wk$=fattr(timesht$,"SEQUENCE_NUM")
-        p2=dec(wk$(8,2))+dec(wk$(10,2))
-
-rem --- Options
-
-        msg_id$="AON_RUN_QUERY"
-        dim x$:stbl("+SYSINFO_TPL")
-        dim msg_tokens$[1]
-        x$=stbl("+SYSINFO")                                                            
-        msg_tokens$[1]=x.task_desc$
-        gosub disp_message
-        if msg_opt$<>"Y" then goto std_exit
-
-rem --- Final Initializations
+    width=132
+    headings=2
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    headings$[2]=""
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ Translate!.getTranslation("AON__(BATCH:_")+batch_no$+")"        
+    when$=sysinfo.system_date$
+    clock$=""
+    dim u[6]
+    precision ivs01_precision
     
-        call pgmdir$+"adc_progress.aon","N","","","","",0,timesheet_dev,1,meter_num,ignore_status
-      
+rem --- Document initializations
 
-rem --- Init Read
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
-        read (timesheet_dev,key=firm_id$,dom=*next)
+    rem --- Column headings
+    columns=16
+    dim columns$[columns,10]
+    switch (BBjAPI().TRUE)
+        case sfs01a.time_entry_s$ = "D"
+            rem --- enter time sheets by date
+            columns$[0,0]=Translate!.getTranslation("AON_EMPLOYEE"),   columns$[0,1]="C", columns$[0,2]=str(max(m0,10))
+            columns$[1,0]=Translate!.getTranslation("AON_WORK_ORDER"), columns$[1,1]="C", columns$[1,2]=str(max(len(timeshtdet.wo_no$),10))
+            break
+        case sfs01a.time_entry_s$ = "E"
+            rem --- enter time sheets by employee
+            columns$[0,0]=Translate!.getTranslation("AON_WORK_ORDER"), columns$[0,1]="C", columns$[0,2]=str(max(len(timeshtdet.wo_no$),10))
+            columns$[1,0]=Translate!.getTranslation("AON_DATE"),       columns$[1,1]="C", columns$[1,2]="10"
+            break
+        case sfs01a.time_entry_s$ = "W"
+            rem --- enter time sheets by work order
+            columns$[0,0]=Translate!.getTranslation("AON_EMPLOYEE"),   columns$[0,1]="C", columns$[0,2]=str(max(m0,10))
+            columns$[1,0]=Translate!.getTranslation("AON_DATE"),       columns$[1,1]="C", columns$[1,2]="10"
+            break
+        case default
+            rem --- parameter not set, or unknown value
+            columns$[0,0]="", columns$[0,1]="C", columns$[0,2]="0"
+            columns$[1,0]="", columns$[1,1]="C", columns$[1,2]="0"
+            break
+    swend
+    columns$[2,0]=Translate!.getTranslation("AON_OPRTN^STEP"), columns$[2,1]="C", columns$[2,2]="4"
+    columns$[3,0]=Translate!.getTranslation("AON_OPRTN^CODE"), columns$[3,1]="C", columns$[3,2]=str(max(len(timeshtdet.op_code$),4))
+	if pr$="Y" then
+        columns$[4,0]=Translate!.getTranslation("AON_PAY^CODE"),   columns$[4,1]="C", columns$[4,2]=str(max(len(timeshtdet.pay_code$),4))
+        columns$[5,0]=Translate!.getTranslation("AON_TITLE^CODE"), columns$[5,1]="C", columns$[5,2]=str(max(len(timeshtdet.title_code$),4))
+    else
+        columns$[4,0]="", columns$[4,1]="C", columns$[4,2]="0"
+        columns$[5,0]="", columns$[5,1]="C", columns$[5,2]="0"
+    endif
+    columns$[6,0]=Translate!.getTranslation("AON_COMPLETED^QUANTITY"), columns$[6,1]="N", columns$[6,2]=str(max(m2,10)), columns$[6,3]=m2$, columns$[6,10]="T"
+    if sfs01a.pay_actstd$="A" then
+        columns$[7,0]=Translate!.getTranslation("AON_START"), columns$[7,1]="C", columns$[7,2]="4"
+        columns$[8,0]=Translate!.getTranslation("AON_STOP"),  columns$[8,1]="C", columns$[8,2]="4"
+    else
+        columns$[7,0]="", columns$[7,1]="C", columns$[7,2]="0"
+        columns$[8,0]="", columns$[8,1]="C", columns$[8,2]="0"
+    endif
+    columns$[9,0]=Translate!.getTranslation("AON_SETUP^HRS"),      columns$[9,1]="N",   columns$[9,2]=str(max(m2,10)),   columns$[9,3]=m2$,  columns$[9,10]="T"
+    columns$[10,0]=Translate!.getTranslation("AON_RUN^HRS"),       columns$[10,1]="N",  columns$[10,2]=str(max(m2,10)),  columns$[10,3]=m2$, columns$[10,10]="T"
+    columns$[11,0]=Translate!.getTranslation("AON_TOTAL^HRS"),     columns$[11,1]="N",  columns$[11,2]=str(max(m2,10)),  columns$[11,3]=m2$, columns$[11,10]="T"
+    columns$[12,0]=Translate!.getTranslation("AON_DIRECT")+"^"+Translate!.getTranslation("AON_RATE") 
+                                                                columns$[12,1]="N", columns$[12,2]=str(max(m3,10)), columns$[12,3]=m3$
+    columns$[13,0]=Translate!.getTranslation("AON_DIRECT")+"^"+Translate!.getTranslation("AON_TOTAL")
+                                                                columns$[13,1]="N", columns$[13,2]=str(max(m1,10)), columns$[13,3]=m1$, columns$[13,10]="T"
+    columns$[14,0]=Translate!.getTranslation("AON_OVHD")+"^"+Translate!.getTranslation("AON_RATE")
+                                                                columns$[14,1]="N", columns$[14,2]=str(max(m3,10)), columns$[14,3]=m3$
+    columns$[15,0]=Translate!.getTranslation("AON_OVHD")+"^"+Translate!.getTranslation("AON_TOTAL")
+                                                                columns$[15,1]="N", columns$[15,2]=str(max(m1,10)), columns$[15,3]=m1$, columns$[15,10]="T"
+    columns$[16,0]=Translate!.getTranslation("AON_EXPENSE")+"^"+Translate!.getTranslation("AON_TOTAL")
+                                                                columns$[16,1]="N", columns$[16,2]=str(max(m1,10)), columns$[16,3]=m1$, columns$[16,10]="T"
 
-rem --- Main Read
-    more=1
-    while more
-        
+rem --- Start progress meter and position header file
+
+    recs=0
+    call pgmdir$+"adc_progress.aon","N","","","","",0,timesheet_dev,1,meter_num,status
+    read (timesheet_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
+
+rem --- Main Read (header file)
+
+    while 1
         read record (timesheet_dev,end=*break) timesht$
-        
-        if timesht.firm_id$<>firm_id$ then break
-        if timesht.sequence_num$="00" then continue
+        if timesht.firm_id$+timesht.batch_no$<>firm_id$+batch_no$ then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        recs=recs+1
 
-rem --- Breaks
-
-        action=pos(p9$="DEW")
-        switch(action)
-            case 1; rem --- Dates
-                if timesht.firm_id$+timesht.trans_date$<>t0$ then gosub first_sub_tot
-                if timesht.firm_id$+timesht.trans_date$+timesht.employee_no$<>t1$ then gosub sec_sub_tot
+        rem --- Breaks
+        switch (BBjAPI().TRUE)
+            case sfs01a.time_entry_s$ = "D"
+                rem --- Dates
+                if timesht.trans_date$<>t0$ then gosub first_sub_tot
+                if timesht.employee_no$<>t1$ then gosub sec_sub_tot
+                trans_date$=timesht.trans_date$
+                employee_no$=timesht.employee_no$
+                trip_key$=timesht.firm_id$+timesht.batch_no$+trans_date$+employee_no$
+                gosub get_employee
+                gosub sub_head
                 break
-            case 2; rem --- Employee
-                if timesht.firm_id$+timesht.employee_no$<>t0$ then gosub first_sub_tot
-                if timesht.firm_id$+timesht.employee_no$+timesht.trans_date$+timesht.employee_no$<>t1$ then gosub sec_sub_tot
+            case sfs01a.time_entry_s$ = "E"
+                rem --- Employee
+                if timesht.employee_no$<>t0$ then gosub first_sub_tot
+                if timesht.trans_date$<>t1$ then gosub sec_sub_tot
+                employee_no$=timesht.employee_no$
+                trans_date$=timesht.trans_date$
+                trip_key$=timesht.firm_id$+timesht.batch_no$+employee_no$+trans_date$
+                gosub get_employee
+                gosub sub_head
                 break
-            case 3; rem --- Work Order
-                if timesht.firm_id$+timesht.wo_no$<>t0$ then gosub first_sub_tot
-                if timesht.firm_id$+timesht.wo_no$+timesht.trans_date$+timesht.employee_no$<>t1$ then gosub sec_sub_tot
-                break
-            case default
-                break
-        swend
-
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
-        
-        e0$=timesht.employee_no$
-        d0$=timesht.wo_no$,d9$=timesht.trans_date$
-rem --- d0$
-    rem --- Additional Reads
-
-    rem --- Get Employee
-
-        if pos(e0$=e$)<>3 then gosub get_employee
-        if pos(d0$=d$)<>5 then gosub get_wo
-
-    rem --- Calculate Overhead
-
-        precision ivs01_precision
-
-    rem --- Print
-
-        if l+2>l9 then gosub sub_head
-
-        action=pos(p9$="DEW")
-        switch(action)
-            case 1; rem --- Dates
-                OutVect!.addItem(timesht.sequence_num$+" "+fnmask$(timesht.employee_no$,m0$))
-                OutVect!.addItem(timesht.wo_no$)
-                break
-            case 2; rem --- Employee
-                OutVect!.addItem(timesht.sequence_num$+" "+timesht.wo_no$)
-                OutVect!.addItem(fndate$(timesht.trans_date$))
-                break
-            case 3; rem --- Work Order
-                OutVect!.addItem(fnmask$(timesht.sequence_num$+" "+timesht.wo_no$,m0$))
-                OutVect!.addItem(fndate$(timesht.trans_date$))
+            case sfs01a.time_entry_s$ = "W"
+                rem --- Work Order
+                if timesht.wo_no$<>t0$ then gosub first_sub_tot
+                if timesht.trans_date$<>t1$ then gosub sec_sub_tot
+                wo_no$=timesht.wo_no$
+                trans_date$=timesht.trans_date$
+                trip_key$=timesht.firm_id$+timesht.batch_no$+wo_no$+trans_date$
+                gosub get_wo
+                gosub sub_head
                 break
             case default
+                continue
                 break
         swend
-
-                OutVect!.addItem(timesht.op_seq$)
-                OutVect!.addItem(timesht.op_code$)
-                if sfs01a.pr_interface$="Y" then
-                    OutVect!.addItem(timesht.pay_code$)
-                    OutVect!.addItem(timesht.title_code$)
-                else
-                    xwk = fnblank(2)
-                endif
-                xwk = fnblank(1)
-
-        if sfs01a.time_clk_flg$="Y"
-            if num(timesht.start_time$,err=*next)>0 then
-                xwk = fnblank(7)
-                OutVect!.addItem(fng$(timesht.start_time$))
-                xwk = fnblank(5)
-            else
-                xwk = fnblank(13)
-            endif
-
-            if num(timesht.stop_time$,err=label1)>0 then
-                xwk = fnblank(7)
-                OutVect!.addItem(fng$(timesht.stop_time$))
-                xwk = fnblank(5)
-            else
-                xwk = fnblank(13)
-            endif
-        endif
-        gosub calc_totals
-
-label1:
-                OutVect!.addItem(str(timesht.hrs:m2$))
-                OutVect!.addItem(str(timesht.direct_rate:m3$))
-                OutVect!.addItem(str(direct_total:m1$))
-                OutVect!.addItem(str(timesht.ovhd_rate:m3$))
-                OutVect!.addItem(str(oh_total:m1$))
-                OutVect!.addItem(str(trans_total:m9$))
-
-        s[0]=s[0]+timesht.hrs+timesht.setup_time
-        s[2]=s[2]+direct_total,s[4]=s[4]+oh_total,s[5]=s[5]+trans_total,s[6]=s[6]+timesht.complete_qty
-
-        t[0]=t[0]+timesht.hrs+timesht.setup_time
-        t[2]=t[2]+direct_total,t[4]=t[4]+oh_total,t[5]=t[5]+trans_total,t[6]=t[6]+timesht.complete_qty
-
-        u[0]=u[0]+timesht.hrs+timesht.setup_time
-        u[2]=u[2]+direct_total,u[4]=u[4]+oh_total,u[5]=u[5]+trans_total,u[6]=u[6]+timesht.complete_qty
-
-        action=pos(p9$="DEW")
-        switch(action)
-            case 1; rem --- Dates
-                OutVect!.addItem(e1$+" "+d1$)
-                xwk = fnblank(5)
-                break
-            case 2; rem --- Employee
-                OutVect!.addItem(d1$)
-                xwk = fnblank(5)
-                break
-            case 3; rem --- Work Order
-                OutVect!.addItem(e1$)
-                xwk = fnblank(5)
-                break
-            case default
-                break
-        swend
-
-            OutVect!.addItem(str(timesht.complete_qty:m2$))
-            OutVect!.addItem(str(timesht.setup_time:m2$))
-            xwk = fnblank(5)
-
-        l=l+2
-        l1=l1+1,l2=l2+1
-        precision ivs01_precision
-
-    rem --- Post To Summary
-        sfw11a.firm_id$=firm_id$
-        sfw11a.wo_location$="  "
-        sfw11a.wo_no$=d0$
-        sfw11a.op_seq$=timesht.op_seq$
-        sfw11a.trans_date$=d9$
         
-        find record (sfw11a_dev,key=sfw11a.firm_id$+sfw11a.wo_location$+sfw11a.wo_no$+sfw11a.op_seq$+sfw11a.trans_date$,dom=*next) sfw11a$
-        sfw11a.hrs=sfw11a.hrs+timesht.hrs
-        sfw11a.act_dir_amt=sfw11a.act_dir_amt+direct_total
-        sfw11a.act_ovhd_amt=sfw11a.act_ovhd_amt+oh_total
-        sfw11a.labor_cost=sfw11a.labor_cost+trans_total
-        sfw11a.setup_time=sfw11a.setup_time+timesht.setup_time
-        sfw11a.complete_qty=sfw11a.complete_qty+timesht.complete_qty
-        write record (sfw11a_dev,key=sfw11a.firm_id$+sfw11a.wo_location$+sfw11a.wo_no$+sfw11a.op_seq$+sfw11a.trans_date$) sfw11a$
+        rem --- Process detail records
+        read (timesheetdet_dev,key=trip_key$,knum="BATCH_KEY",dom=*next)
+        while 1
+            this_key$=key(timesheetdet_dev,end=*break)
+            if pos(trip_key$=this_key$)<>1 then break
+            read record (timesheetdet_dev) timeshtdet$
 
-    rem --- Generate G/L summary
+            switch (BBjAPI().TRUE)
+                case sfs01a.time_entry_s$ = "D"
+                    rem --- Dates
+                    rem --- Get Work Order
+                    if wo_no$<>timeshtdet.wo_no$ then 
+                        wo_no$=timeshtdet.wo_no$
+                        gosub get_wo
+                    endif
+                    
+                    rem --- Start first detail line
+                    OutVect!.addItem(fnmask$(employee_no$(1,p[0]),m0$))
+                    OutVect!.addItem(wo_no$)
+                    break
+                case sfs01a.time_entry_s$ = "E"
+                    rem --- Employee
+                    rem --- Get Work Order
+                    if wo_no$<>timeshtdet.wo_no$ then 
+                        wo_no$=timeshtdet.wo_no$
+                        gosub get_wo
+                    endif
+                    
+                    rem --- Start first detail line
+                    OutVect!.addItem(wo_no$)
+                    OutVect!.addItem(fndate$(trans_date$))
+                    break
+                case sfs01a.time_entry_s$ = "W"
+                    rem --- Work Order
+                    rem --- Get Employee
+                    if employee_no$<>timeshtdet.employee_no$ then
+                        employee_no$=timeshtdet.employee_no$
+                        gosub get_employee
+                    endif
+                    
+                    rem --- Start first detail line
+                    OutVect!.addItem(wo_no$)
+                    OutVect!.addItem(fndate$(trans_date$))
+                    break
+                case default
+                    continue
+                    break
+            swend
 
-            if gl$<>"Y" then continue
-        
-            find record (sfm10a_dev,key=firm_id$+"A"+sfe01a.wo_type$,dom=*next) sfm10a$
-            gldate$=timesht.trans_date$
+            rem --- Finish first detail line
+            wo_location$="  "
+            dim wooprtn$:fattr(wooprtn$)
+            findrecord(wooprtn_dev,key=firm_id$+wo_location$+wo_no$+timeshtdet.oper_seq_ref$,knum="AO_OP_SEQ",dom=*next)wooprtn$
+            OutVect!.addItem(wooprtn.op_seq$)
+            OutVect!.addItem(timeshtdet.op_code$)
             
-            if p9$<>"D" then gosub chk_trans_date
+            if pr$="Y" then
+                OutVect!.addItem(timeshtdet.pay_code$)
+                OutVect!.addItem(timeshtdet.title_code$)
+            else
+                rem --- Due to DocOut bug, non-blank items required for complete_qty to print
+                OutVect!.addItem(".")
+                OutVect!.addItem(".")
+            endif
+            
+            OutVect!.addItem(str(timeshtdet.complete_qty))
 
-rem --- Post to General Ledger
-
-            precision 2
-
-            sfm10_fld$=fattr(sfm10a$,"")
-            sfm10_fld$=sfm10_fld$(pos("gl_wip_acct"=cvs(sfm10_fld$,8)))
-            j=0
-            while sfm10_fld$<>"" 
-                xfield$=sfm10_fld$(1,pos($0A$=sfm10_fld$)-1)
-                arrfield$[j]=xfield$
-                j=j+1
-                sfm10_fld$=sfm10_fld$(pos($0A$=sfm10_fld$)+1)
-                if j*10 >= g[4] then break
-            wend
-
-            i=0
-            while i<j
-                account$=account$+FIELD(sfm10a$,arrfield$[i])
-                i=i+1
-            wend
-
-            memo$=e1$,ref1$=fnmask$(e0$(1,p[0]),m0$)
-            total=trans_total
-            ref2$="WO "+sfe01a.wo_no$
-            ref3$="Step "+timesht.op_seq$
-            amount=total,units=0
-            gosub glrecap
-            account$=sfm10a.gl_dir_lab$
-            amount=-direct_total,units=timesht.hrs
-            gosub glrecap
-            account$=sfm10a.gl_ovh_lab$
-            amount=-(total+amount),units=timesht.hrs
-            gosub glrecap
-            precision ivs01_precision
-
+            if sfs01a.time_clk_flg$="Y"
+                OutVect!.addItem(fnmask$(timeshtdet.start_time$,"00:00"))
+                OutVect!.addItem(fnmask$(timeshtdet.stop_time$,"00:00"))
+            else
+                xwk = fnblank(2)
+            endif
         
+            gosub calc_totals
+            OutVect!.addItem(str(timeshtdet.setup_time))
+            OutVect!.addItem(str(timeshtdet.hrs))
+            OutVect!.addItem(str(timeshtdet.hrs+timeshtdet.setup_time))
+            OutVect!.addItem(str(timeshtdet.direct_rate))
+            OutVect!.addItem(str(direct_total))
+            OutVect!.addItem(str(timeshtdet.ovhd_rate))
+            OutVect!.addItem(str(oh_total))
+            OutVect!.addItem(str(trans_total))
 
-rem --- Loop back for next record
-    
+            rem --- Second detail line
+            switch (BBjAPI().TRUE)
+                case sfs01a.time_entry_s$ = "D"
+                    rem --- Dates
+                    OutVect!.addItem("    "+e1$)
+                    xwk = fnblank(2)
+                    OutVect!.addItem(d1$)
+                    xwk = fnblank(columns-3)
+                    break
+                case sfs01a.time_entry_s$ = "E"
+                    rem --- Employee
+                    OutVect!.addItem("    "+d1$)
+                    xwk = fnblank(columns)
+                    break
+                case sfs01a.time_entry_s$ = "W"
+                    rem --- Work Order
+                    OutVect!.addItem("    "+e1$)
+                    xwk = fnblank(columns)
+                    break
+                case default
+                    xwk = fnblank(columns+1); rem --- blank line
+                    break
+            swend
+
+            rem --- Set flags that detail was printed
+            l1=l1+1,l2=l2+1
+
+            rem --- Second sub-totals
+            s[0]=s[0]+timeshtdet.hrs+timeshtdet.setup_time
+            s[1]=s[1]+timeshtdet.hrs
+            s[2]=s[2]+timeshtdet.setup_time
+            s[3]=s[3]+direct_total
+            s[4]=s[4]+oh_total
+            s[5]=s[5]+trans_total
+            s[6]=s[6]+timeshtdet.complete_qty
+
+            rem --- First sub-totals
+            t[0]=t[0]+timeshtdet.hrs+timeshtdet.setup_time
+            t[1]=t[1]+timeshtdet.hrs
+            t[2]=t[2]+timeshtdet.setup_time
+            t[3]=t[3]+direct_total
+            t[4]=t[4]+oh_total
+            t[5]=t[5]+trans_total
+            t[6]=t[6]+timeshtdet.complete_qty
+
+            rem --- Grand totals
+            u[0]=u[0]+timeshtdet.hrs+timeshtdet.setup_time
+            u[1]=u[1]+timeshtdet.hrs
+            u[2]=u[2]+timeshtdet.setup_time
+            u[3]=u[3]+direct_total
+            u[4]=u[4]+oh_total
+            u[5]=u[5]+trans_total
+            u[6]=u[6]+timeshtdet.complete_qty
+
+            rem --- Accumulate totals for register's time summary
+            precision ivs01_precision
+            dim sfw11a$:fattr(sfw11a$)
+            sfw11a.firm_id$=firm_id$
+            sfw11a.wo_location$="  "
+            sfw11a.wo_no$=wo_no$
+            sfw11a.op_seq$=wooprtn.op_seq$
+            sfw11a.trans_date$=trans_date$
+
+            extract record (sfw11a_dev,key=sfw11a.firm_id$+sfw11a.wo_location$+sfw11a.wo_no$+sfw11a.op_seq$+sfw11a.trans_date$,dom=*next) sfw11a$
+            sfw11a.op_code$=timeshtdet.op_code$
+            sfw11a.code_desc$=wooprtn.code_desc$
+            sfw11a.hrs=sfw11a.hrs+timeshtdet.hrs
+            sfw11a.act_dir_amt=sfw11a.act_dir_amt+direct_total
+            sfw11a.act_ovhd_amt=sfw11a.act_ovhd_amt+oh_total
+            sfw11a.labor_cost=sfw11a.labor_cost+trans_total
+            sfw11a.setup_time=sfw11a.setup_time+timeshtdet.setup_time
+            sfw11a.complete_qty=sfw11a.complete_qty+timeshtdet.complete_qty
+            write record (sfw11a_dev) sfw11a$
+
+            rem --- G/L Distribution
+            if gl$="Y" then
+                precision 2
+                dim sfm10a$:fattr(sfm10a$)
+                find record (sfm10a_dev,key=firm_id$+"A"+sfe01a.wo_type$,dom=*next) sfm10a$
+
+                gldate$=timeshtdet.trans_date$
+                if sfs01a.time_entry_s$<>"D" then gosub chk_trans_date
+                account$=sfm10a.gl_wip_acct$
+                amount=trans_total
+                units=0
+                memo$=e1$
+                ref1$=fnmask$(employee_no$(1,p[0]),m0$)
+                ref2$=Translate!.getTranslation("AON_WO")+" "+sfe01a.wo_no$
+                ref3$=Translate!.getTranslation("AON_STEP")+" "+wooprtn.op_seq$
+                gosub glrecap
+                account$=sfm10a.gl_dir_lab$
+                amount=-direct_total
+                units=timeshtdet.hrs
+                gosub glrecap
+                account$=sfm10a.gl_ovh_lab$
+                amount=-(trans_total+amount)
+                units=timeshtdet.hrs
+                gosub glrecap
+                precision ivs01_precision
+            endif
+
+        rem --- Loop back for next detail record
+        wend
+
+    rem --- Loop back for next header record
     wend
 
 rem --- End
 
     t9$="U"
     gosub first_sub_tot
-    if l+4>l9 then gosub r_head
+    xwk = fnblank(columns+1); rem --- blank line
     TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-    OutVect!.addItem("Grand Totals: ")
-    xwk = fnblank(6)
-    OutVect!.addItem(str(u[0]:m2$))
+    OutVect!.addItem(Translate!.getTranslation("AON_GRAND")+" "+Translate!.getTranslation("AON_TOTAL")+":")
+    if pr$="Y" then
+        xwk = fnblank(5)
+    else
+        xwk = fnblank(3)
+        rem --- Due to DocOut bug, non-blank items required for complete_qty to print
+        OutVect!.addItem(".")
+        OutVect!.addItem(".")
+    endif
+    OutVect!.addItem(str(u[6]))
+    xwk = fnblank(2)
+    OutVect!.addItem(str(u[2]))
+    OutVect!.addItem(str(u[1]))
+    OutVect!.addItem(str(u[0]))
     xwk = fnblank(1)
-    OutVect!.addItem(str(u[2]:m9$))
+    OutVect!.addItem(str(u[3]))
     xwk = fnblank(1)
-    OutVect!.addItem(str(u[4]:m9$))
-    OutVect!.addItem(str(u[5]:m9$))
+    OutVect!.addItem(str(u[4]))
+    OutVect!.addItem(str(u[5]))
+    
+rem --- All done
 
-    update$=pgmdir$+"sfr_timesheet_o1.aon"
-    overlay$=update$
-    out_action$="PRT-PDF"
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+rem --- Destroy the progress meter and run the next overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+    update$=pgmdir$+"sfu_timesheet.aon"
+    overlay$=pgmdir$+"sfr_timesheet_o1.aon"
     next_overlay$=overlay$
     goto std_exit
-
-r_head: rem --- Report Heading
-
-    l=headings+5
-    return
-
-sub_head: rem --- Sub Heading
-
-    if l+2>l9 then gosub r_head
-
-    action=pos(p9$="DEW")
-
-    switch(action)
-        case 1; rem --- Dates
-            OutVect!.addItem("Date: "+fndate$(t0$(3,3)))
-            xwk = fnblank(12)
-            gldate$=t0$(3,3)
-            gosub chk_trans_date
-            break
-        case 2; rem --- Employee
-            OutVect!.addItem("Employee: "+fnmask$(t0$(3,p[0]),m0$)+"  "+ecode.empl_surname$+ecode.empl_givname$)
-            xwk = fnblank(12)
-            break
-        case 3; rem --- Work Order
-            OutVect!.addItem("Work Order: "+t0$(3,7)+"  "+d1$)
-            xwk = fnblank(12)
-            break
-        case default
-            break
-    swend
-
-    xwk = fnblank(13)
-    l=l+2
-    return
-
-first_sub_tot: rem --- First Sub Total
-
-    if t0$=""
-        if t9$="" then let t9$="T"
-        gosub sec_sub_tot
-        if t9$="T" then let t9$="",t1$=""
-        if l2>1
-            if l+3>l9 then gosub sub_head
-            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-            OutVect!.addItem("Totals :")
-            xwk = fnblank(5)
-            OutVect!.addItem(str(t[6]:m2$))
-            OutVect!.addItem(str(t[0]:m2$))
-            xwk = fnblank(1)
-            OutVect!.addItem(str(t[2]:m9$))
-            xwk = fnblank(1)
-            OutVect!.addItem(str(t[4]:m9$))
-            OutVect!.addItem(str(t[5]:m9$))
-            l=l+3
-        endif
-    endif
-
-    if t9$<>"" then return
-    dim t[6]
-
-    action=pos(p9$="DEW")
-    switch(action)
-        case 1; rem --- Dates
-            t0$=timesht.firm_id$+timesht.trans_date$
-            break
-        case 2; rem --- Employee
-            t0$=timesht.firm_id$+timesht.employee_no$
-            break
-        case 3; rem --- Work Order
-            t0$=timesht.firm_id$+timesht.wo_no$
-            break
-        case default
-            break
-    swend
-
-    l2=0
-    if p9$="E" then let e0$=t0$(3,p0); gosub get_employee
-    if p9$="W" then let d0$=t0$(3,p0); gosub get_wo
-    gosub sub_head
-    return
-
-sec_sub_tot: rem --- Second Sub Total
-
-    if t1$<>""
-        if l1>1
-            if l+2>l9 then gosub sub_head
-            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-            OutVect!.addItem("Totals :")
-            xwk = fnblank(5)
-            OutVect!.addItem(str(s[6]:m2$))
-            OutVect!.addItem(str(s[0]:m2$))
-            xwk = fnblank(1)
-            OutVect!.addItem(str(s[2]:m9$))
-            xwk = fnblank(1)
-            OutVect!.addItem(str(s[4]:m9$))
-            OutVect!.addItem(str(s[5]:m9$))
-            l=l+2
-        endif
-        l=l+1
-    endif
-
-    if t9$<>"" then return
-    dim s[6]
-
-    action=pos(p9$="DEW")
-    switch(action)
-        case 1; rem --- Dates
-            t1$=timesht.firm_id$+timesht.trans_date$+timesht.employee_no$
-            break
-        case 2; rem --- Employee
-            t1$=timesht.firm_id$+timesht.employee_no$+timesht.trans_date$
-            break
-        case 3; rem --- Work Order
-            t1$=timesht.firm_id$+timesht.wo_no$+timesht.trans_date$
-            break
-        case default
-            break
-    swend
-
-    l1=0
-    if p9$="D" then let e0$=t1$(6,9); gosub get_employee
-    return
-
-calc_totals: rem --- Calculate Transaction Direct & Overhead Totals
-
-    direct_hrs=round(timesht.direct_rate*timesht.hrs,2)
-    direct_set=round(timesht.direct_rate*timesht.setup_time,2)
-    direct_total=direct_hrs+direct_set
-    oh_hrs=round(timesht.ovhd_rate*timesht.hrs,2)
-    oh_set=round(timesht.ovhd_rate*timesht.setup_time,2)
-    oh_total=oh_hrs+oh_set
-    trans_total=direct_total+oh_total
-    return
-
-get_employee: rem --- Get Employee
-
-    find record (empcode_dev,key=firm_id$+e0$,dom=*next) ecode$
-    dim e9$(30)
-    e9$(1)=cvs(ecode.empl_surname$,2)+", "+ecode.empl_surname$
-    e1$=e9$
-    return
-
-get_wo: rem --- Get Work Order
-
-    find record (sfe01a_dev,key=firm_id$+"  "+d0$,dom=*next) sfe01a$
-    d1$=sfe01a.description_01$
-    if sfe01a.wo_category$="I"
-        find record (ivm01a_dev,key=firm_id$+sfe01a.item_id$,dom=label2) ivm01a$
-        sfe01a.description_01$=ivm01a.item_desc$(1,min(desc[1],30))
-    endif
-label2:
-    return
-
-chk_trans_date: rem --- Check transaction date
-
-    if gl$<>"Y"
-        call pgmdir$+"glc_datecheck.aon",gldate$,"N",period$,year$,glstatus
-        if glstatus then call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,l,errors,status
-    endif
-    return
-
-rem --- Standard G/L Recap Routine
-
-glrecap:
-    if gl$<>"Y"
-        call pgmdir$+"glc_glpost.aon",glm01a_dev,glw11_dev,glt04a_dev,account$,gldate$,ref1$,ref2$,ref3$,memo$,amount,units,status
-    endif
-    return
-
-rem #include std_functions.src
+    
 rem --- Standard AddonSoftware functions (01Mar2006)
-rem --- Functions used to retrieve form values
-
-    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
-    def fnget_table$(q0$)=rd_alias_id$
-
-rem --- Miscellaneous functions
-
-    def fncenter(q$,q)=int((q-len(q$))/2)
 
 rem --- Format inventory item description
 
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	def fnitem$(q$,q1,q2,q3)
+		q$=pad(q$,q1+q2+q3)
+		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+	fnend
 
 rem --- Date/time handling functions
 
@@ -640,10 +597,6 @@ rem --- Date/time handling functions
         if q1$="" q1$=q$
         return q1$
     fnend
-    
-    def fnyy$(q$)=q$(3,2)
-    def fnclock$(q$)=date(0:"%hz:%mz %p")
-    def fntime$(q$)=date(0:"%Hz%mz")
 
 rem --- fnBlank : Create blank cells in OutVect!. No return value
    
@@ -669,47 +622,267 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         return str(q1$:q2$)
     fnend
 
-rem --- fnbasename$: Strip path and optionally the suffix from a file name
+sub_head: rem --- Sub Heading
 
-    def fnbasename$(q$,q0$)
-        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
-        if q then q$=q$(q+1)
-        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
+    xwk = fnblank(columns+1); rem --- blank line
+    switch (BBjAPI().TRUE)
+        case sfs01a.time_entry_s$ = "D"
+            rem --- Dates
+            OutVect!.addItem(Translate!.getTranslation("AON_DATE")+": "+fndate$(t0$))
+            gldate$=t0$
+            gosub chk_trans_date
+            break
+        case sfs01a.time_entry_s$ = "E"
+            rem --- Employee
+            OutVect!.addItem(Translate!.getTranslation("AON_EMPLOYEE")+": "+fnmask$(t0$(1,p[0]),m0$)+"  "+e1$)
+            break
+        case sfs01a.time_entry_s$ = "W"
+            rem --- Work Order
+            OutVect!.addItem(Translate!.getTranslation("AON_WORK_ORDER")+": "+t0$+"  "+d1$)
+            break
+        case default
+            OutVect!.addItem("")
+            break
+    swend
+    xwk = fnblank(columns)
+    xwk = fnblank(columns+1); rem --- blank line
 
-rem --- fnglobal: Return numeric value of passed stbl variable
+    return
 
-    def fnglobal(q$,q1)
-        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
-        return q1
-    fnend
+first_sub_tot: rem --- First Sub Total
 
-rem --- fnglobal$: Return string value of passed STBL variable
+    if t0$<>""
+        if t9$="" then let t9$="T"
+        gosub sec_sub_tot
+        if t9$="T" then let t9$="",t1$=""
+        if l2>1
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            xwk = fnblank(1)
+            switch (BBjAPI().TRUE)
+                case sfs01a.time_entry_s$ = "D"
+                    rem --- Dates
+                    OutVect!.addItem(Translate!.getTranslation("AON_DATE")+" "+Translate!.getTranslation("AON_TOTALS")+":")
+                    break
+                case sfs01a.time_entry_s$ = "E"
+                    rem --- Employee
+                    OutVect!.addItem(Translate!.getTranslation("AON_EMPLOYEE")+" "+Translate!.getTranslation("AON_TOTALS")+":")
+                    break
+                case sfs01a.time_entry_s$ = "W"
+                    rem --- Work Order
+                    OutVect!.addItem(Translate!.getTranslation("AON_WORK_ORDER")+" "+Translate!.getTranslation("AON_TOTALS")+":")
+                    break
+                case default
+                    OutVect!.addItem(Translate!.getTranslation("AON_TOTALS"))+":"
+                    break
+            swend
+            if pr$="Y" then
+                xwk = fnblank(4)
+            else
+                xwk = fnblank(2)
+                rem --- Due to DocOut bug, non-blank items required for complete_qty to print
+                OutVect!.addItem(".")
+                OutVect!.addItem(".")
+            endif
+            OutVect!.addItem(str(t[6]))
+            xwk = fnblank(2)
+            OutVect!.addItem(str(t[2]))
+            OutVect!.addItem(str(t[1]))
+            OutVect!.addItem(str(t[0]))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(t[3]))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(t[4]))
+            OutVect!.addItem(str(t[5]))
+        endif
+    endif
 
-    def fnglobal$(q$,q1$)
-        q1$=stbl(q$,err=*next)
-        return q1$
-    fnend
+    if t9$<>"" then return
+    l2=0
+    dim t[6]
 
-rem #endinclude std_functions.src
+    switch (BBjAPI().TRUE)
+        case sfs01a.time_entry_s$ = "D"
+            rem --- Dates
+            t0$=timesht.trans_date$
+            break
+        case sfs01a.time_entry_s$ = "E"
+            rem --- Employee
+            t0$=timesht.employee_no$
+            break
+        case sfs01a.time_entry_s$ = "W"
+            rem --- Work Order
+            t0$=timesht.wo_no$
+            break
+        case default
+            t0$=""
+            break
+    swend
+
+    return
+
+sec_sub_tot: rem --- Second Sub Total
+
+    if t1$<>""
+        if l1>1
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            xwk = fnblank(2)
+            switch (BBjAPI().TRUE)
+                case sfs01a.time_entry_s$ = "D"
+                    rem --- Dates
+                    OutVect!.addItem(Translate!.getTranslation("AON_EMPLOYEE")+" "+Translate!.getTranslation("AON_TOTALS")+":")
+                    break
+                case sfs01a.time_entry_s$ = "E"
+                    rem --- Employee
+                    OutVect!.addItem(Translate!.getTranslation("AON_DATE")+" "+Translate!.getTranslation("AON_TOTALS")+":")
+                    break
+                case sfs01a.time_entry_s$ = "W"
+                    rem --- Work Order
+                    OutVect!.addItem(Translate!.getTranslation("AON_DATE")+" "+Translate!.getTranslation("AON_TOTALS")+":")
+                    break
+                case default
+                    OutVect!.addItem(Translate!.getTranslation("AON_TOTALS"))+":"
+                    break
+            swend
+            if pr$="Y" then
+                xwk = fnblank(3)
+            else
+                xwk = fnblank(1)
+                rem --- Due to DocOut bug, non-blank items required for complete_qty to print
+                OutVect!.addItem(".")
+                OutVect!.addItem(".")
+            endif
+            OutVect!.addItem(str(s[6]))
+            xwk = fnblank(2)
+            OutVect!.addItem(str(s[2]))
+            OutVect!.addItem(str(s[1]))
+            OutVect!.addItem(str(s[0]))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(s[3]))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(s[4]))
+            OutVect!.addItem(str(s[5]))
+        endif
+    endif
+
+    if t9$<>"" then return
+    l1=0
+    dim s[6]
+
+    switch (BBjAPI().TRUE)
+        case sfs01a.time_entry_s$ = "D"
+            rem --- Dates
+            t1$=timesht.employee_no$
+            break
+        case sfs01a.time_entry_s$ = "E"
+            rem --- Employee
+            t1$=timesht.trans_date$
+            break
+        case sfs01a.time_entry_s$ = "W"
+            rem --- Work Order
+            t1$=timesht.trans_date$
+            break
+        case default
+            t1$=""
+            break
+    swend
+
+    return
+
+calc_totals: rem --- Calculate Transaction Direct & Overhead Totals
+
+    direct_hrs=round(timeshtdet.direct_rate*timeshtdet.hrs,2)
+    direct_set=round(timeshtdet.direct_rate*timeshtdet.setup_time,2)
+    direct_total=direct_hrs+direct_set
+    oh_hrs=round(timeshtdet.ovhd_rate*timeshtdet.hrs,2)
+    oh_set=round(timeshtdet.ovhd_rate*timeshtdet.setup_time,2)
+    oh_total=oh_hrs+oh_set
+    trans_total=direct_total+oh_total
+    return
+
+get_employee: rem --- Get Employee
+
+    dim e1$(30)
+    e1$(1)=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+    dim ecode$:fattr(ecode$)
+    find record (empcode_dev,key=firm_id$+employee_no$,dom=*next) ecode$
+    if cvs(ecode.empl_surname$+ecode.empl_givname$,2)<>"" then
+        e1$(1)=cvs(ecode.empl_surname$,2)+", "+cvs(ecode.empl_givname$,2)
+    endif
+    return
+
+get_wo: rem --- Get Work Order
+
+    dim d1$(30)
+    d1$(1)=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+    dim sfe01a$:fattr(sfe01a$)
+    find record (sfe01a_dev,key=firm_id$+"  "+wo_no$,dom=*next) sfe01a$
+    if sfe01a.wo_category$="I"
+        dim ivm01a$:fattr(ivm01a$)
+        find record (ivm01a_dev,key=firm_id$+sfe01a.item_id$,dom=*next) ivm01a$
+        if cvs(ivm01a.item_desc$,2)<>"" then
+            sfe01a.description_01$(1)=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+        endif
+    endif
+    if cvs(sfe01a.description_01$,2)<>"" then d1$(1)=sfe01a.description_01$
+    return
+
+chk_trans_date: rem --- Check transaction date
+
+    if gl$<>"Y"
+        call pgmdir$+"glc_datecheck.aon",gldate$,"N",period$,year$,glstatus
+        if glstatus then call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,l,errors,status
+    endif
+    return
+
+glrecap: rem --- Standard GL Recap Routine
+
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
+:       ref1$,ref2$,ref3$,memo$,amount,units,status
+    if amount<>0 or units<>0 gl_recs=gl_recs+1
+    return
+    
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
 
 rem #include disp_message.src
 
-disp_message:rem --- Display Message Dialog
+disp_message: rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
-return
-	
-rem #endinclude disp_message.src
 
+    return
+
+rem #endinclude disp_message.src
+    
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
@@ -725,6 +898,7 @@ std_error_release:
     release
 
 rem #endinclude std_error.src
+
 rem #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
@@ -732,8 +906,8 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
@@ -749,10 +923,24 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
 std_exit: rem --- Standard program end (01Mar2006)
 
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

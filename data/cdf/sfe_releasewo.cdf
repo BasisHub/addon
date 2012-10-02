@@ -65,6 +65,8 @@ rem =====================================================
 	rem -- size grid on form
 	gridAvail!=callpoint!.getDevObject("avail_grid")
 
+	util.resizeWindow(Form!, SysGui!)
+
 	gridAvail!.setSize(Form!.getWidth()-(gridAvail!.getX()*2),Form!.getHeight()-(gridAvail!.getY()+40))
 	gridAvail!.setFitToGrid(1)
 
@@ -130,7 +132,8 @@ rem =====================================================
 			req=num(gridAvail!.getCellText(curr_row,2))
 			avail=num(gridAvail!.getCellText(curr_row,5))
 			if req>avail
-				gridAvail!.setRowBackColor(curr_row,callpoint!.getDevObject("error_color"))
+				gridAvail!.setCellBackColor(curr_row,2,callpoint!.getDevObject("error_color"))
+				gridAvail!.setCellBackColor(curr_row,5,callpoint!.getDevObject("error_color"))
 			endif
 		next curr_row
 	endif
@@ -264,6 +267,10 @@ rem --- Release/commit
 		endif
 	endif
 [[SFE_RELEASEWO.BSHO]]
+rem --- init
+
+	use ::ado_util.src::util
+
 rem --- Open needed tables
 
 	num_files=2
@@ -282,6 +289,6 @@ rem --- create grid to display shortages
 
 	call stbl("+DIR_SYP")+"bac_create_color.bbj","+ENTRY_ERROR_COLOR","255,224,224",error_color!,""
 	callpoint!.setDevObject("error_color",error_color!)
-	
+
 	gosub format_grid
 	gosub load_grid

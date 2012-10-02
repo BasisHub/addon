@@ -505,7 +505,7 @@ rem --- Look in check history for this check number
 					ape_checktpl.vendor_name$=apt05a.vendor_name$
 					ape_checktpl.batch_no$=callpoint!.getColumnData("APE_MANCHECKHDR.BATCH_NO")
 					ape_checktpl$=field(ape_checktpl$)
-					write record(ape_mancheckhdr) ape_checktpl$
+rem					write record(ape_mancheckhdr) ape_checktpl$;rem Advisory Locking; no need to write this manually, let Barista do it, after which it'll extract it
 					callpoint!.setStatus("MODIFIED")
 				else
 					callpoint!.setStatus("ABORT")

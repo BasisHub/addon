@@ -225,6 +225,12 @@ rem --- Display Queue time
 use ::sfo_SfUtils.aon::SfUtils
 declare SfUtils sfUtils!
 
+rem --- set validation table for op codes to use sf codes if no bom interface (or bom not installed)
+
+	if callpoint!.getDevObject("bm")<>"Y"
+		callpoint!.setTableColumnAttribute("SFE_WOOPRTN.OP_CODE","DTAB","SFC_OPRTNCOD")
+	endif
+
 rem --- Disable grid if Closed Work Order
 
 	if callpoint!.getDevObject("wo_status")="C"

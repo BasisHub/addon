@@ -1,0 +1,173 @@
+rem AR Drill Down Sale Report by Customer Type (Report Overlay)
+rem Program arr_drillDownSaleReport.aon
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+	setesc std_error
+	seterr std_error
+
+rem --- Retrieve the program path
+
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	firm_id$=sysinfo.firm_id$
+	firm_name$=sysinfo.firm_name$
+
+	milestone=50
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
+
+
+rem --- USE and Declares
+
+	use ::bbjasper.bbj::BBJasperReport
+	use ::bbjasper.bbj::BBJasperViewerWindow
+	use ::ado_func.src::func
+
+	declare BBJasperReport BBjReport!
+	declare BBJasperViewerWindow BBjReportWindow!
+
+	declare BBjRecordSet params!
+	declare BBjRecordData periods!
+
+rem --- Common information
+
+	rem ' add to the prefix to find the support custom objects needed
+	bbjhome$ = System.getProperty("basis.BBjHome") + "/"
+	addPrefix$=bbjhome$ + "utils/reporting/bbjasper/"
+	if pos(" " = addPrefix$) <> 0 then addPrefix$ = chr(34) + addPrefix$ + chr(34)
+	oldPrefix$=pfx
+	newPrefix$=oldPrefix$+" "+addPrefix$
+	prefix newPrefix$
+    
+	barista_wd$=dsk("")+dir("")
+
+	rem ' build the database URL
+	dbserver$="localhost"
+	dbsqlport$=":2001"
+	dbtimeout$="&socket_timeout=5000"
+
+	dbserver$=stbl("+DBSERVER",err=*next)
+	dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+	dbssl=num(stbl("+DBSSL",err=*next))
+	dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+
+	if dbssl
+		dbssl$="&ssl=true"
+	else
+		dbssl$="&ssl=false"
+	endif
+
+	url_user$="&user=guest"
+	if stbl("!DSUDDB",err=*endif)<>"" then
+		url_user$=""
+	endif
+
+	dbname$ = stbl("+DBNAME")
+	dbname_api$ = stbl("+DBNAME_API")
+	if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+		url$ = dbname$
+	else
+		if pos("jdbc:"=cvs(dbname$,8))=1 then			
+			url$=dbname$+url_user$+dbssl$+dbtimeout$
+		else
+			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+		endif
+	endif
+
+	rem ' get the customer id mask
+	call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",custIdMask$,0,custIdLen
+	custIdMaskLen = len(custIdMask$)
+
+rem --- get the accounting periods
+	sql$ = "SELECT TOTAL_PERS, CURRENT_PER, CURRENT_YEAR, "
+	sql$ = sql$ + "PER_ENDING_01, PER_ENDING_02, PER_ENDING_03, PER_ENDING_04, PER_ENDING_05, PER_ENDING_06, "
+	sql$ = sql$ + "PER_ENDING_07, PER_ENDING_08, PER_ENDING_09, PER_ENDING_10, PER_ENDING_11, PER_ENDING_12, PER_ENDING_13 "
+	sql$ = sql$ + "FROM GLS_PARAMS "
+	sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "'"
+
+	params! = BBjAPI().createSQLRecordSet(url$,"",sql$)
+	periods! = params!.getCurrentRecordData()
+
+rem --- Assign input values to local variables
+
+    period$=Option!.getOptionData("PICK_GL_PER")
+    year$=Option!.getOptionData("PICK_YEAR")
+    
+    
+rem - establish the month 
+
+    period = num(period$)
+    
+    firstPerEnding$ = periods!.getFieldValue("PER_ENDING_01")
+    
+    switch period
+    	case 1; ending$ = periods!.getFieldValue("PER_ENDING_01"); break
+    	case 2; ending$ = periods!.getFieldValue("PER_ENDING_02"); break
+    	case 3; ending$ = periods!.getFieldValue("PER_ENDING_03"); break
+    	case 4; ending$ = periods!.getFieldValue("PER_ENDING_04"); break
+    	case 5; ending$ = periods!.getFieldValue("PER_ENDING_05"); break
+    	case 6; ending$ = periods!.getFieldValue("PER_ENDING_06"); break
+    	case 7; ending$ = periods!.getFieldValue("PER_ENDING_07"); break
+    	case 8; ending$ = periods!.getFieldValue("PER_ENDING_08"); break
+    	case 9; ending$ = periods!.getFieldValue("PER_ENDING_09"); break
+    	case 10; ending$ = periods!.getFieldValue("PER_ENDING_10"); break
+    	case 11; ending$ = periods!.getFieldValue("PER_ENDING_11"); break
+    	case 12; ending$ = periods!.getFieldValue("PER_ENDING_12"); break
+    	case 13; ending$ = periods!.getFieldValue("PER_ENDING_13"); break
+    swend
+  
+    month$ = ending$(1,2)
+ 
+rem --- start SalesByCustType report
+
+	reportName$ = stbl("+DIR_REPORTS") + "SalesByCustType.jasper"
+
+	BBjReport! = new BBJasperReport(reportName$, url$)
+	
+	BBjReport!.putParam("FIRM_ID",firm_id$)
+	BBjReport!.putParam("FIRM_NAME",firm_name$)
+	BBjReport!.putParam("MONTH",month$)
+	BBjReport!.putParam("YEAR",year$)
+	BBjReport!.putParam("CUST_ID_MASK", custIdMask$)
+	BBjReport!.putParam("CUST_ID_LEN", str(custIdLen))
+	BBjReport!.putParam("BARISTA_WD",barista_wd$)
+
+	BBjReport!.fill(1)
+
+	BBjReportWindow! = new BBJasperViewerWindow(BBjReport!, 0, 0, 920, 600,"BASIS International, Ltd.", $00080093$)
+	BBjReportWindow!.center()
+	BBjReportWindow!.show(1)
+
+	release
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+    
+    
+
+

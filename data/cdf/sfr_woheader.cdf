@@ -1,35 +1,30 @@
+[[SFR_WOHEADER.BFMC]]
+rem --- Set Custom Query for BOM Item Number
+
+	callpoint!.setTableColumnAttribute("SFR_WOHEADER.BILL_NO_1", "IDEF", "BOM_LOOKUP")
+	callpoint!.setTableColumnAttribute("SFR_WOHEADER.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[SFR_WOHEADER.BILL_NO.AVAL]]
-rem --- Set descriptions
+rem --- Validate against BOM_BILLMAST
 
-	ivm_itemmast=fnget_dev("IVM_ITEMMAST")
-	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
-	item$=callpoint!.getUserInput()
-	read record (ivm_itemmast,key=firm_id$+item$,dom=*next) ivm_itemmast$
+	bmm_billmast=fnget_dev("BMM_BILLMAST")
+	found=0
+	bill$=callpoint!.getUserInput()
+	while 1
+		find (bmm_billmast,key=firm_id$+bill$,dom=*break)
+		found=1
+		break
+	wend
 
-	if num(callpoint!.getControlID()) = num(callpoint!.getControl("BILL_NO_1").getID()) then
-		if cvs(item$,2)<>""
-			callpoint!.setColumnData("<<DISPLAY>>.BEG_DESC",ivm_itemmast.item_desc$,1)
-		else
-			callpoint!.setColumnData("<<DISPLAY>>.BEG_DESC","First",1)
-		endif
-	endif
-	if num(callpoint!.getControlID()) = num(callpoint!.getControl("BILL_NO_2").getID()) then
-		if cvs(item$,2)<>""
-			callpoint!.setColumnData("<<DISPLAY>>.END_DESC",ivm_itemmast.item_desc$,1)
-		else
-			callpoint!.setColumnData("<<DISPLAY>>.END_DESC","Last",1)
-		endif
+	if found=0 and cvs(bill$,3)<>""
+		msg_id$="INPUT_ERR_DATA"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
 	endif
 [[SFR_WOHEADER.AREC]]
 rem --- Set default Warehouse
 
 	whse$=callpoint!.getDevObject("dflt_whse")
 	callpoint!.setColumnData("SFR_WOHEADER.WAREHOUSE_ID",whse$,1)
-
-rem --- Set initial values for descriptions
-
-	callpoint!.setColumnData("<<DISPLAY>>.BEG_DESC","First",1)
-	callpoint!.setColumnData("<<DISPLAY>>.END_DESC","Last",1)
 [[SFR_WOHEADER.REPORT_SEQ.AVAL]]
 rem ---- If By Bill and a whse hasn't been entered, default whse
 
@@ -46,10 +41,9 @@ endif
 [[SFR_WOHEADER.BSHO]]
 rem --- Open needed IV tables
 rem --- Get default warehouse from IV params
-	num_files=2
+	num_files=1
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVS_PARAMS",open_opts$[1]="OTA"
-	open_tables$[2]="IVM_ITEMMAST",open_opts$[2]="OTA"
 	gosub open_tables
 
 	ivs01_dev=num(open_chans$[1])
@@ -100,4 +94,11 @@ rem --  Potentially remove list options based on module installed? status
 			endif
 			indx=indx-1
 		wend
+	endif
+
+	if bm$="Y"
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="BMM_BILLMAST",open_opts$[1]="OTA"
+		gosub open_tables
 	endif

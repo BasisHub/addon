@@ -96,7 +96,7 @@ rem --- if credit-card transaction type, encrypt credit card# and move it to new
 done:rem --- Update AutoLaunch Status
 
     if autolaunch_dev<>0 then
-        extractrecord(autolaunch_dev,key="INIT_DATA")autolaunch_tpl$
+        extractrecord(autolaunch_dev,key="INIT_DATA")autolaunch_tpl$; rem Advisory Locking
         if process_complete then autolaunch_tpl.process_status$="C"
         autolaunch_tpl.trans_date$=date(0:"%Yl%Mz%Dz")
         autolaunch_tpl.trans_time$=date(0:"%Hz%mz%sz")
@@ -155,7 +155,7 @@ init_post_to_gl:
         read(dev,key="",dom=*next)
         while 1
             key$=key(dev,end=*break)
-            readrecord(dev)tpl$
+            extractrecord(dev)tpl$; rem Advisory Locking
 
             if cvs(tpl.post_to_gl$,2)="" then
                 tpl.post_to_gl$="Y"
@@ -163,17 +163,21 @@ init_post_to_gl:
                 rem --- Override with pre-v12 adm_modules.post_gl if still available
                 if use_post_gl then
                     modules_tpl.post_gl$=""
-                    find record (modules_dev,key=stbl("+AON_APPCOMPANY",err=*next)+pad(mod$,3),dom=*endif)modules_tpl$
+                    extract record (modules_dev,key=stbl("+AON_APPCOMPANY",err=*next)+pad(mod$,3),dom=*endif)modules_tpl$; rem Advisory Locking
                     if pos(modules_tpl.post_gl$="YN") then
                         tpl.post_to_gl$=modules_tpl.post_gl$
                         rem --- clear adm_modules.post_gl
                         modules_tpl.post_gl$(1)=""
                         write record (modules_dev)modules_tpl$
+                    else
+                        read(modules_dev,dom=*next)
                     endif
                 endif
 
                 tpl$=field(tpl$)
                 writerecord(dev,key=key$)tpl$
+            else
+                read(dev)
             endif
         wend
     next i
@@ -218,7 +222,8 @@ rem --- process ope/opt-41
     call pgmdir$+"adc_progress.aon","NC","","","","",0,proc_dev,1,meter_num,status
  
     while 1   
-        readrecord (proc_dev,end=*break)proc_rec$
+        extractrecord (proc_dev,end=*break)proc_rec$; rem Advisory Locking
+        proc_key$=key(proc_dev)
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         readrecord(arc_cashcode_dev,key=firm_id$+"C"+proc_rec.cash_rec_cd$,dom=*next)arc_cashcode$
         if arc_cashcode.trans_type$="P" and cvs(proc_rec.payment_id$,3)<>""
@@ -240,6 +245,7 @@ rem --- process ope/opt-41
                 endif
             endif
         endif
+        read(proc_dev,key=proc_key$)
     wend
     
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status    

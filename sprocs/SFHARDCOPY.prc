@@ -45,6 +45,15 @@ rem --- Get the IN parameters used by the procedure
 	thru_cust$ = sp!.getParameter("CUSTOMER_ID_2")
 	from_type$ = sp!.getParameter("WO_TYPE_1")
 	thru_type$ = sp!.getParameter("WO_TYPE_2")
+	masks$ = sp!.getParameter("MASKS")
+	
+rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
+
+	if len(masks$)>0
+		if masks$(len(masks$),1)<>"|"
+			masks$=masks$+"|"
+		endif
+	endif
 	
 	sv_wd$=dir("")
 	chdir barista_wd$
@@ -54,29 +63,44 @@ rem --- Columns for the record set are defined using a string template
 	temp$="FIRM_ID:C(2), WO_NO:C(7*), WO_TYPE:C(1*), WO_CATEGORY:C(1*), WO_STATUS:C(1*), CUSTOMER_ID:C(1*), "
 	temp$=temp$+"SLS_ORDER_NO:C(1*), WAREHOUSE_ID:C(1*), ITEM_ID:C(1*), OPENED_DATE:C(1*), LAST_CLOSE:C(1*), "
 	temp$=temp$+"TYPE_DESC:C(1*), PRIORITY:C(1*), UOM:C(1*), YIELD:C(1*), PROD_QTY:C(1*), COMPLETED:C(1*), "
-	temp$=temp$+"LAST_ACT_DATE:C(1*), ITEM_DESC_1:C(1*), ITEM_DESC_2:C(1*), DRAWING_NO:C(1*), REV:C(1*)"
+	temp$=temp$+"LAST_ACT_DATE:C(1*), ITEM_DESC_1:C(1*), ITEM_DESC_2:C(1*), DRAWING_NO:C(1*), REV:C(1*), "
+	temp$=temp$+"INCLUDE_LOTSER:C(1*), MAST_CLS_INP_QTY_STR:C(1*), MAST_CLS_INP_DT:C(1*), MAST_CLOSED_COST_STR:C(1*), "
+	temp$=temp$+"COMPLETE_YN:C(1*), COST_MASK:C(1*), UNITS_MASK:C(1*), AMT_MASK:C(1*), "	
+	temp$=temp$+"COST_MASK_PATTERN:C(1*), UNITS_MASK_PATTERN:C(1*), AMT_MASK_PATTERN:C(1*)"		
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
 rem --- Get Barista System Program directory
 	sypdir$=""
 	sypdir$=stbl("+DIR_SYP",err=*next)
-
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+	
 rem --- Get masks
 
-rem	pgmdir$=stbl("+DIR_PGM",err=*next)
-rem	call pgmdir$+"adc_getmask.aon","","SF","U","",m1$,0,m1
-rem	call pgmdir$+"adc_getmask.aon","","AR","I","",custmask$,0,custmask
-	m1$="#,###.00-"
-	cust_mask$="00-0000"
-	pct_mask$="##0.0%"
+	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
+	cust_mask$=fngetmask$("cust_mask","000000",masks$)
+	sf_pct_mask$=fngetmask$("sf_pct_mask","##0.00%",masks$)
+	sf_cost_mask$=fngetmask$("sf_cost_mask","#,##0.00-",masks$)	
+	sf_units_mask$=fngetmask$("sf_units_mask","#,##0.00-",masks$)	
+	sf_amt_mask$=fngetmask$("sf_amt_mask","##,##0.00-",masks$)	
 	
+rem --- Make the 'Patterns' used to mask in iReports from Addon masks
+rem       examples:
+rem          ##0.00;##0.00-   Includes negatives with minus at the end
+rem          ##0.00;-##0.00   Includes negatives with minus at the front
+rem          ##0.00;##0.00-   Positives only
+
+	sf_cost_mask_pattern$=fngetPattern$(sf_cost_mask$)
+	sf_units_mask_pattern$=fngetPattern$(sf_units_mask$)
+	sf_amt_mask_pattern$=fngetPattern$(sf_amt_mask$)
+
 rem --- Open files with adc
 
-    files=3,begfile=1,endfile=files
+    files=4,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="ivm-01",ids$[1]="IVM_ITEMMAST"
 	files$[2]="sfm-10",ids$[2]="SFC_WOTYPECD"
 	files$[3]="arm-01",ids$[3]="ARM_CUSTMAST"
+	files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -84,21 +108,24 @@ rem --- Open files with adc
     ivm_itemmast_dev=channels[1]
 	sfc_type_dev=channels[2]
 	arm_custmast=channels[3]
-
+	ivs_params=channels[4]
+	
 rem --- Dimension string templates
 
 	dim ivm_itemmast$:templates$[1]
 	dim sfc_type$:templates$[2]
 	dim arm_custmast$:templates$[3]
+	dim ivs_params$:templates$[4]
 	
 goto no_bac_open
 rem --- Open Files    
-    num_files = 3
+    num_files = 4
     dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
 
 	open_tables$[1]="IVM_ITEMMAST",   open_opts$[1] = "OTA"
 	open_tables$[2]="SFC_WOTYPECD",   open_opts$[2] = "OTA"
 	open_tables$[3]="ARM_CUSTMAST",   open_opts$[3] = "OTA"
+	open_tables$[4]="IVS_PARAMS",     open_opts$[4] = "OTA"	
 
 call sypdir$+"bac_open_tables.bbj",
 :       open_beg,
@@ -114,15 +141,23 @@ call sypdir$+"bac_open_tables.bbj",
 	ivm_itemmast_dev  = num(open_chans$[1])
 	sfc_type_dev = num(open_chans$[2])
 	arm_custmast = num(open_chans$[3])
+	ivs_params   = num(open_chans$[4])
 	
 	dim ivm_itemmast$:open_tpls$[1]
 	dim sfc_type$:open_tpls$[2]
 	dim arm_custmast$:open_tpls$[3]
+	dim ivs_params$:open_tpls$[4]	
 
 no_bac_open:
-
+rem --- Get IV Params for Lot/Serial flag
+	ivs_params_key$=firm_id$+"IV00"
+    find record (ivs_params,key=ivs_params_key$) ivs_params$
+	
 rem --- Build SQL statement
-
+    sql_prep$=""
+	where_clause$=""
+	order_clause$=""
+	
 	sql_prep$="select * from sfe_womastr "
     action=pos(report_seq$="WBCT")-1
     switch action
@@ -136,7 +171,7 @@ rem --- Build SQL statement
 			if from_bill$<>"" where_clause$=where_clause$+" item_id >= '"+from_bill$+"' AND "
 			if thru_bill$<>"" where_clause$=where_clause$+" item_id <= '"+thru_bill$+"' AND "
 			where_clause$=where_clause$+" warehouse_id = '"+wh_id$+"' AND "
-			where_clause$=where_clause$+" item_id$ <> '' AND "
+			where_clause$=where_clause$+" item_id <> '' AND "
             break
         case 2
             order_by$=" ORDER BY customer_id "
@@ -168,17 +203,34 @@ rem --- Build SQL statement
 			where_clause$=where_clause$(1,len(where_clause$)-4)
 		endif
 	endif
-	
-rem report_type$="T"; rem escape caj
 
-rem --- Concatenate the pieces of sql_prep$
-rem --- For Travelers, limit WO recs based on sfe_openedwo
-	if report_type$="T" then 
-		gosub get_traveler_join
-		sql_prep$=travel_join_pre$+sql_prep$+where_clause$+travel_join_post$+order_by$
-	else
-		sql_prep$=sql_prep$+where_clause$+order_by$
-	endif
+rem --- Concatenate the pieces of sql_prep$ based on report_type$
+rem  	 	report_type$ rem M = WO Detail Rpt from *M*enu
+						 rem T = *T*raveler
+						 rem E = Detail Rpt from WO *E*ntry
+						 rem C = *C*losed WO Detail Rpt
+
+   report_type=pos(report_type$="TCME")-1
+    switch report_type
+		rem --- For Travelers, limit WO recs based on sfe_openedwo
+		case 0
+			gosub get_traveler_join
+			sql_prep$=travel_join_pre$+sql_prep$+where_clause$+travel_join_post$+order_by$
+            break
+		rem --- For Close Data Report, limit WO recs based on sfe_closedwo
+        case 1
+			gosub get_closedwo_join
+			sql_prep$=closedwo_join_pre$+sql_prep$+where_clause$+closedwo_join_post$+order_by$
+            break
+        case 2
+			sql_prep$=sql_prep$+where_clause$+order_by$
+            break
+        case 3
+			sql_prep$=sql_prep$+where_clause$+order_by$
+            break			
+        case default
+            break
+    swend
 	
 	sql_chan=sqlunt
 	sqlopen(sql_chan,err=*next)stbl("+DBNAME")
@@ -195,6 +247,13 @@ rem --- Trip Read
 
 		dim ivm_itemmast$:fattr(ivm_itemmast$)
 		find record (ivm_itemmast_dev,key=firm_id$+read_tpl.item_id$,dom=*next)ivm_itemmast$
+
+		if pos(ivs_params.lotser_flag$="LS") and ivm_itemmast.lotser_item$="Y"
+			include_lotser$="Y"
+		else	
+			include_lotser$="N"
+		endif
+		
 		data!.setFieldValue("FIRM_ID",firm_id$)
 		data!.setFieldValue("WO_NO",read_tpl.wo_no$)
 		data!.setFieldValue("WO_TYPE",read_tpl.wo_type$)
@@ -225,15 +284,18 @@ rem --- Trip Read
 		data!.setFieldValue("ITEM_ID",read_tpl.item_id$)
 		data!.setFieldValue("OPENED_DATE",fndate$(read_tpl.opened_date$))
 		data!.setFieldValue("LAST_CLOSE",fndate$(read_tpl.closed_date$))
+		if cvs(read_tpl.closed_date$,3)="" data!.setFieldValue("LAST_CLOSE","")
 		dim sfc_type$:fattr(sfc_type$)
-		read record (sfc_type_dev,key=firm_id$+"A"+read_tpl.wo_type$) sfc_type$
+		sfc_type.code_desc$="Code Not Found"
+		read record (sfc_type_dev,key=firm_id$+"A"+read_tpl.wo_type$,dom=*next) sfc_type$
 		data!.setFieldValue("TYPE_DESC",sfc_type.code_desc$)
 		data!.setFieldValue("PRIORITY",read_tpl.priority$)
 		data!.setFieldValue("UOM",read_tpl.unit_measure$)
-		data!.setFieldValue("YIELD",str(read_tpl.est_yield:pct_mask$))
-		data!.setFieldValue("PROD_QTY",str(read_tpl.sch_prod_qty:m1$))
-		data!.setFieldValue("COMPLETED",str(read_tpl.qty_cls_todt:m1$))
+		data!.setFieldValue("YIELD",str(read_tpl.est_yield:sf_pct_mask$))
+		data!.setFieldValue("PROD_QTY",str(read_tpl.sch_prod_qty:ad_units_mask$))
+		data!.setFieldValue("COMPLETED",str(read_tpl.qty_cls_todt:ad_units_mask$))
 		data!.setFieldValue("LAST_ACT_DATE",fndate$(read_tpl.lstact_date$))
+		if cvs(read_tpl.lstact_date$,3)="" data!.setFieldValue("LAST_ACT_DATE","")
 		if cvs(ivm_itemmast.item_desc$,3)=""
 			data!.setFieldValue("ITEM_DESC_1",read_tpl.description_01$)
 			data!.setFieldValue("ITEM_DESC_2",read_tpl.description_02$)
@@ -242,6 +304,23 @@ rem --- Trip Read
 		endif
 		data!.setFieldValue("DRAWING_NO",read_tpl.drawing_no$)
 		data!.setFieldValue("REV",read_tpl.drawing_rev$)
+		data!.setFieldValue("INCLUDE_LOTSER",include_lotser$)
+		data!.setFieldValue("MAST_CLS_INP_QTY_STR",str(read_tpl.cls_inp_qty:sf_units_mask$))
+		data!.setFieldValue("MAST_CLS_INP_DT",fndate$(read_tpl.cls_inp_date$))
+		data!.setFieldValue("MAST_CLOSED_COST_STR",str(read_tpl.closed_cost:sf_cost_mask$))
+		if read_tpl.complete_flg$<>"Y"
+			data!.setFieldValue("COMPLETE_YN","N")			
+		else
+			data!.setFieldValue("COMPLETE_YN",read_tpl.complete_flg$)
+		endif
+		data!.setFieldValue("COST_MASK",sf_cost_mask$)	
+		data!.setFieldValue("UNITS_MASK",sf_units_mask$)
+		data!.setFieldValue("AMT_MASK",sf_amt_mask$)		
+
+		data!.setFieldValue("COST_MASK_PATTERN",sf_cost_mask_pattern$); rem Pattern used in iReports
+		data!.setFieldValue("UNITS_MASK_PATTERN",sf_units_mask_pattern$); rem Pattern used in iReports
+		data!.setFieldValue("AMT_MASK_PATTERN",sf_amt_mask_pattern$); rem Pattern used in iReports
+
 		rs!.insert(data!)
 	wend
 	
@@ -301,6 +380,58 @@ get_traveler_join:
 	travel_join_post$=tj_post$
 	
 	return
+
+rem --- Build JOIN to wrap Traveler print file, sfe_openedwo, around sfe_womastr JOIN
+get_closedwo_join:
+	cw_pre$=""
+	cw_pre$=cw_pre$+"SELECT m.firm_id"
+    cw_pre$=cw_pre$+"     , m.wo_location"
+    cw_pre$=cw_pre$+"     , m.wo_no"
+    cw_pre$=cw_pre$+"     , m.wo_type"
+    cw_pre$=cw_pre$+"     , m.wo_category"
+    cw_pre$=cw_pre$+"     , m.wo_status"
+    cw_pre$=cw_pre$+"     , m.customer_id"
+    cw_pre$=cw_pre$+"     , m.order_no"
+    cw_pre$=cw_pre$+"     , m.sls_ord_seq_ref"
+    cw_pre$=cw_pre$+"     , m.unit_measure"
+    cw_pre$=cw_pre$+"     , m.bill_rev"
+    cw_pre$=cw_pre$+"     , m.warehouse_id"
+    cw_pre$=cw_pre$+"     , m.item_id"
+    cw_pre$=cw_pre$+"     , m.opened_date"
+    cw_pre$=cw_pre$+"     , m.eststt_date"
+    cw_pre$=cw_pre$+"     , m.estcmp_date"
+    cw_pre$=cw_pre$+"     , m.act_st_date"
+    cw_pre$=cw_pre$+"     , m.lstact_date"
+    cw_pre$=cw_pre$+"     , m.closed_date"
+    cw_pre$=cw_pre$+"     , m.description_01"
+    cw_pre$=cw_pre$+"     , m.description_02"
+    cw_pre$=cw_pre$+"     , m.drawing_no"
+    cw_pre$=cw_pre$+"     , m.drawing_rev"
+    cw_pre$=cw_pre$+"     , m.complete_flg"
+    cw_pre$=cw_pre$+"     , m.recalc_flag"
+    cw_pre$=cw_pre$+"     , m.lotser_item"
+    cw_pre$=cw_pre$+"     , m.priority"
+    cw_pre$=cw_pre$+"     , m.sched_flag"
+    cw_pre$=cw_pre$+"     , m.forecast"
+    cw_pre$=cw_pre$+"     , m.cls_inp_date"
+    cw_pre$=cw_pre$+"     , m.sch_prod_qty"
+    cw_pre$=cw_pre$+"     , m.qty_cls_todt"
+    cw_pre$=cw_pre$+"     , m.cls_cst_todt"
+    cw_pre$=cw_pre$+"     , m.cls_inp_qty"
+    cw_pre$=cw_pre$+"     , m.closed_cost"
+    cw_pre$=cw_pre$+"     , m.est_yield "
+	cw_pre$=cw_pre$+" FROM sfe_closedwo AS c"
+	cw_pre$=cw_pre$+" INNER JOIN ( "
+	
+	cw_post$=""
+	cw_post$=cw_post$+") AS m "
+	cw_post$=cw_post$+"ON c.firm_id+c.wo_location+c.wo_no"
+ 	cw_post$=cw_post$+" = m.firm_id+m.wo_location+m.wo_no "
+		
+	closedwo_join_pre$=cw_pre$
+	closedwo_join_post$=cw_post$
+	
+	return
 	
 rem --- Functions
 
@@ -326,7 +457,43 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         return str(q1$:q2$)
     fnend
 
+	def fngetmask$(q1$,q2$,q3$)
+		rem --- q1$=mask name, q2$=default mask if not found in mask string, q3$=mask string from parameters
+		q$=q2$
+		if len(q1$)=0 return q$
+		if q1$(len(q1$),1)<>"^" q1$=q1$+"^"
+		q=pos(q1$=q3$)
+		if q=0 return q$
+		q$=q3$(q)
+		q=pos("^"=q$)
+		q$=q$(q+1)
+		q=pos("|"=q$)
+		q$=q$(1,q-1)
+		return q$
+	fnend
 
+rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
+	def fngetPattern$(q$)
+		q1$=q$
+		if len(q$)>0
+			if pos("-"=q$)
+				q1=pos("-"=q$)
+				if q1=len(q$)
+					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
+				else
+					q1$=q$(2,len(q$))+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
+				endif
+			endif
+			if pos("CR"=q$)=len(q$)-1
+				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
+			endif
+			if q$(1,1)="(" and q$(len(q$),1)=")"
+				q1$=q$(2,len(q$)-2)+";"+q$
+			endif
+		endif
+		return q1$
+	fnend	
+	
 	std_exit:
 	
 	end

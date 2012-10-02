@@ -136,6 +136,8 @@ if cols>0
 	rec_id$=rec_id$(pos("("=rec_id$,-1,1)+1,2)
 	amt_units$=rec_id$(2,1)
 	glm02a.record_id$=rec_id$(1,1)
+	glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$
+	extractrecord(glm02_dev,key=glm02_key$,dom=*next)x$; rem Advisory Locking
 
 		switch pos(amt_units$="AU")
 			case 1;rem amounts
@@ -156,7 +158,7 @@ if cols>0
 	rem --- write glm-02
 
 	glm02a$=field(glm02a$)
-	writerecord(glm02_dev,key=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$)glm02a$
+	writerecord(glm02_dev)glm02a$
 
 endif
 
