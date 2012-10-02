@@ -11,11 +11,19 @@ rem --- All Rights Reserved
 
 rem --- Document initializations
 
+    use java.util.Iterator
+    use java.util.TreeMap
+
+    declare Iterator iter!
+    declare TreeMap product_typeMap!
+    declare BBjVector t9!
+
+    product_typeMap! = new TreeMap()
     OutVect!=bbjAPI().makeVector()
     HdrVect!=bbjAPI().makeVector()
     BrkVect!=bbjAPI().makeVector()
     TotVect!=bbjAPI().makeVector()
-    
+   
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -41,9 +49,7 @@ rem --- Initialize Data
     headings$[0]=n1$
     headings$[1]=n4$
     h0=132
-    h=0        
-    t9$=""
-    max_pcodes=50; dim t9[max_pcodes,3]; rem "TOTALS BY PRODUCT
+    h=0
     r9$="SPN"
     dim r[3,4]; rem " 0-3 = STANDARD,PROMOTIONAL,NON-STOCK,OTHER"
 
@@ -233,14 +239,21 @@ rem --- Main Loop Starts
         endif
 
         if opm02a.prod_type_pr$<>"N" then
-            if pos(opt11a.product_type$=t9$,3)=0 then let t9$=t9$+opt11a.product_type$
-            if len(t9$)/3>max_pcodes then gosub p_codes
-            x=pos(opt11a.product_type$=t9$,3)
-            x=int(x/3)
-            t9[x,0]=t9[x,0]+opt11a.ext_price
-            t9[x,1]=t9[x,1]+opt11a.unit_cost*opt11a.qty_shipped
-            t9[x,2]=t9[x,2]+opt11a.comm_percent
-            t9[x,3]=t9[x,3]+opt11a.qty_shipped
+            if product_typeMap!.containsKey(opt11a.product_type$) then
+                t9!=cast(BBjVector, product_typeMap!.get(opt11a.product_type$))
+                t9!.setItem(0, opt11a.ext_price+cast(BBjNumber, t9!.getItem(0)))
+                t9!.setItem(1, opt11a.unit_cost*opt11a.qty_shipped+cast(BBjNumber, t9!.getItem(1)))
+                t9!.setItem(2, opt11a.comm_percent+cast(BBjNumber, t9!.getItem(2)))
+                t9!.setItem(3, opt11a.qty_shipped+cast(BBjNumber, t9!.getItem(3)))
+                product_typeMap!.put(opt11a.product_type$, t9!)
+            else
+                t9!=BBjAPI().makeVector()
+                t9!.addItem(opt11a.ext_price)
+                t9!.addItem(opt11a.unit_cost*opt11a.qty_shipped)
+                t9!.addItem(opt11a.comm_percent)
+                t9!.addItem(opt11a.qty_shipped)
+                product_typeMap!.put(opt11a.product_type$, t9!)
+            endif
         endif
 
         return
@@ -327,29 +340,33 @@ rem --- Totals By Product
     xwk = fnblank(6)
 	m2$=m2r$
 	
-    if len(t9$)<>0 then
-        for x=1 to len(t9$) step 3
-            x0=int(x/3)
-        rem dim x0$(30)
-            let ivm10a.code_desc$="***Not On File***"
-            find record (ivm10_dev,key=firm_id$+"A"+t9$(x,3),dom=*next) ivm10a$
+    iter! = product_typeMap!.keySet().iterator()
+    while iter!.hasNext()
+        product_type$=cast(BBjString, iter!.next())
+        t9!=cast(BBjVector, product_typeMap!.get(product_type$))
+        ext_price=cast(BBjNumber, t9!.getItem(0))
+        cost=cast(BBjNumber, t9!.getItem(1))
+        comm_percent=cast(BBjNumber, t9!.getItem(2))
+        qty_shipped=cast(BBjNumber, t9!.getItem(3))
+        if ext_price=0 and cost=0 then continue
 
-            if t9[x0,0]=0 and t9[x0,1]=0 then continue
-            OutVect!.addItem(t9$(x,3)+" "+ivm10a.code_desc$)
-            OutVect!.addItem(str(t9[x0,3]:m2$))
-            OutVect!.addItem(str(t9[x0,0]:m1$))
-            OutVect!.addItem(str(t9[x0,1]:m1$))
-            OutVect!.addItem(str(t9[x0,0]-t9[x0,1]:m1$))
-            OutVect!.addItem(str(fnd(t9[x0,0]-t9[x0,1],t9[x0,0]):m8$))
-            xwk = fnblank(6)
+        let ivm10a.code_desc$="***Not On File***"
+        find record (ivm10_dev,key=firm_id$+"A"+product_type$,dom=*next) ivm10a$
 
-            t[0]=t[0]+t9[x0,0]
-            t[1]=t[1]+t9[x0,1]
-            t[2]=t[2]+t9[x0,2]
-            t[3]=t[3]+t9[x0,3]
-            l=l+1
-        next x
-    endif
+        OutVect!.addItem(product_type$+" "+ivm10a.code_desc$)
+        OutVect!.addItem(str(qty_shipped:m2$))
+        OutVect!.addItem(str(ext_price:m1$))
+        OutVect!.addItem(str(cost:m1$))
+        OutVect!.addItem(str(ext_price-cost:m1$))
+        OutVect!.addItem(str(fnd(ext_price-cost,ext_price):m8$))
+        xwk = fnblank(6)
+
+        t[0]=t[0]+ext_price
+        t[1]=t[1]+cost
+        t[2]=t[2]+comm_percent
+        t[3]=t[3]+qty_shipped
+        l=l+1
+    wend
 
     TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
     OutVect!.addItem("Report Totals: ")
@@ -608,21 +625,6 @@ find_customer: rem --- Find Customer
     arm01a.customer_name$="Not On File"
     find record (arm01_dev,key=firm_id$+opt01a.customer_id$,dom=*next) arm01a$
     find record (arm02_dev,key=firm_id$+opt01a.customer_id$+"  ",dom=*next) arm02a$
-    
-    return
-
-p_codes: rem --- Too Many Pcodes For T9[] Array
-
-    tmp[all]=t9[all]
-    max_pcodes=max_pcodes+20
-    dim t9[max_pcodes,3]
-    
-    for k=0 to max_pcodes-20
-        t9[k,0]=tmp[k,0]
-        t9[k,1]=tmp[k,1]
-        t9[k,2]=tmp[k,2]
-        t9[k,3]=tmp[k,3]
-    next k
     
     return
 

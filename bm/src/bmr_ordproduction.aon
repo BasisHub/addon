@@ -7,20 +7,20 @@ rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
 
-        seterr std_error
-        setesc std_error
+	seterr std_error
+	setesc std_error
 
 rem --- Retrieve the program path
 
-        pgmdir$=stbl("+DIR_PGM",err=*next)
+	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
 
 rem --- Open/Lock files
 
@@ -40,7 +40,6 @@ rem --- Open/Lock files
 	gosub open_tables
 
 	arm01_dev=num(open_chans$[1])
-	ars01a_dev=num(open_chans$[2])
 	bme01_dev=num(open_chans$[3])
 	bme02_dev=num(open_chans$[4])
 	bmm01_dev=num(open_chans$[5])
@@ -52,15 +51,13 @@ rem --- Open/Lock files
 
 rem --- Dimension string templates
 
-    dim arm01a$:open_tpls$[1],ars01a$:open_tpls$[2],bme01a$:open_tpls$[3]
+    dim arm01a$:open_tpls$[1],bme01a$:open_tpls$[3]
 	dim bme02a$:open_tpls$[4],bmm01a$:open_tpls$[5],bms01a$:open_tpls$[6]
 	dim ivm02a$:open_tpls$[7],ivs01a$:open_tpls$[8],ope01a$:open_tpls$[9]
 	dim ope11a$:open_tpls$[10]
 
 rem --- Retrieve parameter records
 
-	ars01a_key$=firm_id$+"AR00"
-	find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
 	bms01a_key$=firm_id$+"BM00"
 	find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
 	ivs01a_key$=firm_id$+"IV00"
@@ -68,19 +65,13 @@ rem --- Retrieve parameter records
 
 rem --- Parameters
 
-	dim p[4],r[4]
+	dim r[4]
 	find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
 	call pgmdir$+"adc_application.aon","OP",info$[all]
 	op$=info$[20]
 
     if op$="Y" then
-        find record (ars01a_dev,key=firm_id$+"AR"+"00",dom=std_missing_params) ars01a$
-        r[0]=num(ars01a.customer_size$)
-        r0=len(ars01a.customer_output$),headings=2
-        p[0]=ivs01a.item_id_len
-        p[1]=ivs01a.vendor_prd_len
-        p[2]=num(ivs01a.precision$)
-        p[3]=ivs01a.ls_no_len
+		call pgmdir$+"adc_getmask.aon","","AR","I",imask$,custmask$,0,custlen
         call pgmdir$+"adc_application.aon","BM",info$[all]
         gl$=info$[9]
 
@@ -90,11 +81,12 @@ rem --- Init Data
         dim bme02a_key$:bme02a_key_tpl$
         more=1
         precision num(ivs01a.precision$)
+		headings=1
         dim headings$[headings]
-        h0=80
-        h=0,l9=55,l=l9+1,errors=0,glstatus=0
+        errors=0,glstatus=0
         when$=sysinfo.system_date$
-        clock$="",headings$[0]=sysinfo.firm_name$,headings$[1]=sysinfo.task_desc$
+        headings$[0]=sysinfo.firm_name$
+		headings$[1]=sysinfo.task_desc$
  
 rem --- Run Report?
 
@@ -120,13 +112,15 @@ rem --- Document initializations
         rep_prog$=pgm(-2)
 
 rem ---  column heading
-        dim columns$[4,10]
-		columns=4
+		columns=5
+        dim columns$[columns,10]
+
 		columns$[0,0]="Prod Date",      columns$[0,1]="C",columns$[0,2]="8"
 		columns$[1,0]="Customer Number",columns$[1,1]="C",columns$[1,2]="10"
 		columns$[2,0]="Customer Name",  columns$[2,1]="C",columns$[2,2]="20"
 		columns$[3,0]="Order Number",   columns$[3,1]="C",columns$[3,2]="10"
 		columns$[4,0]="Reference",      columns$[4,1]="C",columns$[4,2]="10"
+		columns$[5,0]="Update Flag",    columns$[5,1]="C",columns$[5,2]="10"
 
 rem --- Initial Read
 
@@ -149,10 +143,11 @@ rem --- Get Customer Name
 
 print_heading:rem --- Print
 
-            OutVect!.addItem(fnmask$(bme02a.customer_id$(1,r[0]),ars01a.customer_output$))
+            OutVect!.addItem(fnmask$(bme02a.customer_id$(1,custlen),custmask$))
             OutVect!.addItem(x0$)
             OutVect!.addItem(bme02a.order_no$)
             OutVect!.addItem(bme02a.bm_reference$)
+			OutVect!.addItem(bme02a.update_flag$)
             t0=t0+1
 
 rem --- Verify Date
@@ -164,13 +159,22 @@ rem --- Verify Date
         wend
 
 done: rem --- End
-    
-		xwk=fnblank(7)
-		OutVect!.addItem("Total Orders:"+str(t0))
-		xwk=fnblank(2)
-		if errors then goto std_exit
-		run pgmdir$+"bmu_ordproduction.aon"
 
+        if t0=0
+            msg_id$="DOC_OUTPUT_NODATA"
+            gosub disp_message
+            goto std_exit_no_report
+        endif
+
+		xwk=fnblank(7)
+		OutVect!.addItem("Total Orders: "+str(t0))
+		xwk=fnblank(2)
+		if errors then goto std_exit_no_report
+
+		overlay$=pgmdir$+"bmu_ordproduction.aon"
+		next_overlay$=overlay$
+		goto std_exit
+		
 	endif
  
 rem --- OP Not Installed
@@ -179,11 +183,11 @@ rem --- OP Not Installed
 	message$[0]="Order Processing Is Required In Order To Use This Task"
 	message$[1]="          Press <Enter> To Continue"
 	call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
-	goto std_exit
+	goto std_exit_no_report
 
 date_heading: rem --- Date Heading
 
-	xwk=fnblank(5)
+	xwk=fnblank(6)
 	OutVect!.addItem(fndate$(bme02a.prod_date$))
 	
 	return
@@ -361,9 +365,15 @@ rem --- #endinclude std_missing_params.src
 rem --- #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
-        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-        run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-        release
+	
+	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+	run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+	release
 rem --- #endinclude std_end.src
 
-        end
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    release
+
+	end

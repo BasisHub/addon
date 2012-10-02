@@ -209,8 +209,12 @@ rem --- fill with File information
 
 	modules$=callpoint!.getDevObject("modules")
 
+	call pgmdir$+"adc_progress.aon","NC","DDM_TABLES","","","",0,ddm_tables_dev,1,meter_num,status
+
 	while 1
 		read record (ddm_tables_dev, end=*break) ddm_tables$
+
+		call pgmdir$+"adc_progress.aon","S","","","","",0,channel,1,meter_num,status
 
 	rem --- Now fill vectors
 	rem --- Items 1 thru n+1 in FilesMaster must equal items 0 thru n in Files
@@ -264,6 +268,8 @@ rem --- fill with File information
 	callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 	callpoint!.setStatus("REFRESH")
 	
+	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
 	return
 
 rem ==========================================================================

@@ -1,7 +1,8 @@
 [[GLM_BUDGETMASTER.ASHO]]
-num_files=1
+num_files=2
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
+open_tables$[2]="GLM_RECORDTYPES",open_opts$[2]="OTA"
 gosub open_tables
 gls01_dev=num(open_chans$[1])
 dim gls01a$:open_tpls$[1]
@@ -31,16 +32,16 @@ if callpoint!.getRecordStatus()<>"M"
 	endif
 endif
 [[GLM_BUDGETMASTER.ADEL]]
-glm18_dev=fnget_dev("GLM_RECORDTYPE")
-glm18_tpl$=fnget_tpl$("GLM_RECORDTYPE")
+glm18_dev=fnget_dev("GLM_RECORDTYPES")
+glm18_tpl$=fnget_tpl$("GLM_RECORDTYPES")
 dim glm18a$:glm18_tpl$
 glm18a.record_id$=callpoint!.getColumnData("GLM_BUDGETMASTER.BUDGET_CODE")
 glm18a.actbud$="B"
 glm18a.amt_or_units$=callpoint!.getColumnData("GLM_BUDGETMASTER.AMT_OR_UNITS")
 remove(glm18_dev,key=glm18a.record_id$+glm18a.actbud$+glm18a.amt_or_units$,dom=*next)
 [[GLM_BUDGETMASTER.AWRI]]
-glm18_dev=fnget_dev("GLM_RECORDTYPE")
-glm18_tpl$=fnget_tpl$("GLM_RECORDTYPE")
+glm18_dev=fnget_dev("GLM_RECORDTYPES")
+glm18_tpl$=fnget_tpl$("GLM_RECORDTYPES")
 dim glm18a$:glm18_tpl$
 glm18a.record_id$=callpoint!.getColumnData("GLM_BUDGETMASTER.BUDGET_CODE")
 glm18a.actbud$="B"

@@ -1,232 +1,268 @@
 rem --- Inventory Production Register
-rem --- Program bmr_ha v8.0.0 15Jan2008 (bmr_ha)
+rem --- Program bmr_invproduction.aon v8.0.0 15Jan2008 (bmr_ha)
 rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/15/2008 01:44:23)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-        setesc std_error
-        seterr std_error
+	setesc std_error
+	seterr std_error
 
 rem --- Document initializations
 
-        OutVect!=bbjAPI().getSysGui().makeVector()
-        HdrVect!=bbjAPI().getSysGui().makeVector()
-        BrkVect!=bbjAPI().getSysGui().makeVector()
-        TotVect!=bbjAPI().getSysGui().makeVector()
-        rep_date$=date(0:"%Mz/%Dz/%Yd")
-        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-        rep_time$=date(0:"%hz:%mz %p")
-        rep_time_stamp$=date(0:"%Hz%mz%sz")
-        rep_prog$=pgm(-2)
+	OutVect!=bbjAPI().getSysGui().makeVector()
+	HdrVect!=bbjAPI().getSysGui().makeVector()
+	BrkVect!=bbjAPI().getSysGui().makeVector()
+	TotVect!=bbjAPI().getSysGui().makeVector()
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+	rep_prog$=pgm(-2)
 
 rem --- Retrieve the program path
 
-        pgmdir$=stbl("+DIR_PGM",err=*next)
+	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
 
+rem --- see if batching
+
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID") 
+
+rem --- Prepare for call to bmc_explodephontoms.aon
+
+	dim template$[16]
+	
 rem --- Open/Lock files
 
-        files=21,begfile=1,endfile=files
-        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-
-        files$[1]="bme-01",ids$[1]="BME_PRODUCT"
-        files$[2]="bmm-01",ids$[2]="BMM_BILLMAST"
-        files$[3]="bmm-02",ids$[3]="BMM_BILLMAT"
-        files$[4]="bmm-03",ids$[4]="BMM_BILLOPER"
-        files$[5]="bmm-08",ids$[5]="BMC_OPCODES"
-        files$[6]="bms_params",ids$[6]="BMS_PARAMS"
-        files$[7]="ivm-01",ids$[7]="IVM_ITEMMAST"
-        files$[8]="ivm-02",ids$[8]="IVM_ITEMWHSE"
-        files$[9]="ivc_whsecode",ids$[9]="IVC_WHSECODE"
-        files$[10]="ivs_params",ids$[10]="IVS_PARAMS"
-        files$[11]="gls_params",ids$[11]="GLS_PARAMS"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,11,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-
-        bme01_dev=channels[1]
-        bmm01_dev=channels[2]
-        bmm02_dev=channels[3]
-        bmm03_dev=channels[4]
-        bmm08_dev=channels[5]
-        bms01a_dev=channels[6]
-        ivm01_dev=channels[7]
-        ivm02_dev=channels[8]
-        ivm10c_dev=channels[9]
-        ivs01a_dev=channels[10]
-        gls01a_dev=channels[11]
+	num_files=11
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="BME_PRODUCT",open_opts$[1]="OTA"
+	open_tables$[2]="BMM_BILLMAST",open_opts$[2]="OTA"
+	open_tables$[3]="BMM_BILLMAT",open_opts$[3]="OTA"
+	open_tables$[4]="BMM_BILLOPER",open_opts$[4]="OTA"
+	open_tables$[5]="BMC_OPCODES",open_opts$[5]="OTA"
+	open_tables$[6]="BMS_PARAMS",open_opts$[6]="OTA"
+	open_tables$[7]="IVM_ITEMMAST",open_opts$[7]="OTA"
+	open_tables$[8]="IVM_ITEMWHSE",open_opts$[8]="OTA"
+	open_tables$[9]="IVC_WHSECODE",open_opts$[9]="OTA"
+	open_tables$[10]="IVS_PARAMS",open_opts$[10]="OTA"
+	open_tables$[11]="GLS_PARAMS",open_opts$[11]="OTA"
+	
+	gosub open_tables
+	
+	bme01_dev=num(open_chans$[1])
+	bmm01_dev=num(open_chans$[2])
+	bmm02_dev=num(open_chans$[3])
+	bmm03_dev=num(open_chans$[4])
+	bmm08_dev=num(open_chans$[5])
+	bms01a_dev=num(open_chans$[6])
+	ivm01_dev=num(open_chans$[7])
+	ivm02_dev=num(open_chans$[8])
+	ivm10c_dev=num(open_chans$[9])
+	ivs01a_dev=num(open_chans$[10])
+	gls01a_dev=num(open_chans$[11])
 
 rem --- Dimension string templates
 
-    dim bme01a$:templates$[1],bmm01a$:templates$[2],bmm02a$:templates$[3],
-:       bmm03a$:templates$[4],bmm08a$:templates$[5],bms01a$:templates$[6],
-:       ivm01a$:templates$[7],ivm02a$:templates$[8],ivm10c$:templates$[9],
-:       ivs01a$:templates$[10],gls01a$:templates$[11]
+	dim bme01a$:open_tpls$[1],bmm01a$:open_tpls$[2],bmm02a$:open_tpls$[3]
+	dim bmm03a$:open_tpls$[4],bmm08a$:open_tpls$[5],bms01a$:open_tpls$[6]
+	dim ivm01a$:open_tpls$[7],ivm02a$:open_tpls$[8],ivm10c$:open_tpls$[9]
+	dim ivs01a$:open_tpls$[10],gls01a$:open_tpls$[11]
+
+	template$[0]=open_tpls$[2]; rem bmm01a
+	template$[1]=open_tpls$[4]; rem bmm03a
+	template$[3]=open_tpls$[5]; rem bmm08a
+	template$[4]=open_tpls$[7]; rem ivm01a
+	template$[5]=open_tpls$[8]; rem ivm02a
+	template$[6]=open_tpls$[10]; rem ivs01a
+	template$[7]=open_tpls$[6]; rem bms01a
+	template$[15]=open_tpls$[3]; rem bmm02a
+	template$[16]=open_tpls$[11]; rem gls01a
 
 rem --- Retrieve parameter records
 
-        bms01a_key$=firm_id$+"BM00"
-        find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
-        ivs01a_key$=firm_id$+"IV00"
-        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-        gls01a_key$=firm_id$+"GL00"
-        find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+	bms01a_key$=firm_id$+"BM00"
+	find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
+	ivs01a_key$=firm_id$+"IV00"
+	find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 
 rem --- Parameters
 
-        n1$=sysinfo.firm_name$,n2$="IV",n3$=sysinfo.task_desc$,source$=pgm(-2)
-        dim r0$(36),info$[20]
-        il=ivs01a.item_id_len
+	n1$=sysinfo.firm_name$,n2$="IV",n3$=sysinfo.task_desc$,source$=pgm(-2)
+	dim r0$(36),info$[20]
+	il=ivs01a.item_id_len
         
 rem --- Is AR installed? then open files ars-01 and arm-10c
 
     call pgmdir$+"adc_application.aon","AR",info$[all]
     if info$[20]<>"N" then 
-        files$[11]="arc_distcode",ids$[11]="ARC_DISTCODE"
-        files$[12]="ars_params",ids$[12]="ARS_PARAMS"
-        call pgmdir$+"adc_fileopen.aon",action,11,12,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        arm10d_dev=channels[11],ars01a_dev=channels[12]
-        dim arm10d$:templates$[11],ars01a$:templates$[12]
+		num_files=2
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="ARC_DISTCODE",open_opts$[1]="OTA"
+		open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
+		gosub open_tables
+		arm10d_dev=num(open_chans$[1])
+		ars01a_dev=num(open_chans$[2])
+        dim arm10d$:open_tpls$[1]
+		dim ars01a$:open_tpls$[2]
+		template$[10]=open_tpls$[1]
         ar_dist$="N"
         find record (ars01a_dev,key=firm_id$+"AR00",dom=initial) ars01a$
         if ars01a.dist_by_item$="Y" then ar_dist$="Y"
     endif  
 
 initial:
-        dim p[4],g[4],desc[3],info$[20]
-        desc[1]=num(ivs01a.desc_len_01$)
-        desc[2]=num(ivs01a.desc_len_02$)
-        desc[3]=num(ivs01a.desc_len_03$)
-        p[0]=ivs01a.item_id_len
-        p[1]=ivs01a.vendor_prd_len
-        p[2]=num(ivs01a.precision$)
-        p[3]=ivs01a.ls_no_len
-        lf$="N"
-        if pos(ivs01a.lifofifo$="LF")>0 then lf$="Y"
-        dim iv_chans[10]
-        g[0]=num(gls01a.total_pers$)
-        g[1]=num(gls01a.current_per$)
-        g[2]=num(gls01a.current_year$)
-        g[3]=num(gls01a.acct_length$)
-        g[4]=num(gls01a.max_acct_len$)
-        g[2]=num(gls01a.current_year$)
+	dim p[4],g[4],desc[3],info$[20]
+	desc[1]=num(ivs01a.desc_len_01$)
+	desc[2]=num(ivs01a.desc_len_02$)
+	desc[3]=num(ivs01a.desc_len_03$)
+	
+	p[0]=ivs01a.item_id_len
+	p[1]=ivs01a.vendor_prd_len
+	p[2]=num(ivs01a.precision$)
+	p[3]=ivs01a.ls_no_len
+	lf$="N"
+	if pos(ivs01a.lifofifo$="LF")>0 then lf$="Y"
+
+	g[0]=num(gls01a.total_pers$)
+	g[1]=num(gls01a.current_per$)
+	g[2]=num(gls01a.current_year$)
+	g[3]=num(gls01a.acct_length$)
+	g[4]=num(gls01a.max_acct_len$)
+	g[2]=num(gls01a.current_year$)
 
 rem --- Init Data
     
-        precision num(ivs01a.precision$)
-        h0=132
-        h1=120,h=0,h1$=n1$,h2$=n3$,o1$="",o2$="",o1=0
-        l9=59
-        l=l9+1,headings=3,when$=sysinfo.system_date$,clock$="",glstatus=0
+	precision num(ivs01a.precision$)
+	h=0,h1$=n1$,h2$=n3$,o1$="",o2$="",o1=0
+	l9=59
+	l=l9+1,headings=3,glstatus=0
 
-        dim headings$[headings]
-        dim a[1],s[10],k[11],lx[11],sub[9],b1$(60),c1$(64)
-        headings$[0]=h1$
-        headings$[1]=h2$,errors=0
-        m1$=ivs01a.amount_mask$
-        m2$=ivs01a.unit_mask$
-        m3$=ivs01a.cost_mask$
-        call pgmdir$+"adc_sizemask.aon",m1$,m1,6,15
-        call pgmdir$+"adc_sizemask.aon",m2$,m2,10,15
-        call pgmdir$+"adc_sizemask.aon",m3$,m3,5,10
-        dashes$=fill(m1,"-")
-        wip_acct$=bms01a.gl_wip_acct$
-        m0=p[0]
-        units=0
-        if m0<6 then m0=6
-        places=num(ivs01a.precision$)
-        more=1
+	dim headings$[headings]
+	dim a[1],s[10],k[11],lx[11],sub[9],b1$(60),c1$(64)
+	headings$[0]=h1$
+	headings$[1]=h2$,errors=0
+	call pgmdir$+"adc_getmask.aon","","IV","A",imask$,m1$,0,m1
+	call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,m2
+	call pgmdir$+"adc_getmask.aon","","IV","C",imask$,m3$,0,m3
+	dashes$=fill(m1,"-")
+	wip_acct$=bms01a.gl_wip_acct$
+	m0=p[0]
+	units=0
+	if m0<6 then m0=6
+	places=num(ivs01a.precision$)
+	more=1
 
 rem --- Retrieve key templates
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","BME_PRODUCT","PRIMARY",bme01a_key_tpl$,rd_table_chans$[all],status$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","PRIMARY",bmm02a_key_tpl$,rd_table_chans$[all],status$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLSUB","PRIMARY",bmm05a_key_tpl$,rd_table_chans$[all],status$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLOPER","PRIMARY",bmm03a_key_tpl$,rd_table_chans$[all],status$
-        dim bme01a_key$:bme01a_key_tpl$
-        dim bmm02a_key$:bmm02a_key_tpl$
-        dim bmm05a_key$:bmm05a_key_tpl$
-        dim bmm03a_key$:bmm03a_key_tpl$
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","BME_PRODUCT","PRIMARY",bme01a_key_tpl$,rd_table_chans$[all],status$
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","PRIMARY",bmm02a_key_tpl$,rd_table_chans$[all],status$
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLSUB","PRIMARY",bmm05a_key_tpl$,rd_table_chans$[all],status$
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLOPER","PRIMARY",bmm03a_key_tpl$,rd_table_chans$[all],status$
+	dim bme01a_key$:bme01a_key_tpl$
+	dim bmm02a_key$:bmm02a_key_tpl$
+	dim bmm05a_key$:bmm05a_key_tpl$
+	dim bmm03a_key$:bmm03a_key_tpl$
 
 rem --- Open Additional Files
    
     call pgmdir$+"adc_application.aon","AP",info$[all]
     ap$=info$[20]
-    if ap$="Y" then 
-        files$[13]="bmm-05",ids$[13]="BMM_BILLSUB"
-        call pgmdir$+"adc_fileopen.aon",action,13,13,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        bmm05_dev=channels[13];dim bmm05a$:templates$[13]
-    endif    
+    if ap$="Y" then
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="BMM_BILLSUB",open_opts$[1]="OTA"
+		
+		gosub open_tables
+		
+        bmm05_dev=num(open_chans$[1])
+		dim bmm05a$:open_tpls$[1]
+		template$[2]=open_tpls$[1]
+    endif  
+	
     if lf$="Y" then 
-        files$[17]="ivm-04",ids$[14]="IVM_ITEMTIER"
-        files$[20]="ivw-04",ids$[15]="IVW_LFDET"
-        files$[21]="ivw-05",ids$[16]="IVW_LFCOST"
-        call pgmdir$+"adc_fileopen.aon",action,14,16,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        ivm04_dev=channels[14],ivw04_dev=channels[15],ivw05_dev=channels[16]
-        dim ivm04a$:templates$[14],ivw04a$:templates$[15],ivw05a$:templates$[16]
-     endif   
+		num_files=3
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="IVM_ITEMTIER",open_opts$[1]="OTA"
+        open_tables$[2]="IVW_LFDET",open_opts$[2]="OTA"
+        open_tables$[3]="IVW_LFCOST",open_opts$[3]="OTA"
+
+		gosub open_tables
+        
+        ivm04_dev=num(open_chans$[1])
+		ivw04_dev=num(open_chans$[2])
+		ivw05_dev=num(open_chans$[3])
+        dim ivm04a$:open_tpls$[1],ivw04a$:open_tpls$[2],ivw05a$:open_tpls$[3]
+		template$[12]=open_tpls$[1]; rem ivm04 IVM_ITEMTIER
+		template$[13]=open_tpls$[2]; rem ivw04 IVW_LFDET
+		template$[14]=open_tpls$[3]; rem ivw05 IVW_LFCOST
+    endif   
 
     gl$="N"
     status=0
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
-    if status<>0 then goto std_exit
+    if status<>0 then goto std_exit_no_report
     if gl$="Y" then 
-        files$[17]="glm-01",ids$[17]="GLM_ACCT"
-        files$[18]=glw11$,ids$[18]="GLW_DAILYDETAIL",options$[18]="CL"
-        call pgmdir$+"adc_fileopen.aon",action,17,18,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        glm01_dev=channels[17],glw11_dev=channels[18]
-        dim glm01a$:templates$[17],glw11a$:templates$[18]
-
-    endif    
+		num_files=3
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="GLM_ACCT",open_opts$[1]="OTA"
+		open_tables$[2]="GLE_DAILYDETAIL",open_opts$[2]="OTA"
+		open_tables$[3]="GLW_DAILYDETAIL",open_opts$[3]="OTA"
+    		
+		gosub open_tables
+		
+        glm01_dev=num(open_chans$[1])
+		glt04_dev=num(open_chans$[2])
+		glw11_dev=num(open_chans$[3])
+		dim glm01a$:open_tpls$[1]
+		template$[8]=open_tpls$[1]
+		template$[9]=open_tpls$[2]
+		rec_pfx$=firm_id$+process_id$+batch_no$
+		call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+	endif
 
 rem --- Options
 
-        u0$=wip_acct$
+	u0$=wip_acct$
 
 rem --- Run Report?
 
-        msg_id$="AON_RUN_QUERY"
-        dim x$:stbl("+SYSINFO_TPL")
-        dim msg_tokens$[1]
-        x$=stbl("+SYSINFO")                                                            
-        msg_tokens$[1]=x.task_desc$
-        gosub disp_message
+	msg_id$="AON_RUN_QUERY"
+	dim x$:stbl("+SYSINFO_TPL")
+	dim msg_tokens$[1]
+	x$=stbl("+SYSINFO")                                                            
+	msg_tokens$[1]=x.task_desc$
+	gosub disp_message
 
-        if msg_opt$<>"Y" then goto std_exit
-    
-        call pgmdir$+"adc_progress.aon","N","","","","",0,bme01_dev,1,meter_num,status
+	if msg_opt$<>"Y" then goto std_exit_no_report
+
+	call pgmdir$+"adc_progress.aon","N","","","","",0,bme01_dev,1,meter_num,status
 
 rem ---  column heading
-rem ,columns$[4,10]="T"
 
-        dim columns$[9,10]
-        columns=9
-        columns$[0,0]="Ref #",           columns$[0,1]="C",columns$[0,2]="20"
-        columns$[1,0]="Main Bill Number",columns$[1,1]="C",columns$[1,2]="25"
-        columns$[2,0]="Cost",            columns$[2,1]="N",columns$[2,2]="8",columns$[2,3]=m3$,columns$[2,10]="T"
-        columns$[3,0]="Qty",             columns$[3,1]="N",columns$[3,2]="8",columns$[3,3]=m2$,columns$[3,10]="T"
-        columns$[4,0]="Total",           columns$[4,1]="N",columns$[4,2]="8",columns$[4,3]=m1$,columns$[4,10]="T"
-        columns$[5,0]="Update?",         columns$[5,1]="C",columns$[5,2]="8"
-        columns$[6,0]="Available",       columns$[6,1]="N",columns$[6,2]="8",columns$[6,3]=m2$
-        columns$[7,0]="Required",        columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m2$
-        columns$[8,0]="Shortage",        columns$[8,1]="N",columns$[8,2]="8",columns$[8,3]=m2$
-        columns$[9,0]="On-Order",        columns$[9,1]="N",columns$[9,2]="8",columns$[9,3]=m2$
+	dim columns$[9,10]
+	columns=9
+	columns$[0,0]="Ref #",           columns$[0,1]="C",columns$[0,2]="15"
+	columns$[1,0]="Main Bill Number",columns$[1,1]="C",columns$[1,2]="20"
+	columns$[2,0]="Cost",            columns$[2,1]="N",columns$[2,2]="12",columns$[2,3]=m3$,columns$[2,10]="T"
+	columns$[3,0]="Qty",             columns$[3,1]="N",columns$[3,2]="12",columns$[3,3]=m2$,columns$[3,10]="T"
+	columns$[4,0]="Total",           columns$[4,1]="N",columns$[4,2]="12",columns$[4,3]=m1$,columns$[4,10]="T"
+	columns$[5,0]="Update?",         columns$[5,1]="C",columns$[5,2]="8"
+	columns$[6,0]="Available",       columns$[6,1]="N",columns$[6,2]="12",columns$[6,3]=m2$
+	columns$[7,0]="Required",        columns$[7,1]="N",columns$[7,2]="12",columns$[7,3]=m2$
+	columns$[8,0]="Shortage",        columns$[8,1]="N",columns$[8,2]="12",columns$[8,3]=m2$
+	columns$[9,0]="On-Order",        columns$[9,1]="N",columns$[9,2]="12",columns$[9,3]=m2$
 
 rem --- Initial Read
 
@@ -242,7 +278,7 @@ rem --- Heading Read
 
 rem --- Breaks
 
-        if bme01a.firm_id$<>firm_id$ then goto done; rem " --- Company"
+        if bme01a.firm_id$<>firm_id$ then break; rem " --- Company"
         if bme01a.warehouse_id$<>t0$ then gosub warehouse; rem " --- Warehouse"
         if bme01a.prod_date$<>t1$ then gosub date_sub; rem " --- Production Date"
         if bme01a.bm_reference$<>t2$ then gosub reference; rem " --- Reference Number"
@@ -364,6 +400,70 @@ rem --- Print Total for bme-01 record
         cost=0
     wend
 
+done: rem --- Totals
+
+        t9$="E"
+        gosub warehouse
+        if o1<>0 or o2$<>"" or div0<>0 then 
+            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+            if o1<>0 then
+                xwk=fnblank(21)
+                OutVect!.addItem("*** Missing Warehouse Records, Can Not Proceed With Update At This Time")
+                xwk=fnblank(8)
+            endif
+            if o2$<>"" then
+                xwk=fnblank(10)
+                OutVect!.addItem(o2$)
+                xwk=fnblank(21)
+                OutVect!.addItem("*** Missing Operation Codes, Can Not Proceed With Update At This Time")
+                xwk=fnblank(8)
+            endif
+            if div0<>0 then
+                xwk=fnblank(21)
+                OutVect!.addItem("*** Records With Production Quantity Of 0 Exist. Can Not Proceed With Update At This Time")
+                xwk=fnblank(8)
+            endif 
+            goto std_exit_no_update
+        endif
+
+        if short<>0 then
+            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+            xwk=fnblank(11)
+            OutVect!.addItem("*** Warning - Amounts In The Shortage Column Will Create Negative On Hand Balances In Inventory.")
+            xwk=fnblank(8)
+            dim message$[1]
+            message$[0]="Amounts In The Shortage Column Will Create Negative On Hand"
+            message$[1]="Balances In Inventory (<Enter>=Continue)"
+            call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
+            if v3=4 then goto std_exit_no_update
+        endif
+        channel=bmw01_dev
+		width=132
+        page=h
+		update$="bmu_invproduction.aon"
+        overlay$=update$
+        if gl$="Y" then overlay$=pgmdir$+"glr_recap.aon"
+        out_action$="PRT-PDF"
+        next_overlay$=overlay$
+        goto std_exit
+
+no_data: rem --- No Data
+
+        t9$="E"
+        xwk=fnblank(10)
+        OutVect!.addItem("")
+        OutVect!.addItem("*** Nothing To Report ***")
+        OutVect!.addItem(8)
+        goto std_exit
+
+date_heading: rem --- Date Heading
+
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        OutVect!.addItem("Production Date: "+fndate$(t1$))
+        xwk=fnblank(19)
+        if glstatus then call pgmdir$+"glc_datewarn.aon",printer_dev,t1$,glstatus,l,errors,status   
+        return
+
 dist_code: rem --- Dist Code
 
         if ar_dist$<>"N" then 
@@ -398,68 +498,6 @@ rem --- Update G/L
         precision num(ivs01a.precision$)
         return
 
-done: rem --- Totals
-
-        t9$="E"
-        gosub warehouse
-        if o1<>0 and o2$<>"" and div0<>0 then 
-            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-            if o1<>0 then 
-                xwk=fnblank(21)
-                OutVect!.addItem("*** Missing Warehouse Records, Can Not Proceed With Update At This Time")
-                xwk=fnblank(8)
-            endif
-            if o2$<>"" then 
-                xwk=fnblank(10)
-                OutVect!.addItem(o2$)
-                xwk=fnblank(21)
-                OutVect!.addItem("*** Missing Operation Codes, Can Not Proceed With Update At This Time")
-                xwk=fnblank(8)
-            endif
-            if div0<>0 then 
-                xwk=fnblank(21)
-                OutVect!.addItem("*** Records With Production Quantity Of 0 Exist. Can Not Proceed With Update At This Time")
-                xwk=fnblank(8)
-            endif 
-            goto std_exit
-        endif
-
-        if short<>0 then
-            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-            xwk=fnblank(11)
-            OutVect!.addItem("*** Warning - Amounts In The Shortage Column Will Create Negative On Hand Balances In Inventory.")
-            xwk=fnblank(8)
-            dim message$[1]
-            message$[0]="Amounts In The Shortage Column Will Create Negative On Hand"
-            message$[1]="Balances In Inventory (<Enter>=Continue)"
-            call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
-            if v3=4 then goto std_exit
-        endif
-        channel=bmw01_dev
-        width=h0,page=h,update$="bmu_invproduction.aon"
-        overlay$=update$
-        if gl$="Y" then overlay$=pgmdir$+"glr_recap.aon"
-        out_action$="PRT-PDF"
-        next_overlay$=overlay$
-        goto std_exit
-
-no_data: rem --- No Data
-
-        t9$="E"
-        xwk=fnblank(10)
-        OutVect!.addItem("")
-        OutVect!.addItem("*** Nothing To Report ***")
-        OutVect!.addItem(8)
-        goto std_exit
-
-date_heading: rem --- Date Heading
-
-        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-        OutVect!.addItem("Production Date: "+fndate$(t1$))
-        xwk=fnblank(19)
-        if glstatus then call pgmdir$+"glc_datewarn.aon",printer_dev,t1$,glstatus,l,errors,status   
-        return
-
 subcontracts: rem --- Subcontracts
 
     dim sub[9]
@@ -486,31 +524,43 @@ subcontracts: rem --- Subcontracts
 
 lifo_fifo: rem --- LIFO/FIFO
 
+		dim iv_tmpls$[10]
+		iv_tmpls$[1]=template$[5];  rem ivm-02
+		iv_tmpls$[2]=template$[12]; rem ivm04 IVM_ITEMTIER
+		iv_tmpls$[3]=template$[13]; rem ivw04 IVW_LFDET
+	
+		dim iv_chans[10]
+		iv_chans[1]=ivm02_dev
+		iv_chans[2]=ivm04_dev
+		iv_chans[3]=ivw04_dev
+		
         dim item$[10]
         item$[0]=firm_id$
-        item$[1]=bme01a.warehouse_id$,item$[2]=bmm02a.item_id$,type$="R",lf_date$=bme01a.prod_date$
-        iv_chans[0]=ivm04_dev
-        iv_chans[1]=ivw04_dev
-        iv_chans[2]=ivm02_dev
-        action$=ivs01a.lifofifo$+"I"
+        item$[1]=bme01a.warehouse_id$
+		item$[2]=bmm02a.item_id$
+		
+		type$="R"
+		lf_date$=bme01a.prod_date$
+		action$=ivs01a.lifofifo$+"I"
+		
         qty=abs(fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered)
         cost=unitcost
         ivw05a.unit_cost=0
-        if fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered<0 then 
-
+        
 rem --- Inquires For Tier Cost For Returned Items
-        action$(2,1)="R"
-        type$="I"
-        call pgmdir$+"ivc_lifofifo.aon",action$,type$,lf_date$,iv_chans[all],iv_tmpls$[all],item$[all],places,qty,cost,ret_cost,status
-        if ret_cost<>0 then cost=ret_cost
-            type$="R"
-        endif       
+		if fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered<0 then 
+			action$(2,1)="R"
+			type$="I"
+			call pgmdir$+"ivc_lifofifo.aon",action$,type$,lf_date$,iv_chans[all],iv_tmpls$[all],item$[all],places,qty,cost,ret_cost,status
+			if ret_cost<>0 then cost=ret_cost
+			type$="R"
+		endif       
 
-         call pgmdir$+"ivc_lifofifo.aon",action$,type$,lf_date$,iv_chans[all],iv_tmpls$[all],item$[all],places,qty,cost,ret_cost,status
-         if ret_cost<>0 then ivw05a.unit_cost=ret_cost
-         w9$=fill(17)+bmm02a.item_id$+bmmo2a.material_seq$
-         write record (ivw05_dev,key=w9$) ivw05a$
-         return
+		call pgmdir$+"ivc_lifofifo.aon",action$,type$,lf_date$,iv_chans[all],iv_tmpls$[all],item$[all],places,qty,cost,ret_cost,status
+		if ret_cost<>0 then ivw05a.unit_cost=ret_cost
+		w9$=fill(17)+bmm02a.item_id$+bmm02a.material_seq$
+        write record (ivw05_dev,key=w9$) ivw05a$
+        return
 
 warehouse: rem --- Warehouse
 
@@ -639,24 +689,25 @@ reference: rem --- Reference Total
 
 explodephantoms: rem --- Explode Phantoms
 
-        dim channel[15],info$[20],info[20]
+        dim channel[16],info$[20],info[20]
         channel[0]=bmm01_dev
         channel[1]=bmm03_dev,channel[2]=bmm05_dev
         channel[3]=bmm08_dev
         channel[4]=ivm01_dev,channel[5]=ivm02_dev
-        channel[6]=7
-        channel[7]=sys01_dev,channel[8]=glm01_dev
+        channel[6]=ivs01a_dev
+        channel[7]=bms01a_dev,channel[8]=glm01_dev
         channel[9]=glw11_dev
-        channel[10]=arm10d_dev,channel[11]=glt14_dev
+        channel[10]=arm10d_dev
         channel[12]=ivm04_dev,channel[13]=ivw04_dev,channel[14]=ivw05_dev
         channel[15]=bmm02_dev
+		channel[16]=gls01a_dev
         info$[0]=bmm02a.item_id$,info$[1]=ref1$,info$[2]=ref2$,info$[3]=ap$,info$[4]=ar_dist$
-        info$[5]=o2$,info$[6]=bme01a.warwhouse_id$,info$[7]=bme01a.prod_date$,info$[8]=bme01a.update_flag$
+        info$[5]=o2$,info$[6]=bme01a.warehouse_id$,info$[7]=bme01a.prod_date$,info$[8]=bme01a.update_flag$
         info$[9]=gl$,info$[10]=t1$,info$[11]=ivacct$
         info[0]=bme01a.qty_ordered*bmm02a.qty_required,info[1]=l,info[2]=l9,info[3]=headings
         info[4]=short,info[5]=o1,info[6]=0,info[7]=u0,info[8]=u1,info[9]=1
-        info[10]=h,info[12]=glstatus,info[13]=bmm01a.est_yield*lbmm08a.setup_time/100,info[14]=value
-        call pgmdir$+"bmc_fa.aon",channel[all],info$[all],info[all],headings$[all],bme01a.item_id$
+        info[10]=h,info[12]=glstatus,info[13]=bmm01a.est_yield*bmm08a.setup_time/100,info[14]=value
+        call pgmdir$+"bmc_explodephantoms.aon",channel[all],info$[all],info[all],headings$[all],bme01a.item_id$,template$[all],outVect!
         if info[11]>0 then exitto std_exit
         o2$=info$[5]
         l=info[1],short=info[4],o1=info[5],u0=info[7],u1=info[8],h=info[10],value=info[14]
@@ -752,6 +803,30 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
 
 rem #endinclude std_functions.src
 
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+       msg_id$="ENTRY_OPEN_ERROR"
+       dim msg_tokens$[1]
+       msg_tokens$[1]=open_status$
+       gosub disp_message
+       rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+       release
+    endif
+
+    return
+
 rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
@@ -809,6 +884,18 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+	
 std_exit: rem --- Standard program end (01Mar2006)
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next

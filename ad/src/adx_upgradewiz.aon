@@ -1,0 +1,225 @@
+rem ==========================================================================
+rem --- adx_upgradewiz.aon 
+rem --- Utility to automate Addon ugrade.
+rem --- 
+rem --- AddonSoftware Version 11.11
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    use java.io.File
+    use java.util.ArrayList
+    use java.util.HashMap
+    use ::ado_file.src::FileObject
+
+	declare ArrayList pfxList!
+    declare HashMap stblMap!
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    BLOCKSIZE = 2^20
+
+
+rem --- Get user inputs
+
+    dbName$=Option!.getOptionData("DB_NAME")
+    appDesc$=Option!.getOptionData("APP_DESC")
+    newAonLoc$=Option!.getOptionData("NEW_AON_LOC")
+    oldAonLoc$=Option!.getOptionData("OLD_AON_LOC")
+    oldBarLoc$=Option!.getOptionData("OLD_BAR_LOC")
+    syncBackupDir$=Option!.getOptionData("SYNC_BACKUP_DIR")
+    stblMap!=cast(HashMap, callpoint!.getDevObject("stblMap"))
+    pfxList!=cast(ArrayList, callpoint!.getDevObject("pfxList"))
+    rdAdmin!=cast(BBjAdminBase, callpoint!.getDevObject("rdAdmin"))
+    useOldMenu%=int(num(Option!.getOptionData("USE_OLD_MENU")))
+
+	rem --- Flip directory path separators for newAonLoc
+	filePath$=newAonLoc$
+	gosub fix_path
+	newAonLoc$=filePath$
+
+	rem --- Flip directory path separators for oldAonLoc
+	filePath$=oldAonLoc$
+	gosub fix_path
+	oldAonLoc$=filePath$
+
+	rem --- Flip directory path separators for oldBarLoc
+	filePath$=oldBarLoc$
+	gosub fix_path
+	oldBarLoc$=filePath$
+
+	rem --- Flip directory path separators for syncBackupDir
+	filePath$=syncBackupDir$
+	gosub fix_path
+	syncBackupDir$=filePath$
+
+    newAonDir$=newAonLoc$ + "/aon"
+    newBarDir$=newAonLoc$ + "/barista"
+    oldAonDir$=oldAonLoc$ + "/aon"
+    oldBarDir$=oldBarLoc$ + "/barista"
+   
+rem --- Recursively copy oldLocation to newAonDir
+
+	rem --- Set oldLocation to aon directory under the current download directory
+    sep$ = java.io.File.separator
+    bbjHome$=java.lang.System.getProperty("basis.BBjHome")
+    oldLocation$ = bbjHome$ + sep$ + "apps" + sep$ + "aon"
+
+	rem --- Do not copy data or help file
+	copyData%=0
+	help%=0
+	
+    call pgmdir$+"adc_copyaon.aon",oldLocation$,newAonDir$,copyData%,help%,rdForm!,0,status
+    
+rem --- Update new addon.syn file
+
+	rem --- Set newSynFile to addon.syn at the new aon location
+    newSynFile$=newAonDir$+"/config/addon.syn"
+
+	rem --- Setup for upgrade
+    upgrade%=1
+    oldSynFile$=oldAonDir$+"/config/addon.syn"
+
+    call pgmdir$+"adc_updatesynfile.aon",newSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
+
+rem --- Add new application to Barista Installation Manager
+	rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of it's terminating release
+	bar_dir$=dir("")
+	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
+	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
+:	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
+:	+" "+$22$+bar_dir$+"/sys/prog/bai_install_manager.bbj"+$22$
+	user_arg$=" - "
+:	+" -u"+rdAdmin!.getUser()
+:	+" -id"+dbName$
+:	+" -desc"+$22$+appDesc$+$22$
+:	+" -loc"+$22$+newAonLoc$+$22$
+	scall_result=scall(run_arg$+user_arg$,err=*next)
+    
+rem --- Update new sync XML files (and copy old barista/settings dir)
+rem --- BIM clears barista/settings dir, so must do this step after BIMing and before auto-sync
+
+	rem --- Set newSyncLoc to sync directory at the new aon location
+    newSyncLoc$=newAonDir$+"/data/sync"
+
+	rem --- Setup for upgrade
+    upgrade%=1
+    oldSyncLoc$=oldAonDir$+"/data/sync"
+
+    call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+
+rem --- Use old modified menus instead of new standard menus.
+rem --- Temporary "fix" until Barista enhancement 5658 can be implemented to preserve customizations
+rem --- to standard menus, thus no logging or progress meter.
+   if useOldMenu% then
+        declare File oldMenuFile!
+        declare File newMenuFile!
+        declare File newMenuDir!
+        availableLangs$="deuenuespfraitanldsve"
+        for i=1 to len(availableLangs$)-1 step 3
+            lang$=availableLangs$(i,3)
+            
+            rem --- If oldMenuFile exists, overwrite newMenuFile with it 
+            oldMenuFile! = new File(oldAonDir$+"/config/"+lang$+"/addon.men")
+            if oldMenuFile!.exists()
+            
+                rem --- Create new directories as necessary for newMenuFile
+                newMenuDir! = new File(newAonDir$+"/config/"+lang$)
+                FileObject.makeDirs(newMenuDir!)
+
+                rem --- Rename newMenuFile as a backup before overwriting it
+                newMenuFile! = new File(newMenuDir!.getPath()+"/addon.men")
+                rename newMenuFile!.getPath() to newMenuDir!.getPath()+"/addon.men.bak", err=*next
+                
+                rem --- Copy oldMenuFile to newMenuFile
+                sourceChan=unt
+                open(sourceChan,isz=-1,err=*endif)oldMenuFile!.getPath()
+                targetChan=unt
+                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")newMenuFile!.getPath()
+                while 1
+                    readrecord(sourceChan,siz=BLOCKSIZE,end=*break)record$
+                    writerecord(targetChan)record$
+                wend
+                close(sourceChan)
+                close(targetChan)
+            endif
+    
+        next i
+    endif
+
+rem --- Launch auto-sync in new barista for the new addon.syn
+rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to bypass bar_login.bbj in the new barista
+	bar_dir$=newBarDir$
+	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
+	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
+:	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
+:	+" "+$22$+bar_dir$+"/sys/prog/bax_launch_task.bbj"+$22$
+	user_arg$=" - "
+:	+" -u"+rdAdmin!.getUser()
+:	+" -p"+rdAdmin!.getPassword()
+:	+" -t"+"DDM_TABLES"
+:	+" -y"+"A"
+:	+" -a" +"bax_dd_synch_auto.bbj"+$22$+" - "+" -f"+"../aon/config/addon.syn"+" -nui"+$22$
+:	+" -w"
+	scall_result=scall(run_arg$+user_arg$,err=*next)
+    
+done: rem --- All done
+
+    goto std_exit
+
+fix_path: rem --- Flip directory path separators
+
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+	return
+    
+search_replace: rem --- Search record$ for search$, and replace with replace$
+	rem --- Assumes only one occurrence of search$ per line so don't have 
+	rem --- to deal with situation where pos(search$=replace$)>0
+	pos = pos(search$=record$)
+	if(pos) then
+		record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
+	endif
+    return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

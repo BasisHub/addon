@@ -1,3 +1,21 @@
+[[IVM_ITEMMAST.AOPT-BOMU]]
+rem --- Display Where Used from BOMs
+
+cp_item_id$=callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
+user_id$=stbl("+USER_ID")
+dim dflt_data$[2,1]
+dflt_data$[1,0]="ITEM_ID_1"
+dflt_data$[1,1]=cp_item_id$
+dflt_data$[2,0]="ITEM_ID_2"
+dflt_data$[2,1]=cp_item_id$
+call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:	"BMR_MATERIALUSED",
+:	user_id$,
+:	"",
+:	"",
+:	table_chans$[all],
+:	"",
+:	dflt_data$[all]
 [[IVM_ITEMMAST.AOPT-LOOK]]
 rem --- call the custom item lookup form, so we can look for an item by product type, synonym, etc.
 
@@ -604,11 +622,12 @@ rem --- Set user labels and lengths for description segments
 rem --- Disable option menu items
 
 	if ap$<>"Y" disable_str$=disable_str$+"IVM_ITEMVEND;"; rem --- this is a detail window, give alias name
-	if pos(ivs01a.lifofifo$="LF")=0 disable_str$=disable_str$+"LIFO;"; rem --- these are AOPTions, give AOPT code only
-	if pos(ivs01a.lotser_flag$="LS")=0 disable_str$=disable_str$+"LTRN;"
-	if op$<>"Y" disable_str$=disable_str$+"SORD;"
-	if po$<>"Y" disable_str$=disable_str$+"PORD;"
-				
+	if pos(ivs01a.lifofifo$="LF")=0 callpoint!.setOptionEnabled("LIFO",0)
+	if pos(ivs01a.lotser_flag$="LS")=0 callpoint!.setOptionEnabled("LTRN",0)
+	if op$<>"Y" callpoint!.setOptionEnabled("SORD",0)
+	if po$<>"Y" callpoint!.setOptionEnabled("PORD",0)
+	if bm$<>"Y" callpoint!.setOptionEnabled("BOMU",0)
+
 	if disable_str$<>"" call stbl("+DIR_SYP")+"bam_enable_pop.bbj",Form!,enable_str$,disable_str$
 
 rem --- additional file opens, depending on which apps are installed, param values, etc.

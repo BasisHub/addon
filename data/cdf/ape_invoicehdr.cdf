@@ -283,7 +283,7 @@ vendor_id$ = callpoint!.getUserInput()
 gosub disp_vendor_comments
 gosub get_vendor_history
 if vend_hist$="" and user_tpl.multi_types$="Y"
-	msg_id$="AP_NOHIST"
+	msg_id$="AP_VEND_BAD_APTYPE"
 	gosub disp_message
 	callpoint!.setStatus("CLEAR;NEWREC;ABORT")
 endif
@@ -527,7 +527,8 @@ rem --- Retrieve parameter data
                
 aps01a_key$=firm_id$+"AP00"
 find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-user_tpl.amt_msk$=aps01a.amount_mask$
+call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",amt_mask$,0,0
+user_tpl.amt_msk$=amt_mask$
 user_tpl.multi_types$=aps01a.multi_types$
 user_tpl.multi_dist$=aps01a.multi_dist$
 user_tpl.ret_flag$=aps01a.ret_flag$

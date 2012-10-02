@@ -6,6 +6,12 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
+    use java.util.Iterator
+    use java.util.TreeMap
+
+    declare Iterator iter!
+    declare TreeMap receiverMap!
+
     seterr std_error
     setesc std_error
 
@@ -440,21 +446,21 @@ l2000: rem --- Read next PO record
     k$=key(poe15_dev,end=l3200)
     if pos(poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$=k$)<>1 goto l3200
     read record (poe15_dev) poe15a$
-    dim receivers[99]
-    number=1
-    receivers$=poe15a.po_no$+poe15a.receiver_no$
-    receivers[1]=poe15a.total_amount
+    receiverMap! = new TreeMap()
+    receipt$ = poe15a.po_no$+poe15a.receiver_no$
+    receiverMap!.put(receipt$, poe15a.total_amount)
     seq$=poe15a.line_no$
     if cvs(poe15a.po_no$,3)="" goto l2100
     if cvs(poe15a.receiver_no$,3)="" gosub l6500
 
 l2100: rem --- Read history header and original terms
 
-    for receiver=1 to number
+    iter! = receiverMap!.keySet().iterator()
+    while iter!.hasNext()
         dim c0$(22),c1$(160),c[8],xc$(26),terms$(tw)
         dim pot04a$:fattr(pot04a$)
         dim apm10c$:fattr(apm10c$)
-        receipt$=receivers$(((receiver-1)*14)+1,14)
+        receipt$=cast(BBjString, iter!.next())
         find record (pot04_dev,key=firm_id$+receipt$,dom=*next) pot04a$
     l2150:
         ordered$=""
@@ -480,7 +486,7 @@ l2100: rem --- Read history header and original terms
         pbuf$(op[3]+1)=ordered$
         pbuf$(op[4]+1)=received$
         pbuf$(op[5]+1)=terms$
-        pbuf$(op[7]+1)=str(receivers[receiver]:m1$)
+        pbuf$(op[7]+1)=str(cast(BBjNumber, receiverMap!.get(receipt$)):m1$)
         OutVect!.addItem(pbuf$)
         l=l+1
         recs=recs+1
@@ -568,7 +574,7 @@ l2100: rem --- Read history header and original terms
     
     l3000: rem --- Loop back for next PO record
     
-    next receiver
+    wend
     goto l2000
 
 l3200: rem --- Position GL distribution file
@@ -855,8 +861,7 @@ l6390:
 
 l6500: rem --- Find all receivers for a PO
 
-    dim receivers[99]
-    let number=0,receivers$=""
+    receiverMap! = new TreeMap()
     read (poe25_dev,key=poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$,dom=*next)
 
 l6600: rem --- Read next detail line
@@ -865,12 +870,14 @@ l6600: rem --- Read next detail line
     if pos(poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$=k$)<>1 goto l6700
     read record (poe25_dev) poe25a$
     if poe25a.po_no$<>poe15a.po_no$ goto l6600
-    let x=pos(poe25a.po_no$+poe25a.receiver_no$=receivers$,14),x=x/14
-    if x goto l6670
-    let number=number+1,x=number,receivers$=receivers$+poe25a.po_no$+poe25a.receiver_no$
-l6670:
     precision 2
-    let receivers[number]=receivers[number]+round(poe25a.unit_cost*poe25a.qty_received,2)
+    receipt$ = poe25a.po_no$+poe25a.receiver_no$
+    receipt_amt=round(poe25a.unit_cost*poe25a.qty_received,2)
+    if receivermap!.containsKey(receipt$) then
+        receiverMap!.put(receipt$, receipt_amt+cast(BBjNumber, receiverMap!.get(receipt$)))
+    else
+        receiverMap!.put(receipt$, receipt_amt)
+    endif
     precision i[1]
     goto l6600
 

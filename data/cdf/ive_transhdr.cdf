@@ -211,8 +211,8 @@ rem --- Get parameter records
 
 rem --- Numeric masks
 
-	user_tpl.m9$ = ivs01a.price_mask$
-	call pgmdir$+"adc_sizemask.aon",user_tpl.m9$,ignore,8,10
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","P","",prc_mask$,0,0
+	user_tpl.m9$ = prc_mask$
 
 rem --- Lotted flags, Lifo/fifo
 

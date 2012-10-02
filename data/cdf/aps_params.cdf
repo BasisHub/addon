@@ -1,9 +1,3 @@
-[[APS_PARAMS.END_CMT_LINE.AVAL]]
-rem --- make sure ending cmt line > beg cmt line
-if cvs(callpoint!.getColumnData("APS_PARAMS.BEG_CMT_LINE"),3)<>""
-	if num(callpoint!.getColumnData("APS_PARAMS.BEG_CMT_LINE") )> 
-:		num(callpoint!.getUserInput()) then callpoint!.setStatus("ABORT")
-endif
 [[APS_PARAMS.<CUSTOM>]]
 #include std_missing_params.src
 [[APS_PARAMS.ARAR]]

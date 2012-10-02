@@ -20,16 +20,28 @@ not_b4_date$=cvs(callpoint!.getUserInput(),2)
 
 gosub validate_dates
 [[POE_PODET.BDEL]]
-rem --- before delete; check to see if this row is disabled (as it will be if there have been any receipts)...if so don't allow delete
+rem --- before delete; check to see if this row is on a receiver...if so don't allow delete
 rem --- otherwise, reverse the OO quantity in ivm-02
 
+	on_rcvr$="N"
+	item$=callpoint!.getColumnData("POE_PODET.ITEM_ID")
+	poe_recdet=fnget_dev("POE_RECDET")
+	read(poe_recdet,key=firm_id$+item$,knum="ITEM_PO",dom=*next)
+	while 1
+		k$=key(poe_recdet,end=*break)
+		if pos(firm_id$+item$=k$)<>1 break
+		on_rcvr$="Y"
+		break
+	wend
 
-if num(callpoint!.getColumnData("POE_PODET.QTY_RECEIVED"))<>0
-	callpoint!.setStatus("ABORT")
-else
-	curr_qty = -num(callpoint!.getColumnUndoData("POE_PODET.QTY_ORDERED")) * num(callpoint!.getColumnUndoData("POE_PODET.CONV_FACTOR"))
-	if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y"then gosub update_iv_oo
-endif
+	if on_rcvr$="Y"
+		msg_id$="POLINE_NO_DELETE"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	else
+		curr_qty = -num(callpoint!.getColumnUndoData("POE_PODET.QTY_ORDERED")) * num(callpoint!.getColumnUndoData("POE_PODET.CONV_FACTOR"))
+		if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y"then gosub update_iv_oo
+	endif
 [[POE_PODET.AWRI]]
 rem --- if new row, updt ivm-05 (old poc.ua, now poc_itemvend) 
 
@@ -333,7 +345,6 @@ curr_qty = num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED")) * num(callpoin
 if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y" then gosub update_iv_oo
 [[POE_PODET.ADEL]]
 gosub update_header_tots
-
 [[POE_PODET.ADGE]]
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
@@ -374,6 +385,9 @@ rem --- set dates from Header
 callpoint!.setColumnData("POE_PODET.NOT_B4_DATE",callpoint!.getHeaderColumnData("POE_POHDR.NOT_B4_DATE"))
 callpoint!.setColumnData("POE_PODET.REQD_DATE",callpoint!.getHeaderColumnData("POE_POHDR.REQD_DATE"))
 callpoint!.setColumnData("POE_PODET.PROMISE_DATE",callpoint!.getHeaderColumnData("POE_POHDR.PROMISE_DATE"))
+
+rem --- REFRESH is needed in order to get the default PO_LINE_CODE set in AGCL
+callpoint!.setStatus("REFRESH")
 [[POE_PODET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 rem --- this code was already here... is it right?

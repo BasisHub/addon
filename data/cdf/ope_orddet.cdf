@@ -1,3 +1,12 @@
+[[OPE_ORDDET.ADGE]]
+rem --- Disable header buttons
+
+	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("CRAT",0)
+	callpoint!.setOptionEnabled("DINV",0)
+	callpoint!.setOptionEnabled("CINV",0)
+	callpoint!.setOptionEnabled("PRNT",0)
+	callpoint!.setOptionEnabled("RPRT",0)
 [[OPE_ORDDET.EXT_PRICE.AVEC]]
 rem --- Extend price now that grid vector has been updated
 	qty_shipped = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
@@ -54,6 +63,7 @@ rem --- Setup a templated string to pass information back and forth from form
 	declare BBjTemplatedString a!
 
 	tmpl$ =  "LINE_TYPE:C(1)," +
+:				"LINE_DROPSHIP:C(1)," +
 :				"INVOICE_TYPE:C(1)," +
 :				"COMMIT_FLAG:C(1)," +
 :				"MAN_PRICE:C(1)," +
@@ -81,6 +91,7 @@ rem --- Setup a templated string to pass information back and forth from form
 	dflt_data$[7,1] = callpoint!.getColumnData("OPE_ORDDET.PICK_FLAG")
 	
 	a!.setFieldValue("LINE_TYPE",    user_tpl.line_type$)
+	a!.setFieldValue("LINE_DROPSHIP",user_tpl.line_dropship$)
 	a!.setFieldValue("INVOICE_TYPE", callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE"))
 	a!.setFieldValue("STD_LIST_PRC", callpoint!.getColumnData("OPE_ORDDET.STD_LIST_PRC"))
 	a!.setFieldValue("DISC_PERCENT", callpoint!.getColumnData("OPE_ORDDET.DISC_PERCENT"))
@@ -117,7 +128,7 @@ rem --- Write back here
 
 rem --- Need to commit?
 
-	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" then
+	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" and user_tpl.line_dropship$ = "N" then
 		if orig_commit$ = "Y" and callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" then
 			if user_tpl.line_type$ <> "O" then
 				callpoint!.setColumnData("OPE_ORDDET.QTY_BACKORD", "0")
@@ -177,7 +188,9 @@ rem --- Need to commit?
 
 rem --- Return focus to where we were (Detail line grid)
 
-	util.forceEdit(Form!, return_to_row, return_to_col)
+rem --- per bug 5587 disable forceEdit until Barista bug 5586 is fixed
+rem --- then replace forceEdit with setFocus in AGRN
+rem	util.forceEdit(Form!, return_to_row, return_to_col)
 [[OPE_ORDDET.AGDR]]
 rem --- Disable by line type
 
@@ -444,9 +457,9 @@ rem --- Get current and prior values
 	prior_qty   = num(callpoint!.getColumnUndoData("OPE_ORDDET.QTY_ORDERED"))
 	prior_commit$=callpoint!.getColumnUndoData("OPE_ORDDET.COMMIT_FLAG")
 
-rem --- Don't commit or uncommit Quotes
+rem --- Don't commit/uncommit Quotes or DropShips
 
-	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") = "P" goto awri_update_hdr
+	if user_tpl.line_dropship$ = "Y" or callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") = "P" goto awri_update_hdr
 
 rem --- Has there been any change?
 
@@ -576,8 +589,6 @@ awri_update_hdr: rem --- Update header
 			callpoint!.setDevObject("details_changed","Y")
 		endif
 	endif
-
-rem input "Det:Done with AWRI: ", *; rem debug
 [[OPE_ORDDET.BDGX]]
 rem --- Disable detail-only buttons
 
@@ -730,7 +741,9 @@ rem --- Is this item lot/serial?
 
 		rem --- Return focus to where we were (Detail line grid)
 
-			util.forceEdit(Form!, return_to_row, return_to_col)
+rem --- per bug 5587 disable forceEdit until Barista bug 5586 is fixed
+rem --- then replace forceEdit with setFocus in AGRN
+rem			util.forceEdit(Form!, return_to_row, return_to_col)
 		endif
 	endif
 [[OPE_ORDDET.BUDE]]
@@ -759,7 +772,13 @@ rem --- Set defaults for new record
 	callpoint!.setColumnData("OPE_ORDDET.MAN_PRICE", "N")
 	callpoint!.setColumnData("OPE_ORDDET.EST_SHP_DATE", ship_date$)
 
-	if inv_type$ = "P" or ship_date$ > user_tpl.def_commit$ then
+	rem --- Is the default line code for dropships?
+	file$ = "OPC_LINECODE"
+	dim opc_linecode$:fnget_tpl$(file$)
+	opc_linecode.dropship$ = "N"
+	find record (fnget_dev(file$), key=firm_id$+callpoint!.getColumnData("OPE_ORDDET.LINE_CODE"), dom=*next) opc_linecode$
+
+	if opc_linecode.dropship$ = "Y" or inv_type$ = "P" or ship_date$ > user_tpl.def_commit$ then
  		callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "N")
 	else
 		callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "Y")
@@ -796,7 +815,8 @@ rem (Fires regardles of new or existing row.  Use callpoint!.getGridRowNewStatus
 rem --- See if we're coming back from Recalc button
 
 	if callpoint!.getDevObject("rcpr_row") <> ""
-		callpoint!.setFocus(num(callpoint!.getDevObject("rcpr_row")),"OPE_ORDDET.UNIT_PRICE")
+rem --- per bug 5587 disable setFocus until Barista bug 5586 is fixed
+rem		callpoint!.setFocus(num(callpoint!.getDevObject("rcpr_row")),"OPE_ORDDET.UNIT_PRICE")
 		callpoint!.setDevObject("rcpr_row","")
 		callpoint!.setDevObject("details_changed","Y")
 		break
@@ -957,13 +977,6 @@ rem --- Warehouse and Item must be correct
 		rem --- using this instead to force focus if item/whse invalid -- i.e., don't let user leave corrupt row
 		callpoint!.setFocus(this_row,"OPE_ORDDET.ITEM_ID")
 		break; rem --- exit callpoint
-
-	else
-
-	rem --- Clear line type
-
-		user_tpl.line_type$ = ""
-
 	endif
 
 rem --- Set taxable amount
@@ -1436,8 +1449,6 @@ uncommit_iv: rem --- Uncommit Inventory
              rem --- Make sure action$ is set before entry
 rem ==========================================================================
 
-	rem print "in uncommit_iv"; rem debug
-
 	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
 
@@ -1454,7 +1465,7 @@ rem ==========================================================================
 	ord_qty  = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
 	line_ship_date$=callpoint!.getColumnData("OPE_ORDDET.EST_SHP_DATE")
 
-	if cvs(item$, 2)<>"" and cvs(wh$, 2)<>"" and ord_qty and ord_type$<>"P" then
+	if cvs(item$, 2)<>"" and cvs(wh$, 2)<>"" and ord_qty and ord_type$<>"P" and user_tpl.line_dropship$ = "N" then
 		call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 		read record (ivm_itemmast_dev, key=firm_id$+item$, dom=*next) ivm_itemmast$
 
@@ -1841,6 +1852,7 @@ rem --- Set enable/disable based on line type
 rem --- Has line code changed?
 
 	if line_code$ <> user_tpl.prev_line_code$ then
+		user_tpl.prev_line_code$=line_code$
 		callpoint!.setColumnData("OPE_ORDDET.MAN_PRICE", "N")
 		callpoint!.setColumnData("OPE_ORDDET.PRODUCT_TYPE", "")
 		callpoint!.setColumnData("OPE_ORDDET.WAREHOUSE_ID", user_tpl.def_whse$)
@@ -1851,7 +1863,7 @@ rem --- Has line code changed?
 		callpoint!.setColumnData("OPE_ORDDET.VENDOR_ID", "")
 		callpoint!.setColumnData("OPE_ORDDET.DROPSHIP", "")
 
-		if inv_type$ = "P" or callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE") > user_tpl.def_commit$ then
+		if user_tpl.line_dropship$ = "Y" or inv_type$ = "P" or callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE") > user_tpl.def_commit$ then
  			callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "N")
 		else
 			callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "Y")

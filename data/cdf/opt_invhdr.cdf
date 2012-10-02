@@ -195,7 +195,8 @@ rem --- Setup user_tpl$
 	user_tpl.display_bal$      = ars_credit.display_bal$
 	user_tpl.blank_whse$       = blank_whse$
 	user_tpl.dropship_whse$    = ars01a.dropshp_whse$
-	user_tpl.amount_mask$      = ars01a.amount_mask$
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",amt_mask$,0,0
+	user_tpl.amount_mask$      = amt_mask$
 	user_tpl.line_code$        = ars01a.line_code$
 	user_tpl.skip_ln_code$     = ars01a.skip_ln_code$
 	user_tpl.cash_sale$        = ars01a.cash_sale$

@@ -187,8 +187,9 @@ rem --- when re-entering primary form, enable GL button
 rem --- only enable invoice detail button if we've already written some poe_invdet records
 rem --- also re-initialize the "deleted" flag
 
-callpoint!.setOptionEnabled("GDIS",1)
-callpoint!.setDevObject("deleted","")
+if cvs(callpoint!.getColumnData("POE_INVHDR.AP_INV_NO"),2)<>""then
+	callpoint!.setOptionEnabled("GDIS",1)
+endif
 
 poe_invdet=fnget_dev("POE_INVDET")
 
@@ -204,6 +205,8 @@ if pos(invdet_key$=k$)=1
 else
 	callpoint!.setOptionEnabled("INVD",0)
 endif
+
+callpoint!.setDevObject("deleted","")
 [[POE_INVHDR.BPFX]]
 callpoint!.setOptionEnabled("INVD",0)
 callpoint!.setOptionEnabled("GDIS",0)
@@ -327,7 +330,7 @@ endif
 callpoint!.setStatus("RECORD:["+ky$+"]")
 [[POE_INVHDR.ARNF]]
 rem --- set defaults
-		
+
 terms_cd$=callpoint!.getDevObject("dflt_terms_cd")
 invdate$=stbl("+SYSTEM_DATE")
 tmp_inv_date$=callpoint!.getColumnData("POE_INVHDR.INV_DATE")
@@ -341,10 +344,10 @@ if cvs(str(callpoint!.getDevObject("dflt_acct_date")),2)<>""
 	callpoint!.setColumnData("POE_INVHDR.ACCT_DATE",str(callpoint!.getDevObject("dflt_acct_date")))
 else
 	callpoint!.setColumnData("POE_INVHDR.ACCT_DATE",stbl("+SYSTEM_DATE"))
+endif
 callpoint!.setColumnData("POE_INVHDR.HOLD_FLAG","N")
 
 callpoint!.setStatus("REFRESH")
-		
 [[POE_INVHDR.AP_INV_NO.AVAL]]
 rem --- see if in apt-01 (open invoices)
 
@@ -579,7 +582,7 @@ gosub disp_vendor_comments
 gosub get_vendor_history
 
 if vend_hist$="" and callpoint!.getDevObject("multi_types")="Y"
-	msg_id$="AP_NOHIST"
+	msg_id$="AP_VEND_BAD_APTYPE"
 	gosub disp_message
 	callpoint!.setStatus("CLEAR-NEWREC")
 endif
@@ -638,7 +641,7 @@ if cvs(terms_cd$,3)="" then terms_cd$=callpoint!.getDevObject("dflt_terms_cd")
 if cvs(callpoint!.getDevObject("dflt_acct_date"),2)=""
 	callpoint!.setColumnData("POE_INVHDR.ACCT_DATE",callpoint!.getUserInput())
 else
-	callpoint!.setColumnData("POE_INVHDR.ACCT_DATE",callpoint!.getDevObject("dflt_acct_date"))
+	callpoint!.setColumnData("POE_INVHDR.ACCT_DATE",str(callpoint!.getDevObject("dflt_acct_date")))
 endif
 tmp_inv_date$=callpoint!.getUserInput()
 gosub calculate_due_and_discount

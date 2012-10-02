@@ -1,17 +1,19 @@
 [[BMM_BILLMAT.BWRI]]
 rem --- Divisor and Alt Factor need to be 1 if 0
 
-	if num(callpoint!.getColumnData("BMM_BILLMAT.DIVISOR"))=0
-		callpoint!.setColumnData("BMM_BILLMAT.DIVISOR","1")
-	endif
-	if num(callpoint!.getColumnData("BMM_BILLMAT.ALT_FACTOR"))=0
-		callpoint!.setColumnData("BMM_BILLMAT.ALT_FACTOR","1")
-	endif
+	if callpoint!.getColumnData("BMM_BILLMAT.LINE_TYPE")="S"
+		if num(callpoint!.getColumnData("BMM_BILLMAT.DIVISOR"))=0
+			callpoint!.setColumnData("BMM_BILLMAT.DIVISOR","1")
+		endif
+		if num(callpoint!.getColumnData("BMM_BILLMAT.ALT_FACTOR"))=0
+			callpoint!.setColumnData("BMM_BILLMAT.ALT_FACTOR","1")
+		endif
 
-	if num(callpoint!.getColumnData("BMM_BILLMAT.QTY_REQUIRED"))=0
-		msg_id$="IV_QTY_GT_ZERO"
-		gosub disp_message
-		callpoint!.setFocus(callpoint!.getValidationRow(),"BMM_BILLMAT.QTY_REQUIRED")
+		if num(callpoint!.getColumnData("BMM_BILLMAT.QTY_REQUIRED"))=0
+			msg_id$="IV_QTY_GT_ZERO"
+			gosub disp_message
+			callpoint!.setFocus(callpoint!.getValidationRow(),"BMM_BILLMAT.QTY_REQUIRED")
+		endif
 	endif
 [[BMM_BILLMAT.OP_INT_SEQ_REF.AINP]]
 	ops_lines!=SysGUI!.makeVector()
@@ -111,10 +113,12 @@ rem --- Display Net Quantity
 [[BMM_BILLMAT.QTY_REQUIRED.AVAL]]
 rem --- Display Net Quantity
 
-	if num(callpoint!.getUserInput())=0
-		msg_id$="IV_QTY_GT_ZERO"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
+	if callpoint!.getColumnData("BMM_BILLMAT.LINE_TYPE")="S"
+		if num(callpoint!.getUserInput())=0
+			msg_id$="IV_QTY_GT_ZERO"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+		endif
 	endif
 	qty_req=num(callpoint!.getUserInput())
 	alt_fact=num(callpoint!.getColumnData("BMM_BILLMAT.ALT_FACTOR"))
@@ -134,6 +138,14 @@ rem ===================================================================
 	yield_pct=callpoint!.getDevObject("yield")
 	net_qty=BmUtils.netQuantityRequired(qty_req,alt_fact,divisor,yield_pct,scrap_fact)
 	callpoint!.setColumnData("<<DISPLAY>>.NET_REQD",str(net_qty))
+	whse$=callpoint!.getDevObject("dflt_whse")
+	item$=callpoint!.getColumnData("BMM_BILLMAT.ITEM_ID")
+	ivm02_dev=fnget_dev("IVM_ITEMWHSE")
+	dim ivm02$:fnget_tpl$("IVM_ITEMWHSE")
+	read record (ivm02_dev,key=firm_id$+whse$+item$,dom=*next) ivm02$
+	callpoint!.setColumnData("<<DISPLAY>>.UNIT_COST",ivm02.unit_cost$)
+	callpoint!.setColumnData("<<DISPLAY>>.TOTAL_COST",str(ivm02.unit_cost*net_qty))
+
 	return
 
 rem ===================================================================
@@ -180,9 +192,10 @@ rem --- Setup java class for Derived Data Element
 
 rem --- Open files for later use
 
-	num_files=1
+	num_files=2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVM_ITEMMAST",open_opts$[1]="OTAN[2_]"
+	open_tables$[2]="IVM_ITEMWHSE",open_opts$[2]="OTA"
 	gosub open_tables
 
 rem --- fill listbox for use with Op Sequence

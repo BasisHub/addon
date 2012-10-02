@@ -584,8 +584,9 @@ rem --- Open files
 
 rem --- Get IV params, set mask, lot/serial
 
-	find record (params_dev, key=firm_id$+"IV00", dom=std_missing_params) params_rec$ 
-	user_tpl.amt_mask$ = params_rec.amount_mask$
+	find record (params_dev, key=firm_id$+"IV00", dom=std_missing_params) params_rec$
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",amt_mask$,0,0
+	user_tpl.amt_mask$ = amt_mask$
 	if pos(params_rec.lotser_flag$ = "LS") then ls$ = "Y" else ls$ = "N"
 	user_tpl.ls$ = ls$
 	user_tpl.lotser_flag$ = params_rec.lotser_flag$

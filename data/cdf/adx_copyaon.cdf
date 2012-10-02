@@ -1,3 +1,19 @@
+[[ADX_COPYAON.ASHO]]
+rem --- Don't allow running the utility if Addon doesn't exist at Basis download location
+
+	bbjHome$ = System.getProperty("basis.BBjHome")
+	aonSynFile$ = bbjHome$+"/apps/aon/config/addon.syn"
+	aonExists = 0
+	tmp_dev = unt
+	open(tmp_dev, err=*next)aonSynFile$; aonExists = 1
+	close(tmp_dev,err=*next)
+	if !aonExists then
+		msg_id$="AD_DOWNLOAD_MISSING"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=bbjHome$
+		gosub disp_message
+		callpoint!.setStatus("EXIT")
+	endif
 [[ADX_COPYAON.BSHO]]
 rem --- Declare Java classes used
 

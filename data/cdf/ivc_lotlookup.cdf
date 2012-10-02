@@ -291,64 +291,54 @@ rem ==========================================================================
 
 	rem --- added knum="PRIMARY" to below, because if user typed their own lot#, Barista validation logic would
 	rem --- have used knum="AO_ITEM_WH_LOT"...
-	read (ivm_lsmaster_dev,key=firm_id$+whse_id$+item_id$+cvs(get_lot$,3),knum="PRIMARY",dom=*next)
+	read record(ivm_lsmaster_dev,key=firm_id$+whse_id$+item_id$+get_lot$,knum="PRIMARY",dom=*next)ivm_lsmaster$
 
 	lotWin!=callpoint!.getDevObject("lotInfo")	
 
-	while 1
-		readrecord(ivm_lsmaster_dev,end=*break) ivm_lsmaster$
-		
-		if ivm_lsmaster.firm_id$<>firm_id$ 
-:			or ivm_lsmaster$.warehouse_id$<>whse_id$
-:			or ivm_lsmaster.item_id$<>item_id$
-:			or ivm_lsmaster.lotser_no$<>get_lot$ 
-:	   then break
+	callpoint!.setDevObject("selected_lot_loc",ivm_lsmaster.ls_location$)
+	callpoint!.setDevObject("selected_lot_cmt",ivm_lsmaster.ls_comments$)
+	callpoint!.setDevObject("selected_lot_cost",ivm_lsmaster.unit_cost$)
+	callpoint!.setDevObject("selected_lot_avail",str(ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit))
 
-		callpoint!.setDevObject("selected_lot_loc",ivm_lsmaster.ls_location$)
-		callpoint!.setDevObject("selected_lot_cmt",ivm_lsmaster.ls_comments$)
-		callpoint!.setDevObject("selected_lot_cost",ivm_lsmaster.unit_cost$)
-		callpoint!.setDevObject("selected_lot_avail",str(ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit))
+	rem --- Retrieve vendor name
 
-		rem --- Retrieve vendor name
+	vendor$=""
+	vendor_id = num( callpoint!.getDevObject("vendor_id") )
+    
+	if callpoint!.getDevObject("ap_installed") = "Y"
+		vendor$=ivm_lsmaster.vendor_id$
+		disp_vendor$=Translate!.getTranslation("AON_(UNKNOWN)")
 
-		vendor$=""
-		vendor_id = num( callpoint!.getDevObject("vendor_id") )
-		
-		if callpoint!.getDevObject("ap_installed") = "Y"
-			vendor$=ivm_lsmaster.vendor_id$
-			disp_vendor$=Translate!.getTranslation("AON_(UNKNOWN)")
-
-			if cvs(vendor$,2)<>""
-				find record (apm_vendmast_dev,key=firm_id$+vendor$,dom=*next) apm_vendmast$
-				disp_vendor$=apm_vendmast.vendor_id$+" "+cvs(apm_vendmast.vendor_name$,2)
-			endif
-
-			w!=lotWin!.getControl(vendor_id)
-			w!.setText(disp_vendor$)
+		if cvs(vendor$,2)<>""
+			find record (apm_vendmast_dev,key=firm_id$+vendor$,dom=*next) apm_vendmast$
+			disp_vendor$=apm_vendmast.vendor_id$+" "+cvs(apm_vendmast.vendor_name$,2)
 		endif
 
-		rem --- Display grid info
-		
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("comment_id") ) )
-		w!.setText(ivm_lsmaster.ls_comments$)
-		receipt$=func.formatDate(func.latestDate(ivm_lsmaster.lstrec_date$,ivm_lsmaster.lstblt_date$))
-		issue$=func.formatDate(func.latestDate(ivm_lsmaster.lstsal_date$,ivm_lsmaster.lstiss_date$))
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("receipt_id") ) )
-		w!.setText(receipt$)
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("issued_id") ) )
-		w!.setText(issue$)
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("cost_id") ) )
-		w!.setText(ivm_lsmaster.unit_cost$);rem need mask
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("location_id") ) )
-		w!.setText(ivm_lsmaster.ls_location$)
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("onhand_id") ) )
-		w!.setText(ivm_lsmaster.qty_on_hand$)
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("committed_id") ) )
-		w!.setText(ivm_lsmaster.qty_commit$)
-		w!=lotWin!.getControl( num( callpoint!.getDevObject("available_id") ) )
-		w!.setText(str(ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit))
+		w!=lotWin!.getControl(vendor_id)
+		w!.setText(disp_vendor$)
+	endif
 
-	wend
+	rem --- Display grid info
+    
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("comment_id") ) )
+	w!.setText(ivm_lsmaster.ls_comments$)
+	receipt$=func.formatDate(func.latestDate(ivm_lsmaster.lstrec_date$,ivm_lsmaster.lstblt_date$))
+	issue$=func.formatDate(func.latestDate(ivm_lsmaster.lstsal_date$,ivm_lsmaster.lstiss_date$))
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("receipt_id") ) )
+	w!.setText(receipt$)
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("issued_id") ) )
+	w!.setText(issue$)
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("cost_id") ) )
+	w!.setText(ivm_lsmaster.unit_cost$);rem need mask
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("location_id") ) )
+	w!.setText(ivm_lsmaster.ls_location$)
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("onhand_id") ) )
+	w!.setText(ivm_lsmaster.qty_on_hand$)
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("committed_id") ) )
+	w!.setText(ivm_lsmaster.qty_commit$)
+	w!=lotWin!.getControl( num( callpoint!.getDevObject("available_id") ) )
+	w!.setText(str(ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit))
+
 
 return
 

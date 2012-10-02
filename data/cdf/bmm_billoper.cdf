@@ -92,12 +92,14 @@ rem ===================================================================
 	lot_size=callpoint!.getDevObject("lotsize")
 	direct_cost=BmUtils.directCost(hrs_pc,direct_rate,pc_hr,yield_pct,setup,lot_size)
 	oh_cost=direct_cost*oh_rate
-	callpoint!.setColumnData("<<DISPLAY>>.DIRECT_RATE",str(direct_rate))
-	callpoint!.setColumnData("<<DISPLAY>>.DIRECT_COST",str(direct_cost))
-	callpoint!.setColumnData("<<DISPLAY>>.OVHD_COST",str(oh_cost))
-	callpoint!.setColumnData("<<DISPLAY>>.TOT_COST",str(direct_cost+oh_cost))
-	callpoint!.setColumnData("<<DISPLAY>>.QUEUE_TIME",bmm08.queue_time$)
-
+	if pc_hr=0 pc_hr=1
+	net_hrs=100*(hrs_pc/pc_hr)/yield_pct+setup/lot_size
+	callpoint!.setColumnData("<<DISPLAY>>.DIRECT_RATE",str(direct_rate),1)
+	callpoint!.setColumnData("<<DISPLAY>>.DIRECT_COST",str(direct_cost),1)
+	callpoint!.setColumnData("<<DISPLAY>>.OVHD_COST",str(oh_cost),1)
+	callpoint!.setColumnData("<<DISPLAY>>.TOT_COST",str(direct_cost+oh_cost),1)
+	callpoint!.setColumnData("<<DISPLAY>>.QUEUE_TIME",bmm08.queue_time$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.NET_HRS",str(net_hrs),1)
 	return
 
 rem ===================================================================

@@ -11,15 +11,21 @@ rem --- All Rights Reserved
 
 rem --- Use Statements
 
+    use java.util.Iterator
+    use java.util.TreeMap
     use ::ado_func.src::func
 
 rem --- Document initializations
 
+    declare Iterator iter!
+    declare TreeMap product_typeMap!
     declare BBjVector OutVect!
     declare BBjVector HdrVect!
     declare BBjVector BrkVect!
     declare BBjVector TotVect!
+    declare BBjVector t9!
 
+    product_typeMap! = new TreeMap()
     OutVect!=bbjAPI().makeVector()
     HdrVect!=bbjAPI().makeVector()
     BrkVect!=bbjAPI().makeVector()
@@ -43,7 +49,7 @@ rem --- Initialize Data
     func.setLen3(int(i[5]))
 
     dim lf_item$[10],lf_channels[10]
-    dim o[4],r[3,4],s[2],t[4],t9[100,3],u[3]
+    dim o[4],r[3,4],s[2],t[4],u[3]
     ord=0
     ship=0,bo=0,l9=50,l=l9+1,h=0,nf$="(Not On File)"
     pbufwidth=200
@@ -257,14 +263,21 @@ rem --- Check to see if record is in use in Invoice Entry
 
             if opm02a.line_type$="O" then  r[3,0]=r[3,0]+ope11a.ext_price
             if opm02a.prod_type_pr$="N" then continue
-            if pos(ope11a.product_type$=t9$,3)=0 then  t9$=t9$+ope11a.product_type$
-            
-            x=pos(ope11a.product_type$=t9$,3)
-            x=int(x/3)
-            t9[x,0]=t9[x,0]+ope11a.ext_price
-            t9[x,1]=t9[x,1]+ope11a.unit_cost*ope11a.qty_shipped
-            t9[x,2]=t9[x,2]+ope11a.comm_percent
-            t9[x,3]=t9[x,3]+ope11a.qty_shipped
+            if product_typeMap!.containsKey(ope11a.product_type$) then
+                t9!=cast(BBjVector, product_typeMap!.get(ope11a.product_type$))
+                t9!.setItem(0, ope11a.ext_price+cast(BBjNumber, t9!.getItem(0)))
+                t9!.setItem(1, ope11a.unit_cost*ope11a.qty_shipped+cast(BBjNumber, t9!.getItem(1)))
+                t9!.setItem(2, ope11a.comm_percent+cast(BBjNumber, t9!.getItem(2)))
+                t9!.setItem(3, ope11a.qty_shipped+cast(BBjNumber, t9!.getItem(3)))
+                product_typeMap!.put(ope11a.product_type$, t9!)
+            else
+                t9!=BBjAPI().makeVector()
+                t9!.addItem(ope11a.ext_price)
+                t9!.addItem(ope11a.unit_cost*ope11a.qty_shipped)
+                t9!.addItem(ope11a.comm_percent)
+                t9!.addItem(ope11a.qty_shipped)
+                product_typeMap!.put(ope11a.product_type$, t9!)
+            endif
         wend
 
     rem --- Invioce Totals
@@ -350,27 +363,32 @@ rem --- Totals By Product
     OutVect!.addItem("GP %"+$00$+"R")
     xwk=fnblank(6)
 
-    if len(t9$)<>0 then
-        for x=1 to len(t9$) step 3
-            x0=int(x/3)
-            ivm10a.code_desc$=nf$
-            find record (ivm10_dev,key=firm_id$+"A"+t9$(x,3),dom=*next) ivm10a$
-            if t9[x0,0]=0 and t9[x0,1]=0 then continue
+    iter! = product_typeMap!.keySet().iterator()
+    while iter!.hasNext()
+        product_type$=cast(BBjString, iter!.next())
+        t9!=cast(BBjVector, product_typeMap!.get(product_type$))
+        ext_price=cast(BBjNumber, t9!.getItem(0))
+        cost=cast(BBjNumber, t9!.getItem(1))
+        comm_percent=cast(BBjNumber, t9!.getItem(2))
+        qty_shipped=cast(BBjNumber, t9!.getItem(3))
+        if ext_price=0 and cost=0 then continue
+            
+        ivm10a.code_desc$=nf$
+        find record (ivm10_dev,key=firm_id$+"A"+product_type$,dom=*next) ivm10a$
 
-            OutVect!.addItem(t9$(x,3)+" "+ivm10a.code_desc$)
-            OutVect!.addItem(str(t9[x0,3]:m2$)+$00$+"R")
-            OutVect!.addItem(str(t9[x0,0]:m1$)+$00$+"R")
-            OutVect!.addItem(str(t9[x0,1]:m3$)+$00$+"R")
-            OutVect!.addItem(str(t9[x0,0]-t9[x0,1]:m4$)+$00$+"R")
-            OutVect!.addItem(func.grossProfit(t9[x0,0], t9[x0,1])+$00$+"R")
-            xwk=fnblank(6)
+        OutVect!.addItem(product_type$+" "+ivm10a.code_desc$)
+        OutVect!.addItem(str(qty_shipped:m2$)+$00$+"R")
+        OutVect!.addItem(str(ext_price:m1$)+$00$+"R")
+        OutVect!.addItem(str(cost:m3$)+$00$+"R")
+        OutVect!.addItem(str(ext_price-cost:m4$)+$00$+"R")
+        OutVect!.addItem(func.grossProfit(ext_price, cost)+$00$+"R")
+        xwk=fnblank(6)
 
-            t[0]=t[0]+t9[x0,0]
-            t[1]=t[1]+t9[x0,1]
-            t[2]=t[2]+t9[x0,2]
-            t[3]=t[3]+t9[x0,3]
-        next x
-    endif
+        t[0]=t[0]+ext_price
+        t[1]=t[1]+cost
+        t[2]=t[2]+comm_percent
+        t[3]=t[3]+qty_shipped
+    wend
 
     TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     OutVect!.addItem(rt$)

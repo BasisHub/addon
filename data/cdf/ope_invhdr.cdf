@@ -248,6 +248,8 @@ rem --- Set data
 	endif
 	callpoint!.setDevObject("details_changed","N")
 
+	callpoint!.setDevObject("new_rec","N")
+
 rem --- Set flags
 
 	user_tpl.user_entry$ = "N"; rem user entered an order (not navigated)
@@ -382,6 +384,7 @@ rem --- clear availability
 	gosub clear_avail
 	callpoint!.setDevObject("was_on_tot_tab","N")
 	callpoint!.setDevObject("details_changed","N")
+	callpoint!.setDevObject("new_rec","Y")
 
 	gosub init_msgs
 [[OPE_INVHDR.INVOICE_TYPE.AVAL]]
@@ -985,6 +988,26 @@ rem --- Next record must be an invoice
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
 	start_block = 1
+
+rem --- Position the file at the correct record
+
+	if callpoint!.getDevObject("new_rec")="Y"
+		start_key$=firm_id$+"  "
+		cust_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+		order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+		if cvs(cust_id$,2)<>""
+			start_key$=start_key$+cust_id$
+			if cvs(order_no$,2)<>""
+				start_key$=start_key$+order_no$
+			endif
+		endif
+
+		while 1
+			read record (ope01_dev,key=start_key$,dom=*break)
+			extract record (ope01_dev,key=start_key$)
+			break
+		wend
+	endif
 
 	while 1
 		if start_block then
@@ -2786,7 +2809,8 @@ rem --- Setup user_tpl$
 	user_tpl.display_bal$      = ars_credit.display_bal$
 	user_tpl.blank_whse$       = blank_whse$
 	user_tpl.dropship_whse$    = ars01a.dropshp_whse$
-	user_tpl.amount_mask$      = ars01a.amount_mask$
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",amt_mask$,0,0
+	user_tpl.amount_mask$      = amt_mask$
 	user_tpl.line_code$        = ars01a.line_code$
 	user_tpl.skip_ln_code$     = ars01a.skip_ln_code$
 	user_tpl.cash_sale$        = ars01a.cash_sale$

@@ -1,8 +1,19 @@
+[[BME_PRODUCT.BWRI]]
+rem --- Validate Quantity
+
+	if num(callpoint!.getColumnData("BME_PRODUCT.QTY_ORDERED")) <= 0
+		msg_id$="IV_QTY_GT_ZERO"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
 [[BME_PRODUCT.ADIS]]
 rem --- set comments
 
 	if callpoint!.getDevObject("multi_wh")<>"Y"
 		gosub disable_wh
+	else
+		wh$=callpoint!.getDevObject("def_wh")
+		callpoint!.setColumnData("BME_PRODUCT.WAREHOUSE_ID",wh$)
 	endif
 
 	bill_no$=callpoint!.getColumnData("BME_PRODUCT.ITEM_ID")
@@ -12,6 +23,9 @@ rem --- Set default warehouse
 
 	if callpoint!.getDevObject("multi_wh")<>"Y"
 		gosub disable_wh
+	else
+		wh$=callpoint!.getDevObject("def_wh")
+		callpoint!.setColumnData("BME_PRODUCT.WAREHOUSE_ID",wh$)
 	endif
 
 	callpoint!.setColumnData("<<DISPLAY>>.COMMENTS","")
@@ -138,6 +152,8 @@ rem --- get multiple warehouse flag and default warehouse
 	callpoint!.setDevObject("def_wh",ivs01a.warehouse_id$)
 	if ivs01a.multi_whse$<>"Y"
 		gosub disable_wh
+	else
+		callpoint!.setColumnData("BME_PRODUCT.WAREHOUSE_ID",ivs01a.warehouse_id$)
 	endif
 
 rem --- Additional Init

@@ -12,21 +12,32 @@ rem ==========================================================================
     setesc std_error
     seterr std_error
 
+rem --- Get program aurgements
+
+    if argc>1
+        for curr_argv=1 to argc-1
+            temp_argv$=argv(curr_argv)
+            if pos("-u"=temp_argv$)=1 user_id$=temp_argv$(3);rem User ID
+        next curr_argv
+    endif
+
 rem --- Initializations
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Open File(s)
 	
-	num_files=2
+	num_files=3
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="DDM_SYSTEMS", open_opts$[1]="OTA"
 	open_tables$[2]="ADS_AUTOLAUNCH", open_opts$[2]="OTA"
+	open_tables$[3]="ADM_USERROLES", open_opts$[3]="OTA"
 
 	gosub open_tables
 
-	systems_dev = num(open_chans$[1]);dim systems_rec$:open_tpls$[1]
+	ddm_systems = num(open_chans$[1]);dim ddm_systems$:open_tpls$[1]
     ads_autolaunch=num(open_chans$[2]);dim ads_autolaunch$:open_tpls$[2]
+    adm_userroles=num(open_chans$[3]);dim adm_userroles$:open_tpls$[3]
 
 rem --- Get current working directory
 
@@ -34,8 +45,8 @@ rem --- Get current working directory
 
 rem --- Get Addon install location
     
-	readrecord(systems_dev,key=pad("ADDON",16),err=done)systems_rec$
-	aonHome$ = systems_rec.mount_dir$
+	readrecord(ddm_systems,key=pad("ADDON",16),err=done)ddm_systems$
+	aonHome$ = ddm_systems.mount_dir$
 	chdir(aonHome$)
 	aonHome$ = dir(""); rem --- remove possible drive letter from path
 	
@@ -49,16 +60,32 @@ rem --- Reset current working directory
 
 	chdir(workingDir$)
 
+rem --- Determine if current user is an admin
+
+    admin_user = 0
+    readrecord(adm_userroles,key=pad(user_id$,16)+pad("ADMIN",8),err=*next)adm_userroles$; admin_user = 1
+
 rem --- Display warning if Addon is installed under current BASIS product download location
 
+    process_complete = 0
 	if pos(bbjHome$=aonHome$)=1 then
-		msg_id$ = "AON_DEMO_NAG"
+        if admin_user then
+            msg_id$ = "AON_DEMO_NAG_ADMIN"
+        else
+            msg_id$ = "AON_DEMO_NAG"
+        endif
 		gosub disp_message
+        if msg_opt$="D" then
+            msg_id$="AON_DEMO_NAG_REMOVE"
+            gosub disp_message
+            if msg_opt$="Y" then process_complete = 1
+        endif
 	endif
 	
 done:rem --- Update AutoLaunch Status
 
     extractrecord(ads_autolaunch,key="AONDEMONAG")ads_autolaunch$
+    if process_complete then ads_autolaunch.process_status$="C"
     ads_autolaunch.trans_date$=date(0:"%Yl%Mz%Dz")
     ads_autolaunch.trans_time$=date(0:"%Hz%mz%sz")
     ads_autolaunch$ = field(ads_autolaunch$)

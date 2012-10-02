@@ -1,0 +1,300 @@
+rem --- BOM Costing Report
+
+rem --- AddonSoftware Version 11.11.0 - 02Sep2011
+rem --- Copyright (c) 1981-2011 AddonSoftware
+rem --- All Rights Reserved
+
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::java.util.HashMap::HashMap
+
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 50
+
+    setesc std_error
+    seterr std_error
+
+rem --- Use statements and Declares
+
+    use ::ado_func.src::func
+    use ::ado_pdf.src::PDFHelper
+    use ::sys/prog/bao_callpoint.bbj::Callpoint
+    use ::sys/prog/bao_option.bbj::Option
+
+    declare Callpoint callpoint!
+    declare Option option!
+
+rem --- Retrieve the program path
+
+    pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Set document Directory
+
+    docdir$=""
+    docdir$=stbl("+DOC_DIR_PDF",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_tpl$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    user_id$=sysinfo.user_id$
+    proc_date$=date(jul(num(sysinfo.system_date$(1,4)),num(sysinfo.system_date$(5,2)),num(sysinfo.system_date$(7,2))):stbl("+DATE_MASK"))
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+
+rem --- Assign form input values to local variables
+
+	from_bill$=Option!.getOptionData("BILL_NO_1")
+	thru_bill$=Option!.getOptionData("BILL_NO_2")
+	eff_date$=Option!.getOptionData("EFFECT_DATE")
+	comments$=Option!.getOptionData("INCLUDE_COMMENTS")
+	whse$=Option!.getOptionData("WAREHOUSE_ID")
+
+rem --- Open Files    
+goto work_around
+	num_files=8
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+	open_tables$[1]="BMM_BILLMAST",  open_opts$[1] = "OTA"
+	open_tables$[2]="BMM_BILLMAT",   open_opts$[2] = "OTA"
+	open_tables$[3]="BMM_BILLOPER",  open_opts$[3] = "OTA"
+	open_tables$[4]="BMM_BILLSUB",   open_opts$[4] = "OTA"
+	open_tables$[5]="BMC_OPCODES",   open_opts$[5] = "OTA"
+	open_tables$[6]="BMM_BILLCMTS",  open_opts$[6] = "OTA"
+	open_tables$[7]="IVM_ITEMMAST",  open_opts$[7] = "OTA"
+	open_tables$[8]="IVM_ITEMWHSE",  open_opts$[8] = "OTA"
+
+	gosub open_tables
+
+work_around:
+    files=8,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
+    files$[2]="bmm-02",ids$[2]="BMM_BILLMAT"
+	files$[3]="bmm-03",ids$[3]="BMM_BILLOPER"
+	files$[4]="bmm-05",ids$[4]="BMM_BILLSUB"
+	files$[5]="bmm-08",ids$[5]="BMC_OPCODES"
+	files$[6]="bmm-09",ids$[6]="BMM_BILLCMTS"
+	files$[7]="ivm-01",ids$[7]="IVM_ITEMMAST"
+	files$[8]="ivm-02",ids$[8]="IVM_ITEMWHSE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:       ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+
+rem --- Set Report Name & Subreport directory
+
+	reportDir$ = stbl("+DIR_REPORTS",err=*next)
+	reportTitle$="BOM Costing Report"
+	temp = unt
+	open (temp)reportDir$
+	reportDir$ = fid(temp)(9)+"/"
+	close (temp)
+	reportBaseName$ = "BOMCosting"
+	filename$ = reportDir$ + reportBaseName$ + ".jasper"
+
+	declare BBJasperReport report!
+
+rem --- Check for user authentication
+
+	dbserver$="localhost"
+	dbsqlport$=":2001"
+	dbtimeout$="&socket_timeout=5000"
+
+	dbserver$=stbl("+DBSERVER",err=*next)
+	dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+	dbssl=num(stbl("+DBSSL",err=*next))
+	dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+
+	if dbssl
+		dbssl$="&ssl=true"
+	else
+		dbssl$="&ssl=false"
+	endif
+
+	url_user$="&user=guest"
+	if stbl("!DSUDDB",err=*endif)<>"" then
+		url_user$=""
+	endif
+
+    dbname$ = stbl("+DBNAME")
+    dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+        if pos("jdbc:"=cvs(dbname$,8))=1 then			
+            url$=dbname$+url_user$
+        else
+            url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+        endif
+    endif
+
+    report! = new BBJasperReport(filename$,url$,err=CONNECT_ERR)
+
+rem Set Report Locale
+    locale$ = stbl("!LOCALE")
+    locale$ = stbl("+USER_LOCALE",err=*next)
+
+    report!.setLocale(locale$)
+
+rem --- Make Document Archive Record and Get ID
+
+    rep_date$=date(0:stbl("+DATE_MASK"))
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+    rd_source_alias$=rd_alias_id$
+    rd_source_type$="O"
+    rd_doc_source$="E"
+    rd_doc_ext$="JAS"
+    rd_archive_action$=rd_out_status$
+
+call rd_dir_syp$+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       "DOC_ID-NOREPRINT"
+
+rem Create params for the report
+    params! = new java.util.HashMap()
+    params!.put("FIRM_ID",firm_id$)
+    params!.put("BILL_NO_1",from_bill$)
+    params!.put("BILL_NO_2",thru_bill$)
+	params!.put("FIRM_NAME",firm_name$)
+	params!.put("DOC_NO",rd_doc_id$)
+	params!.put("DATE_REP",rep_date$+"  "+rep_time$)
+	params!.put("WHSE",whse$)
+	params!.put("PROD_DATE",prod_date$)
+    if comments$="Y"
+        params!.put("COMMENT_YN","Y")
+    else
+        params!.put("COMMENT_YN","N")
+    endif
+	params!.put("ALL_DATES","N")
+	params!.put("BARISTA_WD",dir(""))
+
+    report!.putParams(params!)
+
+rem Fill the report with content
+    report!.fill(1)
+
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 50
+
+rem View the report
+    declare BBjTopLevelWindow bbjWindow!
+    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,reportTitle$,$00080093$)
+    viewerWindow!.show(0)
+
+    declare BBjTopLevelWindow bbjWindow!
+    bbjWindow!= viewerWindow!.getViewerWindow()
+	cancelled=1
+    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win",err=*next); cancelled=0
+	if cancelled then goto close_win
+
+rem --- Event Control
+
+    process_events,err=*same
+
+	release
+
+close_win:rem --- Viewer Window Closed
+    viewerWindow!.destroy(err=*next)
+
+all_done: rem --- Exit
+
+    goto std_exit
+
+	CONNECT_ERR:
+	x = msgbox(errmes(-1),16,"Connection Failed")
+	release
+
+open_tables: rem --- Open Tables
+
+	call sypdir$+"bac_open_tables.bbj",		open_beg,		open_end,		open_tables$[all],		open_opts$[all],		open_chans$[all],		open_tpls$[all],		table_chans$[all],		open_batch,		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message: rem --- Display Message Dialog
+
+	call sypdir$+"bac_message.bbj",		msg_id$,		msg_tokens$[all],		msg_opt$,		table_chans$[all]
+
+	return
+
+rem --- Functions
+
+    def fnline2y%(tmp0)=(tmp0*12)+12+top_of_detail+2
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+	release
+
+end

@@ -99,11 +99,10 @@ rem --- Clear availability information
 	gosub clear_avail
 	callpoint!.setDevObject("was_on_tot_tab","N")
 	callpoint!.setDevObject("details_changed","N")
+	callpoint!.setDevObject("new_rec","Y")
 
 	gosub init_msgs
 [[OPE_ORDHDR.ARAR]]
-print "Hdr:ARAR"; rem debug
-
 rem --- Set data
 
 	user_tpl.order_date$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_DATE")
@@ -116,9 +115,9 @@ rem --- Set data
 	endif
 	callpoint!.setDevObject("details_changed","N")
 
-rem --- Set flags
+	callpoint!.setDevObject("new_rec","N")
 
-	user_tpl.user_entry$ = "N"; rem user entered an order (not navigated)
+rem --- Set flags
 
 	callpoint!.setDevObject("credit_status_done", "N")
 	callpoint!.setDevObject("credit_action_done", "N")
@@ -534,6 +533,26 @@ rem --- Is next record an order and not void?
 	dim ope01a$:fnget_tpl$(file_name$)
 	start_block = 1
 
+rem --- Position the file at the correct record
+
+	if callpoint!.getDevObject("new_rec")="Y"
+		start_key$=firm_id$+"  "
+		cust_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+		order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
+		if cvs(cust_id$,2)<>""
+			start_key$=start_key$+cust_id$
+			if cvs(order_no$,2)<>""
+				start_key$=start_key$+order_no$
+			endif
+		endif
+
+		while 1
+			read record (ope01_dev,key=start_key$,dom=*break)
+			extract record (ope01_dev,key=start_key$)
+			break
+		wend
+	endif
+
 	while 1
 		if start_block then
 			read record (ope01_dev, dir=0, end=*endif) ope01a$
@@ -561,7 +580,23 @@ rem --- Is next record an order and not void?
 		endif
 	wend
 [[OPE_ORDHDR.ADIS]]
-print "Hdr:ADIS"; rem debug
+rem --- Check for void
+
+	if callpoint!.getColumnData("OPE_ORDHDR.INVOICE_TYPE") = "V" then
+		msg_id$="OP_ORDINV_VOID"
+		gosub disp_message
+		callpoint!.setStatus("NEWREC")
+		break; rem --- exit from callpoint			
+	endif
+
+rem --- Check for invoice
+		
+	if callpoint!.getColumnData("OPE_ORDHDR.ORDINV_FLAG") = "I" then
+		msg_id$ = "OP_IS_INVOICE"
+		gosub disp_message
+		callpoint!.setStatus("NEWREC")
+		break; rem --- exit from callpoint			
+	endif		
 
 rem --- Check locked status
 
@@ -906,12 +941,9 @@ rem --- Display Ship to information
 	ship_to_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
 	gosub ship_to_info
 [[OPE_ORDHDR.ORDER_NO.AVAL]]
-print "ORDER_NO:AVAL"; rem debug
-
 rem --- Do we need to create a new order number?
 
 	new_seq$ = "N"
-	user_tpl.user_entry$ = "N"
 	order_no$ = callpoint!.getUserInput()
 
 	if cvs(order_no$, 2) = "" then 
@@ -927,14 +959,7 @@ rem --- Do we need to create a new order number?
 			callpoint!.setUserInput(order_no$)
 			new_seq$ = "Y"
 		endif
-	else
-		user_tpl.user_entry$ = "Y"
 	endif
-
-	rem debug
-	rem print "   new_seq: ", new_seq$
-	rem print "  order_no: ", order_no$
-	rem print "user_entry: ", user_tpl.user_entry$
 
 rem --- Does order exist?
 
@@ -2451,7 +2476,8 @@ rem --- Setup user_tpl$
 	user_tpl.display_bal$      = ars_credit.display_bal$
 	user_tpl.blank_whse$       = blank_whse$
 	user_tpl.dropship_whse$    = ars01a.dropshp_whse$
-	user_tpl.amount_mask$      = ars01a.amount_mask$
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",amt_mask$,0,0
+	user_tpl.amount_mask$      = amt_mask$
 	user_tpl.line_code$        = ars01a.line_code$
 	user_tpl.skip_ln_code$     = ars01a.skip_ln_code$
 	user_tpl.cash_sale$        = ars01a.cash_sale$

@@ -20,7 +20,7 @@ rem --- Open/Lock files
 
 files=1,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
-files$[1]="APS_PARAMS";rem --- ads-01
+files$[1]="APS_PARAMS";rem --- aps-01
 
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
@@ -37,7 +37,7 @@ if status$<>"" then
 	release
 endif
 
-ads01_dev=num(chans$[1])
+aps01_dev=num(chans$[1])
 
 rem --- Retrieve miscellaneous templates
 
@@ -55,7 +55,7 @@ dim aps01a$:templates$[1]
 rem --- init/parameters
 
 aps01a_key$=firm_id$+"AP00"
-find record (ads01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
 
 dim info$[20]
 
@@ -63,7 +63,7 @@ dim info$[20]
 call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
 gl$=info$[9]
 
-if aps01a.RET_FLAG$="N" 
+if aps01a.ret_flag$<>"Y" 
     ctl_name$="APC_DISTRIBUTION.GL_RET_ACCT"
     ctl_stat$="I"
     gosub disable_fields

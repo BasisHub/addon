@@ -110,6 +110,7 @@ rem --- set defaults for new record
 rem --- Go run the Copy form
 
 	callpoint!.setDevObject("master_bill",callpoint!.getColumnData("BMM_BILLMAST.BILL_NO"))
+	callpoint!.setDevObject("new_bill","")
 
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		"BMC_COPYBILL",
@@ -117,6 +118,12 @@ rem --- Go run the Copy form
 :		"MNT",
 :		"",
 :		table_chans$[all]
+
+	if callpoint!.getDevObject("new_bill")<>""
+		new_bill$=callpoint!.getDevObject("new_bill")
+		callpoint!.setColumnData("BMM_BILLMAST.BILL_NO",new_bill$)
+		callpoint!.setStatus("RECORD:["+firm_id$+new_bill$+"]-REFRESH")
+	endif
 [[BMM_BILLMAST.AREC]]
 rem --- set devobject
 

@@ -115,6 +115,8 @@ rem			callpoint!.setStatus("REFRESH")
 
 		rem --- Return focus to where we were (Detail line grid)
 
-			util.forceEdit(Form!, return_to_row, return_to_col)
+rem --- per bug 5587 disable forceEdit until Barista bug 5586 is fixed
+rem --- then replace forceEdit with setFocus in AGRN
+rem			util.forceEdit(Form!, return_to_row, return_to_col)
 		endif
 	endif

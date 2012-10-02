@@ -397,8 +397,10 @@ rem --- Setup user template
 	dim user_tpl$:user_tpl_str$
 
 	user_tpl.pgmdir$      = stbl("+DIR_PGM",err=*next)
-	user_tpl.cost_mask$   = ivs01a.cost_mask$
-	user_tpl.amount_mask$ = ivs01a.amount_mask$
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",cst_mask$,0,0
+	user_tpl.cost_mask$   = cst_mask$
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",amt_mask$,0,0
+	user_tpl.amount_mask$ = amt_mask$
 
 rem --- Set IV flags
 

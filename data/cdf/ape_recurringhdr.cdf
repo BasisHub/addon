@@ -75,7 +75,8 @@ rem --- Retrieve parameter data
                
 aps01a_key$=firm_id$+"AP00"
 find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-user_tpl.amt_msk$=aps01a.amount_mask$
+call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",amt_mask$,0,0
+user_tpl.amt_msk$=amt_mask$
 user_tpl.multi_types$=aps01a.multi_types$
 user_tpl.dflt_ap_type$=aps01a.ap_type$
 user_tpl.multi_dist$=aps01a.multi_dist$
@@ -200,61 +201,23 @@ if cvs(apm10a$,2)<>""
 	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
 endif
 [[APE_RECURRINGHDR.ARNF]]
-rem record not in ape-03; is it in apt-02?
-rem if so, make sure only pmt grp, terms, hold, 
-rem acct dt, due dt, disc dt, adj amount, disc amount
-rem reference, memo are enabled...
-apt02_dev=fnget_dev("APT_INVOICEDIST")
-dim apt02a$:fnget_tpl$("APT_INVOICEDIST")
-k$=""
-Form!.getControl(num(user_tpl.open_inv_textID$)).setText("")
-apt02_key$=firm_id$+callpoint!.getColumnData("APE_RECURRINGHDR.AP_TYPE")+
-:	callpoint!.getColumnData("APE_RECURRINGHDR.VENDOR_ID")+cvs(callpoint!.getColumnData("APE_RECURRINGHDR.AP_INV_NO"),3)
-read(apt02_dev,key=apt02_key$,dom=*next)
-k$=key(apt02_dev,end=*next); read record(apt02_dev)apt02a$
-if k$(1,len(apt02_key$))=apt02_key$ and cvs(callpoint!.getColumnData("APE_RECURRINGHDR.AP_INV_NO"),3)<>""
-	rem --- not in ape-03, but IS in apt-02
-	rem --- disable dist code, inv date, net amt
-	user_tpl.inv_in_ape03$="N"
-	user_tpl.inv_in_apt02$="Y"
-	
-	callpoint!.setColumnData("APE_RECURRINGHDR.FIRM_ID",apt02a.firm_id$)
-	callpoint!.setColumnData("APE_RECURRINGHDR.AP_TYPE",apt02a.ap_type$)
-	callpoint!.setColumnData("APE_RECURRINGHDR.VENDOR_ID",apt02a.vendor_id$)
-	callpoint!.setColumnData("APE_RECURRINGHDR.AP_INV_NO",apt02a.reference$)
-	dist_bal!=userObj!.getItem(num(user_tpl.dist_bal_ofst$))
-	dist_bal!.setValue(0)
-	ctl_name$="APE_RECURRINGHDR.AP_DIST_CODE"
-	ctl_stat$="D"
-	gosub disable_fields
-	ctl_name$="APE_RECURRINGHDR.INVOICE_DATE"
-	ctl_stat$="D"
-	gosub disable_fields
-	ctl_name$="APE_RECURRINGHDR.NET_INV_AMT"
-	ctl_stat$="D"
-	gosub disable_fields
-	Form!.getControl(num(user_tpl.open_inv_textID$)).setText(Translate!.getTranslation("AON_ADJUST_OPEN_INVOICE:_")+$0A$+fndate$(apt02a.accting_date$)+
-:		Translate!.getTranslation("AON_,_FOR_")+str(num(apt02a.gl_post_amt$):user_tpl.amt_msk$))
-	callpoint!.setStatus("ABLEMAP-REFRESH-ACTIVATE")
-else
-	rem not in ape-03 or apt-02; set up defaults
-	
-	apm10c_dev=fnget_dev("APC_TERMSCODE")
-	dim apm10c$:fnget_tpl$("APC_TERMSCODE")
-	
-	terms_cd$=user_tpl.dflt_terms_cd$
-	invdate$=stbl("+SYSTEM_DATE")
-	gosub calculate_due_and_discount
-	callpoint!.setColumnData("APE_RECURRINGHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
-	callpoint!.setColumnData("APE_RECURRINGHDR.AP_TERMS_CODE",user_tpl.dflt_terms_cd$)
-	callpoint!.setColumnData("APE_RECURRINGHDR.PAYMENT_GRP",user_tpl.dflt_pymt_grp$)
-	callpoint!.setColumnData("APE_RECURRINGHDR.INVOICE_DATE",stbl("+SYSTEM_DATE"))
-	callpoint!.setColumnData("APE_RECURRINGHDR.HOLD_FLAG","N")
-	user_tpl.inv_in_ape03$="N"
-	user_tpl.inv_in_apt02$="N"
-	
-	callpoint!.setStatus("REFRESH")
-endif
+rem not in ape-03; set up defaults
+
+apm10c_dev=fnget_dev("APC_TERMSCODE")
+dim apm10c$:fnget_tpl$("APC_TERMSCODE")
+
+terms_cd$=user_tpl.dflt_terms_cd$
+invdate$=stbl("+SYSTEM_DATE")
+gosub calculate_due_and_discount
+callpoint!.setColumnData("APE_RECURRINGHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
+callpoint!.setColumnData("APE_RECURRINGHDR.AP_TERMS_CODE",user_tpl.dflt_terms_cd$)
+callpoint!.setColumnData("APE_RECURRINGHDR.PAYMENT_GRP",user_tpl.dflt_pymt_grp$)
+callpoint!.setColumnData("APE_RECURRINGHDR.INVOICE_DATE",stbl("+SYSTEM_DATE"))
+callpoint!.setColumnData("APE_RECURRINGHDR.HOLD_FLAG","N")
+user_tpl.inv_in_ape03$="N"
+user_tpl.inv_in_apt02$="N"
+
+callpoint!.setStatus("REFRESH")
 [[APE_RECURRINGHDR.VENDOR_ID.AVAL]]
 rem "check vend hist file to be sure this vendor/ap type ok and to set some defaults;  display vend cmts
 tmp_vendor_id$=callpoint!.getUserInput()
@@ -262,7 +225,7 @@ gosub disp_vendor_comments
 gosub get_vendor_history
 if vend_hist$=""
 	if user_tpl.multi_types$="Y"
-		msg_id$="AP_NOHIST"
+		msg_id$="AP_VEND_BAD_APTYPE"
 		gosub disp_message
 		callpoint!.setStatus("CLEAR-NEWREC")
 	endif

@@ -69,7 +69,7 @@ scan_source:rem --- Scan Source Directory and build vectors to populate gridFile
 		if pos("."=dir_file$)=1 then continue
 		if pos("_"=dir_file$)=1 then continue
 		if pos("DD"=cvs(dir_file$,4))=1 then continue
-		if pos("W-"=cvs(dir_file$,4))=1 then continue
+		if pos("W-"=cvs(dir_file$,4))=3 then continue
 		if pos("SH"=cvs(dir_file$,4))=1 then continue
 		if pos("Z"=cvs(dir_file$,4))=1 then continue
 		if len(cvs(dir_file$,3))>6 then continue

@@ -29,14 +29,15 @@ rem --- Disable fields, set globals
 	user_tpl.orig_price = UserObj!.getFieldAsNumber("UNIT_PRICE")
 	user_tpl.orig_list  = UserObj!.getFieldAsNumber("STD_LIST_PRC")
 	line_type$          = UserObj!.getFieldAsString("LINE_TYPE")
+	line_dropship$      = UserObj!.getFieldAsString("LINE_DROPSHIP")
 	invoice_type$       = UserObj!.getFieldAsString("INVOICE_TYPE")
 
 	if pos(line_type$ = "SPN") = 0 then 
 		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.STD_LIST_PRC", -1)
 		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.DISC_PERCENT",  -1)
 	endif
-		
-	if invoice_type$ = "P" then
+
+	if invoice_type$ = "P" or line_dropship$ = "Y" then
 		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.COMMIT_FLAG",  -1)
 	endif
 [[OPE_ADDL_OPTS.STD_LIST_PRC.AVAL]]

@@ -239,7 +239,6 @@ endif
 rem --- Retrieve parameter data - not keeping any of it here, just make sure params exist
 ars01a_key$=firm_id$+"AR00"
 find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-user_tpl.amt_msk$=ars01a.amount_mask$
 call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
 user_tpl.amt_msk$=imsk$
 gls01a_key$=firm_id$+"GL00"

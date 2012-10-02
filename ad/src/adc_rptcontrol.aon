@@ -27,9 +27,14 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
+rem --- Get Document Processing Queue Object
+
+    use ::sys/prog/bao_docqueue.bbj::DocumentQueue
+    docQueue! = new DocumentQueue()
+
 rem --- Open/Lock files
 
-    files=2,begfile=1,endfile=files
+    files=1,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     if ref_tp$="C"
         files$[1]="arm_custrpt_ctl",ids$[1]="ARM_CUSTRPT_CTL"
@@ -38,55 +43,60 @@ rem --- Open/Lock files
         files$[1]="apm_vendrpt_ctl",ids$[1]="APM_VENDRPT_CTL"
         alt_key$="AO_ALIAS_VEND"
     endif
-    files$[2]="adq_faxemail.dat",ids$[2]="ADQ_FAXEMAIL",options$[2]="S"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
 
     rptctl_dev=channels[1]
-    faxemail_dev=channels[2]
 
     dim rptctl$:templates$[1]
-    dim faxemail$:templates$[2]
 
 rem --- Combo of alias and id (vend or cust) will only be found in one file or the other
 
     rpt_ky$=firm_id$+pad(alias_name$,16)+ref_id$
     read record (rptctl_dev, key=rpt_ky$, knum=alt_key$, dom=done) rptctl$
 
-    if ref_tp$="C" then 
-        fax_to_org$=rptctl.customer_name$
-    else
-        fax_to_org$=rptctl.vendor_name$
+    if rptctl.fax_yn$="Y" then 
+        docQueue!.clear()
+        docQueue!.setFirmID(rptctl.firm_id$)
+        docQueue!.setDocumentID(doc_no$)
+        docQueue!.setDocumentExt(cvs(doc_tp$,4))
+        docQueue!.setProcessType("F");rem <F>ax
+        docQueue!.setStatus("A");rem <A>uto-detect.  Queue will switch it to "Ready" if all required data is present
+        docQueue!.setFaxNumbers(rptctl.fax_nos$)
+        docQueue!.setFaxFromCompany(rptctl.from_company$)
+        docQueue!.setFaxFromName(rptctl.from_name$)
+        fax_to_org$=iff(ref_tp$="C", rptctl.customer_name$, rptctl.vendor_name$)
+        docQueue!.setFaxToOrganization(fax_to_org$)
+        docQueue!.setFaxToName(rptctl.fax_to$)
+        docQueue!.setSubject(rptctl.fax_subject$)
+        docQueue!.setMessage(rptctl.fax_message$)
+        docQueue!.createProcess()
+        proc_key$=docQueue!.getFirmID()+docQueue!.getProcessID()
+        docQueue!.checkStatus(proc_key$)
     endif
 
-    if rptctl.fax_yn$="Y" or rptctl.email_yn$="Y" then 
-        faxemail.firm_id$=rptctl.firm_id$
-        faxemail.doc_no$=doc_no$
-        faxemail.doc_type$=cvs(doc_tp$,4)
-        faxemail.fax_yn$=rptctl.fax_yn$
-        faxemail.fax_nos$=rptctl.fax_nos$
-        faxemail.from_company$=rptctl.from_company$
-        faxemail.from_name$=rptctl.from_name$
-        faxemail.fax_to_org$=fax_to_org$
-        faxemail.fax_to_name$=rptctl.fax_to$
-        faxemail.fax_subject$=rptctl.fax_subject$
-        faxemail.fax_message$=rptctl.fax_message$
-        faxemail.email_yn$=rptctl.email_yn$
-        faxemail.email_from$=rptctl.email_from$
-        faxemail.email_replyto$=rptctl.email_replyto$
-        faxemail.email_to$=rptctl.email_to$
-        faxemail.email_cc$=rptctl.email_cc$
-        faxemail.email_bcc$=rptctl.email_bcc$
-        faxemail.email_subject$=rptctl.email_subject$
-        faxemail.email_message$=rptctl.email_message$
-
-        write record (faxemail_dev) faxemail$
+    if rptctl.email_yn$="Y" then 
+        docQueue!.clear()
+        docQueue!.setFirmID(rptctl.firm_id$)
+        docQueue!.setDocumentID(doc_no$)
+        docQueue!.setDocumentExt(cvs(doc_tp$,4))
+        docQueue!.setProcessType("E")
+        docQueue!.setStatus("A");rem Auto-detect.  Queue will switch it to "Ready" if all required data is present
+        docQueue!.setEmailFrom(rptctl.email_from$)
+        docQueue!.setEmailReplyTo(rptctl.email_replyto$)
+        docQueue!.setEmailTo(rptctl.email_to$)
+        docQueue!.setEmailCC(rptctl.email_cc$)
+        docQueue!.setEmailBCC(rptctl.email_bcc$)
+        docQueue!.setSubject(rptctl.email_subject$)
+        docQueue!.setMessage(rptctl.email_message$)
+        docQueue!.createProcess()
+        proc_key$=docQueue!.getFirmID()+docQueue!.getProcessID()
+        docQueue!.checkStatus(proc_key$)
     endif
 
 done: rem --- All done
 
     close(rptctl_dev)
-    close(faxemail_dev)
 
     goto std_exit
 

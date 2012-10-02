@@ -89,7 +89,9 @@ rem --- Is this item lot/serial?
 
 		rem --- Return focus to where we were (Detail line grid)
 
-		util.forceEdit(Form!, return_to_row, return_to_col)
+rem --- per bug 5587 disable forceEdit until Barista bug 5586 is fixed
+rem --- then replace forceEdit with setFocus in AGRN
+rem		util.forceEdit(Form!, return_to_row, return_to_col)
 	endif
 [[POE_RECDET.QTY_ORDERED.BINP]]
 if callpoint!.getDevObject("line_type")="O"  

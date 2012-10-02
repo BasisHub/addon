@@ -559,7 +559,7 @@ rem --- inits
 	use ::ado_util.src::util
 
 rem --- Open Files
-	num_files=17
+	num_files=18
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
@@ -578,6 +578,7 @@ rem --- Open Files
 	open_tables$[15]="POE_RECHDR",open_opts$[15]="OTA"
 	open_tables$[16]="POE_INVDET",open_opts$[16]="OTA"
 	open_tables$[17]="APM_VENDCMTS",open_opts$[17]="OTA"
+	open_tables$[18]="POE_RECDET",open_opts$[18]="OTA"
 
 	gosub open_tables
 
