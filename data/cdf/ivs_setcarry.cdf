@@ -157,6 +157,8 @@ return
 [[IVS_SETCARRY.AWIN]]
 rem --- Open/Lock files
 
+	use ::ado_util.src::util
+
 	num_files=1
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	
@@ -207,6 +209,8 @@ rem --- misc other init
 			
 	gosub create_reports_vector
 	gosub fill_grid
+
+	util.resizeWindow(Form!, SysGUI!)
 			
 rem --- set callbacks - processed in ACUS callpoint
 	gridABC!.setCallback(gridABC!.ON_GRID_KEY_PRESS,"custom_event")

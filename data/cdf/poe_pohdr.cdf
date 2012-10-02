@@ -48,7 +48,7 @@ rem --- Set Defaults
 	callpoint!.setColumnData("POE_POHDR.WAREHOUSE_ID",ivs_params.warehouse_id$)
 	gosub whse_addr_info
 	callpoint!.setColumnData("POE_POHDR.ORD_DATE",sysinfo.system_date$)
-	callpoint!.setColumnData("POE_POHDR.TERMS_CODE",apm02a.ap_terms_code$)
+	callpoint!.setColumnData("POE_POHDR.AP_TERMS_CODE",apm02a.ap_terms_code$)
 	callpoint!.setColumnData("POE_POHDR.REQD_DATE",sysinfo.system_date$)
 	callpoint!.setColumnData("POE_POHDR.PO_FRT_TERMS",pos_params.po_frt_terms$)
 	callpoint!.setColumnData("POE_POHDR.AP_SHIP_VIA",pos_params.ap_ship_via$)

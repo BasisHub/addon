@@ -42,7 +42,6 @@ rem --- Retrieve parameter data
 	aps01a_key$=firm_id$+"AP00"
 	find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
 	if cvs(aps01a.current_per$,2)=""
-		escape;rem --- current_per$ should only be null if param rec didn't exist
 		callpoint!.setColumnData("APS_PARAMS.CURRENT_PER",gls01a.current_per$)
 		callpoint!.setColumnUndoData("APS_PARAMS.CURRENT_PER",gls01a.current_per$)
 		callpoint!.setColumnData("APS_PARAMS.CURRENT_YEAR",gls01a.current_year$)
@@ -57,4 +56,3 @@ rem --- Retrieve parameter data
 		endif
    callpoint!.setStatus("MODIFIED-REFRESH")
 	endif
-

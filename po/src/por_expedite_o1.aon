@@ -59,16 +59,16 @@ rem --- Headings and print positions
     columns = 12
     columns$[0,0]="Seq",                columns$[0,1]="C",columns$[0,2]="6"
     columns$[1,0]="Wh",                 columns$[1,1]="C",columns$[1,2]="6"
-    columns$[2,0]="Item",               columns$[2,1]="C",columns$[2,2]="25"
+    columns$[2,0]="Item",               columns$[2,1]="C",columns$[2,2]="20"
     columns$[3,0]="Description",        columns$[3,1]="C",columns$[3,2]="30"
     columns$[4,0]="UM",                 columns$[4,1]="C",columns$[4,2]="4"
-    columns$[5,0]="Date^Required",      columns$[5,1]="C",columns$[5,2]="17"
-    columns$[6,0]="Qty^Ordered",        columns$[6,1]="N",columns$[6,2]="6",    columns$[6,3]=m2$
-    columns$[7,0]="Qty^In QA",          columns$[7,1]="N",columns$[7,2]="6",    columns$[7,3]=m2$
-    columns$[8,0]="Qty^Received",       columns$[8,1]="N",columns$[8,2]="6",    columns$[8,3]=m2$
-    columns$[9,0]="Balance^Due",        columns$[9,1]="N",columns$[9,2]="11"     ; rem ;,columns$[9,3]=m2$
-    columns$[10,0]="Unit^Cost",         columns$[10,1]="N",columns$[10,2]="8"   ; rem ,columns$[10,3]=m3$
-    columns$[11,0]="Extension",         columns$[11,1]="N",columns$[11,2]="8"   ; rem ,columns$[11,3]=m1$
+    columns$[5,0]="Date^Required",      columns$[5,1]="C",columns$[5,2]="12"
+    columns$[6,0]="Qty^Ordered",        columns$[6,1]="N",columns$[6,2]=str(len(m2$)),    columns$[6,3]=m2$
+    columns$[7,0]="Qty^In QA",          columns$[7,1]="N",columns$[7,2]=str(len(m2$)),    columns$[7,3]=m2$
+    columns$[8,0]="Qty^Received",       columns$[8,1]="N",columns$[8,2]=str(len(m2$)),    columns$[8,3]=m2$
+    columns$[9,0]="Balance^Due",        columns$[9,1]="N",columns$[9,2]=str(len(m2$)),    columns$[9,3]=m2$
+    columns$[10,0]="Unit^Cost",         columns$[10,1]="N",columns$[10,2]=str(len(m3$)); rem ,  columns$[10,3]=m3$
+    columns$[11,0]="Extension",         columns$[11,1]="N",columns$[11,2]=str(len(m1$)); rem ,  columns$[11,3]=m1$
 
 positions:
 
@@ -96,7 +96,6 @@ positions:
 rem --- Get key templates
 
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_POHDR","PRIMARY",poe02a_key_pritpl$,rd_table_chans$[all],status$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_POHDR","ALT_KEY_01",poe02a_key_alttpl$,rd_table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_PODET","PRIMARY",poe12a_key_tpl$,rd_table_chans$[all],status$
 
 rem --- Position files
@@ -105,22 +104,16 @@ rem --- Position files
 
 rem --- Sort by Purchase Order
 
-    dim poe02a_altkey$:poe02a_key_alttpl$
-
-    read (poe02_dev2,KNUM=1,key=firm_id$+pofrom$,dom=*next)
-    if pofrom$<>"" read (poe02_dev2,KNUM=1,key=firm_id$+pofrom$+vendfrom$,dom=*next)poe02a$;break
-
+    read (poe02a_dev,key=firm_id$+pofrom$,dom=*next)
+   
 rem --- Read through sort file
 
     while more
 
-        poe02a_altkey$=key(poe02_dev2,end=*break)
-        k$=poe02a_altkey.firm_id$+poe02a_altkey.vendor_id$+poe02a_altkey.po_no$
-        read (poe02_dev2)
-        if poe02a_altkey.firm_id$<>firm_id$ goto done
-        dim poe02a_key$:poe02a_key_pritpl$
-        find record (poe02a_dev,key=k$,dom=*continue) poe02a$
-
+        k$=key(poe02a_dev,end=*break)
+        if k$(1,2)<>firm_id$ then goto done
+        read record (poe02a_dev, key=k$, dom=*continue) poe02a$
+        
 rem --- Test Ranges
 
         printit$="N"
@@ -142,7 +135,7 @@ rem --- Test PO Detail date range
         while more
 
             poe12a_key$=key(poe12_dev,end=*break)
-            if poe12a_key.firm_id$+poe12a_key.vendor_id$+poe12a_key.po_no$<>poe02a.firm_id$+poe02a.vendor_id$+poe02a.po_no$ break
+            if poe12a_key.firm_id$+poe12a_key.po_no$<>poe02a.firm_id$+poe02a.po_no$ break
             read record (poe12_dev,key=poe12a_key$) poe12a$
             if datethru$="" or poe12a.reqd_date$<=datethru$ printit$="Y"
 
@@ -182,7 +175,7 @@ printdetail: rem --- Re-loop through detail & print whole PO
     while more
 
         poe12a_key$=key(poe12_dev,end=*break)
-        if poe12a_key.firm_id$+poe12a_key.vendor_id$+poe12a_key.po_no$<>k$ break
+        if pos(k$=poe12a_key$)<>1 then break
         read record (poe12_dev,key=poe12a_key$) poe12a$
 
 rem --- Set up variables
@@ -204,7 +197,7 @@ rem --- Get Drop Ship flag & Line Type
         dropship$="N"
         find record (pom02a_dev,key=poe12a.firm_id$+poe12a.po_line_code$,dom=brnch1) pom02a$
         linetype$=pom02a.line_type$
-        dropship$=pom02a.dropship$
+        rem *** dropship$=pom02a.dropship$
 
 brnch1: rem --- Get Item Desc for S and N type lines
 
@@ -265,7 +258,7 @@ rem --- Print Line Types 'S' & 'N'
 
             OutVect!.addItem(poe12a.po_line_no$)
             OutVect!.addItem(whse_detail$)
-            OutVect!.addItem(itemnum$(1,itemlen))
+            OutVect!.addItem(cvs(itemnum$,2))
             OutVect!.addItem(item_desc$(1,27))
             OutVect!.addItem(unitmeas$)
             OutVect!.addItem(datereq$)
@@ -377,7 +370,7 @@ newpo: rem --- New PO
 
 brnch5:
 
-    find record (apm10c_dev,key=firm_id$+"C"+poe02a.terms_code$,dom=brnch6) apm10c$
+    find record (apm10c_dev,key=firm_id$+"C"+poe02a.ap_terms_code$,dom=brnch6) apm10c$
     termsdesc$=apm10c.code_desc$
 
 brnch6:
@@ -388,8 +381,8 @@ brnch6:
    
 
     xwk = fnblank(12)
-    OutVect!.addItem("PO#: ")
-    OutVect!.addItem(ponum$)
+    OutVect!.addItem("PO#: "+$00$+"B")
+    OutVect!.addItem(ponum$+$00$+"B")
     OutVect!.addItem("Ordered: " + dateord$)
     OutVect!.addItem("Vendor: " + fnmask$(vendor$(1,vendlen),vendomask$) + " " + vendname$)
     xwk = fnblank(1)
@@ -402,7 +395,7 @@ brnch6:
     xwk = fnblank(2)
     OutVect!.addItem("Phone " + phone$)
     xwk = fnblank(4)
-    OutVect!.addItem("Terms " + poe02a.terms_code$)
+    OutVect!.addItem("Terms " + poe02a.ap_terms_code$)
     OutVect!.addItem(termsdesc$)
 
     l=l+3
@@ -412,9 +405,9 @@ pototals: rem --- Print Purchase Order total
 
     TotVect!.addItem(str(OutVect!.size()/columns))
     xwk = fnblank(9)
-    OutVect!.addItem("Total For PO # ")
-    OutVect!.addItem(ponum$)
-    OutVect!.addItem(str(potot:m1$))
+    OutVect!.addItem("Total For PO"+$00$+"B")
+    OutVect!.addItem(ponum$+$00$+"B")
+    OutVect!.addItem(str(potot:m1$)+$00$+"B")
     
     let l=l+2
     return
@@ -514,7 +507,7 @@ rem #endinclude std_functions.src
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
-
+escape; rem *** Inside Standard Error
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_error_exit)

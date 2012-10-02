@@ -77,7 +77,7 @@ callpoint!.setTableColumnAttribute("IVM_ITEMWHSE.SAF_STK_CODE","DFLT",ivs10d.saf
 [[IVM_ITEMWHSE.AOPT-HIST]]
 iv_item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
-rem --- call stbl("+DIR_SYP")+"ivm_itemWhseActivity.aon",
+rem --- call stbl("+DIR_PGM")+"ivm_itemWhseActivity.aon",
 :	gui_dev,
 :	Form!,
 :	iv_whse_id$,

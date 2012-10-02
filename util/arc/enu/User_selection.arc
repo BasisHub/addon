@@ -1,3 +1,5 @@
+//#charset: windows-1252
+
 VERSION "4.0"
 
 WINDOW 1001 "User Selection" 350 300 404 164
@@ -6,12 +8,13 @@ BEGIN
     KEYBOARDNAVIGATION
     NAME "frmUserSelection"
     NOT SIZABLE
-    BUTTON 1, "OK", 120, 128, 60, 24
+	
+    BUTTON 1, "OK", 110, 128, 80, 24
     BEGIN
         NAME "btnOK"
     END
 
-    BUTTON 2, "Cancel", 211, 128, 60, 24
+    BUTTON 2, "Cancel", 201, 128, 80, 24
     BEGIN
         NAME "btnCancel"
     END

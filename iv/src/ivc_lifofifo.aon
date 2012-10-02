@@ -1,0 +1,374 @@
+rem --- LIFO/FIFO Reporting And Inquiry
+rem --- Program ivc_lifofifo v8.0.0 21Dec2007 (ivc_lf)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/21/2007 04:59:03)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem This program calculates GL cost information and LF tier quantities.
+
+rem --- Parameters
+
+rem TYPE$="I": Returns cost information only.
+rem		For Issues, tier cost or average cost if qty spans tiers.
+rem		For Receipts, tier cost for an existing tier with matching date,
+rem			if no matching date last tier cost for LIFO, first for FIFO.
+rem 
+rem TYPE$="R": Processes quantity and cost information in IVW_LFDET.
+rem		For Issues, tier cost or average cost if qty spans tiers. Qty is
+rem			deducted from tier(s).
+rem		For receipts, add to tier with matching cost or create new tier.
+rem 
+rem ACTION$      : Action type (Input)
+rem                (1,1): F = FIFO       
+rem                       L = LIFO   
+rem                (2,1): I = Issue    
+rem                       R = Receipt
+rem TYPE$        : Type of call (Input)
+rem                I = Inquiry    R = Report
+rem LF_DATE$     : Transaction Date (Input)
+rem CHANNELS[n]  : [1] = IVM_ITEMWHSE, [2] = IVM_ITEMTIER, [3] = IVW_LFDET, (Input/Returned)
+rem TEMPLATES$[n]: From adc_fileopen.aon, do not modify (Input)
+rem ITEM$[n]     : Item Information (Input)
+rem                [0]=not used    [1]=Warehouse ID     [2]=Item
+rem PLACES       : Inventory PRECISION (Input)
+rem QUANTITY     : Transaction quantity (Input)
+rem COST         : Transaction cost (Input)
+rem RETURN_COST  : Tier Cost (Returned, Average cost for multi-tier issues)
+rem STATUS       : 0=No Error (Returned)
+
+	seterr std_error
+	setesc std_error
+	
+	enter action$,type$,lf_date$,channels[all],templates$[all],item$[all],places,quantity,cost,return_cost,status
+
+rem --- Retrieve the program path
+
+	pgmdir$=stbl("+DIR_PGM")
+
+rem --- Retrieve sysinfo data
+
+	sysinfo_template$=stbl("+SYSINFO_TPL")
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO")
+	firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files -- assume if channel[1] is set, they're all set
+
+	if channels[1] = 0 then 
+
+		files=4,begfile=1,endfile=files
+		dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+		files$[1]="ivm-02",ids$[1]="IVM_ITEMWHSE"
+		files$[2]="ivm-04",ids$[2]="IVM_ITEMTIER"
+		files$[3]="ivw-04",ids$[3]="IVW_LFDET"
+
+		call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+		if status goto std_exit
+	
+	endif
+	
+	ivm02_dev=channels[1]
+	ivm04_dev=channels[2]
+	ivw04_dev=channels[3]
+
+rem --- Dimension string templates
+
+	dim ivm02a$:templates$[1]
+	dim ivm04a$:templates$[2]
+	dim ivw04a$:templates$[3]
+
+rem --- Initializations
+
+	precision places
+	more = 1
+	true = 1
+	false = !(true)
+	begin_block = true
+	return_cost = cost
+	status = 0
+	work_qty = 0
+	total_cost = 0
+	qty = 0
+	whse$ = item$[1]
+	item$ = item$[2]
+	lf_item$ = firm_id$ + whse$ + item$
+	if action$(1,1)="L" then let lifo=1,fifo=0 else let lifo=0,fifo=1
+	if action$(2,1)="I" then let issue=1,receipt=0 else let issue=0,receipt=1
+	if type$="R" then let report=1,inquiry=0 else let report=0,inquiry=1
+	
+rem --------------------------------------------------------------------------
+rem It look like at some point this program was used both the estimate the
+rem cost on registers (and use that cost for the GL) and to actually update
+rem inventory.  This program current is used only for the first purpose.
+rem ivc_itemupdt.aon is used to update all inventory and it has its own lifo/
+rem fifo logic in it.  At some point, ivc_itemupdt should call this program
+rem so that all lifo/fifo logic is in one place.
+rem 
+rem Since this program is currently always estimating the cost, not updating
+rem it, lfchan_dev will always be ivw04_dev and we will always build the work
+rem file if necessary.
+rem
+rem KJS 24-Dec-2008
+rem --------------------------------------------------------------------------
+
+	rem lfchan_dev=ivm04_dev
+	
+rem --- Build work file
+
+	read (ivw04_dev,key=lf_item$,dom=*next)
+	ivw04a_key$ = ""
+	ivw04a_key$=key(ivw04_dev,end=*next)
+	
+	rem --- Is work file built for this item?
+	if ivw04a_key$ = "" or pos(lf_item$=ivw04a_key$)<>1 then
+		read (ivm04_dev,key=lf_item$,dom=*next)
+		
+		while more
+			ivm04a_key$=key(ivm04_dev,end=*break)
+			if pos(lf_item$=ivm04a_key$)=0 then break
+			read record (ivm04_dev) rec$; rem ivm04 and ivw04 have the same record layout
+			write record (ivw04_dev) rec$
+		wend
+	endif
+
+	lfchan_dev=ivw04_dev
+	
+rem --------------------------------------------------------------------------
+rem --- Process Receipts
+rem --------------------------------------------------------------------------
+
+	if issue then goto process_issue
+	
+	rem --- Look for tier with matching date
+	tier_date_found = false
+	
+	while begin_block
+	
+		read (lfchan_dev,key=lf_item$+lf_date$,dom=*next)
+		ivw04a_key$=key(lfchan_dev,end=*break)
+		
+		if pos(lf_item$+lf_date$ = ivw04a_key$) = 1 then 
+
+			rem --- Tier Found With Matching Date
+			read record (lfchan_dev) ivw04a$
+			
+			if ivw04a.unit_cost = cost then 
+				if report then
+					ivw04a.qty_on_hand = ivw04a.qty_on_hand + quantity
+					ivw04a$ = field(ivw04a$)
+					write record (lfchan_dev) ivw04a$
+				endif
+				
+				tier_date_found = true
+			endif
+		
+		endif
+		
+		break
+	
+	wend
+	
+	if tier_date_found = false then 
+
+		rem --- No Matching Cost Tier Found
+		cost_tier_found = false
+
+		while begin_block
+		
+			rem --- Find a place to insert a tier
+			if lifo then
+				read (lfchan_dev,key=lf_item$+$ff$,dom=*next)
+				ivw04a_key$=keyp(lfchan_dev,end=*break)
+			else
+				if fifo then 
+					read (lfchan_dev,key=lf_item$,dom=*next)
+					ivw04a_key$=key(lfchan_dev,end=*break)
+				endif
+			endif
+
+			rem --- Found a tier
+			if pos(lf_item$ = ivw04a_key$) = 1 then 
+				
+				read record (lfchan_dev,key=ivw04a_key$) ivw04a$
+				if report then gosub update_tier
+				cost_tier_found = true
+			
+			endif
+			
+			break
+		
+		wend
+
+		rem --- No tier cost found, create one
+		if cost_tier_found = false then 
+			read record (ivm02_dev,key=lf_item$) ivm02a$
+			ivw04a.unit_cost=ivm02a.unit_cost
+			gosub update_tier
+		endif
+	
+	endif
+
+	rem --- Return Cost
+	return_cost = ivw04a.unit_cost
+	goto std_exit
+
+
+rem --------------------------------------------------------------------------
+process_issue: rem --- Process Tiers For Quantity Issued
+rem --------------------------------------------------------------------------
+
+	rem --- Position file
+	if lifo then 
+		read (lfchan_dev,key=lf_item$+$ff$,dom=*next)
+	else
+		if fifo then 
+			read (lfchan_dev,key=lf_item$,dom=*next)
+		endif
+	endif
+
+	work_qty = quantity
+	done = false
+	
+	rem --- Loop through tiers
+	repeat
+		if lifo then 
+			key$=keyp(lfchan_dev,end=*break)
+		else
+			if fifo then 
+				key$=key(lfchan_dev,end=*break)
+			endif
+		endif
+	
+		if pos(lf_item$ = key$) <> 1 then break
+	
+		rem --- Found a tier for this item and whse
+		read record (lfchan_dev,key=key$) ivw04a$
+		
+		if ivw04a.qty_on_hand > 0 then 
+		
+			rem --- Calculate Quantity & Cost
+			qty = ivw04a.qty_on_hand - work_qty
+			
+			if qty < 0 then
+				total_cost = total_cost + (ivw04a.qty_on_hand * ivw04a.unit_cost)
+				ivw04a.qty_on_hand = 0
+				work_qty = -qty
+			else
+				total_cost = total_cost + (work_qty * ivw04a.unit_cost)
+				ivw04a.qty_on_hand = ivw04a.qty_on_hand - work_qty
+				work_qty = 0
+			endif
+
+			if report then 
+				ivw04a$ = field(ivw04a$) 
+				write record (ivw04_dev) ivw04a$
+			endif
+			
+			if work_qty = 0 then done = true
+				
+		endif
+		
+		rem Is this to make keyp() work correctly?  Should we use dir=0?
+		if lifo then extract (lfchan_dev,key=key$)
+		
+	until done
+	
+	rem --- No more lifo/fifo tier records, use whse cost
+
+	if work_qty <> 0 then
+		read record (ivm02_dev,key=lf_item$,dom=*next) ivm02a$
+		if ivm02a.unit_cost <> 0 then total_cost = total_cost + (work_qty * ivm02a.unit_cost)
+		work_qty = 0
+	endif
+
+	rem --- All Done
+
+	if total_cost <> 0 and quantity <> 0 then 
+		return_cost=total_cost/quantity
+	endif
+	
+	goto std_exit
+
+rem --------------------------------------------------------------------------
+update_tier: rem --- Update a cost tier
+rem --------------------------------------------------------------------------
+
+	seq$="001"
+	ivw04a.qty_on_hand=quantity
+	ivw04a.unit_cost=cost
+	
+	rem --- Look for open tier
+	while more
+		
+		ivw04a.firm_id$      = firm_id$
+		ivw04a.warehouse_id$ = whse$
+		ivw04a.item_id$      = item$
+		ivw04a.receipt_date$ = lf_date$
+		ivw04a.sequence_no$  = seq$
+		read (lfchan_dev,key=ivw04a.firm_id$+ivw04a.warehouse_id$+ivw04a.item_id$+ivw04a.receipt_date$+ivw04a.sequence_no$,dom=*break)
+		seq$=str(num(seq$)+1:"000")
+		
+	wend
+
+	ivw04a$ = field(ivw04a$)
+	write record (lfchan_dev) ivw04a$
+
+return	
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

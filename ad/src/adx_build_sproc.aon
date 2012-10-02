@@ -1,0 +1,111 @@
+rem --- build_sprocs.aon
+rem --- prototype for table-driven sproc definition
+
+rem --- for now, this program has hard-coded logic to create the VENDOR_INVOICES and
+rem --- VENDOR_INVOICE_DET sprocs... idea is to make an admin table in Addon (Barista?) that contains
+rem --- name, params, .prc loc and .cfg loc so as we deploy, we can run this program
+rem --- as part of install/init, and see to it that sprocs are defined.
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- retrieve data from OE form
+
+    database$=Option!.getOptionData("DATABASE")
+    sproc_path$=cvs(Option!.getOptionData("SPROC_PATH"),3)
+    barista_cfg_path$=cvs(Option!.getOptionData("BARISTA_CFG_PATH"),3)
+    
+rem -- init
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,0,1,meter_num,status
+    
+    chan = sqlunt
+    SQLOPEN(chan) database$
+    
+rem -- main loop (this will eventually be table-driven)
+
+    sqlprep$="CREATE PROCEDURE VENDOR_INVOICES "
+    sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID CHAR(6) IN, AP_TYPE CHAR(2) IN, "
+    sqlprep$=sqlprep$+"BEG_INV_NO CHAR(10) IN, PD_UNPD_BOTH CHAR(1) IN, BARISTA_WD VARCHAR(50) IN, "
+    sqlprep$=sqlprep$+"DIR_REPORT VARCHAR(50) IN) "
+    sqlprep$=sqlprep$+"'"+sproc_path$+"vendor_invoices.prc' '"+barista_cfg_path$+"barista.cfg' "
+    sqlprep$=sqlprep$+"RESULT_SET "
+    sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Open Invoice headers'"
+
+    gosub create_sproc_def
+
+    sqlprep$="CREATE PROCEDURE VENDOR_INVOICE_DET "
+    sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, AP_TYPE CHAR(2) IN, VENDOR_ID CHAR(6) IN, "
+    sqlprep$=sqlprep$+"AP_INV_NO CHAR(10) IN, BARISTA_WD VARCHAR(50) IN) "
+    sqlprep$=sqlprep$+"'"+sproc_path$+"vendor_invoice_det.prc' '"+barista_cfg_path$+"barista.cfg' "
+    sqlprep$=sqlprep$+"RESULT_SET "
+    sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Open Invoice detail drilldown - selected invoice'"
+
+    gosub create_sproc_def
+    
+done:
+sqlclose(chan)
+goto std_exit
+
+create_sproc_def:
+    SQLPREP(chan) sqlprep$
+    SQLEXEC(chan)
+    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+return
+
+
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end
+

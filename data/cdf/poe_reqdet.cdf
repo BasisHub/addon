@@ -1,3 +1,11 @@
+[[POE_REQDET.AREC]]
+rem --- After Array Transfer
+	if cvs(rec_data.po_line_code$,2)="" then
+		wgrid!=form!.getChildWindow(1109).getControl(5900)
+		wrow=wgrid!.getSelectedRow()
+		wgrid!.setSelectedCell(wrow,0)
+	endif
+	gosub update_line_type_info
 [[POE_REQDET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 	gosub validate_whse_item
@@ -37,14 +45,6 @@ rem --- Line Code - After Validataion
 rem --- Item ID - After Column Validataion
 	gosub validate_whse_item
 	
-[[POE_REQDET.ARAR]]
-rem --- After Array Transfer
-	if cvs(rec_data.po_line_code$,2)="" then
-		wgrid!=form!.getChildWindow(1109).getControl(5900)
-		wrow=wgrid!.getSelectedRow()
-		wgrid!.setSelectedCell(wrow,0)
-	endif
-	gosub update_line_type_info
 [[POE_REQDET.<CUSTOM>]]
 rem --- Custom
 	update_line_type_info:

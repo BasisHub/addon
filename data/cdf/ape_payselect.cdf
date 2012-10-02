@@ -204,6 +204,9 @@ return
 
 switch_value:rem --- Switch Check Values
 
+	apt01_dev=fnget_dev("APT_INVOICEHDR")
+	dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
+
 	SysGUI!.setRepaintEnabled(0)
 	gridInvoices!=UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
 	vectInvoices!=UserObj!.getItem(num(user_tpl.vectInvoicesOfst$))
@@ -215,7 +218,15 @@ switch_value:rem --- Switch Check Values
 			row_no=num(TempRows!.getItem(curr_row-1))
 			if gridInvoices!.getCellState(row_no,0)=0
 				gridInvoices!.setCellState(row_no,0,1)
-				gridInvoices!.setCellText(row_no,10,gridInvoices!.getCellText(row_no,8))
+				readrecord(apt01_dev,key=firm_id$+
+:					gridInvoices!.getCellText(row_no,2)+
+:					gridInvoices!.getCellText(row_no,3)+
+:					gridInvoices!.getCellText(row_no,5),dom=*next)apt01a$
+				if callpoint!.getColumnData("APE_PAYSELECT.INCLUDE_DISC")="Y" or
+:					apt01a.disc_date$>=sysinfo.system_date$
+					gridInvoices!.setCellText(row_no,9,apt01a.discount_amt$)
+				endif
+				gridInvoices!.setCellText(row_no,10,str(num(gridInvoices!.getCellText(row_no,8))-num(gridInvoices!.getCellText(row_no,9))))
 				vectInvoices!.setItem(row_no*numcols,"Y")
 				dummy=fn_setmast_flag(vectInvoices!.getItem(row_no*numcols+2),
 :									vectInvoices!.getItem(row_no*numcols+3),
@@ -482,6 +493,7 @@ if vectInvoicesMaster!.size()
 			ape04a.reference$=apt01a.reference$
 			ape04a.ap_inv_memo$=apt01a.ap_inv_memo$
 			ape04a.invoice_date$=apt01a.invoice_date$
+			ape04a.inv_due_date$=apt01a.inv_due_date$
 			ape04a.disc_date$=apt01a.disc_date$
 			ape04a.invoice_amt=amt_to_pay
 			ape04a.discount_amt=disc_to_take
@@ -495,6 +507,8 @@ if vectInvoicesMaster!.size()
 endif
 [[APE_PAYSELECT.AWIN]]
 rem --- Open/Lock files
+
+	use ::ado_util.src::util
 
 	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -573,7 +587,7 @@ rem --- add grid to store invoices, with checkboxes for user to select one or mo
 	vectInvoicesMaster!=SysGUI!.makeVector()
 	nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
 
-	gridInvoices!=Form!.addGrid(nxt_ctlID,5,140,400,300)
+	gridInvoices!=Form!.addGrid(nxt_ctlID,5,140,800,300)
 	user_tpl.gridInvoicesCtlID$=str(nxt_ctlID)
 	user_tpl.gridInvoicesCols$="11"
 	user_tpl.gridInvoicesRows$="10"
@@ -583,6 +597,7 @@ rem --- add grid to store invoices, with checkboxes for user to select one or mo
 	user_tpl.MasterCols=15
 
 	gosub format_grid
+	util.resizeWindow(Form!, SysGui!)
 
 	UserObj!.addItem(gridInvoices!)
 	UserObj!.addItem(vectInvoices!);rem vector of filtered recs from Open Invoices

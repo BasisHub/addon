@@ -10,13 +10,16 @@ rem --- Validate period is valid
 		callpoint!.setStatus("ABORT-REFRESH")
 	endif
 [[IVS_PARAMS.COST_METHOD.AVAL]]
-if user_tpl.old_cost_method$<>""
-	if user_tpl.old_cost_method$<>callpoint!.getUserInput()
-		msg_id$="REBUILD_COSTS"	
-		dim msg_tokens$[1]
-		gosub disp_message
+rem --- Display message if costing method has changed
+
+	if user_tpl.old_cost_method$<>""
+		if user_tpl.old_cost_method$<>callpoint!.getUserInput()
+			msg_id$="REBUILD_COSTS"	
+			dim msg_tokens$[1]
+			gosub disp_message
+			user_tpl.old_cost_method$=callpoint!.getUserInput(); rem display message only once
+		endif
 	endif
-endif
 [[IVS_PARAMS.BSHO]]
 rem --- Open/Lock files
 			
@@ -27,12 +30,15 @@ rem --- Open/Lock files
 :                              ids$[all],templates$[all],channels[all],batch,status
 	if status goto std_exit
 	gls01_dev=channels[1]
+
 rem --- Setup user template
+
 	dim user_tpl$:"old_cost_method:c(1),gls01_dev:n(4),gls01_tpl:c(2048)"
 	user_tpl.gls01_dev=gls01_dev
 	user_tpl.gls01_tpl$=templates$[1]
 [[IVS_PARAMS.ARAR]]
-if user_tpl.old_cost_method$<>""
-	user_tpl.old_cost_method$=callpoint!.getColumnData("IVS_PARAMS.COST_METHOD")
-endif
+rem --- Set old costing method
 
+	if user_tpl.old_cost_method$<>""
+		user_tpl.old_cost_method$=callpoint!.getColumnData("IVS_PARAMS.COST_METHOD")
+	endif

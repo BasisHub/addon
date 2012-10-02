@@ -174,6 +174,8 @@ else
 	close (gle05_dev);rem "will re-open and lock in gle_financials (pgm run from here)
 endif
 [[GLR_13PERIOD.AWIN]]
+use ::ado_util.src::util
+
 num_files=4
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
@@ -223,6 +225,7 @@ gridReports!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
 
 gosub create_reports_vector
 gosub fill_grid
+util.resizeWindow(Form!, SysGui!)
 
 rem --- set callbacks - processed in ACUS callpoint
 gridReports!.setCallback(gridReports!.ON_GRID_KEY_PRESS,"custom_event")

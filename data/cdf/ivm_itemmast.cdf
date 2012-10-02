@@ -287,7 +287,7 @@ if ar$="Y" then more_files$=more_files$+"ARM_CUSTMAST;ARC_DISTCODE;",files=files
 if bm$="Y" then more_files$=more_files$+"BMM_BILLMAST;BMM_BILLMAT;",files=files+2
 if op$="Y" then more_files$=more_files$+"OPE_ORDHDR;OPE_ORDDET;OPE_ORDITEM;",files=files+3
 if po$="Y" then more_files$=more_files$+"POE_REQHDR;POE_POHDR;POE_REQDET;POE_PODET;"
-:	+"POC_LINECODES;POT_RECHDR;POT_RECDET;",files=files+7
+:	+"POC_LINECODE;POT_RECHDR;POT_RECDET;",files=files+7
 if wo$="Y" then more_files$=more_files$+"SFE_WOMASTER;SFE_WOMATL;",files=files+2
 if files
 	begfile=1,endfile=files,wfile=1
@@ -304,6 +304,7 @@ if files
 :                                 	chans$[all],templates$[all],table_chans$[all],batch,status$
 	if status$<>"" goto std_exit
 endif
+
 rem --- if gl installed, does it interface to inventory?
 if gl$="Y" 
 	call dir_pgm1$+"adc_application.aon","IV",info$[all]
@@ -345,10 +346,11 @@ if sa$<>"Y" then
 	endif
 	callpoint!.setTableColumnAttribute("IVM_ITEMMAST.SA_LEVEL","DFLT","N")
 endif
+
 rem --- Set able-map if we've disabled fields
 if able_map then
 	callpoint!.setAbleMap(wmap$)
-	callpoint!.setStatus("ABLEMAP")
+	callpoint!.setStatus("ABLEMAP-ACTIVATE-REFRESH")
 endif
 [[IVM_ITEMMAST.AOPT-PORD]]
 cp_item_id$=callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")

@@ -1,0 +1,609 @@
+rem --- Transaction Register
+rem --- Program ivr_transregister.aon v8.0.0 09Jul2007 (ivr_aa)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 11:39:41)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+    task_desc$=sysinfo.task_desc$
+    sys_date$=sysinfo.system_date$
+
+rem --- Run Report?
+
+    msg_id$="AON_RUN_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit	
+	
+rem --- Open/Lock files
+
+    files=29,begfile=1,endfile=19
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+
+	files$[1]="arc_distcode", ids$[1]="ARC_DISTCODE"
+    files$[2]="ive-01",       ids$[2]="IVE_TRANSHDR"
+    files$[3]="ive-11",       ids$[3]="IVE_TRANSDET"
+    files$[4]="ivm-01",       ids$[4]="IVM_ITEMMAST"
+    files$[5]="ivm-02",       ids$[5]="IVM_ITEMWHSE"
+    files$[6]="ars_params",   ids$[6]="ARS_PARAMS"
+    files$[7]="gls_params",   ids$[7]="GLS_PARAMS"
+    files$[8]="ivs_params",   ids$[8]="IVS_PARAMS"
+	files$[9]="ivc_trancode", ids$[9]="IVC_TRANCODE"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status then goto std_exit
+
+	arc_distcode_dev=channels[1]
+	ive01_dev=channels[2]
+    ive11_dev=channels[3]
+    ivm01_dev=channels[4]
+    ivm02_dev=channels[5]
+    ars01a_dev=channels[6]
+    gls01a_dev=channels[7]
+    ivs01a_dev=channels[8]
+	ivm10b_dev=channels[9]
+
+rem --- Dimension string templates
+
+	dim arc_distcode_rec$:templates$[1]
+	dim ive01a$:templates$[2]
+	dim ive11a$:templates$[3]
+	dim ivm01a$:templates$[4]
+	dim ivm02a$:templates$[5]
+	dim ars01a$:templates$[6]
+	dim gls01a$:templates$[7]
+	dim ivs01a$:templates$[8]
+	dim ivm10b$:templates$[9]
+
+rem --- Parameters
+
+    dim p[5],g[4]
+    n2$="IV"
+    source$=pgm(-2)
+	gl$="N"
+    status=999
+    call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
+    if status then goto std_exit
+	
+    find record (ivs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ivs01a$
+	
+    p[1]=ivs01a.ls_no_len
+    p[2]=num(ivs01a.precision$)
+    p[3]=num(ivs01a.desc_len_01$)
+    p[4]=num(ivs01a.desc_len_02$)
+    p[5]=num(ivs01a.desc_len_03$)
+    dw=p[3]+p[4]+p[5]
+	
+	if gl$="Y" then 
+		find record (gls01a_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+		g[0]=num(gls01a.total_pers$)
+		g[3]=num(gls01a.acct_length$)
+		g[4]=num(gls01a.max_acct_len$)
+		g5=len(gls01a.acct_output$)
+		g[0]=g[3]
+	endif
+	
+    if pos(ivs01a.lotser_flag$="LS") then 
+		ls$="Y" 
+		
+		if ivs01a.lotser_flag$="L" then
+			lotser_text$="  Lot: "
+		else
+			lotser_text$="  Serial#: "
+		endif
+		
+	else 
+		ls$="N"
+	endif
+	
+    if pos(ivs01a.lifofifo$="LF") then lf$="Y" else lf$="N"
+	
+    m1$=ivs01a.amount_mask$
+    m2$=ivs01a.unit_mask$
+    m3$=ivs01a.cost_mask$
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,11,15
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,9,12
+    call pgmdir$+"adc_sizemask.aon",m3$,m3,5,12
+	
+    ar$="N"
+    dist_gl_by_item$="N"
+    call pgmdir$+"adc_application.aon","AR",info$[all]
+    ar$=info$[20]
+	
+    if ar$="N" then
+        find record (ars01a_dev,key=firm_id$+"AR00",dom=std_missing_params) ars01a$
+        dist_gl_by_item$=ars01a.dist_by_item$
+    endif
+		
+rem --- Document initializations
+
+	declare BBjVector OutVect!
+	declare BBjVector HdrVect!
+	declare BBjVector BrkVect!
+	declare BBjVector TotVect!
+
+	OutVect!=bbjAPI().getSysGui().makeVector()
+	HdrVect!=bbjAPI().getSysGui().makeVector()
+	BrkVect!=bbjAPI().getSysGui().makeVector()
+	TotVect!=bbjAPI().getSysGui().makeVector()
+	
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+	rep_prog$=pgm(-2)
+	
+rem --- Initializations
+
+    precision num(ivs01a.precision$)
+	dim o[8]
+    width=132
+    page=0
+    units=0
+    errors=0
+	more=1
+	
+    if gl$="Y" then 
+		glh$="GL Account"
+		glh=max(g5,len(glh$)+2)
+	else
+		glh$=""
+		glh=0
+	endif
+	
+	dim headings$[5]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    glstatus=0
+    places=p[2]
+	
+    o[1]=o[0]+4
+    o[2]=o[1]+3
+    o[3]=o[2]+ivs01a.item_id_len+1
+    o[4]=o[3]+dw
+    o[5]=o[4]+m2
+    o[6]=o[5]+m3
+    o[7]=o[6]+m1+1
+    o[8]=o[7]+glh
+	
+    if o[8]+3>=width then
+        o[8]=width-3
+        o[7]=o[8]-glh-1
+        o[6]=o[7]-m1-1
+        o[5]=o[6]-m3
+        o[4]=o[5]-m2
+        o[1]=o[0]+5
+        o[2]=o[1]+3
+        o[3]=o[2]+ivs01a.item_id_len+1
+        dw=o[4]-o[3]-1
+    endif
+	
+rem --- Column heading
+
+	if gl$<>"Y" then columns=6 else columns=7
+	dim columns$[columns,10]
+	
+	columns$[0,0]="Wh",          columns$[0,1]="C", columns$[0,2]="2"
+	columns$[1,0]="Item",        columns$[1,1]="C", columns$[1,2]=str(ivs01a.item_id_len)
+	columns$[2,0]="Description", columns$[2,1]="C", columns$[2,2]=str(dw)
+	columns$[3,0]="Quantity",    columns$[3,1]="N", columns$[3,2]=str(m2), columns$[3,3]=m2$, columns$[3,10]="T"
+	columns$[4,0]="Cost",        columns$[4,1]="N", columns$[4,2]=str(m3), columns$[4,3]=m3$, columns$[4,10]="T"
+	columns$[5,0]="Total Cost",  columns$[5,1]="N", columns$[5,2]=str(m1), columns$[5,3]=m1$, columns$[5,10]="T"
+	
+	if gl$<>"Y" then
+		columns$[6,0]="Who",        columns$[6,1]="C", columns$[6,2]="16"
+	else
+		columns$[6,0]="GL Account", columns$[6,1]="C", columns$[6,2]=str(glh)
+		columns$[7,0]="Who",        columns$[7,1]="C", columns$[7,2]="16"
+	endif
+
+rem --- Additional File Opens
+
+    if ls$="Y" then
+        files$[20]="ivm-07",ids$[20]="IVM_LSMASTER"
+        files$[21]="ivm-17",ids$[21]="IVM_LSACT"
+    endif
+	
+    if lf$="Y" then
+        files$[22]="ivm-04",ids$[22]="IVM_ITEMTIER"
+        files$[23]="ivw-04",ids$[23]="IVW_LFDET"
+        options$[23]="CL"
+    endif
+	
+    if gl$ ="Y" then
+        files$[24]="glm-01",ids$[24]="GLM_ACCT"
+		files$[25]=glw11$,ids$[25]="GLE_DAILYDETAIL",options$[25]="CL"
+    endif
+	
+	action=1,begfile=19,endfile=29
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then goto std_exit
+	
+    ivm07_dev=channels[20]
+	ivm17_dev=channels[21]
+    ivm04_dev=channels[22]
+    ivw04_dev=channels[23]
+    glm01_dev=channels[24]
+	glw11_dev=channels[25]
+	
+rem --- Lifo/fifo setup
+	
+	dim lf_chans[10]
+	dim lf_tmpls$[10]
+	dim lf_item$[10]
+
+	lf_chans[1]=ivm02_dev
+    lf_chans[2]=ivm04_dev
+    lf_chans[3]=ivw04_dev
+	
+    lf_tmpls$[1]=templates$[5];  rem ivm-02
+	lf_tmpls$[2]=templates$[22]; rem ivm-04
+	lf_tmpls$[3]=templates$[23]; rem ivw-04
+	
+rem --- Final inits, Position file
+	
+	prev_trans_no$=""
+	prev_total=0
+	last_time=0
+    call pgmdir$+"adc_progress.aon","N","","","","",0,ive01_dev,1,meter_num,status
+    read (ive01_dev,key=firm_id$,dom=*next)
+
+rem --- Read next ive-01 header
+
+    while more
+        ive01_key$=key(ive01_dev,end=*break)
+        if pos(firm_id$=ive01_key$)<>1 break
+		
+        read record (ive01_dev,end=*break) ive01a$
+        read (ive11_dev,key=firm_id$+ive01a.iv_trans_no$,dom=*next)
+
+rem --- Read next ive-11 detail
+
+        while more
+            ive11_key$=key(ive11_dev,end=*break)
+            if pos(ive01a.firm_id$ + ive01a.iv_trans_no$ = ive11_key$) <> 1 then break
+			read record (ive11_dev) ive11a$
+
+rem --- Breaks
+
+			if ive11a.iv_trans_no$<>prev_trans_no$ then gosub ref_break
+			call pgmdir$+"adc_progress.aon","S","","","",ive11a.iv_trans_no$,0,0,1,0,ignore_status
+
+rem --- Additional Reads
+
+			dim description$(dw)
+			ivm01a.item_desc$="Unknown Item"
+			find record (ivm01_dev,key=firm_id$+ive11a.item_id$,dom=*next) ivm01a$
+			description$=fnitem$(ivm01a.item_desc$, p[3], p[4], p[5])
+			
+rem --- Not lotted
+
+			if ls$="N" or ivm01a.lotser_item$<>"Y" or ivm01a.inventoried$<>"Y" then
+			
+rem --- LIFO/FIFO?
+
+				if lf$ = "Y" and ivm10b.trans_type$ <> "C" then
+					lf_item$[1]=ive11a.warehouse_id$
+					lf_item$[2]=ive11a.item_id$
+					lf_date$=ive01a.trans_date$
+					quantity=ive11a.trans_qty
+					cost=ive11a.unit_cost
+					ret_cost=0
+					type$="R"
+					
+					if ivm10b.trans_type$="I" or (ivm10b.trans_type$="A" and quantity<0) then 
+						action$=ivs01a.lifofifo$+"I"
+					else
+						action$=ivs01a.lifofifo$+"R"
+					endif
+					
+					call pgmdir$+"ivc_lifofifo.aon",action$,type$,lf_date$,lf_chans[all],lf_tmpls$[all],lf_item$[all],places,abs(quantity),cost,ret_cost,ignore_status
+					
+rem --- Cost change?
+
+					if ive11a.unit_cost<>ret_cost then
+						if ret_cost then ive11a.unit_cost=ret_cost
+						ive11a.total_cost = round(ive11a.trans_qty*ive11a.unit_cost, 2)
+						ive11a$ = field(ive11a$)
+						write record (ive11_dev) ive11a$
+					endif
+				endif
+			endif
+
+rem --- Print detail line
+
+			account$=""
+			lotser$=""
+			prev_total=prev_total+ive11a.total_cost
+			if gl$="Y" then account$=fnmask$(ive11a.gl_account$,gls01a.acct_output$)
+			if ls$="Y" and ivm01a.inventoried$="Y" then lotser$=ive11a.lotser_no$
+			
+			OutVect!.addItem(ive11a.warehouse_id$)
+			OutVect!.addItem(ive11a.item_id$)
+			OutVect!.addItem(description$)
+			OutVect!.addItem(str(ive11a.trans_qty))
+			OutVect!.addItem(str(ive11a.unit_cost))
+			OutVect!.addItem(str(ive11a.total_cost))
+			
+			if gl$<>"Y" then
+				OutVect!.addItem(ive11a.user_id$)
+			else
+				OutVect!.addItem(account$)
+				OutVect!.addItem(ive11a.user_id$)
+			endif
+			
+			if lotser$<>"" then
+				ignore=fnblank(2)
+				OutVect!.addItem(lotser_text$+lotser$)
+				ignore=fnblank(columns-2)
+			endif
+
+rem --- G/L Distribution
+
+			if gl$="Y" and ivm10b.trans_type$<>"C" and ivm10b.post_gl$<>"N" then 
+
+rem --- Distribute by Item?
+
+				account$=ivm01a.gl_inv_acct$
+				
+				if dist_gl_by_item$="Y" then
+					find record (ivm02a_dev,key=firm_id$+ive11a.warehouse_id$+ive11a.item_id$,dom=*endif) ivm02a$
+					find record (arc_distcode_dev,key=firm_id$+"D"+ivm02a.dist_code$,dom=*endif) arc_distcode_rec$
+					account$=arc_distcode_rec.gl_inv_acct$
+				endif
+
+rem --- Post summary record
+
+				gldate$=ive01a.trans_date$
+				memo$=ive11a.item_id$+" "+description$
+				ref1$="Inv Trn "+ive01a.trans_code$
+				ref2$=ive11a.iv_trans_no$
+				ref3$=ive11a.sequence_no$
+				amount=ive11a.total_cost
+				if ivm10b.trans_type$="I" then amount=-amount
+				gosub glrecap
+				account$=ive11a.gl_account$
+				amount=-amount
+				gosub glrecap
+			
+			endif
+
+rem --- Loop back for next detail
+
+        wend
+		
+rem --- Loop back for next header
+		
+    wend
+
+rem --- End of detail, total
+
+	last_time=1
+	gosub ref_break
+
+rem --- Print GL recap and run update
+
+	update$="ivu_transregister.aon"
+	
+    if gl$="Y" then 
+		overlay$=pgmdir$+"glr_recap_DO.aon"
+	else
+		overlay$=update$
+	endif
+	
+    out_action$="PRT-PDF"
+    next_overlay$=overlay$
+    goto std_exit
+
+trans_heading: rem --- Trans Heading
+
+	BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+	headings$[2]="Reference: "+ive01a.iv_trans_no$
+	headings$[3]="Transaction Code: "+ive01a.trans_code$+" "+ivm10b.code_desc$
+	headings$[4]="Transaction Date: "+fndate$(ive01a.trans_date$)
+	headings$[5]="Comment: "+ive01a.trans_cmt$
+	HdrVect!.addItem(headings$[2])
+	HdrVect!.addItem(headings$[3])
+	HdrVect!.addItem(headings$[4])
+	HdrVect!.addItem(headings$[5])
+	
+    return
+
+ref_break: rem --- Reference break, previous totals
+
+    if prev_trans_no$<>"" then
+		TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+		ignore=fnblank(2)
+		OutVect!.addItem("Total For Reference "+prev_trans_no$)
+		ignore=fnblank(2)
+		OutVect!.addItem(str(prev_total))
+		ignore=fnblank(columns-5)
+    endif
+	
+rem --- New reference
+
+    if !(last_time) then
+        prev_trans_no$=ive01a.iv_trans_no$
+		ivm10b.code_desc$="(Not On File)"
+		prev_total=0
+        find record (ivm10b_dev,key=firm_id$+"B"+ive01a.trans_code$,dom=*next) ivm10b$
+        gosub trans_heading
+    endif
+	
+    return
+	
+glrecap: rem --- Standard G/L Recap Routine
+
+    if gl$="Y" then
+        call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,not_used,account$,gldate$,ref1$,ref2$,ref3$,memo$,amount,units,status
+		if status then goto std_exit
+    endif
+	
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+	
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    rem run pgmdir$+"ads_process_end.aon",err=*next
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

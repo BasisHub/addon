@@ -974,7 +974,7 @@ rem --- Setup user_tpl$
 	user_tpl$=user_tpl$+"line_boqty:n(15),line_shipqty:n(15),def_ship:c(8),def_commit:c(8),blank_whse:c(1),"
 	user_tpl$=user_tpl$+"dropship_whse:c(1),def_whse:c(10),avail_oh:c(5),avail_comm:c(5),avail_avail:c(5),"
 	user_tpl$=user_tpl$+"avail_oo:c(5),avail_wh:c(5),avail_type:c(5*),dropship_flag:c(5*),ord_tot_1:c(5*),cur_row:n(5),"
-	user_tpl$=user_tpl$+"price_code:c(2),pricing_code:c(4),order_date:c(8)"
+	user_tpl$=user_tpl$+"price_code:c(2),pricing_code:c(4),order_date:c(8),lot_ser:c(1)"
 	dim user_tpl$:user_tpl$
 	user_tpl.credit_installed$=ars_credit.sys_install$
 	user_tpl.display_bal$=ars_credit.display_bal$
@@ -990,3 +990,4 @@ rem --- Setup user_tpl$
 	user_tpl.dropship_flag$="8"
 	user_tpl.ord_tot_1$="9"
 	user_tpl.cur_row=-1
+	user_tpl.lot_ser$=ivs01a.lotser_flag$

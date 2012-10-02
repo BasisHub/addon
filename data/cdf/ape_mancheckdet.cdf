@@ -96,6 +96,14 @@ if apt01a$(1,len(apt01ak1$))=apt01ak1$
 		callpoint!.setStatus("ABORT-RECORD:"+ape02_key$)
 		goto end_of_inv_aval
 	endif
+	if apt01a.hold_flag$="Y"
+		callpoint!.setMessage("AP_INV_HOLD")
+		ape02_key$=firm_id$+callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE")+
+:						callpoint!.getColumnData("APE_MANCHECKDET.CHECK_NO")+
+:						callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")
+		callpoint!.setStatus("ABORT-RECORD:"+ape02_key$)
+		goto end_of_inv_aval		
+	endif
 	dim ape22_key$:ape22_key1$
 	read(ape22_dev1,key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$,knum=1,dom=*next)
 		ape22_key$=key(ape22_dev1,end=*next)

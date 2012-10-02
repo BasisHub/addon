@@ -155,6 +155,7 @@ event_ctl:rem --- Event Control
 	BtnPrevMo!.setCallback(BtnPrevMo!.ON_TOOL_BUTTON_PUSH,"adjust_date")
 	BtnNextMo!.setCallback(BtnNextMo!.ON_TOOL_BUTTON_PUSH,"adjust_date")
 	BtnNextYr!.setCallback(BtnNextYr!.ON_TOOL_BUTTON_PUSH,"adjust_date")
+	BtnCurrMo!.setCallback(BtnCurrMo!.ON_TOOL_BUTTON_PUSH,"adjust_date")
 
 	TreeOpts!.setCallback(TreeOpts!.ON_TREE_SELECT,"select_category")
 
@@ -210,7 +211,7 @@ rem		ChartBar!.setSeriesName(1,months$[curr_mo]+" "+str(curr_yr-1))
 
 	start_day=num(date(jul(curr_yr,curr_mo,1):"%W"))
 
-	day_str$="313128303130313130313031"
+	day_str$="312831303130313130313031"
 	if mod(curr_yr,4)=0 day_str$(3,2)="29"
 	no_days=num(day_str$(curr_mo*2-1,2))
 
@@ -259,7 +260,8 @@ display_data:rem --- Display Data For Selected Category and Measure
 	dim prior_data[1:31]
 
 	switch curr_cat
-		case 1
+
+		case 1;rem AR
 			dim ade_exec_data$:fattr(ade_execar$)
 			ade_exec_chan=ade_execar
 			read_data$="YES-INT"
@@ -272,7 +274,7 @@ display_data:rem --- Display Data For Selected Category and Measure
 				break
 			swend
 		break
-		case 2
+		case 2; rem AP
 			dim ade_exec_data$:fattr(ade_execap$)
 			ade_exec_chan=ade_execap
 			read_data$="YES-INT"
@@ -285,66 +287,92 @@ display_data:rem --- Display Data For Selected Category and Measure
 				break
 			swend
 		break
-		case 3
-			dim ade_exec_data$:fattr(ade_execcost$)
-			ade_exec_chan=ade_execcost
+		case 3;rem sales orders
+			dim ade_exec_data$:fattr(ade_execsale$)
+			ade_exec_chan=ade_execsale
 			read_data$="YES-INT"
 			switch curr_meas
-				case 1;read_dvar$="ORD_CST_SHIP";break
+				case 1;read_dvar$="ORD_AMT_SHIP";break
 				case 2;read_dvar$="NO_ORD_SHIP";break
-				case 3;read_dvar$="NO_LNS_SHIP";break
+				case 3
+					read_data$="YES-AVG-INT"
+					read_dvar$="ORD_AMT_SHIP:NO_ORD_SHIP"
+				break
 			swend
 		break
-		case 4
+		case 4;rem purchase orders
 			dim ade_exec_data$:fattr(ade_execpo$)
 			ade_exec_chan=ade_execpo
 			read_data$="YES-INT"
 			switch curr_meas
 				case 1;read_dvar$="PO_AMT_REC";break
 				case 2;read_dvar$="NO_LNS_REC";break
+				case 3
+					read_data$="YES-AVG-INT"
+					read_dvar$="PO_AMT_REC:NO_LNS_REC"
+				break
 			swend
 		break
-		case 5
-			dim ade_exec_data$:fattr(ade_execsale$)
-			ade_exec_chan=ade_execsale
+		case 5;rem total sales
+			dim ade_exec_data$:fattr(ade_execstot$)
+			ade_exec_chan=ade_execstot
+			read_data$="YES-INT"
 			switch curr_meas
-				case 1;read_dvar$="ORD_AMT_SHIP";break
-				case 2;read_dvar$="NO_ORD_SHIP";break
-				case 3;read_dvar$="NO_LNS_SHIP";break
+				case 1;read_dvar$="SLS_INV_BYDT";break
+				case 2;read_dvar$="NO_INV_BYDT";break
+				case 3
+					read_data$="YES-AVG-INT"
+					read_dvar$="SLS_INV_BYDT:NO_INV_BYDT"
+				break
 			swend
 		break
-		case 6
-		break
-			dim ade_execctot$:fattr(ade_execctot$)
-			readrecord(ade_execctot,key=read_key$,dom=*next)ade_execctot$
+		case 6;rem profit (sales - costs)	
 			dim ade_execstot$:fattr(ade_execstot$)
 			readrecord(ade_execstot,key=read_key$,dom=*next)ade_execstot$
+			dim ade_execctot$:fattr(ade_execctot$)
+			readrecord(ade_execctot,key=read_key$,dom=*next)ade_execctot$
+			read_data$="INT"
 			switch curr_meas
 				case 1
-					read_dvar$="COST_INV_DTE"
-					read_dvar$="SLS_INV_BYDT"
+					read_dvar1$="SLS_INV_BYDT"
+					read_dvar2$="COST_INV_DTE"
 				break
 				case 2
-					read_dvar$="NO_INV_BYDT"
-					read_dvar$="NO_INV_BYDT"
+					read_dvar1$="NO_INV_BYDT"
+					read_dvar2$=""
+				break
+				case 3
+					read_data$="AVG-INT"
+					read_dvar1$="SLS_INV_BYDT"
+					read_dvar2$="COST_INV_DTE"
+					read_dvar3$="NO_INV_BYDT"
 				break
 			swend
 			for read_data=1 to 31
-				if pos("INT"=read_data$)<>0
-					read_data[read_data]=int(nfield(ade_exec_data$,read_dvar$+"_"+str(read_data:"00")))
-					else
-					read_data[read_data]=nfield(ade_exec_data$,read_dvar$+"_"+str(read_data:"00"))
+				cost=0
+				temp_data=0
+				sales=nfield(ade_execstot$,read_dvar1$+"_"+str(read_data:"00"))
+				if read_dvar2$<>"" cost=nfield(ade_execctot$,read_dvar2$+"_"+str(read_data:"00"))
+				profit=sales-cost				
+				if pos("AVG"=read_data$)<>0
+					temp_data=nfield(ade_execstot$,read_dvar3$+"_"+str(read_data:"00"))
+					if temp_data<>0 temp_data=profit/temp_data
+				else
+					temp_data=profit
 				endif
-			next read_data
+				if pos("INT"=read_data$)<>0
+					read_data[read_data]=int(temp_data)
+				else
+					read_data[read_data]=temp_data
+				endif
+			next read_data			
 		break
-		case 7
-		break
+		case 7;rem IV
 			dim ade_exec_data$:fattr(ade_execiv$)
 			ade_exec_chan=ade_execiv
-			read_data$="YES-INT"
-			switch curr_meas
-				case 1;read_dvar$="COMMIT_VALUE";break
-				case 2;read_dvar$="INV_OH_BYDT";break
+			read_data$="YES-INT-NO_TOT"
+			switch curr_meas			
+				case 1;read_dvar$="INV_OH_BYDT";break
 			swend
 		break
 	swend
@@ -371,7 +399,8 @@ display_data:rem --- Display Data For Selected Category and Measure
 			endif
 		next read_data
 	endif
-
+	
+	rem prior
 	if pos("PRI"=read_data$)<>0
 		dim ade_exec_data$:fattr(ade_exec_data$)
 		readrecord(ade_exec_chan,key=prior_key$,dom=*endif)ade_exec_data$
@@ -405,11 +434,11 @@ display_data:rem --- Display Data For Selected Category and Measure
 		if mod(curr_day,8)<>0 and curr_day>=start_day and day_count<no_days
 			day_count=day_count+1
 			data_text$=str(read_data[day_count])
-			wk_total=wk_total+read_data[day_count]
-			yr_total=yr_total+read_data[day_count]
-			bottom_total[mod(curr_day,8)]=bottom_total[mod(curr_day,8)]+read_data[day_count]
-			else
-			if mod(curr_day,8)=0 and pos("AVG"=read_data$)=0
+				wk_total=wk_total+read_data[day_count]
+				yr_total=yr_total+read_data[day_count]
+				bottom_total[mod(curr_day,8)]=bottom_total[mod(curr_day,8)]+read_data[day_count]
+		else
+			if mod(curr_day,8)=0 and pos("AVG"=read_data$)=0 and pos("NO_TOT"=read_data$)=0
 				data_text$=str(wk_total)
 				bottom_total[8]=bottom_total[8]+wk_total
 				wk_total=0
@@ -421,7 +450,7 @@ display_data:rem --- Display Data For Selected Category and Measure
 	next curr_day
 
 	for curr_total=1 to 8
-		if pos("AVG"=read_data$)=0
+		if pos("AVG"=read_data$)=0 and pos("NO_TOT"=read_data$)=0
 			GridCal!.setCellText(12,curr_total-1,str(bottom_total[curr_total]))
 		else
 			GridCal!.setCellText(12,curr_total-1,"")
@@ -501,14 +530,6 @@ disp_win:rem --- Display Window
 
 	dim ctl_misc$[20]
 
-	temp_chan=unt
-	open(temp_chan)pgm(-2)
-	temp_file$=fid(temp_chan)(9)
-	close(temp_chan)
-	TempFile!=temp_file$
-	temp_file$=TempFile!.replace("\","/")
-	temp_file$=temp_file$(1,pos("/"=temp_file$,-1,2))+"arc/"
-
 	form_id$=file_base$+"arc/ads_execsummary.arc"
 
 	call dir_syp$+"bam_controls.bbj",
@@ -558,11 +579,11 @@ format_tree:rem --- Form Category/Measure Tree
 	CatVect!=SysGUI!.makeVector()
 		CatVect!.addItem("Accounts Receivable YYY")
 		CatVect!.addItem("Accounts Payable    YYY")
-rem		CatVect!.addItem("Open Orders         YYY")
-rem		CatVect!.addItem("Purchase Orders     YYY")
-rem		CatVect!.addItem("Sales Totals        YYY")
-rem		CatVect!.addItem("Gross Profit        YYY")
-rem		CatVect!.addItem("Inventory           YYY")
+		CatVect!.addItem("Open Orders         YYY")
+		CatVect!.addItem("Purchase Orders     YYY")
+		CatVect!.addItem("Sales Totals        YYY")
+		CatVect!.addItem("Gross Profit        YYY")
+		CatVect!.addItem("Inventory           Y  ")
 
 	measure_text$="Amount    Units     Average   "
 
@@ -575,7 +596,7 @@ rem		CatVect!.addItem("Inventory           YYY")
 		temp_cat$=CatVect!.getItem(curr_cat-1)
 		TreeOpts!.addExpandableNode(curr_cat,0,cvs(temp_cat$(1,20),2))
 		for curr_meas=1 to 3
-			if temp_cat$(20+1,1)="Y"
+			if temp_cat$(20+curr_meas,1)="Y"
 				TreeOpts!.addNode(curr_cat*100+curr_meas,curr_cat,cvs(measure_text$(curr_meas*10-9,10),2))
 			endif
 		next curr_meas

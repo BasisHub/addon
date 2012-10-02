@@ -6,12 +6,30 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
+rem --- coming from ivm_lsmaster; turned this pgm into a call by adding the enter, 
+rem --- and initializing item_id$, warehouse_id$ and lotser_no$ from entered values instead of using
+rem --- callpoint!.getColumnData...
+rem --- also added rd_called$="YES" prior to running ads_process_end, so when docout window closes
+rem --- we're back at lot master instead of it closing all windows.  
+rem --- this pgm is very close to ivr_itmWhseAct.aon, from which it was cloned.
+rem --- left off 7/2007, returned and debugged 11/2008.CAH
+rem --- when closed, is killing the lot master, so not sure why rd_called$ isn't working.
+
+
     setesc std_error
     seterr std_error
 
+rem --- Enter Arguments
+
+	enter
+:       iv_item_id$,
+:		iv_whse_id$,
+:       iv_lot_id$,
+:		rd_table_chans$[all]
+
 rem --- Retrieve the program path
 
-    dir_pgm$=stbl("+DIR_PGM",err=*next)
+    pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
@@ -24,29 +42,32 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-	files=1,begfile=1,endfile=files
-	dim files$[files],options$[files],chans$[files],templates$[files]
-	files$[1]="IVM_LSACT";rem --- ivm-17"
+	files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+	files$[1]="ivm-17",ids$[1]="IVM_LSACT"
+    files$[2]="gls_params",ids$[2]="GLS_PARAMS"
 
-	for wkx=begfile to endfile
-		options$[wkx]="OTA"
-	next wkx
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
 
-	call dir_pgm$+"adc_open_tables.aon",begfile,endfile,files$[all],options$[all],
-:			                            chans$[all],templates$[all],rd_table_chans$[all],batch,status$
-
-	if status$<>"" goto std_exit
-    ivm17_dev=num(chans$[1])
+    ivm17_dev=channels[1]
+    gls01_dev=channels[2]
 
 rem --- Dimension string templates
 
-    dim ivm17a$:templates$[1]
+    dim ivm17a$:templates$[1],gls01a$:templates$[2]
+
+rem --- Retrieve G/L parameters
+
+    read record (gls01_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+    tot_pers=num(gls01a.total_pers$)
 
 rem --- Assign form input values to local variables
    
-    item_id$=callpoint!.getColumnData("IVM_LSMASTER.ITEM_ID")
-    warehouse_id$=callpoint!.getColumnData("IVM_LSMASTER.WAREHOUSE_ID")
-	lotser_no$=callpoint!.getColumnData("IVM_LSMASTER.LOTSER_NO")
+    item_id$=iv_item_id$
+    warehouse_id$=iv_whse_id$
+	lotser_no$=iv_lot_id$
 
 rem --- Initializations
 
@@ -105,7 +126,11 @@ get_data:rem --- Get Item/Warehouse Activity Data
         until key_break
 	OutVect!.addItem("Totals:")
     for wk=1 to 10
-		OutVect!.addItem(activity_tots$[wk])
+        if wk=1 or wk=10
+            OutVect!.addItem("")
+        else
+            OutVect!.addItem(activity_tots$[wk])
+        endif
 	next wk
 return
                        
@@ -113,22 +138,51 @@ get_record:rem --- Get Item/Warehouse Activity Record
         key_break=1
 	readrecord(ivm17_dev,err=*return)ivm17a$
         if ivm17a.firm_id$+ivm17a.warehouse_id$+ivm17a.item_id$+ivm17a.lotser_no$ = firm_id$+warehouse_id$+item_id$+lotser_no$
-:               key_break=0;
-:       	dim iv_activity$[11];
-:               iv_activity$[0]="Period: "+ivm17a.period$+"/"+ivm17a.year$,
-:               iv_activity$[1]=ivm17a.beg_balance$,
-:               iv_activity$[2]=ivm17a.qty_received$,
-:               iv_activity$[3]=ivm17a.qty_built$,
-:               iv_activity$[4]=ivm17a.qty_sold$,
-:               iv_activity$[5]=ivm17a.qty_issued$,
-:               iv_activity$[6]=ivm17a.qty_adjust$,
-:               iv_activity$[7]=ivm17a.qty_xfer_in$,
-:               iv_activity$[8]=ivm17a.qty_xfer_out$,
-:               iv_activity$[9]=ivm17a.qty_returned$,
-:               iv_activity$[10]=str(num(iv_activity$[1])+num(iv_activity$[2])+num(iv_activity$[3])
-:                   -num(iv_activity$[4])-num(iv_activity$[5])+num(iv_activity$[6])
-:                   +num(iv_activity$[7])-num(iv_activity$[8])+num(iv_activity$[9]))
-	
+:               key_break=0
+        if next_per=0
+            next_per=num(ivm17a.period$)
+            next_year=num(ivm17a.year$)
+        endif
+        while str(next_year:"0000")+str(next_per:"00")<ivm17a.year$+ivm17a.period$
+            iv_activity$[0]=str(next_per:"00")+"/"+str(next_year:"0000")
+            iv_activity$[1]=iv_activity$[10]
+            iv_activity$[2]="0"
+            iv_activity$[3]="0"
+            iv_activity$[4]="0"
+            iv_activity$[5]="0"
+            iv_activity$[6]="0"
+            iv_activity$[7]="0"
+            iv_activity$[8]="0"
+            iv_activity$[9]="0"
+            next_per=next_per+1
+            if next_per>tot_pers
+                next_per=1
+                next_year=next_year+1
+            endif
+			for wk=0 to 10
+				OutVect!.addItem(iv_activity$[wk])
+				if wk<>0 activity_tots$[wk]=str(num(activity_tots$[wk])+num(iv_activity$[wk]))
+			next wk
+        wend
+       	dim iv_activity$[11]
+        iv_activity$[0]="Period: "+ivm17a.period$+"/"+ivm17a.year$
+        iv_activity$[1]=ivm17a.beg_balance$
+        iv_activity$[2]=ivm17a.qty_received$
+        iv_activity$[3]=ivm17a.qty_built$
+        iv_activity$[4]=ivm17a.qty_sold$
+        iv_activity$[5]=ivm17a.qty_issued$
+        iv_activity$[6]=ivm17a.qty_adjust$
+        iv_activity$[7]=ivm17a.qty_xfer_in$
+        iv_activity$[8]=ivm17a.qty_xfer_out$
+        iv_activity$[9]=ivm17a.qty_returned$
+        iv_activity$[10]=str(num(iv_activity$[1])+num(iv_activity$[2])+num(iv_activity$[3])
+:            -num(iv_activity$[4])-num(iv_activity$[5])+num(iv_activity$[6])
+:            +num(iv_activity$[7])-num(iv_activity$[8])+num(iv_activity$[9]))
+        next_per=next_per+1
+        if next_per>tot_pers
+            next_per=1
+            next_year=next_year+1
+        endif	
 return
 
 
@@ -210,8 +264,7 @@ std_error: rem --- Standard error handler (01Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    dir_pgm$=stbl("+DIR_PGM",err=std_error_exit)
-    call dir_pgm$+"adc_error.aon",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
 :                                str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
@@ -235,8 +288,8 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    dir_pgm$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call dir_pgm$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
 :                                   str(err:"000"),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
@@ -255,7 +308,12 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-    run dir_pgm$+"ads_process_end.aon",err=*next
+    close(ivm17_dev)
+    close(gls01_dev)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    rd_called$="YES";rem --- see to it that only doc_out window closes
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
     release
 rem #endinclude std_end.src
 

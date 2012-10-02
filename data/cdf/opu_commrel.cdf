@@ -9,7 +9,7 @@ dim ars01a$:ars01a_tpl$
 readrecord(ars01_dev,key=firm_id$+"AR00",dom=std_missing_params)ars01a$
 call stbl("+DIR_PGM")+"adc_daydates.aon",sysinfo.system_date$,next$,num(ars01a.commit_days$)
 callpoint!.setColumnData("OPU_COMMREL.LAST_COMMIT",ars01a.lstcom_date$)
-callpoint!.setColumnData("OPU_COMMREL.COMMMIT_THRU",next$)
+callpoint!.setColumnData("OPU_COMMREL.COMMIT_THRU",next$)
 callpoint!.setStatus("REFRESH")
 [[OPU_COMMREL.<CUSTOM>]]
 rem #include std_missing_params.src

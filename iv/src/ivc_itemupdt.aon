@@ -84,15 +84,13 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
-    sys_when$=sysinfo.system_date$
-    sys_yyyymmdd$=fndate$(sys_when$)
     user_id$=stbl("+USER_ID")
 
 rem --- Sanity check
 
     code=pos(action$="BB,BI,BO,IA,IC,II,IR,PH,PO,OE,OP,RC,TI,TO,WI,WO,CO,UC,TA,OO,PI",3)
     if code=0 then goto bad_action_error
-	if item$[2] = "" then goto no_item_error
+	if items$[2] = "" then goto no_item_error
 
 rem --- Was "init" called yet?
 
@@ -134,9 +132,9 @@ rem --- Dimension string templates
 rem --- Parameters
 
     dim p[5]
-    p[0]=num(ivs01a.item_id_len$)
+    p[0]=ivs01a.item_id_len
     p[1]=num(ivs01a.precision$)
-    p[2]=num(ivs01a.ls_no_len$)
+    p[2]=ivs01a.ls_no_len
     ls=pos(ivs01a.lotser_flag$="LS")
     lf=pos(ivs01a.lifofifo$="LF")
     current_per$=ivs01a.current_per$
@@ -157,9 +155,10 @@ rem --- Initializations
 
 rem --- Validate arguments
 
-    when$=refs$[0]
+    ymd$=""
     clock$=""
-    if len(when$)=8 then ymd$=fndate$(when$)
+	if fndate(refs$[0]) then ymd$=refs$[0]
+		
     if pos(action$="IC,PO,OE,CO,UC,TA,OO,PI",3)=0
         call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,ymd$,period$,year$
         if period$="" then period$=current_per$,year$=current_year$
@@ -502,9 +501,9 @@ update_lot_master: rem --- Update lot/serial master
     curfile=ivm07_dev
     gosub update_comtd_on_order
     if action then gosub update_whse_lots
-    if action$="PH" then ivm07a.lstphy_date$=ymd$,ivm07.physical_cnt=refs[5]
+    if action$="PH" then ivm07a.lstphy_date$=ymd$,ivm07a.physical_cnt=refs[5]
     vendor$=ivm07a.vendor_id$
-    if ivm07.qty_on_hand=0 then ivm07a.closed_flag$="C" else ivm07a.closed_flag$=""
+    if ivm07a.qty_on_hand=0 then ivm07a.closed_flag$="C" else ivm07a.closed_flag$=""
     ivm07a$=field(ivm07a$)
     write record (ivm07_dev) ivm07a$
 
@@ -609,7 +608,7 @@ no_item_error: rem --- No inventory item passed
 
 	status=901
 	goto std_exit
-	
+
 init_trans_hist_rec: rem --- Initialize IVT-01/IVT-04 Transaction History Record
 
     if channel=ivt04_dev then 
@@ -637,8 +636,8 @@ init_trans_hist_rec: rem --- Initialize IVT-01/IVT-04 Transaction History Record
     ivtwk.gl_account$=refs$[7]
     ivtwk.location$=location$
     if pos(action$="PORC",2) then ivtwk.line_code$="",ivtwk.po_line_code$=refs$[6]
-    if channel=ivt01_dev then ivtwk.oper_id$=user_id$ else ivtwk.user_id$=user_id$ ; rem ivt-04 does not have a field oper_id$
-    ivtwk.system_date$=sys_yyyymmdd$; rem params$[0]
+    ivtwk.user_id$=user_id$ 
+    ivtwk.system_date$=sysinfo.system_date$
     ivtwk.system_time$=clock$
     ivtwk.terminal_id$=fid(0)
     ivtwk.trans_qty=qty
@@ -803,15 +802,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)
-        q1$=""
-        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if q1$="" q1$=q$
-        return q1$
-    fnend
+	rem --- Return 1 if valid date, 0 if invalid
+ 	def fndate(q$)
+		q=0
+	    q=jul(q$, "%Yl%Mz%Dz", err=*next)
+	    return q<>0
+	fnend
 
-    def fnyy$(q$)=q$(3,2)
-    def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
 
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
@@ -938,8 +935,12 @@ rem --- Inits
 	
 rem --- Open all files
 
-	num_files=13
+	num_files = 13
+	open_beg  = 1
+	open_end  = num_files
+	
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	
 	open_tables$[1]="IVS_PARAMS",    open_opts$[1]="OTA"
 	open_tables$[2]="GLS_PARAMS",    open_opts$[2]="OTA"
 	open_tables$[3]="IVM_ITEMMAST",  open_opts$[3]="OTA"

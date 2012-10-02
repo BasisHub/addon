@@ -1,19 +1,15 @@
 [[APR_CHECKS.PICK_CHECK.AVAL]]
-if callpoint!.getUserInput() = "N"
-	callpoint!.setColumnData("APR_CHECKS.VENDOR_ID","")
-	ctl_name$="APR_CHECKS.VENDOR_ID"
-	ctl_stat$="I"
-	gosub disable_fields
-else
-	ctl_name$="APR_CHECKS.VENDOR_ID"
-	ctl_stat$=" "
-	gosub disable_fields
+if callpoint!.getUserInput()="Y"
+	if callpoint!.getDevObject("multi_types")<>"Y"
+		ctl_name$="APR_CHECKS.AP_TYPE"
+		ctl_stat$="D"
+		gosub disable_fields
+	else
+		ctl_name$="APR_CHECKS.AP_TYPE"
+		ctl_stat$=" "
+		gosub disable_fields
 endif
 [[APR_CHECKS.BSHO]]
-rem --- Disable Vendor ID
-	ctl_name$="APR_CHECKS.VENDOR_ID"
-	ctl_stat$="I"
-	gosub disable_fields
 rem --- See if we need to disable AP Type
 	files=1,begfile=1,endfile=files
 	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
@@ -26,6 +22,7 @@ rem --- Dimension string templates
 rem --- Get parameters
 	aps01_key$=firm_id$+"AP00"
 	readrecord(aps01_dev,key=aps01_key$,dom=std_missing_params)aps01a$
+	callpoint!.setDevObject("multi_types",aps01a.multi_types$)
 	if aps01a.multi_types$ <> "Y" then
 		ctl_name$="APR_CHECKS.AP_TYPE"
 		ctl_stat$="I"
@@ -93,4 +90,3 @@ rem --- Set focus on the Check Date field
 	chk_date!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
 	chk_date!.focus()
 endif
-

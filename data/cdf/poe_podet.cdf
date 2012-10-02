@@ -1,3 +1,11 @@
+[[POE_PODET.AREC]]
+	if cvs(rec_data.po_line_code$,2)="" then
+		wgrid!=form!.getChildWindow(1109).getControl(5900)
+		wrow=wgrid!.getSelectedRow()
+		wgrid!.setSelectedCell(wrow,0)
+	endif
+
+	gosub update_line_type_info
 [[POE_PODET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 
@@ -40,14 +48,6 @@ rem --- After Grid Display Row
 [[POE_PODET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
 	gosub validate_whse_item
-[[POE_PODET.ARAR]]
-	if cvs(rec_data.po_line_code$,2)="" then
-		wgrid!=form!.getChildWindow(1109).getControl(5900)
-		wrow=wgrid!.getSelectedRow()
-		wgrid!.setSelectedCell(wrow,0)
-	endif
-
-	gosub update_line_type_info
 [[POE_PODET.<CUSTOM>]]
 update_line_type_info:
 

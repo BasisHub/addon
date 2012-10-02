@@ -26,10 +26,8 @@ rem --- Open/Lock files
     files=16,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[2]="arm-02",ids$[2]="ARM_CUSTDET"
-    files$[3]="arm-10",ids$[3]="ARC_TERMCODE"
+    files$[3]="arc_termcode",ids$[3]="ARC_TERMCODE"
     files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
-    files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
-    files$[6]="ivm-07",ids$[6]="IVM_LSMASTER"
     files$[7]="ope-01",ids$[7]="OPE_ORDHDR"
     files$[8]="ope-02",ids$[8]="OPE_CREDCUST"
     files$[9]="ope-03",ids$[9]="OPE_CREDDATE"
@@ -37,17 +35,15 @@ rem --- Open/Lock files
     files$[11]="ope-11",ids$[11]="OPE_ORDDET"
     files$[12]="ope-21",ids$[12]="OPE_ORDLSDET"
     files$[13]="opm-02",ids$[13]="OPC_LINECODE"
-    files$[14]="ARS_PARAMS",ids$[14]=files$[14]
-    files$[15]="ARS_PARAMS",ids$[15]=files$[15]
-    files$[16]="IVS_PARAMS",ids$[16]=files$[16]
+    files$[14]="ars_params",ids$[14]="ARS_PARAMS"
+    files$[15]="ars_credit",ids$[15]="ARS_CREDIT"
+    files$[16]="ivs_params",ids$[16]="IVS_PARAMS"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
     arm02_dev=channels[2]
     arm10_dev=channels[3]
     ivm01_dev=channels[4]
-    ivm02_dev=channels[5]
-    ivm07_dev=channels[6]
     ope01_dev=channels[7]
     ope02_dev=channels[8]
     ope03_dev=channels[9]
@@ -62,7 +58,7 @@ rem --- Open/Lock files
 rem --- Dimension string templates
 
     dim arm02a$:templates$[2],arm10a$:templates$[3],ivm01a$:templates$[4]
-    dim ivm02a$:templates$[5],ivm07a$:templates$[6],ope01a$:templates$[7]
+    dim ope01a$:templates$[7]
     dim ope02a$:templates$[8],ope03a$:templates$[9],ope04a$:templates$[10]
     dim ope11a$:templates$[11],ope21a$:templates$[12],opm02a$:templates$[13]
     dim ars01a$:templates$[14],ars01c$:templates$[15],ivs01a$:templates$[16]
@@ -75,7 +71,7 @@ rem --- Retrieve parameter records
 
     ars01a_key$=firm_id$+"AR00"
     find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-    ars01c_key$=firm_id$+"AR00"
+    ars01c_key$=firm_id$+"AR01"
     find record (ars01c_dev,key=ars01c_key$,err=std_missing_params) ars01c$
     ivs01a_key$=firm_id$+"IV00"
     find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
@@ -98,36 +94,16 @@ rem --- Parameters
     ars01c.display_bal$="N"
     find record (ivs01a_dev,key=firm_id$+"IV"+"00",dom=std_missing_params) ivs01a$
     dim p[1],i[2]
-    p[0]=num(ivs01a.item_id_len$)
+    p[0]=ivs01a.item_id_len
     i[2]=num(ivs01a.precision$)
     if pos(ivs01a.lotser_flag$="LS") ls$="Y"
 
 rem --- Initialize Data
 
+    call "ivc_itemupdt.aon::init",iv_channels[all],ivs01a$,iv_items$[all],iv_refs$[all],iv_refs[all],iv_table_chans$[all],status
+
     precision num(ivs01a.precision$)
-    dim iv_files[44],iv_info$[3],iv_info[0],iv_params$[4],iv_refs$[11],iv_refs[5]
-    iv_files[0]=sys01_dev
-    iv_files[1]=ivm01_dev
-    iv_files[2]=ivm02_dev
-    iv_info$[0]=firm_id$
-    iv_params$[0]=sysinfo.system_date$
-    iv_params$[1]=sysinfo.user_id$
-    iv_params$[2]=i2$
-    iv_params$[3]=i3$
-    iv_params$[4]=i4$
     more=1
-
-rem --- Additional File Opens
-
-    if ls$="Y" then
-        files$[12]="ope-21"
-        files$[13]="ivm-07"
-        call pgmdir$+"adc_fileopen.aon",1,12,files,files$[all],options$[all],channels[all],batch,status
-        if status goto std_exit
-        ope21_dev=channels[12]
-        ivm07_dev=channels[13]
-        iv_files[7]=ivm07_dev
-    endif
 
 rem --- Initialize Progress Meter
 
@@ -140,6 +116,7 @@ rem --- Header loop
         read record (ope01_dev,end=*break) ope01a$
         if firm_id$<>ope01a.firm_id$ break
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
         if ope01a.invoice_type$="P" continue
         if ope01a.invoice_type$="I" continue
         if ope01a.lock_status$<>"N" continue
@@ -155,14 +132,15 @@ rem --- Process Lines Here
             if firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$<>ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$ break
             if ope11a.commit_flag$="Y" continue
             if ope11a.est_shp_date$>next$ continue
-            find record (opm02a_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
+            find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
             if pos(opm02a.line_type$="NOM")=0
                 if opm02a.dropship$<>"Y"
-                    iv_info$[1]=ope11a.warehouse_id$
-                    iv_info$[2]=ope11a.item_id$
-                    iv_info$[3]=""
+                    iv_items$[1]=ope11a.warehouse_id$
+                    iv_items$[2]=ope11a.item_id$
+                    iv_items$[3]=""
+                    iv_refs$[0]=sysinfo.system_date$
                     iv_refs[0]=ope11a.qty_ordered
-                    call pgmdir$+"ivc_ua.bbx","OE",iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Commit warehouse quantities
+                    call pgmdir$+"ivc_itemupdt.aon","OE",iv_channels[all],ivs01a$,iv_items$[all],iv_refs$[all],iv_refs[all],iv_table_chans$[all],status
 
 rem --- Serialized/Lotted Items
 
@@ -175,20 +153,21 @@ rem --- Serialized/Lotted Items
 
 rem --- Commit Lot/Serial Quantities
 
-                            iv_info$[1]=ope11a.warehouse_id$
-                            iv_info$[2]=ope11a.item_id$
-                            iv_info$[3]=""
+                            iv_items$[1]=ope11a.warehouse_id$
+                            iv_items$[2]=ope11a.item_id$
+                            iv_items$[3]=""
+                            iv_refs$[0]=sysinfo.system_date$
                             iv_refs[0]=ope21a.qty_shipped
-                            call pgmdir$+"ivc_ua.bbx","UC",iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Uncommit previous warehouse quantites
-                            iv_info$[3]=ope21a.lotser_no$
-                            call pgmdir$+"ivc_ua.bbx","OE",iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Commit warehouse andlot/serial quantites
+                            call pgmdir$+"ivc_itemupdt.aon","UC",iv_channels[all],ivs01a$,iv_items$[all],iv_refs$[all],iv_refs[all],iv_table_chans$[all],status
+                            iv_items$[3]=ope21a.lotser_no$
+                            call pgmdir$+"ivc_itemupdt.aon","OE",iv_channels[all],ivs01a$,iv_items$[all],iv_refs$[all],iv_refs[all],iv_table_chans$[all],status
                         wend
                     endif
                 endif
             endif
 
-            w1$=ope11a.commit_flag$+ope11a.pick_flag$
-            w1$="YN"
+            ope11a.commit_flag$="Y"
+            ope11a.pick_flag$="N"
             ope11a.qty_shipped=ope11a.qty_ordered
             x6=ope11a.ext_price
             x7=ope11a.taxable_amt
@@ -198,7 +177,7 @@ rem --- Commit Lot/Serial Quantities
                 ope11a.unit_price=0
             endif
             if pos(opm02a.line_type$="MO")=0
-                ope11a.EXT_PRICE=ope11a.unit_price*ope11a.qty_shipped
+                ope11a.ext_price=ope11a.unit_price*ope11a.qty_shipped
             endif
             gosub Taxable_Check
             ope01a.taxable_amt=ope01a.taxable_amt+ope11a.taxable_amt-x7
@@ -213,31 +192,31 @@ Order_End: rem --- End of Order Here
 
         if new$="YES"
             ope01a.print_status$="N"
-            if ars01c.SYS_INSTALL$="Y"
+            if ars01c.sys_install$="Y"
                 credit$="1"; rem "Initialize Credit Okay
                 read record (arm02_dev,key=firm_id$+ope01a.customer_id$+ope01a.ar_type$,dom=Credit_Initialize)arm02a$
-                call pgmdir$+"opc_ca.bbx",ope01_dev,arm02_dev,firm_id$,ope01a.customer_id$,c9$,credit$,i6$,0
+                call pgmdir$+"opc_creditmgmnt.aon",ope01_dev,arm02_dev,firm_id$,ope01a.customer_id$,c9$,credit$,i6$,0
 Credit_Initialize:
-                if credit$<>"1"
-                    ope01a.credit_flag$="C"
-                    gosub Update_Credit
 
-rem goto Not_Credit; rem "Credit Not Okay
-                    read record (arm10_dev,key=firm_id$+"A"+ope01a.terms_code$,dom=Record_Write) arm10a$
-                    if arm10a.cred_hold$="Y"
-                        ope01a.credit_flag$="C"
-                        gosub Update_Credit
-                    endif
-rem goto Not_Credit
-Record_Write:
-                    ope04a_key$=firm_id$+"O"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$
-                    write record (ope04_dev,key=ope04a_key$) ope04a$
-                endif
-                ope01a.lock_status$="N"
-                write record (ope01_dev) ope01a$
-                if t9$="END" return
+                if credit$<>"1" goto Bad_Credit; REM "Credit Not Okay
+                readrecord (arm10_dev,key=firm_id$+"A"+ope01a.terms_code$,dom=Update_Print)arm10a$
+                if arm10a.cred_hold$="Y" goto Bad_Credit
+
+Update_Print:
+                ope04a_key$=firm_id$+"O"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$
+                writerecord (ope04_dev,key=ope04a_key$)ope04a$
+                goto Unlock_Order
+
+Bad_Credit:
+                ope01a.credit_flag$="C"
+                gosub Update_Credit
             endif    
         endif    
+
+Unlock_Order:
+        ope01a.lock_status$="N"
+        write record (ope01_dev) ope01a$
+        if t9$="END" THEN RETURN
     wend
 
 rem --- End of orders
@@ -263,19 +242,27 @@ Back:
 Update_Credit: rem --- Update Credit Manager Tickler File
 
     read (ope02_dev,key=firm_id$+ope01a.customer_id$,dom=*next)
-Date_Find:
-    read record (ope02_dev,end=Record_Date)ope02a$
-    if ope02a.firm_id$+ope02a.customer_id$=firm_id$+ope01a.customer_id$
-        if ope02a.order_no$<>ope01a.order_no$ goto Date_Find
-        if ope02a.rev_date$=fnyy_yy21$(fndate$(fndate$(ope01a.order_date$))) return
+    while 1
+        read record (ope02_dev,end=*break)ope02a$
+        if ope02a.firm_id$+ope02a.customer_id$<>firm_id$+ope01a.customer_id$ break
+        if ope02a.order_no$<>ope01a.order_no$ continue
+        if ope02a.rev_date$=ope01a.order_date$ return
         remove (ope02_dev,key=firm_id$+ope01a.customer_id$+ope02a.rev_date$+ope01a.order_no$,dom=*next)
         remove (ope03_dev,key=firm_id$+ope02a.rev_date$+ope02a.customer_id$+ope02a.order_no$,dom=*next)
-    endif
-Record_Date:
-    let ope02a_key$=firm_id$+ope01a.customer_id$+fnyy_yy21$(fndate$(fndate$(ope01a.order_date$)))+ope01a.order_no$
-    write record (ope02_dev,key=ope02a_key$) ope02a$
-    let ope03a_key$=firm_id$+fnyy_yy21$(fndate$(fndate$(ope01a.order_date$)))+ope01a.customer_id$+ope01a.order_no$
-    write record (ope03_dev,key=ope03a_key$) ope03a$
+        break
+    wend    
+    ope02a.firm_id$=firm_id$
+    ope02a.customer_id$=ope01a.customer_id$
+    ope02a.rev_date$=ope01a.order_date$
+    ope02a.order_no$=ope01a.order_no$
+    ope02a$=field(ope02a$)
+    write record (ope02_dev) ope02a$
+    ope03a.firm_id$=firm_id$
+    ope03a.rev_date$=ope01a.order_date$
+    ope03a.customer_id$=ope01a.customer_id$
+    ope03a.order_no$=ope01a.order_no$
+    ope03a$=field(ope03a$)
+    write record (ope03_dev) ope03a$
     return
 
 rem #include std_functions.src

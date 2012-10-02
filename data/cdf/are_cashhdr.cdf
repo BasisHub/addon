@@ -7,7 +7,7 @@ ctl_stat$="D"
 gosub disable_key_fields
 gosub get_open_invoices
 if len(currdtl$)
-	escape;rem for testing -- shouldn't ever contain anything at this point
+	rem escape;rem for testing -- shouldn't ever contain anything at this point
 	gosub include_new_OA_trans
 endif
 disp_applied=chk_applied+gl_applied
@@ -184,6 +184,7 @@ if UserObj!<>null()
 endif
 [[ARE_CASHHDR.AWIN]]
 rem --- Open/Lock files
+use ::ado_util.src::util
 files=30,begfile=1,endfile=11
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="ARE_CASHHDR";rem --- "are-01"
@@ -224,7 +225,6 @@ status=0
 source$=pgm(-2)
 call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AR",glw11$,gl$,status
 if status<>0 goto std_exit
-gl$="Y";rem --- forcing to Y for now...testing
 user_tpl.glint$=gl$
 user_tpl.glworkfile$=glw11$
 if gl$="Y"
@@ -262,6 +262,8 @@ user_tpl.asel_chkbox_id$=str(nxt_ctlID+2)
 user_tpl.gridInvoice_id$=str(nxt_ctlID+3)
 user_tpl.GLind_id$=str(nxt_ctlID+4)
 user_tpl.GLstar_id$=str(nxt_ctlID+5)
+rem --- Reset window size
+util.resizeWindow(Form!, SysGui!)
 rem --- set user-friendly names for controls' positions in UserObj vector, num grid cols, data pos w/in vector, etc.				
 user_tpl.gridInvoice_cols$="12"				
 user_tpl.gridInvoice_rows$="10"				
@@ -629,9 +631,10 @@ gl_distribution:
 	callpoint!.setStatus("REFRESH")
 return
 delete_cashgl:
+rem escape; rem for testing
 rem --- intended to use if oper cancels out after having already done GL dist in separate grid/process, so need to be able to remove them
 rem --- waiting for BCAN event in Barista
-escape;rem --- monitor gl dist remove
+rem --- monitor gl dist remove
 	are_cashgl_dev=fnget_dev("ARE_CASHGL")
 	dim are21a$:fnget_tpl$("ARE_CASHGL")
 	are21a.firm_id$=firm_id$
@@ -773,8 +776,8 @@ return
 include_new_OA_trans:
 rem --- should only happen if new check applied OA, and this OA inv rec not in art-01/11
 rem --- will add information for the OA tran to both vectInvoice! and vectInvSel!
-	if len(currdtl$)<>40 then escape;rem --- for testing... shouldn't happen
-	if currdtl$(11,2)<>"OA" then escape;rem --- for testing... shouldn't happen
+	rem if len(currdtl$)<>40 then escape;rem --- for testing... shouldn't happen
+	rem if currdtl$(11,2)<>"OA" then escape;rem --- for testing... shouldn't happen
 	vectInvoice!.addItem("")
 	vectInvoice!.addItem(currdtl$(11,10))
 	vectInvoice!.addItem(fnmdy$(callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")))

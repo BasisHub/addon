@@ -1,3 +1,11 @@
+[[IVC_TRANCODE.POST_GL.AVAL]]
+rem --- if setting post to gl flag to Y, set min length on GL acct field to 1
+
+if callpoint!.getUserInput()<>"Y"
+	callpoint!.setTableColumnAttribute("IVC_TRANCODE.GL_ADJ_ACCT","MINL","0")
+else
+	callpoint!.setTableColumnAttribute("IVC_TRANCODE.GL_ADJ_ACCT","MINL","1")
+endif
 [[IVC_TRANCODE.BDEL]]
 rem -- don't allow delete of trans code if it's in use in ive_transhdr
 ive01_dev=fnget_dev("IVE_TRANSHDR")

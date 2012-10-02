@@ -21,7 +21,8 @@ endif
 iv_item_id$=callpoint!.getColumnData("IVM_LSMASTER.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_LSMASTER.WAREHOUSE_ID")
 iv_lot_id$=callpoint!.getColumnData("IVM_LSMASTER.LOTSER_NO")
-rem --- call stbl("+DIR_SYP")+"ivm_itemWhseLotActivity.aon",
+rem --- called program was custom grid - replaced by running the report
+rem --- call stbl("+DIR_PGM")+"ivm_itemWhseLotActivity.aon",
 :	gui_dev,
 :	Form!,
 :	iv_whse_id$,
@@ -29,7 +30,7 @@ rem --- call stbl("+DIR_SYP")+"ivm_itemWhseLotActivity.aon",
 : 	iv_lot_id$,
 :	table_chans$[all]
 
-run dir_pgm$+"ivr_itmWhseLotAct.aon"
+call stbl("+DIR_PGM")+"ivr_itmWhseLotAct.aon",iv_item_id$,iv_whse_id$,iv_lot_id$,table_chans$[all]
 [[IVM_LSMASTER.AOPT-LTRN]]
 iv_item_id$=callpoint!.getColumnData("IVM_LSMASTER.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_LSMASTER.WAREHOUSE_ID")

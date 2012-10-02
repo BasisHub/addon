@@ -1,3 +1,24 @@
+[[IVR_ZEROBAL.ZERO_INCLUDED.AVAL]]
+rem -- set report date based on selection (all, since last run, since process dt, since system dt)
+
+switch pos(callpoint!.getUserInput()="ARPS")
+	case 1
+		callpoint!.setColumnData("IVR_ZEROBAL.REPORT_DATE","")
+	break
+	case 2
+		callpoint!.setColumnData("IVR_ZEROBAL.REPORT_DATE",callpoint!.getColumnData("IVR_ZEROBAL.RUN_DATE"))
+	break
+	case 3
+		callpoint!.setColumnData("IVR_ZEROBAL.REPORT_DATE",stbl("+SYSTEM_DATE"))
+	break
+	case 4
+		callpoint!.setColumnData("IVR_ZEROBAL.REPORT_DATE",date(0:"%Yd%Mz%Dz"))
+	break
+	case default
+	break
+swend
+
+callpoint!.setStatus("REFRESH")
 [[IVR_ZEROBAL.ARAR]]
 rem --- Open files
 
@@ -31,14 +52,19 @@ endif
 
 rem --- Display defaults
 
-callpoint!.setColumnData("RUN_DATE",ivs10a.run_date$)
-callpoint!.setColumnData("REPORT_DATE",report_date$)
+callpoint!.setColumnData("IVR_ZEROBAL.RUN_DATE",report_date$)
+callpoint!.setColumnData("IVR_ZEROBAL.REPORT_DATE",report_date$)
 
 if never then
 	callpoint!.setColumnData("IVR_ZEROBAL.ZERO_INCLUDED","A")
+	callpoint!.setColumnData("IVR_ZEROBAL.REPORT_DATE","")
 	ctl_name$ = "IVR_ZEROBAL.ZERO_INCLUDED"
 	ctl_stat$ = "D"
 	gosub disable_fields
+	ctl_name$ = "IVR_ZEROBAL.REPORT_DATE"
+	gosub disable_fields
+else
+	callpoint!.setColumnData("IVR_ZEROBAL.ZERO_INCLUDED","R")
 endif
 
 callpoint!.setStatus("ABLEMAP-REFRESH")

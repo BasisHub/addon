@@ -1,3 +1,94 @@
+[[GLM_SUMMACTIVITY.AWIN]]
+rem print 'show'
+
+rem --- init...open tables, define custom grid, etc.
+use ::ado_util.src::util
+num_files=3
+dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
+open_tables$[2]="GLM_ACCTSUMMARY",open_opts$[2]="OTA"
+open_tables$[3]="GLM_RECORDTYPES",open_opts$[3]="OTA"
+gosub open_tables
+
+gls01_dev=num(open_chans$[1])
+glm18_dev=num(open_chans$[3])
+
+dim gls01a$:open_tpls$[1]
+dim glm18a$:open_tpls$[3]
+
+readrecord(gls01_dev,key=firm_id$+"GL00",dom=std_missing_params)gls01a$
+
+call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,0
+
+rem --- load up period abbr names from gls_params
+num_pers=num(gls01a.total_pers$)
+per_names!=SysGUI!.makeVector()
+for x=1 to num_pers
+	per_names!.addItem(field(gls01a$,"ABBR_NAME_"+str(x:"00")))
+next x
+
+rem ---  load up budget column codes and types from gls_params
+cols!=SysGUI!.makeVector()
+tps!=SysGUI!.makeVector()
+for x=1 to 4
+	cols!.addItem(field(gls01a$,"acct_mn_cols_"+str(x:"00")))
+	tps!.addItem(field(gls01a$,"acct_mn_type_"+str(x:"00")))
+next x
+			
+rem ---  create list for column zero of grid -- column type drop-down
+more=1
+codeList!=SysGUI!.makeVector()
+codes!=SysGUI!.makeVector()
+read(glm18_dev,key="",dom=*next)
+while more
+	readrecord(glm18_dev,end=*break)glm18a$
+	codeList!.addItem(glm18a.rev_title$+"("+glm18a.record_id$+glm18a.amt_or_units$+")")
+	codes!.addItem(glm18a.record_id$+glm18a.amt_or_units$)
+wend
+
+rem ---  set up grid
+nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
+gridActivity!=Form!.addGrid(nxt_ctlID,5,100,1000,100)
+gridActivity!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
+gridActivity!.setSelectionMode(gridActivity!.GRID_SELECT_CELL)
+gridActivity!.setSelectedRow(0)
+gridActivity!.setSelectedColumn(0)
+
+gridActivity!.setCallback(gridActivity!.ON_GRID_EDIT_START,"custom_event")
+gridActivity!.setCallback(gridActivity!.ON_GRID_EDIT_STOP,"custom_event")
+
+rem ---  store desired data (mostly offsets of items in UserObj) in user_tpl
+tpl_str$="pers:c(5),pers_ofst:c(5),codes_ofst:c(5),codeList_ofst:c(5),grid_ctlID:c(5),grid_ofst:c(5),"+
+:		  "cols_ofst:c(5),tps_ofst:c(5),amt_mask:c(15),sv_record_tp:c(30*),vectActivity_ofst:c(5)"
+
+dim user_tpl$:tpl_str$
+
+user_tpl.pers$=str(num_pers)
+user_tpl.pers_ofst$="0"
+user_tpl.codes_ofst$="1"
+user_tpl.codeList_ofst$="2"
+user_tpl.grid_ctlID$=str(nxt_ctlID)
+user_tpl.grid_ofst$="3"
+user_tpl.cols_ofst$="4"
+user_tpl.tps_ofst$="5"
+user_tpl.vectActivity_ofst$="6"
+user_tpl.amt_mask$=m1$
+
+rem ---  store desired vectors/objects in UserObj!
+UserObj!=SysGUI!.makeVector()
+
+UserObj!.addItem(per_names!)
+UserObj!.addItem(codes!)
+UserObj!.addItem(codeList!)
+UserObj!.addItem(gridActivity!)
+UserObj!.addItem(cols!)
+UserObj!.addItem(tps!)
+userobj!.addItem(SysGUI!.makeVector());rem placeholder for vectActivity! that will be used to update glm-02
+
+rem format the grid, and set first column to be a pull-down
+gosub format_gridActivity
+gosub set_column1_list
+util.resizeWindow(Form!, SysGui!)
 [[GLM_SUMMACTIVITY.AREC]]
 rem compare budget columns/types from gls01 with 1st/3rd char of key of glm18
 rem set the 4 listbuttons accordingly, and read/display corres glm02 data
@@ -334,92 +425,3 @@ return
 
 
 #include std_missing_params.src
-[[GLM_SUMMACTIVITY.BSHO]]
-rem print 'show'
-
-rem --- init...open tables, define custom grid, etc.
-num_files=3
-dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
-open_tables$[2]="GLM_ACCTSUMMARY",open_opts$[2]="OTA"
-open_tables$[3]="GLM_RECORDTYPES",open_opts$[3]="OTA"
-gosub open_tables
-
-gls01_dev=num(open_chans$[1])
-glm18_dev=num(open_chans$[3])
-
-dim gls01a$:open_tpls$[1]
-dim glm18a$:open_tpls$[3]
-
-readrecord(gls01_dev,key=firm_id$+"GL00",dom=std_missing_params)gls01a$
-
-call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,0
-
-rem --- load up period abbr names from gls_params
-num_pers=num(gls01a.total_pers$)
-per_names!=SysGUI!.makeVector()
-for x=1 to num_pers
-	per_names!.addItem(field(gls01a$,"ABBR_NAME_"+str(x:"00")))
-next x
-
-rem ---  load up budget column codes and types from gls_params
-cols!=SysGUI!.makeVector()
-tps!=SysGUI!.makeVector()
-for x=1 to 4
-	cols!.addItem(field(gls01a$,"acct_mn_cols_"+str(x:"00")))
-	tps!.addItem(field(gls01a$,"acct_mn_type_"+str(x:"00")))
-next x
-			
-rem ---  create list for column zero of grid -- column type drop-down
-more=1
-codeList!=SysGUI!.makeVector()
-codes!=SysGUI!.makeVector()
-read(glm18_dev,key="",dom=*next)
-while more
-	readrecord(glm18_dev,end=*break)glm18a$
-	codeList!.addItem(glm18a.rev_title$+"("+glm18a.record_id$+glm18a.amt_or_units$+")")
-	codes!.addItem(glm18a.record_id$+glm18a.amt_or_units$)
-wend
-
-rem ---  set up grid
-nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
-gridActivity!=Form!.addGrid(nxt_ctlID,5,100,1000,100)
-gridActivity!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
-gridActivity!.setSelectionMode(gridActivity!.GRID_SELECT_CELL)
-gridActivity!.setSelectedRow(0)
-gridActivity!.setSelectedColumn(0)
-
-gridActivity!.setCallback(gridActivity!.ON_GRID_EDIT_START,"custom_event")
-gridActivity!.setCallback(gridActivity!.ON_GRID_EDIT_STOP,"custom_event")
-
-rem ---  store desired data (mostly offsets of items in UserObj) in user_tpl
-tpl_str$="pers:c(5),pers_ofst:c(5),codes_ofst:c(5),codeList_ofst:c(5),grid_ctlID:c(5),grid_ofst:c(5),"+
-:		  "cols_ofst:c(5),tps_ofst:c(5),amt_mask:c(15),sv_record_tp:c(30*),vectActivity_ofst:c(5)"
-
-dim user_tpl$:tpl_str$
-
-user_tpl.pers$=str(num_pers)
-user_tpl.pers_ofst$="0"
-user_tpl.codes_ofst$="1"
-user_tpl.codeList_ofst$="2"
-user_tpl.grid_ctlID$=str(nxt_ctlID)
-user_tpl.grid_ofst$="3"
-user_tpl.cols_ofst$="4"
-user_tpl.tps_ofst$="5"
-user_tpl.vectActivity_ofst$="6"
-user_tpl.amt_mask$=m1$
-
-rem ---  store desired vectors/objects in UserObj!
-UserObj!=SysGUI!.makeVector()
-
-UserObj!.addItem(per_names!)
-UserObj!.addItem(codes!)
-UserObj!.addItem(codeList!)
-UserObj!.addItem(gridActivity!)
-UserObj!.addItem(cols!)
-UserObj!.addItem(tps!)
-userobj!.addItem(SysGUI!.makeVector());rem placeholder for vectActivity! that will be used to update glm-02
-
-rem format the grid, and set first column to be a pull-down
-gosub format_gridActivity
-gosub set_column1_list
