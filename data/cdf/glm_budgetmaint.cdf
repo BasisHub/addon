@@ -282,7 +282,7 @@ calculate_end_bal:
 	wk=vectGLSummary!.size()
 	if wk>0
 		for x2=0 to wk-1
-			end_bal=end_bal+num(vectGLSummary!.getItem(x2))
+			end_bal=end_bal+num(vectGLSummary!.getItem(x2),err=*next)
 		next x2
 		vectGLSummary!.addItem(str(end_bal))
 	endif
@@ -299,15 +299,26 @@ replicate_amt:
 		vectGLSummary!=SysGUI!.makeVector()		
 		num_pers=num(user_tpl.pers$)
 
-		for x=1 to num_pers+1
-			if x>=curr_col
-				vectGLSummary!.addItem(curr_amt$)
-			else
-				vectGLSummary!.addItem(gridBudgets!.getCellText(curr_row,x))
-			endif
+		valid_num$="N"
+		while 1
+			valid_num=num(curr_amt$,err=*break)
+			valid_num$="Y"
+			break
+		wend
+
+		if valid_num$="Y"
+			for x=1 to num_pers+1
+				if x>=curr_col
+					vectGLSummary!.addItem(curr_amt$)
+				else
+					vectGLSummary!.addItem(gridBudgets!.getCellText(curr_row,x))
+				endif
 			next x
 			gosub calculate_end_bal
 			gridBudgets!.setCellText(curr_row,1,vectGLSummary!)
+		else
+			vectGLSummary!=null()
+		endif
 	endif
 return
 

@@ -37,7 +37,12 @@ callpoint!.setStatus("REFRESH")
 rem --- If select in Physical Intentory, location and cycle can't change
 
 if callpoint!.getColumnData("IVM_ITEMWHSE.SELECT_PHYS") = "Y" then
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.LOCATION",0)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.PI_CYCLECODE",0)
 	call stbl("+DIR_SYP")+"bac_message.bbj","IV_PHY_INV_SELECT",msg_tokens$[all],msg_opt$,table_chans$[all]
+else
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.LOCATION",1)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.PI_CYCLECODE",1)
 endif
 [[IVM_ITEMWHSE.SAFETY_STOCK.AVAL]]
 if num(callpoint!.getUserInput())<0 then callpoint!.setStatus("ABORT")

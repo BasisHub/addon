@@ -531,9 +531,13 @@ rem --- Test and total count string
 		break; rem --- exit callpoint
 	endif
 
-rem --- Serial number count must be one
+rem --- Serial number count must be one or zero
 
-	if user_tpl.this_item_lot_ser and user_tpl.lotser_flag$ = "S" and total <> 1
+	qty$=callpoint!.getUserInput()
+
+	if user_tpl.this_item_lot_ser and user_tpl.lotser_flag$ = "S" and qty$ <> "1" and qty$<> "0"
+		msg_id$="IV_SER_ONE_ZERO"
+		gosub disp_message
 		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
