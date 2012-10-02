@@ -88,14 +88,6 @@ rem -- if AR dist by item param is not checked, disable the dist code field
 if callpoint!.getDevObject("di")<>"Y"
 	callpoint!.setColumnEnabled("AR_DIST_CODE",-1)
 endif
-
-
-rem --- disable lot/serial master if this isn't a lotted/serialized item
-if str(callpoint!.getDevObject("lot_serial_item"))<>"Y"
-	callpoint!.setOptionEnabled("IVM_LSMASTER",0)
-else
-	callpoint!.setOptionEnabled("IVM_LSMASTER",1)
-endif
 [[IVM_ITEMWHSE.AOPT-HIST]]
 iv_item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")

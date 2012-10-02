@@ -93,3 +93,8 @@ rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space 
 	callpoint!.setStatus("ABLEMAP-REFRESH")
 	
 	return
+[[SAX_HISTREBUILD.BSHO]]
+rem --- display warning message
+	
+	msg_id$="SA_REBUILD"
+	gosub disp_message

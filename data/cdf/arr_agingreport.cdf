@@ -82,9 +82,7 @@ callpoint!.setStatus("REFRESH")
 fixed_periods$=callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")
 days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
 start_date$=callpoint!.getUserInput()
-if callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")="Y"
-	gosub calc_dates_fixed
-endif
+gosub calc_dates_fixed
 callpoint!.setStatus("REFRESH")
 [[ARR_AGINGREPORT.<CUSTOM>]]
 calc_dates_fixed:rem --- Calculate Aging Dates
@@ -119,7 +117,7 @@ rem --- fixed_periods$,days_in_per,start_date$ being set prior to gosub
 	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
 	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_120_THRU",new_date$)
 return
-calc_dates1:
+calc_dates1: 
 	rem --- tmp_cur_from$ set prior to gosub
 	days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
 	if days_in_per=0 days_in_per=30
@@ -188,12 +186,12 @@ set_selections: rem --- Enable/Disable Selection columns based on entries
 rem --- tmp_rpt_opt$,tmp_rpt_seq$ set prior to gosub
 dim ctl_name$[6]
 dim ctl_stat$[6]
-ctl_name$[1]="ARR_AGINGREPORT.CUSTOMER_ID_1"
-ctl_name$[2]="ARR_AGINGREPORT.CUSTOMER_ID_2"
-ctl_name$[3]="ARR_AGINGREPORT.ALT_SEQUENCE_1"
-ctl_name$[4]="ARR_AGINGREPORT.ALT_SEQUENCE_2"
-ctl_name$[5]="ARR_AGINGREPORT.SALESPERSON_1"
-ctl_name$[6]="ARR_AGINGREPORT.SALESPERSON_2"
+ctl_name$[1]="ARR_AGINGREPORT.CUSTOMER_ID_01"
+ctl_name$[2]="ARR_AGINGREPORT.CUSTOMER_ID_02"
+ctl_name$[3]="ARR_AGINGREPORT.ALT_SEQUENCE_01"
+ctl_name$[4]="ARR_AGINGREPORT.ALT_SEQUENCE_02"
+ctl_name$[5]="ARR_AGINGREPORT.SALESPERSON_01"
+ctl_name$[6]="ARR_AGINGREPORT.SALESPERSON_02"
 if tmp_rpt_opt$<> "C"
 	ctl_stat$[1]="D"
 	ctl_stat$[2]="D"
@@ -201,29 +199,29 @@ if tmp_rpt_opt$<> "C"
 	ctl_stat$[4]="D"
 	ctl_stat$[5]=" "
 	ctl_stat$[6]=" "
-	callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_1","")
-	callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_2","")
-	callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_1","")
-	callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_2","")
+	callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_01","")
+	callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_02","")
+	callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_01","")
+	callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_02","")
 else
 	ctl_stat$[5]="D"
 	ctl_stat$[6]="D"
-	callpoint!.setColumnData("ARR_AGINGREPORT.SALESPERSON_1","")
-	callpoint!.setColumnData("ARR_AGINGREPORT.SALESPERSON_2","")
+	callpoint!.setColumnData("ARR_AGINGREPORT.SALESPERSON_01","")
+	callpoint!.setColumnData("ARR_AGINGREPORT.SALESPERSON_02","")
 	if tmp_rpt_seq$="A"
 		ctl_stat$[1]="D"
 		ctl_stat$[2]="D"
 		ctl_stat$[3]=" "
 		ctl_stat$[4]=" "
-		callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_1","")
-		callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_2","")
+		callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_01","")
+		callpoint!.setColumnData("ARR_AGINGREPORT.CUSTOMER_ID_02","")
 	else
 		ctl_stat$[1]=" "
 		ctl_stat$[2]=" "
 		ctl_stat$[3]="D"
 		ctl_stat$[4]="D"
-		callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_1","")
-		callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_2","")
+		callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_01","")
+		callpoint!.setColumnData("ARR_AGINGREPORT.ALT_SEQUENCE_02","")
 	endif
 endif
 gosub disable_fields
