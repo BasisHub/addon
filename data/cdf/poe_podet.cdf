@@ -417,6 +417,7 @@ gosub update_line_type_info
 
 if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),2) then
 rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),2) then
+		callpoint!.setColumnData("POE_PODET.PO_LINE_CODE",callpoint!.getUserInput())
 		callpoint!.setColumnData("POE_PODET.CONV_FACTOR","")
 		callpoint!.setColumnData("POE_PODET.FORECAST","")
 		callpoint!.setColumnData("POE_PODET.ITEM_ID","")
@@ -436,7 +437,7 @@ rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callp
 		callpoint!.setColumnData("POE_PODET.WAREHOUSE_ID",callpoint!.getHeaderColumnData("POE_POHDR.WAREHOUSE_ID"))
 		callpoint!.setColumnData("POE_PODET.WO_NO","")
 		callpoint!.setColumnData("POE_PODET.WO_SEQ_REF","")
-
+		callpoint!.setStatus("REFGRID")
 endif
 [[POE_PODET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion

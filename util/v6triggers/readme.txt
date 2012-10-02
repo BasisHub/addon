@@ -1,13 +1,23 @@
-BASIS currently uses three triggers in their own Addon hybrid environment. The trigger source code provided here is for reference/tutorial purposes. They are not intended for general use in other environments.
+AddonSoftware readme.txt: Using Triggers for Hybrid Installations
 
-glm-01.trigger.aw.src - is set as an after write trigger on the glm-01 table in Barista Addon. It's purpose is to replicate any changes to glm-01 to GLM-01 in our 6.1 installation. Since our GL is maintained in Barista Addon we need changes to the glm-01 to go to 6.1 GLM-01 so that they are available for use in GL distribution from our 6.1 modules.
++Version 6 triggers currently defined for Payroll:
 
-GLT-04.trigger.iw.src - is set as an instead of write trigger on the GLT-04 table in 6.1 Addon. It's purpose is to move data into the glt-04 (daily detail file) in Barista Addon. It supports parallel operation, writes go to both tables. The parallel mode was useful for us in proving the concept and once done can be removed causing writes to be done only to the gl4-04.
+The trigger definition (.trigger) and source (.src) files in the <install>/apps/aon/util/v6triggers/ directories are usable with a standard install of Barista/Addon coupled with Addon Version 6 in a hybrid environment. 
 
-GLT-05.trigger.iw.src - is set as an instead of write trigger on the GLT-05 table in 6.1 Addon. It's purpose is intercept writes to the GLT-05 table and dump them since there is no glt-05 in Barista Addon. It also supports parallel operation allowing the write to proceed to the GLT-05 table for use in the proof of concept phase. Once complete it can be removed which then simply discards the write to GLT-05.
+A given trigger definition may specify more than one trigger for a database file, so you will find one or more files in the src directory corresponding to each trigger definition file. 
 
-Notes:
+The .trigger file(s) should be placed in the same directory as the version 6 data files, and the .src file(s) should be placed in a src directory directly underneath the version 6 data directory.  
 
-There is an outstanding BBj issue with Configuration (Bugzilla #17369). When triggers are set up in EM there is one config file for all triggers. This can be a problem for a site that has triggers for multiple systems. In the case of Barista Addon running along side another non-Barista application that also has triggers and it's own config. In this case you may need to set some STBLs and/or specify pathnames directly in the trigger source.
+APM-11 Bank Reconciliation
+GLM-03 Journal ID Codes
+GLT-04 Daily Transaction Detail
+GLT-05 Transaction Detail Sort
+SYM-04 System Master
+SYM-06 Firm Master
+SYS-01 System Control
 
-Additional notes concerning this folder and the src directory underneath. Any files with an extension of .trigger in this directory may be used in a standard production Barista/Version 6 environment. You will find at least one file in the src directory with extensions of .src that match each .trigger file. These files (both the .trigger and .src) are usable with a standard install of Barista and version 6 in a hybrid environment. The .trigger file(s) should be placed in the same directory as the version 6 data files, and the .src file(s) should be placed in a src directory directly underneath the version 6 data directory. Currently (as of 2/4/2010) there are not enough triggers to install and have working properly as a whole. They are being stored here in order to keep them in the repository. We are working on the Payroll triggers first. Once complete, the Manufacturing system will be worked on.
++Barista/Addon triggers currently defined for Payroll:
+
+In addition, there is one trigger that should be placed on the Barista/Addon database.  The .trigger file should be placed in the same directory as the corresponding Barista/Addon data files, and the related .src files should be placed in a src directory directly underneath the Barista/Addon data directory.
+
+GLM-01 Account Master
