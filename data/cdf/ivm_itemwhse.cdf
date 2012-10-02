@@ -43,24 +43,26 @@ rem --- Get total on Open SO lines
 
 rem --- Get total on WO Finished Goods (On Order)
 
-	womast_dev=fnget_dev("SFE_WOMASTR")
-	dim womast_tpl$:fnget_tpl$("SFE_WOMASTR")
+	if callpoint!.getDevObject("wo_installed") = "Y"
+		womast_dev=fnget_dev("SFE_WOMASTR")
+		dim womast_tpl$:fnget_tpl$("SFE_WOMASTR")
 
-	womast_qty=0
+		womast_qty=0
 
-	read(womast_dev,key=firm_id$+whse$+item$,knum="AO_WH_ITM_LOC_WO",dom=*next)
+		read(womast_dev,key=firm_id$+whse$+item$,knum="AO_WH_ITM_LOC_WO",dom=*next)
 
-	while 1
-		read record (womast_dev,end=*break) womast_tpl$
-		if firm_id$<>womast_tpl.firm_id$ break
-		if whse$<>womast_tpl.warehouse_id$ break
-		if item$<>womast_tpl.item_id$ break
-		if womast_tpl.wo_status$ = "O"
-			womast_qty = womast_qty + (womast_tpl.sch_prod_qty - womast_tpl.qty_cls_todt)
-		endif
-	wend
+		while 1
+			read record (womast_dev,end=*break) womast_tpl$
+			if firm_id$<>womast_tpl.firm_id$ break
+			if whse$<>womast_tpl.warehouse_id$ break
+			if item$<>womast_tpl.item_id$ break
+			if womast_tpl.wo_status$ = "O"
+				womast_qty = womast_qty + (womast_tpl.sch_prod_qty - womast_tpl.qty_cls_todt)
+			endif
+		wend
 
-	callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_WO",str(womast_qty))
+		callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_WO",str(womast_qty))
+	endif
 [[IVM_ITEMWHSE.BDEL]]
 rem --- Allow this warehouse to be deleted?
 
@@ -128,7 +130,9 @@ num_files=3
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="POE_PODET",open_opts$[1]="OTA"
 open_tables$[2]="OPE_ORDDET",open_opts$[2]="OTA"
-open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
+if callpoint!.getDevObject("wo_installed") = "Y"
+	open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
+endif
 gosub open_tables
 
 rem --- Get IV params

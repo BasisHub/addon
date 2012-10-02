@@ -1,3 +1,17 @@
+[[ARE_INVDET.GL_ACCOUNT.BINP]]
+rem --- pre-fill with gl sales account for the distribution code
+
+if user_tpl.glint$="Y"
+
+	this_row = callpoint!.getValidationRow()
+
+	if this_row=0 and cvs(callpoint!.getColumnData("ARE_INVDET.GL_ACCOUNT"),3)=""
+		dflt_gl_account$ = callpoint!.getDevObject("dflt_gl_account")
+		callpoint!.setColumnData("ARE_INVDET.GL_ACCOUNT",dflt_gl_account$)
+		callpoint!.setStatus("MODIFIED-REFRESH:ARE_INVDET.GL_ACCOUNT")
+	endif
+
+endif
 [[ARE_INVDET.AGCL]]
 rem --- set preset val for batch_no
 callpoint!.setTableColumnAttribute("ARE_INVDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)

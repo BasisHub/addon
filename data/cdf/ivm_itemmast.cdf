@@ -533,6 +533,7 @@ rem --- init/parameters
 	po$=info$[20]
 	call dir_pgm1$+"adc_application.aon","SF",info$[all]
 	wo$=info$[20]
+	callpoint!.setDevObject("wo_installed",wo$)
 	call dir_pgm1$+"adc_application.aon","SA",info$[all]
 	sa$=info$[20]
 

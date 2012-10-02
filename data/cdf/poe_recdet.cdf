@@ -507,6 +507,8 @@ endif
 [[POE_RECDET.AREC]]
 callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)
+
+callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.PO_LINE_CODE")
 [[POE_RECDET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 rem --- this code was already here... is it right?

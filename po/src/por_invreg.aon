@@ -22,6 +22,7 @@ rem --- Retrieve sysinfo data
     firm_id$=sysinfo.firm_id$
 
 rem --- Document initializations
+    lockKeys!=bbjAPI().makeVector()
     OutVect!=bbjAPI().getSysGui().makeVector()
     HdrVect!=bbjAPI().getSysGui().makeVector()
     BrkVect!=bbjAPI().getSysGui().makeVector()
@@ -72,7 +73,7 @@ rem --- Open/Lock Files
     call pgmdir$+"adc_fileopen.aon",action,begfile,29,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
 
-    if status goto std_exit
+    if status goto remove_locks_and_exit
 
     aps01_dev=channels[1]
     ars01_dev=channels[2]
@@ -167,7 +168,7 @@ rem --- Parameters
     g[4]=num(gls01a.max_acct_len$)
     if cash goto l500
     call pgmdir$+"glc_ctlcreate.aon",err=l500,source$,n2$,glw11$,gl$,status
-    if status goto std_exit
+    if status goto remove_locks_and_exit
     process_id$=stbl("+PROCESS_ID")
     batch_no$=stbl("+BATCH_NO")
     
@@ -253,7 +254,7 @@ rem --- Additional file opens
         files$[30]="arc_distcode",ids$[30]="ARC_DISTCODE"
         call pgmdir$+"adc_fileopen.aon",action,30,30,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto remove_locks_and_exit
         arm10d_dev=channels[30]
         dim arm10d$:templates$[30]
     endif
@@ -262,7 +263,7 @@ rem --- Additional file opens
         files$[31]="pow-17",ids$[31]="POW_INVLAND",options$[31]="C"
         call pgmdir$+"adc_fileopen.aon",action,31,31,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto remove_locks_and_exit
         pow17_dev=channels[31]
         dim pow17a$:templates$[31]
     endif
@@ -274,7 +275,7 @@ rem --- Additional file opens
 
         call pgmdir$+"adc_fileopen.aon",action,32,34,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto remove_locks_and_exit
         glm01_dev=channels[32]
         glw11_dev=channels[33]
         glt04_dev=channels[34]
@@ -293,7 +294,7 @@ rem --- Additional file opens
         files$[35]="sfm-10",ids$[35]="SFC_WOTYPECD"
         call pgmdir$+"adc_fileopen.aon",action,34,35,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto remove_locks_and_exit
         sfe01_dev=channels[34]
         sfm10_dev=channels[35]
         dim sfe01a$:templates$[34],sfm10a$:templates$[35]
@@ -303,7 +304,7 @@ l850: rem --- Run Report
 
     x$=Translate!.getTranslation("AON_DETAIL")
     if level$="I" x$=Translate!.getTranslation("AON_SUMMARY")
-    v=pos(level$="SIL")
+    v=pos(level$="IPL")
     headings$[1]=x$+" "+headings$[1]+" "+desc$[v]
 
 rem --- Remaining print positions
@@ -337,7 +338,7 @@ rem --- Position file
 
     x=m0+11
     if aptype x=x+3
-    if status goto std_exit
+    if status goto remove_locks_and_exit
     call pgmdir$ + "adc_progress.aon","N","","","","",0,poe05_dev,1,meter_num,status
     read (poe05_dev,key=firm_id$,dom=*next)
 
@@ -349,6 +350,19 @@ l1000: rem --- Read next header
     x$=fnmask$(poe05a.vendor_id$(1,p[0]),m0$)+" "+poe05a.ap_inv_no$
     if aptype x$=poe05a.ap_type$+" "+x$
     call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Skip if open in PO Invoice Entry
+
+    call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_INVHDR",k$,"C","",0,table_chans$[all],lock_stat$
+    if lock_stat$="ERR_LOCKED"
+        goto l1000
+    endif
+
+rem --- Soft lock record so it cannot be opened in PO Invoice Entry before update is completed,
+rem --- and keep list of these soft locked records to be processed in the update.
+
+    call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_INVHDR",k$,"L","",0,table_chans$[all],lock_stat$
+    lockKeys!.addItem(k$)
 
 rem --- Level breaks?
 
@@ -655,7 +669,7 @@ report_heading: rem --- Report Heading
 
     l=headings+3
 rem    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
-rem    if status exitto std_exit
+rem    if status exitto remove_locks_and_exit
 
     HdrVect!.addItem("")
     BrkVect!.addItem(str(OutVect!.size()))
@@ -1041,9 +1055,19 @@ std_exit: rem --- Standard program end (01Mar2006)
 rem #endinclude std_end.src
 
 std_exit_no_report:
-
+    
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
     OutVect!=null()
+    goto remove_locks_and_exit
+
+remove_locks_and_exit: rem --- Remove soft locks and exit
+    if lockKeys! <> null() and lockKeys!.size() > 0 then
+        for lck=0 to lockKeys!.size()-1
+            lckk$=cast(BBjString, lockKeys!.getItem(lck))
+            call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_INVHDR",lckk$,"U","",0,table_chans$[all],lock_stat$
+        next lck
+    endif
+    
     goto std_exit
 
     end

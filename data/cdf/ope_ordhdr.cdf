@@ -3,14 +3,25 @@ rem --- Recalculate totals
 
 	disc_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getUserInput())
-
+	gosub calculate_tax
 	gosub disp_totals
+
+rem --- Unremark this next line if we ever get around to fixing bug 4797 which blocks 4753 which this line should solve
+rem	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
 [[OPE_ORDHDR.DISCOUNT_AMT.AVAL]]
-rem --- Recalculate totals
+rem --- Discount Amount cannot exceed Total Sales Amount
 
 	disc_amt = num(callpoint!.getUserInput())
-	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+	total_sales = num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
+	if disc_amt > total_sales then
+		disc_amt = total_sales
+		callpoint!.setUserInput(str(disc_amt))
+	endif
 
+rem --- Recalculate totals
+
+	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+	gosub calculate_tax
 	gosub disp_totals
 [[OPE_ORDHDR.DISCOUNT_AMT.BINP]]
 rem --- Now we've been on the Totals tab
@@ -121,7 +132,6 @@ rem --- Reset all previous values
 	user_tpl.prev_boqty        = 0
 	user_tpl.prev_shipqty      = 0
 	user_tpl.prev_ext_price    = 0
-	user_tpl.prev_taxable      = 0
 	user_tpl.prev_ext_cost     = 0
 	user_tpl.prev_disc_code$   = ""
 	user_tpl.prev_ship_to$     = ""
@@ -545,7 +555,6 @@ rem --- Enable buttons
 
 rem --- Set all previous values
 
-	user_tpl.prev_taxable      = num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT"))
 	user_tpl.prev_ext_cost     = num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST"))
 	user_tpl.prev_disc_code$   = callpoint!.getColumnData("OPE_ORDHDR.DISC_CODE")
 	user_tpl.prev_ship_to$     = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
@@ -2116,6 +2125,20 @@ rem ==========================================================================
 	callpoint!.setDevObject("msg_released","")
 
 	return
+
+rem ==========================================================================
+calculate_tax: rem --- Calculate and display Tax Amount
+rem IN: disc_amt
+rem IN: freight_amt
+rem ==========================================================================
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT")))
+
+	callpoint!.setColumnData("OPE_ORDHDR.TAX_AMOUNT",str(tax_amount))
+	callpoint!.setStatus("REFRESH")
+
+	return
 [[OPE_ORDHDR.BSHO]]
 print "Hdr:BSHO"; rem debug
 
@@ -2336,7 +2359,8 @@ rem --- Setup user_tpl$
 :		"new_order:u(1), " +
 :		"credit_limit_warned:u(1), " +
 :		"shipto_warned:u(1), " +
-:		"first_read:u(1)"
+:		"first_read:u(1), " +
+:		"line_prod_type_pr:c(1)"
 
 	dim user_tpl$:tpl$
 
@@ -2382,7 +2406,6 @@ rem --- Columns for the util disableCell() method
 	user_tpl.prev_boqty        = 0
 	user_tpl.prev_shipqty      = 0
 	user_tpl.prev_ext_price    = 0; rem used in detail section to hold the line extension 
-	user_tpl.prev_taxable      = 0
 	user_tpl.prev_ext_cost     = 0
 	user_tpl.prev_disc_code$   = ""
 	user_tpl.prev_ship_to$     = ""

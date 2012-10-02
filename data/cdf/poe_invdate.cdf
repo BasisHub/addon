@@ -46,9 +46,8 @@ rem --- Enable/Disable Date field
 rem --- Disable date for initial sreen show
 	ctl_name$="POE_INVDATE.DEF_ACCT_DATE"
 	ctl_stat$="D"
-	acctdate$="",acctdate$=stbl("+SYSTEM_DATE",err=*next)
-	callpoint!.setColumnData("POE_INVDATE.DEF_ACCT_DATE",acctdate$)
+	acctdate$=""
+	acctdate$=stbl("+SYSTEM_DATE",err=*next)
 	callpoint!.setColumnData("POE_INVDATE.USE_INV_DATE","Y")
 	temp_stbl$=stbl("DEF_ACCT_DATE",acctdate$)
 	gosub disable_fields
-

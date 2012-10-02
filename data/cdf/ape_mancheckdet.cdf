@@ -94,7 +94,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 			
 					rem callpoint!.setTableColumnAttribute("APE_MANCHECKDET.AP_INV_NO","DFLT",apt01a.ap_inv_no$)
 					callpoint!.setColumnData("APE_MANCHECKDET.AP_INV_NO",apt01a.ap_inv_no$)
-					callpoint!.setStatus("ACTIVATE;REFRESH")
+					callpoint!.setStatus("REFRESH")
 					util.forceEdit(Form!, 0); rem start editing the invoice number on this row
 
 				rem --- Total open invoice amounts
@@ -303,6 +303,8 @@ rem --- Look for Open Invoice
 		disc_amt = num(apt01a.discount_amt$)
 		ret_amt  = num(apt01a.retention$)
 
+		apt11ak1$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
+
 		more_dtl=1
 		read (apt_invoicedet_dev, key=apt11ak1$, dom=*next)	
 							
@@ -320,6 +322,10 @@ rem --- Look for Open Invoice
 
 		callpoint!.setColumnData("APE_MANCHECKDET.INVOICE_DATE",apt01a.invoice_date$)
 		callpoint!.setColumnData("APE_MANCHECKDET.AP_DIST_CODE",apt01a.ap_dist_code$)
+
+		if inv_amt=0
+			callpoint!.setMessage("AP_INVOICE_PAID")
+		endif
 
 	rem --- Disable inv date/dist code, leaving only inv amt/disc amt enabled for open invoice
 

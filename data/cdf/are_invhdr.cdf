@@ -1,3 +1,13 @@
+[[ARE_INVHDR.AR_DIST_CODE.AVAL]]
+rem --- get gl sales account for this distribution code
+
+	dist_code$ = callpoint!.getUserInput()
+
+	arc_distcode_dev=fnget_dev("ARC_DISTCODE")
+	dim arc_distcode$:fnget_tpl$("ARC_DISTCODE")
+	readrecord(arc_distcode_dev,key=firm_id$+"D"+dist_code$,err=*next)arc_distcode$
+
+	callpoint!.setDevObject("dflt_gl_account", arc_distcode.gl_sls_acct$)
 [[ARE_INVHDR.BEND]]
 rem --- remove software lock on batch, if batching
 

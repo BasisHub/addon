@@ -74,7 +74,7 @@ rem ==========================================================================
 	rem --- Which print program to run?
 
 		if run_by$ = "order" then
-			call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
+			call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand_no_col_data", cust_id$, order_no$, callpoint!, table_chans$[all], status
 			if status = 999 then goto std_exit
 		else
 			if run_by$ = "invoice" then

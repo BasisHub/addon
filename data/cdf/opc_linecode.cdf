@@ -1,5 +1,6 @@
 [[OPC_LINECODE.LINE_TYPE.AVAL]]
 rem --- Disable fields that don't apply
+	callpoint!.setColumnData("OPC_LINECODE.LINE_TYPE", callpoint!.getUserInput())
 	gosub disable_ctls
 [[OPC_LINECODE.AR_DIST_CODE.AVAL]]
 rem --- Either fill or blank out 3 G/L display fields
@@ -12,9 +13,11 @@ rem --- Set default type
 	endif
 [[OPC_LINECODE.PROD_TYPE_PR.AVAL]]
 rem --- Maybe disable Product Type
+	callpoint!.setColumnData("OPC_LINECODE.PROD_TYPE_PR", callpoint!.getUserInput())
 	gosub disable_ctls
 [[OPC_LINECODE.DROPSHIP.AVAL]]
 rem --- Maybe disable Distribution Code
+	callpoint!.setColumnData("OPC_LINECODE.DROPSHIP", callpoint!.getUserInput())
 	gosub disable_ctls
 [[OPC_LINECODE.BSHO]]
 rem --- Open Distribution Code file

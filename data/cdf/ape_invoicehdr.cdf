@@ -85,7 +85,7 @@ look_for_invoice:
 		callpoint!.setColumnData("APE_INVOICEHDR.ACCTING_DATE",apt01a.accting_date$)
 		callpoint!.setColumnData("APE_INVOICEHDR.INV_DUE_DATE",apt01a.inv_due_date$)
 		callpoint!.setColumnData("APE_INVOICEHDR.DISC_DATE",apt01a.disc_date$)
-		callpoint!.setColumnData("APE_INVOICEHDR.HOLD_FLAG","N")
+		callpoint!.setColumnData("APE_INVOICEHDR.HOLD_FLAG",apt01a.hold_flag$)
 		callpoint!.setColumnData("APE_INVOICEHDR.AP_INV_MEMO",apt01a.ap_inv_memo$)
 		callpoint!.setColumnData("APE_INVOICEHDR.REFERENCE",apt01a.reference$)
 		callpoint!.setColumnData("APE_INVOICEHDR.INVOICE_AMT","")

@@ -1,3 +1,61 @@
+[[POE_POHDR.PO_NO.AINP]]
+rem --- enable Create PO from Req button
+
+	callpoint!.setOptionEnabled("CRPO",1)
+[[POE_POHDR.AOPT-CRPO]]
+rem --- Lookup requisiton
+rem --- Can't have Barista do the lookup because it also validates, which fails after req is deleted when po is created.
+
+	po_no$=cvs(callpoint!.getColumnData("POE_POHDR.PO_NO"),3)
+	vendor_id$=cvs(callpoint!.getColumnData("POE_POHDR.VENDOR_ID"),3)
+
+	if po_no$=""
+		msg_id$="PO_INVAL_PO"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	else
+		rd_key$ = ""
+		if vendor_id$=""
+			key_pfx$  = firm_id$
+			key_id$   = "PRIMARY"
+		else
+			key_pfx$  = firm_id$ + vendor_id$
+			key_id$   = "AO_VEND_REQ"
+		endif
+
+		call stbl("+DIR_SYP")+"bam_inquiry.bbj",
+:			gui_dev,
+:			Form!,
+:			"POE_REQHDR",
+:			"LOOKUP",
+:			table_chans$[all],
+:			key_pfx$,
+:			key_id$,
+:			rd_key$
+
+		if rd_key$<>"" then 
+			if vendor_id$=""
+				req_no$=rd_key$(3)
+			else
+				req_no$=rd_key$(9)
+			endif
+			callpoint!.setColumnData("POE_POHDR.REQ_NO",req_no$)
+			callpoint!.setStatus("REFRESH")
+		endif
+	endif
+[[POE_POHDR.BPFX]]
+rem --- disable buttons
+
+	callpoint!.setOptionEnabled("CRPO",0)
+	callpoint!.setOptionEnabled("QPRT",0)
+	callpoint!.setOptionEnabled("DPRT",0)
+[[POE_POHDR.ORD_DATE.AVAL]]
+ord_date$=cvs(callpoint!.getUserInput(),2)
+req_date$=cvs(callpoint!.getColumnData("POE_POHDR.REQD_DATE"),2)
+promise_date$=cvs(callpoint!.getColumnData("POE_POHDR.PROMISE_DATE"),2)
+not_b4_date$=cvs(callpoint!.getColumnData("POE_POHDR.NOT_B4_DATE"),2)
+
+gosub validate_dates
 [[POE_POHDR.PO_NO.AVAL]]
 rem --- don't allow user to assign new PO# -- use Barista seq#
 rem --- if user made null entry (to assign next seq automatically) then getRawUserInput() will be empty
@@ -16,24 +74,31 @@ if cvs(callpoint!.getRawUserInput(),3)<>""
 	endif
 endif
 [[POE_POHDR.AOPT-DPRT]]
-rem --- on-demand PO print
+rem --- PO changes must be saved before on-demand PO print
 
-vendor_id$=callpoint!.getColumnData("POE_POHDR.VENDOR_ID")
-po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
+	if callpoint!.getRecordStatus()="M" then
+		msg_id$="PO_SAVE_REQUIRED"
+		gosub disp_message
+	else
+		vendor_id$=callpoint!.getColumnData("POE_POHDR.VENDOR_ID")
+		po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
 
-gosub queue_for_printing
-
-if cvs(vendor_id$,3)<>"" and cvs(po_no$,3)<>""
-
-	gosub queue_for_printing
-	call "por_poprint.aon",vendor_id$,po_no$	
-
-endif
+		if cvs(vendor_id$,3)<>"" and cvs(po_no$,3)<>""
+			gosub queue_for_printing
+			call "por_poprint.aon",vendor_id$,po_no$	
+		endif
+	endif
 [[POE_POHDR.AOPT-QPRT]]
-gosub queue_for_printing
+rem --- PO number and vendor ID required for printing PO
 
-msg_id$="PO_QPRT"
-gosub disp_message
+	vendor_id$=callpoint!.getColumnData("POE_POHDR.VENDOR_ID")
+	po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
+
+	if cvs(vendor_id$,3)<>"" and cvs(po_no$,3)<>""
+		gosub queue_for_printing
+		msg_id$="PO_QPRT"
+		gosub disp_message
+	endif
 [[POE_POHDR.BDEL]]
 rem --- don't allow deletion if any detail line on the PO has a non-zero qty received
 rem --- otherwise, give option to retain requisition (if applicable), reverse OO quantity, delete print and link records
@@ -277,6 +342,19 @@ tamt!.setValue(total_amt)
 rem --- check dtl_posted flag to see if dropship fields should be disabled
 
 gosub enable_dropship_fields 
+
+rem --- enable/disable buttons
+
+	po_no$=cvs(callpoint!.getColumnData("POE_POHDR.PO_NO"),3)
+	vendor_id$=cvs(callpoint!.getColumnData("POE_POHDR.VENDOR_ID"),3)
+
+	if po_no$<>""
+		callpoint!.setOptionEnabled("QPRT",1)
+		callpoint!.setOptionEnabled("DPRT",1)
+		if vendor_id$<>""
+			callpoint!.setOptionEnabled("CRPO",0)
+		endif
+	endif
 [[POE_POHDR.AWRI]]
 rem --- need to put out poe_poprint record
 
@@ -284,9 +362,28 @@ gosub queue_for_printing
 
 
 [[POE_POHDR.REQ_NO.AVAL]]
+rem --- Validate requisition number
+rem --- Can't have Barista validate since req is deleted after po is created.
+
+	req_no$=cvs(callpoint!.getUserInput(),3)
+	valid_req=1
+
+	if req_no$<>""
+		valid_req=0
+		poe_reqhdr_dev=fnget_dev("POE_REQHDR")
+		find (poe_reqhdr_dev,key=firm_id$+req_no$,dom=*endif) 
+		valid_req=1
+	endif
+
+	if !(valid_req)
+		msg_id$="PO_INVAL_REQ_LK"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+
 rem --- Load PO from requisition
 
-if cvs(callpoint!.getUserInput(),3)<>""
+if req_no$<>"" and valid_req
 
 	msg_id$="PO_CREATE_REQ"
 	gosub disp_message
@@ -353,12 +450,12 @@ if cvs(callpoint!.getUserInput(),3)<>""
 			rem --- Update work order?
 
 			if callpoint!.getDevObject("SF_installed")<>"N" and pos(poc_linecode.line_type$="NS")<>0 and cvs(poe_podet.wo_no$,2)<>""
-	escape;rem logic not yet exercised - poc_wa not yet debugged
+				rem logic not yet exercised - poc_wa not yet debugged
 				sfe_womatl_dev=fnget_dev("SFE_WOMATL")
 				sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
 				oldwo$=poe_podet.wo_no$+poe_podet.wo_seq_ref$
 				newwo$=oldwo$,po$=poe_podet.po_no$+poe_podet.internal_seq_no$
-				call stbl("+DIR_PGM")+"poc_wa.bbx",sfe_womatl_dev,sfe_wosubcnt_dev,firm_id$,po$,"P",poc_linecode.code_desc$,oldwo$,newwo$,i[1],status
+				rem call stbl("+DIR_PGM")+"poc_wa.bbx",sfe_womatl_dev,sfe_wosubcnt_dev,firm_id$,po$,"P",poc_linecode.code_desc$,oldwo$,newwo$,i[1],status
 			endif
 
 			rem --- Update PO to OP link
@@ -435,22 +532,26 @@ rem --- Set Defaults
 [[POE_POHDR.WAREHOUSE_ID.AVAL]]
 gosub whse_addr_info
 [[POE_POHDR.REQD_DATE.AVAL]]
-tmp$=callpoint!.getUserInput()
-if tmp$<>"" and tmp$<callpoint!.getColumnData("POE_POHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
-[[POE_POHDR.NOT_B4_DATE.AVAL]]
-not_b4_date$=cvs(callpoint!.getUserInput(),2)
-ord_date$=callpoint!.getColumnData("POE_POHDR.ORD_DATE")
-req_date$=callpoint!.getColumnData("POE_POHDR.REQD_DATE")
+ord_date$=cvs(callpoint!.getColumnData("POE_POHDR.ORD_DATE"),2)
+req_date$=cvs(callpoint!.getUserInput(),2)
 promise_date$=cvs(callpoint!.getColumnData("POE_POHDR.PROMISE_DATE"),2)
+not_b4_date$=cvs(callpoint!.getColumnData("POE_POHDR.NOT_B4_DATE"),2)
 
-if not_b4_date$<>"" then
-	if not_b4_date$<ord_date$ then callpoint!.setStatus("ABORT")
-	if cvs(req_date$,2)<>"" and not_b4_date$>req_date$ then callpoint!.setStatus("ABORT")
-	if cvs(promise_date$,2)<>"" and not_b4_date$>promise_date$ then callpoint!.setStatus("ABORT")
-endif
+gosub validate_dates
+[[POE_POHDR.NOT_B4_DATE.AVAL]]
+ord_date$=cvs(callpoint!.getColumnData("POE_POHDR.ORD_DATE"),2)
+req_date$=cvs(callpoint!.getColumnData("POE_POHDR.REQD_DATE"),2)
+promise_date$=cvs(callpoint!.getColumnData("POE_POHDR.PROMISE_DATE"),2)
+not_b4_date$=cvs(callpoint!.getUserInput(),2)
+
+gosub validate_dates
 [[POE_POHDR.PROMISE_DATE.AVAL]]
-tmp$=cvs(callpoint!.getUserInput(),2)
-if tmp$<>"" and tmp$<callpoint!.getColumnData("POE_POHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
+ord_date$=cvs(callpoint!.getColumnData("POE_POHDR.ORD_DATE"),2)
+req_date$=cvs(callpoint!.getColumnData("POE_POHDR.REQD_DATE"),2)
+promise_date$=cvs(callpoint!.getUserInput(),2)
+not_b4_date$=cvs(callpoint!.getColumnData("POE_POHDR.NOT_B4_DATE"),2)
+
+gosub validate_dates
 [[POE_POHDR.BSHO]]
 rem print 'show';rem debug
 rem --- inits
@@ -818,5 +919,42 @@ queue_for_printing:
 	poe_poprint.po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
 
 	writerecord (poe_poprint_dev)poe_poprint$
+
+return
+
+validate_dates: rem --- validate dates
+
+	bad_date = 0
+
+	if ord_date$<>"" and req_date$<>"" and ord_date$>req_date$ then
+		bad_date = 1
+	endif
+
+	if ord_date$<>"" and promise_date$<>"" and ord_date$>promise_date$ then
+		bad_date = 1
+	endif
+
+	if ord_date$<>"" and not_b4_date$<>"" and ord_date$>not_b4_date$ then
+		bad_date = 1
+	endif
+
+	if req_date$<>"" and promise_date$<>"" and req_date$<promise_date$ then
+		bad_date = 1
+	endif
+
+	if req_date$<>"" and not_b4_date$<>"" and req_date$<not_b4_date$ then
+		bad_date = 1
+	endif
+
+	if promise_date$<>"" and not_b4_date$<>"" and promise_date$<not_b4_date$ then
+		bad_date = 1
+	endif
+
+	if bad_date then
+		msg_id$="INVALID_DATE"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+
 
 return

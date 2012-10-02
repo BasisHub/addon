@@ -47,18 +47,16 @@ rem --- Get user approval to update
     gosub disp_message
     if msg_opt$<>"Y" then goto std_exit_no_update
 
-rem --- Position file
+rem --- Start progress meter
 
-    x=m0+11
-    if aptype x=x+3
     call pgmdir$ + "adc_progress.aon","N","","","","",0,poe05_dev,1,meter_num,status
-    read (poe05_dev,key=firm_id$,dom=*next)
 
-l1000: rem --- Read next header
+rem --- Loop thru all soft locked poe-05 keys
+    if lockKeys!.size()<1 goto done
+    for poe05_i=0 to lockKeys!.size()-1
 
-    k$=key(poe05_dev,end=done)
-    if pos(firm_id$=k$)<>1 goto done
-    read record (poe05_dev) poe05a$
+    poe05_k$=cast(BBjString, lockKeys!.getItem(poe05_i))
+    read record (poe05_dev, key=poe05_k$) poe05a$
     x$=fnmask$(poe05a.vendor_id$(1,p[0]),m0$)+" "+poe05a.ap_inv_no$
     if aptype x$=poe05a.ap_type$+" "+x$
     call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
@@ -329,9 +327,10 @@ l3900: rem --- Loop back for next header
     pot05a.terms_code$=poe05a.ap_terms_code$
     pot05a$=field(pot05a$)
     write record (pot05_dev) pot05a$
-    remove (poe05_dev,key=poe05a.firm_id$+poe05a.ap_type$+poe05a.vendor_id$+poe05a.ap_inv_no$,dom=*next)
+    call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_INVHDR",poe05_k$,"U","",0,table_chans$[all],lock_stat$
+    remove (poe05_dev,key=poe05_k$,dom=*next)
 
-    goto l1000
+    next poe05_i
 
 done: rem --- Update landed cost?
 
@@ -559,9 +558,19 @@ std_exit: rem --- Standard program end (01Mar2006)
 
 std_exit_no_update:
 
+    gosub remove_locks_and_exit
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+remove_locks_and_exit: rem --- Remove soft locks and exit
+    if lockKeys! <> null() and lockKeys!.size() > 0 then
+        for lck=0 to lockKeys!.size()-1
+            lckk$=cast(BBjString, lockKeys!.getItem(lck))
+            call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_INVHDR",lckk$,"U","",0,table_chans$[all],lock_stat$
+        next lck
+    endif
+    return
 
     end

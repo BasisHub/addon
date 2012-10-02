@@ -10,7 +10,18 @@ if callpoint!.getDevObject("gl_installed")<>"Y"  then
 	ctl_name$="POC_LINECODE.GL_PPV_ACCT"
 	gosub disable_fields
 endif
-  
+
+rem --- Unset Lead Time Flag if not S type
+
+if callpoint!.getUserInput() <> "S"
+	callpoint!.setColumnData("POC_LINECODE.LEAD_TIM_FLG","N")
+	callpoint!.setStatus("MODIFIED-REFRESH")
+else
+	if callpoint!.getRecordMode() = "A"
+		callpoint!.setColumnData("POC_LINECODE.LEAD_TIM_FLG","Y")
+		callpoint!.setStatus("REFRESH")
+	endif
+endif
 [[POC_LINECODE.<CUSTOM>]]
 #include std_missing_params.src
 
