@@ -470,6 +470,19 @@ rem --- Look in check history for this check number
 					tmp_vendor_id$=vendor_id$
 					gosub disp_vendor_comments
 					gosub disable_grid
+					ape_mancheckhdr=fnget_dev("APE_MANCHECKHDR")
+					dim ape_checktpl$:fnget_tpl$("APE_MANCHECKHDR")
+					ape_checktpl.firm_id$=firm_id$
+					ape_checktpl.ap_type$=ap_type$
+					ape_checktpl.check_no$=check_no$
+					ape_checktpl.vendor_id$=vendor_id$
+					ape_checktpl.trans_type$="R"
+					ape_checktpl.check_date$=apt05a.check_date$
+					ape_checktpl.vendor_name$=apt05a.vendor_name$
+					ape_checktpl.batch_no$=callpoint!.getColumnData("APE_MANCHECKHDR.BATCH_NO")
+					ape_checktpl$=field(ape_checktpl$)
+					write record(ape_mancheckhdr) ape_checktpl$
+					callpoint!.setStatus("MODIFIED")
 				else
 					callpoint!.setStatus("ABORT")
 				endif

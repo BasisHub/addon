@@ -1,0 +1,640 @@
+rem ==========================================================================
+rem --- adc_firmsetup.aon 
+rem --- Setup new firm with clean data files for new install, with or without
+rem --- demo data.
+rem --- 
+rem --- AddonSoftware Version 11.0
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+rem --- DATADIR$    : Absolute path to the aon/data directory (Input)
+rem --- NEWFIRM$    : New firm ID, not required when with demo data (Input)
+rem --- DEMODATA%   : 0=Without demo data/1=With demo data (Input)
+rem --- RDFORM!     : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%    : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS      : Status code/0=No error (Returned)
+
+    use java.io.File
+	use java.util.Vector
+	use java.util.HashMap
+	use java.util.Iterator
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    seterr std_error
+    setesc std_error
+    enter dataDir$,newFirm$,demoData%,rdForm!,wait4ok%,status
+
+rem --- Initializations
+    status=0
+    BLOCKSIZE = 2^20
+    dir_syp$=stbl("+DIR_SYP")
+    sysGUI! = BBjAPI().getSysGui()
+	declare File aFile!
+	declare Iterator iter!
+	
+	rem --- Initialize HashMap with files required for a clean new install
+	declare HashMap requiredFiles!
+	requiredFiles! = new HashMap()
+	requiredFiles!.put("adm_rptctl","")
+	requiredFiles!.put("adm-09",""); rem --- adm_procmaster
+	requiredFiles!.put("adm-19",""); rem --- adm_procdetail
+	requiredFiles!.put("glm-06",""); rem --- adm_auditcontrol
+	requiredFiles!.put("glm-03",""); rem --- glc_journalcode
+	requiredFiles!.put("glm-18",""); rem --- glm_recordtypes
+	requiredFiles!.put("ivc_whsecode","")
+	requiredFiles!.put("opm_pointofsale","")
+    
+	rem --- Flip directory path separators
+    filePath$=dataDir$
+    gosub fix_path
+    dataDir$=filePath$
+
+	rem --- Get aon directory location from aon/data path
+	aonDir$=dataDir$(1, pos("/data"=dataDir$,-1)-1)
+	
+	rem --- Get aon/data directory under the current download directory
+	sep$ = java.io.File.separator
+	bbjHome$=java.lang.System.getProperty("basis.BBjHome")
+	oldData$ = bbjHome$ + sep$ + "apps" + sep$ + "aon" + sep$ + "data"
+
+rem --- Count files to process so can size progress meter
+	declare File dataDir!
+	dataDir! = new File(dataDir$)
+
+	rem --- Count requiredFiles!
+	meterSize=requiredFiles!.size()
+
+	if cvs(newFirm$,3)<>"" then 
+		rem --- Get/count ads_masks~99*.xml files in aon/data/sync directory
+		declare File syncDir!
+		declare Vector masks99Files!
+		syncDir! = new File(dataDir$ + "/sync")
+		masks99Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Masks99Filter())))
+		meterSize=meterSize+masks99Files!.size()
+
+		rem --- Get/count ads_sequences~99*.xml files in aon/data/sync directory
+		declare Vector sequences99Files!
+		sequences99Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Sequences99Filter())))
+		meterSize=meterSize+sequences99Files!.size()
+	endif
+	
+	if !demodata% then
+		rem --- Count requiredFiles! again
+		meterSize=meterSize+requiredFiles!.size()
+
+		rem --- Get/count ads_masks~01*.xml files in aon/data/sync directory
+		declare Vector masks01Files!
+		masks01Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Masks01Filter())))
+		meterSize=meterSize+masks01Files!.size()
+		
+		rem --- Get/count ads_masks~02*.xml files in aon/data/sync directory
+		declare Vector masks02Files!
+		masks02Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Masks02Filter())))
+		meterSize=meterSize+masks02Files!.size()
+		
+		rem --- Get/count ads_sequences~01*.xml files in aon/data/sync directory
+		declare Vector sequences01Files!
+		sequences01Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Sequences01Filter())))
+		meterSize=meterSize+sequences01Files!.size()
+		
+		rem --- Get/count ads_sequences~02*.xml files in aon/data/sync directory
+		declare Vector sequences02Files!
+		sequences02Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Sequences02Filter())))
+		meterSize=meterSize+sequences02Files!.size()
+		
+		rem --- Get/count inventory item image in aon/images directory
+		declare File imagesDir!
+		declare Vector imagesFiles!
+		imagesDir! = new File(aonDir$ + "/images")
+		imagesFiles! = new Vector(java.util.Arrays.asList(imagesDir!.listFiles()))
+		meterSize=meterSize+imagesFiles!.size()
+		
+		rem --- Get/count demo data files in aon/data directory
+		declare Vector dataFiles!
+		dataFiles! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new DataFilter())))
+		meterSize=meterSize+dataFiles!.size()
+	endif
+    
+rem --- Start progress meter
+    declare BBTranslator Translator!
+    Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+    meter_title$=Translator!.getTranslation("AON_NEW_FIRM_SETUP")+"..."
+    meter_total_recs=meterSize
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST"
+    if wait4ok% then meter_action$=meter_action$+"-OK"
+    gosub disp_meter
+    
+rem --- Open log file
+    location$ = aonDir$
+    gosub open_log
+
+rem --- When not using demo data, remove inventory item image (except addon_logo32.png)
+	if !demodata% then
+		print(log_dev)""
+		print(log_dev)"remove inventory item images"
+		iter! = imagesFiles!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+		
+			rem --- Remove inventory item image (except addon_logo32.png)
+			if aFile!.getName()<>"addon_logo32.png" then
+				aFile!.delete()
+
+				rem --- Increment progress meter
+				meter_text$="removed: "+aFile!.getPath()
+				meter_proc_recs=meter_proc_recs+1
+				meter_action$="MTR-LST"
+				gosub disp_meter
+				print(log_dev)meter_text$
+			endif
+		wend
+	endif
+
+rem --- When not using demo data, remove demo data files (except requiredFiles!)
+	if !demodata% then
+		print(log_dev)""
+		print(log_dev)"remove demo data files"
+		iter! = dataFiles!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+			
+			rem --- Skip directories
+			if aFile!.isDirectory() then continue
+		
+			rem --- Remove demo data files (except requiredFiles!)
+			if !requiredFiles!.containsKey(aFile!.getName()) then
+				aFile!.delete()
+
+				rem --- Increment progress meter
+				meter_text$="removed: "+aFile!.getPath()
+				meter_proc_recs=meter_proc_recs+1
+				meter_action$="MTR-LST"
+				gosub disp_meter
+				print(log_dev)meter_text$
+			endif
+		wend
+	endif
+	
+rem --- Process requiredFiles!
+	print(log_dev)""
+	print(log_dev)"process required data files"
+	iter! = requiredFiles!.keySet().iterator()
+	while iter!.hasNext()
+		aFile! = new File(dataDir!, cast(String, iter!.next()))
+
+		rem --- Need to copy requiredFiles! if they are missing
+		missing=1
+		file_dev=unt
+		open(file_dev,err=*next)aFile!.getPath();missing=0
+		close(file_dev)
+		if missing then
+			rem --- Copy files
+			sourceChan=unt
+			open(sourceChan,isz=-1)oldData$+"/"+aFile!.getName()
+			targetChan=unt
+			open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")aFile!.getPath()
+			while 1
+				readrecord(sourceChan,siz=BLOCKSIZE,end=*break)record$
+				writerecord(targetChan)record$
+			wend
+			close(sourceChan)
+			close(targetChan)
+    
+			rem --- Increment progress meter
+			meter_text$="copied: "+oldData$+"/"+aFile!.getName()
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		endif
+		
+		rem --- Open file
+		file_dev=unt
+		open(file_dev)aFile!.getPath()
+
+		rem --- When not using demo data, remove firm 01 and 02 data
+		if !demodata% then
+			read(file_dev,key="01",dom=*next)
+			while 1
+				key$=key(file_dev,end=*break)
+				if len(key$)>=2 and pos(key$(1,2)="0102",2) then
+					remove(file_dev,key=key$)
+				else
+					read(file_dev,end=*break)
+				endif
+			wend
+		endif
+		
+		rem --- Copy firm 99 to new firm, if new firm not blank
+		if cvs(newFirm$,3)<>"" then 
+			write_dev=unt
+			open(write_dev)aFile!.getPath()
+			read(file_dev,key="99",dom=*next)
+			while 1
+				key$=key(file_dev,err=*break)
+				if len(key$)>=2 and key$(1,2)="99"
+					readrecord(file_dev,key=key$)record$
+					writerecord(write_dev,key=newFirm$+key$(3),dom=*next)newFirm$+record$(3)
+				else
+					read(file_dev,end=*break)
+				endif
+			wend
+
+			rem --- Close files
+			close(write_dev)
+			close(file_dev)
+		
+			rem --- Increment progress meter
+			meter_text$="copied firm 99 to "+newFirm$+": "+aFile!.getPath()
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		endif
+	wend
+
+	rem --- When not using demo data, remove ads_masks~01*.xml files 
+	if !demodata% then
+		print(log_dev)""
+		print(log_dev)"remove ads_masks~01*.xml files"
+		iter! = masks01Files!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+			aFile!.delete()
+
+			rem --- Increment progress meter
+			meter_text$="removed: "+aFile!.getPath()
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		wend
+	endif
+
+	rem --- When not using demo data, remove ads_masks~02*.xml files 
+	if !demodata% then
+		print(log_dev)""
+		print(log_dev)"remove ads_masks~02*.xml files"
+		iter! = masks02Files!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+			aFile!.delete()
+
+			rem --- Increment progress meter
+			meter_text$="removed: "+aFile!.getPath()
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		wend
+	endif
+
+rem --- Process ads_masks99Files!, if new firm not blank
+	if cvs(newFirm$,3)<>"" then 
+		print(log_dev)""
+		print(log_dev)"process sync ads_masks~99*.xml files"
+		iter! = masks99Files!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+		
+			rem --- Copy firm 99 to new firm
+			if aFile!.getName().startsWith("ads_masks~99") then
+				source$=aFile!.getPath()
+				target$=source$(1,pos("99"=source$)-1)+newFirm$+source$(pos("99"=source$)+2)
+						
+				rem --- copy source file to target file, making necessary updates
+				sourceChan=unt
+				open(sourceChan,isz=-1)source$
+				targetChan=unt
+				open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target$
+				while 1
+					read(sourceChan,end=*break)record$
+
+					rem --- replace firm ID in <FIRM_ID> lines
+					if(pos("<FIRM_ID>"=record$)) then
+						x = pos("<FIRM_ID>"=record$) + len("<FIRM_ID>")
+						line$ = record$(1,x-1)
+						line$ = line$ + newFirm$
+						line$ = line$ + record$(x+2)
+						record$ = line$
+					endif
+
+					write(targetChan)record$
+				wend
+				close(sourceChan)
+				close(targetChan)
+
+				rem --- Increment progress meter
+				meter_text$="copied firm 99 to "+newFirm$+": "+target$
+				meter_proc_recs=meter_proc_recs+1
+				meter_action$="MTR-LST"
+				gosub disp_meter
+				print(log_dev)meter_text$
+			endif
+		wend
+	endif
+
+	rem --- When not using demo data, remove ads_sequences~01*.xml files 
+	if !demodata% then
+		print(log_dev)""
+		print(log_dev)"remove ads_sequences~01*.xml files"
+		iter! = sequences01Files!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+			aFile!.delete()
+
+			rem --- Increment progress meter
+			meter_text$="removed: "+aFile!.getPath()
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		wend
+	endif
+
+	rem --- When not using demo data, remove ads_sequences~02*.xml files 
+	if !demodata% then
+		print(log_dev)""
+		print(log_dev)"remove ads_sequences~02*.xml files"
+		iter! = sequences02Files!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+			aFile!.delete()
+
+			rem --- Increment progress meter
+			meter_text$="removed: "+aFile!.getPath()
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		wend
+	endif
+
+rem --- Process ads_sequences99Files!
+	if cvs(newFirm$,3)<>"" then 
+		print(log_dev)""
+		print(log_dev)"process sync ads_sequences~99*.xml files"
+		iter! = sequences99Files!.iterator()
+		while iter!.hasNext()
+			aFile! = cast(File, iter!.next())
+
+			rem --- Copy firm 99 to new firm
+			if aFile!.getName().startsWith("ads_sequences~99") then
+				source$=aFile!.getPath()
+				target$=source$(1,pos("99"=source$)-1)+newFirm$+source$(pos("99"=source$)+2)
+						
+				rem --- copy source file to target file, making necessary updates
+				sourceChan=unt
+				open(sourceChan,isz=-1)source$
+				targetChan=unt
+				open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target$
+				while 1
+					read(sourceChan,end=*break)record$
+
+					rem --- replace firm ID in <FIRM_ID> lines
+					if(pos("<FIRM_ID>"=record$)) then
+						x = pos("<FIRM_ID>"=record$) + len("<FIRM_ID>")
+						line$ = record$(1,x-1)
+						line$ = line$ + newFirm$
+						line$ = line$ + record$(x+2)
+						record$ = line$
+					endif
+
+					write(targetChan)record$
+				wend
+				close(sourceChan)
+				close(targetChan)
+
+				rem --- Increment progress meter
+				meter_text$="copied firm 99 to "+newFirm$+": "+target$
+				meter_proc_recs=meter_proc_recs+1
+				meter_action$="MTR-LST"
+				gosub disp_meter
+				print(log_dev)meter_text$
+			endif
+		wend
+	endif
+    
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    
+	print(log_dev)""
+    print(log_dev)"Firmsetup log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+fix_path: rem --- Flip directory path separators
+
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+    return
+	
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+    filePath$ = location$ + "/logs"
+    gosub fix_path
+    logDir$ = filePath$
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/firmsetup_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"Firmsetup log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)"Data location: " + dataDir$
+    print(log_dev)"New firm ID: " + newFirm$
+    if demoData%
+        print(log_dev)"With demo data."
+    else
+        print(log_dev)"Without demo data."
+    endif
+    print(log_dev)
+
+    return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+rem /**
+rem  * FilenameFilter Class to filter ads_masks~01.xml files.
+rem  */
+
+    class public Masks01Filter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_masks~01") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_masks~02.xml files.
+rem  */
+
+    class public Masks02Filter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_masks~02") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_masks~99.xml files.
+rem  */
+
+    class public Masks99Filter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_masks~99") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_sequences~01.xml files.
+rem  */
+
+    class public Sequences01Filter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_sequences~01") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_sequences~02.xml files.
+rem  */
+
+    class public Sequences02Filter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_sequences~02") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_sequences~99.xml files.
+rem  */
+
+    class public Sequences99Filter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_sequences~99") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter only files in aon/data, not in sub-directories.
+rem  */
+
+    class public DataFilter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if dir!.getName()="data"
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+    
+    end

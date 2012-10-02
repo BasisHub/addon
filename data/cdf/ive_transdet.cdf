@@ -1,3 +1,23 @@
+[[IVE_TRANSDET.ADGE]]
+rem --- Setup for whether to test at end of line
+
+	callpoint!.setDevObject("qty_ok","")
+
+rem --- Display defaults for this row
+
+	dim sysinfo$:stbl("+SYSINFO_TPL")
+	sysinfo$=stbl("+SYSINFO")
+	callpoint!.setTableColumnAttribute("IVE_TRANSDET.USER_ID","DFLT",sysinfo.user_id$)
+
+	if user_tpl.multi_whse$ <> "Y" then
+		callpoint!.setTableColumnAttribute("IVE_TRANSDET.WAREHOUSE_ID","DFLT",user_tpl.warehouse_id$)
+		print "Set default warehouse"; rem debug
+	endif
+
+	if user_tpl.gl$ = "Y" and user_tpl.trans_post_gl$ = "Y" then
+		callpoint!.setTableColumnAttribute("IVE_TRANSDET.GL_ACCOUNT","DFLT",user_tpl.trans_adj_acct$)
+		print "Set default GL account"; rem debug
+	endif
 [[IVE_TRANSDET.ARAR]]
 rem --- Setup for whether to test at end of line
 
@@ -223,22 +243,6 @@ rem --- Uncommit quantity
 	endif
 [[IVE_TRANSDET.AREC]]
 print "after new record (AREC)"; rem debug
-
-rem --- Display defaults for this row
-
-	if user_tpl.multi_whse$ <> "Y" then
-		callpoint!.setColumnData("IVE_TRANSDET.WAREHOUSE_ID",user_tpl.warehouse_id$)
-		print "Set default warehouse"; rem debug
-	endif
-
-	if user_tpl.gl$ = "Y" and user_tpl.trans_post_gl$ = "Y" then
-		callpoint!.setColumnData("IVE_TRANSDET.GL_ACCOUNT",user_tpl.trans_adj_acct$)
-		print "Set default GL account"; rem debug
-	endif
-
-	callpoint!.setStatus("REFRESH")
-	rem callpoint!.setStatus("MODIFIED-REFRESH")
-	rem callpoint!.setStatus("REFGRID")
 
 	callpoint!.setDevObject("qty_ok","")
 [[IVE_TRANSDET.AGCL]]
@@ -660,6 +664,30 @@ rem --- Check the transaction qty
 	endif
 [[IVE_TRANSDET.AGRE]]
 print "after grid row exit (AGRE)"; rem debug
+
+rem --- Check that a warehouse record exists for this item
+
+	this_row = callpoint!.getValidationRow()
+	item$=callpoint!.getColumnData("IVE_TRANSDET.ITEM_ID")
+	wh$=callpoint!.getColumnData("IVE_TRANSDET.WAREHOUSE_ID")
+	okay$="N"
+
+	if callpoint!.getGridRowDeleteStatus(this_row) <> "Y" then
+		file$ = "IVM_ITEMWHSE"
+		ivm02_dev = fnget_dev(file$)
+		dim ivm02a$:fnget_tpl$(file$)
+			
+		if cvs(item$, 2) <> "" and cvs(wh$, 2) <> "" then
+			find record (ivm02_dev, key=firm_id$+wh$+item$, knum="PRIMARY", dom=*endif) ivm02a$
+			okay$="Y"
+		endif
+
+		if okay$="N"
+			callpoint!.setMessage("IV_NO_WHSE_ITEM")
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"IVE_TRANSDET.WAREHOUSE_ID")
+			break
+		endif
+	endif
 
 rem --- Is this row deleted?
 

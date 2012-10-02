@@ -364,15 +364,10 @@ rem --- Are things set for a reprice?
 		rem --- Do repricing
 
 			gosub pricing
+			callpoint!.setDevObject("rcpr_row",str(callpoint!.getValidationRow()))
 			callpoint!.setColumnData("OPE_ORDDET.MAN_PRICE", "N")
 			gosub manual_price_flag
 
-		rem --- Return focus to where we were (Detail line grid)
-		rem --- unless the Enter Price message was displayed
-
-			if !enter_price_message then
-				util.forceEdit(Form!, return_to_col)
-			endif
 		endif
 	endif
 [[OPE_ORDDET.STD_LIST_PRC.BINP]]
@@ -428,7 +423,7 @@ rem --- Initialize inventory item update
 
 		status=999
 		call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-		if status then exitto std_exit
+		if status then goto awri_update_hdr
 
 rem --- Items or warehouses are different: uncommit previous
 
@@ -447,7 +442,7 @@ rem --- Uncommit prior item and warehouse
 
 				if line_ship_date$<=user_tpl.def_commit$				
 					call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-					if status then exitto std_exit
+					if status then goto awri_update_hdr
 				endif
 			endif
 
@@ -462,7 +457,7 @@ rem --- Commit quantity for current item and warehouse
 
 				if line_ship_date$<=user_tpl.def_commit$				
 					call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-					if status then exitto std_exit
+					if status then goto awri_update_hdr
 				endif
 			endif
 
@@ -485,7 +480,7 @@ rem --- Commit quantity for current item and warehouse
 
 				if line_ship_date$<=user_tpl.def_commit$
 					call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-					if status then exitto std_exit
+					if status then goto awri_update_hdr
 				endif
 			endif
 
@@ -499,7 +494,7 @@ rem --- Only do the next if the commit flag has been changed
 rem --- Initialize inventory item update
 		status=999
 		call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-		if status then exitto std_exit
+		if status then goto awri_update_hdr
 
 rem --- Flag changed from Commit to Uncommit: uncommit previous
 
@@ -512,7 +507,7 @@ rem --- Uncommit prior quantity
 				items$[2] = prior_item$
 				refs[0]   = prior_qty
 				call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then exitto std_exit
+				if status then goto awri_update_hdr
 			endif
 		endif
 
@@ -525,7 +520,7 @@ rem --- Commit current quantity
 				items$[2] = curr_item$
 				refs[0]   = curr_qty 
 				call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then exitto std_exit
+				if status then goto awri_update_hdr
 			endif
 		endif
 	endif
@@ -533,6 +528,17 @@ rem --- Commit current quantity
 awri_update_hdr: rem --- Update header
 
 	gosub disp_grid_totals
+
+	file$ = "OPC_LINECODE"
+	dim opc_linecode$:fnget_tpl$(file$)
+	line_code$=callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
+	find record (fnget_dev(file$), key=firm_id$+line_code$, dom=*endif) opc_linecode$
+
+	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" 
+		if opc_linecode.line_type$<>"M"
+			callpoint!.setDevObject("details_changed","Y")
+		endif
+	endif
 
 rem input "Det:Done with AWRI: ", *; rem debug
 [[OPE_ORDDET.BDGX]]
@@ -741,6 +747,15 @@ rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 [[OPE_ORDDET.AGRN]]
 rem (Fires regardles of new or existing row.  Use callpoint!.getRecordMode() to distinguish the two)
 
+rem --- See if we're coming back from Recalc button
+
+	if callpoint!.getDevObject("rcpr_row") <> ""
+		callpoint!.setFocus(num(callpoint!.getDevObject("rcpr_row")),"OPE_ORDDET.UNIT_PRICE")
+		callpoint!.setDevObject("rcpr_row","")
+		callpoint!.setDevObject("details_changed","Y")
+		break
+	endif
+
 rem --- Disable Line Code if existing record
 
 	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) = ""
@@ -751,9 +766,10 @@ rem --- Disable Line Code if existing record
 
 rem --- Disable by line type (Needed because Barista is skipping Line Code)
 
-	rem --- now AREC is forcing focus on Line Code
-	rem line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
-	rem gosub disable_by_linetype
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) = ""
+		line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
+		gosub disable_by_linetype
+	endif
 
 rem --- Disable cost if necessary
 
@@ -973,10 +989,14 @@ rem --- Display Extended Price
 rem --- redisplay totals
 
 	gosub disp_grid_totals
+
+	callpoint!.setDevObject("details_changed","Y")
 [[OPE_ORDDET.ADEL]]
 rem --- redisplay totals
 
 	gosub disp_grid_totals
+
+	callpoint!.setDevObject("details_changed","Y")
 [[OPE_ORDDET.WAREHOUSE_ID.AVAL]]
 print "Det:WAREHOUSE_ID.AVAL"; rem debug
 
@@ -1069,9 +1089,9 @@ rem --- Recalc quantities and extended price
 		user_tpl.prev_boqty = 0
 	endif
 
-	if boqty <> user_tpl.prev_boqty then
-		qty_shipped = ordqty - boqty
+	qty_shipped = ordqty - boqty
 
+	if boqty <> user_tpl.prev_boqty then
 		if qty_shipped < 0 then
 			callpoint!.setUserInput(str(user_tpl.prev_boqty))
 			msg_id$ = "BO_EXCEEDS_ORD"
@@ -1079,11 +1099,11 @@ rem --- Recalc quantities and extended price
 			callpoint!.setStatus("ABORT-REFRESH")
 			break; rem --- exit callpoint
 		endif
-
-		callpoint!.setColumnData("OPE_ORDDET.QTY_SHIPPED", str(qty_shipped))
-		unit_price = num(callpoint!.getColumnData("OPE_ORDDET.UNIT_PRICE"))
-		gosub disp_ext_amt
 	endif
+
+	callpoint!.setColumnData("OPE_ORDDET.QTY_SHIPPED", str(qty_shipped))
+	unit_price = num(callpoint!.getColumnData("OPE_ORDDET.UNIT_PRICE"))
+	gosub disp_ext_amt
 [[OPE_ORDDET.<CUSTOM>]]
 rem ==========================================================================
 disp_grid_totals: rem --- Get order totals and display, save header totals
@@ -1464,6 +1484,12 @@ rem ============================================================================
 	user_tpl.line_prod_type_pr$ = ""
 	start_block = 1
 
+	if callpoint!.getCallpointEvent()="OPE_ORDDET.LINE_CODE.AVAL"
+		line_code$=callpoint!.getUserInput()
+	else
+		line_code$=callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
+	endif
+
 	if cvs(line_code$,2) <> "" then
 		print "---line code is "+ line_code$+ " and came from "+callpoint!.getCallpointEvent(); rem debug
 
@@ -1479,6 +1505,12 @@ rem ============================================================================
 			user_tpl.line_dropship$ = opc_linecode.dropship$
 			user_tpl.line_prod_type_pr$ = opc_linecode.prod_type_pr$
 			print "---Line Type set (", user_tpl.line_type$, ")"; rem debug
+
+			if pos(opc_linecode.line_type$="SP")>0 and num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))<>0
+				callpoint!.setOptionEnabled("RCPR",1)
+			else
+				callpoint!.setOptionEnabled("RCPR",0)
+			endif
 		endif
 	endif
 
@@ -1687,10 +1719,8 @@ rem ==========================================================================
 	callpoint!.setColumnData("OPE_ORDDET.EXT_PRICE", str(round(qty_shipped * unit_price, 2)) )
 	rem print "---Ext price set to", qty_shipped * unit_price; rem debug
 	gosub check_if_tax
-	if previous_ext_price <> round(qty_shipped * unit_price, 2)
-		callpoint!.setStatus("MODIFIED")
-	endif
-	rem --- gosub disp_grid_totals --- can't go here because the status of MODIFIED hasn't taken effect
+	gosub disp_grid_totals
+	callpoint!.setStatus("MODIFIED;REFRESH")
 
 	return
 

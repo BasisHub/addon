@@ -70,7 +70,7 @@ rem "update ivs-01 - ABC rec
 [[IVS_SETCARRY.<CUSTOM>]]
 format_grid:
 
-	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","R","",m1$,0,0
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","V","",m1$,0,0
 	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","%","",m2$,0,0
 
 	dim attr_def_col_str$[0,0]

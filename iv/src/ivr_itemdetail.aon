@@ -1,239 +1,238 @@
-rem --- Item Detail Listing (Input Overlay)
-rem --- Program ivr_itemdetail.aon v8.0.0 09Jul2007 (ivr_ra)
-rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 11:50:50)
+rem Item Detail Listing
+rem Proprietary Software. BASIS International Ltd.
+rem Program ID: ivr_ItemDetail_irpt.aon  <Mar 07, 2011>
 
-rem --- AddonSoftware Version 8.0.0 - 01Jan2007
-rem --- Copyright (c) 1981-2007 AddonSoftware
-rem --- All Rights Reserved
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
 
-    seterr std_error
-    setesc std_error
-
-rem --- Retrieve the program path
-
-    pgmdir$=stbl("+DIR_PGM",err=*next)
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 50
     
-rem --- Use statements
+rem --- Get HashMap of Values in Options Entry Form
 
-    use ::sys/prog/bao_option.bbj::Option
-    
+    params! = Option!.getOptionMap()
+
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
+    sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_tpl$
     sysinfo$=stbl("+SYSINFO",err=*next)
+    user_id$=sysinfo.user_id$
+    proc_date$=date(jul(num(sysinfo.system_date$(1,4)),num(sysinfo.system_date$(5,2)),num(sysinfo.system_date$(7,2))):stbl("+DATE_MASK"))
     firm_id$=sysinfo.firm_id$
-
-    milestone=50
-    milestone=num(stbl("+MILESTONE",err=*next))
-
+    firm_name$=sysinfo.firm_name$
+    
 rem --- Open files
 
-    files=20,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="ivs_params",ids$[1]="IVS_PARAMS"
-    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
-    files$[3]="arc_termcode",ids$[3]="ARC_TERMCODE"
-    files$[4]="glm-01",ids$[4]="GLM_ACCT"
-    files$[5]="ivm-01",ids$[5]="IVM_ITEMMAST"
-    files$[6]="ivm-02",ids$[6]="IVM_ITEMWHSE"
-    files$[7]="ivm-05",ids$[7]="IVM_ITEMVEND"
-    files$[8]="ivm-09",ids$[8]="IVM_ITEMCMTS"
-    files$[9]="ivc_prodcode",ids$[9]="IVC_PRODCODE"
-    files$[10]="ivm-12",ids$[10]="IVM_ITEMACT"
-    files$[11]="ivm-13",ids$[11]="IVC_CLASCODE"
-    files$[12]="ivm-14",ids$[12]="IVM_ITEMSYN"
-    files$[13]="ivm-15",ids$[13]="IVC_TYPECODE"
-    files$[14]="ivm-24",ids$[14]="IVX_ITEMSYN"
-    files$[15]="aps_params",ids$[15]="APS_PARAMS"
-    files$[16]="ars_params",ids$[16]="ARS_PARAMS"
-    files$[17]="gls_params",ids$[17]="GLS_PARAMS"
-    files$[18]="ivc_whsecode",ids$[18]="IVC_WHSECODE"
-    files$[19]="ivc_buycode",ids$[19]="IVC_BUYCODE"
-    files$[20]="arc_distcode",ids$[20]="ARC_DISTCODE"
+    num_files=15
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ARS_PARAMS",     open_opts$[1]="OTA"
+    open_tables$[2]="IVM_ITEMMAST",   open_opts$[2]="OTA"
+    open_tables$[3]="IVC_PRODCODE",   open_opts$[3]="OTA"
+    open_tables$[4]="IVC_CLASCODE",   open_opts$[4]="OTA"
+    open_tables$[5]="IVC_TYPECODE",   open_opts$[5]="OTA"
+    open_tables$[6]="IVM_ITEMWHSE",   open_opts$[6]="OTA"
+    open_tables$[7]="ARC_DISTCODE",   open_opts$[7]="OTA"
+    open_tables$[8]="OPC_TAXCODE",    open_opts$[8]="OTA"
+    open_tables$[9]="IVC_WHSECODE",   open_opts$[9]="OTA"
+    open_tables$[10]="IVC_BUYCODE",   open_opts$[10]="OTA"
+    open_tables$[11]="APM_VENDMAST",  open_opts$[11]="OTA"
+    open_tables$[12]="IVM_ITEMCMTS",  open_opts$[12]="OTA"
+    open_tables$[13]="GLM_ACCT",      open_opts$[13]="OTA"
+    open_tables$[14]="IVM_ITEMSYN",   open_opts$[14]="OTA"
+    open_tables$[15]="IVM_ITEMVEND",  open_opts$[15]="OTA"
 
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-    ivs01a_dev=channels[1]
-    ivm01_dev=channels[2]
-    arm10_dev=channels[3]
-    glm01_dev=channels[4]
-    ivm01_dev2=channels[5]
-    ivm02_dev=channels[6]
-    ivm05_dev=channels[7]
-    ivm09_dev=channels[8]
-    ivm10a_dev=channels[9]
-    ivm12_dev=channels[10]
-    ivm13_dev=channels[11]
-    ivm14_dev=channels[12]
-    ivm15_dev=channels[13]
-    ivm24_dev=channels[14]
-    aps01a_dev=channels[15]
-    ars01a_dev=channels[16]
-    gls01a_dev=channels[17]
-    ivm10c_dev=channels[18]
-    ivm10f_dev=channels[19]
-    arm10d_dev=channels[20]
-    
+    gosub open_tables
 
-rem --- Dimension string templates
+    ars_params_dev=num(open_chans$[1])
+    dim ars_params$:open_tpls$[1]
 
-    dim ivs01a$:templates$[1],ivm01a$:templates$[2],arm10a$:templates$[3],
-:       glm01a$:templates$[4],ivm01b$:templates$[5],ivm02a$:templates$[6],
-:       ivm05a$:templates$[7],ivm09a$:templates$[8],ivm10a$:templates$[9],
-:       ivm12a$:templates$[10],ivm13a$:templates$[11],ivm14a$:templates$[12],
-:       ivm15a$:templates$[13],ivm24a$:templates$[14],aps01a$:templates$[15],
-:       ars01a$:templates$[16],gls01a$:templates$[17],ivm10c$:templates$[18],
-:       ivm10f$:templates$[19],arm10d$:templates$[20]
+rem --- Close files after ensuring they exist
 
-rem --- Assign form input values to local variables
+    num_files=14
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="IVM_ITEMMAST",   open_opts$[1]="CX"
+    open_tables$[2]="IVC_PRODCODE",   open_opts$[2]="CX"
+    open_tables$[3]="IVC_CLASCODE",   open_opts$[3]="CX"
+    open_tables$[4]="IVC_TYPECODE",   open_opts$[4]="CX"
+    open_tables$[5]="IVM_ITEMWHSE",   open_opts$[5]="CX"
+    open_tables$[6]="ARC_DISTCODE",   open_opts$[6]="CX"
+    open_tables$[7]="OPC_TAXCODE",    open_opts$[7]="CX"
+    open_tables$[8]="IVC_WHSECODE",   open_opts$[8]="CX"
+    open_tables$[9]="IVC_BUYCODE",    open_opts$[9]="CX"
+    open_tables$[10]="APM_VENDMAST",  open_opts$[10]="CX"
+    open_tables$[11]="IVM_ITEMCMTS",  open_opts$[11]="CX"
+    open_tables$[12]="GLM_ACCT",      open_opts$[12]="CX"
+    open_tables$[13]="IVM_ITEMSYN",   open_opts$[13]="CX"
+    open_tables$[14]="IVM_ITEMVEND",  open_opts$[14]="CX"
 
-    declare Option option!
+    gosub open_tables
 
-    include$=option!.getOptionData("pick_check")
-    begprod$=option!.getOptionData("product_type_1")
-    endprod$=option!.getOptionData("product_type_2")
-    begitem$=option!.getOptionData("item_id_1")
-    enditem$=option!.getOptionData("item_id_2")
-    type$=option!.getOptionData("item_type")
-    
-rem --- Retrieve parameter records
+rem --- retrieve distribute by sales value from param file
 
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-  
-rem --- Parameters
-
-    dim p[8],g[4],info$[20],i[1]
-    di$="N",g5$=gls01a.acct_output$
-    g[0]=num(gls01a.total_pers$)
-    g[3]=num(gls01a.acct_length$)
-    g[4]=num(gls01a.max_acct_len$)
-    p[0]=ivs01a.item_id_len
-    p[1]=num(ivs01a.precision$)
-    p[2]=ivs01a.ls_no_len
-    p[3]=num(ivs01a.desc_len_01$)
-    p[4]=num(ivs01a.desc_len_02$)
-    p[5]=num(ivs01a.desc_len_03$)
-    p[6]=num(ivs01a.current_per$)
-    p[7]=num(ivs01a.current_year$)
-   
-    call pgmdir$+"adc_application.aon","AR",info$[all]
-    ar$=info$[20]
-    call pgmdir$+"adc_application.aon","AP",info$[all]
-    ap$=info$[20]
-    call pgmdir$+"adc_application.aon","GL",info$[all]
+    readrecord(ars_params_dev,key=firm_id$+"AR00",dom=*next)ars_params$
+    di$=ars_params.dist_by_item$
+    call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
     gl$=info$[20]
-    if gl$<>"N" then 
-        call pgmdir$+"adc_application.aon",n2$,info$[all]
-        gl$=info$[9]
-    endif
-
-    if ap$<>"N" then
-        find record (aps01a_dev,key=firm_id$+"AP00",dom=std_missing_params) aps01a$
-        vendlen=num(aps01a.vendor_size$)
-        files$[20]="apm-01",ids$[20]="APM_VENDMAST"
-
-        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-    apm01_dev=channels[20]
-    dim apm01a$:templates$[20]
-    vendmask$=aps01a.vendor_output$
-    endif
-
-    if ar$<>"N" then
-        find record (ars01a_dev,key=firm_id$+"AR00",dom=std_missing_params) ars01a$
-        di$=ars01a.dist_by_item$
-        if gl$="N" di$="N"
-    endif
-
-rem --- Initializations
-
-    dim datep[8],datew[8],per_name$[12]
-
-    for x=1 to 12
-        per_name$[x]=field(gls01a$,"abbr_name_"+str(x:"00"))
-    next x
     
-    m6$="###0.00-"
-    nf$=Translate!.getTranslation("AON_(NOT_ON_FILE)")
-    m9$="##0-"
+rem --- Set additional params
+
+    params!.put("FIRM_ID",firm_id$)
+	params!.put("FIRM_NAME",firm_name$)
+    params!.put("BARISTA_WD",dir(""))       
+    if params!.get("ITEM_ID_2")="" then params!.put("ITEM_ID_2","~~~~~~")
+    if params!.get("PRODUCT_TYPE_2")="" then params!.put("PRODUCT_TYPE_2","~~~")
+    if params!.get("PICK_CHECK")="Y"
+        params!.put("COMMENT_YN","Y")
+    else
+        params!.put("COMMENT_YN","")
+    endif
+    if gl$="Y" and di$="Y"
+        params!.put("output_gl","Y")
+    else
+        params!.put("output_gl","N")
+    endif
+   
+rem --- Make Document Archive Record and Get ID
+
+    rep_date$=date(0:stbl("+DATE_MASK"))
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+    rd_source_alias$=rd_alias_id$
+    rd_source_type$="O"
+    rd_doc_source$="E"
+    rd_doc_ext$="JAS"
+    rd_archive_action$=rd_out_status$
+
+call rd_dir_syp$+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       "DOC_ID-NOREPRINT"
+
+rem --- Document Output Report Parameters
+
+    params!.put("DOC_NO",rd_doc_id$)
+    params!.put("DATE_REP",rep_date$+"  "+rep_time$)
+    
+rem --- Set Report Name & Subreport directory
+
+    reportDir$ = stbl("+DIR_REPORTS",err=*next)
+    reportTitle$="Inventory Item Detail Listing"
+    temp = unt
+    open (temp)reportDir$
+    reportDir$ = fid(temp)(9)+"/"
+    close (temp)
+    reportBaseName$ = "ItemDetail"
+    filename$ = reportDir$ + reportBaseName$ + ".jasper"
+
+    declare BBJasperReport report!
+    
+rem --- Check for user authentication
+
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    dbtimeout$="&socket_timeout=5000"
   
-    call pgmdir$+"adc_getmask.aon","","IV","P",imask$,m4$,0,0
-    call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,0
-    call pgmdir$+"adc_getmask.aon","","IV","C",imask$,m3$,0,0
-    call pgmdir$+"adc_getmask.aon","","AD","P",imask$,m5$,0,0
-    call pgmdir$+"adc_sizemask.aon",m4$,m4,11,15
-    call pgmdir$+"adc_sizemask.aon",m2$,m2,11,15
-    call pgmdir$+"adc_sizemask.aon",m3$,m3,11,15
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
 
-rem --- Retrieve key template
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMMAST","PRIMARY",ivm01_key_tpl$,rd_table_chans$[all],status$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMSYN","PRIMARY",ivm24_key_tpl$,rd_table_chans$[all],status$
-    dim ivm01a_key$:ivm01_key_tpl$,ivm24a_key$:ivm24_key_tpl$
+    dbname$ = stbl("+DBNAME")
+    dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+        if pos("jdbc:"=cvs(dbname$,8))=1 then			
+            url$=dbname$+url_user$
+        else
+            url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+        endif
+    endif
 
- rem --- Run Overlay
+    report! = new BBJasperReport(filename$,url$)
+    report!.putParams(params!)
 
-    run pgmdir$+"ivr_itemdetail_o1.aon"
+    locale$ = stbl("!LOCALE")
+    locale$ = stbl("+USER_LOCALE",err=*next)
+    report!.setLocale(locale$)
 
-rem #include std_error.src
+rem --- Fill Report and Show
 
-std_error: rem --- Standard error handler (01Apr2006)
+    declare BBJasperViewerWindow viewerWindow!
 
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:   str(err:"000"),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
-    if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
+    report!.fill()
+    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,reportTitle$,$93$)
+    viewerWindow!.setReleaseOnClose(1)
+    viewerWindow!.show(0)
+        
+rem --- Event Control
+
+    process_events,err=*same
+
     release
 
-rem #endinclude std_error.src
+connect_err:rem --- Connection Error
 
-rem #include std_missing_params.src
+    declare java.lang.Exception Exception!
+    Exception! = bbjapi().getLastException()
+    if Exception! = null() then 
+       x = msgbox(errmes(-1),16,"Connection Failed")
+    else
+       x = msgbox(Exception!.getLocalizedMessage(),16,"Connection Failed")
+    endif
 
-std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
-
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
-
-rem #endinclude std_missing_params.src
-
-rem #include std_end.src
-
-std_exit: rem --- Standard program end (01Mar2006)
-
-    if status <> 999 then run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
     
-rem #endinclude std_end.src
+open_tables:rem --- Open Tables
 
-    end
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return

@@ -116,32 +116,29 @@ endif
 rem --- Open/Lock files
 	dir_pgm$=stbl("+DIR_PGM")
 	sys_pgm$=stbl("+DIR_SYP")
-	num_files=6
-	dim files$[num_files],options$[num_files],ids$[num_files],templates$[num_files],channels[num_files]
-	files$[1]="gls_params",ids$[1]="GLS_PARAMS",options$[1]="OTA"
-	files$[2]="ars_params",ids$[2]="ARS_PARAMS",options$[2]="OTA"
-	files$[3]="ars_custdflt",ids$[3]="ARS_CUSTDFLT",options$[3]="OTA"; rem ars-10D
-	files$[4]="ars_credit",ids$[4]="ARS_CREDIT",options$[4]="OTA"; rem ars-01C
-	files$[5]="arm-02",ids$[5]="ARM_CUSTDET",options$[5]="OTA"
-	files$[6]="art-01",ids$[6]="ART_INVHDR",options$[6]="OTA"
-	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,1,num_files,files$[all],options$[all],
-:                              ids$[all],templates$[all],channels[all],batch,status
+	num_files=7
 
-	if status then
-		remove_process_bar:
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-	 	release
-	endif
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
+	open_tables$[3]="ARS_CUSTDFLT",open_opts$[3]="OTA"
+	open_tables$[4]="ARS_CREDIT",open_opts$[4]="OTA"
+	open_tables$[5]="ARM_CUSTDET",open_opts$[5]="OTA"
+	open_tables$[6]="ART_INVHDR",open_opts$[6]="OTA"
+	open_tables$[7]="ART_INVDET",open_opts$[7]="OTA"
+	gosub open_tables
 
-	gls01_dev=channels[1]
-	ars01_dev=channels[2]
-	ars10_dev=channels[3]
-	ars01c_dev=channels[4]
-	arm02_dev=channels[5],arm02_tpl$=templates$[5]
+	gls01_dev=num(open_chans$[1])
+	ars01_dev=num(open_chans$[2])
+	ars10_dev=num(open_chans$[3])
+	ars01c_dev=num(open_chans$[4])
+	arm02_dev=num(open_chans$[5])
+
 rem --- Dimension miscellaneous string templates
-	dim gls01a$:templates$[1],ars01a$:templates$[2],ars10d$:templates$[3],ars01c$:templates$[4]
+
+	dim gls01a$:open_tpls$[1],ars01a$:open_tpls$[2],ars10d$:open_tpls$[3],ars01c$:open_tpls$[4]
+	dim arm02_tpl$:open_tpls$[5]
+
 rem --- Retrieve parameter data
 	dim info$[20]
 	ars01a_key$=firm_id$+"AR00"
@@ -173,7 +170,7 @@ rem --- Retrieve parameter data
 	user_tpl.dflt_cred_hold$=dflt_cred_hold$
 	user_tpl.cust_dflt_tpl$=fattr(ars10d$)
 	user_tpl.cust_dflt_rec$=ars10d$
-	user_tpl.art01_dev=channels[6]
+	user_tpl.art01_dev=num(open_chans$[6])
 	dim dctl$[17]
 	if user_tpl.cm_installed$="Y"
  		dctl$[1]="ARM_CUSTDET.CREDIT_LIMIT"              

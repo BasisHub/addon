@@ -1,6 +1,9 @@
 rem ' Return sales totals by customer by customer type for a given month period
 rem ' SETERR ERROR_ROUTINE
 
+rem ' USE statements
+use ::ado_func.src::func
+
 rem ' Declare some variables ahead of time
 declare BBjStoredProcedureData sp!
 declare BBjRecordSet rs!
@@ -14,6 +17,8 @@ firm_id$=sp!.getParameter("FIRM_ID")
 cust_type$=sp!.getParameter("CUST_TYPE")
 month$ = sp!.getParameter("MONTH")
 year$ = sp!.getParameter("YEAR")
+custIdMask$=sp!.getParameter("CUST_ID_MASK")
+custIdLen=num(sp!.getParameter("CUST_ID_LEN"))
 
 rem ' set up the sql query
 sql$ = "SELECT SUM(t1.total_sales) AS total_sales, t1.customer_id, t3.customer_name, t3.contact_name FROM OPT_INVHDR t1 "
@@ -61,13 +66,17 @@ sqlprep(chan)sql$
 dim irec$:sqltmpl(chan)
 sqlexec(chan)
 
-rs! = BBJAPI().createMemoryRecordSet("FIRM_ID:C(2),CUSTOMER_NBR:C(6),CUST_NAME:C(30),CONTACT_NAME:C(20),TOTAL_SALES:N(15)")
+rs! = BBJAPI().createMemoryRecordSet("FIRM_ID:C(2),CUSTOMER_NBR:C(10),CUSTOMER_ID:C(6),CUST_NAME:C(30),CONTACT_NAME:C(20),TOTAL_SALES:N(15)")
 
 while 1
     irec$ = sqlfetch(chan,err=*break)
     data! = rs!.getEmptyRecordData()    
     data!.setFieldValue("FIRM_ID",firm_id$)
-    data!.setFieldValue("CUSTOMER_NBR",irec.customer_id$)
+
+    customer_id$ = irec.customer_id$
+    data!.setFieldValue("CUSTOMER_NBR",func.alphaMask(customer_id$(1,custIdLen),custIdMask$))
+    data!.setFieldValue("CUSTOMER_ID",customer_id$)
+
     data!.setFieldValue("TOTAL_SALES",str(irec.total_sales))
     data!.setFieldValue("CUST_NAME",irec.customer_name$)
     data!.setFieldValue("CONTACT_NAME",irec.contact_name$)

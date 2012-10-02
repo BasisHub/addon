@@ -11,7 +11,7 @@ rem ==========================================================================
 
 rem --- OLDLOCATION$ : Location of source aon directory being copied (Input)
 rem --- NEWLOCATION$ : Location of target aon directory (Input)
-rem --- UPGRADE%     : 0=Not an upgrade so copy data/1=Upgrade so don't copy data (Input)
+rem --- DEMODATA%    : 0=Do not copy demo data/1=Copy demo data (Input)
 rem --- HELP%        : 0=Do not copy AddonHelp.jar/1=Copy AddonHelp.jar (Input)
 rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
 rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
@@ -21,7 +21,7 @@ rem --- STATUS       : Status code/0=No error (Returned)
 
     seterr std_error
     setesc std_error
-    enter oldLocation$,newLocation$,upgrade%,help%,rdForm!,wait4ok%,status
+    enter oldLocation$,newLocation$,demoData%,help%,rdForm!,wait4ok%,status
 
 rem --- Initializations
 
@@ -31,7 +31,7 @@ rem --- Recursively copy oldLocation to newLocation
 
     declare CopyAonDir utility!
     utility! = new CopyAonDir(rdForm!, wait4ok%)
-    utility!.copyAonDirectory(oldLocation$, newLocation$, upgrade%, help%)
+    utility!.copyAonDirectory(oldLocation$, newLocation$, demoData%, help%)
     
 done: rem --- All done
     
@@ -74,6 +74,7 @@ rem  * Utility Class for recursively copying aon directory, skipping specific
 rem  * pre-defined directories and files.
 rem  */
     use java.io.File
+	use java.util.Iterator
     use java.util.Vector
     use ::bbtranslator.bbj::BBTranslator
     use ::ado_file.src::FileObject
@@ -84,7 +85,7 @@ rem  */
         field private BBjNumber BLOCKSIZE = 2^20
         field private BBjNumber log_dev = 0
         field private BBjNumber meter_proc_recs = 0
-        field private BBjNumber meter_total_recs = 2500
+        field private BBjNumber meter_total_recs = 3000
         field private BBjString dir_syp$=stbl("+DIR_SYP")
         field private BBjSysGui sysGUI!
         field private BBjTopLevelWindow form!
@@ -126,16 +127,91 @@ rem  */
         rem  *
         rem  * @param BBjString oldLocation$
         rem  * @param BBjString newLocation$
-        rem  * @param BBjInt skipDataFiles
+        rem  * @param BBjInt demoData
         rem  * @param BBjInt helpFile
         rem  */
-        method public void copyAonDirectory(BBjString oldLocation$, BBjString newLocation$, BBjInt skipDataFiles%, BBjInt helpFile%)
-            if skipDataFiles then #meter_total_recs = 2000
+        method public void copyAonDirectory(BBjString oldLocation$, BBjString newLocation$, BBjInt demoData%, BBjInt helpFile%)
+            if demoData% then #meter_total_recs = #meter_total_recs + 500
             #meter! = #createProgressMeter()
-            #openLog(skipDataFiles, oldLocation$, newLocation$)
+            #openLog(demoData%, oldLocation$, newLocation$)
 
-            #copyAonDirectory(new File(oldLocation$), new File(newLocation$), skipDataFiles%, helpFile%)
+            #copyAonDirectory(new File(oldLocation$), new File(newLocation$), demoData%, helpFile%)
 
+			if !demoData% then
+
+				rem --- When not using demo data, remove inventory item images (except addon_logo32.png)
+				declare Iterator iter!
+				declare File imagesDir!
+				declare Vector imagesFiles!
+				imagesDir! = new File(newLocation$ + "/images")
+				imagesFiles! = new Vector(java.util.Arrays.asList(imagesDir!.listFiles()))
+				iter! = imagesFiles!.iterator()
+				while iter!.hasNext()
+					aFile! = cast(File, iter!.next())
+				
+					rem --- Remove inventory item image (except addon_logo32.png)
+					if aFile!.getName()<>"addon_logo32.png" then
+						aFile!.delete()
+						#incrementProgressMeter("removed: "+aFile!.getPath())
+						#log("REMOVED: " + aFile!.getPath())
+					endif
+				wend
+
+				rem --- When not using demo data, remove ads_masks~*.xml files except remove ads_masks~99*.xml files
+				declare File syncDir!
+				declare Vector masksFiles!
+				syncDir! = new File(newLocation$ + "/data/sync")
+				masksFiles! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new MasksFilter())))
+				iter! = masksFiles!.iterator()
+				while iter!.hasNext()
+					aFile! = cast(File, iter!.next())
+					aFile!.delete()
+					#incrementProgressMeter("removed: "+aFile!.getPath())
+					#log("REMOVED: " + aFile!.getPath())
+				wend
+
+				rem --- When not using demo data, remove ads_sequences~*.xml files except remove ads_sequences~99*.xml files
+				declare Vector sequencesFiles!
+				sequencesFiles! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new SequencesFilter())))
+				iter! = sequencesFiles!.iterator()
+				while iter!.hasNext()
+					aFile! = cast(File, iter!.next())
+					aFile!.delete()
+					#incrementProgressMeter("removed: "+aFile!.getPath())
+					#log("REMOVED: " + aFile!.getPath())
+				wend
+	
+				rem --- When not using demo data, copy requiredFiles!
+				declare Vector requiredFiles!
+				requiredFiles! = new Vector()
+				requiredFiles!.add("adm_rptctl")
+				requiredFiles!.add("adm-09"); rem --- adm_procmaster
+				requiredFiles!.add("adm-19"); rem --- adm_procdetail
+				requiredFiles!.add("glm-06"); rem --- adm_auditcontrol
+				requiredFiles!.add("glm-03"); rem --- glc_journalcode
+				requiredFiles!.add("glm-18"); rem --- glm_recordtypes
+				requiredFiles!.add("ivc_whsecode")
+				requiredFiles!.add("opm_pointofsale")
+				iter! = requiredFiles!.iterator()
+				while iter!.hasNext()
+					aFile! = new File(newLocation$ + "/data", cast(String, iter!.next()))
+
+					rem --- Copy files
+					sourceChan=unt
+					open(sourceChan,isz=-1)oldLocation$ + "/data/"+aFile!.getName()
+					targetChan=unt
+					open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")aFile!.getPath()
+					while 1
+						readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+						writerecord(targetChan)record$
+					wend
+					close(sourceChan)
+					close(targetChan)
+					#incrementProgressMeter(oldLocation$ + "/data/"+aFile!.getName())
+					#log("COPIED: " + oldLocation$ + "/data/"+aFile!.getName())
+				wend
+			endif
+			
             #closeLog()
             #destroyProgressMeter()
         methodend
@@ -148,10 +224,10 @@ rem  */
         rem  *
         rem  * @param File source
         rem  * @param File target
-        rem  * @param BBjNumber skipDataFiles
+        rem  * @param BBjNumber demoData
         rem  * @param BBjInt helpFile
         rem  */
-        method private void copyAonDirectory(File source!, File target!, BBjInt skipDataFiles%, BBjInt helpFile%)
+        method private void copyAonDirectory(File source!, File target!, BBjInt demoData%, BBjInt helpFile%)
     
             rem -- recursively process directories and copy files
             if(source!.isDirectory()) then
@@ -172,14 +248,14 @@ rem  */
                     for i=0 to fileVector!.size()-1
                         #copyAonDirectory(new File(source!, cast(BBjString, fileVector!.get(i))), 
 :                                         new File(target!, cast(BBjString, fileVector!.get(i))), 
-:                                         skipDataFiles%, helpFile%)
+:                                         demoData%, helpFile%)
                     next i
                 endif
                 
             else
             
-                rem --- for upgrades, skip data files in data directory
-                if(skipDataFiles%) then
+                rem --- skip data files in data directory if not including demo data
+                if(!demoData%) then
                     parent$ = source!.getParent()
                     if(cast(BBjString, parent$).endsWith(cast(BBjString, File.separator + "data"))) then
                         #log("SKIPPED: " + source!.getPath())
@@ -307,11 +383,11 @@ rem  */
         rem /**
         rem  * Open log file.
         rem  *
-        rem  * @param BBjNumber skipDataFiles
+        rem  * @param BBjInt demoData
         rem  * @param BBjString oldLocation$
         rem  * @param BBjString newLocation$
         rem  */
-        method private void openLog(BBjNumber skipDataFiles, BBjString oldLocation$, BBjString newLocation$)
+        method private void openLog(BBjInt demoData%, BBjString oldLocation$, BBjString newLocation$)
             logDir$ = newLocation$ + "/logs"
             appDir$ = newLocation$
             
@@ -329,10 +405,10 @@ rem  */
             print(#log_dev)"Copyaon log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
             print(#log_dev)"Old source location: " + oldLocation$
             print(#log_dev)"New target location: " + newLocation$
-            if skipDataFiles
-                print(#log_dev)"Data files skipped."
+            if demoData%
+                print(#log_dev)"Demo data included."
             else
-                print(#log_dev)"Data files copied."
+                print(#log_dev)"Demo data not included."
             endif
             print(#log_dev)
         methodend
@@ -352,6 +428,38 @@ rem  */
         method private void closeLog()
             print(#log_dev)"Copyaon log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
             close(#log_dev)
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_masks~*.xml files, excluding ads_masks~99*.xml files.
+rem  */
+
+    class public MasksFilter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_masks~") and !file!.startsWith("ads_masks~99") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_sequences~*.xml files, excluding ads_sequences~99*.xml files.
+rem  */
+
+    class public SequencesFilter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_sequences~") and !file!.startsWith("ads_sequences~99") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
         methodend
         
     classend

@@ -1,3 +1,8 @@
+[[POE_REPLENSELECT.AREC]]
+rem --- Set default Ending Review Date equal to today
+	today$=date(0:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("POE_REPLENSELECT.REVIEW_DATE_2",today$)
+	callpoint!.setStatus("REFRESH")
 [[POE_REPLENSELECT.ASVA]]
 rem --- write poe-07
 rem --- run program is old poe.fb that builds poe-06/16/26/36 and 17(?)

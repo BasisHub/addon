@@ -1,3 +1,42 @@
+[[ADX_COPYMODS.NEW_CONFIG_LOC.BINP]]
+rem --- Initialize new config location
+
+	if cvs(callpoint!.getColumnData("ADX_COPYMODS.NEW_CONFIG_LOC"),3)="" then
+		targetDir$=callpoint!.getDevObject("target_dir")
+		callpoint!.setColumnData("ADX_COPYMODS.NEW_CONFIG_LOC",targetDir$)
+		callpoint!.setStatus("REFRESH")
+	endif
+[[ADX_COPYMODS.NEW_CONFIG_LOC.AVAL]]
+rem --- Validate new config location
+
+	config_loc$=callpoint!.getUserInput()
+	gosub validate_config_loc
+	callpoint!.setUserInput(config_loc$)
+	if abort
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
+	if cvs(config_loc$,3)<>cvs(callpoint!.getDevObject("prev_config_loc"),3)
+		rem --- Capture current config location value so can tell later if it's been changed
+		callpoint!.setDevObject("prev_config_loc",config_loc$)
+
+		rem --- Update grid
+		vectRows!=callpoint!.getDevObject("vectRows")
+		if vectRows!.size()>0 then
+			numCols=num(callpoint!.getDevObject("def_rpts_cols"))
+			for i=0 to vectRows!.size()-1 step numCols
+				source_value$=vectRows!.getItem(i+2)
+				if cvs(vectRows!.getItem(i+3),3)="" then
+					gosub source_target_value
+					vectRows!.setItem(i+3, target_value$)
+				endif
+			next i
+
+			gosub fill_grid
+			util.resizeWindow(Form!, SysGui!)
+		endif
+	endif
 [[ADX_COPYMODS.ASIZ]]
 rem --- Resize the grid
 
@@ -42,11 +81,11 @@ rem --- Validate source syn file
 		break
 	endif
 
-rem --- Validate target syn file
+rem --- Validate new config location
 
-	target_syn$=callpoint!.getColumnData("ADX_COPYMODS.TARGET_SYN_FILE")
-	gosub validate_target_syn
-	if !success
+	config_loc$=callpoint!.getColumnData("ADX_COPYMODS.NEW_CONFIG_LOC")
+	gosub validate_config_loc
+	if abort
 		callpoint!.setStatus("ABORT")
 		break
 	endif
@@ -68,14 +107,16 @@ rem --- Build hash of STBL source and target values and array of PREFIX source a
 	numCols=num(callpoint!.getDevObject("def_rpts_cols"))
 
 	for i=0 to vectRows!.size() step numCols
-		if cvs(gridStbls!.getCellText(i/numCols,0),3)="STBL"
+		type$=cvs(gridStbls!.getCellText(i/numCols,0),3)
+
+		if type$="STBL" or type$="SYSSTBL"
 			aList!=new ArrayList()
 			aList!.add(gridStbls!.getCellText(i/numCols,2)); rem --- source value
 			aList!.add(gridStbls!.getCellText(i/numCols,3)); rem --- target value
 			stblMap!.put(gridStbls!.getCellText(i/numCols,1), aList!)
 		endif
 
-		if cvs(gridStbls!.getCellText(i/numCols,0),3)="PREFIX"
+		if type$="PREFIX" or type$="SYSPFX"
 			aList!=new ArrayList()
 			aList!.add(gridStbls!.getCellText(i/numCols,2)); rem --- source value
 			aList!.add(gridStbls!.getCellText(i/numCols,3)); rem --- target value
@@ -85,11 +126,6 @@ rem --- Build hash of STBL source and target values and array of PREFIX source a
 
 	callpoint!.setDevObject("stblMap",stblMap!)
 	callpoint!.setDevObject("pfxList",pfxList!)
-[[ADX_COPYMODS.TARGET_SYN_FILE.AVAL]]
-rem --- Validate target syn file
-
-	target_syn$=callpoint!.getUserInput()
-	gosub validate_target_syn
 [[ADX_COPYMODS.BSHO]]
 rem --- Declare Java classes used
 
@@ -97,38 +133,50 @@ rem --- Declare Java classes used
 	use java.util.ArrayList
 	use java.util.HashMap
 
-rem --- Initialize current source syn file value so can tell later if it's been changed
-
+rem --- Initialize current values so can tell later if they've been changed
 	callpoint!.setDevObject("prev_src_syn_file","")
+	callpoint!.setDevObject("prev_config_loc","")
 [[ADX_COPYMODS.SOURCE_SYN_FILE.AVAL]]
 rem --- Validate source syn file
 
 	source_syn$=callpoint!.getUserInput()
 	gosub validate_source_syn
-
+	
 	if success and cvs(source_syn$,3)<>cvs(callpoint!.getDevObject("prev_src_syn_file"),3)
 		rem --- Capture current source syn file value so can tell later if it's been changed
 		callpoint!.setDevObject("prev_src_syn_file",source_syn$)
 
-		rem --- Set default for target syn file to MODS_DIR/vnnnn/config/MODS_SYN.syn
+		rem --- Set default for new config location to MODS_DIR/vnnnn/
 		rem --- Get vnnnn from VERSION_ID in the ADM_MODULES table
-		rem --- Where ASC_COMP_ID comes from the ACOMP line of source syn file
-		rem --- And ASC_PROD_ID comes from the APROG line of source syn file
+		rem --- Where ASC_COMP_ID comes from the SYSCOMP/ACOMP line of source syn file
+		rem --- And ASC_PROD_ID comes from the SYSAPP/APROG line of source syn file
 		synVersion$="00",comp_id$="",prod_id$=""
 		synChan=unt
 		open(synChan,isz=-1, err=file_not_found)source_syn$
 		while 1
 			read(synChan,end=*break)record$
-			rem --- locate ACOMP line
-			if(pos("ACOMP="=record$) = 1) then
-				rem --- parse ASC_COMP_ID from ACOMP line
-				comp_id$=record$(7, pos(";"=record$(7))-1)
+			if(pos("="=record$)) then
+				key$=record$(1,pos("="=record$)-1)
+
+				rem --- locate lines to parse
+				switch (BBjAPI().TRUE)
+					case key$ = "ACOMP"
+					case key$ = "SYSCOMP"
+						rem --- parse ASC_COMP_ID from SYSCOMP/ACOMP line
+						xpos=len(key$)+2
+						comp_id$=record$(xpos, pos(";"=record$(xpos))-1)
+						break
+					case key$ = "APROD"
+					case key$ = "SYSAPP"
+						rem --- parse ASC_PROD_ID from SYSAPP/APROD line
+						xpos=len(key$)+2
+						prod_id$=record$(xpos, pos(";"=record$(xpos))-1)
+						break
+					case default
+						break
+				swend                    
 			endif
-			rem --- locate APROD line
-			if(pos("APROD="=record$) = 1) then
-				rem --- parse ASC_PROD_ID from APROD line
-				prod_id$=record$(7, pos(";"=record$(7))-1)
-			endif
+			if comp_id$<>"" and prod_id$<>"" then break
 		wend
 		close(synChan)
 
@@ -193,17 +241,12 @@ rem --- Validate source syn file
 			 i=i+1
 			version$=synVersion$+"_"+str(i)
 		wend
-		targetDir$=targetDir$+"/config/"
+		callpoint!.setDevObject("target_dir",targetDir$)
 		synVersion$=version$
 		callpoint!.setDevObject("syn_version",synVersion$)
 
-		rem --- Parse MODS_SYN from source syn path
-		filePath$=source_syn$
-		gosub fix_path
-		targetSynFile$=filePath$(pos("/"=filePath$,-1)+1)
-		callpoint!.setColumnData("ADX_COPYMODS.TARGET_SYN_FILE",targetDir$+targetSynFile$)
+		rem --- Initialize grid
 		callpoint!.setStatus("REFRESH")
-
 		gosub create_reports_vector
 		gosub fill_grid
 		util.resizeWindow(Form!, SysGui!)
@@ -211,7 +254,7 @@ rem --- Validate source syn file
 	break
 
 file_not_found:
-	rem --- Can't initialize target syn file
+	rem --- Cannot open syn file, so can't do much
 [[ADX_COPYMODS.<CUSTOM>]]
 format_grid: rem --- Format grid
 
@@ -270,23 +313,20 @@ fill_grid: rem --- Fill the grid with data in vectRows!
 
 create_reports_vector: rem --- Create a vector of STBLs from the source syn file to fill the grid
 
+	config_loc$=cvs(callpoint!.getColumnData("ADX_COPYMODS.NEW_CONFIG_LOC"),3)
 	more=0
 	synDev=unt
 	open(synDev,isz=-1,err=*next)testfile$; more=1
 
 	vectRows!=SysGUI!.makeVector()
-	stbLine$="STBL=SET "
-	stbLen=len(stbLine$)
-	pfxLine$="PREFIX="
-	pfxLen=len(pfxLine$)
-
 	while more
 		read(synDev,end=*break)record$
 
-		rem --- process STBL lines
-		if(pos(stbLine$=record$) = 1) then
-			stbl$ = record$(stbLen+1, pos("="=record$(stbLen+1))-1)
-			source_value$=cvs(record$(stbLen+pos("="=record$(stbLen+1))+1),3)
+		rem --- process SYSSTBL/STBL lines
+		if(pos("STBL="=record$) = 1 or pos("SYSSTBL="=record$) = 1) then
+			xpos = pos(" "=record$)
+			stbl$ = record$(xpos+1, pos("="=record$(xpos+1))-1)
+			source_value$=cvs(record$(pos("="=record$,1,2)+1),3)
 			gosub source_target_value
 			vectRows!.addItem("STBL")
 			vectRows!.addItem(stbl$)
@@ -294,9 +334,9 @@ create_reports_vector: rem --- Create a vector of STBLs from the source syn file
 			vectRows!.addItem(target_value$)
 		endif
 
-		rem --- process PREFIX lines
-		if(pos(pfxLine$=record$) = 1) then
-			source_value$=cvs(record$(stbLen+1),3)
+		rem --- process SYSPFX/PREFIX lines
+		if(pos("PREFIX"=record$) = 1 or pos("SYSPFX"=record$) = 1) then
+			source_value$=cvs(record$(pos("="=record$)+1),3)
 			gosub source_target_value
 			vectRows!.addItem("PREFIX")
 			vectRows!.addItem("")
@@ -309,99 +349,101 @@ create_reports_vector: rem --- Create a vector of STBLs from the source syn file
 	
 	return
 
-source_target_value: rem -- Set default new target value based on source value
+source_target_value: rem -- Set default new target value based on new config location
 
-	target_value$=source_value$
-
-	rem --- If source holds a path, then need to update it
+	rem --- If source holds a path, then need to initialize default new target value
 	declare File aFile!
 	aFile! = new File(source_value$)
 	if aFile!.exists()
-		rem --- Add version directory to path
-		synVersion$="v"+callpoint!.getDevObject("syn_version")
-		modsDir$=callpoint!.getDevObject("mods_dir")
-		modsDir$=modsDir$(pos(":"=modsDir$)+1)+"/"; rem --- strip possible Windows drive ID and add trailing slash
+		target_value$=""
 		filePath$=source_value$
 		gosub fix_path
 		sourcePath$=filePath$
-		if aFile!.isDirectory() and filePath$(len(sourcePath$))<>"/" then sourcePath$=sourcePath$+"/"
-		if pos(modsDir$=sourcePath$)
-			rem --- Insert new version directory after MODS_DIR
-			target_value$=sourcePath$(1,pos(modsDir$=sourcePath$)-1+len(modsDir$))+synVersion$+"/"
+		
+		if config_loc$<>""
+			rem --- Add version directory to path
+			synVersion$="v"+callpoint!.getDevObject("syn_version")
+			modsDir$=callpoint!.getDevObject("mods_dir")
+			modsDir$=modsDir$(pos(":"=modsDir$)+1)+"/"; rem --- strip possible Windows drive ID and add trailing slash
+			if aFile!.isDirectory() and filePath$(len(sourcePath$))<>"/" then sourcePath$=sourcePath$+"/"
+			if pos(modsDir$=sourcePath$)
 
-			rem --- Remove existing "versioned" directory in source path
-			verDir$=sourcePath$(pos(modsDir$=sourcePath$)+len(modsDir$))
-			if pos("v"=verDir$)=1
-				tmpDir$=verDir$(1,pos("/"=verDir$)-1); rem --- things are easier here without the trailing stuff
-				if pos("_"=tmpDir$)
-					rem --- There can be a "_n" at the end of a "versioned" directory
-					ver=-1
-					ver=num(tmpDir$(2,pos("_"=tmpDir$(2))-1),err=*next)
-					if ver>=0
+				rem --- Remove existing "versioned" directory in source path
+				verDir$=sourcePath$(pos(modsDir$=sourcePath$)+len(modsDir$))
+				if pos("v"=verDir$)=1
+					tmpDir$=verDir$(1,pos("/"=verDir$)-1); rem --- things are easier here without the trailing stuff
+					if pos("_"=tmpDir$)
+						rem --- There can be a "_n" at the end of a "versioned" directory
 						ver=-1
-						ver=num(tmpDir$(pos("_"=tmpDir$)+1),err=*next)
-						if ver>0
+						ver=num(tmpDir$(2,pos("_"=tmpDir$(2))-1),err=*next)
+						if ver>=0
+							ver=-1
+							ver=num(tmpDir$(pos("_"=tmpDir$)+1),err=*next)
+							if ver>0
+								rem --- This path segement starts with a "versioned" directory, so skip first directory in segement
+								verDir$=verDir$(pos("/"=verDir$)+1)
+							endif
+						endif
+					else
+						ver=-1
+						ver=num(tmpDir$(2),err=*next)
+						if ver>=0
 							rem --- This path segement starts with a "versioned" directory, so skip first directory in segement
 							verDir$=verDir$(pos("/"=verDir$)+1)
 						endif
 					endif
-				else
-					ver=-1
-					ver=num(tmpDir$(2),err=*next)
-					if ver>=0
-						rem --- This path segement starts with a "versioned" directory, so skip first directory in segement
-						verDir$=verDir$(pos("/"=verDir$)+1)
-					endif
 				endif
-			endif
-			target_value$=target_value$+verDir$
-		else
-			rem --- Append new version directory to source path
-			if aFile!.isDirectory()
-				sourceDir$=sourcePath$
-				sourceFile$=""
+				target_value$=config_loc$+"/"+verDir$
 			else
-				sourceDir$=sourcePath$(1,pos("/"=sourcePath$,-1))
-				sourceFile$=sourcePath$(pos("/"=sourcePath$,-1))
-			endif
+				rem --- Append new version directory to source path
+				if aFile!.isDirectory()
+					sourceDir$=sourcePath$
+					sourceFile$=""
+				else
+					sourceDir$=sourcePath$(1,pos("/"=sourcePath$,-1))
+					sourceFile$=sourcePath$(pos("/"=sourcePath$,-1))
+				endif
 
-			rem --- Remove existing "versioned" directory in source path
-			verDir$=sourceDir$(pos("/"=sourceDir$,-1,2)+1); rem --- there is a trailing slash
-			sourceDir$=sourceDir$(1,pos("/"=sourceDir$,-1,2)); rem --- there is a trailing slash
-			if pos("v"=verDir$)=1
-				tmpDir$=verDir$(1,pos("/"=verDir$)-1); rem --- things are easier here without the trailing stuff
-				if pos("_"=tmpDir$)
-					rem --- There can be a "_n" at the end of a "versioned" directory
-					ver=-1
-					ver=num(tmpDir$(2,pos("_"=tmpDir$(2))-1),err=*next)
-					if ver>=0
+				rem --- Remove existing "versioned" directory in source path
+				verDir$=sourceDir$(pos("/"=sourceDir$,-1,2)+1); rem --- there is a trailing slash
+				sourceDir$=sourceDir$(1,pos("/"=sourceDir$,-1,2)); rem --- there is a trailing slash
+				if pos("v"=verDir$)=1
+					tmpDir$=verDir$(1,pos("/"=verDir$)-1); rem --- things are easier here without the trailing stuff
+					if pos("_"=tmpDir$)
+						rem --- There can be a "_n" at the end of a "versioned" directory
 						ver=-1
-						ver=num(tmpDir$(pos("_"=tmpDir$)+1),err=*next)
-						if ver>0
+						ver=num(tmpDir$(2,pos("_"=tmpDir$(2))-1),err=*next)
+						if ver>=0
+							ver=-1
+							ver=num(tmpDir$(pos("_"=tmpDir$)+1),err=*next)
+							if ver>0
+								rem --- This is a "versioned" directory, so skip it
+								verDir$=""
+							endif
+						endif
+					else
+						ver=-1
+						ver=num(tmpDir$(2),err=*next)
+						if ver>=0
 							rem --- This is a "versioned" directory, so skip it
 							verDir$=""
 						endif
 					endif
-				else
-					ver=-1
-					ver=num(tmpDir$(2),err=*next)
-					if ver>=0
-						rem --- This is a "versioned" directory, so skip it
-						verDir$=""
-					endif
 				endif
+				target_value$=sourceDir$+verDir$+synVersion$+sourceFile$
 			endif
-			target_value$=sourceDir$+verDir$+synVersion$+sourceFile$
 		endif
 
 		rem --- Target path needs to end with trailing slash (or not), the same as source path
 		if filePath$(len(filePath$))="/"
 			rem -- Add trailing slash as needed to target path
-			if target_value$(len(target_value$))<>"/" then target_value$=target_value$+"/"
+			if len(target_value$)>0 and target_value$(len(target_value$))<>"/" then target_value$=target_value$+"/"
 		else
 			rem -- Remove trailing slash as needed to target path
-			if target_value$(len(target_value$))="/" then target_value$=target_value$(1,(len(target_value$)-1))
+			if len(target_value$)>0 and target_value$(len(target_value$))="/" then target_value$=target_value$(1,(len(target_value$)-1))
 		endif
+	else
+		target_value$=source_value$
 	endif
 
 	return
@@ -465,30 +507,61 @@ verify_syn_file_ext: rem --- Verify file extension is .syn
 
 	return
 
-validate_target_syn: rem --- Validate target syn directory
+validate_config_loc: rem --- Validate new config location
 
-	success=0
+	abort=0
 
-	rem --- Directory must not exist
+	rem --- Remove trailing slashes (/ and \) from new config location
 
-	targetDir$=target_syn$(1, pos("/config/"=target_syn$)-1)
-	exists=0
-	testChan=unt
-	open(testChan,err=*next)targetDir$; exists=1
-	close(testChan)
+	while len(config_loc$) and pos(config_loc$(len(config_loc$),1)="/\")
+		config_loc$ = config_loc$(1, len(config_loc$)-1)
+	wend
 
-	if exists
-		msg_id$="AD_DIR_EXISTS"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=targetDir$
-		gosub disp_message
-		callpoint!.setFocus("ADX_COPYMODS.TARGET_SYN_FILE")
+	rem --- Remove trailing “/config”
+
+	if len(config_loc$)>=7 and pos(config_loc$(1+len(config_loc$)-7)="/config\config" ,7)
+		config_loc$ = config_loc$(1, len(config_loc$)-7)
+	endif
+
+	rem --- Don’t allow current download location
+
+	testLoc$=config_loc$
+	gosub verify_not_download_loc
+	if !loc_ok
+		callpoint!.setColumnData("ADX_COPYMODS.NEW_CONFIG_LOC", config_loc$)
+		callpoint!.setFocus("ADX_COPYMODS.NEW_CONFIG_LOC")
 		callpoint!.setStatus("ABORT")
+		abort=1
 		return
 	endif
 
-	success=1
-	
+	rem --- Cannot be same as sync file location
+
+	source_syn$=callpoint!.getColumnData("ADX_COPYMODS.SOURCE_SYN_FILE")
+	if ((new File(source_syn$)).getAbsolutePath()).toLowerCase().startsWith((new File(config_loc$)).getAbsolutePath().toLowerCase()+File.separator)
+		msg_id$="AD_INSTALL_LOC_USED"
+		gosub disp_message
+		callpoint!.setColumnData("ADX_COPYMODS.NEW_CONFIG_LOC", config_loc$)
+		callpoint!.setFocus("ADX_COPYMODS.NEW_CONFIG_LOC")
+		callpoint!.setStatus("ABORT")
+		abort=1
+		return
+	endif
+
+	return
+
+verify_not_download_loc: rem --- Verify not using current download location
+
+	loc_ok=1
+	bbjHome$ = System.getProperty("basis.BBjHome")
+	if ((new File(testLoc$)).getAbsolutePath()).toLowerCase().startsWith((new File(bbjHome$)).getAbsolutePath().toLowerCase()+File.separator)
+		msg_id$="AD_INSTALL_LOC_BAD"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=bbjHome$
+		gosub disp_message
+		loc_ok=0
+	endif
+
 	return
 
 fix_path: rem --- Flip directory path separators

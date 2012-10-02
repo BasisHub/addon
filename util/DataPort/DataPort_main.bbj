@@ -93,6 +93,38 @@ rem --- Set the hook for dealer custom call
         break
     wend
 
+rem --- Get current Customer and Vendor number sizes
+
+	custSizeMap! = new java.util.HashMap()
+	vendSizeMap! = new java.util.HashMap()
+	dim key$(6)
+    sys01_dev=unt
+    open (sys01_dev)source_folder$+"/"+cvs("sys-01",version_cvs)
+	while 1
+		key$(1)=key(sys01_dev,end=*break)
+		firm$=key$(1,2)
+		rec$=key$(3)
+		switch (BBjAPI().TRUE)
+			case rec$ = "AR00"
+				rem --- Customer number size
+				dim p2$(6)
+				read(sys01_dev)*,*,p2$(1)
+				custSizeMap!.put(firm$,num(p2$(1,2)))
+				break
+			case rec$ = "AP00"
+				rem --- Vendor number size
+				dim p2$(4)
+				read(sys01_dev)*,*,p2$(1)
+				vendSizeMap!.put(firm$,num(p2$(1,2)))
+				break
+			case default
+				read(sys01_dev)
+				break
+		swend
+
+	wend
+	close(sys01_dev)
+	
 rem --- Set the Temporary Vendor Number here
 
     temp_vend$=""
@@ -501,9 +533,10 @@ end_ddm04:
     if record_id_field$<>"" and field(old_rec$,record_id_field$,err=*continue)<>ddm03.record_id$ then
        goto next_rec
     endif
-    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) +                      field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
+    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) + field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
        goto next_rec
     endif
+	thisFirm$=""
 
     rem --- start field loop
 
@@ -517,6 +550,7 @@ rem --- Retrieve value$ if applicable
 rem --- Get list of valid firms
         if cvs(old_fieldlist.name$[field],3)="FIRM_ID"
             if cvs(value$,3)<>""
+				thisFirm$=value$
                 if pos(value$=firms$,2)=0
                     firms$=firms$+value$
                 endif
@@ -612,6 +646,26 @@ rem --- Set blank Credit Hold (Y;N;E) field values to N
             value$="W"
         endif
 
+rem --- CUSTOMER_ID and VENDOR_ID data needs adjusting when masks are less than full size
+
+		if cvs(new_fieldlist.name$[field],3) = "CUSTOMER_ID"
+			if custSizeMap!.containsKey(thisFirm$) then
+				cust_size = cast(BBjNumber, custSizeMap!.get(thisFirm$))
+				if cust_size > 0 and cust_size < 6 then
+					value$=pad(value$(1,cust_size),6,"R","0")
+				endif
+			endif
+		endif
+		
+		if cvs(new_fieldlist.name$[field],3) = "VENDOR_ID"
+			if vendSizeMap!.containsKey(thisFirm$) then
+				vend_size = cast(BBjNumber, vendSizeMap!.get(thisFirm$))
+				if vend_size > 0 and vend_size < 6 then
+					value$=pad(value$(1,vend_size),6,"R","0")
+				endif
+			endif
+		endif
+		
 rem --- Call custom program - Note - there is no CALL/ENTER list, so all variables will be 
 rem     available. Common usages for this would be things like data conversion, since value$
 rem     holds the data in the field coming in, and old_fieldlist.name$[field] is the variable

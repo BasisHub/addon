@@ -7,12 +7,13 @@ rem --- Recalculate totals
 	gosub disp_totals
 
 	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
+	callpoint!.setDevObject("was_on_tot_tab","Y")
 [[OPE_ORDHDR.DISCOUNT_AMT.AVAL]]
 rem --- Discount Amount cannot exceed Total Sales Amount
 
 	disc_amt = num(callpoint!.getUserInput())
 	total_sales = num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
-	if disc_amt > total_sales then
+	if (total_sales >= 0 and disc_amt > total_sales) or (total_sales < 0 and disc_amt < total_sales) then
 		disc_amt = total_sales
 		callpoint!.setUserInput(str(disc_amt))
 	endif
@@ -22,6 +23,7 @@ rem --- Recalculate totals
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	gosub calculate_tax
 	gosub disp_totals
+	callpoint!.setDevObject("was_on_tot_tab","Y")
 [[OPE_ORDHDR.DISCOUNT_AMT.BINP]]
 rem --- Now we've been on the Totals tab
 
@@ -93,6 +95,7 @@ rem --- Clear availability information
 	
 	gosub clear_avail
 	callpoint!.setDevObject("was_on_tot_tab","N")
+	callpoint!.setDevObject("details_changed","N")
 
 	gosub init_msgs
 [[OPE_ORDHDR.ARAR]]
@@ -101,7 +104,14 @@ print "Hdr:ARAR"; rem debug
 rem --- Set data
 
 	user_tpl.order_date$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_DATE")
-	callpoint!.setDevObject("was_on_tot_tab","N")
+
+	idx=form!.getControl(num(stbl("+TAB_CTL"))).getSelectedIndex()
+	if idx<>2
+		callpoint!.setDevObject("was_on_tot_tab","N")
+	else
+		callpoint!.setDevObject("was_on_tot_tab","Y")
+	endif
+	callpoint!.setDevObject("details_changed","N")
 
 rem --- Set flags
 
@@ -271,40 +281,28 @@ rem --- Has customer and order number been entered?
 
 rem --- Check Ship-to's
 
-		shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
-		shipto_var$  = "OPE_ORDHDR.SHIPTO_NO"
-
-		if shipto_type$ = "S" and cvs(callpoint!.getColumnData(shipto_var$), 2) = "" then
-			msg_id$ = "OP_SHIPTO_NO_MISSING"
-			gosub disp_message
-			callpoint!.setFocus(shipto_var$)
-			user_tpl.shipto_warned = 1
-			break; rem --- exit callpoint
-		else
-			ship_addr1_var$ = "<<DISPLAY>>.SADD1"
-
-			if shipto_type$ = "M" and cvs(callpoint!.getColumnData(ship_addr1_var$), 2) = "" then
-				msg_id$ = "OP_MAN_SHIPTO_NEEDED"
-				gosub disp_message
-				callpoint!.setFocus(ship_addr1_var$)
-				user_tpl.shipto_warned = 1
-				break; rem --- exit callpoint
-			endif
-		endif
+	shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
+	shipto_no$  = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
+	gosub check_shipto
+	if user_tpl.shipto_warned
+		break; rem --- exit callpoint
+	endif
 
 rem --- Check to see if we need to go to the totals tab
 
 rem --- Force focus on the Totals tab
-goto no_warn;rem jpb Work on this for bug 4717
+
 	if pos(callpoint!.getDevObject("totals_warn")="24")>0
-		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0 then
-			callpoint!.setMessage("OP_TOTALS_TAB")
-			callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
-			callpoint!.setStatus("ABORT")
-			break
+		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
+			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
+				callpoint!.setMessage("OP_TOTALS_TAB")
+				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
+				callpoint!.setDevObject("was_on_tot_tab","Y")
+				callpoint!.setStatus("ABORT")
+				break
+			endif
 		endif
 	endif
-no_warn:
 [[OPE_ORDHDR.CUSTOMER_ID.AVAL]]
 print "CUSTOMER_ID:AVAL"; rem debug
 	
@@ -382,6 +380,18 @@ rem --- Do credit status (management)
 [[OPE_ORDHDR.BPRK]]
 print "Hdr:BPRK"; rem debug
 
+	if pos(callpoint!.getDevObject("totals_warn")="24")>0
+		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
+			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
+				callpoint!.setMessage("OP_TOTALS_TAB")
+				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
+				callpoint!.setDevObject("was_on_tot_tab","Y")
+				callpoint!.setStatus("ABORT")
+				break
+			endif
+		endif
+	endif
+
 rem --- Is previous record an order and not void?
 
 	file_name$ = "OPE_ORDHDR"
@@ -449,7 +459,27 @@ rem --- Enable buttons as appropriate
 rem --- Set Backordered text field
 
 	call user_tpl.pgmdir$+"opc_creditmsg.aon","H",callpoint!,UserObj!
-	
+
+rem --- Set MODIFIED if totals were changed in the grid
+
+	if cvs(callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID"),3)<>"" 
+:	and cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"),3)<>""
+:	and str(callpoint!.getDevObject("discount_amt"))<>"null"
+:	and str(callpoint!.getDevObject("freight_amt"))<>"null"
+:	and str(callpoint!.getDevObject("tax_amount"))<>"null"
+:	and str(callpoint!.getDevObject("taxable_amt"))<>"null"
+:	and str(callpoint!.getDevObject("total_cost"))<>"null"
+:	and str(callpoint!.getDevObject("total_sales"))<>"null" then
+
+		if num(callpoint!.getDevObject("discount_amt"))<>num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
+:		or num(callpoint!.getDevObject("freight_amt"))<>num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+:		or num(callpoint!.getDevObject("tax_amount"))<>num(callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT"))
+:		or num(callpoint!.getDevObject("taxable_amt"))<>num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT"))
+:		or num(callpoint!.getDevObject("total_cost"))<>num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST"))
+:		or num(callpoint!.getDevObject("total_sales"))<>num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")) then
+			callpoint!.setStatus("MODIFIED")
+		endif
+	endif	
 [[OPE_ORDHDR.BPFX]]
 print "Hdr:BPFX"; rem debug
 
@@ -462,8 +492,31 @@ rem --- Disable buttons
 	callpoint!.setOptionEnabled("PRNT",0)
 	callpoint!.setOptionEnabled("RPRT",0)
 	callpoint!.setOptionEnabled("TTLS",0)
+
+rem --- Capture current totals so we can tell later if they were changed in the grid
+
+	if cvs(callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID"),3)<>"" and cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"),3)<>""
+		callpoint!.setDevObject("discount_amt",callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
+		callpoint!.setDevObject("freight_amt",callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+		callpoint!.setDevObject("tax_amount",callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT"))
+		callpoint!.setDevObject("taxable_amt",callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT"))
+		callpoint!.setDevObject("total_cost",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST"))
+		callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
+	endif
 [[OPE_ORDHDR.BNEK]]
 print "Hdr:BNEK"; rem debug
+
+	if pos(callpoint!.getDevObject("totals_warn")="24")>0
+		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
+			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
+				callpoint!.setMessage("OP_TOTALS_TAB")
+				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
+				callpoint!.setDevObject("was_on_tot_tab","Y")
+				callpoint!.setStatus("ABORT")
+				break
+			endif
+		endif
+	endif
 
 rem --- Is next record an order and not void?
 
@@ -576,6 +629,15 @@ rem --- Set OrderHelper object fields
 rem --- Clear availability
 
 	gosub clear_avail
+
+rem --- Capture current totals so we can tell later if they were changed in the grid
+
+	callpoint!.setDevObject("discount_amt",callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
+	callpoint!.setDevObject("freight_amt",callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+	callpoint!.setDevObject("tax_amount",callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT"))
+	callpoint!.setDevObject("taxable_amt",callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT"))
+	callpoint!.setDevObject("total_cost",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST"))
+	callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
 [[OPE_ORDHDR.BOVE]]
 print "Hdr:BOVE"; rem debug
 
@@ -811,18 +873,27 @@ rem --- Duplicate Historical Invoice
 [[OPE_ORDHDR.SHIPTO_NO.AVAL]]
 print "SHIPTO:AVAL"; rem debug
 
+rem --- Check Ship-to's
+
+	shipto_no$  = callpoint!.getUserInput()
+	shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
+	gosub check_shipto
+	if user_tpl.shipto_warned
+		break; rem --- exit callpoint
+	endif
+
 rem --- Remove manual ship-record, if necessary
 
-	ship_to_no$ = callpoint!.getUserInput()
 	cust_id$    = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 	order_no$   = callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 
-	if user_tpl.prev_ship_to$ = "000099" and ship_to_no$ <> "000099" then
+	if user_tpl.prev_ship_to$ = "000099" and shipto_no$ <> "000099" then
 		remove (fnget_dev("OPE_ORDSHIP"), key=firm_id$+cust_id$+order_no$, dom=*next)
 	endif
 
 rem --- Display Ship to information
 
+	ship_to_no$  = callpoint!.getUserInput()
 	ship_to_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
 	gosub ship_to_info
 [[OPE_ORDHDR.ORDER_NO.AVAL]]
@@ -1062,7 +1133,16 @@ rem --- Disable Ship To fields
 
 	declare BBjVector column!
 	column! = BBjAPI().makeVector()
+	
+	column!.addItem("OPE_ORDHDR.SHIPTO_NO")
+	if ship_to_type$="S"
+		status = 1
+	else
+		status = -1
+	endif
+	callpoint!.setColumnEnabled(column!, status)
 
+	column!.clear()
 	column!.addItem("<<DISPLAY>>.SNAME")
 	column!.addItem("<<DISPLAY>>.SADD1")
 	column!.addItem("<<DISPLAY>>.SADD2")
@@ -1071,6 +1151,7 @@ rem --- Disable Ship To fields
 	column!.addItem("<<DISPLAY>>.SCITY")
 	column!.addItem("<<DISPLAY>>.SSTATE")
 	column!.addItem("<<DISPLAY>>.SZIP")
+	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
 
 	if ship_to_type$="M"
 		status = 1
@@ -1271,6 +1352,7 @@ rem --- Write/Remove manual ship to file
 		ordship_tpl.city$        = callpoint!.getColumnData("<<DISPLAY>>.SCITY")
 		ordship_tpl.state_code$  = callpoint!.getColumnData("<<DISPLAY>>.SSTATE")
 		ordship_tpl.zip_code$    = callpoint!.getColumnData("<<DISPLAY>>.SZIP")
+		ordship_tpl.cntry_id$    = callpoint!.getColumnData("<<DISPLAY>>.SCNTRY_ID")
 
 		ordship_tpl$ = field(ordship_tpl$)
 		write record (ordship_dev) ordship_tpl$
@@ -1296,6 +1378,7 @@ rem ==========================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.BCITY",  custmast_tpl.city$)
 	callpoint!.setColumnData("<<DISPLAY>>.BSTATE", custmast_tpl.state_code$)
 	callpoint!.setColumnData("<<DISPLAY>>.BZIP",   custmast_tpl.zip_code$)
+	callpoint!.setColumnData("<<DISPLAY>>.BCNTRY_ID",   custmast_tpl.cntry_id$)
 
 	return
 
@@ -1376,7 +1459,9 @@ rem ==========================================================================
 			callpoint!.setColumnData("<<DISPLAY>>.SCITY",custship_tpl.city$)
 			callpoint!.setColumnData("<<DISPLAY>>.SSTATE",custship_tpl.state_code$)
 			callpoint!.setColumnData("<<DISPLAY>>.SZIP",custship_tpl.zip_code$)
+			callpoint!.setColumnData("<<DISPLAY>>.SCNTRY_ID",custship_tpl.cntry_id$)
 		else
+			callpoint!.setColumnData("OPE_ORDHDR.SHIPTO_NO","")
 			callpoint!.setColumnData("<<DISPLAY>>.SNAME",Translate!.getTranslation("AON_SAME"))
 			callpoint!.setColumnData("<<DISPLAY>>.SADD1","")
 			callpoint!.setColumnData("<<DISPLAY>>.SADD2","")
@@ -1385,9 +1470,12 @@ rem ==========================================================================
 			callpoint!.setColumnData("<<DISPLAY>>.SCITY","")
 			callpoint!.setColumnData("<<DISPLAY>>.SSTATE","")
 			callpoint!.setColumnData("<<DISPLAY>>.SZIP","")
+			callpoint!.setColumnData("<<DISPLAY>>.SCNTRY_ID","")
 		endif
 
 	else
+
+		callpoint!.setColumnData("OPE_ORDHDR.SHIPTO_NO","")
 
 		ordship_dev=fnget_dev("OPE_ORDSHIP")
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
@@ -1401,6 +1489,7 @@ rem ==========================================================================
 		callpoint!.setColumnData("<<DISPLAY>>.SCITY",ordship_tpl.city$)
 		callpoint!.setColumnData("<<DISPLAY>>.SSTATE",ordship_tpl.state_code$)
 		callpoint!.setColumnData("<<DISPLAY>>.SZIP",ordship_tpl.zip_code$)
+		callpoint!.setColumnData("<<DISPLAY>>.SCNTRY_ID",ordship_tpl.cntry_id$)
 	endif
 
 	callpoint!.setStatus("REFRESH")
@@ -2136,6 +2225,30 @@ rem ==========================================================================
 	callpoint!.setStatus("REFRESH")
 
 	return
+
+rem ==========================================================================
+check_shipto: rem --- Check Ship-to's
+rem IN: shipto_type$
+rem IN: shipto_no$
+rem ==========================================================================
+
+	user_tpl.shipto_warned = 0
+	if shipto_type$ = "S" and cvs(shipto_no$, 2) = "" then
+		msg_id$ = "OP_SHIPTO_NO_MISSING"
+		gosub disp_message
+		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_NO")
+		user_tpl.shipto_warned = 1
+	else
+		ship_addr1_var$ = "<<DISPLAY>>.SADD1"
+		if shipto_type$ = "M" and cvs(callpoint!.getColumnData(ship_addr1_var$), 2) = "" then
+			msg_id$ = "OP_MAN_SHIPTO_NEEDED"
+			gosub disp_message
+			callpoint!.setFocus(ship_addr1_var$)
+			user_tpl.shipto_warned = 1
+		endif
+	endif
+		
+	return
 [[OPE_ORDHDR.BSHO]]
 print "Hdr:BSHO"; rem debug
 
@@ -2237,6 +2350,7 @@ rem --- Disable display fields
 	column!.addItem("<<DISPLAY>>.BCITY")
 	column!.addItem("<<DISPLAY>>.BSTATE")
 	column!.addItem("<<DISPLAY>>.BZIP")
+	column!.addItem("<<DISPLAY>>.BCNTRY_ID")
 	column!.addItem("<<DISPLAY>>.ORDER_TOT")
 
 	if ars01a.job_nos$<>"Y" then 
@@ -2254,8 +2368,7 @@ rem --- Disable display fields
 	column!.addItem("<<DISPLAY>>.SCITY")
 	column!.addItem("<<DISPLAY>>.SSTATE")
 	column!.addItem("<<DISPLAY>>.SZIP")
-	callpoint!.setColumnEnabled(column!, -1)
-
+	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
 	column!.addItem("<<DISPLAY>>.AGING_FUTURE")
 	column!.addItem("<<DISPLAY>>.AGING_CUR")
 	column!.addItem("<<DISPLAY>>.AGING_30")
@@ -2474,9 +2587,11 @@ rem --- get mask for display sequence number used in detail lines (needed when c
 	call stbl("+DIR_PGM")+"adc_getmask.aon","LINE_NO","","","",line_no_mask$,0,0
 	callpoint!.setDevObject("line_no_mask",line_no_mask$)
 
-rem --- Set object for which customer number is being shown
+rem --- Set object for which customer number is being shown and that details haven't changed
 
 	callpoint!.setDevObject("current_customer","")
+	callpoint!.setDevObject("details_changed","N")
+	callpoint!.setDevObject("rcpr_row","")
 
 rem --- setup message_tpl$
 

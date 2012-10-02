@@ -10,13 +10,13 @@ rem ==========================================================================
 
 
 rem --- SOURCESYN$   : Absolute path to the application's current syn file (Input)
-rem --- TARGETSYN$   : Absolute path to the application's syn file being created (Input)
-rem --- STBLMAP!     : HashMap of ArrayLists keyed by STBLs from current syn file (Input)
-rem ---              :     ArrayList (0) = current (source) value of STBL
-rem ---              :     ArrayList (1) = new (target) value of STBL
-rem --- PFXLIST!     : ArrayList (order is important) of ArrayLists of PREFIXs from current syn file (Input)
-rem ---              :     ArrayList (0) = current (source) value of PREFIX
-rem ---              :     ArrayList (1) = new (target) value of PREFIX
+rem --- TARGETDIR$   : Absolute path to where application is being created (Input)
+rem --- STBLMAP!     : HashMap of ArrayLists keyed by SYSSTBL/STBLs from current syn file (Input)
+rem ---              :     ArrayList (0) = current (source) value of SYSSTBL/STBL
+rem ---              :     ArrayList (1) = new (target) value of SYSSTBL/STBL
+rem --- PFXLIST!     : ArrayList (order is important) of ArrayLists of SYSPFX/PREFIXs from current syn file (Input)
+rem ---              :     ArrayList (0) = current (source) value of SYSPFX/PREFIX
+rem ---              :     ArrayList (1) = new (target) value of SYSPFX/PREFIX
 rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
 rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
 rem --- STATUS       : Status code/0=No error (Returned)
@@ -30,7 +30,7 @@ rem --- STATUS       : Status code/0=No error (Returned)
 
     seterr std_error
     setesc std_error
-    enter sourceSyn$,targetSyn$,stblMap!,pfxList!,rdForm!,wait4ok%,status
+    enter sourceSyn$,targetDir$,stblMap!,pfxList!,rdForm!,wait4ok%,status
 
 rem --- Initializations
 
@@ -40,7 +40,7 @@ rem --- Copy a custom mods project from one location to another
 
     declare CopyCustomMods utility!
     utility! = new CopyCustomMods(rdForm!, wait4ok%)
-    utility!.copyMods(sourceSyn$, targetSyn$, stblMap!, pfxList!)
+    utility!.copyMods(sourceSyn$, targetDir$, stblMap!, pfxList!)
     
 done: rem --- All done
     
@@ -121,16 +121,16 @@ rem  */
         rem  * syn and XML files in new location. 
         rem  *
         rem  * @param BBjString sourceSyn$
-        rem  * @param BBjString targetSyn$
+        rem  * @param BBjString targetDir$
         rem  * @param HashMap stblMap!
         rem  * @param ArrayList pfxList!
         rem  */
-        method public void copyMods(BBjString sourceSyn$, BBjString targetSyn$, HashMap stblMap!, ArrayList pfxList!)
+        method public void copyMods(BBjString sourceSyn$, BBjString targetDir$, HashMap stblMap!, ArrayList pfxList!)
 			
 			rem --- Start progress meter and log
 			#meter_total_recs = #meter_total_recs + stblMap!.size() + pfxList!.size()
 			#meter! = #createProgressMeter()
-            #openLog(sourceSyn$, targetSyn$, stblMap!, pfxList!)
+            #openLog(sourceSyn$, targetDir$, stblMap!, pfxList!)
 
             rem --- Parse <mods_dir> from source syn path.
 			declare File modsDir!
@@ -141,9 +141,9 @@ rem  */
             #incrementProgressMeter(meter_text$)
             #log(meter_text$)
 
-            rem --- Parse <mods_dir> from target syn path.
-            targetDir$ = #parseModsPath(targetSyn$)
-			meter_text$ = "target dir: " + targetDir$
+            rem --- Parse syn filename from source syn path.
+			targetSyn$ = targetDir$ + "/config/" + #parseFileName(sourceSyn$)
+			meter_text$ = "target syn: " + targetSyn$
             #incrementProgressMeter(meter_text$)
             #log(meter_text$)
 
@@ -166,7 +166,7 @@ rem  */
                 target$=cast(BBjString, aList!.get(1))
 				nextSource! = new File(source$)
 				#log("")
-				meter_text$ = "copy STBL: " + key$
+				meter_text$ = "copy SYSSTBL/STBL: " + key$
 				#incrementProgressMeter(meter_text$)
 				#log(meter_text$)
 				rem --- skip if already copied
@@ -185,7 +185,7 @@ rem  */
                 target$=cast(BBjString, aList!.get(1))
 				nextSource! = new File(source$)
 				#log("")
-				meter_text$ = "copy PREFIX: " + source$
+				meter_text$ = "copy SYSPFX/PREFIX: " + source$
 				#incrementProgressMeter(meter_text$)
 				#log(meter_text$)
 				rem --- skip if already copied
@@ -234,12 +234,37 @@ rem  */
             rem --- Get mods directory location from path
             if pos("/config/"=path$)
                 rem --- mods directory contains config directory
-                modsDir$=path$(1, pos("/config/"=path$))
+                modsDir$=path$(1, pos("/config/"=path$,-1))
             else
                 rem --- config directory not found, so use directory holding syn file
                     modsDir$=path$(1, pos("/"=path$,-1))
             endif
             methodret modsDir$
+        methodend
+
+        rem /**
+        rem  * Parse file name from given path.
+        rem  *
+        rem  * @param BBjString path$
+        rem  * @return BBjString filename$
+        rem  */
+        method private BBjString parseFileName(BBjString path$)
+            filename$ = ""
+
+            rem --- Flip directory path separators to "/"
+            pos=pos("\"=path$)
+            while pos
+                path$=path$(1, pos-1)+"/"+path$(pos+1)
+                pos=pos("\"=path$)
+            wend
+
+            rem --- Get mods directory location from path
+            if pos("/"=path$)
+                filename$=path$(pos("/"=path$,-1)+1)
+            else
+				filename$ = path$
+            endif
+            methodret filename$
         methodend
 
         rem /**
@@ -285,7 +310,7 @@ rem  */
 					FileObject.makeDirs(targetParent!)
 				endif
                 targetChan=unt
-                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getAbsolutePath()
                 while 1
                     readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
                     writerecord(targetChan)record$
@@ -300,7 +325,7 @@ rem  */
         rem /**
         rem  * Update syn file.
         rem  *
-        rem  * Update DIR, APROD, STBL, PREFIX and CFG lines in syn file 
+        rem  * Update SYSDIR/DIR, SYSAPP/APROD, SYSSTBL/STBL, SYSPFX/PREFIX and SYSCFG/CFG lines in syn file 
 		rem  * to point to new directories.
         rem  *
         rem  * @param BBjString synFile$
@@ -321,63 +346,70 @@ rem  */
 			open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")synFile$ + ".tmp"
 			while 1
 				read(sourceChan,end=*break)record$
-                key$ = record$(1, pos("="=record$) - 1)
-				switch (BBjAPI().TRUE)
-					case key$ = "DIR"
-						rem --- replace DIR path with new directory
-						record$ = record$(1, pos("="=record$)) + newDir$
-						break
-					case key$ = "APROD"
-						rem --- update APROD path with new direcotry
-						xpos = pos("/prop/"=record$)
-						tail$ = record$(xpos+1)
-						head$ = record$(1, pos(";"=record$(1, xpos), -1))
-						record$ = head$ + newDir$ + tail$
-						break
-					case key$ = "STBL"
-						rem --- replace STBL path with new path
-						xpos = pos(" "=record$)
-						stbl$ = record$(xpos+1, pos("="=record$(xpos+1)) - 1)
-						if(stblMap!.containsKey(stbl$)) then
-							aList! = cast(ArrayList, stblMap!.get(stbl$))
-							target$=cast(BBjString, aList!.get(1))
-							record$ = record$(1, pos("="=record$,1,2)) + target$
-						endif
-						break
-					case key$ = "PREFIX"
-						rem --- replace PREFIX path with new path
-						xpos = pos("="=record$)
-						path$  = record$(xpos+1)
-						currentPath! = new File(path$)
-						rem --- locate current path in array of PREFIXs, and replace with new path
-						iter!=pfxList!.iterator()
-						while iter!.hasNext()
-							aList! = cast(ArrayList, iter!.next())
-							source$=cast(BBjString, aList!.get(0))
-							target$=cast(BBjString, aList!.get(1))
-							nextPath! = new File(source$)
-							rem --- is this the correct path to replace with?
-							if (nextPath!.getAbsolutePath() = currentPath!.getAbsolutePath())
-								record$ = record$(1, xpos) + target$
-								break
+				if(pos("="=record$)) then
+					key$ = record$(1, pos("="=record$) - 1)
+					switch (BBjAPI().TRUE)
+						case key$ = "DIR"
+						case key$ = "SYSDIR"
+							rem --- replace SYSDIR/DIR path with new directory
+							record$ = record$(1, pos("="=record$)) + newDir$ + "/"
+							break
+						case key$ = "APROD"
+						case key$ = "SYSAPP"
+							rem --- update SYSAPP/APROD path with new direcotry
+							xpos = pos("/prop/"=record$)
+							tail$ = record$(xpos+1)
+							head$ = record$(1, pos(";"=record$(1, xpos), -1))
+							record$ = head$ + newDir$ + "/" + tail$
+							break
+						case key$ = "STBL"
+						case key$ = "SYSSTBL"
+							rem --- replace SYSSTBL/STBL path with new path
+							xpos = pos(" "=record$)
+							stbl$ = record$(xpos+1, pos("="=record$(xpos+1)) - 1)
+							if(stblMap!.containsKey(stbl$)) then
+								aList! = cast(ArrayList, stblMap!.get(stbl$))
+								target$=cast(BBjString, aList!.get(1))
+								record$ = record$(1, pos("="=record$,1,2)) + target$
 							endif
-						wend
-						break
-					case key$ = "CFG"
-						rem --- replace CFG path with new path for corresponding STBL
-						xpos = pos("="=record$)
-						ypos = pos("="=record$,1,2)
-						stbl$ = record$(xpos+1, ypos - xpos - 1)
-						if(stblMap!.containsKey(stbl$)) then
-							aList! = cast(ArrayList, stblMap!.get(stbl$))
-							target$=cast(BBjString, aList!.get(1))
-							record$ = record$(1, ypos) + target$
-						endif
-						break
-					case default
-						rem --- other lines, no change
-						break
-				swend                    
+							break
+						case key$ = "PREFIX"
+						case key$ = "SYSPFX"
+							rem --- replace SYSPFX/PREFIX path with new path
+							xpos = pos("="=record$)
+							path$  = record$(xpos+1)
+							currentPath! = new File(path$)
+							rem --- locate current path in array of PREFIXs, and replace with new path
+							iter!=pfxList!.iterator()
+							while iter!.hasNext()
+								aList! = cast(ArrayList, iter!.next())
+								source$=cast(BBjString, aList!.get(0))
+								target$=cast(BBjString, aList!.get(1))
+								nextPath! = new File(source$)
+								rem --- is this the correct path to replace with?
+								if (nextPath!.getAbsolutePath() = currentPath!.getAbsolutePath())
+									record$ = record$(1, xpos) + target$
+									break
+								endif
+							wend
+							break
+						case key$ = "CFG"
+						case key$ = "SYSCFG"
+							rem --- replace SYSCFG/CFG path with new path for corresponding STBL
+							xpos = pos("="=record$)
+							ypos = pos("="=record$,1,2)
+							stbl$ = record$(xpos+1, ypos - xpos - 1)
+							if(stblMap!.containsKey(stbl$)) then
+								aList! = cast(ArrayList, stblMap!.get(stbl$))
+								target$=cast(BBjString, aList!.get(1))
+								record$ = record$(1, ypos) + target$
+							endif
+							break
+						case default
+							rem --- other lines, no change
+							break
+					swend
+				endif
         
 				write(targetChan)record$
 				#log(record$)
@@ -557,16 +589,13 @@ rem  */
         rem  * Open log file.
         rem  *
         rem  * @param BBjString sourceSyn$
-        rem  * @param BBjString targetSyn$
+        rem  * @param BBjString targetDir$
         rem  * @param HashMap stblMap!
         rem  * @param ArrayList pfxList!
         rem  */
-        method private void openLog(BBjString sourceSyn$, BBjString targetSyn$, HashMap stblMap!, ArrayList pfxList!)
-            rem --- log directory is under aon at same level as data directory
-            modsDir$ = #parseModsPath(targetSyn$)
-            logDir$ = modsDir$ + "/logs"
-            
+        method private void openLog(BBjString sourceSyn$, BBjString targetDir$, HashMap stblMap!, ArrayList pfxList!)
             rem --- create logs directory at new location
+            logDir$ = targetDir$ + "/logs"
             FileObject.makeDirs(new File(logDir$))
 
             rem --- create and open log file
@@ -579,7 +608,7 @@ rem  */
             rem --- write log header info
             print(#log_dev)"Updatexml log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
             print(#log_dev)"Source syn file: " + sourceSyn$
-            print(#log_dev)"Target syn file: " + targetSyn$
+            print(#log_dev)"Target syn file: " + targetDir$
 
             rem --- write STBL info
             declare Iterator iter!

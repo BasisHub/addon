@@ -1,0 +1,128 @@
+rem ==========================================================================
+rem --- adx_installwiz.aon 
+rem --- Utility to automate installation (not upgrade yet) of Addon.
+rem --- 
+rem --- AddonSoftware Version 11.0
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Get user inputs
+
+    newLocation$=Option!.getOptionData("NEW_INSTALL_LOC") + "/aon"
+    newFirm$=Option!.getOptionData("NEW_FIRM_ID")
+    copyData%=int(num(Option!.getOptionData("COPY_DATA")))
+    help%=int(num(Option!.getOptionData("APP_HELP")))
+
+	rem --- Flip directory path separators for newLocation
+	filePath$=newLocation$
+	gosub fix_path
+	newLocation$=filePath$
+    
+rem --- Recursively copy oldLocation to newLocation
+
+	rem --- Set oldLocation to aon directory under the current download directory
+    sep$ = java.io.File.separator
+    bbjHome$=java.lang.System.getProperty("basis.BBjHome")
+    oldLocation$ = bbjHome$ + sep$ + "apps" + sep$ + "aon"
+
+    call pgmdir$+"adc_copyaon.aon",oldLocation$,newLocation$,copyData%,help%,rdForm!,0,status
+    
+rem --- Update new addon.syn file
+
+	rem --- Set updateSynFile to addon.syn at the new install location
+    updateSynFile$=newLocation$+"/config/addon.syn"
+
+	rem --- Set upgrade off
+    upgrade%=0
+    oldSynFile$=""
+    
+	rem --- Build dataMap HashMap of STBL data paths, keyed by STBL
+    use java.util.HashMap
+    declare HashMap dataMap!
+	dataMap!=new HashMap()
+	dataMap!.put("ADDATA",newLocation$+"/data/")
+	dataMap!.put("APDATA",newLocation$+"/data/")
+	dataMap!.put("ARDATA",newLocation$+"/data/")
+	dataMap!.put("BMDATA",newLocation$+"/data/")
+	dataMap!.put("GLDATA",newLocation$+"/data/")
+	dataMap!.put("IVDATA",newLocation$+"/data/")
+	dataMap!.put("MPDATA",newLocation$+"/data/")
+	dataMap!.put("OPDATA",newLocation$+"/data/")
+	dataMap!.put("PODATA",newLocation$+"/data/")
+	dataMap!.put("PRDATA",newLocation$+"/data/")
+	dataMap!.put("SADATA",newLocation$+"/data/")
+	dataMap!.put("SFDATA",newLocation$+"/data/")
+
+    call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,dataMap!,rdForm!,0,status
+    
+rem --- Update new sync XML files
+
+	rem --- Set newSyncLoc to sync directory at the new install location
+    newSyncLoc$=newLocation$+"/data/sync"
+
+	rem --- Set upgrade off
+    upgrade%=0
+    oldSyncLoc$=""
+    syncBackupDir$=""
+
+    call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+
+rem --- Setup new firm
+
+    call pgmdir$+"adc_firmsetup.aon",newLocation$+"/data",newFirm$,copyData%,rdForm!,1,status
+    
+done: rem --- All done
+
+    goto std_exit
+
+fix_path: rem --- Flip directory path separators
+
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+	return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

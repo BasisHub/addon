@@ -1,0 +1,279 @@
+rem ==========================================================================
+rem --- adc_mvupgrdfiles.aon 
+rem --- Call to move files created by the EM Update Wizard to their correct
+rem --- locations as specified by DD_TABLE_PATH and STBL, or the database's
+rem --- Data File and User Props.
+rem --- 
+rem --- AddonSoftware Version 11.0
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+
+rem --- FILELOC$     : Updated Files Destination used for EM Update Wizard (Input)
+rem --- DBNAME$      : New Database used for EM Update Wizard (Input)
+rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS       : Status code/0=No error (Returned)
+
+    use java.io.File
+    use java.util.Vector
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    seterr std_error
+    setesc std_error
+    enter fileLoc$,dbName$,rdForm!,wait4ok%,status
+
+rem --- Initializations
+    status=0
+    dir_syp$=stbl("+DIR_SYP")
+    sysGUI! = BBjAPI().getSysGui()
+		
+rem --- Size progress meter based on number of files to move
+	declare File source!
+	source! = new File(fileLoc$)
+	declare Vector fileVector!
+	fileVector! = new Vector(java.util.Arrays.asList(source!.list()))
+    
+rem --- Start progress meter
+    declare BBTranslator Translator!
+    Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+	meter_title$=Translator!.getTranslation("AON_DISTRIBUTING")+"..."
+    meter_total_recs=fileVector!.size()
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST"
+    if wait4ok% then meter_action$=meter_action$+"-OK"
+    gosub disp_meter
+    
+rem --- Open log file
+    location$ = fileLoc$
+    gosub open_log
+
+rem --- Currently this utility can only use the database used by this Barista/Addon instance.
+	if dbName$<>stbl("+DBNAME_API") then
+		rem --- Increment progress meter
+		meter_text$="WARNING: database not accessible from this Barista/Addon instance"
+		meter_proc_recs=meter_proc_recs+1
+		meter_action$="MTR-LST"
+		gosub disp_meter
+		print(log_dev)meter_text$
+
+		msg_id$="AD_DB_NOT_ACCESSIBLE"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=dbName$
+		gosub disp_message
+		goto done
+	endif
+    
+rem --- Open File(s)
+    
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    ddm_tables=num(open_chans$[1]);dim ddm_tables$:open_tpls$[1]
+	
+rem --- Process each file in source dir
+	if fileVector!.size()>0 then
+		declare File file!
+		declare File target!
+		declare File sourceFile!
+		declare File targetFile!
+		for i=0 to fileVector!.size()-1
+			fileName$ = cast(BBjString, fileVector!.get(i))
+			file! = new File(source!, fileName$)
+			
+			rem --- skip directories
+			if(file!.isDirectory()) then continue
+			
+			rem --- check for file name in ddm_tables
+			read(ddm_tables,key=fileName$,knum="FILE_NAME",dom=*next)
+			readrecord(ddm_tables,err=*next)ddm_tables$
+			if cvs(ddm_tables.dd_file_name$,3)<>fileName$ then
+				rem --- check for table name in ddm_tables
+				readrecord(ddm_tables,key=pad(cvs(fileName$,4),16," "),knum="PRIMARY",err=*next)ddm_tables$
+					rem --- skip if file and table name not found
+					if cvs(ddm_tables.dd_table_alias$,3)<>cvs(fileName$,4) then
+						rem --- Increment progress meter
+						meter_text$=fileName$+" -- table not found"
+						meter_proc_recs=meter_proc_recs+1
+						meter_action$="MTR-LST"
+						gosub disp_meter
+						print(log_dev)meter_text$
+						
+						continue
+					endif
+			endif
+			
+			rem --- move file to where it belongs, if not there already
+			path$=cvs(ddm_tables.dd_table_path$,3)
+			if path$="" then
+				path$=stbl("+DIR_DAT")
+			endif
+			if len(path$)>1 and path$(1,1)="[" and path$(len(path$),1)="]" then
+				path$=stbl(path$(2,len(path$)-2))
+			endif
+			target!=new File(path$)
+			if target!.getAbsolutePath()=source!.getAbsolutePath() then
+				rem --- don't move, it's already where it belongs
+				meter_text$=fileName$
+			else
+				rem --- have one to move or delete
+				sourceFile!= new File(source!, fileName$)
+				if cvs(ddm_tables.asc_comp_id$,3)="01007514" and pos(cvs(ddm_tables.asc_prod_id$,3)+";"="ADB;DDB;SQB;")
+					rem --- delete Barista files
+					meter_text$=fileName$+" -- deleted"
+					sourceFile!.delete()
+				else
+					rem --- move (rename) this one
+					meter_text$=fileName$+" -- moved to "+path$
+					rem --- create new directory if it doesn't exist
+					FileObject.makeDirs(target!)
+					targetFile!=new File(target!, fileName$)
+					targetFile!.delete()
+					sourceFile!.renameTo(targetFile!)
+				endif
+			endif
+
+			rem --- Increment progress meter
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+			print(log_dev)meter_text$
+		next i
+	endif
+    
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    
+	print(log_dev)
+    print(log_dev)"Mvupgrdfiles log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+	
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+    filePath$ = location$ + "/logs"
+    gosub fix_path
+    logDir$ = filePath$
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/mvupgrdfiles_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+            
+	rem --- write log header info
+	print(log_dev)"Mvupgrdfiles log started:   " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+	print(log_dev)"Update Files Location:      " + fileLoc$
+	print(log_dev)"New Database Nmae:          " + dbName$
+	print(log_dev)
+
+    return
+
+fix_path: rem --- Flip directory path separators
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+    return
+
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto exit_prog
+    endif
+
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+    
+    end

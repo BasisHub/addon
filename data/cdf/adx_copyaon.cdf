@@ -1,54 +1,53 @@
+[[ADX_COPYAON.BSHO]]
+rem --- Declare Java classes used
+
+	use java.io.File
 [[ADX_COPYAON.AREC]]
 rem --- Initialize aon new install location
 rem --- Default to /aon_prod/vnnnn (where nnnn=new version)
-rem --- Get new version from SYS line of download addon.syn file
+rem --- Get vnnnn from VERSION_ID in the ADM_MODULES table
 
-	bbjHome$ = System.getProperty("basis.BBjHome")
-	download_loc$ = bbjHome$ + "/apps/aon"
-	synChan=unt
-	open(synChan,isz=-1, err=file_not_found)download_loc$ + "/config/addon.syn"
+	synVersion$="00"
+	comp_id$=STBL("+AON_APPCOMPANY")
+	prod_id$="AD"
 
-    synVersion$ = "0000"
+	sql_chan=sqlunt
+	sqlopen(sql_chan)stbl("+DBNAME")
+	sql_prep$="SELECT version_id FROM adm_modules"
+	sql_prep$=sql_prep$+" WHERE asc_comp_id='" + comp_id$ + "' and asc_prod_id='" + prod_id$ + "'"
+	sqlprep(sql_chan)sql_prep$
+	dim select_tpl$:sqltmpl(sql_chan)
+	sqlexec(sql_chan)
 	while 1
-		read(synChan,end=*break)record$
-		rem --- locate SYS line
-		if(pos("SYS="=record$) = 1) then
-			rem --- parse version from SYS line
-			start$ = "^Version "
-			startLen = len(start$)
-			startPos = pos(start$=record$)
-			end$ = " - "
-			endPos = pos(end$=record$(startPos + startLen))
-            if startPos>0 and endPos>0
-                parsed=1
-                synVersion$ = cvs(record$(startPos + startLen, endPos - 1),3)
-                rem -- remove decimal point
-                dotPos = pos("."=synVersion$)
-                if(dotPos) then
-                    synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
-                endif
-				rem --- Replace blanks with underscores
-				pos=pos(" "=synVersion$)
-				while pos
-					synVersion$=synVersion$(1, pos-1)+"_"+synVersion$(pos+1)
-					pos=pos(" "=synVersion$)
-				wend
-            endif
-			break
-		endif
+		select_tpl$=sqlfetch(sql_chan,err=*break) 
+		synVersion$=cvs(select_tpl.version_id$,3)
 	wend
-	close(synChan)
+	sqlclose(sql_chan)
 
+	rem --- Remove decimal point from version
+	dotPos = pos("."=synVersion$)
+	if(dotPos) then
+		synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
+	endif
+
+	rem --- Verify target syn dir doesn't exist
+	rem --- As necessary, append _i to target syn dir
+	version$=synVersion$
+	i=0
+	testChan=unt
+	while 1
+		targetDir$=modsDir$+"/v"+version$
+		open(testChan,err=*break)targetDir$
+		close(testChan)
+		 i=i+1
+		version$=synVersion$+"_"+str(i)
+	wend
+	targetDir$=targetDir$+"/config/"
+	synVersion$=version$
 
 	new_loc$ = "/aon_prod/v" + synVersion$
-
 	callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
 	callpoint!.setStatus("REFRESH")
-	break
-
-file_not_found:
-
-	rem --- Can't initialize aon new install location
 [[ADX_COPYAON.<CUSTOM>]]
 validate_aon_dir: rem --- Validate directory for aon new install location
 
@@ -96,16 +95,10 @@ location_used:
 	return
 
 verify_not_download_loc: rem --- Verify not using current download location
-	rem --- Some needed improvements
-	rem --- Doesn't handle . or .. relative paths
-	rem --- Doesn't handle symbolic links
-	rem --- / vs \ may be an issue
-	rem --- Should be case insensitive for Windows
-	rem --- basis.BBjHome includes the Windows drive id
 
 	loc_ok=1
 	bbjHome$ = System.getProperty("basis.BBjHome")
-	if pos(bbjHome$=testLoc$)=1
+	if ((new File(testLoc$)).getAbsolutePath()).toLowerCase().startsWith((new File(bbjHome$)).getAbsolutePath().toLowerCase()+File.separator)
 		msg_id$="AD_INSTALL_LOC_BAD"
 		dim msg_tokens$[1]
 		msg_tokens$[1]=bbjHome$

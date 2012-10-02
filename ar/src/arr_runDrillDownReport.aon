@@ -12,12 +12,14 @@ REM ========================================================================
 
 	use ::bbjasper.bbj::BBJasperReport
 	use ::bbjasper.bbj::BBJasperViewerWindow
+	use ::ado_func.src::func
 
 	declare BBJasperReport BBjReport!
 	declare BBJasperViewerWindow BBjReportWindow!
 
 	declare BBjSysGui sysgui!
 	declare BBjTopLevelWindow win!
+	declare BBjVector custId!
 
 REM ========================================================================
 REM Common information
@@ -74,6 +76,10 @@ REM ========================================================================
 	firm_id$=sysinfo.firm_id$
 	firm_name$=sysinfo.firm_name$
 
+	rem ' get the customer id mask
+	call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",custIdMask$,0,custIdLen
+	custIdMaskLen = len(custIdMask$)
+	    
 	REM set current month and year
 	year$ = date(0:"%Y")
 	year = num(year$)
@@ -210,6 +216,8 @@ startSalesByCustType:
 	BBjReport!.putParam("FIRM_NAME",firm_name$)
 	BBjReport!.putParam("MONTH",month$)
 	BBjReport!.putParam("YEAR",year$)
+	BBjReport!.putParam("CUST_ID_MASK", custIdMask$)
+	BBjReport!.putParam("CUST_ID_LEN", str(custIdLen))
 
 	BBjReport!.fill()
 
@@ -243,6 +251,8 @@ startSalesCustTypeCust:
 	BBjReport!.putParam("CUST_TYPE",cust_type$)
 	BBjReport!.putParam("MONTH",month$)
 	BBjReport!.putParam("YEAR",year$)
+	BBjReport!.putParam("CUST_ID_MASK", custIdMask$)
+	BBjReport!.putParam("CUST_ID_LEN", str(custIdLen))
 
 	BBjReport!.fill()
 
@@ -271,17 +281,22 @@ startSaleByCustomer:
 	ppos = pos(" " = cust_type$)
 	if ppos <> 0 then cust_type$ = cust_type$(1,ppos-1)
 
-	customer$ = cvs(listbuttonC!.getItemAt(listbuttonC!.getSelectedIndex()),3)
-	customer_nbr$ = customer$(1,6)
-	cust_name$ = customer$(8)
+	index = listbuttonC!.getSelectedIndex()
+	customer_id$ = custId!.getItem(index)
+	customer$ = cvs(listbuttonC!.getItemAt(index),3)
+	customer_nbr$ = customer$(1,custIdMaskLen)
+	cust_name$ = customer$(custIdMaskLen+2)
 		
 	BBjReport!.putParam("FIRM_ID",firm_id$)
 	BBjReport!.putParam("FIRM_NAME",firm_name$)
 	BBjReport!.putParam("CUST_TYPE",cust_type$)
 	BBjReport!.putParam("CUSTOMER_NBR",customer_nbr$)
+	BBjReport!.putParam("CUSTOMER_ID",customer_id$)
 	BBjReport!.putParam("CUST_NAME",cust_name$)
 	BBjReport!.putParam("MONTH",month$)
 	BBjReport!.putParam("YEAR",year$)
+	BBjReport!.putParam("CUST_ID_MASK", custIdMask$)
+	BBjReport!.putParam("CUST_ID_LEN", str(custIdLen))
 
 	BBjReport!.fill()
 
@@ -310,9 +325,11 @@ startSalesInvoiceDetails:
 	ppos = pos(" " = cust_type$)
 	if ppos <> 0 then cust_type$ = cust_type$(1,ppos-1)
 
-	customer$ = cvs(listbuttonC!.getItemAt(listbuttonC!.getSelectedIndex()),3)
-	customer_nbr$ = customer$(1,6)
-	cust_name$ = customer$(8)
+	index = listbuttonC!.getSelectedIndex()
+	customer_id$ = custId!.getItem(index)
+	customer$ = cvs(listbuttonC!.getItemAt(index),3)
+	customer_nbr$ = customer$(1,custIdMaskLen)
+	cust_name$ = customer$(custIdMaskLen+2)
 
 	invoice$ = listbuttonI!.getItemAt(listbuttonI!.getSelectedIndex())
 	inv_nbr$ = invoice$(1,7)
@@ -322,12 +339,15 @@ startSalesInvoiceDetails:
 	BBjReport!.putParam("FIRM_NAME",firm_name$)
 	BBjReport!.putParam("CUST_TYPE",cust_type$)
 	BBjReport!.putParam("CUSTOMER_NBR",customer_nbr$)
+	BBjReport!.putParam("CUSTOMER_ID",customer_id$)
 	BBjReport!.putParam("CUST_NAME",cust_name$)
 	BBjReport!.putParam("MONTH",month$)
 	BBjReport!.putParam("YEAR",year$)
 	BBjReport!.putParam("AR_INV_NBR",inv_nbr$)
 	BBjReport!.putParam("INVOICE_DATE",inv_date$)
 	BBjReport!.putParam("WindowWidth","1250")
+	BBjReport!.putParam("CUST_ID_MASK", custIdMask$)
+	BBjReport!.putParam("CUST_ID_LEN", str(custIdLen))
 
 	BBjReport!.fill()
 
@@ -382,6 +402,8 @@ REM ========================================================================
 
 housekeep_customer:
 
+	custId! = BBjAPI().makeVector()
+	
 	cust_type = listbuttonT!.getSelectedIndex()
 
 	rem ' at the point the invoice listbutton should always be disable and emptey
@@ -408,13 +430,18 @@ housekeep_customer:
 	
 		count = 0
 		listbuttonC!.insertItemAt(count, "None")
+		custId!.insertItem(count, "None")
 		count = count + 1
-		
+			
 		if !(rs!.isEmpty()) then
 			while 1
 				rec! = rs!.getCurrentRecordData()
 
 				cust_nbr$ = rec!.getFieldValue("CUSTOMER_ID")
+				custId!.insertItem(count, cust_nbr$)
+	
+				rem ' mask the customer id
+				cust_nbr$ = func.alphaMask(cust_nbr$(1,custIdLen),custIdMask$)
 				cust_name$ = rec!.getFieldValue("CUSTOMER_NAME")
 
 				listbuttonC!.insertItemAt(count, cust_nbr$ + " " + cust_name$)
@@ -447,7 +474,7 @@ housekeep_invoices:
 			listbuttonI!.removeAllItems()
 			listbuttonI!.setEnabled(0)
 		else
-			customer$ = listbuttonC!.getItemAt(customer)
+			customer$ = custId!.getItem(customer)
 			customer$ = customer$(1,6)
 
 			listbuttonI!.setEnabled(1)

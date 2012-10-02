@@ -12,7 +12,8 @@ rem ==========================================================================
 rem --- NEWSYCNLOC$    : Location of target data/sync directory being updated (Input)
 rem --- OLDSYNCLOC$    : Location of source data/sync directory for upgrades (Input)
 rem --- SYNCBACKUPDIR$ : Location of sync backup directory for upgrades (Input)
-rem --- UPGRADE%       : 0=Not an upgrade so copy data/1=Upgrade so don't copy data (Input)
+rem --- UPGRADE%       : 0=Not an upgrade so don't copy sync backup XMLs
+rem ---                : 1=Upgrade so copy sync backup XMLs (Input)
 rem --- RDFORM!        : Parent BBjTopLevelWindow object, the form (Input)
 rem --- WAIT4OK%       : Wait for user's OK when done, 0=don't wait/1=wait (Input)
 rem --- STATUS         : Status code/0=No error (Returned)
@@ -122,8 +123,9 @@ rem  */
             if upgrade%
                 rem --- copy non-branded sync xml files from provided location
                 rem --- (aonDir$ path separators already flipped to "/")
-                #copyXmlFiles(new File(syncBackupDir$), new File(aonDir$(1,pos("/"=aonDir$,-1))+"/data/sync")); rem ... pre-v11
-rem ... for v11                #copyXmlFiles(new File(syncBackupDir$), new File(aonDir$(1,pos("/"=aonDir$,-1))+"barista/admin_backup"))
+rem                #copyFiles(new File(syncBackupDir$), new File(aonDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
+                #copyFiles(new File(syncBackupDir$), new File(aonDir$(1,pos("/"=aonDir$,-1)) + "barista/admin_backup"), new XmlFilter())
+
                 rem --- copy branded consolidated (not non-consolidated) sync xml files
                 rem --- (prior to v11.0 branded consolidated sync xml files were in data/sync directory,
                 rem ---  and non-consolidated sync xml files were deleted when consolidated files were created)
@@ -133,8 +135,16 @@ rem ... for v11                #copyXmlFiles(new File(syncBackupDir$), new File(
                 if !oldBackupDir!.exists() or !oldBackupDir!.isDirectory()
                     oldBackupDir! = new File(oldSyncLoc$)
                 endif
-                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "/data/sync")); rem ... pre-v11
-rem ... for v11                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "/data/admin_backup"))
+rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
+                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/admin_backup"), new XmlFilter())
+
+				rem --- copy old ads_masks~*.xml files, except ads_masks~99*.xml files
+				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
+                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new MasksFilter())
+
+				rem --- copy old ads_sequences~*.xml files, except ads_sequences~99*.xml files
+				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
+                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new SequencesFilter())
             endif
             
             rem --- update xml files in data/sync dir
@@ -147,14 +157,15 @@ rem ... for v11                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "
         methodend
 
         rem /**
-        rem  * Copy XML files.
+        rem  * Copy filtered files.
         rem  *
-        rem  * Copies XML files from source directory to target directory, 
+        rem  * Copies filtered files from source directory to target directory, 
         rem  *
         rem  * @param File sourceDir!
         rem  * @param File targetDir!
+		rem  * @param java.io.FilenameFilter filter!
         rem  */
-        method private void copyXmlFiles(File sourceDir!, File targetDir!)
+        method private void copyFiles(File sourceDir!, File targetDir!, java.io.FilenameFilter filter!)
             declare File sourceXml!
             declare File targetXml!
             
@@ -163,7 +174,7 @@ rem ... for v11                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "
             
             rem --- get list of what is in the source dir, and process it
             declare Vector fileVector!
-            fileVector! = new Vector(java.util.Arrays.asList(sourceDir!.list()))
+            fileVector! = new Vector(java.util.Arrays.asList(sourceDir!.list(filter!)))
             if(fileVector!.size()>0) then
                 #log("")
                 for i=0 to fileVector!.size()-1
@@ -299,11 +310,11 @@ rem ... for v11                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "
 
             rem --- Get aon directory location from path
             if pos("/aon/"=path$+"/")
-                aonDir$=path$(1, pos("/aon/"=path$+"/") + len("/aon") - 1)
+                aonDir$=path$(1, pos("/aon/"=path$+"/",-1) + len("/aon") - 1)
             else
                 rem --- aon directory not found, so use directory containing the data directory
                 if pos("/data/"=path$+"/")
-                    aonDir$=path$(1, pos("/data/"=path$+"/") - 1)
+                    aonDir$=path$(1, pos("/data/"=path$+"/",-1) - 1)
                 endif
             endif
             methodret aonDir$
@@ -426,6 +437,54 @@ rem ... for v11                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "
             print(#log_dev)
             print(#log_dev)"Updatexml log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
             close(#log_dev)
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter *.xml files.
+rem  */
+
+    class public XmlFilter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_masks~*.xml files, excluding ads_masks~99*.xml files.
+rem  */
+
+    class public MasksFilter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_masks~") and !file!.startsWith("ads_masks~99") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
+rem /**
+rem  * FilenameFilter Class to filter ads_sequences~*.xml files, excluding ads_sequences~99*.xml files.
+rem  */
+
+    class public SequencesFilter implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.startsWith("ads_sequences~") and !file!.startsWith("ads_sequences~99") and file!.endsWith(".xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
         methodend
         
     classend

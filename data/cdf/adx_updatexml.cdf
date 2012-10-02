@@ -1,3 +1,7 @@
+[[ADX_UPDATEXML.BSHO]]
+rem --- Declare Java classes used
+
+	use java.io.File
 [[ADX_UPDATEXML.UPGRADE.AINP]]
 rem --- Enable/disable input field for backup sync location
 
@@ -83,11 +87,11 @@ parse_aon_path: rem --- Enable/disable input field for backup sync location
 
 	rem --- Get aon directory location from path
 	if pos("/aon/"=path$+"/")
-		aon_dir$=path$(1, pos("/aon/"=path$+"/") + len("/aon") - 1)
+		aon_dir$=path$(1, pos("/aon/"=path$+"/",-1) + len("/aon") - 1)
 	else
 		rem --- aon directory not found, so use directory containing the data directory
 		if pos("/data/"=path$+"/")
-			aon_dir$=path$(1, pos("/data/"=path$+"/") - 1)
+			aon_dir$=path$(1, pos("/data/"=path$+"/",-1) - 1)
 		endif
 	endif
 
@@ -192,16 +196,10 @@ remove_trailing_slash: rem --- rem --- Remove trailing slashes (/ and \) from ne
 	return
 
 verify_not_download_loc: rem --- Verify not using current download location
-	rem --- Some needed improvements
-	rem --- Doesn't handle . or .. relative paths
-	rem --- Doesn't handle symbolic links
-	rem --- / vs \ may be an issue
-	rem --- Should be case insensitive for Windows
-	rem --- basis.BBjHome includes the Windows drive id
 
 	loc_ok=1
 	bbjHome$ = System.getProperty("basis.BBjHome")
-	if pos(bbjHome$=testLoc$)=1
+	if ((new File(testLoc$)).getAbsolutePath()).toLowerCase().startsWith((new File(bbjHome$)).getAbsolutePath().toLowerCase()+File.separator)
 		msg_id$="AD_INSTALL_LOC_BAD"
 		dim msg_tokens$[1]
 		msg_tokens$[1]=bbjHome$

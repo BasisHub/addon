@@ -190,12 +190,14 @@ rem ==========================================================================
 				break
 			endif
 
-			apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt + apt11a.trans_disc
+			apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
+			apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 		wend
+		if apt01a.discount_amt<0 then apt01a.discount_amt=0
 
 	rem --- override discount and payment amounts if already in ape04 (computer checks)
 
-		disc_amt=0
+		disc_amt=apt01a.discount_amt
 		pymnt_amt=0
 		dim ape04a$:fattr(ape04a$)
 		read record(ape04_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next) ape04a$
@@ -217,7 +219,7 @@ rem ==========================================================================
 			vectInvoices!.addItem(apt01a.ap_inv_no$); rem 5
 			vectInvoices!.addItem(date(jul(apt01a.inv_due_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 6
 			vectInvoices!.addItem(date(jul(apt01a.disc_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 7
-			vectInvoices!.addItem(apt01a.invoice_amt$); rem 8
+			vectInvoices!.addItem(str(apt01a.invoice_amt - apt01a.retention - disc_amt - pymnt_amt)); rem 8
 			vectInvoices!.addItem(str(disc_amt)); rem 9
 			vectInvoices!.addItem(str(pymnt_amt)); rem 10
 			vectInvoices!.addItem(apt01a.retention$); rem 11
@@ -231,13 +233,14 @@ rem ==========================================================================
 			vectInvoicesMaster!.addItem(apt01a.ap_inv_no$); rem 6
 			vectInvoicesMaster!.addItem(date(jul(apt01a.inv_due_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 7
 			vectInvoicesMaster!.addItem(date(jul(apt01a.disc_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 8
-			vectInvoicesMaster!.addItem(apt01a.invoice_amt$); rem 9
+			vectInvoicesMaster!.addItem(str(apt01a.invoice_amt - apt01a.retention - disc_amt - pymnt_amt)); rem 9
 			vectInvoicesMaster!.addItem(str(disc_amt)); rem 10
 			vectInvoicesMaster!.addItem(str(pymnt_amt)); rem 11
 			vectInvoicesMaster!.addItem(apt01a.retention$); rem 12
 			vectInvoicesMaster!.addItem(apt01a.inv_due_date$); rem 13
 			vectInvoicesMaster!.addItem(apt01a.vendor_id$); rem 14
 			vectInvoicesMaster!.addItem(apt01a.disc_date$); rem 15
+			vectInvoicesMaster!.addItem(apt01a.invoice_amt$); rem 16
 			rows=rows+1
 		endif
 	wend
@@ -254,6 +257,8 @@ rem ==========================================================================
 	dim apm01a$:fnget_tpl$("APM_VENDMAST")
 	apt01_dev = fnget_dev("APT_INVOICEHDR")
 	dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
+	apt11_dev = fnget_dev("APT_INVOICEDET")
+	dim apt11a$:fnget_tpl$("APT_INVOICEDET")
 
 	SysGUI!.setRepaintEnabled(0)
 
@@ -291,6 +296,20 @@ rem				endif
 					gosub disp_message
 					break
 				endif
+				
+				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
+				while 1
+					readrecord(apt11_dev,end=*break)apt11a$
+					if pos(firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ =
+:						    firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$) <> 1 
+:					then 
+						break
+					endif
+
+					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
+					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+				wend
+				if apt01a.discount_amt<0 then apt01a.discount_amt=0
 
 				gridInvoices!.setCellState(row_no,0,1)
 
@@ -300,7 +319,8 @@ rem				endif
 					gridInvoices!.setCellText(row_no, 9, apt01a.discount_amt$)
 				endif
 
-				payment_amt = num(gridInvoices!.getCellText(row_no,8)) - num(gridInvoices!.getCellText(row_no,9)) - apt01a.retention
+				gridInvoices!.setCellText(row_no, 8, "0.00")
+				payment_amt = apt01a.invoice_amt - num(gridInvoices!.getCellText(row_no,9)) - apt01a.retention
 				gridInvoices!.setCellText(row_no, 10, str(payment_amt))
 				vectInvoices!.setItem(row_no * numcols, "Y")
 				dummy = fn_setmast_flag(
@@ -321,8 +341,30 @@ rem				endif
 		rem --- Checked -> not checked
 
 			else
+
+				rem --- re-initialize
+				read record (apt01_dev, key=firm_id$+
+:					gridInvoices!.getCellText(row_no,2)+
+:					gridInvoices!.getCellText(row_no,3)+
+:					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
+				
+				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
+				while 1
+					readrecord(apt11_dev,end=*break)apt11a$
+					if pos(firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ =
+:						    firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$) <> 1 
+:					then 
+						break
+					endif
+
+					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
+					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+				wend
+				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+
 				gridInvoices!.setCellState(row_no,0,0)
-				gridInvoices!.setCellText(row_no,9,"0.00")
+				gridInvoices!.setCellText(row_no, 8, str(str(apt01a.invoice_amt - apt01a.retention - apt01a.discount_amt)))
+				gridInvoices!.setCellText(row_no,9,str(apt01a.discount_amt))
 				gridInvoices!.setCellText(row_no,10,"0.00")
 				dummy = fn_setmast_flag(
 :					vectInvoices!.getItem(row_no*numcols+2),
@@ -335,7 +377,7 @@ rem				endif
 :					vectInvoices!.getItem(row_no*numcols+2),
 :					vectInvoices!.getItem(row_no*numcols+3),
 :					vectInvoices!.getItem(row_no*numcols+5),
-:					"0",
+:					str(apt01a.discount_amt),
 :					"0"
 :				)
 			endif
@@ -522,6 +564,8 @@ rem ==========================================================================
 	dim apm01a$:fnget_tpl$("APM_VENDMAST")
 	apt01_dev = fnget_dev("APT_INVOICEHDR")
 	dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
+	apt11_dev = fnget_dev("APT_INVOICEDET")
+	dim apt11a$:fnget_tpl$("APT_INVOICEDET")
 
 	SysGUI!.setRepaintEnabled(0)
 
@@ -568,6 +612,20 @@ rem				endif
 					continue
 				endif
 
+				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
+				while 1
+					readrecord(apt11_dev,end=*break)apt11a$
+					if pos(firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ =
+:						    firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$) <> 1 
+:					then 
+						break
+					endif
+
+					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
+					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+				wend
+				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+
 				gridInvoices!.setCellState(row_no,0,1)
 
 				if callpoint!.getColumnData("APE_PAYSELECT.INCLUDE_DISC")="Y" or
@@ -576,7 +634,8 @@ rem				endif
 					gridInvoices!.setCellText(row_no, 9, apt01a.discount_amt$)
 				endif
 
-				payment_amt = num(gridInvoices!.getCellText(row_no,8)) - num(gridInvoices!.getCellText(row_no,9)) - apt01a.retention
+				gridInvoices!.setCellText(row_no, 8, "0.00")
+				payment_amt = apt01a.invoice_amt - num(gridInvoices!.getCellText(row_no,9)) - apt01a.retention
 				gridInvoices!.setCellText(row_no, 10, str(payment_amt))
 				vectInvoices!.setItem(row_no * numcols, "Y")
 				dummy = fn_setmast_flag(
@@ -597,8 +656,29 @@ rem				endif
 		rem --- Checked -> not checked
 
 			else
+				rem --- re-initialize
+				read record (apt01_dev, key=firm_id$+
+:					gridInvoices!.getCellText(row_no,2)+
+:					gridInvoices!.getCellText(row_no,3)+
+:					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
+
+				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
+				while 1
+					readrecord(apt11_dev,end=*break)apt11a$
+					if pos(firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ =
+:						    firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$) <> 1 
+:					then 
+						break
+					endif
+
+					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
+					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+				wend
+				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+
 				gridInvoices!.setCellState(row_no,0,0)
-				gridInvoices!.setCellText(row_no,9,"0.00")
+				gridInvoices!.setCellText(row_no, 8, str(str(apt01a.invoice_amt - apt01a.retention - apt01a.discount_amt)))
+				gridInvoices!.setCellText(row_no,9,str(apt01a.discount_amt))
 				gridInvoices!.setCellText(row_no,10,"0.00")
 				dummy = fn_setmast_flag(
 :					vectInvoices!.getItem(row_no*numcols+2),
@@ -611,7 +691,7 @@ rem				endif
 :					vectInvoices!.getItem(row_no*numcols+2),
 :					vectInvoices!.getItem(row_no*numcols+3),
 :					vectInvoices!.getItem(row_no*numcols+5),
-:					"0",
+:					str(apt01a.discount_amt),
 :					"0"
 :				)
 			endif
@@ -718,8 +798,9 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 :								   vend$+
 :								   vectInvoicesMaster!.getItem(row+6)
 				read record (apt01_dev, key=apt01_key$) apt01a$
-				amt_to_pay   = num(vectInvoicesMaster!.getItem(row+9))
+				orig_inv_amt   = num(vectInvoicesMaster!.getItem(row+16))
 				disc_to_take = num(vectInvoicesMaster!.getItem(row+10))
+				amt_to_pay   = num(vectInvoicesMaster!.getItem(row+11))
 
 				if vectInvoicesMaster!.getItem(row+1)<>"Y"
 					apt01a.selected_for_pay$="N"
@@ -740,7 +821,7 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 					ape04a.invoice_amt   = amt_to_pay
 					ape04a.discount_amt  = disc_to_take
 					ape04a.retention     = apt01a.retention
-					ape04a.orig_inv_amt  = amt_to_pay; rem --- added this 3/18/08, but not sure if it's the right way to set it.CAH
+					ape04a.orig_inv_amt  = orig_inv_amt
 
 					ape04a$=field(ape04a$)
 					write record (ape04_dev) ape04a$
@@ -854,7 +935,7 @@ rem --- Add grid to store invoices, with checkboxes for user to select one or mo
 	user_tpl.gridInvoicesCtlID$ = str(nxt_ctlID)
 	user_tpl.gridInvoicesCols$ = "12"
 	user_tpl.gridInvoicesRows$ = "10"
-	user_tpl.MasterCols = 16
+	user_tpl.MasterCols = 17
 	user_tpl.retention_col = 12
 	user_tpl.ap_check_seq$=aps_params.ap_check_seq$
 
@@ -942,25 +1023,25 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 
 		rem --- Discount Amount
 
-			if curr_col = 9 then 
-				x=curr_row
+		if curr_col = 9 then 
 				inv_amt  = num(gridInvoices!.getCellText(curr_row,8))
-				disc_amt = num(gridInvoices!.getCellText(curr_row,9)) * sgn(inv_amt)
+				disc_amt = num(gridInvoices!.getCellText(curr_row,9))
 				pmt_amt  = num(gridInvoices!.getCellText(curr_row,10))
+				retent_amt = num(gridInvoices!.getCellText(curr_row,11))
+				orig_inv_amt = num(vectInvoicesMaster!.getItem((curr_row*user_tpl.MasterCols)+16))
 
-				if sgn(disc_amt) <> sgn(inv_amt) then 
-					disc_amt = abs(disc_amt) * sgn(inv_amt)
+				if sgn(disc_amt) <> sgn(orig_inv_amt) then 
+					disc_amt = abs(disc_amt) * sgn(orig_inv_amt)
 					gridInvoices!.setCellText(curr_row,9,str(disc_amt))
 				endif
 
-				if abs(disc_amt) > abs(inv_amt)
-					disc_amt = inv_amt
-					gridInvoices!.setCellText(curr_row,9,str(disc_amt))
-				endif
-
-				if abs(disc_amt) <> abs(inv_amt) - abs(pmt_amt)
-					pmt_amt = (abs(inv_amt) - abs(disc_amt)) * sgn(inv_amt)
-					gridInvoices!.setCellText(curr_row,10,str(pmt_amt))
+				if abs(disc_amt) <> abs(orig_inv_amt) - abs(retent_amt) - abs(pmt_amt)
+					if pmt_amt=0 or abs(disc_amt) > abs(orig_inv_amt) - abs(retent_amt) - abs(pmt_amt)  then 
+						pmt_amt = (abs(orig_inv_amt) - abs(retent_amt) - abs(disc_amt)) * sgn(orig_inv_amt)
+						gridInvoices!.setCellText(curr_row,10,str(pmt_amt))
+					endif
+					inv_amt = orig_inv_amt -  (abs(retent_amt) + abs(disc_amt) + abs(pmt_amt)) * sgn(orig_inv_amt)
+					gridInvoices!.setCellText(curr_row,8,str(inv_amt))
 				endif
 
 				if disc_amt<>0 or inv_amt<>0 then 
@@ -1026,34 +1107,30 @@ rem						endif
 		rem --- Payment Amount
 
 			if curr_col=10
-				x=curr_row
 				inv_amt  = num(gridInvoices!.getCellText(curr_row,8))
 				disc_amt = num(gridInvoices!.getCellText(curr_row,9))
-				pmt_amt  = num(gridInvoices!.getCellText(curr_row,10)) * sgn(inv_amt)
-
-				if sgn(pmt_amt) <> sgn(inv_amt) then 
-					pmt_amt = abs(pmt_amt) * sgn(inv_amt)
+				pmt_amt  = num(gridInvoices!.getCellText(curr_row,10))
+				retent_amt = num(gridInvoices!.getCellText(curr_row,11))
+				orig_inv_amt = num(vectInvoicesMaster!.getItem((curr_row*user_tpl.MasterCols)+16))
+					
+				if sgn(pmt_amt) <> sgn(orig_inv_amt) then 
+					pmt_amt = abs(pmt_amt) * sgn(orig_inv_amt)
 					gridInvoices!.setCellText(curr_row,10,str(pmt_amt))
 				endif
 
-				if abs(pmt_amt) > abs(inv_amt) then 
-					pmt_amt = inv_amt
+				if abs(pmt_amt) > abs(orig_inv_amt) - abs(retent_amt) - abs(disc_amt) then 
+					pmt_amt = (abs(orig_inv_amt) - abs(retent_amt) - abs(disc_amt)) * sgn(orig_inv_amt)
 					gridInvoices!.setCellText(curr_row,10,str(pmt_amt))
 				endif
 
-				if abs(pmt_amt) <> abs(inv_amt) - abs(disc_amt) then 
-					disc_amt = (abs(inv_amt) - abs(pmt_amt)) * sgn(inv_amt)
-					gridInvoices!.setCellText(curr_row,9,str(disc_amt))
-				endif
-
-				if pmt_amt=0 then 
-					disc_amt=0
-					pmt_amt=0
-					gridInvoices!.setCellText(curr_row,9,str(disc_amt))
-					gridInvoices!.setCellText(curr_row,10,str(pmt_amt))
-				endif
-
-				if pmt_amt<>0 then 
+				if pmt_amt=0 then
+					rem --- de-select payment
+					if gridInvoices!.getCellState(curr_row,0) = 1 then 
+						x=curr_row
+						gosub switch_value
+						curr_row=x
+					endif
+				else
 					if gridInvoices!.getCellState(curr_row,0)=0 then 
 						read record (apm01_dev, key=firm_id$+
 :							gridInvoices!.getCellText(curr_row,3), dom=*next) apm01a$
@@ -1089,19 +1166,10 @@ rem						endif
 :							str(pmt_amt)
 :						)
 					endif
-				else
-					if gridInvoices!.getCellState(curr_row,0)=1
-						gridInvoices!.setCellState(curr_row,0,0)
-						dummy = fn_setmast_flag(
-:							vectInvoices!.getItem(curr_row*numcols+2),
-:							vectInvoices!.getItem(curr_row*numcols+3),
-:							vectInvoices!.getItem(curr_row*numcols+5),
-:							"N",
-:							"0"
-:						)
-					endif
 				endif
 
+				inv_amt = orig_inv_amt -  (abs(retent_amt) + abs(disc_amt) + abs(pmt_amt)) * sgn(orig_inv_amt)
+				gridInvoices!.setCellText(curr_row,8,str(inv_amt))
 				vectInvoices!.setItem(curr_row*num(user_tpl.gridInvoicesCols$)+9,str(disc_amt))
 				vectInvoices!.setItem(curr_row*num(user_tpl.gridInvoicesCols$)+10,str(pmt_amt))
 				dummy = fn_setmast_amts(
