@@ -358,13 +358,24 @@ next_file:
     endif
 
     rem --- skip these files
-    if pos("."=datafile$)=1 then goto next_file
-    if pos("_"=datafile$)=1 then goto next_file
-    if pos("z"=cvs(datafile$,8))=1 then  goto next_file
-    if pos("dd"=cvs(datafile$,8))=1 then goto next_file
-    if pos("w-"=cvs(datafile$,8))=3 then goto next_file
-    if pos("sh"=cvs(datafile$,8))=1 then goto next_file
-    if pos("ivm-03"=cvs(datafile$,8))=1 then goto next_file
+    if pos("."=datafile$)=1 or
+:   pos("_"=datafile$)=1 or
+:   pos("z"=cvs(datafile$,8))=1 or
+:   pos("dd"=cvs(datafile$,8))=1 or
+:   pos("w-"=cvs(datafile$,8))=3 or
+:   pos("sh"=cvs(datafile$,8))=1 or
+:   pos(cvs(datafile$,8)="apm-04;apt-03;",7) or
+:   pos(cvs(datafile$,8)="are-07;are-43;arm-04;art-43;art-53;",7) or
+:   pos(cvs(datafile$,8)="bmm-04;bmm-06;",7)or
+:   pos(cvs(datafile$,8)="glt-05;",7) or
+:   pos(cvs(datafile$,8)="ivm-03;ivm-08;",7) or
+:   pos(cvs(datafile$,8)="poe-31;poe-32;poe-33;poe-34;poe-41;poe-42;po3-43;poe-44;poe-52;poe-53;poe-54;pot-24;pot-34;pot-35;pot-44;",7) or
+:   pos(cvs(datafile$,8)="sym-59;sym-69;sys-60;",7) or
+:   pos(cvs(datafile$,8)="woe-03;wom-07;",7) then
+        print "Skipped: ",datafile$
+        print (log_dev)"Skipped: ",datafile$
+        goto next_file
+    endif
 
     print "Data file: ",datafile$
     print (log_dev)"Data file: ",datafile$
@@ -372,6 +383,78 @@ next_file:
     if cvs(datafile$,8)="sys-01" then
        normalize_sys01=1
     endif; rem ' sys-01
+
+    rem --- Split old header/detail files into separate files
+    switch pos(cvs(datafile$,8)="woe-11;woe-21;woe-31;",7)
+        case 1; rem --- woe-11
+            split_record_id$="A"
+            header_keys_end_with$="00"
+            headerfile$="wox-11"
+            detailfile$="wox-12"
+
+            rem --- Copy header records to temporary header file.
+            header_file=1
+            split_temp_file$=headerfile$
+            split_temp_file_desc$="DataPort temp header re "+datafile$
+            gosub split_header_detail_recs
+
+            rem --- Copy detail records to temporary detail file.
+            header_file=0
+            split_temp_file$=detailfile$
+            split_temp_file_desc$="DataPort temp detail re "+datafile$
+            gosub split_header_detail_recs
+
+            break
+        case 8; rem --- woe-21
+            split_record_id$="A"
+            header_keys_end_with$="00"
+            headerfile$="wox-21"
+            detailfile$="wox-22"
+
+            rem --- Copy header records to temporary header file.
+            header_file=1
+            split_temp_file$=headerfile$
+            split_temp_file_desc$="DataPort temp header re "+datafile$
+            gosub split_header_detail_recs
+
+            rem --- Copy detail records to temporary detail file.
+            header_file=0
+            split_temp_file$=detailfile$
+            split_temp_file_desc$="DataPort temp detail re "+datafile$
+            gosub split_header_detail_recs
+
+            break
+        case 15; rem --- woe-31
+            split_record_id$="A"
+            header_keys_end_with$="00"
+            headerfile$="wox-31"
+            detailfile$="wox-32"
+
+            rem --- Copy header records to temporary header file.
+            header_file=1
+            split_temp_file$=headerfile$
+            split_temp_file_desc$="DataPort temp header re "+datafile$
+            gosub split_header_detail_recs
+
+            rem --- Copy detail records to temporary detail file.
+            header_file=0
+            split_temp_file$=detailfile$
+            split_temp_file_desc$="DataPort temp detail re "+datafile$
+            gosub split_header_detail_recs
+
+            break
+        case default
+            rem --- unknown file, don't split
+            break
+    swend
+    if pos(cvs(datafile$,8)="woe-11;woe-21;woe-31;",7) then
+        rem --- Don't port files that were split. Their temporary header and detail files will be ported.
+        print "   "+datafile$+" was split into separate header and detail files."
+        print "   "+cvs(headerfile$,version_cvs)+" and "+cvs(detailfile$,version_cvs)+" will be ported separately."
+        print (log_dev)"   "+datafile$+" was split into separate header and detail files."
+        print (log_dev)"   "+cvs(headerfile$,version_cvs)+" and "+cvs(detailfile$,version_cvs)+" will be ported separately."
+        goto next_file
+    endif
 
 rem --- Read the dictionary file ddm-03 to get data file info
 
@@ -489,15 +572,12 @@ end_ddm04:
     dim old_fieldlist$:fields$
     old_fieldlist$=fattr(old_rec$,"")
     record_id_field$=""
-    if pos("RECORD_ID_"=old_fieldlist.name$[1]) then
-       record_id_field$=old_fieldlist.name$[1]
-    endif
-    if pos("RECORD_ID_"=old_fieldlist.name$[2]) then
-       record_id_field$=old_fieldlist.name$[2]
-    endif
-    if pos("RECORD_ID_"=old_fieldlist.name$[3]) then
-       record_id_field$=old_fieldlist.name$[3]
-    endif
+    for j=1 to fields
+        if pos("RECORD_ID_"=old_fieldlist.name$[j]) then
+           record_id_field$=old_fieldlist.name$[j]
+           break
+        endif
+    next
 
     rem ' Special address processing?
     addr_lines=0
@@ -2067,6 +2147,88 @@ reformat_address:
     new_rec.city$=city$
     new_rec.state_code$=state$
 return; rem ' reformat_address
+
+split_header_detail_recs: rem --- Split old header/detail files into separate files
+    rem --- Do not alter v6/v7 file so it can still be used as-is on existing v6/v7 system.
+    rem --- Copy v6/v7 file to temporary v6/v7 header and detail files.
+    rem ---     Input: datafile$
+    rem ---     Input: split_record_id$
+    rem ---     Input: header_keys_end_with$
+    rem ---     Input: split_temp_file$
+    rem ---     Input: split_temp_file_desc$
+    rem ---     Input: header_file
+    
+    rem --- Write ddm-03 record for temporary file
+    dim split_ddm03$:fattr(ddm03$)
+    split_ddm03.file_name$=cvs(split_temp_file$,version_cvs)
+    split_ddm03.record_id$=split_record_id$
+    split_ddm03.description$=split_temp_file_desc$
+    writerecord(ddm03,key=split_ddm03.file_name$+split_ddm03.record_id$)split_ddm03$
+
+    rem --- Copy ddm-04 records for datafile to ddm-04 records for the temporary file    
+    dim split_ddm04$:fattr(ddm04$)
+    read(ddm04,key=datafile$+split_record_id$,dom=*next)
+    while 1
+        ddm04_key$=key(ddm04,end=*break)
+        if pos(datafile$+split_record_id$=ddm04_key$)<>1 then break
+        readrecord(ddm04,key=ddm04_key$)split_ddm04$
+        split_ddm04.file_name$=cvs(split_temp_file$,version_cvs)
+        writerecord(ddm04,key=split_ddm04.file_name$+split_ddm04.record_id$+split_ddm04.layout_seq$)split_ddm04$
+        
+        rem --- Reset file pointer to get next ddm-04 record for datafile
+        read(ddm04,key=ddm04_key$)
+    wend
+
+    rem --- Create temporary file
+    split_file=unt
+    open (split_file)source_folder$+"/"+datafile$
+    lock (split_file)
+    fid$=fid(split_file)
+    fid$=fid$(1,8)+source_folder$+"/"+cvs(split_temp_file$,version_cvs)
+    fin$=fin(split_file)(86)
+    keyed = asc(and(fid$(1,1),$06$)) or asc(and(fid$(1,1),$08$)) or fid$(1,1)=$0d$
+    multi = keyed and asc(fid$(2,1))=0
+    single = keyed and !(multi)
+    erase source_folder$+"/"+cvs(split_temp_file$,version_cvs),err=*next
+    if multi then
+       file fid$,fin$
+    else
+       file fid$
+    endif
+    
+    rem --- Copy datafile to temporary header and detail files
+    temp_file=unt
+    open (temp_file)source_folder$+"/"+cvs(split_temp_file$,version_cvs)
+    lock (temp_file)
+    read(split_file,key="",dom=*next)
+    while 1
+        split_key$=key(split_file,end=*break)
+        readrecord(split_file)rec$
+        if pos(cvs(datafile$,8)="woe-11;woe-21;woe-31",7)
+            rem --- Second string in woe-11/21/31 detail record is written short.
+            rem --- Need to pad it to correct length in order to port trailing numerics correctly.
+            pos_2nd_0a=pos($0a$=rec$,1,2)
+            if pos_2nd_0a<49 then
+                rec$(pos_2nd_0a)=pad("",49-pos_2nd_0a)+rec$(pos_2nd_0a)
+            endif
+        endif
+        end_pos=len(split_key$)-len(header_keys_end_with$)+1
+        if (header_file and pos(header_keys_end_with$=split_key$,-1)=end_pos) or 
+:       (!header_file and pos(header_keys_end_with$=split_key$,-1)<>end_pos) then
+            rem --- Correct record type for this temporary file
+            if single then
+               writerecord(temp_file,key=split_key$)rec$
+            else
+               writerecord(temp_file)rec$
+            endif
+        endif
+    wend
+    close (split_file)
+    close (temp_file)
+
+    rem --- Append temporary file to vectPort!
+    vectPort!.addItem(cvs(split_temp_file$,version_cvs))
+    return
 
 disp_meter:rem --- Display Progress Meter
 

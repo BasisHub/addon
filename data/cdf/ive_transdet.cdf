@@ -99,6 +99,8 @@ ls_lookup: rem --- Call the lot lookup window and set default lot, lot location,
 	declare BBjStandardGrid grid!
 	grid! = util.getGrid(Form!)
 	grid_ctx=grid!.getContextID()
+	curr_row=grid!.getSelectedRow()
+	curr_col=grid!.getSelectedColumn()
 
 	rem --- Set data for the lookup form
 
@@ -155,6 +157,8 @@ ls_lookup: rem --- Call the lot lookup window and set default lot, lot location,
 
 	rem --- return focus to where we were (lot number)
 	sysgui!.setContext(grid_ctx)
+	grid!.startEdit(curr_row,curr_col)
+	callpoint!.setStatus("ACTIVATE")
 	
 [[IVE_TRANSDET.BUDE]]
 print "before record undelete (BUDE)"; rem debug

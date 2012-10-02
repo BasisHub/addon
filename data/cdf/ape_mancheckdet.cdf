@@ -207,6 +207,8 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 		declare BBjStandardGrid grid!
 		grid! = util.getGrid(Form!)
 		grid_ctx=grid!.getContextID()
+		curr_row=grid!.getSelectedRow()
+		curr_col=grid!.getSelectedColumn()
 		rem --- invoke GL Dist form
 		gosub get_gl_tots
 		user_id$=stbl("+USER_ID")
@@ -226,9 +228,10 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 :		dflt_data$[all]
 		rem --- Reset focus on detail row where GL Dist was executed
 		sysgui!.setContext(grid_ctx)
+		grid!.startEdit(curr_row,curr_col)
 	endif	
 endif
-callpoint!.setStatus("MODIFIED-REFRESH")
+callpoint!.setStatus("MODIFIED-REFRESH-ACTIVATE")
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
 print "Det: AP_INV_NO.AVAL"; rem debug
 

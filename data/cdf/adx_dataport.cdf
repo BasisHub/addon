@@ -222,10 +222,71 @@ check_source_dir:
 		tempColor!=callpoint!.getDevObject("valid_color")
 		callpoint!.setDevObject("source_ok",1)
 
+		gosub check_for_batched_files
 	endif
 
 	source!=util.getControl(callpoint!,"ADX_DATAPORT.SOURCE_DIR")		
 	source!.setBackColor(tempColor!)
+
+return
+
+rem --- check for existing batched files, and build HashMap of them ==============================
+
+check_for_batched_files:
+
+	batched_files!=new java.util.HashMap()
+
+	rem --- Open batch processing files
+	sym49_dev=unt
+	open(sym49_dev,err=close_files)temp_dir$+cvs("sym-49",cvs_check)
+	dim sym49_k$(3),batch_number$(3),process_id$(10)
+	sym09_dev=unt
+	open(sym09_dev,err=close_files)temp_dir$+cvs("sym-09",cvs_check)
+	dim sym09_k$(10),description$(30)
+	sym39_dev=unt
+	open(sym39_dev,err=close_files)temp_dir$+cvs("sym-39",cvs_check)
+	dim sym39_k$(16),file_name$(6)
+
+	rem --- Check sym-49 to see if there are any open batches
+	process_not_found$=Translate!.getTranslation("AON_PROCESS")+" "+Translate!.getTranslation("AON_NOT_FOUND")+": "
+	read(sym49_dev,key="",dom=*next)
+	while 1
+		sym49_k$(1)=key(sym49_dev,end=*break)
+		read(sym49_dev)*,process_id$(1)
+		batch_number$(1)=sym49_k$
+
+		rem --- Check sym-09 to get process description for this open batch
+		description$(1)=process_not_found$+process_id$
+		read(sym09_dev,key=process_id$,dom=*next)*,description$(1)
+
+		rem --- Check sym-39 to get files in this open batch
+		read(sym39_dev,key=process_id$,dom=*next)
+		while 1
+			sym39_k$(1)=key(sym39_dev,end=*break)
+			if pos(process_id$=sym39_k$)<> 1 then break
+			read(sym39_dev)
+			file_name$(1)=sym39_k$(11)
+			if batched_files!.containsKey(file_name$) then
+				rem --- batched_file! already includes this file, so just add this batch to the list of batches
+				vec!=cast(BBjVector,batched_files!.get(file_name$))
+				batches$=vec!.getItem(0)
+				batches$=batches$+"; "+batch_number$
+				vec!.setItem(0,batches$)
+			else
+				rem --- batched_file! doesn't includes this file, so add it
+				vec!=BBjAPI().makeVector()
+				vec!.addItem(batch_number$)
+				vec!.addItem(description$)
+				batched_files!.put(file_name$,vec!)
+			endif
+		wend
+	wend
+
+close_files:
+	if sym09_dev then close(sym09_dev,err=*next)
+	if sym39_dev then close(sym39_dev,err=*next)
+	if sym49_dev then close(sym49_dev,err=*next)
+	callpoint!.setDevObject("batched_files",batched_files!)
 
 return
 
@@ -262,10 +323,23 @@ switch_value: rem --- Switch Check Values===============================
 	gridFiles!=callpoint!.getDevObject("gridFiles")
 	TempRows!=gridFiles!.getSelectedRows()
 	if TempRows!.size()>0
+		batched_files!=callpoint!.getDevObject("batched_files")
 		for curr_row=1 to TempRows!.size()
 			if gridFiles!.getCellState(TempRows!.getItem(curr_row-1),0)=0
-				gridFiles!.setCellState(TempRows!.getItem(curr_row-1),0,1)
+				rem --- Don't allow selecting this file if it's batched
+				file_name$=gridFiles!.getCellText(TempRows!.getItem(curr_row-1),1)
+				if batched_files!.containsKey(file_name$) then
+					vec!=cast(BBjVector,batched_files!.get(file_name$))
+					msg_id$="CANNOT_PORT_BATCHED"
+					dim msg_tokens$[3]
+					msg_tokens$[1]=vec!.getItem(1)
+					msg_tokens$[2]=file_name$
+					msg_tokens$[3]=vec!.getItem(0)
+					gosub disp_message
 				else
+					gridFiles!.setCellState(TempRows!.getItem(curr_row-1),0,1)
+				endif
+			else
 				gridFiles!.setCellState(num(TempRows!.getItem(curr_row-1)),0,0)
 			endif
 		next curr_row
