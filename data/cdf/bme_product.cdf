@@ -1,3 +1,23 @@
+[[BME_PRODUCT.BTBL]]
+rem --- Get Batch information
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("BME_PRODUCT.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+[[BME_PRODUCT.ARAR]]
+rem --- Get Unit of Sale
+
+	item$=callpoint!.getColumnData("BME_PRODUCT.ITEM_ID")
+	ivm01_dev=fnget_dev("IVM_ITEMMAST")
+	dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
+
+	while 1
+		read record (ivm01_dev,key=firm_id$+item$,dom=*break)ivm01a$
+		callpoint!.setColumnData("<<DISPLAY>>.UNIT_OF_SALE",ivm01a.unit_of_sale$,1)
+		break
+	wend
+
+	bill_no$=item$
+	gosub disp_bill_comments
 [[BME_PRODUCT.BWRI]]
 rem --- Validate Quantity
 
@@ -163,6 +183,14 @@ rem --- Additional Init
 	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"IV",glw11$,gl$,status
 	if status<>0 goto std_exit
 	callpoint!.setDevObject("glint",gl$)
+
+rem --- Additional Init
+
+	gl$="N"
+	status=0
+	source$=pgm(-2)
+	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"BM",glw11$,gl$,status
+	if status<>0 goto std_exit
 [[BME_PRODUCT.ITEM_ID.AINV]]
 rem --- Item synonym processing
 

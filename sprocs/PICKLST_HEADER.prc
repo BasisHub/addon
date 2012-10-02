@@ -72,7 +72,7 @@ data! = rs!.getEmptyRecordData()
 find record (ope_ordhdr_chan, key=firm_id$+"  "+customer_id$+order_no$, dom=*continue) ope_ordhdr$
 
 data!.setFieldValue("ORDER_DATE", func.formatDate(ope_ordhdr.order_date$))
-
+goto end_block
 find record (ars_report_chan, key=firm_id$+"AR02") ars_report$
 
 comp_addr$ = ars_report.addr_line_1$+ars_report.addr_line_2$+ars_report.city$+ars_report.state_code$+ars_report.zip_code$
@@ -145,7 +145,7 @@ while BBjAPI().TRUE
     message$ = message$ + pad(opc_msg_det.message_text$, 40) + $0D$
 wend
 data!.setFieldValue("MESSAGE", message$)
-
+end_block:
 rs!.insert(data!)
 
 rem Tell the stored procedure to return the result set.

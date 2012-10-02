@@ -36,6 +36,34 @@ rs! = BBJAPI().createMemoryRecordSet("FIRM_ID:C(2), BILL_NO:C(20), DRAWING_NO:C(
 :                                     SOURCE_CODE:C(1), UNIT_MEASURE:C(2), LSTRVS_DATE:C(8), LSTACT_DATE:C(8), CREATE_DATE:C(8),
 :                                     EST_YIELD:N(5*), STD_LOT_SIZE:N(7*), ITEMDESC:C(60), SUB_ASSMBLY:C(20)")
 
+rem --- Get Barista System Program directory
+	sypdir$=""
+	sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Open files with adc
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
+    files$[2]="bmm-01",ids$[2]="BMM_BILLMAST"
+    files$[3]="bmm-02",ids$[3]="BMM_BILLMAT"
+    files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    bmm_billmast_dev = channels[1]
+    bmm_billmast_dev1= channels[2]
+    bmm_billmat_dev  = channels[3]
+    ivm_itemmast_dev = channels[4]
+
+rem --- Dimension string templates
+
+    dim bmm_billmast$:templates$[1]
+	dim bmm_billmat$:templates$[3]
+	dim ivm_itemmast$:templates$[4]
+
+goto no_bac_open
 rem --- Open Files    
     num_files = 4
     dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
@@ -44,10 +72,6 @@ rem --- Open Files
 	open_tables$[2]="BMM_BILLMAST",  open_opts$[2] = "OTA[_2]"
 	open_tables$[3]="BMM_BILLMAT",   open_opts$[3] = "OTA"
 	open_tables$[4]="IVM_ITEMMAST",   open_opts$[4] = "OTA"
-
-rem --- Get Barista System Program directory
-	sypdir$=""
-	sypdir$=stbl("+DIR_SYP",err=*next)
 
 call sypdir$+"bac_open_tables.bbj",
 :       open_beg,
@@ -68,7 +92,7 @@ call sypdir$+"bac_open_tables.bbj",
 	dim bmm_billmast$:open_tpls$[1]
 	dim bmm_billmat$:open_tpls$[3]
 	dim ivm_itemmast$:open_tpls$[4]
-
+no_bac_open:
 rem --- Trip Read
 
 	extract record (bmm_billmast_dev, key=firm_id$+from_bill$, dom=*next)
@@ -105,7 +129,7 @@ rem --- Now find all sub-bills within the main bill
 rem --- Populate data set with all sub-bills
 		if len(bill_numbers$)>0
 			for x=1 to len(bill_numbers$) step bill_len+1
-				readrecord (bmm_billmast_dev,key=firm_id$+bill_numbers$(x+1,bill_len)) bmm_billmast$
+				readrecord (bmm_billmast_dev1,key=firm_id$+bill_numbers$(x+1,bill_len)) bmm_billmast$
 				gosub output_bill
 			next x
 		endif

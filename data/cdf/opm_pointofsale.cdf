@@ -1,3 +1,11 @@
+[[OPM_POINTOFSALE.ADIS]]
+rem --- Default Warehouse is required when Warehouse Entry is skipped
+
+if callpoint!.getColumnData("OPM_POINTOFSALE.SKIP_WHSE")="Y"
+	callpoint!.setTableColumnAttribute("OPM_POINTOFSALE.WAREHOUSE_ID","MINL","1")
+else
+	callpoint!.setTableColumnAttribute("OPM_POINTOFSALE.WAREHOUSE_ID","MINL","0")
+endif
 [[OPM_POINTOFSALE.REC_PRT_PORT.AVAL]]
 rem --- Check alias, is it in the config file?
 
@@ -211,11 +219,10 @@ rem --- Valid Hex?
 		callpoint!.setStatus("ABORT")
 	endif
 [[OPM_POINTOFSALE.SKIP_WHSE.AVAL]]
-rem --- Valid response?
+rem --- Default Warehouse is required when Warehouse Entry is skipped
 
-	skip$ = callpoint!.getUserInput()
-
-	if skip$ <> "Y" and skip$ <> "N" then
-		callpoint!.setMessage("YES_OR_NO")
-		callpoint!.setStatus("ABORT")
-	endif
+if callpoint!.getUserInput()="Y"
+	callpoint!.setTableColumnAttribute("OPM_POINTOFSALE.WAREHOUSE_ID","MINL","1")
+else
+	callpoint!.setTableColumnAttribute("OPM_POINTOFSALE.WAREHOUSE_ID","MINL","0")
+endif

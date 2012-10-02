@@ -322,7 +322,6 @@ rem --- Set previous item / enable repricing, options, lot
 	gosub enable_addl_opts
 	gosub able_lot_button
 [[OPE_ORDDET.LINE_CODE.BINP]]
-print "Det:LINE_CODE.BINP"; rem debug
 
 rem --- Set previous value / enable repricing, options, lots
 
@@ -330,6 +329,14 @@ rem --- Set previous value / enable repricing, options, lots
 	gosub enable_repricing
 	gosub enable_addl_opts
 	gosub able_lot_button
+
+rem --- Force focus on Warehouse when Line Code entry is skipped
+
+	if callpoint!.getDevObject("skipLineCode") = "Y" then
+		callpoint!.setDevObject("skipLineCode","N"); rem --- skip line code entry only once
+		callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.WAREHOUSE_ID")
+		break
+	endif
 [[OPE_ORDDET.BWRI]]
 rem --- Set values based on line type
 
@@ -625,10 +632,6 @@ rem --- Set detail defaults and disabled columns
 	callpoint!.setTableColumnAttribute("OPE_ORDDET.LINE_CODE","DFLT", user_tpl.line_code$)
 	callpoint!.setTableColumnAttribute("OPE_ORDDET.WAREHOUSE_ID","DFLT", user_tpl.warehouse_id$)
 
-rem	if user_tpl.skip_ln_code$ = "Y" then
-rem		callpoint!.setColumnEnabled(-1, "OPE_ORDDET.LINE_CODE", 0)
-rem	endif
-
 	if user_tpl.skip_whse$ = "Y" then
 		rem callpoint!.setColumnEnabled(-1, "OPE_ORDDET.WAREHOUSE_ID", 0)
 		item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
@@ -758,9 +761,6 @@ rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 [[OPE_ORDDET.AREC]]
 rem --- Backorder is zero and disabled on a new record
 
-	rem user_tpl.new_detail = 1
-	rem The above is not reliable; use callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())
-
 	callpoint!.setColumnData("OPE_ORDDET.QTY_BACKORD", "0")
 	callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"OPE_ORDDET.QTY_BACKORD", 0)
 
@@ -771,6 +771,9 @@ rem --- Set defaults for new record
 
 	callpoint!.setColumnData("OPE_ORDDET.MAN_PRICE", "N")
 	callpoint!.setColumnData("OPE_ORDDET.EST_SHP_DATE", ship_date$)
+
+	rem --- For new lines may want to skip line code entry the first time.
+	callpoint!.setDevObject("skipLineCode",user_tpl.skip_ln_code$)
 
 	rem --- Is the default line code for dropships?
 	file$ = "OPC_LINECODE"
@@ -796,10 +799,6 @@ rem --- Buttons start disabled
 	callpoint!.setOptionEnabled("LENT",0)
 	callpoint!.setOptionEnabled("RCPR",0)
 	callpoint!.setOptionEnabled("ADDL",0)
-
-rem --- Force focus on Line Code since Barista is skipping it (rem'd since Barista bug 3999 fixed)
-
-rem	callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE")
 [[OPE_ORDDET.BDEL]]
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
@@ -820,14 +819,6 @@ rem		callpoint!.setFocus(num(callpoint!.getDevObject("rcpr_row")),"OPE_ORDDET.UN
 		callpoint!.setDevObject("rcpr_row","")
 		callpoint!.setDevObject("details_changed","Y")
 		break
-	endif
-
-rem --- Disable Line Code if existing record
-
-	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) = ""
-		callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE", 0)
-	else
-		callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"OPE_ORDDET.LINE_CODE", 1)
 	endif
 
 rem --- Disable by line type (Needed because Barista is skipping Line Code)
@@ -897,19 +888,13 @@ rem --- Set availability info
 [[OPE_ORDDET.AGRE]]
 rem --- Clear/set flags
 
-	rem user_tpl.new_detail = 0
-
 	round_precision = num(callpoint!.getDevObject("precision"))
 	this_row = callpoint!.getValidationRow()
-	print "---This Row:", this_row; rem debug
-	print "---getGridRowNewStatus: ", callpoint!.getGridRowNewStatus(this_row); rem debug
-	print "---getGridRowModifyStatus: ", callpoint!.getGridRowModifyStatus(this_row); rem debug
 
 	if callpoint!.getGridRowNewStatus(this_row) <> "Y" and callpoint!.getGridRowModifyStatus(this_row) <> "Y" then
 		break; rem --- exit callpoint
 	endif
 
-	print "---Passed Grid Row Status tests..."; rem debug
 	user_tpl.detail_modified = 1
 
 rem --- Returns

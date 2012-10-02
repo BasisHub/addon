@@ -1,3 +1,7 @@
+[[ADM_PROCBATCHES.DESCRIPTION.BINP]]
+rem --- Save the record
+
+	callpoint!.setStatus("SAVE")
 [[ADM_PROCBATCHES.BATCH_NO.AVAL]]
 rem --- don't allow user to assign new batch# -- use Barista seq# (BATCH_NO)
 rem --- if user made null entry (to assign next seq automatically) then getRawUserInput() will be empty
@@ -23,17 +27,22 @@ rem --- disallow user entering non-existent batch number
 	else
 rem --- set defaults
 
-		callpoint!.setColumnData("ADM_PROCBATCHES.DATE_OPENED",date(0:"%Yd%Mz%Dz"))
-		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_DATE",date(0:"%Yd%Mz%Dz"))
-		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_TIME",date(0:"%hz%mz"))
-		callpoint!.setColumnData("ADM_PROCBATCHES.PROCESS_ID",stbl("+PROCESS_ID"))
-		callpoint!.setColumnData("ADM_PROCBATCHES.TIME_OPENED",date(0:"%hz%mz"))
-		callpoint!.setColumnData("ADM_PROCBATCHES.USER_ID",sysinfo.user_id$)
-		callpoint!.setColumnData("ADM_PROCBATCHES.DESCRIPTION",stbl("+BATCH_DESC"))
-		callpoint!.setStatus("MODIFIED-REFRESH")
+		callpoint!.setColumnData("ADM_PROCBATCHES.DATE_OPENED",date(0:"%Yd%Mz%Dz"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_DATE",date(0:"%Yd%Mz%Dz"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_TIME",date(0:"%hz%mz"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.PROCESS_ID",stbl("+PROCESS_ID"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.TIME_OPENED",date(0:"%hz%mz"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.USER_ID",sysinfo.user_id$,1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.DESCRIPTION",stbl("+BATCH_DESC"),1)
+		callpoint!.setStatus("MODIFIED")
+		callpoint!.setColumnEnabled("ADM_PROCBATCHES.BATCH_NO",0)
 	endif
 [[ADM_PROCBATCHES.BEND]]
-release
+rem --- Notify user of the process aborting and release
+
+	msg_id$="PROCESS_ABORT"
+	gosub disp_message
+	release
 [[ADM_PROCBATCHES.BTBL]]
 callpoint!.setTableColumnAttribute("ADM_PROCBATCHES.PROCESS_ID","PVAL",$22$+stbl("+PROCESS_ID")+$22$)
 if stbl("+ALLOW_NEW_BATCH")<>"Y"

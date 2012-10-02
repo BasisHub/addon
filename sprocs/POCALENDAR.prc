@@ -34,7 +34,23 @@ rem beg_mo$="04"
 rem beg_yr$="2008"
 rem end_mo$="05"
 rem end_yr$="2008"
+rem goto bac_open
+rem --- Open files with adc
 
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="pom-01",ids$[1]="POM_CALENDAR"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    pom_calendar_dev = channels[1]
+
+rem --- Dimension string templates
+
+    dim pom_calendar$:templates$[1]
+
+goto no_bac_open
 rem --- Open/Lock files
 
     files=1,begfile=1,endfile=files
@@ -52,6 +68,7 @@ rem --- Open/Lock files
 rem --- Dimension string templates
 
     dim pom_calendar$:templates$[1]
+no_bac_open:
     dim day_name$[6]
     dim day_status$[41]
     

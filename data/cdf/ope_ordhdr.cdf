@@ -225,8 +225,12 @@ rem --- Is flag down?
 
 rem --- Credit action
 
-	if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
-		gosub do_credit_action
+	rem --- Temporay work around to avoid error 11 when no record exists re Barista bug 5743
+	rem --- Header record will exist if at least one detail line has been entered.
+	if GridVect!.getItem(0).size()>0 then
+		if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
+			gosub do_credit_action
+		endif
 	endif
 [[OPE_ORDHDR.AOPT-PRNT]]
 rem --- Print a counter Picking Slip
@@ -1164,7 +1168,7 @@ rem --- Disable Ship To fields
 	if ship_to_type$="S"
 		status = 1
 	else
-		status = -1
+		status = 0
 	endif
 	callpoint!.setColumnEnabled(column!, status)
 
@@ -1182,7 +1186,7 @@ rem --- Disable Ship To fields
 	if ship_to_type$="M"
 		status = 1
 	else
-		status = -1
+		status = 0
 	endif
 
 	callpoint!.setColumnEnabled(column!, status)
@@ -1244,7 +1248,7 @@ rem --- Enable/disable expire date based on value
 	inv_type$ = callpoint!.getUserInput()
 
 	if inv_type$ = "S" then
-		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", -1)
+		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", 0)
 	else
 		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", 1)
 	endif
@@ -2356,7 +2360,7 @@ rem --- Disable display fields
 		column!.addItem("OPE_ORDHDR.JOB_NO")
 	endif
 
-	callpoint!.setColumnEnabled(column!, -1)
+	callpoint!.setColumnEnabled(column!, 0)
 
 	column!.clear()
 	column!.addItem("<<DISPLAY>>.SNAME")
@@ -2375,7 +2379,7 @@ rem --- Disable display fields
 	column!.addItem("<<DISPLAY>>.AGING_90")
 	column!.addItem("<<DISPLAY>>.AGING_120")
 	column!.addItem("<<DISPLAY>>.TOT_AGING")
-	callpoint!.setColumnEnabled(column!, -1)
+	callpoint!.setColumnEnabled(column!, 0)
 
 rem --- Save display control objects
 

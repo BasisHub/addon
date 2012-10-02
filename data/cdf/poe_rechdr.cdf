@@ -128,14 +128,11 @@ if callpoint!.getUserInput()="N"
 	callpoint!.setDevObject("ds_orders","N")
 	callpoint!.setDevObject("so_ldat","")
 	callpoint!.setDevObject("so_lines_list","")
-	callpoint!.setTableColumnAttribute("POE_RECHDR.CUSTOMER_ID","MINL","0")	
-	callpoint!.setTableColumnAttribute("POE_RECHDR.ORDER_NO","MINL","0")
-else
-	callpoint!.setTableColumnAttribute("POE_RECHDR.CUSTOMER_ID","MINL","1")
-	if callpoint!.getDevObject("OP_installed")="Y"
-		callpoint!.setTableColumnAttribute("POE_RECHDR.ORDER_NO","MINL","1")
-	endif
+	callpoint!.setColumnData("POE_RECHDR.ORDER_NO","",1)
+	callpoint!.setColumnData("POE_RECHDR.SHIPTO_NO","",1)
 endif
+
+gosub enable_dropship_fields
 [[POE_RECHDR.CUSTOMER_ID.AVAL]]
 rem --- if dropshipping, retrieve/display specified shipto address
 
@@ -178,13 +175,6 @@ gosub vendor_info
 gosub disp_vendor_comments
 gosub purch_addr_info
 gosub whse_addr_info
-
-rem --- depending on whether or not drop-ship flag is selected and OE is installed, set min lengths for cust# and order#
-
-callpoint!.setTableColumnAttribute("POE_RECHDR.CUSTOMER_ID","MINL","1")
-if callpoint!.getDevObject("OP_installed")="Y"
-	callpoint!.setTableColumnAttribute("POE_RECHDR.ORDER_NO","MINL","1")
-endif
 
 rem --- disable drop-ship checkbox, customer, order until/unless no detail exists
 
@@ -360,25 +350,41 @@ rem --- Verify that there are line codes - abort if not.
 		release
 	endif
 
-rem --- call adc_application to see if OE is installed; if so, open a couple tables for potential use if linking PO to SO for dropship
+rem --- call adc_application to see if AR is installed; if so, open a couple tables for potential use if linking dropship to customer
+
+	dim info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","AR",info$[all]
+	callpoint!.setDevObject("AR_installed",info$[20])
+	if info$[20]="Y"
+		num_files=2
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="ARM_CUSTMAST",open_opts$[1]="OTA"
+		open_tables$[2]="ARM_CUSTSHIP",open_opts$[2]="OTA"
+
+		gosub open_tables
+	else
+		rem --- dropship not allowed without AR
+		callpoint!.setTableColumnAttribute("POE_RECHDR.DROPSHIP","DFLT", "N")
+		callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",-1)
+	endif
+
+rem --- call adc_application to see if OP is installed; if so, open a couple tables for potential use if linking PO to SO for dropship
 
 	dim info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
 	callpoint!.setDevObject("OP_installed",info$[20])
 	if info$[20]="Y"
-		num_files=6
+		num_files=4
 		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-		open_tables$[1]="ARM_CUSTMAST",open_opts$[1]="OTA"
-		open_tables$[2]="ARM_CUSTSHIP",open_opts$[2]="OTA"
-		open_tables$[3]="OPE_ORDSHIP",open_opts$[3]="OTA"
-		open_tables$[4]="OPE_ORDHDR",open_opts$[4]="OTA"
-		open_tables$[5]="OPE_ORDDET",open_opts$[5]="OTA"
-		open_tables$[6]="OPC_LINECODE",open_opts$[6]="OTA"
+		open_tables$[1]="OPE_ORDSHIP",open_opts$[1]="OTA"
+		open_tables$[2]="OPE_ORDHDR",open_opts$[2]="OTA"
+		open_tables$[3]="OPE_ORDDET",open_opts$[3]="OTA"
+		open_tables$[4]="OPC_LINECODE",open_opts$[4]="OTA"
 
 		gosub open_tables
 	
-		opc_linecode_dev=num(open_chans$[6])
-		dim opc_linecode$:open_tpls$[6]
+		opc_linecode_dev=num(open_chans$[4])
+		dim opc_linecode$:open_tpls$[4]
 		
 		let oe_dropship$=""
 		read record (opc_linecode_dev,key=firm_id$,dom=*next)
@@ -390,6 +396,9 @@ rem --- call adc_application to see if OE is installed; if so, open a couple tab
 		wend
 		
 		callpoint!.setDevObject("oe_ds_line_codes",oe_dropship$)
+	else
+		rem --- Sale order number not allowed without OP
+		callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",-1)
 	endif
 
 rem --- call adc_application to see if SF is installed
@@ -654,52 +663,48 @@ return
 
 
 form_inits:
-
 rem --- setting up for new rec or nav to diff rec
 
 callpoint!.setDevObject("ds_orders","")
 callpoint!.setDevObject("so_ldat","")
 callpoint!.setDevObject("so_lines_list","")
 callpoint!.setDevObject("qty_received","")
-
 callpoint!.setDevObject("total_amt","0")
 callpoint!.setDevObject("dtl_posted","")
-
-callpoint!.setTableColumnAttribute("POE_RECHDR.CUSTOMER_ID","MINL","0")	
-callpoint!.setTableColumnAttribute("POE_RECHDR.ORDER_NO","MINL","0")
-
 callpoint!.setColumnData("<<DISPLAY>>.COMMENTS","")
+
+rem --- dropship not allowed without AR
+if callpoint!.getDevObject("AR_installed")<>"Y"
+	callpoint!.setTableColumnAttribute("POE_RECHDR.DROPSHIP","DFLT", "N")
+	callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",-1)
+endif
 
 return
 
 enable_dropship_fields:
-rem disables/enables dropship fields if detail has (or hasn't) been created for this requisition
-rem since warehouse in hdr can't be changed once detail is posted, handling that control here, too.
+rem --- Disables/enables dropship fields if detail has (or hasn't) been created for this requisition.
+rem --- Since warehouse in hdr can't be changed once detail is posted, handling that control here, too.
 
+rem --- Dropship disabled and set to 'N' in BSHO when AR is not installed
+rem --- Sale order number disabled in BSHO when OP is not installed
 if callpoint!.getDevObject("dtl_posted")="Y"
 	callpoint!.setColumnEnabled("POE_RECHDR.WAREHOUSE_ID",0)
-	if callpoint!.getDevObject("OP_installed")="Y"
-		callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",0)
-		callpoint!.setColumnEnabled("POE_RECHDR.CUSTOMER_ID",0)
-		callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",0)			
-	else
-		callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",1)
-		callpoint!.setColumnEnabled("POE_RECHDR.CUSTOMER_ID",1)
-		callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",0)		
-	endif
+	callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",0)
+	callpoint!.setColumnEnabled("POE_RECHDR.CUSTOMER_ID",0)
+	callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",0)			
 else
 	callpoint!.setColumnEnabled("POE_RECHDR.WAREHOUSE_ID",1)
+	rem --- disable customer number and sales order number if not a dropship
 	if callpoint!.getColumnData("POE_RECHDR.DROPSHIP")="Y"
-		callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",1)
 		callpoint!.setColumnEnabled("POE_RECHDR.CUSTOMER_ID",1)
-		callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",1)
+		if callpoint!.getDevObject("OP_installed")="Y" then
+			callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",1)
+		endif
 	else
-		callpoint!.setColumnEnabled("POE_RECHDR.DROPSHIP",1)
 		callpoint!.setColumnEnabled("POE_RECHDR.CUSTOMER_ID",0)
 		callpoint!.setColumnEnabled("POE_RECHDR.ORDER_NO",0)
 	endif
 endif
-
 
 callpoint!.setStatus("REFRESH")
 

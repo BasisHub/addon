@@ -3,11 +3,8 @@ rem --- get gl sales account for this distribution code
 
 	dist_code$ = callpoint!.getUserInput()
 
-	arc_distcode_dev=fnget_dev("ARC_DISTCODE")
-	dim arc_distcode$:fnget_tpl$("ARC_DISTCODE")
-	readrecord(arc_distcode_dev,key=firm_id$+"D"+dist_code$,err=*next)arc_distcode$
+	gosub get_gl_sales_acct
 
-	callpoint!.setDevObject("dflt_gl_account", arc_distcode.gl_sls_acct$)
 [[ARE_INVHDR.BEND]]
 rem --- remove software lock on batch, if batching
 
@@ -75,6 +72,11 @@ if callpoint!.getColumnData("ARE_INVHDR.SIM_INV_TYPE")="V"
 		endif
 	endif
 endif
+
+rem --- get gl sales account for this distribution code
+
+	dist_code$ = callpoint!.getColumnData("ARE_INVHDR.AR_DIST_CODE")
+	gosub get_gl_sales_acct
 [[ARE_INVHDR.AGDS]]
 gosub calc_grid_tots
 callpoint!.setColumnData("<<DISPLAY>>.TOT_QTY",str(tqty))
@@ -260,6 +262,17 @@ check_outstanding_inv:
     readrecord(art_invhdr_dev,key=firm_id$+"  "+tmp_cust_id$+
 :       callpoint!.getColumnData("ARE_INVHDR.AR_INV_NO")+"00",err=*next)art01a$;os_inv$="Y"
     return
+
+get_gl_sales_acct:
+rem --- incoming dist_code$ from either ADIS (calling up existing rec) or dist code AVAL
+
+	arc_distcode_dev=fnget_dev("ARC_DISTCODE")
+	dim arc_distcode$:fnget_tpl$("ARC_DISTCODE")
+	readrecord(arc_distcode_dev,key=firm_id$+"D"+dist_code$,err=*next)arc_distcode$
+
+	callpoint!.setDevObject("dflt_gl_account", arc_distcode.gl_sls_acct$)
+	return
+
 disable_ctls:rem --- disable selected control
 	for dctl=1 to 8
 		dctl$=dctl$[dctl]

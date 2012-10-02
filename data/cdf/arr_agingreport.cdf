@@ -90,7 +90,9 @@ callpoint!.setStatus("REFRESH")
 calc_dates_fixed:rem --- Calculate Aging Dates
 rem --- fixed_periods$,days_in_per,start_date$ being set prior to gosub
 	if days_in_per=0 days_in_per=30
-	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM",start_date$)
+	new_start$=""
+	call stbl("+DIR_PGM")+"adc_daydates.aon",start_date$,new_start$,1
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM",new_start$)
 	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM")
 	new_date$=date(jul(prev_date$,"%Yd%Mz%Dz")-1:"%Yd%Mz%Dz")
 	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_CUR_THRU",new_date$)

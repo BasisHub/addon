@@ -37,6 +37,15 @@ rem --- Display Net Qty and Total Cost
 	unit_cost=num(callpoint!.getColumnData("BMM_BILLSUB.UNIT_COST"))
 	gosub calc_display
 [[BMM_BILLSUB.DIVISOR.AVAL]]
+rem --- Don't allow Divisor to be 0
+
+	if num(callpoint!.getUserInput())=0
+		msg_id$="DIVISOR_NOT_ZERO"
+		gosub disp_message
+		callpoint!.setColumnData("BMM_BILLSUB.DIVISOR","1",1)
+		callpoint!.setFocus(callpoint!.getValidationRow(),"BMM_BILLSUB.DIVISOR")
+	endif
+
 rem --- Display Net Qty and Total Cost
 
 	qty_req=num(callpoint!.getColumnData("BMM_BILLSUB.QTY_REQUIRED"))

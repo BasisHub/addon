@@ -1,3 +1,20 @@
+[[OPS_PARAMS.ADIS]]
+
+rem --- Default Line Code is required when Line Code Entry is skipped
+
+if callpoint!.getColumnData("OPS_PARAMS.SKIP_LN_CODE")="Y"
+	callpoint!.setTableColumnAttribute("OPS_PARAMS.LINE_CODE","MINL","1")
+else
+	callpoint!.setTableColumnAttribute("OPS_PARAMS.LINE_CODE","MINL","0")
+endif
+[[OPS_PARAMS.SKIP_LN_CODE.AVAL]]
+rem --- Default Line Code is required when Line Code Entry is skipped
+
+if callpoint!.getUserInput()="Y"
+	callpoint!.setTableColumnAttribute("OPS_PARAMS.LINE_CODE","MINL","1")
+else
+	callpoint!.setTableColumnAttribute("OPS_PARAMS.LINE_CODE","MINL","0")
+endif
 [[OPS_PARAMS.AREC]]
 callpoint!.setColumnData("OPS_PARAMS.INV_HIST_FLG","Y")
 [[OPS_PARAMS.END_CMT_LINE.AVAL]]

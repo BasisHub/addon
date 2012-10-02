@@ -1,3 +1,16 @@
+[[BME_ORDER.AREC]]
+rem --- Clear Order Date
+
+	callpoint!.setColumnData("<<DISPLAY>>.ORDER_DATE","",1)
+[[BME_ORDER.ARAR]]
+	ope01_dev=fnget_dev("OPE_ORDHDR")
+	dim ope01a$:fnget_tpl$("OPE_ORDHDR")
+
+	cust$=callpoint!.getColumnData("BME_ORDER.CUSTOMER_ID")
+	order$=callpoint!.getColumnData("BME_ORDER.ORDER_NO")
+	read record(ope01_dev,key=firm_id$+"  "+cust$+order$,dom=*next)ope01a$
+
+	callpoint!.setColumnData("<<DISPLAY>>.ORDER_DATE",fndate$(ope01a.order_date$),1)
 [[BME_ORDER.ORDER_NO.AVAL]]
 rem --- Check to make sure the order selected is an Order
 
@@ -14,6 +27,8 @@ rem --- Check to make sure the order selected is an Order
 		callpoint!.setColumnData("BME_ORDER.ORDER_NO","",1)
 		callpoint!.setStatus("ABORT")
 	endif
+
+	callpoint!.setColumnData("<<DISPLAY>>.ORDER_DATE",fndate$(ope01a.order_date$),1)
 [[BME_ORDER.PROD_DATE.AVAL]]
 rem --- make sure production date is in an appropriate GL period
 

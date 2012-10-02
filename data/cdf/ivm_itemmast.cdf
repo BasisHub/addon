@@ -621,6 +621,7 @@ rem --- Set user labels and lengths for description segments
 
 rem --- Disable option menu items
 
+	callpoint!.setOptionEnabled("STOK",0); rem --- per bug 5774, disabled for now
 	if ap$<>"Y" disable_str$=disable_str$+"IVM_ITEMVEND;"; rem --- this is a detail window, give alias name
 	if pos(ivs01a.lifofifo$="LF")=0 callpoint!.setOptionEnabled("LIFO",0)
 	if pos(ivs01a.lotser_flag$="LS")=0 callpoint!.setOptionEnabled("LTRN",0)
