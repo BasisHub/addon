@@ -392,16 +392,19 @@ rem --- Get current and prior values
 	curr_whse$ = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
 	curr_item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
 	curr_qty   = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+	curr_commit$=callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")
 
 	prior_whse$ = callpoint!.getColumnUndoData("OPE_INVDET.WAREHOUSE_ID")
 	prior_item$ = callpoint!.getColumnUndoData("OPE_INVDET.ITEM_ID")
 	prior_qty   = num(callpoint!.getColumnUndoData("OPE_INVDET.QTY_ORDERED"))
+	prior_commit$=callpoint!.getColumnUndoData("OPE_INVDET.COMMIT_FLAG")
 
 rem --- Has there been any change?
 
-	if	curr_whse$ <> prior_whse$ or 
-:		curr_item$ <> prior_item$ or 
-:		curr_qty   <> prior_qty
+	if	(curr_whse$ <> prior_whse$ or 
+:		 curr_item$ <> prior_item$ or 
+:		 curr_qty   <> prior_qty) and
+:		curr_commit$ = prior_commit$
 :	then
 
 rem --- Initialize inventory item update
@@ -465,6 +468,43 @@ rem --- Commit quantity for current item and warehouse
 
 		endif
 
+	endif
+
+rem --- Only do the next if the commit flag has been changed
+	if curr_commit$ <> prior_commit$
+
+rem --- Initialize inventory item update
+		status=999
+		call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+		if status then exitto std_exit
+
+rem --- Flag changed from Commit to Uncommit: uncommit previous
+
+		if curr_commit$ ="N" and prior_commit$ = "Y"
+
+rem --- Uncommit prior quantity
+
+			if prior_qty<>0 then
+				items$[1] = prior_whse$
+				items$[2] = prior_item$
+				refs[0]   = prior_qty
+				call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+				if status then exitto std_exit
+			endif
+		endif
+
+		if curr_commit$ = "Y" and prior_commit$ <> "Y"
+
+rem --- Commit current quantity
+
+			if curr_qty<>0 then
+				items$[1] = curr_whse$
+				items$[2] = curr_item$
+				refs[0]   = curr_qty 
+				call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+				if status then exitto std_exit
+			endif
+		endif
 	endif
 
 rem --- Update header
@@ -748,6 +788,7 @@ rem --- Clear/set flags
 
 	rem user_tpl.new_detail = 0
 
+	round_precision = num(callpoint!.getDevObject("precision"))
 	this_row = callpoint!.getValidationRow()
 
 	if callpoint!.getGridRowNewStatus(this_row) <> "Y" and callpoint!.getGridRowModifyStatus(this_row) <> "Y" then
@@ -835,7 +876,7 @@ rem --- Set price and discount
 		callpoint!.setColumnData("OPE_INVDET.DISC_PERCENT", str(round(100 - unit_price * 100 / std_price, 2)) )
 	else
 		if disc_per <> 100 then
-			callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str(round(unit_price * 100 / (100 - disc_per), 2)) )
+			callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str(round(unit_price * 100 / (100 - disc_per), round_precision)) )
 		endif
 	endif
 	
@@ -846,7 +887,7 @@ rem --- Set amounts for non-commited "other" type detail lines
 :		user_tpl.line_type$ = "O"                                        and
 :		ext_price <> 0
 :	then
-		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(ext_price, 2)) )
+		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(ext_price, round_precision)) )
 		callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", "0")
 		callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", "0")
 	endif
@@ -867,8 +908,9 @@ rem --- Set header order totals
 print "Det:UNIT_PRICE:AVAL"; rem debug
 
 rem --- Set Manual Price flag and round price
-	
-	unit_price = round(num(callpoint!.getUserInput()), 2)
+
+	round_precision = num(callpoint!.getDevObject("precision"))	
+	unit_price = round(num(callpoint!.getUserInput()), round_precision)
 	callpoint!.setUserInput(str(unit_price))
 
 	if pos(user_tpl.line_type$="SP") and 
@@ -1014,7 +1056,9 @@ rem ==========================================================================
 	tamt!.setValue(ttl_ext_price)
 	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_SALES", str(ttl_ext_price))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(ttl_ext_price))
-	disc_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	discamt! = UserObj!.getItem(num(callpoint!.getDevObject("disc_amt_disp")))
+	discamt!.setValue(disc_amt)
+
 	sub_tot = num(callpoint!.getHeaderColumnData("<<DISPLAY>>.SUBTOTAL"))
 	tax_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.TAX_AMOUNT"))
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.FREIGHT_AMT"))
@@ -1059,7 +1103,19 @@ rem ==========================================================================
 		ttl_taxable = ordHelp!.totalTaxable( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
 	endif
 
-	disc_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+rem --- Calculate Discount Amount
+	disc_code$=callpoint!.getDevObject("disc_code")
+
+	file_name$ = "OPC_DISCCODE"
+	disccode_dev = fnget_dev(file_name$)
+	dim disccode_rec$:fnget_tpl$(file_name$)
+
+	find record (disccode_dev, key=firm_id$+disc_code$, dom=*next) disccode_rec$
+	new_disc_per = disccode_rec.disc_percent
+
+	disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
+	callpoint!.setHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT",str(disc_amt))
+
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.FREIGHT_AMT"))
 	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable)
 
@@ -1072,6 +1128,7 @@ pricing: rem --- Call Pricing routine
          rem          enter_price_message (0/1)
 rem ==========================================================================
 
+	round_precision = num(callpoint!.getDevObject("precision"))
 	enter_price_message = 0
 
 	wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
@@ -1123,14 +1180,14 @@ rem ==========================================================================
 		util.forceEdit(Form!, user_tpl.unit_price_col)
 		enter_price_message = 1
 	else
-		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(price, 2)) )
+		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(price, round_precision)) )
 		callpoint!.setColumnData("OPE_INVDET.DISC_PERCENT", str(disc))
 	endif
 
 	if disc=100 then
 		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str(user_tpl.item_price))
 	else
-		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str( round((price*100) / (100-disc), 2) ))
+		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str( round((price*100) / (100-disc), round_precision) ))
 	endif
 
 	rem callpoint!.setStatus("REFRESH")

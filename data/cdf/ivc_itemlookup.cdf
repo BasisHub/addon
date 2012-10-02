@@ -291,6 +291,9 @@ load_and_display_grid:
 	while 1 
 		read record (search_dev,end=*break) searchrec$		
 		if searchrec.firm_id$<>firm_id$ then break
+		if len(cvs(search_text$,2)) > 0
+			if pos(firm_id$+cvs(search_text$,2)=searchrec$)<>1 break
+		endif
 		read record (ivm_itemmast_dev,key=firm_id$+searchrec.item_id$,dom=*next)ivm_itemmast$
 	
 		vectSearch!.addItem(field(searchrec$,search_field$))

@@ -47,10 +47,13 @@ rem --- Get Amount mask
 
 	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",amount_mask$,0,mask_len
 
-rem --- Set Current Discount amount and Freight anount from Dev Objects
+rem --- Set Current Discount amount and Freight amount from Dev Objects
 
 	callpoint!.setColumnData("OPE_ORDTOTALS.DISCOUNT_AMT",str(callpoint!.getDevObject("disc_amt")))
 	callpoint!.setColumnData("OPE_ORDTOTALS.FREIGHT_AMT",str(callpoint!.getDevObject("frt_amt")))
+
+rem --- Store DevObjects in case user aborts form
+	callpoint!.setDevObject("tax_amt",callpoint!.getColumnData("OPE_ORDTOTALS.TAX_AMOUNT"))
 
 rem --- Get current discounts
 
@@ -104,6 +107,9 @@ rem --- Calculate and display Discount and Tax
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDTOTALS.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_ORDTOTALS.TAX_AMOUNT", str(tax_amount))
+
+rem --- Store DevObject in case user aborts form
+	callpoint!.setDevObject("tax_amt",callpoint!.getColumnData("OPE_ORDTOTALS.TAX_AMOUNT"))
 
 	gosub display_fields
 [[OPE_ORDTOTALS.ASVA]]

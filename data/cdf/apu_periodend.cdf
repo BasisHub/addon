@@ -18,7 +18,7 @@ aps01_tpl$=fnget_tpl$("APS_PARAMS")
 dim aps01a$:aps01_tpl$
 
 read record (aps01_dev,key=firm_id$+"AP00",dom=std_missing_params)aps01a$
-callpoint!.setColumnData("APU_PERIODEND.PERIOD_YEAR",aps01a.current_per$+aps01a.current_year$)
+callpoint!.setColumnData("APU_PERIODEND.PERIOD_YEAR",aps01a.current_year$+aps01a.current_per$)
 callpoint!.setStatus("REFRESH")
 [[APU_PERIODEND.<CUSTOM>]]
 #include std_missing_params.src

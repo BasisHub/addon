@@ -205,7 +205,7 @@ rem --- Print the order?
 	msg_id$="OP_ORDREL"
 	gosub disp_message
 	if msg_opt$="Y"
-		call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand", cust$, ord$, callpoint!, table_chans$[all], status
+		call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand_no_col_data", cust$, ord$, callpoint!, table_chans$[all], status
 	endif
 	callpoint!.setStatus("EXIT")
 

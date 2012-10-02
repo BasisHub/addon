@@ -135,8 +135,6 @@ rem --- Return focus to where we were (Detail line grid)
 
 	util.forceEdit(Form!, return_to_row, return_to_col)
 [[OPE_ORDDET.AGDR]]
-print "Det:AGDR"; rem debug
-
 rem --- Disable by line type
 
 	line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
@@ -307,8 +305,6 @@ rem --- Set previous value / enable repricing, options, lots
 	gosub enable_addl_opts
 	gosub able_lot_button
 [[OPE_ORDDET.BWRI]]
-print "Det:BWRI"; rem debug
-
 rem --- Set values based on line type
 
 	file$ = "OPC_LINECODE"
@@ -401,8 +397,6 @@ rem --- Enable the Recalc Price button, Additional Options, Lots
 	gosub enable_addl_opts
 	gosub able_lot_button
 [[OPE_ORDDET.AWRI]]
-print "Det:AWRI"; rem debug
-
 rem --- Commit inventory
 
 rem --- Is this row deleted?
@@ -417,16 +411,23 @@ rem --- Get current and prior values
 	curr_item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
 	curr_qty   = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
 	line_ship_date$=callpoint!.getColumnData("OPE_ORDDET.EST_SHP_DATE")
+	curr_commit$=callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")
 
 	prior_whse$ = callpoint!.getColumnUndoData("OPE_ORDDET.WAREHOUSE_ID")
 	prior_item$ = callpoint!.getColumnUndoData("OPE_ORDDET.ITEM_ID")
 	prior_qty   = num(callpoint!.getColumnUndoData("OPE_ORDDET.QTY_ORDERED"))
+	prior_commit$=callpoint!.getColumnUndoData("OPE_ORDDET.COMMIT_FLAG")
+
+rem --- Don't commit or uncommit Quotes
+
+	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") = "P" goto awri_update_hdr
 
 rem --- Has there been any change?
 
-	if	curr_whse$ <> prior_whse$ or 
-:		curr_item$ <> prior_item$ or 
-:		curr_qty   <> prior_qty
+	if	(curr_whse$ <> prior_whse$ or 
+:		 curr_item$ <> prior_item$ or 
+:		 curr_qty   <> prior_qty) and
+:		curr_commit$ = prior_commit$
 :	then
 
 rem --- Initialize inventory item update
@@ -498,14 +499,49 @@ rem --- Commit quantity for current item and warehouse
 
 	endif
 
+rem --- Only do the next if the commit flag has been changed
+	if curr_commit$ <> prior_commit$
+
+rem --- Initialize inventory item update
+		status=999
+		call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+		if status then exitto std_exit
+
+rem --- Flag changed from Commit to Uncommit: uncommit previous
+
+		if curr_commit$ ="N" and prior_commit$ = "Y"
+
+rem --- Uncommit prior quantity
+
+			if prior_qty<>0 then
+				items$[1] = prior_whse$
+				items$[2] = prior_item$
+				refs[0]   = prior_qty
+				call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+				if status then exitto std_exit
+			endif
+		endif
+
+		if curr_commit$ = "Y" and prior_commit$ <> "Y"
+
+rem --- Commit current quantity
+
+			if curr_qty<>0 then
+				items$[1] = curr_whse$
+				items$[2] = curr_item$
+				refs[0]   = curr_qty 
+				call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+				if status then exitto std_exit
+			endif
+		endif
+	endif
+
 awri_update_hdr: rem --- Update header
 
 	gosub disp_grid_totals
 
 rem input "Det:Done with AWRI: ", *; rem debug
 [[OPE_ORDDET.BDGX]]
-print "Det:BDGX"; rem debug
-
 rem --- Disable detail-only buttons
 
 	callpoint!.setOptionEnabled("LENT",0)
@@ -536,9 +572,6 @@ rem --- Set header total amounts
 
 	
 [[OPE_ORDDET.AGCL]]
-rem print 'show',; rem debug
-print "Det:AGCL"; rem debug
-
 rem --- Set detail defaults and disabled columns
 
 	callpoint!.setTableColumnAttribute("OPE_ORDDET.LINE_CODE","DFLT", user_tpl.line_code$)
@@ -648,8 +681,6 @@ rem --- Is this item lot/serial?
 		endif
 	endif
 [[OPE_ORDDET.BUDE]]
-print "Det:BUDE"; rem debug
-
 rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 
 	if callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y"
@@ -657,8 +688,6 @@ rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 		gosub uncommit_iv
 	endif
 [[OPE_ORDDET.AREC]]
-print "Det:AREC"; rem debug
-
 rem --- Disable skipped columns (debug: disabled, line code won't be set yet)
 
 	rem line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
@@ -706,8 +735,6 @@ rem --- Buttons start disabled
 	callpoint!.setOptionEnabled("RCPR",0)
 	callpoint!.setOptionEnabled("ADDL",0)
 [[OPE_ORDDET.BDEL]]
-print "Det:BDEL"; rem debug
-
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
 	if callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y"
@@ -715,8 +742,6 @@ rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 		gosub uncommit_iv
 	endif
 [[OPE_ORDDET.AGRN]]
-print "Det:AGRN"; rem debug
-
 rem (Fires regardles of new or existing row.  Use callpoint!.getRecordMode() to distinguish the two)
 
 rem --- Disable by line type (Needed because Barista is skipping Line Code)
@@ -786,12 +811,11 @@ rem --- Set availability info
 
 	gosub set_avail
 [[OPE_ORDDET.AGRE]]
-print "Det:AGRE"; rem debug
-
 rem --- Clear/set flags
 
 	rem user_tpl.new_detail = 0
 
+	round_precision = num(callpoint!.getDevObject("precision"))
 	this_row = callpoint!.getValidationRow()
 	print "---This Row:", this_row; rem debug
 	print "---getGridRowNewStatus: ", callpoint!.getGridRowNewStatus(this_row); rem debug
@@ -889,7 +913,7 @@ rem --- Set price and discount
 		callpoint!.setColumnData("OPE_ORDDET.DISC_PERCENT", str(round(100 - unit_price * 100 / std_price, 2)) )
 	else
 		if disc_per <> 100 then
-			callpoint!.setColumnData("OPE_ORDDET.STD_LIST_PRC", str(round(unit_price * 100 / (100 - disc_per), 2)) )
+			callpoint!.setColumnData("OPE_ORDDET.STD_LIST_PRC", str(round(unit_price * 100 / (100 - disc_per), round_precision)) )
 		endif
 	endif
 	
@@ -907,22 +931,15 @@ rem --- Set amounts for non-commited "other" type detail lines
 
 rem --- Set header order totals
 
-	total_sales = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.TOTAL_SALES"))
-	total_cost  = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.TOTAL_COST"))
-	ext_cost    = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")) * num(callpoint!.getColumnData("OPE_ORDDET.UNIT_COST"))
+	gosub disp_grid_totals
 
-	callpoint!.setHeaderColumnData("OPE_ORDHDR.TOTAL_SALES", str(total_sales + ext_price - user_tpl.prev_ext_price))
-	callpoint!.setHeaderColumnData("OPE_ORDHDR.TOTAL_COST",  str(total_cost  + ext_cost  - user_tpl.prev_ext_cost))
 	callpoint!.setStatus("MODIFIED;REFRESH")
-
-	rem print "---Total sales set:", num(callpoint!.getHeaderColumnData("OPE_ORDHDR.TOTAL_SALES")); rem debug
-	rem print "---Total cost set :", num(callpoint!.getHeaderColumnData("OPE_ORDHDR.TOTAL_COST")); rem debug
 [[OPE_ORDDET.UNIT_PRICE.AVAL]]
 print "Det:UNIT_PRICE:AVAL"; rem debug
 
 rem --- Set Manual Price flag and round price
-	
-	unit_price = round(num(callpoint!.getUserInput()), 2)
+	round_precision = num(callpoint!.getDevObject("precision"))
+	unit_price = round(num(callpoint!.getUserInput()),round_precision)
 	callpoint!.setUserInput(str(unit_price))
 
 	if pos(user_tpl.line_type$="SP") and 
@@ -938,14 +955,10 @@ rem --- Display Extended Price
 	qty_shipped = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
 	gosub disp_ext_amt
 [[OPE_ORDDET.AUDE]]
-print "Det:AUDE"; rem debug
-
 rem --- redisplay totals
 
 	gosub disp_grid_totals
 [[OPE_ORDDET.ADEL]]
-print "Det:ADEL"; rem debug
-
 rem --- redisplay totals
 
 	gosub disp_grid_totals
@@ -1062,18 +1075,20 @@ rem ==========================================================================
 	tamt!.setValue(ttl_ext_price)
 	callpoint!.setHeaderColumnData("OPE_ORDHDR.TOTAL_SALES", str(ttl_ext_price))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(ttl_ext_price))
-	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
+	discamt! = UserObj!.getItem(num(callpoint!.getDevObject("disc_amt_disp")))
+	discamt!.setValue(disc_amt)
+rem	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	sub_tot = num(callpoint!.getHeaderColumnData("<<DISPLAY>>.SUBTOTAL"))
-	tax_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.TAX_AMOUNT"))
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	sub_tot = ttl_ext_price - disc_amt
-	net_sales = sub_tot + tax_amt + freight_amt
+	net_sales = sub_tot + ttl_tax + freight_amt
 	totamt! = UserObj!.getItem(num(callpoint!.getDevObject("total_sales_disp")))
 	totamt!.setValue(ttl_ext_price)
 	subamt! = UserObj!.getItem(num(callpoint!.getDevObject("subtot_disp")))
 	subamt!.setValue(sub_tot)
 	netamt! = UserObj!.getItem(num(callpoint!.getDevObject("net_sales_disp")))
 	netamt!.setValue(net_sales)
+
 	taxamt! = UserObj!.getItem(num(callpoint!.getDevObject("tax_amt_disp")))
 	taxamt!.setValue(ttl_tax)
 
@@ -1109,7 +1124,20 @@ rem ==========================================================================
 		ttl_taxable = ordHelp!.totalTaxable( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
 	endif
 
-	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
+rem --- Calculate Discount Amount
+	disc_code$=callpoint!.getDevObject("disc_code")
+
+	file_name$ = "OPC_DISCCODE"
+	disccode_dev = fnget_dev(file_name$)
+	dim disccode_rec$:fnget_tpl$(file_name$)
+
+	find record (disccode_dev, key=firm_id$+disc_code$, dom=*next) disccode_rec$
+	new_disc_per = disccode_rec.disc_percent
+
+	disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
+	callpoint!.setHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
+
+rem	disc_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable)
 
@@ -1122,6 +1150,7 @@ pricing: rem --- Call Pricing routine
          rem          enter_price_message (0/1)
 rem ==========================================================================
 
+	round_precision = num(callpoint!.getDevObject("precision"))
 	print "in pricing..."; rem debug
 
 	enter_price_message = 0
@@ -1177,14 +1206,14 @@ rem ==========================================================================
 		util.forceEdit(Form!, user_tpl.unit_price_col)
 		enter_price_message = 1
 	else
-		callpoint!.setColumnData("OPE_ORDDET.UNIT_PRICE", str(round(price, 2)) )
+		callpoint!.setColumnData("OPE_ORDDET.UNIT_PRICE", str(round(price, round_precision)) )
 		callpoint!.setColumnData("OPE_ORDDET.DISC_PERCENT", str(disc))
 	endif
 
 	if disc=100 then
 		callpoint!.setColumnData("OPE_ORDDET.STD_LIST_PRC", str(user_tpl.item_price))
 	else
-		callpoint!.setColumnData("OPE_ORDDET.STD_LIST_PRC", str( round((price*100) / (100-disc), 2) ))
+		callpoint!.setColumnData("OPE_ORDDET.STD_LIST_PRC", str( round((price*100) / (100-disc), round_precision) ))
 	endif
 
 	rem callpoint!.setStatus("REFRESH")
@@ -1330,6 +1359,7 @@ rem ==========================================================================
 	ope_ordlsdet_dev=fnget_dev("OPE_ORDLSDET")
 	dim ope_ordlsdet$:fnget_tpl$("OPE_ORDLSDET")
 
+	ord_type$ = callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE")
 	cust$    = callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID")
 	ar_type$ = callpoint!.getColumnData("OPE_ORDDET.AR_TYPE")
 	order$   = callpoint!.getColumnData("OPE_ORDDET.ORDER_NO")
@@ -1339,7 +1369,7 @@ rem ==========================================================================
 	ord_qty  = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
 	line_ship_date$=callpoint!.getColumnData("OPE_ORDDET.EST_SHP_DATE")
 
-	if cvs(item$, 2)<>"" and cvs(wh$, 2)<>"" and ord_qty then
+	if cvs(item$, 2)<>"" and cvs(wh$, 2)<>"" and ord_qty and ord_type$<>"P" then
 		call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 		read record (ivm_itemmast_dev, key=firm_id$+item$, dom=*next) ivm_itemmast$
 
@@ -1394,7 +1424,7 @@ rem ==========================================================================
 	start_block = 1
 
 	if cvs(line_code$,2) <> "" then
-		print "---line code is blank"; rem debug
+		print "---line code is "+ line_code$+ " and came from "+callpoint!.getCallpointEvent(); rem debug
 
 		file$ = "OPC_LINECODE"
 		dim opc_linecode$:fnget_tpl$(file$)
@@ -1428,8 +1458,7 @@ rem --- Product Type Processing
 
 	if cvs(line_code$,2) <> "" then
 		if opc_linecode.prod_type_pr$ <> "E" then
-			callpoint!.setColumnEnabled("OPE_ORDDET.PRODUCT_TYPE", 0)
-			util.disableGridCell(Form!, user_tpl.prod_type_col, callpoint!.getValidRow())
+			callpoint!.setColumnEnabled(num(callpoint!.getValidRow()),"OPE_ORDDET.PRODUCT_TYPE", 0)
 			rem print "---disabled prod type"; rem debug
 
 			if opc_linecode.prod_type_pr$ = "D" then
@@ -1574,7 +1603,7 @@ rem ==========================================================================
 	qty_ord  = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
 	gosub lot_ser_check
 
-	if lotted$ = "Y" and qty_ord <> 0 then
+	if lotted$ = "Y" and qty_ord <> 0 and callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE")<>"P" then
 		callpoint!.setOptionEnabled("LENT",1)
 	else
 		callpoint!.setOptionEnabled("LENT",0)
@@ -1647,17 +1676,20 @@ rem ==========================================================================
 credit_exceeded: rem --- Credit Limit Exceeded (ope_dd, 5500-5599)
 rem ==========================================================================
 
-	if user_tpl.credit_limit <> 0 and !user_tpl.credit_limit_warned then
-		msg_id$ = "OP_OVER_CREDIT_LIMIT"
-		dim msg_tokens$[1]
-		msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
-		gosub disp_message
-		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
-		user_tpl.credit_limit_warned = 1
+	arm02_dev=fnget_dev("ARM_CUSTDET")
+	dim arm02a$:fnget_tpl$("ARM_CUSTDET")
+	read record (arm02_dev,key=firm_id$+callpoint!.getHeaderColumnData("OPE_ORDHDR.CUSTOMER_ID")+"  ",dom=*next) arm02a$
+	if arm02a.cred_hold$<>"E"
+		if user_tpl.credit_limit <> 0 and !user_tpl.credit_limit_warned then
+			msg_id$ = "OP_OVER_CREDIT_LIMIT"
+			dim msg_tokens$[1]
+			msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
+			gosub disp_message
+			callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
+			callpoint!.setHeaderColumnData("OPE_ORDHDR.CREDIT_FLAG","C")
+			user_tpl.credit_limit_warned = 1
+		endif
 	endif
-
-	rem print "out"; rem debug
-
 	return
 
 rem ==========================================================================
