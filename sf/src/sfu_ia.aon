@@ -1,0 +1,159 @@
+rem --- Generate Requisitions (Input Overlay)
+rem --- Program sfu_ia v8.0.0 17Jan2008 (sfu_ia)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/17/2008 09:32:31)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=17,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="apm-02",ids$[1]="APM_VENDHIST"
+    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+    files$[3]="ivm-02",ids$[3]="IVM_ITEMWHSE"
+    files$[4]="ivm-05",ids$[4]="IVM_ITEMVEND"
+    files$[5]="ivs_params",ids$[5]="IVS_PARAMS"
+    files$[6]="poe-01",ids$[6]="POE_REQHDR"
+    files$[7]="poe-02",ids$[7]="POE_POHDR"
+    files$[8]="poe-11",ids$[8]="POE_REQDET"
+    files$[9]="poe-21",ids$[9]="POE_REQPRINT"
+    files$[10]="poe-31",ids$[10]="POE_REQBYREQ"
+    files$[11]="poe-41",ids$[11]="POE_REQBYITM"
+    files$[12]="poe-52",ids$[12]="POE_POBYREQ"
+    files$[13]="pom-02",ids$[13]="POC_LINECODE"
+    files$[14]="sfe-01",ids$[15]="SFE_WOMASTR"
+    files$[15]="sfe-22",ids$[16]="SFE_WOMATL"
+    files$[16]="sfe-32",ids$[17]="SFE_WOSUBCNT"
+    files$[17]="sfs-01a",ids$[18]="SFS_PARAMS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apm02_dev=channels[1]
+    ivm01_dev=channels[2]
+    ivm02_dev=channels[3]
+    ivm05_dev=channels[4]
+    ivs01a_dev=channels[5]
+    poe01_dev=channels[6]
+    poe02_dev=channels[7]
+    poe11_dev=channels[8]
+    poe21_dev=channels[9]
+    poe31_dev=channels[10]
+    poe41_dev=channels[11]
+    poe52_dev=channels[12]
+    pom02_dev=channels[13]
+    sfe01_dev=channels[14]
+    sfe22_dev=channels[15]
+    sfe32_dev=channels[16]
+    sfs01a_dev=channels[17]
+
+rem --- Dimension string templates
+
+    dim apm02a$:templates$[1],ivm01a$:templates$[2],ivm02a$:templates$[3],
+:       ivm05a$:templates$[4],ivs01a$:templates$[5],poe01a$:templates$[6],
+:       poe02a$:templates$[7],poe11a$:templates$[8],poe21a$:templates$[9],
+:       poe31a$:templates$[10],poe41a$:templates$[11],poe52a$:templates$[12],
+:       pom02a$:templates$[13],sfe01a$:templates$[14],
+:       sfe22a$:templates$[15],sfe32a$:templates$[16],sfs01a$:templates$[17]
+
+rem --- Assign form input values to local variables
+
+    from_work_order$=Option!.getOptionData("From Work Order")
+    through_work_order$=Option!.getOptionData("Through Work Order")
+    open_or_planned$=Option!.getOptionData("Open/Planned")
+
+rem --- Retrieve parameter records
+
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    sfs01a_key$=firm_id$+"SF00"
+    find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
+
+rem --- Parameters
+
+    n1$=sysinfo.firm_name$,n2$="SF",n3$=sysinfo.task_desc$
+    find record (sfs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) sfs01a$
+    if sfs01a.po_interface$<>"Y" then goto std_exit
+    call pgmdir$+"adc_application.aon","PO",info$[all]
+    if info$[20]="N" then goto std_exit
+
+rem --- Init Data
+
+    dim a0$(85),a1$(110),a[5]
+
+
+done: rem --- Overlay
+
+    run pgmdir$+"sfu_ib.bbx"
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

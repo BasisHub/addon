@@ -1,0 +1,260 @@
+rem --- Shop Floor Dispatch Report
+rem --- Program sfr_pa v8.0.0 04Jan2008 (sfr_pa)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:37:40)
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=9,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="arm-01",ids$[1]="ARM_CUSTMAST"
+    files$[2]="bmm-08",ids$[2]="BMC_OPCODES"
+    files$[3]="IVS_PARAMS",ids$[3]="IVS_PARAMS"
+    files$[4]="sfe-01",ids$[4]="SFE_WOMASTR"
+    files$[5]="sfe-02",ids$[5]="SFE_WOOPRTN"
+    files$[6]="sfm-02",ids$[6]="SFC_OPRTNCOD"
+    files$[7]="sfm-05",ids$[7]="SFE_WOSCHDL"
+    files$[8]="SFS_PARAMS",ids$[8]="SFS_PARAMS"
+    files$[9]="sft-01",ids$[9]="SFT_OPNOPRTR"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    arm01a_dev=channels[1]
+    bmm08a_dev=channels[2]
+    ivs01a_dev=channels[3]
+    sfe01a_dev=channels[4]
+    sfe02a_dev=channels[5]
+    sfm02a_dev=channels[6]
+    sfm05a_dev=channels[7]
+    sfs01a_dev=channels[8]
+    sft01a_dev=channels[9]
+
+rem --- Dimension string templates
+
+    dim arm01a$:templates$[1],bmm08a$:templates$[2],ivs01a$:templates$[3],
+:       sfe01a$:templates$[4],sfe02a$:templates$[5],sfm02a$:templates$[6],
+:       sfm05a$:templates$[7],sfs01a$:templates$[8],sft01a$:templates$[9]
+
+rem --- Assign form input values to local variables
+
+    wo_open$=Option!.getOptionData("open")
+    wo_planned$=Option!.getOptionData("planned")
+    wo_quoted$=Option!.getOptionData("quoted")
+    wo_status$=""
+    if wo_open$="Y" then wo_status$=wo_status$+"O"
+    if wo_planned$="Y" then wo_status$=wo_status$+"P"
+    if wo_quoted$="Y" then wo_status$=wo_status$+"Q"
+    begdate$=Option!.getOptionData("analysis_date_1")
+    lastdate$=Option!.getOptionData("analysis_date_2")
+    schedate$=Option!.getOptionData("sched_date")
+    pr_code$=Option!.getOptionData("priority_code")
+    op_code$=Option!.getOptionData("oper_code")
+
+
+rem --- Retrieve parameter records
+
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    sfs01a_key$=firm_id$+"SF00"
+    find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
+
+rem --- Parameters
+
+    dim info$[20]
+    n1$=sysinfo.firm_name$,n2$="SF",n4$=sysinfo.task_desc$,bm$="N"
+    rem find record (sfs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) sfs01a$
+    find record (sfs01a_dev,key=firm_id$+"SF00",dom=std_missing_params) sfs01a$
+    opnmax=num(sfs01a.max_op_codes$)
+    bm$=sfs01a.bm_interface$
+    find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    if bm$="Y"
+        call pgmdir$+"adc_application.aon","BM",info$[all]
+        bm$=info$[20]
+    endif
+
+rem --- Initializations
+
+    dim blank$(30),dashes$(80,"-")
+    l0=10
+    m2$="##0.0-"
+    m2=len(m2$),umask$="-######0.000",umask=len(umask$)
+    call pgmdir$+"adc_sizemask.aon",m3$,m3,8,10
+    schedate$=sysinfo.system_date$
+    l9=59
+    l=l9+1
+    lines=21-l0
+
+    if pr_code$="" then
+        pr_code$="9"
+    endif
+    operation$=""
+    if schedate$="" then
+        schedate$=sysinfo.system_date$
+    endif
+    
+
+rem --- Setup Headings
+
+    if pos("O"=wo_status$)>0 then h0$=h0$+"Open/"
+    if pos("P"=wo_status$)>0 then h0$=h0$+"Planned/"
+    if pos("Q"=wo_status$)>0 then h0$=h0$+"Quoted/"
+    h0$="Includes All "+h0$(1,len(h0$)-1)+" Work Orders"
+    h1$="From "
+    if begdate$="" then h1$=h1$+"The First Date" else h1$=h1$+fndate$(begdate$)
+    h1$=h1$+" Through "
+    if lastdate$="" then h1$=h1$+"The Last Date" else h1$=h1$+fndate$(lastdate$)
+    if op_code$="" then h2$="For All Op Codes" else h2$="For Op Code "+op_code$
+    h2$=h2$+" With Priority Code Of 1"
+    if pr_code$>"1" then h2$=h2$+" Through "+pr_code$
+    h2$=h2$+" Scheduled As Of "+fndate$(schedate$)
+
+
+done: rem --- Run Overlay
+
+    run pgmdir$+"sfr_shpflrdsptch_o1.aon"
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    rem def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem #include fndate.src
+
+        def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+        fnend
+
+rem #endinclude fndate.src
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

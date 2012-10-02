@@ -1,0 +1,181 @@
+rem glr - GL Budget Revision Register (Lead Overlay)
+rem Program gle_budgetupdate v8.0.0 27May2006 (glr_ra)
+rem Created by adx_progconv.bbx v1.0.3 (05/27/2006 05:26:55)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="glm-08",ids$[2]="GLM_BUDGETMASTER"
+    files$[3]="glm-18",ids$[3]="GLM_RECORDTYPES"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm08_dev=channels[2]
+    glm18_dev=channels[3]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1]
+    dim glm08a$:templates$[2]
+    dim glm18a$:templates$[3]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    acctlen=num(gls01a.acct_length$)
+    m0$=gls01a.acct_output$
+    headings=3
+
+rem --- Assign input values to local variables
+
+    budget_code$=option!.getOptionData("BUDGET_REVS")
+    id$=budget_code$(1,1)
+    au$=budget_code$(2,1)
+    begacct$=option!.getOptionData("GL_ACCOUNT_1")
+    endacct$=option!.getOptionData("GL_ACCOUNT_2")
+    wildcard$=option!.getOptionData("GL_WILDCARD")
+    rounding$=option!.getOptionData("ROUNDING")
+    update_year$=option!.getOptionData("UPDATE_TYPE")
+
+rem --- If no record id or type was specified, use first on file for this firm
+
+    read (glm08_dev,key=firm_id$,dom=*next)
+    k$=key(glm08_dev,end=std_exit)
+    if id$="" id$=k$(3,1)
+    if au$="" au$=k$(4,1)
+
+rem --- Initializations
+
+    dim headings$[headings]
+    update$="glu_budgetupdate.aon"
+
+rem --- Retrieve budget title
+
+    call pgmdir$+"glc_suminfo.aon",glm08_dev,glm18_dev,firm_id$,id$,au$,description$,x$,status
+
+rem --- Initialize report headings
+
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+    if cvs(begacct$,2)="" x$="First Account"
+:                    else x$="Account "+fnmask$(begacct$(1,acctlen),m0$)
+    if cvs(endacct$,2)="" y$="Last Account"
+:                    else y$="Account "+fnmask$(endacct$(1,acctlen),m0$)
+    x$="From "+x$+" Through "+y$
+    if cvs(wildcard$,2)<>"" then x$=x$+" (Wildcard "+$22$+cvs(wildcard$,2)+$22$+")"
+    headings$[2]=x$
+    x$="Budget "+$22$+id$+$22$+" "+cvs(description$,2)
+    if au$="A" y$="(Amounts)"
+:         else y$="(Units)"
+    headings$[3]=x$+" "+y$
+
+rem --- Run report overlay
+
+    close (gls01_dev,err=*next)
+    close (glm08_dev,err=*next)
+    close (glm18_dev,err=*next)
+    run pgmdir$+"glr_summary.aon"
+
+rem --- Functions
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_missing_params_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

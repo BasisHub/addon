@@ -1,0 +1,890 @@
+rem --- Retrieve Sales Analysis Control Parameters
+rem --- Program sac_pa v8.0.0 25Jul2007 (sac_pa)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/25/2007 04:19:05)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --------------------------------------------------------------------------------
+
+rem --- ACTION        : Specifies which sales analysis to perform (Input)
+rem --- 1 = sam-01  Customer      Product    Item
+rem --- 2 = sam-02  Territory     Product    Item
+rem --- 3 = sam-03  Salesperson   Product    Item
+rem --- 4 = sam-04  Cust Type     Product    Item
+rem --- 5 = sam-05  Customer      Ship-To    Item
+rem --- 6 = sam-06  SIC           Product    Item
+rem --- 7 = sam-07  Product       Item
+rem --- 8 = sam-08  Warehouse     Product    Item
+rem --- 9 = sam-09  Vendor        Product    Item
+rem --- 10 = sam-10  Dist Code     Product    Item
+rem --- 11 = sam-11  Product       Non-Stock
+rem --- 12 = sam-12  Territory     Customer   Product
+rem --- >20 = use alternate key
+rem --- N0$           : Firm ID (Input)
+rem --- SEGMENTS      : Number of key segments to use (Returned)
+rem --- LEVELS$[n]    : Character designation of detail levels (Returned)
+rem --- LITERALS$[n]  : Screen literals to display (Returnd)
+rem --- TYPES$[n]     : V0$ field types (Returned)
+rem --- IMASKS$[n]    : V3$ field input masks (Returned)
+rem --- OMASKS$[n]    : Output display masks (Returned)
+rem --- PROMPTS$[n]   : V4$ field prompts to display (Returned)
+rem --- INLEN[n]      : Number of characters in input field (Returned)
+rem --- FLDLEN[n]     : Length of key segment (Returned)
+rem --- DESCCHAN[n]   : Channel of file to obtain description (Returned)
+rem --- DESCREC$[n]   : ID of record to obtain description (Returned)
+rem --- DESCPOS[n]    : Start position of description in DESCSTR (Returned)
+rem --- DESCLEN[n]    : Length of description in DESCSTR (Returned)
+rem --- SA_CHANNELS[n]: Channels of Sales Analysis files (Returned)
+rem --- [1]=SAM-xx file   [2]=SAM-xx cross reference file
+rem --- KEYLEN        : Key length of SAM-xx record (Returned)
+rem --- XREFS[n]      : Segment position in cross reference file (Returned)
+rem --- FY$           : Current Sales Analysis fiscal year (Returned)
+rem --- PERIODS       : Number of fiscal periods (Returned)
+rem --- PERIODS$[x]   : Abbreviated period names (Returned)
+rem --- IV_MASKS$[y]  : Inventory parameter masks (Returned)
+rem --- [1] = Amount   [2] = Unit   [3] = Cost
+rem --- IV_DESC[z]    : Inventory item description parameters (Returned)
+rem --- [0]        = Item number length
+rem --- [1] to [3] = Description segment lengths
+rem --- IVM14_DEV     : ivm-14 channel (Returned)
+rem --- STATUS        : Status Code (0 = No Errors) (Returned)
+
+    setesc std_error
+    seterr std_error
+    enter action,firm_id$,segments,levels$[all],literals$[all],types$[all],imasks$[all],omasks$[all],prompts$[all],inlen[all],fldlen[all],descchan[all],descrec$[all],descstr[all],descpos[all],desclen[all],sa_channels[all],keylen,xrefs[all],fy$,periods,periods$[all],iv_masks$[all],iv_desc[all],ivm14_dev,status
+
+rem --- Retrieve the program paths
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)    
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=6,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS"
+    files$[2]="ars_params",ids$[2]="ARS_PARAMS"
+    files$[3]="gls_params",ids$[3]="GLS_PARAMS"
+    files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
+    files$[5]="sas_params",ids$[5]="SAS_PARAMS"
+    files$[6]="ivm-14",ids$[6]="IVM_ITEMSYN"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01_dev=channels[1]
+    ars01_dev=channels[2]
+    gls01_dev=channels[3]
+    ivs01_dev=channels[4]
+    sas01_dev=channels[5]
+    ivm14_dev=channels[6]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],ars01a$:templates$[2],gls01a$:templates$[3]
+    dim ivs01a$:templates$[4],sas01a$:templates$[5],ivm14a$:templates$[6]
+
+rem --- Parameters
+
+    saopts=11
+    dim sap1$(saopts),sap2$(saopts),arp2$(6),arp4$(4),glp2$(10),glp3$(13*25),ivp2$(53)
+    find record (sas01_dev,key=firm_id$+"SA00",dom=std_missing_params) sas01a$
+    find record (ars01_dev,key=firm_id$+"AR00",dom=std_missing_params) ars01a$
+    find record (gls01_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+    find record (ivs01_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    if action=9 find record (aps01_dev,key=firm_id$+"AP00",dom=std_missing_params) aps01a$
+
+rem --- Initializations
+
+    xrefs[1]=1
+    xrefs[2]=2
+    xrefs[3]=3
+    xrefs[4]=4
+
+    fy$=ars01a.current_year$
+    periods=num(gls01a.total_pers$)
+    for x=1 to periods
+        if x=1 periods$[x]=gls01a.abbr_name_01$
+        if x=2 periods$[x]=gls01a.abbr_name_02$
+        if x=3 periods$[x]=gls01a.abbr_name_03$
+        if x=4 periods$[x]=gls01a.abbr_name_04$
+        if x=5 periods$[x]=gls01a.abbr_name_05$
+        if x=6 periods$[x]=gls01a.abbr_name_06$
+        if x=7 periods$[x]=gls01a.abbr_name_07$
+        if x=8 periods$[x]=gls01a.abbr_name_08$
+        if x=9 periods$[x]=gls01a.abbr_name_09$
+        if x=10 periods$[x]=gls01a.abbr_name_10$
+        if x=11 periods$[x]=gls01a.abbr_name_11$
+        if x=12 periods$[x]=gls01a.abbr_name_12$
+        if x=13 periods$[x]=gls01a.abbr_name_13$        
+    next x
+    iv_masks$[1]=ivs01a.unit_mask$
+    iv_masks$[2]=ivs01a.cost_mask$
+    iv_masks$[3]=ivs01a.price_mask$
+    iv_desc[0]=num(ivs01a.item_id_len$)
+    iv_desc[1]=num(ivs01a.desc_len_01$)
+    iv_desc[2]=num(ivs01a.desc_len_02$)
+    iv_desc[3]=num(ivs01a.desc_len_03$)
+
+rem --- Which Sales Analysis?
+
+    on mod(action,20) goto bad_stat,by_cust,by_terr,by_sls,by_custtype,by_custship,
+:                          by_sic,by_prod,by_whse,by_vend,by_dist,by_nonstock,
+:                          by_terr_cust,bad_stat
+
+by_cust: rem --- (Action = 1 & 21) Customer/Product/Item
+
+    if mod(action,20)=1 if sas01a.by_customer$<>"Y" exitto not_avail            
+    if action=1 then
+        levels$[1]="C"
+        levels$[2]="P"
+        levels$[3]="I"
+        segments=pos(sas01a.customer_lev$=levels$[1]+levels$[2]+levels$[3])
+        literals$[1]="Customer"
+        literals$[2]="Product Type"
+        literals$[3]="Item"
+        types$[1]="M"
+        types$[2]="S"
+        types$[3]="S"
+        imasks$[1]=ars01a.amount_mask$
+        imasks$[2]=""
+        imasks$[3]=""
+        omasks$[1]=ars01a.customer_output$
+        omasks$[2]=""
+        omasks$[3]=""
+        for x=1 to segments
+            prompts$[x]="Enter Valid "+literals$[x]
+        next x
+        inlen[1]=num(ars01a.customer_size$)
+        inlen[2]=3
+        inlen[3]=iv_desc[0]
+        fldlen[1]=6
+        fldlen[2]=3
+        fldlen[3]=20
+        files$[1]="arm-01"
+        files$[2]="ivc_prodcode"
+        files$[3]="ivm-01"
+        descrec$[1]=""
+        descrec$[2]="A"
+        descrec$[3]=""
+        descstr[1]=1
+        descstr[2]=0
+        descstr[3]=1
+        descpos[1]=1
+        descpos[2]=7
+        descpos[3]=1
+        desclen[1]=30
+        desclen[2]=20
+        desclen[3]=60
+        keylen=35
+        xrefs[1]=3
+        xrefs[2]=1
+        xrefs[3]=2
+        goto done
+    else
+        levels$[3]="C"
+        levels$[1]="P"
+        levels$[2]="I"
+        segments=pos(sas01a.customer_lev$=levels$[1]+levels$[2]+levels$[3])
+        literals$[3]="Customer"
+        literals$[1]="Product Type"
+        literals$[2]="Item"
+        types$[3]="M"
+        types$[1]="S"
+        types$[2]="S"
+        imasks$[3]=ars01a.amount_mask$
+        imasks$[1]=""
+        imasks$[2]=""
+        omasks$[3]=ars01a.customer_output$
+        omasks$[1]=""
+        omasks$[2]=""
+        for x=1 to segments
+            prompts$[x]="Enter Valid "+literals$[x]
+        next x
+        inlen[3]=num(ars01a.customer_size$)
+        inlen[1]=3
+        inlen[2]=iv_desc[0]
+        fldlen[3]=6
+        fldlen[1]=3
+        fldlen[2]=20
+        files$[3]="arm-01"
+        files$[1]="ivc_prodcode"
+        files$[2]="ivm-01"
+        descrec$[3]=""
+        descrec$[1]="A"
+        descrec$[2]=""
+        descstr[3]=1
+        descstr[1]=0
+        descstr[2]=1
+        descpos[3]=1
+        descpos[1]=7
+        descpos[2]=1
+        desclen[3]=30
+        desclen[1]=20
+        desclen[2]=60
+        keylen=35
+        xrefs[3]=3
+        xrefs[1]=1
+        xrefs[2]=2
+        goto done
+    endif
+    
+by_terr: rem --- (Action = 2) Territory/Product/Item
+
+    if mod(action,20)=2 if sas01a.by_territory$<>"Y" exitto not_avail        
+    levels$[1]="T"
+    levels$[2]="P"
+    levels$[3]="I"
+    segments=pos(sas01a.terrcode_lev$=levels$[1]+levels$[2]+levels$[3])    
+    literals$[1]="Territory"
+    literals$[2]="Product Type"
+    literals$[3]="Item"
+    types$[1]="S"
+    types$[2]="S"
+    types$[3]="S"
+    imasks$[1]=""
+    imasks$[2]=""
+    imasks$[3]=""
+    omasks$[1]=""
+    omasks$[2]=""
+    omasks$[3]=""
+    for x=1 to segments
+        prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    inlen[1]=3
+    inlen[2]=3
+    inlen[3]=iv_desc[0]
+    fldlen[1]=3
+    fldlen[2]=3
+    fldlen[3]=20
+    files$[1]="arc_terrcode"
+    files$[2]="ivc_prodcode"
+    files$[3]="ivm-01"
+    descrec$[1]="H"
+    descrec$[2]="A"
+    descrec$[3]=""
+    descstr[1]=0
+    descstr[2]=0
+    descstr[3]=1
+    descpos[1]=7
+    descpos[2]=7
+    descpos[3]=1
+    desclen[1]=20
+    desclen[2]=20
+    desclen[3]=60
+    keylen=32
+    goto done
+
+by_sls: rem --- (Action = 3) Salesperson/Product/Item
+
+    if mod(action,20)=3 if sas01a.by_salespsn$<>"Y" exitto not_avail    
+    levels$[1]="S"
+    levels$[2]="P"
+    levels$[3]="I"
+    segments=pos(sas01a.salespsn_lev$=levels$[1]+levels$[2]+levels$[3])    
+    literals$[1]="Salesperson"
+    literals$[2]="Product Type"
+    literals$[3]="Item"
+    types$[1]="S"
+    types$[2]="S"
+    types$[3]="S"
+    imasks$[1]=""
+    imasks$[2]=""
+    imasks$[3]=""
+    omasks$[1]=""
+    omasks$[2]=""
+    omasks$[3]=""
+    for x=1 to segments
+        prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    inlen[1]=3
+    inlen[2]=3
+    inlen[3]=iv_desc[0]
+    fldlen[1]=3
+    fldlen[2]=3
+    fldlen[3]=20
+    files$[1]="arc_salecode"
+    files$[2]="ivc_prodcode"
+    files$[3]="ivm-01"
+    descrec$[1]="F"
+    descrec$[2]="A"
+    descrec$[3]=""
+    descstr[1]=0
+    descstr[2]=0
+    descstr[3]=1
+    descpos[1]=7
+    descpos[2]=7
+    descpos[3]=1
+    desclen[1]=20
+    desclen[2]=20
+    desclen[3]=60
+    keylen=32
+    goto done
+
+by_custtype: rem --- (Action = 4) Customer Type/Product/Item
+
+    if mod(action,20)=1 if sas01a.by_customer_type$<>"Y" exitto not_avail
+    levels$[1]="C"
+    levels$[2]="P"
+    levels$[3]="I"
+    segments=pos(sas01a.custtype_lev$=levels$[1]+levels$[2]+levels$[3])
+    literals$[1]="Customer Type"
+    literals$[2]="Product Type"
+    literals$[3]="Item"
+    types$[1]="S"
+    types$[2]="S"
+    types$[3]="S"
+    imasks$[1]=""
+    imasks$[2]=""
+    imasks$[3]=""
+    omasks$[1]=""
+    omasks$[2]=""
+    omasks$[3]=""
+    for x=1 to segments
+        prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    inlen[1]=3
+    inlen[2]=3
+    inlen[3]=iv_desc[0]
+    fldlen[1]=3
+    fldlen[2]=3
+    fldlen[3]=20
+    files$[1]="arc_custtype"
+    files$[2]="ivc_prodcode"
+    files$[3]="ivm-01"
+    descrec$[1]="L"
+    descrec$[2]="A"
+    descrec$[3]=""
+    descstr[1]=0
+    descstr[2]=0
+    descstr[3]=1
+    descpos[1]=7
+    descpos[2]=7
+    descpos[3]=1
+    desclen[1]=20
+    desclen[2]=20
+    desclen[3]=60
+    keylen=32
+    goto done
+
+by_custship: rem --- (Action = 5) Customer/Ship-to/Item
+
+    if mod(action,20)=5 if sas01a.by_shipto$<>"Y" exitto not_avail    
+    levels$[1]="C"
+    levels$[2]="S"
+    levels$[3]="I"
+    segments=pos(sas01a.shipto_lev$=levels$[1]+levels$[2]+levels$[3])
+    literals$[1]="Customer"
+    literals$[2]="Customer Ship-To"
+    literals$[3]="Item"
+    types$[1]="M"
+    types$[2]="Z"
+    types$[3]="S"
+    imasks$[1]=ars01a.amount_mask$
+    imasks$[2]=""
+    imasks$[3]=""
+    omasks$[1]=ars01a.customer_output$
+    omasks$[2]=""
+    omasks$[3]=""
+    for x=1 to segments
+        prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    inlen[1]=num(ars01a.customer_size$)
+    inlen[2]=6
+    inlen[3]=iv_desc[0]
+    fldlen[1]=6
+    fldlen[2]=6
+    fldlen[3]=20
+    files$[1]="arm-01"
+    files$[2]="arm-03"
+    files$[3]="ivm-01"
+    descrec$[1]=""
+    descrec$[2]=""
+    descrec$[3]=""
+    descstr[1]=1
+    descstr[2]=1
+    descstr[3]=1
+    descpos[1]=1
+    descpos[2]=1
+    descpos[3]=1
+    desclen[1]=30
+    desclen[2]=30
+    desclen[3]=60
+    keylen=38
+    goto done
+
+by_sic: rem --- (Action = 6) SIC/Product/Item
+
+    if mod(action,20)=6 if sas01a.by_sic_code$<>"Y" exitto not_avail
+    levels$[1]="C"
+    levels$[2]="P"
+    levels$[3]="I"
+    segments=pos(sas01a.sic_code_lev$=levels$[1]+levels$[2]+levels$[3])
+    literals$[1]="SIC"
+    literals$[2]="Product Type"
+    literals$[3]="Item"
+    types$[1]="S"
+    types$[2]="S"
+    types$[3]="S"
+    imasks$[1]=""
+    imasks$[2]=""
+    imasks$[3]=""
+    omasks$[1]=""
+    omasks$[2]=""
+    omasks$[3]=""
+    for x=1 to segments
+        prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    inlen[1]=8
+    inlen[2]=3
+    inlen[3]=iv_desc[0]
+    fldlen[1]=8
+    fldlen[2]=3
+    fldlen[3]=20
+    files$[1]=""
+    files$[2]="ivc_prodcode"
+    files$[3]="ivm-01"
+    descrec$[1]=""
+    descrec$[2]="A"
+    descrec$[3]=""
+    descstr[1]=0
+    descstr[2]=0
+    descstr[3]=1
+    descpos[1]=8
+    descpos[2]=7
+    descpos[3]=1
+    desclen[1]=20
+    desclen[2]=20
+    desclen[3]=60
+    keylen=37
+    goto done
+
+by_prod: rem --- (Action = 7) Product/Item
+
+    if mod(action,20)=7 if sas01a.by_product$<>"Y" exitto not_avail
+    levels$[1]="P"
+    levels$[2]="I"
+    levels$[3]=""
+    segments=pos(sas01a.product_lev$=levels$[1]+levels$[2]+levels$[3])
+    literals$[1]="Product Type"
+    literals$[2]="Item"
+    types$[1]="S"
+    types$[2]="S"
+    imasks$[1]=""
+    imasks$[2]=""
+    omasks$[1]=""
+    omasks$[2]=""
+    for x=1 to segments
+        let prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    let inlen[1]=3
+    let inlen[2]=iv_desc[0]
+    let fldlen[1]=3
+    let fldlen[2]=20
+    let files$[1]="ivc_prodcode"
+    let files$[2]="ivm-01"
+    let files$[3]=""
+    let descrec$[1]="A"
+    let descrec$[2]=""
+    let descstr[1]=0
+    let descstr[2]=1
+    let descpos[1]=7
+    let descpos[2]=1
+    let desclen[1]=20
+    let desclen[2]=60
+    let keylen=29
+    goto done
+
+by_whse: rem --- (Action = 8) Warehouse/Product/Item
+
+    if mod(action,20)=8 if sas01a.by_whse$<>"Y" exitto not_avail
+    let levels$[1]="W"
+    let levels$[2]="P"
+    let levels$[3]="I"
+    segments=pos(sas01a.whse_lev$=levels$[1]+levels$[2]+levels$[3])
+    let literals$[1]="Warehouse"
+    let literals$[2]="Product Type"
+    let literals$[3]="Item"
+    let types$[1]="S"
+    let types$[2]="S"
+    let types$[3]="S"
+    let imasks$[1]=""
+    let imasks$[2]=""
+    let imasks$[3]=""
+    let omasks$[1]=""
+    let omasks$[2]=""
+    let omasks$[3]=""
+    for x=1 to segments
+        let prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    let inlen[1]=2
+    let inlen[2]=3
+    let inlen[3]=iv_desc[0]
+    let fldlen[1]=2
+    let fldlen[2]=3
+    let fldlen[3]=20
+    let files$[1]="ivc_whsecode"
+    let files$[2]="ivc_prodcode"
+    let files$[3]="ivm-01"
+    let descrec$[1]="C"
+    let descrec$[2]="A"
+    let descrec$[3]=""
+    let descstr[1]=0
+    let descstr[2]=0
+    let descstr[3]=1
+    let descpos[1]=6
+    let descpos[2]=7
+    let descpos[3]=1
+    let desclen[1]=24
+    let desclen[2]=20
+    let desclen[3]=60
+    let keylen=31
+    goto done
+
+by_vend: rem --- (Action = 9) Vendor/Product/Item
+
+    if mod(action,20)=9 if sas01a.by_vendor$<>"Y" exitto not_avail
+    let levels$[1]="V"
+    let levels$[2]="P"
+    let levels$[3]="I"
+    segments=pos(sas01a.vendor_lev$=levels$[1]+levels$[2]+levels$[3])
+    let literals$[1]="Vendor"
+    let literals$[2]="Product Type"
+    let literals$[3]="Item"
+    let types$[1]="M"
+    let types$[2]="S"
+    let types$[3]="S"
+    let imasks$[1]=aps01a.amount_mask$
+    let imasks$[2]=""
+    let imasks$[3]=""
+    let omasks$[1]=aps01a.vendor_output$
+    let omasks$[2]=""
+    let omasks$[3]=""
+    for x=1 to segments
+        let prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    let inlen[1]=num(aps01a.vendor_size$)
+    let inlen[2]=3
+    let inlen[3]=iv_desc[0]
+    let fldlen[1]=6
+    let fldlen[2]=3
+    let fldlen[3]=20
+    let files$[1]="apm-01"
+    let files$[2]="ivc_prodcode"
+    let files$[3]="ivm-01"; rem "Files for DESCCHAN[1, 2 & 3]
+    let descrec$[1]=""
+    let descrec$[2]="A"
+    let descrec$[3]=""
+    let descstr[1]=1
+    let descstr[2]=0
+    let descstr[3]=1
+    let descpos[1]=1
+    let descpos[2]=7
+    let descpos[3]=1
+    let desclen[1]=30
+    let desclen[2]=20
+    let desclen[3]=60
+    let keylen=35
+    goto done
+
+by_dist: rem --- (Action = 10) Dist Code/Product/Item
+
+    if mod(action,20)=10 if sas01a.by_dist_code$<>"Y" exitto not_avail
+    let levels$[1]="D"
+    let levels$[2]="P"
+    let levels$[3]="I"
+    segments=pos(sas01a.distcode_lev$=levels$[1]+levels$[2]+levels$[3])
+    let literals$[1]="Distribution Code"
+    let literals$[2]="Product Type"
+    let literals$[3]="Item"
+    let types$[1]="S"
+    let types$[2]="S"
+    let types$[3]="S"
+    let imasks$[1]=""
+    let imasks$[2]=""
+    let imasks$[3]=""
+    let omasks$[1]=""
+    let omasks$[2]=""
+    let omasks$[3]=""
+    for x=1 to segments
+        let prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    let inlen[1]=2
+    let inlen[2]=3
+    let inlen[3]=iv_desc[0]
+    let fldlen[1]=2
+    let fldlen[2]=3
+    let fldlen[3]=20
+    let files$[1]="arc_distcode"
+    let files$[2]="ivc_prodcode"
+    let files$[3]="ivm-01"
+    let descrec$[1]="D"
+    let descrec$[2]="A"
+    let descrec$[3]=""
+    let descstr[1]=0
+    let descstr[2]=0
+    let descstr[3]=1
+    let descpos[1]=6
+    let descpos[2]=7
+    let descpos[3]=1
+    let desclen[1]=20
+    let desclen[2]=20
+    let desclen[3]=60
+    let keylen=31
+    goto done
+
+by_nonstock: rem --- (Action = 11) Product/Non-stock
+
+    if mod(action,20)=11 if sas01a.by_nonstock$<>"Y" exitto not_avail
+    let levels$[1]="P"
+    let levels$[2]="N"
+    let levels$[3]=""
+    segments=pos(sas01a.nonstock_lev$=levels$[1]+levels$[2]+levels$[3])
+    let literals$[1]="Product Type"
+    let literals$[2]="Non-Stock Item"
+    let types$[1]="S"
+    let types$[2]="S"
+    let imasks$[1]=""
+    let imasks$[2]=""
+    let omasks$[1]=""
+    let omasks$[2]=""
+    for x=1 to segments
+        let prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    let inlen[1]=3
+    let inlen[2]=40
+    let fldlen[1]=3
+    let fldlen[2]=40
+    let files$[1]="ivc_prodcode"
+    let files$[2]=""
+    let files$[3]=""
+    let descrec$[1]="A",descrec$[2]=""
+    let descstr[1]=0
+    let descstr[2]=0
+    let descpos[1]=7
+    let descpos[2]=0
+    let desclen[1]=20
+    let desclen[2]=0
+    let keylen=49
+    goto done
+
+by_terr_cust: rem --- (Action = 12) Territory/Customer/Product/Item
+
+    if mod(action,20)=1 if sas01a.by_customer$<>"Y" exitto not_avail
+    let levels$[1]="T"
+    let levels$[2]="C"
+    let levels$[3]="P"
+    let levels$[4]="I"
+    let segments=pos(sas01a.customer_lev$=levels$[1]+levels$[2]+levels$[3]+levels$[4])
+    let literals$[1]="Territory"
+    let literals$[2]="Customer"
+    let literals$[3]="Product Type"
+    let literals$[4]="Item"
+    let types$[1]="S"
+    let types$[2]="M"
+    let types$[3]="S"
+    let types$[4]="S"
+    let imasks$[1]=""
+    let imasks$[2]=arp1$
+    let imasks$[3]=""
+    let imasks$[4]=""
+    let omasks$[1]=""
+    let omasks$[2]=arm0$
+    let omasks$[3]=""
+    let omasks$[4]=""
+    for x=1 to segments
+        let prompts$[x]="Enter Valid "+literals$[x]
+    next x
+    let inlen[1]=3
+    let inlen[2]=num(ars01a.customer_size$(1,2))
+    let inlen[3]=3
+    let inlen[4]=iv_desc[0]
+    let fldlen[1]=3
+    let fldlen[2]=6
+    let fldlen[3]=3
+    let fldlen[4]=20
+    let files$[1]="arc_terrcode"
+    let files$[2]="arm-01"
+    let files$[3]="ivc_prodcode"
+    let files$[4]="ivm-01"
+    let descrec$[1]="H"
+    let descrec$[2]=""
+    let descrec$[3]="A"
+    let descrec$[4]=""
+    let descstr[1]=0
+    let descstr[2]=1
+    let descstr[3]=0
+    let descstr[4]=1
+    let descpos[1]=7
+    let descpos[2]=1
+    let descpos[3]=7
+    let descpos[4]=1
+    let desclen[1]=20
+    let desclen[2]=30
+    let desclen[3]=20
+    let desclen[4]=60
+    let keylen=38
+    let xrefs[1]=4
+    let xrefs[2]=1
+    let xrefs[3]=2
+    let xrefs[4]=3
+    goto done
+
+done: rem --- Open Sales Analysis File(s)
+
+    dim ids$[endfile],templates$[endfile],channels[endfile]
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto bad_stat
+    let descchan[1]=channels[1],descchan[2]=channels[2],descchan[3]=channels[3],descchan[4]=channels[4]
+
+rem --- All Done
+
+    goto std_exit
+
+not_avail: rem --- Selected Sales Analysis Not Available
+
+    let number=1
+    dim message$[number]
+    let message$[0]="This Sales Analysis is currently not available."
+    let message$[1]="           <Enter> = Continue"
+    call pgmdir$+"adc_stdmessage.aon",3,message$[all],number,-1,-1,v$,v3
+
+bad_stat: rem --- Return STATUS = ERR
+
+    let status=err
+    if status=0 status=999
+    goto std_exit
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    close (aps01_dev,err=*next)
+    close (ars01_dev,err=*next)
+    close (gls01_dev,err=*next)
+    close (ivs01_dev,err=*next)
+    close (sas01_dev,err=*next)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

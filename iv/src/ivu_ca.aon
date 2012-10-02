@@ -1,0 +1,387 @@
+rem --- Inventory Period End Update
+rem --- Program ivu_ca v8.0.0 09Jul2007 (ivu_ca)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 11:55:01)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    more=1
+rem --- Open/Lock files
+
+    files=12,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[2]="apm-06",ids$[2]="APM_VENDREPL"
+    files$[3]="ivm-01",ids$[3]="IVM_ITEMMAST"
+    files$[4]="ivm-02",ids$[4]="IVM_ITEMWHSE"
+    files$[5]="ivm-07",ids$[5]="IVM_LSMASTER"
+    files$[6]="ivm-12",ids$[6]="IVM_ITEMMAST"
+    files$[7]="ivm-17",ids$[7]="IVM_ITEMACT"
+    files$[8]="ivt-01",ids$[8]="IVT_LSTRANS"
+    files$[9]="ivt-04",ids$[9]="IVT_ITEMTRAN"
+    files$[10]="APS_PARAMS",ids$[10]=files$[10]
+    files$[11]="GLS_PARAMS",ids$[11]=files$[11]
+    files$[12]="IVS_PARAMS",ids$[12]=files$[12]
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apm06_dev=channels[2]
+    ivm01_dev=channels[3]
+    ivm02_dev=channels[4]
+    ivm07_dev=channels[5]
+    ivm12_dev=channels[6]
+    ivm17_dev=channels[7]
+    ivt01_dev=channels[8]
+    ivt04_dev=channels[9]
+    aps01a_dev=channels[10]
+    gls01a_dev=channels[11]
+    ivs01a_dev=channels[12]
+
+rem --- Dimension string templates
+
+    dim apm06a$:templates$[2],ivm01a$:templates$[3],ivm02a$:templates$[4],
+:       ivm07a$:templates$[5],ivm12a$:templates$[6],ivm17a$:templates$[7],
+:       ivt01a$:templates$[8],ivt04a$:templates$[9],aps01a$:templates$[10],
+:       gls01a$:templates$[11],ivs01a$:templates$[12]
+
+
+
+rem --- Assign form input values to local variables
+
+    table$=fnget_table$("")
+    period_from$=fnget_fld_data$(table$,"Period_01")
+    period_to$=fnget_fld_data$(table$,"Period_02")
+
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+  
+rem --- Parameters
+
+    dim info$[20],ap$(21)
+    n1$=sysinfo.firm_name$
+    n2$="IV"
+    n3$=sysinfo.task_desc$
+    apflag$="N"
+    find record (ivs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ivs01a$
+    find record (gls01a_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+    call pgmdir$+"adc_application.aon","AP",info$[all]
+    apflag$=info$[20]
+    if apflag$="N" then
+        find record (aps01a_dev,key=firm_id$+"AP00",dom=Init) aps01a$
+        apflag$=aps01a.use_replen$
+        if apflag$=" " apflag$="N"
+    endif
+    rem dim p[7],g[4]
+    g[0]=num(ivs01a.Firm_Id$)
+    p[0]=num(ivs01a.ITEM_ID_LEN$)
+    p[2]=num(ivs01a.LS_NO_LEN$)
+    p[6]=num(ivs01a.CURRENT_PER$)
+    p[7]=fnyy_year(ivs01a.CURRENT_year$)
+
+Init:rem --- Init Data
+
+    precision num(ivs01a.precision$)
+    rem dim a[20],b[12],c[12],d[12],r[11]
+    m0=len(m0$)
+    m1=len(m1$)
+    g5=len(g5$)
+    dim channs[44],params[3],params$[4],item$[3],refs$[11],refs[53]
+    channs[0]=sys01_dev
+    channs[1]=ivm01_dev
+    channs[2]=ivm02_dev
+    channs[7]=ivm07_dev
+    channs[12]=ivm12_dev
+    channs[17]=ivm17_dev
+    channs[41]=ivt01_dev
+    channs[44]=ivt04_dev
+    params[0]=p[0]
+    params$[0]=sysinfo.system_date$
+    params$[1]=sysinfo.user_id$
+    params$[2]=p2$
+    params$[3]=p3$
+    params$[4]=p4$
+    controls=3
+    first=0
+    last=controls
+    action$=""
+    dim control[controls],value$[controls],value[controls],mask$[controls]
+    for ii=0 to 1
+        control[ii]=3000+ii
+    next ii
+    control[3]=2000
+
+rem --- Check on Lot/Serial Flag
+
+    ls$="N"
+    if pos(ivs01.lotser_flag$="LS")<>0 then
+        call pgmdir$+"adc_fileopen.aon",1,6,8,files$[all],options$[all],channels[all],batch,status
+        if status goto std_exit
+        ivm07_dev=channels[6]
+        ivm17_dev=channels[7]
+        ivt01_dev=channels[8]
+        channs[7]=ivm07_dev
+        channs[17]=ivm17_dev
+        channs[41]=ivt01_dev
+        ls$=ivs01.lotser_flag$
+    endif
+
+rem --- Check on Replenishment
+
+    if apflag$="Y" then
+        call pgmdir$+"adc_fileopen.aon",1,9,9,files$[all],options$[all],channels[all],batch,status
+        if status apflag$="N"
+        apm06_dev=channels[9]
+    endif
+
+rem --- Display Resource
+
+    dim resparams$[20],resparams[20]
+    resaction$=""
+    resparams$[0]=pgm(-2)
+    call pgmdir$+"syc_ra.bbx",resaction$,resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+    if status goto std_exit
+
+rem --- Determine Period Limits
+
+    call pgmdir$+"adc_perioddates.aon",sys01_dev,p[6],p[7],v0$,v9$,status
+    p8$=v0$
+    p9$=v9$
+    p9=p[6]
+    h3$="Period "+str(p[6])+"  From "+fndate$(v0$)+" To "+fndate$(v9$)
+    call pgmdir$+"syc_rs.bbx","",my_context,2000,h3$,0,"",status
+    call pgmdir$+"adc_daydates.aon",v9$,when$,1
+
+Correct: rem --- Correct?
+
+    call pgmdir$+"adc_yesno.aon",0,"Are You Ready To Close This Period",0,v$,v3
+    on v3 goto Correct_Call,Correct,Correct,Correct,std_exit,Correct_Call,std_exit
+Correct_Call:
+    if v$="NO" goto std_exit
+    if v$<>"YES" goto Correct
+    call pgmdir$+"adc_progress.aon","N","","","Updating","",3+p[0],0,1,meter_num,status
+    refs$[0]=when$
+
+rem --- Disallow 'M'enu option in Error Routine
+
+    exit_ctrl=1
+
+rem --- Process ivm-02
+
+    read (ivm02_dev,key=firm_id$,dom=*next)
+
+rem --- Main Read
+    while more
+
+        ivm02_key$=key(ivm02_dev,end=*break)
+        if ivm02_key$=firm_id$ then
+            read record (ivm02_dev) ivm02a$
+            read record (ivm01_dev,key=ivm02a_key.firm_id$+ivm02a_key.item_id$,dom=*continue) ivm01a$
+            call pgmdir$+"adc_progress.aon","S","","","",ivm02_key.warehouse_id$+" "+ivm02_key.item_id$,0,0,1,meter_num,status
+            if ls$="N" or c2$(19,2)<>"YY" goto Check_SlNo_Call
+            read (ivm07_dev,key=ivm02.firm_id$+ivm02.warehouse_id$+ivm02.item_id$,dom=*next)
+        endif
+
+rem --- Check for Serial Numbers
+        while more
+            ivm07_key$=key(ivm07_dev,end=*break)
+            if pos(ivm02a_key.firm_id$+ivm02_key.warehouse_id$+ivm02a_key.item_id$=ivm07_key$)=1 then
+                read record (ivm07_dev) ivm07a$
+                find record (ivm17_dev,key=ivm07_key$+ivs01a.CURRENT_year$+ivs01a.CURRENT_PER$,dom=*continue) ivm17a$
+                call pgmdir$+"ivc_pa.bbx","END",b[all],balance
+                item$[0]=ivm02.firm_id$
+                item$[1]=ivm02.warehouse_id$
+                item$[2]=ivm02.item_id$
+                item$[3]=ivm17a.lotser_nbr$
+                refs$[10]=ivm07a.inv_loaction$
+                refs$[11]=ivm07a.ls_comments$
+                refs[0]=balance
+                refs[1]=ivm07a.unit_cost
+                call pgmdir$+"ivc_ua.bbx","BB",channs[all],params[all],params$[all],item$[all],refs$[all],refs[all],status
+            endif       
+        wend
+
+Check_SlNo_Call:
+
+        find record (ivm12a_dev,key=ivm02a_key.firm_id$+ivm02_key.warehouse_id$+ivm02a_key.item_id$+ivs01a.CURRENT_PER$+ivs01a.CURRENT_year$,dom=*continue) ivm12a$
+        call pgmdir$+"ivc_pa.bbx","END",b[all],balance
+        item$[0]=ivm02.firm_id$
+        item$[1]=ivm02.warehouse_id$
+        item$[2]=ivm02a.item_id$
+        item$[3]=""
+        refs$[10]=""
+        refs$[11]=""
+        refs[0]=balance
+        refs[1]=ivm02a_key.unit_cost
+        call pgmdir$+"ivc_ua.bbx","BB",channs[all],params[all],params$[all],item$[all],refs$[all],refs[all],status
+    wend
+
+rem --- Update Replenishment File - Year End Only
+
+    if apflag$="Y" or p9=g[0] then
+        dim r[11]
+        read (apm06_dev,key=firm_id$,dom=*next)
+        while more
+            let apm06a_key$=key(apm06_dev,end=*break)
+            if pos(firm_id$=apm06a_key$)<>1 break
+            extract record (apm06_dev,key=apm06a_key$) apm06a$
+            let apm06a.ytd_rec_amt=apm06a.nyr_rec_amt,apm06a.nyr_rec_amt=0
+            let apm06a.ytd_rec_lbs=apm06a.nyr_rec_lbs,apm06a.nyr_rec_lbs=0
+            let apm06a.ytd_rec_unts=apm06a.nyr_rec_unts,apm06a.nyr_rec_unts=0
+            write record (apm06_dev,key=apm06a_key$) apm06a$
+        wend
+    endif
+
+done: rem --- Increment Period
+
+    if p9>=p[6] then
+        let p[6]=p[6]+1
+        if p[6]>g[0] p[6]=1,p[7]=p[7]+1
+        extract record (sys01_dev,key=firm_id$+n2$+"00",dom=*next) ivs01a$
+        let ivs01a.CURRENT_PER$=str(p[6]:"00"),ivs01a.CURRENT_year$=fnyear_yy21$(p[7])
+        write record (sys01_dev,key=firm_id$+n2$+"00") ivs01a$
+    endif
+    goto std_exit
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    rem run pgmdir$+"ads_process_end.aon",err=*next
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

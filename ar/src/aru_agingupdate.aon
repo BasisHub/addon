@@ -1,0 +1,205 @@
+rem --- Age Accounts Receivable Transactions
+rem --- Program aru_agingupdate v8.0.0 28Dec2006 (aru_eb)
+rem --- Created by adx_codeport.bbx v1.1.5 (12/28/2006 10:57:05)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="arm-02",ids$[2]="ARM_CUSTDET"
+    files$[3]="art-01",ids$[3]="ART_INVHDR"
+    files$[4]="art-11",ids$[4]="ART_INVDET"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ars01_dev=channels[1]
+    arm02_dev=channels[2]
+    art01_dev=channels[3]
+    art11_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim arm02a$:templates$[2],art01a$:templates$[3],art11a$:templates$[4]
+
+rem --- Assign form input values to local variables
+
+    aging_date$=option!.getOptionData("AGING_DATE")
+    age_by$=option!.getOptionData("PICK_LISTBUTTON")
+    begcust$=option!.getOptionData("CUSTOMER_ID_1")
+    endcust$=option!.getOptionData("CUSTOMER_ID_2")
+
+rem --- Initializations
+
+    dim aging[5]
+    moreheaders=1
+    moredetail=1
+    customer$=""
+    period_dates$=""
+
+rem --- Determine 30 day aging period dates
+
+    periods$=""
+    for x=-5 to 0
+        enddate$=""
+        call pgmdir$+"adc_daydates.aon",aging_date$,enddate$,x*30
+        period_dates$=enddate$+period_dates$
+    next x
+
+rem --- Start progress meter and position the file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,art01_dev,1,meter_num,status
+    read (art01_dev,key=firm_id$+"  "+begcust$,dom=*next)
+
+    rem --- Read the next Invoice Header (art-01) record
+
+    while moreheaders
+          k$=key(art01_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          read record (art01_dev) art01a$
+          if endcust$<>"" if art01a.customer_id$>endcust$ break
+          balance=art01a.invoice_amt
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status 
+
+          rem --- Customer break?
+
+          if art01a.firm_id$+art01a.ar_type$+art01a.customer_id$<>customer$ gosub customer_break
+
+          rem --- Position Invoice Detail (art-11) file
+
+          art01_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
+          read (art11_dev,key=art01_key$,dom=*next)
+
+          rem --- Process detail records for this invoice
+
+          while moredetail
+                k$=key(art11_dev,end=*break)
+                if pos(art01_key$=k$)<>1 break
+                read record (art11_dev) art11a$
+                if art11a.trans_type$<>" " balance=balance+art11a.trans_amt+art11a.adjdisc_amt
+          wend
+
+          rem --- Age this invoice
+
+          if age_by$="I" transaction_date$=art01a.invoice_date$
+:                   else transaction_date$=art01a.inv_due_date$
+          period=pos(transaction_date$>period_dates$,8)
+          if period=0 period=5 
+:                else period=int(period/8)
+          aging[period]=aging[period]+balance
+    
+          rem --- Loop back for next invoice
+
+    wend
+
+rem --- Totals
+
+    gosub customer_break
+    goto std_exit
+
+customer_break: rem --- Customer Break
+
+    if customer$<>""
+       dim arm02a$:fattr(arm02a$)
+       find record (arm02_dev,key=last_arm02_key$,dom=*proceed) arm02a$
+       arm02a.aging_future=aging[0]
+       arm02a.aging_cur=aging[1]
+       arm02a.aging_30=aging[2]
+       arm02a.aging_60=aging[3]
+       arm02a.aging_90=aging[4]
+       arm02a.aging_120=aging[5]
+       arm02a$=field(arm02a$)
+       write record (arm02_dev,key=arm02_key$) arm02a$
+    endif
+    dim aging[5]
+    customer$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$
+    last_arm02_key$=art01a.firm_id$+art01a.customer_id$+art01a.ar_type$
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbx",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

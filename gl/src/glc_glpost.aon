@@ -1,0 +1,211 @@
+rem glc - Post To Daily Detail File
+rem Program glc_glpost v8.0.0 25Apr2006 (glc_aa)
+rem Created by adx_progconv.bbx v1.0.1 (04/25/2006 07:49:40)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- GLM01_DEV: glm-01 channel (Input)
+rem --- GLT04_DEV: glt-04 channel (Input)
+rem --- RESERVED : glt-14 channel (Input)
+rem --- ACCOUNT$ : GL account number (Input)
+rem --- WHEN$    : Transaction date in YYYYMMDD format (Input)
+rem --- REF1$    : Reference 1 (Input)
+rem --- REF2$    : Reference 2 (Input)
+rem --- REF3$    : Reference 3 (Input)
+rem --- MEMO$    : Posting memo (Input)
+rem --- AMOUNT   : Posting amount (Input)
+rem --- UNITS    : Posting units (Input)
+rem --- STATUS   : Status/0=No Error (Returned)
+
+rem --- All arguments are input except STATUS, which is returned
+
+    seterr std_error
+    setesc std_error
+    enter glm01_dev,glt04_dev,reserved,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Retrieve templates
+
+    files=2,begfile=1,endfile=files,status=0
+    dim ids$[files],templates$[files]
+    templates$[1]=fnglobal$("+GLM01A_TPL","")
+    templates$[2]=fnglobal$("+GLT04A_TPL","")
+    ids$[1]="glm-01:GLM_ACCT"
+    ids$[2]="glt-04:GLE_DAILYDETAIL"
+    needed=cvs(templates$[1],2)="" or cvs(templates$[2],2)=""
+    if needed call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto done
+    glcontrol_template$=stbl("+GLCONTROL_TPL",err=done)
+
+rem --- Dimension and store string templates
+
+    dim glm01a$:templates$[1],glt04a$:templates$[2]
+    x$=stbl("+GLM01A_TPL",templates$[1])
+    x$=stbl("+GLT04A_TPL",templates$[2])
+
+rem --- Parameters
+
+    precision 2
+    dim glcontrol$:glcontrol_template$
+    status=0
+    glcontrol$=stbl("+GLCONTROL",err=done)
+    if glcontrol.post_gl$="N" goto done
+    if glcontrol.gl_post_code$="N" goto done
+    acctlen=num(glcontrol.max_acct_len$)
+    application$=glcontrol.system_id$
+    journal$=glcontrol.journal_id$
+    audit$=glcontrol.gl_adt_no$
+    firm_id$=glcontrol.firm_id$
+
+rem --- Initializations
+
+    verify$=""
+    detail$="Y"
+    seqpos=36
+    sequence=0
+    glref1$=ref1$
+    glref2$=ref2$
+    glref3$=ref3$
+    glmemo$=memo$
+    glyear$="  "
+    glperiod$="  "
+    gldate$=when$
+
+rem --- Determine period and year
+
+    if abs(amount)+abs(units)=0 goto done
+    if gldate$=glcontrol.trns_date$ 
+       period$=glcontrol.period$
+       year$=glcontrol.year$
+       goto period_year
+    endif
+
+    call pgmdir$+"glc_datecheck.aon",gldate$,verify$,period$,year$,status
+
+period_year: rem --- Store GL period and year
+
+    glyear$=year$
+    glperiod$=period$
+
+rem --- Retrieve account master
+
+    glm01_key$=firm_id$+account$
+    glm01a.detail_flag$="Y"
+    detail$="Y"
+    find record (glm01_dev,key=glm01_key$,dom=sequence)glm01a$
+    if glcontrol.detail_flag$="N" detail$="N"
+    if glcontrol.detail_flag$="Y" detail$="Y"
+    if glcontrol.detail_flag$="A" detail$=glm01a.detail_flag$
+    if cvs(glm01a.gl_account$,2)="" or glm01a.gl_account$=fill(acctlen,"0") detail$="Y"
+
+sequence: rem --- Determine sequence number for posting
+
+    glt04_key$=firm_id$+journal$+audit$+glyear$+glperiod$+gldate$+account$
+    read (glt04_dev,key=glt04_key$+$FF$,dom=*next,err=done)
+    k$=keyp(glt04_dev,end=initialize_glt04)
+    glt04_key$=glt04_key$+str(sequence:"00000")
+    if k$(1,seqpos-1)<>glt04_key$(1,seqpos-1) goto initialize_glt04
+    sequence=num(k$(seqpos))
+    glt04_key$=k$
+    if sequence>99998 detail$="N"
+
+initialize_glt04: rem --- Detail Posting?
+
+    if detail$="Y" goto update_glt04
+
+rem --- Summary Posting
+
+    glmemo$=glcontrol.description$
+    glref1$=""
+    glref2$=""
+    glref3$=""
+    extract record (glt04_dev,key=glt04_key$,dom=update_glt04)glt04a$
+    if glt04a.description$=glmemo$ goto update_glt04
+
+rem --- New summary record required
+
+    detail$="Y"
+
+update_glt04: rem --- Format remaining glt-04 fields
+
+    glt04a.firm_id$=firm_id$
+    glt04a.journal_id$=journal$
+    glt04a.gl_adt_no$=audit$
+    glt04a.posting_year$=glyear$
+    glt04a.posting_per$=glperiod$
+    glt04a.trns_date$=gldate$
+    glt04a.gl_account$=account$
+    if detail$="Y" sequence=sequence+1
+    glt04a.seq_no$=str(sequence:"00000")
+    glt04a.reference_01$=glref1$
+    glt04a.reference_02$=glref2$
+    glt04a.reference_03$=glref3$
+    glt04a.description$=glmemo$
+    glt04a.trans_amt=glt04a.trans_amt+amount
+    if glcontrol.units_flag$="Y" glt04a.units=glt04a.units+units
+
+rem --- Write glt-04 record
+
+    write record (glt04_dev)glt04a$
+
+done: rem --- All done
+
+    goto std_exit
+
+rem --- Functions
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit:
+        return q1$
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+  call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

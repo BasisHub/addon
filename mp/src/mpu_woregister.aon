@@ -1,0 +1,895 @@
+rem --- Planned Work Order Register Update
+rem --- Program mpu_da v8.0.0 12Mar2008 (mpu_da)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (03/12/2008 09:41:51)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=16,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
+    files$[2]="bmm-02",ids$[2]="BMM_BILLMAT"
+    files$[3]="bmm-03",ids$[3]="BMM_BILLOPER"
+    files$[4]="bmm-05",ids$[4]="BMM_BILLSUB"
+    files$[5]="bmm-08",ids$[5]="BMC_OPCODES"
+    files$[6]="bmm-09",ids$[6]="BMM_BILLCMTS"
+    files$[7]="ivm-01",ids$[7]="IVM_ITEMMAST"
+    files$[8]="ivm-02",ids$[8]="IVM_ITEMWHSE"
+    files$[9]="mpm-01",ids$[9]="MPM_FORECAST"
+    files$[10]="mpw-05",ids$[10]="MPW_PLANWO"
+    files$[11]="sfe-01",ids$[11]="SFE_WOMASTR"
+    files$[12]="sfe-02",ids$[12]="SFE_WOOPRTN"
+    files$[13]="sfe-07",ids$[13]="SFE_WOCOMNT"
+    files$[14]="sfe-22",ids$[14]="SFE_WOMATL"
+    files$[15]="sfe-32",ids$[15]="SFE_WOSUBCNT"
+    files$[16]="sfs-10",ids$[16]="SFS_NUMBERS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    bmm01_dev=channels[1]
+    bmm02_dev=channels[2]
+    bmm03_dev=channels[3]
+    bmm05_dev=channels[4]
+    bmm08_dev=channels[5]
+    bmm09_dev=channels[6]
+    ivm01_dev=channels[7]
+    ivm02_dev=channels[8]
+    mpm01_dev=channels[9]
+    mpw05_dev=channels[10]
+    sfe01_dev=channels[11]
+    sfe02_dev=channels[12]
+    sfe07_dev=channels[13]
+    sfe22_dev=channels[14]
+    sfe32_dev=channels[15]
+    sfs10n_dev=channels[16]
+
+rem --- Dimension string templates
+
+    dim bmm01a$:templates$[1],bmm02a$:templates$[2],bmm03a$:templates$[3],
+:       bmm05a$:templates$[4],bmm08a$:templates$[5],bmm09a$:templates$[6],
+:       ivm01a$:templates$[7],ivm02a$:templates$[8],mpm01a$:templates$[9],
+:       mpw05a$:templates$[10],sfe01a$:templates$[11],sfe02a$:templates$[12],
+:       sfe07a$:templates$[13],sfe22a$:templates$[14],sfe32a$:templates$[15],sfs10n$:templates$[16]
+
+rem --- Retrieve key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","MPW_PLANWO","PRIMARY",mpw05_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLCMTS","PRIMARY",bmm09_key_tpl$,rd_table_chans$[all],status$
+    dim mpw05_key$:mpw05_key_tpl$
+    dim bmm09_key$:bmm09_key_tpl$
+
+initializations: rem --- Initializations
+
+    precision iv_precision
+    dim a0$(52),a1$(30),a2$(57),a[11],b0$(25),b1$(20),b2$(114),b[10]
+    dim c0$(25),c1$(110),c[11],d0$(33),d1$(38),d[6],g0$(25),g1$(69)
+    dim g2$(6),g3$(20),g4$(20),g[9],h0$(90),h[13],k0$(14),k1$(60)
+    dim l0$(24),l1$(48),p0$(3),p[0],r0$(22),r1$(60),r2$(64),r3$(40)
+    dim r6$(90),r[9],s0$(5),s1$(84),s2$(156),s[2],t0$(24),t1$(64),t[20]
+    dim u0$(15),u1$(151),u[13],w0$(75),w1$(141),w[11],y0$(15),y1$(151)
+    dim y[13],z0$(15),z1$(151),z[13],message$[2],o[9],totals[1]
+    title$="MRP Planned Work Order Scheduling Report"
+    stars$=fill(8,"*")
+    headings$[1]=title$
+    l=l9+1,last$="",item$="",forecast$=""
+    whseitem$=""
+    total$="",m9$="###,##0",nodesc=0,skip=1
+    more=1
+
+rem --- Print positions
+
+    o[9]=81
+    o[8]=o[9]-4,o[7]=o[8]-9,o[6]=o[7]-9,o[5]=o[6]-4
+    o[4]=o[5]-4
+    o[3]=o[4]-4,o[1]=8,o[2]=o[1]+iv_length+4
+    dw=o[3]-o[1]-1
+
+rem --- Background
+rem    print @(0,11),'ce',
+
+rem --- Is user ready to update the register?
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit
+
+rem --- Disallow 'M'enu option in Error Routine
+
+    exit_ctrl=1
+
+rem --- Open printer and display progress meter
+
+    call pgmdir$+"adc_printer.aon",printer_dev,0,title$,"",status
+    if status then goto std_exit
+    call pgmdir$+"adc_progress.aon","N","","","","",0,mpw05_dev,1,meter_num,status
+
+rem --- Position file
+
+    read (mpw05_dev,key=firm_id$,dom=*next)
+
+rem --- Read next mpw-05 record
+
+while more
+
+    mpw05_key$=key(mpw05_dev,end=done)
+    if pos(prefix$=mpw05_key$)<>1 then goto done
+    read record (mpw05_dev) mpw05a$
+    x$=mpw05_key.warehouse_id$+" "+mpw05_key.item_id$+" "+fndate$(mpw05_key.reqd_date$)
+    if x$=last$ then goto forecast_break
+    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+    last$=x$
+
+forecast_break:
+
+    if mpw05_key.forecast$=forecast$ then goto level_break
+    gosub get_forecast
+    if status then goto done
+
+level_break: rem --- Has warehouse/item changed?
+
+    if mpw05_key.warehouse_id$+mpw05_key.item_id$<>whseitem$ then gosub item_break
+    whseitem$=mpw05_key.warehouse_id$+mpw05_key.item_id$
+
+rem --- Initialize sfe-01 Work Order Header record
+
+    dim w0$(75),w1$(141),w[11],description$(dw)
+
+next_wonumber:
+
+    gosub get_wonumber
+    sfe01_key$=firm_id$+fill(2)+wonumber$
+    find (sfe01_dev,key=sfe01_key$,dom=initialize_sfe01)
+    goto next_wonumber
+
+initialize_sfe01: rem --- Initialize sfe-01 Work Order Header
+
+    sfe01a.wo_type$=wotype$
+    sfe01a.wo_category$="I"
+    sfe01a.wo_status$="P"
+    sfe01a.est_sttdate$=fndate$(mpw05a.trns_date$)
+    sfe01a.est_cmpdate$=fndate$(mpw05a.reqd_date$)
+    sfe01a.priority$="5"
+    sfe01a.sched_flag$="B"
+    sfe01a.forecast$=forecast$,required=mpw05a.qty_required
+    whse$=mpw05a.warehouse_id$
+    item$=mpw05a.item_id$
+    sfe01a.warehouse_id$=whse$
+    sfe01a.item_id$=item$
+
+rem --- Retrieve item and bill masters for this inventory item
+
+    bmm01a.firm_id$=firm_id$
+    bmm01a.bill_no$=item$
+    ivm01a.firm_id$=bmm01a.firm_id$
+    ivm01a.item_id$=bmm01a.bill_no$
+    currentbill$=bmm01a.bill_no$
+    ivm01_key$=ivm01a.firm_id$+ivm01a.item_id$
+    bmm01_key$=bmm01a.firm_id$+bmm01a.bill_no$
+    find record (ivm01_dev,key=ivm01_key$,dom=*continue) ivm01a$
+    find record (bmm01_dev,key=bmm01_key$,dom=*continue) bmm01a$
+    if nodesc goto remaining_initializations
+    description$(1)=whse$+" "+ivm01a.item_id$(3,iv_length)+" "+fnitem$(ivm01a.item_desc$,i[2],i[3],i[4])
+    total$=description$
+
+rem --- Set remaining work order fields using item and bill information
+
+remaining_initializations:
+
+    if pos(ivs01a.lotser_flag$="SL") then if ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then let sfe01a.lotser_item$="Y"
+    sfe01a.unit_measure$=ivm01a.unit_of_sale$
+    sfe01a.bill_rev$=bmm01a.bill_rev$
+    sfe01a.drawing_no$=bmm01a.drawing_no$
+    sfe01a.drawing_rev$=bmm01a.drawing_rev$
+    sfe01a.sch_prod_qty=required
+    sfe01a.sch_prod_qty=bmm01a.est_yield
+
+rem --- Update bill's last activity date if necessary
+
+    if bmm01a.lstact_date$>=sfe01a.opened_date$ then goto initialize_explosion
+    bmm01a.lstact_date$=sfe01a.opened_date$
+    bmm01a.source_code$="W"
+    bmm01_key$=bmm01a.firm_id$+bmm01a.bill_no$
+    write record (bmm01_dev,key=bmm01_key$) bmm01a$
+
+initialize_explosion: rem --- Perform any initializations prior to beginning the explosion
+
+    dim units[99],seqs$[99]
+    billstack$=""
+    level=0,units[level]=1,seqs$[level]="001",quantity=1
+
+rem --- Write planned work order
+
+    sfe01_key$=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$
+    write record (sfe01_dev,key=sfe01_key$) sfe01a$
+    workorders=workorders+1
+
+rem --- Update cross-reference file for new work order
+
+    sfe01_key$=firm_id$+sfe01a.wo_type$+sfe01a.wo_location$+sfe01a.wo_no$
+    write record (sfe01_dev,key=sfe01_key$) sfe01a$
+    sfe01_key$=firm_id$+sfe01a.warehouse_id$+sfe01a.item_id$+sfe01a.wo_location$+sfe01a.wo_no$
+    write record (sfe01_dev,key=sfe01_key$) sfe01a$
+    totals[0]=totals[0]+1
+
+rem --- Copy comments from bill to work order
+
+    bmm01_key$=bmm01a.firm_id$+bmm01a.bill_no$
+    read (bmm09_dev,key=bmm01_key$,dom=*next)
+
+next_bmm09:
+
+    bmm09_key$=key(bmm09_dev,end=explosion)
+    if pos(bmm01_key$=bmm09_key$)<>1 then goto explosion
+    read record (bmm09_dev,key=bmm09_key$) bmm09a$
+    sfe07a.firm_id$=sfe01a.firm_id$
+    sfe07a.wo_location$=sfe01a.wo_location$
+    sfe07a.wo_no$=sfe01a.wo_no$
+    sfe07a.sequence_no$=str(num(sfe01a.sequence_no$):"000")
+    sfe07a.ext_comments$=bmm09a.std_comments$
+    sfe07_key$=sfe07a.firm_id$+sfe07a.wo_location$+sfe07a.wo_no$+sfe07a.sequence_no$
+    write record (sfe07_dev,key=sfe07_key$) sfe07a$
+    goto next_bmm09
+
+explosion: rem --- Explode Bills
+
+    dim yields[99]
+    billstack$=item$
+    currentbill$=billstack$,woitem$=sfe01a.item_id$
+    components$=""
+    materials$="",yields[0]=sfe01a.est_yield,yield=sfe01a.est_yield
+
+position_bmm02: rem --- Position the bmm-02 Material Detail file
+
+    read (bmm02_dev,key=firm_id$+currentbill$,dom=*next)
+
+next_bmm02: rem --- Read next bmm-02 Materials Detail record
+
+    bmm02_key$=key(bmm02_dev,end=bmm02_loop)
+    if bmm02_key.firm_id$+bmm02_key.bill_no$<>firm_id$+currentbill$ then goto bmm02_loop
+    read record (bmm02_dev,key=bmm02_key$) bmm02a$
+    effdate$=bmm02a.effect_date$
+    obsdate$=bmm02a.obsolt_date$
+    gosub verify_date
+    if status then goto next_bmm02
+
+rem --- Initializations for processing this detail record
+
+    ivm01a.firm_id$=bmm02a.firm_id$
+    ivm01a.item_id$=bmm02a.bill_no$
+    ivm02a.firm_id$=firm_id$
+    ivm02a.warehouse_id$=whse$
+    ivm02a.item_id$=bmm02a.item_id$
+    sfe22a.firm_id$=sfe01a.firm_id$
+    sfe22a.wo_location$=sfe01a.wo_location$
+    sfe22a.wo_no$=sfe01a.wo_no$
+    sfe22a.record_id_b$="B"
+    ivm01a.item_desc$="(Not On File)"
+
+rem --- Is this a message line?
+
+    if bmm02a.line_type$<>"M" then goto get_item
+    sfe22a.line_type$="M"
+    sfe22a.ext_comments$=bmm02a.ext_comments$
+    goto update_materials
+
+get_item: rem --- Retrieve ivm-01 Item Master and ivm-02 Warehouse Detail
+
+    ivm01_key$=ivm01a.firm_id$+ivm01a.item_id$
+    find record (ivm01_dev,key=ivm01_key$,dom=missing_inventory) ivm01a$
+    ivm02_key$=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$
+    find record (ivm02_dev,key=ivm02_key$,dom=missing_inventory) ivm02a$
+
+rem --- If quantity, alternate factor or divisor are zero, set
+
+missing_inventory: rem --- them to one to avoid divide by zero errors
+
+    if bmm02a.qty_required=0 then let bmm02a.qty_required=1
+    if bmm02a.alt_factor=0 then let bmm02a.alt_factor=1
+    if bmm02a.divisor=0 then let bmm02a.divisor=1
+    qty=bmm02a.qty_required
+    factor=bmm02a.alt_factor,divisor=bmm02a.divisor,scrap=bmm02a.scrap_factor
+
+rem --- Initialize sfe-22 Material Requirements record
+
+    sfe22a.unit_measure$=ivm01a.unit_of_sale$
+    cost=ivm02a.unit_cost
+    sfe22a.require_date$=sfe01a.eststt_date$
+    sfe22a.warehouse_id$=sfe01a.warehouse_id$
+    sfe22a.item_id$=bmm02a.item_id$
+    seqs$[level]=bmm02a.material_seq$
+    sfe22a.line_type$="S"
+    sfe22a.divisor=divisor
+    sfe22a.qty_required=qty*quantity
+    sfe22a.alt_factor=factor
+    sfe22a.unit_cost=cost
+    sfe22a.scrap_factor=scrap
+    yield=yields[level]
+    if yield=0 then let yield=100
+
+rem --- Calculate yielded quantity, unit cost and extension
+
+    sfe22a.units=fnqty(q)*quantity
+    sfe22a.unit_cost=y[0]*cost*quantity
+    sfe22a.total_units=required*y[0]*quantity
+    sfe22a.total_cost=required*y[0]*cost*quantity
+    precision 2
+    sfe22a.total_cost=sfe22a.total_cost*1
+    precision iv_precision
+
+rem --- Is this a phantom bill?
+
+    bmm01_key$=firm_id$+bmm02a.item_id$
+    find record (bmm01_dev,key=bmm01_key$,dom=update_materials) bmm01a$
+    if bmm01a.phantom_bill$="N" then goto update_materials
+
+rem --- Move down to process phantom components
+
+    bmm01a.firm_id$=firm_id$
+    bmm01a.bill_no$=bmm02a.item_id$
+    billstack$=billstack$+bmm02a.item_id$
+    currentbill$=bmm02a.item_id$
+    quantity=1
+    level=len(billstack$)/20-1
+    units[level]=sfe22a.units,seqs$[level]=bmm02a.material_seq$
+    quantity=units[level]
+    yields[level]=bmm01a.est_yield
+
+rem --- Update last activity date for bill (if necessary)
+
+    if sfe01a.opened_date$<bmm01a.lstact_date$ then goto phantom_components
+    bmm01a.lstact_date$=sfe01a.opened_date$
+    bmm01a.source_code$="W"
+    
+    bmm01_key$=bmm01a.firm_id$+bmm01a.bill_no$
+    write record (bmm01_dev,key=bmm01_key$) bmm01a$
+
+phantom_components: rem --- Loop back and process phantom components
+
+    goto position_bmm02
+
+update_materials: rem --- Position sfe-22 Material Requirements file
+
+    sfe22_key$=sfe22a.firm_id$+sfe22a.wo_location$+sfe22a.wo_no$+sfe22a.record_id_b$+"   "
+    read (sfe22_dev,key=sfe22_key$,dom=*next)
+
+rem --- What was the last sequence number used?
+
+    sfe22a.material_seq$="000"
+    sfe22_key$=keyp(sfe22_dev,end=update_sfe22)
+    if pos(sfe22a.firm_id$+sfe22a.wo_location$+sfe22a.wo_no$+sfe22a.record_id_b$=sfe22_key$)=1 then let sfe22a.material_seq$=sfe22_key.material_seq$
+    if sfe32a.subcont_seq$<>"999" then goto update_sfe22
+    module$="Materials"
+    gosub too_many_lines
+    goto bmm02_loop
+
+update_sfe22: rem --- Write new sfe-22 Material Requirements record
+
+    sfe22a.material_seq$=str(num(sfe22a.material_seq$)+1:"000")
+    write record (sfe22_dev,key=sfe22_key$) sfe22a$
+    if sfe22a.line_type$="M" then goto update_materials_exit
+
+rem --- Update sfe-03 Material Requirements cross-reference
+
+    sfe22_key$=firm_id$+fill(2)+sfe22a.warehouse_id$+sfe22a.item_id$+sfe22a.wo_no$+sfe22a.material_seq$
+    write record (sfe22_dev,key=sfe22_key$) sfe22a$
+
+update_materials_exit: rem --- Done with this material requirement
+
+    if cvs(bmm02a.op_seq$,2)="" then goto next_bmm02
+    materials$=materials$+bmm02a.bill_no$+bmm02a.op_seq$+sfe22a.material_seq$
+    goto next_bmm02
+
+rem --- Update operations and subcontracts for this level and
+
+bmm02_loop: rem --- then move back up to the prior level
+
+    if billstack$=woitem$ then goto update_workorder
+    gosub update_operations
+    gosub update_subcontracts
+    units[level]=0
+    seqs$[level]="000"
+
+prior_level:
+
+    billstack$=billstack$(1,level*20)
+    level=level-1
+    currentbill$=billstack$(level*20+1,20)
+    quantity=1
+    if level then let quantity=units[level]
+    read (bmm02_dev,key=firm_id$+currentbill$+seqs$[level],dom=prior_level)
+    goto next_bmm02
+
+rem --- Since the bill explosion is completed, we need to finalize
+
+update_workorder: rem --- the operations and subcontracts for the new work order
+
+    currentbill$=billstack$
+    gosub update_operations
+    gosub update_subcontracts
+
+rem --- Now schedule the work order
+
+    gosub schedule_workorder
+    if status then goto done
+    sfe01_key$=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$
+    write record (sfe01_dev,key=sfe01_key$) sfe01a$
+
+rem --- Loop back for next mpw-05 Planned Work Order
+
+    wend
+
+done: rem --- All done
+
+    gosub item_break
+    if l+2>l9 then gosub report_heading
+    print (printer_dev)totals[0]:m9$," Total Work Order(s) were generated"
+    print (printer_dev)totals[1]:m9$," Work Order(s) were scheduled"
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    goto std_exit
+
+report_heading: rem --- Report Heading
+
+    l=headings+1
+    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,h,width,when$,clock$,status
+    if status then exitto std_exit
+    print (printer_dev)@(o[0]),"Work",@(o[6]),"--- Scheduled ---"
+    print (printer_dev)@(o[0]),"Order",@(o[1]),"WH Item",@(o[2]),"Description",@(o[3]),"Pri",@(o[4]),"Mth",@(o[5]),"Sts",@(o[6]+1),"Start",@(o[7]),"Complete",@(o[8]),"Cat",@(o[9]),"Scheduling Status"
+    print (printer_dev)""
+    l=l+3
+    skip=0
+    return
+
+rem --- Not enough sequence numbers for materials, operations
+
+too_many_lines: rem --- or subcontracts.
+
+    message$[0]="Not enough free sequence numbers for "+module$+"."
+    message$[1]="Press <Enter> to Continue"
+    call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
+    return
+
+verify_date: rem --- Verify that Effective and Obsolete dates aren't applicable
+
+    status=0
+    if cvs(effdate$,2)<>"" then if sfe01a.opened_date$<effdate$ then let status=1
+    if cvs(obsdate$,2)<>"" then if sfe01a.opened_date$>=obsdate$ then let status=1
+    return
+
+item_break: rem --- Warehouse/item break
+
+    if workorders=0 then goto next_item
+    if l+3>l9 then gosub report_heading
+    if skip then print (printer_dev)""
+    print (printer_dev)str(workorders)," Work Order(s) generated for ",total$
+    print (printer_dev)""
+    l=l+3
+
+next_item: rem --- Initializations for new warehouse/item
+
+    workorders=0
+    nodesc=0
+    return
+
+update_operations: rem --- Copy operation lines from current bill to work order
+
+    sfe02a.firm_id$=sfe01a.firm_id$
+    sfe02a.wo_location$=sfe01a.wo_location$
+    sfe02a.wo_no$=sfe01a.wo_no$
+    sfe02a.record_id_a$="A"
+    billkey$=firm_id$+currentbill$
+    read (bmm03_dev,key=billkey$,dom=*next)
+
+next_bmm03: rem --- Read next bmm-03 Operations Detail record
+
+    bmm03_key$=key(bmm03_dev,end=update_operations_exit)
+    if pos(billkey$=bmm03_key$)<>1 then goto update_operations_exit
+    read record (bmm03_dev,key=bmm03_key$) bmm03a$
+    effdate$=bmm03a.effect_date$
+    obsdate$=bmm03a.obsolt_date$
+    gosub verify_date
+    if status then goto bmm03_loop
+
+rem --- Set Work Order Operations fields using bill operation
+
+    bmm08a.firm_id$=firm_id$
+    bmm08a.op_code$=bmm03a.op_code$
+    sfe02a.op_code$=bmm03a.op_code$
+    sfe02a.require_date$=sfe01a.eststt_date$
+    sfe02a.line_type$=bmm03a.line_type$
+
+    if sfe02a.line_type$="M" then goto operations_message
+    bmm08_key$=bmm08a.firm_id$+bmm08a.op_code$
+    find record (bmm08_dev,key=bmm08_key$,dom=bmm03_loop) bmm08a$
+    sfe02a.code_desc$=bmm08a.code_desc$
+    direct_rate=bmm08a.direct_rate,overhead_rate=direct*bmm08a.ovhd_factor
+    hours_per_piece=sfe02a.runtime_hrs
+    pieces_per_hour=sfe02a.unit_cost,setup=sfe02a.hrs_per_pce
+    if pieces_per_hour=0 then if bmm08a.pcs_per_hour<>0 then let pieces_per_hour=bmm08a.pcs_per_hour else let pieces_per_hour=1
+    sfe02a.hrs_per_pce=hours_per_piece*quantity/yield*100
+    sfe02a.pcs_per_hour=pieces_per_hour,sfe02a.direct_rate=direct_rate,sfe02a.ovhd_rate=overhead_rate,sfe02a.setup_time=setup,sfe02a.move_time=bmm08a.move_time
+    sfe02a.runtime_hrs=fnopnoset(q)*quantity
+    sfe02a.unit_cost=fnopnosetdol(q)*quantity,sfe02a.total_time=fnop(q),sfe02a.tot_std_cost=fnopdol(q)
+    sfe02a.tot_std_cost=round(sfe02a.tot_std_cost,2)
+    goto position_sfe02
+
+operations_message: rem --- Just copy message, no other fields need to be set
+
+    sfe02a.ext_comments=bmm03a.ext_comments
+
+position_sfe02: rem --- Position sfe-02 Operations Detail file
+
+    sfe02_key$=sfe02a.firm_id$+sfe02a.wo_location$+sfe02a.wo_no$+sfe02a.record_id_a$+"   "
+    read (sfe02_dev,key=sfe02_key$,dom=*next)
+
+rem --- What was the last sequence number used?
+
+    sfe02a.op_seq$="000"
+    sfe02_key$=keyp(sfe02_dev,end=update_sfe02)
+    if pos(sfe02a.firm_id$+sfe02a.wo_location$+sfe02a.wo_no$+sfe02a.record_id_a$=sfe02_key$)=1 then let sfe02a.op_seq$=sfe02_key.op_seq$
+    if sfe02a.op_seq$<>"999" then goto update_sfe02
+    module$="Operations"
+    gosub too_many_lines
+    goto update_operations_exit
+
+update_sfe02: rem --- Write new sfe-02 Operations Detail record
+
+    sfe02a.op_seq$=str(num(sfe02a.op_seq$)+1:"000")
+    write record (sfe02_dev,key=sfe02_key$) sfe02a$
+    components$=components$+currentbill$+bmm03a.op_seq$+sfe02a.op_seq$
+    if sfe02a.line_type$<>"S" goto update_material_requirements
+
+rem --- Update Shop Floor cross-references
+
+    sfe02_alt1_key$=firm_id$+fill(2)+sfe02a.op_code$+sfe02a.require_date$+sfe02a.wo_no$+sfe02a.op_seq$
+    write record (sfe02_dev,key=sfe02_alt1_key$) sfe02a$
+
+update_material_requirements: rem --- Update material requirements for this operation
+
+    y0=pos(bmm03a.bill_no$+bmm03a.op_seq$=materials$,26)
+    if y0=0 then goto bmm03_loop
+    sfe22_key$=sfe02a.firm_id$+sfe02a.wo_location$+sfe02a.wo_no$+"B"+materials$(y0+23,3)
+    extract record (sfe22_dev,key=sfe22_key$,dom=bmm03_loop) sfe22a$
+    sfe22a.op_seq$=sfe02a.op_seq$
+    write record (sfe22_dev,key=sfe22_key$) sfe22a$
+
+bmm03_loop: rem --- Loop back for next operations detail for this bill
+
+    goto next_bmm03
+
+update_operations_exit: rem --- Done with operations for this bill
+
+    return
+
+update_subcontracts: rem --- Copy subcontract lines from current bill to work order
+
+    sfe32a.firm_id$=sfe02a.firm_id$
+    sfe32a.wo_location$=sfe02a.wo_location$
+    sfe32a.wo_no$=sfe02a.wo_no$
+    sfe32a.record_id_c$="C"
+    billkey$=firm_id$+currentbill$
+    read (bmm05_dev,key=billkey$,dom=*next)
+
+next_bmm05: rem --- Read next bmm-05 Subcontract Detail record
+
+    bmm05_key$=key(bmm05_dev,end=update_subcontracts_exit)
+    if pos(billkey$=bmm05_key$)<>1 then goto update_subcontracts_exit
+    read record (bmm05_dev,key=bmm05_key$) bmm05a$
+    effdate$=bmm05a.effect_date$
+    obsdate$=bmm05a.obsolt_date$
+    gosub verify_date
+    if status then goto bmm05_loop
+    sfe32a.require_date$=sfe01a.eststt_date$
+    sfe32a.vendor_id$=bmm05a.vendor_id$
+    sfe32a.line_type$=bmm05a.line_type$
+    if bmm05a.line_type$<>"S" then goto subcontract_message
+    qty=bmm05a.qty_required
+    factor=bmm05a.alt_factor,divisor=bmm05a.divisor,sfe32a.unit_measure$=""
+    sfe32a.description$=bmm05a.ext_comments$(1,30)
+    sfe32a.op_seq$="",sfe32a.units=fnsub(q)
+    sfe32a.unit_cost=sfe32a.units*sfe32a.total_units
+    sfe32a.total_units=required*sfe32a.units,sfe32a.total_cost=required*sfe32a.unit_cost
+    sfe32a.rate=bmm05a.unit_cost
+    sfe32a.lead_time=bmm05a.lead_time
+    goto check_subcontract
+
+subcontract_message:
+
+    sfe32a.unit_measure$=""
+    sfe32a.description$=""
+    sfe32a.ext_comments$=bmm05a.ext_comments$
+
+check_subcontract: rem --- Position sfe-32 Subcontract Detail file
+
+    x=pos(bmm05a.op_seq$=components$,26)
+    if x then let sfe32a.op_seq$=components$(x+23,3)
+    read (sfe32_dev,key=sfe32a.op_seq$+$ff$,dom=*next)
+
+rem --- What was the last sequence number used?
+
+    sfe32a.subcont_seq$="000"
+    sfe32_key$=keyp(sfe32_dev,end=update_sfe32)
+    if pos(sfe32a.firm_id$+sfe32a.wo_location$+sfe32a.wo_no$+sfe32a.record_id_c$=sfe32_key$)=1 then let sfe32a.subcont_seq$=sfe32_key.subcont_seq$
+    if sfe32a.subcont_seq$<>"999" then goto update_sfe32
+    module$="Subcontracts"
+    gosub too_many_lines
+    goto update_subcontracts_exit
+
+update_sfe32: rem --- Write new sfe-32 Subcontract Detail record
+
+    sfe32a.subcont_seq$=str(num(ope32a.subcont_seq$)+1:"000")
+    write record (sfe32_dev,key=sfe32a.firm_id$+sfe32a.wo_location$+sfe32a.wo_no$+sfe32a.record_id_c$+sfe32a.subcont_seq$) sfe32a$
+
+bmm05_loop: rem --- Loop back for next subcontracts detail for this bill
+
+    goto next_bmm05
+
+update_subcontracts_exit: rem --- Done with subcontracts for this bill
+
+    return
+
+get_wonumber: rem --- Generate next Work Order number
+
+    sfs10n_key$=firm_id$+"N"
+    extract record (sfs10n_dev,key=sfs1n0_key$,dom=missing_sfs10n) sfs10n$
+    goto update_sfs10n
+missing_sfs10n:
+    sfs10n.next_wo_no=1000
+update_sfs10n:
+    sfs10n.next_wo_no=sfs10n.next_wo_no+1
+    if sfs10n.next_wo_no>9999999 then let sfs10n.next_wo_no=1000
+    wonumber$=str(sfs10n.next_wo_no:"0000000")
+    write record (sfs10_dev,key=sfs10n_key$) sfs10n$
+    return
+
+get_forecast: rem --- Retrieve forecast master and associated Work Order Type code
+
+    forecast$=mpw05_key.forecast$
+    mpm01_key$=firm_id$+forecast$,status=0
+    find record (mpm01_dev,key=mpm01_key$,dom=missing_wotype) mpm01a$
+    if cvs(mpm01a.wo_type$,2)="" then goto missing_wotype
+    wotype$=mpm01a.wo_type$
+    goto get_forecast_exit
+
+missing_wotype: rem --- Missing required Work Order Type for current forecast
+
+    status=1
+    message$[0]="No Work Order Type Assigned to Forecast "+forecast$+"."
+    message$[1]="Press <Enter> to Continue"
+    call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
+get_forecast_exit:
+    return
+
+schedule_workorder: rem --- Schedule planned work order and print detail line
+
+    dim buffer$(width)
+    buffer$(o[0]+1)=sfe01a.wo_no$
+    buffer$(o[1]+1)=description$
+    buffer$(o[3]+2)=sfe01a.wo_status$
+    buffer$(o[4]+2)=sfe01a.sched_flag$,nodesc=1
+    description$=""
+    estend$="",status$="00",msg$="",status=0,skip=1
+    if pos(sfe01a.sched_flag$="BF")=0 then goto invalid_method
+    if sfe01a.sched_flag$="F" then let estbeg$=sfe01a.eststt_date$ else let estbeg$=sfe01a.estcmp_date$
+    call pgmdir$+"sfc_aa.aon",sfe01a.wo_no$,estbeg$,estend$,sfe01a.sched_flag$,bmm08_dev,status$
+    buffer$(o[5]+1)=sfe01a.priority$
+    x=num(status$(2,1))
+    if x then let buffer$(o[6]+1)=stars$,buffer$(o[7]+1)=stars$
+    on x goto scheduled,unscheduled_operation,invalid_date,missing_file,invalid_method,unscheduled_purchase,unknown_error
+
+scheduled: rem --- Successful Schedule
+
+    sfe01a.eststt_date$=estbeg$
+    sfe01a.estcmp_date$=estend$
+    totals[1]=totals[1]+1
+    if sfe01a.sched_flag$="B" then sfe01a.eststt_date$=estend$;sfe01a.estcmp_date$=estbeg$
+    buffer$(o[6]+1)=fndate$(sfe01a.eststt_date$)
+    buffer$(o[7]+1)=fndate$(sfe01a.estcmp_date$)
+    buffer$(o[8]+2)=sfe01a.wo_category$
+    msg$="Scheduled"
+    goto detail_line
+
+unscheduled_operation: rem --- Unscheduled Date in Shop Floor Calendar
+
+    msg$="Unscheduled Date Found in Shop Floor Calendar"
+    goto detail_line
+
+invalid_date: rem --- Invalid 'From' Date
+
+    x$="Start"
+    if sfe01a.sched_flag$="B" then let x$="Completion"
+    msg$="Invalid Estimated "+x$+" Date"
+    goto detail_line
+rem --- Invalid Scheduling Method
+invalid_method:
+    buffer$(o[5]+1)=sfe01a.priority$
+    buffer$(o[6]+1)=stars$
+    buffer$(o[7]+1)=stars$
+    msg$="Manual Method/No Scheduling Performed"
+    if sfe01a.sched_flag$<>"M" then let msg$="Invalid Scheduling Method"
+    goto detail_line
+rem --- Unscheduled Date in Purchase Calendar
+unscheduled_purchase:
+    let msg$="Unscheduled Date Found In Purchase Order Calendar"
+    goto detail_line
+rem --- Undetermined error
+unknown_error:
+    let msg$="An Undetermined Error Has Occurred"
+    goto detail_line
+rem --- File Missing
+missing_file:
+    let status=1
+    let message$[0]="A necessary Shop Floor Control file is missing. Make sure the"
+    let message$[1]="Calendar and other Shop Floor files exist, then rerun this task."
+    let message$[2]="Press <Enter> to Continue"
+    call pgmdir$+"adc_stdmessage.aon",1,message$[all],2,22,-1,v$,v3
+    goto schedule_workorder_exit
+rem --- Print detail line for this work order
+detail_line:
+    if l+2>l9 then let buffer$(o[1]+1,dw)=total$
+    if l+2>l9 then gosub report_heading
+    let buffer$(o[9]+1)=msg$
+    print (printer_dev)@(o[0]),buffer$
+    let l=l+1
+    if status$(1,1)="0" then goto schedule_workorder_exit
+    print (printer_dev)@(o[9]),"Required Date Changed (Subcontract On Work Order)"
+    let l=l+1
+schedule_workorder_exit:
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

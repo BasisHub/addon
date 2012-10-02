@@ -1,0 +1,112 @@
+rem glc - Return glm-02 Record ID Information
+rem Program glc_suminfo v8.0.0 15Apr2006 (glc_fa)
+rem Created by adx_progconv.bbx v1.0.0 (04/15/2006 12:44:15)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- GLM08_DEV   : glm-08 Channel (Input)
+rem --- GLM18_DEV   : glm-18 Channel (Input)
+rem --- N0$         : Firm ID (Input)
+rem --- SELECTION$  : Record ID 0-5 Std/A-Z Budgets (Input)
+rem --- FLAGS$      : A=Amount/U=Units (Input)
+rem --- DESCRIPTION$: 30 Character Description (Returned)
+rem --- TITLE$      : 15 Character Column Title (Returned)
+rem --- STATUS      : 0=Found/1=Not Found (Returned)
+
+    seterr std_error
+    setesc std_exit
+    enter glm08_dev,glm18_dev,firm_id$,selection$,flag$,description$,title$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve record templates
+
+    files=2,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="glm-08A:GLM_BUDGETMASTER"
+    ids$[2]="glm-18A:GLM_RECORDTYPES"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension string templates
+
+    dim glm08a$:templates$[1],glm18a$:templates$[2]
+
+rem --- Initializations
+
+    status=1
+    nf$="(Not Found)"
+    ab$="AB"
+    description$=nf$
+    title$=nf$
+
+rem --- Edit Arguments
+
+    if pos(flag$="AU")=0 goto std_exit
+
+rem --- Standard glm-02 Record?
+
+    index=num(selection$,err=budget)
+
+rem --- Retrieve standard glm-02 record description
+
+    r$=ab$(mod(index,2)+1,1)
+    glm18_key$=selection$+r$+flag$
+    find record (glm18_dev,key=glm18_key$,dom=done)glm18a$
+    description$=cvs(glm18a.description$,2)
+    title$=cvs(glm18a.rev_title$,2)
+    status=0
+    goto std_exit
+
+budget: rem --- Retrieve budget revision record
+
+    glm08_key$=firm_id$+selection$+flag$
+    find record (glm08_dev,key=glm08_key$,dom=done)glm08a$
+    description$=cvs(glm08a.description$,2)
+    title$=cvs(glm08a.rev_title$,2)
+    status=0
+
+done: rem --- All done
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

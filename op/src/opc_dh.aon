@@ -1,0 +1,894 @@
+rem --- Order/Invoice Entry (Lot/Serial Number Input)
+rem --- Program opc_dh v8.0.0 10Dec2007 (opc_dh)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/10/2007 10:34:30)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+
+            setesc std_error
+            seterr std_error
+            enter a0$,w0$,d2$,y0$,s$,w[all],q[all],iv_files[all],o[all],l,l1,l9,o1
+
+rem --- Retrieve the program path
+
+            pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+            sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+            dim sysinfo$:sysinfo_template$
+            sysinfo$=stbl("+sysinfo",err=*next)
+            milestone=num(stbl("+milestone",err=*next),err=*next)
+            firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+            files=4,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+            files$[2]="ivm-07",ids$[2]="IVM_LSMASTER"
+            files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
+            files$[4]="ope-21",ids$[4]="OPE_ORDLSDET"
+            call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit
+            ars01a_dev=channels[1]
+            ivm07_dev=channels[2]
+            ivs01a_dev=channels[3]
+            ope21_dev=channels[4]
+
+rem --- Dimension string templates
+
+            dim ars01a$:templates$[1],ivm07a$:templates$[2],ivs01a$:templates$[3],
+:           ope21a$:templates$[4]
+
+rem --- Assign form input values to local variables
+
+            value_01$=Option!.getOptionData("form_value_01")
+
+rem --- Retrieve parameter records
+
+            ars01a_key$=firm_id$+"AR00"
+            find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+            ivs01a_key$=firm_id$+"IV00"
+            find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Open/Lock Files
+
+            files=4
+            dim files$[files],options$[files],channels[files]
+            files$[1]="sys-01"
+            files$[2]="ope-21",files$[3]="ope-21",files$[4]="ivm-07"
+            options$[1]="P"
+            options$[2]="P",options$[3]="",options$[4]="P"; rem escape does the same file twice in persist mode work?
+            call pgmdir$+"adc_fileopen.aon",1,1,files,files$[all],options$[all],channels[all],batch,status
+            if status then goto std_exit
+            sys01_dev=channels[1]
+            ope21_dev=channels[2],ope21_dev2=channels[3],ivm07_dev=channels[4]
+
+rem --- Determine interface
+
+            call pgmdir$+"syc_dg.bbx",sysgui_dev,event$,event_len,sysfin$,sysfin,ui$,status
+            if status then goto std_exit
+
+rem --- Parameters
+
+            dim i[6],t$:stbl("+TASK_TMPL")
+            t$=stbl("+TASK")
+            firm_id$=t.f0$(16,2),n2$="OP"
+            find record (sys01_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+            for i=0 to 6
+                i[i]=num(i2$(i*2+1,2))
+            next i
+            m3=len(m3$)
+            bbj=fnglobal("+BBJ",0)
+
+rem --- Initialize Data
+
+            precision i[2]
+            turn_off_grid_hilite=57
+            goto_col=47,goto_row=48,draw_cell=54,grid_info_block=20,get_visible_rows=43,get_top_row=46,get_sel_row=45,set_multi_cells=87,set_rows=67,set_editable=108; rem grid sendmsg functions
+            dim h0$(44),h1$(95),h[12],t0$(23),t1$(20),t[2],msg$[1]
+            dim iv_refs$[11],iv_refs[5],iv_info$[3],iv_info[0],iv_params$[4],iv_params[3]
+            iv_info$[0]=firm_id$
+            iv_params$[0]=sysinfo.system_date$,iv_params$[1]=sysinfo.user_id$,iv_params$[2]=i2$,iv_params$[3]=i3$
+            iv_params$[4]=i4$
+            iv_params[0]=i[0],iv_params[1]=i[4],iv_params[2]=i[5],iv_params[3]=i[6]
+            t0$(1)=w0$(1,20)
+            l9=19,p9$=i3$(17,1),ttl_lots=0,o1=0
+            if p9$="S" then let p8$="Serial Number" else if p9$="L" then let p8$="Lot Number"
+            grid_id=200
+            max_row=999,max_col=4; rem must match resource
+            dim col2print[max_col]
+            col2print[0]=4
+            col2print[1]=9,col2print[2]=q[4],col2print[3]=q[1],col2print[4]=77-m3
+            dim key2row[max_row],row2key$[max_row]
+            for i=0 to max_row; let key2row[i]=-1; next i
+            seq_inc=1
+            call pgmdir$+"syc_rg.bbx::save",globalvars$,ignore_status
+            more=1
+            cntr=0
+            islinecorrect=0
+rem --- Display GUI resource
+
+            if ui$="W"
+                prior_context=sysfin.current_context
+                dim resparams$[20],resparams[20]
+                resparams$[0]=pgm(-2)
+                resparams$[6]="Enter "+p8$+"s"
+                call pgmdir$+"syc_ra.bbx","O",resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+                if status then goto std_exit
+                temp=0
+            else
+                temp=1
+            endif
+
+rem Setup_Grid: rem --- Setup Grid
+
+            while more
+                if temp=0
+                    dim grid$:tmpl(sysgui_dev,ind=1)
+                    grid$=sendmsg(sysgui_dev,grid_id,grid_info_block,0,"")
+                    void$=sendmsg(sysgui_dev,grid_id,turn_off_grid_hilite,0,"")
+                    visible_rows=dec($00$+sendmsg(sysgui_dev,grid_id,get_visible_rows,0,""))
+                    if bbj then let void$=sendmsg(sysgui_dev,grid_id,set_editable,1,"")
+                    break
+                    endif
+                endif
+Back_Ground: rem --- Background
+
+                if l>l1+2 then print @(0,l9+1),'ce',@(0,l1),'ld','ld'; let l=l-2
+                  continue
+                else
+                 row=l-1
+                 print 'sb',@(72,row),"Cost",'sf',
+                 break
+            wend
+Lists_all: 
+
+                gosub list_all; rem no guarantee in chui that ttl_lots would be set correctly here, so the loop below is needed
+                ttl_lots=0
+                read (ope21_dev,key=w0$(1,20),dom=*next)
+            while more
+                ope21a_key$=key(ope21_dev,end=*break)
+                if ope21a.LOTSER_No$<>w0$(1,20) then break
+                read record (ope21_dev) ope21a$
+                ttl_lots=ttl_lots+t[0]
+            wend
+Done_start:
+                if ttl_lots=w[2] then goto start_done
+
+overflow: rem --- Overflow
+
+                if ui$<>"W" then 
+                    if l>l9 then print @(0,20),'ce',@(0,l1+2),'ld'; let l=l-1
+                 endif  
+Escape_call: rem --- escape call pgmdir$+"syc_wc.bbx", 1, 0, 80, 0, 0, 20, 0
+
+                if v3=4 then goto start_done
+
+rem --- Next Key
+
+                ope21a_key$=key(ope21_dev,end=sequence)
+                if ope21a.LOTSER_No$=w0$(1,20) or ui$<>"W" then
+                    read record (ope21_dev) ope21a$
+                    cntr=1
+                endif
+
+sequence: rem --- Seq
+        if cntr=0
+            if ui$<>"W" or next_grid_row=0 then let seq=num(ive21a.SEQUENCE_NO$)+seq_inc else let seq=min(num(row2key$[next_grid_row-1])+seq_inc,max_row)
+While more
+seq_enter:
+
+                v0$="Z"
+                v1$="KCER",v2$=str(seq:"000"),v3$="",v0=3,v1=4,v2=l,i0=0
+                v4$="Enter A Serialized/Lotted Sequence Number (<Enter>=Next/<F4>=End)"
+                control_id=grid_id,grid_col=i0,grid_row=key2row[num(v2$)],vaction$="g"
+                if grid_row=-1 then let grid_row=next_grid_row
+
+                if (ui$="W" and grid_row=next_grid_row) or (ui$<>"W" and v3=4) then let row=grid_row,junk=fnclear_col(grid_col)
+                if ui$="W" and grid_row<>next_grid_row junk=fnprint_col(grid_col); rem restore orignal value of key if not a new line.  new value will be printed only if this is a new key.
+                if wants_to_edit_cell and vnotice.row<>next_grid_row goto goto_grid_cell; rem if this is a new record and the user click on a field in the new row, ignore it.
+                on v3 goto Col_print,seq_enter,seq_enter,seq_enter,start_done,start_done,start_done,seq_enter,seq_enter
+Col_print:
+
+            if v<=0 or num(v$)=0 then
+                continue
+            endif
+            ive21a.SEQUENCE_NO$=v$
+            void=fnprint_col(0)
+            find record (ope21_dev,key=t0$,dom=setup) ope21a$
+            find record (ivm07_dev,key=firm_id$+w0$(31,2)+w0$(33,20)+ope21a.LOTSER_NO$,dom=*next) ivm07a$
+            break
+wend
+endif
+
+rem ................................... main loop
+While more
+display_rec: rem --- Display record
+                prev_lot$=ope21a.LOTSER_NO$
+                prev_ord_qty=t[0],h[1]=h[1]-t[0]
+                if ui$="W" and grid_row=next_grid_row then gosub clear_grid_row
+                gosub display_fields
+                if ui$<>"W" then
+                    islinecorrect=1
+                    break
+                else
+                    islinecorrect=0
+                    break
+                endif
+
+setup: rem --- Setup
+
+                dim t1$(20),t[2]
+                if p9$="S" then let t[0]=1,t[1]=1 else let t[0]=w[2]-ttl_lots,t[1]=w[2]-ttl_lots
+                if p9$="S" and w[4]<0 then let t[0]=-1,t[1]=-1
+                prev_lot$=""
+                prev_ord_qty=0,new_detail=1
+                key2row[num(t0$(21,3))]=next_grid_row
+                row2key$[next_grid_row]=ive21a.SEQUENCE_NO$
+                junk=fnprint_col(grid_col)
+                islinecorrect=0
+                break
+
+while more
+lot: rem --- Enter Lot/Serial Number......... first sub loop
+
+                v0$="S"
+                v1$="CE",v2$=ope21a.FIRM_ID$(1,i[3]),v3$="",v4$="Enter a "+p8$,v0=i[3],v1=9,v2=l,i0=1
+                control_id=grid_id
+                grid_col=i0,grid_row=key2row[num(ive21a.SEQUENCE_NO$)],vaction$="g",junk=fntbfkey("+TB_FIND_ID",3)
+                if y0$(27,1)<>"Y" and d2$(20,1)="Y" then let v4$="Enter a valid "+p8$+" (<F3>=Lookup)"
+
+                on v3 goto Display,lot,lot_done,lu_lot,lot_done,Display,lot_done
+
+Display:
+                if (y0$(27,1)="Y" or d2$(20,1)<>"Y") then
+                    if pos(" "<>v$)=0 then
+                        continue
+                    else
+                        let ope21a.LOTSER_NO$=v$,t[2]=w[0]
+                        break
+                    endif
+                else
+                    goto lot_find
+                endif
+
+lu_lot: rem --- Lookup
+
+                    v8$="Z"
+                    ivm07a.LOTSER_NO$=firm_id$+w0$(31,2)+w0$(33,20),h1$(1)=""
+                    dim h[12]
+                    if w[2]<0 then if p9$="S" then let v8$="C" else let v8$=""
+                    call pgmdir$+"syc_ll.bbx",v8$,h0$,h1$,h[all]
+                    if pos(" "<>h0$)=0 then
+                        rem go to first sub loop
+                        continue
+                    endif
+
+                    if ui$<>"W" then print @(0,l+1),'ce',
+                    goto lot_check_qty
+
+lot_find: rem --- Find The Lots
+
+                    ope21a.LOTSER_NO$=v$
+                    find record (ivm07_dev,key=firm_id$+w0$(31,2)+w0$(33,20)+ope21a.LOTSER_NO$,dom=lot) ivm07a$
+                    if prev_lot$=ope21a.LOTSER_NO$ then let h[1]=h[1]-prev_ord_qty
+                    if t[1]<0 and p9$="L" then goto lot_set_cost
+                    if t[1]>=0 or h[0]-h[1]<=0 then goto lot_check_qty
+                    msg$[0]="Warning!! Serial # is already in inventory (<Enter>=Retry)"
+                    v1=0,v2=22
+                    call pgmdir$+"adc_stdmessage.aon",2,msg$[all],0,v1,v2,ignore$,ignore
+                    continue
+
+lot_check_qty: rem --- Check quantity available
+
+                     if t[1]<0 or h[0]-h[1]>0 then goto Check_quantity
+
+Message:
+                    msg$[0]="Quantity Not Available (<Enter>=Continue/<F4>=Back to "+p8$+")",v1=0,v2=22
+                    call pgmdir$+"adc_stdmessage.aon",2,msg$[all],0,v1,v2,ignore$,v3
+                    on v3 goto Check_quantity,Message,Message,Message,lot,Message
+
+Check_quantity:
+                    ope21a.LOTSER_NO$=ivm07a.LOTSER_NO$(25,i[3])
+                    if h[0]-h[1]<t[0] then let t[0]=h[0]-h[1],t[1]=t[0]
+
+lot_set_cost: rem --- Set cost
+
+                     t[2]=h[3]
+
+rem ................................first sub loop ends
+wend
+
+lot_display: rem --- Display
+
+                    gosub display_fields
+
+lot_done:
+                    break
+
+qty_ord: rem --- Order Qty
+
+                    if p9$="S" then
+                        break
+                    endif
+
+Enter_qty:
+
+                    v0$="N"
+                    v1$="C",v2$=str(t[0]),v3$=m2$,v4$="Enter Qty Ordered On This Line",v0=7,v1=q[4],v2=l
+                    control_id=grid_id
+                    grid_col=i0,grid_row=key2row[num(ope21a.SEQUENCE_NO$)],vaction$="g"
+                    rem gosub std_input
+                    on v3 goto Check_value,Control_flow,Enter_qty,Control_flow,Check_value,Control_flow,Enter_qty
+
+Check_value:
+
+                    t[0]=v
+                    if y0$(27,1)<>"Y" and d2$(20,1)="Y" and t[0]<0 then
+                        t[1]=t[0]; let void=fnprint_col(3)
+                        i0=3
+                        break
+                    endif
+                    if y0$(27,1)="Y" or d2$(20,1)<>"Y" or t[0]<=h[0]-h[1] then
+                        t[1]=t[0]; let void=fnprint_col(3)
+                        i0=3
+                        break
+                    endif
+
+Message1:
+
+                    msg$[0]="Quantity Not Available (<Enter>=Continue,<F4>=Back to Ord Qty)"
+                    v1=0,v2=22
+                    call pgmdir$+"adc_stdmessage.aon",2,msg$[all],0,v1,v2,ignore$,v3
+                    on v3 goto Print1,Message1,Message1,Message1,qty_ord,Message1
+
+Print1:
+
+                    t[1]=t[0]; let void=fnprint_col(3)
+                    i0=3
+
+Control_flow:
+                     break
+
+qty_ship: rem --- Ship Qty
+
+                    if p9$="S" then
+                        break
+                    endif
+
+shipped_qty:
+
+                    v0$="N"
+                    v1$="C",v2$=str(t[1]),v3$=m2$,v4$="Enter Qty Shipped On This Line",v0=7,v1=q[1],v2=l
+                    control_id=grid_id
+                    grid_col=i0,grid_row=key2row[num(ope21a.SEQUENCE_NO$)],vaction$="g"
+                    on v3 goto check_value1,flow_control,shipped_qty,flow_control,check_value1,flow_control,shipped_qty
+
+check_value1:
+
+                    t[1]=v
+                    if y0$(27,1)<>"Y" and d2$(20,1)="Y" and t[1]<0 then
+                        break
+                    endif
+                    if y0$(27,1)="Y" or d2$(20,1)<>"Y" or t[1]<=h[0]-h[1] then
+                        break
+                    endif
+
+message2:
+
+                    msg$[0]="Quantity Not Available (<Enter>=Continue,<F4>=Back to Ord Shiped)"
+                    v1=0,v2=22
+                    call pgmdir$+"adc_stdmessage.aon",2,msg$[all],0,v1,v2,ignore$,v3
+                    on v3 goto flow_control,message2,message2,message2,qty_ship,message2
+
+
+wend
+rem ...................................
+
+
+rem the value of islinecorrect becomes 1 only when the value ui$ is not equal to w in display_rec section
+if islinecorrect=0
+flow_control: rem --- Flow Control
+
+                if debug then print (debug_dev)"Starting flow control with i0=",str(i0),", v3=",str(v3)
+                grid_data$=fnglobal$(grid_stbl$,"")
+                if wants_to_edit_cell and vnotice.row%<>grid_row then let wants_to_edit_cell=0,needs_to_edit_cell=1; goto is_line_correct
+                switch v3
+                case 0
+                case 1
+                case 3; let i0=i0+1; break
+                case 2; let i0=max(0,i0-1); break; rem allow backup into seq
+                case 4
+                case 5; exitto is_line_correct
+                case 6
+                if grid_row=next_grid_row then let row=grid_row; gosub clear_grid_row
+                new_detail=0
+                exitto start_done
+                case default; exitto done_v3
+                swend
+                if debug then print (debug_dev)"Going to field",i0
+
+next_field:
+                on i0 goto sequence,lot,qty_ord,qty_ship,is_line_correct
+endif
+
+is_line_correct: rem --- Correct?
+
+                if validate=0 then let validate=1,v3=0,old_control_id=0,i0=i0_nonkey1
+                    goto next_field
+                endif
+                validate=0
+
+                 if ui$<>"W" then
+Value_keyboard:
+                v0$=""
+                v2$="",v3$="",v0=1,v1=78,v2=l,k9$=t0$,v4$="<Enter>=OK, <D>=Delete",i0=i0_done
+                on v3 goto line_correct,Value_keyboard,flow_control,Value_keyboard,line_correct
+
+line_correct:
+                if v$<>"" and v$<>"D" then goto is_line_correct
+                if v$="D" then goto delete_line
+            endif
+
+update_line: rem --- Write
+
+            if prev_lot$<>ope21a.LOTSER_NO$ and prev_ord_qty<>t[0] then
+                if prev_lot$<>"" then
+                    let commit_lot$=prev_lot$,commit_qty=prev_ord_qty,increasing=0
+                    gosub commit
+                endif
+                commit_lot$=ope21a.LOTSER_NO$
+                commit_qty=t[0],increasing=1
+                gosub commit
+                prev_lot$=ope21a.LOTSER_NO$
+                prev_ord_qty=t[0]
+            endif
+
+record_write:
+                l=l+1
+                if ui$<>"W" then print @(0,21),'cl',@(0,22),'cl',
+                write record (ope21_dev,key=t0$) ope21a$
+                if new_detail and ui$="W" then gosub insert_new_key
+                if needs_to_edit_cell then goto goto_grid_cell
+                if v3=4 then goto start_done
+                goto overflow
+
+delete_line: rem --- Delete
+
+                if ui$="W" then
+                    gosub delete_a_key; if dont_delete then goto delete_record
+                    if grid_row<>-1 and delete_row=next_grid_row then goto print_lines
+                endif
+
+remove_line: remove (ope21_dev,key=t0$,dom=*next)
+
+print_lines:
+                if ui$<>"W" then print @(0,l),'cl',@(0,21),'cl',@(0,22),'cl',
+                if prev_lot$="" then goto over_flow
+                commit_lot$=prev_lot$
+                commit_qty=prev_ord_qty,increasing=0
+                gosub commit
+
+over_flow:
+                goto overflow
+
+rem --- Start ITAIC
+start_done:
+                i0=i0_done
+
+done: rem --- Options
+
+                if ui$<>"W" then print @(0,l),'ce',
+                if ttl_lots<>w[4] then
+                    msg$[0]="WARNING: "+str(ttl_lots)+" "+p8$+"'s Assigned."
+                    msg$[1]="Total Ordered Is "+str(w[4])+" (<Enter>=Continue)"
+                    call pgmdir$+"adc_stdmessage.aon",2,msg$[all],1,-1,-1,ignore$,ignore
+                endif
+
+                v0$="S"
+                v1$="C",v2$="Y",v3$="",v4$="Is the "+p8$+" information correct (Y/N/Review/List/Delete)?",v0=6,v1=0,v2=22,control_id=grid_id,grid_col=i0-i0_done+1,grid_row=-1,vaction$="g"
+
+                if wants_to_edit_cell then goto goto_grid_cell
+
+done_v3:
+
+                on v3 goto done_test,done,done,done,check_and_back,check_and_back,check_and_back,delete_line,insert_record
+
+done_test:
+
+                if v$="R" or v$="REVIEW" then goto review
+                if v$="L" or v$="LIST" then goto do_list
+                if v$="DELETE" then goto delete_record
+                if v$="" then let v$="Y"
+                on pos(v$="YN") goto done,check_and_back,overflow
+
+insert_record:
+                goto sequence
+
+check_and_back: rem --- OK Here
+
+                if ui$<>"W" then print @(72,row),'cl',@(0,l1+2),'ce',; let l=l1+2
+                l=l1+2
+                o1=1,k9$=w0$(1,20),l9=18,v$="",v3=0,ttl_ship=0,ttl_cost=0
+
+rem --- Calc Unit Cost/Qty Shipped
+
+    read (ope21_dev,key=w0$(1,20),dom=*next)
+    while more
+        ope21a_key$=key(ope21_dev,end=break_record)
+        if ope21a.LOTSER_NO$<>w0$(1,20) then
+            break
+        endif
+        read record (ope21_dev) ope21a$
+        ttl_ship=ttl_ship+t[1]
+        ttl_cost=ttl_cost+t[1]*t[2]
+    wend
+
+break_record:
+                if ttl_ship<>w[4] then let o1=2,i0=10,l=l1
+                o[0]=w[2]
+                o[1]=w[6],o[2]=w[7],o[6]=w[0]*w[4],w[4]=ttl_ship
+                if w[4] then let w[0]=ttl_cost/w[4]
+                if w[4]>w[2] then let w[2]=w[4]
+                goto std_exit
+
+delete_record: rem --- Delete All Assignments Here
+
+                if ui$="W" then
+                    call pgmdir$+"adc_yesno.aon",0,"Delete this record and all detail lines",0,vv$,v3
+                    if v3 or vv$="NO" then goto start_done
+                    if vv$<>"YES" then goto delete_record
+                endif
+
+                read (ope21_dev,key=w0$(1,20),dom=*next)
+
+    while more
+        ope21a_key$=key(ope21_dev,end=break_records1)
+        if ope21a.LOTSER_NO$<>w0$(1,20) then
+            break
+        endif
+        read record (ope21_dev) ope21a$
+        commit_lot$=ope21a.LOTSER_NO$
+        commit_qty=t[0],increasing=0
+        gosub commit
+        remove (ope21_dev,key=k$)
+    wend
+
+break_records1:
+                    void$=stbl("!CLEAR",grid_stbl$,err=*next)
+                    goto check_and_back
+
+do_list: rem --- List
+
+                    gosub list_all
+                    goto start_done
+
+review: rem --- Review
+
+                    read (ope21_dev,key=w0$(1,20),dom=*next)
+                    gosub clear_screen
+                    v3=0
+                    goto overflow
+
+display_fields: rem --- Display Fields
+
+rem --- escape needed? if t0$<=k9$ and ui$="W" then gosub clear_screen
+
+                    void=fnprint_col(0)
+                    void=fnprint_col(1),void=fnprint_col(4)
+
+rem --- escape if p9$="L" then  let void = fnprint_col( 2 ), void = fnprint_col( 3 )
+
+                    void=fnprint_col(2)
+                    void=fnprint_col(3)
+                    k9$=t0$
+                    return
+
+list_all: rem --- List
+
+                    if ui$="W" then print (sysgui_dev)'title'(2001,w0$(33)),
+                    gosub clear_screen
+                    nothing_found=1
+                    next_grid_row=0
+                    read (ope21_dev,key=w0$(1,20),dom=*next)
+
+    while more
+        ope21a_key$=key(ope21_dev,end=return_back)
+        if ope21a.LOTSER_NO$<>w0$(1,20) then
+            break
+        endif
+        key2row[num(ope21a_key.SEQUENCE_NO$)]=next_grid_row
+        row2key$[next_grid_row]=ope21a.SEQUENCE_NO$
+        read record (ope21_dev) ope21a$
+        if ui$<>"W" or l>l9 then
+            v0$="S"
+            v1$="CE",v2$="",v3$="",v4$="Press <Enter> To Continue",v0=1,v1=0,v2=22
+            if v3=4 then 
+                break
+            endif
+            gosub clear_screen
+        endif
+
+fields_display:
+        gosub display_fields
+        l=l+1
+        nothing_found=0
+        next_grid_row=min(next_grid_row+1,max_row)
+    wend
+
+return_back:
+    return
+
+commit: rem --- Commit / Decommit / Total
+
+    if y0$(27,1)<>"Y" or d2$(20,1)="Y" or a0$(21,1)<>"P" 
+        iv_info$[1]=w0$(31,2)
+        iv_info$[2]=w0$(33,20),iv_info$[3]="",iv_refs[0]=commit_qty
+        if increasing then let iv_action$="UC" else let iv_action$="OE"
+        call pgmdir$+"ivc_ua.bbx",iv_action$,iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Undo previous warehouse action
+        iv_info$[3]=commit_lot$
+        if increasing then let iv_action$="OE" else let iv_action$="UC"
+        call pgmdir$+"ivc_ua.bbx",iv_action$,iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Do warehouse and serial/lot action
+    endif
+
+    if increasing then let ttl_lots=ttl_lots+commit_qty else let ttl_lots=ttl_lots-commit_qty
+    return
+
+delete_a_key: rem --- Delete a key from key2row, row2key, grid_data$
+
+    dont_delete=1
+    delete_row=dec($00$+sendmsg(sysgui_dev,grid_id,get_sel_row,0,""))
+    while more
+        if row2key$[delete_row]="" then 
+            break
+        endif
+        call pgmdir$+"adc_yesno.aon",0,"Delete detail line "+row2key$[delete_row],0,v$,v3
+        if v3 or v$<>"YES" then
+            break
+        endif
+        dont_delete=0
+        ope21a.SEQUENCE_NO$=row2key$[delete_row],row2key$[delete_row]="",key2row[num(ope21a.SEQUENCE_NO$)]=-1,grid_row=-1,grid_data$=fnglobal$(grid_stbl$,"")
+        if delete_row=next_grid_row then
+            let row=delete_row
+            gosub clear_grid_row
+            break
+        endif
+        for ix=delete_row to next_grid_row
+            row2key$[ix]=row2key$[ix+1]
+            key2row[num(row2key$[ix])]=ix
+            for iy=0 to max_col
+                grid_data$=fnhash_ins$(grid_data$,str(iy)+":"+str(ix),fnhash_ext$(grid_data$,str(iy)+":"+str(ix+1)))
+            next iy
+        next ix
+        next_grid_row=next_grid_row-1
+        junk$=stbl(grid_stbl$,grid_data$)
+        junk$=sendmsg(sysgui_dev,grid_id,set_rows,min(next_grid_row+20,max_row),$$)
+        gosub redraw_grid
+        break
+    wend
+
+    return
+
+insert_new_key: rem --- Insert new key into key2row, row2key arrays
+
+rem --- and update grid_data$
+
+    new_detail=0
+    hold_key$=ope21a.SEQUENCE_NO$,ix=next_grid_row,grid_data$=fnglobal$(grid_stbl$,"")
+
+    while more
+        if !ix and row2key$[ix-1]<=hold_key$ then
+
+rem --- Insert here (we're at the top or row above is less)
+
+            row2key$[ix]=hold_key$
+            key2row[num(hold_key$)]=ix
+            for iy=0 to max_col
+                grid_data$=fnhash_ins$(grid_data$,str(iy)+":"+str(ix),fnset_cell$(iy))
+            next iy
+            break
+        endif
+move_row: rem --- Move row above down
+
+        row2key$[ix]=row2key$[ix-1]
+        key2row[num(row2key$[ix])]=ix
+        for iy=0 to max_col
+            grid_data$=fnhash_ins$(grid_data$,str(iy)+":"+str(ix),fnhash_ext$(grid_data$,str(iy)+":"+str(ix-1)))
+        next iy
+        ix=ix-1
+    wend
+
+    next_grid_row=min(next_grid_row+1,max_row)
+    grid_row=-1,void$=stbl(grid_stbl$,grid_data$)
+    gosub redraw_grid
+    void$=sendmsg(sysgui_dev,grid_id,set_rows,min(next_grid_row+20,max_row),$$)
+    return
+
+rem --- Clear Lower Screen
+clear_screen:
+    if ui$<>"W" then
+        for i=l1+2 to l9+1
+            print @(0,i),'cl',
+        next i
+        l=l1+2
+        return
+    endif
+clear_grid: rem --- gui - clear grid
+
+    void$=sendmsg(sysgui_dev,grid_id,set_multi_cells,0,fill(max_col*max_row,$0a$),my_context)
+    grid_data$=stbl(grid_stbl$,"")
+
+    return
+
+rem --- Clear a grid row
+
+clear_grid_row:
+
+    for col=0 to max_col
+        let void=fnclear_col(col)
+    next col
+    return
+
+rem --- Goto grid cell
+
+goto_grid_cell:
+if debug then print (debug_dev)"In goto_grid_cell: (",vnotice.col%,vnotice.row%,")"
+    let wants_to_edit_cell=0,needs_to_edit_cell=0,i0=vnotice.col%,hold_k$=row2key$[vnotice.row%],new_detail=0
+    if hold_k$<>""
+        if hold_k$=ope21a.SEQUENCE_NO$ then
+            continue
+        endif
+        if debug then print (debug_dev)"Going to grid cell",i0,", row",vnotice.row%,", key = ",hold_k$
+        find record (ope21_dev2,key=ope21a.LOTSER_NO$+hold_k$,dom=ggc_new_key) ope21a$
+        find record (ivm07_dev,key=firm_id$+w0$(31,2)+w0$(33,20)+ope21a.LOTSER_NO$,dom=ggc_new_key) ivm07a$
+        let prev_lot$=ope21a.LOTSER_NO$,prev_ord_qty=t[0],h[1]=h[1]-t[0]
+        gosub display_fields
+        continue
+    endif
+
+ggc_new_key:
+    let ope21a.SEQUENCE_NO$=hold_key$,i0=0,new_detail=1
+
+ggc_done: 
+goto next_field
+
+rem .............................
+
+redraw_grid: rem " --- Redraw grid
+    let top_row=dec($00$+sendmsg(sysgui_dev,grid_id,get_top_row,0,""))
+    let bot_row=min(max_row,top_row+visible_rows-1)
+    if top_row<=bot_row then
+        for row=top_row to bot_row
+            for col=0 to max_col
+                let grid.col%=col,grid.row%=row
+                let grid.buf$=fnhash_ext$(grid_data$,str(col)+":"+str(row))
+                if fncol2type$(col)="Y" then if grid.buf$="Y" or grid.buf$="YES" then let grid.style%=4,grid.buf$="" else if grid.buf$="N" or grid.buf$="NO" then let grid.style%=8,grid.buf$=""
+                let void$=sendmsg(sysgui_dev,grid_id,draw_cell,0,grid$,my_context)
+            next col
+        next row
+    endif
+redraw_grid_done: return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+   exit
+rem #endinclude std_exit.src
+
+    end

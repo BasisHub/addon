@@ -1,0 +1,236 @@
+rem glu - 13 Period Financial Report Printing (Update Overlay)
+rem Program glu_13period v8.0.0 04Jun2006 (glu_eb)
+rem Created by adx_progconv.bbx v1.0.3 (06/04/2006 06:37:25)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- This program compiles the data necessary to produce the
+rem --- reports from the Summary Activity (glm-02) file. This 
+rem --- program is only run if the user has chosen NOT to reprint
+rem --- existing reports. The next overlay is glr_headings, which
+rem --- assembles the custom headings for the financial reports.
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    records$=""
+    currec$=""
+    prirec$=""
+    last$=""
+    more=1
+    moredetail=1
+    year=0
+    year=num(begyear$,err=*next)
+    closed=1
+    notclosed=0
+    status=gls01a.gl_yr_closed$="Y"
+    curr_year=num(gls01a.current_year$)
+    switch status
+           case notclosed
+                if year=curr_year records$="40"
+                if year=curr_year-1 records$="02"
+                if year=curr_year-2 records$="2 "
+           break
+           case closed
+                if year=curr_year records$="02"
+                if year=curr_year-1 records$="2 "
+                if year=curr_year+1 records$="40"
+           break
+    swend
+    if records$<>""
+       currec$=records$(1,1)
+       prirec$=records$(2,1)
+    endif
+
+rem --- Start progress meter
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,glm01_dev,1,0,status
+
+rem --- Clear out gle-08
+
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",gle08_dev
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",gle09_dev
+
+rem --- Position GL Account Master (glm-01)
+
+    k$=""
+    if firm_id$<>"99" k$=firm_id$
+    read (glm01_dev,key="",dom=*next)
+
+rem --- Read next GL Account Master (glm-01) record
+
+    while more
+          glm01_key$=key(glm01_dev,end=*break)
+          if firm_id$<>"99"
+:            if pos(firm_id$=glm01_key$)<>1 break
+          read record (glm01_dev) glm01a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+
+          rem --- Retrieve prior year Summary Activity (glm-02) record
+
+          dim ta[mp*3],tu[mp*3]
+          amount=0
+          units=0
+          number=1
+          record_id$=prirec$
+          gosub summary_activity
+
+          rem --- Accumulate balances and fill prior year buckets
+
+          for x=0 to period-1
+              amount=amount+a[x]
+              units=units+u[x]
+          next x
+          for x=period to num(gls01a.total_pers$)
+              ta[number]=a[x]
+              tu[number]=u[x]
+              number=number+1
+          next x
+
+          rem --- Retrieve current year Summary Activity (glm-02) record
+
+          record_id$=currec$
+          gosub summary_activity
+
+          rem --- Fill current year buckets
+
+          for x=1 to period
+              ta[number]=a[x]
+              tu[number]=u[x]
+              number=number+1
+          next x
+
+          rem --- Set normal sign based on account type
+
+          sign=1
+          if pos(glm01a.gl_acct_type$="LCI") sign=-1
+
+          rem --- Update 13 Period Financial Report Amount (gle-08) records
+
+          if firm_id$="99" read (glm21_dev,key=glm01_key$,dom=*next) 
+:                     else read (glm11_dev,key=glm01_key$,dom=*next)
+          while moredetail
+                if firm_id$="99" k$=key(glm21_dev,end=*break) 
+:                           else k$=key(glm11_dev,end=*break)
+                if pos(glm01_key$=k$)<>1 break
+                if firm_id$="99" read record (glm21_dev,key=k$) glm21a$
+:                           else read record (glm11_dev,key=k$) glm11a$
+                if firm_id$="99" x$=glm21a.gl_rpt_no$+glm21a.gl_rpt_line$
+:                           else x$=glm11a.gl_rpt_no$+glm11a.gl_rpt_line$
+                glreport$=x$(1,2)
+                line$=x$(3,4)
+                if glreport$="00" continue
+                if cvs(glreport$,2)="" continue
+                if line$="0000" continue
+                if cvs(line$,2)="" continue
+
+                rem --- Update 13 Period Financial Report Amount (gle-08) 
+                rem --- record for this report
+
+                gosub report_amounts
+
+                gle08a$=field(gle08a$)
+                write record (gle08_dev,key=gle08_key$) gle08a$
+
+                rem --- End of report update loop
+
+          wend
+
+          rem --- End of acccount master loop
+
+    wend
+
+rem --- Run report headings overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run pgmdir$+"glr_headings.aon",err=std_exit
+
+summary_activity: rem --- Retrieve either current or prior year Summary Activity (glm-02) record
+
+    dim a[mp],u[mp]
+    glm02a.firm_id$=glm01a.firm_id$
+    glm02a.gl_account$=glm01a.gl_account$
+    glm02a.record_id$=record_id$
+    glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$
+    find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
+    call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+    return
+
+report_amounts: rem --- Retrieve 13 Period Financial Report Amount (gle-08) record
+
+    if x$<>last$ 
+       dim pa[mp],pu[mp]
+       last$=x$
+       dim gle08a$:fattr(gle08a$)
+       gle08a.gl_updt_seq$=""
+       gle08_key$=firm_id$+x$
+       glm22_key$=gle08_key$
+       find record (glm22_dev,key=glm22_key$,dom=*return) glm22a$
+       find record (gle08_dev,key=gle08_key$,dom=*next) gle08a$
+       for x=1 to mp
+           pa[x]=nfield(gle08a$,"period_amt_"+str(x:"00"))
+           pu[x]=nfield(gle08a$,"period_units_"+str(x:"00"))
+       next x
+       if gle08a.gl_updt_seq$<>sequence$
+          dim pa[mp],pu[mp]
+          gle08a.gl_updt_seq$=sequence$
+       endif
+    endif
+    begamt=amount*sign
+    begunt=units*sign
+    pa[0]=begamt
+    pu[0]=begunt
+    for x=1 to mp
+        pa[x]=pa[x]+ta[x]*sign
+        pu[x]=pu[x]+tu[x]*sign
+    next x
+    for X=1 TO mp
+        field gle08a$,"period_amt_"+str(x:"00")=str(pa[x])
+        field gle08a$,"period_units_"+str(x:"00")=str(pu[x])
+    next x
+    gle08a.firm_id$=firm_id$
+    if firm_id$="99" gle08a.gl_rpt_no$=glm21a.gl_rpt_no, gle08a.gl_rpt_line$=glm21a.gl_rpt_line$
+:      else gle08a.gl_rpt_no$=glm11a.gl_rpt_no$, gle08a.gl_rpt_line$=glm11a.gl_rpt_line$
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

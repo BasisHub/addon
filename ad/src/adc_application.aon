@@ -1,0 +1,207 @@
+rem adc - Verify Application Installed
+rem Program adc_application v8.0.0 23Apr2006 (syc_va)
+rem Created by adx_progconv.bbx v1.0.1 (04/23/2006 10:57:31)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- MODULE$   : 2 character application ID (Input)
+rem --- INFO$[n]  : Information array (Returned)
+rem ---              [0] Module description
+rem ---              [1] Multiple firms (Y/N)
+rem ---              [2] Default Firm ID
+rem ---              [3] Installed (Y/N)
+rem ---              [4] Version number
+rem ---              [5] Data path
+rem ---              [6] Program source path
+rem ---              [7] Program executable path
+rem ---              [9] Post to GL (Y/N)
+rem ---             [19] Fiscal Calendar installed (Y/N)
+rem ---             [20] Installed for this firm (Y/N)
+
+    seterr std_error
+    setesc std_error
+    enter module$,info$[all]
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=6,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",options$[1]="R",ids$[1]="GLS_PARAMS"; rem "R"=Required
+    files$[2]="ars_params",options$[2]="R",ids$[2]="ARS_PARAMS"
+    files$[3]="aps_params",options$[3]="R",ids$[3]="APS_PARAMS"
+    files$[4]="ivs_params",options$[4]="R",ids$[4]="IVS_PARAMS"
+    files$[5]="sas_params",options$[5]="R",ids$[5]="SAS_PARAMS"
+    files$[6]="adm_modules.dat",options$[6]="S",ids$[6]="ADM_MODULES";rem "S"=System file
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    ars01_dev=channels[2]
+    aps01_dev=channels[3]
+    ivs01_dev=channels[4]
+    sas01_dev=channels[5]
+    adm04_Dev=channels[6]
+
+    dim gls01a$:templates$[1]
+    dim adm04a$:templates$[6]
+
+rem --- Initializations
+
+    dim info$[20]
+    module$=cvs(module$,4)
+    info$[1]="N"
+    info$[3]="N"
+    info$[9]="N"
+    info$[19]="N"
+    info$[20]="N"
+
+rem --- Get application record
+
+    find record (adm04_dev,key=stbl("+AON_APPCOMPANY",err=*next)+pad(module$,3),dom=*next)adm04a$
+    info$[0]=cvs(adm04a.sys_desc$,2)
+    info$[1]=adm04a.multi_firm$
+    info$[2]=adm04a.company_id$
+    info$[3]=adm04a.sys_install$
+    info$[4]=fnglobal$("+AON_VERSION","8.0.0")
+    info$[5]=fnglobal$("+"+module$+"DATA","")
+    if cvs(info$[5],2)="" info$[5]=fnglobal$("+DIR_DAT","./data/")
+    info$[6]="./"+cvs(module$,8)+"/"
+    info$[7]=fnglobal$("+DIR_PGM","./programs/")
+    info$[9]=adm04a.post_gl$
+
+rem --- Post to GL?
+
+    if pos(info$[9]="YN")=0 info$[9]="Y"
+    if info$[9]="N" goto parameters
+    adm04a.sys_install$="N"
+    find record (adm04_dev,key=stbl("+AON_APPCOMPANY",err=*next)+"GL ",dom=*next)adm04a$
+    info$[9]=adm04a.sys_install$
+    if info$[9]="N" goto parameters
+    find record (gls01_dev,key=firm_id$+"GL00",dom=parameters)gls01a$
+    info$[19]="Y"
+    if gls01a.gl_post_code$="N" info$[9]="N"
+
+parameters: rem --- Translate module to retrieve parameter record (if necessary)
+
+    parameters$=module$
+    if module$="AR" find_dev=ars01_dev
+    if module$="AP" find_dev=aps01_dev
+    if module$="GL" find_dev=gls01_dev
+    if module$="IV" find_dev=ivs01_dev
+    if module$="SA" find_dev=sas01_dev
+    if module$="OP" parameters$="AR", find_dev=ars01_dev
+    if module$="PO" parameters$="IV", find_dev=ivs01_dev
+    if module$="MP" parameters$="IV", find_dev=ivs01_dev
+
+rem --- Get parameter record for this application
+
+    if pos(module$="DD GE SY AD ",3) goto installed
+
+    if find_dev=0 goto done;rem "need to open and define proper parameter file
+
+    find (find_dev,key=firm_id$+parameters$+"00",dom=done)
+    if parameters$="GL" info$[19]="Y"
+
+installed: rem --- Installed for this firm?
+
+    if info$[3]="Y" info$[20]="Y"
+    if info$[3]<>"Y" info$[3]="N"
+    if info$[20]<>"Y" info$[20]="N"
+
+done: rem --- All done
+
+    goto std_exit
+
+rem --- Functions
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit:
+        return q1$
+    fnend
+
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    close (gls01_dev,err=*next)
+    close (ars01_dev,err=*next)
+    close (aps01_dev,err=*next)
+    close (ivs01_dev,err=*next)
+    close (adm04_dev,err=*next)
+    exit
+
+rem #endinclude std_exit.src
+
+    end

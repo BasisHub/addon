@@ -1,0 +1,274 @@
+rem --- Purchase Requisition Update
+rem --- Program mpu_ca v8.0.0 16Apr2008 (mpu_ca)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (04/16/2008 10:28:05)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=11,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="apm-01",ids$[1]="APM_VENDMAST"
+    files$[2]="apm-02",ids$[2]="APM_VENDHIST"
+    files$[3]="mpw-04",ids$[3]="MPW_REQVEND"
+    files$[4]="poe-01",ids$[4]="POE_REQHDR"
+    files$[5]="poe-02",ids$[5]="POE_POHDR"
+    files$[6]="poe-11",ids$[6]="POE_REQDET"
+    files$[7]="poe-21",ids$[7]="POE_REQPRINT"
+    files$[8]="poe-31",ids$[8]="POE_REQBYREQ"
+    files$[9]="poe-41",ids$[9]="POE_REQBYITM"
+    files$[10]="poe-52",ids$[10]="POE_POBYREQ"
+    files$[11]="pom-02",ids$[11]="POC_LINECODE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apm01a_dev=channels[1]
+    apm02a_dev=channels[2]
+    mpw04a_dev=channels[3]
+    poe01a_dev=channels[4]
+    poe02a_dev=channels[5]
+    poe11a_dev=channels[6]
+    poe21a_dev=channels[7]
+    poe31a_dev=channels[8]
+    poe41a_dev=channels[9]
+    poe52a_dev=channels[10]
+    pom02a_dev=channels[11]
+
+rem --- Dimension string templates
+
+    dim apm01a$:templates$[1],apm02a$:templates$[2],
+:       mpw04a$:templates$[3],poe01a$:templates$[4],poe02a$:templates$[5],
+:       poe11a$:templates$[6],poe21a$:templates$[7],poe31a$:templates$[8],
+:       poe41a$:templates$[9],poe52a$:templates$[10],pom02a$:templates$[11]
+
+
+rem --- Open/Lock Files
+
+    dim files[11]
+    files[1]=apm02_dev
+    files[2]=poe01_dev,files[3]=poe02_dev
+    files[4]=poe11_dev
+    files[5]=poe52_dev,files[6]=pom02_dev
+    files[7]=pos10_dev
+    files[8]=poe21_dev,files[9]=poe31_dev
+    files[10]=poe41_dev
+    files[11]=sys01_dev
+
+rem --- Initializations
+
+    precision ivs01_precision
+    dim r0$(39),r1$(35),r[6]
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","MPW_REQVEND","PRIMARY",mpw04_key_tpl$,rd_table_chans$[all],status$
+    dim mpw04a_key$:mpw04_key_tpl$
+       
+rem --- Options
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$: stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit    
+
+rem --- Disallow 'M'enu option in Error Routine
+
+    exit_ctrl=1
+
+rem --- Position File
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,mpw04_dev,1,meter_num,status
+    last$=""
+    item$="",vendor$=""
+    read (mpw04_dev,key=firm_id$,dom=*next)
+
+next_mpw04: rem --- Read next mpw-04 Item Requirements by Vendor record
+
+    while more
+        mpw04a_key$=key(mpw04_dev,end=done)
+        if pos(prefix$=mpw04a_key$)=1 then 
+            read record (mpw04_dev) mpw04a$
+            if mpw04a_key.vendor_id$+mpw04a_key.item_id$<>last$ then 
+                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+                last$=mpw04a_key.vendor_id$+mpw04a_key.item_id$
+            endif
+vendor_break: rem --- New Vendor?
+
+            if mpw04a.vendor_id$<>vendor$ then 
+                k$=mpw04a.firm_id$+mpw04a.vendor_id$
+                vendor$=""
+                find (apm01_dev,key=k$,dom=mpw04_loop)
+                vendor$=mpw04a_key.forecast$
+            endif
+generate_requisition: rem --- Generate Purchase Requisition
+
+            dim info$[14],info[2]
+            info$[0]=firm_id$
+            info$[1]=mpw04a.vendor_id$
+            info$[2]="S"
+            info$[3]=mpw04a.warehouse_id$
+            info$[5]=fnyy_yy21$(fndate$(fndate$(mpw04a.require_date$)))
+            info$[6]=mpw04a.unit_measure$
+            info$[7]="M"
+            info$[8]=mpw04a.forecast$
+            info$[13]=mpw04a.item_id$
+            info$[4]=sysinfo.system_date$
+            info[0]=mpwo4a.conv_factor
+            info[1]=mpw04a.unit_cost
+            info[2]=mpw04a.qty_required
+            call pgmdir$+"poc_updpurreq.aon",files[all],info$[all],info[all],detail_key$,status
+
+mpw04_loop: rem --- Loop back for next record
+         else
+            break
+         endif
+    wend
+done: rem --- All done
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    goto std_exit
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+	return
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+end

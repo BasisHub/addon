@@ -1,0 +1,350 @@
+rem glr - Assemble Financial & 13 Period Report Headings
+rem Program glr_headings v8.0.0 04Jun2006 (glr_fa)
+rem Created by adx_progconv.bbx v1.0.3 (06/04/2006 12:35:12)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- This program assembles the headings for the financial
+rem --- and 13 period reports by replacing heading tokens with 
+rem --- actual values. This program is either being run the lead 
+rem --- overlay (gle_financials or gle_13period) if the reprint 
+rem --- option was selected. Otherwise it is being run by one of
+rem --- the update overlays (glu_financials or glu_13period). In
+rem --- those cases the OVERLAY=0. Since this program is also the
+rem --- lead overlay for the reporting loop it is also run by the
+rem --- reporting overlays (glr_financials or glr_13period) in
+rem --- in which case OVERLAY=1.
+
+rem --- This program reads through the list of reports to be printed,
+rem --- assembles the appropriate headings and then runs the report
+rem --- program specified in REPORT$ (set by the lead overlay). That
+rem --- program then runs this one until the list has been completed.
+
+rem --- The input list of reports is contained in either the Financial
+rem --- Report Selections (gle-04) table or the 13 Period Report
+rem --- Selections (gle-05) table. Since both tables are identical,
+rem --- the program uses gle04_dev and gle04a$ as the channel and 
+rem --- template respectively. If the 13 period reports are being run
+rem --- (FINANCIALS=0) then gle04_dev is set equal to gle05_dev so 
+rem --- that the correct report list is read.
+
+    setesc std_error
+    seterr std_error
+
+    if OutVect!<>null() OutVect!=null()
+    next_overlay$="";rem these two stmts make sure we don't loop in DocOut
+
+rem --- Branch based on whether or not this program is being run from the
+rem --- lead/update overlays (OVERLAY=0) or the report overlay (OVERLAY=1)
+
+    if overlay goto next_report
+
+rem --- Retrieve and update Financial Report Parameter record
+
+    gls01c_key$=firm_id$+"GL02"
+    find record (gls01c_dev,key=gls01c_key$,err=std_missing_params) gls01c$
+    period=num(gls01c.period$)
+    year=num(gls01c.year$)
+    n=2
+    if financials n=1
+    sequence$=field(gls01c$,"gl_updt_seq_"+str(n:"00"))
+    p=num(field(gls01c$,"print_flag_"+str(n:"00")))
+    p=p+1
+    if p>9 p=0
+    printflag$=str(p)
+    field gls01c$,"print_flag_"+str(n:"00")=printflag$    
+    write record (gls01c_dev,key=gls01c_key$) gls01c$
+
+rem --- Other parameter settings
+
+    width=132
+
+rem --- Initializations
+
+    dim h1$(width)
+    headmax=5
+    headings=0
+    colmax=8
+    more=1
+    morecolumns=1
+    moreheadings=1
+    l9=59
+    l=l9+1
+    page=0
+    clock$=""
+    when$=sysinfo.system_date$
+
+rem --- Custom financials or 13 period reports?
+
+    if financials=0 gle04_dev=gle05_dev;dim gle04a$:fattr(gle05a$)
+
+rem --- Determine starting/ending dates for report period
+
+    call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,ignore_status
+
+rem --- Open printer, start progress meter and position file
+
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status goto std_exit
+    call pgmdir$+"adc_progress.aon","N","","","","",0,gle04_dev,1,0,ignore_status
+    read (gle04_dev,key=firm_id$,dom=*next)
+
+next_report: rem --- Read next Report Selections (gle-04/gle-05) record
+
+    while more
+          k$=key(gle04_dev,end=std_exit)
+          if pos(firm_id$=k$)<>1 exitto std_exit
+          read record (gle04_dev) gle04a$
+
+          rem --- Retrieve Financial Report Master (glm-12) record
+
+          glm12a.firm_id$=gle04a.firm_id$
+          glm12a.gl_rpt_no$=gle04a.gl_rpt_no$
+          glm12a.gl_rpt_line$="0000"
+          glm12_key$=glm12a.firm_id$+glm12a.gl_rpt_no$;rem not incl in key...+glm12a.gl_rpt_line$
+          find record (glm12_dev,key=glm12_key$,dom=*continue) glm12a$
+          m1$=glm12a.amount_mask$
+          m2$=glm12a.unit_mask$
+          m3$=glm12a.ratio_mask$
+          m4$=glm12a.percent_mask$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,ignore_status
+
+          rem --- Retrieve Financial Report Headings (glm-13) record for this report
+          rem --- and build RPT_HEAD$ which is a string of all report headings
+
+          dim h1$(width),rpt_head$(width*headmax)
+          glm13a.firm_id$=glm12a.firm_id$
+          glm13a.heading_no$=glm12a.heading_no$
+          k$=glm13a.firm_id$+glm13a.heading_no$
+          read (glm13_dev,key=k$,dom=*next)
+          while moreheadings
+                glm13_key$=key(glm13_dev,end=*break)
+                if pos(k$=glm13_key$)<>1 break
+                read record (glm13_dev)glm13a$
+                n=num(glm13a.sequence_no$,err=*continue)
+                if n>=headmax break
+                rpt_head$(n*width+1,width)=glm13a.rpt_heading$
+          wend
+
+          rem --- Generate standard heading elements
+
+          curyear$=str(year)
+          priyear$=str(year-1)
+          pribeg$=fndate$(begdate$)
+          pribeg$(7,2)=priyear$(3)
+          priend$=fndate$(enddate$)
+          priend$(7,2)=priyear$(3)
+          period$=cvs(field(gls01a$,"period_name_"+str(period:"00")),2)
+          quarter$="Fourth"
+          if period<10 quarter$="Third"
+          if period<7 quarter$="Second"
+          if period<4 quarter$="First"
+
+          rem --- Replace tokens in heading with standard elements
+
+          token$="[C-YEAR]"
+          element$=curyear$
+          type=0
+          gosub heading_tokens
+
+          token$="[P-YEAR]"
+          element$=priyear$
+          type=0
+          gosub heading_tokens
+
+          token$="[MONTH]"
+          element$=period$
+          type=1
+          gosub heading_tokens
+
+          token$="[QUARTER]"
+          element$=quarter$
+          type=1
+          gosub heading_tokens
+
+          token$="[C-PERIOD]"
+          element$="Period "+str(period)+" From "+fndate$(begdate$)+" To "+fndate$(enddate$)
+          type=1
+          gosub heading_tokens
+
+          token$="[P-PERIOD]"
+          element$="Period "+str(period)+" From "+pribeg$+" To "+priend$
+          type=1
+          gosub heading_tokens
+
+          token$="[C-END]"
+          element$="Period Ending "+fndate$(enddate$)
+          type=1
+          gosub heading_tokens
+
+          token$="[P-END]"
+          element$="Period Ending "+priend$
+          type=1
+          gosub heading_tokens
+
+          token$="[FIRM]"
+          element$=cvs(sysinfo.firm_name$,2)
+          type=1
+          gosub heading_tokens
+
+          token$="[R-DATE]"
+          element$="Run Date "+fndate$(sysinfo.system_date$)
+          type=0
+          gosub heading_tokens
+
+          token$="[Y-END]"
+          v$=fndate$(enddate$)
+          element$=period$+" "+v$(5,2)+", "+v$(1,4)
+          type=1
+          gosub heading_tokens
+
+          rem --- Store heading information
+          
+          dim headings$[1];rem dummy for DocOut - these reports print headings in main part of form
+          dim heading$[headmax-1]
+          for x=0 to headmax-1
+              heading$[x]=rpt_head$(x*width+1,width)
+              if cvs(heading$[x],2)<>"" headings=x
+          next x
+
+          rem --- Extract column positions from the Financial Report Columns (glm-32) file
+
+          rem --- A[column,type]: Column=report column
+          rem ---               : Type=0 for period
+          rem ---               :      1 for actual/budget/variance
+          rem ---               :      2 for amounts or units
+          rem ---               :      3 for default position
+
+          dim a[colmax-1,3]
+          x=0
+          glm32a.firm_id$=gle04a.firm_id$
+          glm32a.gl_rpt_no$=gle04a.gl_rpt_no$
+          k$=glm32a.firm_id$+glm32a.gl_rpt_no$
+          read (glm32_dev,key=k$,dom=*next)
+          while morecolumns
+                glm32_key$=key(glm32_dev,end=*break)
+                if pos(k$=glm32_key$)<>1 break
+                if x>=colmax break
+                read record (glm32_dev) glm32a$
+                value=pos(glm32a.per_type_cde$="PQYABC")
+                if value=0 
+                   a[x,0]=9
+                   x=x+1
+                   continue
+                endif
+                a[x,0]=value-1
+                value=pos(glm32a.actbud$="ABV")
+                if value=0 value=1
+                a[x,1]=value-1
+                value=pos(glm32a.amt_or_units$="AU")
+                if value=0 value=1
+                a[x,2]=value-1
+                a[x,3]=num(glm32a.sequence_no$)
+                x=x+1
+          wend
+
+          rem --- Found a report and the headings are completed
+
+          break
+
+          rem --- Missing the Financial Report Master for the selected report.
+          rem --- Loop back and try the next entry.
+
+    wend
+
+rem --- Run report overlay
+
+    overlay=1
+    l=l9+1
+    run report$,err=std_exit
+
+heading_tokens: rem --- Replace heading token with standard element
+
+    while pos(token$=rpt_head$)
+          p=pos(token$=rpt_head$)
+          lt=len(token$)
+          le=len(element$)
+          if p=0 break
+          if type=0 
+             rpt_head$(p,lt)=""
+             rpt_head$(p,le)=element$
+             continue
+          endif
+          if p+int((lt-le)/2)<0
+             rpt_head$(p,lt)=""
+             rpt_head$(p,le)=element$
+             continue
+          endif
+          rpt_head$(p,lt)=""
+          l=le-lt
+          if l>0 p=max(p-int(l/2),1)
+          if l<0 p=p+int(abs(l)/2)
+          rpt_head$(p,le)=element$
+    wend
+    return
+
+rem --- Functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

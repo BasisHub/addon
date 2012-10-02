@@ -1,0 +1,171 @@
+rem adx - CodePort Program Conversion Utility (Labels Overlay)
+rem Program adx_codeportlbls.bbj v8.0.0 12Oct2007
+rem 
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Feb2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+rem 
+
+rem --- Initializations
+    dim labels$[999],position[999],refs[999]
+    let labels=0
+
+rem --- Build a list of all labels defined in this program
+    let description$="Building label list..."
+    gosub display_step
+    for x=1 to numlines
+        let rec$=lines$[x]
+        let r=pos("rem "=rec$),p=pos(":"=rec$)
+        if p=0 then continue
+        if r then if p>r then continue
+        let x$=rec$(1,p-1),p=pos(" "=x$)
+        if p then continue
+        if cvs(x$,1+2)="" then continue
+        let labels=labels+1
+        let labels$[labels]=x$
+        let position[labels]=x
+    next x
+    gosub display_done
+
+rem --- Try and replace labels with *next where possible
+    let description$="checking for symbolic labels..."
+    gosub display_step
+    let symbolic$="*next"
+    let option$="dom="
+    gosub symbolic_label
+    let option$="err="
+    gosub symbolic_label
+    gosub display_done
+
+rem --- Count number of references for each label
+    let description$="Removing unreferenced labels..."
+    gosub display_step
+    for x=1 to numlines
+        let rec$=lines$[x]
+        for z=1 to labels
+            let p=pos(labels$[z]=cvs(rec$,8))
+            if p then if x<>position[z] then let refs[z]=refs[z]+1
+        next z
+    next x
+
+rem --- Remove unreferenced labels
+    for x=1 to labels
+        if refs[x] then continue
+        let line=position[x]
+        let rec$=lines$[line]
+        let x$=labels$[x]+":"
+        if pos(x$=rec$)<>1 then continue
+        let rec$=cvs(rec$(len(x$)+1),1)
+        let lines$[line]=rec$
+        if rec$<>"" then continue
+        rem --- Remove blank line if one is created when the label was removed
+        gosub delete_line
+        for z=1 to labels
+            if position[z]>line then let position[z]=position[z]-1
+        next z
+        rem --- Next label
+    next x
+    gosub display_done
+    rem --- For debugging
+    rem gosub listlabels
+    rem escape
+
+rem --- Run the next overlay
+NEXT_OVERLAY: 
+    RUN "adx_codeporterrs.bbj",ERR=THE_END
+
+rem --- Search for option and see if a literal label can be
+rem --- replaced by a symbolic label (e.g. *next)
+symbolic_label: 
+    for x=1 to numlines
+        let rec$=lines$[x]
+        let r=pos("rem "=rec$)
+        let p=pos(option$=rec$)
+        if p=0 then continue
+        if r then if p>r then continue
+        let w=p+len(option$)
+        if rec$(w,1)="*" then continue
+        let label$=rec$(w)
+        let l=len(label$)+1
+        let c=pos(","=label$)
+        if c then let l=c
+        let c=pos(")"=label$)
+        if c then if c<l then let l=c
+        let label$=label$(1,l-1)
+        rem --- Find the next non-blank line
+        for z=x+1 to numlines
+            let x$=cvs(lines$[z],1+2)
+            if x$<>"" then break
+        next z
+        if pos(label$=x$)<>1 then continue
+        let x$=rec$
+        let p=pos(label$=rec$)
+        let rec$=rec$(1,p-1)+symbolic$+rec$(p+len(label$))
+        let lines$[x]=rec$
+        rem --- For debugging
+        rem print cvs(rec$(1,min(len(rec$),79)),1)
+        rem print cvs(x$(1,min(len(x$),79)),1)
+        rem print "Label ",label$," -> *next"
+    next x
+return 
+
+rem --- Display range of LINES$ (debugging tool)
+listlines: 
+    for x=b to e
+        print "(",x:"0000","): ",lines$[x]
+    next x
+    escape 
+return 
+
+rem --- Display label list (debugging tool)
+listlabels: 
+    for x=1 to labels
+        print "(Line ",str(position[x]:"0000"),") ",labels$[x],@(50),"Referenced ",str(refs[x]:"000")," time(s)"
+    next x
+return 
+
+rem --- Display message
+display_message: 
+    print fndatestamp$(0),message$
+    print (log_dev)fndatestamp$(0),message$,cr$
+return 
+
+rem --- Display step
+display_step: 
+    let message$=description$
+    gosub display_message
+return 
+
+rem --- Display step completion
+display_done: 
+    let message$=description$+"completed"
+    gosub display_message
+return 
+
+rem --- Insert a blank line at LINE
+insert_line: 
+    let numlines=numlines+1
+    for z=numlines to line+1 step -1
+        let lines$[z]=lines$[z-1]
+    next z
+    let lines$[line]=""
+return 
+
+rem --- Delete a line at LINE
+    delete_line: 
+    for z=line to numlines
+        let lines$[z]=lines$[z+1]
+    next z
+    let lines$[numlines]="",numlines=numlines-1
+return 
+
+rem --- Functions
+    def fndatestamp$(q)=date(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
+
+rem --- Exit utility
+the_end: 
+    run "adx_codeportexit.bbj",err=finished
+finished: 
+    end

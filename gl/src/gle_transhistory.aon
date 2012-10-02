@@ -1,0 +1,170 @@
+rem gle - GL Transaction History Report (Lead Overlay)
+rem Program gle_transhistory v8.0.0 27May2006 (glr_ca)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem ************don't think this is used...looks like all functionality
+rem ************was incorporated into glr_transhistory.aon. CAH 
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ads-01"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ads01_dev=channels[1]
+
+rem --- Retrieve miscellaneous templates
+
+    files=1,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="gls-01A"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension miscellaneous string templates
+
+    dim gls01a$:templates$[1]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (ads01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    acctlen=num(gls01a.acct_length$)
+    m0$=gls01a.acct_output$
+    headings=4
+
+rem --- Assign input values to local variables
+
+    begper$=Option!.getOptionData("BEG_GL_PER")
+    begyear$=Option!.getOptionData("BEG_YEAR")
+    endper$=Option!.getOptionData("END_GL_PER")
+    endyear$=Option!.getOptionData("END_YEAR")
+    begacct$=Option!.getOptionData("GL_ACCOUNT_1")
+    endacct$=Option!.getOptionData("GL_ACCOUNT_2")
+    wildcard$=Option!.getOptionData("GL_WILDCARD")
+    journal$=Option!.getOptionData("PICK_JOURNAL_ID")
+    detail$=Option!.getOptionData("PICK_LISTBUTTON")
+    if cvs(begper$,2)="" begper$=gls01a.current_per$
+    if cvs(endper$,2)="" endper$=gls01a.current_per$
+    if cvs(begyear$,2)="" begyear$=gls01a.current_year$
+    if cvs(endyear$,2)="" endyear$=gls01a.current_year$
+    if cvs(detail$,2)="" detail$="D"
+
+rem --- Initializations
+
+    dim headings$[headings]
+
+rem --- Retrieve Journal ID record if one was specified
+
+    glm03a.firm_id$=firm_id$
+    glm03a.journal_id$=journal$
+    glm03a.code_desc$="(Not On File)"
+    glm03_key$=glm03a.firm_id$+glm03a.journal_id$
+    if cvs(journal$,2)<>"" find record (glm03_dev,key=glm03_key$,dom=*next) glm03a$
+
+rem --- Initialize report headings
+
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+    if cvs(begacct$,2)="" x$="First Account"
+:                    else x$="Account "+fnmask$(begacct$(1,acctlen),m0$)
+    if cvs(endacct$,2)="" y$="Last Account"
+:                    else y$="Account "+fnmask$(endacct$(1,acctlen),m0$)
+    x$="From "+x$+" Through "+y$
+    if cvs(wildcard$,2)<>"" then x$=x$+" (Wildcard "+$22$+cvs(wildcard$,2)+$22$+")"
+    headings$[2]=x$
+    x$=field(gls01a$,"period_name_"+begper$)
+    y$=field(gls01a$,"period_name_"+endper$)
+    headings$[3]="From "+cvs(x$,2)+" (Period "+begper$+") "+begyear$+" Through "+
+:                cvs(y$,2)+" (Period "+endper$+") "+endyear$
+    if detail$="D" x$="Detail" else x$="Summary"
+    if cvs(journal$,2)="" y$="All Journals" 
+:                    else y$="Journal ID "+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
+    headings$[4]=x$+" Report For "+y$
+
+rem --- Run report overlay
+
+    close (ads01_dev,err=*next)
+    run pgmdir$+"glr_transhistory.aon"
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+   call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:         str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_missing_params_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+   run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,860 @@
+rem --- Aging Report
+rem --- Program arr_agingreport v8.0.0 12Jan2007 (arr_bb)
+rem --- Created by adx_codeport.bbx v1.1.5 (01/12/2007 11:41:57)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- Important control variables:
+
+rem --- agingdate$: Aging as of date
+rem --- basis$    : Basis for aging (I=Invoice date/D=Due date)
+rem --- future$   : Include future invoices (Y/N)?
+rem --- option$   : List by customer or salesperson (C/S)?
+rem --- sequence$ : If by customer use ID or alternate sequence (C/A)?
+rem --- begcust$  : Beginning Customer ID
+rem --- endcust$  : Ending Customer ID
+rem --- begalt$   : Beginning Alternate Sequence
+rem --- endalt$   : Ending Alternate Sequence
+rem --- begsales$ : Beginning Salesperson
+rem --- endsales$ : Ending Salesperson
+rem --- credits$  : Include credits in aging (Y/N)?
+rem --- update$   : Update customer aging summary (Y/N)?
+rem --- type$     : Summary or detail report (S/D)?
+rem --- comments$ : Include customer comments on the report (Y/N)?
+
+rem --- Totals arrays
+
+rem --- c[n]: Customer totals
+rem --- s[n]: Salesperson totals
+rem --- t[n]: Report totals
+
+rem --- d[n]: Detail line array
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=7,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
+    files$[3]="arm-02",ids$[3]="ARM_CUSTDET"
+    files$[4]="arm-05",ids$[4]="ARM_CUSTCMTS"
+    files$[5]="arc_salecode",ids$[5]="ARC_SALECODE"
+    files$[6]="art-01",ids$[6]="ART_INVHDR"
+    files$[7]="art-11",ids$[7]="ART_INVDET"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ars01_dev=channels[1]
+    arm01_dev=channels[2]
+    arm02_dev=channels[3]
+    arm05_dev=channels[4]
+    arm10_dev=channels[5]
+    art01_dev=channels[6]
+    art11_dev=channels[7]
+
+rem --- Dimension string templates
+
+    dim ars01a$:templates$[1],arm01a$:templates$[2],arm02a$:templates$[3]
+    dim arm05a$:templates$[4],arm10f$:templates$[5],art01a$:templates$[6]
+    dim art11a$:templates$[7]
+
+rem --- Assign form input values to local variables
+
+    maxperiods=5
+    dim begperiods$[maxperiods],endperiods$[maxperiods]
+    agingdate$=option!.getOptionData("REPORT_DATE")
+    credits$=option!.getOptionData("AGE_CREDITS")
+    basis$=option!.getOptionData("REPORT_TYPE")
+    future$=option!.getOptionData("FUTURE_AGING")
+    option$=option!.getOptionData("REPORT_OPTION")
+    sequence$=option!.getOptionData("REPORT_SEQUENCE")
+    begcust$=option!.getOptionData("CUSTOMER_ID_01")
+    endcust$=option!.getOptionData("CUSTOMER_ID_02")
+    begalt$=option!.getOptionData("ALT_SEQUENCE_01")
+    endalt$=option!.getOptionData("ALT_SEQUENCE_02")
+    begsales$=option!.getOptionData("SALESPERSON_01")
+    endsales$=option!.getOptionData("SALESPERSON_02")
+    update$=option!.getOptionData("UPDATE_AGING")
+    type$=option!.getOptionData("REPORT_SUMM_DET")
+    comments$=option!.getOptionData("CUST_COMMENTS")
+    begperiods$[0]=option!.getOptionData("AGEDATE_FUT_FROM")
+    begperiods$[1]=option!.getOptionData("AGEDATE_CUR_FROM")
+    begperiods$[2]=option!.getOptionData("AGEDATE_30_FROM")
+    begperiods$[3]=option!.getOptionData("AGEDATE_60_FROM")
+    begperiods$[4]=option!.getOptionData("AGEDATE_90_FROM")
+    endperiods$[1]=option!.getOptionData("AGEDATE_CUR_THRU")
+    endperiods$[2]=option!.getOptionData("AGEDATE_30_THRU")
+    endperiods$[3]=option!.getOptionData("AGEDATE_60_THRU")
+    endperiods$[4]=option!.getOptionData("AGEDATE_90_THRU")
+    endperiods$[5]=option!.getOptionData("AGEDATE_120_THRU")
+    col_format$=option!.getOptionData("COL_FORMAT")
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+    history$="Y";rem ars01a.inv_hist_flg$ - not accessible anymore? jpb
+    jn$=ars01a.job_nos$
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0
+    m8$="(###) ###-####"
+    m0=len(m0$)
+    m1=len(m1$)
+    m8=len(m8$)
+    m9$=m1$
+    if pos("("=m9$)=1 m9$=m9$(1,1)+"#"+m9$(2)
+:                else m9$="#"+m9$
+    m9=len(m9$)
+
+rem --- Is Sales Order Processing installed?
+
+    dim info$[20]
+    application$="OP"
+    call pgmdir$+"adc_application.aon",application$,info$[all]
+    op$=info$[20]
+    if op$="N" 
+       history$="N"
+       jn$="N"
+    endif
+
+rem --- Document initializations
+
+            OutVect!=bbjAPI().getSysGui().makeVector()
+            BrkVect!=bbjAPI().getSysGui().makeVector()
+            HdrVect!=bbjAPI().getSysGui().makeVector()
+            TotVect!=bbjAPI().getSysGui().makeVector()
+            rep_date$=date(0:"%Mz/%Dz/%Yd")
+            rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+            rep_time$=date(0:"%hz:%mz %p")
+            rep_time_stamp$=date(0:"%Hz%mz%sz")
+            rep_prog$=pgm(-2)
+
+rem --- Initializations
+
+    headings=3
+    if option$="S" headings=4
+    dim headings$[headings],hd1[12],hd2[12],hs[7],od[12],os[7]
+    dim periodbeg$[maxperiods],periodend$[maxperiods]
+    dim c[maxperiods+1],d[maxperiods+1],s[maxperiods+1],t[maxperiods+1]
+    page=0
+    width=132
+    maxlines=59
+    lines=maxlines+1
+    morecustomers=1
+    moreheaders=1
+    moredetail=1
+    when$=sysinfo.system_date$
+    clock$=""
+    artype$=fill(2)
+    salesperson$=""
+    lastcode$=""
+    dim u_line$(m1,"-")
+    future=future$="Y"
+
+rem --- Underline for subtotals and totals
+
+    x=(5*m1)+(m1*future)+m9
+    underline=width-x
+    underline$=fill(x,"-")
+
+rem --- Set table and index values based on the option and sequence specified by the user
+
+    keynum=0
+    channel=arm01_dev
+    if sequence$="A" keynum=2
+    if option$="S"
+       keynum=1
+       channel=arm02_dev
+    endif
+
+rem --- Initialize report headings
+
+    dim periodbeg$[maxperiods],periodend$[maxperiods]
+    customer=1
+    salesperson=2
+    future_heading$=""
+    if future future_heading$="Future"
+    h1$="Detail Aging Report"
+    h2$="Based On Due Date"
+    h8$="First"
+    h9$="Last"
+    ageby$="Due"
+    if basis$="I" 
+       h2$="Based On Invoice Date"
+       ageby$="Invoiced"
+    endif
+    option=pos(option$="CS")
+    switch option
+           case customer
+                h3$="Customers By "
+                if sequence$="N" h3$=h3$+"ID"
+                if sequence$="A" h3$=h3$+"Alternate Sequence"
+                h3$=h3$+" From "
+                if sequence$="N" if begcust$<>"" h8$=fnmask$(begcust$(1,customer_size),m0$) 
+                if sequence$="N" if endcust$<>"" h9$=fnmask$(endcust$(1,customer_size),m0$)
+                if sequence$="A" if begalt$<>"" h8$=cvs(begalt$,3)
+                if sequence$="A" if endalt$<>"" h9$=cvs(endalt$,3)
+           break
+           case salesperson 
+                h3$="Customers By Salesperson"
+                h3$=h3$+" From "
+                if begsales$<>"" h8$=begsales$ 
+                if endsales$<>"" h9$=endsales$
+           break
+           case default
+           break
+    swend
+    h3$=h3$+h8$+" To "+h9$
+    if type$="S" h1$="Summary Aging Report" 
+    h1$=h1$+" As Of "+fndate$(agingdate$)
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=h1$+" "+h2$
+    headings$[2]=h3$
+    if option$="S" headings$[headings]="[HEADER]"
+    for x=0 to maxperiods
+        if cvs(begperiods$[x],2)<>"" periodbeg$[x]=fndate$(begperiods$[x])
+        if cvs(endperiods$[x],2)<>"" periodend$[x]=fndate$(endperiods$[x])
+    next x
+
+rem --- Additional file opens
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    if jn$="Y" files$[1]="opm-09",ids$[1]="OPM_CUSTJOBS"
+    if op$="Y" files$[2]="opt-01",ids$[2]="OPT_ORDHDR"
+    if op$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                              ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    opm09_dev=channels[1]
+    opt01_dev=channels[2]
+
+rem --- Dimension string templates
+
+    if jn$="Y" dim opm09a$:templates$[1]
+    if op$="Y" dim opt01a$:templates$[2]
+
+rem --- column headings
+
+    if type$="D"
+
+        columns=12
+        if col_format$="Y" columns=16
+        dim columns$[columns,10]
+
+        p1$=periodbeg$[1]+"^-"+periodend$[1]
+        p2$=periodbeg$[2]+"^-"+periodend$[2]
+        p3$=periodbeg$[3]+"^-"+periodend$[3]
+        p4$=periodbeg$[4]+"^-"+periodend$[4]
+        p5$=periodend$[5]
+    
+        columns$[columns-12,0]="Invoice",columns$[columns-12,1]="C",columns$[columns-12,2]="7"
+        columns$[columns-11,0]="Invoiced",columns$[columns-11,1]="C",columns$[columns-11,2]="15"
+        columns$[columns-10,0]="PO^Number",columns$[columns-10,1]="C",columns$[columns-10,2]="7"
+        columns$[columns-9,0]="Order^Number",columns$[columns-9,1]="C",columns$[columns-9,2]="7"
+        columns$[columns-8,0]="Trm",columns$[columns-8,1]="C",columns$[columns-8,2]="3"
+        columns$[columns-7,0]="Tp",columns$[columns-7,1]="C",columns$[columns-7,2]="3"
+        columns$[columns-6,0]=future_heading$ ,columns$[columns-6,1]="N",columns$[columns-6,2]="10",columns$[columns-6,3]=m1$,columns$[columns-6,10]="T"
+        columns$[columns-5,0]=p1$,columns$[columns-5,1]="N",columns$[columns-5,2]="10",columns$[columns-5,3]=m1$,columns$[columns-5,10]="T"
+        columns$[columns-4,0]=p2$,columns$[columns-4,1]="N",columns$[columns-4,2]="10",columns$[columns-4,3]=m1$,columns$[columns-4,10]="T"
+        columns$[columns-3,0]=p3$,columns$[columns-3,1]="N",columns$[columns-3,2]="10",columns$[columns-3,3]=m1$,columns$[columns-3,10]="T"
+        columns$[columns-2,0]=p4$,columns$[columns-2,1]="N",columns$[columns-2,2]="10",columns$[columns-2,3]=m1$,columns$[columns-2,10]="T"
+        columns$[columns-1,0]=p5$,columns$[columns-1,1]="N",columns$[columns-1,2]="10",columns$[columns-1,3]=m1$,columns$[columns-1,10]="T"
+        columns$[columns,0]="Balance",columns$[columns,1]="N",columns$[columns,2]="12",columns$[columns,3]=m9$,columns$[columns,10]="T"
+        if col_format$="Y"
+            columns$[0,0]="Customer",columns$[0,1]="C",columns$[0,2]="7"
+            columns$[1,0]="Name",columns$[1,1]="C",columns$[1,2]="30"
+            columns$[2,0]="Contact",columns$[2,1]="C",columns$[2,2]="30"
+            columns$[3,0]="Phone",columns$[3,1]="C",columns$[3,2]="10"
+        endif
+    endif
+
+    if type$="S"
+
+	columns=7
+	dim columns$[7,10]
+
+        columns$[0,0]="Customer",columns$[0,1]="C",columns$[0,2]="30"
+        columns$[1,0]=future_heading$ ,columns$[1,1]="N",columns$[1,2]="10",columns$[1,3]=m1$,columns$[1,10]="T"
+        columns$[2,0]=periodbeg$[1]+"^-"+periodend$[1],columns$[2,1]="N",columns$[2,2]="10",columns$[2,3]=m1$,columns$[2,10]="T"
+        columns$[3,0]=periodbeg$[2]+"^-"+periodend$[2],columns$[3,1]="N",columns$[3,2]="10",columns$[3,3]=m1$,columns$[3,10]="T"
+        columns$[4,0]=periodbeg$[3]+"^-"+periodend$[3],columns$[4,1]="N",columns$[4,2]="10",columns$[4,3]=m1$,columns$[4,10]="T"
+        columns$[5,0]=periodbeg$[4]+"^-"+periodend$[4],columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m1$,columns$[5,10]="T"
+        columns$[6,0]=periodend$[5],columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]="10",columns$[6,10]="T"
+        columns$[7,0]="Balance",columns$[7,1]="N",columns$[7,2]="12",columns$[7,3]=m1$,columns$[7,10]="T"
+
+    endif
+
+rem --- Start progress meter and position customer file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    read (channel,knum=keynum,key=firm_id$,dom=*next)
+
+rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
+
+    while morecustomers
+          k$=key(channel,knum=keynum,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          if option$="C"
+             dim arm02a$:fattr(arm02a$)
+             read record (arm01_dev,knum=keynum,key=k$) arm01a$
+             arm02a.firm_id$=arm01a.firm_id$
+             arm02a.customer_id$=arm01a.customer_id$
+             arm02a.ar_type$=artype$
+             arm01_key$=arm01a.firm_id$+arm01a.customer_id$
+             arm02_key$=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$
+             find record (arm02_dev,key=arm02_key$,dom=*proceed) arm02a$
+          endif
+          if option$="S"
+             read record (arm02_dev,knum=keynum,key=k$) arm02a$
+             arm01a.firm_id$=arm02a.firm_id$
+             arm01a.customer_id$=arm02a.customer_id$
+             arm01_key$=arm01a.firm_id$+arm01a.customer_id$
+             arm02_key$=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$
+             find record (arm01_dev,key=arm01_key$,dom=*continue) arm01a$
+          endif
+          if cvs(begcust$,3)<>"" if arm01a.customer_id$<begcust$ continue
+          if cvs(endcust$,3)<>"" if arm01a.customer_id$>endcust$ continue
+          if cvs(begalt$,3)<>"" if arm01a.alt_sequence$(1,len(cvs(begalt$,3)))<begalt$ continue
+          if cvs(endalt$,3)<>"" if arm01a.alt_sequence$(1,len(cvs(endalt$,3)))>endalt$ continue
+          if cvs(begsales$,3)<>"" if arm02a.slspsn_code$<begsales$ continue
+          if cvs(endsales$,3)<>"" if arm02a.slspsn_code$>endsales$ continue
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          if option$="C" if sequence$="N" if endcust$<>"" if arm01a.customer_id$>endcust$ break
+          if option$="S" if endsales$<>"" if arm02a.slspsn_code$>endsales$ break
+
+          rem --- Level break?
+
+          if option$="S" if arm02a.slspsn_code$<>lastcode$ gosub salesperson
+
+          rem --- Initializations for this customer
+
+          dim customer$(w),c[maxperiods+1]
+          printed=0
+          first=1
+          customer$=fnmask$(arm01a.customer_id$(1,customer_size),m0$)+" "+arm01a.customer_name$
+          call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(arm01a.phone_no$,2),"",phone_mask$
+          phone$=cvs(arm01a.phone_no$,2)
+          phone$=str(phone$:phone_mask$,err=*next)
+
+          rem --- Position the Invoice Header (art-01) file for aging
+
+          keyprefix$=arm01a.firm_id$+artype$+arm01a.customer_id$
+          read (art01_dev,key=keyprefix$,dom=*next)
+
+          rem --- Read next Invoice Header record
+
+          while moreheaders
+                art01_key$=key(art01_dev,end=*break)
+                if pos(keyprefix$=art01_key$)<>1 break
+                read record (art01_dev) art01a$
+                if future$="N" if art01a.invoice_date$>agingdate$ continue
+                amount=art01a.invoice_amt
+
+                rem --- Position Invoice Detail (art-11) file
+
+                art01_key$=art01a.firm_id$+art01a.ar_type$+
+:                          art01a.customer_id$+art01a.ar_inv_no$
+                read (art11_dev,key=art01_key$,dom=*next)
+
+                rem --- Read Invoice Detail (art-11) records
+
+                while moredetail
+                      k$=key(art11_dev,end=*break)
+                      if pos(art01_key$=k$)<>1 break
+                      read record (art11_dev) art11a$
+                      if future$="N" if art11a.trans_date$>agingdate$ continue
+                      amount=amount+art11a.trans_amt+art11a.adjdisc_amt
+                wend
+
+                rem --- Include credit?
+
+                if nocredits if amount<0 continue
+
+                rem --- Assign the proper date for aging purposes
+
+                asof$=art01a.invoice_date$
+                if basis$="D" asof$=art01a.inv_due_date$
+
+                rem --- Age this invoice
+
+                dim d[maxperiods]
+                notaged=1
+                period=maxperiods
+                for x=0 to maxperiods
+                    if notaged if asof$>=begperiods$[x] period=x,notaged=0
+                next x
+                if amount=0 continue
+
+                rem --- Accumulate totals
+
+                printed=1
+                d[period]=amount
+                c[period]=c[period]+amount
+                s[period]=s[period]+amount
+                t[period]=t[period]+amount
+
+                rem --- Summary report?
+
+                if type$="S" continue
+
+                rem --- Format detail line
+
+                dim periods$[maxperiods+1],po$(10),order$(7)
+                periods$[period]=str(amount)
+                periods$[period]=str(amount)
+                po$(1)="None"
+                order$(1)="None"
+
+                rem --- Print customer header and comments if necessary
+
+                while first
+                      none=1
+                      first=0
+                      continued$=""
+                      gosub customer_heading
+
+                      if comments=0 or col_format$="Y" break
+
+                      rem --- Print customer comments
+                                                     
+                      read (arm05_dev,key=arm01_key$,dom=*next)
+                      while moredetail
+                            k$=key(arm05_dev,end=*break)
+                            if pos(arm01_key$=k$)<>1 break
+                            read record (arm05_dev) arm05a$
+                            rem if lines+1>maxlines gosub customer_heading
+
+                            OutVect!.addItem(arm05a.sequence_num$)
+                            OutVect!.addItem(arm05a.std_comments$)
+                            abc=fnblank(columns-1)
+
+                            lines=lines+1
+                            none=0
+                      wend
+                      if none break
+                      rem if lines+2>maxlines gosub customer_heading
+                      abc=fnblank(columns+1)
+                      lines=lines+1
+                      break
+                wend 
+
+rem --- If Sales Order Processing is installed try and get the invoice history 
+rem --- record to obtain the order and purchase order numbers. Note that only
+rem --- the first 10 characters of the PO number are printed because of the 
+rem --- inability to fit any more characters than are currently printed on a
+rem --- line.
+
+                history=history$="Y" and arm02a.inv_hist_flg$="Y"
+                if history
+                   dim opt01a$:fattr(opt01a$)
+                   opt01a.firm_id$=art01a.firm_id$
+                   opt01a.ar_type$=art01a.ar_type$
+                   opt01a.customer_id$=art01a.customer_id$
+                   opt01a.ar_inv_no$=art01a.ar_inv_no$
+                   opt01a.sequence_000$=fill(len(opt01a.sequence_000$),"0")
+                   opt01a.order_no$=order$
+                   opt01a.customer_po_no$=po$
+                   k$=opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+
+:                     opt01a.ar_inv_no$; rem +opt01a.sequence_000$
+                   find record (opt01_dev,key=k$,dom=*proceed) opt01a$
+                   order$(1)=opt01a.order_no$
+                   po$(1)=opt01a.customer_po_no$
+                endif
+
+                rem --- Print detail line
+
+                rem if lines+1>maxlines gosub customer_heading
+
+                     if col_format$="Y"
+                        OutVect!.addItem(fnmask$(arm01a.customer_id$(1,customer_size),m0$))
+                        OutVect!.addItem(arm01a.customer_name$)
+                        OutVect!.addItem(arm01a.contact_name$)
+                        OutVect!.addItem(phone$)
+                     endif
+                     OutVect!.addItem(art01a.ar_inv_no$) 
+                     OutVect!.addItem(fndate$(asof$))
+                     OutVect!.addItem(po$)
+                     OutVect!.addItem(order$)
+                     OutVect!.addItem(art01a.ar_terms_code$)
+                     OutVect!.addItem(art01a.invoice_type$)
+
+                if period=0
+                     OutVect!.addItem(str(amount))
+                     abc=fnblank(5)
+                     OutVect!.addItem(str(amount))
+                endif                     
+
+                if period=1
+                     abc=fnblank(1)
+                     OutVect!.addItem(str(amount))
+                     abc=fnblank(4)
+                     OutVect!.addItem(str(amount))
+                endif
+
+                if period=2
+                     abc=fnblank(2)
+                     OutVect!.addItem(str(amount))
+                     abc=fnblank(3)
+                     OutVect!.addItem(str(amount))
+                endif
+
+                if period=3
+                     abc=fnblank(3)
+                     OutVect!.addItem(str(amount))
+                     abc=fnblank(2)
+                     OutVect!.addItem(str(amount))
+                endif
+
+                if period=4
+                     abc=fnblank(4)
+                     OutVect!.addItem(str(amount))
+                     abc=fnblank(1)
+                     OutVect!.addItem(str(amount))
+                endif
+
+                if period>4
+                     abc=fnblank(5)   
+                     OutVect!.addItem(str(amount))
+                     OutVect!.addItem(str(amount))
+                endif
+
+                lines=lines+1
+
+                rem --- If job numbers are being used retrieve the job (if one exists) and print it
+  
+                while jn$="Y"
+                      dim opm09a$:fattr(opm09a$),job$(j)
+                      k$=opt01a.firm_id$+opt01a.customer_id$+opt01a.job_no$
+                      find record (opm09_dev,key=k$,dom=*break) opm09a$
+                      job$(1)="Job "+opm09a.job_no$+" "+opm09a.customer_name$
+                      rem if lines+1>maxlines gosub customer_heading
+ 
+                      OutVect!.addItem(job$)
+                      abc=fnblank(12)
+                      lines=lines+1
+                      break
+                wend
+
+                rem --- Loop back for next Invoice Header
+
+          wend
+
+          rem --- Print customer total
+
+          while printed
+                for x=0 to maxperiods
+                    c[maxperiods+1]=c[maxperiods+1]+c[x]
+                next x
+                if type$="D" and col_format$="Y" break
+                rem if type$="D" if lines+2>maxlines gosub customer_heading 
+                if type$="S" if lines+2>maxlines gosub increment_lines 
+                  
+                if type$="D"
+                   dim x$(t)
+                   x$="Total for "+customer$
+                   x$=cvs(x$,2)
+
+                    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+                    abc=fnblank(1)
+                    OutVect!.addItem(x$)
+                    abc=fnblank(4)
+
+                endif 
+
+                if type$="S"
+                   if col_format$="N"
+                       abc=fnblank(9)
+                   endif
+                   OutVect!.addItem(customer$)
+                endif
+
+                if future$="Y"
+                    OutVect!.addItem(str(c[0]))
+                else
+                    OutVect!.addItem("")
+                endif
+
+                OutVect!.addItem(str(c[1]))
+                OutVect!.addItem(str(c[2]))
+                OutVect!.addItem(str(c[3]))
+                OutVect!.addItem(str(c[4]))
+                OutVect!.addItem(str(c[5]))
+                OutVect!.addItem(str(c[6]))
+
+                lines=lines+2                
+                printed=0
+
+          wend  
+
+          rem --- Update customer detail record (if requested)
+
+          if update$="N" continue
+          arm02a.aging_future=c[0]
+          arm02a.aging_cur=c[1]
+          arm02a.aging_30=c[2]
+          arm02a.aging_60=c[3]
+          arm02a.aging_90=c[4]
+          arm02a.aging_120=c[5]
+          arm02a$=field(arm02a$)
+          write record (arm02_dev) arm02a$
+          rem read (arm02_dev,key=arm02_key$)
+
+          rem --- Loop back for next customer
+
+    wend
+
+rem --- All done
+
+    done=1
+    if option$="S" 
+       gosub salesperson
+       salesperson$=""
+       headings=3
+       lines=maxlines+1
+    endif
+    x$="Totals for Report"
+    for x=0 to maxperiods
+        t[maxperiods+1]=t[maxperiods+1]+t[x]
+    next x
+    if lines+2>maxlines gosub increment_lines
+    if type$="D" and col_format$<>"Y"
+
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+ 
+        abc=fnblank(1)
+        OutVect!.addItem(x$)
+        abc=fnblank(4)
+    endif 
+
+    if type$="S" and col_format$<>"Y"
+
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+        OutVect!.addItem(x$)
+    endif 
+ 
+    if future$="Y"
+        OutVect!.addItem(str(t[0]))
+    else
+        OutVect!.addItem("")
+    endif
+    if col_format$<>"Y"
+        OutVect!.addItem(str(t[1]))
+        OutVect!.addItem(str(t[2])) 
+        OutVect!.addItem(str(t[3]))
+        OutVect!.addItem(str(t[4]))
+        OutVect!.addItem(str(t[5]))
+        OutVect!.addItem(str(t[6]))
+    endif
+
+    goto std_exit
+
+increment_lines: rem --- Increment lines variable
+
+    lines=headings+1
+    if option$="S" headings$[3]=cvs(salesperson$,2)
+    lines=lines+2
+    return
+
+customer_heading: rem --- Print customer subheading
+
+    if type$="S" or col_format$="Y" return
+    if lines+3>maxlines gosub increment_lines
+
+        abc=fnblank(13)
+
+        OutVect!.addItem(fnmask$(arm01a.customer_id$(1,customer_size),m0$))
+        OutVect!.addItem(arm01a.customer_name$)
+        abc=fnblank(11)
+
+        abc=fnblank(1)
+        OutVect!.addItem(phone$)
+        abc=fnblank(11)
+
+        abc=fnblank(1)
+        OutVect!.addItem(arm01a.contact_name$)
+        abc=fnblank(11)
+
+        lines=lines+3
+
+    return
+
+salesperson: rem --- Salesperson break
+
+    salesperson=lastcode$<>""
+    if col_format$="Y" return
+    while salesperson
+          x$="Total for "+salesperson$
+          for x=0 to maxperiods
+              s[maxperiods+1]=s[maxperiods+1]+s[x]
+          next x
+          rem if type$="D" if lines+2>maxlines gosub customer_heading 
+          if type$="S" if lines+2>maxlines gosub increment_lines 
+
+     if type$="D" 
+ 
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+        abc=fnblank(1)
+        OutVect!.addItem(x$)
+        abc=fnblank(4)
+      endif 
+ 
+      if type$="S" 
+        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+        OutVect!.addItem(x$) 
+      endif    
+
+        if future$="Y"
+            OutVect!.addItem(str(s[0]))
+        else
+            OutVect!.addItem("")
+        endif    
+        
+        OutVect!.addItem(str(s[1]))
+        OutVect!.addItem(str(s[2])) 
+        OutVect!.addItem(str(s[3]))
+        OutVect!.addItem(str(s[4]))
+        OutVect!.addItem(str(s[5]))
+        OutVect!.addItem(str(s[6]))
+    
+        lines=lines+2
+        salesperson=0
+    
+   wend
+    if done return
+    dim arm10f$:fattr(arm10f$),s[maxperiods+1]
+    arm10f.firm_id$=arm02a.firm_id$
+    arm10f.record_id_f$="F"
+    arm10f.slspsn_code$=arm02a.slspsn_code$
+    arm10f.code_desc$="(Not on File)"
+    k$=arm10f.firm_id$+arm10f.record_id_f$+arm10f.slspsn_code$
+    find record (arm10_dev,key=k$,dom=*next) arm10f$
+    lastcode$=arm10f.slspsn_code$
+    salesperson$="Salesperson "+arm10f.slspsn_code$+" "+arm10f.code_desc$
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(salesperson$)
+    lines=maxlines+1
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

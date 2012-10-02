@@ -1,0 +1,328 @@
+rem --- Lot/Serial Number Input
+rem --- Program ivc_sa v8.0.0 05Dec2007 (ivc_sa)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 10:20:20)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+        seterr std_error
+        setesc std_error
+        enter item$,a0$,a1$,a[all],l0,l9,type$,ive11_dev,curr$
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+sysinfo",err=*next)
+        milestone=num(stbl("+milestone",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+        files=3,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]="ive-11",ids$[1]="IVE_TRANSDET"
+        files$[2]="ivm-07",ids$[2]="IVM_LSMASTER"
+        files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit
+        ive11_dev=channels[1]
+        ivm07_dev=channels[2]
+        ivs01a_dev=channels[3]
+
+rem --- Dimension string templates
+
+         dim ive11a$:templates$[1],ivm07a$:templates$[2],ivs01a$:templates$[3]
+
+rem --- Assign form input values to local variables
+
+        value_01$=Option!.getOptionData("form_value_01")
+
+rem --- Retrieve parameter records
+
+        ivs01a_key$=firm_id$+"IV00"
+        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Open/Lock Files
+
+        files=2
+        dim files$[files],options$[files],channels[files]
+        files$[1]="ivm-07"
+        files$[2]="sys-01",options$[2]="P"
+        call pgmdir$+"adc_fileopen.aon",1,1,files,files$[all],options$[all],channels[all],batch,status
+        if status then goto std_exit
+        ivm07_dev=channels[1]
+        sys01_dev=channels[2]
+
+rem --- Determine interface
+
+        call pgmdir$+"syc_dg.bbx",sysgui_dev,event$,event_len,sysfin$,sysfin,ui$,status
+        if status then goto std_exit
+
+rem --- Parameters
+
+        dim p[5],t$:stbl("+TASK_TMPL")
+        t$=stbl("+TASK")
+        firm_id$=t.f0$(16,2)
+        find record (sys01_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+        if pos(p3$(17,1)="SL")=0 then goto std_exit
+        p[0]=num(p2$(1,2))
+        p[1]=num(p2$(3,2)),p[3]=num(p2$(7,2))
+        p[2]=num(p2$(9,2))
+        p[4]=num(p2$(11,2)),p[5]=num(p2$(13,2))
+        m1=len(m1$)
+        m2=len(m2$),m3=len(m3$),p9$="Lot/Serial"
+        if l9-l0-2<0 then goto std_exit
+        bbj=fnglobal("+BBJ",0)
+
+rem --- Initializations
+
+        dim o[3],lotser$(20),s0$(53),s1$(22),s2$(62)
+        l0=l0+1
+        l=l0,o[3]=79-m3
+        for i=2 to 0 step -1; let o[i]=o[i+1]-m2; next i
+        a0$=pad(a0$,44)
+        a1$=pad(a1$,95)
+        call pgmdir$+"syc_rg.bbx::save",globalvars$,ignore_status
+        more=1
+        brk=1
+        cntr=1
+
+rem --- Background
+
+        if ui$<>"W" then print 'sb',@(1,l0-1),p9$+" #/Comment",@(o[0]+m2-8),"On Hand",@(o[1]+m2-6),"Avail",@(o[2]+m2-4),"Qty",@(o[3]+m3-5),"Cost",'sf'
+
+rem --- display fields?  (what is there to display?)
+
+        gosub display_fields
+
+        Lot_Number: rem --- Lot/Serial Number
+
+    while more
+
+        
+        v0$="S"
+        v1$="CE",v3$="",v0=p[3],v1=1,v2=l0,i0=0
+        v2$= ivm07a.LOTSER_NBR$
+        v4$="Enter A New "+p9$+" Number/End"
+        on v3 goto Serial_Number,Lot_Number,Lot_Number,Lot_Number,done,Serial_Number,done
+
+        Serial_Number:
+        if cvs(v$,2)="" then
+            continue
+        endif
+        lotser$(1)=v$
+
+rem --- Check Current Session Entries for Duplicate Lot/Serial #s
+
+        if type$="R" 
+            read (ive11_dev,key=curr$(1,9),dom=*next)
+            while more
+                ive11a_key$=key(ive11_dev,end=*break)
+                if ive11a.FIRM_ID$+ive11a.IV_TRANS_NO$<>curr$(1,9)
+                    break
+                endif
+                read record (ive11_dev,key=ive11a_key$) ive11a$
+                if item$(3,22)+v$<>s1$+cvs(ive11a.LOTSER_NO$,2) 
+                    continue
+                else
+                    brk=0
+                    break
+                endif
+            wend 
+        endif 
+
+
+rem --- Retrieve record
+        if brk=1
+            find record (ivm07_dev,key=item$+lotser$,dom=int_new) ivm07a$
+            if ivm07a.QTY_ON_HAND=0 then
+                cntr=1
+                break
+            endif
+        endif 
+        if ivs01a.LOTSER_FLAG$<>"S" 
+            break
+        endif
+        dim mess$[0]
+        mess$[0]="This Serial Number Already Exists (<Enter>=Continue)"
+        call pgmdir$+"adc_stdmessage.aon",2,mess$[all],0,-1,-1,v$,v3
+    wend 
+
+    if  cntr=1
+        Lot_Exists: rem --- Lot already exists
+
+        v4$="WARNING:This Lot # Already Exists. Add To Existing Lot #"
+        call pgmdir$+"adc_yesno.aon",1,v4$,1,v$,v3
+        on pos(v$="YN") goto Lot_Exists,Display_Sub,Lot_Number
+
+        Display_Sub:
+        gosub display_fields
+
+    endif
+
+    int_new:rem --- Initialize for new record
+    
+        ivm07a.FIRM_ID$=item$(1,2)
+        ivm07a.WAREHOUSE_ID$=item$(3,2)
+        ivm07a.ITEM_ID$=item$(5,20)
+        ivm07a.LOTSER_NO$=lotser$
+
+    Quantity: rem --- Quantity
+        while more
+            if ivs01a.LOTSER_FLAG$="S" and ivm07a.QTY_ON_HAND=0 then let ivm07a.QTY_ON_HAND=1
+            v0$="N"
+            v1$="C",v2$=str(ivm07a.QTY_ON_HAND),v3$=m2$,v0=7,v1=o[2],v2=l0
+            v4$="Enter The Quantity For This Transaction"
+            if pos(type$="RI")>0 then let v4$="Enter A Positive Quantity For This Transaction"
+            on v3 goto Lot_Flag,Quantity,To_Flowcontrol,Quantity,To_Flowcontrol,Lot_Flag,To_Flowcontrol
+            Lot_Flag:
+               if ivs01a.LOTSER_FLAG$="S" and abs(v)>1 then
+                    continue
+                endif
+                if pos(type$="RI")>0 and v<0 then
+                    continue
+                endif
+                break
+        wend
+        ivm07a.QTY_ON_HAND=v
+        print @(v1,v2),v:m2$,
+
+        while more
+            To_Flowcontrol: rem    goto flow_control
+                break
+            Cost_Calc: rem --- Cost
+                v0$="N"
+                v1$="C",v2$=str(ivm07a.UNIT_COST),v3$=m3$,v0=7,v1=o[3],v2=l0
+                v4$="Enter The Unit Cost"
+               
+                on v3 goto Print_port,Cost_Calc,Break_To_Flowcontrol,Cost_Calc,Break_To_Flowcontrol,Print_port,Break_To_Flowcontrol
+
+            Print_port:
+                ivm07a.unit_cost=v
+                print @(v1,v2),v:m3$
+                Break_To_Flowcontrol: rem    goto flow_control
+                break
+            Comment_Port: rem --- Comments
+                v0$="S"
+                v1$="C",v2$=ivm07a.LS_COMMENTS$,v3$="",v0=40,v1=6,v2=l0+1
+                v4$="Enter Any Optional Comments"
+                
+                on v3 goto CommentPortion,Comment_Port,ToFlowControl,Comment_Port,ToFlowControl,CommentPortion,ToFlowControl
+            CommentPortion:
+                ivm07a.LS_COMMENTS$=v$
+            ToFlowControl: rem    goto flow_control
+                break
+            Location_Portion: rem --- Location
+                v0$="S"
+                v1$="C",v2$=ivm07a.INV_LOCATION$,v3$="",v0=10,v1=66,v2=l0+1
+                v4$="Enter The Current Location"
+                print 'sb',@(48,l+1),"Current Location: ",'sf',
+                rem gosub std_input
+                on v3 goto Curr_Location,Location_Portion,To_FlowControl_Part,Location_Portion,To_FlowControl_Part,Curr_Location,To_FlowControl_Part
+            Curr_Location:
+                ivm07a.LS_LOCATION$=v$
+            To_FlowControl_Part: rem    goto flow_control
+                break
+        wend
+
+        flow_control: rem --- Flow Control
+        switch v3
+            case 0
+            case 1
+            case 3; let i0=i0+1; break
+            case 2
+            if i0<i0_nonkey1 then let i0=max(0,i0-1) else let i0=max(i0_nonkey1,i0-1)
+            break
+            case 4; exitto start_done
+            case default; exitto start_done
+        swend
+        on i0 goto Quantity,Cost_Calc,Comment_Port,Location_Portion,done
+
+    start_done: 
+          let i0=i0_done
+    done: rem --- All done
+    goto std_exit
+    display_fields: rem --- Display Fields
+
+        print @(0,l0),ivm07a_key.LOTSER_NO$(25,p[3]),
+:       @(o[0]),ivm07a.QTY_ON_HAND:m3$,
+:       @(o[1]),ivm07a.QTY_ON_HAND-ivm07a.QTY_COMMIT:m3$,
+:       @(o[2]),ivm07a.QTY_ON_HAND:m2$,
+:       @(o[3]),ivm07a.UNIT_COST:m3$,
+:       @(6,l0+1),ivm07a.LS_COMMENTS$,
+:       @(48),'sb',"Current Location: ",'sf',
+:       @(66),ivm07a.LS_LOCATION$
+        if ui$="W" and ivm07a.CLOSED_FLAG$="C" then print @(0,l0+1),"*C*"
+        return
+
+rem --- Return numeric value of passed STBL variable
+        def fnglobal(q$,q1)
+        q1$=stbl(q$,err=globalnum_exit)
+        q1=num(q1$,err=*next)
+
+    globalnum_exit:
+        return q1
+        fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

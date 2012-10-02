@@ -1,0 +1,488 @@
+rem --- Inventory Stock Movement Report
+rem --- Program ivr_stkmovemt_o1 v8.0.0 16Jul2007 (ivr_cb)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/16/2007 12:54:51)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- Document initializations
+            OutVect!=bbjAPI().getSysGui().makeVector()
+            HdrVect!=bbjAPI().getSysGui().makeVector()
+            BrkVect!=bbjAPI().getSysGui().makeVector()
+            rep_date$=date(0:"%Mz/%Dz/%Yd")
+            rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+            rep_time$=date(0:"%hz:%mz %p")
+            rep_time_stamp$=date(0:"%Hz%mz%sz")
+   
+
+rem --- Initializations
+
+            precision p[1]
+            headings=7
+            when$=sysinfo.system_date$
+            clock$=""
+            h9$=""
+            done=0
+            dim headings$[headings],o[9],prod_tot[5],whse_tot[5],grand_tot[5]
+            headings$[0]=sysinfo.firm_name$
+            headings$[1]=sysinfo.task_desc$
+            width=132
+            page=0
+            l9=59
+            l=l9+1
+            product=0
+            warehouse=0
+            report=0
+            dim channs[3],period$[1]
+            channs[3]=ivm03_dev
+            channs[2]=ivm12_dev
+            day_of_mth=num(when$(7,2))
+            period$[0]=year$+period$
+            period$[1]=year$+period$
+            more=1
+
+rem --- Print positions
+    
+            gosub Position
+
+rem --- Position files
+
+          
+            call pgmdir$+"adc_progress.aon","N","","","","",0,ivm03_dev,1,meter_num,status
+
+            dim ivm03a_key$:ivm03_key_tpl$
+            first$=firm_id$+"A"
+            ivm03a_key$=first$+begprod$
+            p=0
+            if level$="W" first$=firm_id$+"C",ivm03a_key$=first$+begwhse$,p=2
+            read (ivm03_dev,key=ivm03a_key$,dom=*next)
+
+            While more
+
+                ivm03a_key$=key(ivm03_dev,end=*break)
+                if pos(first$=ivm03a_key$)<>1 break
+                if level$="W" whse$=ivm03a_key.warehouse_id$
+                product$=ivm03a_key.product_type$
+                item$=ivm03a_key.item_id$
+   rem             a=msgbox(ivm03a_key.item_id$)
+                if level$<>"W" then
+   rem             item$=ivm03a_key.item_id$
+
+rem --- By Item: Valid Product/Item?
+
+            if endprod$<>"" if product$>endprod$ break
+            if begitem$<>"" then
+                if item$<begitem$ then
+                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
+:                   ivm03a_key.product_type$+begitem$,dir=0,dom=*Continue)
+                    continue
+                endif
+            endif
+            if enditem$<>"" then
+                if item$>enditem$ then
+                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
+:                   ivm03a_key.product_type$+$FF$,dir=0,dom=*Continue)
+                    continue
+                endif
+            endif
+            x$=product$+" "+item$(1,p[0])
+            
+        else
+            if endwhse$<>"" if whse$>endwhse$ break
+            if begprod$<>"" then
+                if product$<begprod$ then
+                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
+:                   ivm03a_key.warehouse_id$+begprod$,dom=*continue)
+                    continue
+                endif
+            endif
+            if endprod$<>"" then
+                if product$>endprod$ then
+                     read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
+:                    ivm03a_key.warehouse_id$+$FF$,dom=*continue)
+                     continue
+                endif
+            endif
+            if begitem$<>"" then
+                if item$<begitem$ then
+                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
+:                   ivm03a_key.warehouse_id$+ivm03a_key.product_type$+begitem$,dir=0,dom=*continue)
+                    continue
+                endif
+            endif
+            if enditem$<>"" then
+                if item$>enditem$ then
+                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
+:                   ivm03a_key.warehouse_id$+ivm03a_key.product_type$+$FF$,dom=*continue)
+                    continue
+                endif
+            endif
+            x$=whse$+" "+product$+" "+item$(1,p[0])
+        endif
+        call pgmdir$+"adc_progress.aon","S","","","",x$,0,0,1,meter_num,status
+        if level$="W" if whse$<>t0$ gosub BreakWhse
+        if product$<>t1$ gosub BreakProd
+        read (ivm03_dev)
+
+rem --- Retrieve item
+
+                dim item$[2],whse$[2],whse[20],activity[12]
+                ivm01a_key$=firm_id$+item$
+                if level$="W" ivm02a_key$=firm_id$+whse$+item$
+                find record (ivm01_dev,key=ivm01a_key$,dom=*continue) ivm01a$
+                if type$<>"" then
+                    if ivm01a.item_type$<>type$ then
+                        continue
+                    endif
+                endif
+                action$="A"
+                item$[0]=firm_id$
+                item$[2]=item$
+                if level$="W" item$[1]=whse$,action$=""
+                if level$="W" find record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
+                call pgmdir$+"ivc_whseinfo.aon",action$,ivchannels[all],item$[all],whse$[all],whse[all],value,status,rd_table_chans$[all]
+                call pgmdir$+"ivc_usage.aon",level$,ivchannels[all],item$[all],factors[all],day_of_mth,period$+year$,ivs01a.current_per$+ivs01a.current_year$,g[0],p[1],usage,estimated,flag$,status
+                if flag$<>"" usage=estimated
+                avg_usage=usage/g[0]
+                if level$="W" action$="" else action$="A"
+                call pgmdir$+"ivc_whseact.aon",action$,channs[all],item$[all],period$[all],activity[all],status
+                cur_usage=activity[3]+activity[4]-activity[8]
+                prior_usage=usage-cur_usage
+                cur_recpts=activity[1]+activity[2]
+                cur_adj=activity[5]+activity[6]+activity[7]
+
+rem --- Print detail line
+
+                x$=""
+                issued$=""
+                needed=1+split
+                if h9$<>"" needed=needed+2
+                if level$="W" last_issue$=fnl$(ivm02a.lstsal_date$,ivm02a.lstiss_date$) else last_issue$=fnl$(ivm01a.lstsal_date$,ivm01a.lstiss_date$)
+                if num(last_issue$(1,4))>0 if last_issue$(5,2)="00" last_issue$(5,4)="0101"
+                if cvs(last_issue$,2)<>"" issued$=fndate$(last_issue$)
+                if split=0 x$=fnitem$(ivm01a.Item_Desc$,p[3],p[4],p[5])
+                if l+needed>l9 
+                if h9$<>"" gosub ProdHead
+                OutVect!.addItem(ivm01a_key$(3))
+                OutVect!.addItem(x$)
+                OutVect!.addItem(ivm01a.unit_of_sale$)
+                OutVect!.addItem(issued$)
+                OutVect!.addItem(str(avg_usage:m2$))
+                OutVect!.addItem(str(usage:m2$)+flag$)
+                OutVect!.addItem(str(cur_usage:m2$))
+                OutVect!.addItem(str(prior_usage:m2$))
+                OutVect!.addItem(str(cur_recpts:m2$))
+                OutVect!.addItem(str(cur_adj:m2$))
+
+                l=l+1+split
+                if split<>0 then
+                    x$=fnitem$(ivm01a.Item_Desc$,p[3],p[4],p[5])
+                OutVect!.addItem(x$)
+                endif
+
+rem --- Accumulate totals
+                prod_tot[0]=prod_tot[0]+avg_usage
+                prod_tot[1]=prod_tot[1]+usage
+                prod_tot[2]=prod_tot[2]+cur_usage
+                prod_tot[3]=prod_tot[3]+prior_usage
+                prod_tot[4]=prod_tot[4]+cur_recpts
+                prod_tot[5]=prod_tot[5]+cur_adj
+           wend
+
+done: rem --- All done
+
+rem    if subtotals$="N" goto done_back
+            done=1
+            if level$="W" gosub BreakWhse
+            if level$="I" gosub BreakProd
+
+                OutVect!.addItem(fill(m2*6+1,"-"))
+                OutVect!.addItem("Total For Report ")
+                OutVect!.addItem(str(grand_tot[0]:m2$))
+                OutVect!.addItem(str(grand_tot[1]:m2$))
+                OutVect!.addItem(str(grand_tot[2]:m2$))
+                OutVect!.addItem(str(grand_tot[3]:m2$))
+                OutVect!.addItem(str(grand_tot[4]:m2$))
+                OutVect!.addItem(str(grand_tot[5]:m2$))
+
+
+done_back:
+            goto std_exit
+
+
+
+ProdHead: rem --- Product subheading
+
+    
+
+             xwk=fnblank(10)
+             OutVect!.addItem(h9$)
+             xwk=fnblank(9)
+             xwk=fnblank(10)
+             l=l+2
+             h9$=""
+             return
+
+InitHead: rem --- Initialize HEADINGS$
+
+            dim h1$(width),h2$(width),h6$(width),h7$(width),headings$[headings+1]
+
+
+            headings$[0]=sysinfo.firm_name$
+            headings$[1]=sysinfo.task_desc$
+            if level$="I" headings$[1]=headings$[1]+" By Item"
+            if level$="W" headings$[1]=headings$[1]+" By Warehouse"
+            headings$[1]=headings$[1]+" For Period "+period$+" "+year$+" "+per_name$[num(period$)]
+            headings$[3]="[HEADER]"    
+            if begitem$="" headings$[4]="From Item: First" else headings$[4]="From Item: "+begitem$
+            if enditem$="" headings$[4]=headings$[4]+" -- To Item: Last" else headings$[4]=headings$[4]+" -- To Item: "+enditem$
+            if begprod$="" headings$[5]="From Product: First" else headings$[5]="From Product: "+begprod$                
+            if endprod$="" headings$[5]=headings$[5]+" -- To Product: Last" else headings$[5]=headings$[5]+" -- To Product: "+endprod$
+            if type$=""    headings$[6]="All Item Types" else headings$[6]="Item Type: "+type$
+
+dim columns$[9,10]
+                columns=9
+                    columns$[0,0]="Item",                  columns$[0,1]="C",columns$[0,2]="30"
+                    columns$[1,0]="Description",           columns$[1,1]="C",columns$[1,2]="40"
+                    columns$[2,0]="UM",                    columns$[2,1]="C",columns$[2,2]="5"
+                    columns$[3,0]="Date of Last Issue",    columns$[3,1]="N",columns$[3,2]="10"
+                    columns$[4,0]="Avg Period Usage",      columns$[4,1]="N",columns$[4,2]="10",columns$[4,3]=m2$
+                    columns$[5,0]="Annual Usage",          columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m2$
+                    columns$[6,0]="Period Usage",          columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m2$
+                    columns$[7,0]="Prior Usage",           columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$
+                    columns$[8,0]="Period Receipts",       columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m2$
+                    columns$[9,0]="Period Adjust",         columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m2$
+                    
+    
+    return
+
+BreakWhse: rem --- Warehouse Break
+
+            if t0$="" then goto new_whse
+            if t0$<>"" then rem or subtotals$<>"N"
+                gosub BreakProd
+
+                xwk=fnblank(4)
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                xwk=fnblank(3)
+                OutVect!.addItem("Total For Warehouse "+t0$)
+                OutVect!.addItem(str(whse_tot[0]:m2$))
+                OutVect!.addItem(str(whse_tot[1]:m2$))
+                OutVect!.addItem(str(whse_tot[2]:m2$))
+                OutVect!.addItem(str(whse_tot[3]:m2$))
+                OutVect!.addItem(str(whse_tot[4]:m2$))
+                OutVect!.addItem(str(whse_tot[5]:m2$))
+
+
+                let l=l+2
+            endif
+new_whse:
+                if done return
+                dim whse_tot[5]
+                let t0$=whse$, ivm10c.short_name$="(Not on File)",l=l9+1,warehouse=0
+                find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
+                let x$="Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2)
+                BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+                HdrVect!.addItem(x$)
+                return
+
+BreakProd: rem --- Product break
+
+            if t1$="" then goto new_prodtype
+            if t1$<>"" then rem or subtotals$<>"N"
+
+                xwk=fnblank(4)
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                OutVect!.addItem(fill(m2*2+1,"-"))
+                xwk=fnblank(3)
+                OutVect!.addItem("Total For Product "+t1$)
+                OutVect!.addItem(str(prod_tot[0]:m2$))
+                OutVect!.addItem(str(prod_tot[1]:m2$))
+                OutVect!.addItem(str(prod_tot[2]:m2$))
+                OutVect!.addItem(str(prod_tot[3]:m2$))
+                OutVect!.addItem(str(prod_tot[4]:m2$))
+                OutVect!.addItem(str(prod_tot[5]:m2$))
+
+                let l=l+2
+                for x=0 to 5
+                    let grand_tot[x]=grand_tot[x]+prod_tot[x],whse_tot[x]=whse_tot[x]+prod_tot[x]
+                next x
+            endif
+new_prodtype:
+            if done return
+            dim prod_tot[5]
+            let t1$=product$,ivm10a.code_desc$="(Not on File)",product=0
+            find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
+            let h9$="Product Type "+t1$+" "+ivm10a.code_desc$
+            return
+
+Position: rem --- Print positions
+
+            m1$=ivs01a.amount_mask$
+            m2$=ivs01a.unit_mask$
+            m3$=ivs01a.cost_mask$
+            call pgmdir$+"adc_sizemask.aon",m2$,m2,8,12
+            call pgmdir$+"adc_sizemask.aon",m3$,m3,8,12
+            o[1]=p[0]+1
+            o[9]=width-m2
+            o[8]=o[9]-m2
+            o[7]=o[8]-m2
+            o[6]=o[7]-m2
+            o[5]=o[6]-m2-1
+            o[4]=o[5]-m2
+            o[3]=o[4]-9
+            o[2]=o[3]-4
+            split=0
+            if p[0]+p[3]+p[4]+p[5]>o[2] split=1
+            more=1
+            gosub InitHead
+            return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem " --- Compare two dates"
+    def fnl$(q1$,q2$)
+        if CVS(q1$,2)="" THEN LET q1$="zzzzzzzz"
+        if CVS(q2$,2)="" THEN LET q2$="zzzzzzzz"
+        q$=q1$
+        if q2$>q1$ then q$=q2$
+        if q$="zzzzzzzz" then q$="        "
+        return q$
+    fnend
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

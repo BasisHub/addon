@@ -1,0 +1,238 @@
+rem --- Sales Register (Summary Overlay)
+rem --- Program opr_hc v8.0.0 01Feb2008 (opr_hc)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (02/01/2008 10:08:32)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+        setesc std_error
+        seterr std_error
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+DIR_PGM",err=*next)
+       
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Initializations
+
+        more=1
+        l9=55
+        l=l9+1,headings=1
+
+rem --- Background
+
+        print @(0,10),'cl',@(0,11),'cl',@(0,12),'cl',
+        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+        call pgmdir$+"adc_progress.aon","N","","",h$+" Summary","",3,0,1,meter_num,status
+
+rem     retrieve template for OPW_TERRSUMM record key
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","OPW_TERRSUMM","PRIMARY",opw11a_key_tpl$,table_chans$[all],status$
+        dim opw11a_key$:opw11a_key_tpl$
+
+rem     retrieve template for OPW_LINESUMM record key
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","OPW_LINESUMM","PRIMARY",opw21a_key_tpl$,table_chans$[all],status$
+        dim opw21a_key$:opw21a_key_tpl$
+
+rem     retrieve template for OPW_SALESUMM record key
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","OPW_SALESUMM","PRIMARY",opw31a_key_tpl$,table_chans$[all],status$
+        dim opw31a_key$:opw31a_key_tpl$
+
+
+
+rem --- Territory Summary
+
+        r1$="A"
+        r2$="H"
+        h$="Territory"
+        work_dev=opw11_dev
+        dim key_templ$:opw11a_key$
+        p=7,w=20
+        gosub Process_Summary_Section
+
+rem --- Transaction Summary
+
+        r1$="B"
+        r2$="E"
+        h$="Transaction"
+        work_dev=opw21_dev
+        dim key_templ$:opw21a_key$
+        p=5
+        w=20
+        gosub Process_Summary_Section
+        print (printer_dev)@(5),"Tax",@(40),u[2]:ars01a.amount_mask$
+        print (printer_dev)@(5),"Freight",@(40),u[3]:ars01a.amount_mask$
+        print (printer_dev)@(5),"Discount",@(40),u[5]:ars01a.amount_mask$
+
+rem --- Salesperson Summary
+
+        r1$="C"
+        r2$="F"
+        h$="Salesperson"
+        work_dev=opw31_dev
+        dim key_templ$:opw31a_key$
+        p=7
+        w=20
+        gosub Process_Summary_Section
+
+rem --- All done
+
+        if noninv<>0 or inv<>0 then
+            if inv<>1 then
+                dim message$[1]
+                message$[0]="Missing Inventoried Lot/Serial Numbers (<Enter>=Continue)"
+                call pgmdir$+"adc_stdmessage.aon",1,message$[all],0,22,-1,v$,v3
+                goto std_exit
+            else
+                v4$="Missing Non-Inventoried Lot/Serial Nbrs - Proceed With Update"
+                call pgmdir$+"adc_yesno.aon",0,v4$,0,v$,v3
+                    if v$<>"YES" then
+                        goto std_exit
+                    endif
+            endif
+        endif
+
+rem --- Close Files Not Needed For Update Or GL Summary
+
+        close (opw11_dev,err=*next)
+        close (opw01_dev,err=*next)
+        close (opw21_dev,err=*next)
+        close (opw41_dev,err=*next)
+        close (opw31_dev,err=*next)
+
+rem --- Run next overlay
+
+        update$="opu_ca.bbx"
+        if gl$="Y" then
+            dim glcontrol$(740)
+            glcontrol$(1)=stbl("+GLCONTROL",err=GL_Summary)
+            glcontrol$(50,1)=ars01a.prt_gl_det$; rem "Print GL Sales Detail Report
+            x$=stbl("+GLCONTROL",glcontrol$)
+
+GL_Summary: rem --- print @(40,5),"G/L Summary",'cl',
+
+            run pgmdir$+"glr_recap.aon"
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+        endif
+
+
+        run update$,err=std_exit
+
+report_heading: rem --- Report Heading
+
+        call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
+        if status then exitto std_exit
+        l=headings+1
+
+Sub_Heading: rem --- Subheading
+
+        print (printer_dev)""
+        print (printer_dev)h$," Summary",@(40+m1-7),"Amount"
+        print (printer_dev)""
+        l=l+3
+        return
+
+Process_Summary_Section: rem --- Process Summary Section
+
+rem --- print @(40,5),h$," Summary",'cl',
+
+        if l+3>l9 then
+            gosub report_heading
+        else
+            gosub Sub_Heading
+        endif
+
+        read (work_dev,key=firm_id$,dom=*next)
+
+rem --- Read next record
+While more
+        key_templ$=key(work_dev,end=*break)
+        if pos(firm_id$=key_templ$)<>1 then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        read record (work_dev) opw11a$
+
+rem --- Print record
+
+        rem dim x$(32)
+        x$(p)="Unknown "+h$
+        if r2$="E" then find record (opm02_dev,key=firm_id$+opw21a_key.line_code$,dom=Label_One) opm02a$
+        if r2$="F" then find record (arm10_dev,key=firm_id$+r2$+opw31a_key.slspsn_code$,dom=Label_One) arm10f$
+        if r2$="H" then find record (arm10_dev,key=firm_id$+r2$+opw11a_key.territory$,dom=Label_One) arm10h$
+        if r1$="B" then if opm02a.line_type$="M" then continue
+Label_One:
+        if l>l9 then gosub report_heading
+        print (printer_dev)@(5),key_templ$(5)," ",x$(p,w),@(40),x0:ars10a.amount_mask$
+        l=l+1
+Wend
+
+rem --- Section complete
+
+        return
+
+rem --- #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+        if pos("EXIT"=rd_err_act$) goto std_error_exit
+        if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+        if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+        master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_error_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_error_release:
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem --- #endinclude std_error.src
+rem --- #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+        call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+        master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_missing_params_release:
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem --- #endinclude std_missing_params.src
+
+rem --- #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+        run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+        release
+
+rem --- #endinclude std_end.src
+
+        end

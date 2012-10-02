@@ -1,0 +1,372 @@
+rem --- W-2 Calculation
+rem --- Program prw_ca v8.0.0 04Jun2008 (prw_ca)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/04/2008 10:31:13)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=9,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="prm-01",ids$[1]="PRM_EMPLMAST"
+    files$[2]="PRC_TAXCODE",ids$[2]="PRC_TAXCODE"
+    files$[3]="PRC_W2BOX",ids$[3]="PRC_W2BOX"
+    files$[4]="PRS_PARAMS",ids$[4]="PRS_PARAMS"
+    files$[5]="prt-01",ids$[5]="PRT_EMPLEARN"
+    files$[6]="prt-11",ids$[6]="PRT_EMPLDDCT"
+    files$[7]="prt-21",ids$[7]="PRT_EMPLTAX"
+    files$[8]="prt-31",ids$[8]="PRT_EMPLCONT"
+    files$[9]="prw-06",ids$[9]="PRW_W2REPORT"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    prm01a_dev=channels[1]
+    prm10c_dev=channels[2]
+    prm10w_dev=channels[3]
+    prs01a_dev=channels[4]
+    prt01a_dev=channels[5]
+    prt11a_dev=channels[6]
+    prt21a_dev=channels[7]
+    prt31a_dev=channels[8]
+    prw06a_dev=channels[9]
+
+rem --- Dimension string templates
+
+    dim prm01a$:templates$[1],prm10c$:templates$[2],prm10w$:templates$[3],
+:       prs01a$:templates$[4],prt01a$:templates$[5],prt11a$:templates$[6],
+:       prt21a$:templates$[7],prt31a$:templates$[8],prw06a$:templates$[9]
+
+rem --- Assign form input values to local variables
+
+    option$=Option!.getOptionData("cur_archive")
+    year$=Option!.getOptionData("archive_year")
+    quarter$=Option!.getOptionData("quarter")
+    begemp$=Option!.getOptionData("employee_1")
+    endemp$=Option!.getOptionData("employee_2")
+
+rem --- Retrieve parameter records
+
+    prs01a_key$=firm_id$+"PR00"
+    find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
+
+rem --- Parameters
+
+    dim p[4]
+    p[0]=num(prs01a.empl_no_len$)
+    p[1]=num(prs01a.max_empl_no$),p[3]=num(prs01a.dept_size$)
+    p[1]=num(prs01a.current_per$),p[2]=num(fnyy$(prs01a.current_year$)),p[3]=num(prs01a.zip_length$)
+    m0=len(m0$)
+
+initializations: rem --- Initializations
+
+    dim j0$(20,"0"),r8$(9),r9$(9),x1$(30)
+    s=10; rem "Number of codes that can be entered for the Box/Line
+    dim y0$(92),y1$(s),y2$(s*2),y3$(s),y[s-1],y1[s-1]
+
+rem --- Get key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRW_W2REPORT","PRIMARY",prw06a_prikey_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRM_EMPLMAST","PRIMARY",prm01a_prikey_tpl$,rd_table_chans$[all],status$
+    dim prw06a_key$:prw06_prikey_tpl$
+    dim prm01a_key$:prm01_prikey_tpl$
+
+    yr$=year$(3,2)
+    files$[4]="PRMA"+yr$+firm_id$
+    files$[5]="PRT0"+yr$+firm_id$,files$[6]="PRT1"+yr$+firm_id$
+    files$[7]="PRT2"+yr$+firm_id$
+    files$[8]="PRT3"+yr$+firm_id$,options$[4]="R",options$[5]="R",options$[6]="R",options$[7]="R",options$[8]="R"
+
+open_employee: rem --- Open Employee Files
+
+    call pgmdir$+"adc_fileopen.aon",1,4,8,files$[all],options$[all],channels[all],batch,status
+    if status
+        if option$="C"
+            prm01a_dev=channels[4]
+            prt01a_dev=channels[5]
+            prt11a_dev=channels[6]
+            prt21a_dev=channels[7]
+            prt31a_dev=channels[8]
+        else
+rem --- Can't Open Archive File
+
+            msg_id$="UNABLE_OPEN_ARCHIVE"
+            dim msg_tokens$[1]
+            msg_tokens$[0]=year$
+            gosub disp_message
+            if msg_opt$="R" then goto open_employee else goto std_exit
+        endif
+    else
+        goto std_exit
+    endif
+
+processing: rem -- Processing
+
+    call pgmdir$+"adc_progress.aon","CN","","","","",0,prm01a_dev,1,meter_num,status
+
+rem --- Remove Old Records For Selected Employees
+
+    read (prw06a_dev,key=firm_id$+begemp$,dom=*next)
+    
+    while more
+        prw06a_key$=key(prw06a_dev,end=*break)
+        if prw06_key.firm_id$<>firm_id$ then break
+        if num(endemp$)>0 and prw06_key.employee_no$>endemp$ then break
+        remove (prw06a_dev,key=prw06a_key$)
+    wend
+
+rem --- Init Employee Masterfile prm-01
+
+    read (prm01a_dev,key=firm_id$+begemp$,dom=*next)
+
+rem --- Main Loop
+    
+    while more
+        prm01a_key$=key(prm01a_dev,end=*break)
+        if prm01a_key.firm_id$<>firm_id$ then break
+        read record (prm01a_dev,key=prm01a_key$) prm01a$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if num(begemp$)>0 and prm01a_key.employee_no$>begemp$ then break
+        read (prm10w_dev,key=firm_id$+"W",dom=*next); rem "Init prm-10 for W2 Box definitions
+
+rem --- W-2 Box Loop
+
+        while more
+            prm10w_key$=key(prm10w_dev,end=*break)
+            if pos(firm_id$+"W"=prm10w_key$)=0 then break
+            read record (prm10w_dev,key=prm10w_key$) prm10w$; rem "Get prm-10 W2 Box definitions
+            prw06a$=prm10w_key.firm_id$+prm10w_key.record_id_w$+prm10w.w2_box_id$+prm10w.w2_bxln_id$+prm10w.w2_state_id$+prm10w.w2_loc_code$
+            for j=1 to s
+                if pos(" "<>field(prm10w$,"w2_code_type_"+str(j:"00")))=0 then exitto write_record
+                gosub get_detail; if x$="" then continue
+                n=1
+                n1=0,w=0,w1=0
+                if field(prm10w$,"w2_code_type_"+str(j:"00"))="C"
+                    read record (prm10c_dev,key=firm_id$+"C"+field(prm10w$,"w2_code_id_"+str(j:"00")),dom=*next) prm10c$; rem "Get prm-10 Tax Code definition
+                    if prm10c.tax_jur_type$="S" then let prw06a.tax_code$=prm10c.w2_state_id$; if a0$(15,2)="  " then let a0$(15,2)=prm10c.tax_code$
+                    if prm10c.tax_jur_type$="L" then let prw06a.loc_tax_code$=prm10c.loc_code$; if prw06a.loc_tax_code$="  " then let prw06a.loc_tax_code$=prm10c.tax_code$
+                endif
+                if num(field(prm10w$,"w2_amt_type_"+str(j:"00")))>2 then n1=12 
+                if num(field(prm10w$,"w2_amt_type_"+str(j:"00")))>1 then n1=6
+                if field(prm10w$,"w2_code_oper_"+str(j:"00"))="-" then let n=-1
+                if quarter<>1
+                    for l=1 to quarter
+                        w1=w1+w[l+n1]
+                    next l
+                else
+                    let w1=w[1+n1]
+                endif
+
+                w=w+w1*n; rem "Operator '+-'
+                if y1[j-1]<=0 y1[j-1]=1; rem "Multiplier must be positive
+                w=w*y1[j-1]; rem "Invoke Multiplier"
+                if a0$(15,4)<>"    " and w>0 then write record (prw06a_dev,key=a0$) prw06a2$
+                a[0]=a[0]+w
+            next j
+
+write_record: rem --- Write Employees W2 Box Record
+
+            if a[0]>0 then write record (prw06a_dev,key=a0$) prw06a$
+            else 
+                if a[0]<0
+                    a0=0; read record (prw06a_dev,key=a0$,dom=*next) prw06a1$; goto apply_ded
+                    k2$=key(prw06a_dev,end=apply_ded); if pos(a0$(1,6)=k2$)=1 then read record (prw06a_dev,key=k2$) prw06a1$
+apply_ded:
+                    a0=a0+a[0]; rem "Apply deductions to state code if needed
+                    if a0>=0 then write record (prw06a_dev,key=a0$) prw06a1$
+                endif
+            endif
+            read (prm10w_dev,key=prm10w_key$)
+        wend
+    wend
+
+done:
+    goto std_exit
+
+get_detail: rem --- Get Employee Detail History
+
+    x$=""; dim w[19]; flag=0
+    action=pos(field(prm10w$,"w2_code_type_"+str(j:"00"))="ABCD")
+    switch(pos)
+        case 1
+            nbr=16; dim x[nbr]
+            read record (prt01a_dev,key=k$+"A"+field(prm10w$,"w2_code_id_"+str(j:"00")),dom=ret_back) prt01a$
+            for i=0 to nbr
+                let w[i]=x[i]
+            next i
+            break
+        case 2
+            nbr=7; dim x[nbr]
+            read record (prt11a_dev,key=k$+"B"+field(prm10w$,"w2_code_id_"+str(j:"00")),dom=ret_back) prt11a$
+            for i=0 to nbr
+                let w[i]=x[i]
+            next i
+            break
+        case 3
+            nbr=18; dim x[nbr]
+            read record (prt21a_dev,key=k$+"C"+field(prm10w$,"w2_code_id_"+str(j:"00")),dom=ret_back) prt21a$
+            for i=0 to nbr
+                let w[i]=x[i]
+            next i
+            break
+        case 4
+            let nbr=19; dim x[nbr]
+            read record (prt31a_dev,key=k$+"D"+field(prm10w$,"w2_code_id_"+str(j:"00")),dom=ret_back) prt31a$
+            for i=0 to nbr
+                let w[i]=x[i]
+            next i
+            break
+        case default
+            break
+    swend
+    
+ret_back:
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

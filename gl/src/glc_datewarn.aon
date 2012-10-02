@@ -1,0 +1,140 @@
+rem --- Print transaction date error/warning message
+rem --- Program glc_datewarn v8.0.0 11Apr2006 (glc_ga)
+rem --- Created by adx_progconv.bbx v1.0.0 (04/11/2006 05:00:32)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- This routine is used to print a standardized error or warning
+rem --- message on a register or update when glc_datecheck has determined
+rem --- that one exists. Note that it does NOT check for a page break.
+rem --- Page breaks and headings are the responsibility of the caller.
+
+rem --- printer_dev: Printer channel (Input)
+rem --- when$      : Transaction date (Input)
+rem --- number     : Transaction date error/warning number (Input)
+rem --- lines      : Line counter (Input)
+rem --- errors     : Total number of errors (Returned)
+rem --- status     : 0=No error (Returned)
+
+    setesc std_exit
+    seterr std_error
+    enter printer_dev,when$,number,lines,errors,status
+
+rem --- Initializations
+
+    error=0
+    warning=0
+    status=0
+    prefix$=""
+    message$=""
+    transaction$=" The "+fndate$(when$)+" transaction date"
+    if number
+       warning=number<100
+       error=number>100
+    endif
+    x$=stbl("!CLEAR","+DTWARN_MSG",err=*next)
+
+rem --- Initialize warning message based on number
+
+    while warning
+          prefix$="WARNING:"
+          switch number
+                 case 1
+                      message$="occurs prior to the current period"
+                 break
+                 case 2
+                      message$="occurs after the next period"
+                 break
+                 case 3
+                      message$="falls into a prior GL period"
+                 break
+                 case default
+                 break
+          swend
+          break
+    wend
+
+rem --- Initialize error message based on number
+
+    while error
+          prefix$="ERROR:"
+          errors=errors+1
+          switch number
+                 case 101
+                      message$="is not in the prior, current or next GL year"
+                 break
+                 case 102
+                      message$="falls into a locked GL period"
+                 break
+                 case 103
+                      message$="falls into a closed fiscal year"
+                 break
+                 case 104
+                      message$="This GL account does not exist"
+                      transaction$=""
+                 break
+                 case default
+                 break
+          swend
+          break
+    wend
+
+rem --- Print warning/error message
+
+    while cvs(message$,2)<>""
+          message$="---> "+prefix$+transaction$+" "+message$+"."
+          if printer_dev > 0
+              print (printer_dev) message$
+              lines=lines+1
+          else
+              x$=stbl("+DTWARN_MSG",message$)
+          break
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+rem --- Functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:          str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

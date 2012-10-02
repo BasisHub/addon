@@ -1,0 +1,127 @@
+rem adc - Format address block
+rem Program adc_address v8.0.0 11Mar2006 (syc_aa)
+rem Created by adx_progconv.bbx v1.0.0 (03/11/2006 03:53:59)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- ADDRESS$ : Address string (in=raw, out=formatted)
+rem --- WIDTH_IN : Width of address line (input)
+rem --- LINES    : Number of lines in address block (input)
+rem --- ZIP      : Length of zip/postal code string (input)
+rem --- WIDTH    : Width of address line desired in output
+
+rem --- ADDRESS$ is a block of address lines, WIDTH_IN by LINES long.  The
+rem --- ZIP code is outside this block.  The last two characters of the
+rem --- block (not including the ZIP) are considered the state if they
+rem --- aren't blank.
+
+rem --- Country has been added at ZIP+1.  If it exists, it is placed under
+rem --- the line where the ZIP code is added.
+
+rem --- Going out, ADDRESS$ is formatted WIDTH by LINES+1 long.
+
+    seterr std_error
+    setesc std_error
+    enter address$,width_in,lines,zip,width
+
+rem --- Initializations
+
+    size=width*(lines+1)
+    dim buffer$(size)
+
+rem --- Format City/State
+
+    block=width_in*lines
+    state$=address$(block-1,2)
+    address$(block-1,2)=""
+    if state$="  " goto fill_buffer
+    pt=pos(" "<>address$(1,block-2),-1)
+    if pt<block-3 address$(pt+1,4)=", "+state$ 
+:            else address$(block-1,2)=state$
+
+fill_buffer: rem --- Put non-blank address lines into buffer
+
+    n=0
+    for i=0 to lines-1
+        if cvs(address$(i*width_in+1,width_in),2)<>"" 
+:          buffer$(n*width+1,width)=address$(i*width_in+1,width_in),
+:          n=n+1
+        endif
+    next i
+
+rem --- Format ZIP code
+
+    zip$=address$(block+1,zip)
+    call stbl("+DIR_SYP")+"bac_getmask.bbj","P",cvs(zip$,2),"",postal_mask$
+    postal$=cvs(zip$,2)
+    postal$=str(postal$:postal_mask$,err=*next)
+
+rem --- Find last non-blank line (or last line if all are blank)
+
+    for ll=size-width+1 to 1 step -width
+        if cvs(buffer$(ll,width),2)<>"" exitto zipcode
+    next ll
+    ll=size-width+1
+
+zipcode: rem --- Will the ZIP code fit on this line?
+
+    last$=cvs(buffer$(ll,width),2)
+    if width>=len(last$+"  "+postal$) buffer$(ll,width)=last$+"  "+postal$ 
+:                             else ll=ll+width,buffer$(ll)=postal$
+
+rem --- Add country if it exists
+
+    country$=address$(block+zip+1)
+    if country$="" goto done
+    if ll+width<=size ll=ll+width; rem "Next line, if possible
+    if cvs(buffer$(ll),1)<>"" buffer$(ll)=cvs(buffer$(ll),2)+"  "+country$ 
+:                        else buffer$(ll)=country$
+
+done: rem --- All done
+
+    address$=buffer$
+    goto std_exit
+
+rem --- Functions
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

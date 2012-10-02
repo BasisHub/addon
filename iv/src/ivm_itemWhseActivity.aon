@@ -1,0 +1,278 @@
+rem Inventory Activity Inquiry by Firm/Item/Warehouse
+rem Proprietary Software.  AddonSoftware 
+rem Program ID: ivm_itemWhseActivity.aon  <Aug 11,2006>
+rem --- replaced this custom grid w/ ivr_itmWhseAct using docout Jun/07.CAH
+
+	if stbl("+USE_SETERR")="YES" seterr error_proc
+
+rem --- Enter Arguments
+
+	enter
+:		rd_gui_dev,
+:		rdBaseWin!,
+:		iv_whse_id$,
+:       iv_item_id$,
+:		rd_table_chans$[all]
+
+
+
+misc_vars:rem --- Misc Variables
+
+	rd_dir_pgm$=stbl("+DIR_PGM")
+	rd_dir_img$=stbl("+DIR_IMG")
+	rd_dir_sys$=stbl("+DIR_SYS")
+	rd_gui_dev$=stbl("+GUI_DEVICE")
+	rd_file_usr$=stbl("+FILE_USR")
+	rd_file_set$=stbl("+FILE_SET")
+
+	not_found$="(Not Found)"
+	iv_firm_id$=stbl("+FIRM_ID")
+        rd_grid_col_hdgs$="Beg bal   Received  Built     Sold      Issued    Adjusted  Xfer In   Xfer Out  Returned  End Bal   "
+
+
+rem --- Get Attributes
+
+	call rd_dir_pgm$+"rdm_attr_init.aon",rd_attr_def_tbl$[all],rd_attr_def_col$[all]
+    rd_attr_def_col$=rd_attr_def_col$[0,0]
+    rd_attr_def_tbl$=rd_attr_def_tbl$[0,0]
+
+file_opens: rem --- File Opens
+
+	rd_num_files=5
+	dim rd_open_tables$[1:rd_num_files],rd_open_opts$[1:rd_num_files],rd_open_chans$[1:rd_num_files],rd_open_tpls$[1:rd_num_files]
+
+	rd_open_tables$[1]=stbl("+GUI_DEVICE"),rd_open_opts$[1]="O"
+	rd_open_tables$[2]="IVM_ITEMACT",rd_open_opts$[2]="OTA"
+
+	gosub open_tables
+
+	rd_gui_dev=num(rd_open_chans$[1])
+	ivm_itemact=num(rd_open_chans$[2]);dim ivm_itemact$:rd_open_tpls$[2]
+
+prog_setup:rem --- Program Setup
+
+	bbjAPI!=bbjAPI()
+	rdSysGUI!=bbjAPI!.getSysGui()
+	rdDataVect!=rdSysGUI!.makeVector()
+    rdHdgsVect!=rdSysGUI!.makeVector()
+	gosub disp_win
+	gosub get_data
+	gosub def_grid
+	gosub get_usr_settings
+	gosub fill_grid
+	gosub resize_win
+
+	rdWindow!.setVisible(1)
+	rdDispGrid!.focus()
+
+    dim rd_gui_event$:tmpl(rd_gui_dev)
+    dim rd_notify_base$:noticetpl(0,0)
+
+event_ctl:rem --- Event Control
+
+	rdWindow!.setCallback(rdWindow!.ON_CLOSE,"exit_prog")
+	rdWindow!.setCallback(rdWindow!.ON_RESIZE,"resize_win")
+	rdDispGrid!.setCallback(rdDispGrid!.ON_GRID_KEY_PRESS,"grid_keypress")
+
+	process_events,err=*same
+
+grid_keypress:rem --- Grid Key Pressed
+
+    rd_gui_event$=rdSysGUI!.getLastEventString()
+    rd_notify_base$=notice(rd_gui_dev,rd_gui_event.x%)
+    dim rd_notice$:noticetpl(rd_notify_base.objtype%,rd_gui_event.flags%)
+    rd_notice$=rd_notify_base$
+
+    switch rd_notice.wparam
+		case 27;rem <escape>
+			goto exit_prog
+		break
+        case default
+        break
+    swend
+
+	return
+
+get_data:rem --- Get Item/Warehouse Activity Data
+
+	rdDataVect!.clear()
+    rdHdgsVect!.clear()
+    dim activity_tots$[11]
+    read(ivm_itemact,key=iv_firm_id$+iv_whse_id$+iv_item_id$,dom=*next)
+	repeat; gosub get_record
+        if key_break=0 then for wk=1 to 10;
+:           rdDataVect!.addItem(iv_activity$[wk]);
+:           activity_tots$[wk]=str(num(activity_tots$[wk])+num(iv_activity$[wk]));
+:           next wk;
+:           rdHdgsVect!.addItem(iv_activity$[0])
+        until key_break
+    for wk=1 to 10; rdDataVect!.addItem(activity_tots$[wk]);next wk;rdHdgsVect!.addItem("Totals:")
+	return
+                       
+get_record:rem --- Get Item/Warehouse Activity Record
+    key_break=1
+	readrecord(ivm_itemact,err=*return)ivm_itemact$
+    if ivm_itemact.firm_id$+ivm_itemact.warehouse_id$+ivm_itemact.item_id$ = iv_firm_id$+iv_whse_id$+iv_item_id$
+:       key_break=0;
+:       dim iv_activity$[11];
+:           iv_activity$[0]="Period: " +ivm_itemact.period$+"/"+ivm_itemact.year$,
+:           iv_activity$[1]=ivm_itemact.beg_balance$,
+:           iv_activity$[2]=ivm_itemact.qty_received$,
+:           iv_activity$[3]=ivm_itemact.qty_built$,
+:           iv_activity$[4]=ivm_itemact.qty_sold$,
+:           iv_activity$[5]=ivm_itemact.qty_issued$,
+:           iv_activity$[6]=ivm_itemact.qty_adjust$,
+:           iv_activity$[7]=ivm_itemact.qty_xfer_in$,
+:           iv_activity$[8]=ivm_itemact.qty_xfer_out$,
+:           iv_activity$[9]=ivm_itemact.qty_returned$,
+:           iv_activity$[10]=str(num(iv_activity$[1])+num(iv_activity$[2])+num(iv_activity$[3])
+:               -num(iv_activity$[4])-num(iv_activity$[5])+num(iv_activity$[6])
+:               +num(iv_activity$[7])-num(iv_activity$[8])+num(iv_activity$[9]))
+
+	return
+
+fill_grid:rem --- Fill Grid With Data
+
+	rdDispGrid!.setCellText(0,0,rdDataVect!)
+	rdWindow!.setCursor(0)
+
+	return
+
+open_tables:rem --- Open Tables
+
+	call rd_dir_pgm$+"rdc_open_tables.aon",
+:		rd_open_beg,
+:		rd_open_end,
+:		rd_open_tables$[all],
+:		rd_open_opts$[all],
+:		rd_open_chans$[all],
+:		rd_open_tpls$[all],
+:		rd_table_chans$[all],
+:		rd_open_batch,
+:		rd_open_status$
+
+	if rd_open_status$<>""
+:		rd_msg_text$=rd_open_status$,
+:		rd_msg_defs$="O  ;F;O";
+:		gosub disp_msg;
+:		release
+
+	return
+
+disp_msg:rem --- Display Messages
+
+	call rd_dir_pgm$+"rdm_message.aon",
+:		rd_gui_dev,
+:		"AddonSoftware",
+:		rd_msg_text$,
+:		rd_msg_defs$,
+:		rd_msg_opt$
+
+	rd_msg_title$=""
+	rd_msg_text$=""
+
+	return
+
+get_usr_settings:rem --- Get User/Windows Settings
+
+	call rd_dir_pgm$+"rdc_winsize.aon",rd_window_key$,"W","",rdWindow!,"READ",rd_win_coord[all]
+
+	return
+
+save_usr_settings:rem --- Save Windows Coordinates
+
+	call rd_dir_pgm$+"rdc_winsize.aon",rd_window_key$,"W","",rdWindow!,"SAVE",rd_win_coord[all]
+
+	return
+
+disp_win:rem --- Call Window Display Public
+	
+	dim rd_ctl_misc$[20]
+
+	rd_form_id$=rd_dir_sys$+"rdc_gridcolrow.arc"
+
+	call rd_dir_pgm$+"rdm_controls.aon",
+:		rd_gui_dev,
+:		rdSysGUI!,
+:		rd_form_id$,
+:		rd_win_coord[all],
+:		rdWindow!,
+:		"DISPLAY",
+:		rd_open_chan$[all],
+:		rd_ctl_misc$[all]
+
+	rdWindow!.setTitle("Warehouse History this Item")
+	rdDispGrid!=rdWindow!.getControl(5000)
+	rdDispGridCHdr!=rdDispGrid!.getColumnHeader()
+	rdDispGridRHdr!=rdDispGrid!.getRowHeader()
+
+	rd_win_disp$="YES"
+
+	return
+
+def_grid:rem --- Define Grid
+
+	rd_def_table_cols=10
+        rd_def_table_rows=rdHdgsVect!.size()
+	dim rd_attr_col$[rd_def_table_cols,len(rd_attr_def_col$[0,0])/5]
+
+		for rd_curr_col=1 to rd_def_table_cols
+			rd_attr_col$[rd_curr_col,fnstr_pos("DVAR",rd_attr_def_col$[0,0],5)]="COL_"+str(rd_curr_col:"00")
+			rd_attr_col$[rd_curr_col,fnstr_pos("LABS",rd_attr_def_col$[0,0],5)]=rd_grid_col_hdgs$((rd_curr_col-1)*10+1,10)
+			rd_attr_col$[rd_curr_col,fnstr_pos("MSKO",rd_attr_def_col$[0,0],5)]="-####.0000"
+			rd_attr_col$[rd_curr_col,fnstr_pos("MSKI",rd_attr_def_col$[0,0],5)]="-####.0000"
+			rd_attr_col$[rd_curr_col,fnstr_pos("DTYP",rd_attr_def_col$[0,0],5)]="N"
+			rd_attr_col$[rd_curr_col,fnstr_pos("CTLW",rd_attr_def_col$[0,0],5)]="70"
+		next rd_curr_col
+
+		for rd_curr_attr=1 to rd_def_table_cols
+			rd_attr_col$[0,1]=rd_attr_col$[0,1]+pad(rd_attr_col$[rd_curr_attr,fnstr_pos("DVAR",rd_attr_def_col$[0,0],5)],40)
+		next rd_curr_attr
+		rd_attr_disp_col$=rd_attr_col$[0,1]
+
+	call rd_dir_pgm$+"rdm_grid_init.aon",rd_gui_dev,rdDispGrid!,"MULTI-COLH-LINES-LIGHT",rd_def_table_rows,rd_attr_def_col$[all],rd_attr_disp_col$,rd_attr_col$[all]
+	rdDispGrid!.setDefaultAlignment(1)
+	rdDispGrid!.setRowHeaderWidth(85)
+	rdDispGrid!.setRowHeaderAlignment(0)
+	for rowlbls=0 to rd_def_table_rows-1
+		rdDispGrid!.setRowHeaderCellText(rowlbls,rdHdgsVect!.getItem(rowlbls))
+	next rowlbls
+	return
+
+resize_win:rem --- Resize Window Event
+
+	rdDispGrid!.setSize(rdWindow!.getWidth()-(rdDispGrid!.getX()*2),rdWindow!.getHeight()-(rdDispGrid!.getY()*2))
+
+	return
+
+all_returns:rem --- All Returns
+
+	return
+
+rem --- Functions
+
+	def fnstr_pos(rd_tmp0$,rd_tmp1$,rd_tmp0)=int((pos(rd_tmp0$=rd_tmp1$,rd_tmp0)+rd_tmp0-1)/rd_tmp0)
+	def fnstrip$(rd_tmp0$,rd_tmp1$)=rd_tmp0$(1,pos(fill(50,rd_tmp1$)=rd_tmp0$+fill(50,rd_tmp1$))-1)
+
+error_proc:rem --- Error Processing Routine
+
+	rd_err_text$=""
+	if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+
+	call stbl("+DIR_PGM")+"adc_error.aon",pgm(-2),str(tcb(5):"00000"),str(err:"000"),rd_err_text$,rd_err_act$
+
+	if pos("EXIT"=rd_err_act$)<>0 goto exit_prog
+	if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+	if pos("RETRY"=rd_err_act$)<>0 retry
+
+exit_prog:rem --- Exit Program
+
+	if rd_win_disp$="YES"
+		gosub save_usr_settings
+		rdWindow!.destroy()
+		rdBaseWin!.focus()
+		rdSysGUI!.setContext(rdBaseWin!.getContextID())
+	endif
+
+	exit
+

@@ -1,0 +1,97 @@
+rem --- Program ivc_popstock v8.0.0 4Jan2008
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- Retrieve system information
+
+    seterr std_error
+    setesc std_error
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get info from selection form
+
+    item_id$=option!.getOptionData("ITEM_ID")
+    abc_code$=option!.getOptionData("ABC_CODE")
+    buyer_code$=option!.getOptionData("BUYER_CODE")
+    vendor_id$=option!.getOptionData("VENDOR_ID")
+    lead_time$=option!.getOptionData("LEAD_TIME")
+    maximum_qty$=option!.getOptionData("MAXIMUM_QTY")
+    order_point$=option!.getOptionData("ORDER_POINT")
+    ord_pnt_code$=option!.getOptionData("ORD_PNT_CODE")
+    eoq$=option!.getOptionData("EOQ")
+    eoq_code$=option!.getOptionData("EOQ_CODE")
+    safety_stock$=option!.getOptionData("SAFETY_STOCK")
+    saf_stk_code$=option!.getOptionData("SAF_STK_CODE")
+
+rem --- Open/Lock Files
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ivm-02",ids$[1]="IVM_ITEMWHSE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ivm02_dev=channels[1]
+    dim ivm02a$:templates$[1]
+    
+rem --- Populate ivm-02
+
+    read (ivm02_dev,key=firm_id$+item_id$,knum=2,dom=*next)
+    while 1
+        read record (ivm02_dev,end=*break) ivm02a$
+        if firm_id$+item_id$<>ivm02a$.firm_id$+ivm02a$.item_id$ break
+        ivm02a.abc_code$=abc_code$
+        ivm02a.buyer_code$=buyer_code$
+        ivm02a.vendor_id$=vendor_id$
+        ivm02a.lead_time$=lead_time$
+        ivm02a.maximum_qty$=maximum_qty$
+        ivm02a.order_point$=order_point$
+        ivm02a.ord_pnt_code$=ord_pnt_code$
+        ivm02a.eoq$=eoq$
+        ivm02a.eoq_code$=eoq_code$
+        ivm02a.safety_stock$=safety_stock$
+        ivm02a.saf_stk_code$=saf_stk_code$
+        ivm02a$=field(ivm02a$)
+        write record (ivm02_dev)ivm02a$
+    wend
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call pgmdir$+"adc_error.aon",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    close (ivm02_dev,err=*next)
+    exit
+
+    end

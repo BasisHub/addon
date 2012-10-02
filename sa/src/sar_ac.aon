@@ -1,0 +1,737 @@
+rem --- Generic Sales Analysis Report
+rem --- Program sar_ac v8.0.0 23Jul2007 (sar_ac)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/23/2007 02:12:25)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --------------------------------------------------------------------------------
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)    
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="sas_params"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    sas01_dev=channels[1]
+
+rem --- IOLists
+
+    saw00a: iolist a0$,qnty[all],cost[all],sales[all]
+    sam00a: iolist x0$,q[all],c[all],s[all]
+    descchana: iolist x$[all]
+
+rem --- Retrieve miscellaneous templates
+
+    files=1,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="sas-01A:SAS_PARAMS"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension miscellaneous string templates
+
+    dim sas01a$:templates$[1]
+
+rem --- Assign form input values to local variables
+
+    table$=fnget_table$("")
+    value_01$=fnget_fld_data$(table$,"dataname_01")
+
+rem --- Retrieve parameter records
+
+    sas01a_key$=firm_id$+"SA00"
+    find record (sas01_dev,key=sas01a_key$,err=std_missing_params) sas01a$
+
+rem --- Parameters
+
+    gosub get_sort_parameters
+    dim wpos[nmbr]; rem "Key positions of segments in 'sorted' Work file
+    wpos[0]=3
+    for i=1 to nmbr
+        wpos[i]=2+kpos[i]+sort_size-fldlen[0]
+    next i
+    if action=21
+        wpos[0]=19
+        wpos[1]=19
+        wpos[2]=22
+        wpos[3]=42
+        wpos[4]=48
+    endif
+    level=pos(level$=levels$)
+    if pos(seq$="AD")=0 goto makeVect
+    if level>1 wpos[1]=wpos[0]
+    if level>2 wpos[2]=wpos[1]+fldlen[1]
+    if level>3 wpos[3]=wpos[2]+fldlen[2]
+    if level>1 wpos[0]=wpos[level-1]+fldlen[level-1]; rem "Key position of Sort Amount in 'sorted' Work file
+
+rem --- Document Initializations
+
+makeVect:
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Initializations
+
+    dim a0$(sort_size+keylen-2),c[12],q[12],s[12],cost[3],qnty[3],sales[3]
+    period=num(period$)
+    priyear$=str(num(year$)-1:"0000")
+    mtd$=periods$[period]+" "+year$
+    primtd$=periods$[period]+" "+priyear$
+    total=0
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,12,15
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,5,12
+    m4$="-##0.00%"
+    m4=len(m4$)
+    m4_max=999.99
+    width=132
+    page=0
+    l9=59
+    when$=sysinfo.system_date$
+    clock$=""
+    headings=5
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$+" For "+mtd$
+    prev_seg1_head$=""
+    prev_seg2_head$=""
+    prev_seg3_head$=""
+
+rem --- Print positions
+
+    dim o[9],newline[segments]
+    o[1]=0
+    o[2]=o[1]+3
+    o[3]=o[2]+3
+    o[4]=o[3]+3
+    o[9]=width-m4
+    o[8]=o[9]-1-m1
+    o[7]=o[8]-1-m1
+    o[6]=o[7]-1-m1
+    o[5]=o[6]-1-m2
+    if pos("M"=myp$) detail=len(mtd$)+1 else detail=4
+    sum_fldlen=0
+
+    for i=1 to segments
+        if literals$[i]="" continue
+        if literals$[i]="Item" desclen=iv_desc[1]+iv_desc[2]+iv_desc[3] else desclen=desclen[i]
+        if o[i]+max(inlen[i],len(omasks$[i]))+1+desclen+2>o[5]-detail newline[i]=1; rem "Line feed after segment description?
+        sum_fldlen=sum_fldlen+fldlen[i]
+    next i
+
+rem --- Count Number Of Detail Lines
+
+    lines=0
+    if pos("M"=myp$) lines=lines+1
+    if pos("Y"=myp$) lines=lines+1
+    if pos("P"=myp$) lines=lines*2
+
+rem --- Report headings
+
+    dim h1$(width),h2$(width),x1$[level],x2$[level]
+    h=0
+    literals$=""
+    for i=1 to level
+        if literals$[i]="" continue
+        h=h+1
+        literals$=literals$+"/"+literals$[i]
+        x1$[h]="From "+literals$[i]+": "
+        x2$[h]="  To "+literals$[i]+": "
+        if begsegs$[i]="" x1$[h]=x1$[h]+"First" else x1$[h]=x1$[h]+begsegs$[i]
+        if endsegs$[i]="" x2$[h]=x2$[h]+"Last" else x2$[h]=x2$[h]+endsegs$[i]
+    next i
+    dim h[h]
+    if h=1 h[1]=min(fncx(x1$[1],width/2),fncx(x2$[1],width/2))
+    if h=2 h[1]=1,h[2]=width-max(len(x1$[2]),len(x2$[2]))
+    if h=3 h[1]=1,h[2]=min(fncx(x1$[2],width/2),fncx(x2$[2],width/2)),h[3]=width-max(len(x1$[3]),len(x2$[3]))
+    if h=4 h[1]=1,h[2]=min(fncx(x1$[2],width/3),fncx(x2$[2],width/3)),h[3]=min(fncx(x1$[3],2*width/3),fncx(x2$[3],2*width/3)),h[4]=width-max(len(x1$[4]),len(x2$[4]))
+    for i=1 to h
+        h1$(h[i])=x1$[i]
+        h2$(h[i])=x2$[i]
+    next i
+    literals$=literals$(2)
+    headings$[3]=h1$
+    headings$[4]=h2$
+    if break$="Y"
+        headings$[5]=" [HEADER]"
+    endif
+
+rem --- Document columns
+
+    columns=9
+    dim columns$[columns,3]
+    if level>=1 columns$[0,0]=literals$[1],columns$[0,1]="C",columns$[0,2]=str(fldlen[1]+1+min(30,desclen[1]))
+    if level>=2 columns$[1,0]=literals$[2],columns$[1,1]="C",columns$[1,2]=str(fldlen[2]+1+min(30,desclen[2]))
+    if level>=3 columns$[2,0]=literals$[3],columns$[2,1]="C",columns$[2,2]=str(fldlen[3]+1+min(30,desclen[3]))
+    if level>=4 columns$[3,0]=literals$[4],columns$[3,1]="C",columns$[3,2]=str(fldlen[4]+1+min(30,desclen[4]))
+    columns$[4,0]="",columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Units",columns$[5,1]="N",columns$[5,2]=str(m2),columns$[5,3]=m2$
+    columns$[6,0]="Sales",columns$[6,1]="N",columns$[6,2]=str(m1),columns$[6,3]=m1$
+    columns$[7,0]="Cost",columns$[7,1]="N",columns$[7,2]=str(m1),columns$[7,3]=m1$
+    columns$[8,0]="Gross Profit",columns$[8,1]="N",columns$[8,2]=str(m1),columns$[8,3]=m1$
+    columns$[9,0]="Percent",columns$[9,1]="N",columns$[9,2]=str(m4),columns$[9,3]=m4$
+
+
+rem --- Set Sales Anaylsis Year
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sam_dev,1,meter_num,status
+    sayear$=year$
+    yr=0
+    t0$=""
+
+l950: rem --- Position Sort File Pointer
+
+    if action=21
+        read (sam_dev,key=firm_id$+sayear$,knum=1,dom=*next)
+    endif
+    if action<>21
+        read (sam_dev,key=firm_id$+sayear$,dom=*next)
+    endif
+
+l1000: rem --- Build Report Work File
+
+    sam_k$=key(sam_dev,end=l1700)
+
+l1020:
+    if pos(firm_id$+sayear$=sam_k$)<>1 goto l1700
+    read (sam_dev)
+    i=1; rem "Begin loop
+
+l1050: rem --- Validate Segment Begin
+
+    if begsegs$[i]="" goto l1100
+    if sam_k$(kpos[i],fldlen[i])>=begsegs$[i] goto l1100
+    sam_k$=sam_k$(1,kpos[i]-1)+begsegs$[i]
+    read (sam_dev,key=sam_k$,dom=l1600)
+    goto l1020
+
+l1100: rem --- Validate Segment End
+
+    if endsegs$[i]="" goto l1150
+    if sam_k$(kpos[i],fldlen[i])<=endsegs$[i] goto l1150
+    sam_k$=sam_k$(1,kpos[i]-1)+$FF$
+    read (sam_dev,key=sam_k$,dom=l1600)
+
+l1150: rem --- Check Next Segment
+
+    i=i+1
+    if i<=segments goto l1050; rem "End loop
+    call pgmdir$+"adc_progress.aon","S","","","","",0,sam_dev,1,meter_num,status
+
+rem --- Detail Level Break?
+
+    if t0$="" goto l1400
+    for i=1 to level
+        if literals$[i]<>"" and sam_k$(kpos[i],fldlen[i])<>t0$(kpos[i],fldlen[i]) exitto l1300
+    next i
+    goto l1500
+
+l1300: rem --- Write Report Work File Record
+
+    total=0
+    if pos("M"=myp$) total=total+qnty[0]+sales[0]+cost[0]
+    if pos("Y"=myp$) total=total+qnty[1]+sales[1]+cost[1]
+    if pos("P"=myp$) and pos("M"=myp$) total=total+qnty[2]+sales[2]+cost[2]
+    if pos("P"=myp$) and pos("Y"=myp$) total=total+qnty[3]+sales[3]+cost[3]
+    if zero$="N" and total=0 goto l1400
+    write (saw00_dev,key=a0$) iol=saw00a
+
+l1400: rem --- Initialize New Report Work File Record
+
+    dim a0$(sort_size+keylen-4),cost[3],qnty[3],sales[3]
+    t0$=sam_k$(1,kpos[level]+fldlen[level]-1)
+    a0$(1,2)=firm_id$
+    a0$(3+sort_size)=t0$(kpos[1])
+    for i=1 to level
+        if literals$[i]="" a0$(wpos[i],fldlen[i])=""
+    next i
+    read (saw00_dev,key=a0$,dom=*next) iol=saw00a
+
+l1500: rem --- Next Sales Analysis Record
+
+    sam00_k$=sam_k$
+    if action=21
+        read (sam00_dev,key=sam00_k$,knum=1,dom=l1600)iol=sam00a
+    endif
+    if action<>21
+        read (sam00_dev,key=sam00_k$,dom=l1600) iol=sam00a
+    endif
+    if pos("M"=myp$) qnty[yr]=qnty[yr]+q[period-1],cost[yr]=cost[yr]+c[period-1],sales[yr]=sales[yr]+s[period-1]
+    if pos("Y"=myp$)=0 goto l1600
+    for i=0 to period-1
+        qnty[yr+1]=qnty[yr+1]+q[i]
+        cost[yr+1]=cost[yr+1]+c[i]
+        sales[yr+1]=sales[yr+1]+s[i]
+    next i
+
+l1600: rem --- Get Next Sort Record
+
+    goto l1000
+
+l1700: rem --- Set Prior Sales Anaylsis Year
+
+    if sayear$=priyear$ goto l1750
+    if pos("P"=myp$)=0 goto l1750
+    sayear$=priyear$
+    yr=2
+    goto l950
+
+l1750: rem --- Write Last Report Work File Record
+
+    if pos(" "<>a0$(3))=0 goto l1900; rem "Empty report
+    total=0
+    if pos("M"=myp$) total=total+qnty[0]+sales[0]+cost[0]
+    if pos("Y"=myp$) total=total+qnty[1]+sales[1]+cost[1]
+    if pos("P"=myp$) and pos("M"=myp$) total=total+qnty[2]+sales[2]+cost[2]
+    if pos("P"=myp$) and pos("Y"=myp$) total=total+qnty[3]+sales[3]+cost[3]
+    if zero$="N" and total=0 goto l1800
+    write (saw00_dev,key=a0$) iol=saw00a
+
+l1800: rem --- Sort Report Work File
+
+    if pos(seq$="AD")=0 goto l1900
+    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+    read (saw00_dev,key="",dom=*next)
+
+l1830: rem --- Top of loop
+
+    saw00_k$=key(saw00_dev,end=l1900)
+    if pos(" "<>saw00_k$(3,sort_size)) goto l1900
+    read (saw00_dev,key=saw00_k$) iol=saw00a
+    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+    if seq$="A" if sales[sort_key]>0 a0$(3,sort_size)=str(-sales[sort_key]:sort_mask$) else a0$(3,sort_size)=str(sort_num+sales[sort_key]:sort_mask$)
+    if seq$="D" if sales[sort_key]<0 a0$(3,sort_size)=str(sales[sort_key]:sort_mask$) else a0$(3,sort_size)=str(sort_num-sales[sort_key]:sort_mask$)
+    if level=1 goto l1885
+    a0$(wpos[0],sort_size)=a0$(3,sort_size)
+    for i=1 to level
+        a0$(wpos[i],fldlen[i])=saw00_k$(2+sort_size-fldlen[0]+kpos[i],fldlen[i])
+    next i
+l1885:
+    write (saw00_dev,key=a0$) iol=saw00a
+    remove (saw00_dev,key=saw00_k$)
+
+    goto l1830
+
+l1900: rem --- Position Report Work File Pointer
+
+    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+    dim cost_tot[3],qnty_tot[3],sales_tot[3],c[3],q[3],s[3]
+    done=0
+    t0$=""
+    t1$=""
+    t2$=""
+    read (saw00_dev,key="",dom=*next)
+
+l2000: rem --- Process Report Work File
+
+    saw00_k$=key(saw00_dev,end=done)
+    read (saw00_dev,key=saw00_k$) iol=saw00a
+    tmp$=""
+    for i=1 to level
+        if literals$[i]<>"" tmp$=tmp$+a0$(wpos[i],fldlen[i])
+    next i
+    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+
+rem --- Segment Breaks
+
+    if a0$(wpos[1],fldlen[1])<>t0$ gosub first_break
+    if a0$(wpos[2],fldlen[2])<>t1$ gosub second_break
+    if a0$(wpos[3],fldlen[3])<>t2$ gosub third_break
+
+rem --- Fourth Segment Detail
+
+    if level<4 or literals$[4]="" goto l2600
+    seg=4
+    seg$=a0$(wpos[seg],fldlen[seg])
+    gosub get_seg_desc
+    c[all]=cost[all]
+    q[all]=qnty[all]
+    s[all]=sales[all]
+    gosub print_detail
+    if l+1>l9 goto l2600
+
+l2600: rem --- Accumulate Totals
+
+    qnty_tot[all]=qnty_tot[all]+qnty[all]
+    cost_tot[all]=cost_tot[all]+cost[all]
+    sales_tot[all]=sales_tot[all]+sales[all]
+    if literals$[1]<>"" qnty_tot1[all]=qnty_tot1[all]+qnty[all],cost_tot1[all]=cost_tot1[all]+cost[all],sales_tot1[all]=sales_tot1[all]+sales[all]
+    if level>1 and literals$[2]<>"" qnty_tot2[all]=qnty_tot2[all]+qnty[all],cost_tot2[all]=cost_tot2[all]+cost[all],sales_tot2[all]=sales_tot2[all]+sales[all]
+    if level>2 and literals$[3]<>"" qnty_tot3[all]=qnty_tot3[all]+qnty[all],cost_tot3[all]=cost_tot3[all]+cost[all],sales_tot3[all]=sales_tot3[all]+sales[all]
+
+rem --- Get Next Report Work File Record
+
+    goto l2000
+
+done: rem --- All done
+
+    done=1
+    gosub first_break
+    c[all]=cost_tot[all]
+    q[all]=qnty_tot[all]
+    s[all]=sales_tot[all]
+    seg1_head$="Total for Report"
+    seg2_head$=""
+    seg3_head$=""
+    seg4_head$=""
+    if break$="Y" 
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        HdrVect!.addItem("Total Page")
+    endif    
+    gosub print_detail
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    goto std_exit
+
+print_detail: rem --- Initialize For Detail Line Print
+
+    if pos("M"=myp$) detail$=mtd$,ii=0; gosub l5900
+    if pos("Y"=myp$) detail$="YTD",ii=1; gosub l5900
+    if pos("P"=myp$) and pos("M"=myp$) detail$=primtd$,ii=2; gosub l5900
+    if pos("P"=myp$) and pos("Y"=myp$) detail$="Prior YTD",ii=3; gosub l5900
+    blank=fnblank(10)
+    return
+
+l5900: rem --- Print Detail Line
+
+    if zero$="N" and q[ii]=0 and s[ii]=0 and c[ii]=0 goto l5990
+    seg=1
+    if cvs(seg1_head$,2)<>""
+        OutVect!.addItem(seg1_head$)
+        seg1_head$=""
+    else
+        blank=fnblank(1)
+    endif
+    if level>=2 
+        seg=2
+        if cvs(seg2_head$,2)<>"" 
+            OutVect!.addItem(seg2_head$)
+            seg2_head$=""
+        else
+            blank=fnblank(1)
+        endif
+    else
+        blank=fnblank(1)
+    endif
+    if level>=3
+        seg=3
+        if cvs(seg3_head$,2)<>""
+            OutVect!.addItem(seg3_head$)
+            seg3_head$=""
+        else
+            blank=fnblank(1)
+        endif
+    else
+        blank=fnblank(1)
+    endif
+    if level>=4
+        seg=4
+        seg$=a0$(wpos[seg],fldlen[seg])
+        gosub get_seg_desc
+        OutVect!.addItem(segdesc$)
+    else
+        blank=fnblank(1)
+    endif
+    OutVect!.addItem(detail$)
+    OutVect!.addItem(str(q[ii]:m2$))
+    OutVect!.addItem(str(s[ii]:m1$))
+    OutVect!.addItem(str(c[ii]:m1$))
+    OutVect!.addItem(str(s[ii]-c[ii]:m1$))
+    OutVect!.addItem(str(fnpercent_profit(s[ii],c[ii],m4_max):m4$))
+
+l5990:
+    return
+
+first_break: rem --- First Segment Break
+
+    if literals$[1]="" goto l6190
+    if t0$="" goto l6100
+    gosub second_break
+    if level=1 goto l6050
+l6050:
+    c[all]=cost_tot1[all]
+    q[all]=qnty_tot1[all]
+    s[all]=sales_tot1[all]
+    seg1_head$="Total for "+t0$
+    seg2_head$=""
+    seg3_head$=""
+    seg4_head$=""
+    gosub print_detail
+l6100:
+    if done goto l6190
+    dim cost_tot1[3],qnty_tot1[3],sales_tot1[3]
+    if break$="Y" 
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        if types$[1]="M"
+            breakhdr$=fnmask$(a0$(wpos[1],inlen[1]),omasks$[1])
+        else
+            breakhdr$=a0$(wpos[1],inlen[1])
+        endif
+        HdrVect!.addItem(literals$[1]+" "+breakhdr$)
+    endif    
+    t0$=a0$(wpos[1],fldlen[1])
+    t1$=""
+    t2$=""
+    seg$=t0$
+    seg=1
+    gosub get_seg_desc
+    seg1_head$=segdesc$
+
+l6190:
+    return
+
+second_break: rem --- Second Segment break
+
+    if level<2 goto l6390
+    if literals$[2]="" goto third_break
+    if t1$="" goto l6300
+    gosub third_break
+    if level=2 goto l6250
+l6250:
+    c[all]=cost_tot2[all]
+    q[all]=qnty_tot2[all]
+    s[all]=sales_tot2[all]
+    if level>2 then
+        seg2_head$="Total for "+t1$
+        seg3_head$=""
+        seg4_head$=""
+    endif
+    gosub print_detail
+    if l+1>l9 goto l6300
+l6300:
+    if done goto l6390
+    dim cost_tot2[3],qnty_tot2[3],sales_tot2[3]
+    t1$=a0$(wpos[2],fldlen[2])
+    t2$=""
+    seg$=t1$
+    seg=2
+    gosub get_seg_desc
+    seg2_head$=segdesc$
+
+l6390:
+    return
+
+third_break: rem --- Third Segment break
+
+    if level<3 or literals$[3]="" goto l6590
+    if t2$="" goto l6500
+    if level=3 goto l6450
+
+l6450:
+    c[all]=cost_tot3[all]
+    q[all]=qnty_tot3[all]
+    s[all]=sales_tot3[all]
+    if level>3 then
+        seg3_head$="Total for "+t2$
+        seg4_head$=""
+    endif
+    gosub print_detail
+    if l+1>l9 goto l6500
+l6500:
+    if done goto l6590
+    dim cost_tot3[3],qnty_tot3[3],sales_tot3[3]
+    t2$=a0$(wpos[3],fldlen[3])
+    seg$=t2$
+    seg=3
+    gosub get_seg_desc
+    
+    seg3_head$=segdesc$
+
+l6590:
+    return
+
+get_seg_desc: rem --- Get Description For Segment Selection
+
+    dim x$[descstr[seg]](descpos[seg]+desclen[seg]),fld$(inlen[seg])
+    if descchan[seg]=0 goto l6850
+    x$[descstr[seg]](descpos[seg])="Unknown "+literals$[seg]
+    if cvs(seg$,2)="" and literals$[seg]="Item" segdesc$="Summarized Items"; goto l6890
+    if cvs(seg$,2)="" and literals$[seg]="Customer Ship-To" x$[descstr[seg]](descpos[seg])="Bill-To Address"
+    if literals$[seg]="Customer Ship-To" descrec$[seg]=a0$(wpos[seg-1],fldlen[seg-1])
+    read (descchan[seg],key=firm_id$+descrec$[seg]+seg$,dom=*next) iol=descchana
+l6850:
+    desc$=x$[descstr[seg]](descpos[seg],desclen[seg])
+    fld$(1)=seg$
+    if types$[seg]="M" fld$=fnmask$(fld$(1,inlen[seg]),omasks$[seg])
+    if literals$[seg]="Item" desc$=fnitem$(x$[descstr[seg]](descpos[seg],desclen[seg]),iv_desc[1],iv_desc[2],iv_desc[3]),fld$=fld$(1,inlen[seg])
+    segdesc$=fld$+"  "+desc$
+l6890:
+    return
+
+get_sort_parameters: rem --- Get Sort Parameters
+
+    sort_size=16
+    sort_mask$="-"+fill(sort_size-1,"0")
+    m$=m1$
+    p=pos("."=m$)
+    if p=0 goto l6960
+    if pos("-"=m$)>p p=p+1
+    sort_mask$(sort_size-len(m$)+p,1)="."; rem "Place the decimal point
+l6960:
+    sort_num=num("1"+sort_mask$(2))+num(sort_mask$(1,sort_size-1)+"1"); rem "Maximum value that fits mask
+    sort_key=pos(myp$(1,1)="MYP")-1
+    if myp$(1,1)="P" sort_key=pos(myp$(2,1)="MYP")+1
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- Find middle of string
+    
+    def fncx(q$,q)=int(q-len(q$)/2)
+
+rem --- FNPERCENT_PROFIT Percent Profit Calculation"
+    def fnpercent_profit(q1,q2,q9)
+    if q1=0 then if q2=0 then q=0 else q=-q9
+    if q1 then q=max(min((q1-q2)/q1*100,q9),-q9)
+    return q                                              
+    fnend                                                 
+
+rem --- Create blank cell in OutVect!
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    pgmdir$=stbl("+DIR_SYP",err=*next)
+    run pgmdir$+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

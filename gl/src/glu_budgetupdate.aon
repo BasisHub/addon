@@ -1,0 +1,237 @@
+rem glu - Update Budget Revision
+rem Program glu_budgetupdate v8.0.0 29May2006 (glu_ja)
+rem Created by adx_progconv.bbx v1.0.3 (05/29/2006 12:42:53)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	if OutVect!<>null() OutVect!=null()
+
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    task$=cvs(sysinfo.task_desc$,2)
+
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="glm-01",ids$[2]="GLM_ACCT"
+    files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
+    files$[4]="glm-08",ids$[4]="GLM_BUDGETMASTER"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm01_dev=channels[2]
+    glm02_dev=channels[3]
+    glm08_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3],glm08a$:templates$[4]
+
+
+rem --- Retrieve parameter records
+
+    glm08_key$=firm_id$+id$+au$
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    find record (glm08_dev,key=glm08_key$,dom=std_exit) glm08a$
+    total_periods=num(gls01a.total_pers$)
+    acctlen=num(gls01a.acct_length$)
+    m0$=gls01a.acct_output$
+    mp=13
+
+rem --- Initializations
+
+    dim a[mp],u[mp]
+    more=1
+    record$="1"
+    if update_year$="N" record$="5"
+
+rem --- Get approval from user to proceed
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" goto std_exit_no_update
+
+rem --- Start progress meter and position file
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    call pgmdir$+"adc_progress.aon","N","","","","",0,glm01_dev,1,meter_num,status
+    k$=firm_id$+begacct$
+    found=0
+    read record(glm01_dev,key=k$,dom=*next)glm01a$;found=1
+
+rem --- Get next GL account master
+
+    while more
+          if found=1
+            found=0
+          else
+            read record(glm01_dev,end=*break) glm01a$
+          endif
+          if pos(firm_id$=k$)<>1 break
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          if endacct$<>"" if glm01a.gl_account$>endacct$ break
+          gosub wildcard
+          if status continue
+
+          rem --- Retrieve budget (glm-02) record
+
+          dim a[mp],u[mp]
+          glm02_key$=firm_id$+glm01a.gl_account$+id$
+          find record (glm02_dev,key=glm02_key$,dom=*continue) glm02a$
+          call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+
+          rem --- Amounts or Units?
+
+          dim b[mp]
+          for x=0 to total_periods
+              if au$="A" b[x]=a[x]
+              if au$="U" b[x]=u[x]
+          next x
+
+          rem --- Update current/next year GL Account Summary (glm-02) record
+
+          dim a[mp],u[mp]
+          glm02_key$=firm_id$+glm01a.gl_account$+record$
+          glm02a.firm_id$=firm_id$,glm02a.gl_account$=glm01a.gl_account$,glm02a.record_id$=record$
+          find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
+          for x=0 to total_periods
+              if au$="A" a[x]=b[x]
+              if au$="U" u[x]=b[x]
+          next x
+          call pgmdir$+"glc_summary.aon","U",glm02a$,a[all],u[all],status
+          glm02a$=field(glm02a$);write record (glm02_dev,key=glm02_key$) glm02a$
+
+          rem --- Loop back for next glm-01 record
+
+    wend
+
+    rem --- All Done
+
+    goto std_exit
+
+wildcard: rem --- Test account number against specified wildcard mask
+
+    status=0
+    if wildcard$="" return
+    if wildcard<>len(wildcard$) wildcard=len(wildcard$)
+    x$=fnmask$(glm01a.gl_account$(1,acctlen),m0$)
+    for x=1 to wildcard
+        if wildcard$(x,1)="?" continue
+        if x$(x,1)<>wildcard$(x,1) status=1
+    next x
+    return
+
+rem --- Functions
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_missing_params_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+    msg_id$="UPDATE_COMPLETE"
+    gosub disp_message
+std_exit_no_update: rem --- from adc_yes_no if user says "No"
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

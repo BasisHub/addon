@@ -1,0 +1,119 @@
+rem --- Make File Like Another
+rem --- Program adc_makelike v8.0.0 27Sep2007 (adc_makelike)
+rem --- Created by adx_codeport.bbx v1.1.5 (09/27/2007 09:46:02)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --------------------------------------------------------------------------------
+
+rem --- MAKE$ : Name of file to make (input)
+rem --- LIKE$ : Name of template file (input)
+rem --- STATUS: Zero=No Error/Non-Zero=Error (returned)
+
+    seterr std_error
+    setesc std_error
+    enter make$,like$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Sanity
+
+    status=0
+    if cvs(make$,2)="" status=998; goto std_exit
+    if len(like$)<6 status=997; goto std_exit
+    temp_dev=unt
+    open (temp_dev,err=batched)make$
+    close (temp_dev)
+    status=996
+    goto std_exit
+
+batched: rem --- Is this a Batching Template File?  Then turn off batching temporarily
+
+    process$=""
+    process$=stbl("+PROCESS",err=non_batched)
+    junk$=stbl("!CLEAR","+PROCESS")
+
+non_batched: rem --- Open Template File
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]=like$
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    like_dev=channels[1]
+    if process$<>"" junk$=stbl("+PROCESS",process$)
+
+rem --- Create file from FID() and FIN() info
+
+    fid$=fid(like_dev)
+    fin$=fin(like_dev)
+    if len(fin$)>86 key_def$=fin$(86) else key_def$=fill(8*48,$00$)
+    close (like_dev)
+    path$=fndirname$(make$)
+    if path$="" path$=fndirname$(fid$(9)) else path$=""
+    fid$=fid$(1,8)+path$+make$
+    file fid$,key_def$
+
+rem --- Done
+
+    status=0
+    goto std_exit
+
+rem --- Return the dirname (path) of a file
+
+    def fndirname$(q$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q return q$(1,q) else return ""
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

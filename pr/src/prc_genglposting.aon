@@ -1,0 +1,245 @@
+rem --- Generate Payroll G/L Postings
+rem --- Program prc_genglposting.aon v8.0.0 20Jun2008 (prc_ga)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/20/2008 10:32:55)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- ACTION      : 0=/Initialization/1=Header Posting/2=Detail Posting
+rem --- CHANNELS(0) : GLM01_DEV : glm-01 Channel
+rem --- (1) : GLT04_DEV : glt-04 Channel
+rem --- (2) : GLT14_DEV : glt-14 Channel
+rem --- (3) : PRM10_DEV : prm-10 Channel
+rem --- INFO$   [0] : REF1$     : Formatted Employee Number
+rem --- [1] : MEMO$     : Employee Name
+rem --- [2] : ACCRUAL$  : Payroll Parameter Accrual Flag
+rem --- [3] : PAYDATE$  : Pay Date
+rem --- [4] : CHKDATE$  : Check Date
+rem --- [5] : RECORD$   : pre-01 Record (1st String)
+rem --- [6] : DEPT$     : Department Code
+rem --- [7] :           : Reserved for future use
+rem --- [8] : ACCRDATE$ : Accrual Date
+rem --- [9] : CASHACCT$ : Cash G/L Account Number (Returned)
+rem --- [10] : ACCRACCT$ : Accrual G/L Account Number (Returned)
+rem --- INFO    (0) : G0        : G/L Account Number Length
+rem --- (1) : DAYS      : Accrual Days
+rem --- (2) : A         : Payroll/Posting Amount
+rem --- (3) : U         : Payroll/Posting Units
+rem --- CHANNELS$[0] : prm10b$ : Template string of prm10b ; added this new variable to pass the templates of prm10 files which sre used in this program
+rem --- [1] : prm10e$ : Template string of prm10e
+
+    setesc std_exit
+    seterr std_error
+    enter action,channels[all],info$[all],info[all],channels$[all]
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Parameters
+
+    glm01_dev=channels[0]
+    glt04_dev=channels[1]
+    prm10b_dev=channels[2]
+    prm10e_dev=channels[3]
+    dim prm10b$:channels$[0]
+    dim prm10e$:channels$[1]
+    ref1$=info$[0]
+    memo$=info$[1]
+    accrual$=info$[2]
+    paydate$=info$[3]
+    chkdate$=info$[4]
+    record$=info$[5]
+    dept$=info$[6]
+    ref2$=record$(15,7)
+    accrdate$=info$[8]
+    cashacct$=info$[9]
+    accracct$=info$[10]
+    g0=info[0]
+    days=info[1],a=info[2],u=info[3]
+
+rem --- Initializations
+
+    dim debit$(g0,"0"),credit$(g0,"0")
+    prm10b.gl_account$=fill(g0,"0")
+    prm10e.gl_cash_acct$=fill(g0,"0")
+    prm10e.gl_accr_acct$=fill(g0,"0")
+    firm_id$=record$(1,2)
+    amount=0,units=0,when$=chkdate$
+    if accrual$="Y" when$=paydate$
+    code$=record$(25,2)
+
+rem --- Retrieve department record
+
+    find record (prm10e_dev,key=firm_id$+"E"+dept$,dom=*next) prm10e$
+    if action>2 then goto std_exit
+
+rem --- Store and return Cash/Accrual G/L Accounts
+    if action=0then
+        info$[9]=prm10e.gl_cash_acct$
+        info$[10]=prm10e.gl_accr_acct$
+        goto done
+    endif
+
+rem --- Heading Record
+    if action=1 then
+        debit$=cashacct$
+        credit$=accracct$
+        when$=chkdate$
+        ref3$="Payroll"
+    endif
+
+    if action=2 then
+        if pos(record$(22,1)="ABCD")=0 then goto std_exit
+        
+rem --- Earnings Record
+        if record$(22,1)="A" then
+            credit$=accracct$
+            when$=paydate$
+            for i=1 to 14
+                x=pos(code$=field(prm10e$,"pay_code_"+str(i:"00")))
+                if x>0 break
+            next i
+            ref3$=code$+" "+record$(27,2)+" "+record$(29,2)
+            if x<>0 then
+                debit$=field(prm10e$,"gl_pay_acct_"+str(x:"00"))
+                if days<>0 then
+
+rem --- Accrued payroll
+
+                    account$=debit$
+                    gldate$=when$
+                    amount=a*accrual/14
+                    units=u*accrual/14
+                    gosub glpost
+                    gldate$=accrdate$
+                    amount=-amount,units=-units
+                    gosub glpost
+                    account$=credit$
+                    amount=-amount,units=-units
+                    gosub glpost
+                    gldate$=when$
+                    amount=-amount,units=-units
+                    gosub glpost
+                endif
+                units=u
+            endif
+        endif
+
+rem --- Deduction Record
+        if record$(22,1)="B" then
+            find record (prm10b_dev,key=firm_id$+"B"+code$,dom=*next) prm10b$
+            debit$=prm10b.gl_account$
+            credit$=accracct$,ref3$="Deduct "+code$
+        endif
+
+rem --- Tax Record
+        if record$(22,1)="C" then
+            for i=1 to 10
+                x=pos(code$=field(prm10e$,"tax_code_"+str(i:"00")))
+                if x>0 break
+            next i
+            credit$=accracct$
+            if x<>0 then
+                debit$=field(prm10e$,"gl_tax_acct_"+str(int(x):"00"))
+                ref3$="Tax "+code$
+            endif
+        endif
+
+rem --- Contribution Record
+        if record$(22,1)="D" then
+            for i=1 to 14
+                x=pos(code$=field(prm10e$,"contrib_code_"+str(i:"00")))
+                if x>0 break
+            next i
+            if x<>0 then
+                credit$=field(prm10e$,"gl_cont_acc_"+str(int(x):"00"))
+                ref3$="Contrib "+code$
+                debit$=field(prm10e$,"gl_cont_exp_"+str(int(x):"00"))
+            endif
+        endif
+
+    endif
+
+rem --- Generate G/L Postings
+
+    account$=debit$
+    gldate$=when$,amount=a
+    if action=2 if pos(record$(22,1)="BC")>0 amount=-amount
+    gosub glpost
+    account$=credit$
+    amount=-amount,units=0
+    gosub glpost
+
+done: rem --- All done
+
+    goto std_exit
+
+glpost: rem --- Standard G/L Recap Routine
+rem print str(action)+"***"+record$(22,1)+"****"+debit$+"***"+credit$;escape
+    call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,glt14_dev,account$,gldate$,ref1$,ref2$,ref3$,memo$,amount,units,status
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

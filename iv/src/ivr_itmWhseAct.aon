@@ -1,0 +1,319 @@
+rem Inventory Activity Inquiry by Firm/Item/Warehouse
+rem Proprietary Software.  AddonSoftware 
+rem Program ID: ivr_itmWhseAct.aon  <June 7,2007>
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+rem --- coming from ivm_itemwhse; turned this pgm into a call by adding the enter, 
+rem --- and initializing item_id$ and warehouse_id$ from entered values instead of using
+rem --- callpoint!.getColumnData...
+rem --- also added rd_called$="YES" prior to running ads_process_end, so when docout window closes
+rem --- we're back at warehouse master instead of it closing all windows.  6/18/07.CAH
+
+    setesc std_error
+    seterr std_error
+
+rem --- Enter Arguments
+
+	enter
+:       iv_item_id$,
+:		iv_whse_id$,
+:		rd_table_chans$[all]
+
+rem --- Retrieve the program path
+
+    dir_pgm$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    task_desc$=sysinfo.task_desc$
+
+rem --- Open/Lock files
+
+	files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+	files$[1]="ivm-12",ids$[1]="IVM_ITEMACT"
+    files$[2]="gls_params",ids$[2]="GLS_PARAMS"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+
+    ivm12_dev=channels[1]
+    gls01_dev=channels[2]
+
+rem --- Dimension string templates
+
+    dim ivm12a$:templates$[1],gls01a$:templates$[2]
+
+rem --- Retrieve G/L parameters
+
+    read record (gls01_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+    tot_pers=num(gls01a.total_pers$)
+
+rem --- Assign form input values to local variables
+
+    item_id$=iv_item_id$
+    warehouse_id$=iv_whse_id$
+
+rem --- temp    item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
+rem --- temp    warehouse_id$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
+
+rem --- Initializations
+
+    title$="Warehouse Period History"
+
+rem --- Init Headings
+
+rem --- date/time 
+	OutVect!=bbjAPI().getSysGui().makeVector()
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- column headings
+
+	mask$="-####.0000"
+	dim columns$[10,10]
+		columns$[0,0]="Period",columns$[0,1]="C",columns$[0,2]="12"
+		columns$[1,0]="Begin Bal",columns$[1,1]="N",columns$[1,2]="12",columns$[1,3]=mask$
+		columns$[2,0]="Received",columns$[2,1]="N",columns$[2,2]="12",columns$[2,3]=mask$
+		columns$[3,0]="Built",columns$[3,1]="N",columns$[3,2]="12",columns$[3,3]=mask$
+		columns$[4,0]="Sold",columns$[4,1]="N",columns$[4,2]="12",columns$[4,3]=mask$
+		columns$[5,0]="Issued",columns$[5,1]="N",columns$[5,2]="12",columns$[5,3]=mask$
+		columns$[6,0]="Adjusted",columns$[6,1]="N",columns$[6,2]="12",columns$[6,3]=mask$
+		columns$[7,0]="Xfer In",columns$[7,1]="N",columns$[7,2]="12",columns$[7,3]=mask$
+		columns$[8,0]="Xfer Out",columns$[8,1]="N",columns$[8,2]="12",columns$[8,3]=mask$
+		columns$[9,0]="Returned",columns$[9,1]="N",columns$[9,2]="12",columns$[9,3]=mask$
+		columns$[10,0]="Ending Bal",columns$[10,1]="N",columns$[10,2]="12",columns$[10,3]=mask$
+
+rem --- miscellaneous headings
+    dim headings$[4]
+    headings$[0]=firm_name$
+	headings$[1]=task_desc$
+    headings$[2]=title$
+	headings$[3]="Item: "+item_id$
+    headings$[4]="Warehouse: "+warehouse_id$
+
+rem --- read data/load OutVect!
+
+	gosub get_data
+	goto std_exit
+
+get_data:rem --- Get Item/Warehouse Activity Data
+
+    dim activity_tots$[10]
+    read(ivm12_dev,key=firm_id$+warehouse_id$+item_id$,dom=*next)
+	repeat; gosub get_record
+        if key_break=0 then
+			for wk=0 to 10
+				OutVect!.addItem(iv_activity$[wk])
+				if wk<>0 activity_tots$[wk]=str(num(activity_tots$[wk])+num(iv_activity$[wk]))
+			next wk
+		endif
+    until key_break
+	OutVect!.addItem("Totals:")
+    for wk=1 to 10
+        if wk=1 or wk=10
+            OutVect!.addItem("")
+        else
+            OutVect!.addItem(activity_tots$[wk])
+        endif
+	next wk
+return
+                       
+get_record:rem --- Get Item/Warehouse Activity Record
+
+    key_break=1
+	readrecord(ivm12_dev,err=*return)ivm12a$
+    if ivm12a.firm_id$+ivm12a.warehouse_id$+ivm12a.item_id$ = firm_id$+warehouse_id$+item_id$
+:       key_break=0
+        if next_per=0
+            next_per=num(ivm12a.period$)
+            next_year=num(ivm12a.year$)
+        endif
+        while str(next_year:"0000")+str(next_per:"00")<ivm12a.year$+ivm12a.period$
+            iv_activity$[0]=str(next_per:"00")+"/"+str(next_year:"0000")
+            iv_activity$[1]=iv_activity$[10]
+            iv_activity$[2]="0"
+            iv_activity$[3]="0"
+            iv_activity$[4]="0"
+            iv_activity$[5]="0"
+            iv_activity$[6]="0"
+            iv_activity$[7]="0"
+            iv_activity$[8]="0"
+            iv_activity$[9]="0"
+            next_per=next_per+1
+            if next_per>tot_pers
+                next_per=1
+                next_year=next_year+1
+            endif
+			for wk=0 to 10
+				OutVect!.addItem(iv_activity$[wk])
+				if wk<>0 activity_tots$[wk]=str(num(activity_tots$[wk])+num(iv_activity$[wk]))
+			next wk
+        wend
+        dim iv_activity$[10]
+        iv_activity$[0]=ivm12a.period$+"/"+ivm12a.year$
+        iv_activity$[1]=ivm12a.beg_balance$
+        iv_activity$[2]=ivm12a.qty_received$
+        iv_activity$[3]=ivm12a.qty_built$
+        iv_activity$[4]=ivm12a.qty_sold$
+        iv_activity$[5]=ivm12a.qty_issued$
+        iv_activity$[6]=ivm12a.qty_adjust$
+        iv_activity$[7]=ivm12a.qty_xfer_in$
+        iv_activity$[8]=ivm12a.qty_xfer_out$
+        iv_activity$[9]=ivm12a.qty_returned$
+        iv_activity$[10]=str(num(iv_activity$[1])+num(iv_activity$[2])+num(iv_activity$[3])
+:            -num(iv_activity$[4])-num(iv_activity$[5])+num(iv_activity$[6])
+:            +num(iv_activity$[7])-num(iv_activity$[8])+num(iv_activity$[9]))
+        next_per=next_per+1
+        if next_per>tot_pers
+            next_per=1
+            next_year=next_year+1
+        endif
+    return
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    dir_pgm$=stbl("+DIR_SYP",err=std_error_exit)
+    call dir_pgm$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    dir_pgm$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call dir_pgm$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    close (ivm12_dev)
+    close (gls01_dev)
+    rd_called$="YES";rem --- see to it that only doc_out window closes
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+    release
+rem #endinclude std_end.src
+
+    end

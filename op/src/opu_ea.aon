@@ -1,0 +1,529 @@
+rem --- Commit & Release Future Orders
+rem --- Program opu_ea v8.0.0 06Jul2007 (opu_ea)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/06/2007 02:08:59)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=16,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[2]="arm-02",ids$[2]="ARM_CUSTDET"
+    files$[3]="arm-10",ids$[3]="ARC_TERMCODE"
+    files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
+    files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
+    files$[6]="ivm-07",ids$[6]="IVM_LSMASTER"
+    files$[7]="ope-01",ids$[7]="OPE_ORDHDR"
+    files$[8]="ope-02",ids$[8]="OPE_CREDCUST"
+    files$[9]="ope-03",ids$[9]="OPE_CREDDATE"
+    files$[10]="ope-04",ids$[10]="OPE_PRNTLIST"
+    files$[11]="ope-11",ids$[11]="OPE_ORDDET"
+    files$[12]="ope-21",ids$[12]="OPE_ORDLSDET"
+    files$[13]="opm-02",ids$[13]="OPC_LINECODE"
+    files$[14]="ARS_PARAMS",ids$[14]=files$[14]
+    files$[15]="ARS_PARAMS",ids$[15]=files$[15]
+    files$[16]="IVS_PARAMS",ids$[16]=files$[16]
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    arm02_dev=channels[2]
+    arm10_dev=channels[3]
+    ivm01_dev=channels[4]
+    ivm02_dev=channels[5]
+    ivm07_dev=channels[6]
+    ope01_dev=channels[7]
+    ope02_dev=channels[8]
+    ope03_dev=channels[9]
+    ope04_dev=channels[10]
+    ope11_dev=channels[11]
+    ope21_dev=channels[12]
+    opm02_dev=channels[13]
+    ars01a_dev=channels[14]
+    ars01c_dev=channels[15]
+    ivs01a_dev=channels[16]
+
+rem --- Dimension string templates
+
+    dim arm02a$:templates$[2],arm10a$:templates$[3],ivm01a$:templates$[4],
+:       ivm02a$:templates$[5],ivm07a$:templates$[6],ope01a$:templates$[7],
+:       ope02a$:templates$[8],ope03a$:templates$[9],ope04a$:templates$[10],
+:       ope11a$:templates$[11],ope21a$:templates$[12],opm02a$:templates$[13],
+:       ars01a$:templates$[14],ars01c$:templates$[15],ivs01a$:templates$[16]
+
+
+rem --- Assign form input values to local variables
+
+    table$=fnget_table$("")
+    Last_committed_day$=fnget_fld_data$(table$,"Last_committed_day")
+    Commit_inventory$=fnget_fld_data$(table$,"Commit_inventory")
+    Searching$=fnget_fld_data$(table$,"Searching")   
+    Updating$=fnget_fld_data$(table$,"Updating")
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    ars01c_key$=firm_id$+"AR00"
+    find record (ars01c_dev,key=ars01c_key$,err=std_missing_params) ars01c$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+
+rem --- Document initializations
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+
+
+rem --- Parameters
+
+  
+    n1$=sysinfo.firm_name$
+    n2$="AR"
+    n4$=sysinfo.task_desc$
+    ls$="N"
+    find record (ars01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ars01a$
+    dim c9$(55)
+    find record (ars01c_dev,key=firm_id$+n2$+"01",dom=std_missing_params) ars01c$
+    ars01c.DISPLAY_BAL$="N"
+    find record (ivs01a_dev,key=firm_id$+"IV"+"00",dom=std_missing_params) ivs01a$
+    dim p[1],i[2]
+    p[0]=num(ivs01a.ITEM_ID_LEN$)
+    i[2]=num(ivs01a.precision$)
+    if pos(ivs01a.lotser_flag$="LS") ls$="Y"
+
+rem --- Initialize Data
+
+rem    precision i[2]
+precision num(ivs01a.precision$)
+rem dim a0$(200),a[13],b[2],c1$(64),c[10],w1$(64),w[17]
+    last$=ars01a.lstcom_date$
+    call pgmdir$+"adc_daydates.aon",sysinfo.system_date$,next$,num(ars01a.commit_days$)
+    dim iv_files[44],iv_info$[3],iv_info[0],iv_params$[4],iv_refs$[11],iv_refs[5]
+    iv_files[0]=sys01_dev
+    iv_files[1]=ivm01_dev
+    iv_files[2]=ivm02_dev
+    iv_info$[0]=firm_id$
+    iv_params$[0]=sysinfo.system_date$
+    iv_params$[1]=sysinfo.user_id$
+    iv_params$[2]=i2$
+    iv_params$[3]=i3$
+    iv_params$[4]=i4$
+    more=1
+rem --- Additional File Opens
+
+    if ls$="Y" then
+            files$[12]="ope-21"
+            files$[13]="ivm-07"
+            call pgmdir$+"adc_fileopen.aon",1,12,files,files$[all],options$[all],channels[all],batch,status
+            if status goto std_exit
+            ope21_dev=channels[12]
+            ivm07_dev=channels[13]
+            iv_files[7]=ivm07_dev
+    endif
+
+display_resource: rem --- Display Resource
+
+    dim resparams$[20],resparams[20]
+    resaction$=""
+    resparams$[0]=pgm(-2)
+    call pgmdir$+"syc_ra.bbx",resaction$,resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+    
+    call pgmdir$+"syc_df.bbx",0,3000,my_context,status
+    gosub display_fields
+    
+Display1:
+    call pgmdir$+"syc_rs.bbx","",my_context,3000,fndate$(last$),0,"",status
+    i0=0
+    control_id=3000
+
+Enter_option: rem --- Enter Options Here
+
+    call pgmdir$+"syc_rs.bbx","",my_context,3001,fndate$(next$),0,"",status
+    v0$="D"
+    v1$="C"
+    v2$=next$
+    v4$="Commit All Orders Scheduled for Shipment Through This Date"
+    v0=3
+    v1=40
+    v2=4
+    v3$=""
+    control_id=3001
+    
+    on v3 goto Next_Done,Enter_option,flow_control,Enter_option,flow_control,Next_Done,flow_control
+Next_Done:
+    next$=v$
+    goto done
+
+  while more
+
+                call pgmdir$+"adc_progress.aon","N","","","Processing","",18,0,1,meter_num,status
+                read (ope01_dev,key=firm_id$+"  ",dom=*next)
+
+
+    while more  
+
+                ope01a_key$=key(ope01_dev,end=*break)
+                if pos(firm_id$=ope01a_key$)<>1 break
+                read record (ope01_dev,key=ope01a_key$) ope01a$
+                call pgmdir$+"adc_progress.aon","S","","","",fnmask$(ope01a_key.CUSTOMER_ID$,m0$)+"  "+ope01a_key.ORDER_NO$,0,0,1,meter_num,status
+                if ope01a.INVOICE_TYPE$="P" continue
+                if ope01a.INVOICE_TYPE$="I" continue
+                if ope01a.LOCK_STATUS$<>"N" continue
+                new$="NO"
+                ope01a.LOCK_STATUS$="Y"; rem "Lock it while processing
+                write record (ope01_dev,key=ope01a_key$) ope01a$
+
+rem --- Process Lines Here
+
+                read (ope11_dev,key=ope01a_key.FIRM_ID$+ope01a_key.AR_TYPE$+ope01a_key.CUSTOMER_ID$+ope01a_key.ORDER_NO$,dom=*next)
+
+        while more
+                ope11a_key$=key(ope11_dev,end=*break)
+                if pos(ope01a_key.FIRM_ID$+ope01a_key.AR_TYPE$+ope01a_key.CUSTOMER_ID$+ope01a_key.ORDER_NO$=ope11a_key$)<>1 break
+                read record (ope11_dev,key=ope11a_key$) ope11a$
+                if ope11a.COMMIT_FLAG$="Y" continue
+                if ope11a.EST_SHP_DATE$>next$ continue
+                find record (opm02a_dev,key=firm_id$+ope11a.LINE_CODE$,dom=*continue) opm02a$
+                call pgmdir$+"adc_progress.aon","S","","","",fnmask$(ope11a_key.CUSTOMER_ID$,m0$)+" "+ope11a_key.ORDER_NO$+" "+ope11a_key.LINE_NO$,0,0,1,meter_num,status
+                    if pos(opm02a.LINE_TYPE$="NOM")=0 then
+                        if opm02a.DROPSHIP$<>"Y" then
+                                iv_info$[1]=ope11a.WAREHOUSE_ID$
+                                iv_info$[2]=ope11a.ITEM_ID$
+                                iv_info$[3]=""
+                                iv_refs[0]=ope11a.QTY_ORDERED
+                                call pgmdir$+"ivc_ua.bbx","OE",iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Commit warehouse quantities
+
+rem --- Serialized/Lotted Items
+
+                            if ls$="Y" then
+                                    read (ope21_dev,key=ope11a_key.FIRM_ID$+ope11a_key.AR_TYPE$+ope11a_key.CUSTOMER_ID$+ope11a_key.ORDER_NO$+ope11a_key.LINE_NO$,dom=*next)
+
+                                while more
+                                            are23_k$=key(ope21_dev,end=*break)
+                                            if pos(ope11a_key.FIRM_ID$+ope11a_key.AR_TYPE$+ope11a_key.CUSTOMER_ID$+ope11a_key.ORDER_NO$+ope11a_key.LINE_NO$=are23_k$)<>1 break
+                                            read record (ope21_dev) ope21a$
+
+        rem --- Commit Lot/Serial Quantities
+
+                                            iv_info$[1]=ope11a.WAREHOUSE_ID$
+                                            iv_info$[2]=ope11a.ITEM_ID$
+                                            iv_info$[3]=""
+                                            iv_refs[0]=ope21a.QTY_SHIPPED
+                                            call pgmdir$+"ivc_ua.bbx","UC",iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Uncommit previous warehouse quantites
+                                            iv_info$[3]=ope21a.LOTSER_NO$
+                                            call pgmdir$+"ivc_ua.bbx","OE",iv_files[all],iv_info[all],iv_params$[all],iv_info$[all],iv_refs$[all],iv_refs[all],iv_status; rem "Commit warehouse andlot/serial quantites
+                                wend
+                            endif
+                          endif
+                       endif
+
+                w1$=ope11a.COMMIT_FLAG$+ope11a.PICK_FLAG$
+                let w1$="YN"
+                ope11a.QTY_SHIPPED=ope11a.QTY_ORDERED
+                x6=ope11a.EXT_PRICE
+                x7=ope11a.TAXABLE_AMT
+                precision 2
+                if opm02a.LINE_TYPE$="O" and ope11a.EXT_PRICE=0 and ope11a.UNIT_PRICE<>0 ope11a.EXT_PRICE=ope11a.UNIT_PRICE,ope11a.UNIT_PRICE=0
+                if pos(opm02a.LINE_TYPE$="MO")=0 ope11a.EXT_PRICE=ope11a.UNIT_PRICE*ope11a.QTY_SHIPPED
+                gosub Taxable_Check
+                ope01a.TAXABLE_AMT=ope01a.TAXABLE_AMT+ope11a.TAXABLE_AMT-x7
+                ope01a.TOTAL_SALES=ope01a.TOTAL_SALES+ope11a.EXT_PRICE-x6
+                ope01a.TOTAL_COST=ope01a.TOTAL_COST+UNIT_COST*ope11a.QTY_SHIPPED
+rem             precision i[2]
+                precision num(ivs01a.precision$)
+                write record (ope11_dev,key=ope11a_key$) ope11a$
+                new$="YES"; rem "Changed one. Generate pick ticket."
+        wend
+
+Order_End: rem --- End of Order Here
+
+                if new$="YES" then
+                            ope01a.PRINT_STATUS$="N"
+                            if ars01c.SYS_INSTALL$="Y" then
+                                    credit$="1"; rem "Initialize Credit Okay
+                                    read record (arm02_dev,key=firm_id$+ope01a_key.CUSTOMER_ID$+ope01a_key.AR_TYPE$,dom=Credit_Initialize) arm02a$
+                                    call pgmdir$+"opc_ca.bbx",ope01_dev,arm02_dev,firm_id$,ope01a_key.CUSTOMER_ID$,c9$,credit$,i6$,0
+Credit_Initialize:
+                                    if credit$<>"1"
+                                     ope01a.CREDIT_FLAG$="C"
+                                     gosub Update_Credit
+
+rem goto Not_Credit; rem "Credit Not Okay
+                                    read record (arm10_dev,key=firm_id$+"A"+ope01a.TERMS_CODE$,dom=Record_Write) arm10a$
+                                    if arm10a.CRED_HOLD$="Y" 
+                                   ope01a.CREDIT_FLAG$="C"
+                                    gosub Update_Credit
+                             endif
+rem goto Not_Credit
+Record_Write:
+                            ope04a_key$=firm_id$+"O"+ope01a_key.AR_TYPE$+ope01a_key.CUSTOMER_ID$+ope01a_key.ORDER_NO$
+                            write record (ope04_dev,key=ope04a_key$) ope04a$
+   
+               endif
+
+
+
+                ope01a.LOCK_STATUS$="N"
+                write record (ope01_dev,key=ope01a_key.FIRM_ID$+ope01a_key.AR_TYPE$+ope01a_key.CUSTOMER_ID$+ope01a_key.ORDER_NO$+ope01a_key.SEQUENCE_000$) ope01a$
+                if t9$="END" return
+
+    wend
+
+
+
+                t9$="END"; gosub Order_End
+                extract record (sys01_dev,key=firm_id$+n2$+"00") ars01a$
+                ars01a.lstcom_date$=next$
+                write record (sys01_dev,key=p0$) ars01a$
+                goto std_exit
+flow_control:
+                switch v3
+                case 0
+                case 1
+                case 3; let i0=i0+1; break
+                case 2; if i0<i0_nonkey1 i0=max(0,i0-1) else i0=max(i0_nonkey1,i0-1) fi; break
+                case 4; let i0=i0_done; break
+                case default; exitto done_v3
+                swend
+                on i0 goto Display1,Enter_option,done,done
+
+done: rem --- Correct?
+
+                if validate then  validate=0
+                    else     
+
+                        v0$="S"
+                        v1$="KC"
+                        v2$="Y"
+                        v3$=""
+                        v4$="ITAC=Y"
+                        v0=6
+                        v1=fnv(v4$)
+                        v2=22
+                        control_id=i0-i0_done+1
+  
+done_v3:
+                         on v3 goto done_test,done,done,done,std_exit,validate_input,std_exit,done
+done_test:
+
+                                action=pos(v$="YN")
+                                flow_ctr=0
+                                validate_ip=1
+                                d_key=2
+
+                                switch action
+                                       case flow_ctr
+                                             goto flow_control
+                                             break
+                                        case validate_ip
+                                             goto validate_input 
+                                             break
+                                        case d_key
+                                             goto do_nonkey1
+                                             break
+                                             case default
+                                        break
+                                swend
+rem            on pos(v$="YN") goto flow_control,validate_input,do_nonkey1
+validate_input:
+                        validate=1
+                        old_control_id=0
+do_nonkey1:
+                        v3=0
+                        i0=i0_nonkey1-1
+                        goto flow_control
+                endif
+end_input:
+                        exit_ctrl=1
+  wend
+   
+display_fields:
+    control_id=3000
+    cid_cnt=0
+while more
+    if cid_cnt=0 disp_inp$=fndate$(last$)
+    if cid_cnt=1 disp_inp$=fndate$(next$)
+    call pgmdir$+"syc_rs.bbx","",my_context,control_id,disp_inp$,0,"",status
+    call pgmdir$+"syc_rs.bbx","",my_context,control_id+10000,disp_desc$,0,"",status
+    cid_cnt=cid_cnt+1; let control_id=control_id+1
+    if cid_cnt>1 break
+    wend
+    disp_inp$=""
+    disp_desc$=""
+    return
+
+Taxable_Check: rem --- Check If Taxable
+
+    let ope11a.TAXABLE_AMT=0
+    if opm02a.TAXABLE_FLAG$<>"N" then
+            read record (ivm01_dev,key=firm_id$+ope11a.ITEM_ID$,dom=Back) ivm01a$
+            if pos(opm02a.LINE_TYPE$="MNO")<>0 if ivm01a.TAXABLE_FLAG$<>"N" then
+                let ope11a.TAXABLE_AMT=ope11a.EXT_PRICE
+            endif
+    endif
+Back:
+    return
+
+Update_Credit: rem --- Update Credit Manager Tickler File
+
+    read (ope02_dev,key=firm_id$+ope01a_key.CUSTOMER_ID$,dom=*next)
+Date_Find:
+    let ope02a_key$=key(ope02_dev,end=Record_Date)
+    read (ope02_dev,key=ope02a_key$)
+    if ope02a_key.firm_id$+ope02a_key.customer_id$=firm_id$+ope01a_key.CUSTOMER_ID$ then
+        if ope02a_key.ORDER_NO$<>ope01a_key.ORDER_NO$ goto Date_Find
+        if ope02a_key.rev_date$=fnyy_yy21$(fndate$(fndate$(ope01a.ORDER_DATE$))) return
+        remove (ope02_dev,key=ope02a_key$,dom=*next)
+        remove (ope03_dev,key=firm_id$+ope02a_key.rev_date$+ope02a_key.customer_id$+ope02a_key.ORDER_NO$,dom=*next)
+    endif
+Record_Date:
+    let ope02a_key$=firm_id$+ope01a_key.CUSTOMER_ID$+fnyy_yy21$(fndate$(fndate$(ope01a.ORDER_DATE$)))+ope01a_key.ORDER_NO$
+    write record (ope02_dev,key=ope02a_key$) ope02a$
+    let ope03a_key$=firm_id$+fnyy_yy21$(fndate$(fndate$(ope01a.ORDER_DATE$)))+ope01a_key.CUSTOMER_ID$+ope01a_key.ORDER_NO$
+    write record (ope03_dev,key=ope03a_key$) ope03a$
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+rem    run pgmdir$+"ads_process_end.aon",err=*next
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+ end

@@ -1,0 +1,370 @@
+rem --- Generate Finance Charges
+rem --- Program aru_financecharg v8.0.0 17Jan2007 (aru_hb)
+rem --- Created by adx_codeport.bbx v1.1.5 (01/17/2007 10:54:40)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=9,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="are-02",ids$[2]="ARE_CNVINV"
+    files$[3]="are-05",ids$[3]="ARE_INVHDR"
+    files$[4]="arm-02",ids$[4]="ARM_CUSTDET"
+    files$[5]="arc_distcode",ids$[5]="ARC_DISTCODE"
+    files$[6]="ars_next_seq",ids$[6]="ARS_NEXT_SEQ"
+    files$[7]="art-01",ids$[7]="ART_INVHDR"
+    files$[8]="art-11",ids$[8]="ART_INVDET"
+    files$[9]="arc_termcode",ids$[9]="ARC_TERMCODE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_update
+    ars01_dev=channels[1]
+    are02_dev=channels[2]
+    are05_dev=channels[3]
+    arm02_dev=channels[4]
+    arc_distcode_dev=channels[5]
+    ars10_dev=channels[6]
+    art01_dev=channels[7]
+    art11_dev=channels[8]
+    arc_termcode_dev=channels[9]
+
+rem --- Dimension string templates
+
+    dim ars01a$:templates$[1],are02a$:templates$[2],are05a$:templates$[3]
+    dim arm02a$:templates$[4],arm10d$:templates$[5],ars10n$:templates$[6]
+    dim art01a$:templates$[7],art11a$:templates$[8],arm10a$:templates$[9]
+
+rem --- Assign form input values to local variables
+
+    invoice_date$=option!.getOptionData("INVOICE_DATE")
+    overdue$=option!.getOptionData("PICK_INTEGER")
+    pastdue$=option!.getOptionData("PASTDUE_AMT")
+    percent$=option!.getOptionData("PERCENTAGE")
+    minimum$=option!.getOptionData("MINIMUM_AMT")
+    ar_dist_code$=option!.getOptionData("AR_DIST_CODE")
+    ar_terms_code$=option!.getOptionData("AR_TERMS_CODE")
+
+    overdue=num(overdue$)
+    pastdue=num(pastdue$)
+    percent=num(percent$)
+    minimum=num(minimum$)
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    m9$=fill(7,"0")
+
+rem --- Is Sales Order Processing installed?
+
+    dim info$[20]
+    application$="OP"
+    call pgmdir$+"adc_application.aon",application$,info$[all]
+    op$=info$[20]
+
+rem --- Initializations
+
+    done=0
+    balance=0
+    moreheaders=1
+    moredetail=1
+    artype$=fill(2)
+    customer$=""
+
+rem --- Additional file opens
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ops_numbers",ids$[1]="OPS_NUMBERS"
+    files$[2]="opt-01",ids$[2]="OPM_TERMINAL"
+    if op$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                              ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_update
+    ops10_dev=channels[1]
+    opt01_dev=channels[2]
+
+rem --- Dimension string templates
+
+    if op$="Y" dim ops10n$:templates$[1],opt01a$:templates$[2]
+
+rem --- Retrieve Terms Code (arm-10a) record
+
+    dim arm10a$:fattr(arm10a$)
+    arm10a.firm_id$=firm_id$
+    arm10a.record_id_a$="A"
+    arm10a.ar_terms_code$=ar_terms_code$
+    arm10a.code_desc$=nf$
+    k$=arm10a.firm_id$+arm10a.record_id_a$+arm10a.ar_terms_code$ 
+    find record (arc_termcode_dev,key=k$) arm10a$
+
+rem --- Retrieve Distribution Code (arm-10d) record
+
+    dim arm10d$:fattr(arm10d$)
+    arm10d.firm_id$=firm_id$
+    arm10d.record_id_d$="D"
+    arm10d.ar_dist_code$=ar_dist_code$
+    arm10d.code_desc$=nf$
+    k$=arm10d.firm_id$+arm10d.record_id_d$+arm10d.ar_dist_code$ 
+    find record (arc_distcode_dev,key=k$,dom=*next) arm10d$
+
+rem --- Start progress meter and position invoice header file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,art01_dev,1,meter_num,status
+    read (art01_dev,key=firm_id$,dom=*next)
+
+    rem --- Read the next Invoice Header (art-01) record
+
+    while moreheaders
+          art01_key$=key(art01_dev,end=*break)
+          if pos(firm_id$=art01_key$)<>1 break
+          read record (art01_dev) art01a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          if art01a.inv_due_date$>invoice_date$ continue
+          if art01a.invoice_type$="F" continue 
+
+          rem --- Customer break?
+
+          if art01a.customer_id$<>customer$ gosub customer_break
+          customer$=art01a.customer_id$
+          artype$=art01a.ar_type$
+          if arm02a.finance_chg$<>"Y" continue
+
+          rem --- Position Invoice Detail (art-11) file
+          amount=art01a.invoice_amt
+          invoice$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
+          read (art11_dev,key=art01_key$,dom=*next)
+
+          rem --- Process detail records for this invoice
+
+          while moredetail
+                k$=key(art11_dev,end=*break)
+                if pos(invoice$=k$)<>1 break
+                read record (art11_dev) art11a$
+                if art11a.trans_date$<=invoice_date$ amount=amount+art11a.trans_amt+
+:                                                           art11a.adjdisc_amt
+          wend
+
+          rem --- Is this invoice overdue by the requisite number of days?
+
+          days=0
+          call pgmdir$+"adc_daydates.aon",art01a.inv_due_date$,invoice_date$,days
+
+          if days>=overdue balance=balance+amount
+
+          rem --- Loop back for next invoice
+
+    wend
+
+rem --- All done
+
+    done=1
+    gosub customer_break
+    goto std_exit
+
+customer_break: rem --- Customer break
+
+    update=customer$<>""
+    if update update=balance>0
+    if update update=balance>=pastdue
+
+    rem --- Generate finance charge record
+
+    while update
+
+          rem --- Calculate the amount
+
+          amount=(balance*percent)/100
+          if amount<minimum amount=minimum
+          if amount=0 break
+
+          next_invoice: rem --- Get the next AR invoice number
+
+          duplicate=1
+          if op$<>"Y"
+             dim ars10n$:fattr(ars10n$)
+             ars10n.firm_id$=firm_id$
+             ars10n.record_id_n$="N"
+             ars10_key$=ars10n.firm_id$+ars10n.record_id_n$
+             while duplicate
+                   find record (ars10_dev,key=ars10_key$,dom=*next) ars10n$
+                   ars10n.nxt_sim_inv=ars10n.nxt_sim_inv+1
+                   ars10n$=field(ars10n$)
+                   write record (ars10_dev,key=ars10_key$) ars10n$
+                   invoice$=str(ars10n.nxt_sim_inv:m9$)
+                   k$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+invoice$+art01a.sequence_00$
+                   find (art01_dev,key=k$,dom=*next); continue
+                   k$=art01a.firm_id$+invoice$
+                   find (are05_dev,key=k$,dom=*next); continue
+                   duplicate=0
+              wend
+          endif
+
+          rem --- Get the next OP invoice number (if it's installed)
+
+          if op$="Y"
+             dim ops10n$:fattr(ops10n$)
+             ops10n.firm_id$=firm_id$
+             ops10n.record_id_n$="N"
+             ops10_key$=ops10n.firm_id$+ops10n.record_id_n$
+             while duplicate
+                   find record (ops10_dev,key=ops10_key$,dom=*next) ops10n$
+                   ops10n.next_inv_no=ops10n.next_inv_no+1
+                   ops10n$=field(ops10n$)
+                   write record (ops10_dev,key=ops10_key$) ops10n$
+                   invoice$=str(ops10n.next_inv_no:m9$)
+                   k$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+invoice$+art01a.sequence_00$
+                   find (art01_dev,key=k$,dom=*next); continue
+                   k$=art01a.firm_id$+invoice$
+                   find (are05_dev,key=k$,dom=*next); continue
+                   k$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+invoice$
+                   find (opt01_dev,key=k$,dom=*next); continue
+                   duplicate=0
+             wend
+          endif
+
+          rem --- Reposition the Invoice History (art-01) file
+
+          read (art01_dev,key=art01_key$)
+
+          rem --- Calculate due and discount dates
+
+          call pgmdir$+"adc_duedate.aon",arm10a.prox_or_days$,invoice_date$,arm10a.inv_days_due,when$,status
+          inv_due_date$=when$
+          call pgmdir$+"adc_duedate.aon",arm10a.prox_or_days$,invoice_date$,arm10a.disc_days,when$,status
+          disc_date$=when$
+
+          rem --- Initialize and write the Finance Charge (are-02) record
+
+          dim are02a$:fattr(are02a$)
+          are02a.firm_id$=firm_id$
+          are02a.ar_type$=artype$
+          are02a.customer_id$=customer$
+          are02a.ar_inv_no$=invoice$
+          are02a.ar_dist_code$=ar_dist_code$
+          are02a.ar_terms_code$=ar_terms_code$
+          are02a.invoice_type$="F"
+          are02a.invoice_date$=invoice_date$
+          are02a.inv_due_date$=inv_due_date$
+          are02a.disc_date$=disc_date$
+          are02a.invoice_amt=amount
+          are02a$=field(are02a$)
+          write record (are02_dev,dom=next_invoice) are02a$
+          update=0
+          balance=0
+
+          rem --- Finance charge record generated
+
+    wend
+
+rem --- Are we supposed to generate finance charges for the new customer?
+
+    if done return
+    customer$=art01a.customer_id$
+    dim arm02a$:fattr(arm02a$)
+    arm02a.firm_id$=art01a.firm_id$
+    arm02a.customer_id$=art01a.customer_id$
+    arm02a.ar_type$=art01a.ar_type$
+    k$=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$
+    find record (arm02_dev,key=k$,dom=*next) arm02a$
+    if arm02a.finance_chg$="Y" return
+    customer$=""
+    read (art01_dev,key=art01_key$,dom=*next)
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+std_exit_no_update:
+    release
+
+rem #endinclude std_end.src
+
+    end

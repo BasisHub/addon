@@ -1,0 +1,282 @@
+rem adc - Open Database Files
+rem Program adc_fileopen v8.0.0 21Mar2006 (syc_da)
+rem Created by adx_progconv.bbx v1.0.0 (03/21/2006 02:26:37)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- As of 03/21/06 this program is incomplete:
+ 
+rem --- Batching is not supported
+rem --- Creation of files using the dictionary is not supported
+rem --- Creation of files using the "make like" capability is not supported
+rem --- Verification that the application is installed is not supported
+rem --- The PERSIST option is not supported
+rem --- The REQUIRED FILE option is not supported
+rem --- The MAKE IF option is not supported
+rem --- Verification that the fiscal calendar is setup is missing
+
+rem --- ACTION       : Action code (Reserved for future use)
+rem --- BEGFILE      : First file to open (Input)
+rem --- ENDFILE      : Last file to open (Input)
+rem --- FILES$[n]    : List of files to be opened (Input)
+rem --- OPTIONS$[n]  : Open options by file (Input)
+rem ---                C=Clear after open
+rem ---                F=Unnecessary file (do not create)
+rem ---                L=Lock after open
+rem ---                M=Make if not found regardless of system installation
+rem ---                P=Persist mode, set and check globals.
+rem ---                R=Required file (do not create)
+rem ---                S=System file (added March 2008; open using sysdatadir$ instead of datadir$)
+rem --- IDS$[n]      : Template record id for FILES$[n] (Input)
+rem ---                Null=Record type "A"
+rem --- TEMPLATES$[n]: Template for FILES$[n] (Returned)
+rem --- CHANNELS[n]  : Channel that FILES$[n] was opened on (Returned)
+rem --- BATCH        : Batch number if applicable (Returned)
+rem --- STATUS       : Status code/0=No error (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],
+:         channels[all],batch,status
+
+rem --- Define ddm-21 Template File template and open it
+
+    datadir$=fnglobal$("+DIR_DAT","")
+    pgmdir$=fnglobal$("+DIR_PGM","")
+    sysdatadir$=fnglobal$("+DIR_BRD","")
+    filedir$=datadir$
+    status=999
+    ddm21_dev=unt
+    basename$="ddm_table_tpls.dat"
+    open (ddm21_dev)sysdatadir$+basename$
+    read(ddm21_dev,key="DDM_TABLE_TPLS",dom=*next)
+    ddm21_key$=key(ddm21_dev,end=template_error)
+    if pos("DDM_TABLE_TPLS"=ddm21_key$)<>1
+        goto template_error
+    else
+        read (ddm21_dev)*,*,ddm21_tpl$
+    endif
+    dim ddm21a$:ddm21_tpl$
+
+rem --- Initializations
+
+    status=0
+    batch=0
+    retry_value=0
+
+arguments: rem --- Edit arguments
+
+    if begfile>endfile goto std_exit
+
+rem --- Open requested files
+open_file_loop:
+    errors=0
+    retry_value=1
+    for x=begfile to endfile
+        channels[x]=0
+        basename$=cvs(files$[x],2)
+        pathname$=basename$
+        basepath$=pathname$
+        filedir$=datadir$
+        if pos("S"=options$[x])<>0 then filedir$=sysdatadir$
+        if basename$<>""
+    
+            rem --- Attempt to open file
+actual_open:
+            channel=unt
+            open_mode$=""
+
+            rem --- Actual open
+
+            open (channel,mode=open_mode$,err=open_error)filedir$+pathname$
+
+            rem --- Set arrays values to be returned
+
+            channels[x]=channel
+            files$[x]=basename$
+        endif
+
+        rem --- Retrieve template for opened file
+
+        id$=ids$[x]
+        if cvs(id$,2)="" then continue
+        wk$=fattr(ddm21a$,"dd_table_alias")
+        plen=dec(wk$(10,2))
+        ddm21a.dd_table_alias$=cvs(pad(id$,plen),4)
+        find record (ddm21_dev,key=ddm21a.dd_table_alias$,err=template_error) ddm21a$
+        templates$[x]=cvs(ddm21a.dd_table_tpl$,2)
+        continue
+    
+    open_error: rem --- Error encountered attempting to open the file
+
+        errors=1,sverr=err
+        gosub get_file_description
+        if sverr=12 goto not_found
+        error$="Error "+str(sverr)+" encountered while trying to open "+description$
+        if sverr=0 goto file_locked
+        break
+
+    file_locked: rem --- Error 0 - File locked by another user
+
+        description$="file: "+files$[x]
+
+        error$=description$+" is locked by another user"
+        break
+
+    not_found: rem --- Error 12 - File not found
+  
+        if description$="" then description$="file: "+files$[x]
+
+        errors=0
+        if pos("F"=options$[x]) continue
+
+        if ids$[x]<>"" and ddm10a.restrict_create$<>"Y"
+            call stbl("+DIR_SYP")+"bac_create_table.bbj",cvs(ids$[x],4),"",table_chans$[all],"create",status$
+            if status$="" goto actual_open; rem back to open now that file is created
+        endif
+
+        errors=1
+        error$="Unable to locate "+description$
+        break
+
+    template_error: rem --- Error encountered attempting to retrieve the template
+
+  
+        errors=1,sverr=err
+        description$="file: "+files$[x]+", "+ids$[x]
+        rem  gosub get_file_description
+        error$="Error "+str(sverr)+" encountered while attempting to retrieve the template for "+description$
+        break
+    
+        rem --- End of open loop
+    
+    next x
+
+rem --- Any errors encountered during the open loop?
+
+    if errors goto error_message 
+
+rem --- Process options by file
+options_loop:
+    retry_value=2
+    for x=begfile to endfile
+        basename$=cvs(files$[x],2)
+        if cvs(files$[x],2)="" continue
+        if options$[x]="" continue
+    
+        rem --- Clear file (after we make sure nobody else is using it)
+    
+        if pos("C"=options$[x])=0 goto lock_file
+        lock (channels[x],err=options_error)
+        call pgmdir$+"adc_clearfile.aon",channels[x]
+    
+    lock_file: rem --- Lock file
+    
+        if pos("L"=options$[x])=0 continue
+        lock (channels[x],err=options_error)
+        continue
+    
+    options_error: rem --- Error 0 - Can't lock or clear file
+    
+        errors=1,sverr=err   
+        gosub get_file_description
+        error$="Error "+str(sverr)+" encountered while trying to open "+description$
+        if sverr=0 error$=description$+" is in use by another user and cannot be locked or cleared"
+        break
+    
+    next_option: rem --- End of options loop
+    
+    next x
+
+rem --- Any errors encountered during the options loop?
+
+    if errors goto error_message 
+
+rem --- All done
+
+    goto std_exit
+
+error_message: rem --- An error was encountered. Display error message and exit.
+
+    error$=error$+"."
+    title$="Error Recovery"
+    buttons=5
+    icon=16
+    msg_return=msgbox(error$,buttons+icon,title$,err=std_exit)
+    if sverr=0 and msg_return=4
+        begfile=x
+        errors=0
+        if retry_value=1
+            goto open_file_loop
+        else
+            goto options_loop
+        endif
+    endif    
+    status=sverr+1
+    goto std_exit
+
+get_file_description: rem --- Return file description
+
+    description$=$22$+files$[x]+" - (Unknown Table)"+$22$
+    read (ddm21_dev,key="DDM_TABLES",dom=*next)
+    ddm21_key$=key(ddm21_dev,err=*return);read(ddm21_dev)*,*,template$
+    if pos("DDM_TABLES"=ddm21_key$)<>1 return
+    ddm10_key$=cvs(ids$[x],4)
+    ddm10_dev=unt
+    open (ddm10_dev,err=*return) sysdatadir$+"ddm_tables.dat"
+    dim ddm10a$:template$
+    wk$=fattr(ddm10a$,"dd_table_alias")
+    plen=dec(wk$(10,2))
+    find record (ddm10_dev,key=pad(ddm10_key$,plen),err=*return) ddm10a$
+    description$=$22$+files$[x]+" - "+cvs(ddm10a.dd_alias_desc$,2)+$22$
+    return
+
+rem --- Functions
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit:
+        return q1$
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+std_exit: rem --- Return to calling program
+
+    close (ddm10_dev,err=*next)
+    close (ddm21_dev,err=*next)
+    exit
+    end

@@ -1,0 +1,336 @@
+rem --- Order Entry Additional Options Window
+rem --- Program opc_dd v8.0.0 07Dec2007 (opc_dd)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/07/2007 11:55:25)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+
+        seterr std_error
+        setesc std_error
+        enter prec,line,emsk$,umsk$,pmsk$,i_type$,l_type$,w0$,w1$,w[all],msg$
+
+rem --- Retrieve the program path
+
+         pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+        files=2,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+        files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit
+        ars01a_dev=channels[1]
+        ivs01a_dev=channels[2]
+
+rem --- Dimension string templates
+
+        dim ars01a$:templates$[1],ivs01a$:templates$[2]
+
+rem --- Retrieve parameter records
+
+        ars01a_key$=firm_id$+"AR00"
+        find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+        ivs01a_key$=firm_id$+"IV00"
+        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Determine Interface
+
+        call pgmdir$+"syc_dg.bbx",sysgui_dev,sysgui$,sysgui,sysfin$,sysfin,ui$,status
+        if status then goto std_exit
+
+rem --- Sanity check
+
+        if pos(l_type$="SPNO")=0 then goto std_exit
+
+rem --- Initialize Data
+        more=1
+        restore_syscrc$=fnglobal$("+SYSCRC","")
+        precision prec
+        pmsk=len(pmsk$)
+        msg$=""
+        width=44+pmsk
+        height=7,win_x=int(20-pmsk/2),heading$="Additional Options"
+        if line+2+height>22 then let win_y=line-height-2 else let win_y=line+2
+        if w1$(44,1)=" " then let w1$(44,1)="Y"
+        savprice=w[1]
+        savlist=w[5]
+
+rem --- Display Resource
+
+        dim resparams$[20],resparams[20]
+        resparams$[0]=pgm(-2)
+        resparams$[1]=pgm(-2)
+        resparams$[6]=heading$
+        if ui$<>"W" then call pgmdir$+"syc_wa.bbx",0,width,height,win_x,win_y,resparams$[6],char_win$
+        call pgmdir$+"syc_ra.bbx","P",resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+        if status then goto std_exit
+        gosub display_fields
+
+rem --- If this is GUI, display seq# and item
+
+        if ui$="W" then 
+                call pgmdir$+"syc_rs.bbx","",my_context,2011,w0$(18,3),0,"",ignore_status
+                call pgmdir$+"syc_rs.bbx","",my_context,2013,w0$(33,20),0,"",ignore_status
+        endif
+
+Final_inits: rem --- Final inits
+
+    while more
+
+
+
+                call pgmdir$+"syc_df.bbx",(pos(l_type$="SPN")),3000,my_context,ignore_status
+                call pgmdir$+"syc_df.bbx",(pos(l_type$="SPN")),3001,my_context,ignore_status
+                break
+
+List_price: rem --- Override List Price
+
+                if pos(l_type$="SPN")=0 then let v3=0; break
+                v0$="N"
+                v1$="C",v2$=str(w[5]),v3$=pmsk$,v4$="Enter an override list price",v0=7,v1=14,v2=0,control_id=3000
+                on v3 goto Save_list,List_price,flow_control,List_price,flow_control,Save_list,flow_control
+Save_list:
+                w[5]=v
+                if w[5]<>savlist then gosub recalc
+                break
+
+Override: rem --- Override Disc %
+
+                if pos(l_type$="SPN")=0 then break
+                v0$="N"
+                v1$="C",v2$=str(w[8]),v3$=pmsk$,v4$="Enter a discount % to mark down from list",v0=7,v1=14,v2=1,control_id=3001
+                on v3 goto Recalculation,Override,flow_control,Override,flow_control,Recalculation,flow_control
+Recalculation:
+                w[8]=v
+                gosub recalc
+                break
+
+Date_ship: rem --- Ship Date
+
+                v0$="D"
+                v1$="CR",v2$=w1$(41,3),v3$="",v4$="Enter Scheduled Ship Date for this item",v0=3,v1=39,v2=0,control_id=3002
+                on v3 goto Control_flow2,Date_ship,flow_control,Date_ship,flow_control,Control_flow2,flow_control
+Control_flow2:
+                w1$(41,3)=v$
+                break       
+
+Committed: rem --- Committed?
+
+               if i_type$="P" then break
+               v0$="Y"
+               v1$="C",v2$=w1$(44,1),v3$="",v4$="Should These Items be Committed to This Order?",v0=1,v1=39,v2=1,control_id=3003
+               on v3 goto Msg_committed,Committed,flow_control,Committed,flow_control,Msg_committed,flow_control
+
+Msg_committed:
+                if w1$(44,1)="N" and v$="Y" then let msg$="COMMIT" else let msg$=""
+                 w1$(44,1)=v$
+                 if w1$(44,1)="N" then let w1$(45,1)="N"
+                 break
+       wend
+
+flow_control: rem --- Flow Control
+
+             on v3 goto incr_i0,incr_i0,decr_i0,incr_i0,set_i0_done,done_v3
+
+      while more
+
+decr_i0:
+             if i0<i0_nonkey1 then let i0=max(0,i0-1) else let i0=max(i0_nonkey1,i0-1)
+                break
+
+incr_i0:
+                i0=i0+1;break 
+              
+
+set_i0_done:
+             i0=i0_done
+             break
+     wend
+
+next_field:
+            on i0 goto List_price,Override,Date_ship,Committed,done
+
+            goto abort
+
+done: rem --- Correct?
+
+            if validate then let validate=0
+                  else
+                   v0$="Y"
+                   v1$="KC",v2$="Y",v3$="",v4$="ITAC=Y",v0=1,v1=0,v2=22,control_id=i0-i0_done+1
+
+
+done_v3:
+            on v3 goto done_test,done,done,done,abort,validate_input,abort,done,done,done
+
+done_test:
+            on pos(v$="YN") goto flow_control,validate_input,do_nonkey1
+
+validate_input:
+
+            validate=1
+            old_control_id=0
+
+do_nonkey1:
+             v3=0
+             i0=i0_nonkey1-1
+             goto flow_control
+
+endif
+
+end_input:
+
+            goto std_exit
+
+abort: rem --- Abort
+
+          status=999
+          goto std_exit
+
+display_fields: rem --- Display fields
+
+            call pgmdir$+"syc_rs.bbx","",my_context,3000,str(w[5]:pmsk$),0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,3001,str(w[8]:pmsk$),0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,3002,fndate$(w1$(41)),0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,3003,w1$(44,1),0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,2001,str(w[1]:pmsk$),0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,2003,w0$(22,1),0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,2005,w1$(45,1),0,"",status
+            return
+recalc: rem --- Recalculate Price/Discount
+
+            w[1]=w[5]*(100-w[8])*0.01
+            if w[1]<>savprice then let w0$(22,1)="Y"
+            gosub display_fields
+            return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_missing_params.src
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end
+
+    

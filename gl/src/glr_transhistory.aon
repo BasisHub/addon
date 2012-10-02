@@ -1,0 +1,718 @@
+rem glr - GL Transaction History Report (Report Overlay)
+rem Program glr_transhistory v8.0.0 19Apr2006 (glr_cb)
+rem Created by adx_progconv.bbx v1.0.0 (04/19/2006 12:57:02)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=5,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="glm-01",ids$[2]="GLM_ACCT"
+    files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
+    files$[4]="glm-03",ids$[4]="GLC_JOURNALCODE"
+    files$[5]="glt-06",ids$[5]="GLT_TRANSDETAIL"
+    call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm01_dev=channels[2]
+    glm02_dev=channels[3]
+    glm03_dev=channels[4]
+    glt06_dev=channels[5]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3],glm03a$:templates$[4],glt06a$:templates$[5]
+
+rem --- Assign input values to local variables
+
+    begper$=Option!.getOptionData("BEG_GL_PER")
+    begyear$=Option!.getOptionData("BEG_YEAR")
+    endper$=Option!.getOptionData("END_GL_PER")
+    endyear$=Option!.getOptionData("END_YEAR")
+    begacct$=Option!.getOptionData("GL_ACCOUNT_1")
+    endacct$=Option!.getOptionData("GL_ACCOUNT_2")
+    wildcard$=Option!.getOptionData("GL_WILDCARD")
+    journal$=Option!.getOptionData("PICK_JOURNAL_ID")
+    detail$=Option!.getOptionData("PICK_LISTBUTTON")
+    export_format$=Option!.getOptionData("EXPORT_FORMAT")
+    rd_alias_id$=Option!.getAlias()    
+    if export_format$="Y"
+        if len(rd_alias_id$)>15 rd_alias_id$=rd_alias_id$(1,15)
+        rd_alias_id$=rd_alias_id$+"X"
+    endif
+
+    begper$=str(num(begper$):"00")
+    endper$=str(num(endper$):"00")
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    units_flag$=gls01a.units_flag$
+    total_pers=num(gls01a.total_pers$)
+    call "adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
+    call "adc_getmask.aon","","GL","A","",m1$,0,m1
+    call "adc_getmask.aon","","GL","U","",m2$,0,m2
+    acctlen=num(gls01a.acct_length$)
+    mp=13
+    headings=4
+    inquiry$=cvs(inquiry$,2)
+    if inquiry$<>"" then headings=3
+
+rem --- Retrieve Journal ID record if one was specified
+
+    glm03a.firm_id$=firm_id$
+    glm03a.journal_id$=journal$
+    glm03a.code_desc$="(Not On File)"
+    glm03_key$=glm03a.firm_id$+glm03a.journal_id$
+    find record (glm03_dev,key=glm03_key$,err=*next) glm03a$
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Initializations
+
+    dim headings$[headings],stars$(m2,"*")
+    dim as[(mp+1)*3],us[(mp+1)*3],o[10],at[2],et[2],pt[2],jt[2],rt[2],n[2]
+    when$=sysinfo.system_date$
+    clock$=""
+    width=132
+    page=0
+    l9=59
+    l=l9+1
+    l1=0
+    number=0
+    done=0
+    more=1
+    t0$=""
+    t1$=""
+    t2$=""
+    h0$=""
+    h1$=""
+    last$=""
+    starting$=begyear$+begper$
+    ending$=endyear$+endper$
+    bb$="Beginning Balance"
+
+rem --- Document columns
+
+rem --- Summary Report Heading
+
+    if detail$="S"
+
+        columns=5
+        dim columns$[5,10]
+        columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]=str(acctlen),columns$[0,3]=m0$
+        columns$[1,0]="Date",columns$[1,1]="C",columns$[1,2]="10"
+        columns$[2,0]="Jrnl",columns$[2,1]="C",columns$[2,2]="50"
+        columns$[3,0]="Debits",columns$[3,1]="N",columns$[3,2]=str(len(m1$)),columns$[3,3]=m1$,columns$[3,10]="T"
+        columns$[4,0]="Credits",columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
+        columns$[5,0]="Units",columns$[5,1]="N",columns$[5,2]=str(len(m2$)),columns$[5,3]=m2$,columns$[5,10]="T"
+
+    endif
+
+rem --- Detail Report Heading
+
+    if detail$="D"
+
+        columns=10
+        dim columns$[10,10]
+        columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]=str(acctlen),columns$[0,3]=m0$
+        columns$[1,0]="Date",columns$[1,1]="C",columns$[1,2]="10"
+        columns$[2,0]="Jrnl",columns$[2,1]="C",columns$[2,2]="5"
+        columns$[3,0]="Audit #",columns$[3,1]="C",columns$[3,2]="10"
+        columns$[4,0]="Memo",columns$[4,1]="C",columns$[4,2]="25"
+        columns$[5,0]="Ref 1",columns$[5,1]="C",columns$[5,2]="12"
+        columns$[6,0]="Ref 2",columns$[6,1]="C",columns$[6,2]="12"
+        columns$[7,0]="Ref 3",columns$[7,1]="C",columns$[7,2]="12"
+        columns$[8,0]="Debits",columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
+        columns$[9,0]="Credits",columns$[9,1]="N",columns$[9,2]=str(len(m1$)),columns$[9,3]=m1$,columns$[9,10]="T"
+        columns$[10,0]="Units",columns$[10,1]="N",columns$[10,2]=str(len(m2$)),columns$[10,3]=m2$,columns$[10,10]="T"
+
+    endif
+
+rem --- Initialize report headings
+
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+    if cvs(begacct$,2)="" x$="First Account"
+:                    else x$="Account "+fnmask$(begacct$(1,acctlen),m0$)
+    if cvs(endacct$,2)="" y$="Last Account"
+:                    else y$="Account "+fnmask$(endacct$(1,acctlen),m0$)
+    x$="From "+x$+" Through "+y$
+    if cvs(wildcard$,2)<>"" then x$=x$+" (Wildcard "+$22$+cvs(wildcard$,2)+$22$+")"
+    headings$[2]=x$
+    x$="",y$=""
+    x$=field(gls01a$,"period_name_"+begper$,err=*next)
+    y$=field(gls01a$,"period_name_"+endper$,err=*next)
+    if x$<>"" and y$<>""
+        headings$[3]="From "+cvs(x$,2)+" (Period "+begper$+") "+begyear$+" Through "+
+:           cvs(y$,2)+" (Period "+endper$+") "+endyear$
+        if detail$="D" x$="Detail" else x$="Summary"
+        if cvs(journal$,2)="" y$="All Journals" 
+:           else y$="Journal ID "+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
+        headings$[4]=x$+" Report For "+y$
+    else
+        if detail$="D" x$="Detail" else x$="Summary"
+        if cvs(journal$,2)="" y$="All Journals" 
+:           else y$="Journal ID "+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
+        headings$[3]=x$+" Report For "+y$
+    endif
+
+rem --- Determine which years for GL summary (glm-02) records
+
+    year1=num(gls01a.current_year$)-1
+    begper=0
+    endper=total_pers
+    year2=year1+1
+    year3=year2+1
+    begyear=num(begyear$)
+    endyear=num(endyear$)
+    begper=num(begper$)-1
+    endper=num(endper$)
+    records$="204"
+    records=len(records$)
+    begoffset=0
+    endoffset=0
+    if begyear=year2 begoffset=1
+    if begyear=year3 begoffset=2
+    if endyear=year2 endoffset=1
+    if endyear=year3 endoffset=2
+    begindex=mp*begoffset+begoffset
+    endindex=mp*endoffset+endoffset
+
+rem --- Start progress meter
+
+    call stbl("+DIR_PGM")+"adc_progress.aon","NC","","","","",0,glt06_dev,1,meter_num,status
+    glt06_key$=firm_id$
+    if cvs(begacct$,2)<>"" then glt06_key$=glt06_key$+begacct$
+    read (glt06_dev,key=glt06_key$,dom=*next)
+
+rem --- Read next transaction history (glt-06) record
+
+    while more
+
+          k$=key(glt06_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          read record (glt06_dev,key=k$)glt06a$
+          call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          transdate$=glt06a.posting_year$+glt06a.posting_per$
+          if endacct$<>"" if glt06a.gl_account$>endacct$ break
+          if transdate$<starting$ continue
+          if transdate$>ending$ continue
+          if journal$<>"" if glt06a.journal_id$<>journal$ continue
+
+          gosub wildcard
+          if status continue
+
+          rem --- Level breaks?
+
+          if glt06a.gl_account$<>t0$ gosub account_break
+          if transdate$<>t1$ gosub period_break
+          if detail$="S" if glt06a.trns_date$+glt06a.journal_id$<>t2$ gosub journal_break
+
+          rem --- Print subheadings
+
+          if h0$<>"" gosub account_heading
+          if h1$<>"" gosub period_heading
+
+          rem --- Format detail line fields
+
+          debits=0
+          credits=0
+          amount=glt06a.trans_amt
+          units=glt06a.units
+          debit$=""
+          credit$=""
+          unit$=""
+          if amount>0 debits=amount,debit$=str(amount)
+          if amount<0 credits=amount,credit$=str(abs(amount))
+          if units_flag$="Y" if units unit$=stars$,unit$=str(units,err=*next)
+          n[0]=debits
+          n[1]=credits
+          n[2]=units
+
+          rem --- Print detail line
+            
+            if export_format$="Y"
+                wk$=export_acct$
+            else
+                wk$=""
+            endif
+
+            if detail$="D"
+                OutVect!.addItem(wk$)
+                OutVect!.addItem(fndate$(glt06a.trns_date$))
+                OutVect!.addItem(glt06a.journal_id$)
+                OutVect!.addItem(glt06a.gl_adt_no$)
+                OutVect!.addItem(glt06a.description$)
+                OutVect!.addItem(glt06a.reference_01$)
+                OutVect!.addItem(glt06a.reference_02$)
+                OutVect!.addItem(glt06a.reference_03$)
+                OutVect!.addItem(debit$)
+                OutVect!.addItem(credit$)
+                OutVect!.addItem(unit$)
+                l1=l1+1
+            endif
+
+          rem --- Accumulate totals
+
+          for x=0 to 2
+              at[x]=at[x]+n[x]
+              pt[x]=pt[x]+n[x]
+              jt[x]=jt[x]+n[x]
+              rt[x]=rt[x]+n[x]
+              et[x]=et[x]+n[x]
+          next x
+
+          rem --- Loop back for next transaction history (glt-06) record
+
+    wend
+
+rem --- All Done
+
+    done=1
+    gosub account_break
+    goto std_exit
+
+account_heading: rem --- Account Heading
+
+    h0$=cvs(h0$,2)
+    b$=h0$(8)+"     -    "+bb$
+
+    if detail$="S"
+        if export_format$="Y"
+            OutVect!.addItem(export_acct$)
+            abc=fnblank(1)
+            OutVect!.addItem(export_desc$+" "+h1$+" "+bb$)
+            OutVect!.addItem(begdebit$)
+            OutVect!.addItem(begcredit$)
+            OutVect!.addItem(begunits$)
+            h1$=""
+        else
+            abc=fnblank(6)
+            OutVect!.addItem(h0$(1,7))
+            OutVect!.addItem("")
+            OutVect!.addItem(b$)
+            OutVect!.addItem(begdebit$)
+            OutVect!.addItem(begcredit$)
+            OutVect!.addItem(begunits$)
+        endif
+    endif
+
+    if detail$="D"
+        if export_format$="Y"
+            OutVect!.addItem(export_acct$)
+            abc=fnblank(3)
+            OutVect!.addItem(export_desc$)
+            OutVect!.addItem(h1$)
+            OutVect!.addItem(bb$)
+            abc=fnblank(1)
+            OutVect!.addItem(begdebit$)
+            OutVect!.addItem(begcredit$)
+            OutVect!.addItem(begunits$)
+            h1$=""
+        else
+            abc=fnblank(11)
+            OutVect!.addItem(h0$(1,7))
+            abc=fnblank(3)
+            OutVect!.addItem(b$)
+            abc=fnblank(3)
+            OutVect!.addItem(begdebit$)
+            OutVect!.addItem(begcredit$)
+            OutVect!.addItem(begunits$)
+        endif
+    endif
+
+    acct$=cvs(h0$,2)+" (continued)"
+    h0$=""
+    return
+
+period_heading: rem --- Period Heading
+
+
+    if detail$="S"
+        if export_format$="Y"
+            OutVect!.addItem(export_acct$)
+            OutVect!.addItem("")
+            OutVect!.addItem(export_desc$+" "+h1$)
+            abc=fnblank(3)
+        else
+            OutVect!.addItem("")
+            OutVect!.addItem(h1$)
+            abc=fnblank(4)
+        endif
+    endif
+
+    if detail$="D"
+        if export_format$="Y"
+            OutVect!.addItem(export_acct$)
+            abc=fnblank(3)
+            OutVect!.addItem(export_desc$)
+            OutVect!.addItem(h1$)
+            abc=fnblank(5)
+        else
+            OutVect!.addItem("")
+            OutVect!.addItem(h1$)
+            abc=fnblank(9)            
+        endif
+        l1=l1+1
+    endif
+
+    h1$=""
+    return
+
+account_break: rem --- Account number break
+
+    if t0$="" goto new_account
+    gosub period_break
+    if export_format$="Y"
+        total$="Account total"
+        x$="",y$=""
+    else
+        total$="Total For Account "+fnmask$(glm01a.gl_account$(1,acctlen),m0$)
+    endif
+    debits=at[0]
+    credits=at[1]
+    units=at[2]
+    gosub print_totals
+    if journal$<>"" goto new_account
+
+rem --- Calculate account ending balance
+
+    amount=as[endindex]
+    units=us[endindex]
+    for x=1 to endper
+        amount=amount+as[endindex+x]
+        units=units+us[endindex+x]
+    next x
+
+rem --- Print warning if calculated balance doesn't match transaction total
+
+    if endbal=amount goto new_account
+    debits=endbal-amount
+    credits=0
+    units=et[2]-units
+    if debits<0 credits=debits,debits=0
+    total$="WARNING: Transaction Total Differs From Summary Activity By"
+    gosub print_totals
+
+new_account: rem --- New account
+
+    if done return
+    dim as[(mp+1)*3],us[(mp+1)*3],at[2],et[2]
+    t0$=glt06a.gl_account$
+    glm01a.firm_id$=firm_id$
+    glm01a.gl_account$=glt06a.gl_account$
+    glm01a.gl_acct_desc$="(Not On File)"
+    glm01_key$=glm01a.firm_id$+glm01a.gl_account$
+    find record (glm01_dev,key=glm01_key$,dom=*next)glm01a$
+    h0$=fnmask$(glm01a.gl_account$(1,acctlen),m0$)+" "+glm01a.gl_acct_desc$
+    export_acct$=glm01a.gl_account$
+    export_desc$=glm01a.gl_acct_desc$
+
+rem --- Load summary activity for account
+
+    for x=1 to records
+        dim a[mp],u[mp]
+        y=(x-1)*mp+(x-1)*1
+        glm02_key$=glm01a.firm_id$+glm01a.gl_account$+records$(x,1)
+        find record (glm02_dev,key=glm02_key$,dom=*continue) glm02a$
+        call stbl("+DIR_PGM")+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+        for p=0 to mp
+            as[y+p]=a[p]
+            us[y+p]=u[p]
+        next p
+    next x
+
+rem --- Initialize account totals
+
+    et[1]=as[begindex]
+    et[2]=us[begindex]
+    if begper
+       for x=1 to begper
+           et[1]=et[1]+as[begindex+x]
+           et[2]=et[2]+us[begindex+x]
+       next x
+    endif
+    begcredit$=str(abs(et[1]))
+    begdebit$=""
+    begunits$=""
+    if units_flag$="Y" begunits$=str(et[2])
+    if et[1]>0
+       et[0]=et[1]
+       et[1]=0
+       begdebit$=str(et[0])
+       begcredit$=""
+    endif
+    return
+
+period_break: rem --- Period break
+
+    if t1$="" goto new_period
+    if detail$="D" and l1<1 goto period_balance
+    gosub journal_break
+    x$=field(gls01a$,"abbr_name_"+str(period:"00"))
+    y$=glt06a.posting_year$
+    if export_format$="Y"
+        total$="Total"
+    else
+        total$="Total For "+x$+" "+y$
+    endif
+    debits=pt[0]
+    credits=pt[1]
+    units=pt[2]
+    gosub print_totals
+
+period_balance: rem --- Print ending balance for period
+
+    if export_format$="Y"
+        total$="Ending balance"
+    else
+        total$="Ending Balance For "+x$+" "+y$
+    endif
+    endbal=et[0]+et[1]
+    debits=endbal
+    credits=0
+    units=et[2]
+    if endbal<0 credits=endbal,debits=0
+    gosub print_totals
+
+new_period: rem --- New period
+
+    if done return
+    dim pt[2]
+    m$=glt06a.posting_per$
+    period=num(m$)
+    x$=field(gls01a$,"abbr_name_"+str(period:"00"))
+    y$=glt06a.posting_year$
+    t1$=y$+m$
+    h1$=x$+" "+y$
+    l1=0
+    return
+
+journal_break: rem --- Journal break
+
+    if detail$="D" return
+    if t2$="" goto new_journal
+    amount=jt[0]+jt[1]
+    debit$=str(amount)
+    credit$="",unit$=""
+    if amount<0 credit$=str(abs(amount)),debit$=""
+    if units_flag$="Y" if units unit$=stars$,unit$=str(jt[2],err=*next)
+
+    if export_format$="Y"
+        wk$=export_acct$
+    else
+        wk$=""
+    endif
+    OutVect!.addItem(wk$)
+    OutVect!.addItem(fndate$(t2$))
+    OutVect!.addItem(h2$)
+    OutVect!.addItem(debit$)
+    OutVect!.addItem(credit$)
+    OutVect!.addItem(unit$)
+
+new_journal: rem --- New journal
+
+    if done return
+    dim jt[2],b[2]
+    glm03a.firm_ID$=sysinfo.firm_id$
+    glm03a.journal_id$=glt06a.journal_id$
+    glm03a.code_desc$="(Not On File)"
+    glm03_key$=glm03a.firm_id$+glm03a.journal_id$
+    find record (glm03_dev,key=glm03_key$,dom=*next) glm03a$
+    t2$=glt06a.trns_date$+glt06a.journal_id$
+    h2$=glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
+    return
+
+print_totals: rem --- Print totals line
+
+    amount=debits+credits
+    debit$=str(amount)
+    credit$=""
+    unit$=""
+    if amount<0 credit$=str(abs(amount)),debit$=""
+    if units_flag$="Y" unit$=stars$,unit$=str(units,err=*next)
+
+    if detail$="D"
+        if export_format$="Y"
+            OutVect!.addItem(export_acct$)
+            abc=fnblank(3)
+            OutVect!.addItem(export_desc$)
+            OutVect!.addItem(x$+" "+y$)
+            OutVect!.addItem(total$)
+            abc=fnblank(1)
+            OutVect!.addItem(debit$)
+            OutVect!.addItem(credit$)
+            OutVect!.addItem(unit$)
+        else
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            abc=fnblank(4)
+            OutVect!.addItem(total$)
+            abc=fnblank(3)
+            OutVect!.addItem(debit$)
+            OutVect!.addItem(credit$)
+            OutVect!.addItem(unit$)
+        endif
+    endif
+
+    if detail$="S"
+
+        if export_format$="Y"
+            OutVect!.addItem(export_acct$)
+            abc=fnblank(1)
+            OutVect!.addItem(export_desc$+" "+x$+" "+y$+" "+total$)
+            OutVect!.addItem(debit$)
+            OutVect!.addItem(credit$)
+            OutVect!.addItem(unit$)
+        else
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            abc=fnblank(2)
+            OutVect!.addItem(total$)
+            OutVect!.addItem(debit$)
+            OutVect!.addItem(credit$)
+            OutVect!.addItem(unit$)
+        endif
+    endif
+
+    return
+
+wildcard: rem --- Test account number against specified wildcard mask
+
+    status=0
+    if wildcard$="" return
+    if wildcard<>len(wildcard$) wildcard=len(wildcard$)
+    x$=fnmask$(glt06a.gl_account$(1,acctlen),m0$)
+    for x=1 to wildcard
+        if wildcard$(x,1)="?" continue
+        if x$(x,1)<>wildcard$(x,1) status=1
+    next x
+    return
+
+rem --- Functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_missing_params_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call stbl("+DIR_PGM")+"adc_progress.aon","D","","","","",0,0,0,0,status
+    close (gls01_dev,err=*next)
+    close (glm01_dev,err=*next)
+    close (glm02_dev,err=*next)
+    close (glm03_dev,err=*next)
+    close (glt06_dev,err=*next)
+    run stbl("+DIR_PGM")+menu$,err=*next
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

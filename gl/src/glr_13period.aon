@@ -1,0 +1,380 @@
+rem glr - 13 Period Financial Report Printing (Report Overlay)
+rem Program glr_13period v8.0.0 09Jun2006 (glr_fc)
+rem Created by adx_progconv.bbx v1.0.3 (06/09/2006 03:06:52)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- This program is the second overlay of the report generation
+rem --- cycle. A list of financial reports to be produced is contained
+rem --- in the 13 Period Financial Report Selections (gle-05) file.
+rem --- The preceding overlay (glr_headings) reads the next report
+rem --- from the file, assembles the report headings and then runs
+rem --- this program. Once the report is printed, this program runs
+rem --- glr_headings and the cycle is repeated until the last report
+rem --- in the 13 Period Financial Report Selections (gle-05) file
+rem --- has been run.
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    dim a[mp],u[mp],pa[mp],pu[mp],ta[mp],tu[mp],h$(width)
+    more=1
+    last$=""
+    m1$="-#######"
+    m1=len(m1$)
+
+rem --- Build 13 period headings
+
+    headings=3
+    n=period+1
+    for x=1 to mp-1
+        x$=str(n)+" "+field(gls01a$,"abbr_name_"+str(n:"00"))
+        p=24+m1*x 
+        y=len(x$)-1
+        h$(p-y)=x$
+        n=n+1
+        if n>total_pers n=1
+    next x
+    x$="Total"
+    p=24+m1*x
+    y=len(x$)-1
+    h$(p-y)=x$
+    heading$[headings]=h$
+
+rem --- Position Financial Report Detail (glm-22) file
+
+    glm22_key$=gle04a.firm_id$+gle04a.gl_rpt_no$
+    read record (glm22_dev,key=glm22_key$,dom=*next) glm22a$
+
+rem --- Read next Financial Report Detail (glm-22) record
+
+    while more
+          k$=key(glm22_dev,end=*break)
+          if pos(glm22_key$=k$)<>1 break
+          read record (glm22_dev) glm22a$
+          editing_code$=glm22a.editing_code$
+          input_total$=glm22a.input_total$
+          output$=""
+          for x=1 to 5
+              output$=output$+field(glm22a$,"output_total_"+str(x:"00"))
+          next x
+          for x=1 to 5
+              output$=output$+field(glm22a$,"output_oper_"+str(x:"00"))
+          next x
+
+          rem --- If it's a heading line just go print it
+
+          if glm22a.line_type$="H" goto print_line
+
+          rem --- This section of the program deals with retrieving the period
+          rem --- record for the line, performing any totaling and then updating
+          rem --- the totals record for the line.
+
+          rem --- Retrieve 13 Period Financial Report Amount (gle-08) record
+
+          dim pa[mp],pu[mp]
+          gle08_key$=k$
+          dim gle08a$:fattr(gle08a$)
+          find record (gle08_dev,key=gle08_key$,dom=*next) gle08a$
+          if gle08a.gl_updt_seq$<>sequence$
+             gle08a.firm_id$=glm22a.firm_id$
+             gle08a.gl_rpt_no$=glm22a.gl_rpt_no$
+             gle08a.gl_rpt_line$=glm22a.gl_rpt_line$
+             gle08a.gl_updt_seq$=sequence$
+             gle08a$=field(gle08a$)
+             write record (gle08_dev,key=gle08_key$) gle08a$
+          endif
+
+          rem --- Move amounts and units to working arrays
+
+          for x=0 to mp
+              pa[x]=nfield(gle08a$,"period_amt_"+str(x+1:"00"))
+              pu[x]=nfield(gle08a$,"period_units_"+str(x+1:"00"))
+              a[x]=pa[x]
+              u[x]=pu[x]
+          next x
+
+          rem --- If an input total exists for this line, retrieve the
+          rem --- Report Totals (gle-09) record and add them to the working
+          rem --- array values.
+
+          totalnumber$=input_total$
+          if pos(totalnumber$="   000",3)=0
+             totalnumber$=input_total$
+             update_sequence$=printflag$
+             gosub get_totals
+             gosub totals_to_line
+             gosub totals_to_period
+          endif
+
+          rem --- Accumulate balance if specified
+
+          if pos("B"=editing_code$)=0 goto total_out
+          bucket=total_pers+2
+          if bucket>12 bucket=bucket-12
+          for x=1 to mp
+              if bucket<>x and (bucket<>1 or x<>mp) 
+                 pa[x]=pa[x]+pa[x-1]
+                 pu[x]=pu[x]+pu[x-1]
+                 a[x]=pa[x]
+                 u[x]=pu[x]
+              endif
+          next x
+
+          total_out: rem --- Update Report Totals (gle-09) records as required
+
+          if cvs(output$,2)="" goto print_line
+          for x=0 to 4
+              totalnumber$=output$(x*3+1,3)
+              operator$=output$(x+16,1)
+              if pos(totalnumber$="   000",3) continue
+              update_sequence$=printflag$
+              sign=1
+              if operator$="-" sign=-1
+              gosub get_totals
+              if pos("C"=editing_code$) dim ta[mp],tu[mp]
+              gosub period_to_totals
+              gle09a.firm_id$=firm_id$
+              gle09a.totals_type$="T"
+              gle09a.total_no$=totalnumber$
+              gle09a.gl_updt_seq$=update_sequence$
+              gle09_key$=gle09a.firm_id$+gle09a.totals_type$+gle09a.total_no$
+              for y=1 to mp+1
+                  field gle09a$,"period_amt_"+str(y:"00")=ta[y-1]
+                  field gle09a$,"period_units_"+str(y:"00")=tu[y-1]
+              next y
+              gle09a$=field(gle09a$)
+              write record (gle09_dev,key=gle09_key$) gle09a$
+          next x
+
+          print_line: rem --- Perform any required editing and print the line
+
+          rem --- Editing code definitions:
+
+          rem --- S = Space (blank line)
+          rem --- U = Underline
+          rem --- D = Double underline
+          rem --- P = Page break
+          rem --- - = Change sign
+          rem --- C = Clear totals
+          rem --- F = Favorable (reverses sign of a variance column)
+          rem --- $ = $ mask
+
+          rem --- Page break?
+
+          if pos("P"=editing_code$) gosub report_heading
+          if l>l9 gosub report_heading
+
+          rem --- Blank line?
+
+          if pos("S"=editing_code$)
+             dim print_buf$(width)
+             gosub output_print_buf
+             l=l+1
+          endif
+
+          rem --- Underline?
+
+          char$=""
+          dim print_buf$(width)
+          if pos("U"=editing_code$) char$="-"
+          if pos("D"=editing_code$) char$="="
+          if char$<>""
+             for x=1 to 13
+                 dim underline$(m1,char$)
+                 print_buf$(25+m1*(x-1),len(underline$))=underline$
+             next x
+             gosub output_print_buf
+             l=l+1
+          endif
+ 
+          rem --- Change sign?
+
+          if pos("-"=editing_code$)
+             for x=0 to 13
+                 a[x]=-a[x]
+             next x
+          endif
+
+          rem --- Non-printing line?
+ 
+          if glm22a.line_type$="N" continue
+
+          rem --- Print line description
+ 
+          if l+1>l9 gosub report_heading
+          line_desc$=cvs(glm22a.gl_line_desc$,2)
+          dim print_buf$(width)
+          if line_desc$<>"" print_buf$(num(glm22a.default_pos$)+1,len(line_desc$))=line_desc$
+
+          rem --- If this isn't a heading line, print amounts
+
+          if glm22a.line_type$<>"H"
+             tot_line=0
+             for x=1 to mp
+                 if a[x] 
+                    print_buf$(25+m1*(x-1),len(m1$))=str(a[x]:m1$)
+                    tot_line=tot_line+a[x]
+                 endif   
+             next x
+             print_buf$(25+m1*(x-2),len(m1$))=str(tot_line:m1$)
+             gosub output_print_buf
+          endif
+
+          l=l+1
+
+          rem --- Loop back for next record
+
+    wend
+
+rem --- Run report headings overlay to get the next report
+
+    next_overlay$=pgmdir$+"glr_headings.aon"
+    goto std_exit
+
+    rem run pgmdir$+"glr_headings.aon"
+
+report_heading: rem --- Report heading
+
+    if OutVect!=null()
+        rem --- Document initializations
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rep_prog$=pgm(-2)
+
+        dim columns$[0,10];rem dummy, since won't actually have docout column headings
+        columns$[0,0]="  ",columns$[0,1]="C",columns$[0,2]=str(width)
+    endif
+        rem Create a new page
+        l=headings+1
+        page=page+1
+        clock$=date(0:"%hz:%mz %p")
+        dim print_buf$(width)
+        print_buf$(1)=heading$[0]
+        print_buf$(width-11)="Page"+str(page:"###0")
+        gosub output_print_buf
+        dim print_buf$(width)
+        print_buf$(1)=heading$[1]
+        print_buf$(width-len(audit$))=audit$
+        gosub output_print_buf
+
+        rem --- Print remaining heading lines
+
+        if headings<2 return
+        for i=2 to headings
+            dim print_buf$(width)
+            print_buf$(1)=heading$[i]
+            gosub output_print_buf
+        next i
+
+return
+
+output_print_buf:
+
+    OutVect!.addItem(print_buf$)
+
+return
+
+get_totals: rem --- Retrieve Report Totals (gle-09) record
+
+    if totalnumber$=last$ return
+    dim ta[mp],tu[mp]
+    dim gle09a$:fattr(gle09a$)
+    gle09a.firm_id$=firm_id$
+    gle09a.totals_type$="T"
+    gle09a.total_no$=totalnumber$
+    gle09_key$=gle09a.firm_id$+gle09a.totals_type$+gle09a.total_no$
+    find record (gle09_dev,key=gle09_key$,dom=*next) gle09a$
+    if gle09a.gl_updt_seq$=update_sequence$
+       for y=0 to mp
+           ta[y]=nfield(gle09a$,"period_amt_"+str(y+1:"00"))
+           tu[y]=nfield(gle09a$,"period_units_"+str(y+1:"00"))
+       next y
+    endif
+    last$=totalnumber$
+    gle09a.gl_updt_seq$=update_sequence$
+    return
+
+totals_to_line: rem --- Add total amounts to line amounts
+
+    for y=0 to mp
+        a[y]=a[y]+ta[y]
+        u[y]=u[y]+tu[y]
+        if pos("F"=editing_code$) 
+           a[y]=-a[y]
+           u[y]=-u[y]
+        endif
+    next y
+    return
+
+period_to_totals: rem --- Add period amounts to total amounts
+
+    for y=0 to mp
+        ta[y]=ta[y]+pa[y]*sign
+        tu[y]=tu[y]+pu[y]*sign
+    next y
+    return
+
+totals_to_period: rem --- Add total amounts to period amounts
+
+    for y=0 to mp
+        pa[y]=pa[y]+ta[y]
+        pu[y]=pu[y]+tu[y]
+    next y
+    return
+
+rem --- Functions
+
+    def fnppos(q,q$)=q-min(1,pos("$"=q$))
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

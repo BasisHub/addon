@@ -1,0 +1,279 @@
+rem glr - Totals/Report Cross-Reference
+rem Program glr_totalsreport v8.0.0 28May2006 (glr_oa)
+rem Created by adx_progconv.bbx v1.0.3 (05/28/2006 10:45:46)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS";rem "gls-01"
+    files$[2]="glm-12",ids$[2]="GLM_FINMASTER"
+    files$[3]="glm-22",ids$[3]="GLM_FINDETAIL"
+    files$[4]="glw-01",ids$[4]="GLX_FINTOTAL"
+        options$[4]="C"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm12_dev=channels[2]
+    glm22_dev=channels[3]
+    glw01_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1]
+    dim glm12a$:templates$[2],glm22a$:templates$[3],glw01a$:templates$[4]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    headings=1
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Initializations
+
+    dim headings$[headings]
+    clock$=""
+    when$=sysinfo.system_date$
+    width=80
+    page=1
+    l9=59
+    l=l9+1
+    number=0
+    more=1
+    moredetail=1
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+
+rem --- Document columns
+
+    columns=4
+    dim columns$[4,3]
+     columns$[0,0]="Total Number",columns$[0,1]="C",columns$[0,2]="15"
+     columns$[1,0]="Report Number",columns$[1,1]="C",columns$[1,2]="15"
+     columns$[2,0]="Description",columns$[2,1]="C",columns$[2,2]="25"
+     columns$[3,0]="Line Number",columns$[3,1]="C",columns$[3,2]="15"
+     columns$[4,0]="Description",columns$[4,1]="C",columns$[4,2]="25"
+     
+
+rem --- Get user approval to proceed
+
+     msg_id$="AON_RUN_QUERY"
+     dim x$:stbl("+SYSINFO_TPL")
+     dim msg_tokens$[1]
+     x$=stbl("+SYSINFO")                                                            
+     msg_tokens$[1]=x.task_desc$
+     gosub disp_message
+     if msg_opt$<>"Y" then goto std_exit
+
+rem --- Start progress meter and position files
+
+    call pgmdir$+"adc_clearfile.aon",glw01_dev
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm12_dev,1,0,ignore_status
+    read (glm12_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Financial Report Master (glm-12) record
+
+    while more
+          glm12_key$=key(glm12_dev,end=*break)
+          if pos(firm_id$=glm12_key$)<>1 break
+          read record (glm12_dev) glm12a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          read (glm22_dev,key=glm12_key$,dom=*next)
+
+          rem --- Read next Financial Report Detail (glm-22) record
+
+          while moredetail
+                k$=key(glm22_dev,end=*break)
+                if k$(1,len(glm12_key$))<>glm12_key$ break
+                read record (glm22_dev) glm22a$
+
+                rem --- Write sort record
+
+                glw01a.input_total$=glm22a.input_total$
+                if glw01a.input_total$<>"000"
+                   glw01a.gl_rpt_no$=glm22a.gl_rpt_no$
+                   glw01a.gl_rpt_line$=glm22a.gl_rpt_line$
+                   glw01_key$=glw01a.input_total$+glw01a.gl_rpt_no$+glw01a.gl_rpt_line$
+                   write record (glw01_dev,key=glw01_key$) glw01a$
+                   number=number+1
+                endif
+                for x=1 to 5
+                    glw01a.input_total$=field(glm22a$,"output_total_"+str(x:"00"))
+                    if glw01a.input_total$="000" continue
+                    glw01a.gl_rpt_no$=glm22a.gl_rpt_no$
+                    glw01a.gl_rpt_line$=glm22a.gl_rpt_line$
+                    glw01_key$=glw01a.input_total$+glw01a.gl_rpt_no$+glw01a.gl_rpt_line$
+                    write record (glw01_dev,key=glw01_key$) glw01a$
+                    number=number+1
+                next x
+
+                rem --- Loop back for next detail
+
+         wend
+
+         rem --- Loop back for next header
+
+    wend
+
+rem --- Position sort file
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,glw01_dev,1,0,ignore_status
+    t0$=""
+    read (glw01_dev,key="",dom=*next)
+
+rem --- Read next sort record
+
+    while more
+          k$=key(glw01_dev,end=*break)
+          read record (glw01_dev) glw01a$
+          call pgmdir$+"adc_progress.aon","S","","","",t0$,0,glw01_dev,1,meter_num,status
+
+          level_break: rem --- Level break?
+
+          if glw01a.input_total$<>t0$ 
+             t0$=glw01a.input_total$
+             h0$=t0$
+          endif
+
+          rem --- Additional reads
+
+          glm12_key$=firm_id$+glw01a.gl_rpt_no$
+          glm22_key$=firm_id$+glw01a.gl_rpt_no$+glw01a.gl_rpt_line$
+          find record (glm12_dev,key=glm12_key$,dom=*next) glm12a$
+          find record (glm22_dev,key=glm22_key$,dom=level_break) glm22a$
+
+          rem --- Print detail line
+        
+            OutVect!.addItem(h0$)
+            OutVect!.addItem(glm12a.gl_rpt_no$)
+            OutVect!.addItem(glm12a.gl_rpt_desc$)
+            OutVect!.addItem(glm22a.gl_rpt_line$)
+            OutVect!.addItem(glm22a.gl_line_desc$)
+            
+          rem --- Loop back for next sort record
+
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+
+rem --- Functions
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,105 @@
+rem glu - Purge Transaction History
+rem Program glu_purgetrans v8.0.0 13May2006 (glu_aa)
+rem Created by adx_progconv.bbx v1.0.3 (05/13/2006 12:09:32)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ads-01"
+    files$[2]="glt-06"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ads01_dev=channels[1]
+    glt06_dev=channels[2]
+
+rem --- Dimension string templates
+
+    dim glt06a$:templates$[2]
+
+rem --- Assign input values to local variables
+
+    period$=rd_rec_data$[1,0]
+    year$=rd_rec_data$[2,0]
+
+rem --- Initializations
+
+    more=1
+    when$=year$+period$
+    
+rem --- Set up progress meter and position file
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,glt06_dev,1,meter_num,status
+    read (glt06_dev,key=firm_id$,dom=*next)
+
+rem --- Cycle through transaction history and remove postings through the 
+rem --- specified period and year.
+
+    while more
+          k$=key(glt06_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          read record (glt06_dev)glt06a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          posting$=glt06a.posting_year$+glt06.posting_per$
+          if posting$<=when$ remove (glt06_dev,key=k$)
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:          str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,99 @@
+rem glc - Post to Daily Detail File from GL Recap Work File
+rem Program glc_update v8.0.0 11May2006
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- GLM01_DEV: GL Account Master file channel (Input)
+rem --- GLT04_DEV: Daily Detail file channel (Input)
+rem --- GLW11_DEV: GL Recap work file channel (Input)
+rem --- STATUS   : Status/0=No Error (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter glm01_dev,glt04_dev,glw11_dev,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Retrieve templates
+
+    files=1,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="glw-11A:GLW_DAILYDETAIL"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension and store string templates
+
+    dim glw11a$:templates$[1]
+
+rem --- Initializations
+
+    more=1
+    status=0
+    seqpos=36
+
+rem --- Position file
+
+    read (glw11_dev,key=firm_id$,dom=*next)
+
+rem --- Read through the work file and post the records to the daily detail file
+
+    while more
+          k$=key(glw11_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          read record(glw11_dev) glw11a$
+          call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,notused,glw11a.gl_account$,glw11a.trns_date$,
+:                                       glw11a.reference_01$,glw11a.reference_02$,glw11a.reference_03$,
+:                                       glw11a.description$,glw11a.trans_amt,glw11a.units,status
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+   call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:              str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

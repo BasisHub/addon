@@ -1,0 +1,472 @@
+rem --- Work Order Header Report - II
+rem --- Program sfr_woheader_o1.aon v8.0.0 04Jan2008 (sfr_gb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 01:40:18)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Retrieve key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","PRIMARY",sfe01a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","ALT_KEY_01",sfe03a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","ALT_KEY_02",sfe03b_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","ALT_KEY_03",sfe03c_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",sft01a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_CLSOPRTR","PRIMARY",sft03a_key_tpl$,rd_table_chans$[all],status$
+    
+    dim sft01a_key$:sft01a_key_tpl$
+    dim sft03a_key$:sft03a_key_tpl$
+
+rem --- Assign Title, Record, and keys
+    if sequence$="W" 
+        h3$="Work Order Sequence"
+        beging$=wofrom$
+        ending$=wothru$
+        dim key_tpl$:sfe01a_key_tpl$
+        begin_key$=firm_id$+sfe01a.wo_location$+beging$
+        keynum=0
+    endif
+    if sequence$="B"
+        h3$="Bill Number Sequence"
+        beging$=billfrom$
+        ending$=billthru$
+        dim key_tpl$:sfe03c_key_tpl$
+        begin_key$=firm_id$+whse$+beging$
+        keynum=3
+    endif
+    if sequence$="C"
+        h3$="Customer Sequence"
+        beging$=custfrom$
+        ending$=custthru$
+        dim key_tpl$:sfe03b_key_tpl$
+        begin_key$=firm_id$+beging$
+        keynum=2
+    endif
+    if sequence$="T"
+        h3$="Work Order Type Sequence"
+        beging$=wotfrom$
+        ending$=wotthru$
+        dim key_tpl$:sfe03a_key_tpl$
+        begin_key$=firm_id$+beging$
+        keynum=1
+    endif
+    h9$=h3$(1,pos("Seq"=h3$)-2)
+
+    h4$=""
+    if pos("O"=option$)>0 then let h4$=h4$+"Open/"
+    if pos("C"=option$)>0 then let h4$=h4$+"Closed/"
+    if pos("P"=option$)>0 then let h4$=h4$+"Planned/"
+    if pos("Q"=option$)>0 then let h4$=h4$+"Quoted/"
+    h4$=h4$(1,len(h4$)-1)
+    if beging$<> "" h4$=h4$+" Beginning With "+cvs(beging$,2) else h4$=h4$+" Beginning With First "
+    if ending$<> "" h4$=h4$+" and Ending With "+ending$ else h4$=h4$+" and Ending with Last "
+    
+    if closedate$<>"" then let h6$="Work In Process As Of "+fndate$(closedate$) else let h6$=""
+
+rem --- Init Data
+
+    dim u[1],t[1],w[11]
+    more=1
+    r0=121-c1-item_len-(46+m2+m1)-2
+    if r0>30 then let r0=30
+    headings$[2]=h3$
+    headings$[3]=h4$
+    headings$[4]=h6$
+    
+rem --- Column Headings
+    dim columns$[12,10]
+    columns = 12
+
+    columns$[0,0]="WO No.",      columns$[0,1]="C",columns$[0,2]="20"
+    columns$[1,0]="Dt Opnd",     columns$[1,1]="C",columns$[1,2]="8"
+    columns$[2,0]="WO Type",     columns$[2,1]="C",columns$[2,2]="3"
+    columns$[3,0]="Ct",          columns$[3,1]="C",columns$[3,2]="3"
+    columns$[4,0]="St",          columns$[4,1]="C",columns$[4,2]="3"
+    columns$[5,0]="Start Dt",    columns$[5,1]="C",columns$[5,2]="8"
+    columns$[6,0]="Comp Dt",     columns$[6,1]="C",columns$[6,2]="8"
+    columns$[7,0]="Close Qty",   columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$
+    columns$[8,0]="Close Value", columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m1$
+    columns$[9,0]="Description", columns$[9,1]="C",columns$[9,2]="25"
+    columns$[10,0]="Bill No",    columns$[10,1]="C",columns$[10,2]="8"
+    columns$[11,0]="Cust No",    columns$[11,1]="C",columns$[11,2]="8"
+    columns$[12,0]="Ord No",     columns$[12,1]="C",columns$[12,2]="8"
+    
+rem --- Init Read
+
+    extractrecord(sfe01a_dev,key=begin_key$,knum=keynum,dom=*next)
+
+rem --- Main Read
+    while more
+
+        key_tpl$=key(sfe01a_dev,knum=keynum,end=*break)
+        if pos(firm_id$=key_tpl$)<>1 break
+
+        if ending$<>"" 
+            if sequence$="W" and key_tpl.firm_id$+key_tpl.wo_location$+key_tpl.wo_no$>firm_id$+key_tpl.wo_location$+ending$ break
+            if sequence$="B" and key_tpl.firm_id$+key_tpl.warehouse_id$+key_tpl.item_id$>firm_id$+whse$+ending$ break
+            if sequence$="C" and key_tpl.firm_id$+key_tpl.customer_id$>firm_id$+ending$ break
+            if sequence$="T" and key_tpl.firm_id$+key_tpl.wo_type$>firm_id$+ending$ break   
+        else
+            if sequence$="B" and whse$<>"" then if key_tpl.warehouse_id$>whse$ break
+        endif
+
+        if sequence$<>"W" then 
+            if sequence$="T" data1$=key_tpl.wo_type$
+            if sequence$="C" data1$=key_tpl.customer_id$
+            if sequence$="B" data1$=key_tpl.item_id$
+            if data1$<>t0$ then gosub sub_total
+            read (sfe01a_dev,knum=keynum)
+        endif
+
+        check_status:
+            read record (sfe01a_dev,key=key_tpl$,knum=keynum,dom=*continue) sfe01a$
+            if closedate$<>"" and sfe01a.opened_date$>closedate$ then continue
+            if pos("P"=option$)<=0 or sfe01a.wo_status$<>"P"
+                if pos("Q"=option$)<=0 or sfe01a.wo_status$<>"Q"
+                    if pos("O"=option$)<=0 or sfe01a.wo_status$<>"O"
+                        if pos("P"=option$)=0 and sfe01a.wo_status$="P" then continue
+                        if pos("Q"=option$)=0 and sfe01a.wo_status$="Q" then continue
+                        if pos("O"=option$)=0 and sfe01a.wo_status$="O" then continue
+                        if pos("C"=option$)>0 and sfe01a.wo_status$<>"C" then continue
+                        if pos("C"=option$)=0 and sfe01a.wo_status$="C" and closedate$="" then continue
+                        if pos("O"=option$)>0 and pos("C"=option$)=0 and sfe01a.wo_status$="C" and sfe01a.closed_date$<=closedate$ then continue
+                        if pos("P"=option$)>0 and pos("C"=option$)=0 and sfe01a.wo_status$="C" and sfe01a.closed_date$<=closedate$ then continue
+                        if pos("Q"=option$)>0 and pos("C"=option$)=0 and sfe01a.wo_status$="C" and sfe01a.closed_date$<=closedate$ then continue
+                        if pos("C"=option$)>0 and len(closedate$)>0 and sfe01a.closed_date$>closedate$ then continue
+                    endif
+                endif
+            endif
+
+            if sfe01a.wo_category$="I" 
+                dim d1$(60)
+                d1$(1)="**Invalid Item**"
+                find record (ivm01a_dev,key=firm_id$+sfe01a.item_id$,dom=*next) ivm01a$
+                d1$(1)=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+            endif
+
+            rem --- Calculate Actuals
+
+                if sfe01a.wo_status$="C" and sfe01a.closed_date$<=g9$ then gosub closed else gosub not_closed
+               
+            rem --- Print Closed Values
+                if pos("C"=option$)<=0 or sfe01a.wo_status$<>"C" 
+                    rem --- Reduce By Closed Amount
+                    if closedate$="" then let sfe01a.reserved_num=sfe01a.reserved_num-sfe01a.cls_cst_todt
+                    if sfe01a.closed_date$<=closedate$ then let sfe01a.reserved_num=sfe01a.reserved_num-sfe01a.cls_cst_todt
+                endif
+
+    rem --- Print
+        OutVect!.addItem(sfe01a.wo_no$)
+        if pos(sfe01a.wo_status$="CPQ")=0
+            OutVect!.addItem(fndate$(sfe01a.opened_date$))
+        else
+            if sfe01a.wo_status$="C" then let stat$="*Closed*" 
+            if sfe01a.wo_status$="P" then let stat$="*Plannd*" 
+            if sfe01a.wo_status$="Q" then let stat$="*Quoted*"  
+            if sfe01a.wo_status$="C" then OutVect!.addItem(stat$) else OutVect!.addItem("")
+        endif
+        OutVect!.addItem(sfe01a.wo_type$)
+        OutVect!.addItem(sfe01a.wo_category$)
+        OutVect!.addItem(sfe01a.wo_status$)
+        OutVect!.addItem(fndate$(sfe01a.eststt_date$))
+        if pos(sfe01a.wo_status$="CPQ")=0 then OutVect!.addItem(fndate$(sfe01a.estcmp_date$)) else OutVect!.addItem(fndate$(sfe01a.closed_date$))
+        OutVect!.addItem(str(sfe01a.sch_prod_qty))
+        OutVect!.addItem(str(sfe01a.reserved_num))
+        if sfe01a.wo_category$="I" then 
+            OutVect!.addItem(d1$(1,desclen))
+            OutVect!.addItem(sfe01a.item_id$)
+        endif
+        if pos(sfe01a.wo_category$="R")>0 then 
+            OutVect!.addItem(sfe01a.description_01$)
+            OutVect!.addItem("")
+        endif
+        if sfe01a.wo_category$="N" then 
+            OutVect!.addItem(sfe01a.description_01$)
+            OutVect!.addItem("Special")
+        endif
+        if sfs01a.ar_interface$="Y" then 
+            if pos(" "<>sfe01a.customer_id$)>0 then OutVect!.addItem(fnmask$(sfe01a.customer_id$,ars01a.customer_output$)) else OutVect!.addItem("")
+            if pos(" "<>sfe01a.order_no$)>0 then OutVect!.addItem(sfe01a.order_no$) else OutVect!.addItem("")
+        else
+            xwk=fnblank(2)
+        endif
+        
+        t[0]=t[0]+sfe01a.sch_prod_qty
+        t[1]=t[1]+sfe01a.reserved_num,u[0]=u[0]+sfe01a.sch_prod_qty,u[1]=u[1]+sfe01a.reserved_num,l=l+1,l0=l0+1
+
+    wend
+
+done: rem --- End
+
+    t9$="U"
+    if sequence$<>"W" then gosub sub_total
+    xwk=fnblank(8)
+    OutVect!.addItem(j$(1,m1-1))
+    xwk=fnblank(9)
+    OutVect!.addItem("Grand Total: ")
+    xwk=fnblank(2)
+    OutVect!.addItem(str(u[1]))
+    xwk=fnblank(4)
+    goto std_exit
+
+sub_heading: rem --- Sub Heading
+
+    if sequence$="T" 
+        OutVect!.addItem(t0$+"   "+h5$)
+        xwk=fnblank(25)
+    endif
+    if sequence$="C"
+        OutVect!.addItem(fnmask$(t0$(1,c0),ars01a.customer_output$)+"   "+h5$)
+        xwk=fnblank(25)
+    endif
+return
+
+
+sub_total: rem --- First Sub Total
+    if t0$<>"" 
+        if l0>1 
+            if sequence$="B" then 
+                xwk=fnblank(7)
+                OutVect!.addItem(j$(1,m2-1))
+            else
+                xwk=fnblank(8)
+            endif
+            OutVect!.addItem(j$(1,m1-1))
+            xwk=fnblank(4)
+            OutVect!.addItem(h9$)
+            OutVect!.addItem(t0$)
+            OutVect!.addItem("Total: ")
+            if sequence$="B" then 
+                xwk=fnblank(4)
+                OutVect!.addItem(str(t[0]))
+            else
+                xwk=fnblank(5)
+            endif
+            OutVect!.addItem(str(t[1]))
+            xwk=fnblank(17)
+        else
+            xwk=fnblank(13)
+        endif
+    endif
+    if t9$<>"" then return
+    dim t[1]
+    t0$=data1$
+    l0=0
+
+    p=pos(sequence$="TC") 
+    if p=0 return 
+    if p=1
+        dim h5$(39); let h5$(1)="*** Not On File ***"
+        find record (sfm10a_dev,key=firm_id$+"A"+t0$,dom=sub_heading) sfm10a$
+        h5$=sfm10a.code_desc$
+        gosub sub_heading
+    endif 
+    if p=2
+        dim h5$(30); let h5$(1)="*** Not On File ***"
+        find record (arm01a_dev,key=firm_id$+t0$,dom=sub_heading) arm01a$
+        h5$=arm01a.customer_name$
+        gosub sub_heading
+    endif
+return
+
+closed: rem --- Process Closed Work Order Transactions
+
+    wotran_dev=sft03a_dev
+    while more
+        k1$=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$
+        read (wotran_dev,key=k1$,dom=*next)
+        while more
+            sft03a_key$=key(wotran_dev,end=*break)
+            k5$=sft03a_key.firm_id$+sft03a_key.wo_location$+sft03a_key.wo_no$
+            if k5$<>k1$ then break
+            if closedate$<>"" then if sft03a_key.trans_date$>closedate$ then break
+            read record (wotran_dev,key=sft03a_key$) sft03a$
+            sfe01a.reserved_num=sfe01a.reserved_num+sft03a.ext_cost
+        wend
+        if wotran_dev=sft03a_dev then let wotran_dev=sft23a_dev;continue
+        if wotran_dev=sft23a_dev then let wotran_dev=sft33a_dev;continue
+        break
+    wend
+return
+
+not_closed: rem --- Process Work Order Transactions
+
+    wotran_dev=sft01a_dev
+    while more
+        k1$=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$
+        read (wotran_dev,key=k1$,dom=*next)
+        while more
+            sft01a_key$=key(wotran_dev,end=*break)
+            k5$=sft01a_key.firm_id$+sft01a_key.wo_location$+sft01a_key.wo_no$
+            if k5$<>k1$ then break
+            if closedate$<>"" then if sft01a_key.trans_date$>closedate$ then break
+            read record (wotran_dev,key=sft01a_key$) sft01a$
+            sfe01a.reserved_num=sfe01a.reserved_num+sft01a.ext_cost
+        wend
+        if wotran_dev=sft01a_dev then let wotran_dev=sft21a_dev; continue
+        if wotran_dev=sft21a_dev then let wotran_dev=sft31a_dev; continue
+        break
+    wend
+return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+    def fnh$(q$)=q$(1,2)+chr(32*pos("C"=x9$))+q$(3)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    rem def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

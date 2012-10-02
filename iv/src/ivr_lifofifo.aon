@@ -1,0 +1,503 @@
+rem ivr - LIFO/FIFO Tier Report
+rem Program ivr_lifofifo.aon v8.0.0 23Oct2006 (ivr_xb)
+rem Created by adx_codeport.bbx v1.1.1 (10/23/2006 01:01:25)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem This report has been modified for output to vector/grid (OutVect!), instead of directly to printer
+
+rem --- The following IOLIST's were removed from this program:
+
+rem --- ivm01a: iolist a0$(1),a1$(1),a2$(1),a3$(1),a4$,a5$,a6$,a[all]
+rem --- ivm04a: iolist b0$(1),b1$(1),b2$,b[all]
+rem --- ivm10a: iolist x0$(1)
+rem --- ivm10c: iolist x0$(1)
+rem --- ivs01a: iolist i0$,i1$,i2$,i3$,i4$,m0$,m1$,m2$,m3$,m4$,m5$
+rem --- sys01t: iolist x$,f0$,x$,x$,x$,f4$,f5$
+
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    sys_date$=sysinfo.system_date$
+    firm_name$=sysinfo.firm_name$
+    task_desc$=sysinfo.task_desc$
+
+rem --- Open/Lock files
+
+    files=6,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    if status goto std_exit
+    files$[1]="ivs_params",ids$[1]="IVS_PARAMS"
+    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+    files$[3]="ivm-03",ids$[3]="IVX_ITEMPRWH"
+    files$[4]="ivm-04",ids$[4]="IVM_ITEMTIER"
+    files$[5]="ivc_whsecode",ids$[5]="IVC_WHSECODE"
+    files$[6]="ivc_prodcode",ids$[6]="IVC_PRODCODE"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ivs01_dev=channels[1]
+    ivm01_dev=channels[2]
+    ivm03c_dev=channels[3]
+    ivm04_dev=channels[4]
+    ivm10c_dev=channels[5]
+    ivm10a_dev=channels[6]
+
+rem --- Dimension string templates
+
+    dim ivm01a$:templates$[2],ivm04a$:templates$[4],ivm10c$:templates$[5]
+    dim ivm10a$:templates$[6],ivs01a$:templates$[1],ivm03c$:templates$[3]
+
+rem --- Retrieve key template
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMPRWH","PRIMARY",ivm03c_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMTIER","PRIMARY",ivm04a_key_tpl$,table_chans$[all],status$
+
+    dim ivm03c_key$:ivm03c_key_tpl$,ivm04a_key$:ivm04a_key_tpl$
+
+rem --- Assign form input values to local variables
+   
+    begdate$=option!.getOptionData("pick_date_1")
+    enddate$=option!.getOptionData("pick_date_2")
+    begwhse$=option!.getOptionData("warehouse_id_1")
+    endwhse$=option!.getOptionData("warehouse_id_2")
+    begprod$=option!.getOptionData("product_type_1")
+    endprod$=option!.getOptionData("product_type_2")
+    begitem$=option!.getOptionData("item_id_1")
+    enditem$=option!.getOptionData("item_id_2")
+    type$=option!.getOptionData("item_type")
+
+rem --- Retrieve parameter records
+
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    dim p[5]
+    P[0]=num(ivs01a.item_id_len$)
+    p[1]=num(ivs01a.precision$)
+    p[3]=num(ivs01a.desc_len_01$)
+    p[4]=num(ivs01a.desc_len_02$)
+    p[5]=num(ivs01a.desc_len_03$)
+    call pgmdir$+"adc_getmask.aon","","GL","A",imask$,m1$,0,0
+    call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,0
+Expand_M2:    if len(m2$)<15 m2$="#"+m2$; goto Expand_M2
+    call pgmdir$+"adc_getmask.aon","","IV","C",imask$,m3$,0,0
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,12,15
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,10,15
+    call pgmdir$+"adc_sizemask.aon",m3$,m3,10,15
+
+    DIM HEADINGS$[4],O[10],PRODUCT[1],REPORT[1],ITEM[1],TOTAL[1],WAREHOUSE[1],TYPES$[10]
+ 
+    LET HEADINGS$[0]=firm_name$,HEADINGS$[1]=task_desc$,CLOCK$="",H9$=""
+    LET WIDTH=132,L9=59,L=L9+1,HEADINGS=8,SOURCE$="BBBOTAOPRCTIWOIAIIIRPH"
+    LET TYPES$[0]="Conv",TYPES$[1]="BOM",TYPES$[2]="Tier",TYPES$[3]="Sale"
+    LET TYPES$[4]="P.O.",TYPES$[5]="Xfer",TYPES$[6]="W.O.",TYPES$[7]="Adj"
+    LET TYPES$[8]="Iss",TYPES$[9]="Rec",TYPES$[10]="Phys"
+
+    LET O[1]=P[0]+1,O[10]=WIDTH-M1,O[9]=O[10]-M3,O[8]=O[9]-M2;rem -- print positions
+    LET O[7]=O[8]-3,O[6]=O[7]-11,O[5]=O[6]-6,O[4]=O[5]-9
+    LET O[3]=O[4]-4,O[2]=O[3]-4,O[1]=O[0]+P[0],SPLIT=0
+    IF P[0]+P[3]+P[4]+P[5]>O[2] THEN LET SPLIT=1
+
+    gosub l5800; rem --- Initialize HEADINGS$
+
+rem --- Position files
+
+    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",7+p[0],ivm03c_dev,1,0,ignore_status
+rem    call pgmdir$+"adc_progress.aon","S","","","","Printing",0,0,1,meter_num,status
+    first$=firm_id$+"C"
+    ivm03c.firm_id$=firm_id$,ivm03c.record_id_c$="C"
+    if begwhse$<>"" then ivm03c.warehouse_id$=begwhse$
+    if begwhse$<>"" and begprod$<>"" ivm03c.product_type$=begprod$
+    if begprod$<>"" and begitem$<>"" ivm03c.item_id$=begitem$
+
+    read (ivm03c_dev,key=ivm03c$,dom=*next)
+
+Main_Read: rem --- Get next sort record
+
+    k$=key(ivm03c_dev,end=done)
+    if pos(first$=k$)<>1 goto done
+    read (ivm03c_dev)
+    whse$=k$(4,2)
+    product$=k$(6,3)
+    item$=k$(9)
+
+rem --- Valid Warehouse/Product/Item?
+
+    if endwhse$<>"" if cvs(whse$,3)>endwhse$ goto Done
+    if begprod$<>"" if cvs(product$,3)<begprod$ goto Beg_Prod
+    if endprod$<>"" if cvs(product$,3)>endprod$ goto Last_Prod
+    if begitem$<>"" if cvs(item$,3)<begitem$ goto Beg_Item
+    if enditem$<>"" if cvs(item$,3)>enditem$ goto Last_Item
+
+    call pgmdir$+"adc_progress.aon","S","","","",whse$+" "+product$+" "+item$(1,p[0]),0,0,1,meter_num,status
+    if whse$<>t0$ gosub l6000
+    if product$<>t1$ gosub l6200
+
+rem --- Retrieve item
+
+    needed=split
+    find record (ivm01_dev,key=firm_id$+item$,dom=Next_Item) ivm01a$
+    if type$<>"" if ivm01a.item_type$<>type$ goto Next_Item
+    description$=cvs(ivm01a.item_desc$,3)
+    um$=ivm01a.unit_of_sale$
+    if split=0 goto l1600
+    if len(description$)>o[2] description$=description$(1,o[2]-1)
+
+l1600: rem --- Position file for reading LIFO/FIFO records
+
+    dim item[1]
+    tier=0
+    read (ivm04_dev,key=firm_id$+whse$+item$+begdate$,dom=*next)
+
+Next_Tier: rem --- Read next LIFO/FIFO record
+
+    ivm04a_key$=key(ivm04_dev,end=l3000)
+    if pos(firm_id$+whse$+item$=ivm04a_key$)<>1 goto l3000
+    read record (ivm04_dev) ivm04a$
+    if enddate$<>"" if ivm04a.receipt_date$>enddate$ goto l3000
+    if ivm04a.qty_on_hand=0 goto l3000
+
+rem --- Format print fields
+
+    l=l+1+needed
+    tier=tier+1
+    d$=""
+    value=ivm04a.qty_on_hand*ivm04a.unit_cost
+    if split=0 if tier=1 d$=description$,x=o[1]
+    if split>0 if tier>1 d$=description$,x=o[0]+3
+    if tier=1 l=l+1
+    x=pos(ivm04a.trans_source$=source$,2)
+    trans$=ivm04a.trans_source$
+    if x>0 trans$=types$[(x-1)/2]
+
+rem --- Print detail line
+
+    if h9$<>""
+        OutVect!.addItem(h9$)
+        h9$=""
+        for x=1 to 10
+            OutVect!.addItem("")
+        next x
+    endif; rem --- sub-headings for product
+	OutVect!.addItem(item$)
+	OutVect!.addItem(d$)
+	OutVect!.addItem(um$)
+	OutVect!.addItem(str(tier:"##0"))
+	OutVect!.addItem(fndate$(ivm04a.receipt_date$))
+	OutVect!.addItem(trans$)
+	OutVect!.addItem(ivm04a.trans_ref$)
+	OutVect!.addItem(ivm04a.sequence_no$)
+	OutVect!.addItem(str(ivm04a.qty_on_hand:m2$))
+	OutVect!.addItem(str(ivm04a.unit_cost:m3$))
+	OutVect!.addItem(str(value:m1$))
+    item$="",um$="",needed=0
+
+rem --- Accumulate totals
+
+    item[0]=item[0]+ivm04a.qty_on_hand
+    item[1]=item[1]+value
+    report[1]=report[1]+value
+    product[0]=product[0]+1
+    product[1]=product[1]+value
+    warehouse[0]=warehouse[0]+1
+    warehouse[1]=warehouse[1]+value
+
+rem --- Loop back for next tier record
+
+    goto Next_Tier
+
+l3000: rem --- Print item totals
+
+    if tier=0 goto Next_Item
+
+    if split>0
+        if tier<2
+            OutVect!.addItem("")
+            OutVect!.addItem(description$)
+            for x=1 to 9;OutVect!.addItem("");next x
+        endif
+    endif
+    if tier=1 goto Next_Item
+    total$="Total For Item "+ivm01a.item_id$
+    total[0]=item[0]
+    total[1]=item[1]
+    l1=1
+    gosub l6900
+
+Next_Item: rem --- Loop back for next record
+
+    goto Main_Read
+
+Beg_Prod: read (ivm03c_dev,key=k$(1,5)+begprod$,dom=Next_Item)
+Last_Prod: read (ivm03c_dev,key=k$(1,5)+$FF$,dom=Next_Item)
+Beg_Item: read (ivm03c_dev,key=k$(1,8)+begitem$,dir=0,dom=Next_Item)
+Last_Item: read (ivm03c_dev,key=k$(1,8)+$FF$,dom=Next_Item)
+
+Done: rem --- All done
+
+    done=1
+    gosub l6000
+    total$="Total For Report"
+    total[1]=report[1]
+    l1=2
+    gosub l6900
+    goto std_exit
+
+nolifofifo: rem --- LIFO/FIFO not set in parameter record
+
+    call pgmdir$+"ivc_warnings.aon","F",status
+    goto std_exit
+
+l5800: rem --- Initialize HEADINGS$
+
+rem --- date/time 
+	OutVect!=bbjAPI().getSysGui().makeVector()
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+		rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+		rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem ---  miscellaneous report hdgs
+    x1$="First"
+    x2$="First"
+    if begitem$<>"" x1$=begitem$
+    if begprod$<>"" x2$=begprod$
+    h1$="Item: from "+x1$
+    h3$="Product: from "+x2$
+    x1$="Last"
+    x2$="Last"
+    x3$="All Item Types"
+    if enditem$<>"" x1$=enditem$
+    if endprod$<>"" x2$=endprod$
+    if type$<>"" x3$="Item Type "+type$
+    h1$=h1$+" to "+x1$   
+    h3$=h3$+" to "+x2$
+    h5$=x3$
+    headings$[2]=h1$
+    headings$[3]=h3$
+    headings$[4]=h5$
+
+rem --- column headings
+	dim columns$[10,10]
+		columns$[0,0]="Item",columns$[0,1]="C",columns$[0,2]="30"
+		columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="30"
+		columns$[2,0]="UM",columns$[2,1]="C",columns$[2,2]="5"
+		columns$[3,0]="Tier",columns$[3,1]="C",columns$[3,2]="5",columns$[3,3]="##0"
+		columns$[4,0]="Date",columns$[4,1]="C",columns$[4,2]="10"
+		columns$[5,0]="Type",columns$[5,1]="C",columns$[5,2]="5"
+		columns$[6,0]="Reference",columns$[6,1]="C",columns$[6,2]="15"
+		columns$[7,0]="Seq",columns$[7,1]="C",columns$[7,2]="5"
+		columns$[8,0]="Quantity",columns$[8,1]="N",columns$[8,2]="15",columns$[8,3]=m2$
+		columns$[9,0]="Unit Cost",columns$[9,1]="N",columns$[9,2]="15",columns$[9,3]=m3$
+		columns$[10,0]="Extension",columns$[10,1]="N",columns$[10,2]="15",columns$[10,3]=m1$
+
+    return
+
+l6000: rem --- Warehouse Break
+
+    if t0$="" goto l6100
+    gosub l6200
+    total$="Total For Warehouse "+t0$
+    total[1]=warehouse[1]
+    l1=2
+    if warehouse[0]>0 gosub l6900
+l6100:
+    if done goto l6190
+    dim warehouse[1]
+    t0$=whse$
+    ivm10c.short_name$="(Not on File)"
+    l=l9+1
+    find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
+    let x$="Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2)
+    OutVect!.addItem(x$)
+    for x=1 to 10
+        OutVect!.addItem("")
+    next x
+
+l6190:
+    return
+
+l6200: rem --- Product break
+
+    if t1$="" goto l6300
+    let total$="Total For Product "+t1$,total[1]=product[1],l1=2
+    if product[0]>0 gosub l6900
+l6300:
+    if done goto l6390
+    dim product[1]
+    let t1$=product$,ivm10a.code_desc$="(Not on File)"
+    find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
+    let h9$="Product Type "+t1$+" "+ivm10a.code_desc$
+l6390:
+    return
+
+l6900: rem --- Print total line
+
+    let x1$="",x2$=str(total[1]:m1$),total$=cvs(total$,2)
+    if total[0]<>0 x1$=str(total[0]:m2$)
+
+    OutVect!.addItem(total$)
+    for x=1 to 7
+        OutVect!.addItem("")
+    next x
+    OutVect!.addItem(x1$)
+    OutVect!.addItem("")
+    OutVect!.addItem(x2$)
+    for x=1 to 11;OutVect!.addItem("");next x;rem "blank line after tots
+    let l=l+l1,total[0]=0,total[1]=0
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_data$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Find length of field
+    def fnfldlen(q$,q1$)
+        wkq$=fattr(q$,q1$)
+        wkq=dec(wkq$(10,2))
+    return wkq
+
+rem --- Format inventory item description
+
+    def fnitem$(q$)=cvs(q$,32)
+rem --- old format using params: def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+   def fndate$(q$) 
+        if cvs(q$,2)="" return ""
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if testdate$<>"" 
+            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+        endif
+        return testdate$
+    fnend    
+rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

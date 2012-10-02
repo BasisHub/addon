@@ -1,0 +1,543 @@
+rem --- Shop Floor Dispatch Report
+rem --- Program sfr_pb v8.0.0 25Jan2008 (sfr_pb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/25/2008 05:27:28)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Initializations
+
+    headings=5
+    dim headings$[headings]
+    headings$[0]=n1$
+    headings$[1]=n4$
+    headings$[2]=h0$
+    headings$[3]=h1$
+    headings$[4]=h2$
+    h0=132
+    when$=sysinfo.system_date$
+    clock$=""
+    more=1
+
+rem --- Retrieve key templates
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOSCHDL","PRIMARY",sfm05a_key_pritpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",sft01a_key_pritpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","KEY01",sfe02a_key_alt1tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","PRIMARY",sfe02a_key_pritpl$,rd_table_chans$[all],status$
+    
+
+rem --- Headings and print positions
+
+ 
+    dim columns$[13,10]
+    columns = 13
+    columns$[0,0]="Date Req'd",         columns$[0,1]="C",columns$[0,2]="6"
+    columns$[1,0]="Pri Code",           columns$[1,1]="C",columns$[1,2]="4"
+    columns$[2,0]="WO St",              columns$[2,1]="C",columns$[2,2]="15"
+    columns$[3,0]="WO Tp",              columns$[3,1]="C",columns$[3,2]="2"
+    columns$[4,0]="W.O Number",         columns$[4,1]="C",columns$[4,2]="5"
+    columns$[5,0]="Description",        columns$[5,1]="C",columns$[5,2]="6"
+    columns$[6,0]="At Opn",             columns$[6,1]="C",columns$[6,2]="3"
+    columns$[7,0]="Frm Opn",            columns$[7,1]="C",columns$[7,2]="3"
+    columns$[8,0]="Sched Complete",     columns$[8,1]="C",columns$[8,2]="6"
+    columns$[9,0]="Customer",           columns$[9,1]="C",columns$[9,2]="5"
+    columns$[10,0]="Setup Time",        columns$[10,1]="N",columns$[10,2]="4",columns$[10,3]=ivs01a.cost_mask$
+    columns$[11,0]="Run Time",          columns$[11,1]="N",columns$[11,2]="4",columns$[11,3]=ivs01a.cost_mask$
+    columns$[12,0]="Move Time",         columns$[12,1]="N",columns$[12,2]="3",columns$[12,3]=ivs01a.cost_mask$
+    columns$[13,0]="Critical Ratio",    columns$[13,1]="N",columns$[13,2]="4",columns$[13,3]=ivs01a.unit_mask$
+
+
+rem --- Calculate Actual Transactions
+
+    gosub calc_time
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sfm05a_dev,1,0,ignore_status
+
+rem --- Position wom-05 detail file
+
+    dim sched[days]
+    totset=0
+    totrun=0,wtotset=0,wtotrun=0
+    prefix$=firm_id$+op_code$
+    read (sfm05a_dev,key=prefix$,dom=*next)
+
+rem --- Read next wom-05 detail record
+
+    dim sfm05a_key$:sfm05a_key_pritpl$
+    while more
+        sfm05a_key$=key(sfm05a_dev,end=done)
+        if pos(prefix$=sfm05a_key$)<>1 then goto done
+        read record (sfm05a_dev) sfm05a$
+        thisseq$=sfm05a_key.op_seq$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+
+rem --- Work order still open?
+
+        sfe01a.firm_id$=sfm05a_key.firm_id$
+        sfe01a.wo_location$="  "
+        sfe01a.wo_no$=sfm05a_key.wo_no$
+
+        move=0
+        find record (sfe01a_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*continue) sfe01a$
+        if pos(sfe01a.wo_status$=wo_status$)=0 then continue
+        dim desc$(20)
+
+        desc$(1)=sfe01a.description_01$
+        if sfe01a.wo_category$="I" then 
+            desc$(1)=sfe01a.item_id$+" "+desc$
+        endif
+        move=move+sfm05a.move_time
+        if ar$="Y" then 
+            find record (arm01a_dev,key=firm_id$+sfe01a.customer_id$,dom=*next) arm01a$
+        endif
+
+rem --- Shall we print it?
+
+        gosub init_wo
+        gosub calc_rem_units
+        if begdate$<>"" and begdate$>sfm05a_key.sched_date$ then continue
+        if lastdate$<>"" and lastdate$<sfm05a_key.sched_date$ then continue
+        if sfe01a.priority$>pr_code$ then continue
+        if runt=0 and set=0 and move=0 then continue
+        if t1$<>sfm05a_key.sched_date$ then gosub week_end_subtot
+        if t0$<>sfm05a_key.op_code$ then gosub totals
+        gosub det_disp
+        totset=totset+set
+        totrun=totrun+runt
+        wtotset=wtotset+set
+        wtotrun=wtotrun+runt
+
+rem --- Loop back for next record
+        
+    wend
+
+
+calc_time: rem --- Calculate Actual Run & Setup Time From Transactions
+    wostr$=""
+    key1$=firm_id$+sfe02a.wo_location$+op_code$
+    read (sfe02a_dev,key=key1$,knum=1,dom=*next)
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sfe02a_dev,1,0,ignore_status
+
+    dim sfe02a_key$:sfe02a_key_alt1tpl$
+    while more
+        sfe02a_key$=key(sfe02a_dev,knum=1,end=*break)
+        if cvs(sfe02a_key.op_code$,3)<>cvs(op_code$,3) then break
+        read (sfe02a_dev,key=sfe02a_key$,knum=1)
+        read (sft01a_dev,key=firm_id$+sfe02a_key.wo_location$+sfe02a_key.wo_no$,dom=*next)
+        dim sft01a_key$:sft01a_key_pritpl$
+
+        while more
+            sft01a_key$=key(sft01a_dev,end=*break)
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,ignore_status
+
+            if sft01a_key.wo_no$<>sfe02a_key.wo_no$ then break
+            read record (sft01a_dev) sft01a$
+            if sft01a.record_id_o$<>"O" then continue
+            if cvs(sft01a.op_code$,3)<>cvs(op_code$,3) then continue
+            units=units+sft01a.units
+            set=set+sft01a.setup_time
+        wend
+rem --- Done With This Work Order
+        if units=0 and set=0 then continue
+        if pos(sfe02a_key.wo_no$=wostr$,7+2*umask)=0 then 
+            wostr$=wostr$+sfe02a_key.wo_no$+str(units:umask$)+str(set:umask$)
+        endif
+        units=0
+        set=0
+    wend
+
+return
+
+done: rem --- End Of File
+
+    t9$="E"
+    if len(sfm05a_key$)<>0 then
+        gosub totals
+    endif
+    goto std_exit
+
+
+det_disp: rem --- Detail display
+    if l0=0 then gosub sub_head
+    gosub calc_ratio
+    OutVect!.addItem(str(fndate$(sfm05a_key.sched_date$)))
+    OutVect!.addItem(sfe01a.priority$)
+    OutVect!.addItem(sfe01a.wo_status$)
+    OutVect!.addItem(sfe01a.wo_type$)
+    OutVect!.addItem(sfe01a.wo_no$)
+    OutVect!.addItem(desc$)
+    OutVect!.addItem(at$)
+    OutVect!.addItem(from$)
+    OutVect!.addItem(str(fndate$(sfe01a.estcmp_date$)))
+    OutVect!.addItem(arm01a.customer_name$)
+    OutVect!.addItem(str(set))
+    OutVect!.addItem(str(runt))
+    OutVect!.addItem(str(move))
+    OutVect!.addItem(str(critr))
+
+    
+    l=l+1
+    l0=l0+1
+    l1=l1+1
+    return
+
+sub_head: rem --- Sub Heading
+    blank=fnblank(14)
+    if bm$="Y" then
+        find record (bmm08_dev,key=firm_id$+sfm05a_key.op_code$,dom=*next) bmm08a$
+        OutVect!.addItem("Operation Code: ")
+        OutVect!.addItem(sfm05a_key.op_code$)
+        OutVect!.addItem(bmm08a.code_desc$)
+        blank=fnblank(11)
+    else
+        find record (sfm02a_dev,key=firm_id$+sfm05a_key.op_code$,dom=*next) sfm02a$
+        OutVect!.addItem("Operation Code: ")
+        OutVect!.addItem(sfm05a_key.op_code$)
+        OutVect!.addItem(sfm02a.code_desc$)
+        blank=fnblank(11)
+    endif
+    blank=fnblank(14)
+    l=l+2
+    return
+
+week_end_subtot: rem --- Week Ending Subtotals
+    if t1$<>"" and l1<>0 then
+        dummy$=""
+        sdate$=""
+
+        call pgmdir$+"adc_dayweek.aon",t1$,dummy$,dow
+        if dow<>0 then
+            call pgmdir$+"adc_daydates.aon",t1$,sdate$,7-dow
+            if t9$<>"E" and (sfm05a_key.sched_date$>sdate$ or t0$<>sfm05a_key.op_code$)
+                blank=fnblank(10)
+                for i=1 to 2 
+                    OutVect!.addItem("-----------")
+                next i
+                blank=fnblank(2)
+                blank=fnblank(5)
+                OutVect!.addItem("Totals")
+                OutVect!.addItem("For")
+                OutVect!.addItem("Week")
+                OutVect!.addItem("Ending")
+                OutVect!.addItem(str(fndate$(sdate$)))
+                OutVect!.addItem(str(wtotset))
+                OutVect!.addItem(str(wtotrun))
+                blank=fnblank(3)
+                blank=fnblank(13)
+                l=l+3
+                wtotset=0
+                wtotrun=0
+            endif
+        endif
+    endif
+    t1$=sfm05a_key.sched_date$
+    l1=0
+    return
+
+totals: rem --- Totals
+
+    gosub week_end_subtot
+    if t0$<>"" and l0<>0 then
+        blank=fnblank(10)
+        for i=1 to 2 
+            OutVect!.addItem("-----------")
+        next i
+        blank=fnblank(2)
+        blank=fnblank(5)
+        OutVect!.addItem("Total")
+        OutVect!.addItem("For")
+        OutVect!.addItem("Op")
+        OutVect!.addItem("Code")
+        OutVect!.addItem(t0$)
+        blank=fnblank(1)
+        OutVect!.addItem(str(totset))
+        OutVect!.addItem(str(totrun))
+        blank=fnblank(2)
+        blank=fnblank(13)
+    endif
+    totset=0
+    totrun=0
+    l0=0
+    t0$=sfm05a_key.op_code$
+    return
+
+init_wo: rem --- Initialize WO
+
+    dim runtim[opnmax],setup[opnmax],actrun[opnmax],actset[opnmax],ops$[opnmax,1]
+    opind$=""
+    x0=0,now=0,at$="",from$="",set=0,runt=0,not_found$=""
+    read (sfe02a_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,knum=0,dom=*next)
+
+    dim sfe02a_pkey$:sfe02a_key_pritpl$
+    while more
+        sfe02a_pkey$=key(sfe02a_dev,knum=0,end=*break)
+        if pos(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$=sfe02a_pkey$)<>1 then break
+        read record (sfe02a_dev,knum=0) sfe02a$
+        if sfe02a.line_type$="S" then
+            opind$=opind$+sfe02a.op_seq$
+            ops$[x0,0]=sfe02a.op_code$
+            ops$[x0,1]=sfe02a.require_date$
+            runtim[x0]=sfm05a.runtime_hrs
+            setup[x0]=sfm05a.setup_time
+            x0=x0+1
+        endif
+    wend
+
+rem --- Calculate Actual
+
+    read (sft01a_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
+    while more
+        sft01a_key$=key(sft01a_dev,end=*break)
+        if pos(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$=sft01a_key$)<>1 then break
+        read record (sft01a_dev) sft01a$
+        seq$=sft01a.op_seq$
+        cod$=sft01a.op_code$
+        while more
+            indx=pos(seq$=opind$,3)
+            if indx<>0 then break
+            opind$=opind$+seq$
+            ops$[x0,0]=cod$,x0=x0+1
+        wend
+        indx=int(indx/3)
+        actset[indx]=actset[indx]+sft01a.setup_time,actrun[indx]=actrun[indx]+sft01a.units
+        if now<indx then now=indx
+    wend
+
+rem ---- This operation?
+
+    if actset[now]+actrun[now]>setup[now]+runtim[now] then now=now+1
+    at$=ops$[now,0]
+    thisindx=pos(thisseq$=opind$,3)
+    if thisindx=0 then
+        thisindx=int(thisindx/3)
+        xfrom=thisindx-1
+        if xfrom<0 then xfrom=0
+        from$=ops$[xfrom,0]
+        runt=runtim[thisindx]
+        set=setup[thisindx]
+    endif
+    return
+
+calc_ratio: rem --- Calculate Critical Ratio
+
+    reqsav$=""
+    remsav=0
+    x=now*3+1
+    ind=int(x/3)
+    reqd$=sfm05a_key.sched_date$
+    if reqsav$=reqd$ then
+        remain=remsav
+    else
+        reqsav$=reqd$
+        call pgmdir$+"sfc_ophours.aon",schedate$,reqd$,remain,sfm05a_key.op_code$,flag$
+        if flag$="Y" then
+            remain=0
+            call pgmdir$+"adc_daydates.aon",schedate$,reqd$,remain
+            remain=remain*8
+            not_found$="Y"
+        endif
+        remsav=remain
+    endif
+    if runt+set<>0 then
+        critr=remain/(runt+set)
+        if critr>999.9 then critr=999.9
+        if critr<-999.9 then critr=-999.9
+    endif
+    return
+
+calc_rem_units: rem --- Calculate Remaining Units
+
+    unitrun=0
+    unitset=0
+    wopos=pos(sfe01a.wo_no$=wostr$,7+2*umask)
+    if wopos<>0 then
+        unitrun=num(wostr$(wopos+7,umask))
+        unitset=num(wostr$(wopos+7+umask,umask))
+        runt=runt-unitrun
+        set=set-unitset
+        if runt>=0 then
+            wostr$(wopos+7,umask)=str(0:umask$)
+        else
+            unitrun=-runt
+            wostr$(wopos+7,umask)=str(unitrun:umask$)
+            runt=0
+        endif
+        if set>=0 then
+            wostr$(wopos+7+umask,umask)=str(0:umask$)
+        else
+            unitset=-unitset,wostr$(wopos+7+umask,umask)=str(unitset:umask$)
+            set=0
+        endif
+    endif
+
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+rem def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+
+rem #include fndate.src
+
+        def fndate$(q$)
+            if cvs(q$,2)="" return ""
+            if pos("9"<>q$)=0 return q$
+            testdate$=""
+            testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+            return testdate$
+        fnend
+
+rem #endinclude fndate.src
+
+
+
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

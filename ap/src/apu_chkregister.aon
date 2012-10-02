@@ -1,0 +1,489 @@
+rem --- Computer Check Register Update
+rem --- Program apu_chkregister v8.0.0 27Oct2007 (apu_ba)
+rem --- Created by adx_codeport.bbx v1.1.5 (10/27/2007 10:21:46)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	if OutVect!<>null() OutVect!=null()
+
+rem --- Close printer and destroy current progress meter (if one exists)
+
+    close (printer_dev,err=*next)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+rem --- Skip update if errors were encountered
+
+    if errors goto std_exit_no_update
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=16,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS"
+    files$[3]="gls_params",ids$[3]="GLS_PARAMS"
+    files$[5]="apm-01",ids$[5]="APM_VENDMAST"
+    files$[6]="apm-02",ids$[6]="APM_VENDHIST"
+    files$[8]="apc_distribution",ids$[8]="APC_DISTRIBUTION"
+    files$[9]="apt-01",ids$[9]="APT_INVOICEHDR"
+    files$[10]="apt-02",ids$[10]="APT_INVOICEDIST"
+    files$[11]="apt-05",ids$[11]="APT_CHECKHISTORY"
+    files$[12]="apt-11",ids$[12]="APT_INVOICEDET"
+    files$[13]="apw-01",ids$[13]="APW_CHECKINVOICE"
+    files$[14]="glm-01",ids$[14]="GLM_ACCT"
+    files$[15]="glt-04",ids$[15]="GLE_DAILYDETAIL"
+    files$[16]="glt-05",ids$[16]="GLT_BANKCHECKS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,13,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_update
+    ads01_dev=channels[1]
+    gls01_dev=channels[3]
+    apm01_dev=channels[5]
+    apm02_dev=channels[6]
+    apm10b_dev=channels[8]
+    apt01_dev=channels[9]
+    apt02_dev=channels[10]
+    apt05_dev=channels[11]
+    apt11_dev=channels[12]
+    apw01_dev=channels[13]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],gls01a$:templates$[3]
+    dim apm01a$:templates$[5],apm02a$:templates$[6]
+    dim apm10b$:templates$[8],apt01a$:templates$[9],apt02a$:templates$[10]
+    dim apt05a$:templates$[11],apt11a$:templates$[12],apw01a$:templates$[13]
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+
+rem --- Parameters
+
+    dim info$[20]
+    br$=aps01a.br_interface$
+    ap_year=num(aps01a.current_year$)
+    call pgmdir$+"adc_application.aon","AP",info$[all]
+    gl$=info$[9]
+    max_acct_len=num(gls01a.max_acct_len$)
+
+rem --- Initializations
+
+    dim t[2]
+    g9$=field(gls01a$,"per_ending_"+str(num(gls01a.total_pers$):"00"))
+    w=ap_year
+    if g9$<gls01a.per_ending_01$ w=w+1
+    g9$=str(w)+g9$
+    prior_g9$=str(w-1)+g9$(5,4)
+    g8$=aps01a.cur_1099_yr$+"1231"
+    prior_g8$=str(num(aps01a.cur_1099_yr$)-1:"0000")+"1231"
+    more=1
+
+rem --- Additional File Opens
+
+    if gl$<>"Y" goto confirm_update
+    call pgmdir$+"adc_fileopen.aon",action,14,15,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_update
+    glm01_dev=channels[14];dim glm01a$:templates$[14]
+    glt04_dev=channels[15];dim glt04a$:templates$[15]
+    if br$<>"Y" goto confirm_update
+    call pgmdir$+"adc_fileopen.aon",action,16,16,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_update
+    glt05_dev=channels[16];dim glt05a$:templates$[16]
+
+confirm_update: rem --- Run Update?
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- File initializations
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,apw01_dev,1,meter_num,status
+
+rem --- Init Read
+
+    read (apw01_dev,key=firm_id$,dom=*next)
+
+rem --- Main Read
+
+    while more
+        k0$=key(apw01_dev,end=done)
+        read record (apw01_dev) apw01a$
+        if pos(firm_id$=apw01a.firm_id$)<>1 goto done
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if apw01a.comp_or_void$="V" goto void_check
+
+rem --- Check Detail
+
+        k1$=k0$(1,4)+apw01a.vendor_id$+apw01a.ap_inv_no$
+        read record (ape04_dev,key=k1$,dom=void_check) ape04a$
+        if ape04a.check_no$<>apw01a.check_no$ goto void_check
+        goto open_invoice
+
+next_invoice: rem --- Next Invoice
+
+        k1$=key(ape04_dev,end=remove_check)
+        if k1$(1,10)<>k0$(1,4)+apw01a.vendor_id$ goto remove_check
+        read record (ape04_dev) ape04a$
+
+open_invoice: rem --- Open Invoice
+
+        gosub update_open_invoice
+
+rem --- Vendor
+
+        while more
+            extract record (apm02_dev,key=firm_id$+ape04a.vendor_id$+ape04a.ap_type$,dom=*break) apm02a$
+            apm02a.lstpay_date$=apw01a.check_date$
+            apm02a.open_invs=apm02a.open_invs-ape04a.invoice_amt+ape04a.retention
+            if apw01a.check_date$<=prior_g9$ apm02a.pri_yr_discs=apm02a.pro_yr_discs+ape04a.discount_amt,apm02a.pyr_payments=apm02a.pyr_payments+ape04a.invoice_amt-ape04a.retention-ape04a.discount_amt
+            if apw01a.check_date$>prior_g9$ and apw01a.check_date$<=g9$ apm02a.ytd_discs=apm02a.ytd_discs+ape04a.discount_amt,apm02a.ytd_payments=apm02a.ytd_payments+ape04a.invoice_amt-ape04a.retention-ape04a.discount_amt
+            if apw01a.check_date$>g9$ apm02a.nyr_disc=apm02a.nyr_disc+ape04a.discount_amt,apm02a.nyr_payments=apm02a.nyr_payments+ape04a.invoice_amt-ape04a.retention-ape04a.discount_amt
+            if apw01a.check_date$<=prior_g8$ apm02a.pri_cal_pmt=apm02a.pri_cal_pmt+ape04a.invoice_amt-ape04a.retention-ape04a.discount_amt
+            if apw01a.check_date$>prior_g8$ and apw01a.check_date$<=g8$ apm02a.cur_cal_pmts=apm02a.cur_cal_pmts+ape04a.invoice_amt-ape04a.retention-ape04a.discount_amt
+            if apw01a.check_date$>g8$ apm02a.nxt_cyr_pmts=apm02a.nxt_cyr_pmts+ape04a.invoice_amt-ape04a.retention-ape04a.discount_amt
+            apm02a$=field(apm02a$)
+            write record (apm02_dev,key=firm_id$+ape04a.vendor_id$+ape04a.ap_type$) apm02a$
+            break
+        wend
+
+rem --- G/L Reference Fields
+
+        if gl$="Y" 
+            ref2$=ape04a.ap_inv_no$
+            ref3$=apw01a.check_no$+" "+apw01a.ap_type$
+            when$=apw01a.check_date$
+            memo$="Unknown Vendor"
+            ref1$=fnmask$(ape04a.vendor_id$(1,vendor_size),m0$)
+            find record (apm01_dev,key=firm_id$+ape04a.vendor_id$,dom=*next) apm01a$;memo$=apm01a.vendor_name$
+        endif    
+
+rem --- Dist Code
+
+        if d9$<>k2$
+            k2$=d9$
+            dim apm10b$:fattr(apm10b$)
+            find record (apm10b_dev,key=firm_id$+"B"+k2$,dom=*next) apm10b$
+        endif    
+
+rem --- Cash Basis
+
+        if aps01a.cash_basis$<>"Y" goto open_checks
+        read (apt02_dev,key=firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$,dom=*next)
+        while more
+            k$=key(apt02_dev,end=open_checks)
+            if len(k$)<21 goto open_checks
+            if k$(1,21)<>firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$ goto open_checks
+            read record (apt02_dev) apt02a$
+        wend    
+
+open_checks: rem --- Open Checks
+
+        dim apt05a$:fattr(apt05a$)
+        apt05a.firm_id$=firm_id$
+        apt05a.ap_type$=apw01a.ap_type$
+        apt05a.check_no$=apw01a.check_no$
+        apt05a.vendor_id$=ape04a.vendor_id$
+        apt05a.ap_inv_no$=ape04a.ap_inv_no$
+        apt05a.check_date$=apw01a.check_date$
+        apt05a.trans_type$="C"
+        apt05a.ap_dist_code$=k2$ ;rem jpb k2$?
+        apt05a.invoice_amt=ape04a.invoice_amt
+        apt05a.discount_amt=ape04a.discount_amt
+        apt05a.retention=ape04a.retention
+        apt05_key$=firm_id$+apw01a.ap_type$+apt05a.check_no$+apt05a.vendor_id$+apt05a.ap_inv_no$
+        write record (apt05_dev,key=apt05_key$,dom=remove_open_invoice) apt05a$
+        if br$="Y" if gl$="Y" gosub update_bank_rec
+        goto remove_open_invoice
+
+remove_open_invoice: rem --- Delete Open Invoice
+
+rem --- Remove Check Detail
+        remove (ape04_dev,key=k1$)
+
+        goto next_invoice
+
+void_check: rem --- Void Check
+
+        dim apt05a$:fattr(apt05a$)
+        apt05a.firm_id$=firm_id$
+        apt05a.ap_type$=apw01a.ap_type$
+        apt05a.check_no$=apw01a.check_no$
+        apt05a.check_date$=apw01a.check_date$
+        apt05a.trans_type$="V"
+        apt05_key$=firm_id$+apw01a.ap_type$+apt05a.check_no$+apt05a.vendor_id$+apt05a.ap_inv_no$
+        write record (apt05_dev,key=apt05_key$,dom=remove_check) apt05a$
+        if br$="Y" x9$=x9$+apt05a.check_no$
+
+remove_check: rem --- Remove Check
+
+        remove (apw01_dev,key=k0$,dom=*next)
+
+    wend
+
+done: rem --- Clear Remainder
+    
+    read (ape04_dev,key=firm_id$,dom=*next)
+    while more
+        k$=key(ape04_dev,end=*break)
+        if pos(firm_id$=k$)<>1 break
+        remove (ape04_dev,key=k$)
+    wend
+
+rem --- All done
+
+    if gl$="Y"
+       call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+       call pgmdir$+"glc_ctlupdate.aon",status
+    endif
+    call pgmdir$+"adc_batchdelete.aon",err=*next,status
+    goto std_exit
+
+update_open_invoice: rem --- update open invoice
+
+    apt01_key$=firm_id$+ape04a.ap_type$+ape04a.vendor_id$+ape04a.ap_inv_no$
+    find record (apt01_dev,key=apt01_key$,dom=invoice_not_found) apt01a$
+    apt01a.selected_for_pay$="N"
+    write record (apt01_dev,key=apt01_key$) apt01a$
+    t[0]=apt01a.invoice_amt
+    t[1]=apt01a.discount_amt
+    t[2]=apt01a.retention
+    d9$=apt01a.ap_dist_code$    
+    read (apt11_dev,key=apt01_key$,dom=*next)
+
+rem --- Accumulate any adjustments/payments
+
+    while more
+        k$=key(apt11_dev,end=*break)
+        if pos(k$(1,20)=firm_id$+ape04a.ap_type$+ape04a.vendor_id$+ape04a.ap_inv_no$)<>1 break
+        read record (apt11_dev) apt11a$
+        lastseq=num(apt11a.sequence_num$)
+        t[0]=t[0]+apt11a.trans_amt
+        t[1]=t[1]+apt11a.trans_disc
+        t[2]=t[2]+apt11a.trans_ret
+    wend
+
+rem --- Initialize new detail
+
+    dim apt11a$:fattr(apt11a$)
+    apt11a.firm_id$=firm_id$
+    apt11a.ap_type$=ape04a.ap_type$
+    apt11a.vendor_id$=ape04a.vendor_id$
+    apt11a.ap_inv_no$=ape04a.ap_inv_no$
+    apt11a.sequence_num$=str(lastseq+1:"00")
+
+rem --- Write detail
+
+    apt11a.trans_type$="C"
+    apt11a.trans_ref$=apw01a.check_no$
+    apt11a.trans_date$=apw01a.check_date$
+    apt11a.trans_amt=(-ape04a.invoice_amt)+ape04a.retention
+    apt11a.trans_disc=-ape04a.discount_amt
+    write record (apt11_dev,key=firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$+apt11a.sequence_num$) apt11a$
+    t[0]=t[0]+apt11a.trans_amt
+    t[1]=t[1]+apt11a.trans_disc
+    t[2]=t[2]+apt11a.trans_ret
+invoice_not_found:
+    return
+
+update_bank_rec: rem --- Update glt-05
+
+    while more
+        dim glt05a$:fattr(glt05a$)
+        if x9$="" break
+        glt05a.firm_id$=firm_id$
+        glt05a.gl_account$=apm10b.gl_cash_acct$(1,max_acct_len)
+        glt05a.check_no$=x9$(1,7)
+        glt05a.check_type$="A"
+        glt05a.paid_code$="V"
+        glt05a.bnk_chk_date$=apt05a.check_date$
+        glt05a.description$="VOID"
+        glt05a$=field(glt05a$)
+        write record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$) glt05a$
+        if len(x9$)>7 x9$=x9$(8) else x9$=""
+    wend
+
+rem --- Detail
+
+    glt05a.firm_id$=firm_id$
+    glt05a.gl_account$=apm10b.gl_cash_acct$(1,max_acct_len)
+    glt05a.check_no$=apt05a.check_no$
+    glt05a.check_type$="A"
+    glt05a.paid_code$="O"
+    glt05a.bnk_chk_date$=apt05a.check_date$
+    dim apm01a$:fattr(apm01a$)
+    find record (apm01_dev,key=firm_id$+apt05a.vendor_id$,dom=*next) apm01a$
+    let glt05a.description$=apm01a.vendor_name$
+    let q$=glt05a.description$
+    let glt05a.check_amount=apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention
+    find record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$,dom=*next) glt05a$;
+:      let glt05a.check_amount=glt05a.check_amount+apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention,glt05a.description$=q$
+    glt05a$=field(glt05a$)
+    write record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$) glt05a$
+
+    return
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

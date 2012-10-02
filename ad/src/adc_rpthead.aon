@@ -1,0 +1,196 @@
+rem adc - Report Heading Subroutine
+rem Program adc_rpthead v8.0.0 21Mar2006 (syc_ha)
+rem Created by adx_progconv.bbx v1.0.0 (03/21/2006 02:06:55)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- PRINTER_DEV: Printer channel
+rem --- HEADING$[*]: Report heading lines
+rem --- HEADINGS   : Number of HEADING$ lines to print (1 or more)
+rem --- PAGE       : Page number
+rem --- WIDTH      : Width of report line (80 or 132)
+rem --- WHEN$      : Date in packed format
+rem --- CLOCK$     : Time (set automatically on first call)
+rem --- STATUS     : 0=No Error / Otherwise printer error or interrupt
+
+    seterr std_error
+    setesc std_error
+    enter printer_dev,heading$[all],headings,page,width,when$,clock$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+
+rem --- Parameters
+
+    audit=width-1
+    audit$=""
+    glcontrol_tpl$=stbl("+GLCONTROL_TPL",err=initializations)
+    dim glcontrol$:glcontrol_tpl$
+    glcontrol$=stbl("+GLCONTROL",err=initializations)
+    audit$=cvs(glcontrol.gl_adt_no$,2)
+    if audit$<>"" audit$="Audit # "+audit$,audit=width-len(audit$)
+
+initializations: rem --- Initializations
+
+    dim msg$[2]
+    status=0
+    if clock$="" clock$=fnclock$("")
+    if when$="" when$=sysinfo.system_date$
+    datehdr$=fndate$(when$)
+    timehdr$=clock$
+
+rem --- Get output device type
+
+    if printer_dev=0
+        msg$[0]="No output device has been opened"
+        call pgmdir$+"adc_stdmessage.aon",1,msg$[all],0,-1,-1,v$,v3
+        status=999
+        goto std_exit
+    endif
+    
+    fin$=fin(printer_dev)
+    device_type$=fin$(33)
+    p=pos($00$=device_type$)
+    device_type$=device_type$(p+1)
+rem    preview=pos("Print Preview"=device_type$)=1
+
+rem --- Check max printer width
+
+    if page or sysinfo.printer_id$="PF" goto cancel_check
+    if width<=asc(fin$(3)) goto current_width
+    msg$[0]="This output device ("+sysinfo.printer_id$+") has a maximum width of "+str(asc(fin$(3)))+
+:           ". This report requires a width of at least "+str(width)+
+:           ". Please select another output device."
+    call pgmdir$+"adc_stdmessage.aon",1,msg$[all],0,-1,-1,v$,v3
+    status=999
+    goto std_exit
+
+current_width: rem --- Check current printer width
+
+    if width<=asc(fin$(7)) goto cancel_check
+    print (printer_dev)'MS','CP','MP',; rem Try setting compressed
+    fin$=fin(printer_dev)
+    if width<=asc(fin$(7)) goto cancel_check
+    msg$[0]="This output device ("+sysinfo.printer_id$+") has a current width of "+str(asc(fin$(7)))+
+:           " and could not be put into compressed mode. This report needs a width of at least "+
+:           str(width)+". Please select another printer or a wider mode for this printer."
+    call pgmdir$+"adc_stdmessage.aon",2,msg$[all],0,-1,-1,v$,v3
+    status=999
+    goto std_exit
+
+cancel_check: rem --- Check for interrupt
+
+    gosub interrupt_check
+    if headings=0 and cvs(heading$[0],2)="" goto done
+
+rem --- Initial form feed?
+
+    ff$='FF'
+    if page goto batching
+    if fnglobal$("+FF","Y")="N" ff$='CR'
+    if preview ff$='CR'
+    junk$=stbl("!CLEAR","+FF",err=*next)
+
+batching: rem --- Batching?
+
+    process$=cvs(pad(fnglobal$("+PROCESS",""),15),2)
+    if process$<>"" datehdr$=fndate$(when$)+" "+clock$,
+:                   timehdr$="Batch: "+str(num(process$(13,3)):"000")
+
+rem --- Print report heading
+
+    page=page+1
+    print (printer_dev)ff$,@(0),datehdr$,@(fncenter(heading$[0],width)),heading$[0],
+:                      @(width-9)," Page",page:"###0"
+    print (printer_dev)@(0),timehdr$,@(fncenter(heading$[1],width)),heading$[1],
+:                      @(audit),audit$
+
+rem --- Print remaining heading lines
+
+    if headings<2 goto done
+    for i=2 to headings
+        print (printer_dev)@(fncenter(heading$[i],width)),heading$[i]
+    next i
+
+done: rem --- All done
+
+    goto std_exit
+
+interrupt_check: rem --- Check for user cancellation
+
+rem --- Get Interrupt Action To Take
+
+    return   
+
+    print (printer_dev)""
+    print (printer_dev)"----> Report Terminated by Operator"
+    status=999
+    exitto std_exit
+    return
+
+rem --- Functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit:
+        return q1$
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

@@ -1,0 +1,358 @@
+rem --- Credit Management Status Display
+rem --- Program opc_ca v8.0.0 05Dec2007 (opc_ca)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 03:12:42)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+                setesc std_error
+                seterr std_error
+                enter ope01_dev,arm02_dev,firm_id$,customer$,credit$,s$,m1$,type
+
+rem --- Retrieve the program path
+
+                pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+                sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+                dim sysinfo$:sysinfo_template$
+                sysinfo$=stbl("+SYSINFO",err=*next)
+                milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+                firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+                files=4,begfile=1,endfile=files
+                dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+                files$[1]="arm-02",ids$[1]="ARM_CUSTDET"
+                files$[2]="ars_params",ids$[2]="ARS_PARAMS"
+                files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
+                files$[4]="ope-01",ids$[4]="OPE_ORDHDR"
+                call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+                if status goto std_exit
+                arm02_dev=channels[1]
+                ars01a_dev=channels[2]
+                ivs01a_dev=channels[3]
+                ope01_dev=channels[4]
+
+rem --- Dimension string templates
+
+                dim arm02a$:templates$[1],ars01a$:templates$[2],ivs01a$:templates$[3],
+:               ope01a$:templates$[4]
+
+rem --- Retrieve parameter records
+
+                ars01a_key$=firm_id$+"AR00"
+                find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+                ivs01a_key$=firm_id$+"IV00"
+                find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Determine interface
+
+                call pgmdir$+"syc_dg.bbx",sysgui_dev,sysgui$,sysgui,sysfin$,sysfin,ui$,status
+                if status then goto std_exit
+
+rem --- Initializations
+                call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDHDR","PRIMARY",ope01a_key_tpl$,rd_table_chans$[all],status$
+                dim ope01a_key$:ope01a_key_tpl$
+                more=1
+                aging_bucket=num(ars01c.aginf_bucket$)
+                win$="",globalvars$=""
+                if aging_bucket=0 then let aging_bucket=5
+                t0=0
+                t1=0,t2=0,t8=0,t9=0,l0=0,title$="Customer Credit Status"
+                win_x=2
+                win_y=11,height=12,width=17+len(m1$),o=0
+                if type=0 then let o=3,l0=win_y+1,height=height-1
+                if ui$="W" then let prior_context=sysfin.current_context
+
+rem --- Get Customer Detail Record
+
+                read record (arm02_dev,key=firm_id$+customer$+"  ",dom=*next) arm02a$
+
+rem --- Display Background
+
+                if ars01c.display_bal$<>"N" or ui$<>"W" then 
+                   on type goto Without_window,Window_Inside
+
+   while more
+
+Without_window: rem --- Without Window
+
+                 call pgmdir$+"syc_wc.bbx",0,0,width,height,win_x,win_y,1
+                 print 
+:                       @(win_x+(fncenter(title$,width)-1),win_y)," ",title$," ",
+                 for i=l0 to l0+8
+                 print 
+:                       @(o,i),fill(width-2),
+                 next i
+                 break
+
+Window_Inside: rem --- Inside Window
+
+                 call pgmdir$+"syc_wa.bbx",0,width,height,win_x,win_y,title$,win$
+                 print @(0,l0),'ce',
+                 break
+   wend
+Back_ground: rem --- Background
+
+                        print 'sb',
+:                       @(o+2,l0),"Credit Limit:",
+:                       @(o+1,l0+1),"Open Invoices:",
+:                       @(o+3,l0+2),"Open Orders:",
+:                       @(o+4,l0+3),"Open B/O's:",
+:                       @(o+3,l0+4),"Held Orders:",
+:                       @(o+3,l0+6),"Credit Left:",
+:                       @(o+1,l0+7),"Over",
+:                       @(o+9,l0+7)," Days:",
+:                       @(o+1,l0+8),"Customer Hold:",'sf',
+
+
+              endif
+
+position: rem --- Position file
+
+            read (ope01_dev,key=firm_id$+"  "+customer$,dom=*next)
+
+   while more; rem --- Total Open Orders
+
+                        ope01a_key$=key(ope01_dev,end=*break)
+                        if pos(firm_id$+"  "+customer$=ope01a_key.firm_id$+ope01a_key.ar_type$+ope01a_key.customer_id$)<>1 then break
+                        read record (ope01_dev) ope01a$
+                        if pos(ope01a.invoice_type$="PV")>0 then continue
+                        if ope01a.invoice_type$="B" then let t1=t1+ope01a.total_sales else if ope01a.credit_flag$="C" then let t2=t2+ope01a.total_sales else let t0=t0+ope01a.total_sales
+   wend
+
+open_invoices: rem --- Total Open Invoices
+
+                        for i=0 to 5
+                            t9=t9+c[i]
+                        next i
+
+rem --- Total Past Due Invoices
+
+                        for i=aging_bucket to 5
+                            t8=t8+c[i]
+                        next i
+
+rem --- Set Check Credit Limit Flag
+
+while more
+
+    if arm02a.cred_hold$<>"Y" then 
+
+         if arm02a.cred_hold$="E" then break
+              if !(ars01c.auto_hold$="Y" and arm02a.credit_limit>0 and arm02a.credit_limit<t9+t0+t1+t2) then 
+                   if num(ars01c.hold_amount$)<=0 then if ope01a.total_sales<=num(ars01c.hold_amount$) then 
+                              if t8<=num(ars01c.past_due_lim$) then break  
+                               endif      
+                              endif        
+                   endif
+              endif     
+     endif         
+
+credit_limit: rem --- Set flag to check credit limit = Yes
+
+            s$(1,1)="0"
+            goto display_credit
+             
+wend
+
+nolimit: rem --- Set flag to check credit limit = No
+
+           s$(1,1)="1"
+
+display_credit: rem --- Display Credit Management Data
+
+            if ars01c.display_bal$="N" then goto std_exit
+            if ui$<>"W" then 
+            gosub display_fields
+
+rem --- Prompt for <Enter> if windowed
+
+            if type=0 then goto std_exit
+            v4$="<Enter>=Continue"
+            v0$="S"
+            v1$="",v2$="",v3$="",v0=1,v1=fnv1(v4$,width),v2=22
+            goto std_exit
+    endif
+
+gui: rem --- Windows
+
+    call pgmdir$+"syc_rg.bbx::save",globalvars$,ignore_status
+    dim resparams$[20],resparams[20]
+    resparams$[0]=pgm(-2)
+    resparams$[1]=pgm(-2)
+    resparams$[6]=title$
+    call pgmdir$+"syc_ra.bbx","P",resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+    if status then goto std_exit
+    gosub gui_display_fields
+
+rem --- Options
+
+    v0$="S"
+    v1$="KC",v2$="Y",v3$="",v4$="",v0=1,v1=0,v2=22,control_id=i0-i0_done+1
+rem    gosub std_input
+    goto std_exit
+
+display_fields: rem --- Display Fields
+
+    print 
+:                       @(o+15,l0),arm02a.credit_limit:m1$,
+:                       @(o+15,l0+1),t9:m1$,
+:                       @(o+15,l0+2),t0:m1$,
+:                       @(o+15,l0+3),t1:m1$,
+:                       @(o+15,l0+4),t2:m1$,
+    if arm02a.credit_limit>0 then print 
+:                       @(o+15,l0+6),arm02a.credit_limit-(t9+t0+t1+t2):m1$,
+    print 
+:                       @(o+5,l0+7),(aging_bucket-1)*30,
+:                       @(o+15,l0+7),t8:m1$,
+:                       @(o+17,l0+8),arm02a.cred_hold$,
+    return
+
+gui_display_fields: rem --- Display Fields
+
+    controls=8
+    dim control[controls],value$[controls],value[controls],mask$[controls]
+    control[0]=2009
+    control[1]=2010,control[2]=2011,control[3]=2012
+    control[4]=2013
+    control[5]=2014,control[6]=2015,control[7]=2016
+    control[8]=2017
+    value[0]=arm02a.credit_limit
+    value[1]=t9,value[2]=t0,value[3]=t1
+    value[4]=t2
+    value[6]=(aging_bucket-1)*30,value[7]=t8,value$[8]=arm02a.cred_hold$
+    if arm02a.credit_limit>0 then let value[5]=arm02a.credit_limit-(t9+t0+t1+t2)
+    for xx=0 to 7
+        if xx<>6 then 
+        mask$[xx]=m1$
+        endif
+
+Display_fields1:
+    next xx
+    call pgmdir$+"syc_rd.bbx","",my_context,0,controls,control[all],value$[all],value[all],mask$[all],status
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+       exit
+rem #endinclude std_exit.src
+
+    end

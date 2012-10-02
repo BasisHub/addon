@@ -1,0 +1,430 @@
+rem --- Production Exception Report
+rem --- Program sfr_sb v8.0.0 07Jan2008 (sfr_sb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/07/2008 09:25:51)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Init Data
+
+    more=1
+    headings=3
+    dim headings$[headings],a1$(141)
+    h4$="For Run Date Of "+fndate$(r0$)
+    if steps$="Y" then 
+        h4$=h4$+" Including All Incomplete Steps" 
+    else 
+        h4$=h4$+" Including Only Past Due Steps"
+    endif
+    h5$="For "
+    if pos("L"=type$)>0 then h5$=h5$+"Past Due Labor And "
+    if pos("P"=type$)>0 then h5$=h5$+"Past Due P.O.'s And "
+    h5$=h5$(1,len(h5$)-5)
+    headings$[0]=h1$
+    headings$[1]=h2$
+    headings$[2]=h4$
+    headings$[3]=h5$,h0=80,h=0,when$=sysinfo.system_date$,clock$=""
+
+
+
+rem --- Headings and print positions
+
+ 
+    dim columns$[8,10]
+    columns = 9
+    columns$[0,0]="Pri Cod",            columns$[0,1]="C",columns$[0,2]="4"
+    columns$[1,0]="W.O Num",            columns$[1,1]="C",columns$[1,2]="8"
+    columns$[2,0]="Custom Desc",        columns$[2,1]="C",columns$[2,2]="21"
+    columns$[3,0]="Estmte Start",       columns$[3,1]="C",columns$[3,2]="9"
+    columns$[4,0]="Actual Start",       columns$[4,1]="C",columns$[4,2]="9"
+    columns$[5,0]="Estmte Complte",     columns$[5,1]="C",columns$[5,2]="10"
+    columns$[6,0]="Type",               columns$[6,1]="C",columns$[6,2]="5"
+    columns$[7,0]="Sch Mth",            columns$[7,1]="C",columns$[7,2]="3"
+    columns$[8,0]="Date Requ",          columns$[8,1]="C",columns$[8,2]="9"
+    
+rem --- Background
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
+
+rem --- Init Read
+
+    read (sfe01_dev,key=firm_id$,dom=*next)
+
+
+
+rem --- Main Loop Starts
+
+    while more
+        read record (sfe01_dev,end=done) sfe01a$
+        if pos(firm_id$=sfe01a.firm_id$)<>1 then break
+
+rem --- Breaks
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if sfe01a.wo_status$<>"O" then continue
+        labor$=""
+
+rem --- Operation Overdue?
+
+        if pos("L"=type$)<>0 then
+            gosub where_is_wo
+            if opind$<>"" and r0$>date_req$ then labor$="Y"
+        endif
+
+rem --- Purchase Overdue?
+
+        if pos("P"=type$) then gosub subs_overdue
+
+rem --- Check For Print
+
+        if labor$="" and subs$="" then continue
+
+rem --- Print Data
+
+        dim desc$(20)
+        if sfe01a.wo_category$="I" then
+            desc$(1)=sfe01a.item_id$
+        else
+            desc$(1)=cvs(sfe01a.description_01$,2)+" "+cvs(sfe01a.description_02$,2)
+        endif
+        if op$<>"N" then 
+            find record (arm01_dev,key=firm_id$+sfe01a.customer_id$,dom=*next) arm01a$
+        endif
+
+        OutVect!.addItem(sfe01a.priority$)
+        OutVect!.addItem(sfe01a.wo_no$)
+        OutVect!.addItem(desc$)
+        OutVect!.addItem(fndate$(sfe01a.eststt_date$))
+        OutVect!.addItem(fndate$(sfe01a.act_st_date$))
+        OutVect!.addItem(fndate$(sfe01a.estcmp_date$))
+        OutVect!.addItem(sfe01a.wo_type$)
+        OutVect!.addItem(sfe01a.sched_flag$)
+
+        l=l+1
+        
+        blank=fnblank(1)
+
+        if cvs(arm01a.customer_name$,2)<>"" then
+            blank=fnblank(2)
+            OutVect!.addItem(arm01a.customer_name$)
+            blank=fnblank(6)
+            blank=fnblank(9)
+        endif        
+
+
+rem --- Operation Loop
+
+        if labor$<>"" then
+            for i=now to no_ops
+                if cvs(ops$[i,0],2)="" then break
+                if steps$="N" and ops$[i,1]>r0$ then continue
+                x0$=fill(5)+pad("Not Found",20)
+                if bm$="Y" then 
+                    find record (bmm08_dev,key=firm_id$+ops$[i,0],dom=*next) bmm08a$
+                    x0$=bmm08a.code_desc$
+                else
+                    find record (sfm02_dev,key=firm_id$+ops$[i,0],dom=*next) sfm02a$
+                    x0$=sfm02a.code_desc$
+                endif
+
+                blank=fnblank(1)
+                OutVect!.addItem("Op: "+ops$[i,0])
+                OutVect!.addItem("  "+x0$)
+                OutVect!.addItem("Setup Left: "+str(ops[i,2]-ops[i,3]:"###.00"))
+                OutVect!.addItem("")
+                OutVect!.addItem("Run Left: "+str(ops[i,0]-ops[i,1]:"###.00"))
+                OutVect!.addItem("")
+                OutVect!.addItem("")
+                OutVect!.addItem(fndate$(ops$[i,1]))
+
+                l=l+1
+            next i
+        endif
+
+rem --- Subcontract Loop
+
+        if subs$<>"" and po$="Y" then
+            for i=1 to len(subs$) step 3
+                find record (sfe32_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)+"C"+subs$(i,3)) sfe32a$
+                if steps$="N" and sfe32a.require_date$>r0$ then continue
+                apm01a.vendor_name$=pad("Invalid Vendor",30)
+                find record (apm01_dev,key=firm_id$+sfe32a.vendor_id$,dom=*next) apm01a$
+
+                if sfe32a.po_status$=" " then
+                    status$="None"
+                else 
+                    if sfe32a.po_status$="R" then
+                         status$="Req."
+                    else 
+                        if sfe32a.po_status$="P" then
+                            status$="P.O."
+                        else
+                            status$=""
+                        fi
+                    fi
+                fi    
+                blank=fnblank(1)
+                OutVect!.addItem("Stat: "+status$)
+                OutVect!.addItem("Vndr:"+apm01a.vendor_name$)
+                OutVect!.addItem("")
+                OutVect!.addItem("")
+                OutVect!.addItem("Days Left: "+str(sfe32a.lead_time:"##0"))
+                OutVect!.addItem("")
+                OutVect!.addItem("")
+                OutVect!.addItem(fndate$(sfe02a.require_date$))
+                l=l+1
+            next i
+        endif
+
+rem --- Page or line feed
+        blank=fnblank(9)
+        blank=fnblank(9)
+        l=l+2
+        
+rem Main Loop Ends
+    wend
+
+
+
+done: rem --- End Of File Here
+
+    goto std_exit
+
+
+
+where_is_wo: rem --- Find Current Location of W.O.
+
+    opind$=""
+    op=0,now_op$=""
+    dim ops$[no_ops,1],ops[no_ops,4]
+    read (sfe02_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)+"A",dom=*next)
+
+rem --- Read Loop for Standards
+    while more
+        sfe02a_key$=key(sfe02_dev,end=*break)
+        if pos((sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)=sfe02a_key$)<>1 then break
+        read record (sfe02_dev,key=sfe02a_key$) sfe02a$
+        if sfe02a.TOTAL_TIME=0 continue
+        opind$=opind$+sfe02a.op_seq$
+        ops$[op,0]=sfe02a.OP_CODE$
+        ops$[op,1]=sfe02a.require_date$
+        ops[op,0]=sfe02a.total_time
+        ops[op,2]=sfe02a.setup_time
+        op=op+1
+    wend
+
+    read (sft01_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$),dom=*next)
+
+rem --- Read Loop for Actuals
+    while more
+        sft01a_key$=key(sft01_dev,end=*break)
+        if pos((sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)=sft01a_key$)<>1 then break
+        read record (sft01_dev,key=sft01a_key$) sft01a$
+        op=pos(sft01a.op_seq$=opind$,3)
+        if op=0 then continue
+        op=int(op/3)
+        ops[op,1]=ops[op,1]+sft01a.units
+        ops[op,3]=ops[op,3]+sft01a.setup_time
+        ops[op,4]=ops[op,4]+sft01a.complete_qty
+    wend
+
+rem --- Setup Current Op Code
+
+    now=0
+    for i=0 to len(opind$)/3-1
+        if ops[i,1]>0 then now=i
+        if ops[i,4]>=sfe01a.sch_prod_qty then now=i+1
+    next i
+    if ops[now,1]>=ops[now,0] then now=now+1
+    if now>len(opind$)/3-1 then
+        opind$=""
+        return
+    endif
+
+rem --- Now setup NOW_OP$
+
+    now_op$=ops$[now,0]
+    date_req$=ops$[now,1]
+
+    return
+
+subs_overdue: rem --- Check for Subcontracts Overdue
+
+    subs$=""
+    sub_rem=0
+    read (sfe32_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)+"C",dom=*next)
+
+rem --- Read Loop for Subs
+    while more
+        sfe32a_key$=key(sfe32_dev,end=*break)
+        if pos((sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$)+"C"=sfe32a_key$)<>1 then break
+        read record (sfe32_dev,key=sfe32a_key$) sfe32a$
+        if pos(sfe32a.line_type$="MI") or sfe32a.po_status$="C" or sfe32a.require_date$>=r0$ then continue
+        subs$=subs$+sfe32a.subcont_seq$
+        sub_rem=sub_rem+sfe32a.lead_time
+    wend
+
+    return
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+   rem def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- fnblank: Create blank cells in OutVect!. No return value
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

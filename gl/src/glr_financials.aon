@@ -1,0 +1,500 @@
+rem glr - Financial Report Printing (Report Overlay)
+rem Program glr_financials v8.0.0 09Jun2006 (glr_fb)
+rem Created by adx_progconv.bbx v1.0.3 (06/09/2006 03:06:29)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- This program is the second overlay of the report generation
+rem --- cycle. A list of financial reports to be produced is contained
+rem --- in the Financial Report Selections (gle-04) file. The preceding
+rem --- overlay (glr_headings) reads the next report from the file,
+rem --- assembles the report headings and then runs this program. 
+rem --- Once the report is printed, this program runs glr_headings and
+rem --- the cycle is repeated until the last report in the Financial
+rem --- Report Selections (gle-04) file has been run.
+
+    setesc std_error
+    seterr std_error
+
+rem --- Parameters
+
+    mc=7
+    mo=5
+    mx=8
+    my=1
+    mz=1
+    mt=3
+    m1=len(m1$)
+    m2=len(m2$)
+    m3=len(m3$)
+    m4=len(m4$)
+
+rem --- Initializations
+
+    dim colinfo$((colmax+1)*mc)
+    more=1
+    moredetail=1
+    moretotals=1
+    cpn$="CPN"
+    pqy$="PQY"
+    last$=""
+
+rem --- Dimension matrices for financial reports
+
+rem --- Matrix definitions for S[X,Y,Z] and T[X,Y,Z]
+
+rem --- X: 0=C-PERIOD/1=C-QTR/2=C-YEAR (Current year period, quarter and year totals)
+rem ---    3=P-PERIOD/4=P-QTR/5=P-YEAR (Prior year period, quarter and year totals)
+rem ---    6=N-PERIOD/7=N-QTR/8=N-YEAR (Next year period, quarter and year totals)
+rem --- Y: 0=Actual/1=Budget
+rem --- Z: 0=Amount/1=Units
+
+    dim s[mx,my,mz],t[mx,my,mz]
+
+rem --- Get Report Columns (glm-32) information for this report
+    col=0
+    glm32_key$=gle04a.firm_id$+gle04a.gl_rpt_no$
+    read (glm32_dev,key=glm32_key$,dom=*next)
+    while moredetail
+          glm32_key$=key(glm32_dev,end=*break)
+          if pos(gle04a.firm_id$+gle04a.gl_rpt_no$=glm32_key$)<>1 break
+          read record (glm32_dev,key=glm32_key$) glm32a$
+          if col>=colmax break
+          colinfo$(col*mc+1,mc)=glm32a.per_type_cde$+glm32a.actbud$+glm32a.amt_or_units$+
+:                               glm32a.ratiopct$+glm32a.default_pos$
+          col=col+1
+    wend
+
+rem --- Position Financial Report Detail (glm-22) file
+
+    read record (glm22_dev,key=gle04a.firm_id$+gle04a.gl_rpt_no$,dom=*next) glm22a$
+
+rem --- Read next Financial Report Detail (glm-22) record
+
+    while more
+          glm22_key$=key(glm22_dev,end=*break)
+          if pos(gle04a.firm_id$+gle04a.gl_rpt_no$=glm22_key$)<>1 break
+          read record (glm22_dev) glm22a$
+          line_type$=glm22a.line_type$
+          editing_code$=glm22a.editing_code$
+          input_total$=glm22a.input_total$
+          output$=""
+          for x=1 to 5
+              output$=output$+field(glm22a$,"output_total_"+str(x:"00"))
+          next x
+          for x=1 to 5
+              output$=output$+pad(field(glm22a$,"output_oper_"+str(x:"00")),1)
+          next x
+
+          rem --- Transfer Financial Report Amounts (gle-06) from 
+          rem --- the record to the s[x,y,z] working array
+
+          dim s[mx,my,mz]
+          read (gle06_dev,key=glm22_key$,dom=*next)
+          while moredetail
+                k$=key(gle06_dev,end=*break)
+                if pos(glm22_key$=k$)<>1 break
+                read record (gle06_dev) gle06a$
+                x=(pos(gle06a.gl_pcn_flag$=cpn$)*mt-mt)+(pos(gle06a.gl_pqy_flag$=pqy$)-1)
+                s[x,0,0]=gle06a.actual_amt
+                s[x,0,1]=gle06a.actual_units
+                s[x,1,0]=gle06a.budget_amt
+                s[x,1,1]=gle06a.budget_units
+
+          wend
+
+          rem --- If it's a heading line just go print it
+
+          if line_type$="H" goto print_line
+
+          rem --- This section of the program deals with accumulating the detail
+          rem --- for the line, performing any totaling and then updating the
+          rem --- totals record for the line.
+
+          rem --- Check to see if this is a new update sequence
+
+          dim values[7]
+          if glm22a.gl_updt_seq$<>sequence$ dim y[mt],s[mx,my,mz]
+
+          rem --- Accumulate detail for this line
+
+          rem --- A[column,type]: Column=report column
+          rem ---               : Type=0 for period
+          rem ---               :      1 for actual/budget/variance
+          rem ---               :      2 for amounts or units
+          rem ---               :      3 for default position
+
+          for n=0 to 7
+              a[n,3]=num(field(glm22a$,"gl_rpt_col_"+str(n+1:"00")))
+
+              rem --- Totals line?
+
+              if line_type$="T" continue
+
+              rem --- Assign array indices from A[column,type]
+
+              x=a[n,0]
+              y=a[n,1]
+              z=a[n,2]
+              if x=9 continue
+
+              rem --- Actual or budget?
+
+              if y=0 or y=1 values[n]=s[x,y,z]
+
+              rem --- Variance?
+
+              if y=2 values[n]=s[x,1,z]-s[x,0,z]
+     
+          next n
+
+          rem --- If an input total exists for this line, retrieve the
+          rem --- Report Totals (gle-07) record and add them to the working
+          rem --- array values.
+
+          totalnumber$=input_total$
+          if pos(totalnumber$="   000",3)=0
+             typecode$="T"
+             update_sequence$=printflag$
+             gosub get_totals
+             gosub line_totals
+             gosub include_totals
+          endif
+
+          rem --- Check for ratio/percent
+
+          input_percnt$=glm22a.input_percnt$
+          if pos(input_percnt$="   000",3)=0
+             typecode$="P"
+             totalnumber$=input_percnt$
+             update_sequence$=sequence$
+             gosub get_totals
+          endif
+
+          rem --- Calculate ratio/percent
+
+          for x=0 to 7
+              ratiopct$=colinfo$(x*mc+4,1)
+              if ratiopct$=" " continue
+              pqy=a[x,0]
+              actbud=a[x,1]
+              amtunits=a[x,2]
+              ratiopct=0
+              divisor=0
+              if ratiopct$="R" amtunits=abs(sgn(amtunits)-1)
+              if pqy=9 divisor=0 
+:                else if actbud=0 or actbud=1 divisor=t[pqy,actbud,amtunits]
+              if actbud>1 and ratiopct$="P" divisor=s[pqy,1,amtunits]
+              if ratiopct$="P" values[x]=values[x]*100
+              if divisor ratiopct=values[x]/divisor
+              values[x]=ratiopct
+              if ratiopct$="%" 
+:                if x>1 and values[x-1] values[x]=values[x-2]*100/values[x-1]
+:                                  else values[x]=0
+              if ratiopct$="$" 
+:                if x>1 values[x]=values[x-1]-values[x-2]
+:                  else values[x]=0
+          next x
+
+          total_out: rem --- Update Report Totals (gle-07) records as required
+
+          if cvs(output$,2)="" goto print_line
+          for w=0 to 4
+              totalnumber$=output$(w*3+1,3)
+              operator$=output$(w+16,1)
+              if pos(totalnumber$="   000",3) continue
+              typecode$="T"
+              update_sequence$=printflag$
+              sign=1
+              if operator$="-" sign=-1
+              gosub get_totals
+
+              rem --- Clear totals first?
+
+              if pos("C"=editing_code$) dim t[mx,my,mz]
+    
+              rem --- Accumulate totals and write Report Totals (gle-07) records
+
+              for x=0 to mx
+                  n=0
+                  for y=0 to my
+                      for z=0 to mz
+                          t[x,y,z]=t[x,y,z]+s[x,y,z]*sign
+                      next z
+                  next y
+              next x
+              for x=0 to mx
+                  gle07a.gl_pcn_flag$=cpn$(int(x/mt)+1,1)
+                  gle07a.gl_pqy_flag$=pqy$(mod(x,mt)+1,1)
+                  gle07a.actual_amt=t[x,0,0]
+                  gle07a.actual_units=t[x,0,1]
+                  gle07a.budget_amt=t[x,1,0]
+                  gle07a.budget_units=t[x,1,1]
+                  gle07_key$=gle07a.firm_id$+gle07a.tot_type_cde$+
+:                            gle07a.total_no$+gle07a.gl_pcn_flag$+
+:                            gle07a.gl_pqy_flag$
+                  gle07a$=field(gle07a$)
+                  write record (gle07_dev,key=gle07_key$) gle07a$
+              next x
+          next w
+
+print_line: rem --- Perform any required editing and print the line
+
+          rem --- Editing code definitions:
+
+          rem --- S = Space (blank line)
+          rem --- U = Underline
+          rem --- D = Double underline
+          rem --- P = Page break
+          rem --- - = Change sign
+          rem --- C = Clear totals
+          rem --- F = Favorable (reverses sign of a variance column)
+          rem --- $ = $ mask
+
+          rem --- Page break?
+
+          if pos("P"=editing_code$) gosub report_heading
+          if l>l9 gosub report_heading
+          rem --- Blank line?
+
+          if pos("S"=editing_code$)
+             dim print_buf$(width)
+             gosub output_print_buf
+             l=l+1
+          endif
+
+          rem --- Underline?
+
+          char$=""
+          dim print_buf$(width)
+          if pos("U"=editing_code$) char$="-"
+          if pos("D"=editing_code$) char$="="
+          if l+1>l9 gosub report_heading
+          if char$<>""
+             for x=0 to 7
+                 if a[x,3]=0 continue
+                 amtunit$=colinfo$(x*mc+3,1)
+                 ratiopct$=colinfo$(x*mc+4,1)
+                 if amtunit$="U" dim underline$(m2,char$)
+                 if amtunit$="A" dim underline$(m1,char$)
+                 if pos(ratiopct$="P%") dim underline$(m4,char$)
+                 if ratiopct$="R" dim underline$(m3,char$)
+                 if ratiopct$="$" 
+:                   if x and colinfo$((x-1)*mc+3,1)="U" dim underline$(m2,char$) 
+:                                                  else dim underline$(m1,char$)
+                 print_buf$(a[x,3],len(underline$))=underline$
+             next x
+             gosub output_print_buf
+             l=l+1
+          endif
+
+          rem --- Change sign?
+
+          if pos("-"=editing_code$)
+             for x=0 to 7
+                 values[x]=-values[x]
+             next x
+          endif
+
+          rem --- Non-printing line?
+ 
+          if line_type$="N" continue
+
+          rem --- Print line description
+ 
+          if l+1>l9 gosub report_heading
+          line_desc$=cvs(glm22a.gl_line_desc$,2)
+          dim print_buf$(width)
+          if line_desc$<>"" print_buf$(num(glm22a.default_pos$)+1,len(line_desc$))=line_desc$
+
+          rem --- If this isn't a heading line, print amounts
+
+          if line_type$<>"H"
+
+            for x=0 to 7
+                 mask$="##,###,###.00-"
+                 if values[x]=0 or a[x,0]=9 or a[x,3]=0 continue
+                 p=x*mc
+                 amtunit$=colinfo$(p+3,1)
+                 ratiopct$=colinfo$(p+4,1)
+                 if a[x,1]>1 and pos("F"=editing_code$) values[x]=-values[x]
+                 if pos(ratiopct$="BC$%")=0
+                     if (ratiopct$<>" " and pos(input_percnt$="   000",3)) or
+:                        values[x]=0 or a[x,0]=9 or a[x,3]=0 continue
+                 endif
+
+                 if amtunit$="A" mask$=m1$
+                 if amtunit$="U" mask$=m2$
+                 if ratiopct$="R" mask$=m3$
+                 if pos(ratiopct$="P%")>0 
+                     mask$=m4$
+                     if abs(values[x])>999.99
+                        values[x]=sgn(values[x])*999.99
+                     endif
+                 endif
+                 if ratiopct$="$" if x and colinfo$((x-1)*mc+3,1)="U" mask$=m2$
+:                                                                else mask$=m1$
+                 if pos(ratiopct$="PR%")=0 and pos(amtunit$="AR") and pos("$"=editing_code$)
+                    xpos=pos("#"=mask$)
+                    if xpos mask$=mask$(1,xpos-1)+"$"+mask$(xpos); fi
+                 endif
+
+                 print_buf$(fnppos(a[x,3],mask$),len(mask$))=str(values[x]:mask$)
+             next x
+             gosub output_print_buf
+          endif
+          
+          l=l+1
+
+          rem --- Loop back for next record
+
+    wend
+
+rem --- Run report headings overlay to get the next report
+
+    next_overlay$=pgmdir$+"glr_headings.aon"
+    goto std_exit
+
+    rem run pgmdir$+"glr_headings.aon"
+
+report_heading: rem --- Report Heading
+
+    if OutVect!=null()
+        rem --- Document initializations
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rep_prog$=pgm(-2)
+
+        dim columns$[0,10];rem dummy, since won't actually have docout column headings
+        columns$[0,0]="  ",columns$[0,1]="C",columns$[0,2]=str(width)
+    endif
+        rem Create a new page
+        l=headings+1
+        page=page+1
+        clock$=date(0:"%hz:%mz %p")
+        dim print_buf$(width)
+        print_buf$(1)=heading$[0]
+        print_buf$(width-10)=" Page"+str(page:"###0")
+        gosub output_print_buf
+        dim print_buf$(width)
+        print_buf$(1)=heading$[1]
+        print_buf$(width-len(audit$))=audit$
+        gosub output_print_buf
+
+        rem --- Print remaining heading lines
+
+        if headings<2 return
+        for i=2 to headings
+            dim print_buf$(width)
+            print_buf$(1)=heading$[i]
+            gosub output_print_buf
+        next i
+
+return
+
+output_print_buf:
+
+    OutVect!.addItem(print_buf$)
+
+return
+
+get_totals: rem --- Retrieve Report Totals (gle-07) record
+
+    if typecode$+totalnumber$=last$ return
+    notfound=1
+    gle07a.firm_id$=firm_id$
+    gle07a.tot_type_cde$=typecode$
+    gle07a.total_no$=totalnumber$
+    gle07_key$=gle07a.firm_id$+gle07a.tot_type_cde$+gle07a.total_no$
+    read (gle07_dev,key=firm_id$+typecode$+totalnumber$,dom=*next)
+    while moretotals
+          k$=key(gle07_dev,end=*break)
+          if pos(gle07_key$=k$)<>1 break
+          read record (gle07_dev,key=k$)gle07a$
+          if gle07a.gl_updt_seq$<>update_sequence$ continue
+          notfound=0
+          x=(pos(gle07a.gl_pcn_flag$=cpn$)*mt-mt)+(pos(gle07a.gl_pqy_flag$=pqy$)-1)
+          t[x,0,0]=gle07a.actual_amt
+          t[x,0,1]=gle07a.actual_units
+          t[x,1,0]=gle07a.budget_amt
+          t[x,1,1]=gle07a.budget_units
+    wend
+    if notfound dim t[mx,my,mz]
+    last$=typecode$+totalnumber$
+    gle07a.gl_updt_seq$=update_sequence$
+    return
+
+line_totals: rem --- Accumulate from total
+
+    for n=0 to 7
+        x=a[n,0]
+        y=a[n,1]
+        z=a[n,2]
+        if x=9 continue
+        if y=0 or y=1 values[n]=values[n]+t[x,y,z]
+        if y=2 values[n]=values[n]+t[x,1,z]-t[x,0,z]
+    next n
+    return
+
+include_totals: rem --- Retrieve total
+
+    for x=0 to mx
+        for y=0 to my
+            for z=0 to mz
+                s[x,y,z]=s[x,y,z]+t[x,y,z]
+            next z
+        next y
+    next x
+    return
+
+rem --- Functions
+
+    def fnppos(q,q$)=q-min(1,pos("$"=q$))
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

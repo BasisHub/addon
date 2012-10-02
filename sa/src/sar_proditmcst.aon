@@ -1,0 +1,119 @@
+rem --- Program sar_proditmcst v8.0.0 16Jul2007 (sar_proditmcst)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- Retrieve system information
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    rem  milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get info from selection form
+
+    from_prod$=option!.getOptionData("PRODUCT_TYPE_1")
+    thru_prod$=option!.getOptionData("PRODUCT_TYPE_2")
+    from_item$=option!.getOptionData("ITEM_ID_1")
+    thru_item$=option!.getOptionData("ITEM_ID_2")
+    from_cust$=option!.getOptionData("CUSTOMER_ID_1")
+    thru_cust$=option!.getOptionData("CUSTOMER_ID_2")
+    year$=option!.getOptionData("CURRENT_YEAR")
+    period$=option!.getOptionData("CURRENT_PER")
+    report$=option!.getOptionData("12_PER_REPORT")
+    su$=option!.getOptionData("SALES_UNITS")
+    seq$=option!.getOptionData("SEQ_SA")
+    level$=option!.getOptionData("SA_LEVEL")
+    break$=option!.getOptionData("PAGE_BREAK")
+    zero$=option!.getOptionData("INC_ZERO_SLS")
+    myp$=""
+    if option!.getOptionData("MTD") = "Y" then myp$=myp$+"M"
+    if option!.getOptionData("YTD") = "Y" then myp$=myp$+"Y"
+    if option!.getOptionData("PRIOR") = "Y" myp$=myp$+"P"
+
+rem --- Open/Lock Files
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="saw-01",options$[1]="C",ids$[1]="SAW_CUSTOMER"
+    files$[2]="sam-01",ids$[2]="SAM_CUSTOMER"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    saw00_dev=channels[1]
+    sam00_dev=channels[2]
+    
+    sam_dev=fnget_dev("SAM_CUSTOMER")
+    sam_tpl$=fnget_tpl$("SAM_CUSTOMER")
+
+rem --- Run Sales Analysis by Product/Item/Customer
+
+    action=21
+    run pgmdir$+"sar_ab.aon"
+
+rem --- Functions
+
+	def fnget_dev(tmp0$)=num(rd_table_chans$[0,0](pos(tmp0$=rd_table_chans$[0,0],20)+17,3))
+	def fnget_tpl$(tmp0$)=rd_table_chans$[int(pos(tmp0$=rd_table_chans$[0,0],20)/20)+1,0]
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run pgmdir$+"ads_process_end.aon",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

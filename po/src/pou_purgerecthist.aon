@@ -1,0 +1,277 @@
+rem --- Purge Purchase Order Receipt History
+rem --- Program pou_purgerecthist v8.0.0 09Jul2007 (pou_fa)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 10:13:12)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=13,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[2]="apm-01",ids$[2]="APM_VENDMAST"
+    files$[3]="ivm-01",ids$[3]="IVM_ITEMMAST"
+    files$[6]="pot-04",ids$[6]="POT_RECHDR"
+    files$[7]="pot-14",ids$[7]="POT_RECDET"
+    files$[11]="aps_params",ids$[11]="APS_PARAMS"
+    files$[12]="ivs_params",ids$[12]="IVS_PARAMS"
+    files$[13]="pos_params",ids$[13]="POS_PARAMS"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apm01_dev=channels[2]
+    ivm01_dev=channels[3]
+    pot04_dev=channels[6]
+    pot14_dev=channels[7]
+    aps01a_dev=channels[11]
+    ivs01a_dev=channels[12]
+    pos01a_dev=channels[13]
+
+
+rem --- Dimension string templates
+
+    dim apm01a$:templates$[2],ivm01a$:templates$[3],
+:       pot04a$:templates$[6],pot14a$:templates$[7],
+:       aps01a$:templates$[11],ivs01a$:templates$[12],pos01a$:templates$[13]
+
+rem --- Assign form input values to local variables
+
+    purgedate$=option!.getOptionData("pick_date")
+    vendfrom$=option!.getOptionData("vendor_id_1")
+    vendthru$=option!.getOptionData("vendor_id_2")
+    itemfrom$=option!.getOptionData("item_id_01")
+    itemthru$=option!.getOptionData("item_id_02")
+    whsefrom$=option!.getOptionData("warehouse_id_01")
+    whsethru$=option!.getOptionData("warehouse_id_02")
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    pos01a_key$=firm_id$+"PO00"
+    find record (pos01a_dev,key=pos01a_key$,err=std_missing_params) pos01a$
+
+rem --- Parameters
+
+    dim desclen[3],params[3]
+    
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","I","",vendomask$,0,vendlen
+    ivprecision=num(ivs01a.precision$)
+    itemlen=num(ivs01a.item_id_len$)
+
+    desclen[1]=num(ivs01a.desc_len_01$)
+    desclen[2]=num(ivs01a.desc_len_02$)
+    desclen[3]=num(ivs01a.desc_len_03$) 
+       
+rem --- Initializations
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECHDR","PRIMARY",pot04a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","PRIMARY",pot14a_key_tpl$,rd_table_chans$[all],status$
+    more=1
+    
+rem --- Run report overlay
+
+    msg_id$="AON_RUN_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit
+    exit_ctrl=1
+    call pgmdir$+"adc_progress.aon","NC","","","Purging","",25,pot04_dev,1,meter_num,status
+    read (pot04_dev,key=firm_id$+vendfrom$,dom=*next)
+
+rem --- Loop through pot-04 headers
+
+       dim pot04a_key$:pot04a_key_tpl$
+
+    while more
+
+        pot04a_key$=key(pot04_dev,end=*break)
+        if pot04a_key.firm_id$<>firm_id$ break
+        read record (pot04_dev) pot04a$
+        vendor$=pot04a.vendor_id$
+        ponum$=pot04a.po_no$
+        receiver$=pot04a.po_no$
+        rcptdate$=pot04a.recpt_date$
+
+rem --- Valid Vendor/Receipt Date?
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if vendthru$<>"" if vendor$>vendthru$ break
+        if rcptdate$>purgedate$ continue
+
+rem --- Remove all passing detail
+         
+    dim pot14a_key$:pot14a_key_tpl$
+    read (pot14_dev,key=pot04a_key$,dom=*next)
+
+        while more
+
+            let pot14a_key$=key(pot14_dev,end=*break)
+            if pot14a_key.firm_id$+pot14a_key.vendor_id$+pot14a_key.po_no$+pot14a_key.receiver_no$<>pot04a_key$ break
+            read record (pot14_dev) pot14a$
+            let whse$=pot14a.warehouse_id$,item$=pot14a.item_id$,linenum$=pot14a.po_line_no$
+
+rem --- Valid Whse/Item?
+
+            if whsefrom$<>"" if whse$<whsefrom$ or
+:            whsethru$<>"" if whse$>whsethru$ or
+:            itemfrom$<>"" if item$<itemfrom$ or
+:            itemthru$<>"" if item$>itemthru$
+
+rem --- Valid, so purge
+
+rem           remove (pot14_dev,key=firm_id$+vendor$+ponum$+receiver$+linenum$,dom=*next)
+
+rem --- Loop up for next detail
+
+        wend
+
+rem --- Done detail for header; Remove orphaned headers
+
+        let pot14a_key$=key(pot14_dev,end=*continue)
+        if pot14a_key.firm_id$+pot14a_key.vendor_id$+pot14a_key.po_no$+pot14a_key.receiver_no$=pot04a_key$ continue; rem "Leave hdr if there's detail
+rem        remove (pot04_dev,key=pot04a_key$,dom=*next)
+        t0=t0+1
+rem --- Loop up for next header
+
+    wend
+
+rem --- All done
+escape; rem print t0 
+    goto std_exit
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Date/time handling functions
+
+  def fndate$(q$) 
+
+        if cvs(q$,2)="" return ""
+
+        testdate$=""
+
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+
+        if testdate$<>"" 
+
+            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+        endif
+
+        return testdate$
+
+    fnend    
+
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,112 @@
+rem --- GL Audit Control (Update Audit Control table and delete +GLCONTROL)
+rem --- Program glc_ctldelete v8.0.0 16Apr2006 (glc_da)
+rem --- Created by adx_progconv.bbx v1.0.0 (04/16/2006 01:05:36)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- This program is called at the end of a task in order to update
+rem --- the GL Audit Control table (if necessary) and to delete the +GLCONTROL
+rem --- global variable. The update flag is set by glc_ctlupdate, which is 
+rem --- normally called upon successful completion of an update process.
+
+rem --- status: 0=No error (returned)
+
+    seterr std_error
+    setesc std_exit
+    enter status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Initializations
+
+    status=0
+    updating=1
+
+rem --- Update the GL Audit Control (glm-06) record if necessary
+
+    while updating
+
+          rem --- Retrieve the contents of +GLCONTROL and set the local
+          rem --- variables accordingly
+
+          glcontrol_template$=stbl("+GLCONTROL_TPL",err=*break) 
+          dim glcontrol$:glcontrol_template$
+          glcontrol$=stbl("+GLCONTROL",err=*break)
+          if glcontrol.update_flag$<>"Y" break
+          firm_id$=glcontrol.firm_id$
+          program$=glcontrol.program_name$
+          process$=glcontrol.process_id$
+
+          rem --- Open files
+
+          files=1,begfile=1,endfile=files
+          dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+          files$[1]="glm-06"
+          call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                         ids$[all],templates$[all],channels[all],batch,status
+          if status break
+          glm06_dev=channels[1]
+
+          rem --- Dimension string templates
+
+          dim glm06a$:templates$[1]
+
+          rem --- Retrieve and update the GL Audit Control entry for this application
+
+          k$=firm_id$+process$+program$
+          find record (glm06_dev,key=k$,dom=*break) glm06a$
+          glm06a.lstupd_date$=glm06a.lstuse_date$
+          glm06a.lstupd_time$=glm06a.lstuse_time$
+          write record (glm06_dev,key=k$) glm06a$
+          break
+    wend
+
+rem --- All done.
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:           str(err),rd_err_text$,rd_err_act$
+
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    x$=stbl("!CLEAR","+GLCONTROL",err=*next)
+    x$=stbl("!CLEAR","+GLCONTROL_TPL",err=*next)
+    close (sym06_dev,err=*next)
+    exit
+
+rem #endinclude std_exit.src
+
+    end

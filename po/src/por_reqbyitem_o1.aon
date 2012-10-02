@@ -1,0 +1,501 @@
+rem --- Requisitions By Item Report (Print Overlay)
+rem --- Program por_reqbyitem_o1 v8.0.0 17Jul2007 (por_hb)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/17/2007 12:47:59)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Document initializations
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Init Data
+
+    precision ivprecision
+    grandtot=0
+    printwtot$="N"
+    dim itemnum$(20),itemdesc$(60),whsename$(24)
+    more=1
+    
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQDET","PRIMARY",poe11a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQDET","WHSE_ITEM",poe11a_key_whsetpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","APM_VENDMAST","PRIMARY",apm01a_key_tpl$,rd_table_chans$[all],status$
+
+rem --- Headings and print positions
+
+    headings=6
+    dim headings$[headings],o[13]
+    width=132
+    page=0
+    l9=59
+    l=l9+1
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+
+rem --- Headings and print positions
+
+ 
+    dim columns$[12,10]
+    columns = 12
+    columns$[0,0]="Item",               columns$[0,1]="C",columns$[0,2]="4"
+    columns$[1,0]="Req #",              columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="Seq",                columns$[2,1]="C",columns$[2,2]="4"
+    columns$[3,0]="Vendor",             columns$[3,1]="C",columns$[3,2]="22"
+    columns$[4,0]="UM",                 columns$[4,1]="C",columns$[4,2]="4"
+    columns$[5,0]="Date Required",      columns$[5,1]="C",columns$[5,2]="5"
+    columns$[6,0]="Date Promised",      columns$[6,1]="C",columns$[6,2]="5"
+    columns$[7,0]="Not Before",         columns$[7,1]="C",columns$[7,2]="5"
+    columns$[8,0]="Conv Factor",        columns$[8,1]="N",columns$[8,2]="3",columns$[8,3]=m5$
+    columns$[9,0]="Quantity Req'd",     columns$[9,1]="N",columns$[9,2]="6",columns$[9,3]=m2$
+    columns$[10,0]="Unit Cost",         columns$[10,1]="N",columns$[10,2]="6",columns$[10,3]=m3$
+    columns$[11,0]="Extension",         columns$[11,1]="N",columns$[11,2]="6",columns$[11,3]=m1$
+    columns$[12,0]="Quantity On Order", columns$[12,1]="N",columns$[12,2]="6",columns$[12,3]=m2$
+    
+
+positions:
+    o[1]=o[0]+5
+    o[2]=o[1]+8
+    o[3]=o[2]+4
+    o[4]=o[3]+7
+    o[5]=o[4]+25
+    o[6]=o[5]+3
+    o[7]=o[6]+9
+    o[8]=o[7]+9
+    o[9]=o[8]+9
+    o[10]=o[9]+m5+1
+    o[11]=o[10]+m2+1
+    o[12]=o[11]+m3+1
+    o[13]=o[12]+m1+1
+    if o[13]+11>=width
+        o[13]=width-m2
+        o[12]=o[13]-m1-1
+        o[11]=o[12]-m3
+        o[10]=o[11]-m2
+        o[9]=o[10]-m5
+    endif
+rem --- Position files
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,poe11a_dev,1,meter_num,status
+
+rem --- Init Sort File
+   
+    dim poe11a_altkey$:poe11a_key_whsetpl$
+    if whsefrom$="" firstwhse$=fill(2) else firstwhse$=whsefrom$
+
+    read (poe11_dev2,knum=2,key=firm_id$+firstwhse$+"S"+itemfrom$,dom=*next)
+    if itemfrom$<>"" read(poe11_dev2,knum=2,key=firm_id$+firstwhse$+"S"+itemfrom$+reqfrom$,dom=*next)
+
+    while more
+
+        poe11a_altkey$=key(poe11_dev2,knum=2,end=*break)
+        if poe11a_altkey.firm_id$<>firm_id$ break
+        if poe11a_altkey.line_type$<"S" read(poe11_dev2,knum=2,key=firm_id$+poe11a_altkey.warehouse_id$+"S",dom=*continue)
+        if poe11a_altkey.line_type$>"S" read(poe11_dev2,knum=2,key=firm_id$+poe11a_altkey.warehouse_id$+$ff$,dom=*continue)
+        if itemfrom$<>"" if poe11a_altkey.item_id$<itemfrom$ read(poe11_dev2,key=firm_id$+poe11a_altkey.warehouse_id$+"S"+itemfrom$,dom=*continue)
+        if itemthru$<>"" if poe11a_altkey.item_id$>itemthru$ read(poe11_dev2,key=firm_id$+poe11a_altkey.warehouse_id$+$ff$,dom=*continue)        
+        sortkey$=firm_id$+poe11a_altkey.vendor_id$+poe11a_altkey.req_no$+poe11a_altkey.po_line_no$
+        read (poe11_dev2,end=done)
+
+rem --- Find corresponding detail line
+
+        find record (poe11a_dev,key=sortkey$,dom=*next) poe11a$
+        if poe11a.firm_id$+poe11a.vendor_id$+poe11a.req_no$+poe11a.po_line_no$<>sortkey$ then continue
+
+rem --- Test Req Detail ranges
+
+            if poe11a.warehouse_id$+poe11a.item_id$=poe11a_altkey.warehouse_id$+poe11a_altkey.item_id$ then
+                if whsefrom$="" or poe11a.warehouse_id$>=whsefrom$ then
+                    if whsethru$="" or poe11a.warehouse_id$<=whsethru$ then
+                        if itemfrom$="" or poe11a.item_id$>=itemfrom$ then
+                            if itemthru$="" or poe11a.item_id$<=itemthru$ then
+                                if reqfrom$="" or poe11a.req_no$>=reqfrom$ then
+                                    if reqthru$="" or poe11a.req_no$<=reqthru$ then
+                                        if vendfrom$="" or poe11a.vendor_id$>=vendfrom$ then
+                                            if vendthru$="" or poe11a.vendor_id$<=vendthru$ then
+                                                gosub gettestdate_detail
+       
+            
+                if datefrom$="" or testdated$>=datefrom$ then
+                if datethru$="" or testdated$<=datethru$  
+           
+                    linetype$="N"
+                  
+                    p02_key$=poe11a.firm_id$+poe11a.po_line_code$
+                    find record (pom02a_dev,key=p02_key$,dom=*next) pom02a$
+                    linetype$=pom02a.line_type$
+
+                    if linetype$<>"S" continue
+
+rem --- Test breaks; print line
+                        call pgmdir$+"adc_progress.aon","S","","","","",0,poe11a_dev,1,meter_num,status
+
+        if status<>0 goto std_exit
+                       gosub testbreaks
+                        gosub printdetail
+
+                    endif
+
+                endif
+
+            endif
+        
+        endif
+
+rem --- Accumulate totals; then get next sort file record
+
+        qtyreqtot=qtyreqtot+reqqty
+        itemtot=itemtot+extension
+        whsetot=whsetot+extension
+        grandtot=grandtot+extension
+        extension=0
+        extension$=""
+        reqqty=0
+        reqqty$=""
+
+    wend
+
+done: rem --- All Done
+
+    if l+2>l9 gosub set_lines
+    gosub itemtotals
+    gosub whsetotals
+ 
+    xwk = fnblank(13)
+    xwk = fnblank(1)
+    OutVect!.addItem("Total For Report")
+    xwk = fnblank(9)
+    OutVect!.addItem(str(grandtot:m1$))
+    xwk = fnblank(1)
+   
+    goto std_exit
+
+rem --- Print Detail Subroutine
+
+printdetail: rem --- Set up variables
+
+    dim datereq$(8),dateprom$(8),notb4date$(8)
+    itemnum$=poe11a.item_id$
+    unitmeas$=poe11a.unit_measure$
+    if poe11a.reqd_date$<>fill(8) datereq$=fndate$(poe11a.reqd_date$)
+    if poe11a.promise_date$<>fill(8) dateprom$=fndate$(poe11a.promise_date$)
+    if poe11a.not_b4_date$<>fill(8) notb4date$=fndate$(poe11a.not_b4_date$)
+    convfact$=str(poe11a.conv_factor:m5$)
+    reqqty=poe11a.req_qty
+    reqqty$=str(reqqty:m2$)
+    unitcost$=str(poe11a.unit_cost:m3$)
+    reqnum$=poe11a.req_no$
+    vendor$=poe11a.vendor_id$
+
+rem --- Get vendor's name
+
+    vendname$="Not On File"+fill(19)
+    a01_key$=poe11a.firm_id$+poe11a.vendor_id$
+    find record (apm01a_dev,key=a01_key$,dom=get_ext) apm01a$
+    vendname$=apm01a.vendor_name$
+
+get_ext: rem --- Get extension
+
+    gosub calc_extension
+
+rem --- Print detail line
+
+    if l+1>l9 gosub set_lines
+  
+    xwk = fnblank(1)
+    OutVect!.addItem(reqnum$)
+    OutVect!.addItem(poe11a.po_line_no$)
+    OutVect!.addItem(str(fnmask$(vendor$(1,vendlen),vendomask$)) + vendname$(1,24))
+    OutVect!.addItem(unitmeas$)
+    OutVect!.addItem(datereq$)
+    OutVect!.addItem(dateprom$)
+    OutVect!.addItem(notb4date$)
+    OutVect!.addItem(convfact$)
+    OutVect!.addItem(reqqty$)
+    OutVect!.addItem(unitcost$)
+    OutVect!.addItem(extension$)
+    xwk = fnblank(1)
+  
+    l=l+1
+    return
+
+set_lines: rem --- Set the line count
+
+    l=headings+1
+    l=l+6
+    return
+
+assignheads: rem --- Assign headings variables
+
+    if vendfrom$="" vendf$="First" else vendf$=vendfrom$
+    if vendthru$="" vendt$="Last" else vendt$=vendthru$
+    if itemfrom$="" itemf$="First" else itemf$=itemfrom$
+    if itemthru$="" itemt$="Last" else itemt$=itemthru$
+    if reqfrom$="" reqf$="First" else reqf$=reqfrom$
+    if reqthru$="" reqt$="Last" else reqt$=reqthru$
+    if datefrom$="" datef$="First" else datef$=fndate$(datefrom$)
+    if datethru$="" datet$="Last" else datet$=fndate$(datethru$)
+    headings$[1]=headings$[1](1,len(sysinfo.task_desc$))+" For Warehouse "+whse$+" "+cvs(whsename$,2)
+
+
+    headings$[2]="From Vendor: "+ vendf$
+    headings$[2]=headings$[2] + " -- To Vendor: " + vendt$
+    headings$[3]="From Item: "+ itemf$
+    headings$[3]=headings$[3] + " -- To Item " + itemt$
+    headings$[4]="From Requisition: "+ reqf$
+    headings$[4]=headings$[3] + " -- To Requisition: " + reqt$
+    headings$[5]="From Order Date: " + datef$
+    headings$[5]= headings$[5] + " -- To Order Date:" + datet$
+
+    return
+
+gettestdate_detail: rem --- Determine date to use when testing range in detail
+
+    action=pos(whichdate$="OPRD")
+    date_ordered=1
+    date_promised=2
+    date_required=3
+    date_dont_del_before=4
+
+    switch action
+        case date_ordered
+            break
+        case date_promised
+            testdated$=poe11a.promise_date$
+            break
+        case date_required
+            testdated$=poe11a.reqd_date$
+            break
+        case date_dont_del_before
+            testdated$=poe11a.not_b4_date$
+            break
+        case default
+            break
+    swend
+    return
+
+testbreaks: rem --- Test for Breaks
+
+    if poe11a.warehouse_id$=whse$ 
+
+        if poe11a.item_id$=itemnum$ return
+        gosub itemtotals
+        gosub newitem
+        return
+
+    endif
+
+    if printitot$="Y" gosub itemtotals
+    if printwtot$="Y" gosub whsetotals
+    gosub newwhse
+    gosub newitem
+    return
+
+newwhse: rem --- New Warehouse
+
+    whsetot=0
+    whsename$="Not On File"
+    whse$=poe11a.warehouse_id$
+    printwtot$="Y"
+    printitot$="N"
+    find record (ivm10c_dev,key=firm_id$+"C"+whse$,dom=set_lines) ivm10c$
+    whsename$=ivm10c.short_name$
+    gosub set_lines
+    return
+
+newitem: rem --- New Item
+
+    itemtot=0
+    qtyreqtot=0
+    itemnum$=poe11a.item_id$
+    printitot$="Y"
+    dim itemdesc$(60),x1$(60)
+    ivm01a.item_desc$="Not On File"
+    i01_key$=firm_id$+poe11a.item_id$
+    find record (ivm01a_dev,key=i01_key$,dom=brnch1) ivm01a$
+    ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desclen[1],desclen[2],desclen[3])
+
+brnch1:
+
+    i02_key$=firm_id$+poe11a.warehouse_id$+poe11a.item_id$
+    qtyonorder=0
+    find record (ivm02a_dev,key=i02_key$,dom=*next) ivm02a$
+    if l+3>l9 gosub set_lines
+    qtyonorder=num(ivm02a.qty_on_order$)
+ 
+    xwk = fnblank(13)
+    OutVect!.addItem(itemnum$(1,itemlen))
+    xwk = fnblank(2)
+    OutVect!.addItem(itemdesc$)
+    xwk = fnblank(8)
+    OutVect!.addItem(str(qtyonorder:m2$))
+
+    l=l+1
+    return
+
+whsetotals: rem --- Print Warehouse total
+
+    if l+2>l9 gosub set_lines
+    l=l+2
+    return
+
+itemtotals: rem --- Print Item total
+
+    if l+2>l9 gosub set_lines
+
+    xwk = fnblank(1)
+    OutVect!.addItem("Total For Item " + itemnum$(1,itemlen))
+    xwk = fnblank(1)
+    OutVect!.addItem(itemdesc$(1,22))
+    xwk = fnblank(5)
+    OutVect!.addItem(str(qtyreqtot:m2$))
+    xwk = fnblank(1)
+    OutVect!.addItem(str(itemtot:m1$))
+    xwk = fnblank(1)
+    
+
+    let l=l+2
+    return
+
+calc_extension: rem --- Calc extension
+
+    precision 2
+    let extension=poe11a.conv_factor*reqqty,extension$=str(extension:m1$)
+    precision ivprecision
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$) 
+        if cvs(q$,2)="" return ""
+
+        testdate$=""
+
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+
+        if testdate$<>"" 
+
+            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+        endif
+
+        return testdate$
+
+    fnend    
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

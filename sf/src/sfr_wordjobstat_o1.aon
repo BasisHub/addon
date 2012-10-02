@@ -1,0 +1,902 @@
+rem --- Work Order Job Status Summery - Printing Overlay
+rem --- Program sfr_vb v8.0.0 04Jan2008 (sfr_vb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 10:42:55)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+        seterr std_error
+        setesc std_error
+
+rem --- Document initializations
+
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock Files
+rem --- Init Data
+rem --- Retrieve key templates
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","PRIMARY",sfe01_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","ALT_KEY_01",sfe01a_key_alt01$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","ALT_KEY_02",sfe01b_key_alt02$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","ALT_KEY_03",sfe01c_key_alt03$,rd_table_chans$[all],status$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","PRIMARY",sfe02_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",sfe22_key_tpl$,rd_table_chans$[all],status$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_CLSOPRTR","PRIMARY",sft03_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_CLSMATTR","PRIMARY",sft23_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_CLSSUBTR","PRIMARY",sft33_key_tpl$,rd_table_chans$[all],status$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",sft01_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNMATTR","PRIMARY",sft21_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNSUBTR","PRIMARY",sft31_key_tpl$,rd_table_chans$[all],status$
+
+        switch pos(report_sequence$="WBCT")
+            case 1; rem --- report_sequence$="W"    
+                h3$="Work Order Sequence"
+                dim key_tpl$:sfe01_key_tpl$
+                beginning$=wofrom$
+                ending$=wothru$
+                begin_key$=firm_id$+sfe01a.wo_location$+beginning$
+                keynum=0
+                break
+            case 2; rem -- report_sequence$="B"    
+                h3$="Bill Number Sequence"
+                dim key_tpl$:sfe01c_key_alt03$
+                beginning$=billfrom$
+                ending$=billthru$
+                begin_key$=firm_id$+whse$+beging$
+                keynum=3
+                break
+            case 3; rem -- report_sequence$="C"    
+                h3$="Customer Sequence"
+                dim key_tpl$:sfe01b_key_alt02$
+                beginning$=custfrom$
+                ending$=custthru$
+                begin_key$=firm_id$+beging$
+                keynum=2
+                break
+            case 4; rem -- report_sequence$="T"    
+                h3$="Work Order Type Sequence"
+                dim key_tpl$:sfe01a_key_alt01$
+                beginning$=wotfrom$
+                ending$=wotthru$
+                begin_key$=firm_id$+beging$
+                keynum=1
+                break
+         swend
+
+        h4$=""
+        if pos("U"=how$)>0 then h5$="Units"
+        if pos("D"=how$)>0 then h5$="Dollars"
+
+        if pos("O"=wostatus$)>0 then h4$="Open/"
+        if pos("C"=wostatus$)>0 then h4$=h4$+"Closed/"
+        if pos("P"=wostatus$)>0 then h4$=h4$+"Planned/"
+        if pos("Q"=wostatus$)>0 then h4$=h4$+"Quoted/"
+        h4$=h4$(1,len(h4$)-1)
+
+        if date1$<>"" then h6$="Work In Process As Of "+fndate$(date1$) else h6$=""
+
+        h4$=h4$+" Beginning With "
+        if beginning$<>"" then  h4$=h4$+beginning$ else h4$=h4$+"The First"
+        h4$=h4$(1,POS("   "=h4$+"   ")-1)
+        h4$=h4$+" And Ending With "
+        if ending$<>"" then h4$=h4$+ending$ else h4$=h4$+"The Last"
+        h4$=h4$(1,POS("   "=h4$+"   ")-1)
+
+        dim t[1]
+        m6$="###0.00-"
+        m9$="##,##0.00-"
+        headings$[2]=h3$
+        headings$[3]=h4$
+        headings$[4]=h6$
+        headings$[5]="In "+h5$
+        more=1
+
+        if how$="U"
+            dim columns$[11,10]
+            columns = 12
+
+            columns$[0,0]="W.O #",         columns$[0,1]="C",columns$[0,2]="10"
+            columns$[1,0]="Sts",           columns$[1,1]="C",columns$[1,2]="5"
+            columns$[2,0]="Type",          columns$[2,1]="C",columns$[2,2]="5"
+            columns$[3,0]="Operations",    columns$[3,1]="C",columns$[3,2]="30"
+            columns$[4,0]="Date Req",      columns$[4,1]="C",columns$[4,2]="10"
+            columns$[5,0]="Last Act.",     columns$[5,1]="C",columns$[5,2]="10"
+            columns$[6,0]="Std.Setup",     columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m6$
+            columns$[7,0]="Std.Run",       columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m6$
+            columns$[8,0]="Act.Setup",     columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m6$
+            columns$[9,0]="Act.Run",       columns$[9,1]="N",columns$[9,2]="8",columns$[9,3]=m6$
+            columns$[10,0]="# Vnce",       columns$[10,1]="N",columns$[10,2]="8",columns$[10,3]=m6$
+            columns$[11,0]="Cmp Qty",      columns$[11,1]="N",columns$[11,2]="8",columns$[11,3]=m6$
+        else
+            dim columns$[11,10]
+            columns = 12
+
+            columns$[0,0]="W.O #",         columns$[0,1]="C",columns$[0,2]="10"
+            columns$[1,0]="Sts",           columns$[1,1]="C",columns$[1,2]="5"
+            columns$[2,0]="Type",          columns$[2,1]="C",columns$[2,2]="5"
+            columns$[3,0]="Operations",    columns$[3,1]="C",columns$[3,2]="30"
+            columns$[4,0]="Date Req",      columns$[4,1]="C",columns$[4,2]="10"
+            columns$[5,0]="Last Act.",     columns$[5,1]="C",columns$[5,2]="10"
+            columns$[6,0]="Std.Direct",    columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m6$
+            columns$[7,0]="Std.Ovh",       columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m6$
+            columns$[8,0]="Act.Direct",    columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m6$
+            columns$[9,0]="Act.Ovh",       columns$[9,1]="N",columns$[9,2]="8",columns$[9,3]=m6$
+            columns$[10,0]="# Vnce",       columns$[10,1]="N",columns$[10,2]="8",columns$[10,3]=m6$
+            columns$[11,0]="# Vnce",       columns$[11,1]="N",columns$[11,2]="8",columns$[11,3]=m6$
+        endif
+
+
+rem --- Additional File Opens
+
+        call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+        if status then goto std_exit
+
+rem --- Background
+
+        call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
+
+rem --- Options
+rem --- Init Read
+
+        flag=0
+        read (sfe01_dev,key=begin_key$,knum=keynum,dom=main)
+        flag=1
+      
+rem --- Main Read
+main:
+        while more
+            if (!flag) then
+                end_pgm_flag=0
+                key_tpl$=key(sfe01_dev,knum=keynum,end=end_pgm)
+                if pos(firm_id$=key_tpl$)<>1 then 
+                    end_pgm_flag=1
+                    break
+                endif
+                end_pgm_flag=1
+                if ending$<>"" 
+                    if report_sequence$="W" and key_tpl.firm_id$+key_tpl.wo_location$+key_tpl.wo_no$>firm_id$+key_tpl.wo_location$+ending$ then break
+                    if report_sequence$="B" and key_tpl.firm_id$+key_tpl.warehouse_id$+key_tpl.item_id$>firm_id$+whse$+ending$ break
+                    if report_sequence$="C" and key_tpl.firm_id$+key_tpl.customer_id$>firm_id$+ending$ break
+                    if report_sequence$="T" and key_tpl.firm_id$+key_tpl.wo_type$>firm_id$+ending$ break   
+                endif
+
+                end_pgm_flag=0
+                  
+                if report_sequence$<>"W"
+rem --- Breaks
+                    if report_sequence$="T" then 
+                        data3$=key_tpl.wo_type$
+                    else 
+                        if report_sequence$="C" then
+                            data3$=key_tpl.customer_id$
+                        else 
+                            data3$=key_tpl.warehouse_id$+key_tpl.item_id$
+                        endif
+                    endif
+                    if data3$<>t0$ then gosub first_subtotal
+                    read (sfe01_dev,knum=keynum)
+                endif
+
+            endif
+            flag=0
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            read record (sfe01_dev,key=key_tpl$,knum=keynum,dom=*continue) sfe01a$
+            cqty=sfe01a.qty_cls_todt
+            if date1$<>"" and sfe01a.opened_date$>date1$ then continue
+            if pos("P"=wostatus$)<=0 or sfe01a.wo_status$<>"P"
+                if pos("Q"=wostatus$)<=0 or (sfe01a.wo_status$)<>"Q" 
+                    if pos("O"=wostatus$)<=0 or sfe01a.wo_status$<>"O" 
+                        if pos("P"=wostatus$)=0 and sfe01a.wo_status$="P" then continue
+                        if pos("Q"=wostatus$)=0 and sfe01a.wo_status$="Q" then continue
+                        if pos("O"=wostatus$)=0 and sfe01a.wo_status$="O" then continue
+                        if pos("C"=wostatus$)>0 and sfe01a.wo_status$<>"C" then continue
+                        if pos("C"=wostatus$)=0 and sfe01a.wo_status$="C" and date1$="" then continue
+                        if pos("O"=wostatus$)>0 and pos("C"=wostatus$)=0 and sfe01a.wo_status$="C" 
+:                                               and sfe01a.closed_date$<=date1$ then continue
+                        if pos("P"=wostatus$)>0 and pos("C"=wostatus$)=0 and sfe01a.wo_status$="C" 
+:                                               and sfe01a.closed_date$<=date1$ then continue
+                        if pos("Q"=wostatus$)>0 and pos("C"=wostatus$)=0 and sfe01a.wo_status$="C" 
+:                                               and sfe01a.closed_date$<=date1$ then continue
+                        if pos("C"=wostatus$)>0 and len(date1$)>0 and sfe01a.closed_date$>date1$ then continue
+                    endif
+                endif
+            endif
+
+            if sfe01a.wo_category$<>"I" then
+                d1$=sfe01a.description_01$+" "+sfe01a.description_02$
+            else
+                dim d1$(60)
+                d1$(1)="**Invalid Item**"
+                find record (ivm01_dev,key=firm_id$+sfe01a.item_id$,dom=*next) ivm01a$
+                d1$(1)=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+            endif
+
+rem --- Print Work Order Header Information
+
+rem ***            if l+1>l9 then gosub sub_heading
+            OutVect!.addItem(sfe01a.wo_no$)
+            OutVect!.addItem(sfe01a.wo_status$)
+            OutVect!.addItem(sfe01a.wo_type$)
+            OutVect!.addItem(d1$(1,desclen))
+            xwk = fnblank(8)
+            xwk = fnblank(3)
+            OutVect!.addItem("Sched.Qty:"+str(sfe01a.sch_prod_qty:m6$)+" Closed Qty:"+str(sfe01a.qty_cls_todt:m6$))
+            xwk = fnblank(8)
+            l=l+2
+            gosub process_work_order
+        wend
+       
+        if end_pgm_flag=1 then goto std_exit
+
+process_work_order: rem --- Process Work Order
+
+        if sfe01a.wo_status$="O" or (sfe01a.wo_status$="C" and sfe01a.closed_date$>g9$) then 
+            wo_status$="1" 
+        else 
+            wo_status$="0"
+        endif
+        x0$=""
+        totslab=0,totalab=0,t2=0,t3=0,totamat=0,t7=0,x1$="",x2$="",last_date$=""
+        dim stdlab[i9],stdrun[i9],actlab[i9],actrun[i9],stddir[i9],stdovh[i9],actdir[i9],actovh[i9],stdset[i9],actset[i9],qtycom[i9]
+
+rem --- Calc Standards - Operations
+
+        read (sfe02_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$+"A",dom=*next)
+
+        dim sfe02a_key$:sfe02_key_tpl$
+        while more
+            sfe02a_key$=key(sfe02_dev,end=*break)
+            if pos((sfe02a_key.firm_id$+sfe02a_key.wo_location$+sfe02a_key.wo_no$)=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$))<>1 then break
+            read record (sfe02_dev,key=sfe02a_key$) sfe02a$
+            if sfe02a.line_type$<>"S" then continue
+            while more
+                y=pos(sfe02a.op_seq$=x0$,3)
+                if y=0 then
+                     x0$=x0$+sfe02a.op_seq$
+                     x1$=x1$+sfe02a.code_desc$
+                     x2$=x2$+sfe02a.op_code$
+                     x3$=x3$+sfe02a.require_date$
+                    continue
+                endif
+               break  
+             wend
+            x=int(y/3)
+            stdlab[x]=stdlab[x]+sfe02a.tot_std_cost
+            stdrun[x]=stdrun[x]+sfe02a.total_time-sfe02a.setup_time
+            stddir[x]=stddir[x]+sfe02a.total_time*sfe02a.direct_rate
+            stdovh[x]=stdovh[x]+sfe02a.tot_std_cost-sfe02a.total_time*sfe02a.direct_rate
+            stdset[x]=stdset[x]+sfe02a.setup_time
+        wend
+
+rem --- Calc Standards - Materials
+
+        totsmat=0
+        read (sfe22_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
+
+        dim sfe22a_key$:sfe22_key_tpl$
+        while more
+            sfe22_key$=key(sfe22_dev,end=*break)
+            if pos((sfe22a.firm_id$+sfe22a.wo_location$+sfe22a.wo_no$)=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$))<>1 then break
+            read record (sfe22_dev,key=sfe22_key$) sfe22a$
+            if sfe22a.line_type$<>"S" then continue
+            totsmat=totsmat+sfe22a.total_cost
+        wend
+
+rem --- Get Actuals
+
+        dim last_date$((y+1)*8)
+        gosub calculate_actuals
+
+rem --- Print
+
+        if x0$="" then return
+        for y=1 to len(x0$)/3
+
+            xwk = fnblank(3)
+            OutVect!.addItem("         "+x2$(3*y-2,3)+" "+x1$(20*y-19,20))
+            x=int((3*y-2)/3)
+            if how$="U" then 
+                break_flag=1
+                gosub print_unit_info
+            endif
+            if how$="D" then 
+                break_flag=1
+                gosub print_dollar_info
+            endif
+            totslab=totslab+stdlab[x]
+            totalab=totalab+actlab[x],t2=t2+stdrun[x],t3=t3+actrun[x]
+            l=l+1
+        next y
+        break_flag=0
+
+print_unit_info: rem --- Print Unit Information
+        if how$<>"U" or break_flag=1 then
+            if how$<>"D" or break_flag=1 then
+                ldate$="00/00/00"
+                if cvs(last_date$,3)<>""  then 
+                     last_date$=cvs(last_date$,3)
+                     if len(last_date$)>x*8+1 then
+                         ldate$=fndate$(last_date$(x*8+1,8))
+                     endif
+                endif
+
+                OutVect!.addItem(fndate$((x3$(x*8+1,8))))
+                OutVect!.addItem(ldate$)
+                OutVect!.addItem(str(stdset[x]:m6$))
+                OutVect!.addItem(str(stdrun[x]:m6$))
+                OutVect!.addItem(str(actset[x]:m6$))
+                OutVect!.addItem(str(actrun[x]:m6$))
+
+                totstd=stdset[x]+stdrun[x]
+                totact=actset[x]+actrun[x]
+                if totstd<>0 then  
+                    pctvar=(totstd-totact)*100/totstd 
+                else  
+                    pctvar=0
+                endif
+                OutVect!.addItem(str(pctvar:m6$))
+                OutVect!.addItem(str(qtycom[x]:m6$))
+
+                totsset=totsset+stdset[x]
+                totsrun=totsrun+stdrun[x]
+                totaset=totaset+actset[x]
+                totarun=totarun+actrun[x]
+                return
+             endif
+         endif
+
+print_dollar_info: rem --- Print Dollar Information
+        if how$<>"U" or break_flag=1 then
+            if how$<>"D" or break_flag=1 then
+                ldate$="00/00/00"
+                if cvs(last_date$,3)<>""  then 
+                     last_date$=cvs(last_date$,3)
+                     if len(last_date$)>x*8+1 then
+                         ldate$=fndate$(last_date$(x*8+1,8))
+                     endif
+                endif
+
+                OutVect!.addItem(fndate$(x3$(x*8+1,8)))
+                OutVect!.addItem(ldate$)
+                OutVect!.addItem(str(stddir[x]:m6$))
+                OutVect!.addItem(str(stdovh[x]:m6$))
+                OutVect!.addItem(str(actdir[x]:m6$))
+                OutVect!.addItem(str(actovh[x]:m6$))
+
+                totstd=stddir[x]+stdovh[x]
+                totact=actdir[x]+actovh[x]
+                if totstd<>0 then 
+                    pctvar=(totstd-totact)*100/totstd 
+                else
+                    pctvar=0
+                endif
+
+                OutVect!.addItem(str((totstd-totact):m6$))
+                OutVect!.addItem(str(pctvar:m6$))
+
+                totsdir=totsdir+stddir[x]
+                totsovh=totsovh+stdovh[x]
+                totadir=totadir+actdir[x]
+                totaovh=totaovh+actovh[x]
+                return
+            endif
+         endif
+
+rem --- Dollar Totals
+
+        if how$<>"U" or break_flag=1 then
+
+            if totsdir<>0 then 
+                pctvar=(totsdir-totadir)*100/totsdir 
+            else 
+                pctvar=0
+            endif
+
+            xwk = fnblank(6)
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+
+            xwk = fnblank(3)
+            OutVect!.addItem("*** Total For Work Order "+sfe01a.wo_no$+" ***")
+            OutVect!.addItem("Direct Labor:")
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totsdir:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totadir:m6$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totsdir-totadir:m6$))
+            OutVect!.addItem(str(pctvar:m6$))
+
+             if totsovh<>0 then 
+                pctvar=(totsovh-totaovh)*100/totsovh
+             else 
+                pctvar=0
+             endif
+            xwk = fnblank(4)
+            OutVect!.addItem("Overhead Labor:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totsovh:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totaovh:m9$))
+            OutVect!.addItem(str(totsovh-totaovh:m6$))
+            OutVect!.addItem(str(pctvar:m6$))
+
+             totadir=0
+             totaovh=0,totsdir=0,totsovh=0
+             l=l+3
+
+rem ------- Summary Totals
+
+            if wo_status$="0" then cqty=sfe01a.sch_prod_qty
+            if wo_status$="1" and cqty=0 then cqty=sfe01a.sch_prod_qty
+
+            xwk = fnblank(6)
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+
+            xwk = fnblank(4)
+            OutVect!.addItem("Labor Totals:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totslab:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totalab:m9$))
+            OutVect!.addItem(str(totslab-totalab:m6$))
+
+            if totslab<>0 then 
+                OutVect!.addItem(str((totslab-totalab)*100/totslab:m6$))
+            else 
+                OutVect!.addItem(str(0:m6$))
+            endif
+
+            xwk = fnblank(4)
+            OutVect!.addItem("Per Unit:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totslab/cqty:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totalab/cqty:m9$))
+            OutVect!.addItem(str((totslab-totalab)/cqty:m6$))
+            xwk = fnblank(1)
+
+            xwk = fnblank(4)
+            OutVect!.addItem("Material Totals:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totsmat:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totamat:m9$))
+            OutVect!.addItem(str(totsmat-totamat:m6$))
+
+            if totsmat<>0 then 
+                OutVect!.addItem(str((totsmat-totamat)*100/totsmat:m6$))
+            else 
+                OutVect!.addItem(str(0:m6$))
+            endif
+
+            xwk = fnblank(4)
+            OutVect!.addItem("Per Unit:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totsmat/cqty:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totamat/cqty:m9$))
+            OutVect!.addItem(str((totsmat-totamat)/cqty:m6$))
+            xwk = fnblank(1)
+
+            xwk = fnblank(6)
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+
+            xwk = fnblank(4)
+            OutVect!.addItem("WO Totals:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totslab+totsmat:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totalab+totamat:m9$))
+            OutVect!.addItem(str((totslab+totsmat)-(totalab+totamat):m6$))
+
+            if totslab+totsmat<>0 then 
+                OutVect!.addItem(str(((totslab+totsmat)-(totalab+totamat))*100/(totslab+totsmat):m6$))
+            endif
+
+            xwk = fnblank(4)
+            OutVect!.addItem("Per Unit Totals:")
+            xwk = fnblank(2)
+            OutVect!.addItem(str((totslab+totsmat)/cqty:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str((totalab+totamat)/cqty:m9$))
+            OutVect!.addItem(str(((totslab+totsmat)-(totalab+totamat))/cqty:m6$))
+            OutVect!.addItem(str((((totslab+totsmat)/cqty)-((totalab+totamat)/cqty))*100/((totslab+totsmat)/cqty):m6$))
+            xwk = fnblank(12)
+
+            totslab=0
+            totalab=0
+            totsmat=0
+            totamat=0
+            l=l+8
+            return
+        endif
+
+rem ----Unit Totals
+
+        totstd=totsset+totsrun
+        totact=totaset+totarun
+        if totstd<>0 then 
+            pctvar=(totstd-totact)*100/totstd 
+        else 
+            pctvar=0
+        endif
+
+
+            xwk = fnblank(6)
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+            OutVect!.addItem("----------")
+
+            xwk = fnblank(3)
+            OutVect!.addItem("*** Total For Work Order "+sfe01a.wo_no$+" ***")
+            xwk = fnblank(2)
+            OutVect!.addItem(str(totsset:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totaset:m9$))
+            xwk = fnblank(3)
+            xwk = fnblank(7)
+            OutVect!.addItem(str(totsrun:m9$))
+            xwk = fnblank(1)
+            OutVect!.addItem(str(totarun:m9$))
+            OutVect!.addItem(str(pctvar:m6$))
+            xwk = fnblank(1)
+            xwk = fnblank(12)
+
+        totsset=0
+        totaset=0,totsrun=0,totarun=0
+        l=l+4
+rem --- All Done With Work Order
+        return
+
+rem --- Calculate Actuals
+
+calculate_actuals:
+        tran_pass$="0"
+cal_actual1:
+        flag1=0
+        while more
+            if (!flag1) then
+                gosub select_transaction_file
+                if tran_pass$="4" then break
+                read (wotran_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
+            endif
+            flag1=0
+            wotran_key$=key(wotran_dev,end=*continue)
+            flag1=1
+            if wotran_key.firm_id$+wotran_key.wo_location$+wotran_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then 
+                flag1=0
+                continue
+            endif
+            read record (wotran_dev,key=wotran_key$) sftran$
+            xfer$=fattr(sftran$,"")
+            xfer$=xfer$(pos("trans_date"=cvs(xfer$,8)))
+            xfer$=xfer$(pos($0A$=xfer$)+1)
+            xfield$=xfer$(1,pos($0A$=xfer$)-1)
+            record_id$=field(sftran$,xfield$)
+
+            switch pos(record_id$="OMS")
+                case 0; continue
+                case 1
+rem ------- Actual Operations
+                    y=pos(sftran.op_seq$=x0$,3)
+                    y=int(y/3)
+                    actlab[y]=actlab[y]+sftran.ext_cost
+                    actrun[y]=actrun[y]+sftran.units
+                    actdir[y]=actdir[y]+sftran.units*sftran.direct_rate
+                    actovh[y]=actovh[y]+sftran.ext_cost-sftran.units*sftran.direct_rate
+                    actset[y]=actset[y]+sftran.setup_time
+                    qtycom[y]=qtycom[y]+sftran.complete_qty
+                    if last_date$="" then
+                        if sftran.trans_date$>last_date$(y*8+1,8) then
+                            last_date$(y*8+1,8)=sftran.trans_date$
+                        endif
+                    else
+                            last_date$=last_date$+sftran.trans_date$
+                    endif
+                    continue
+                case 2; totamat=totamat+sftran.ext_cost; continue
+                case 3; t7=t7+sftran.ext_cost; continue
+            swend
+            break
+        wend 
+        return
+
+select_transaction_file: rem --- Select Transaction File
+        switch pos(wo_status$="01")
+            case 0
+                    tran_pass$="4"
+                    break
+            case 1
+                switch pos(tran_pass$="0123")
+                     case 1 
+                        wotran_dev=sft03_dev 
+                        dim sftran$:templates$[13]
+                        dim wotran_key$:sft03_key_tpl$
+                        tran_pass$="1" 
+                        break
+                    case 2 
+                        wotran_dev=sft23_dev
+                        dim sftran$:templates$[15]
+                        dim wotran_key$:sft23_key_tpl$
+                        tran_pass$="2"
+                        break
+                    case 3 
+                        wotran_dev=sft33_dev 
+                        dim sftran$:templates$[17]
+                        dim wotran_key$:sft33_key_tpl$
+                        tran_pass$="3"
+                        break
+                    case default; tran_pass$="4"; break
+                swend
+                break
+            case 2
+                switch pos(tran_pass$="0123")
+                    case 1 
+                        wotran_dev=sft01_dev 
+                        dim sftran$:templates$[12]
+                        dim wotran_key$:sft01_key_tpl$
+                        tran_pass$="1"
+                        break
+                    case 2 
+                        wotran_dev=sft21_dev 
+                        dim sftran$:templates$[14]
+                        dim wotran_key$:sft21_key_tpl$
+                        tran_pass$="2" 
+                        break
+                    case 3 
+                        wotran_dev=sft31_dev 
+                        dim sftran$:templates$[16]
+                        dim wotran_key$:sft31_key_tpl$
+                        tran_pass$="3" 
+                        break
+                    case default; tran_pass$="4"; break
+                swend
+                break
+        swend
+        return
+done:
+        tran_pass$="4"
+        return
+        
+end_pgm: rem --- End
+
+        goto std_exit
+        
+
+sub_heading: rem --- Sub Heading
+
+        switch pos(report_sequence$="TC")
+            case 1 
+                OutVect!.addItem(t0$+"   "+h5$)
+                xwk = fnblank(11)
+                xwk = fnblank(12)
+                l=l+3
+                break
+            case 2 
+                if ars01a.customer_output$<> "" then
+                    OutVect!.addItem(fnmask$(t0$(1,c0)+ars01a.customer_output$)+" "+h5$)
+                    xwk = fnblank(11)
+                    xwk = fnblank(12)
+                endif
+                l=l+1
+                break
+        swend
+        return
+
+first_subtotal:rem --- First Sub Total
+        if cvs(t0$,3)<>"" then
+            if l0<=1 then 
+                l=l+1
+            else
+                if l+2>l9 then gosub sub_heading
+                if report_sequence$="B" then OutVect!.addItem(str(t[0]:m2$))
+                OutVect!.addItem(h9$+" "+t0$+"   "+"Total: ")
+                OutVect!.addItem(str(t[1]:m1$))
+                l=l+3
+            endif
+        endif
+
+label_one:
+        dim t[1]
+        t0$=data3$
+        l0=0
+        switch pos(report_sequence$="TC")
+            case 1
+                dim h5$(39)
+                h5$(1)="*** Not On File ***"
+                find record (sfm10_dev,key=firm_id$+"A"+t0$,dom=*break) sfm10a$
+                h5$=sfm10a.code_desc$
+                gosub sub_heading
+                break
+            case 2
+rem --- Customer
+                dim h5$(30)
+                h5$(1)="*** Not On File ***"
+                if cvs(t0$,3) <> "" then
+                    rem t0$=key_tpl.customer_id$
+                    find record (arm01_dev,key=firm_id$+t0$,dom=label_one) arm01a$
+                endif
+                gosub sub_heading
+                break
+         swend
+         return
+
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+        def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+        def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+        def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+        def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+        def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+        def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+        def fnblank(q0)
+            for q1=1 to q0
+                OutVect!.addItem("")
+            next q1
+            return q1
+        fnend
+
+rem --- Date/time handling functions
+
+        def fndate$(q$)
+            if cvs(q$,2)="" return ""
+            if pos("9"<>q$)=0 return q$
+            testdate$=""
+            testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+            return testdate$
+        fnend
+        def fnyy$(q$)=q$(3,2)
+        def fnclock$(q$)=date(0:"%hz:%mz %p")
+        def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+        def fnmask$(q1$,q2$)
+            if q2$="" q2$=fill(len(q1$),"0")
+            return str(-num(q1$,err=*next):q2$,err=*next)
+            q=1
+            q0=0
+            while len(q2$(q))
+                  if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+                  q=q+1
+            wend
+            if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+            return str(q1$:q2$)
+        fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+        def fnbasename$(q$,q0$)
+            q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+            if q then q$=q$(q+1)
+            if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+        return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+        def fnglobal(q$,q1)
+            q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+            return q1
+        fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+        def fnglobal$(q$,q1$)
+            q1$=stbl(q$,err=*next)
+            return q1$
+        fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+        if pos("EXIT"=rd_err_act$) goto std_error_exit
+        if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+        if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+        master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_error_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_error_release:
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem ----#endinclude std_error.src
+rem ----#include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+        call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+        master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_missing_params_release:
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+        run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+        release
+rem #endinclude std_end.src
+
+end

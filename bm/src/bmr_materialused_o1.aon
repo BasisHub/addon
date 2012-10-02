@@ -1,0 +1,305 @@
+rem --- Materials Where Used Listing
+rem --- Program bmr_materialused_o1 v8.0.0 04Jan2008 (bmr_bb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:43:20)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+    task_desc$=sysinfo.task_desc$
+    sys_date$=sysinfo.system_date$
+
+rem --- Init Data
+
+    h0=132
+    more=1
+    h=0,headings=3,when$=sys_date$,clock$=""
+    dim d1$(60),headings$[headings]
+    headings$[0]=firm_name$
+    headings$[1]=task_desc$
+    if itemfrom$="" then headings$[3]="From Item : First" else headings$[3]="From Item : "+cvs(itemfrom$,2)
+    if itemfrom$="" then headings$[3]=headings$[3]+" -- To Item : Last" else headings$[3]=headings$[3]+" -- To Item : "+itemthru$
+    dim qtyreq[0]
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","ALT_KEY_01",bmm02a_key_tpl$,rd_table_chans$[all],status$
+
+rem ---  column heading
+
+    dim columns$[7,10]
+    columns = 7
+    columns$[0,0]="Item ID",        columns$[0,1]="C",columns$[0,2]="7"
+    columns$[1,0]="Description",    columns$[1,1]="C",columns$[1,2]="25"
+    columns$[2,0]="Bill No.",       columns$[2,1]="C",columns$[2,2]="8"
+    columns$[3,0]="Description",    columns$[3,1]="C",columns$[3,2]="25"
+    columns$[4,0]="Effect Date",    columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Obsolete Date",  columns$[5,1]="C",columns$[5,2]="10"
+    columns$[6,0]="Qty Reqd",       columns$[6,1]="N",columns$[6,2]="8",columns$[6,3]=p1$,columns$[6,10]="T"
+    columns$[7,0]="Seq",            columns$[7,1]="C",columns$[7,2]="5"
+
+rem --- Background
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,bmm01_dev,1,meter_num,status
+
+rem --- Initial Read
+
+    extractrecord (bmm02_dev,key=firm_id$+itemfrom$,knum=1,dom=*next)
+
+rem --- Main Loop
+
+    while more
+        dim bmm02a_key$:bmm02a_key_tpl$
+        bmm02a_key$=key(bmm02_dev,knum=1,end=done)
+        readrecord (bmm02_dev)bmm02a$
+
+rem --- Breaks
+
+        if bmm02a_key.firm_id$<>firm_id$ then break
+        if itemthru$<>"" then
+            if bmm02a_key.item_id$(1,len(itemthru$))>itemthru$ then break
+        endif
+        read record (bmm01_dev,key=(bmm02a_key.firm_id$+bmm02a_key.bill_no$),dom=*continue) bmm01a$
+
+        if (bmm02a.firm_id$+bmm02a.item_id$)<>t0$ then
+            gosub item_break
+        else
+            xwk = fnblank(2)
+        endif
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        d1$="*** Not On File ***"
+        find record (ivm01_dev,key=(bmm01a.firm_id$+bmm01a.bill_no$),dom=print_head) ivm01a$
+        d1$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])+fill(60)
+        d1$=ivm01a.item_desc$
+
+print_head: rem --- Print
+
+        OutVect!.addItem(bmm01a.bill_no$(1,p[0]))
+        OutVect!.addItem(ivm01a.item_desc$(1,30))
+        OutVect!.addItem(fndate$(bmm02a.effect_date$))
+        OutVect!.addItem(fndate$(bmm02a.obsolt_date$))
+        OutVect!.addItem(str(fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)))
+        OutVect!.addItem(bmm02a.material_seq$)
+        t0=t0+1
+        l1=l1+1
+        qtyreq[0]=qtyreq[0]+bmm02a.qty_required
+    wend
+
+done: rem --- Totals
+
+        t9$="E"
+        gosub item_break
+        xwk = fnblank(9)
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+        OutVect!.addItem("Total Records : "+str(t0))
+        xwk = fnblank(6)
+        goto std_exit
+
+print_item: rem --- Print Item
+
+        r0$=" "
+        find (bmm01_dev,key=firm_id$+bmm02a.item_id$,dom=print_desc)
+        r0$="*"
+print_desc:
+        OutVect!.addItem(r0$+t0$(3))
+        OutVect!.addItem(description$)
+return
+
+
+item_break: rem --- Item Break
+    if t0$<>"" then
+        if l1>=2 then
+            xwk = fnblank(7)
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            xwk = fnblank(2)
+            OutVect!.addItem("Item Total : ")
+            xwk = fnblank(4)
+            OutVect!.addItem(str(qtyreq[0]:p1$))
+            xwk = fnblank(9)
+        else
+            xwk = fnblank(8)
+        endif
+    endif
+
+
+
+rem --- Setup New Item
+
+    if t9$<>"" return
+    t0$=bmm02a_key.firm_id$+bmm02a_key.item_id$
+    description$="***Not On File***",l1=0
+    dim qtyreq[0]
+    find record (ivm01_dev,key=bmm02a_key.firm_id$+bmm02a_key.item_id$,dom=prnt_item) ivm01a$
+    description$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])+fill(30)
+    description$=description$(1,30)
+
+prnt_item:
+    gosub print_item
+    return
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format quantity
+
+    def fnqty(q1,q2,q3,q4,q5)=10000*q1*q2/(q3*q4*(100-q5))
+
+rem --- Date/time handling functions
+
+rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem #include fndate.src
+
+        def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+        fnend
+
+rem #endinclude fndate.src
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

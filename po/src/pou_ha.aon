@@ -1,0 +1,494 @@
+rem --- Purge QA Receipt Rejection History
+rem --- Program pou_ha v8.0.0 09Jul2007 (pou_ha)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 10:13:38)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=5,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[2]="apm-01",ids$[2]="APM_VENDMAST"
+    files$[3]="pot-03",ids$[3]="POT_QAREJHST"
+    files$[4]="APS_PARAMS",ids$[4]=files$[4]
+    files$[5]="IVS_PARAMS",ids$[5]=files$[5]
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apm01_dev=channels[2]
+    pot03_dev=channels[3]
+    aps01a_dev=channels[4]
+    ivs01a_dev=channels[5]
+
+rem --- Dimension string templates
+
+    dim apm01a$:templates$[2],pot03a$:templates$[3],aps01a$:templates$[4],ivs01a$:templates$[5]
+
+rem --- Assign form input values to local variables
+
+    vendfrom$=option!.getOptionData("beg_vendor")
+    vendthru$=option!.getOptionData("end_vendor")
+    recfrom$=option!.getOptionData("beg_receiver")
+    recthru$=option!.getOptionData("end_receiver")
+    pofrom$=option!.getOptionData("beg_po")
+    pothru$=option!.getOptionData("end_po")
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    
+rem --- Parameters
+
+    vendlen=num(aps01a.vendor_size$)
+
+rem --- Initializations
+
+    dim vendfname$(30),vendtname$(30)
+    type$="P"; rem "Purchase Order for poc_lb.bbx
+    more=1
+
+rem --- Display Resource
+
+    dim resparams$[20],resparams[20]
+    resaction$=""
+    resparams$[0]=pgm(-2)
+    call pgmdir$+"syc_ra.bbx",resaction$,resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+    if status goto std_exit
+    goto flow_control
+
+brnch1: rem --- Beginning Vendor
+
+    v0$="M"
+    v1$="KCE"
+    v2$=vendfrom$
+    v3$=vendimask$
+    v4$="Enter A Valid Vendor Number (<F1>=First/<F3>=Lookup)"
+    v0=6
+    v1=40
+    v2=3
+    i0=0
+    control_id=3000
+    on v3 goto brnch4,brnch2,brnch5,brnch3,flow_control,brnch4,flow_control
+
+brnch2:
+    if v3=1 v$=""
+    if v$="" let vendfrom$=""
+    call pgmdir$+"syc_rs.bbx","",my_context,13000,"First",0,"",status
+    goto flow_control
+
+brnch3:
+    call pgmdir$+"syc_lv.bbx",v$
+    if v$="" goto brnch1
+
+brnch4:
+    if v$="" goto brnch2
+    dim x1$(195)
+    find record (apm01a_dev,key=firm_id$+v$,dom=brnch1) apm01a$
+    vendfrom$=v$
+    vendfname$=apm01a.vendor_name$
+    call pgmdir$+"syc_rs.bbx","",my_context,3000,fnmask$(vendfrom$,vendomask$),0,"",status; call pgmdir$+"syc_rs.bbx","",my_context,13000,vendfname$(1,min(79-v1-vendlen-1,30)),0,"",status
+
+brnch5:
+    goto flow_control
+
+brnch6: rem --- Ending Vendor
+
+    v0$="M"
+    v1$="KCE"
+    v2$=vendthru$
+    v3$=vendimask$
+    v4$="Enter A Valid Vendor Number (<F1>=Last/<F3>=Lookup)"
+    v0=6
+    v1=40
+    v2=4
+    control_id=3001
+    on v3 goto brnch9,brnch7,brnch10,brnch8,flow_control,brnch9,flow_control
+
+brnch7:
+    if v3=1 v$=""
+    if v$="" let vendthru$=""
+    call pgmdir$+"syc_rs.bbx","",my_context,13001,"Last",0,"",status
+    goto flow_control
+
+brnch8:
+    call pgmdir$+"syc_lv.bbx",v$
+    if v$="" goto brnch6
+
+brnch9:
+    if v$="" goto brnch7
+    if vendfrom$<>"" if v$<vendfrom$ goto brnch6
+    dim x1$(195)
+    find record (apm01a_dev,key=firm_id$+v$,dom=brnch6) apm01a$
+    vendthru$=v$
+    vendtname$=apm01a.vendor_name$
+    call pgmdir$+"syc_rs.bbx","",my_context,3001,fnmask$(vendthru$,vendomask$),0,"",status; call pgmdir$+"syc_rs.bbx","",my_context,13001,vendtname$(1,min(79-v1-vendlen-1,30)),0,"",status
+
+brnch10:
+    goto flow_control
+
+brnch11: rem --- Beginning Receiver Number
+
+    v4$="Enter A Valid Receiver Number (<F1>=First)"
+    v0$="Z"
+    v1$="CKE"
+    v2$=recfrom$
+    v3$=""
+    v0=7
+    v1=40
+    v2=5
+    control_id=3002
+    on v3 goto brnch13,brnch12,brnch14,brnch13,flow_control,brnch13,flow_control
+
+brnch12:
+    if v3=1 v$=""
+    if v$="" let recfrom$=""
+    call pgmdir$+"syc_rs.bbx","",my_context,13002,"First",0,"",status
+    goto flow_control
+
+brnch13:
+    if v$="" goto brnch12
+    recfrom$=v$
+    call pgmdir$+"syc_rs.bbx","",my_context,3002,recfrom$,0,"",status
+
+brnch14:
+    goto flow_control
+
+brnch15: rem --- Ending Receiver Number
+
+    v4$="Enter A Valid Receiver Number (<F1>=Last)"
+    v0$="Z"
+    v1$="CKE"
+    v2$=recthru$
+    v3$=""
+    v0=7
+    v1=40
+    v2=6
+    control_id=3003
+    on v3 goto brnch17,brnch16,brnch18,brnch17,flow_control,brnch17,flow_control
+
+brnch16:
+    if v3=1 v$=""
+    if v$="" let recthru$=""
+    call pgmdir$+"syc_rs.bbx","",my_context,13003,"Last",0,"",status
+    goto flow_control
+
+brnch17:
+    if v$="" goto brnch12
+    recthru$=v$
+    call pgmdir$+"syc_rs.bbx","",my_context,3003,recthru$,0,"",status
+
+brnch18:
+    goto flow_control
+
+brnch19: rem --- Beginning Purchase Order
+
+    v0$="Z"
+    v1$="KCE"
+    v2$=pofrom$
+    v3$=""
+    v4$="Enter A Valid Purchase Order Number (<F1>=First/<F3>=Lookup)"
+    v0=7
+    v1=40
+    v2=7
+    control_id=3004
+    on v3 goto brnch22,brnch20,brnch23,brnch21,flow_control,brnch22,flow_control
+
+brnch20:
+    if v3=1 v$=""
+    if v$="" let pofrom$=""
+    call pgmdir$+"syc_rs.bbx","",my_context,13004,"First",0,"",status
+    goto flow_control
+
+
+brnch21:
+    call pgmdir$+"poc_lb.bbx",type$,vendpo$
+    if len(vendpo$)<15 goto brnch20 else v$=vendpo$(9,7)
+
+brnch22:
+    if v$="" goto brnch20
+    pofrom$=v$
+    call pgmdir$+"syc_rs.bbx","",my_context,3004,pofrom$,0,"",status
+
+brnch23:
+    goto flow_control
+
+brnch24: rem --- Ending Purchase Order
+
+    v0$="Z"
+    v1$="KCE"
+    v2$=pothru$
+    v3$=""
+    v4$="Enter A Valid Purchase Order Number (<F1>=Last/<F3>=Lookup)"
+    v0=7
+    v1=40
+    v2=8
+    control_id=3005
+    on v3 goto brnch27,brnch25,brnch28,brnch26,flow_control,brnch27,flow_control
+
+brnch25:
+    if v3=1 v$=""
+    if v$="" let pothru$=""
+    call pgmdir$+"syc_rs.bbx","",my_context,13005,"Last",0,"",status
+    goto flow_control
+    
+brnch26:
+    call pgmdir$+"poc_lb.bbx",type$,vendpo$
+    if len(vendpo$)<15 goto brnch25 else v$=vendpo$(9,7)
+
+brnch27:
+    if v$="" goto brnch25
+    if pofrom$<>"" if v$<pofrom$ goto brnch11
+    pothru$=v$
+    call pgmdir$+"syc_rs.bbx","",my_context,3005,pothru$,0,"",status
+
+brnch28:
+    goto flow_control
+
+flow_control:
+    switch v3
+    case 0
+    case 1
+    case 3; let i0=i0+1; break
+    case 2; if i0<i0_nonkey1 i0=max(0,i0-1) else i0=max(i0_nonkey1,i0-1) fi; break
+    case 4; let i0=i0_done; break
+    case default; exitto done_v3
+    swend
+rem on i0 goto l1000,brnch6,brnch11,brnch15,brnch19,brnch24,done_1,done_1
+
+done_1: rem --- Correct?
+
+    if validate 
+        validate=0
+    else
+        gosub display_fields
+        v0$="S"
+        v1$="KC"
+        v2$="Y"
+        v3$=""
+        v4$="ITAC=Y"
+        v0=6
+        v1=fnv(v4$)
+        v2=22
+        control_id=i0-i0_done+1
+
+done_v3:
+        on v3 goto done_test,done_1,done_1,done_1,std_exit,validate_input,std_exit,done_1
+
+done_test:
+
+        action=pos(v$="YN")
+        val_input=1
+        do_nonkey=2
+
+        switch action
+
+            case val_input
+
+validate_input:
+                validate=1
+                old_control_id=0
+
+                v3=0
+                i0=i0_nonkey1-1
+                break
+
+            case do_nonkey
+                v3=0
+                i0=i0_nonkey1-1
+                break
+
+            case default
+                break
+        swend
+        goto flow_control
+
+    endif
+
+rem --- Run report overlay
+
+    msg_id$="AON_RUN_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit
+    exit_ctrl=1
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,pot03_dev,1,meter_num,status
+    read (pot03_dev,key=firm_id$+vendfrom$+recfrom$+pofrom$,dom=*next)
+
+rem --- Loop through pot-03
+
+    while more
+
+        pot03a_key$=key(pot03_dev,end=*break)
+        if pot03a_key.firm_id$<>firm_id$ break
+        vendor$=pot03a_key.vendor_id$
+        receiver$=pot03a_key.receiver_no$
+        ponum$=pot03a_key.po_no$
+
+rem --- Valid Vendor/Receiver/PO?
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if vendthru$<>"" if vendor$>vendthru$ break
+
+        if recfrom$<>"" if receiver$<recfrom$
+            read (pot03_dev,key=pot03a_key.firm_id$+pot03a_key.vendor_id$+recfrom$,dom=*continue);  rem --- Skip to beginning receiver for this vendor
+        else 
+            if recthru$<>"" if receiver$>recthru$
+                read (pot03_dev,key=pot03a_key.firm_id$+pot03a_key.vendor_id$+$FF$,dom=*continue); rem --- Skip to next vendor
+        else 
+            if pofrom$<>"" if ponum$<pofrom$
+                read (pot03_dev,key=pot03a_key.firm_id$+pot03a_key.vendor_id$+pot03a_key.receiver_no$+pofrom$,dom=*continue); rem --- Skip to beginning po number
+        else 
+            if pothru$<>"" if ponum$>pothru$
+                read (pot03_dev,key=pot03a_key.firm_id$+pot03a_key.vendor_id$+pot03a_key.receiver_no$+$FF$,dom=*continue);     rem --- Skip to next receiver
+        else
+            remove (pot03_dev,key=pot03a_key$,dom=*next)
+        endif
+
+rem --- Loop up for next receiver
+
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+display_fields:
+
+    let control_id=3000,cid_cnt=0
+
+    while more
+
+        if cid_cnt=0 if vendfrom$="" disp_inp$=vendfrom$,disp_desc$="First" else disp_inp$=fnmask$(vendfrom$,vendomask$),disp_desc$=vendfname$(1,min(79-v1-vendlen-1,30))
+        if cid_cnt=1 if vendthru$="" disp_inp$=vendthru$,disp_desc$="Last" else disp_inp$=fnmask$(vendthru$,vendomask$),disp_desc$=vendtname$(1,min(79-v1-vendlen-1,30))
+        if cid_cnt=2 if recfrom$="" disp_inp$=recfrom$,disp_desc$="First" else disp_inp$=recfrom$,disp_desc$=""
+        if cid_cnt=3 if recthru$="" disp_inp$=recthru$,disp_desc$="First" else disp_inp$=recthru$,disp_desc$=""
+        if cid_cnt=4 if pofrom$="" disp_inp$=pofrom$,disp_desc$="First" else disp_inp$=pofrom$,disp_desc$=""
+        if cid_cnt=5 if pothru$="" disp_inp$=pothru$,disp_desc$="Last" else disp_inp$=pothru$,disp_desc$=""
+        call pgmdir$+"syc_rs.bbx","",my_context,control_id,disp_inp$,0,"",status
+        call pgmdir$+"syc_rs.bbx","",my_context,control_id+10000,disp_desc$,0,"",status
+        let cid_cnt=cid_cnt+1; let control_id=control_id+1
+        if cid_cnt<=i0_done-1 break
+
+    wend
+
+    let disp_inp$="",disp_desc$=""
+    return
+    call pgmdir$+"syc_rs.bbx","",my_context,control_id,"",0,"",status
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

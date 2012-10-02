@@ -1,0 +1,232 @@
+rem glu - Daily Detail Update
+rem Program glu_dailydetail v8.0.0 21May2006 (glu_ba)
+rem Created by adx_progconv.bbx v1.0.3 (05/21/2006 01:46:14)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	if OutVect!<>null() OutVect!=null()
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    task$=cvs(sysinfo.task_desc$,2)
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glm-01",ids$[1]="GLM_ACCT"
+    files$[2]="glm-02",ids$[2]="GLM_ACCTSUMMARY"
+    files$[3]="glt-04",ids$[3]="GLE_DAILYDETAIL"
+    files$[4]="glt-06",ids$[4]="GLT_TRANSDETAIL"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    glm01_dev=channels[1]
+    glm02_dev=channels[2]
+    glt04_dev=channels[3]
+    glt06_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim glm01a$:templates$[1],glm02a$:templates$[2],glt04a$:templates$[3],glt06a$:templates$[4]
+
+rem --- get key template for glt-06
+   
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","GLT_TRANSDETAIL","PRIMARY",key_tpl$,rd_table_chans$[all],rd_stat$
+    glt06_key_tpl$=key_tpl$
+    dim glt06_key$:glt06_key_tpl$
+
+rem --- Initializations
+
+    more=1
+
+rem --- Request user approval to update the daily detail
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" goto std_exit_1 
+
+rem --- Start progress meter and position files
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,glt04_dev,1,0,ignore_status
+    read (glt04_dev,key=firm_id$,dom=*next)
+
+rem --- Get next glt-04 record
+
+    while more
+          glt04_key$=key(glt04_dev,end=*break)
+          if pos(firm_id$=glt04_key$)<>1 break
+          read record (glt04_dev)glt04a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+          rem --- Retrieve GL Account Master
+
+          glm01a.firm_id$=glt04a.firm_id$
+          glm01a.gl_account$=glt04a.gl_account$
+          glm01_key$=glm01a.firm_id$+glm01a.gl_account$
+          find record (glm01_dev,key=glm01_key$,dom=missing_account) glm01a$
+          goto record_id
+
+          missing_account: rem --- Missing account master. Create one.
+
+          glm01a.firm_id$=glt04a.firm_id$
+          glm01a.gl_account$=fill(10,"0")
+          glm01a.gl_acct_desc$="(Missing Account Master)"
+          glm01a.gl_acct_type$="A"
+          glm01a.detail_flag$="N"
+          glm01_key$=glm01a.firm_id$+glm01a.gl_account$
+          write record (glm01_dev,key=glm01_key$) glm01a$
+
+          record_id: rem --- Determine which GL account summary record to update
+
+          id$="0"
+          fy=num(gls01a.current_year$,err=update_summary)
+          py=fy
+          py=num(glt04a.posting_year$,err=*next)
+          closed=pos(gls01a.gl_yr_closed$="YN");rem was NY... backwards? 10/07.CH
+          switch closed
+                 case 1
+                      if py<fy id$="2"
+                      if py>fy id$="4"
+                 break
+                 case 2
+                      if py=fy-2 id$="2"
+                      if py=fy-1 id$="0"
+                      if py=fy id$="4"
+                 break
+          swend
+
+          update_summary: rem --- Update GL account summary record
+
+          dim a[13],u[13]
+          period=num(glt04a.posting_per$)
+          glm02a.firm_id$=glt04a.firm_id$
+          glm02a.gl_account$=glt04a.gl_account$
+          glm02a.record_id$=id$
+          glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$
+          find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
+          call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+          a[period]=a[period]+glt04a.trans_amt
+          if gls01a.units_flag$="Y" u[period]=u[period]+glt04a_units
+          call pgmdir$+"glc_summary.aon","U",glm02a$,a[all],u[all],status
+
+          write_summary: rem --- Write updated GL account summary record
+          glm02a$=field(glm02a$)
+          write record (glm02_dev,key=glm02_key$)glm02a$
+
+          rem --- Move detail transaction from daily detail to transaction history
+
+          if gls01a.retain_det$<>"Y" goto remove_detail
+          glt06a.firm_id$=glt04a.firm_id$
+          glt06a.journal_id$=glt04a.journal_id$
+          glt06a.gl_adt_no$=glt04a.gl_adt_no$
+          glt06a.posting_year$=glt04a.posting_year$
+          glt06a.posting_per$=glt04a.posting_per$
+          glt06a.trns_date$=glt04a.trns_date$
+          glt06a.gl_account$=glt04a.gl_account$
+          glt06a.seq_no$="00000"
+          glt06a.reference_01$=glt04a.reference_01$
+          glt06a.reference_02$=glt04a.reference_02$
+          glt06a.reference_03$=glt04a.reference_03$
+          glt06a.description$=glt04a.description$
+          glt06a.period$=glt04a.period$
+          glt06a.year$=glt04a.year$
+          glt06a.dealer_str$=glt04a.dealer_str$
+          glt06a.trans_amt=glt04a.trans_amt
+          glt06a.units=glt04a.units
+          glt06a.dealer_num_01=glt04a.dealer_num_01
+          glt06a.dealer_num_02=glt04a.dealer_num_02
+          glt06a.dealer_num_03=glt04a.dealer_num_03
+          glt06_key$=glt06a.firm_id$+glt06a.gl_account$+glt06a.posting_year$+
+:                    glt06a.posting_per$+glt06a.trns_date$+glt06a.journal_id$+glt06a.gl_adt_no$+$FFFFFFFFFF$
+
+          rem --- Get the next sequence number
+
+          dim k$:glt06_key_tpl$
+          read (glt06_dev,key=glt06_key$,dom=*next)
+          k$=keyp(glt06_dev,err=update_detail)
+          if k$(1,len(k$)-len(k.seq_no$))=glt06_key$(1,len(glt06_key$)-len(glt06_key.seq_no$))
+            glt06a.seq_no$=k.seq_no$
+          endif
+          update_detail: rem --- Write transaction history detail record
+
+          sequence=num(glt06a.seq_no$)+1
+          glt06a.seq_no$=str(sequence:"00000")
+          write record (glt06_dev) glt06a$
+
+          remove_detail: rem --- Remove daily detail record
+
+          remove (glt04_dev,key=glt04_key$,dom=*next)
+
+          rem --- Loop back for next record
+
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+    msg_id$="UPDATE_COMPLETE"
+    gosub disp_message
+std_exit_1: rem --- from adc_yes_no if user says "No"
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

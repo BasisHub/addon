@@ -1,0 +1,125 @@
+rem adc - Get proper batch from user (Public/Called)
+rem Program adc_getbatch v8.0.0 21Mar2008
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 12Apr2008 |
+rem  |  Copyright (c) 1981-2008 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- ALIAS$    : Alias if from form (in)
+rem --- PROG_NAME$: Program Name if from back end program (in)
+
+    seterr std_error
+    setesc std_error
+    enter alias$,prog_name$
+
+rem --- set default stbl
+
+    x$=stbl("+BATCH_NO","")
+
+rem --- Open/Lock files
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="adm-09",ids$[1]="ADM_PROCMASTER"
+    files$[2]="adm-19",ids$[2]="ADM_PROCDETAIL"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    adm09_dev=channels[1]
+    adm19_dev=channels[2]
+
+rem --- Dimension string templates
+
+    dim adm09a$:templates$[1],adm19a$:templates$[2]
+
+rem --- Setup default values
+
+    proc_id$=""
+    batch_id$=""
+    allow_entry$=""
+
+rem --- Get Process ID"
+
+    if cvs(prog_name$,2)<>""
+        alt_key=2
+        key_val$=pad(prog_name$,len(adm19a.program_name$))
+    else
+        alt_key=1
+        key_val$=pad(alias$,len(adm19a.dd_table_alias$))
+    endif
+    read record (adm19_dev,key=key_val$,knum=alt_key,dom=*next)
+    while 1
+        k$=key(adm19_dev,end=*break)
+        if pos(key_val$=k$)<>1 break
+        readrecord(adm19_dev,end=*break)adm19a$
+        proc_id$=adm19a.process_id$
+        break
+    wend
+    if proc_id$="" goto done
+
+rem --- See if program is in batch file
+
+    read record (adm09_dev,key=proc_id$,dom=done)adm09a$
+    if adm09a.batch_entry$<>"Y" goto done
+
+rem --- Now see if this program allows batch entry or not
+
+    x$=stbl("+BATCH_DESC",adm09a.description$)
+    x$=stbl("+ALLOW_NEW_BATCH",adm19a.new_batch$)
+    x$=stbl("+PROCESS_ID",cvs(adm19a.process_id$,3))
+
+rem --- Here's where we call the proper form (allow new or not)
+
+    call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADM_PROCBATCHES",stbl("+USER_ID"),"MNT","",table_chans$[all]
+    x$=stbl("!CLEAR","+ALLOW_NEW_BATCH")
+    x$=stbl("!CLEAR","+BATCH_DESC")
+    x$=stbl("!CLEAR","+PROCESS_ID")
+    batch_id$=allow_entry$
+
+done: rem --- All done
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    close (adm09_dev,err=*next)
+    close (adm19_dev,err=*next)
+    exit
+
+rem #endinclude std_exit.src
+
+    end

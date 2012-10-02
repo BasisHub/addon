@@ -1,0 +1,340 @@
+rem --- EOQ, Order Point & Safety Stock Report (Report Overlay)
+rem --- Program ivr_itemeoqrpt_o2.aon v8.0.0 16Jul2007 (ivr_oc)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Initializations
+
+    precision p[1]
+    dim headings$[5],o[6]
+    headings$[0]=sysinfo.firm_name$
+    when$=sysinfo.system_date$
+    clock$=""
+    m4$="##0.00%"
+    headings=5
+    width=132
+    page=0
+    l9=59
+    l=l9+1
+    h8$=" For All Item Types"
+    if type$<>"" h8$=" For Item Type "+type$
+    m4=len(m4$)
+    if m3>m4 m4$=fill(m3-m4)+m4$
+    if m4>m3 m3$=fill(m4-m3)+m3$
+    more=1
+rem --- Print positions
+    o[6]=width-m2-2
+    o[5]=o[6]-m2-2
+    o[4]=o[5]-m2-6
+    o[3]=o[4]-m2-11
+    o[3]=o[4]-m2-11
+    o[2]=o[3]-m2-11
+    o[1]=o[2]-16
+    o[0]=o[1]-m2-7
+    uwidth=o[4]-o[2]
+    setup$="   Setup Cost "+str(setup:m3$)
+    carry=carry*100
+    carry$="Carrying Cost "+str(carry:m4$)
+    zerocost1$=fill(m2-4)+"Zero"
+    zerocost2$=fill(m2-4)+"Cost"
+
+rem --- Background
+
+rem    call pgmdir$+"adc_progress.aon","N","","","Printing","",7+p[0],0,1,meter_num,status
+
+rem --- Initialize HEADINGS$
+
+    dim h1$(width),h2$(width),usage$(uwidth,"-")
+    x1$="First"
+    x2$="First"
+    x2=5
+    if begitem$<>"" x1$=begitem$
+    if begprod$<>"" x2$=begprod$,x2=3
+    if endprod$="" if x2=3 x2=4
+    h1$(1)="From Item: "+x1$
+    h1$(fncenter(setup$,width))=setup$
+    h1$(width-x2-13)="From Product: "+x2$
+    x1$="Last"
+    x2$="Last"
+    if enditem$<>"" x1$=enditem$
+    if endprod$<>"" x2$=endprod$
+    h2$(1)="  To Item: "+x1$
+    h2$(fncenter(carry$,width))=carry$
+    h2$(width-x2-13)="  To Product: "+x2$
+    x1$=" Actual & Estimated Usage"
+    headings$[3]=h1$
+    headings$[4]=h2$
+    usage$(fncenter(x1$,uwidth),len(x1$))=x1$
+
+rem --- Position file
+
+    if level$<>"W" then
+    headings$[1]=sysinfo.task_desc$+" By Item"+h8$
+    read (ivw11_dev,key=firm_id$,dom=*next)
+
+        while more
+
+            ivw11a_key$=key(ivw11_dev,end=*break)
+            if pos(firm_id$=ivw11a_key$)<>1 break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            read record (ivw11_dev) ivw11a$
+
+rem --- Level break?
+
+            if ivw11a.product_type$<>t1$ gosub Product_Break
+
+rem --- Print detail line for record
+
+            cost$=""
+            unitcost=ivw11a.unit_cost
+            if ivw11a.stock_level$="I" gosub product_subheading
+
+        wend
+
+    endif
+
+    if level$<>"I" then
+        headings$[1]=sysinfo.task_desc$+" By Warehouse"
+        l=l9+1
+        t0$=""
+        t1$=""
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        first$=firm_id$+begwhse$
+        read (ivw21_dev,key=first$,dom=*next)
+
+            while more
+
+            ivw21a_key$=key(ivw21_dev,end=*break)
+            if pos(firm_id$=ivw21a_key$)<>1 break
+            if begwhse$<>"" and ivw21a_key.warehouse_id$>endwhse$ break
+            call pgmdir$+"adc_progress.aon","S","","","",ivw21a_key.warehouse_id$+" "+ivw21a_key.product_type$+" "+ivw21a_key.item_id$,0,0,1,meter_num,status
+            read record (ivw21_dev) ivw21a$
+
+rem --- Level break?
+
+            if ivw21a_key.warehouse_id$<>t0$ gosub Warehouse_Break
+            if ivw21a_key.product_type$<>t1$ gosub Product_Break
+
+rem --- Process work file record
+
+            cost$="Cost "+str(ivw21a.unit_cost:m3$)
+            unitcost=ivw21a.unit_cost
+            if ivw21a.stock_level$="W" gosub product_subheading
+
+            wend
+    endif
+
+done: rem --- All done
+
+    close (printer_dev,err=overlay)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+overlay:
+
+rem --- Chain to next overlay
+goto std_exit
+
+    call pgmdir$+"syc_dc.bbx",my_context,main_context,status
+    call pgmdir$+"syc_cn.bbx","",0,3,'CE',status
+    run pgmdir$+"ivu_oa.bbx"
+
+report_heading: rem --- Report Heading
+
+    l=headings+3
+    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
+    if status exitto std_exit
+    print (printer_dev)
+:                       @((o[4]+4+m2)-7),"Safety",
+:                       @(o[5]+m2-6),"Order"
+    print (printer_dev)"Item/Description",
+:                       @(o[2]),usage$,
+:                       @((o[4]+4+m2)-7),"Stock",
+:                       @(o[5]+m2-6),"Point",
+:                       @(o[6]+m2-4),"EOQ"
+    return
+
+product_subheading: rem --- Print product subheading
+
+    if h9$<>"" then
+        if l+6>l9 gosub report_heading
+        print (printer_dev)""
+        print (printer_dev)h9$
+        l=l+2
+        h9$=""
+    endif
+
+    if l+4>l9 gosub report_heading
+    l=l+4
+    average=ivw21a.usage_qty_01/g[0]
+    weighted=ivw21a.usage_qty_02/g[0]
+    oldeoq$=str(ivw21a.eoq_01:m2$)+" "+ivw21a.eoq_code$
+    neweoq$=str(ivw21a.eoq_02:m2$)
+    if carry=0 or unitcost=0 oldeoq$=zerocost1$,neweoq$=zerocost2$
+    print (printer_dev)""
+    print (printer_dev)ivw21a.item_id$," ",ivw21a.item_desc$
+    print (printer_dev)
+:                           @(o[1])," ABC Code ",ivw21a.abc_code$,
+:                           @(o[2]),"Avg Period ",average:m2$,
+:                           @(o[3]),"Wgt Period ",weighted:m2$,
+:                           @(o[4]),"Old ",ivw21a.safety_stock_01:m2$,"",ivw21a.saf_stk_code$,
+:                           @(o[5]),ivw21a.order_point_01:m2$," ",ivw21a.ord_pnt_code$,
+:                           @(o[6]),oldeoq$
+    print (printer_dev)
+:                           @(o[0]),cost$,
+:                           @(o[1]),"Lead Time ",str(int(ivw21a.lead_time)),
+:                           @(o[2]),"Act Annual ",ivw21a.usage_qty_01:m2$,
+:                           @(o[3]),"Est Annual ",ivw21a.usage_qty_02:m2$,
+:                           @(o[4]),"New ",ivw21a.safety_stock_01:m2$,
+:                           @(o[5]),ivw21a.order_point_02:m2$,
+:                           @(o[6]),neweoq$
+    return
+
+Warehouse_Break: rem --- Warehouse Break
+
+    gosub Product_Break
+    let t0$=ivw21a.warehouse_id$,ivm10c.short_name$="(Not On File)",l=l9+1
+    find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
+    let headings$[1]=sysinfo.task_desc$+" For Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2)+h8$
+    return
+
+Product_Break: rem --- Product Break
+
+    let t1$=ivw21a.product_type$,ivm10a.code_desc$="(Not On File)"
+    find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
+    let h9$="Product "+t1$+" "+ivm10a.code_desc$
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$) 
+        if cvs(q$,2)="" return ""
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if testdate$<>"" 
+            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+        endif
+        return testdate$
+    fnend    
+rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

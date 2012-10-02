@@ -1,0 +1,462 @@
+rem --- Period-End Update
+rem --- Program pru_da v8.0.0 03Jun2008 (pru_da)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/03/2008 03:44:51)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+        setesc std_error
+        seterr std_error
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+        files=8,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+        files$[2]="prs_params",ids$[2]="PRS_PARAMS"
+        files$[3]="prt-01",ids$[3]="PRT_EMPLEARN"
+        files$[4]="prt-03",ids$[4]="PRT_MNTHCHCK"
+        files$[5]="prt-05",ids$[5]="PRT_LABORDST"
+        files$[6]="prt-11",ids$[6]="PRT_EMPLDDCT"
+        files$[7]="prt-21",ids$[7]="PRT_EMPLTAX"
+        files$[8]="prt-31",ids$[8]="PRT_EMPLCONT"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit
+        gls01a_dev=channels[1]
+        prs01a_dev=channels[2]
+        prt01_dev=channels[3]
+        prt03_dev=channels[4]
+        prt05_dev=channels[5]
+        prt11_dev=channels[6]
+        prt21_dev=channels[7]
+        prt31_dev=channels[8]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],prs01a$:templates$[2],prt01a$:templates$[3],
+:       prt03a$:templates$[4],prt05a$:templates$[5],prt11a$:templates$[6],
+:       prt21a$:templates$[7],prt31a$:templates$[8]
+
+rem --- Retrieve parameter records
+
+        gls01a_key$=firm_id$+"GL00"
+        find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+        prs01a_key$=firm_id$+"PR00"
+        find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
+
+
+rem --- Parameters
+
+        n1$=sysinfo.firm_name$,n2$="PR",n4$=sysinfo.task_desc$
+        find record (prs01_dev,key=firm_id$+n2$+"00",dom=std_missing_params) prs01a$
+        find record (gls01_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+
+        g[0]=num(total_pers$)
+        g[1]=num(current_per$)
+        g[2]=num(current_year$)
+        g[3]=num(acct_length$)
+        g[4]=num(max_acct_len$)
+
+        g[2]=fnyy_year(current_year$)
+        p[0]=num(prs01a.empl_no_len$)
+        p[1]=num(prs01a.current_per$)
+        p[2]=fnyy_year(prs01a.current_year$)
+        p[3]=num(prs01a.precision$)
+
+initializations: rem --- Initializations
+
+        more=1
+        precision p[3]
+        m0=len(prs10a.empl_output$)
+        p9=p[1]
+        gosub get_per_desc
+
+rem retrieve template for FILE record key
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLEARN","PRIMARY",prt01a_key_tpl$,table_chans$[all],status$
+        dim prt01a_key$:prt01a_key_tpl$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLDDCT","PRIMARY",prt11a_key_tpl$,table_chans$[all],status$
+        dim prt11a_key$:prt11a_key_tpl$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLTAX","PRIMARY",prt21a_key_tpl$,table_chans$[all],status$
+        dim prt21a_key$:prt21a_key_tpl$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLCONT","PRIMARY",prt31a_key_tpl$,table_chans$[all],status$
+        dim prt31a_key$:prt31a_key_tpl$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_MNTHCHCK","PRIMARY",prt03a_key_tpl$,table_chans$[all],status$
+        dim prt03a_key$:prt03a_key_tpl$
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_LABORDST","PRIMARY",prt05a_key_tpl$,table_chans$[all],status$
+        dim prt05a_key$:prt05a_key_tpl$
+
+
+rem --- Display Resource
+
+        dim resparams$[20],resparams[20]
+        resaction$=""
+        resparams$[0]=pgm(-2)
+        call pgmdir$+"syc_ra.bbx",resaction$,resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+        gosub display_fields
+
+options: rem --- Options
+
+        v0$="N"
+        v1$="E",v2$=str(p9:"##"),v3$="##",v4$="1 Thru "+str(p[1]:"##"),v0=2,v1=40,v2=3,i0=0,control_id=3000
+        on v3 goto label_one,options,flow_control,options,flow_control,label_one,flow_control
+
+label_one:
+        if v<1 or v>p[1] then goto options
+        p9=v
+        gosub get_per_desc
+        goto flow_control
+
+
+
+
+rem --- Disallow 'M'enu option in Error Routine
+        while more
+            
+rem --- Earnings
+
+            call pgmdir$+"adc_progress.aon","N","","","","",0,prt01_dev,1,meter_num,status
+
+            read (prt01_dev,key=firm_id$,dom=*next)
+
+          while more
+            prt01a_key$=key(prt01_dev,end=*break)
+            if prt01a_key.firm_id$<>firm_id$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            read record (prt01_dev) prt01a$
+            prt01a.mtd_amount=prt01a.nmtd_amt
+            prt01a.nmtd_amt=0
+            prt01a.mtd_units=prt01a.nmtd_units
+            prt01a.nmtd_units=0
+            write record (prt01_dev,key=prt01a_key$) prt01a$
+          wend
+
+deductions: rem --- Deductions
+
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+            call pgmdir$+"adc_progress.aon","N","","","","",0,prt11_dev,1,meter_num,status
+            read (prt11_dev,key=firm_id$,dom=*next)
+
+          while more
+            prt11a_key$=key(prt11_dev,end=*break)
+            if prt11a_key.firm_id$<>firm_id$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            read record (prt11_dev) prt11a$
+            prt11a.mtd_amount=prt11a.nmtd_amt
+            prt11a.nmtd_amt=0
+            write record (prt11_dev,key=prt11a_key$) prt11a$
+          wend
+
+taxes: rem --- Taxes
+
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+            call pgmdir$+"adc_progress.aon","N","","","","",0,prt21_dev,1,meter_num,status
+            dim y[17],z[0]
+            read (prt21_dev,key=firm_id$,dom=*next)
+
+          while more
+            prt21a_key$=key(prt21_dev,end=*break)
+            if prt21a_key.firm_id$<>firm_id$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            read record (prt21_dev) prt21a$
+            prt21a.mtd_gross=prt21a.nmtd_gross
+            prt21a.nmtd_gross=0
+            prt21a.mtd_taxable=prt21a.nmtd_taxable
+            prt21a.nmtd_taxable=0
+            prt21a.mtd_tax=prt21a.nmtd_tax
+            prt21a.nmtd_tax=0
+            write record (prt21_dev,key=prt21a_key$) prt21a$
+          wend
+
+contributions: rem --- Contributions
+
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+            call pgmdir$+"adc_progress.aon","N","","","","",0,prt31_dev,1,meter_num,status
+            read (prt31_dev,key=firm_id$,dom=*next)
+          while more
+            prt31a_key$=key(prt31_dev,end=*break)
+            if prt31a_key.firm_id$<>firm_id$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            read record (prt31_dev) prt31a$
+            prt31a.mtd_gross=prt31a.nmtd_gross
+            prt31a.nmtd_gross=0
+            prt31a.mtd_basis=prt31a.nmtd_basis
+            prt31a.nmtd_basis=0
+            prt31a.mtd_amount=prt31a.nmtd_amount
+            prt31a.nmtd_amount=0
+            write record (prt31_dev,key=prt31a_key$) prt31a$
+          wend
+
+init_check_read: rem --- Init Check Read
+
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+            call pgmdir$+"adc_progress.aon","N","","","","",0,prt03_dev,1,meter_num,status
+            read (prt03_dev,key=firm_id$,dom=*next)
+
+          while more
+rem --- Main Check Read
+
+            prt03a_key$=key(prt03_dev,end=*break)
+            if prt03a_key.firm_id$<>firm_id$ then break
+            read record (prt03_dev) prt03a$
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Keep Or Remove
+
+            if len(prt03a.firm_id$+prt03a.check_no$+prt03a.check_type$+prt03a.reserved_str$+prt03a.employee_no$+prt03a.pay_end_date$+prt03a.check_date$)>=25 then
+                if prt03a.pay_end_date$>p9$ then continue
+            endif
+
+remove_check: rem --- Remove Check
+
+            remove (prt03_dev,key=prt03a_key$)
+
+          wend
+
+labor_dist: rem --- Labor Dist
+
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+            call pgmdir$+"adc_progress.aon","N","","","","",0,prt05_dev,1,meter_num,status
+            read (prt05_dev,key=firm_id$,dom=*next)
+
+          while more
+
+rem --- Main Labor Dist Read
+
+            prt05a_key$=key(prt05_dev,end=done)
+            read record (prt05_dev,end=done) prt05a$
+            if prt05a_key$="" then goto done
+            if pos(firm_id$=prt05a_key$)<>1 then goto done
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            prt05a.mtd_amount=prt05a.nmtd_amt
+            prt05a.mtd_units=prt05a.nmtd_units
+            prt05a.nmtd_amt=0
+            prt05a.nmtd_units=0
+            write record (prt05_dev,key=prt05a_key$) prt05a$
+
+          wend
+
+flow_control:
+            switch v3
+            case 0
+            case 1
+            case 3; let i0=i0+1; break
+            case 2; if i0<i0_nonkey1 then let i0=max(0,i0-1) else let i0=max(i0_nonkey1,i0-1) fi; break
+            case 4; let i0=i0_done; break
+            case default; exitto done_v3
+            swend
+            on i0 goto options,done,done,options
+
+italic: rem --- Correct?
+
+            if validate then let validate=0; continue
+            v0$="S"
+            v1$="KC",v2$="Y",v3$="",v4$="ITAC=Y",v0=6,v1=fnv(v4$),v2=22,control_id=i0-i0_done+1
+
+done_v3:
+            on v3 goto done_test,done,done,done,std_exit,validate_input,std_exit,done
+
+done_test:
+            on pos(v$="YN") goto flow_control,validate_input,do_nonkey1
+            
+validate_input:
+            validate=1
+            old_control_id=0
+do_nonkey1:
+            v3=0
+            i0=i0_nonkey1-1
+            goto flow_control
+
+end_input: rem --- Run report overlay
+
+        wend
+
+done: rem --- Increment Period
+
+        if p9>=p[1] then
+            p[1]=p[1]+1
+            if p[1]>g[0] then let p[1]=1,p[2]=p[2]+1
+            extract record (prs01a,key=firm_id$+n2$+"00",dom=*next) prs01a$
+            prs01a.current_per$=str(p[1]:"00")
+            prs01a.current_year$=fnyear_yy21$(p[2])
+            write record (prs01a_dev,key=firm_id$+n2$+"00") prs01a$
+        endif
+
+
+rem --- Done
+            goto std_exit
+
+display_fields:
+            control_id=3000
+            cid_cnt=0
+
+        while more
+            if cid_cnt=0 then let disp_inp$=str(p9),disp_desc$=" From "+fndate$(p8$)+" To "+fndate$(p9$)
+            call pgmdir$+"syc_rs.bbx","",my_context,control_id,disp_inp$,0,"",status
+            call pgmdir$+"syc_rs.bbx","",my_context,control_id+10000,disp_desc$,0,"",status
+            cid_cnt=cid_cnt+1; let control_id=control_id+1
+            if cid_cnt>i0_done-1 then break
+        wend
+
+            disp_inp$=""
+            disp_desc$=""
+            i0=i0_done
+            goto done
+            call pgmdir$+"syc_rs.bbx","",my_context,control_id,"",0,"",status
+            return
+
+get_per_desc: rem --- GET DESCRIPTION OF PERIOD
+
+            control_id=13000
+            call pgmdir$+"adc_perioddates.aon",sys01_dev,p9,p[2],p8$,p9$,status
+            h3$="Period "+str(p9:"##")+"  From "+fndate$(p8$)+" To "+fndate$(p9$)
+            call pgmdir$+"syc_rs.bbx","",my_context,control_id,h3$(11),0,"",status
+            return
+
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

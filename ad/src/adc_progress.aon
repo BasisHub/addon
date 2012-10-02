@@ -1,0 +1,140 @@
+rem adc - Progress Meter
+rem Program adc_progress v8.0.0 01Apr2006 (syc_pm)
+rem Created by adx_progconv.bbx v1.0.0 (04/01/2006 10:02:53)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- ACTION$     : Action/function code (Input)
+rem ---               C = Cancel allowed by user (only used with N)
+rem ---               D = Delete progress meter
+rem ---               N = Create new progress meter
+rem ---               S = Show progress meter
+rem --- METER_TITLE$: Title of progress meter window (N & S input)
+rem --- METER_PHASE$: Phase description for multi-phase meter (N & S input)
+rem --- RESERVED1$  : Reserved for future use
+rem --- RESERVED2$  : Reserved for future use
+rem --- RESERVED1   : Reserved for future use
+rem --- CHANNEL     : Optional channel number of file being processed.
+rem ---               Used to size GUI bar meter when not zero (N & S input)
+rem --- NUMBER      : Record frequency to display meter key (S input)
+rem ---               Zero behaves the same as one
+rem --- RESERVED2   : Reserved for future use
+rem --- STATUS      : Status/0=No Error (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter action$,meter_title$,meter_phase$,reserved1$,reserved2$,reserved1,channel,
+:         number,reserved2,status
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=fnglobal$("+SYSINFO_TPL","")
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=fnglobal$("+SYSINFO","")
+
+rem --- Initializations
+
+    status=0
+    process_task$="+process_task"
+    process_id$=cvs(sysinfo.task_id$,2)
+    title$=cvs(sysinfo.task_desc$,2)
+    rdGroupSpace!=bbjAPI().getGroupNamespace()
+
+create_meter: rem --- Create progress meter
+
+    if pos("N"=action$)
+       fin$=fin(channel)
+       maxrec$=str(dec(fin$(77,4)))
+       create$="C"
+       option$=""
+       if pos("C"=action$) option$="CNC"
+       arguments$=process_id$+"^"+create$+"^"+title$+"^"+option$+"^"+maxrec$+"^"
+    endif
+
+update_meter: rem --- Update progress meter
+
+    if pos("S"=action$)
+       frequency=fnglobal("+METER_FREQUENCY",1)
+       count=fnglobal("+METER_COUNT",1)+max(number,1)
+       x$=stbl("+METER_COUNT",str(count))
+       count$=str(count)
+       update$="U"
+       arguments$=process_id$+"^"+update$+"^"+count$+"^"
+    endif
+
+delete_meter: rem ---Delete progress meter
+
+    if pos("D"=action$)
+       delete$="D"
+       x$=stbl("!CLEAR","+METER_COUNT",err=*next)
+       arguments$=process_id$+"^"+delete$+"^"
+    endif
+
+rem --- Update namespace accordingly
+
+    rdGroupSpace!.setValue(process_task$,arguments$)
+
+rem --- All done
+
+    goto std_exit
+
+rem --- Functions
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        let q1$=stbl(q$,err=globalnum_exit),q1=num(q1$,err=globalnum_exit)
+        globalnum_exit: 
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit: 
+        return q1$
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

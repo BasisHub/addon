@@ -1,0 +1,707 @@
+rem --- Export Year-end W2 to txt for 3rd party print product (Employee)
+rem --- Program prx_exportw2totext_o1 v8.0.0 04Jun2008 (prx_yc)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/04/2008 10:32:00)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=5,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="prm-01",ids$[2]="PRM_EMPLMAST"
+    files$[2]="prm-03",ids$[3]="PRX_W2WORK"
+    files$[3]="PRC_W2BOX",ids$[4]="PRC_W2BOX"
+    files$[4]="PRS_PARAMS",ids$[5]="PRS_PARAMS"
+    files$[5]="prw-06",ids$[6]="PRW_W2REPORT"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    prm01a_dev=channels[1]
+    prm03w_dev=channels[2]
+    prm10w_dev=channels[3]
+    prs01a_dev=channels[4]
+    prw06a_dev=channels[5]
+
+rem --- Dimension string templates
+
+    dim prm01a$:templates$[1],prm03a$:templates$[2],
+:       prm10w$:templates$[3],prs01a$:templates$[4],prw06a$:templates$[5]
+
+rem --- Retrieve parameter records
+
+    prs01a_key$=firm_id$+"PR00"
+    find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
+
+rem --- Init Data
+
+    w2file$="PR"+"W2DATA"+firm_id$+".TXT"
+    rec$=""
+    maxstates=1; rem "Max num state entries possible on W2
+    maxlocals=1; rem "Max num locality entries possible on W2
+    box12_codes$="ABCDEFGHJKLMNPQRSTV"
+    len_box12_codes=len(box12_codes$)
+    dim box12_tots[len_box12_codes-1]
+    istart=0; rem "Element to start with for Box 12 array processing
+    client_id$=""
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRW_W2REPORT","PRIMARY",prw06_prikey_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRX_W2WORK","PRIMARY",prm03_prikey_tpl$,rd_table_chans$[all],status$
+    dim prw06a_key$:prw06_prikey_tpl$
+    dim prw06a_key2$:prw06_prikey_tpl$
+    dim prm03a_key$:prm03_prikey_tpl$
+
+rem --- Notification box
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,prw06a,1,meter_num,ignore_status
+
+rem --- Init Read
+
+    read (prw06a_dev,key=firm_id$,dom=*next)
+
+rem --- Set Up Employee fields
+
+    while more
+
+        dim box12_tots[len_box12_codes-1]
+        istart=0; rem "Element to start with for Box 12 array processing
+        statecode_cnt=1
+        statetax_cnt=1; rem "Count of states printed this W2
+        localcode_cnt=1
+        localtax_cnt=1; rem "Count of locals printed this W2
+        addl_scodes_done=0
+        addl_staxes_done=0
+        addl_lcodes_done=0
+        addl_ltaxes_done=0
+        toomanybox12=0
+        toomanystatewage=0,toomanystatetax=0
+        toomanylocalwage=0
+        toomanylocaltax=0,doingaddlw2=0
+        multi_arraymax=50; rem "Assume no more than 50 states/locals per emp
+        dim statewages4multi[multi_arraymax]
+        dim localwages4multi[multi_arraymax]
+        dim statetaxes4multi[multi_arraymax]
+        dim localtaxes4multi[multi_arraymax]
+        gosub init_var; rem "Initialize export variables
+        prw06a_key$=key(prw06a_dev,end=done)
+        if prw06a_key.firm_id$<>firm_id$ then goto done
+
+rem --- Check if state code was selected
+
+rem "All state codes were selected
+
+        if !(cvs(picked_statecd$,2)="" and nostatecodes=0)
+            read (prw06a_dev2,key=prw06a_key.firm_id$+prw06a_key.employee_no$+"16",dom=*next)
+            flag=0
+            while more
+                prw06a_key2$="";prw06a_key2$=key(prw06a_dev2,end=*next)
+                if prw06a_key2$="" if nostatecodes then flag=1;break else break; rem "No records found. If 'None Assigned' was selected passes test else next employee
+                if nostatecodes if prw06a_key2.firm_id$+prw06a_key2.employee_no$+prw06a_key2.w2_box_id$<>prw06a_key.firm_id$+prw06a_key.employee_no$+"16" then flag=1;break else break; rem ";REM "'none assigned' was selected. if no state recs were found, passes else next employee
+                if prw06a_key2.firm_id$+prw06a_key2.employee_no$+prw06a_key2.w2_box_id$<>prw06a_key.firm_id$+prw06a_key.employee_no$+"16" then break; rem "No state recs and are looking for a state, so next employee
+                if prw06a_key2.state_code$=picked_statecd$ then flag=1 else read (prw06a_dev2,end=*break); continue
+            wend
+            if !flag then read (prw06a_dev);continue; rem "No match so advance ptr & get next employee
+       endif
+
+rem --- Check if local code was selected
+
+rem "All local codes were selected
+
+        if !(cvs(picked_localcd$,2)="" and nolocalcodes=0)
+            read (prw06a_dev2,key=prw06a_key.firm_id$+prw06a_key.employee_no$+"18",dom=*next)
+            while more
+                prw06a_key2$=""; let prw06a_key2$=key(prw06a_dev2,end=*next)
+                if prw06a_key2$="" if nolocalcodes then flag=1;break else break; rem ""no records found. if 'none assigned' was selected passes test else next employee
+                if nolocalcodes if prw06a_key2.firm_id$+prw06a_key2.employee_no$+prw06a_key2.w2_box_id$<>prw06a_key.firm_id$+prw06a_key.employee_no$+"18" then flag=1;break else break; rem "'None Assigned' was selected. If no state recs were found, passes else next employee
+                if prw06a_key2.firm_id$+prw06a_key2.employee_no$+prw06a_key2.w2_box_id$<>prw06a_key.firm_id$+prw06a_key.employee_no$+"18" break; rem "No local recs and are looking for a specific locality, so next employee
+                if prw06a_key2.loc_tax_code$<>picked_localcd$ read (prw06a_dev2,end=*break); continue; rem "Try again
+            wend
+            if !flag then read (prw06a_dev);continue; rem "No match so advance ptr & get next employee
+        endif
+
+rem --- Employee Information
+
+        find record (prm01a_dev,key=prw06a_key.firm_id$+prw06a_key.employee_no$,dom=label1) prm01a$
+        goto label2
+label1:
+        read (prw06a_dev);continue; rem "Employee not on file so advance ptr, get next
+        
+label2: rem --- Found one to process
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,prw06a_dev,1,meter_num,ignore_status
+        controlnum$=fnmask$(a0$(3,p[0]),m0$)
+
+rem --- SSN
+
+        if num(prm01a.soc_sec_no$)>0 then let ssnum$=fndequote$(prm01a.soc_sec_no$)
+
+rem --- Employee Name
+rem --- let fullname$=cvs(a1$(1,30),1+2+32);rem "Don't need both full and f/l
+
+        firstname$=fndequote$(prm01a.empl_givname$)
+        lastname$=fndequote$(prm01a.empl_surname$)
+
+rem --- Street Address
+
+        address1$=fndequote$(prm01a.addr_line_01$)
+        address2$=fndequote$(prm01a.addr_line_02$)
+        city$=fndequote$(prm01a.city$)
+        state$=fndequote$(prm01a.state_code$)
+
+rem --- Zip Code
+
+        dim zip$(5),zip_ext$(4)
+        tmp_zip$=prm01a.zip_code$
+        tmp_zip$=cvs(tmp_zip$,1+32)+fill(9)
+        tmp_zip_ext$=tmp_zip$(6,4)
+        tmp_zip$=tmp_zip$(1,5)
+        zip$=cvs(tmp_zip$,2)
+        zip_ext$=cvs(tmp_zip_ext$,2)
+
+rem --- Statutory Employee
+
+        statutory_emp$=""
+
+rem --- Get The Numbers...
+
+        while more
+
+            prw06a_key$=key(prw06a_dev,end=*break)
+            if pos(prm01a.firm_id$=prw06a_key$)<>1 then break
+            read record (prw06a_dev) prw06a$
+            box$=prw06a.w2_box_id$
+            if !(box$>"12" and box$<"a ")
+                if box$="01" then let wages=b0; continue
+                if box$="02" then let fed_withheld=b0; continue
+                if box$="03" then let ss_wages=b0; continue
+                if box$="04" then let ss_withheld=b0; continue
+                if box$="05" then let medicare_wages=b0; continue
+                if box$="06" then let medicare_withheld=b0; continue
+                if box$="07" then let ss_tips=b0; continue
+                if box$="08" then let allocated_tips=b0; continue
+                if box$="09" then let aeic_payment=b0; continue
+                if box$="10" then let dependent_benefits=b0; continue
+                if box$="11" then let nonqualified_plans=b0; continue
+                if box$<>"12" then continue
+
+rem --- Box 12 Here
+
+                codepos=pos(prw06a.w2_bxln_id$=box12_codes$)-1
+                if codepos<0 then continue
+                box12_tots[codepos]=b0;continue
+            endif
+
+rem --- Box 14
+
+            if box$="14"
+                lineid=num(prw06a.w2_bxln_id$); if lineid>0 then let lineid=lineid-1
+                read record (prm10a_dev,key=prw06a.firm_id$+"W"+prw06a.w2_box_id$+prw06a.w2_bxln_id$,dom=*continue) prm10w$
+                if pos("-"=h0$(47,40))=0 then continue
+                on lineid goto label4,label5,label6,label3
+label4:
+                box14_1$=prm10w.w2_bxln_des$(1,pos("-"=prm10w.w2_bxln_des$)-1)+fill(3)
+                box14_1$=box14_1$(1,3)+str(b0:m1$)
+                continue
+label5:
+                box14_2$=prm10w.w2_bxln_des$(1,pos("-"=prm10w.w2_bxln_des$)-1)+fill(3)
+                box14_2$=box14_2$(1,3)+str(b0:m1$)
+                continue 
+label6:
+                box14_3$=prm10w.w2_bxln_des$(1,pos("-"=prm10w.w2_bxln_des$)-1)+fill(3)
+                box14_3$=box14_3$(1,3)+str(b0:m1$)
+label3:
+                continue
+            endif
+
+rem --- Boxes 15 & 16 State code and state wage basis
+
+            if box$="16" then gosub state_code_wages_routine;continue; rem "State code & wages routine
+
+rem --- Box 17 State tax withheld
+
+            if box$="17"then gosub state_tax_routine;continue; rem "State tax routine
+
+rem --- Boxes 18 & 20 - Local Wages and Locality
+
+            if box$<>"18" then
+            gosub local_wages_locality_routine; rem "Local wages & locality routine
+            continue
+
+rem --- Box 19 Local taxes
+
+            if box$<>"19" then continue
+            gosub local_tax_routine; rem "Local tax routine
+
+rem --- Loop back up for next prw-06
+
+        wend
+
+rem --- Pension Plan/Deferred Comp Flags
+
+        if prm01a.pension_plan$="Y" then let retire_plan$="X"
+
+rem --- Assign Box 12
+
+        gosub assign_nums_strings; rem "Assign box 12 nums & strings
+
+rem --- Write record. Loop up for next prw-06
+
+        while more
+
+            gosub check_w2; rem "Check if need to clear some boxes
+            rec$=rec$+$22$+controlnum$+$22$
+            rec$=rec$+","+$22$+firstname$+$22$
+            rec$=rec$+","+$22$+middleinit$+$22$
+            rec$=rec$+","+$22$+lastname$+$22$
+            rec$=rec$+","+$22$+fullname$+$22$
+            rec$=rec$+","+$22$+address1$+$22$
+            rec$=rec$+","+$22$+address2$+$22$
+            rec$=rec$+","+$22$+city$+$22$
+            rec$=rec$+","+$22$+state$+$22$
+            rec$=rec$+","+$22$+zip$+$22$
+            rec$=rec$+","+$22$+zip_ext$+$22$
+            rec$=rec$+","+$22$+foreign$+$22$
+            rec$=rec$+","+$22$+foreign_state$+$22$
+            rec$=rec$+","+$22$+foreign_zip$+$22$
+            rec$=rec$+","+$22$+countycode$+$22$
+            rec$=rec$+","+$22$+ssnum$+$22$
+            rec$=rec$+","+str(wages)
+            rec$=rec$+","+str(fed_withheld)
+            rec$=rec$+","+str(ss_wages)
+            rec$=rec$+","+str(ss_withheld)
+            rec$=rec$+","+str(medicare_wages)
+            rec$=rec$+","+str(medicare_withheld)
+            rec$=rec$+","+str(ss_tips)
+            rec$=rec$+","+str(allocated_tips)
+            rec$=rec$+","+str(aeic_payment)
+            rec$=rec$+","+str(dependent_benefits)
+            rec$=rec$+","+str(nonqualified_plans)
+            rec$=rec$+","+$22$+box12_a$+$22$
+            rec$=rec$+","+str(box12_a)
+            rec$=rec$+","+$22$+box12_b$+$22$
+            rec$=rec$+","+str(box12_b)
+            rec$=rec$+","+$22$+box12_c$+$22$
+            rec$=rec$+","+str(box12_c)
+            rec$=rec$+","+$22$+box12_d$+$22$
+            rec$=rec$+","+str(box12_d)
+            rec$=rec$+","+$22$+statutory_emp$+$22$
+            rec$=rec$+","+$22$+retire_plan$+$22$
+            rec$=rec$+","+$22$+thirdpartysick$+$22$
+            rec$=rec$+","+$22$+box14_1$+$22$
+            rec$=rec$+","+$22$+box14_2$+$22$
+            rec$=rec$+","+$22$+box14_3$+$22$
+            rec$=rec$+","+$22$+state1_code$+$22$
+            rec$=rec$+","+str(state1_wages)
+            rec$=rec$+","+str(state1_withheld)
+            rec$=rec$+","+str(locality1_wages)
+            rec$=rec$+","+str(locality1_withheld)
+            rec$=rec$+","+$22$+locality1_name$+$22$
+            rec$=rec$+","+$22$+locality1_code$+$22$
+            rec$=rec$+","+$22$+state2_code$+$22$
+            rec$=rec$+","+str(state2_wages)
+            rec$=rec$+","+str(state2_withheld)
+            rec$=rec$+","+str(locality2_wages)
+            rec$=rec$+","+str(locality2_withheld)
+            rec$=rec$+","+$22$+locality2_name$+$22$
+            rec$=rec$+","+$22$+locality2_code$+$22$
+            rec$=rec$+","+$22$+client_id$+$22$
+            w2_dev=unt
+            print (w2_dev)rec$,$0d0a$,
+
+rem --- If need another W2, clear fields that shouldn't dupe
+
+            if toomanybox12=0 and toomanystatewage=0 and toomanystatetax=0 and toomanylocalwage=0 and toomanylocaltax=0 then continue
+            numberedboxesonly=1
+            doingaddlw2=1
+            statecode_cnt=1
+            statetax_cnt=1
+            localcode_cnt=1
+            localtax_cnt=1
+            gosub init_var; rem "Clear the fields for boxes 1-20
+            if toomanybox12 gosub assign_nums_strings; rem "Box 12 routine
+            if toomanystatewage gosub state_code_wages_routine; rem "State wage routine
+            if toomanystatetax gosub state_tax_routine; rem "State tax routine
+            if toomanylocalwage gosub local_wages_locality_routine; rem "Local wage routine
+            if toomanylocaltax gosub local_tax_routine; rem "Local tax routine
+        wend
+
+rem "Next Employee
+    wend
+
+done: rem --- Done
+
+        goto std_exit
+
+init_var: rem --- Init variables for W2 text file
+
+rem "Leave boxes a-f
+
+        if !numberedboxesonly
+            controlnum$=""
+            firstname$=""
+            middleinit$=""
+            lastname$=""
+            fullname$=""
+            address1$=""
+            address2$=""
+            city$=""
+            state$=""
+            zip$=""
+            zip_ext$=""
+            foreign$=""
+            foreign_state$=""
+            foreign_zip$=""
+            countycode$=""
+            ssnum$=""
+        endif
+
+        wages=0
+        fed_withheld=0
+        ss_wages=0
+        ss_withheld=0
+        medicare_wages=0
+        medicare_withheld=0
+        ss_tips=0
+        allocated_tips=0
+        aeic_payment=0
+        dependent_benefits=0
+        nonqualified_plans=0
+        box12_a$=""
+        box12_a=0
+        box12_b$=""
+        box12_b=0
+        box12_c$=""
+        box12_c=0
+        box12_d$=""
+        box12_d=0
+        statutory_emp$=""
+        retire_plan$=""
+        thirdpartysick$=""
+        box14_1$=""
+        box14_2$=""
+        box14_3$=""
+        if !leave_st_loc
+            state1_code$=""
+            state1_wages=0
+            state1_withheld=0
+            locality1_wages=0
+            locality1_withheld=0
+            locality1_name$=""
+            locality1_code$=""
+            state2_code$=""
+            state2_wages=0
+            state2_withheld=0
+            locality2_wages=0
+            locality2_withheld=0
+            locality2_name$=""
+            locality2_code$=""
+        endif
+        rec$=""
+        numberedboxesonly=0
+        leave_st_loc=0
+        return
+
+state_code_wages_routine: rem --- State code and wages routine (Boxes 15 & 16)
+
+rem "NOTE: Have already determined this is a valid employee w/no state codes
+
+    if !nostatecodes
+        statecode$=prw06a.state_code$
+        statewage=b0
+        if !(cvs(picked_statecd$,2)<>"" and statecode$<>picked_statecd$)
+            if doingaddlw2<>0
+                if cvs(states4multi$,2)="" then toomanystatewage=0
+            else
+
+rem --- If we've processed enough states for one W2, store add'l W2 data
+
+                if statecode_cnt>maxstates
+                    toomanystatewage=1
+                    states4multi$=states4multi$+statecode$
+                    statewages4multi[statecode_cnt-maxstates]=statewage; rem "One-based
+                    statecode_cnt=statecode_cnt+1
+                    return
+                endif
+                toomanystatewage=0
+            endif
+
+            if doingaddlw2<>0
+                statecode$=states4multi$(1,2)
+                states4multi$=states4multi$(3)
+                statewage=statewages4multi[statecode_cnt+addl_scodes_done]
+                addl_scodes_done=addl_scodes_done+1
+            endif
+            if statecode_cnt=1 then let state1_code$=statecode$
+            if statecode_cnt=2 then let state2_code$=statecode$
+            if statecode_cnt=1 then let state1_wages=statewage
+            if statecode_cnt=2 then let state2_wages=statewage
+            statecode_cnt=statecode_cnt+1
+        endif
+    endif
+    return
+
+state_tax_routine: rem --- State tax routine (Box 17)
+
+rem "NOTE: Have already determined this is a valid employee w/no state codes
+
+    if !nostatecodes
+        statecode$=prw06a.state_code$
+        statetax=b0
+        if !(cvs(picked_statecd$,2)<>"" and statecode$<>picked_statecd$)
+            if doingaddlw2<>0
+                if !toomanystatewage then toomanystatetax=0
+            else
+                if statetax_cnt>maxstates
+                    toomanystatetax=1
+                    statetaxes4multi[statetax_cnt-maxstates]=statetax; rem "One-based
+                    statetax_cnt=statetax_cnt+1
+                    return
+                endif
+                toomanystatetax=0
+            endif
+
+            if doingaddlw2<>0
+                statetax=statetaxes4multi[statetax_cnt+addl_staxes_done]
+                addl_staxes_done=addl_staxes_done+1
+            endif
+            if statetax_cnt=1 then let state1_withheld=statetax
+            if statetax_cnt=2 then let state2_withheld=statetax
+            if doingaddlw2 if cvs(states4multi$,2)="" toomanystatewage=0,toomanystatetax=0; rem "We've done last state, but left TOOMANYSTATEWAGE flag set so that we'd process the tax, so clear all here.
+            statetax_cnt=statetax_cnt+1
+        endif
+    endif
+    return
+
+local_wages_locality_routine: rem --- Local wages & locality routine (Boxes 18 & 20)
+
+rem "NOTE: Have already determined this is a valid employee w/no local codes
+
+    if !nolocalcodes
+        localcode$=b0$(17,2)
+        localwage=b0
+        if !(cvs(picked_localcd$,2)<>"" and localcode$<>picked_localcd$)
+            if doingaddlw2<>0
+                if cvs(locals4multi$,2)=""
+                    toomanylocalwage=0
+                else
+                    if doingaddlw2<>0
+                        localcode$=locals4multi$(1,2)
+                        locals4multi$=locals4multi$(3)
+                        localwage=localwages4multi[localcode_cnt+addl_scodes_done]
+                    endif
+                    localname$="Missing"
+                    read record (prm10a_dev,key=firm_id$+"C"+localcode$,dom=label7) prm10c3$
+                    localname$=prm10c3.tax_juris$
+label7:
+                    addl_lcodes_done=addl_lcodes_done+1
+                    if localcode_cnt=1
+                        locality1_code$=localcode$
+                        locality1_name$=localname$
+                        locality1_withheld=localwage
+                        return
+                    endif
+                    if localcode=2
+                        locality2_code$=localcode$
+                        locality2_name$=localname$
+                        locality2_withheld=localwage
+                    endif
+                    localcode_cnt=localcode_cnt+1
+                endif
+                return
+            endif
+        endif
+
+rem --- If we've processed enough locals for one W2, store add'l W2 data
+
+        if localcode_cnt>maxlocals
+            toomanylocalwage=1
+            locals4multi$=locals4multi$+localcode$
+            localwages4multi[localcode_cnt-maxlocals]=localwage; rem "One-based
+            localcode_cnt=localcode_cnt+1
+            return
+        endif
+        toomanylocalwage=0
+        if doingaddlw2<>0
+            localcode$=locals4multi$(1,2)
+            locals4multi$=locals4multi$(3)
+            localwage=localwages4multi[localcode_cnt+addl_scodes_done]
+        endif
+        localname$="Missing"
+        read record (prm10a_dev,key=firm_id$+"C"+localcode$,dom=label8) prm10c3$
+        localname$=prm10c3.tax_juris$
+label8:
+        addl_lcodes_done=addl_lcodes_done+1
+        if localcode_cnt=1
+            locality1_code$=localcode$
+            locality1_name$=localname$
+            locality1_withheld=localwage
+            localcode_cnt=localcode_cnt+1
+            return
+        endif
+        if localcode=2
+            locality2_code$=localcode$
+            locality2_name$=localname$
+            locality2_withheld=localwage
+        endif
+        localcode_cnt=localcode_cnt+1
+     endif
+     return
+
+local_tax_routine: rem --- Local tax routine
+
+rem "NOTE: Have already determined this is a valid employee w/no local codes
+    
+    if !nolocalcodes
+        localcode$=prm10c3.tax_juris$
+        localtax=b0
+        if !(cvs(picked_localcd$,2)<>"" and localcode$<>picked_localcd$)
+            if doingaddlw2<>0 then if !toomanylocalwage then toomanylocaltax=0
+        else
+            if localcode_cnt>maxlocals
+                toomanylocaltax=1
+                localtaxes4multi[localtax_cnt-maxlocals]=localtax; rem "One-based
+                localtax_cnt=localtax_cnt+1
+            endif
+        endif
+        toomanylocaltax=0
+        if doingaddlw2<>0
+            localtax=localtaxes4multi[localtax_cnt+addl_ltaxes_done]
+            addl_ltaxes_done=addl_ltaxes_done+1
+        endif
+        if localtax_cnt=1 then let locality1_withheld=localtax
+        if localtax_cnt=2 then let locality2_withheld=localtax
+        if doingaddlw2 if cvs(locals4multi$,2)="" toomanylocalwage=0,toomanylocaltax=0; rem "We've done last local, but left TOOMANYLOCALWAGE flag set so that we'd process the tax, so clear all here.
+        localtax_cnt=localtax_cnt+1
+    endif
+    return
+
+assign_nums_strings: rem --- Assign box 12 nums and strings
+
+rem --- Sets TOOMANYBOX12 if more Box 12 codes than fit on one W2
+
+    while more
+        for i=istart to len_box12_codes-1; if box12_tots[i]>0 then exitto label10 else next i
+        toomanybox12=0
+        break
+label10:
+        if box12_d then let toomanybox12=1,istart=i else let toomanybox12=0,istart=0
+        if toomanybox12 then break
+        if !box12_a
+            box12_a$=box12_codes$(i+1,1)
+            box12_a=box12_tots[i],istart=i+1
+            continue
+        endif
+        if !box12_b
+            box12_b$=box12_codes$(i+1,1)
+            box12_b=box12_tots[i],istart=i+1
+            continue
+        endif
+        if !box12_c
+            box12_c$=box12_codes$(i+1,1)
+            box12_c=box12_tots[i],istart=i+1
+            continue
+        endif
+        if !box12_d
+            box12_d$=box12_codes$(i+1,1)
+            box12_d=box12_tots[i],istart=i+1
+        endif
+    wend
+    return
+    
+check_w2: rem --- Check if first W-2 for employee for this year/state/local
+    
+    rem --- IF first for emp/yr THEN write PRM-03W for both states/locals
+    rem --- ELSE IF not same state&local THEN clear boxes 1-14
+    dim prm03w2_0$(18)
+    startkey$=firm_id$+"W"+prm01a.employee_no$+packedyear$
+    read (prm03w_dev,key=startkey$,dom=*next)
+    let prm03a_key$=key(prm03w_dev,end=label11)
+    if prm03a_key.firm_id$+prm03a_key.record_id_w$+prm03a_key.employee_no$+prm03a_key.year$<>startkey$
+label11: 
+        let prm03w2_0$(1)=startkey$+pad(state1_code$,2)+pad(locality1_code$,2)
+        write record (prm03w_dev,key=prm03w2_0$) prm03w2$
+        if cvs(state2_code$,2)="" and cvs(locality2_code$,2)<>""
+            prm03w2_0$(1)=startkey$+pad(state2_code$,2)+pad(locality2_code$,2)
+            write record (prm03w_dev,key=prm03w2_0$) prm03w2$
+        endif
+        return
+    endif
+    read (prm03w_dev)
+    if prm03a_key.state_code$+prm03a_key.loc_tax_code$<>pad(state1_code$,2)+pad(locality1_code$,2)
+        rem --- if k4$(15,4)=state2_code$+locality2_code$ then goto 6990
+        let numberedboxesonly=1,leave_st_loc=1
+        gosub init_var; rem "Clear fields
+    endif
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

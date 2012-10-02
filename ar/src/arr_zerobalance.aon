@@ -1,0 +1,406 @@
+rem --- Zrto Balance Invoice Report
+rem --- Program arr_zerobalance v8.0.0 31Dec2006 (arr_lb)
+rem --- Created by adx_codeport.bbx v1.1.5 (12/31/2006 10:32:58)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+            OutVect!=bbjAPI().getSysGui().makeVector()
+            HdrVect!=bbjAPI().getSysGui().makeVector()
+            BrkVect!=bbjAPI().getSysGui().makeVector()
+            rep_date$=date(0:"%Mz/%Dz/%Yd")
+            rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+            rep_time$=date(0:"%hz:%mz %p")
+            rep_time_stamp$=date(0:"%Hz%mz%sz")
+            rep_prog$=pgm(-2)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
+    files$[3]="art-01",ids$[3]="ART_INVHDR"
+    files$[4]="art-11",ids$[4]="ART_INVDET"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ars01_dev=channels[1]
+    arm01_dev=channels[2]
+    art01_dev=channels[3]
+    art11_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim ars01a$:templates$[1],arm01a$:templates$[2],art01a$:templates$[3],art11a$:templates$[4]
+
+rem --- Assign form input values to local variables
+
+    thrudate$=option!.getOptionData("REPORT_DATE")
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,9,11
+    m0=len(m0$)
+    m1=len(m1$)
+
+rem --- Is Sales Order Processing installed?
+
+    dim info$[20]
+    application$="OP"
+    call pgmdir$+"adc_application.aon",application$,info$[all]
+    op$=info$[20]
+
+rem --- Column Headings
+    dim columns$[8,10]
+    columns=8
+        columns$[0,0]="Cust/Inv", columns$[0,1]="C",columns$[0,2]="25"
+        columns$[1,0]="Date",     columns$[1,1]="C",columns$[1,2]="10"
+        columns$[2,0]="Due/Ref",  columns$[2,1]="C",columns$[2,2]="10"
+        columns$[3,0]="TC",       columns$[3,1]="C",columns$[3,2]="5"
+        columns$[4,0]="Type",     columns$[4,1]="C",columns$[4,2]="10"
+        columns$[5,0]="Invoice",  columns$[5,1]="N",columns$[5,2]="12";columns$[5,3]=m1$
+        columns$[6,0]="Applied",  columns$[6,1]="N",columns$[6,2]="12";columns$[6,3]=m1$
+        columns$[7,0]="Balance",  columns$[7,1]="N",columns$[7,2]="12";columns$[7,3]=m1$
+        columns$[8,0]="Discount", columns$[8,1]="N",columns$[8,2]="12";columns$[8,3]=m1$
+
+rem --- Initializations
+
+    headings=3
+    dim headings$[headings],o[9]
+    page=0
+    width=80
+    maxlines=59
+    lines=maxlines+1
+    morecustomers=1
+    moreheaders=1
+    moredetail=1
+    when$=sysinfo.system_date$
+    clock$=""
+    artype$=fill(2)
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]="Zero Balance Invoice Report"
+    headings$[2]="Includes Transactions Through "+fndate$(thrudate$)
+
+rem --- Define print positions
+
+    o[0]=0
+    o[1]=2
+    o[2]=10
+    o[3]=19
+    o[4]=28
+    o[5]=31
+    o[9]=width-m1
+    o[8]=o[9]-m1
+    o[7]=o[8]-m1
+    o[6]=o[7]-m1
+
+rem --- Additional file opens
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="opt-01",ids$[1]="OPT_ORDHDR"
+    if op$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                              ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    opt01_dev=channels[1]
+
+rem --- Dimension string templates
+
+    if op$="Y" dim opt01a$:templates$[1]
+
+rem --- Start progress meter and position Customer Master file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
+    while begcustomer$<>""
+          read (arm01_dev,key=firm_id$+begcustomer$)
+          read (arm01_dev,dir=-1,err=*next)
+          begcustomer$=""
+    wend
+
+rem --- Read next Customer Master (arm-01) record
+
+    while morecustomers
+          arm01_key$=key(arm01_dev,end=*break)
+          if pos(firm_id$=arm01_key$)<>1 break
+          read record (arm01_dev,key=arm01_key$) arm01a$
+          if endcustomer$<>"" if arm01a.customer_id$>endcustomer$ break
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status 
+
+          rem --- Read customer detail records
+
+          first=1
+          printed=0
+          custinv=0
+          custapp=0
+          custdis=0
+          customer$=arm01a.firm_id$+artype$+arm01a.customer_id$
+          read (art01_dev,key=customer$,dom=*next)
+
+          rem --- Read next invoice header record
+
+          while moreheaders
+                art01_key$=key(art01_dev,end=*break)
+                if pos(customer$=art01_key$)<>1 break
+                read record (art01_dev) art01a$
+                if art01a.invoice_date$>thrudate$ continue
+                balance=art01a.invoice_amt
+
+                rem --- Position Invoice Detail (art-11) file
+
+                art01_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
+                read (art11_dev,key=art01_key$,dom=*next)
+
+                rem --- Read Invoice Detail (art-11) records and accumulate invoice balance
+
+                future=0
+                while moredetail
+                      k$=key(art11_dev,end=*break)
+                      if pos(art01_key$=k$)<>1 break
+                      read record (art11_dev) art11a$
+                      if art11a.trans_date$>thrudate$ 
+                         future=1
+                         break
+                      endif 
+                      balance=balance+art11a.trans_amt+art11a.adjdisc_amt
+                wend
+
+                rem --- Zero balance?
+
+                if future continue
+                if balance<>0 continue
+
+                rem --- Print zero balance invoice
+
+                type$=fntype$(art01a.invoice_type$)
+                if first gosub customer_heading
+               
+                OutVect!.addItem("   "+art01a.ar_inv_no$)
+                OutVect!.addItem(fndate$(art01a.invoice_date$))
+                OutVect!.addItem(fndate$(art01a.inv_due_date$))
+                OutVect!.addItem(art01a.ar_terms_code$)
+                OutVect!.addItem(type$)
+                OutVect!.addItem(str(art01a.invoice_amt:m1$))
+                xwk=fnblank(2)
+                OutVect!.addItem(str(art01a.disc_allowed:m1$))
+                
+                printed=1
+                custinv=custinv+art01a.invoice_amt
+                custdis=custdis+art01a.disc_allowed
+                applied=0
+                detail=0
+                art01_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
+                read (art11_dev,key=art01_key$,dom=*next)
+
+                rem --- Read next invoice detail record
+
+                while moredetail
+                      k$=key(art11_dev,end=*break)
+                      if pos(art01_key$=k$)<>1 break
+                      read record (art11_dev) art11a$
+                      if art11a.trans_date$>thrudate$ continue
+                      detail=1
+                      type$=fntype$(art11a.trans_type$)
+                      OutVect!.addItem("")
+                      OutVect!.addItem(fndate$(art11a.trans_date$))
+                      OutVect!.addItem(art11a.refchk_no$)
+                      OutVect!.addItem("")
+                      OutVect!.addItem(type$)
+                      OutVect!.addItem("")
+                      OutVect!.addItem(str(art11a.trans_amt:m1$))
+                      OutVect!.addItem("")
+                      OutVect!.addItem(str(art11a.adjdisc_amt:m1$))
+
+                      applied=applied+art11a.trans_amt
+                      custapp=custapp+art11a.trans_amt
+                      custdis=custdis+art11a.adjdisc_amt
+                wend
+
+                rem --- Print invoice total and loop back for next invoice header
+
+                if detail=0 continue
+                balance=art01a.invoice_amt+applied
+                xwk=fnblank(4)
+                OutVect!.addItem("Total")
+                xwk=fnblank(2)
+                OutVect!.addItem(str(balance:m1$))
+                OutVect!.addItem("")
+                lines=lines+1
+
+          wend
+                
+          rem --- Print customer total and loop back for next Customer Master
+
+          if printed=0 continue
+          balance=custinv+custapp
+
+          OutVect!.addItem("        "+"Customer Total")
+          xwk=fnblank(4)
+          OutVect!.addItem(str(custinv:m1$))
+          OutVect!.addItem(str(custapp:m1$))
+          OutVect!.addItem(str(balance:m1$))
+          OutVect!.addItem(str(custdis:m1$))
+          lines=lines+1
+          reportinv=reportinv+custinv
+          reportapp=reportapp+custapp
+          reportdis=reportdis+custdis
+    wend
+
+rem --- All done
+done:
+
+    balance=reportinv+reportapp
+    xwk=fnblank(9)
+    OutVect!.addItem("        "+"Report Total")
+    xwk=fnblank(4)
+    OutVect!.addItem(str(reportinv:m1$))
+    OutVect!.addItem(str(reportapp:m1$))
+    OutVect!.addItem(str(balance:m1$))
+    OutVect!.addItem(str(reportdis:m1$))
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run pgmdir$+"aru_zerobalance.aon",err=*next
+    goto std_exit
+
+customer_heading: rem --- Print customer heading
+
+    xwk=fnblank(9)
+    OutVect!.addItem(arm01a.customer_id$(1,customer_size)+" "+arm01a.customer_name$)
+    xwk=fnblank(8)
+    lines=lines+2
+    first=0
+    return
+
+rem --- Functions
+
+rem --- fntype$: Return type description based on code value
+
+    def fntype$(q$)
+        q1$=q$
+        if q$="S" q1$="Sale"
+        if q$="C" q1$="Cash"
+        if q$="F" q1$="Fin"
+        if q$="A" q1$="Adj"
+        if q$="V" q1$="Void"
+        if q$="I" q1$="Inv"
+        return q1$
+    fnend
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

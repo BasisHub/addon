@@ -1,0 +1,414 @@
+rem --- Work Order Pick Slip - Printing
+rem --- Program sfr_bb v8.0.0 04Jan2008 (sfr_bb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 02:45:55)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    precision ivs01_precision
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Init Data
+
+    m9=80-m2*3
+    if m2+23+p[0]>m9 then let splitline=1
+    if splitline or m2+23+p[0]<m9-m2 then let m9=m9-m2,m9$="Y"
+    stepnum=1
+    more=1
+    flag=0
+    backtomain=0
+
+rem --- Additional File Opens
+
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status then goto std_exit
+    v=5
+
+rem --- Background
+
+    print @(1,10),'cl',@(1,11),'cl',@(1,12),'cl'
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sfe04c_dev,1,meter_num,ignore_status
+
+rem --- Init Read
+
+    read (sfe04c_dev,key=firm_id$+"  "+"C",dom=*next)
+
+rem --- Main Read
+
+    while more
+
+        old_op_step$=""
+        stepnum=1
+
+        while more
+
+            sfe04c_key$=key(sfe04c_dev,end=done)
+            if sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.record_id_c$<>firm_id$+"  "+"C"
+                flag=1
+                break
+            endif
+            read (sfe04c_dev)
+
+        rem --- Get Work Order
+
+            read record (sfe13a_dev,key=sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.wo_no$+"000",dom=*continue) sfe13a$
+            read record (sfe01_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$,dom=*continue) sfe01a$
+            find (sfe04c_dev2,key=(sfe13a.firm_id$+sfe13a.wo_location$)+"D"+sfe13a.wo_no$,dom=*break)
+
+        wend
+
+        if flag then break
+
+    rem --- Find Customer
+
+        arm01a.cust_name$="*** Not On File ***"
+        if pos(" "<> sfe01a.customer_id$)<>0
+            find record (arm01a_dev,key=firm_id$+sfe01a.customer_id$,dom=*next) arm01a$
+        endif
+
+    rem --- Find Warehouse
+
+        if y1$<>sfe13a.warehouse_id$ then
+            ivm10c.short_name$="*** Not On File ***"
+            find record (ivm10c_dev,key=firm_id$+"C"+sfe13a.warehouse_id$,dom=label1) ivm10c$
+            y1$=sfe13a.warehouse_id$
+        endif
+
+    label1: rem --- Type
+
+        if z1$<>sfe13a.firm_id$ then
+            sfm10a.code_desc$="**** Not On File ****"
+            find record (sfm10a_dev,key=firm_id$+"A"+sfe13a.firm_id$,dom=*next) sfm10a$
+        endif
+
+    rem --- Category
+
+        if sfe13a.wo_category$="I" then let z2$="Inventory"
+        if sfe13a.wo_category$="N" then let z2$="Non-Stock"
+        if sfe13a.wo_category$="R" then let z2$="Recurring"
+        h=0
+        print @(40,5),sfe13a.wo_no$,
+
+    rem --- Details Here
+
+        read (sfw13a_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$,dom=*next)
+        head_comm$=""
+        gosub get_wo_hdr_cmnts
+
+        dim sfw13a_key$:sfw13a_key_tpl$
+        while more
+            sfw13a_key$=key(sfw13a_dev,end=*break)
+            if sfw13a_key.firm_id$+sfw13a_key.wo_location$+sfw13a_key.wo_no$<>sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            op_step$=sfw13a_key.op_seq$
+            k$=sfw13a_key.firm_id$+sfw13a_key.wo_location$+sfw13a_key.wo_no$+sfw13a_key.material_seq$
+            read (sfw13a_dev)
+            read record (sfe23a_dev,key=sfw13a_key$,dom=*continue) sfe23a$
+            ivm01a.item_desc$="*** Not On File ***"
+            find record (ivm01a_dev,key=firm_id$+sfe23a.item_id$,dom=*next) ivm01a1$
+            dx$=ivm01a1.item_desc$
+            find record (ivm02a_dev,key=firm_id$+sfe23a.warehouse_id$+sfe23a.item_id$,dom=*next) ivm02a$
+            ivm02a.qty_on_hand=ivm02a.qty_on_hand-(sfe23a.qty_ordered-sfe23a.tot_qty_iss)
+            gosub details
+            stepnum=stepnum+1
+        wend
+    wend
+
+
+done: rem --- End
+
+    close (printer_dev,err=err_Line)
+    for i=10 to 12; print @(0,i),'cl'; next i
+
+err_Line:
+
+    v4$="Did The Print Lists Pick Correctly "
+    call pgmdir$+"adc_yesno.aon",1,v4$,1,v$,v3
+    if v$="N" then goto std_exit
+    if v$<>"Y" then goto err_Line
+    print @(27,7),"Now Clearing Print File...",'cl',
+    read (sfe04c_dev,key=firm_id$+"  "+"C",dom=*next)
+
+    while more
+
+        sfe04c_key$=key(sfe04c_dev,end=std_exit)
+        if sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.record_id_c$<>firm_id$+"  "+"C" then goto std_exit
+        read (sfe04c_dev)
+        read record (sfe13a_dev,key=sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.wo_no$+"000",dom=*continue) sfe13a$
+        write record (sfe15a_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$+sfe13a.sequence_000$) sfe15a$
+
+    rem --- Remove Committed and Create Issue
+
+        x0=0
+        read (sfw13a_dev,key=sfe15a.firm_id$+sfe15a.wo_location$+sfe15a.wo_no$,dom=*next)
+
+        while more
+
+            sfw13a_key$=key(sfw13a_dev,end=*break)
+            if sfw13a_key.firm_id$+sfw13a_key.wo_location$+sfw13a_key.wo_no$<>sfe15a.firm_id$+sfe15a.wo_location$+sfe15a.wo_no$ then break
+            sfw13a_key$=sfw13a_key.firm_id$+sfw13a_key.wo_location$+sfw13a_key.wo_no$+sfw13a_key.material_seq$
+            read (sfw13a_dev)
+            read record (sfe23a_dev,key=k1$,dom=*continue) sfe23a$
+
+        rem --- Renumber Issue Sequence to Match Pick List
+
+            x0=x0+1
+            sfe25a.firm_id$=sfe23a.firm_id$
+            sfe25a.wo_location$=sfe23a.wo_location$
+            sfe25a.wo_no$=sfe23a.wo_no$
+            sfe25a.material_seq$=str(x0:"000")
+            sfe23a.step_no$=sfe23a.material_seq$
+            write record (sfe25a_dev,key=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.material_seq$) sfe25a$
+
+        wend
+
+        remove (sfe04c_dev,key=k$)
+
+    wend
+
+report_heading: rem --- Report Heading
+
+    l=headings+3
+    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,h,h0,when$,clock$,status
+    if status then exitto std_exit
+    find record (ivm01a_dev,key=firm_id$+sfe13a.item_id$,dom=*next) ivm01a2$
+    if sfe13a.wo_category$="I" then let desc1$=ivm01a2.item_desc$(1,min(desc[1],41)),ivm01a2.item_desc$=description$(desc[1]+1,min(desc[2],42))
+    if sfe13a.wo_category$<>"I" then let desc1$=sfe01a.description_01$,desc2$=sfe01a.description_02$
+    old_op_step$=op_step$
+    print (printer_dev)@(0),"WO Number: ",sfe13a.wo_no$,
+:                      @(21),"Type: ",sfe13a.firm_id$," ",sfm10a.code_desc$,@(53),"Category: ",a1$(3,1)," ",z2$,'lf',
+:                      @(2),"Op Step: ",op_step$; let l=l+2
+    if sfe13a.wo_category$="I" then
+        print (printer_dev)@(0),"Bill Number:  ",sfe13a.item_id$; let l=l+1
+    endif
+    print (printer_dev)@(0),"Description:",@(14),desc1$,@(56),"Open Date: ",
+:                       @(67),fndate$(sfe01a.opened_date$),'lf',@(14),desc2$,
+:                       @(55),"Start Date: ",@(67),fndate$(sfe01a.eststt_date$),'lf',
+:                       @(0),"Drawing #: ",sfe01a.drawing_no$,@(37),"Rev: ",sfe01a.drawing_no$,
+:                       @(50),"Completion Date:",@(67),fndate$(sfe01a.estcmp_date$),'lf'; let l=l+3
+
+    if pos(" "<>sfe01a.customer_id$)>0 then
+        print (printer_dev)@(0),"Customer: ",fnmask$(sfe01a.customer_id$(1,c0),c3$),"  ",c1$,@(62),"Order: ",sfe01a.order_no$,"-",sfe01a.line_no$,'lf'; let l=l+1
+    endif
+    print (printer_dev)@(0),"Warehouse: ",sfe13a.warehouse_id$," ",ivm10c.short_name$,@(62-m2),"Production Qty: ",sfe01a.SCH_PROD_QTY-sfe01a.QTY_CLS_TODT:m2$,'lf',j$; let l=l+2
+    print (printer_dev)@(m9+m2-4),"On",
+    if m9$="Y" then
+        print (printer_dev)@(m9+m2*4-4),"On"
+    else
+        print (printer_dev)""
+    endif
+    print (printer_dev)"Step Location",@(14+m2-6),"Req'd",@(23+m2-8),"Picked",
+:                                      @(22+m2),"Item",@(m9+m2-5),"Hand",
+:                                      @(m9+m2*2-6),"Com'd",@(m9+m2*3-6),"Avail",
+    if m9$="Y" then
+        print (printer_dev)@(m9+m2*4-6),"Order",'lf'
+    else
+        print (printer_dev)'lf'
+    endif
+    l=l+3
+    gosub print_hdr
+    return
+
+details: rem --- Details
+
+    x1=0
+    if ivs01a.lotser_flag$="S" and (ivm01a1.lotser_item$+ivm01a1.inventoried$)="YY" then let x1=sfe23a.qty_ordered-sfe23a.tot_qty_iss,x9$="Serial #:"
+    if ivs01a.lotser_flag$="L" and (ivm01a1.lotser_item$+ivm01a1.inventoried$)="YY" then let x1=5,x9$="Lot #:"
+    if l+2+splitline>l9 or op_step$<>old_op_step$ then gosub report_heading
+    print (printer_dev)@(0),stepnum:"000"," ",ivm02a.location$,@(14),sfe23a.qty_ordered-sfe23a.tot_qty_iss:m2$,j1$(1,7),@(22+m2),sfe23a.item_id$,
+    if splitline then print (printer_dev)""
+    print (printer_dev)@(m9),ivm02a.qty_on_hand:m2$,ivm02a.qty_commit:m2$,ivm02a.qty_on_hand-ivm02a.qty_commit:m2$,
+    if m9$="Y" then print (printer_dev)ivm02a.qty_on_order:m2$,
+    print (printer_dev)""
+    read record (sfe22b_dev,key=(sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$)+"B"+sfe23a.material_seq$,dom=*next) sfe22b$
+    dim desc$(60)
+    desc$(1)=fnitem$(dx$,desc[1],desc[2],desc[3])
+    print (printer_dev)@(5),"WO Seq: ",sfe23a.material_seq$,@(25+m2),desc$(1,min(desc[1]+desc[2]+desc[3]+2,79-(25+m2)))
+    l=l+2+splitline
+    gosub material
+    if pos(ivs01a.lotser_flag$="LS")=0 then
+        return
+    endif
+    if (ivm01a1.lotser_item$+ivm01a1.inventoried$)<>"YY" then
+        return
+    endif
+    for x=1 to x1
+        if l>l9 then gosub report_heading
+        print (printer_dev)@(14),x9$,"_____________________________"
+        l=l+1
+    next x
+
+    return
+
+material: rem --- Get comments for this material
+
+    dim sfe22b_key$:sfe22b_key_tpl$
+    while more
+        sfe22b_key$=key(sfe22b_dev,end=*break)
+        if pos(sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$+"B"=sfe22b_key$)<>1 then break
+        read record (sfe22b_dev) sfe22b$
+        if sfe22b.line_type$<>"M" then break 
+        if l+1>l9 then gosub report_heading
+        print (printer_dev)@(14),sfe22bext_comments$
+        l=l+1
+    wend
+    return
+
+get_wo_hdr_cmnts: rem --- Get header comments for this Work Order
+
+    read (sfe22b_dev,key=sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$+"B",dom=*next)
+    while more
+        sfe22b_key$=key(sfe22b_dev,end=*break)
+        if pos(sfe13a.firm_id$+sfe13a.wo_location$+sfe13a.wo_no$+"B"=sfe22b_key$)<>1 then break
+        read record (sfe22b_dev) sfe22b$
+        if sfe22b.line_type$<>"M" then break
+        head_comm$=head_comm$+sfe22b.ext_comments$
+    wend
+    return
+
+print_hdr: rem --- Print Header Comments
+
+    if len(head_comm$)<>0 then
+        for x=1 to len(head_comm$) step 60
+            print (printer_dev)@(14),head_comm$(x,60)
+            l=l+1
+        next x
+        if l>l9 then let l=l9-1
+    endif
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,226 @@
+rem glu - Recurring Journal Entry Update
+rem Program glu_recurring v8.0.0 13May2006 (glu_ha)
+rem Created by adx_progconv.bbx v1.0.3 (05/13/2006 01:07:31)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	if OutVect!<>null() OutVect!=null()
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    task$=cvs(sysinfo.task_desc$,2)
+
+rem --- Open/Lock files
+
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gle-01",ids$[1]="GLE_JRNLHDR"
+    files$[2]="gle-11",ids$[2]="GLE_JRNLDET"
+    files$[3]="glm-07",ids$[3]="GLC_CYCLECODE"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+
+    rem gle-02/12 already open from register on gle01_dev and gle11_dev
+    rem so set gle02_dev and gle12_dev to gle01_dev and gle11_dev,
+    rem then set gle01_dev and gle11_dev to channels for gle-01 and gle-11,
+    rem just opened above
+
+    gle02_dev=gle01_dev
+    gle12_dev=gle11_dev
+    gle01_dev=channels[1]
+    gle11_dev=channels[2]
+    glm07_dev=channels[3]
+
+rem --- Dimension string templates
+
+    dim gle01a$:templates$[1],gle11a$:templates$[2],glm07a$:templates$[3]
+
+rem --- Initializations
+
+    more=1
+    moredetail=1
+    yyyymm$=sysinfo.system_date$(1,6)
+
+rem --- Options
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" goto std_exit_no_update
+
+rem --- Start progress meter and position file
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,gle02_dev,1,0,status
+    read (gle02_dev,key=firm_id$,dom=*next)
+
+rem --- Copy records from gle-02/12 Recurring Journal Entry to 
+rem --- gle-01/11 Journal Entry files.
+
+    while more
+          gle02_key$=key(gle02_dev,end=*break)
+          if pos(firm_id$=gle02_key$)<>1 break
+          read record (gle02_dev)gle01a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+          if cycle$<>"" if gle01a.journal_id$<>cycle$ continue
+          reversal=cvs(gle01a.reverse_date$,2)<>"" 
+          if reversal=0 gosub end_of_month
+          if reversal if cycle_reversal$="C" gosub calculation
+          if reversal if cycle_reversal$="D" gosub bydate
+          write record (gle01_dev,key=gle02_key$)gle01a$
+          read (gle12_dev,key=gle02_key$,dom=*next)
+          while moredetail
+                k$=key(gle12_dev,end=*break)
+                if pos(gle02_key$=k$)<>1 break
+                read record (gle12_dev)gle11a$
+                write record (gle11_dev,key=w0$)gle11a$
+          wend
+          dim glm07a$:fattr(glm07a$)
+          while 1
+                readrecord (glm07_dev,key=firm_id$+gle01a.cycle_code$,dom=*break)glm07a$
+                glm07a.lstuse_date$=date(0:"%Y%Mz%Dz")
+                glm07a.lstuse_time$=date(0:"%hz%mz")
+                glm07a$=field(glm07a$)
+                writerecord(glm07_dev,key=firm_id$+gle01a.cycle_code$)glm07a$
+                break
+          wend
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+calculation: rem --- Reversal by Calculation
+
+rem --- The new reversal date is based on the difference in days between
+rem --- the original transaction date and the original reversal date.
+
+    begdate$=gle01a.trans_date$
+    enddate$=gle01a.reverse_date$
+    numdays=0
+    call pgmdir$+"adc_daysdate.aon",begdate$,enddate$,numdays
+    gosub end_of_month
+    begdate$=gle01a.trans_date$
+    enddate$=""
+    call pgmdir$+"adc_daysdate.aon",begdate$,enddate$,numdays
+    gle01a.reverse_date$=enddate$
+    return
+
+bydate: rem --- Reversal by Date
+
+rem --- The new reversal date will occur on the same date (if possible)
+rem --- and the month and year will be based on the difference between
+rem --- the original transaction date and the original reversal date.
+
+    begdate$=gle01a.trans_date$
+    enddate$=gle01a.reverse_date$
+    years=num(enddate$(1,4))-num(begdate$(1,2))
+    months=num(enddate$(5,2))-num(begdate$(5,2))
+    new_day=num(enddate$(7,2))
+    if new_day<1 new_day=1
+    gosub end_of_month
+    begdate$=gle01a.trans_date$
+    new_month=num(begdate$(5,2))+months
+    new_year=num(begdate$(1,4))+years
+    while new_month<1
+          new_month=new_month+12
+          new_year=new_year+1
+    wend
+
+date_check: rem --- Make sure that new date is a valid one
+
+    valid_date=jul(new_year,new_month,new_day,err=previous_day)
+    goto bydate_exit
+
+previous_day: rem --- Ran past the end of the month, need to back up a day
+
+    new_day=new_day-1
+    goto date_check
+
+bydate_exit: rem --- Set reversal date and return
+
+    gle01a.reverse_date$=str(new_year:"0000")+str(new_month:"00")+str(new_day:"00")
+    return
+
+end_of_month: rem --- Make sure the date doesn't fall beyond the end of the month
+
+    month=num(yyyymm$(5,2))
+    xday=num(gle01a.trans_date$(7,2))
+    year=num(yyyymm$(1,4))
+    if month=2 
+:      if fpt(year/4)=0 and xday>29 xday=29 
+:         else if xday>28 xday=28
+    if (month=4 or month=6 or month=9 or month=11) and xday>30 xday=30
+    gle01a.trans_date$=str(year:"0000")+str(month:"00")+str(xday:"00")
+    return
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+	msg_id$="UPDATE_COMPLETE"
+	dim msg_tokens$[1]
+	msg_opt$=""
+	gosub disp_message
+
+std_exit_no_update:
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

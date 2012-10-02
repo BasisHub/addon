@@ -1,0 +1,183 @@
+rem --- Inventory Analysis Report (Input Overlay)
+rem --- Program ivr_itemanalysis.aon v8.0.0 09Jul2007 (ivr_ha)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 11:47:07)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open files
+
+    files=15,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+    files$[3]="ivm-02",ids$[3]="IVM_ITEMWHSE"
+    files$[4]="ivm-03",ids$[4]="IVX_ITEMPROD"
+    files$[5]="ivc_prodcode",ids$[5]="IVC_PRODCODE"
+    files$[6]="ivm-12",ids$[6]="IVM_ITEMACT"
+    files$[7]="ivm-14",ids$[7]="IVM_ITEMSYN"
+    files$[8]="ivm-15",ids$[8]="IVC_TYPECODE"
+    files$[9]="ivw-01",ids$[9]="IVW_ITEMTOTS"
+    files$[14]="ivw-02",ids$[14]="IVW_WHSETOTS"
+    files$[10]="ivm-03",ids$[10]="IVX_ITEMWHSE"
+    files$[11]="ivs_params",ids$[11]="IVS_PARAMS"
+    files$[12]="ivc_whsecode",ids$[12]="IVC_WHSECODE"
+    files$[13]="ivm-03",ids$[13]="IVX_ITEMPRWH"
+    files$[15]="ivm-03",ids$[15]="IVX_ITEMWHSE"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    ivm01_dev=channels[2]
+    ivm02_dev=channels[3]
+    ivm03a_dev=channels[4]
+    ivm10a_dev=channels[5]
+    ivm12_dev=channels[6]
+    ivm14_dev=channels[7]
+    ivm15_dev=channels[8]
+    ivw01_dev=channels[9]
+    ivw02_dev=channels[14]
+    ivm03g_dev=channels[10]
+    ivs01_dev=channels[11]
+    ivm10c_dev=channels[12]
+    ivm03c_dev=channels[13]
+    ivm03g_dev2=channels[15]
+
+rem --- Dimension string templates
+
+    dim ivm01a$:templates$[2],ivm02a$:templates$[3],ivm03a$:templates$[4],
+:       ivm10a$:templates$[5],ivm12a$:templates$[6],ivm14a$:templates$[7],
+:       ivm15a$:templates$[8],ivw01a$:templates$[9],ivm03g$:templates$[10],
+:       gls01a$:templates$[1],ivs01a$:templates$[11],ivm10c$:templates$[12],
+:	ivm03c$:templates$[13],ivw02a$:templates$[14]
+
+
+rem --- Assign form input values to local variables
+
+    period1$=option!.getOptionData("period_year_1")
+    begyear$=period1$(3),begper$=period1$(1,2)
+    period2$=option!.getOptionData("period_year_2")
+    endyear$=period2$(3),endper$=period2$(1,2)
+    base$=option!.getOptionData("rpt_level")
+    level$=option!.getOptionData("stock_level")
+    begwhse$=option!.getOptionData("warehouse_id_1")
+    endwhse$=option!.getOptionData("warehouse_id_2")
+    begprod$=option!.getOptionData("product_type_01")
+    endprod$=option!.getOptionData("product_type_02")
+    begitem$=option!.getOptionData("item_id_01")
+    enditem$=option!.getOptionData("item_id_02")
+    type$=option!.getOptionData("item_type")
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+   
+rem --- Retrieve key template
+
+    if level$="I" ivm03_dev=ivm03a_dev; call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMPROD","PRIMARY",ivm03_key_tpl$,table_chans$[all],status$
+    if level$<>"I" ivm03_dev=ivm03c_dev; call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMPRWH","PRIMARY",ivm03_key_tpl$,table_chans$[all],status$
+    dim ivm03a_key$:ivm03_key_tpl$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVW_ITEMTOTS","PRIMARY",ivw01_key_tpl$,table_chans$[all],status$
+    dim ivw01a_key$:ivw01_key_tpl$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVW_WHSETOTS","PRIMARY",ivw02_key_tpl$,table_chans$[all],status$
+    dim ivw02a_key$:ivw02_key_tpl$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMMAST","PRIMARY",ivm01_key_tpl$,table_chans$[all],status$
+    dim ivm01a_key$:ivm01_key_tpl$
+
+rem --- Parameters
+
+    dim p[5],g[1]
+    p[0]=num(ivs01a.item_id_len$)
+    p[1]=num(ivs01a.precision$)
+    g[0]=num(gls01a.total_pers$)
+    p[3]=num(ivs01a.desc_len_01$)
+    p[4]=num(ivs01a.desc_len_02$)
+    p[5]=num(ivs01a.desc_len_03$)
+   
+rem --- Initializations
+
+    if cvs(begwhse$,2)="" begwhse$=""
+    if cvs(endwhse$,2)="" endwhse$=""
+    if cvs(begprod$,2)="" begprod$=""
+    if cvs(endprod$,2)="" endprod$=""
+    if cvs(begitem$,2)="" begitem$=""
+    if cvs(enditem$,2)="" enditem$=""
+
+rem --- Run overlay
+    run pgmdir$+"ivr_itemanalysis_o1.aon"
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+     pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call pgmdir$+"adc_error.aon",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

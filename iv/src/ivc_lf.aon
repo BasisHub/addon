@@ -1,0 +1,275 @@
+rem --- LIFO/FIFO Reporting And Inquiry
+rem --- Program ivc_lf v8.0.0 21Dec2007 (ivc_lf)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/21/2007 04:59:03)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+rem This program calculates GL cost information and LF tier quantities.
+
+        seterr std_error
+        setesc std_error
+        enter action$,type$,lf_date$,channels[all],item$[all],places,quantity,cost,return_cost,status
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+sysinfo",err=*next)
+        milestone=num(stbl("+milestone",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+        files=4,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]="ivm-02",ids$[1]="IVM_ITEMWHSE"
+        files$[2]="ivm-04",ids$[2]="IVM_ITEMTIER"
+        files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
+        files$[4]="ivw-04",ids$[4]="IVW_LFDET"
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit
+        ivm02_dev=channels[1]
+        ivm04_dev=channels[2]
+        ivs01a_dev=channels[3]
+        ivw04_dev=channels[4]
+
+rem --- Dimension string templates
+
+        dim ivm02a$:templates$[1],ivm04a$:templates$[2],ivs01a$:templates$[3],
+:       ivw04a$:templates$[4]
+
+rem --- Assign form input values to local variables
+
+        value_01$=Option!.getOptionData("form_value_01")
+
+rem --- Retrieve parameter records
+
+        ivs01a_key$=firm_id$+"IV00"
+        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Initializations
+
+        precision places
+        more=1
+        proc_issue=0
+        return_cost=cost,status=0,work_qty=0,total_cost=0,qty=0
+        lf_item$=item$[0]+item$[1]+item$[2]
+        if action$(1,1)="L" then let lifo=1,fifo=0 else let lifo=0,fifo=1
+        if action$(2,1)="I" then let issue=1,receipt=0 else let issue=0,receipt=1
+        if type$="R" then let report=1,inquiry=0 else let report=0,inquiry=1
+
+rem --- Channel Assignments
+
+        ivm04_dev=channels[0]
+        ivw04_dev=channels[1],ivm02_dev=channels[2]
+        lfchan_dev=ivm04_dev
+
+rem --- Initialize
+
+        read (ivw04_dev,key=lf_item$,dom=*next)
+        ivw04a_key$=key(ivw04_dev,end=Build_WorkFile)
+        if pos(ivw04a.FIRM_ID$+ivw04a.WAREHOUSE_ID$+ivw04a.ITEM_ID$=lf_item$)<>1 then
+
+            Build_WorkFile: rem --- Build Work File
+
+                read (ivm04_dev,key=lf_item$,dom=*next)
+                while more
+                    ivm04a_key$=key(ivm04_dev,end=*break)
+                    if pos(ivm04a.FIRM_ID$+ivm04a.WAREHOUSE_ID$+ivm04a.ITEM_ID$=lf_item$)=0 then
+                        break
+                    endif
+                    read record (ivm04_dev,key=ivm04a_key$) ivm04a$
+                    write record (ivw04_dev,key=ivm04a_key$) ivw04a$
+                wend
+        endif
+
+        lfchan_dev=ivw04_dev
+
+rem --- Process
+        while more
+
+            if issue then
+                proc_issue=1
+                break
+            endif
+            read (lfchan_dev,key=lf_item$+lf_date$,dom=*next)
+            ivw04a_key$=key(lfchan_dev,end=no_match)
+            if ivw04a.FIRM_ID$+ivw04a.WAREHOUSE_ID$+ivw04a.ITEM_ID$+ivw04a.RECEIPT_DATE$=lf_item$+lf_date$ then
+
+                rem --- Tier Found With Matching Date
+
+                    read record (lfchan_dev,key=ivw04a_key$) ivw04a$
+                    if inquiry then
+                        break
+                    endif
+                    if ivw04a.UNIT_COST=cost then
+                        ivw04a.QTY_ON_HAND=ivw04a.QTY_ON_HAND+quantity
+                        write record (lfchan_dev,key=ivw04a_key$) ivw04a$
+                        break
+                    endif
+            endif
+
+            no_match: rem --- No Matching Cost Tier Found
+
+            if !fifo then
+                read (lfchan_dev,key=lf_item$+$ff$,dom=*next)
+                ivw04a_key$=keyp(lfchan_dev,end=no_tier_cost)
+            else
+                read (lfchan_dev,key=lf_item$,dom=*next)
+                ivw04a_key$=key(lfchan_dev,end=no_tier_cost)
+            endif
+
+            if ivw04a.FIRM_ID$+ivw04a.WAREHOUSE_ID$+ivw04a.ITEM_ID$<>lf_item$ then
+
+                no_tier_cost: rem --- No Tier Cost Found
+                read record (ivm02_dev,key=lf_item$,dom=std_exit) ivm02a$
+                ivw04a.UNIT_COST=ivm02a.UNIT_COST
+            else
+                read record (lfchan_dev,key=ivw04a_key$) ivw04a$
+            endif
+
+            if inquiry then
+                break
+            endif
+            seq$="001"
+            a1$=""
+            a2$=""
+            ivw04a.QTY_ON_HAND=quantity
+            ivw04a.UNIT_COST=cost
+            While more
+                
+                ivw04a.FIRM_ID$=lf_item$(1,2)
+                ivw04a.WAREHOUSE_ID$=lf_item$(3,2)
+                ivw04a.ITEM_ID$=lf_item$(5,20)
+                ivw04a.RECEIPT_DATE$=lf_date$
+                ivw04a.SEQUENCE_NO$=seq$
+                read (lfchan_dev,key=ivw04a.FIRM_ID$+ivw04a.WAREHOUSE_ID$+ivw04a.ITEM_ID$+ivw04a.RECEIPT_DATE$+ivw04a.SEQUENCE_NO$,dom=*break)
+                seq$=str(num(seq$)+1)
+            wend
+
+            write record (lfchan_dev,key=ivw04a.FIRM_ID$+ivw04a.WAREHOUSE_ID$+ivw04a.ITEM_ID$+ivw04a.RECEIPT_DATE$+ivw04a.SEQUENCE_NO$) ivw04a$
+            break
+        wend
+
+        if proc_issue=0
+            return_lf_cost: rem --- Return Cost
+
+                return_cost=ivw04a.UNIT_COST
+                goto std_exit
+        endif
+
+        process_issue: rem --- Process Tiers For Quantity Issued
+
+            if lifo then read (lfchan_dev,key=lf_item$+$ff$,dom=Work_Qnty)
+            if fifo then read (lfchan_dev,key=lf_item$,dom=*next)
+
+        Work_Qnty:
+            work_qty=quantity
+
+        while more
+                read_next_record:
+                    if lifo then let key$=keyp(lfchan_dev,end=no_more_tiers)
+                    if fifo then let key$=key(lfchan_dev,end=no_more_tiers)
+                    rem if pos(key$(1,24)=lf_item$)=0 then
+                    if pos(ivw04a.FIRM_ID$+ivw04a.WAREHOUSE_ID$+ivw04a.ITEM_ID$=lf_item$)=0 then
+                        break
+                    endif
+                    read record (lfchan_dev,key=key$) ivw04a$
+                    if ivw04a.QTY_ON_HAND<=0 then
+                        if lifo then extract (lfchan_dev,key=key$)
+                        continue
+                    endif
+
+                rem --- Calculate Quantity & Cost
+
+                    qty=ivw04a.QTY_ON_HAND-work_qty
+                    if qty<0 then
+                        total_cost=total_cost+(ivw04a.QTY_ON_HAND*ivw04a.UNIT_COST)
+                        ivw04a.QTY_ON_HAND=0
+                        work_qty=-qty
+                    else
+                        total_cost=total_cost+(work_qty*a[1])
+                        ivw04a.QTY_ON_HAND=ivw04a.QTY_ON_HAND-work_qty
+                        work_qty=0
+                    endif
+                
+                    if report then write record (ivw04_dev,key=key$) ivw04a$
+                    if lifo then extract (lfchan_dev,key=key$)
+                    if work_qty<>0 then
+                        continue
+                    endif
+        wend
+        no_more_tiers: rem --- No More Lifo/Fifo Tier Records
+
+            if work_qty<>0 then
+                read record (ivm02_dev,key=lf_item$,dom=*next) ivm02a$
+                if ivm02a.UNIT_COST<>0 then let total_cost=total_cost+(work_qty*ivm02a.UNIT_COST)
+                work_qty=0
+            endif
+
+        done: rem --- All Done
+
+        all_done:
+            if total_cost<>0 then let return_cost=total_cost/quantity
+            goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

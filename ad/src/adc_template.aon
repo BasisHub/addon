@@ -1,0 +1,154 @@
+rem adc - Return Table Template
+rem Program adc_template v8.0.0 21Mar2006
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- BEGFILE      : First file to open (Input)
+rem --- ENDFILE      : Last file to open (Input)
+rem --- IDS$[n]      : Template record ids in xxx-99x format(Input)
+rem --- TEMPLATES$[n]: Template for requested record id (Returned)
+rem --- STATUS       : Status code/0=No error (Returned)
+
+rem    seterr std_error
+    setesc std_error
+    enter begfile,endfile,ids$[all],templates$[all],status
+
+rem --- open ddm21 (template file); get its own template (i.e. template for the template file)
+
+	datadir$=stbl("+DIR_DAT",err=*next)
+    sysdatadir$=stbl("+DIR_BRD",err=*next)
+	status=999
+	ddm_table_tpls_dev=unt
+	basename$="ddm_table_tpls.dat"
+	open (ddm_table_tpls_dev)sysdatadir$+basename$
+    read(ddm_table_tpls_dev,key="DDM_TABLE_TPLS",dom=*next)
+    ddm21_key$=key(ddm_table_tpls_dev,end=template_error)
+    if pos("DDM_TABLE_TPLS"=ddm21_key$)<>1
+        goto template_error
+    else
+        read (ddm_table_tpls_dev)*,*,ddm21_tpl$
+    endif
+    dim ddm_table_tpls$:ddm21_tpl$
+
+rem --- Initializations
+
+    status=0
+
+rem --- Edit arguments
+
+    if begfile>endfile goto std_exit
+
+rem --- Open requested files
+
+    errors=0
+
+    for x=begfile to endfile
+
+        if cvs(ids$[x],2)="" continue
+        ddm_table_tpls_key$=ids$[x]
+        rem --- allow for disk:alias format, strip off disk name
+        wpos = pos(":"=ddm_table_tpls_key$)
+        if wpos
+            ddm_table_tpls_key$=ddm_table_tpls_key$(wpos+1)
+        endif
+
+rem --- Standard AddonSoftware file name or table alias?
+
+        wk$=fattr(ddm_table_tpls$,"dd_table_alias")
+        plen=dec(wk$(10,2))
+        ddm_table_tpls_key$=pad(ddm_table_tpls_key$,plen)
+        find record (ddm_table_tpls_dev,key=ddm_table_tpls_key$,err=template_error)ddm_table_tpls$
+        templates$[x]=cvs(ddm_table_tpls.dd_table_tpl$,2)
+        continue
+
+    template_error: rem --- Error encountered attempting to retrieve the template
+
+        errors=1
+        file=x
+        error$="Error "+str(err)+" encountered while attempting to retrieve the template for "
+        break
+    
+        rem --- End of template loop
+    
+    next x
+
+rem --- All done
+
+    if errors=0 goto std_exit
+
+rem --- An error was encountered. Retrieve the table description,
+rem --- display the error message and exit.
+
+    filename$=ids$[file]
+    description$="(Unknown Table)"    
+    read (ddm_table_tpls_dev,key="DDM_TABLES",dom=*next)
+    ddm_table_tpls_key$=key(ddm_table_tpls_dev,err=*return);read(ddm_table_tpls_dev)*,*,template$
+    if pos("DDM_TABLES"=ddm_table_tpls_key$)<>1 return
+    ddm_tables_key$=ddm_table_tpls.dd_table_alias$
+    ddm_tables_dev=unt
+    open (ddm_tables_dev,err=error_message) sysdatadir$+"ddm_tables.dat"
+    dim ddm_tables$:template$
+    find record (ddm_tables_dev,key=ddm_tables_key$,err=error_message)ddm_tables$
+    description$=cvs(ddm_tables.dd_alias_desc$,2)
+
+error_message: rem --- Display the message. 
+
+    error$=error$+$22$+filename$+" "+description$
+    if id$<>"" error$=error$+" - Record ID "+id$
+    error$=error$+$22$+"."
+    title$="Error Recovery"
+    buttons=5
+    icon=16
+    status=err+1
+    x=msgbox(error$,buttons+icon,title$,err=std_exit)
+    goto std_exit
+
+rem --- Functions
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit:
+        return q1$
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+std_exit: rem --- Return to calling program
+
+    close (ddm_tables_dev,err=*next)
+    close (ddm_table_tpls_dev,err=*next)
+    exit
+    end

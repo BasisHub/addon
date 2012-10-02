@@ -1,0 +1,109 @@
+rem adc - Calculate AP & AR Due Dates
+rem Program adc_duedate v8.0.0 22Apr2006 (syc_cd)
+rem Created by adx_progconv.bbx v1.0.1 (04/22/2006 10:54:02)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- TYPE$ : Day terms or Prox terms (D/P) (Input)
+rem --- FROM$ : From date in YYYYMMDD format (Input)
+rem --- DAYS  : Number of days when TYPE$="D" (Input)
+rem ---       : Day of the month when TYPE$="P" (Input)
+rem --- DUE$  : Calculated due date in YYYYMMDD format (Returned)
+rem --- STATUS: Zero=No Error/Non-Zero=Error (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter type$,from$,days,due$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Initializations
+
+    due$=from$
+    baddate=1
+
+rem --- Terms type is days. Due date = FROM$+DAYS
+
+    while type$="D"
+          due$=""
+          call stbl("+DIR_PGM")+"adc_daydates.aon",from$,due$,days
+          if due$="N" 
+             due$=""
+             status=999
+          endif
+          break
+    wend
+
+rem --- Terms type is Prox. Due date = same day next month
+
+    while type$="P"
+          yyyy=num(from$(1,4))
+          mm=num(from$(5,2))+1
+          if days=0 days=num(from$(7,2))
+          dd=days
+          if mm>12 yyyy=yyyy+1,mm=1
+          while baddate
+
+                rem --- Convert julian date to internal YYYYMMDD format
+
+                due$=date(jul(yyyy,mm,dd,err=*next):"%Yl%Mz%Dz"); break
+
+                rem --- Invalid day of the month (i.e. June 31st or Feb 30)
+
+                dd=dd-1
+                if dd continue
+                due$=""
+                status=999
+                break
+          wend
+          break
+      wend
+
+rem --- Done
+
+    if due$="" due$=from$
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

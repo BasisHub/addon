@@ -1,0 +1,142 @@
+rem --- Open MRP Files Using Alias
+rem --- Program mpc_openalias v8.0.0 31Jan2008 (mpc_fa)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/31/2008 04:02:59)
+rem --- Modified on March 14,2008
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- CHANNEL  : Channel number to open file using (Input)
+rem --- ALIAS$   : Standard ADD+ON file alias, e.g. mpe-03 (Input)
+rem --- DD_NAME$ : version 8 data dictionary name for alias (like MPE_PEGGING -- Input)
+rem --- FIRM$    : Firm ID (Input)
+rem --- FORECAST$: Forecast Type (Input)
+rem --- FILENAME$: Actual file name opened (Returned)
+rem --- STATUS   : 0=No Error (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter channel,alias$,dd_name$,firm$,forecast$,filename$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=1,begfile=1,endfile=files
+   
+rem --- Initializations
+
+    action=1
+    files=1
+    if channel<>0 then let action=0,files=channel
+    alias=0
+    status=0
+    more=1
+
+rem --- Build FILENAME$
+
+    status=10
+    if len(alias$)=6 then 
+        filename$=alias$(1,2)+alias$(6,1)+firm$+cvs(forecast$,2)
+
+rem --- Open FILENAME$
+        flag=0
+        while more
+            dim files$[files],options$[files],channels[files],ids$[files],templates$[files]
+            files$[files]=filename$,ids$[files]=dd_name$
+            options$[files]="F"
+            begfile=files
+            endfile=files
+            call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:           ids$[all],templates$[all],channels[all],batch,da_status
+            if da_status then flag=1;break
+            if channels[files]<>0 then break
+            call pgmdir$+"adc_makelike.aon",filename$,alias$,ml_status
+        wend
+        if flag=0 then
+            channel=channels[files]
+
+rem --- All Done
+
+            status=0
+            goto std_exit
+        endif
+    endif
+rem --- Error exit
+
+    if status=0 then let status=e0
+    if status=0 then let status=err
+    if status=0 then let status=911
+
+    dim message$[2]
+    message$[0]="Unable to open or define MRP work file for Firm "+$22$+firm$+$22$
+    message$[1]="Forecast Type "+$22$+cvs(forecast$,2)+$22$+" - File "+$22$+alias$+$22$+". Status was "+str(status)
+    message$[2]="             Press <Enter> To Continue"
+    call pgmdir$+"adc_stdmessage.aon",1,message$[all],2,22,-1,v$,v3
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

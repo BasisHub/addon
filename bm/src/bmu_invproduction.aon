@@ -1,0 +1,681 @@
+rem --- Inventory Production Update
+rem --- Program bmu_aa v8.0.0 28Jan2008 (bmu_aa)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/28/2008 11:02:29)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+    setesc std_error
+    seterr std_error
+
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    OutVect!=null()
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files  
+
+    files=29,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="bme-01",ids$[2]="BME_PRODUCT"
+    files$[3]="bmm-01",ids$[3]="BMM_BILLMAST"
+    files$[4]="bmm-02",ids$[4]="BMM_BILLMAT"
+    files$[5]="bmm-03",ids$[5]="BMM_BILLOPER"
+    files$[6]="bmm-08",ids$[6]="BMC_OPCODES"
+    files$[7]="bms_params",ids$[7]="BMS_PARAMS"
+    files$[8]="gls_params",ids$[8]="GLS_PARAMS"
+    files$[9]="ivm-01",ids$[9]="IVM_ITEMMAST"
+    files$[10]="ivm-02",ids$[10]="IVM_ITEMWHSE"
+    files$[11]="ivm-03",ids$[11]="IVX_ITEMPROD"
+    files$[12]="ivm-04",ids$[12]="IVM_ITEMTIER"
+    files$[13]="ivm-05",ids$[13]="IVM_ITEMVEND"
+    files$[14]="ivm-07",ids$[14]="IVM_LSMASTER"
+    files$[15]="ivm-08",ids$[15]="IVX_LSXREF"
+    files$[16]="ivm-12",ids$[16]="IVM_ITEMACT"
+    files$[17]="ivm-17",ids$[17]="IVM_LSACT"
+    files$[18]="ivs_params",ids$[18]="IVS_PARAMS"
+    files$[19]="ivt-01",ids$[19]="IVT_LSTRANS"
+    files$[20]="ivt-02",ids$[20]="IVX_LSCUST"
+    files$[21]="ivt-03",ids$[21]="IVX_LSVEND"
+    files$[22]="ivt-04",ids$[22]="IVT_ITEMTRAN"
+    files$[23]="ivw-04",ids$[23]="IVW_LFDET"
+    files$[24]="ivw-05",ids$[24]="IVW_LFCOST"
+    files$[25]="arc_distcode",ids$[25]="ARC_DISTCODE"
+    files$[26]="bmm-05",ids$[26]="BMM_BILLSUB"
+    files$[27]="glm-01",ids$[27]="GLM_ACCT"
+    files$[28]="glt-04",ids$[28]="GLE_DAILYDETAIL"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,24,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit      
+    ars01a_dev=channels[1]
+    bme01_dev=channels[2]
+    bmm01_dev=channels[3]
+    bmm02_dev=channels[4]
+    bmm03_dev=channels[5]
+    bmm08_dev=channels[6]
+    bms01a_dev=channels[7]
+    gls01a_dev=channels[8]
+    ivm01_dev=channels[9]
+    ivm02_dev=channels[10]
+    ivm03_dev=channels[11]
+    ivm04_dev=channels[12]
+    ivm05_dev=channels[13]
+    ivm07_dev=channels[14]
+    ivm08_dev=channels[15]
+    ivm12_dev=channels[16]
+    ivm17_dev=channels[17]
+    ivs01_dev=channels[18]
+    ivt01_dev=channels[19]
+    ivt02_dev=channels[20]
+    ivt03_dev=channels[21]
+    ivt04_dev=channels[22]
+    ivw04_dev=channels[23]
+    ivw05_dev=channels[24]
+
+
+rem --- Dimension string templates
+
+dim ars01a$:templates$[1],bme01a$:templates$[2],bmm01a$:templates$[3],
+:       bmm02a$:templates$[4],bmm03a$:templates$[5],bmm08a$:templates$[6],
+:       bms01a$:templates$[7],gls01a$:templates$[8],ivm01a$:templates$[9],
+:       ivm02a$:templates$[10],ivm03a$:templates$[11],ivm04a$:templates$[12],
+:       ivm05a$:templates$[13],ivm07a$:templates$[14],ivm08a$:templates$[15],
+:       ivm12a$:templates$[16],ivm17a$:templates$[17],ivs01a$:templates$[18],
+:       ivt01a$:templates$[19],ivt02a$:templates$[20],ivt03a$:templates$[21],
+:       ivt04a$:templates$[22],ivw04a$:templates$[23],ivw05a$:templates$[24]
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    bms01a_key$=firm_id$+"BM00"
+    find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+
+rem --- Parameters
+
+    n1$=sysinfo.firm_name$,n2$="IV",n3$=sysinfo.task_desc$
+    find record (ivs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ivs01a$
+    dim r0$(36),info$[20]
+    find record (bms01a_dev,key=firm_id$+"BM00",dom=std_missing_params) bms01a$
+    find record (gls01a_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+    ar_dist$="N"
+    find record (ars01a_dev,key=firm_id$+"AR00",dom=label1) ars01a$
+    if ars01a.dist_by_item$="Y" then
+        call pgmdir$+"adc_application.aon","AR",info$[all]
+        if info$[20]<>"N" then 
+            call pgmdir$+"adc_fileopen.aon",action,25,25,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit  
+            arm10_dev=channels[25];dim arm10d$:templates$[25]
+            ar_dist$="Y"
+        endif
+   endif 
+label1:
+    dim p[6],g[4],info$[20]
+    for x=0 to 4
+        g[x]=num(g2$(x*2+1,2),err=*next)
+    next x
+    g[2]=num(gls01a.current_year$)
+    p[0]=num(ivs01a.item_id_len$)
+    p[1]=num(ivs01a.vendor_prd_len$)
+    p[2]=num(ivs01a.precision$)
+    p[3]=num(ivs01a.ls_no_len$)
+    p[5]=num(ivs01a.current_per$)
+    p[6]=num(ivs01a.current_year$)
+    call pgmdir$+"adc_application.aon","BM",info$[all]
+    gl$=info$[9]
+    call pgmdir$+"adc_application.aon","AP",info$[all]
+    ap$=info$[20]
+
+rem --- Init Data
+
+    precision p[2]
+    dim a[1],b[12],c[16],d[10],h[11],hx[11]
+    ref1$=""
+    ref2$="",ref3$="Prod Entry"
+    costmethod$=ivs01a.cost_method$
+    lifofifo$=ivs01a.lifofifo$
+    more=1
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLOPER","PRIMARY",bmm03_key_tpl$,rd_table_chans$[all],status$
+
+rem --- ivc_itemupdt.aon Params
+
+    dim params[10],params$[10],item$[3],ref$[11],files[44]
+    files[0]=gls01a_dev
+    files[1]=ivm01_dev
+    files[2]=ivm02_dev
+    files[4]=ivm04_dev
+    files[5]=ivm05_dev
+    files[7]=ivm07_dev
+    files[8]=ivm08_dev
+    files[12]=ivm12_dev
+    files[17]=ivm17_dev
+    files[41]=ivt01_dev
+    files[42]=ivt02_dev
+    files[43]=ivt03_dev
+    files[44]=ivt04_dev
+    params[0]=g[0]
+    params$[0]=sysinfo.system_date$
+    params$[1]=sysinfo.user_id$
+    params$[2]=p2$
+    params$[3]=p3$
+    params$[4]=p4$
+    item$[0]=firm_id$(1,2)
+
+rem --- Additional File Opens
+
+    if ap$="Y" then
+        call pgmdir$+"adc_fileopen.aon",action,26,26,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit  
+        bmm05_dev=channels[26];dim bmm05a$:templates$[26]
+    endif 
+
+    if gl$="Y" then
+         call pgmdir$+"adc_fileopen.aon",action,27,28,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit  
+        glm01_dev=channels[27];dim glm01a$:templates$[27]
+        glt04_dev=channels[28];dim glt04a$:templates$[28]
+    endif 
+
+rem --- Options
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit
+    if gl$="Y" then call pgmdir$+"glc_ctlupdate.aon",status
+
+rem --- Clear LIFO/FIFO Work Files
+
+    if lifofifo$<>"N" then
+        call pgmdir$+"adc_clearfile.aon",ivw04_dev
+        call pgmdir$+"adc_clearfile.aon",ivw05_dev
+    endif 
+
+rem --- Disallow 'M'enu option in Error Routine
+
+    exit_ctrl=1
+
+rem --- Initial Read
+
+    read (bme01_dev,key=firm_id$,dom=*next)
+
+rem --- Main Loop
+
+    while more 
+        value=0
+        k0$=key(bme01_dev,end=*break)
+        if pos(firm_id$=k0$)<>1 then break
+        read record (bme01_dev) bme01a$
+        parent$=bme01a.item_id$
+        update$=bme01a.update_flag$,whse$=bme01a.warehouse_id$
+        print @(40,3),whse$," ",cvs(bme01a.item_id$,2),
+
+rem --- Additional Reads
+
+        dim h[11]
+        bill$="N"
+        read record (bmm01_dev,key=firm_id$+parent$,dom=label2) bmm01a$
+        bill$="Y"
+label2:
+        if bmm01a.est_yield=0 then let bmm01a.est_yield=100
+
+rem --- Item Number
+
+        find record (ivm01_dev,key=firm_id$+parent$,dom=warehose) ivm01a$
+        ref1$="Whse "+whse$
+        ref2$=bme01a.bm_reference$
+        parentgl$=ivm01a.gl_inv_acct$
+        ivacct$=ivm01a.gl_inv_acct$
+        find record (ivm02_dev,key=bme01a.firm_id$+bme01a.warehouse_id$+parent$,dom=get_cost_info) ivm02a$
+        unitcost=ivm02a.unit_cost
+        curlist=ivm02a.cur_price
+
+get_cost_info: rem --- Get Cost Info
+
+        tcost=unitcost
+        if bme01a.qty_ordered>=0 and costmethod$="A"   then
+            dim channel[9]
+            channel[0]=bmm01_dev
+            channel[1]=bmm02_dev,channel[2]=bmm03_dev
+            channel[3]=bmm05_dev
+            channel[4]=bmm08_dev,channel[5]=ivm02_dev
+            channel[6]=ivm04_dev
+            channel[7]=ivw04_dev,channel[8]=ivw05_dev
+            channel[9]=sys01_dev
+            call pgmdir$+"bmc_ea.aon",parent$,channel[all],bme01a.qty_ordered,bme01a.prod_date$,firm_id$,ap$,
+:                   "N",1,mat_cost,lab_cost,oh_cost,sub_cost,bme01a.qty_ordered,bme01a.qty_ordered,"Y",whse$,ea_status
+            tcost=mat_cost+lab_cost+oh_cost+sub_cost
+        endif 
+
+warehose: rem --- Warehouse
+
+        find record (ivm02_dev,key=bme01a.firm_id$+bme01a.warehouse_id$+parent$,dom=init_detail) ivm02a$
+        if update$="Y" then
+
+rem --- Dist Code
+            if ar_dist$<>"N" then 
+                dim parentgl$(g[4],"0")
+                find record (arm10_dev,key=firm_id$+"D"+ivm02a.ar_dist_code$,dom=init_IV_update) arm10d1$
+                parentgl$=arm10d.gl_inv_acct$
+                ivacct$=parentgl$
+            endif 
+
+init_IV_update: rem --- Init for IV update for Finished Good
+
+            fg_glacct$=parentgl$
+        endif 
+
+init_detail: rem --- Init Detail
+
+        if bill$<>"N" then
+            read (bmm02_dev,key=bme01a.firm_id$+parent$,dom=*next)
+
+rem --- Read Detail
+                    
+            while more
+                dim bmm01a2$:templates$[3]
+                read record (bmm02_dev,end=*break) bmm02a$
+                if cvs(bmm02a.effect_date$,3)<>"" then if bme01a.prod_date$<bmm02a.effect_date$ then continue
+                if cvs(bmm02a.obsolt_date$,3)<>"" then if bme01a.prod_date$>=bmm02a.obsolt_date$ then continue
+                if bmm02a.line_type$="M" then continue
+                if bmm02a.firm_id$+bmm02a.bill_no$<>bme01a.firm_id$+parent$ then break
+                bmm01a2.est_yield=100
+                find record (bmm01_dev,key=bme01a.firm_id$+bmm02a.item_id$,dom=label3) bmm01a2$
+                if bmm01a2.phantom_bill$="Y" then 
+                    gosub explode
+                    read (bmm02_dev,key=bmm02a.firm_id$+bmm02a.bill_no$+bmm02a.material_seq$,dom=*next); rem " --- Reset bmm-02 Pointer
+                    continue
+                endif 
+label3:
+                dim glacct$(g[4])
+                find record (ivm01_dev,key=bme01a.firm_id$+bmm02a.item_id$,dom=*continue) ivm01a$
+                childgl$=ivm01a.gl_inv_acct$
+                glacct$=childgl$
+
+rem --- Update Warehouse By Issuing Children
+
+                if bmm02a.divisor=0 then let bmm02a.divisor=1
+                find record (ivm02_dev,key=bme01a.firm_id$+bme01a.warehouse_id$+bmm02a.item_id$,dom=updategl) ivm02a$
+                units=fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered
+                if phantom$="Y" units=0; rem "So that when ATAMO processes phantoms, it won't change on-hand etc qty's in file
+                iss_or_rec$="I"; rem "I=Issue, O=Receipt
+                unitcost=ivm02a.unit_cost
+                curlist=ivm02a.cur_price
+                finished$=parent$
+                item$=bmm02a.item_id$
+                if bme01a.qty_ordered<>0 gosub atamo; rem "Update IV unless qty ordered is 0"
+
+rem --- Distribution  
+                dim arm10d2$:tmpl(arm10_dev)
+                if ar_dist$<>"N" then
+                    dim childgl$(g[4],"0")
+                    find record (arm10_dev,key=firm_id$+"D"+ivm02a.ar_dist_code$,dom=updategl) arm10d2$
+                    childgl$=arm10d.gl_inv_acct$
+                endif 
+
+updategl: rem --- Update G/L
+
+                if update$="N" then let parentgl$=bms01a.gl_wip_acct$ else let parentgl$=ivacct$
+                account$=parentgl$
+                when$=bme01a.prod_date$
+                amount=unitcost*fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered
+                units=fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered
+                precision 2
+                amount=amount*1
+                value=value+amount
+                memo$="Item "+cvs(bme01a.item_id$,2)
+                gosub glpost
+                account$=childgl$
+                amount=-amount
+                units=-units
+                memo$="Item "+cvs(bmm02a.item_id$,2)
+                gosub glpost
+                precision num(ivs01a.precision$)
+
+rem --- Loop back for next record
+            wend 
+rem --- Operation & Subcontract Distribution
+
+            memo$="Variance"
+            gosub operation
+            if ap$="Y" then gosub subcontracts
+            if costmethod$="R" and bme01a.qty_ordered>=0 then 
+                let tcost=value/bme01a.qty_ordered
+            else
+                if costmethod$<>"A" and bme01a.qty_ordered<0 then 
+                    find record (ivm01_dev,key=firm_id$+parent$,dom=update_last_used_flag) ivm01a$
+                    find record (ivm02_dev,key=bme01a.firm_id$+bme01a.warehouse_id$+parent$,dom=*next) ivm02a$
+                    unitcost=ivm02a.unit_cost
+                    when$=bme01a.prod_date$
+                    account$=r0$(27,g[4])
+                    tcost=unitcost
+                    amount=value-tcost*bme01a.qty_ordered
+                    units=0
+                    gosub glpost
+                    if update$="N" then let parentgl$=bms01a.gl_wip_acct$ else let parentgl$=ivacct$
+                    account$=parentgl$
+                    amount=-amount
+                    gosub glpost
+                endif
+            endif 
+        endif 
+update_last_used_flag: rem --- Update Last Used Flag
+
+        read record (bmm01_dev,key=firm_id$+parent$,dom=remove_record) bmm01a$
+        if bme01a.prod_date$>=bmm01a.lstact_date$ then let bmm01a.lstact_date$=bme01a.prod_date$,bmm01a.source_code$="B"
+        write record (bmm01_dev,key=firm_id$+parent$) bmm01a$
+
+rem --- Update Inventory for Finished Goods
+
+        find record (ivm01_dev,key=firm_id$+parent$,dom=remove_record) ivm01a$
+        find record (ivm02_dev,key=bme01a.firm_id$+bme01a.warehouse_id$+parent$,dom=*next) ivm02a$
+        unitcost=tcost
+        curlist=ivm02a.cur_price
+        units=bme01a.qty_ordered
+        if update$<>"Y" units=0; rem "Only change qtys if Update flag=Y
+        if costmethod$="S" or update$="N" or bme01a.qty_ordered<0 unitcost=ivm02a.unit_cost; rem  "Use whse cost in ATAMO call so cost won't update under these conditions"
+        item$=parent$
+        glacct$=fg_glacct$
+        finished$=fill(20)
+        iss_or_rec$="O"; rem "I==Issue, O==Receipt"
+        if update$="Y" and bme01a.qty_ordered<>0 gosub atamo; rem "Update IV if qty ordered is > 0 and Finished Goods Update Flag = "y".
+
+remove_record: rem --- Remove Record
+
+        remove (bme01_dev,key=k0$,dom=*continue)
+    wend
+   
+done: rem --- End
+
+    call pgmdir$+"adc_batchdelete.aon",status
+    goto std_exit
+
+atamo: rem --- Update IV
+
+    dim ref[3],b6$(g[4])
+    action$="B"+iss_or_rec$
+    item$[1]=whse$
+    item$[2]=item$
+    ref$[0]=bme01a.prod_date$
+    ref$[2]=bme01a.bm_reference$
+    ref$[7]=glacct$
+    ref$[9]=finished$
+    ref[0]=units
+    ref[1]=unitcost,ref[2]=curlist
+    if iss_or_rec$="I" then let ref[0]=-units
+
+rem --- Inventory updates
+
+    call pgmdir$+"ivc_itemupdt.aon",action$,files[all],ivs01a$,item$[all],ref$[all],ref[all],status
+    return
+
+subcontracts: rem --- Subcontracts
+
+    dim sub[9]
+    read (bmm05_dev,key=bme01a.firm_id$+bme01a.item_id$,dom=*next)
+    while more
+        k1$=key(bmm05_dev,end=*break)
+        if pos(bme01a.firm_id$+parent$=k1$)<>1 then break
+        read record (bmm05_dev) bmm05a$
+        if cvs(bmm05a.effect_date$,3)<>"" then if bme01a.prod_date$<bmm05a.effect_date$ then continue
+        if cvs(bmm05a.obsolt_date$,3)<>"" then if bme01a.prod_date$>=bmm05a.obsolt_date$ then continue
+        if bmm05a.line_type$<>"S" then continue
+        if update$="N" then let parentgl$=bms01a.gl_wip_acct$ else let parentgl$=ivacct$
+        if bmm05a.divisor=0 then let bmm05a.divisor=1
+        a0=bme01a.qty_ordered*bmm05a.unit_cost*fnsub(bmm05a.qty_required,bmm05a.alt_factor,bmm05a.divisor)
+        units=bme01a.qty_ordered*fnsub(bmm05a.qty_required,bmm05a.alt_factor,bmm05a.divisor)
+        when$=bme01a.prod_date$
+        account$=parentgl$
+        amount=a0
+        value=value+amount
+        memo$="Item "+cvs(bme01a.item_id$,2)+" "+bmm05a.ext_comments$
+        gosub glpost
+        account$=r0$(17,g[4])
+        amount=-a0
+        units=-units
+        gosub glpost       
+    wend
+return
+
+operation: rem --- Operation
+
+    dim x1$(50),x[13],k[11],h[11]
+    dim bmm01a1$:templates$[3]
+    dim bmm03_key$:bmm03_key_tpl$ 
+    read record (bmm01_dev,key=bme01a.firm_id$+parent$,dom=*next) bmm01a1$
+    read (bmm03_dev,key=bme01a.firm_id$+parent$,dom=*next)
+    while more
+        bmm03_key$=key(bmm03_dev,end=*break)
+        if pos(bme01a.firm_id$+parent$=bmm03_key$)<>1 then break
+        read record (bmm03_dev) bmm03a$
+        if cvs(bmm03a.effect_date$,3)<>"" then if bme01a.prod_date$<bmm03a.effect_date$ then continue
+        if cvs(bmm03a.obsolt_date$,3)<>"" then if bme01a.prod_date$>=bmm03a.obsolt_date$ then continue
+        if bmm03a.line_type$="M" then continue
+        find record (bmm08_dev,key=bmm03_key.firm_id$+bmm03a.op_code$,dom=*next) bmm08a$
+        if bmm01a1.std_lot_size=0 then let bmm01a1.std_lot_size=1
+        if bme01a.qty_ordered<>0 then 
+           let directcost=fnop2(bme01a.qty_ordered,bmm03a.hrs_per_pce,bmm08a.direct_rate,bmm03a.pcs_per_hour,bmm01a1.est_yield,bmm03a.setup_time)
+           units=fnopu(bme01a.qty_ordered,bmm03a.hrs_per_pce,bmm03a.pcs_per_hour,bmm01a1.est_yield,bmm03a.setup_time) 
+        else 
+           let directcost=0
+           units=0
+        endif
+        ohcost=directcost*bmm08a.ovhd_factor
+        ounits=units*bmm08a.ovhd_factor
+
+rem --- Direct Labor
+
+        precision 2
+        directcost=directcost*1
+        ohcost=ohcost*1
+        account$=bmm08a.gl_dir_lab$
+        when$=bme01a.prod_date$
+        amount=-directcost
+        units=-units
+        memo$="Item "+cvs(bme01a.item_id$,2)+" "+bmm08a.code_desc$
+        gosub glpost
+        account$=parentgl$
+        amount=directcost
+        units=-units
+        value=value+directcost
+        gosub glpost
+
+rem --- Overhead
+
+        account$=bmm08a.gl_ovh_var$
+        amount=-ohcost,units=-ounits
+        gosub glpost
+        let account$=parentgl$
+        amount=ohcost
+        units=ounits
+        value=value+ohcost
+        gosub glpost
+        precision num(ivs01a.precision$)
+    wend 
+return
+
+explode: rem --- Explode Phantom Bills
+
+    dim channel[23],info$[11],info[20]
+    let channel[0]=bmm01_dev,channel[1]=bmm03_dev,channel[2]=bmm05_dev
+    let channel[3]=bmm08_dev,channel[4]=ivm01_dev,channel[5]=ivm02_dev
+    let channel[6]=ivt04_dev,channel[7]=sys01_dev,channel[8]=glm01_dev
+    let channel[9]=glt04_dev,channel[10]=arm10_dev,channel[11]=glt14_dev
+    let channel[12]=ivm04_dev,channel[13]=ivm05_dev,channel[14]=ivm07_dev
+    let channel[15]=ivm08_dev,channel[16]=ivm12_dev,channel[17]=ivm17_dev
+    let channel[18]=ivt01_dev,channel[19]=ivt02_dev,channel[20]=ivt03_dev
+    let channel[21]=ivt04_dev,channel[22]=ivm03_dev,channel[23]=bmm02_dev
+    let info$[0]=bmm02a.item_id$,info$[1]=ref1$,info$[2]=ref2$,info$[3]=ap$
+    let info$[4]=ar_dist$,info$[5]=bme01a.bm_reference$,info$[6]=whse$
+    let info$[7]=bme01a.prod_date$,info$[8]=update$,info$[9]=gl$,info$[10]=ivacct$
+    let info[0]=bme01a.qty_ordered*bmm02a.qty_required,info[1]=bmm01a1.est_yield*bmm01a2.est_yield/100
+    call pgmdir$+"bmc_ga.aon",channel[all],info$[all],info[all],bme01a.item_id$
+    let value=value+info[2]
+return
+
+rem --- Standard G/L Posting Routine
+
+glpost:
+    if gl$="Y" then
+        call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,glt14_dev,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
+    endif 
+return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+    def fnqty(q1,q2,q3,q4,q5)=10000*q1*q2/(q3*q4*(100-q5))
+    def fnsub(q1,q2,q3)=q1*q2/q3
+    def fnop2(q1,q2,q3,q4,q5,q6)=q1*100*(q2*q3/q4)/q5+SGN(q1)*q6*q3
+    def fnopu(q1,q2,q3,q4,q5)=q1*100*(q2/q3)/q4+SGN(q1)*q5
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

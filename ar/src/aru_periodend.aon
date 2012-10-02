@@ -1,0 +1,555 @@
+rem --- Accounts Receivable Period End Update
+rem --- Program aru_periodend v8.0.0 01Jan2007 (aru_bb)
+rem --- Created by adx_codeport.bbx v1.1.5 (01/01/2007 11:07:44)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Are Sales Order Processing or Sales Analysis installed?
+
+    application$="OP"
+    call pgmdir$+"adc_application.aon",application$,info$[all]
+    op$=info$[20]
+    application$="SA"
+    call pgmdir$+"adc_application.aon",application$,info$[all]
+    sa$=info$[20]
+
+rem --- Open/Lock files
+
+    files=24,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
+    files$[3]="arm-02",ids$[3]="ARM_CUSTDET"
+    files$[4]="arm-06",ids$[4]="ARM_CUSTPMTS"
+    files$[5]="ars_mtdcash",ids$[5]="ARS_MTDCASH"
+    files$[6]="art-01",ids$[6]="ART_INVHDR"
+    options$[6]="L"
+    if op$="Y"
+       files$[7]="ope-01",ids$[7]="OPE_ORDHDR"
+       files$[8]="opm-09",ids$[8]="OPM_CUSTJOBS"
+       files$[9]="ops_mtdsales",ids$[9]="OPS_MTDSALES"
+       files$[10]="opt-01",ids$[10]="OPT_ORDHDR"
+    endif
+    if sa$="Y"
+       files$[11]="sam-01",ids$[11]="SAM_CUSTOMER"
+       files$[12]="sam-02",ids$[12]="SAM_TERRITRY"
+       files$[13]="sam-03",ids$[13]="SAM_SALESPSN"
+       files$[14]="sam-04",ids$[14]="SAM_CUSTTYPE"
+       files$[15]="sam-05",ids$[15]="SAM_CUSTSHIP"
+       files$[16]="sam-06",ids$[16]="SAM_CUSTSIC"
+       files$[17]="sam-07",ids$[17]="SAM_ITEM"
+       files$[18]="sam-08",ids$[18]="SAM_WAREHSE"
+       files$[19]="sam-09",ids$[19]="SAM_VENDOR"
+       files$[20]="sam-10",ids$[20]="SAM_DISTCODE"
+       files$[21]="sam-11",ids$[21]="SAM_NONSTOCK"
+       files$[22]="sam-12",ids$[22]="SAM_CUSTTERR"
+       files$[23]="sas_params",ids$[23]="SAS_PARAMS"
+    endif
+    files$[24]="gls_params",ids$[24]="GLS_PARAMS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_update
+    ars01_dev=channels[1]
+    arm01_dev=channels[2]
+    arm02_dev=channels[3]
+    arm06_dev=channels[4]
+    ars10_dev=channels[5]
+    art01_dev=channels[6]
+    ope01_dev=channels[7]
+    opm09_dev=channels[8]
+    ops10_dev=channels[9]
+    opt01_dev=channels[10]
+    sam01_dev=channels[11]
+    sam02_dev=channels[12]
+    sam03_dev=channels[13]
+    sam04_dev=channels[14]
+    sam05_dev=channels[15]
+    sam06_dev=channels[16]
+    sam07_dev=channels[17]
+    sam08_dev=channels[18]
+    sam09_dev=channels[19]
+    sam10_dev=channels[20]
+    sam11_dev=channels[21]
+    sam12_dev=channels[22]
+    sas01_dev=channels[23]
+    gls01_dev=channels[24]
+
+rem --- Dimension string templates
+
+    dim ars01a$:templates$[1],arm01a$:templates$[2],arm02a$:templates$[3]
+    dim arm06a$:templates$[4],ars10c$:templates$[5],art01a$:templates$[6]
+    dim gls01a$:templates$[24]
+    if op$="Y" dim ope01a$:templates$[7],opm09a$:templates$[8],ops10s$:templates$[9],opt01a$:templates$[10]
+    if sa$="Y" dim sam01a$:templates$[11],sam02a$:templates$[12],sam03a$:templates$[13],
+:                  sam04a$:templates$[14],sam05a$:templates$[15],sam06a$:templates$[16],
+:                  sam07a$:templates$[17],sam08a$:templates$[18],sam09a$:templates$[19],
+:                  sam10a$:templates$[20],sam11a$:templates$[21],sam12a$:templates$[22],
+:                  sas01a$:templates$[23]
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    sas01a_key$=firm_id$+"SA00"
+    if sa$="Y" find record (sas01_dev,key=sas01a_key$,err=std_missing_params) sas01a$
+    current_period=num(ars01a.current_per$)
+    current_year=num(ars01a.current_year$)
+    total_periods=num(gls01a.total_pers$)
+    call pgmdir$+"adc_perioddates.aon",gls01_dev,current_period,current_year,begdate$,
+:                                      enddate$,status
+    period=current_period
+    mp=13
+
+rem --- Initializations
+
+    precision 4
+    morecustomers=1
+    moredetail=1
+    moresales=1
+    if sa$<>"Y" moresales=0
+    morejobs=1
+    if op$<>"Y" morejobs=0
+    if ars01a.job_nos$<>"Y" morejobs=0
+    artype$=fill(2)
+
+rem --- Get user approval to proceed
+
+    msg_id$="CLOSE_PERIOD"
+    dim msg_tokens$[2]
+    msg_tokens$[0]=str(current_period)
+    msg_tokens$[1]=fndate$(begdate$)
+    msg_tokens$[2]=fndate$(enddate$)
+    gosub disp_message
+    if msg_opt$="N" goto std_exit_no_update
+
+rem --- Calculate Date For Retaining Job Numbers
+
+    y=num(sysinfo.system_date$(1,4))
+    m=num(sysinfo.system_date$(5,2))-num(ars01a.retain_jobs$)
+    d=num(sysinfo.system_date$(7,2))
+check_month:
+    while m<1
+          m=m+12
+          y=y-1
+    wend
+    jobdate$=date(jul(y,m,d,err=check_days):"%Y%Mz%Dz")
+    goto period_end
+check_days:
+    d=d-1
+    goto check_month
+
+period_end: rem --- Roll Month to Date Sales Total
+
+    if op$="Y" and period>=current_period
+       dim ops10s$:fattr(ops10s$)
+       ops10s.firm_id$=firm_id$
+       ops10s.record_id_s$="S"
+       k$=ops10s.firm_id$+ops10s.record_id_s$
+       read record (ops10_dev,key=k$,dom=*proceed) ops10s$
+       ops10s.mtd_sales=ops10s.nmtd_sales
+       ops10s.mtd_returns=ops10s.nmtd_returns
+       ops10s.mtd_tax=ops10s.nmtd_tax
+       ops10s.mtd_freight=ops10s.nxt_mtd_frgt
+       ops10s.mtd_cost=ops10s.nxt_mtd_cost
+       ops10s.mtd_discount=ops10s.nxt_mtd_disc
+       ops10s.mtd_csh_sale=ops10s.nmtd_cashsl
+       ops10s.nmtd_sales=0
+       ops10s.nmtd_returns=0
+       ops10s.nmtd_tax=0
+       ops10s.nxt_mtd_frgt=0
+       ops10s.nxt_mtd_cost=0
+       ops10s.nxt_mtd_disc=0
+       ops10s.nmtd_cashsl=0
+       ops10s$=field(ops10s$)
+       write record (ops10_dev,key=k$) ops10s$
+    endif 
+
+rem --- Roll Month to Date Cash Totals
+
+    if period>=current_period
+       dim ars10c$:fattr(ars10c$)
+       ars10c.firm_id$=firm_id$
+       ars10c.record_id_c$="C"
+       k$=ars10c.firm_id$+ars10c.record_id_c$
+       read record (ars10_dev,key=k$,dom=*proceed) ars10c$
+       ars10c.mtd_cash=ars10c.nxt_mtd_cash
+       ars10c.mtd_csh_disc=ars10c.nmtd_cash_ds
+       ars10c.mtd_csh_gl=ars10c.nmtd_cashgl
+       ars10c.nxt_mtd_cash=0
+       ars10c.nmtd_cash_ds=0
+       ars10c.nmtd_cashgl=0
+       ars10c$=field(ars10c$)
+       write record (ars10_dev,key=k$) ars10c$
+    endif
+
+rem --- Start progress meter and position customer master file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
+    read (arm01_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Customer Master (arm-01) record
+
+    while morecustomers
+          arm01_key$=key(arm01_dev,end=*break)
+          if pos(firm_id$=arm01_key$)<>1 break
+          read record (arm01_dev,key=arm01_key$) arm01a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+          rem --- Update Customer Sales and Payments Summary (arm-06) record
+
+          dim arm06a$:fattr(arm06a$)
+          arm06a.firm_id$=arm01a.firm_id$
+          arm06a.customer_id$=arm01a.customer_id$
+          arm06_key$=arm01_key$
+          find record (arm06_dev,key=arm06_key$,dom=*next) arm06a$ 
+          if period=total_periods
+             arm06a.pyr_sales=arm06a.ytd_sales
+             arm06a.pri_ytd_cost=arm06a.ytd_cost
+             arm06a.avg_dtp_pytd=arm06a.avg_dtp_pytd
+             arm06a.pyr_no_py=arm06a.ytd_no_pmts
+             arm06a.pyr_hi_crd=arm06a.ytd_hi_cred
+             arm06a.ytd_sales=0
+             arm06a.ytd_cost=0
+             arm06a.avg_dtp_pytd=0
+             arm06a.ytd_no_pmts=0
+             arm06a.ytd_hi_cred=0
+          endif
+          arm06a.mtd_sales=arm06a.nmtd_sales
+          arm06a.ytd_sales=arm06a.ytd_sales+arm06a.nmtd_sales
+          arm06a.mtd_cost=arm06a.nxt_mtd_cost
+          arm06a.ytd_cost=arm06a.ytd_cost+arm06a.nxt_mtd_cost
+          arm06a.nmtd_sales=0
+          arm06a.nxt_mtd_cost=0
+          payments=arm06a.ytd_no_pmts+arm06a.nmtd_no_pay
+          ytd=arm06a.avg_days_ytd*arm06a.ytd_no_pmts
+          nmtd=arm06a.avg_dtp_nmtd*arm06a.nmtd_no_pay
+          if payments<>0 arm06a.avg_days_ytd=int((ytd+nmtd)/payments)
+:                   else arm06a.avg_days_ytd=arm06a.avg_dtp_nmtd
+          arm06a.ytd_no_pmts=arm06a.ytd_no_pmts+arm06a.nmtd_no_pay
+          arm06a.avg_days_mtd=arm06a.avg_dtp_nmtd
+          arm06a.mtd_no_pmts=arm06a.nmtd_no_pay
+          arm06a.avg_dtp_nmtd=0
+          arm06a.nmtd_no_pay=0
+          if arm06a.nmtd_high_cr>arm06a.ytd_hi_cred arm06a.ytd_hi_cred=arm06a.nmtd_high_cr
+          arm06a.mtd_high_crd=arm06a.nmtd_high_cr
+          arm06a.nmtd_high_cr=0
+          arm06a$=field(arm06a$)
+          write record (arm06_dev,key=arm06_key$) arm06a$
+
+          rem --- If this isn't a temporary customer we're done
+
+          if arm01a.retain_cust$<>"N" continue
+
+          rem --- Perform checks to see if this temporary customer can be deleted
+          rem --- Start with the Invoice Header (art-01) file
+
+          keyprefix$=firm_id$+artype$+arm01a.customer_id$
+          read (art01_dev,key=keyprefix$,dom=*next)
+          k$=key(art01_dev,end=*next)
+          if pos(keyprefix$=k$)=1 continue
+
+          rem --- Check the Customer Sales Analysis (sam-01) file if sales analysis is installed
+
+          found=0
+          year$=fill(4)
+          k$=firm_id$+year$+arm01a.customer_id$
+          while moresales
+                read (sam01_dev,key=k$,dom=*next)
+                sam01_key$=key(sam01_dev,end=*break)
+                if pos(firm_id$=sam01_key$)<>1 break
+                if pos(arm01a.customer_id$=sam01_key$(7))=1
+                   found=1
+                   break
+                endif
+                year$=str(num(sam01_key$(3,4))+1:"0000")
+                k$=firm_id$+year$+arm01a.customer_id$
+          wend 
+          if found continue
+
+          rem --- Check Open Order (ope-01) file if Sales Order Processing is installed
+
+          k$=""
+          keyprefix$=firm_id$+artype$+arm01a.customer_id$
+          if op$="Y"
+             read (ope01_dev,key=keyprefix$,dom=*proceed)
+             k$=key(ope01_dev,end=*proceed)
+          endif
+          if pos(keyprefix$=k$)=1 continue
+
+          rem --- Check Invoice History (ope-01) file if Sales Order Processing is installed
+
+          k$=""
+          keyprefix$=firm_id$+artype$+arm01a.customer_id$
+          if op$="Y"
+             read (opt01_dev,key=keyprefix$,dom=*proceed)
+             k$=key(opt01_dev,end=*proceed)
+          endif
+          if pos(keyprefix$=k$)=1 continue
+
+          rem --- Remove temporary customer
+
+          arm02_key$=firm_id$+artype$+arm01a.customer_id$
+          remove (arm06_dev,key=arm06_key$,dom=*next)
+          remove (arm02_dev,key=arm02_key$,dom=*next)
+          remove (arm01_dev,key=arm01_key$,dom=*next)
+
+          rem --- Loop back for next customer master record
+
+    wend 
+
+rem --- Process Job Number (opm-09) records if Sales Order Processing is installed
+rem --- and job numbers are being used.
+
+    while morejobs
+          call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+          call pgmdir$+"adc_progress.aon","NC","","","","",0,opm09_dev,1,meter_num,status
+          read (opm09_dev,key=firm_id$,dom=*next)
+          while moredetail
+                k$=key(opm09_dev,end=*break)
+                if pos(firm_id$=k$)<>1 break
+                read record (opm09_dev,key=k$) opm09a$
+                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+                if opm09a.fst_shp_date$<jobdate$ 
+:                  and opm09a.retain_cust$="N" remove (opm09_dev,key=k$)
+          wend
+          break
+    wend
+
+rem --- If the last period of the fiscal year is being closed and Sales Analysis is
+rem --- installed generate initial sales analysis records for the next fiscal year
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    if period<>current_period moresales=0
+    if period+1<=total_periods moresales=0
+    thisyear$=str(current_year:"0000")
+    nextyear$=str(current_year+1:"0000")
+    keyprefix$=firm_id$+thisyear$
+    while moresales
+          if sas01a.by_customer$="Y"
+             dim template$:fattr(sam01a$)
+             channel=sam01_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_territory$="Y"
+             dim template$:fattr(sam02a$)
+             channel=sam02_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_salespsn$="Y"
+             dim template$:fattr(sam03a$)
+             channel=sam03_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_customer_type$="Y"
+             dim template$:fattr(sam04a$)
+             channel=sam04_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_shipto$="Y"
+             dim template$:fattr(sam05a$)
+             channel=sam05_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_sic_code$="Y"
+             dim template$:fattr(sam06a$)
+             channel=sam06_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_product$="Y"
+             dim template$:fattr(sam07a$)
+             channel=sam07_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_whse$="Y"
+             dim template$:fattr(sam08a$)
+             channel=sam08_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_vendor$="Y"
+             dim template$:fattr(sam09a$)
+             channel=sam09_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_dist_code$="Y"
+             dim template$:fattr(sam10a$)
+             channel=sam10_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_nonstock$="Y"
+             dim template$:fattr(sam11a$)
+             channel=sam11_dev
+             gosub sales_analysis
+          endif
+          if sas01a.by_customer$="Y"
+             dim template$:fattr(sam12a$)
+             channel=sam12_dev
+             gosub sales_analysis
+          endif
+          break
+    wend
+
+rem --- Increment the period (and maybe the year) in the AR Parameter Record
+
+    if period<current_period goto std_exit
+    current_period=current_period+1
+    if current_period>total_periods
+       current_period=1
+       current_year=current_year+1
+    endif
+    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    ars01a.current_per$=str(current_period:"00")
+    ars01a.current_year$=str(current_year:"0000")
+    write record (ars01_dev,key=ars01a_key$) ars01a$
+    goto std_exit
+
+sales_analysis: rem --- Initialize a sales analysis file for the new year
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    keyprefix$=firm_id$+thisyear$
+    read (channel,key=keyprefix$,dom=*next)
+    while moresales
+          k$=key(channel,end=*break)
+          if pos(keyprefix$=k$)<>1 break
+          read record (channel) template$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+          rem --- Transfer numerics into work arrays
+
+          dim qtys[mp],costs[mp],sales[mp]
+          for x=1 to mp
+              qtys[x]=nfield(template$,"qty_shipped_"+str(x:"00"))
+              costs[x]=nfield(template$,"total_cost_"+str(x:"00"))
+              sales[x]=nfield(template$,"total_sales_"+str(x:"00"))
+          next x
+
+          rem --- Any activity in the current year?
+
+          none=1
+          for x=1 to mp
+              if qtys[x] or costs[x] or sales[x] none=0
+          next x
+          if none continue
+
+          rem --- Create a record for the next year
+
+          dim qtys[mp],costs[mp],sales[mp]
+          template.year$=nextyear$
+          for x=1 to mp
+              field template$,"qty_shipped_"+str(x:"00")=qtys[x]
+              field template$,"total_cost_"+str(x:"00")=costs[x]
+              field template$,"total_sales_"+str(x:"00")=sales[x]
+          next x
+          template$=field(template$)
+          write record (channel) template$
+
+          rem --- Reposition file after writing a record
+
+          read (channel,key=k$)
+
+    wend
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

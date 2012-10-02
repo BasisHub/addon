@@ -1,0 +1,234 @@
+rem adx - CodePort Program Conversion Utility (Initialization Overlay)
+rem Program adx_codeport.bbj v8.0.0 12Oct2007
+rem  
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Feb2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+rem  
+rem --- This overlay performs the initializations for the program
+rem --- conversion process and then runs adx_codeportfile to get
+rem --- the name of the next source program to convert.
+rem 
+begin 
+rem --- Initialize title bar
+    let version$="v1.1.5",utility$=PGM(-2)
+    let title$="CodePort - Program Conversion Utility "+version$
+rem ---     let icon$=fnglobal$("+ADDONICON","images/addon_logo_16.ico")
+rem ---     print 'minicon'(icon$,0),'title'(title$)
+    print 'show',title$
+
+rem --- Retrieve directory paths from the config file
+    let logdir$=fnglobal$("+CODEPORT_LOGS","")
+    let filedir$=fnglobal$("+CODEPORT_FILES","")
+    let pgmdir$=fnglobal$("+DIR_PGM","")
+    let libdir$=fnglobal$("+CODEPORT_LIB","")
+
+rem --- Create and open log file
+    let logfile$=logdir$+"CodePort_"+DATE(0:"%Mz%Dz%Yz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase logfile$,err=create_logfile
+    create_logfile: 
+    string logfile$
+    let log_dev=unt
+    open (log_dev)logfile$
+
+rem --- Parameters
+parameters: 
+    let pro5lst$=fnglobal$("+PRO5LST","C:/basis/vpro5/pro5lst.exe")
+    REM --- Initializations
+    dim oldcode$[999],newcode$[999],options$[10]
+    let sysref$=$22$+"sy",cr$=$0d$
+    let fornext=4,whilewend=6
+    let keepfiles=1,replace_includes=0,filelist=0
+    let tmp$=".tmp",txt$=".txt",src$=".src"
+
+rem --- Replacements for obsolete xref files/records
+rem --- xreffile$ = List of xref files
+rem --- xrefrecs$ = List of xref records replaced by secondary indices
+rem --- xrefindx$ = List of corresponding secondary index files
+    let xreffile$="",xrefrecs$="",xrefindx$=""
+    let xreffile$=xreffile$+"apm-04 apt-03 arm-04 bmm-04 bmm-06 glm-04 "
+    let xreffile$=xreffile$+"glt-14 ivm-03 ivm-08 ivm-24 ope-51 ope-61 "
+    let xreffile$=xreffile$+"opt-51 opt-61 poe-31 poe-32 poe-33 poe-34 "
+    let xreffile$=xreffile$+"poe-41 poe-42 poe-43 poe-44 poe-52 poe-53 "
+    let xreffile$=xreffile$+"poe-54 pot-35 prm-03 sam-21 sfe-03 sfm-03 "
+    let xrefrecs$=xrefrecs$+"apm-04Aapm-04Bapt-03Aapt-03Bapt-03Carm-04A"
+    let xrefrecs$=xrefrecs$+"arm-04Barm-04Carm-04Earm-04Farm-04Garm-04H"
+    let xrefrecs$=xrefrecs$+"arm-04Jarm-04Karm-04Larm-04Marm-04Narm-04T"
+    let xrefrecs$=xrefrecs$+"bmm-04Abmm-06Aglm-04Aglt-14Aivm-03Aivm-03B"
+    let xrefrecs$=xrefrecs$+"ivm-03Civm-03Divm-03Fivm-03Givm-03Hivm-03I"
+    let xrefrecs$=xrefrecs$+"ivm-03Jivm-03Tivm-03Uivm-08Aivm-24Aope-51A"
+    let xrefrecs$=xrefrecs$+"ope-61Apoe-31Apoe-32Apoe-33A"
+    let xrefrecs$=xrefrecs$+"poe-34Apoe-41Apoe-42Apoe-43Apoe-44Apoe-52A"
+    let xrefrecs$=xrefrecs$+"poe-53Apoe-54Apot-35Aprm-03Aprm-03Bsam-21A"
+    let xrefindx$=xrefindx$+"apm-01 apm-01 apt-01 apt-01 apt-01 arm-01 "
+    let xrefindx$=xrefindx$+"arm-02 arm-02 arm-01 arm-02 arm-02 arm-02 "
+    let xrefindx$=xrefindx$+"arm-02 arm-02 arm-01 arm-01 arm-01 arm-02 "
+    let xrefindx$=xrefindx$+"bmm-02 bmm-03 glm-01 glt-04 ivm-01 ivm-02 "
+    let xrefindx$=xrefindx$+"ivm-02 ivm-01 ivm-02 ivm-02 ivm-01 ivm-01 "
+    let xrefindx$=xrefindx$+"ivm-01 ivm-01 ivm-01 ivm-07 ivm-14 ope-01 "
+    let xrefindx$=xrefindx$+"ope-11 opt-01 opt-01 poe-01 poe-02 poe-03 "
+    let xrefindx$=xrefindx$+"poe-04 poe-11 poe-12 poe-13 poe-14 poe-02 "
+    let xrefindx$=xrefindx$+"poe-03 poe-04 pot-15 prm-01 prm-01 sam-01 "
+    let xrefindx$=xrefindx$+"sfe-01 sfe-01 sfe-01 sfm-01 sym-19 sym-49 "
+    gosub iolist_format
+
+rem --- Startup notification
+    let message$=title$
+    gosub display_message
+    let message$="Program conversion initiated using "+utility$
+    gosub display_message
+
+rem --- Which version is being converted to 8?
+get_version:
+    let title$="Which Addon version(6/7) you want to convert to Addon 8?"
+    let default$="7"
+    call "user_selections.bbj",title$,default$,filedir$,source_version$
+    let source_version=num(source_version$,err=get_version)
+    if source_version<>6 then 
+        if  source_version<>7 then 
+            a=msgbox("Invalid version.. Try again")
+            goto get_version
+        endif
+    endif
+
+rem --- Keep temp files?
+    let prompt$="Retain temporary work files?"
+    let x=msgbox(prompt$,3+32+256,title$)
+    if x=2 then goto the_end
+    let message$="Retaining temporary work files"
+    if x=7 then let keepfiles=0,message$="Not retaining temporary work files"
+    gosub display_message
+
+rem --- Replace #includes with actual code?
+    let prompt$="Replace #include's with actual code?"
+    let x=msgbox(prompt$,3+32,title$)
+    if x=2 then goto the_end
+    if x=6 then let replace_includes=1
+    let message$="Not replacing #includes with actual code"
+    if x=6 then let message$="r"+message$(6)
+    gosub display_message
+
+rem --- Single program or file list?
+single_program: 
+    let prompt$="Convert single program?"
+    let x=msgbox(prompt$,3+32,title$)
+    if x=2 then goto the_end
+    if x=7 then goto get_filelist
+    let message$="Converting a single program"
+    gosub display_message
+    goto open_replacements
+
+rem --- Get the name of the filelist to be used
+get_filelist: 
+    let title$="Select folder to be used",STATUS=1
+    let filters$="All files (*.*)"+$0A$+"*.*"
+    pathname$=fileopen(title$,pgmdir$,"","",filters$,1)
+    if pathname$="::BAD::" then goto get_filelist
+    if pathname$="::CANCEL::" then goto single_program
+    let status=0
+
+rem --- Open filelist
+    let lstfile$=pathname$
+    let temp_pathname$=pathname$
+    let lst_dev=unt
+    open (lst_dev,err=get_filelist)lstfile$
+    let filelist=1
+    let message$="Using file list "+$22$+lstfile$+$22$
+    gosub display_message
+
+rem --- Open replacements.ini file
+open_replacements:
+    if source_version=6 then let repfile$=filedir$+"replacements_oldport.ini"
+    if source_version=7 then let repfile$=filedir$+"replacements.ini"
+    let repfile=0
+    let rep_dev=unt
+    open (rep_dev,err=missing_replacements)repfile$
+    let repfile=1
+rem --- Load code replacement table
+load_replacements: 
+    if repfile=0 then goto missing_replacements
+    let description$="Loading code replacement table..."
+    gosub display_step
+next_code_replacement: 
+    read (rep_dev,end=load_replacements_exit)rec$
+    let rec$=cvs(rec$,2)
+    if rec$="" or pos("#"=rec$)=1 then goto next_code_replacement
+    let p=pos("|"=rec$)
+    if p=0 then goto next_code_replacement
+    let x$=cvs(rec$(1,p-1),1+2),y$=cvs(rec$(p+1),1+2)
+    let replacements=replacements+1
+    let oldcode$[replacements]=x$,newcode$[replacements]=y$
+    if pos("fn"=oldcode$[replacements])=1 then let functions$=functions$+newcode$[replacements]
+    goto next_code_replacement
+
+rem --- Done loading replacements
+load_replacements_exit: 
+    gosub display_done
+    if source_version=6 then goto next_overlay
+    let functions$=functions$+"fnitem$fnglobal(fnglobal$fnstr_pos("
+    let functions$=functions$+"fnget_table$fnget_rec_data$fnget_fld_data$"
+    goto next_overlay
+
+rem --- Missing code replacement file
+    missing_replacements: 
+    let message$="missing replacements.ini file "+$22$+repfile$+$22$
+    gosub display_message
+    let message$="NO code replacements will be performed"
+    gosub display_message
+
+rem --- Run next overlay
+next_overlay: 
+    let pgmdir1$=pgmdir$
+    run "adx_codeportfile.bbj",err=the_end
+
+rem --- Convert xref files/records to IOLIST format
+iolist_format: 
+    let l=len(xrefrecs$)
+    for x=1 to l step 7
+        let x$=xrefrecs$(x,7)
+        let x$=x$(1,3)+x$(5,2)+cvs(x$(7,1),8)+" "
+        let xrefrecs$(x,7)=x$
+    next x
+    let l=len(xreffile$)
+    for x=1 to l step 7
+        let x$=xreffile$(x,7)
+        let x$=x$(1,3)+x$(5,2)+"  "
+        let xreffile$(x,7)=x$
+    next x
+return 
+
+rem --- Display message
+display_message: 
+    print fndatestamp$(0),message$
+    print (log_dev)fndatestamp$(0),message$,cr$
+return 
+
+rem --- Display step
+display_step: 
+    let message$=description$
+    gosub display_message
+return 
+
+rem --- Display step completion
+display_done: 
+    let message$=description$+"completed"
+    gosub display_message
+return 
+
+rem --- Functions
+    def fndatestamp$(q)=DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
+
+rem --- Return string value of passed STBL variable
+    def fnglobal$(q$,q1$)
+        let q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit: 
+        return q1$
+    fnend
+
+rem --- Exit utility
+the_end: 
+    run "adx_codeportexit.bbj",err=finished
+finished: 
+    end

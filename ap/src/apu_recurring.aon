@@ -1,0 +1,224 @@
+rem --- Recurring Invoice Update
+rem --- Program apu_fa v8.0.0 11Feb2007 (apu_fa)
+rem --- Created by adx_codeport.bbx v1.1.5 (02/11/2007 10:45:45)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	if OutVect!<>null() OutVect!=null()
+
+rem --- Close printer and destroy current progress meter (if one exists)
+
+    close (printer_dev,err=*next)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+rem --- Initializations
+
+rem --- Get user approval to update
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Start progress meter and position header file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,ape03_dev,1,meter_num,status
+    read (ape03_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Recurring Invoice Header (ape-03) record
+
+    while moreheaders
+          read record (ape03_dev,end=*break) ape03a$
+          if ape03a.firm_id$<>firm_id$ break
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+          rem --- Retrieve terms code for this invoice
+
+          dim apm10c$:fattr(apm10c$)
+          apm10c.firm_id$=ape03a.firm_id$
+          apm10c.record_id_c$="C"
+          apm10c.terms_codeap$=ape03a.ap_terms_code$
+          apm10c.code_desc$=nf$
+          k$=apm10c.firm_id$+apm10c.record_id_c$+apm10c.terms_codeap$
+          find record (apm10c_dev,key=k$,dom=*next) apm10c$
+
+          rem --- Recalculate dates for this recurring invoice
+
+          wrong=1
+          calculating=1
+          d=num(ape03a.invoice_date$(7,2))
+          while calculating
+                while wrong
+                      x=jul(year,month,d,err=*break)
+                      invoice_date$=date(x:"%Yl%Mz%Dz")
+                      wrong=0
+                wend
+                if wrong=0 break
+                d=d-1
+          wend
+          ape03a.invoice_date$=invoice_date$
+          ape03a.accting_date$=invoice_date$
+          call pgmdir$+"adc_duedate.aon",apm10c.prox_or_days$,ape03a.invoice_date$,
+:                                        apm10c.due_days,ape03a.inv_due_date$,status
+          call pgmdir$+"adc_duedate.aon",apm10c.prox_or_days$,ape03a.invoice_date$,
+:                                        apm10c_disc_days,ape03a.disc_date$,status
+
+          rem --- Generate unique invoice number for this recurring invoice
+
+          wrong=1
+          calculating=1
+          d=num(ape03a.invoice_date$(7,2))+1
+          invoice$=""
+          while calculating
+                while wrong        
+                      d=d-1
+                      x=jul(year,month,d,err=*continue)
+                      wrong=0
+                wend
+                x$=str(x:"0000000")
+                invoice$=ape03a.ap_inv_no$(1,6)+x$(4)
+                k$=ape03a.firm_id$+ape03a.ap_type$+ape03a.vendor_id$+invoice$
+                find record (apt01_dev,key=k$,dom=*break)
+          wend 
+
+          rem --- Copy the invoice header to the entry file and write the record
+
+          dim ape01a$:ape01_tpl$
+          ape01a.firm_id$=ape03a.firm_id$
+          ape01a.ap_type$=ape03a.ap_type$
+          ape01a.vendor_id$=ape03a.vendor_id$
+          ape01a.ap_inv_no$=invoice$
+          ape01a.sequence_00$=ape03a.sequence_00$
+          ape01a.ap_dist_code$=ape03a.ap_dist_code$
+          ape01a.payment_grp$=ape03a.payment_grp$
+          ape01a.ap_terms_code$=ape03a.ap_terms_code$
+          ape01a.invoice_date$=ape03a.invoice_date$
+          ape01a.accting_date$=ape03a.accting_date$
+          ape01a.inv_due_date$=ape03a.inv_due_date$
+          ape01a.disc_date$=ape03a.disc_date$
+          ape01a.reference$=ape03a.reference$
+          ape01a.ap_inv_memo$=ape03a.ap_inv_memo$
+          ape01a.hold_flag$=ape03a.hold_flag$
+          ape01a.invoice_type$=ape03a.invoice_type$
+          ape01a.invoice_amt=ape03a.invoice_amt
+          ape01a.discount_amt=ape03a.discount_amt
+          ape01a.retention=ape03a.retention
+          ape01a.net_inv_amt=ape03a.net_inv_amt
+
+          k$=ape01a.firm_id$+ape01a.ap_type$+ape01a.vendor_id$+ape01a.ap_inv_no$
+          write record (ape01_dev,key=k$) ape01a$
+
+          rem --- Position the Recurring Invoice Detail (ape-13) file
+
+          invoice$=ape03a.firm_id$+ape03a.ap_type$+ape03a.vendor_id$+
+:                  ape03a.ap_inv_no$
+          read (ape13_dev,key=invoice$,dom=*next)
+
+          rem --- Read the next Recurring Invoice Detail (ape-13) record and
+          rem --- copy it to the entry file
+
+          while moredetail
+                k$=key(ape13_dev,end=*break)
+                if pos(invoice$=k$)<>1 break
+                read record (ape13_dev) ape13a$
+                dim ape11a$:ape11_tpl$
+                ape11a.firm_id$=ape13a.firm_id$
+                ape11a.ap_type$=ape13a.ap_type$
+                ape11a.vendor_id$=ape13a.vendor_id$
+                ape11a.ap_inv_no$=ape01a.ap_inv_no$
+                ape11a.sequence_num$=ape13a.sequence_num$
+                ape11a.gl_account$=ape13a.gl_account$
+                ape11a.gl_post_amt=ape13a.gl_post_amt
+                ape11a.units=ape13a.units
+
+                k$=ape11a.firm_id$+ape11a.ap_type$+ape11a.vendor_id$+ape11a.ap_inv_no$+
+:                                  ape11a.sequence_num$
+                write record (ape11_dev,key=k$) ape11a$
+          wend
+          
+          rem --- Loop back for next Recurring Invoice Header
+
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+	msg_id$="UPDATE_COMPLETE"
+	dim msg_tokens$[1]
+	msg_opt$=""
+	gosub disp_message
+
+std_exit_no_update:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

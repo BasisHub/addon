@@ -1,0 +1,946 @@
+rem --- Manual Check Register
+rem --- Program apr_manualcheck v8.0.0 11Feb2007 (apr_ga)
+rem --- Created by adx_codeport.bbx v1.1.5 (02/11/2007 03:09:35)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+rem --- altered for docout, and added reversal logic (it was missing), so needs QA. CAH
+
+            setesc std_error
+            seterr std_error
+
+rem --- Retrieve the program path
+
+            pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+            sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+            dim sysinfo$:sysinfo_template$
+            sysinfo$=stbl("+SYSINFO",err=*next)
+            milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+            firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+            files=14,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="aps_params",ids$[1]="APS_PARAMS";rem "aps-01
+            files$[2]="ape-02",ids$[2]="APE_MANCHECKHDR"
+            files$[3]="ape-12",ids$[3]="APE_MANCHECKDIST"
+            files$[4]="ape-22",ids$[4]="APE_MANCHECKDET"
+            files$[5]="apm-01",ids$[5]="APM_VENDMAST"
+            files$[6]="apm-02",ids$[6]="APM_VENDHIST"
+            files$[8]="apc_typecode",ids$[8]="APC_TYPECODE";rem "apm-10A
+            files$[9]="apt-01",ids$[9]="APT_INVOICEHDR"
+            files$[10]="apt-02",ids$[10]="APT_INVOICEDIST"
+            files$[11]="apt-05",ids$[11]="APT_CHECKHISTORY"
+            files$[12]="apt-11",ids$[12]="APT_INVOICEDET"
+            files$[13]="gls_params",ids$[13]="GLS_PARAMS";rem "gls-01
+            files$[14]="apc_distribution",ids$[14]="APC_DISTRIBUTION";rem "apm-10B
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit_no_report
+            aps01_dev=channels[1]
+            ape02_dev=channels[2]
+            ape12_dev=channels[3]
+            ape22_dev=channels[4]
+            apm01_dev=channels[5]
+            apm02_dev=channels[6]
+            apm10a_dev=channels[8]
+            apt01_dev=channels[9]
+            apt02_dev=channels[10]
+            apt05_dev=channels[11]
+            apt11_dev=channels[12]
+            gls01_dev=channels[13]
+            apm10b_dev=channels[14]
+
+rem --- Dimension string templates
+
+    dim ape02a$:templates$[2],ape12a$:templates$[3],ape22a$:templates$[4],
+:       apm01a$:templates$[5],apm02a$:templates$[6],
+:       apm10a$:templates$[8],apt01a$:templates$[9],apt02a$:templates$[10],
+:       apt05a$:templates$[11],apt11a$:templates$[12],aps01a$:templates$[1],
+:       gls01a$:templates$[13],apm10b$:templates$[14]
+
+
+rem --- Retrieve parameter records
+
+        aps01a_key$=firm_id$+"AP00"
+        find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+        gls01a_key$=firm_id$+"GL00"
+        find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+        call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",m1$,0,0
+        multitypes=aps01a.multi_types$="Y"
+        retention=aps01a.ret_flag$="Y"
+        cashbasis=aps01a.cash_basis$="Y"
+        bankrec=aps01a.br_interface$="Y"
+        call pgmdir$+"adc_sizemask.aon",m1$,m1,10,15
+        m0=len(m0$)
+        m1=len(m1$)
+        call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,0
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",g1$,0,0
+        acct_length=num(gls01a.acct_length$)
+        call pgmdir$+"adc_sizemask.aon",g1$,g1,10,15
+        g0=len(g0$)
+        g1=len(g1$)
+
+rem --- Is General Ledger installed and being used?
+
+        source$=pgm(-2)
+        application$="AP"
+        gl$="N"
+        status=0
+        call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
+        if status goto std_exit_no_report
+        gl=gl$="Y"
+
+rem --- Initializations
+
+rem --- OutVect! for DocOut, date/time 
+
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        TotVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rep_prog$=pgm(-2)
+
+rem --- column headings
+        columns=12
+	dim columns$[12,10]
+		columns$[0,0]="Chk No",       columns$[0,1]="C",columns$[0,2]="7"
+		columns$[1,0]="Chk Date",     columns$[1,1]="C",columns$[1,2]="8"
+		columns$[2,0]="Type",         columns$[2,1]="C",columns$[2,2]="7"
+		columns$[3,0]="Vendor",       columns$[3,1]="C",columns$[3,2]="25"
+		columns$[4,0]="Invoice No",   columns$[4,1]="C",columns$[4,2]="10"
+		columns$[5,0]="Inv Date",     columns$[5,1]="C",columns$[5,2]="8"
+		columns$[6,0]="Invoice Amt",  columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m1$,columns$[6,10]="T"
+		columns$[7,0]="Discount Amt", columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m1$,columns$[7,10]="T"
+		columns$[8,0]="Payment Amt",  columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m1$,columns$[8,10]="T"
+		columns$[9,0]="Retention Amt",columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m1$,columns$[9,10]="T"
+		columns$[10,0]="GL Account",  columns$[10,1]="C",columns$[10,2]="10"
+		columns$[11,0]="GL Amount",   columns$[11,1]="N",columns$[11,2]="10",columns$[11,3]=m1$,columns$[11,10]="T"
+		columns$[12,0]="Error",       columns$[12,1]="C",columns$[12,2]="8"
+
+        headings=5
+        dim headings$[headings],o[11],h[12]
+        dim pt[4],ct[4],at[4],rt[4]
+        units=0
+        errors=0
+        glstatus=0
+        done=0
+        page=0
+        width=132
+        maxlines=59
+        lines=maxlines+1
+        moreinvoices=1
+        moreheaders=1
+        moredetail=1
+        when$=sysinfo.system_date$
+        clock$=""
+        aptype$=""
+        nf$="(Not on File)"
+        lasttype$=""
+        headings$[0]=sysinfo.firm_name$
+        headings$[1]=sysinfo.task_desc$
+        distribution$=""
+        gl_hdr1$=""
+        gl_hdr2$=""
+        if gl
+           distribution$="GL Distribution"
+           gl_hdr1$="Account"
+           gl_hdr2$="Amount"
+        endif
+        d=len(distribution$)
+        retention_hdr1$=""
+        retention_hdr2$=""
+        if retention
+           retention_hdr1$="Retention"
+           retention_hdr2$="   Amount" 
+        endif
+        recs=0
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+
+rem --- Transaction types
+
+        types$="VMR"
+        void=1
+        manual=2
+        reversal=3
+
+rem --- Define print positions
+
+        o[11]=width-1
+        o[10]=o[11]
+        if gl
+           o[11]=width-g1
+           o[10]=max(o[11]-g0,width-(d+1))
+        endif
+        o[9]=o[10]-1
+        if retention o[9]=o[10]-m1
+        for x=8 to 6 step -1
+            o[x]=o[x+1]-m1
+        next x
+        o[5]=o[6]-10
+        o[4]=o[5]-11
+        o[0]=0
+        o[1]=o[0]+8
+        o[2]=o[1]+9
+        o[3]=o[2]+9
+        w=(o[6]-(o[3]+m0+1))-1
+
+rem --- Define header positions
+
+        dim underline$(width-o[6],"-")
+        for x=0 to 5
+            h[x]=o[x]
+        next x
+        h[6]=o[6]+m1-8
+        h[7]=o[7]+m1-9
+        h[8]=o[8]+m1-8
+        h[9]=width-1
+        h[10]=h[9]
+        h[11]=h[10]
+        h[12]=h[10]
+        if retention h[9]=o[9]+m1-10
+        if gl
+           h[10]=o[10]
+           h[11]=o[11]+m1-7
+           h[12]=h[10]+fncenter(distribution$,width-o[10])
+        endif
+
+rem --- Additional file opens
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glm-01",ids$[1]="GLM_ACCT"
+    files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
+    files$[3]="glt-05",ids$[3]="GLT_BANKCHECKS"
+    files$[4]=glw11$
+    options$[4]="CL"
+    if gl call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                         ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_report
+    glm01_dev=channels[1]
+    glt04_dev=channels[2]
+    glt05_dev=channels[3]
+    glw11_dev=channels[4]
+
+rem --- Dimension string templates
+
+    if gl dim glm01a$:templates$[1],glt05a$:templates$[3]
+
+rem --- Get user approval to proceed
+
+    msg_id$="AON_RUN_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_report
+
+rem --- Open printer, start progress meter and position header file
+
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status goto std_exit_no_report
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,ape02_dev,1,meter_num,status
+    read (ape02_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Manual Check Header (ape-02) record
+
+    while moreheaders
+          k$=key(ape02_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          recs=recs+1
+          read record (ape02_dev) ape02a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          check$=ape02a.firm_id$+ape02a.ap_type$+ape02a.check_no$+ape02a.vendor_id$
+          gldate$=ape02a.check_date$
+          if gl$="Y" call pgmdir$+"glc_datecheck.aon",gldate$,"N",period$,year$,glstatus
+          rem --- Determine what kind of transaction this is
+
+          detail=0
+          transaction=pos(ape02a.trans_type$=types$)
+
+rem --- Initializations for this check
+
+          dim ct[4],vendor$(w)
+
+rem --- Retrieve vendor name
+
+          while transaction<>void
+                if pos("TEMP"=ape02a.vendor_id$)<>1
+                   dim apm01a$:fattr(apm01a$)
+                   apm01a.firm_id$=ape02a.firm_id$
+                   apm01a.vendor_id$=ape02a.vendor_id$
+                   apm01a.vendor_name$=nf$
+                   k$=apm01a.firm_id$+apm01a.vendor_id$
+                   find record (apm01_dev,key=k$,dom=*proceed) apm01a$
+                   id$=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+                   name$=apm01a.vendor_name$
+                   vendor$(1)=id$+" "+name$
+                endif
+                if pos("TEMP"=ape02a.vendor_id$)=1 and transaction<>manual
+                   dim apm03a$:fattr(apm03a$)
+                   apm03a.firm_id$=ape02a.firm_id$
+                   apm03a.ap_type$=ape02a.ap_type$
+                   apm03a.ap_inv_no$=ape02a.ap_inv_no$
+                   apm03a.vendor_name$=nf$
+                   k$=apm03a.firm_id$+apm03a.ap_type$+apm03a.ap_inv_no$
+                   find record (apm03_dev,key=k$,dom=*proceed) apm03a$
+                   name$=apm03a.vendor_name$
+                endif
+                if pos("TEMP"=ape02a.vendor_id$)=1 and transaction=manual
+                   name$=ape02a.vendor_name$
+                endif
+                if pos("TEMP"=ape02a.vendor_id$)=1
+                   id$=ape02a.vendor_id$
+                   vendor$(1)=id$
+                   vendor$(m0+2)=name$
+                endif
+                errors=errors+(pos(nf$=name$)=1)
+                break
+          wend
+
+rem --- Process transaction based on what type it is
+
+		  switch transaction
+
+rem --- Voided check
+
+                 case void
+
+					  xwk=fnblank(13);rem --- blank line
+					  OutVect!.addItem(ape02a.check_no$)
+					  OutVect!.addItem(fndate$(ape02a.check_date$))
+					  OutVect!.addItem("Void")
+					  xwk=fnblank(10)
+
+                 break
+
+rem --- Reversal
+rem --- bulk of reversal routine is missing? 4/30.CAH; added based on v6 code 5/2/07.CAH
+rem --- note: v6 used ape-05, but v7/8 use apt-05.CAH
+                 case reversal
+
+					  OutVect!.addItem(ape02a.check_no$)
+					  OutVect!.addItem(fndate$(ape02a.check_date$))
+					  OutVect!.addItem("Reversal")
+					  OutVect!.addItem(vendor$)
+					  xwk=fnblank(9)
+
+                      lines=lines+1
+                      detail=0
+                      ref1$=id$
+                      ref2$=ape02a.check_no$
+                      ref3$=""
+                      memo$=name$
+
+                      read (apt05_dev,key=check$,dom=*next)
+                      while moreinvoices
+                            k$=key(apt05_dev,end=*break)
+                            if pos(check$=k$)<>1 break
+                            read record (apt05_dev) apt05a$
+
+rem --- Accumulate totals
+
+                            dim it[4]
+                            it[0]=-apt05a.invoice_amt
+                            it[1]=-apt05a.discount_amt
+                            it[2]=-apt05a.invoice_amt+apt05a.discount_amt+apt05a.retention
+                            it[3]=-apt05a.retention
+                            for x=0 to 3
+                                ct[x]=ct[x]+it[x]
+                                at[x]=at[x]+it[x]
+                                rt[x]=rt[x]+it[x]
+                            next x
+
+rem --- Format detail line fields
+
+                            payment=-apt05a.invoice_amt+apt05a.discount_amt+apt05a.retention
+                            invoice$=apt05a.ap_inv_no$
+                            invdate$=fndate$(apt05a.check_date$)
+                            amount$=str(it[0])
+                            discount$=str(it[1])
+                            payment$=str(it[2])
+                            retention$=str(it[3])
+
+                            account$=""
+                            posting$="";rem added 11/3/07.CH
+
+							gosub print_invoice
+
+rem --- Retrieve the distribution code record
+
+                            dim apm10b$:fattr(apm10b$)
+                            apm10b.firm_id$=apt05a.firm_id$
+                            apm10b.record_id_b$="B"
+                            apm10b.ap_dist_code$=apt05a.ap_dist_code$
+                            apm10b.code_desc$=nf$
+                            k$=apm10b.firm_id$+apm10b.record_id_b$+apm10b.ap_dist_code$
+                            find record (apm10b_dev,key=k$,dom=*next) apm10b$
+                            errors=errors+(pos(nf$=apm10b.code_desc$)=1)
+
+						    k$=apt05a.firm_id$+apt05a.ap_type$+apt05a.vendor_id$+
+:                                      apt05a.ap_inv_no$
+						    find record(apt01_dev,key=k$,dom=*next)apt01a$
+
+rem --- A/P reverse post
+							if apt01a$(1,len(k$))=k$ and cashbasis<>1 and apt01a.mc_inv_flag$<>"M"
+								account$=apm10b.gl_ap_acct$
+                                amount=-apt05a.invoice_amt+apt05a.retention
+                                gosub glrecap
+							endif
+
+rem --- Cash and discount reversals
+
+                            account$=apm10b.gl_cash_acct$
+                            amount=apt05a.invoice_amt-apt05a.retention-apt05a.discount_amt
+                            gosub glrecap
+                            account$=apm10b.gl_disc_acct$
+                            amount=ape22a.discount_amt
+                            gosub glrecap							
+
+rem --- reverse dist
+
+							if cashbasis or apt01a.mc_inv_flag$="M"
+
+								detail$=ape02a.firm_id$+ape02a.ap_type$+
+:										ape02a.vendor_id$+"C"+
+:										ape02a.check_no$
+
+								if dtl_old$<>detail$
+									dtl_old$=detail$
+									read (apt02_dev,key=detail$,dom=*next)
+									while moredetail
+										  k$=key(apt02_dev,end=*break)
+										  if pos(detail$=k$)<>1 break
+										  read record (apt02_dev) apt02a$
+										  account$=apt02a.gl_account$
+										  amount=-apt02a.gl_post_amt
+										  gosub glrecap
+									wend
+								endif
+							endif
+
+rem --- inv. distribution
+
+							if cashbasis or apt01a.mc_inv_flag$="M"
+
+								detail$=apt05a.firm_id$+apt05a.ap_type$+
+:										apt05a.vendor_id$+"I"+
+:										apt05a.ap_inv_no$
+
+								read (apt02_dev,key=detail$,dom=*next)
+								while moredetail
+									k$=key(apt02_dev,end=*break)
+									if pos(detail$=k$)<>1 break
+									read record (apt02_dev) apt02a$
+									if apt01a.invoice_amt=0
+										apt02a.gl_post_amt=0
+									else
+										apt02a.gl_post_amt=apt02a.gl_post_amt*apt05a.invoice_amt/apt02a.gl_post_amt
+									endif
+									dist_amt=dist_amt+apt02a.gl_post_amt
+									account$=apt02a.gl_account$
+									amount=-apt02a.gl_post_amt
+									account1$=account$
+									gosub glrecap
+								wend
+								if account1$<>""
+									account$=account1$
+									amount=-dist_amt
+									gosub glrecap
+								endif
+							endif
+                      wend
+                 break
+
+rem --- Manual check
+
+                 case manual
+
+					  OutVect!.addItem(ape02a.check_no$)
+					  OutVect!.addItem(fndate$(ape02a.check_date$))
+					  OutVect!.addItem("Manual")
+					  OutVect!.addItem(vendor$)
+					  xwk=fnblank(9)
+
+                      lines=lines+1
+                      detail=0
+                      ref1$=id$
+                      ref2$=ape02a.check_no$
+                      ref3$=""
+                      memo$=name$
+                      if multitypes ref3$="AP Type "+ape02a.ap_type$
+                      read (ape22_dev,key=check$,dom=*next)
+                      while moreinvoices
+                            k$=key(ape22_dev,end=*break)
+                            if pos(check$=k$)<>1 break
+                            read record (ape22_dev) ape22a$
+
+rem --- Accumulate totals
+
+                            dim it[4]
+                            it[0]=ape22a.invoice_amt
+                            it[1]=ape22a.discount_amt
+                            it[2]=ape22a.invoice_amt-ape22a.discount_amt-ape22a.retention
+                            it[3]=ape22a.retention
+                            for x=0 to 3
+                                ct[x]=ct[x]+it[x]
+                                at[x]=at[x]+it[x]
+                                rt[x]=rt[x]+it[x]
+                            next x
+                            invoice=ape22a.invoice_amt-ape22a.retention
+
+rem --- Retrieve the distribution code record
+
+                            dim apm10b$:fattr(apm10b$)
+                            apm10b.firm_id$=ape22a.firm_id$
+                            apm10b.record_id_b$="B"
+                            apm10b.ap_dist_code$=ape22a.ap_dist_code$
+                            apm10b.code_desc$=nf$
+                            k$=apm10b.firm_id$+apm10b.record_id_b$+apm10b.ap_dist_code$
+                            find record (apm10b_dev,key=k$,dom=*next) apm10b$
+                            errors=errors+(pos(nf$=apm10b.code_desc$)=1)
+
+rem --- Generate GL postings for this check/invoice
+
+rem --- Cash basis
+
+                            while cashbasis
+                                  account$=""
+                                  amount=0
+                                  total=0
+                                  distribution=0
+                                  invoice$=ape22a.firm_id$+ape22a.ap_type$+
+:                                          ape22a.vendor_id$+"I"+ape22a.ap_inv_no$
+
+rem --- Accumulate total distribution for this check
+
+                                  read (apt02_dev,key=invoice$,dom=*next)
+                                  while moredetail
+                                        k$=key(apt02_dev,end=*break)
+                                        if pos(invoice$=k$)<>1 break
+                                        read record (apt02_dev) apt02a$
+                                        distribution=distribution+apt02a.gl_post_amt
+                                  wend
+                                  if distribution=0 break
+
+rem --- Prorate postings based on total distribution
+
+                                  read (apt02_dev,key=invoice$,dom=*next)
+                                  while moredetail
+                                        k$=key(apt02_dev,end=*break)
+                                        if pos(invoice$=k$)<>1 break
+                                        read record (apt02_dev) apt02a$
+                                        if apt02a.gl_account$<>account$ gosub account_break
+                                        amount=amount+((apt02a.gl_post_amt*invoice)/distribution)
+                                  wend
+
+rem --- Last posting to prevent rounding errors
+
+                                  amount=invoice-total
+                                  if account$<>"" gosub glrecap
+                                  break
+                            wend
+
+rem --- AP accrual posting if cash basis isn't being used
+
+                            while cashbasis=0
+                                  k$=ape22a.firm_id$+ape22a.ap_type$+ape22a.vendor_id$+
+:                                    ape22a.ap_inv_no$
+                                  find (apt01_dev,key=k$,dom=*break) 
+                                  account$=apm10b.gl_ap_acct$
+                                  amount=invoice
+                                  gosub glrecap
+                                  break
+                            wend
+		
+rem --- Cash and discount postings for this check
+
+                            account$=apm10b.gl_cash_acct$
+                            amount=ape22a.discount_amt-ape22a.invoice_amt+ape22a.retention
+                            gosub glrecap
+                            account$=apm10b.gl_disc_acct$
+                            amount=-ape22a.discount_amt
+                            gosub glrecap
+
+rem --- Format detail line fields
+
+                            payment=ape22a.invoice_amt-ape22a.discount_amt-ape22a.retention
+                            invoice$=ape22a.ap_inv_no$
+                            invdate$=fndate$(ape22a.invoice_date$)
+                            amount$=str(it[0])
+                            discount$=str(it[1])
+                            payment$=str(it[2])
+                            retention$=str(it[3])
+
+rem --- Position GL distribution detail (ape-12) file
+
+                            total=0
+                            account$=""
+                            posting$="";rem --- 11/3/07.CH -- in wrong place below?
+                            detail$=ape22a.firm_id$+ape22a.ap_type$+
+:                                   ape22a.check_no$+ape22a.vendor_id$+
+:                                   ape22a.ap_inv_no$
+
+rem --- Process miscellaneous GL entries
+                            read (ape12_dev,key=detail$,dom=*next)
+                            while moredetail
+                                  k$=key(ape12_dev,end=*break)
+                                  if pos(detail$=k$)<>1 break
+                                  read record (ape12_dev) ape12a$
+                                  detail=detail+1
+
+ rem --- Print this record
+
+                                  account$=""
+                                  posting$=""
+                                  if gl
+                                     account$=fnmask$(ape12a.gl_account$(1,acct_length),g0$)
+                                     posting$=str(ape12a.gl_post_amt)
+                                  endif
+                                  while gl or cvs(invoice$,2)<>""
+                                        gosub print_invoice
+                                        break
+                                  wend
+                                        account$=ape12a.gl_account$
+                                        amount=ape12a.gl_post_amt
+                                        if gl gosub glrecap
+                                        ct[4]=ct[4]+amount
+                                        at[4]=at[4]+amount
+                                        rt[4]=rt[4]+amount
+                                        total=total+amount
+
+rem --- break/wend after gosub print_invoice used to be here, but that 
+rem --- meant not all GL dist recs got accum'd, so reported out of bal.CAH
+
+                            wend
+                            k$=ape22a.firm_id$+ape22a.ap_type$+ape22a.vendor_id$+
+:                              ape22a.ap_inv_no$
+                            find (apt01_dev,key=k$,dom=*next);continue
+
+rem --- above was find (apt01_dev,key=k$,dom=*continue);isn't that backwards? seems like
+rem --- we want to continue if we DO find invoice, and check totals if we don't (i.e., 
+rem --- we posted the GL dist ourselves).CAH
+
+                            if total=ape22a.invoice_amt
+								continue
+							else
+rem --- if GL dist <> invoice, change last cell just added to OutVect! to carry err cd
+								xwk=OutVect!.size()
+								if xwk OutVect!.setItem(xwk-1,"Error cd 1")
+								headings$[3]="Errors encountered in register:"
+								headings$[4]="Error code 1: GL Distribution out of balance"
+								errors=errors+1
+							endif
+                      wend
+
+rem --- Print check information if necessary
+
+                      if cvs(invoice$,2)<>"" gosub print_invoice
+
+rem --- Print check totals if necessary
+
+                      if detail>1
+                         for x=0 to 4
+                             pt[x]=ct[x]
+                         next x
+                         total$="Total for Check "+ape22a.check_no$
+                         gosub print_total
+                      endif
+                 break
+
+rem --- Unknown transaction type
+
+                 case default
+                 break
+          swend
+rem --- Loop back for next manual check header
+
+    wend
+
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    done=1
+    for x=0 to 4
+        pt[x]=rt[x]
+    next x
+    gosub print_total
+
+rem --- Any errors encountered?
+
+    while errors
+          headings$[3]="Errors encountered in register:"
+		  headings$[5]="This register is out of balance or missing information."
+          break
+    wend
+
+rem --- Destroy the progress meter and run the next overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+    update$=pgmdir$+"apu_manualchecks.aon"
+    if errors
+    	gosub Display_Message
+    	if special_flag$<>"Y" then update$=""
+    endif
+
+    overlay$=update$
+    if gl overlay$=pgmdir$+"glr_recap_DO.aon"
+rem --- run overlay$,err=std_exit
+
+	out_action$="PRT-PDF"
+	next_overlay$=overlay$
+	goto std_exit
+
+
+vendor_heading: rem --- Vendor subheading
+rem --- used?.CAH
+
+       OutVect!.addItem(vendor$)
+       lines=lines+1
+       return
+
+print_invoice: rem --- Print invoice detail line
+
+	xwk=fnblank(4)
+	OutVect!.addItem(invoice$)
+	OutVect!.addItem(invdate$)
+	OutVect!.addItem(amount$)
+	OutVect!.addItem(discount$)
+	OutVect!.addItem(payment$)
+	OutVect!.addItem(retention$)
+	OutVect!.addItem(account$)
+	OutVect!.addItem(posting$)
+	OutVect!.addItem("")
+
+    lines=lines+1                                    
+    detail=detail+1
+    invoice$=""
+    invdate$=""
+    amount$=""
+    discount$=""
+    payment$=""
+    retention$=""
+    return
+
+print_total: rem --- Print totals
+
+	xwk=fnblank(13);rem --- blank line
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+	xwk=fnblank(4)
+	OutVect!.addItem("Total")
+	OutVect!.addItem("")
+	OutVect!.addItem(str(pt[0]))
+	OutVect!.addItem(str(pt[1]))
+	OutVect!.addItem(str(pt[2]))
+	OutVect!.addItem(str(pt[3]))
+	OutVect!.addItem("")
+	OutVect!.addItem(str(pt[4]))
+	OutVect!.addItem("")
+    
+    return
+
+type_break: rem --- AP Type break
+rem --- used? 4/30.CAH
+    if multitypes=0 return
+    while lasttype$<>""
+          total$="Total for "+aptype$
+          for x=0 to 4
+              pt[x]=at[x]
+          next x
+          gosub print_total
+          break
+    wend
+    if done return
+    dim apm10a$:fattr(apm10a$),at[4]
+    apm10a.firm_id$=ape02a.firm_id$
+    apm10a.record_id_a$="A"
+    apm10a.ap_type$=ape02a.ap_type$
+    apm10a.code_desc$=nf$
+    k$=apm10a.firm_id$+apm10a.record_id_a$+apm10a.ap_type$
+    find record (apm10a_dev,key=k$,dom=*next) apm10a$
+    aptype$="AP Type "+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(taskdesc$+" - "+aptype$)
+    errors=errors+(pos(nf$=apm10a.code_desc$)=1)
+    lines=maxlines+1
+    lasttype$=apm10a.ap_type$
+    return
+
+account_break: rem --- GL account break when processing cash basis entries
+
+    if cvs(account$,2)<>"" gosub glrecap
+    account$=apt02a.gl_account$
+    total=total+amount
+    amount=0
+    return
+
+glrecap: rem --- Standard GL Recap Routine
+
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
+:                                            ref1$,ref2$,ref3$,memo$,amount,units,status
+    return
+
+Display_Message: rem --- Display Message Routine
+
+    msg_id$="AON_REG_ERRS"
+    gosub disp_message
+    if pos("PASSVALID"=msg_opt$)<>0 special_flag$="Y"
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+
+rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include fndate.src
+
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend 
+
+rem #endinclude fndate.src
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnamount$: Return null string or masked amount
+
+    def fnamount$(q1,q2,q1$)
+        q2$=""
+        if q1 q2$=str(q2:q1$)
+        return q2$
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+	
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+std_exit_no_report:
+
+    release
+
+rem #endinclude std_end.src
+
+    end

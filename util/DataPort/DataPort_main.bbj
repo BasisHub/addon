@@ -1,0 +1,1101 @@
+rem DataPort Data File Conversion Utility (Template creation program)
+rem Program create_template.bbj v8.0.0 28Oct07
+rem
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Feb2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+rem
+rem --- This overlay creates templates for version 6/7 data files using
+rem --- the Addon dictionary files ddm-01, ddm-03 and ddm-04 and then
+rem --- copied to Addon 8 data files after performing date format changes.
+rem --- Normalization of data files will also be done in this program.
+rem
+rem --- Dictionary file templates
+dim ddm01$:"data_name:c(12*),description:c(30),lstrev:c(6),data_type:c(1),reserved_str:c(68*),fld_length:n(3*),display_len:n(3*),reserved_num:n(1*)"
+dim ddm03$:"file_name:c(6),record_id:c(1*),description:c(30),reserved_str:c(33*),reserved_num:n(3*)"
+dim ddm04$:"file_name:c(6),record_id:c(1),layout_seq:c(3*),data_name:c(12),reserved_str1:c(41),fld_sep:c(1),reserved_str2:c(68*),reserved_num:n(1*),fld_repeats:n(3*),fld_occurs:n(3)"
+
+rem --- Set the hook for dealer custom call
+
+    custom_prog$=""
+    while 1
+        custom_prog$=cvs(stbl("+CUSTOM_DP_PROG",err=*break),3)
+        if custom_prog$<>""
+            addr custom_prog$,err=*next;break
+            custom_prog$=""
+        endif
+        break
+    wend
+
+rem --- Set the number of years to add here
+
+    add_year=0
+    add_year=num(stbl("+DEMO_DATE_INCREMENT",err=open_files))
+
+open_files:
+rem --- Open files
+
+ddm01=unt
+open (ddm01)source_folder$+"/"+cvs("ddm-01",version_cvs)
+
+ddm03=unt
+open (ddm03)source_folder$+"/"+cvs("ddm-03",version_cvs)
+
+ddm04=unt
+open (ddm04)source_folder$+"/"+cvs("ddm-04",version_cvs)
+
+ddm_table_tpls = unt
+open (ddm_table_tpls)dictfile$+"ddm_table_tpls.dat"
+dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+
+ddm_tables = unt
+open (ddm_tables)dictfile$+"ddm_tables.dat"
+
+rem --- Load xref files into memory
+
+rd_meter_data$="Loading aliases..."
+rd_meter_action$="WIN-LST-OK"
+rd_meter_title$="DataPort"
+gosub disp_meter
+
+file_alias! = new java.util.HashMap()
+dim file_alias$:"file_id:c(16*=124),alias:c(16*=)"
+file_alias = unt
+open (file_alias)filedir$+"file_alias"
+while 1
+   read (file_alias,end=*break)file_alias$
+   if len(file_alias$) then
+      keyval$ = cvs(file_alias.file_id$,7)
+      dataval$ = cvs(file_alias.alias$,7)
+      if file_alias!.get(keyval$)=null() then
+         file_alias!.put(keyval$,dataval$)
+      else
+         print "*** skip duplicate file_alias: ",file_alias$
+      endif
+   endif
+wend
+close (file_alias)
+
+file_xref! = new java.util.HashMap()
+dim file_xref$:"old_filename:c(16*=124),new_filename:c(16*=)"
+file_xref = unt
+open (file_xref)filedir$+"file_xref"
+while 1
+   read (file_xref,end=*break)file_xref$
+   if len(file_xref$) then
+      keyval$ = cvs(file_xref.old_filename$,7)
+      dataval$ = cvs(file_xref.new_filename$,3)
+      file_xref!.put(keyval$,dataval$)
+   endif
+wend
+close (file_xref)
+
+field_file_xref! = new java.util.HashMap()
+dim field_file_xref$:"alias:c(16*=124),old_fieldname:c(16*=124),new_fieldname:c(16*=)"
+field_file_xref = unt
+open (field_file_xref)filedir$+"field_file_xref"
+while 1
+   read (field_file_xref,end=*break)field_file_xref$
+   if len(field_file_xref$) then
+      keyval$ = cvs(field_file_xref.alias$,7)+"."+cvs(field_file_xref.old_fieldname$,7)
+      dataval$ = cvs(field_file_xref.new_fieldname$,7)
+      field_file_xref!.put(keyval$,dataval$)
+   endif
+wend
+close (field_file_xref)
+
+field_name_xref! = new java.util.HashMap()
+dim field_name_xref$:"old_fieldname:c(16*=124),new_fieldname:c(16*=)"
+field_name_xref = unt
+open (field_name_xref)filedir$+"field_name_xref"
+while 1
+   read (field_name_xref,end=*break)field_name_xref$
+   if len(field_name_xref$) then
+      keyval$ = cvs(field_name_xref.old_fieldname$,7)
+      dataval$ = cvs(field_name_xref.new_fieldname$,7)
+      field_name_xref!.put(keyval$,dataval$)
+   endif
+wend
+close (field_name_xref)
+
+rd_meter_data$="Processing files . . ."
+rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+rd_meter_action$="LST"
+gosub disp_meter
+
+rem --- Read the v6/v7 data directory
+old_dir=unt
+open (old_dir)source_folder$
+
+next_file:
+    if rdVectPort! = null() then
+       readrecord (old_dir,end=end_read_loop)datafile$
+    else
+       datafile$ = str(rdVectPort!.removeItem(0),err=end_read_loop)
+    endif
+
+    datafile$=cvs(datafile$,version_cvs)
+    rd_meter_data$="   "+datafile$
+    rd_meter_action$="LST"
+    gosub disp_meter
+
+    if rdVectPort!.size(err=*endif) then
+       rd_meter_proc_recs=rd_meter_proc_recs+1
+       rd_meter_action$="MTR-"
+       gosub disp_meter
+    endif
+
+    rem ' skip these files -- TODO: Explain why.
+    if pos("."=datafile$)=1 then goto next_file
+    if pos("_"=datafile$)=1 then goto next_file
+    if pos("z"=cvs(datafile$,8))=1 then  goto next_file
+    if pos("dd"=cvs(datafile$,8))=1 then goto next_file
+    if pos("w-"=cvs(datafile$,8))=1 then goto next_file
+    if pos("sh"=cvs(datafile$,8))=1 then goto next_file
+
+    print "Data file: ",datafile$
+    print (log_dev)"Data file: ",datafile$
+
+    if cvs(datafile$,8)="ivm-03" then
+        rem ' create the v8 ivm-03
+        old_ivm03$=source_folder$+"/"+datafile$
+        old_ivm03=unt
+        open (old_ivm03)old_ivm03$
+        new_ivm03$=destin_folder$+"/"+cvs(datafile$,8)
+        fid$=fid(old_ivm03)
+        fid$=fid$(1,8)+new_ivm03$
+        erase new_ivm03$,err=*next
+        file fid$
+        new_ivm03=unt
+        open (new_ivm03)new_ivm03$
+        lock (new_ivm03)
+        while 1
+            k$=key(old_ivm03,end=*break)
+            readrecord(old_ivm03,end=*break)rec$
+            writerecord(new_ivm03,key=k$)rec$
+        wend
+        close (old_ivm03)
+        close (new_ivm03)
+        goto next_file
+    endif; rem ivm-03
+
+    if cvs(datafile$,8)="sys-01" then
+       normalize_sys01=1
+    endif; rem ' sys-01
+
+rem --- Read the dictionary file ddm-03 to get data file info
+
+    read(ddm03,key=pad(datafile$,6),dom=*next)
+
+next_ddm03:
+    if copy_sys01 then
+       readrecord(ddm03,key=ddm03_key$,dom=read_normalize_xref)ddm03$
+    else
+       readrecord(ddm03,end=next_file)ddm03$
+       if cvs(ddm03.file_name$,3)<>cvs(datafile$,3) then
+          goto next_file
+       endif
+    endif
+    gosub get_new_template
+    rd_gen_table_tpl$=""
+    data_seq_str$=""
+    fields=0
+    date_format$ = $$
+    print "   Creating template for "+ddm03.file_name$+ddm03.record_id$+"  ("+table_alias$+")"
+    print (log_dev)"   Creating template for "+ddm03.file_name$+ddm03.record_id$
+
+    read(ddm04,key=ddm03.file_name$+ddm03.record_id$,dom=*next)
+next_ddm04:
+    readrecord(ddm04,end=end_ddm04)ddm04$
+    if ddm04.file_name$<>ddm03.file_name$ or ddm04.record_id$<>ddm03.record_id$ then
+       goto end_ddm04
+    endif
+
+    findrecord(ddm01,key=ddm04.data_name$,dom=next_ddm04)ddm01$
+    rd_col_length=ddm01.fld_length
+    if ddm04.fld_repeats>1 then
+       rd_col_length=ddm01.fld_length*ddm04.fld_repeats
+    endif
+    rd_col_occurs_sfx$=""
+    rd_col_occurs$=""
+    rd_col_occurs=1
+    if ddm04.fld_occurs>1 then
+       rd_col_occurs$="YES"
+       rd_col_occurs=ddm04.fld_occurs
+    endif
+
+    data_seq_pos=pos(pad(ddm04.data_name$,16)=data_seq_str$,20)
+    if data_seq_pos<>0 then
+       rd_occur_adj=num(data_seq_str$(data_seq_pos+17,2))
+    else
+       rd_occur_adj=0
+       data_seq_str$=data_seq_str$+pad(ddm04.data_name$,16)+"-00;"
+    endif
+
+    for rd_curr_occur=1 to rd_col_occurs
+       data_seq_pos=pos(pad(ddm04.data_name$,16)=data_seq_str$,20)
+       data_seq_str$(data_seq_pos+17,2)=str(num(data_seq_str$(data_seq_pos+17,2))+1:"00")
+       if rd_col_occurs$="YES" or rd_occur_adj>0 then
+          rd_col_occurs_sfx$="_"+str(rd_curr_occur+rd_occur_adj:"00")
+       endif
+
+       rem ' field names can only contain [A-Z0-9_]
+       data_name$=tbl(cvs(ddm04.data_name$,7),tbl=az_09)
+       rd_temp_seg$=cvs(data_name$,3)+rd_col_occurs_sfx$+":"
+       datatype$=iff(ddm01.data_type$="N","N","C")
+       rd_temp_seg$=rd_temp_seg$+datatype$+"("+str(rd_col_length)
+       if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E" then
+          rd_temp_seg$=rd_temp_seg$+"*"
+       endif
+       if rd_col_occurs$="YES" or rd_occur_adj>0
+         if rd_curr_occur+rd_occur_adj=rd_col_occurs
+           if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E"
+             if rd_temp_seg$(len(rd_temp_seg$),1)<>"*"
+               rd_temp_seg$=rd_temp_seg$+"*"
+             endif
+           endif
+         endif
+       endif  
+       rd_temp_seg$=rd_temp_seg$+")"
+       fields = fields + 1
+       if len(rd_gen_table_tpl$) then
+          rd_gen_table_tpl$=rd_gen_table_tpl$+","
+       endif
+       rd_gen_table_tpl$=rd_gen_table_tpl$+rd_temp_seg$
+       rem ' Date formats
+       if ddm01.data_type$="D" then
+          date_format$ = date_format$ + chr(rd_col_length)
+       else
+          if ddm01.data_type$="A" and rd_col_length=2 then
+             date_format$ = date_format$ + chr(255)
+          else
+             date_format$ = date_format$ + chr(0)
+          endif
+       endif
+   next rd_curr_occur
+
+   goto next_ddm04
+
+az_09: table 7f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 30 31 32 33 34 35 36 37 38 39 5f 5f 5f 5f 5f 5f 5f 41 42 43 44 45 46 47 48 49 4a 4b 4c 4d 4e 4f 50 51 52 53 54 55 56 57 58 59 5a 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f 5f
+
+end_ddm04:
+    if rd_gen_table_tpl$="" then
+       escape; goto eof
+    endif
+
+    dim old_rec$:rd_gen_table_tpl$
+    fields$="name["+str(fields)+"]:c(20*)"
+    dim old_fieldlist$:fields$
+    old_fieldlist$=fattr(old_rec$,"")
+    record_id_field$=""
+    if pos("RECORD_ID_"=old_fieldlist.name$[2]) then
+       record_id_field$=old_fieldlist.name$[2]
+    endif
+    if pos("RECORD_ID_"=old_fieldlist.name$[1]) then
+       record_id_field$=old_fieldlist.name$[1]
+    endif
+
+    rem ' Special address processing?
+    addr_lines=0
+    if source_version=6 and pos($0a$+"CITY"+$0a$=new_fields$) and pos($0a$+"STATE_CODE"+$0a$=new_fields$)
+       if pos($0a$+"ADDR_LINE_3"+$0a$=old_fieldlist$) then
+          addr_lines=3
+       endif
+       if pos($0a$+"ADDR_LINE_5"+$0a$=old_fieldlist$) then
+          addr_lines=5
+       endif
+    endif
+
+    rem ' Do we need to set the shipto type?
+    ar_shipto = table_alias$="OPE_ORDHDR" or table_alias$="OPT_ORDHDR"
+
+    rem ' Correlate old fieldnames to new fieldnames
+    dim new_fieldlist$:fields$
+    new_fieldlist$=$$
+    for field=1 to fields
+        old_fieldname$=old_fieldlist.name$[field]
+        gosub set_new_fieldname
+        new_fieldlist$ = new_fieldlist$ + new_fieldname$ + $0a$
+    next field
+    old_file=unt
+    if copy_sys01 then
+       datafile$="sys-01"
+    endif
+    open (old_file)source_folder$+"/"+datafile$
+    lock (old_file)
+    print "   Copying data from  "+ddm03.file_name$+ddm03.record_id$
+    print(log_dev)"   Copying data from    "+ddm03.file_name$+ddm03.record_id$
+
+next_rec:
+    readrecord(old_file,end=eof)old_rec$
+    if source_version=6 and datafile$="ARM-10" and old_rec$(1,3)="01G" goto next_rec
+    if pos("00"=old_rec$)<>1 goto next_rec
+    if record_id_field$<>"" and field(old_rec$,record_id_field$,err=*continue)<>ddm03.record_id$ then
+       goto next_rec
+    endif
+    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) +
+:                     field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
+       goto next_rec
+    endif
+    for field=1 to fields
+        if new_fieldlist.name$[field]=$$ then continue
+        value$=field(old_rec$,old_fieldlist.name$[field],err=*continue)
+
+rem --- check for specific values that can't be found any other way
+        if cvs(new_fieldlist.name$[field],3)="REPORT_ALIAS"
+            if cvs(value$,3)="AR_STATEMENT" value$="ARR_STATEMENTS"
+            if cvs(value$,3)="OP_INVOICE" value$="OPR_INVOICES"
+            if cvs(value$,3)="OP_PICKINGLIST" value$="OPR_ODERPICKLST"
+            if cvs(value$,3)="OP_QUOTE" value$="OPR_QUOTE"
+            if cvs(value$,3)="PO_PURCHASE_ORDER" value$="POR_POPRINT"
+            if cvs(value$,3)="PO_REQS"value$="POR_REQS"
+        endif
+        if source_version=6 and (datafile$="ARM-10" OR datafile$="APM-10") and old_fieldlist.name$[field]="PROX_OR_DAYS" and cvs(value$,2)="A"
+            value$="P"
+        endif
+        if source_version=6 and datafile$="GLM-22"
+            while pos($22$=value$)
+                value$(pos($22$=value$,1))=" "
+            wend
+            if pos("OUTPUT_OPER"=old_fieldlist.name$[field])=1
+                x$=old_fieldlist.name$[field]
+                if pos(value$="+-")=0
+                    value$=" "
+                endif
+                if value$=" " and num(field(new_rec$,"output_total_"+x$(len(x$)-1,2)))<>0
+                    value$="+"
+                endif
+            endif
+            value$=cvs(value$,2)
+        endif
+        if old_fieldlist.name$[field]="ZIP_CODE" and len(cvs(value$,2))=9
+            if value$(6,4)="0000"
+                value$=value$(1,5)
+            endif
+        endif    
+
+rem --- Call custom program - Note - there is no CALL/ENTER list, so all variables will be 
+rem     available. Common usages for this would be things like data conversion, since value$
+rem     holds the data in the field coming in, and old_fieldlist.name$[field] is the variable
+rem     name from the dictionary of the source data. datafile$ is the source datafile name.
+
+        if custom_prog$<>""
+            call custom_prog$
+        endif
+
+        attr$=fattr(old_rec$,old_fieldlist.name$[field])
+        fld_sep$=attr$(3,1)
+        fld_typ$=attr$(1,1)
+        fld_len=dec(attr$(10,2))
+        if fld_sep$=$0a$ and len(value$)>fld_len and dec(fld_typ$)=1 
+            if pos($20$<>value$(fld_len+1))=0
+                value$=value$(1,fld_len)
+            endif
+        endif
+        switch asc(date_format$(field))
+           case 0
+              break
+           case 3
+              if len(cvs(value$,3)) then
+                 value$=str(asc(value$)-32+1900+add_year)+str(asc(value$(2))-32:"00")+str(mod(asc(value$(3))-32,100):"00")
+              else
+                 value$=pad("",8)
+              endif
+              break
+           case 2
+           case 6
+              if len(cvs(value$,3)) then
+                 if asc(value$)>=65 then
+                    value$=str(200+asc(value$)-65)+value$(2)
+                 else
+                    value$="19"+value$
+                 endif
+                 value$=str(num(value$(1,4),err=*next)+add_year)+value$(5)
+              else
+                 value$=pad("",8)
+              endif
+              break
+           case 8
+              value$=str(num(value$(1,4))+add_year)+value$(5)
+              break
+           case 255
+              if len(cvs(value$,3)) then
+                 value$=str(asc(value$)-32:"00")+str(asc(value$(2))-32:"00")
+              else
+                 value$=pad("",8)
+              endif
+              break
+           case default; escape; rem ' should never get here
+        swend
+
+        rem 'replace non-print characters with spaces
+        value$=cvs(value$,16)
+
+        field new_rec$,new_fieldlist.name$[field]=value$
+    next field
+
+    if addr_lines then gosub reformat_address
+
+    if ar_shipto then
+       shipto_no = -1
+       shipto_no = num(field(new_rec$,"shipto_no"),err=*next)
+       switch shipto_no
+           case 0; shipto_type$="B"; break
+           case 99; shipto_type$="M"; break
+           case default; shipto_type$="S"; break
+       swend
+       field new_rec$,"shipto_type"=shipto_type$
+    endif
+
+    new_rec$=field(new_rec$)
+
+write_record:
+    if keysize then
+       k$=xkgen(new_rec$,xfin$,0)
+       if len(k$)>keysize then
+          writerecord(new_file,key=k$(1,keysize),err=write_err)new_rec$
+       else
+          writerecord(new_file,key=k$,err=write_err)new_rec$
+       endif
+    else
+       writerecord(new_file,err=write_err)new_rec$
+    endif
+    goto next_rec
+
+eof:
+    if old_file then
+       close (old_file)
+       old_file=0
+    endif
+    if new_file then
+       close (new_file)
+       new_file=0
+    endif
+    if copy_sys01 then
+       goto read_normalize_xref
+    endif
+    goto next_ddm03
+
+rem ' Auto-resize on error
+write_err:
+    if err<>1 then escape
+    fid$=fid(new_file)
+    new_file$=fid$(9)
+    print "*** Resizing ",new_file$," ... ",
+    temp_file$=new_file$+".bak"
+    erase temp_file$,err=*next
+    fid$=fid$(1,8)+temp_file$
+    fid$(7,2)=bin(len(new_rec$),2); rem ' new record size
+    fin$=fin(new_file)(86)
+    keyed = asc(and(fid$(1,1),$06$)) or asc(and(fid$(1,1),$08$)) or fid$(1,1)=$0d$
+    multi = keyed and asc(fid$(2,1))=0
+    single = keyed and !(multi)
+    if multi then
+       file fid$,fin$
+    else
+       file fid$
+    endif
+    close (new_file)
+    open (new_file)new_file$
+    lock (new_file)
+    temp_file=unt
+    open (temp_file)temp_file$
+    lock (temp_file)
+    while 1
+        readrecord(new_file,end=*break)rec$
+        if single then
+           k$=keyp(new_file)
+           writerecord(temp_file,key=k$)rec$
+        else
+           writerecord(temp_file)rec$
+        endif
+    wend
+    close (new_file)
+    close (temp_file)
+    erase new_file$
+    rename temp_file$ to new_file$
+    open (new_file)new_file$
+    lock (new_file)
+    print "(resized)"
+    goto write_record
+
+end_read_loop:
+    if old_dir then
+       close (old_dir)
+       old_dir=0
+    endif
+    if normalize_sys01 then
+       print "   sys-01 will be normalized to different parameter files"
+       print (log_dev)"sys-01"
+       print (log_dev)"   sys-01 will be normalized to different parameter files"
+       file_normalization=unt
+       open (file_normalization)filedir$+"file_normalization"
+       copy_sys01=1
+read_normalize_xref:
+       read(file_normalization,end=end_read_normalize_xref)file_normalization$
+       if file_normalization$="" then
+          goto read_normalize_xref
+       endif
+       ddm03_key$=cvs(file_normalization$(9,6),version_cvs)+file_normalization$(15,1)
+       datafile$=ddm03_key$(1,6)
+       goto next_ddm03
+end_read_normalize_xref:
+       close (file_normalization)
+       normalize_sys01=0
+       goto end_read_loop
+    endif; rem ' normalize_sys01
+
+rem --- Now go populate masks and sequences
+
+    if source_version=6 gosub version6_files
+    gosub make_masks
+rem    gosub make_messages
+rem    gosub make_printplus
+
+    print (log_dev)$0a$+"DataPort completed"
+    print (log_dev)"DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
+
+    rd_meter_proc_recs=rd_meter_total_recs
+    rd_meter_action$="LST-END"
+    gosub disp_meter
+
+    release
+
+version6_files:
+
+    arm10_dev=unt
+    open (arm10_dev)source_folder$+"/"+cvs("arm-10",version_cvs)
+
+    new_file=unt
+    datafile$=cvs("opm-04",8)
+    table_alias$="OPC_MSG_HDR"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_opm04_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then goto start_msg_det
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+get_opm04_template:
+    dim ids$[1],templates$[1]
+    ids$[1]="OPC_MSG_HDR"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status escape;rem Should have been able to get the template for opm-04
+    dim new_rec$:templates$[1]
+read_msg_hdr:
+    read(arm10_dev,end=start_msg_det)arm10a_0$,arm10a_1$
+    if arm10a_0$(3,1)<>"G" goto read_msg_hdr
+    if arm10a_0$(6,1)<>"1" goto read_msg_hdr
+    new_rec.firm_id$=arm10a_0$(1,2)
+    new_rec.message_code$=arm10a_0$(4,2)
+    new_rec.code_desc$=arm10a_0$(7,20)
+    new_rec$=field(new_rec$)
+    writerecord(new_file)new_rec$
+    goto read_msg_hdr
+
+start_msg_det:
+    close (new_file)
+    new_file=unt
+    datafile$=cvs("opm-14",8)
+    table_alias$="OPC_MSG_DET"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_opm14_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then goto end_of_msgs
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+get_opm14_template:
+    dim ids$[1],templates$[1]
+    ids$[1]="OPC_MSG_DET"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status escape;rem Should have been able to get the template for opm-14
+    dim new_rec$:templates$[1]
+    read(arm10_dev,key="",dom=*next)
+
+    while 1
+        read(arm10_dev,end=*break)arm10a_0$,arm10a_1$
+        if arm10a_0$(3,1)<>"G" continue
+        dim second$(200)
+        k$=key(arm10_dev,end=*next)
+        if pos(arm10a_0$(1,5)=k$)=1
+            read(arm10_dev)*,second$
+        endif
+        msg$=pad(arm10a_1$,200)+pad(second$,200)
+        for x=1 to 400 step 40
+            if pos(" "<>msg$(x))<>0
+                new_rec.firm_id$=arm10a_0$(1,2)
+                new_rec.message_code$=arm10a_0$(4,2)
+                new_rec.message_seq$=str(((x-1)/40)+1:"00")
+                new_rec.message_text$=msg$(x,40)
+                new_rec$=field(new_rec$)
+                writerecord(new_file)new_rec$
+            endif
+        next x
+    wend
+end_of_msgs:
+    close (new_file)
+    new_file=0
+return
+
+make_masks:
+
+rem --- First try to create the ars_custdflt record"
+
+    sys01_dev=unt
+    open (sys01_dev)source_folder$+"/"+cvs("sys-01",version_cvs)
+
+    new_file=unt
+    datafile$=cvs("ars_custdflt",8)
+    table_alias$="ARS_CUSTDFLT"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_custdflt_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then escape;goto no_cust_default; rem should be able to create the customer default table
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+get_custdflt_template:
+    dim ids$[1],templates$[1]
+    ids$[1]="ARS_CUSTDFLT"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status escape; goto no_cust_default; rem Should have been able to get the template for opm-04
+    dim new_rec$:templates$[1]
+read_dflt_hdr:
+    read(sys01_dev,end=no_cust_default)sys01_0$,sys01_1$,sys01_2$,sys01_3$
+    if len(sys01_0$)<>6 goto read_dflt_hdr
+    if pos("AR00"=sys01_0$(3))<>1 goto read_dflt_hdr
+    new_rec.firm_id$=sys01_0$(1,2)
+    new_rec.record_id_d$="D"
+    new_rec.disc_code$=sys01_3$(50,2)
+    new_rec.territory$=sys01_3$(52,3)
+    new_rec.slspsn_code$=sys01_3$(55,3)
+    new_rec.tax_code$=sys01_3$(58,2)
+    new_rec.ar_terms_code$=sys01_3$(60,2)
+    new_rec.ar_dist_code$=sys01_3$(62,2)
+    new_rec.customer_inv_his$=sys01_3$(78,1)
+    new_rec$=field(new_rec$)
+    writerecord(new_file)new_rec$
+    goto read_dflt_hdr
+
+no_cust_default:
+    masks_dev=unt
+    open (masks_dev)stbl("+DIR_BRA")+"ads_masks.dat"
+    comp_id$=stbl("+DEFAULT_ASC_COMP_ID")
+
+    rem --- Get templates for masks"
+
+    readrecord(ddm_table_tpls,key=pad("ADS_MASKS",16))ddm_table_tpls$
+    dim ads_masks$:ddm_table_tpls.template$
+
+    rem --- Do the Masks
+
+    old_file=unt
+    open (old_file)source_folder$+"/"+cvs("sys-01",version_cvs)
+    while 1
+        read(old_file,end=*break)a0$,a1$,a2$,a3$,a4$,a5$,a6$,a7$,a8$,a9$,a10$
+        if len(a0$)<>6 continue
+        if num(a0$(1,2),err=*continue)=0 continue
+        if a0$(5,2)<>"00" continue
+        if pos(a0$(3,2)="APARBMGLIVPRSFWO",2)=0 continue
+        if a0$(3,2)="WO" a0$(3,2)="SF";rem convert v7 Shop Floor to v6 Work Orders
+        if a0$(3,2)<>"BM"
+            if pos(a0$(3,2)="IVWO",2)=0
+                dim ads_masks$:fattr(ads_masks$)
+                ads_masks.firm_id$=a0$(1,2)
+                ads_masks.asc_comp_id$=comp_id$
+                ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+                ads_masks.dd_mask_type$="I"
+                ads_masks.dd_attr_mski$=cvs(a5$,3)
+                ads_masks.dd_attr_msko$=cvs(a5$,3)
+                ads_masks$=field(ads_masks$)
+                if cvs(a1$,3)<>"" or cvs(a5$,3)<>""
+                    writerecord(masks_dev)ads_masks$
+                endif    
+            endif    
+
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="A"
+            ads_masks.dd_attr_mski$=cvs(a6$,3)
+            ads_masks.dd_attr_msko$=cvs(a6$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a6$,3)<>""
+                writerecord(masks_dev)ads_masks$
+            endif
+
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="U"
+            ads_masks.dd_attr_mski$=cvs(a7$,3)
+            ads_masks.dd_attr_msko$=cvs(a7$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a7$,3)<>""
+                writerecord(masks_dev)ads_masks$
+            endif    
+
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="R"
+            if a0$(3,2)="GL"
+                ads_masks.dd_mask_type$="P"
+            endif
+            if a0$(3,2)="IV"
+                ads_masks.dd_mask_type$="C"
+            endif
+            ads_masks.dd_attr_mski$=cvs(a8$,3)
+            ads_masks.dd_attr_msko$=cvs(a8$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a8$,3)<>""
+                writerecord(masks_dev)ads_masks$
+            endif    
+
+            if a0$(3,2)="IV"
+                dim ads_masks$:fattr(ads_masks$)
+                ads_masks.firm_id$=a0$(1,2)
+                ads_masks.asc_comp_id$=comp_id$
+                ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+                ads_masks.dd_mask_type$="P"
+                ads_masks.dd_attr_mski$=cvs(a9$,3)
+                ads_masks.dd_attr_msko$=cvs(a9$,3)
+                ads_masks$=field(ads_masks$)
+                if cvs(a9$,3)<>""
+                    writerecord(masks_dev)ads_masks$
+                endif
+    
+                dim ads_masks$:fattr(ads_masks$)
+                ads_masks.firm_id$=a0$(1,2)
+                ads_masks.asc_comp_id$=comp_id$
+                ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+                ads_masks.dd_mask_type$="V"
+                ads_masks.dd_attr_mski$=cvs(a10$,3)
+                ads_masks.dd_attr_msko$=cvs(a10$,3)
+                ads_masks$=field(ads_masks$)
+                if cvs(a10$,3)<>""
+                    writerecord(masks_dev)ads_masks$
+                endif    
+            endif
+        else
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="H"
+            ads_masks.dd_attr_mski$=cvs(a1$,3)
+            ads_masks.dd_attr_msko$=cvs(a1$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a1$,3)<>""
+                writerecord(masks_dev)ads_masks$
+            endif    
+
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="Q"
+            ads_masks.dd_attr_mski$=cvs(a1$,3)
+            ads_masks.dd_attr_msko$=cvs(a1$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a1$,3)<>""
+                writerecord(masks_dev)ads_masks$
+            endif    
+
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="M"
+            ads_masks.dd_attr_mski$=cvs(a2$,3)
+            ads_masks.dd_attr_msko$=cvs(a2$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a2$,3)<>""
+                writerecord(masks_dev)ads_masks$
+             endif   
+
+            dim ads_masks$:fattr(ads_masks$)
+            ads_masks.firm_id$=a0$(1,2)
+            ads_masks.asc_comp_id$=comp_id$
+            ads_masks.asc_prod_id$=pad(a0$(3,2),3)
+            ads_masks.dd_mask_type$="O"
+            ads_masks.dd_attr_mski$=cvs(a3$,3)
+            ads_masks.dd_attr_msko$=cvs(a3$,3)
+            ads_masks$=field(ads_masks$)
+            if cvs(a3$,3)<>""
+                writerecord(masks_dev)ads_masks$
+            endif    
+        endif
+    end_mask:
+    wend
+
+    return
+
+get_new_template:
+    new_datafile$=cvs(datafile$,8)
+    file_id$=ddm03.file_name$+ddm03.record_id$
+    file_id! = file_xref!.get(cvs(file_id$,7))
+    if file_id!<>null() then
+       rem ' found mapping for filename+record id
+       file_id$ = str(file_id!)
+       if len(file_id$)>7 then
+          rem ' Longer new-style filename
+          new_datafile$ = cvs(file_id$,8)
+       else
+          rem ' Drop the record id from the old-style filename
+          new_datafile$=cvs(file_id$(1,len(file_id$)-1),8)
+       endif
+    else
+       file_id! = file_xref!.get(cvs(datafile$,7))
+       if file_id!<>null() then
+          rem ' found mapping for filename
+          file_id$ = str(file_id!)+ddm03.record_id$
+          new_datafile$ = cvs(str(file_id!),8)
+       endif
+    endif
+
+    table_alias! = file_alias!.get(cvs(file_id$,7))
+    table_alias$ = iff(table_alias!=null(),"",cvs(str(table_alias!),3))
+    print "Table Alias: ",table_alias$
+    if table_alias$="" then
+       print "   Data File "+file_id$+" will not be ported"
+       print (log_dev)"   Data File "+file_id$+" will not be ported"
+       goto eof
+    endif
+
+    findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=check_for_definition)ddm_table_tpls$
+    dim new_rec$:ddm_table_tpls.template$
+    new_fields$=$0a$+fattr(new_rec$,"")
+
+    new_file=unt
+    open (new_file,err=check_for_definition)destin_folder$+"/"+new_datafile$
+    lock (new_file)
+    a=msgbox(new_datafile$+" already exists in destination folder. Do you want to overwrite data?",3+32+0,"DataPort")
+    if a=6 then
+       return; rem ' Yes-Overwrite
+    endif
+    if a=7 then
+       goto eof; rem ' No-Skip
+    endif
+    if a=2 then
+       goto eoj; rem ' Cancel-Exit
+    endif
+return; rem ' get_new_template
+
+check_for_definition:
+    new_file=0
+    find (ddm_tables,key=pad(table_alias$,16),dom=undefined_file)
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+new_datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then
+       print "*** ERROR ***: Couldn't create "+new_datafile$+$0a$+status$
+       print (log_dev)"*** ERROR ***: Couldn't create "+new_datafile$+$0a$+status$
+       goto eof
+    endif
+    print "   New file "+new_datafile$+" created in folder "+destin_folder$
+    print (log_dev)"   New file "+new_datafile$+" created"
+
+    new_file=unt
+    open (new_file)destin_folder$+"/"+new_datafile$
+    lock (new_file)
+    xfid$=xfid(new_file)
+    xfin$=$$
+    keysize=dec(xfid$(2,4))
+    if keysize then
+       call stbl("+DIR_SYP")+"bac_create_xfin.bbj",table_alias$,xfin$,rd_table_chans$[all],status$
+       if len(status$) then
+          escape
+       endif
+    endif
+return
+
+undefined_file:
+    print "   Data File "+file_id$+" will not be ported"
+    print (log_dev)"   Data File "+file_id$+" will not be ported"
+    goto eof
+return
+
+set_new_fieldname:
+    new_fieldname$=""
+
+    if old_fieldname$="RESERVED_STR" then
+       old_fieldname$="RESERVED_STR_02"
+    endif
+
+    if pos("RESERVED_STR_0"=old_fieldname$) or pos("RESERVED_NUM"=old_fieldname$) then
+       new_fieldname$=""
+       return
+    endif
+
+    if pos($0a$+old_fieldname$+$0a$=new_fields$) then
+       new_fieldname$=old_fieldname$
+    endif
+
+    if new_fieldname$<>"" and new_fieldname$<>"RESERVED_STR" then
+       return
+    endif
+
+    if source_version=6 and table_alias$="IVC_PRODCODE" and old_fieldname$="RESERVED_STR" then
+       new_fieldname$="SA_LEVEL"
+       goto check_fieldlist
+    endif
+
+    if pos("INV_DUE_DATE_"=old_fieldname$) then
+       new_fieldname$="INV_DUE_BYDT_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("SLS_INV_DATE_"=old_fieldname$) then
+       new_fieldname$="SLS_INV_BYDT_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("INV_OH_DATE_"=old_fieldname$) then
+       new_fieldname$="INV_OH_BYDT_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("NBR_INV_DUE_"=old_fieldname$) then
+       new_fieldname$="NO_INV_DUE_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("NBR_ORD_SHIP_"=old_fieldname$) then
+       new_fieldname$="NO_ORD_SHIP_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("NBR_LNS_REC_"=old_fieldname$) then
+       new_fieldname$="NO_LNS_REC_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("NBR_INV_DATE_"=old_fieldname$) then
+       new_fieldname$="NO_INV_BYDT_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("NBR_INV_BYDT_"=old_fieldname$) then
+       new_fieldname$="NO_INV_BYDT_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    if pos("EARN_DEDUCT_"=old_fieldname$) then
+       new_fieldname$="EARNDEDUCT_"+old_fieldname$(len(old_fieldname$)-1)
+       goto check_fieldlist
+    endif
+
+    keyval$ = table_alias$+"."+old_fieldname$
+    new_fieldname! = field_file_xref!.get(keyval$)
+    if new_fieldname! = null() then
+       new_fieldname$ = ""
+    else
+       new_fieldname$=str(new_fieldname!)
+       goto check_fieldlist
+    endif
+
+    keyval$=old_fieldname$
+    new_fieldname! = field_name_xref!.get(keyval$)
+    if new_fieldname! = null() then
+       new_fieldname$ = ""
+       return
+    else
+       new_fieldname$=str(new_fieldname!)
+    endif
+
+check_fieldlist:
+
+    if pos($0a$+new_fieldname$+$0a$=new_fields$)=0 then
+       new_fieldname$=""
+    endif
+
+return; rem ' set_new_fieldname
+
+reformat_address:
+    if addr_lines=5 then
+       address$=old_rec.addr_line_1$+old_rec.addr_line_2$+old_rec.addr_line_3$+old_rec.addr_line_4$+old_rec.addr_line_5$
+    endif
+    if addr_lines=3 then
+       address$=old_rec.addr_line_1$+old_rec.addr_line_2$+old_rec.addr_line_3$
+    endif
+    dim state$(2),city$(24)
+    states$="ALAKAZARCACOCTDEDCFLGAHIIDILINIAKSKYLAMEMDMAMIMNMSMOMTNENVNHNJNMNYNCNDOHOKORPAPRRISCSDTNTXUTVTVAVIWAWVWIWY"
+    states$=states$+"ABBCMBNBNLNSNTNUONPEQCSKYT"; rem ' Canadian province/territory codes
+    if len(address$) and len(address$)/24 then
+       for x=len(address$) to 1 step -24
+           string1$=cvs(address$(x-23,24),2)
+           if string1$="" then
+              continue
+           endif
+           if len(string1$)<2 then
+              city$(1)=string1$,address$(x-23,24)=""
+              break
+           endif
+           if len(string1$)=2 then
+              break
+           endif
+           if len(string$)>2 and string1$(len(string1$)-2,1)<>" " then
+              city$(1)=""
+              break
+           endif
+           string2$=string1$(len(string1$)-1,2)
+           if pos(string2$=states$,2)=0 then
+              city$(1)=""
+              break
+           endif
+           state$=string2$
+           if len(string1$)=2 then
+              if x>1 then
+                 city$(1)=address$(x-47,24)
+                 address$(x-47,48)=""
+              endif
+           else
+              city$(1)=address$(x-23,len(string1$)-3)
+              address$(x-23,24)=""
+           endif
+           string1$=cvs(city$,2)
+           if len(string1$) and string1$(len(string1$),1)="," then
+              string1$=string1$(1,len(string1$)-1)
+           endif
+           city$(1)=string1$
+           break
+       next x
+    endif
+
+    REM ' TODO: More detail here?
+    if city$="" or state$="" then
+       print(log_dev)"Error copying address fields"
+    endif
+
+    new_rec.addr_line_1$=address$(1,24)
+    new_rec.addr_line_2$=address$(25,24)
+    if addr_lines=5 then
+       new_rec.addr_line_3$=address$(49,24)
+       new_rec.addr_line_4$=address$(73,24)
+    endif
+    new_rec.city$=city$
+    new_rec.state_code$=state$
+return; rem ' reformat_address
+
+disp_meter:rem --- Display Progress Meter
+
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
+:        rdSysGUI!,
+:        rdWindow!,
+:        rdMeterWin!,
+:        rd_meter_title$,
+:        rd_meter_total_recs,
+:        rd_meter_proc_recs,
+:        rd_meter_data$,
+:        rd_meter_action$
+
+    return
+
+eoj:
+   a=msgbox("Exit from DataPort?",4+32+256,"DataPort")
+   if a=6 then
+      release
+   endif
+   if a=7 then
+      a=msgbox("Continuing DataPort..")
+      goto eof
+   endif

@@ -1,0 +1,264 @@
+rem --- Payroll Date List (Report Overlay)
+rem --- Program prr_datelist_o1.aon v8.0.0 04Jun2008 (prr_sb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/04/2008 10:20:02)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Initializations
+
+    headings=3
+    clock$="",width=80,t0=0,h=0,when$=sysinfo.system_date$
+    dim headings$[headings]
+    x0$="First Date"
+    x1$="Last Date"
+    if date_from$<>"" then let x0$=fndate$(date_from$)
+    if date_thru$<>"" then let x1$=fndate$(date_thru$)
+    h4$="From "+x0$+" Thru "+x1$
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$+" By Date "+h3$,headings$[2]=h4$
+    more=1
+
+rem --- Column Headings
+
+    dim columns$[2,10]
+    columns = 3
+    columns$[0,0]="Date",           columns$[0,1]="C",columns$[0,2]="8"
+    columns$[1,0]="Employee No",    columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="Name",           columns$[2,1]="C",columns$[2,2]="15"
+    
+
+rem --- Get key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRW_DATESORT","PRIMARY",prw02a_prikey_tpl$,rd_table_chans$[all],status$
+    dim prw02a_key$:prw02a_prikey_tpl$
+
+    call pgmdir$+"adc_progress.aon","CN","","","","",0,prw02a_dev,1,meter_num,ignore_status
+
+rem --- Sort by selected date
+
+    gosub sort_records
+
+rem --- Init Read
+
+    read (prw02a_dev,key=firm_id$,dom=*next)
+
+rem --- Main Read
+
+    while more
+
+        prw02a_key$=key(prw02a_dev,end=*break)
+        if prw02a_key.firm_id$<>firm_id$ then break
+        read (prw02a_dev)
+        call pgmdir$+"adc_progress.aon","S","","","","",0,prw02a_dev,1,meter_num,ignore_status
+
+rem --- Employee
+
+        find record (prm01a_dev,key=prw02a_key.firm_id$+prw02a_key.employee_no$,dom=*continue) prm01a$
+        q=pos("  "=prm01a.empl_surname$)-1
+        if q<1 then let q=16
+        x1$=prm01a.empl_surname$(1,q)+", "+prm01a.empl_givname$
+        if option$="A" and cvs(prm01a.term_date$,3)<>"" then continue
+        if option$="T" and cvs(prm01a.term_date$,3)="" then continue
+
+rem --- Print
+
+        OutVect!.addItem(fndate$(field(prm01a$,sort_date$)))
+        OutVect!.addItem(fnmask$(prm01a.employee_no$,m0$))
+        OutVect!.addItem(x1$)
+        t0=t0+1
+
+    wend
+
+done: rem --- Totals
+
+    xwk=fnblank(4)
+    OutVect!.addItem(str(t0)+" Employee(s) Listed")
+    OutVect!.addItem("")
+    goto std_exit
+
+
+sort_records: rem --- Sort
+
+    read (prm01a_dev,key=firm_id$,dom=*next)
+    while more
+        read record (prm01a_dev,end=*break) prm01a$
+        if prm01a.firm_id$<>firm_id$ then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+        y0$=field(prm01a$,sort_date$)
+        if cvs(y0$,3)="" then continue
+        if date_from$<>"" then if y0$<date_from$ then continue
+        if date_thru$<>"" then if y0$>date_thru$ then continue
+        x0$=firm_id$+y0$+prm01a.employee_no$
+        write record (prw02a_dev,key=x0$) prw02a$
+    wend
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

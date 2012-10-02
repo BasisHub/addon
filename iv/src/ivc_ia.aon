@@ -1,0 +1,516 @@
+rem --- Inventory Item Entry
+rem --- Program ivc_ia v8.0.0 19Dec2007 (ivc_ia)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/19/2007 03:35:53)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+rem --- escape  we need to be able to pass in the warehouse for verification
+
+            seterr std_error
+            setesc std_error
+            enter action$,column,row,channels[all],firm$,default$,prompt$,params[all],item$[all],item[all],fkey,i0,i0_done,validate,parent_context,event$
+
+rem --- Retrieve the program path
+
+            pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+            sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+            dim sysinfo$:sysinfo_template$
+            sysinfo$=stbl("+sysinfo",err=*next)
+            milestone=num(stbl("+milestone",err=*next),err=*next)
+            firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+            files=4,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
+            files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+            files$[3]="ivm-14",ids$[3]="IVM_ITEMSYN"
+            files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
+            call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit
+            bmm01_dev=channels[1]
+            ivm01_dev=channels[2]
+            ivm14_dev=channels[3]
+            ivs01a_dev=channels[4]
+
+rem --- Dimension string templates
+
+            dim bmm01a$:templates$[1],ivm01a$:templates$[2],ivm14a$:templates$[3],
+:           ivs01a$:templates$[4]
+
+rem --- Assign form input values to local variables
+
+            value_01$=Option!.getOptionData("form_value_01")
+
+rem --- Retrieve parameter records
+
+            ivs01a_key$=firm_id$+"IV00"
+            find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Get resource name if necessary
+rem --- escape we need a separate argument for res_name$
+
+            if pos("O"<>action$) then
+                res_name$=""
+                fattr$="",fattr$=fattr(event$,err=*next)
+                if fattr$="" then let res_name$=event$,event$=""
+                if res_name$="" then let res_name$=pgm(-1)
+            endif
+ rem --- Determine interface
+
+            call pgmdir$+"syc_dg.bbx",sysgui_dev,event$,event_len,sysfin$,sysfin,ui$,status
+            if status then goto std_exit
+            if ui$="W" then
+                rem gosub flow_initializations
+            endif
+
+rem --- Debug?
+
+            debug=fnglobal("+DEBUG",0)
+            debug_dev=fnglobal("+DEBUG_CHAN",999)
+            if debug then let db_pfx$=fill(tcb(13),".|")
+            if debug then print (debug_dev)db_pfx$,"*** ",pgm(-2)
+
+rem --- Initializations
+
+            if pos("O"=action$)=0 then gosub get_menu_arrays
+            listbox_id=8000
+            header_id=2000,footer_id=2001; rem needs to match resource
+            fkey=0
+            ivm01_dev=channels[1],bmm01_dev=channels[2],ivm14_dev=channels[14]
+            dim item$[6],item[12]
+            item$[0]=default$
+            control_id=3000+i0,i0_orig=i0
+            more=1
+            tryanother=0
+            trySyn=0
+rem --- Display only
+
+            if pos("O"=action$)<>0 then
+                v$=default$
+                v1=column,v2=row
+                if cvs(v$,2)="" then goto all_good
+                goto get_record
+            endif
+
+rem .....................Main Loop
+
+while more
+
+get_item: rem --- Get item number/BOM
+
+            v0$="S"
+            v1$="C",v2$=default$,v3$="",v4$=cvs(prompt$,2)
+            v0=params[0]
+            v1=column,v2=row,fkey=0,vaction$=""
+            if pos("G"=action$) then
+                let vaction$="g",control_id=grid_id,grid_col=i0_orig,grid_row=params[5]
+            endif
+            if v4$="" then
+                if pos("B"=action$) then
+                    let v4$="Enter A Valid BOM"
+                else
+                    let v4$="Enter A Valid Item Number"
+                endif
+            endif
+            if pos("S"=action$) then let vaction$="s"
+            if pos("N"=action$)=0 then let v4$=v4$+" ("
+            if pos("F"=action$) then let v4$=v4$+"<F1>=First/"
+            if pos("L"=action$) then let v4$=v4$+"<F1>=Last/"
+            if pos("A"=action$) then let v4$=v4$+"<F1>=All/"
+            if (pos("U"=action$)=0 and pos("N"=action$)=0) then let v4$=v4$+"<F3>=Lookup)"
+            if pos("U"=action$) then let v4$=v4$+"<F1>=Item Lookup, <F3>=Bill Lookup)"
+            if pos("V"=action$) then let v1$="",v4$=""
+            if ui$="W" and pos("S"=action$) and event.code$="l" and event.context=parent_context then
+                if debug then
+                    print (debug_dev)db_pfx$,"Sending event back to caller"
+                endif
+                break
+            endif
+            if wants_to_edit_cell then
+                let params[5]=vnotice.row%,i0=vnotice.col%
+                break
+            endif
+            fkey=v3
+            on v3 goto get_record,first_last_all,done,lu_item_bom,done,get_record,done
+
+first_last_all: rem --- <F1> First/Last/All/Item Lookup
+
+            if pos("U"<>action$) then
+                if pos("F"=action$) or pos("L"=action$) or pos("A"=action$) then
+                    let v$=""
+                    goto all_good
+                endif
+                if pos("N"=action$) then
+                    break
+                endif
+                continue
+            endif
+
+lu_item_bom: rem --- <F3> Lookup Item or BOM
+
+            if pos("N"=action$) then
+                break
+            endif
+            if pos("B"=action$) or (pos("U"=action$) and v3=3) then
+                call pgmdir$+"syc_lb.bbx",v$
+            else
+                call pgmdir$+"syc_li.bbx",v$
+            endif
+            if v$="" then
+                continue
+            endif
+            fkey=0
+
+
+        
+rem .....................Sub Loop
+
+        while more
+get_record: rem --- Retrieve item master
+
+            if cvs(v$,2)="" then goto first_last_all
+            ivm01a.FIRM_ID$=firm$
+            ivm01a.ITEM_ID$=v$
+            if pos("R"<>action$) then
+                find record (ivm01_dev,key=ivm01a.FIRM_ID$+ivm01a.ITEM_ID$,dom=item_not_found) ivm01a$
+            else
+                read record (ivm01_dev,key=ivm01a.FIRM_ID$+ivm01a.ITEM_ID$,dom=item_not_found) ivm01a$
+            endif
+        
+            if pos("B"=action$) then find (bmm01_dev,key=ivm01a.FIRM_ID$+ivm01a.ITEM_ID$,dom=item_not_found)
+
+all_good: rem --- Return item information and display (optional)
+
+            item$[0]=ivm01a.ITEM_ID$
+            item$[1]=fnitem$(ivm01a.ITEM_DESC$,params[1],params[2],params[3])
+            rem item$[2]=a2$
+            rem item$[3]=a3$,item$[4]=a4$,item$[5]=a5$,item$[6]=a6$
+            item[all]=a[all]
+            desc$=item$[1]
+            if ui$<>"W" then let desc$=pad(desc$,80-v1-len(item$[0])-2) 
+            if pos("D"=action$)=0 and pos("O"=action$)=0 then
+                break
+            endif
+            if v$="" then
+                if pos("F"=action$) then
+                    let desc$="First"
+                else
+                    if pos("L"=action$) then
+                        let desc$="Last"
+                    else
+                        if pos("A"=action$) then
+                            let desc$="All"
+                        endif
+                    endif
+                endif
+            endif
+
+            call pgmdir$+"syc_rs.bbx","",my_context,control_id,item$[0],0,"",ignore_status
+            call pgmdir$+"syc_rs.bbx","",my_context,10000+control_id,desc$,0,"",ignore_status
+            break
+
+item_not_found: rem --- Item not found. Check synonyms
+
+            dim check$(22)
+            rem s0$(1)=firm$+v$
+            ivm14a.FIRM_ID$=firm$
+            ivm14a.ITEM_SYNONYM$=v$
+            l=1,count=0,line=1,page=1,check$(1)=firm$+v$
+            width=73
+            height=12,win_x=1,win_y=3,max_row=height-5,w=width-21
+            call pgmdir$+"syc_sa.bbx::init",str(ui$),max_row,pages,linfo$[all]
+            match=0
+            selection$=""
+            dim llist$[pages,max_row,5],more$[pages,max_row,1]
+            read (ivm14_dev,key=ivm14a.FIRM_ID$+ivm14a.ITEM_SYNONYM$+ivm14a.ITEM_ID$,dom=*next)
+
+        
+
+rem  .....................Inner Loop
+
+            while more
+
+synonym: rem --- Read next synonym
+
+                    ivm14a_key$=key(ivm14_dev,end=*break)
+                    if pos(firm$+v$=ivm14a_key$)<>1 then
+                        break
+                    endif
+                    if ivm14a.FIRM_ID$+ivm14a.ITEM_SYNONYM$=check$ then let match=match+1
+                    if match<>0 then
+                        if match>1 then
+                            if ivm14a.FIRM_ID$+ivm14a.ITEM_SYNONYM$<>check$ then
+                                break
+                            endif
+                        else
+                            if ivm14a.FIRM_ID$+ivm14a.ITEM_SYNONYM$<>check$ then
+                            selection$=ivm14a.ITEM_ID$
+                            goto try_syn
+                        endif
+                    endif
+item_from_syn: rem --- Retrieve item
+
+                    read record (ivm14_dev) ivm14a$
+                    rem a0$(1)=firm$+s0$(23)
+                    ivm01a.FIRM_ID$=firm$
+                    ivm01a.ITEM_ID$=ivm14a.ITEM_ID$
+                    find record (ivm01_dev,key=ivm01a.FIRM_ID$+ivm01a.ITEM_ID$,dom=*continue) ivm01a$
+                    if pos("B"=action$) then find (bmm01_dev,key=ivm01a.FIRM_ID$+ivm01a.ITEM_ID$,dom=*continue)
+
+rem --- Display page?
+
+                    if l>=max_row then
+                        gosub syn_lookup
+                        if fkey=1 or fkey=4 then
+                            tryanother=1
+                            break
+                        endif
+                        if selection$<>"" then
+                            trySyn=1
+                            break
+                        endif
+                    endif
+lu_syn: rem --- Lookup window record
+
+                    dim g1$(width-2),description$(w-(params[0]+3))
+                    description$(1)=fnitem$(ivm01a.ITEM_DESC$,params[1],params[2],params[3])
+                    g1$(2)=ivm01a.ITEM_ID$
+                    g1$(3+params[0])=description$,g1$(w)=" "+ivm14a.ITEM_SYNONYM$
+                    llist$[page,line,1]=g1$
+                    llist$[page,line,2]=ivm01a.ITEM_ID$
+                    count=count+1
+                    line=line+1,l=l+1
+
+
+rem  .....................Inner Loop
+
+            wend
+
+            if tryanother=1
+rem  ..........control breaks to try_another: label
+                break
+            endif
+
+rem this portion will be skipped if the value of trySyn=1
+            if trySyn=0
+eof_syn: rem --- End of file
+
+                    if count=0 then
+                        continue
+                    endif
+                    if count>1 or match=0 then
+                        selection$=selection$+"|EOF"
+                        gosub syn_lookup
+                        if fkey=1 or fkey=4 or selection$="" then
+                            break
+                        endif
+                    else
+                        selection$=ivm14a.ITEM_ID$
+                    endif
+            endif
+try_syn: rem --- Try with selected item
+
+            v$=selection$
+            gosub pop_me
+            continue
+
+rem .....................Sub Loop
+
+        wend
+
+        
+
+try_another: rem --- Back to item input
+            gosub pop_me
+
+rem .....................Main Loop Ends
+
+wend
+
+
+
+done: rem --- All done
+
+        goto std_exit
+
+syn_lookup: rem --- Synonym lookup initializations
+
+        dim heading$(width-2),footing$(width-2)
+        heading$(2)="Number"
+        heading$(3+params[0])="Name"
+        footing$(2)="F1=Restart  F4=End  PgUp  PgDn"
+        title$="Inventory Synonym Lookup"
+        name$="",heading$(w+1)="Synonym"
+        if ui$<>"W" then
+            call pgmdir$+"syc_wa.bbx",0,width,height,win_x,win_y,title$,name$
+            print @(0,0),'sb','br',heading$,'er','sf',
+            print @(0,height-3),'sb','br',footing$,'er','sf',
+        else
+rem --- gui
+        call pgmdir$+"syc_rg.bbx::save",globalvars$,ignore_status
+        dim resparams$[20],resparams[20]
+        resparams$[0]=pgm(-2)
+        call pgmdir$+"syc_ra.bbx","",resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+        linfo$[0]=str(resparams[0])
+        linfo$[1]=str(listbox_id),linfo$[3]=linfo$[0]
+        print (sysgui_dev)'title'(header_id,heading$),'title'(footer_id,footing$),
+    endif
+
+display_page: rem --- Display page
+
+        selection=0
+        call pgmdir$+"syc_sa.bbx",5,llist$[all],more$[all],linfo$[all],selection$,selection,page,pages,max_row,name$,height,width,fkey
+        if fkey<>1 then
+            if fkey=5 then let selection$=llist$[page,selection,2]
+        endif
+        gosub pop_me
+        return
+
+pop_me: rem --- Pop window or destroy context
+
+        if ui$<>"W" then
+            if name$<>"" then call pgmdir$+"syc_wd.bbx",name$
+            name$=""
+        else
+            rem --- gui
+            if linfo$[0]<>"" then call pgmdir$+"syc_dc.bbx",num(linfo$[0]),my_context,ignore_status
+            linfo$[0]=""
+            if globalvars$<>"" then call pgmdir$+"syc_rg.bbx::restore",globalvars$,ignore_status
+        endif
+        return
+
+get_menu_arrays: rem " --- Load all menu arrays from globals
+        call pgmdir$+"syc_as.bbx::retrieve_str",res_name$+":vmenu$",vmenu$[all],status
+        call pgmdir$+"syc_as.bbx::retrieve_num",res_name$+":vmenu",vmenu[all],status
+        call pgmdir$+"syc_as.bbx::retrieve_str",res_name$+":vtool$",vtool$[all],status
+        call pgmdir$+"syc_as.bbx::retrieve_num",res_name$+":vtool",vtool[all],status
+        return
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

@@ -1,0 +1,286 @@
+rem --- Create QA/PO Receiver From PO Or PO From Requisition
+rem --- Program poc_ma v8.0.0 05Dec2007 (poc_ma)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 11:52:26)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+    enter type$,files[all],params$[all],a0$,a1$,a[all],b0$,b1$,b[all],places,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+sysinfo",err=*next)
+    milestone=num(stbl("+milestone",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=14,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS"
+    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+    files$[3]="ivm-02",ids$[3]="IVM_ITEMWHSE"
+    files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
+    files$[5]="poe-04",ids$[5]="POE_RECHDR"
+    files$[6]="poe-08",ids$[6]="POE_LINKED"
+    files$[7]="poe-12",ids$[7]="POE_PODET"
+    files$[8]="poe-14",ids$[8]="POE_RECDET"
+    files$[9]="poe-34",ids$[9]="POE_RECBYPO"
+    files$[10]="poe-44",ids$[10]="POE_RECBYITM"
+    files$[11]="poe-54",ids$[11]="POE_POBYREC"
+    files$[12]="pom-02",ids$[12]="POC_LINECODE"
+    files$[13]="sfe-22",ids$[13]="SFE_WOMATL"
+    files$[14]="sfe-32",ids$[14]="SFE_WOSUBCNT"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01a_dev=channels[1]
+    ivm01_dev=channels[2]
+    ivm02_dev=channels[3]
+    ivs01a_dev=channels[4]
+    poe04_dev=channels[5]
+    poe08_dev=channels[6]
+    poe12_dev=channels[7]
+    poe14_dev=channels[8]
+    poe34_dev=channels[9]
+    poe44_dev=channels[10]
+    poe54_dev=channels[11]
+    pom02_dev=channels[12]
+    sfe22_dev=channels[13]
+    sfe32_dev=channels[14]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],ivm01a$:templates$[2],ivm02a$:templates$[3],
+:       ivs01a$:templates$[4],poe04a$:templates$[5],poe08a$:templates$[6],
+:       poe12a$:templates$[7],poe14a$:templates$[8],poe34a$:templates$[9],
+:       poe44a$:templates$[10],poe54a$:templates$[11],pom02a$:templates$[12],
+:       sfe22a$:templates$[13],sfe32a$:templates$[14]
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Open/Lock Files
+
+    poe12_dev=files[0]
+    poe04_dev=files[1],poe14_dev=files[2]
+    poe34_dev=files[3]
+    poe54_dev=files[4],pom02_dev=files[5]
+    ivm01_dev=files[6]
+    ivm02_dev=files[7],sfe22_dev=files[8]
+    sfe32_dev=files[9]
+    poe44_dev=files[10]
+
+rem --- Parameters
+
+    if type$="P" then let x3=15,x4=38,w0=18 else let x3=22,x4=45,w0=25
+    f0$=params$[0]
+    i2$=params$[2],i3$=params$[3],i4$=params$[4]
+
+rem --- Initializations
+
+    precision places
+    dim channels[99],params[10],item$[10],refs[20],refs$[20]
+    firm_id$=a0$(1,2)
+    channels[1]=ivm01_dev,channels[2]=ivm02_dev,a2$="",a3$=""
+    more=1
+
+rem --- Initialize receipt header and header xrefs (Q/C)
+
+    a1$(1)=b1$
+    a1$(29,6)="",a[all]=b[all]
+    if type$<>"P"
+rem        x3$(1)=firm_id$+a0$(16,7)+a0$(3)
+        poe34a.firm_id$=firm_id$
+        poe34a.po_no$=a0$(16,7)
+        poe34a.vendor_no$=a0$(3,6)
+        poe34a.receiver_no$=a0$(9,7)
+rem        x5$(1)=firm_id$+a0$(9,7)+a0$(3,6)+a0$(16,7)
+        poe54a.firm_id$=firm_id$
+        poe54a.receiver_no$=a0$(9,7)
+        poe54a.po_no$=a0$(16,7)
+        poe54a.vendor_no$=a0$(3,6)
+        a1$(29,6)=f0$(18,6)
+    else
+    
+rem --- Initialize PO header and header xrefs (P)
+
+        a1$(112,7)=b0$(9)
+rem        x3$(1)=firm_id$+a0$(9)+a0$(3)
+        poe34a.firm_id$=firm_id$
+        poe34a.receiver_no$=a0$(9,7)
+        poe34a.po_no$=a0$(16,7)
+        poe34a.vendor_no$=a0$(3,6)
+rem        x5$(1)=firm_id$+a1$(112,7)+a0$(3)
+        poe54a.firm_id$=firm_id$
+        poe54a.receiver_no$=a1$(112,7)
+        poe54a.vendor_no$=a0$(3,6)
+    endif
+
+rem --- Write header and header xrefs
+
+    write record (poe04_dev,key=a0$) poe04a$
+    write record (poe34_dev,key=poe34a.firm_id$+poe34a.receiver_no$+poe34a.po_no$+poe34a.vendor_no$) poe34a$
+    write record (poe54_dev,key=poe54a.firm_id$+poe54a.receiver_no$+poe54a.vendor_no$+poe54a.po_no$) poe54a$
+
+rem --- Position detail file
+
+    read (poe12_dev,key=b0$,dom=*next)
+
+rem --- Read next detail line
+
+    while more
+
+        poe12a_key$=key(poe12_dev,end=*break)
+        if pos(b0$=poe12a_key$)<>1 then break
+        read record (poe12_dev) poe12a$
+rem        w0$(1)=a0$+r0$(16,3)
+        poe14a.firm_id$=a0$(1,2)
+        poe14a.vendor_no$=a0$(3,6)
+        poe14a.receiver_no$=a0$(9,7)
+        poe14a.po_no$=a0$(16,7)
+        poe14a.po_line_no$=poe12a.po_line_no$
+
+        if type$="P" then let poe14a.qty_ordered=poe12a.req_quantity
+        if type$="C" then let w[4]=w[7],w[5]=0,w[6]=0,w[7]=0,w[8]=0
+        poe14a.qty_prev_rec=poe12a.qty_received
+        poe14a.qty_received=0
+        write record (poe14_dev,key=poe14a.firm_id$+poe14a.vendor_no$+poe14a.po_no$+poe14a.receiver_no$+poe14a.po_line_no$) poe14a$
+
+    rem --- Get Purchase Order Line Code
+
+        if firm_id$+poe14a.po_line_code$<>pom02a.firm_id$+pom02a.po_line_code$ then find record (pom02_dev,key=firm_id$+poe14a.po_line_code$,dom=*continue) pom02a$
+
+    rem --- Write By Item X-Ref For 'S' Line Types
+
+        if pom02a.line_type$="S"
+            if type$="P" 
+rem                let x4$(1)=w0$(1,2)+w3$(3,20)+w0$(9,10)+w0$(3,6) 
+                poe44a.firm_id$=poe14a.firm_id$
+                poe44a.item_id$=poe14a.item_id$
+                poe44a.receiver_no$=poe14a.receiver_no$
+                poe44a.vendor_no$=poe14a.vendor_no$
+            else 
+rem                let x4$(1)=w0$(1,2)+w3$(3,20)+w0$(16,10)+w0$(3,13)
+                poe44a.firm_id$=poe14a.firm_id$
+                poe44a.item_id$=poe14a.item_id$
+                poe44a.po_no$=poe14a.po_no$
+                poe44a.vendor_no$=poe14a.vendor_no$
+                poe44a.receiver_no$=poe14a.receiver_no$
+            fi
+            write record (poe44_dev,key=x4$) poe44a$
+        endif
+
+    rem --- Converting a Requisition to a PO requires additional processing
+
+        if type$="P"
+
+        rem --- Update link to OP
+
+            if cvs(poe14a.customer_no$+poe14a.order_no$+poe14a.line_no$,2)<>""
+                poe08a.firm_id$=poe14a.firm_id$
+                poe08a.vendor_no$=poe14a.vendor_no$
+                poe08a.po_no$=poe14a.po_no$
+                poe08a.po_line_no$=poe14a.po_line_no$
+                poe08a.customer_no$=poe14a.customer_no$
+                poe08a.order_no$=poe14a.order_no$
+                poe08a.line_no$=poe14a.line_no$
+                write record (poe08_dev) poe08a$
+            endif
+
+        rem --- Increase quantity on-order if standard item
+
+            if pom02a.line_type$="S"
+                item$[0]=firm_id$
+                item$[1]=poe14a.warehouse_id$,item$[2]=poe14a.item_no$,refs[0]=poe14a.qty_ordered*poe14a.conv_factor
+                params$[2]=i2$
+                params$[3]=i3$,params$[4]=i4$
+                call pgmdir$+"ivc_ua.bbx","OO",channels[all],params[all],params$[all],item$[all],refs$[all],refs[all],ignore_status
+            endif
+
+        rem --- Remove any existing work order link
+
+            if !(sfe22_dev=0 or sfe32_dev=0 or pos(pom02a.line_type$="NS")=0 or cvs(poe14a.wo_no$,2)="")
+rem                po$=w0$(9)
+                po$=poe14a.receiver_no$+poe14a.po_no$+poe14a.po_line_no$
+                oldwo$=poe14a.wo_no$+poe14a.sequence_no$,newwo$=oldwo$
+                call pgmdir$+"poc_wa.bbx",sfe22_dev,sfe32_dev,firm_id$,po$,type$,y1$,oldwo$,newwo$,places,ignore_status
+            endif
+
+        endif
+
+    rem --- Loop back for next line item
+
+    wend
+
+done: rem --- All done
+
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

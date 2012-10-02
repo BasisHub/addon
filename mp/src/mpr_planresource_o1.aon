@@ -1,0 +1,340 @@
+rem --- Planned Resources Report (Report Overlay)
+rem --- Program mpr_planresource_o1 v8.0.0 31Jan2008 (mpr_db)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/31/2008 09:13:35)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    call pgmdir$+"mpc_openalias.aon",mpe04_dev,"mpe-04","MPE_RESDET",firm_id$,forecast$,filename$,status
+    if status then goto std_exit
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status then goto std_exit
+
+rem --- Initializations
+
+    more=1
+    precision ivs01_precision
+    headings$[2]=h5$
+    prefix$=cvs(firm_id$+forecast$+whse$,2)
+    number=endper-begper+2
+    lines=2
+    maxcol=9,numcol=maxcol,begper=begper-1,endper=endper-1
+    if numcol>number then let numcol=number
+    call pgmdir$+"adc_sizemask.aon",bms01a.hrqty_mask$,m4,10,10
+    columns = endper+4
+    dim columns$[columns,10]
+    columns$[0,0]="Oper^Code",columns$[0,1]="C",columns$[0,2]="5"
+    columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="      ",columns$[2,1]="C",columns$[2,2]="8"
+    clno=3,n=0
+    dim dates$[number]
+    for x=begper to endper
+        dates$[n]=fndate$(FIELD(mpm01a$,"plan_date_"+str(x+1:"00")))
+        columns$[clno,0]=dates$[n],columns$[clno,1]="N",columns$[clno,2]="8",columns$[clno,10]="T"
+        n=n+1
+        clno=clno+1
+    next x
+
+    columns$[clno,0]="Totals",columns$[clno,1]="N",columns$[clno,2]="8",columns$[clno,10]="T"
+
+rem --- Titles/Headings
+
+    dim totals[number,lines],amounts[number,lines],dates$[number]
+
+rem --- Background
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,mpe02_dev,1,meter_num,status
+
+rem --- Position file
+
+    read (mpe02_dev,key=prefix$,dom=*next)
+
+rem --- Read next mpe-02 record
+
+    while more
+
+        read record (mpe02_dev,end=done) mpe02a$
+        if pos(prefix$=mpe02a.firm_id$+mpe02a.forecast$+mpe02a.warehouse_id$+mpe02a.op_code$)<>1 then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Additional reads
+
+        bmm08a.firm_id$=firm_id$
+        bmm08a.op_code$=mpe02a.op_code$
+        bmm08a.code_desc$="Unknown Operation"
+        find record (mpe04_dev,key=mpe02a.firm_id$+mpe02a.forecast$+mpe02a.warehouse_id$+mpe02a.op_code$,dom=*next) mpe04a$
+        find record (bmm08_dev,key=bmm08a.firm_id$+bmm08a.op_code$,dom=*next) bmm08a$
+
+rem --- Build detail
+
+        dim amounts[number,lines]
+        n=0
+        last=0
+        for x=begper to endper
+            n=n+1
+            amounts[n,0]=num(FIELD(mpe02a$,"resource_cap_"+str((x+1):"00"))),amounts[n,1]=num(FIELD(mpe04a$,"req_per_per_"+str((x+1):"00")))
+            amounts[n,lines]=amounts[n,0]-amounts[n,1]
+        next x
+
+rem --- Accumulate operation totals
+
+        for y=0 to lines
+            for x=1 to number-1
+                amounts[number,y]=amounts[number,y]+amounts[x,y]
+            next x
+        next y
+
+rem --- Print detail
+
+        OutVect!.addItem(bmm08a.op_code$)
+        OutVect!.addItem(bmm08a.code_desc$)
+        OutVect!.addItem("(Hours)")
+        xwk=fnblank(endper+4)
+        OutVect!.addItem("Capacity")
+        y=0
+        n=0
+        for x=begper to endper+1
+            n=n+1
+            OutVect!.addItem(str(amounts[n,y]:m4$))
+        next x
+        xwk=fnblank(2)
+        OutVect!.addItem("Required")
+        y=1
+        n=0
+        for x=begper to endper+1
+            n=n+1
+            OutVect!.addItem(str(amounts[n,y]:m4$))
+        next x
+        xwk=fnblank(2)
+        OutVect!.addItem("Available")
+        y=2
+        n=0
+        for x=begper to endper+1
+            n=n+1
+            OutVect!.addItem(str(amounts[n,y]:m4$))
+        next x
+       
+
+
+rem --- Accumulate report totals
+
+        for y=0 to lines
+            for x=1 to number
+                totals[x,y]=totals[x,y]+amounts[x,y]
+            next x
+        next y
+
+    rem --- Loop back for next record
+    
+    wend
+
+done: rem --- All done
+
+        bmm08a.code_desc$="Totals For Report"
+        last=0
+        for y=0 to lines
+            for x=1 to number
+                amounts[x,y]=totals[x,y]
+            next x
+        next y
+
+rem --- Print totals
+
+        xwk=fnblank(1)
+        OutVect!.addItem("Totals For Report")
+        OutVect!.addItem("(Hours)")
+        xwk=fnblank(endper+4)
+        OutVect!.addItem("Capacity")
+        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+        y=0
+        n=0
+        for x=begper to endper+1
+            n=n+1
+            OutVect!.addItem(str(amounts[n,y]:m4$))
+        next x  
+        xwk=fnblank(2)
+        OutVect!.addItem("Required")
+        y=1
+        n=0
+        for x=begper to endper+1
+            n=n+1
+            OutVect!.addItem(str(amounts[n,y]:m4$))
+        next x  
+        xwk=fnblank(2)
+        y=2
+        n=0
+        OutVect!.addItem("Available")
+        for x=begper to endper+1
+            n=n+1
+            OutVect!.addItem(str(amounts[n,y]:m4$))
+        next x  
+        goto std_exit
+
+
+rem --- #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+        def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+        def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+        def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+        def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+        def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+        def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+        def fndate$(q$)
+            if cvs(q$,2)="" return ""
+            if pos("9"<>q$)=0 return q$
+            testdate$=""
+            testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+            return testdate$
+        fnend
+        def fnyy$(q$)=q$(3,2)
+        def fnclock$(q$)=date(0:"%hz:%mz %p")
+        def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+        def fnmask$(q1$,q2$)
+            if q2$="" q2$=fill(len(q1$),"0")
+            return str(-num(q1$,err=*next):q2$,err=*next)
+            q=1
+            q0=0
+            while len(q2$(q))
+                  if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+                  q=q+1
+            wend
+            if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+            return str(q1$:q2$)
+        fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+        def fnblank(q0)
+            for q1=1 to q0
+                OutVect!.addItem("")
+            next q1
+            return q1
+        fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+        def fnbasename$(q$,q0$)
+            q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+            if q then q$=q$(q+1)
+            if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+        return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+        def fnglobal(q$,q1)
+            q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+            return q1
+        fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+        def fnglobal$(q$,q1$)
+            q1$=stbl(q$,err=*next)
+            return q1$
+        fnend
+
+rem --- #endinclude std_functions.src
+
+rem --- #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+        if pos("EXIT"=rd_err_act$) goto std_error_exit
+        if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+        if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+        master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_error_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_error_release:
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem --- #endinclude std_error.src
+rem --- #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+        call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+        master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_missing_params_release:
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem --- #endinclude std_missing_params.src
+
+rem --- #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+        run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+        release
+rem --- #endinclude std_end.src
+
+        end

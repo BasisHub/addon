@@ -1,0 +1,382 @@
+rem --- Union History Report 2
+rem --- Program prr_unionhist_o1 v8.0.0 04Jun2008 (prr_vb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/04/2008 10:19:15)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Initializations
+
+    headings=4
+    clock$="",width=80
+    dim headings$[headings]
+    headings$[0]=h1$
+    headings$[1]=h2$,headings$[2]=h6$
+    firsttime$="Y"
+    more=1
+
+    dim columns$[0,10]
+    columns$[0,1]="",columns$[0,1]="C",columns$[0,2]="80"
+    columns=0
+    pbufwidth=80
+
+rem --- Display Resource
+
+    call pgmdir$+"adc_progress.aon","CN","","","","",0,prt04a_dev,1,meter_num,ignore_status
+
+rem --- Init Read
+
+    read (prt04a_dev,key=firm_id$+from_union$,dom=*next)
+
+rem --- Main Read
+
+    while more
+
+        read record (prt04a_dev,end=done) prt04a$
+        if prt04a.firm_id$<>firm_id$ then goto done
+        if thru_union$<>"" then if prt04a.union_code$>thru_union$ then goto done
+        if h8$="Y" then call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+
+rem --- Breaks
+
+        if prt04a.union_code$<>t0$ then gosub union_brk
+        if t1$="" then gosub empl_brk
+        if prt04a.firm_id$+prt04a.union_code$+prt04a.empl_surname$+prt04a.empl_givname$+prt04a.employee_no$+prt04a.pay_end_date$<>t1$(1,44) then gosub empl_brk
+
+rem --- Check Date
+
+        v9$=prt04a.pay_end_date$
+        v$=v9$(1,4)+v9$(5,2)
+        if v9$>monday$ then if v$<>year_month$ continue
+
+rem --- Which Week?
+
+        v9$=v9$(3,2)
+        x=pos(v9$<=sundays$,2)
+        if x=0 then let x=1
+        x=(x+1)/2-1
+        w[x]=w[x]+prt04a.total_units
+        z9=z9+prt04a.tot_earn_amt
+        t8=1
+    wend
+
+done: rem --- Totals
+
+    t9$="E"
+    gosub union_brk
+    if firsttime$<>"Y" then goto std_exit
+    gosub report_heading
+    dim pbuf$(pbufwidth)
+    pbuf$(21)="***Nothing To Report***"
+    OutVect!.addItem(pbuf$)
+    goto std_exit
+
+report_heading: rem --- Report Heading
+
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    firsttime$="N"
+    
+    dim pbuf$(pbufwidth)
+    pbuf$(1)=prs01c.name$
+    pbuf$(46)=prm10j.description$
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)=prs01c.addr_line_1$
+    pbuf$(46)=prm10j.addr_line_1$
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)=prs01c.addr_line_2$
+    pbuf$(46)=prm10j.addr_line_2$
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)=prs01c.city$+prs01c.state_code$
+    pbuf$(46)=prm10j.addr_line_3$
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)="License #"+prm10j.union_id_no$
+    pbuf$(46)=fnmask$(prm10j.zip_code$,m7$)
+    OutVect!.addItem(pbuf$)
+    OutVect!.addItem("")
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)=dashline$
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(36)="Social"
+    pbuf$(50)="--Weekly Hours Worked--"
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)="Seq"
+    pbuf$(6)="Employee Name"
+    pbuf$(33)="Security No"
+    pbuf$(51)="1"
+    pbuf$(56)="2"
+    pbuf$(61)="3"
+    pbuf$(66)="4"
+    pbuf$(71)="5"
+    pbuf$(75)="Total"
+    OutVect!.addItem(pbuf$)
+
+    dim pbuf$(pbufwidth)
+    pbuf$(1)=dashline$
+    OutVect!.addItem(pbuf$)
+    OutVect!.addItem("")
+    l=l+11
+    return
+
+ucode_head: rem --- Union Contrib Code Heading
+
+    dim pbuf$(pbufwidth)
+    pbuf$(21)="Cont. Code"
+    pbuf$(37)="Cont. Rate"
+    pbuf$(40+m1)="Cont. Amount"
+    OutVect!.addItem(pbuf$)
+    OutVect!.addItem("")
+    return
+
+disp_ucode_head: rem --- Display Union Contrib Codes
+
+    z0=0
+    gosub ucode_head
+    for x=1 to 20
+        x$=field(prm10j$,"contrib_code_"+str(x:"00"))
+        if x$="  " then continue
+        find record (prm10d_dev,key=firm_id$+"D"+x$,dom=*next) prm10d$
+        amnt=0
+        if prm10d.calc_type$="F" then amnt=prm10d.calc_rtamt
+        if prm10d.calc_type$="U" then amnt=prm10d.calc_rtamt*(s[0]+s[1]+s[2]+s[3]+s[4])
+        if prm10d.calc_type$="D" then amnt=prm10d.calc_rtamt*z9
+        dim pbuf$(pbufwidth)
+        pbuf$(21)=x$+" "+prm10d.pr_code_desc$+" "+str(prm10d.calc_rtamt:m3$)
+        pbuf$(51)=str(amnt:m1$)
+        OutVect!.addItem(pbuf$)
+        z0=z0+amnt
+    next x
+    OutVect!.addItem("")
+    if z0<>0 then 
+        dim pbuf$(pbufwidth)
+        pbuf$(26)="Total Amount Due:"
+        pbuf$(51)=str(z0:m1$)
+        OutVect!.addItem(pbuf$)
+    endif
+
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    dim pbuf$(pbufwidth)
+    pbuf$(1)="Signed By"+unders$(1,20)+" "+"Title"+unders$(1,15)+" "+"License No."+unders$(1,15)
+    OutVect!.addItem(pbuf$)
+    return
+
+union_brk: rem --- Union Break
+
+    if t0$<>""
+        gosub empl_brk
+        
+        dim pbuf$(pbufwidth)
+        pbuf$(50)=dashline$(1,31)
+        OutVect!.addItem(pbuf$)
+
+        dim pbuf$(pbufwidth)
+        pbuf$(21)="Union Totals: "
+        pbuf$(50)=str(s[0]:m2$)+str(s[1]:m2$)+str(s[2]:m2$)+str(s[3]:m2$)+str(s[4]:m2$)
+        pbuf$(77)=str(s[0]+s[1]+s[2]+s[3]+s[4]:m2$)
+        OutVect!.addItem(pbuf$)
+        OutVect!.addItem("")
+        OutVect!.addItem("")
+        gosub disp_ucode_head
+    endif
+    if t9$="E" then return
+    dim s[10]
+    t0$=prt04a.union_code$
+    t9=1
+    z9=0
+    find record (prm10j_dev,key=firm_id$+"J"+prt04a.union_code$,dom=*next) prm10j$
+    gosub report_heading
+    return
+
+empl_brk: rem --- Employee Break
+
+    dim b1$(240)
+    find record (prm01a_dev,key=firm_id$+prt04a.employee_no$,dom=*next) prm01a$
+    if t1$<>"" and t8<>0
+        dim pbuf$(pbufwidth)
+        pbuf$(1)=str(t9:"##0")
+        pbuf$(7)=t3$
+        pbuf$(34)=t2$
+        pbuf$(50)=str(w[0]:m2$)+str(w[1]:m2$)+str(w[2]:m2$)+str(w[3]:m2$)+str(w[4]:m2$)
+        pbuf$(75)=str(w[0]+w[1]+w[2]+w[3]+w[4]:m2$)
+        OutVect!.addItem(pbuf$)
+        l=l+1
+        t9=t9+1
+        for x=0 to 4
+            s[x]=s[x]+w[x]
+            t[x]=t[x]+w[x]
+        next x
+    endif
+    t1$=prt04a.firm_id$+prt04a.union_code$+prt04a.empl_surname$+prt04a.empl_givname$+prt04a.employee_no$+prt04a.pay_end_date$
+    t2$=fnmask$(prm01a.soc_sec_no$,m9$)
+    t8=0
+    dim w[10]
+    x=16
+    if prt04a.empl_surname$<>" " then t3$=cvs(prt04a.empl_surname$,2)+" , "+prt04a.empl_givname$
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

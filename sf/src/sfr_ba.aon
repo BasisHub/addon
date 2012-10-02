@@ -1,0 +1,225 @@
+rem --- Work Order Pick List Print - Create Work File
+rem --- Program sfr_ba v8.0.0 04Jan2008 (sfr_ba)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:02:10)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=16,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="arm-01",ids$[1]="ARM_CUSTMAST"
+    files$[2]="ARS_PARAMS",ids$[2]="ARS_PARAMS"
+    files$[3]="ivm-01",ids$[3]="IVM_ITEMMAST"
+    files$[4]="ivm-02",ids$[4]="IVM_ITEMWHSE"
+    files$[5]="IVC_WHSECODE",ids$[5]="IVC_WHSECODE"
+    files$[6]="IVS_PARAMS",ids$[6]="IVS_PARAMS"
+    files$[7]="sfe-01",ids$[7]="SFE_WOMASTR"
+    files$[8]="sfe-04",ids$[8]="SFE_WOTRANS"
+    files$[9]="sfe-13",ids$[9]="SFE_WOMATHDR"
+    files$[10]="sfe-15",ids$[10]="SFE_WOMATISH"
+    files$[11]="sfe-22",ids$[11]="SFE_WOMATL"
+    files$[12]="sfe-23",ids$[12]="SFE_WOMATDTL"
+    files$[13]="sfe-25",ids$[13]="SFE_WOMATISD"
+    files$[14]="sfm-10",ids$[14]="SFC_WOTYPECD"
+    files$[15]="sfs-01a",ids$[15]="SFS_PARAMS"
+    files$[16]="sfw-13",ids$[16]="SFW_PICKLCTN"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    arm01a_dev=channels[1]
+    ars01a_dev=channels[2]
+    ivm01a_dev=channels[3]
+    ivm02a_dev=channels[4]
+    ivm10c_dev=channels[5]
+    ivs01a_dev=channels[6]
+    sfe01a_dev=channels[7]
+    sfe04c_dev=channels[8]
+    sfe13a_dev=channels[9]
+    sfe15a_dev=channels[10]
+    sfe22b_dev=channels[11]
+    sfe23a_dev=channels[12]
+    sfe25a_dev=channels[13]
+    sfm10a_dev=channels[14]
+    sfs01a_dev=channels[15]
+    sfw13a_dev=channels[16]
+
+rem --- Dimension string templates
+
+    dim arm01a$:templates$[1],ars01a$:templates$[2],ivm01a$:templates$[3],ivm01a1$:templates$[3],ivm01a2$:templates$[3],
+:       ivm02a$:templates$[4],ivm10c$:templates$[5],ivs01a$:templates$[6],
+:       sfe01a$:templates$[7],sfe04c$:templates$[8],sfe13a$:templates$[9],
+:       sfe15a$:templates$[10],sfe22b$:templates$[11],sfe23a$:templates$[12],
+:       sfe25a$:templates$[13],sfm10a$:templates$[14],sfs01a$:templates$[15],
+:       sfw13a$:templates$[16]
+
+rem --- Assign form input values to local variables
+
+    sort_seq$=option!.getOptionData("restart")
+    wo_no$=option!.getOptionData("work_order_number")
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    sfs01a_key$=firm_id$+"SF00"
+    find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
+
+rem --- Parameters
+
+    find record (sfs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) sfs01a$
+    find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    dim p[4],desc[3]
+    p[0]=num(ivs01a.item_id_len$)
+    ivs01_precision=num(ivs01a.precision$)
+    if sfs01a.ar_interface$="Y"
+        find record (ars01a_dev,key=firm_id$+"AR00",dom=*next) ars01a$
+        c0=num(ars01a.cust_size$)
+    endif
+
+rem --- Initialize Data
+
+    h0=80
+    h=0,headings=2,when$=sysinfo.system_date$,clock$=""
+    dim headings$[headings],picksort$(27)
+    headings$[0]=n1$
+    headings$[1]=n3$
+    l9=59
+    l=l9+1
+    dim j0$(20,"0"),j$(80,"-"),j1$(10,"_"),x0$(30),y[13]
+    m0=len(sfs01a.empl_output$)
+    m1=len(sfs01a.amount_mask$),m2=len(sfs01a.unit_mask$),m3=len(sfs01a.rate_mask$)
+    desclen[1]=num(ivs01a.desc_len_01$)
+    desclen[2]=num(ivs01a.desc_len_02$)
+    desclen[3]=num(ivs01a.desc_len_03$)  
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,6,12
+    more=1
+
+rem --- Retrieve key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOTRANS","PRIMARY",sfe04c_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",sfe22b_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATDTL","PRIMARY",sfe23a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFW_PICKLCTN","PRIMARY",sfw13a_key_tpl$,rd_table_chans$[all],status$
+
+done: rem --- Run Overlay
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,sfe04c_dev,1,meter_num,ignore_status
+    gosub creat_xref
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,1,meter_num,ignore_status
+    run pgmdir$+"sfr_bb.aon"
+
+creat_xref: rem --- Create Cross Reference File
+
+    dim sfe04c_key$:sfe04c_key_tpl$
+    dim sfe23a_key$:sfe23a_key_tpl$
+
+    while more
+
+        sfe04c_key$=key(sfe04c_dev,end=*break)
+        read (sfe04c_dev,key=sfe04c_key$)
+
+        if sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.record_id_c$=firm_id$+"  "+"C"
+
+            read (sfe13a_dev,key=sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.wo_no$+"000",dom=creat_xref)
+            read (sfe23a_dev,key=sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.wo_no$+"000",dom=*next)
+
+            while more
+
+                sfe23a_key$=key(sfe23a_dev,end=creat_xref)
+                if sfe23a_key.firm_id$+sfe23a_key.wo_location$+sfe23a_key.wo_no$<>sfe04c_key.firm_id$+sfe04c_key.wo_location$+sfe04c_key.wo_no$ then break
+                read record (sfe23a_dev,key=k2$) sfe23a$
+                find record (sfe22b_dev,key=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$+"B"+sfe23a.material_seq$,dom=*next) sfe22b$
+                if r1$="L" then find record (ivm02a_dev,key=firm_id$+sfe23a.warehouse_id$+sfe23a.item_id$,dom=*next) ivm02a$
+                if r1$="L" then find record (ivm02a_dev,key=firm_id$+sfe23a.warehouse_id$+sfe23a.item_id$,dom=*next) ivm02a$
+                k4$=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$+sfe22b.op_seq$+ivm02a.location$+sfe23a.material_seq$
+                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+                picksort$=k4$
+                write record (sfw13a_dev,key=k4$) sfw13a$
+
+            wend
+
+            continue
+
+        endif
+
+    wend
+
+    return
+
+    def fnv(q$)=42+int(len(q$)/2)
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

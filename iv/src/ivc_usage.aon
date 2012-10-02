@@ -1,0 +1,228 @@
+rem --- Calculate Actual & Estimated Annual Usage
+rem --- Program ivc_usage.aon v8.0.0 26Jul2007 (ivc_au)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/26/2007 09:54:55)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- ACTION$    : Action to perform (input)
+rem --- I = Calculate Annual Usage (all warehouses)
+rem --- W = Calculate Annual Usage (single warehouse)
+rem --- CHANNELS[N]: Channel Numbers (input)
+rem --- [1] = ivm-01
+rem --- [2] = ivm-02
+rem --- [3] = ivm-03
+rem --- [12] = ivm-12
+rem --- ITEM$[n]   : Inventory Item Information (input)
+rem --- [0]  = Firm ID
+rem --- [1]  = Warehouse ID
+rem --- [2]  = Inventory Item Number
+rem --- FACTORS[n] : ABC Factors (input)
+rem --- DAY_OF_MTH : Current day of the month (input)
+rem --- BASE_PERYR$: Period + Year To Base Usage On (MMYYYY) (input)
+rem --- CUR_PERYR$ : Current Inventory Period + Year (MMYYYY) (input)
+rem --- NUMPERIODS : Number of periods in fiscal year (input)
+rem --- PLACES     : Inventory precision (input)
+rem --- ACTUAL     : Actual Annual Usage (returned)
+rem --- ESTIMATED  : Estimated Annual Usage (returned)
+rem --- FLAG$      : *=Not enough history to return ACTUAL (returned)
+rem --- STATUS     : 0=No error (returned)
+
+    seterr std_error
+    setesc std_error
+
+    enter action$,channels[all],item$[all],factors[all],day_of_mth,base_peryr$,cur_peryr$,numperiods,places,actual,estimated,flag$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- File channels
+
+    ivm01_dev=channels[1]
+    ivm02_dev=channels[2]
+    ivm12_dev=channels[12]
+
+rem --- Retrieve miscellaneous templates
+
+    files=4,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="IVM_ITEMMAST"; rem ivm-01A:
+    ids$[2]="IVM_ITEMWHSE"; rem ivm-02A:
+    ids$[3]="IVM_ITEMACT"; rem ivm-12A:
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension miscellaneous string templates
+
+    dim ivm01a$:templates$[1],ivm02a$:templates$[2],ivm12a$:templates$[3]
+
+rem --- Initializations
+
+    precision places
+    dim b[20],w[12],periods$[13]
+    flag$=""
+    status=1
+    periods$[1]=base_peryr$(3,4)+base_peryr$(1,2)
+    flag$=""
+    p=num(base_peryr$(1,2))
+    y$=base_peryr$(3,4)
+    y=num(y$)
+    for x=2 to numperiods
+        p=p-1
+        if p=0 p=numperiods,y=y-1,y$=str(y)
+        periods$[x]=y$+str(p:"00")
+    next x
+    firm_id$=item$[0]
+    whse$=item$[1]
+    item_no$=item$[2]
+    actual=0
+    estimated=0
+    first$=firm_id$+whse$+item_no$
+    current$=cur_peryr$(3,4)+cur_peryr$(1,2)
+
+rem --- Retrieve Item
+
+    find record (ivm01_dev,key=firm_id$+item_no$,dom=std_exit) ivm01a$
+    x$=item$[0]+item$[2]
+    warehouses$=item$[1]
+    if pos("I"=action$)=0 goto all_warehouses
+    read (ivm02_dev,key=x$,knum=2,dom=*next)
+    more=1
+while more; rem --- Read next warehouse for item
+
+    k$=key(ivm02_dev,knum=2,end=*break)
+    if pos(x$=k$)<>1 *break
+    read (ivm02_dev,knum=2)
+    if pos(k$(24,2)=warehouses$)=0 warehouses$=warehouses$+k$(24,2)
+    if pos("I"=action$)=0 exitto read_history
+    wend
+
+all_warehouses: rem --- For all requested warehouses
+
+    if len(warehouses$)=0 goto std_exit
+    for warehouse=1 to len(warehouses$) step 2
+        first$=item$[0]+warehouses$(warehouse,2)+item$[2]
+    
+read_history: rem --- At Least One Year's Worth Of History?
+    
+        read (ivm12_dev,key=first$,dom=*next)
+        more=1
+        flag$="*";rem indicates that actual is not for full year
+        while more
+            k$=key(ivm12_dev,end=*break)
+            if pos(first$=k$)<>1 break
+            if k$(25,6)>periods$[numperiods] break
+            flag$=""
+            more=0
+        wend
+
+        rem --- Calculate Estimated/Accumulate Actual For Current Warehouse
+    
+        current=0
+        prior=0
+        for x=1 to numperiods
+            find record (ivm12_dev,key=first$+periods$[x],dom=*continue) ivm12a$
+            periods=x
+            used=(ivm12a.qty_sold+ivm12a.qty_issued)-ivm12a.qty_returned
+            actual=actual+used
+            if x>1 prior=prior+used; continue
+            if periods$[x]=current$ 
+                current=(used*30.55)/day_of_mth
+            else
+                current=used
+            endif
+        next x
+    
+        rem --- Base estimate on available history or full year?
+    
+        if flag$="" periods=numperiods
+    
+        rem --- Calculate Weighted Usage
+    
+        abc$=ivm01a.abc_code$
+        if ivm01a.stock_level$="W"
+            ivm02a.abc_code$=abc$
+            find record (ivm02_dev,key=first$,dom=*next) ivm02a$
+            abc$=ivm02a.abc_code$
+        endif
+        if abc$<"A" or abc$>"Z" abc$="A"
+        factor=factors[pos(abc$="ABCDEFGHIJKLMNOPQRSTUVWXYZ")-1]
+        current=current*factor*.01
+        periods=max(periods,2)
+        weighted=current+(prior/(periods-1)*(1-factor*.01))
+        estimated=estimated+(weighted*numperiods)
+    
+        rem --- Loop back for next warehouse xref
+    
+    next warehouse
+
+rem --- All done
+
+    status=0
+    goto std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

@@ -1,0 +1,226 @@
+rem adc - Retrieve masks
+rem Program adc_getmask v8.0.0 29Aug2007 (syc_rm)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- element_id$  : Element name
+rem --- app_id$      : Application ID (in)
+rem --- The following values of mask_type were the valid ones as of 9/1/2007
+rem --- You may use either the one character code, or the token it represents
+rem --- Actual valid types will be built dynamically when this call is run
+rem --- mask_type$   : A = Amount
+rem                    I = ID
+rem                    U = Units
+rem                    % = Percent
+rem                    R = Rate
+rem                    E = Extension
+rem                    Q = Quantity
+rem                    C = Cost
+rem                    P = Price
+rem                    V = Conversion Factor
+rem                    M = Material Factor
+rem                    O = Overhead Factor
+rem                    H = Hours
+rem                    Z = Zip Code
+rem                    T = Telephone
+rem --- i_mask$      : Requested input mask (out)
+rem --- o_mask$      : Requested output mask (out)
+rem --- i_mask_len   : Length of input mask - # and 0 only
+rem --- o_mask_len   : Length of output mask - # and 0 only
+
+rem --- if the mask cannot be found, the default will be ###
+
+rem --- If element_id$ is not blank, it will use that.
+
+    seterr std_error
+    setesc std_error
+
+    enter element_id$,app_id$,mask_type$,i_mask$,o_mask$,i_mask_len,o_mask_len
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+misc_vars:rem --- Misc Variables
+
+    rd_dir_syp$=stbl("+DIR_SYP")
+    rd_dir_img$=stbl("+DIR_IMG")
+    rd_dir_sys$=stbl("+DIR_SYS")
+    rd_gui_dev$=stbl("+GUI_DEVICE")
+    rd_file_usr$=stbl("+FILE_USR"),rd_file_usr$=stbl("+DIR_USR",err=*next)+"bar_"+cvs(stbl("+USER_ID",err=*next),138)+".usr"
+    rd_file_set$=stbl("+FILE_SET")
+    rd_user_id$=stbl("+USER_ID")
+
+    rd_task_val$="EXPAND_ELEMENT"+str(dec(info(3,0)):"0000")
+
+rem --- Open Tables
+
+    rd_num_files=4
+    dim rd_open_tables$[1:rd_num_files],rd_open_opts$[1:rd_num_files],rd_open_chans$[1:rd_num_files],rd_open_tpls$[1:rd_num_files]
+
+    rd_open_tables$[1]="DDM_ELEMENTS",rd_open_opts$[1]="OTA"
+    rd_open_tables$[2]="ADS_MASKS",rd_open_opts$[2]="OTA"
+    rd_open_tables$[3]="DDM_ELEMENT_LDAT",rd_open_opts$[3]="OTA"
+    rd_open_tables$[4]="DDM_COLUMN_LDAT",rd_open_opts$[4]="OTA"
+
+    gosub open_tables
+
+    ddm_elements_dev=num(rd_open_chans$[1]);dim ddm_elementsa$:rd_open_tpls$[1]
+    ads_mask_dev=num(rd_open_chans$[2]);dim ads_masksa$:rd_open_tpls$[2]
+    ddm_element_ldat_dev=num(rd_open_chans$[3]);dim ddm_element_ldat$:rd_open_tpls$[3]
+    ddm_column_ldat_dev=num(rd_open_chans$[4]);dim ddm_column_ldat$:rd_open_tpls$[4]
+
+initializations:
+
+    valid_type$=""
+    i_mask$=""
+    o_mask$=""
+    i_mask_len=0
+    o_mask_len=0
+
+rem ---Build string of valid mask types
+
+    read(ddm_column_ldat_dev,key=pad("ADS_MASKS",16)+pad("DD_MASK_TYPE",16),dom=*next)
+    k$=key(ddm_column_ldat_dev,end=get_elements)
+    if pos(pad("ADS_MASKS",16)+pad("DD_MASK_TYPE",16)=k$)<>1 goto get_elements
+next_col_ldat:
+    readrecord(ddm_column_ldat_dev,end=validate_input)ddm_column_ldat$
+    if ddm_column_ldat.dd_table_alias$<>pad("ADS_MASKS",16) goto validate_input
+    if ddm_column_ldat.dd_dvar_name$<>pad("DD_MASK_TYPE",16) goto validate_input
+    if cvs(ddm_column_ldat.dd_attr_ldat$,2)<>"" valid_type$=valid_type$+ddm_column_ldat.dd_attr_ldat$
+    goto next_col_ldat
+
+get_elements:
+
+    read(ddm_element_ldat_dev,key=pad("DD_MASK_TYPE",16),dom=*next)
+    k$=key(ddm_element_ldat_dev,end=validate_input)
+    if pos(pad("DD_MASK_TYPE",16)=k$)<>1 goto validate_input
+next_ele_ldat:
+    readrecord(ddm_element_ldat_dev,end=validate_input)ddm_element_ldat$
+    if ddm_element_ldat.dd_data_name$<>pad("DD_MASK_TYPE",16) goto validate_input
+    if cvs(ddm_element_ldat.dd_attr_ldat$,2)<>"" valid_type$=valid_type$+ddm_element_ldat.dd_attr_ldat$
+    goto next_ele_ldat
+
+validate_input:
+
+rem --- implode mask_type to 1 character if possible
+
+    mask_type$=cvs(mask_type$,4)
+    if mask_type$ = "AMOUNT" mask_type$="A"
+    if mask_type$ = "ID" mask_type$="I"
+    if mask_type$ = "UNITS" mask_type$="U"
+    if mask_type$ = "PERCENT" mask_type$="%"
+    if mask_type$ = "RATE" mask_type$="R"
+    if mask_type$ = "EXTENSION" mask_type$="E"
+    if mask_type$ = "QUANTITY" mask_type$="Q"
+    if mask_type$ = "COST" mask_type$="C"
+    if mask_type$ = "PRICE" mask_type$="P"
+    if mask_type$ = "CONV FACTOR" mask_type$="V"
+    if mask_type$ = "MTL FACTOR" mask_type$="M"
+    if mask_type$ = "OVHD FACTOR" mask_type$="O"
+    if mask_type$ = "HOURS" mask_type$="H"
+    if mask_type$ = "ZIP CODE" mask_type$="Z"
+    if mask_type$ = "TELEPHONE" mask_type$="T"
+
+rem --- Verify valid input
+
+    if cvs(element_id$,2)=""
+        if cvs(app_id$,2)="" or cvs(mask_type$,2)=""
+            goto done
+        endif
+        if len(mask_type$)<>1
+            goto done
+        endif
+        if pos(mask_type$=valid_type$)=0 
+            goto done
+        endif    
+        readrecord(ads_mask_dev,key=firm_id$+stbl("+AON_APPCOMPANY",err=done)+pad(app_id$,3)+mask_type$,dom=done)ads_masksa$
+        i_mask$=ads_masksa.dd_attr_mski$
+        o_mask$=ads_masksa.dd_attr_msko$
+    else
+        readrecord(ddm_elements_dev,key=pad(element_id$,16),dom=done)ddm_elementsa$
+        readrecord(ads_mask_dev,key=firm_id$+ddm_elementsa.asc_comp_id$+ddm_elementsa.asc_prod_id$+
+:                                   ddm_elementsa.dd_mask_type$,dom=done)ads_masksa$
+        i_mask$=ads_masksa.dd_attr_mski$
+        o_mask$=ads_masksa.dd_attr_msko$
+    endif
+
+done: rem --- All done
+
+    if cvs(i_mask$,3)<>"" mask$=i_mask$;gosub mask_len;i_mask_len=size else i_mask$="###",i_mask_len=3
+    if cvs(o_mask$,3)<>"" mask$=o_mask$;gosub mask_len;o_mask_len=size else o_mask$="###",o_mask_len=3
+    close(ddm_elements_dev,err=*next)
+    close(ads_masks_dev,err=*next)
+    goto std_exit
+
+open_tables:rem -----<Open Tables
+
+	call rd_dir_syp$+"bac_open_tables.bbj",
+:		rd_open_beg,
+:		rd_open_end,
+:		rd_open_tables$[all],
+:		rd_open_opts$[all],
+:		rd_open_chans$[all],
+:		rd_open_tpls$[all],
+:		rd_table_chans$[all],
+:		rd_open_batch,
+:		rd_open_status$
+
+	return
+
+mask_len:
+
+    size=0
+    for x=1 to len(mask$)
+        if pos(mask$(x,1)="#0AU")>0 size=size+1
+    next x
+    return
+
+rem --- Functions
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

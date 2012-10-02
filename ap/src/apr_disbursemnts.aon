@@ -1,0 +1,788 @@
+rem --- Disbursements Journal (Report Overlay)
+rem --- Program apr_disbursemnts v8.0.0 24Jan2007 (apr_mb)
+rem --- Created by adx_codeport.bbx v1.1.5 (01/24/2007 06:00:58)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=7,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS"; rem  aps-01
+    files$[2]="apm-01",ids$[2]="APM_VENDMAST"
+    files$[3]="apc_typecode",ids$[3]="APC_TYPECODE"; rem apm-10
+    files$[4]="apt-02",ids$[4]="APT_INVOICEDIST"
+    files$[5]="apt-05",ids$[5]="APT_CHECKHISTORY"
+    files$[6]="apw-05",ids$[6]="APW_DISBURSEMNTS";rem apw-05
+    options$[6]="C"
+    files$[7]="gls_params",ids$[7]="GLS_PARAMS"; rem gls-01
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01_dev=channels[1]
+    apm01_dev=channels[2]
+    apm10_dev=channels[3]
+    apt02_dev=channels[4]
+    apt05_dev=channels[5]
+    apw05_dev=channels[6]
+    gls01_dev=channels[7]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1]
+    dim apm01a$:templates$[2],apm10a$:templates$[3],apt02a$:templates$[4],
+:       apt05a$:templates$[5],apw05a$:templates$[6],gls01a$:templates$[7]
+
+rem --- Assign form input values to local variables
+
+    period$=Option!.getOptionData("PERIOD")
+    sequence$=Option!.getOptionData("REPORT_SEQUENCE")
+    year$=Option!.getOptionData("YEAR")
+    export_format$=Option!.getOptionData("EXPORT_FORMAT")
+    if export_format$="Y"
+        rd_alias_id$=Option!.getAlias()    
+        if len(rd_alias_id$)>15 rd_alias_id$=rd_alias_id$(1,15)
+        rd_alias_id$=rd_alias_id$+"X"
+    endif
+    year=num(year$)
+    period=num(period$)
+    
+    
+    call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    call pgmdir$+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+    call pgmdir$+"adc_getmask.aon","","AP","A","",m1$,0,0
+    multitypes=aps01a.multi_types$="Y"
+    m1$=aps01a.amount_mask$
+    m0=len(m0$)
+    m1=len(m1$)
+    call pgmdir$+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
+    g0=len(g0$)
+    headings=3
+    if multitypes headings=4
+
+rem --- Is General Ledger installed?
+
+    gl$="N"
+    application$="AP"
+    call pgmdir$+"adc_application.aon",application$,info$[all]
+    gl$=info$[9]
+    if gl$="Y"
+       application$="GL"
+       call pgmdir$+"adc_application.aon",application$,info$[all]
+       gl$=info$[20]
+    endif
+    if gl$="Y"
+       call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
+    endif
+
+rem --- Initializations
+
+    dim headings$[headings],underline$(m1*3,"-"),accounts$[100],amounts[100],o[9],h[9]
+    dim at[2],ct[2],vt[2],rt[2],totals[2],detail[2]
+
+    typebreak_flag = 0; rem -- Flag for  typebreak 
+
+    vm=max(m0,8)
+    gm=max(g0,9)
+    done=0
+    number=0
+    printed=0
+    page=0
+    width=132
+    more=1
+    when$=sysinfo.system_date$
+    clock$=""
+    nf$="(Not on File)"
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    headings$[2]="For Period "+str(period)+" From "+fndate$(begdate$)+" Through "+fndate$(enddate$)
+    if sequence$="C"
+       channel=apt05_dev 
+       headings$[1]=headings$[1]+" By Check Number"
+    endif
+    if sequence$="V" 
+       channel=apw05_dev
+       headings$[1]=headings$[1]+" By Vendor"
+    endif
+    if sequence$="A"
+       channel=apw05_dev
+       headings$[1]=headings$[1]+" By Alternate Sequence"
+    endif
+    headings$[3]="[HEADER]"
+    altseq$=""
+    lasttype$=""
+    lastvendor$=""
+    lastcheck$=""
+    printed$="N"
+    ah$="Account"
+    if gl$<>"Y" 
+       ah$=""
+       gm=0
+       g0=0
+    endif
+    sorting=pos(sequence$="AV")
+
+rem --- Headings and print positions
+    
+    if multitypes and export_format$="Y"
+        columns=11
+        dim columns$[columns,10]
+        columns$[0,0]="AP Type",       columns$[0,1]="C",columns$[0,2]="8"
+        rpt_cols=1
+    else
+        columns=10
+        dim columns$[columns,10]
+        rpt_cols=0
+    endif
+    
+    
+
+    columns$[rpt_cols,0]="Check No",       columns$[rpt_cols,1]="C",columns$[rpt_cols,2]="10"
+    columns$[rpt_cols+1,0]="Check Tp",         columns$[rpt_cols+1,1]="C",columns$[rpt_cols+1,2]="10"
+    columns$[rpt_cols+2,0]="Check Dt",         columns$[rpt_cols+2,1]="C",columns$[rpt_cols+2,2]="10"
+    columns$[rpt_cols+3,0]="Vendor ID",        columns$[rpt_cols+3,1]="C",columns$[rpt_cols+3,2]="10"
+    columns$[rpt_cols+4,0]="Name",           columns$[rpt_cols+4,1]="C",columns$[rpt_cols+4,2]="20"
+    columns$[rpt_cols+5,0]="Alt Seq",        columns$[rpt_cols+5,1]="C",columns$[rpt_cols+5,2]="10"
+    columns$[rpt_cols+6,0]="Invoice No",     columns$[rpt_cols+6,1]="C",columns$[rpt_cols+6,2]="10"
+    columns$[rpt_cols+7,0]="Account",            columns$[rpt_cols+7,1]="C",columns$[rpt_cols+7,2]="10"
+    columns$[rpt_cols+8,0]="Distrib Amt",     columns$[rpt_cols+8,1]="N",columns$[rpt_cols+8,2]=str(len(m1$)),columns$[rpt_cols+8,3]=m1$,columns$[rpt_cols+8,10]="T"
+    columns$[rpt_cols+9,0]="Discount Amt",    columns$[rpt_cols+9,1]="N",columns$[rpt_cols+9,2]=str(len(m1$)),columns$[rpt_cols+9,3]=m1$,columns$[rpt_cols+9,10]="T"
+    columns$[rpt_cols+10,0]="Check Amt",       columns$[rpt_cols+10,1]="N",columns$[rpt_cols+10,2]=str(len(m1$)),columns$[rpt_cols+10,3]=m1$,columns$[rpt_cols+10,10]="T"
+
+   
+rem --- Define print positions
+
+    o[0]=0
+    o[9]=width-m1
+    o[8]=o[9]-m1
+    o[7]=o[8]-m1
+    o[6]=o[7]-g0
+    o[5]=o[6]-12
+    w=3+max(m0,10)
+    vh$="Vendor"
+    nh$=""
+    h[5]=o[5]
+    h[7]=o[7]+m1-8
+    h[8]=o[8]+m1-9
+    h[9]=o[9]+m1-7
+    if sequence$="C"
+       o[1]=8
+       o[2]=o[1]+9
+       o[3]=o[2]+9
+       o[4]=o[3]+vm
+       dw=min(30,o[5]-o[4]-1)
+    endif
+    if sequence$="V"
+       o[3]=0
+       o[4]=o[3]+vm
+       o[2]=o[5]-9
+       o[1]=o[2]-9
+       o[0]=o[1]-8
+       dw=min(30,o[0]-o[4]-1)
+    endif
+    if sequence$="A"
+       o[3]=0
+       o[4]=11
+       o[2]=o[5]-9
+       o[1]=o[2]-9
+       o[0]=o[1]-9
+       vh$="Alt Seq"
+       nh$="Vendor"
+       dw=min(31+m0,o[0]-o[4]-1)
+    endif
+    for x=0 to 6
+        h[x]=o[x]
+    next x
+
+rem --- Additional file opens
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    if gl$="Y"
+       files$[1]="glm-01",ids$[1]="GLM_ACCT"; rem glm-01
+       files$[2]="glw_disbtotals",ids$[2]="GLW_DISBTOTALS"
+       options$[2]="CL"
+    endif
+    if gl$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                              ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    glm01_dev=channels[1]
+    glw04_dev=channels[2]
+
+rem --- Dimension string templates
+
+    if gl$="Y" dim glm01a$:templates$[1],glw04a$:templates$[2]
+
+rem --- Sort Check History (apt-05) by vendor ID or alternate sequence
+
+    while sorting
+          call pgmdir$+"adc_progress.aon","NC","","","","",0,apt05_dev,1,meter_num,status
+          read (apt05_dev,key=firm_id$,dom=*next)
+
+          rem --- Read next history record
+
+          while more
+                k$=key(apt05_dev,end=*break)
+                if pos(firm_id$=k$)<>1 break
+                read record (apt05_dev) apt05a$
+                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+                if apt05a.check_date$<begdate$ continue
+                if apt05a.check_date$>enddate$ continue
+
+                rem --- Initialize and write sort record
+
+                dim apm01a$:fattr(apm01a$),apw05a$:fattr(apw05a$)
+                apm01a.firm_id$=apt05a.firm_id$
+                apm01a.vendor_id$=apt05a.vendor_id$
+                k$=apm01a.firm_id$+apm01a.vendor_id$
+                if sequence$="A" find record (apm01_dev,key=k$,dom=*next) apm01a$
+                apw05a.firm_id$=apt05a.firm_id$
+                apw05a.ap_type$=apt05a.ap_type$
+                apw05a.alt_sequence$=apm01a.alt_sequence$
+                apw05a.vendor_id$=apt05a.vendor_id$
+                apw05a.check_no$=apt05a.check_no$
+                apw05a.ap_inv_no$=apt05a.ap_inv_no$
+                apw05a$=field(apw05a$)
+                k$=apw05a.firm_id$+apw05a.ap_type$+apw05a.alt_sequence$+
+:                  apw05a.vendor_id$+apw05a.check_no$+apw05a.ap_inv_no$
+                write record (apw05_dev,key=k$) apw05a$
+
+                rem --- Loop back for next invoice record
+
+          wend
+
+          rem --- Sorting completed
+
+          call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+          sorting=0
+          break
+    wend  
+
+rem --- Start progress meter and position the driver file
+
+    sequence=pos(sequence$="ADV")
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    read (apw05_dev,key=firm_id$,dom=*next)
+    read (apt02_dev,key=firm_id$,dom=*next)
+
+    rem --- Read next check history or sort record
+
+    while more
+          k$=key(channel,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          if sequence$="C" read record (apt05_dev,key=k$) apt05a$
+          if pos(sequence$="AV")
+             read record (apw05_dev,key=k$) apw05a$
+             apt05a.firm_id$=apw05a.firm_id$
+             apt05a.ap_type$=apw05a.ap_type$
+             apt05a.vendor_name$=apm01a.alt_sequence$
+             apt05a.vendor_id$=apw05a.vendor_id$
+             apt05a.check_no$=apw05a.check_no$
+             apt05a.ap_inv_no$=apw05a.ap_inv_no$
+             k$=apt05a.firm_id$+apt05a.ap_type$+apt05a.check_no$+
+:               apt05a.vendor_id$+apt05a.ap_inv_no$
+             readrecord(apt05_dev,key=k$)apt05a$
+          endif
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+          rem --- Is the record in the requested period?
+
+          if apt05a.check_date$<begdate$ continue
+          if apt05a.check_date$>enddate$ continue
+
+          rem --- Level breaks
+
+          if apt05a.ap_type$<>lasttype$ gosub type_break
+          if apt05a.vendor_id$<>lastvendor$ gosub vendor_break
+          if apt05a.check_no$<>lastcheck$ gosub check_break
+
+          rem --- Voided check?
+
+          accumulating=apt05a.trans_type$<>"V"
+
+          rem --- Accumulate invoice distribution
+
+          while accumulating
+                number=0
+                printed$="N"
+                keyprefix$=apt05a.firm_id$+apt05a.ap_type$+apt05a.vendor_id$+"I"+
+:                          apt05a.ap_inv_no$
+                if gl$<>"Y" break
+                gosub gl_distribution
+                keyprefix$=apt05a.firm_id$+apt05a.ap_type$+apt05a.vendor_id$+"I"+
+:                          apt05a.ap_inv_no$
+                if number break
+                printed$="Y"
+                keyprefix$=apt05a.firm_id$+apt05a.ap_type$+apt05a.vendor_id$+"C"+
+:                          lastcheck$+fill(3)
+                gosub gl_distribution
+                accumulating=0
+                break
+          wend
+
+          rem --- Pro-rate the amount
+
+          prorate=number
+          while prorate
+                dim prorated[number]
+                sum=0
+                for x=1 to number
+                    if apt05a.invoice_amt<>0 and total<>0 
+                       prorated[x]=(apt05a.invoice_amt*amounts[x])/total
+                       sum=sum+prorated[x]
+                    endif
+                next x
+                if sum<>apt05a.invoice_amt prorated[1]=prorated[1]+apt05a.invoice_amt-sum
+                for x=1 to number
+                    amounts[x]=prorated[x]
+                next x
+                prorated=0
+                break
+          wend
+
+          rem --- Initialize detail line fields
+
+          dim detail[2]
+          invoice$=apt05a.ap_inv_no$
+          account$=""
+          detail[0]=apt05a.invoice_amt
+          detail[1]=apt05a.discount_amt+apt05a.retention
+          detail[2]=apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention
+          if number account$=fnmask$(accounts$[1](1,acct_length),g0$)
+          if number detail[0]=amounts[1]
+
+          rem --- Print a voided check
+
+          voided=apt05a.trans_type$="V"
+          while voided
+                if multitypes and export_format$="Y"
+                    OutVect!.addItem(lasttype$)
+                endif
+                OutVect!.addItem(check$)
+                OutVect!.addItem(type$)
+                OutVect!.addItem(paid$)
+
+                xwk = fnblank(8)
+
+                break
+          wend
+  
+          if voided continue
+
+          rem --- Print check history record
+
+          if multitypes and export_format$="Y"
+            OutVect!.addItem(lasttype$)
+          endif
+
+          OutVect!.addItem(check$)
+          OutVect!.addItem(type$)
+          OutVect!.addItem(paid$)
+          OutVect!.addItem(vendor$)
+          OutVect!.addItem(name$)
+          OutVect!.addItem(altseq$)
+          OutVect!.addItem(invoice$)
+          OutVect!.addItem(account$)
+          OutVect!.addItem(str(detail[0]))
+          xwk = fnblank(2)
+
+          printed=printed+1
+          gosub accumulate_totals
+
+          rem --- Update GL distribution
+
+          if number
+             account$=accounts$[1]
+             amount=amounts[1]
+             first=2
+             gosub update_gl
+          endif
+          if number>1 gosub print_distribution
+
+          rem --- Initialize fields for the next record
+
+          if export_format$<>"Y"
+            check$=""
+            type$=""
+            paid$=""
+          endif
+
+          rem --- Loop back for next record
+
+    wend
+
+rem --- All done
+
+    done=1
+    gosub type_break
+    if export_format$<>"Y"
+        total$="Total For Report"
+        totals[0]=rt[0]
+        totals[1]=rt[1]
+        totals[2]=rt[2]
+        gosub print_total
+    endif
+
+rem --- Run next overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+    if gl$ = "Y" then overlay$=pgmdir$+"glr_accttotals.aon"
+    out_action$="PRT-PDF"
+    next_overlay$=overlay$
+
+    goto std_exit
+
+print_total: rem --- Print subtotal/total
+
+    if export_format$="Y"
+        if multitypes
+            OutVect!.addItem(lasttype$)
+        endif
+        OutVect!.addItem(check$)
+        OutVect!.addItem(type$)
+        OutVect!.addItem(paid$)
+        OutVect!.addItem(vendor$)
+        OutVect!.addItem(name$)
+        OutVect!.addItem(altseq$)
+        xwk=fnblank(3)
+        OutVect!.addItem(str(totals[1]))
+        OutVect!.addItem(str(totals[2]))        
+    else
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+        xwk = fnblank(4)
+        OutVect!.addItem(total$)
+        xwk=fnblank(3)        
+        OutVect!.addItem(str(totals[0]))
+        OutVect!.addItem(str(totals[1]))
+        OutVect!.addItem(str(totals[2]))
+    endif
+    return
+
+print_distribution: rem --- Print GL distribution
+
+    dim detail[2]
+    for n=first to number
+        account$=accounts$[n]
+        amount=amounts[n]
+        detail[0]=amount
+
+    if export_format$="Y" 
+        if multitypes
+            OutVect!.addItem(lasttype$)
+        endif
+        OutVect!.addItem(check$)
+        OutVect!.addItem(type$)
+        OutVect!.addItem(paid$)
+        OutVect!.addItem(vendor$)
+        OutVect!.addItem(name$)
+        OutVect!.addItem(altseq$)
+        OutVect!.addItem(invoice$)
+    else
+        xwk=fnblank(7)
+    endif
+        OutVect!.addItem(str(fnmask$(account$(1,acct_length),g0$)))
+        OutVect!.addItem(str(amount:m1$))
+        xwk=fnblank(2)
+   
+        gosub accumulate_totals
+        gosub update_gl
+    next n
+    return
+
+type_break: rem --- AP type break
+
+    while lasttype$<>""
+      
+          if sequence$="C" gosub check_break
+:                     else gosub vendor_break
+          if export_format$<>"Y"
+              if multitypes
+                 total$="Total for "+aptype$
+                 totals[0]=at[0]
+                 totals[1]=at[1]
+                 totals[2]=at[2]
+                 typebreak_flag=1  
+                 gosub print_total
+              endif
+          endif
+        break
+    wend
+    if multitypes=0 return
+    if done return
+    dim at[2]
+    dim apm10a$:fattr(apm10a$)
+    apm10a.firm_id$=apt05a.firm_id$
+    apm10a.record_id_a$="A"
+    apm10a.ap_type$=apt05a.ap_type$
+    apm10a.code_desc$=nf$
+    k$=apm10a.firm_id$+apm10a.record_id_a$+apm10a.ap_type$
+    find record (apm10_dev,key=k$,dom=*next) apm10a$
+    lasttype$=apm10a.ap_type$
+    aptype$="AP Type "+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(aptype$)
+    return
+
+vendor_break: rem --- Vendor break
+
+    while lastvendor$<>""
+        
+          gosub check_break
+          if sequence$="C" break
+          if cprinted=0 break
+          if export_format$<>"Y"
+              total$="Total For Vendor "+x$
+              totals[0]=vt[0]
+              totals[1]=vt[1]
+              totals[2]=vt[2]
+              typebreak_flag=0  
+              gosub print_total
+          endif
+        break
+    wend
+    if done return
+    dim apm01a$:fattr(apm01a$)
+    dim vt[2],vendor$(m0),name$(dw),altseq$(10)
+    lastvendor$=apt05a.vendor_id$
+    if cvs(lastvendor$,2)="" return
+    apm01a.firm_id$=apt05a.firm_id$
+    apm01a.vendor_id$=apt05a.vendor_id$
+    apm01a.vendor_name$=nf$
+    k$=apm01a.firm_id$+apm01a.vendor_id$
+    find record (apm01_dev,key=k$,dom=*next) apm01a$
+    vendor$(1)=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+    name$(1)=apm01a.vendor_name$
+    altseq$(1)=apm01a.alt_sequence$
+    oldname$=name$
+    oldvend$=vendor$
+    cprinted=0
+    return
+
+check_break: rem --- Check break
+
+    while lastcheck$<>""
+          distribution=0
+          if cvs(keyprefix$,2)<>"" and printed$<>"Y"
+             keyprefix$=apt05a.firm_id$+apt05a.ap_type$+apt05a.vendor_id$+"C"+
+:                       lastcheck$+fill(3)
+             first=1
+             distribution=1
+             gosub gl_distribution
+          endif
+          if distribution if number gosub print_distribution
+          if printed=0 break
+          totals[0]=ct[0]
+          totals[1]=ct[1]
+          totals[2]=ct[2]
+          total$="Totals For Check "+lastcheck$
+          typebreak_flag=0 
+          cprinted=1
+          gosub print_total
+          break
+    wend
+    if done return
+    dim ct[2]
+    lastcheck$=apt05a.check_no$
+    check$=lastcheck$
+    paid$=fndate$(apt05a.check_date$)
+    type$="Computer"
+    if apt05a.trans_type$="M" type$="Manual"
+    if apt05a.trans_type$="R" type$="Reversal"
+    if apt05a.trans_type$="V" type$="Void"
+    printed=0
+    if sequence$="C" 
+       vendor$=oldvend$
+       name$=oldname$
+    endif
+    return
+
+gl_distribution: rem --- Accumulate GL distribution
+
+    dim accounts$[100],amounts[100]
+    total=0
+    number=0
+    read (apt02_dev,key=keyprefix$,dom=*next)
+
+    rem --- Read next apt-02 record
+
+    while more
+          k$=key(apt02_dev,end=*break)
+          if pos(keyprefix$=k$)<>1 break
+          read record (apt02_dev) apt02a$
+          while number
+                p=0
+                for x=1 to number
+                    if apt02a.gl_account$=accounts$[x]
+                       p=x
+                       break
+                    endif                       
+                next x
+                break
+          wend
+          if number=0 or (number and p=0)
+             number=number+1
+             p=number
+             accounts$[p]=apt02a.gl_account$
+          endif
+          amounts[p]=amounts[p]+apt02a.gl_post_amt
+          total=total+apt02a.gl_post_amt
+    wend 
+    return
+
+accumulate_totals: rem --- Accumulate totals
+
+    for x=0 to 2
+        at[x]=at[x]+detail[x]
+        ct[x]=ct[x]+detail[x]
+        vt[x]=vt[x]+detail[x]
+        rt[x]=rt[x]+detail[x]
+    next x
+    return
+
+update_gl: rem --- Update GL summary
+
+    if gl$<>"Y" return
+    if amount=0 return
+    dim glw04a$:fattr(glw04a$)
+    glw04a.firm_id$=apt02a.firm_id$
+    glw04a.gl_account$=account$
+    k$=glw04a.firm_id$+glw04a.gl_account$
+    find record (glw04_dev,key=k$,dom=*next) glw04a$
+    glw04a.gl_post_amt=glw04a.gl_post_amt+amount
+    glw04a$=field(glw04a$)
+    write record (glw04_dev,key=k$) glw04a$
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

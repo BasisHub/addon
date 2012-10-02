@@ -1,0 +1,338 @@
+rem --- Order/Production Register
+rem --- Program bmr_ja v8.0.0 21Jan2008 (bmr_ja)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/21/2008 09:38:54)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=10,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="arm-01",ids$[1]="ARM_CUSTMAST"
+    files$[2]="ars_params",ids$[2]="ARS_PARAMS"
+    files$[3]="bme-01",ids$[3]="BME_PRODUCT"
+    files$[4]="bme-02",ids$[4]="BME_ORDER"
+    files$[5]="bmm-01",ids$[5]="BMM_BILLMAST"
+    files$[6]="bms_params",ids$[6]="BMS_PARAMS"
+    files$[7]="ivm-02",ids$[7]="IVM_ITEMWHSE"
+    files$[8]="ivs_params",ids$[8]="IVS_PARAMS"
+    files$[9]="ope-01",ids$[9]="OPE_ORDHDR"
+    files$[10]="ope-11",ids$[10]="OPE_ORDDET"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    arm01_dev=channels[1]
+    ars01a_dev=channels[2]
+    bme01_dev=channels[3]
+    bme02_dev=channels[4]
+    bmm01_dev=channels[5]
+    bms01a_dev=channels[6]
+    ivm02_dev=channels[7]
+    ivs01a_dev=channels[8]
+    ope01_dev=channels[9]
+    ope11_dev=channels[10]
+
+rem --- Dimension string templates
+
+    dim arm01a$:templates$[1],ars01a$:templates$[2],bme01a$:templates$[3],
+:       bme02a$:templates$[4],bmm01a$:templates$[5],bms01a$:templates$[6],
+:       ivm02a$:templates$[7],ivs01a$:templates$[8],ope01a$:templates$[9],
+:       ope11a$:templates$[10]
+
+
+rem --- Retrieve parameter records
+
+     ars01a_key$=firm_id$+"AR00"
+     find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+     bms01a_key$=firm_id$+"BM00"
+     find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
+     ivs01a_key$=firm_id$+"IV00"
+     find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+
+rem --- Parameters
+
+    dim p[4],r[4]
+    find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    call pgmdir$+"adc_application.aon","OP",info$[all]
+    op$=info$[20]
+
+    if op$="Y" then
+        find record (ars01a_dev,key=firm_id$+"AR"+"00",dom=std_missing_params) ars01a$
+        r[0]=num(ars01a.customer_size$)
+        r0=len(ars01a.customer_output$),headings=2
+        p[0]=num(ivs01a.item_id_len$)
+        p[1]=num(ivs01a.vendor_prd_len$),p[2]=num(ivs01a.precision$+" "),p[3]=num(ivs01a.ls_no_len$)
+        call pgmdir$+"adc_application.aon","BM",info$[all]
+        gl$=info$[9]
+
+rem --- Init Data
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","BME_ORDER","PRIMARY",bme02a_key_tpl$,rd_table_chans$[all],status$
+        dim bme02a_key$:bme02a_key_tpl$
+        more=1
+        precision num(ivs01a.precision$)
+        dim headings$[headings]
+        h0=80
+        h=0,l9=55,l=l9+1,errors=0,glstatus=0
+        when$=sysinfo.system_date$
+        clock$="",headings$[0]=sysinfo.firm_name$,headings$[1]=sysinfo.task_desc$
+ 
+rem --- Run Report?
+
+        msg_id$="AON_RUN_QUERY"
+        dim x$:stbl("+SYSINFO_TPL")
+        dim msg_tokens$[1]
+        x$=stbl("+SYSINFO")                                                            
+        msg_tokens$[1]=x.task_desc$
+        gosub disp_message
+        if msg_opt$<>"Y" then goto std_exit
+
+        call pgmdir$+"adc_progress.aon","N","","","","",0,bme02_dev,1,meter_num,status
+
+rem --- Document initializations
+
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem ---  column heading
+        dim columns$[4,10]
+        columns=4
+        columns$[0,0]="Prod Date",      columns$[0,1]="C",columns$[0,2]="8"
+        columns$[1,0]="Customer Number",columns$[1,1]="C",columns$[1,2]="10"
+        columns$[2,0]="Customer Name",  columns$[2,1]="C",columns$[2,2]="20"
+        columns$[3,0]="Order Number",   columns$[3,1]="C",columns$[3,2]="10"
+        columns$[4,0]="Reference",      columns$[4,1]="C",columns$[4,2]="10"
+
+rem --- Initial Read
+
+        read (bme02_dev,key=firm_id$,dom=*next)
+        
+rem --- Heading Read
+        while more
+            bme02a_key$=key(bme02_dev,end=done)
+            read record (bme02_dev,end=*break) bme02a$
+rem --- Breaks
+            if pos(firm_id$=bme02a_key$)<>1 then break
+            if bme02a.prod_date$<>t0$ then gosub date_break else OutVect!.addItem("")
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Get Customer Name
+
+            x0$="***Not On File***"
+            find record (arm01_dev,key=firm_id$+bme02a.customer_id$,dom=print_heading) arm01a$
+            x0$=arm01a.customer_name$
+
+print_heading:rem --- Print
+
+            OutVect!.addItem(fnmask$(bme02a.customer_id$(1,r[0]),ars01a.customer_output$))
+            OutVect!.addItem(x0$)
+            OutVect!.addItem(bme02a.order_no$)
+            OutVect!.addItem(bme02a.bm_reference$)
+            t0=t0+1
+
+rem --- Verify Date
+
+            if gl$<>"Y" then continue
+            when$=bme02a.prod_date$
+            if gl$="Y" then call pgmdir$+"glc_datecheck.aon",when$,"N","","",glstatus
+            if glstatus then call pgmdir$+"glc_datewarn.aon",printer_dev,when$,glstatus,l,errors,status
+        wend
+
+done: rem --- End
+    
+        xwk=fnblank(7)
+        OutVect!.addItem("Total Orders:"+str(t0))
+        xwk=fnblank(2)
+        if errors then goto std_exit
+        run pgmdir$+"bmu_ordproduction.aon"
+
+    endif
+ 
+rem --- OP Not Installed
+    dim message$[1]
+    message$[0]="Order Processing Is Required In Order To Use This Task"
+    message$[1]="          Press <Enter> To Continue"
+    call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
+    goto std_exit
+
+date_heading: rem --- Date Heading
+
+    xwk=fnblank(5)
+    OutVect!.addItem(fndate$(bme02a.prod_date$))
+return
+
+date_break: rem --- Date Break
+
+    gosub date_heading
+    t0$=bme02a.prod_date$
+return
+
+rem --- #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+        def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+        def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+        def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+        def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+        def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+        def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+        def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+        def fnyy$(q$)=q$(3,2)
+        def fnclock$(q$)=date(0:"%hz:%mz %p")
+        def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+        def fnmask$(q1$,q2$)
+            if q2$="" q2$=fill(len(q1$),"0")
+            return str(-num(q1$,err=*next):q2$,err=*next)
+            q=1
+            q0=0
+            while len(q2$(q))
+                  if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+                  q=q+1
+            wend
+            if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+            return str(q1$:q2$)
+        fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+        def fnbasename$(q$,q0$)
+            q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+            if q then q$=q$(q+1)
+            if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+        return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+        def fnglobal(q$,q1)
+            q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+            return q1
+        fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+        def fnglobal$(q$,q1$)
+            q1$=stbl(q$,err=*next)
+            return q1$
+        fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem --- #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
+	
+rem #endinclude disp_message.src
+
+rem --- #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+        if pos("EXIT"=rd_err_act$) goto std_error_exit
+        if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+        if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+
+        master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_error_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_error_release:
+
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem --- #endinclude std_error.src
+rem --- #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+        rd_err_text$=""
+        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+        pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+        call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+
+        master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+        if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_missing_params_release:
+
+        status=999
+        if pgm(-1)<>pgm(-2) exit
+        release
+
+rem --- #endinclude std_missing_params.src
+
+rem --- #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+        run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+        release
+rem --- #endinclude std_end.src
+
+        end

@@ -1,0 +1,191 @@
+rem ivc - Return Warehouse Activity
+rem Program ivc_whseact.aon v8.0.0 26Oct2006 (ivc_wb)
+rem Created by adx_codeport.bbx v1.1.1 (10/26/2006 11:47:22)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- ACTION$    : Action to perform (input)
+rem --- ""  = Return info for specific warehouse
+rem --- "A" = Return info for all warehouses
+rem --- "T" = Return total beginning balance instead of first
+rem --- "L" = Return info for lot/serial number
+rem --- CHANNELS[N]: Channel Numbers (input)
+rem --- [2] = ivm-12 or ivm-17
+rem --- [3] = ivm-03
+rem --- ITEM$[n]   : Inventory Item Information
+rem --- [0] = Firm ID
+rem --- [1] = Warehouse ID (optional)
+rem --- [2] = Inventory Item Number
+rem --- [3] = Lot/Serial Number
+rem --- PERIOD$[n] : Period Range (input)
+rem --- [0] = Beginning Period/Year (YYYYMM)
+rem --- [1] = Ending Period/Year (YYYYMM)
+rem --- ACTIVITY[n]: Warehouse Activity (returned)
+rem --- [0] to [12] = IVM-12/17 numerics
+rem --- STATUS     : Status Code (returned)
+
+    seterr std_error
+    setesc std_error
+    enter action$,channels[all],item$[all],period$[all],activity[all],status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Retrieve miscellaneous templates
+
+    ivm03_dev=channels[3]
+    ivm12_dev=channels[2]
+
+    files=2,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="IVX_ITEMWHSE"; rem ivm-03g
+    if pos(action$="L")=0 ids$[2]="IVM_ITEMACT"; rem ivm-12
+    if pos(action$="L")<>0 ids$[2]="IVM_LSACT"; rem ivm-17
+
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension string templates
+
+    dim ivm03a$:templates$[1],ivm12a$:templates$[2]
+
+rem --- Initializations
+
+    keylen=30
+    period=25
+    if pos("L"=action$)>0 keylen=50,period=45
+
+    dim b0$(keylen),b[12]
+    firm_id$=item$[0]
+    warehouse$=item$[1]
+    item$=item$[2]
+    status=0
+    if pos("L"=action$)>0 lotser$=item$[3]
+    for x=0 to 12
+        activity[x]=0
+    next x
+
+rem --- Single Warehouse
+
+    if pos("A"=action$)>0 goto l1900
+    gosub l6000
+    goto done
+
+l1900: rem --- Position warehouse file
+
+    read (ivm03_dev,key=firm_id$+"G"+item$,dom=*next)
+
+l2000: rem --- All Warehouses
+
+    k$=key(ivm03_dev,end=done)
+    if pos(firm_id$+"G"+item$=k$)<>1 goto done
+    read (ivm03_dev)
+    warehouse$=k$(24,2)
+    gosub l6000
+    goto l2000
+
+done: rem --- All done
+
+    goto std_exit
+
+l6000: rem --- Position activity file to beginning period/year
+
+    b0$(1)=firm_id$+warehouse$
+    b0$(5)=item$
+    b0$(period)=period$[0]
+    first=1
+    if pos("L"=action$)>0 b0$(25,20)=lotser$
+    read record (ivm12_dev,key=b0$,dom=l6100) ivm12a$
+    goto l6150
+
+l6100: rem --- Read activity record(s) and accumulate totals
+
+    k$=key(ivm12_dev,end=l6190)
+    if pos(b0$(1,keylen-6)=k$)<>1 goto l6190
+    if k$(keylen-5)>period$[1] goto l6190
+    read record (ivm12_dev) ivm12a$
+l6150:
+
+    dim names$:"name[100]:c(40*)"
+    names$=fattr(ivm12a$,"")
+    startx=1
+    while names.name$[startx] <> "BEG_BALANCE"
+        startx=startx+1
+    wend
+    for x=0 to 12
+        name$=names.name$[x+startx]
+        activity[x]=activity[x]+nfield(ivm12a$,name$)
+    next x
+    if first activity[0]=activity[0]+ivm12a.beg_balance
+    if pos("T"=action$)=0 first=0
+    goto l6100
+l6190:
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

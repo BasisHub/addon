@@ -1,0 +1,254 @@
+rem --- Vendor Label Printing
+rem --- Program apr_labels v8.0.0 22Dec2006 (apr_kb)
+rem --- Created by adx_codeport.bbx v1.1.5 (12/22/2006 01:43:35)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS";rem aps-01
+    files$[2]="apm-01",ids$[2]="APM_VENDMAST"
+    files$[3]="apc_typecode",ids$[3]="APC_TYPECODE";rem apm-10A
+
+   call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+
+    aps01_dev=channels[1]
+    apm01_dev=channels[2]
+    apm10_dev=channels[3]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],apm01a$:templates$[2],apm10a$:templates$[3]
+
+rem --- Assign form input values to local variables
+
+    sequence$=Option!.getOptionData("REPORT_TYPE")
+    labels$=Option!.getOptionData("PICK_INTEGER")
+    begvendor$=Option!.getOptionData("VENDOR_ID_1")
+    endvendor$=Option!.getOptionData("VENDOR_ID_2")
+    begalt$=Option!.getOptionData("ALT_SEQUENCE_1")
+    endalt$=Option!.getOptionData("ALT_SEQUENCE_2")
+    begzip$=Option!.getOptionData("ZIP_CODE_1")
+    endzip$=Option!.getOptionData("ZIP_CODE_2")
+    labels=num(labels$)
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    across=num(aps01a.label_across$)
+    length=num(aps01a.label_length$)
+    width=num(aps01a.label_width$)
+
+rem --- Initializations
+
+    dim label$(across*width*4),linefeeds$(length,$0A$)
+    answer$="Y"
+    msg_id$="PRINT_TEST_PATTERN"
+    more=1
+    first=1
+    lines=4
+    if length<4 lines=length
+    offset=0
+    keynum=0
+    begvalue$=begvendor$
+    endvalue$=endvendor$
+    if sequence$="A"
+       keynum=2
+       begvalue$=begalt$
+       endvalue$=endalt$
+    endif
+    if sequence$="Z"
+       keynum=3
+       begvalue$=begzip$
+       endvalue$=endzip$
+    endif
+    endvalue=len(endvalue$)
+
+rem --- Open the printer
+
+    printer_open$="N"
+
+rem --- Print test patterns until the user is satisfied
+
+    while answer$="Y"
+        dim msg_tokens$[1]
+        msg_opt$=""
+        gosub disp_message
+        if msg_opt$<>"Y" break
+
+        rem --- Print test pattern
+
+        if printer_open$="N"
+            call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+            if status exitto std_exit
+            printer_open$="Y"
+        endif
+        dim label$(across*width*length,"X")
+        printed_across=1
+        gosub label
+        msg_id$="ANOTHER_PATTERN"
+    wend
+    if msg_opt$="C" goto std_exit
+    
+    if printer_open$="N"
+        call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+        if status goto std_exit
+    endif
+
+rem --- Start the progress meter and position the file
+
+    read(apm01_dev,key=firm_id$,knum=keynum,dom=*next)
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,apm01_dev,1,meter_num,status
+    while begvalue$<>""
+          read (apm01_dev,key=firm_id$+begvalue$,knum=keynum,dom=*continue)
+          read (apm01_dev,dir=-1,err=*next)
+          begvalue$=""
+    wend
+
+
+rem --- Read next Vendor Master (apm-01) record
+
+    while more
+          k$=key(apm01_dev,knum=keynum,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          if endvalue$<>"" if k$(3,endvalue)>endvalue$ break
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          read record (apm01_dev) apm01a$
+
+          rem --- Print the label(s) for this vendor
+
+          printed=1
+          while printed<=labels
+                printed=printed+1
+                if printed_across>=across gosub label
+                printed_across=printed_across+1
+                address$=apm01a.addr_line_1$+apm01a.addr_line_2$+apm01a.city$+
+:                        apm01a.state_code$+apm01a.zip_code$
+                call pgmdir$+"adc_address.aon",address$,24,3,9,30
+                label$(width*(printed_across-1)+1,width)=apm01a.vendor_name$
+                label$(width*(across+printed_across-1)+1,width)=address$(1,30)
+                label$(width*(2*across+printed_across-1)+1,width)=address$(31,30)
+                label$(width*(3*across+printed_across-1)+1,width)=address$(61,30)
+          wend
+
+          rem --- Loop back for next vendor master
+
+    wend
+
+rem --- All done
+
+    gosub label
+    goto std_exit
+
+label: rem --- Print the label(s)
+
+    if printed_across=0 return
+    if first 
+       for x=1 to length
+           print (printer_dev) ""
+       next x
+       first=0
+    endif
+    for x=0 to lines-1
+        print (printer_dev) @(offset),label$(x*across*width+1,across*width)
+    next x
+    if length>4 print (printer_dev) linefeeds$(1,length-5)
+    printed_across=0
+    label$(1)=""
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

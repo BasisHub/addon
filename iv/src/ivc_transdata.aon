@@ -1,0 +1,345 @@
+rem ivc - Format Standard Transaction References
+rem Program ivc_transdata.aon v8.0.0 26Oct2006 (ivc_td)
+rem Created by adx_codeport.bbx v1.1.1 (10/26/2006 01:10:51)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+
+rem --- TRANS$         : IVT-01/04 second string (A1$) (input)
+rem --- CHANNELS[n]    : Channel Numbers (input)
+rem --- [0] = ivm-01
+rem --- [1] = ivm-10
+rem --- [2] = arm-01 (if installed)
+rem --- [3] = apm-01 (if installed)
+rem --- [4] = glm-01 (if installed)
+rem --- PARAMS[n]      : Masking parameters (input)
+rem --- [0] = Item number length
+rem --- [1] = Customer number length (if installed)
+rem --- [2] = Vendor number length (if installed)
+rem --- [3] = GL account number length (if installed)
+rem --- [4] = Item description segment 1 length
+rem --- [5] = Item description segment 2 length
+rem --- [6] = Item description segment 3 length
+rem --- MASKS$[n]      : Firm ID and display masks (input)
+rem --- [0] = Firm ID
+rem --- [1] = Customer mask (if installed)
+rem --- [2] = Vendor mask (if installed)
+rem --- [3] = GL account mask (if installed)
+rem --- TYPE$          : Abbreviated transaction type (returned)
+rem --- DESCRIPTION$[n]: Three line description block (returned)
+
+    seterr std_error
+    setesc std_error
+    enter trans$,channels[all],params[all],masks$[all],type$,description$[all]
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    addr pgm(-2),err=*next
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+    ivm01_dev=channels[0]
+    ivm10a_dev=channels[1]
+    arm01_dev=channels[2]
+    apm01_dev=channels[3]
+    glm01_dev=channels[4]
+    ivm10b_dev=channels[5]
+    ivm10c_dev=channels[6]
+
+rem --- Retrieve miscellaneous templates
+
+    files=7,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="IVM_ITEMMAST"
+    ids$[2]="ARM_CUSTMAST"
+    ids$[3]="APM_VENDMAST"
+    ids$[4]="GLM_ACCT"
+    ids$[5]="IVC_TRANCODE"
+    ids$[6]="IVC_WHSECODE"
+    ids$[7]="IVT_ITEMTRAN"
+
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension string templates
+
+    dim ivm01a$:templates$[1],ivm10b$:templates$[5],ivm10c$:templates$[6],
+:       arm01a$:templates$[2],apm01a$:templates$[3],glm01a$:templates$[4],ivt04a$:templates$[7]
+
+rem --- Initializations
+
+    ivt04a$=trans$
+    dim x0$(32),x1$(54),x2$(54)
+    description$[0]=""
+    description$[1]=""
+    description$[2]=""
+    source$=ivt04a.trans_source$
+    ref1$=ivt04a.trans_ref_1$
+    ref2$=ivt04a.trans_ref_2$
+    if pos(source$="IAIIIRIC",2) source$="IT"
+    ref3$=ivt04a.trans_ref_3$
+    ref4$=ivt04a.trans_ref_4$
+    seq$=ivt04a.iv_hist_seq$
+    desc$=""
+    item$=ivt04a.item_id$
+    type$=""
+    types$="Beg BOM TranSalePhysP.O.XferXferW.O.W.O."
+    gl_account$=ivt04a.gl_account$
+    comment$=ivt04a.trans_cmt$
+    line_code$=ivt04a.line_code$
+    location$=ivt04a.location$
+    po_line_code$=ivt04a.po_line_code$
+
+rem --- Retrieve finished item
+
+    if pos(source$="BMWI",2)=0 goto get_cust
+    desc$=""
+    find record (ivm01_dev,key=firm_id$+item$,dom=get_cust) ivm01a$
+    desc$=fnitem$(ivm01a.item_desc$)
+
+get_cust: rem --- Retrieve customer name
+
+    if pos(source$="OPWIWO",2)=0 goto get_vend
+    if arm01_dev=0 goto get_vend
+    if cvs(ref1$,2)="" goto get_vend
+    find record (arm01_dev,key=firm_id$+ref1$,dom=*next) arm01a$
+    ref1$=fnmask$(arm01a.customer_id$,masks$[1])
+
+get_vend: rem --- Retrieve vendor name
+
+    if source$<>"PO" goto get_gl
+    if apm01_dev=0 goto get_gl
+    if cvs(ref1$,2)="" goto get_gl
+    find record (apm01_dev,key=firm_id$+ref1$,dom=*next) apm01a$
+    ref1$=fnmask$(apm01a.vendor_id$,masks$[2])
+
+get_gl: rem --- Retrieve GL account
+
+    if pos(source$="OPITTITOBMWIWO",2)=0 goto do_branch
+    if glm01_dev=0 goto do_branch
+    if num(gl_account$,err=do_branch)=0 goto do_branch
+    find record (glm01_dev,key=firm_id$+gl_account$,dom=do_branch) glm01a$
+    description$[2]="GL Acct "+fnmask$(gl_account$,masks$[3])+" "+glm01a.gl_acct_desc$
+
+do_branch: rem --- Branch based on record source
+
+    source=pos(source$="BBBMITOPPHPOTITOWIWO",2)
+    if source>0 source=int((source+1)/2)
+    on source goto done,beg_bal,bom,iv_tran,op,ph,po,xfer,xfer,wo_issue,wo_rcpt,done
+
+beg_bal: rem --- BB Beginning Balance
+
+    x1$(1)="Beginning Balance"
+    goto done
+
+bom: rem --- BM Bill of Materials Production Entry
+
+    x1$(1)="Ref "+ref2$
+    if cvs(item$,2)="" goto done
+    x2$(1)="Item "+item$+" "+desc$
+    goto done
+
+iv_tran: rem --- IT Inventory Transactions
+
+    x0$(6,20)="(Undefined Code)"
+    x2$(1)="Ref "+ref2$
+    find record (ivm10b_dev,key=firm_id$+"B"+ref4$,dom=Set_Trans_Desc) ivm10b$
+    x0$(6,20)=ivm10b.code_desc$
+Set_Trans_Desc:
+    x1$(1)="Code "+ref4$+" "+x0$(6,20)+comment$
+    if cvs(seq$,2)<>"" x2$(12)="-"+seq$
+    goto done
+
+op: rem --- Type "OP" (Invoice)
+
+    x1$(1)="Customer "+ref1$+" "+arm01a.customer_name$
+    x2$(1)="Invoice "+ref3$+"-"+seq$+" Order "+ref2$+" Line "+line_code$
+    goto done
+
+ph: rem --- PH Physical Inventory Adjustment
+
+    x1$(1)="Physical Inventory Adjustment"
+    x2$(1)="Cycle "+ref4$+"  Loc "+location$
+    goto done
+
+po: rem --- PO Purchase Order Receipt
+
+    x1$(1)="Vendor "+ref1$+" "+apm01a.vendor_name$
+    x2$(1)="PO "+ref2$+"-"+seq$+" Line "+po_line_code$
+    goto done
+
+xfer: rem --- TI/TO Transfer In/Out
+
+    x0$(6,24)="(Undefined Warehouse)"
+    x2$(1)="Ref "+ref2$
+    find record (ivm10c_dev,key=firm_id$+"C"+ref4$,dom=Set_Transfer_Desc) ivm10c$
+    x0$(6,24)=ivm10c.short_name$
+Set_Transfer_Desc:
+    if source$="TO" x1$(1)="To "+ref4$+" "+x0$(6,24)
+    if source$="TI" x1$(1)="From "+ref4$+" "+x0$(6,24)
+    goto done
+
+wo_issue: rem --- WI Work Order Issue
+
+    x1$(1)="WO "+ref3$+"-"+seq$+"  Type "+ref4$
+    p=1
+    if ref1$<>"" x1$(29)="Customer "+ref1$
+    if item$<>"" x2$(p)="Item "+item$,p=len(item$)+7
+    if cvs(ref2$,2)<>"" x2$(p)="SO "+ref2$
+    if cvs(ref2$,2)="" x2$(p)=desc$
+    goto done
+
+wo_rcpt: rem --- WO Work Order Receipt
+
+    x1$(1)="WO "+ref3$+"  Type "+ref4$
+    p=1
+    if ref1$<>"" x2$(1)="Customer "+ref1$,p=18
+    if cvs(ref2$,2)<>"" x2$(p)="SO "+ref2$
+    goto done
+
+done: rem --- All done
+
+    description$[0]=cvs(x1$,2)
+    description$[1]=cvs(x2$,2)
+    if source>0 type$=types$((source-1)*4+1,4)
+    goto std_exit
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_table_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+    
+    def fnitem$(q$)=cvs(q$,32)
+rem --- old format using params: def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$) 
+        if cvs(q$,2)="" return ""
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if testdate$<>"" 
+            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+        endif
+        return testdate$
+    fnend    
+rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

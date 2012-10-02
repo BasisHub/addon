@@ -1,0 +1,412 @@
+rem glr - GL Trial Balance (Report Overlay)
+rem Program glr_trialbalance v8.0.0 13Apr2006 (glr_bb)
+rem Created by adx_progconv.bbx v1.0.0 (04/13/2006 02:29:09)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="glm-01",ids$[2]="GLM_ACCT"
+    files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
+    files$[4]="glm-10",ids$[4]="GLM_ACCTBREAKS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm01_dev=channels[2]
+    glm02_dev=channels[3]
+    glm10_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    m0$=gls01a.acct_output$
+    m1$=gls01a.amount_mask$
+    glyear=num(gls01a.current_year$)
+    acctlen=num(gls01a.acct_length$)
+    headings=3
+    break$=""
+    desc$=""
+    call pgmdir$+"glc_regroup.aon",glm10_dev,sysinfo.firm_id$,break$,desc$
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,9,15
+
+rem --- Assign input values to local variables
+
+    begper$=Option!.getOptionData("PICK_GL_PER")
+    begyear$=Option!.getOptionData("PICK_YEAR")
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Initializations
+
+    dim headings$[headings],u1$(m1,"-"),totals[5]
+    dim a[13],u[13],d[5],w[5],s[5],t[5],o[8]
+    when$=sysinfo.system_date$
+    clock$=""
+    width=132
+    page=0
+    l9=59
+    l=l9+1
+    number=0
+    done=0
+    last=0
+    more=1
+    x=(m1*2)+1
+    h3$=pad(" Beginning Balance ",x,"C","-")
+    h4$=pad(" Period To Date ",x,"C","-")
+    h5$=pad(" Ending Balance ",x,"C","-")
+    period=num(begper$)
+    year=num(begyear$)
+    call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+    headings$[2]="For " + cvs(field(gls01a$,"period_name_"+str(period:"00")),2) + " " + begyear$ + " (Period " + str(period:"00") + ")"
+    headings$[3]=fndate$(begdate$)+" Through "+fndate$(enddate$)
+
+rem --- Print positions
+
+    o[8]=width-m1
+    for x=7 to 3 step -1
+        o[x]=o[x+1]-m1-1
+    next x
+    o[2]=o[3]-36
+    p=max(m0,8)
+    o[1]=o[2]-p-1
+    if o[1]<2 o[1]=2,o[2]=o[1]+p+1
+    w=o[3]-o[2]
+    if w>35 w=35
+
+rem --- Which glm-02 record?
+    
+    closed=pos(gls01a.gl_yr_closed$="NY")
+    switch closed
+           case 1
+                if year=glyear record$="4"
+                if year=glyear-1 record$="0"
+                if year=glyear-2 record$="2"
+           break
+           case 2
+               if year=glyear record$="0"
+               if year=glyear-1 record$="2"
+               if year=glyear+1 record$="4"
+           break
+    swend
+
+rem --- Document columns
+
+    columns=7
+    dim columns$[7,10]
+    columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]="10"
+    columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="30"
+    columns$[2,0]="Beg Bal(Dr)",columns$[2,1]="N",columns$[2,2]=str(len(m1$)),columns$[2,3]=m1$,columns$[2,10]="T"
+    columns$[3,0]="Beg Bal(Cr)",columns$[3,1]="N",columns$[3,2]=str(len(m1$)),columns$[3,3]=m1$,columns$[3,10]="T"
+    columns$[4,0]="Per To Date(Dr)",columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
+    columns$[5,0]="Per To Date(Cr)",columns$[5,1]="N",columns$[5,2]=str(len(m1$)),columns$[5,3]=m1$,columns$[5,10]="T"
+    columns$[6,0]="End Bal(Dr)",columns$[6,1]="N",columns$[6,2]=str(len(m1$)),columns$[6,3]=m1$,columns$[6,10]="T"
+    columns$[7,0]="End Bal(Cr)",columns$[7,1]="N",columns$[7,2]=str(len(m1$)),columns$[7,3]=m1$,columns$[7,10]="T"
+
+rem --- Start progress meter
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm01_dev,1,meter_num,status
+    read (glm01_dev,key=firm_id$,dom=*next)
+
+rem --- Read next glm-01 record
+
+    while more
+
+          k$=key(glm01_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          read record (glm01_dev)glm01a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          type=pos(glm01a.gl_acct_type$="ALCIE")
+
+          rem --- Read glm-02 record
+
+          action$="R"
+          glm02_key$=firm_id$+glm01a.gl_account$+record$
+
+          find record (glm02_dev,key=glm02_key$,dom=*continue)glm02a$
+          call pgmdir$+"glc_summary.aon",action$,glm02a$,a[all],u[all],status
+
+          chart_break: rem --- Chart of Account Break?
+
+          if break$="" goto beginning_balance
+          if glm01a.gl_account$<break$(1,10) goto beginning_balance
+ 
+          rem --- Print subtotal and new heading
+
+          gosub account_break
+          subhead$=cvs(desc$(1,20),2)
+          gosub subheadings
+
+          next_heading: rem --- Strip current heading
+
+          if len(break$)>10 break$=break$(11),desc$=desc$(21) else break$="",desc$=""
+          if break$<>"" and pos(" "<>break$(1,10))=0 goto next_heading
+          goto chart_break
+
+          beginning_balance: rem --- Accumulate beginning balance
+
+          balance=a[0]
+          sum=abs(balance)
+          if period-1
+             for x=1 to period-1
+                 balance=balance+a[x]
+                 sum=sum+abs(a[x])
+             next x
+          endif
+
+          rem --- Extract period to date and calculate ending balance
+
+          dim d[5]
+          current=a[period]
+          ending=balance+current
+          sum=sum+abs(current)
+          if sum=0 continue
+          if balance>0 d[0]=balance else d[1]=abs(balance)
+          if current>0 d[2]=current else d[3]=abs(current)
+          if ending>0 d[4]=ending else d[5]=abs(ending)
+
+          rem --- Print detail line
+
+          OutVect!.addItem(fnmask$(glm01a.gl_account$(1,acctlen),m0$))
+          OutVect!.addItem(glm01a.gl_acct_desc$(1,w))
+          for x=0 to 5
+               if d[x] 
+                    OutVect!.addItem(str(d[x]))
+               else 
+                    OutVect!.addItem("")
+               fi
+          next x
+
+          rem --- Accumulate totals
+
+          for x=0 to 5
+              s[x]=s[x]+d[x]
+              t[x]=t[x]+d[x]
+          next x
+          totals[type]=totals[type]+d[4]-d[5]
+
+          rem --- Loop back for next record
+
+    wend
+
+rem --- All done
+
+    done=1
+    gosub account_break
+
+rem --- Print report totals
+
+    for x=0 to 5
+        w[x]=t[x]
+    next x
+    total$="Total For Report",last=1
+    gosub subtotal
+
+rem --- Print account type totals
+
+    abc=fnblank(8)
+    OutVect!.addItem("")
+    OutVect!.addItem("Total Assets")
+    OutVect!.addItem(str(totals[1]))
+    abc=fnblank(5)
+
+    OutVect!.addItem("")
+    OutVect!.addItem("Total Liabilities")
+    OutVect!.addItem(str(-totals[2]))
+    abc=fnblank(5)
+
+    OutVect!.addItem("")
+    OutVect!.addItem("Total Equity")
+    OutVect!.addItem(str(-totals[3]))
+    abc=fnblank(5)
+
+    OutVect!.addItem("")
+    OutVect!.addItem("Total Income")
+    OutVect!.addItem(str(-totals[4]))
+    abc=fnblank(5)
+
+    OutVect!.addItem("")
+    OutVect!.addItem("Total Expenses")
+    OutVect!.addItem(str(totals[5]))
+    abc=fnblank(5)
+
+rem need partial underline here... took out u$
+
+    OutVect!.addItem("")
+    OutVect!.addItem("Net Income/(Loss)")
+    OutVect!.addItem(str(-(totals[4]+totals[5])))
+    abc=fnblank(5)
+
+rem --- Return to menu
+
+    goto std_exit
+
+subheadings: rem --- Subheading
+
+    OutVect!.addItem(subhead$)
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    return
+
+account_break: rem --- Chart of Accounts Break
+
+    if t0$="" or cvs(glm01a.gl_account$,2)="" goto new_account
+    for x=0 to 5
+        w[x]=s[x]
+    next x
+    total$="Total For "+subhead$
+    gosub subtotal
+
+new_account: rem --- New account
+
+    if done return
+    dim s[5]
+    t0$=glm01a.gl_account$
+    return
+
+subtotal: rem --- Print subtotal/total
+
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+    OutVect!.addItem("")
+    OutVect!.addItem(total$)
+    OutVect!.addItem(str(w[0]))
+    OutVect!.addItem(str(w[1]))
+    OutVect!.addItem(str(w[2]))
+    OutVect!.addItem(str(w[3]))
+    OutVect!.addItem(str(w[4]))
+    OutVect!.addItem(str(w[5]))
+
+return
+
+rem --- Functions
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" let q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") let q0=q0+1 else let q2$(q,1)="X"
+              let q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 let q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_missing_params_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

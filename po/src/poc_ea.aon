@@ -1,0 +1,271 @@
+rem --- Delete Requisition, Purchase Order or Receipt
+rem --- Program poc_ea v8.0.0 18Dec2007 (poc_ea)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/18/2007 03:09:32)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+    enter type$,channels[all],params[all],params$[all],a0$,a1$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+sysinfo",err=*next)
+    milestone=num(stbl("+milestone",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=16,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS"
+    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+    files$[3]="ivm-02",ids$[3]="IVM_ITEMWHSE"
+    files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
+    files$[5]="poe-02",ids$[5]="POE_POHDR"
+    files$[6]="poe-08",ids$[6]="POE_LINKED"
+    files$[7]="poe-12",ids$[7]="POE_PODET"
+    files$[8]="poe-22",ids$[8]="POE_POPRINT"
+    files$[9]="poe-32",ids$[9]="POE_POBYPO"
+    files$[10]="poe-42",ids$[10]="POE_POBYITEM"
+    files$[11]="poe-52",ids$[11]="POE_POBYREQ"
+    files$[12]="poe-63",ids$[12]="POE_QAREJDET"
+    files$[13]="pom-02",ids$[13]="POC_LINECODE"
+    files$[14]="pos-10",ids$[14]=""
+    files$[15]="sfe-22",ids$[15]="SFE_WOMATL"
+    files$[16]="sfe-32",ids$[16]="SFE_WOSUBCNT"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01a_dev=channels[1]
+    ivm01_dev=channels[2]
+    ivm02_dev=channels[3]
+    ivs01a_dev=channels[4]
+    poe02_dev=channels[5]
+    poe08_dev=channels[6]
+    poe12_dev=channels[7]
+    poe22_dev=channels[8]
+    poe32_dev=channels[9]
+    poe42_dev=channels[10]
+    poe52_dev=channels[11]
+    poe63_dev=channels[12]
+    pom02_dev=channels[13]
+    pos10_dev=channels[14]
+    sfe22_dev=channels[15]
+    sfe32_dev=channels[16]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],ivm01a$:templates$[2],ivm02a$:templates$[3],
+:       ivs01a$:templates$[4],poe02a$:templates$[5],poe08a$:templates$[6],
+:       poe12a$:templates$[7],poe22a$:templates$[8],poe32a$:templates$[9],
+:       poe42a$:templates$[10],poe52a$:templates$[11],poe63a$:templates$[12],
+:       pom02a$:templates$[13],pos10a$:templates$[14],sfe22a$:templates$[15],
+:       sfe32a$:templates$[16]
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Open/Lock Files
+
+    pos10_dev=channels[1]
+    pom02_dev=channels[2],poe02_dev=channels[3]
+    poe12_dev=channels[4]
+    poe22_dev=channels[5],poe32_dev=channels[6]
+    poe42_dev=channels[7]
+    poe52_dev=channels[8],ivm01_dev=channels[9]
+    ivm02_dev=channels[10]
+    sfe22_dev=channels[11],sfe32_dev=channels[12]
+    poe08_dev=channels[13]
+    poe63_dev=channels[14]
+
+rem --- Parameters
+
+    keylen=18
+    if pos(type$="QC") then let keylen=25
+    firm_id$=params$[0]
+    sf$=params$[1],places=params[0]
+    i2$=params$[2]
+    i3$=params$[3],i4$=params$[4]
+
+rem --- Initializations
+
+    precision places
+    dim w0$(keylen),w[12]
+    dim files[99],item$[6],params$[20],params[20],refs[20],refs$[20]
+
+rem --- Position detail file
+
+    read (poe12_dev,key=a0$,dom=*next)
+
+
+    while more
+
+        poe12a_key$=key(poe12_dev,end=*break)
+        if pos(a0$=poe12a_key$)<>1 then break
+        read record (poe12_dev) poe12a$
+        remove (poe12_dev,key=poe12a_key$,dom=*break)
+        remove (poe08_dev,key=(poe12a.firm_id$ + poe12a.vendor_id$ + poe12a.po_no$ + poe12a.po_line_no$),dom=*next)
+
+        if poe12a.firm_id$+poe12a.po_line_code$<>(pom02a.firm_id$ + pom02a.po_line_code$) then 
+            pom02a.firm_id$ = poe12a.firm_id$
+            pom02a.po_line_code$ = poe12a.po_line_code$
+rem            pom02a.code_desc$ = ""
+            pom02a$(6,32)=""
+            find record (pom02_dev,key=(pom02a.firm_id$ + pom02a.po_line_code$),dom=*next) pom02a$
+        endif
+
+rem --- Remove Item/PO xref
+
+        if pom02a.line_type$ = "S" then 
+            poe12a_key$=poe12a.firm_id$ + poe12a.item_id$ + (poe12a.po_no$ + poe12a.po_line_no$) + poe12a.vendor_id$
+            if pos(type$="QC") then let poe12a_key$=poe12a_key$(1,22)+poe12a.po_line_no$+poe12a.vendor_id$+poe12a.po_no$
+            remove (poe42_dev,key=poe12a_key$,dom=*next)
+
+rem --- Reduce quantity on-order
+
+            if type$="P" then 
+                item$[0]=firm_id$
+                item$[1]=poe12a.warehouse_id$,item$[2]=poe12a.item_id$,refs[0]=-(poe12a.qty_ordered - poe12a.qty_received)*poe12a.conv_factor
+                files[1]=ivm01_dev
+                files[2]=ivm02_dev,action$="OO"
+                params$[2]=i2$
+                params$[3]=i3$,params$[4]=i4$
+                call pgmdir$+"ivc_ua.bbx",action$,files[all],params[all],params$[all],item$[all],refs$[all],refs[all],status
+            endif
+
+rem --- Delete lot/serial file
+
+            if pos(type$="QC")<>0 then 
+                channel=poe22_dev; rem "poe-23 or poe-24
+                if channel gosub remove_record
+            endif
+
+         endif
+
+rem --- Delete rejection detail file
+
+        if type$="Q" then 
+            channel=poe63_dev
+            if channel gosub remove_record
+        endif
+
+rem --- Remove any existing work order link
+
+        if sf$<>"Y" then continue
+        if pos(pom02a.line_type$="NS")=0 then continue
+        if pos(type$="RP")=0 then continue
+        if cvs(poe12a.wo_no$,2)="" then continue
+        po$=(poe12a.po_no$ + poe12a.po_line_no$)
+        oldwo$=(poe12a.wo_no$ + poe12a.sequence_no$),newwo$=""
+        call pgmdir$+"poc_wa.bbx",sfe22_dev,sfe32_dev,firm_id$,po$,type$,(pom02a.code_desc$ + pom02a.line_type$ + pom02a.dropship$ + pom02a.lead_tim_flg$ + pom02a.land_cst_flg$ + pom02a.add_options$ + pom02a.reserved_str$) ,oldwo$,newwo$,places,status
+
+rem --- Loop back for next detail
+
+    wend
+
+
+rem --- Remove print record
+
+    if pos(type$<>"QC") then 
+        remove (poe22_dev,key=a0$,dom=*next)
+        poe12a_key$=a0$(1,2)+a0$(9)+a0$(3,6)
+    endif
+
+rem --- Remove header
+
+    if pos(type$="QC") then let poe12a_key$=a0$(1,2)+a0$(16,7)+a0$(3,6)+a0$(9,7)
+    remove (poe32_dev,key=poe12a_key$,dom=*next)
+
+    poe12a_key$=a0$(1,2)+a1$(112,7)+a0$(3)
+    if pos(type$="QC") then let poe12a_key$=a0$(1,2)+a0$(9,7)+a0$(3,6)+a0$(16,7)
+    if pos(type$="PQC") remove (poe52_dev,key=poe12a_key$,dom=*next)
+    remove (poe02_dev,key=a0$,dom=*next)
+
+rem --- All done
+
+    goto std_exit
+
+remove_record:
+
+rem --- Remove Record
+
+    read (channel,key=a0$,dom=*next)
+    
+    while more
+        k$=key(channel,end=*break)
+        if pos(a0$=k$)<>1 then break
+        remove (channel,key=k$)
+    wend
+
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

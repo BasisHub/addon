@@ -1,0 +1,316 @@
+rem --- AUTO EARNINGS GENERATION UPDATE 2
+rem --- Program pru_bb v8.0.0 04Jun2008 (pru_bb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/04/2008 10:32:43)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=7,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="pre-01",ids$[1]="PRE_PAYROLL"
+    files$[2]="pre-11",ids$[2]="PRE_PAYEARNG"
+    files$[3]="prm-01",ids$[3]="PRM_EMPLMAST"
+    files$[4]="prm-02",ids$[4]="PRM_EMPLPAY"
+    files$[5]="prm-10",ids$[5]="PRC_PAYCODE"
+    files$[6]="prs_params",ids$[6]="PRS_PARAMS"
+    files$[7]="prs_period",ids$[7]="PRS_PERIOD"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    pre01a_dev=channels[1]
+    pre11a_dev=channels[2]
+    prm01a_dev=channels[3]
+    prm02a_dev=channels[4]
+    prm10a_dev=channels[5]
+    prs01a_dev=channels[6]
+    prs01b_dev=channels[7]
+
+rem --- Dimension string templates
+
+    dim pre01a$:templates$[1],pre11a$:templates$[2],prm01a$:templates$[3],
+:       prm02a$:templates$[4],prm10a$:templates$[5],prs01a$:templates$[6],
+:       prs01b$:templates$[7]
+
+
+rem --- Retrieve parameter records
+
+    prs01a_key$=firm_id$+"PR00"
+    find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
+    prs01b_key$=firm_id$+"PR01"
+    find record (prs01b_dev,key=prs01b_key$,err=std_missing_params) prs01b$
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRC_PAYCODE","PRIMARY",prm10_key_tpl$,rd_table_chans$[all],status$
+    dim prm10_key$:prm10_key_tpl$
+
+rem --- Initializations
+
+    dim u[3],z[3],t[99,3]
+    m0$=prs01a.empl_output$
+rem ??? u[3] and z[3] are declared and used in calculation in update totals and calc deductions. But values are not assigned to this array before using in calculation
+    more =1
+rem --- Disallow 'M'enu option in Error Routine
+
+    exit_ctrl=1
+    call pgmdir$+"adc_progress.aon","NC","","","Updating","",10,prm01_dev,1,meter_num,status
+
+rem --- Init Read
+
+    read (prm01_dev,key=firm_id$,dom=*next)
+    find record (prm10_dev,key=firm_id$+"A"+prs01a.reg_pay_code$,dom=std_exit) prm10a$
+
+rem --- Main Read
+
+while more
+
+    prm10_key$=key(prm01_dev,end=done)
+    if prm10_key.firm_id$<>firm_id$ then break
+    s0$="N"
+    s1$="N"
+    read record (prm01_dev) prm01a$
+    if cvs(prm01a.term_date$,3)<>"" then continue
+    if pos(prm01a.pay_period$=prs01b.pay_periods$)=0 then continue
+    call pgmdir$+"adc_progress.aon","S","","","",fnmask$(prm01a.employee_no$,m0$),0,0,1,meter_num,status
+
+rem --- Read Detail
+
+    titlerec$="N"
+    find record (prm02_dev,key=prm01a.firm_id$+prm01a.employee_no$+prm01a.normal_title$,dom=check_titlerec) prm02a$
+    titlerec$="Y"
+   
+check_titlerec:
+
+    while more
+        if prm01a.pay_period$=" " then break
+        pre01a.firm_id$=prm01a.firm_id$
+        pre01a.employee_no$=prm01a.employee_no$
+        pre01a.check_type$="C"
+        pre01a.sequence_no$="01"
+        pre01a.pay_period$=prm01a.pay_period$
+        pre11a.firm_id$=prm01a.firm_id$
+        pre11a.employee_no$=prm01a.employee_no$
+        pre11a.check_type$="C"
+        pre11a.sequence_no$="01"
+        pre11a.record_id_a$="A"
+        pre11a.pr_entry_seq$="01"
+        pre11a.pay_code$=prs01a.reg_pay_code$
+        pre11a.title_code$=prm01a.normal_title$
+        pre11a.dept_code$=prm01a.dept_code$
+        if titlerec$="N" then break
+        pre11a.rate=prm02a.std_rate
+        pre11a.units=prm02a.std_hrs
+        pre11a.extended_amt=prm02a.std_rate
+        if prm01a.hrlysalary$="S" and prm02a.std_hrs<>0 then
+            pre11a.rate=prm02a.std_rate/prm02a.std_hrs
+            pre11a.extended_amt=prm02a.std_rate
+        else
+            pre11a.extended_amt=pre11a.rate*pre11a.units
+        endif
+        precision 2
+        pre11a.units=pre11a.units*1
+        pre11a.extended_amt=pre11a.extended_amt*1
+        pre11a.base_rate=pre11a.rate*1
+        precision prs01a.precision
+        if prm01a.hrlysalary$<>"S" and prm02a.std_hrs=0 then break
+        while more
+            write record (pre11_dev,key=pre11a.firm_id$+pre11a.employee_no$+pre11a.check_type$+pre11a.sequence_no$+"A"+pre11a.pr_entry_seq$,dom=*next) pre11a$; break
+            pre11a.pr_entry_seq$=str(num(pre11a.pr_entry_seq$)+1:"00")
+        wend
+        s0$="Y"
+        find record (prm10_dev,key=firm_id$+"A"+pre11a.pay_code$,dom=*break) prm10a$
+        gosub update_totals
+    break
+    wend
+
+rem --- Heading
+
+    if s0$="N" and s1$="N" then continue
+    write record (pre01_dev,key=pre01a.firm_id$+pre01a.employee_no$+pre01a.check_type$+pre01a.sequence_no$+fill(7,"")) pre01a$
+
+wend 
+
+done: rem --- End
+
+    goto std_exit
+
+update_totals: rem --- Update Totals
+
+    for x=0 to 10
+        if cvs(FIELD(prm10a$,"pr_tot_to_"+str(x:"00")),3)= "" then continue
+        x0=1
+        if FIELD(prm10a$,"pr_tot_oper_"+str(x:"00"))="-" then x0=-1
+        t=num(FIELD(prm10a$,"pr_tot_to_"+str(x:"00")))
+        precision 2
+        if pre11a.record_id_a$="A" 
+            if FIELD(prm10a$,"pr_spec_func_"+str(x:"00"))=" " then t[t,0]=t[t,0]+x0*(pre11a.extended_amt+u[2])*1
+            if FIELD(prm10a$,"pr_spec_func_"+str(x:"00"))="P" and x[1]<>0 then t[t,0]=t[t,0]+x0*(pre11a.extended_amt/x[1]+u[2]/x[1])*1
+            if FIELD(prm10a$,"pr_spec_func_"+str(x:"00"))="S" then t[t,2]=t[t,2]+x0*(pre11a.extended_amt+u[2])*1
+        endif
+        t[t,1]=t[t,1]+x0*(pre11a.units+u[1])*1
+        precision prs01a.precision
+    next x
+    return
+
+rem --- Calc Deduct; This is not called anywhere in this program. 
+
+    pre11a.rate=0
+    pre11a.units=0
+    pre11a.extended_amt=0
+    t=num(x0$(30,2))
+    if z[1]=0 z[1]=x[1]
+rem x0$(24,1) is Unit Flag
+    if x0$(24,1)="F" goto l6900
+    if x0$(24,1)="U" w[0]=t[t,1],w[1]=y[0]
+    if x0$(24,1)="D" w[0]=t[t,0],w[1]=z[0]
+    if w[1]=0 w[1]=x[0]
+    w[2]=w[1]*w[0]
+    goto l6920
+l6900:
+    w[2]=z[0]
+l6920:
+    if z[1]<>0 if w[2]+y[1]+y[2]+y[3]+y[4]>z[1] w[2]=z[1]-y[1]-y[2]-y[3]-y[4]
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,229 @@
+rem --- Rebuild Inventory On-Order Quantities
+rem --- Program ivx_ea v8.0.0 09Jul2007 (ivx_ea)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 11:55:30)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=6,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[2]="ivm-02",ids$[2]="IVM_ITEMWHSE"
+    files$[3]="poe-12",ids$[3]="POE_PODET"
+    files$[4]="poe-42",ids$[3]="POE_POBYITEM"
+    files$[5]="sfe-01",ids$[3]="SFE_WOMASTR"
+    files$[6]="IVS_PARAMS",ids$[6]=files$[6]
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    ivm02_dev=channels[2]
+    poe12_dev=channels[3]
+    poe42_dev=channels[4]
+    sfe01_dev=channels[5]
+    ivs01a_dev=channels[6]
+rem --- Dimension string templates
+
+    dim ivm02a$:templates$[2],poe12a$:templates$[3],poe42a$:templates$[4],
+:       sfe01a$:templates$[5],ivs01a$:templates$[6]
+
+
+
+rem --- Assign form input values to local variables
+
+    table$=fnget_table$("")
+    rebuild_qty$=fnget_fld_data$(table$,"rebuild_Qty")
+
+rem --- Retrieve parameter records
+
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    
+
+
+rem --- Parameters
+
+    dim p[1],info$[20]
+    n2$="IV"
+    find record (ivs01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ivs01a$
+    p[0]=num(ivs01a.item_nbr_len$)
+    p[1]=num(ivs01a.precision$)
+    call pgmdir$+"adc_application.aon","PO",info$[all]
+    po$=info$[20]
+    call pgmdir$+"adc_application.aon","SF",info$[all]
+    sf$=info$[20]
+    
+ 
+rem --- Initializations
+
+        precision num(ivs01a.precision$)
+        more=1
+
+
+rem --- Options
+
+        v4$="Do You Wish To Rebuild Inventory On-Order Quantities"
+        call pgmdir$+"adc_yesno.aon",0,v4$,0,v$,v3
+        if v$<>"YES" goto std_exit
+
+rem --- Position warehouse file
+
+        x$="Clearing Current On-Order Quantities"
+        x=3+p[0]
+        gosub Update_Screen
+        read (ivm02_dev,key=firm_id$,dom=*next)
+
+rem --- Clear ivm-02 On Hand
+        while more
+            ivm02a_key$=key(ivm02_dev,end=*break)
+            if pos(firm_id$=k$)<>1 break
+            call pgmdir$+"adc_progress.aon","S","","","",ivm02a_key.warehouse_id$+" "+ivm02a_key.Item_id$,0,0,1,meter_num,status
+            extract record (ivm02_dev,key=ivm02a_key$) ivm02a$
+            ivm02a.qty_on_order=0
+            write record (ivm02_dev,key=ivm02a_key$) ivm02a$
+        wend
+
+rem --- Purchase Orders
+
+        if po$="Y" then
+            x$="Purchase Order On-Order Quantities"
+            x=3+p[0]
+            gosub Update_Screen
+            read (poe42_dev,key=firm_id$,dom=*next)
+        endif
+rem --- Read next PO sort record
+        while more
+            poe42a_key$=key(poe42_dev,end=*break)
+            if pos(firm_id$=poe42a_key$)<>1 break
+            read (poe42_dev)
+            call pgmdir$+"adc_progress.aon","S","","","",poe42a_key.item_id$,0,poe12_dev,1,meter_num,status
+            poe12a_key$=poe42a_key.firm_id$+poe42a_key.vendor_id$+poe42a_key.po_no$+poe42a_key.po_line_no$
+            find record (poe12a_dev,key=poe12a_key$,dom=*continue) poe12a$
+            ivm02a_key$=ivmo2a.firm_id$+poe12a.warehouse_id$+poe12a.item_id$
+            extract record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
+            ivm02a.qty_on_order=ivm02a.qty_on_order+((poe12a.qty_ordered-poe12a.qty_received)*poe12a.conv_factor)
+            write record (ivm02_dev,key=ivm02a.firmid$+ivm02a.warehouse_id$+ivm02a.item_id$) ivm02a$
+        wend
+
+rem --- Work Orders
+
+        if sf$="Y" then
+            x$="Work Order On-Order Quantities"
+            x=7
+            gosub Update_Screen
+            read (sfe01_dev,key=firm_id$,dom=*next)
+
+rem --- Read next work order
+            while more
+                sfe01a_key$=key(sfe01_dev,end=*break)
+                if pos(firm_id$=sfe01a_key$)<>1 break
+                call pgmdir$+"adc_progress.aon","S","","","",sfe01a_key.wo_no$,0,sfe01_dev,1,meter_num,status
+                read record (sfe01_dev) sfe01a$
+
+rem --- Is it open?
+
+                if sfe01a.wo_category$<>"I" continue
+                if pos(sfe01a.wo_status$="CPQ")>0 continue
+                if sfe01a.sch_prd_qty<=sfe01a.qty_cls_todt continue
+
+rem --- Update warehouse
+
+                ivm02a_key$=sfe01a.firm_id$+sfe01a.warehouse_id$+sfe01a.item_id$
+                extract record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
+                ivm02a.qty_on_order=ivm02a.qty_on_order+(sfe01a.sch_prd_qty-sfe01a.qty_cls_todt)
+                write record (ivm02_dev,key=ivm02a_key$) ivm02a$
+            wend
+        endif
+done: rem --- All done
+
+        goto std_exit
+    endif
+
+rem --- PO or WO must be installed
+
+    dim message$[1]
+    message$[0]="Inventory On-Order Quantities Can Only Exist If The Purchase Order And/Or"
+    message$[1]="Shop Floor Control System(s) Are Installed (<Enter>=Continue"
+    call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,-1,-1,v$,v3
+    goto std_exit
+
+Update_Screen: rem --- Update screen
+
+    call pgmdir$+"adc_progress.aon","N","","","Updating","",x,0,1,meter_num,status
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    rem run pgmdir$+"ads_process_end.aon",err=*next
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

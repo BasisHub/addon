@@ -1,0 +1,761 @@
+rem --- Pegging Report (Report Overlay)
+rem --- Program mpr_pegging_o1 v8.0.0 25Mar2008 (mpr_fb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (03/25/2008 12:07:58)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock Files
+
+    dim files[12]
+    call pgmdir$+"mpc_openalias.aon",mpe05_dev,"mpe-05","MPE_PEGGING",firm_id$,forecast$,filename$,status
+    if status then goto std_exit
+rem    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+rem    if status then goto std_exit
+    files[1]=ivm01_dev
+    files[2]=ivm02_dev
+    files[12]=ivm12_dev
+
+initializations: rem --- Initializations
+
+    precision ivprecision
+    dim types$[typecodes],dashes$(m2*6,"-"),info$[2]
+    types$[0]= "Unknown        "
+    types$[1]= "On Hand        "
+    types$[2]= "PO On Order    "
+    types$[3]= "WO On Order    "
+    types$[4]= "Forecast       "
+    types$[5]= "Dependent      "
+    types$[6]= "Sales Demand   "
+    types$[7]= "WO Demand      "
+    types$[8]= "WO Release     "
+    types$[9]= "PO Release     "
+    types$[10]="WO Receipt     "
+    types$[11]="PO Receipt     "
+    types$[12]="PO Req On Order"
+    headings$[1]=headings$[1]+" For "+h5$
+    headings$[2]="Warehouse: "+whse$
+    if option$="" then headings$[3]="Item Type: All Items" 
+:   else if option$="A" then headings$[3]="Item Type: Purchase Items Only"
+:   else if option$="B" then headings$[3]="Item Type: Production Items Only"
+    if begitem$="" and enditem$="" then headings$[5]="Item: All Items"
+    else
+        if begitem$="" then headings$[5]="Item: From First" else headings$[5]="From "+begitem$
+        if enditem$="" then headings$[5]=headings$[5]+" To Last" else headings$[5]=headings$[5]+" To "+enditem$
+    endif
+    headings$[6]="Period: From "+str(begper)+" To "+str(endper)
+    dim columns$[0,10]
+    columns=0
+    columns$[0,0]="",columns$[0,1]="C",columns$[0,2]="220"
+
+    l1=0
+    h3$="",prefix$=cvs(firm_id$+forecast$+whse$,2),done=0,continued=0
+    m0=max(len(apmask$),len(armask$))
+    number=0
+    more=1
+    pbufwidth=250
+
+rem --- Print positions
+
+    dim o[10],h1[5],h2[10]
+    o[10]=width-m2
+    o[9]=o[10]-m2,o[8]=o[9]-m2,o[7]=o[8]-m2,o[6]=o[7]-m2
+    o[5]=o[6]-m2
+    o[0]=0,o[1]=9,o[2]=o[1]+13,o[3]=o[2]+ivlength,o[4]=o[3]+11
+    x$=" No Bill Of Materials Defined"
+    nw=o[5]-(o[4]+m0+1)
+    h2[10]=width-8
+    h2[9]=h2[10]-10,h2[8]=h2[9]-10,h2[7]=h2[8]-11
+    h2[6]=h2[7]-9
+    h2[5]=h2[6]-m2-1,h2[4]=h2[5]-m2-1,h2[3]=h2[4]-4
+    h2[2]=h2[3]-m5-1
+    h2[1]=ivlength,production_width=h2[2]-h2[1]+1
+    h1[4]=o[7]-m3
+    h1[3]=h1[4]-21,h1[2]=h1[3]-m5-1,h1[1]=ivlength
+    h1[5]=h1[3]-(apmask+31)
+    vw=29
+    if h1[5]<20 then let h1[5]=20,vw=h1[3]-(h1[5]+apmask+1)-1
+    dim nb$(width-o[5],"-")
+    purchase_width=h1[2]-h1[1]+1
+    who=o[5]-o[4]
+    hr=width-max(len(h7$),len(h8$))
+    nb$(fncenter(x$,len(nb$)),len(x$))=x$
+
+    s2$=today$
+    for x=1 to mpm01a.no_of_pers
+        s2$=s2$+FIELD(mpm01a$,"plan_date_"+str(x:"00"))
+    next x
+    if pos(today$>=s2$(7,mpm01a.no_of_pers*8),8)>0 then let s2$(1,8)=""
+    if begper=1 and endper=mpm01a.no_of_pers then let begper=begper-1
+
+rem --- Background
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,mpe05_dev,1,meter_num,status
+
+rem --- Build report heading based on transactions selected
+
+    if selection$="" then goto all_transactions
+    h9$="Selected Transactions: "
+    nw=len(selection$)
+
+    flag1=0
+    for x=1 to nw
+        transaction=pos(selection$(x,1)=typecodes$)
+        temp$=h9$
+        h9$=h9$+cvs(types$[transaction],3)
+        if !flag1 
+            if len(h9$)>=100
+                h10$=temp$;h9$="";flag1=1
+            endif
+        endif
+        if x=nw-1 and h9$<>"" then let h9$=h9$+" And "
+        if x<nw-1 and h9$<>"" then let h9$=h9$+", "
+    next x
+    headings$[4]=h9$
+    goto position_mpe05
+all_transactions:
+    h3$="All Transaction Types"
+    selection$=typecodes$
+    headings$[4]="Selected Transactions: "+h3$
+
+position_mpe05: rem --- Position file
+
+    read (mpe05_dev,key=prefix$+begitem$,dom=*next)
+
+rem --- retrieve template for IVX_ITEMPROD record key
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMMAST","ALT_KEY_04",ivm01a_altkey4_tpl$,table_chans$[all],status$
+    dim ivm01a_altkey$:ivm01a_altkey4_tpl$
+
+next_mpe05: rem --- Read next mpe-05 Pegging Detail record
+
+    while more
+
+        read record (mpe05_dev,end=done) mpe05a$
+        if pos(prefix$=mpe05a.firm_id$+mpe05a.forecast$+mpe05a.warehouse_id$+mpe05a.item_id$+mpe05a.trns_date$+mpe05a.source_code$+mpe05a.seq_no$)<>1 then goto done
+        if cvs(enditem$,2)<>"" then if mpe05a.item_id$>enditem$ then break
+        transdate$=mpe05a.trns_date$
+        prod$="N"
+        if option$<>"" then if mpe05a.mrp_type$<>option$ continue
+        if pos(mpe05a.source_code$=selection$)=0 then continue
+        if mpe05a.mrp_type$="B" then let prod$="Y"
+        x$=mpe05a.item_id$+" "+fndate$(transdate$)
+        if cvs(transdate$,2)="" then let x$=mpe05a.item_id$+fill(9)
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Level breaks
+
+        if mpe05a.item_id$<>t0$ then gosub item_break
+        if transdate$>t1$ then gosub period_break
+        if period<begper then continue
+        if period>endper then continue
+
+rem --- Format detail line
+
+        dim who$(who)
+        transaction$=mpe05a.source_code$
+        transaction=pos(transaction$=typecodes$)
+        item$=""
+        ref$=""
+        if pos(transaction$="CEGHIJK") then let item$=mpe05a.finish_item$
+        if pos(transaction$="F")>0 then let ref$=mpe05a.order_no$
+        if pos(transaction$="BIL")>0 then let ref$=mpe05a.po_no$
+        if pos(transaction$="CGH")>0 then let ref$=mpe05a.wo_no$+" "+mpe05a.wo_type$+"  "+mpe05a.wo_status$
+
+rem --- Amounts
+
+        dim amounts$[5]
+        if transaction$="A" then let available=mpe05a.qty_on_hand
+
+        if (mpe05a.gross_req<>0)
+            amounts$[0]=str(mpe05a.gross_req:m2$)
+            period_totals[0]=period_totals[0]+mpe05a.gross_req
+            item_totals[0]=item_totals[0]+mpe05a.gross_req
+        endif
+
+        if (mpe05a.qty_on_order<>0)
+            amounts$[1]=str(mpe05a.qty_on_order:m2$)
+            period_totals[1]=period_totals[1]+mpe05a.qty_on_order
+            item_totals[1]=item_totals[1]+mpe05a.qty_on_order
+        endif
+
+        if (mpe05a.net_required<>0)
+            amounts$[3]=str(mpe05a.net_required:m2$)
+            period_totals[3]=period_totals[3]+mpe05a.net_required
+            item_totals[3]=item_totals[3]+mpe05a.net_required
+        endif
+
+        if (mpe05a.planned_rel<>0)
+            amounts$[4]=str(mpe05a.planned_rel:m2$)
+            period_totals[4]=period_totals[4]+mpe05a.planned_rel
+            item_totals[4]=item_totals[4]+mpe05a.planned_rel
+        endif
+
+        if (mpe05a.planned_rec<>0)
+            amounts$[5]=str(mpe05a.planned_rec:m2$)
+            period_totals[5]=period_totals[5]+mpe05a.planned_rec
+            item_totals[5]=item_totals[5]+mpe05a.planned_rec
+        endif
+
+        available=available+mpe05a.qty_on_order-mpe05a.gross_req+mpe05a.planned_rec
+        amounts$[2]=str(available:m2$)
+
+rem --- Note that quantity available is a running total
+
+        item_totals[2]=available
+        period_totals[2]=available
+
+rem --- Branch and retrieve appropriate reference records based on transaction
+
+        flg=0
+        on transaction goto detail_line,detail_line,set_vendor_flag,set_customer_flag,detail_line,detail_line,set_customer_flag,set_wo_flag,detail_line,set_vendor_flag,detail_line,set_vendor_flag,set_vendor_flag
+
+        set_vendor_flag:
+                if !flg then flg=1
+        set_wo_flag:
+                if !flg then flg=2
+        set_customer_flag:
+                if !flg then flg=3
+
+        while more
+
+            if flg=1
+
+vendor: rem --- Reference Vendor
+
+                if cvs(mpe05a.vendor_id$,2)="" then break
+                apm01a.firm_id$=firm_id$
+                apm01a.vendor_id$=mpe05a.vendor_id$
+                apm01a.vendor_name$="Unknown Vendor"
+                find record (apm01_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
+                who$(1)=fnmask$(apm01a.vendor_id$(1,aplength),apmask$)+" "+apm01a.vendor_name$
+
+            endif
+
+            if flg=2
+
+workorder: rem --- Work Order Demand
+
+                if sf$<>"Y" then break
+                sfe01a.firm_id$=firm_id$
+                sfe01a.wo_no$=mpe05a.wo_no$
+                find record (sfe01_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*break) sfe01a$
+                mpe05a.customer_id$=sfe01a.customer_id$
+                if cvs(mpe05a.customer_id$,2)<>"" then flg=3
+
+            endif
+
+            if flg=3
+
+customer: rem --- Reference Customer
+
+                if op$<>"Y" then break
+                if cvs(mpe05a.customer_id$,2)<>"" then
+                    arm01a.firm_id$=firm_id$
+                    arm01a.customer_id$=mpe05a.customer_id$
+                    arm01a.customer_name$="Unknown Customer"
+                    find record (arm01_dev,key=arm01a.firm_id$+arm01a.customer_id$,dom=*next) arm01a$
+                    who$(1)=fnmask$(arm01a.customer_id$(1,arlength),armask$)
+                endif
+
+            endif
+
+            break
+
+        wend
+
+detail_line: rem --- Print detail line
+
+        if l+3>l9 then gosub report_heading
+        if l1<=0 then
+            l=l+1
+        endif
+
+print_line:
+
+    item$=cvs(item$,3)
+    ref$=cvs(ref$,3)
+    who$=cvs(who$,3)
+    amounts$[0]=cvs(amounts$[0],3)
+    amounts$[1]=cvs(amounts$[1],3)
+    amounts$[2]=cvs(amounts$[2],3)
+    amounts$[3]=cvs(amounts$[3],3)
+    amounts$[4]=cvs(amounts$[4],3)
+    amounts$[5]=cvs(amounts$[5],3)
+
+    a=fnblank(1)
+    if transaction$<>"A"
+        pbuf$(1)=fndate$(transdate$)
+        pbuf$(12)=types$[transaction]
+        pbuf$(29)=item$
+        pbuf$(36)=ref$
+        pbuf$(45)=who$
+        pbuf$(74)=amounts$[0]
+        pbuf$(88)=amounts$[1]
+        pbuf$(99)=amounts$[2]
+        pbuf$(111)=amounts$[3]
+        pbuf$(124)=amounts$[4]
+        pbuf$(134)=amounts$[5]
+    else
+        pbuf$(1)="Begin: "
+        pbuf$(12)=types$[transaction]
+        pbuf$(29)=item$
+        pbuf$(36)=ref$
+        pbuf$(45)=who$
+        pbuf$(74)=amounts$[0]
+        pbuf$(88)=amounts$[1]
+        pbuf$(99)=amounts$[2]
+        pbuf$(111)=amounts$[3]
+        pbuf$(124)=amounts$[4]
+        pbuf$(134)=amounts$[5]
+    endif
+
+    OutVect!.addItem(pbuf$)
+
+    l=l+1
+    l1=l1+1,continued=1
+
+mpe05_loop: rem --- Loop back for next mpe-05 Pegging Detail record
+
+    goto next_mpe05
+
+    wend
+
+done: rem --- All done
+
+    gosub item_break
+    if number then goto std_exit
+    done=1
+    gosub report_heading
+    goto std_exit
+
+report_heading: rem --- Report Heading
+
+    dim pbuf$(pbufwidth)
+    l=headings+5
+    if done then goto report_heading_exit
+    if continued then goto detail_heading
+    if prod$="Y" then goto production_heading
+
+purchase_heading: rem --- Purchase heading
+
+    dim description$(purchase_width)
+    description$(1)=fnitem$(ivm01a.item_desc$,i[2],i[3],i[4])
+
+    a=fnblank(1)
+    pbuf$(1)="Purchase Item   Description                 Lead Time   Vendor Item Number  Unit Cost   EOQ  Avg. Monthly Usg  Safety Stock   Qty On Hand"
+    OutVect!.addItem(pbuf$)
+    a=fnblank(1)
+    pbuf$(1)=ivm01a.item_id$
+    pbuf$(17)=description$
+    pbuf$(43)=str(leadtime:m5$)
+    pbuf$(73)=str(ivm02a.unit_cost:m3$)
+    pbuf$(81)=str(eoq:m2$)
+    pbuf$(91)=str(avg_usage:m2$)
+    pbuf$(116)=str(safety:m2$)
+    pbuf$(121)=str(ivm02a.qty_on_hand:m2$)
+    OutVect!.addItem(pbuf$)
+
+    l=l+4
+    number=number+1
+
+rem --- Vendor information
+
+    vendor$=stockvendor$
+    gosub vendor_information
+
+    a=fnblank(1)
+    pbuf$(1)=""
+    pbuf$(15)="Stocking Vendor "+vendornumb$
+    pbuf$(35)=vendorname$
+    pbuf$(60)=vendorpart$
+    pbuf$(73)=vendorcost$
+    OutVect!.addItem(pbuf$)
+    a=fnblank(1)
+
+    l=l+1
+    number=number+1
+
+    if include$<>"Y" then goto detail_heading
+    read (ivm01_dev,key=firm_id$+ivm02a.item_id$,knum=4,dom=*next)
+
+next_ivm01: rem --- Loop through inventory vendor records and list other vendors
+
+    ivm01a_altkey$=key(ivm01_dev,knum=4,end=purchase_heading_exit)
+    if pos(ivm01a_altkey.firm_id$=firm_id$+"H")<>1 then goto purchase_heading_exit
+    if ivm01a_altkey.item_id$<>ivm02a.item_id$ then goto purchase_heading_exit
+    read record (ivm01_dev,key=ivm01a_altkey$,knum=4) ivm01a$
+    vendor$=ivm01a.vendor_id$
+    if vendor$=stockvendor$ then goto next_ivm01
+    gosub vendor_information
+
+    pbuf$(1)=""
+    pbuf$(15)=total$+vendornumb$
+    pbuf$(35)=vendorname$
+    pbuf$(60)=vendorpart$
+    pbuf$(73)=vendorcost$
+    OutVect!.addItem(pbuf$)
+    a=fnblank(1)
+    l=l+1
+    goto next_ivm01
+
+purchase_heading_exit: rem --- Purchase heading completed
+
+    goto detail_heading
+
+production_heading: rem --- Production heading
+
+    dim description$(production_width)
+    description$(1)=fnitem$(ivm01a.item_desc$,i[2],i[3],i[4])
+    
+    a=fnblank(1)
+    pbuf$(1)="Production Item  Description              Lead Time  Rev  EOQ  Lot Size  Phantom Bill?  Est. Yield  Bill Created  Last revision   Last Used"
+    OutVect!.addItem(pbuf$)
+    a=fnblank(1)
+
+    if bill$="" then goto production_heading_nobill
+    pbuf$(1)=ivm01a.item_id$
+    pbuf$(18)=description$
+    pbuf$(40)=str(leadtime:m5$)
+    pbuf$(54)=revcode$
+    pbuf$(59)=str(eoq:m2$)
+    pbuf$(60)=lot$
+    pbuf$(74)=phantom$
+    pbuf$(89)=yield$
+    pbuf$(101)=created$
+    pbuf$(115)=revision$
+    pbuf$(130)=used$
+    OutVect!.addItem(pbuf$)
+    a=fnblank(1)
+    goto production_heading_exit
+production_heading_nobill:
+    pbuf$(1)=ivm01a.item_id$+" "+description$+" "+str(leadtime:m5$)+" "+str(eoq:m2$)+" "+nb$
+    OutVect!.addItem(pbuf$)
+    a=fnblank(1)
+
+production_heading_exit: rem --- Production heading completed
+
+    l=l+4
+    number=number+1
+
+detail_heading: rem --- Detail heading
+
+    pbuf$(1)="Date"+"     "+"Transaction"+"       "+"Item"+"    "+"Reference"+" "+"Customer/Vendor"+"           "+"Gross"+"       "+"Scheduled"+"    "+"Projected"+"    "+"Net"+"        "+"Planned"+"    "+"Planned"
+    OutVect!.addItem(pbuf$)
+    pbuf$(1)="                                                                       "+"Required"+"    "+"Receipt"+"      "+"Available"+"    "+"Required"+"    "+"Release"+"    "+"Receipt"
+    OutVect!.addItem(pbuf$)
+    l=l+3
+report_heading_exit:
+    return
+
+period_totals: rem --- Print period totals
+
+    if l+2>l9 then gosub report_heading
+    pbuf$(1)=" "
+    pbuf$(75)=dashes$
+    OutVect!.addItem(pbuf$)
+    pbuf$(1)=" "
+rem    pbuf$(68-len(total$))=total$+" "+str(gross_required:m2$)+" "+str(scheduled_receipt:m2$)+"            "+str(net_required:m2$)+" "+str(planned_release:m2$)+" "+str(planned_receipt:m2$)
+rem    pbuf$(68-len(total$))=total$
+    pbuf$(34)=total$
+    pbuf$(68)=str(gross_required:m2$)
+    pbuf$(80)=str(scheduled_receipt:m2$)
+rem    pbuf$(99)=amounts$[2]
+    pbuf$(106)=str(net_required:m2$)
+    pbuf$(118)=str(planned_release:m2$)
+    pbuf$(129)=str(planned_receipt:m2$)
+    OutVect!.addItem(pbuf$)
+    l=l+2
+    return
+
+item_break: rem --- Item Break
+
+    if t0$<>""
+        gosub period_break
+        gross_required=item_totals[0]
+        scheduled_receipt=item_totals[1]
+        projected_available=item_totals[2]
+        net_required=item_totals[3]
+        planned_release=item_totals[4]
+        planned_receipt=item_totals[5]
+        projected_available=0
+        total$="Totals For Item "+ivm01a.item_id$+" "+cvs(fnitem$(ivm01a.item_desc$,i[2],i[3],i[4]),2)
+        if len(total$)>o[5] then let total$=total$(1,o[5])
+        gosub period_totals
+        a=fnblank(3)
+    endif
+
+next_item: rem --- Initializations for next item
+
+    dim item_totals[5]
+    ivm01a.firm_id$=firm_id$
+    ivm01a.item_id$=mpe05a.item_id$
+    ivm02a.firm_id$=firm_id$
+    ivm02a.warehouse_id$=whse$
+    ivm02a.item_id$=mpe05a.item_id$
+    t0$=mpe05a.item_id$
+    t1$=""
+    revcode$=""
+    lot$="",phantom$="",yield$="",created$=""
+    revision$=""
+    used$="",bill$=""
+    bmm01a.firm_id$=ivm01a.firm_id$
+    bmm01a.bill_no$=ivm01a.item_id$
+    continued=0
+    find record (ivm01_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=*next) ivm01a$
+    find record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,dom=*next) ivm02a$
+    if ivm01a.stock_level$="I" then
+        stockvendor$=ivm01a.vendor_id$
+        ss=ivm01a.safety_stock
+        eoq=ivm01a.eoq
+        lt=ivm01a.lead_time
+    else
+        stockvendor$=ivm02a.vendor_id$
+        ss=ivm02a.safety_stock
+        eoq=ivm02a.eoq
+        lt=ivm02a.lead_time
+    endif
+
+rem --- Retrieve bill master for this item (if one exists)
+
+    if prod$="Y"
+        find record (bmm01_dev,key=bmm01a.firm_id$+bmm01a.bill_no$,dom=calculate_usage) bmm01a$
+        revcode$=bmm01a.bill_rev$
+        phantom$="No"
+        created$=fndate$(bmm01a.create_date$)
+        revision$=fndate$(bmm01a.lstrvs_date$)
+        used$=fndate$(bmm01a.lstact_date$)
+        bill$="Y"
+        if bmm01a.phantom_bill$="Y" then let phantom$="Yes"
+        if bmm01a.est_yield>999.99 then let bmm01a.est_yield=999.99
+        if bmm01a.est_yield<-999.99 then let bmm01a.est_yield=-999.99
+        yield$=str(bmm01a.est_yield:"-##0.00")+"%"
+        lot$=str(bmm01a.std_lot_size:ivs01a.unit_mask$)
+    endif
+
+calculate_usage: rem --- Calculate monthly average usage for this item
+
+    avg_usage=0
+    base_pryr$=curr_period$+curr_year$
+    action$="W"
+    periods=num(max_period$)
+    curr_pryr$=curr_period$+curr_year$
+    info$[0]=firm_id$
+    info$[1]=ivm02a.warehouse_id$,info$[2]=ivm02a.item_id$
+    call pgmdir$+"ivc_usage.aon",action$,files[all],info$[all],factors[all],day_of_month,base_pryr$,curr_pryr$,periods,ivprecision,actual,estimated,flag$,status
+    if flag$<>"" then let actual=estimated
+    l=l9+1
+    avg_usage=actual/periods,available=0
+    return
+
+period_break: rem --- Period Break
+
+    if len(cvs(t1$,1))<>0
+        if l1=0 then goto next_period
+        gross_required=period_totals[0]
+        scheduled_receipt=period_totals[1]
+        projected_available=period_totals[2]
+        net_required=period_totals[3]
+        planned_release=period_totals[4]
+        planned_receipt=period_totals[5]
+        projected_available=0
+
+        total$="Totals For Period "+str(period)+" "+fndate$(t1$)
+        if t1$=today$ then let total$="Totals For Prior Periods"
+        if len(total$)>o[5] then let total$=total$(1,o[5])
+        gosub period_totals
+    endif
+
+next_period: rem --- Initializations for next period
+
+    dim period_totals[5]
+    let period$=mpe05a.trns_date$,period=pos(period$<=s2$,8)
+    if period=0 then let period=len(s2$)-5
+
+    let period=int(period/8),l1=0,t1$=s2$(period*8+1,8)
+    return
+
+vendor_information: rem --- Retrieve vendor information
+
+    dim vendornumb$(apmask)
+    let vendornumb$(1)="None",vendorpart$=""
+    let vendorcost$="",total$="Other Vendor "
+    if cvs(vendor$,2)="" then goto vendor_information_exit
+    let vendornumb$(1)=fnmask$(vendor$(1,aplength),apmask$)
+    ivm05a.firm_id$=firm_id$
+    ivm05a.vendor_id$=vendor$
+    ivm05a.item_id$=mpe05a.item_id$
+    apm01a.firm_id$=firm_id$
+    apm01a.vendor_id$=vendor$
+    apm01a.vendor_name$="Unknown Vendor"
+    find record (apm01_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
+rem --- Retrieve any associated item/vendor record
+missing_vendor:
+    find record (ivm05_dev,key=ivm05a.firm_id$+ivm05a.vendor_id$+ivm05a.item_id$,dom=vendor_information_exit) ivm05a$
+    let vendorpart$=ivm05a.vendor_item$,vendorcost$=str(ivm05a.last_po_cost:m3$),vendorname$=apm01a.vendor_name$
+    if ivm05a.prisec_flag$="P" then let t$="Primary Vendor "
+    if ivm05a.prisec_flag$="S" then let t$="Secondary Vendor "
+vendor_information_exit:
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

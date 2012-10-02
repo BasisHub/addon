@@ -1,0 +1,153 @@
+rem adx - CodePort Program Conversion Utility (Source Program Overlay)
+rem Program adx_codeportfile.bbj v8.0.0 12Oct2007
+rem 
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Feb2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+rem 
+rem --- This program retrieves the name of the source program to be
+rem --- converted to v8.x. The user is either prompted for the file
+rem --- for the file name (for a single program) or the next name is
+rem --- read from the file list. This program is run from the lead
+rem --- overlay (adx_codeport) and when the current program has
+rem --- been converted (adx_codeporterrs).
+rem 
+
+rem --- Single file or file list?
+    if filelist then goto filelist
+    if source_version=6 then goto get_sourcefile_6
+
+rem --- Get the name of the program to be converted
+get_sourcefile: 
+    let title$="Select program to be converted",status=1
+    let filters$="PRO/5 executables (*.bbx)"+$0A$+"*.bbx"+$0A$+"All files (*.*)"+$0A$+"*.*"
+    rem --- print (0)'fileopen'(title$,pgmdir$,"","",filters$)
+    rem --- read (0)pathname$
+    pathname$=fileopen(title$,pgmdir1$,"","",filters$)
+    if pathname$="::BAD::" then goto get_sourcefile
+    if pathname$="::CANCEL::" then goto the_end
+    let filename$=fnbasename$(pathname$,""),status=0
+    let pgmdir1$=pathname$(1,pos(filename$=pathname$)-1)
+    let p=pos("."=filename$,-1),basename$=filename$(1,p-1)
+    goto arguments
+
+get_sourcefile_6:
+    let title$="Select program to be converted",status=1
+    let filters$="All files (*.*)"+$0A$+"*.*"
+    pathname$=fileopen(title$,pgmdir1$,"","",filters$)
+    if pathname$="::BAD::" then goto get_sourcefile_6
+    if pathname$="::CANCEL::" then goto the_end
+    let filename$=fnbasename$(pathname$,""),status=0
+    let pgmdir1$=pathname$(1,pos(filename$=pathname$)-1)
+
+rem --- Get the new name for the program
+get_newname: 
+    p=pos("."=filename$)
+    let newname1$=filename$(1,p-1)+"_"+filename$(p+1)+".lst"
+    let newname1$=cvs(newname1$,1+2+8)
+    let p=pos("."=newname1$,-1),basename$=newname1$(1,p-1)
+
+rem --- Number of arguments?
+arguments: 
+    let title$="Number of forms fields being passed?"
+    let default$="1"
+    call "user_selections.bbj",title$,default$,filedir$,arguments$
+    let arguments=num(arguments$,err=arguments)
+    if filelist and target then goto get_targetfile
+
+rem --- Get the target location for the program
+get_targetlocation: 
+    let title$="Select destination directory for the converted program"
+    outputdir$=fileopen(title$,pgmdir$,"","","",1)
+    if outputdir$="::BAD::" then goto get_targetlocation
+    if outputdir$="::CANCEL::" then outputdir$=pgmdir$;goto get_targetfile
+    let target=1;  outputdir$=outputdir$+"/";pgmdir$=outputdir$
+
+rem --- Get the new name for the program
+get_targetfile: 
+    let title$="Enter the name of the program file to be created"
+    let default$=basename$
+    call "user_selections.bbj",title$,default$,filedir$,newname$
+    let newname$=cvs(newname$,1+2)
+    if newname$="" then goto get_targetfile
+
+rem --- Get the extension for the program
+get_targetextension: 
+    let title$="Enter the extension of the program file to be created"
+    let default$="src"
+    call "user_selections.bbj",title$,default$,filedir$,src$
+    if len(src$)<>3 then goto get_targetextension
+    let src$="."+cvs(src$,1+2)
+
+rem --- Does the output file already exist?
+    let srcfile$=outputdir$+newname$+src$
+    let src_dev=unt
+    open (src_dev,err=next_overlay)srcfile$
+    close (src_dev)
+
+rem --- Get user permission to overwrite existing file
+    let prompt$="Output file "+srcfile$+" already exists. OK to overwrite?"
+    print (0,err=get_targetfile)'ask'(title$,2,prompt$,"&OK:O"+$0D$,"&Cancel:C"+$0D$)
+    input x$
+    if x$="C" then goto get_targetfile
+    goto next_overlay
+
+rem --- Read in next source file name from the file list being used
+filelist: 
+    if source_version=6 then goto filelist6
+    readrecord(lst_dev,err=file_list_end)lstfile$
+        if pos(".bbx"=lstfile$)=0 then goto filelist
+        let pathname$=temp_pathname$+"/"+lstfile$
+        let filename$=fnbasename$(lstfile$,""),status=0
+        let pgmdir$=pathname$(1,pos(filename$=pathname$)-1)
+        let p=pos("."=filename$,-1),basename$=filename$(1,p-1)
+        goto arguments
+    file_list_end:
+        filelist=0;target=0
+        goto the_end
+filelist6: 
+    readrecord(lst_dev,err=file_list_end)lstfile$
+        if mask(lstfile$,"[A-Z][A-Z][A-Z][.][A-Z0-9][A-Z]")=0 then goto filelist6
+        let pathname$=temp_pathname$+"/"+lstfile$
+        let filename$=fnbasename$(lstfile$,""),status=0
+        let pgmdir$=pathname$(1,pos(filename$=pathname$)-1)
+        goto get_newname
+    file_list6_end:
+        filelist=0;target=0
+        goto the_end
+
+rem --- Run next overlay
+next_overlay: 
+    if source_version=6 then run "adc_oldport.bbj"
+    run "adx_codeportconv.bbj",err=the_end
+
+rem --- Display message
+display_message: 
+    print fndatestamp$(0),message$
+    print (log_dev)fndatestamp$(0),message$,cr$
+return 
+
+rem --- Display step
+display_step: 
+    let message$=description$
+    gosub display_message
+return 
+
+rem --- Functions
+    def fndatestamp$(q)=date(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
+
+rem --- Strip path and optionally the suffix from a file name
+def fnbasename$(q$,q0$)
+    let q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+    if q then let q$=q$(q+1)
+    if q0$<>"" then let q=mask(q$,q0$); if q then let q$=q$(1,q-1)
+    return q$
+fnend
+
+rem --- Exit utility
+the_end: 
+    run "adx_codeportexit.bbj",err=finished
+finished: 
+    end

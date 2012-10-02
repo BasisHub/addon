@@ -1,0 +1,325 @@
+rem --- Transaction Date Verification
+rem --- Program glc_datecheck v8.0.0 16Apr2006 (glc_ea)
+rem --- Created by adx_progconv.bbx v1.0.0 (04/16/2006 01:05:36)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+rem --- when$    : Transaction Date in YYYYMMDD format (Input)
+rem --- verify$  : Verification Flag (Y/N) (Input)
+rem --- period$  : Fiscal Period (Returned)
+rem --- year$    : Fiscal Year (Returned)
+rem --- status   : 0=No Error (Returned)
+
+rem --- Warnings (entry processing will continue, but updates will be stopped)
+rem --- status = 1: The date occurs prior to the previous application period
+rem --- status = 2: The date occurs after the next application period
+rem --- status = 3: The date falls into a prior GL period
+
+rem --- Errors (entry processing will be stopped)
+rem --- status = 101: The date is not in the prior, current or next GL year
+rem --- status = 102: The date falls into a locked GL period
+rem --- status = 103: The date falls into a closed fiscal year
+
+    setesc std_exit
+    seterr std_error
+    enter when$,verify$,period$,year$,status
+
+rem --- Initialize arguments in case of an early exit
+
+    status=0
+    period$=""
+    year$=""
+    x$=stbl("!CLEAR","+DTWARN_MSG",err=*next)
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+
+rem --- Parameters
+
+    status=0
+    glcontrol_tpl$=stbl("+GLCONTROL_TPL",err=std_exit)
+    dim glcontrol$:glcontrol_tpl$
+    glcontrol$=stbl("+GLCONTROL",err=std_exit)
+    mp=13
+    total_pers=num(glcontrol.total_pers$)
+
+rem --- Initializations
+
+    dim locked$(mp*3,"N")
+    apperiod$=glcontrol.current_per$
+    apyear$=glcontrol.current_year$
+    glperiod$=glcontrol.gl_period$
+    glyear$=glcontrol.gl_year$
+    apperiod=num(apperiod$)
+    apyear=num(apyear$)
+    glperiod=num(glperiod$)
+    glyear=num(glyear$)
+    yyyymmdd$=when$
+    period$=apperiod$
+    year$=apyear$
+    next_apperiod=apperiod+1
+    next_apyear=apyear
+    if next_apperiod>total_pers 
+       next_apperiod=1
+       next_apyear=apyear+1
+    endif
+
+rem --- Posting to GL?
+
+    if glcontrol.post_gl$="N" goto done
+    if glcontrol.gl_post_code$="N" goto done
+
+rem --- Is this date same as the last one verified?
+
+    if yyyymmdd$=glcontrol.trns_date$
+       period$=glcontrol.period$
+       year$=glcontrol.year$
+       goto std_exit
+    endif
+
+rem --- Initialize locked period flags based on fiscal calendar
+
+    locked$(1,mp)="YYYYYYYYYYYYY"
+    p=0
+    y=mp*2
+    for x=mp+1 to y
+        p=p+1
+        locked$(x,1)=field(glcontrol$,"locked_flag_"+str(p:"00"))
+    next x
+    year1=glyear-1
+    year2=glyear
+    year3=glyear+1
+    if glcontrol.gl_yr_closed$="Y" goto determine_period
+    year1=glyear-2
+    year2=glyear-1
+    year3=glyear
+    locked$(mp+1,mp)=locked$(1,mp)
+    p=0
+    y=mp*3
+    for x=(mp*2)+1 to y
+        p=p+1
+        locked$(x,1)=field(glcontrol$,"locked_flag_"+str(p:"00"))
+    next x
+
+determine_period: rem --- Determine which period/year that date falls into
+  
+    period=0
+    year=year1
+    for m=1 to total_pers
+        begdate$=field(glcontrol$,"pri_per_beg_"+str(m:"00"))
+        enddate$=field(glcontrol$,"pri_per_end_"+str(m:"00"))
+        if yyyymmdd$<begdate$ or yyyymmdd$>enddate$ continue
+        period=m
+        break
+    next m
+    if period goto range_check
+    year=year2
+    for m=1 to total_pers
+        begdate$=field(glcontrol$,"cur_per_beg_"+str(m:"00"))
+        enddate$=field(glcontrol$,"cur_per_end_"+str(m:"00"))
+        if yyyymmdd$<begdate$ or yyyymmdd$>enddate$ continue
+        period=m
+        break
+    next m
+    if period goto range_check
+    year=year2
+    for m=1 to total_pers
+        begdate$=field(glcontrol$,"cur_per_beg_"+str(m:"00"))
+        enddate$=field(glcontrol$,"cur_per_end_"+str(m:"00"))
+        if yyyymmdd$<begdate$ or yyyymmdd$>enddate$ continue
+        period=m
+        break
+    next m
+
+range_check: rem --- Does date fall into 3 year GL range?
+
+    period$=str(period:"00")
+    year$=str(year:"0000")
+    if period=0 
+       status=101
+       goto use_application
+    endif
+
+rem --- Does date fall into the current application period?
+
+    if period=apperiod and year=apyear goto use_application
+
+rem --- Does date fall into the next application period?
+
+    if period=next_apperiod and year=next_apyear goto use_next_application
+
+rem --- Does date occur after end of the next application period?
+
+    status=1
+    if fnn(next_apyear,next_apperiod)>fnn(year,period) goto journal_entry
+    status=2
+    goto prior_period
+
+journal_entry: rem --- Processing Journal Entries when posting by period?
+
+    if glcontrol.gl_post_code$<>"P" goto current_fiscal
+    if glcontrol.permit_je$="Y" goto current_fiscal
+    goto use_application
+
+current_fiscal: rem --- Does period/year fall into the current fiscal year?
+
+    if year=glyear goto locked_period
+    if year3>glyear if year=year3 goto prior_period
+
+rem --- Is Prior Year Closed flag set to Y?
+
+    if glcontrol.gl_yr_closed$<>"Y" goto year_end
+    status=103
+    if glcontrol.gl_post_code$<>"P" goto use_application
+    goto use_gl
+
+year_end: rem --- Is Allow Year End Adjustments flag set to Y?
+
+    if glcontrol.post_yr_end$="Y" goto locked_period
+    status=103
+    if glcontrol.gl_post_code$<>"P" goto use_application
+    goto use_gl
+
+use_application: rem --- Set period/year equal to current application period/year
+
+    period$=apperiod$
+    year$=apyear$
+    period=apperiod
+    year=apyear
+    goto prior_period
+
+use_next_application: rem --- Set period/year equal to next application period/year
+
+    period=next_apperiod
+    year=next_apyear
+    period$=str(period:"00")
+    year$=str(year:"0000")
+
+prior_period: rem --- Does period/year occur before current GL period/year?
+
+    if fnn(year,period)>=fnn(glyear,glperiod) goto locked_period
+    status=3
+    if glcontrol.gl_post_code$<>"P" goto locked_period
+
+use_gl: rem --- Set period/year equal to GL period/year
+
+    period$=glperiod$
+    year$=glyear$
+
+locked_period: rem --- Is period/year locked?
+
+    y=0
+    if year=year2 y=mp
+    if year=year3 y=mp*2
+    if locked$(y+period,1)<>"Y" goto message
+
+rem --- Is Post To Locked Periods flag set to Y?
+
+    if glcontrol.post_locked$="Y" goto message
+    period$=apperiod$
+    year$=apyear$
+    status=102
+    if glcontrol.gl_post_code$<>"P" goto message
+    period$=glperiod$
+    year$=glyear$
+
+message: rem --- Display warning/error message if verification requested
+
+    if status=0 or verify$<>"Y" goto done
+    dim message$[1]
+    part1$="The current "+glcontrol.system_id$(9)+" period is "+str(apperiod)+
+:          " ("+fndate$(glcontrol.app_per_beg$)+" to "+fndate$(glcontrol.app_per_end$)+")."
+    part2$="The "+fndate$(yyyymmdd$)+" date occurs "
+    switch status
+           case 1
+                part2$=part2$+"prior to the current period."
+           break
+           case 2
+                part2$=part2$+"after the next period."
+           break
+           case 3 
+                part1$="The current GL period is "+str(glperiod)+" ("+fndate$(glcontrol.gl_per_beg$)+
+:                      " to "+fndate$(glcontrol,gl_per_end$)+")."
+                part2$=part2$+"falls into a prior GL period."
+           break
+           case 101 
+                part2$=part2$+"is not in the prior, current or next GL year."
+           break
+           case 102
+                part2$=part2$+"falls into a locked GL period."
+           break
+           case 103 
+                part2$=part2$+"falls into a closed fiscal year."
+           break
+    swend
+    message$[0]=part1$+$0A$+part2$
+    dim msg_tokens$[1]
+    msg_tokens$[1]=part1$+$0a$+part2$
+    call stbl("+DIR_SYP")+"bac_message.bbj","GENERIC_OK",msg_tokens$[all],msg_opt$,table_chans$[all]
+rem    call pgmdir$+"adc_stdmessage.aon",2,message$[all],0,0,0,v$,v3
+
+done: rem --- All done
+
+    glcontrol.trns_date$=yyyymmdd$
+    glcontrol.period$=period$
+    glcontrol.year$=year$
+    if status 
+       glcontrol.trns_date$=""
+       glcontrol.period$=""
+       glcontrol.year$=""
+    endif
+    let x$=stbl("+GLCONTROL",glcontrol$)
+    goto std_exit
+
+rem --- Functions
+
+    def fnn(q1,q2)=q1*100+q2
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_error_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end

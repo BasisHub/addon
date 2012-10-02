@@ -1,0 +1,121 @@
+rem --- Invoice Date Modification Update
+rem --- Program aru_dateregister v8.0.0 07Jan2007
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Open/Lock files
+
+    close (printer_dev,err=*next)
+
+rem --- Initializations
+
+    ar_type$=fill(2)
+
+rem --- Get user approval to proceed
+
+    overlay$=""
+    next_overlay$=""
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Start progress meter and position invoice file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,are06_dev,1,meter_num,status
+    read (are06_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Invoice (are-06) record
+
+    while more
+          are06_key$=key(are06_dev,end=*break)
+          if pos(firm_id$=are06_key$)<>1 break
+          read record (are06_dev) are06a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+          rem --- Update Open Invoice (art-01) file
+
+          dim art01a$:fattr(art01a$)
+          art01a.firm_id$=are06a.firm_id$
+          art01a.ar_type$=are06a.ar_type$
+          art01a.customer_id$=are06a.customer_id$
+          art01a.ar_inv_no$=are06a.ar_inv_no_ver$
+          art01a.sequence_00$="00"
+          k$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+
+:            art01a.ar_inv_no$+art01a.sequence_00$
+          find record (art01_dev,key=k$,dom=invalid_inv) art01a$
+          art01a.ar_terms_code$=are06a.ar_terms_code$
+          art01a.invoice_date$=are06a.invoice_date$
+          art01a.inv_due_date$=are06a.inv_due_date$
+          art01a.disc_date$=are06a.disc_date$
+          art01a.dates_chg$="*"
+          art01a$=field(art01a$)
+          write record (art01_dev,key=k$) art01a$
+ 
+         rem --- Delete Invoice (are-06) record and loop back for the next one
+invalid_inv:
+
+          remove (are06_dev,key=are06_key$)
+
+    wend
+
+rem --- All done
+
+    call pgmdir$+"adc_batchdelete.aon",status
+    goto std_exit
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+	msg_id$="UPDATE_COMPLETE"
+	dim msg_tokens$[1]
+	msg_opt$=""
+	gosub disp_message
+
+std_exit_no_update:
+
+    release
+
+rem #endinclude std_end.src
+
+    end

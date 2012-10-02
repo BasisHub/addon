@@ -1,0 +1,463 @@
+rem OldPort Program Conversion Utility 
+rem Program oldport.bbj v8.0.0 21Oct2007
+rem  
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Feb2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+rem  
+rem --- This overlay performs the initializations for the program
+rem --- conversion process and then runs adx_codeportfile to get
+rem --- the name of the next source program to convert.
+rem 
+
+
+pro5lst: 
+    let description$="Creating source listing from program executable..."
+    gosub display_step
+    let tmpfile$=outputdir$+basename$+txt$
+    call "_label",pathname$,tmpfile$,status$,1
+    let command$=pro5lst$+" -w1024 "+tmpfile$
+    let x=scall(command$)
+    let tmpfile$=outputdir$+newname1$,txtfile$=basename$+txt$
+    erase outputdir$+newname1$,err=rename_tmpfile
+    rename_tmpfile: rename outputdir$+basename$,tmpfile$
+    rem let txtfile$=outputdir$+basename$+txt$
+    gosub display_done
+
+gosub load_sourcecode
+gosub replace_code
+
+rem --- Source Code changes
+    erase tmpfile$
+    string tmpfile$
+    open (txt_dev)tmpfile$
+    for i=1 to numlines
+        rec$=lines$[i]
+        
+        rem --- Change the Header lines of the program (Line 10 & 20)
+        if i=1 then
+            if MASK(rec$(11,3),"[A-Z][A-Z][A-Z]") then rec$(11,3)=cvs(rec$(11,3),8)
+        endif
+        if i=2 then gosub line20
+
+        rem --- Change in the argument of some CALLed programs.SYC.SA,SYC.FB,IVC.IA
+        gosub change_call_list
+
+        rem --- Add Progress meter call instead of notification boxes
+        gosub add_progress_meter
+
+        rem --- Changes in On V3 line
+        gosub change_ONV3
+
+        rem --- Change the FNF$ function
+        gosub change_alphaFNF
+
+        rem --- Rename Data file names within the source code
+        gosub rename_datafile
+
+        rem --- Convert data files of AR to OP
+        gosub read_crossref_file
+
+        rem --- Rename Program names within the source code
+        gosub rename_program_names
+
+        write(txt_dev)rec$
+    next i
+    close (txt_dev)
+
+rem --- Make standard code blocks
+    gosub load_sourcecode
+    erase tmpfile$
+    string tmpfile$
+    newnum=8700,arraynum=1
+    dim temparray$[100]
+    open (txt_dev)tmpfile$
+        for i=1 to numlines
+            rec$=lines$[i]   
+            
+            
+            rem --- Check for old std function lines
+            if num(rec$(1,4))>7000 and num(rec$(1,4))<7300 then rec$="";goto assign_stdcode
+            if num(rec$(1,4))>9000 and num(rec$(1,4))<9400 then rec$="" ;goto assign_stdcode
+            if num(rec$(1,4))>9800 and num(rec$(1,4))<9900 then rec$="" ;goto assign_stdcode
+            if num(rec$(1,4))>700 and  num(rec$(1,4))<800 then rec$="" ;goto assign_stdcode
+            if num(rec$(1,4))>22 and  num(rec$(1,4))<=30 then rec$="" ;goto assign_stdcode
+            assign_stdcode:
+            if pos("7000"=rec$)=1 then rec$="#include std_input.src"
+            if pos("9000"=rec$)=1 then rec$="#include std_error_600.src";input_line=i
+            if pos("9800"=rec$)=1 then rec$="#include std_mp.src" 
+            if pos("0700"=rec$)=1 then rec$="#include display_resource.src"
+            if pos("0022"=rec$)=1 then rec$="#include copyright.src"
+                      
+            if rec$<>"" then write (txt_dev)rec$
+        next_loop:
+        next i
+    close(txt_dev)
+    
+    gosub load_sourcecode
+    replace_pass: 
+        let includes=0
+        for x=1 to numlines
+            rec$=lines$[x]         
+            p=pos("#include"=rec$)
+            if p=1 then
+                let include$=cvs(rec$(p+9),1+2),inc_dev=unt,includes=1
+                open (inc_dev)libdir$+include$
+                let line=x
+                next_include_line: 
+                        read (inc_dev,end=next_include)rec$
+                        let rec$=cvs(rec$,2)
+                        let lines$[x]=rec$,x=x+1,line=x
+                        gosub insert_line
+                goto next_include_line
+            next_include: 
+                close (inc_dev,err=next_include_x)
+            next_include_x: 
+            endif
+        next x
+        if includes then goto replace_pass
+        
+
+
+
+rem --- Add labels to source code 
+    erase tmpfile$
+    string tmpfile$
+    open (txt_dev)tmpfile$
+    for i=1 to numlines
+        label$=""
+        let rec$=lines$[i]
+        
+        if pos("SETESC"=rec$) then rec$(12)=" STD_ESCAPE"
+        if pos("SETERR"=rec$) then rec$(12)=" STD_ERROR"
+
+        if pos("0100 REM"=rec$)=1 then
+            rec$="0100 OPEN_FILES: REM "+$22$+" --- Open/Lock Files"+$22$ 
+        endif
+        if pos("0400 REM"=rec$)=1 then
+            rec$="0400 PARAMETERS: REM "+$22$+"  --- Parameters"+$22$ 
+        endif
+        if pos("0500 REM"=rec$)=1 then
+            rec$="0500 INTIALIZATIONS: REM "+$22$+"  --- Initializations"+$22$ 
+        endif
+        if pos("0700 REM"=rec$)=1 then
+            rec$="0700 DISPLAY_RESOURCE: REM "+$22$+"  --- Display Resource"+$22$ 
+        endif
+        if pos("3200 REM"=rec$)=1 or pos("3900 REM"=rec$)=1
+            rec$(5)=" FLOW_CONTROL: REM "+$22$+"  --- Flow Control"+$22$ 
+        endif
+        if pos("4000"=rec$)=1 then
+            templine$=rec$(5);p=pos("L4000:"=templine$)
+            if p then templine$=templine$(p+7) 
+            if pos("done"=cvs(rec$,8)) then label$="DONE:"
+            if pos("correct"=cvs(rec$,8)) then label$="ITAIC:"
+            rec$="4000 "+label$+templine$
+        endif
+        if pos("5000"=rec$)=1 then
+            templine$=rec$(5);p=pos("L5000:"=templine$)
+            if p then templine$=templine$(p+7) 
+            if pos("display"=cvs(rec$,8)) then label$="DISPLAY_FIELDS:"
+            if pos("heading"=cvs(rec$,8)) then label$="REPORT_HEADING:"
+            rec$="5000 "+label$+templine$
+        endif
+        
+        if rec$<>"" then write (txt_dev)rec$
+    next i
+    close(txt_dev)
+
+
+rem --- Recompile program
+pro5cpl$=fnglobal$("+PRO5CPL","c:/basis/vpro5/pro5cpl.exe")
+
+command$=pro5cpl$+" -m1024 -k -xbbx "+tmpfile$
+a=scall(command$)
+erase tmpfile$
+goto the_end
+
+
+rem --- Subroutines
+rem --- Change line 20
+line20:
+    if pos("Program "=rec$)
+        let Current_Date$=DATE(0:"%D%Ms%Y")
+        let ver$="v7.1.0"
+        p=MASK(rec$,"[A-Z][A-Z][A-Z][.][0-9A-Z][A-Z]")
+        let pgmname$=rec$(p,6)
+        pgm_type$=""
+        type$=pgmname$(3,1)
+        
+        if type$ ="E" then pgm_type$="Header/Detail"
+        if type$ ="P" then pgm_type$="Simple Maintenance"
+        if type$ ="R" or type$ ="U" or type$ ="P" or type$ ="X" then pgm_type$="Pick Screen"
+        if type$ ="M" then
+            if pgmname$(5,1)="A" then
+                search$="RUN "+$22$+pgmname$(1,5)
+                for x=3 to numlines
+                    if pos(search$=rec$) then pgmtype$="Simple Maintenance";break
+                next x
+            else
+                pgm_type$="Complex Maintenance"
+            endif
+       endif
+       if pgm_type$="" then pgm_type$="Other"
+
+    rec$="0020 REM "+$22$+"Program "+fnprogramname$(pgmname$)+" "+ver$+" "+Current_Date$+" "+pgm_type$
+    endif
+return
+
+rem --- Change in the argument of some CALLed programs.SYC.SA,SYC.FB,IVC.IA
+change_call_list:
+    p=pos("SYC.SA"=rec$)
+        if p then
+            q=pos("MORE$[ALL]"=rec$)
+            templine$=rec$(q+10)
+            rec$(q)="MORE$[ALL],LINFO$[ALL]"
+            rec$=cvs(rec$,2)+templine$
+        endif
+    p=pos("SYC.FB"=rec$)
+    if p then
+        rec$=rec$(1,p+7)+"ACTION$,CHANNEL,PARTIAL$,STATUS"
+    endif
+    p=pos("IVC.IA"=rec$)
+        if p then rec$=rec$+",IO,IO_ITIAC,VALIDATE,PARENT_CONTEXT,EVENT"
+return
+
+rem --- Change the FNF$ function
+change_alphaFNF:
+    if pos("RETURN STR(-NUM(Q1$,ERR=ALPHA_FNF):Q2$,ERR=ALPHA_FNF)"=rec$) then
+        line_num$=rec$(1,5)
+        rec$=rec$(6)
+        rec$=line_num$+"IF POS("+$22$+"E"+$22$+"=CVS(Q1$,4)) THEN GOTO ALPHA_FNF ELSE "+rec$
+    endif
+return
+
+rem --- Changes in On V3 line
+change_ONV3:
+    p=pos("ON V3 GOTO"=rec$)
+    if p then
+        first=pos(","=rec$)
+        ok$=rec$(first-4,4)
+        last=pos(","=rec$,-1)
+        cancel$=rec$(last+1)
+        rec$=rec$+","+ok$+","+cancel$
+    endif
+return
+
+rem --- Add Progress meter call instead of notification boxes
+add_progress_meter:
+    if pos("SYC.NB"=rec$) then
+        line_num$=rec$(1,5)
+        rec$=rec$(6)
+        p1=pos(","=rec$);p2=pos(","=rec$,2);p3=pos(","=rec$,-1)
+        label$=rec$(p1+1,p2-(p1+1));length$=rec$(p2+1,p3-(p2+1))
+        rec$=line_num$+"CALL "+$22$+"syc_pm.bbx"+$22$+","+$22$+"N"+$22$+","+$22$+$22$+","+$22$+$22$+","+label$+","+$22$+$22$+","+length$+",0,1,0,IGNORE_STATUS"
+    endif
+
+    if pos("PRINT @(COLUMN,11)"=rec$) then
+        line_num$=rec$(1,5)
+        rec$=rec$(25)
+        l=len(rec$)
+        for x=1 to l
+            if mod(pos($28$=rec$(1,x),1,0),2)=1 
+                if mod(pos($29$=rec$(1,x),1,0),2)=1
+                    if rec$(x,1)="," then rec$(x,1)="+"
+                endif
+            endif
+            if mod(pos($28$=rec$(1,x),1,0),2)=0 
+                if mod(pos($29$=rec$(1,x),1,0),2)=0
+                    if rec$(x,1)="," then rec$(x,1)="+"
+                endif
+            endif
+        next x
+
+        if pos($28$=rec$)=0 and pos($29$=rec$)=0
+            for x=1 to l
+                if rec$(x,1)="," then rec$(x,1)="+"
+            next x
+        endif
+
+        if rec$(l)="+" then rec$=rec$(1,l-1)
+        rec$=line_num$+"CALL "+$22$+"syc_pm.bbx"+$22$+","+$22$+"S"+$22$+","+$22$+$22$+","+$22$+$22$+","+$22$+$22$+","+rec$+",0,0,1,0,IGNORE_STATUS"
+    endif
+return
+
+rem --- Rename Data file names within the source code
+rename_datafile:
+    if MASK(rec$,"[A-Z][A-Z][A-Z]-[0-9][0-9]")
+        x=1,temp$=""
+        while x
+            p=MASK(rec$(x),"[A-Z][A-Z][A-Z]-[0-9][0-9]")
+                if p 
+                    rec$(p,6)=cvs(rec$(p,6),8)
+                    temp$=temp$+rec$(1,p+6)
+                    rec$=rec$(p+7)
+                else
+                    temp$=temp$+rec$
+                    x=p
+                endif
+        wend
+        rec$=temp$
+    endif 
+return
+
+rem --- Convert data files of AR to OP
+read_crossref_file:
+    let chan=unt
+    open(chan)filedir$+"renamed_data_files"
+    read_loop:
+        readrecord(chan,siz=14,end=finish_loop)dat$
+        p=pos(dat$(1,6)=rec$,1,0)
+        for x=1 to p
+            position=pos(dat$(1,6)=rec$)
+            if position then rec$(position,6)=dat$(8,6)
+        next x
+        p=pos(cvs((dat$(1,3)+dat$(5,2)),4)=rec$,1,0)
+        for x=1 to p
+            position=pos(cvs((dat$(1,3)+dat$(5,2)),4)=rec$)
+            if position then rec$(position,5)=cvs((dat$(8,3)+dat$(12,2)),4)
+        next x
+        goto read_loop
+    finish_loop:
+    close(chan)
+return
+
+rem --- Rename Program names within the source code
+rename_program_names:
+    p=pos("CALL "=rec$)
+    if p then 
+        if rec$(p+5,1)=$22$ and rec$(p+12,1)=$22$ then 
+            templine$=rec$(p+12)
+            rec$(p+6)=fnprogramname$(rec$(p+6,6))
+            rec$=cvs(rec$,2)+templine$
+        endif
+    endif
+
+    p=pos("RUN "=rec$)
+    if p then 
+        if rec$(p+4,1)=$22$ and rec$(p+11,1)=$22$ then 
+            templine$=rec$(p+11)
+            rec$(p+5)=fnprogramname$(rec$(p+5,6))
+            rec$=cvs(rec$,2)+templine$
+        endif
+    endif
+    
+    p=MASK(rec$,"[A-Z][A-Z][A-Z][.][0-9A-Z][A-Z]")
+    if p then
+        templine$=rec$(p+6)
+        rec$(p)=fnprogramname$(rec$(p,6))
+        rec$=cvs(rec$,2)+templine$
+    endif     
+return
+
+rem --- Load source listing
+load_sourcecode:
+    dim lines$[9999]
+    let description$="Loading source listing..."
+    gosub display_step
+    let txt_dev=unt,numlines=0
+    open (txt_dev)tmpfile$
+
+    rem --- Top of source code read loop
+    next_txt: 
+        read (txt_dev,end=load_sourcecode_exit)rec$
+        let rec$=cvs(rec$,2)
+        if rec$="" then goto next_txt
+        if len(rec$)<20 then rec$=rec$+fill(50)
+        let numlines=numlines+1
+        let lines$[numlines]=rec$
+        goto next_txt
+
+    load_sourcecode_exit: 
+        gosub display_done
+        let original=numlines
+    close (txt_dev)
+return
+
+rem --- Search and replace code as indicated in replacements.ini
+replace_code: 
+    let description$="Replacing code fragments as required..."
+    gosub display_step
+    for x=1 to numlines
+        let rec$=lines$[x]
+        for y=1 to replacements
+            replacement_test: 
+            let p=pos(oldcode$[y]=rec$),l=len(oldcode$[y])
+            if p=0 then goto next_replacement
+            let rec$=rec$(1,p-1)+newcode$[y]+rec$(p+l)
+            goto replacement_test
+            next_replacement: 
+        next y
+        let lines$[x]=rec$
+    next x
+    rem --- Search and replace completed
+    gosub display_done
+return 
+
+rem --- Insert a blank line at line
+insert_line: 
+    let numlines=numlines+1
+    for z=numlines to line+1 step -1
+        let lines$[z]=lines$[z-1]
+    next z
+    let lines$[line]=""
+return 
+
+rem --- Delete a line at line
+delete_line: 
+    if line>numlines then return 
+    for z=line to numlines
+        let lines$[z]=lines$[z+1]
+    next z
+    let lines$[numlines]="",numlines=numlines-1
+return
+
+rem --- Display message
+display_message: 
+    print fndatestamp$(0),message$
+    print (log_dev)fndatestamp$(0),message$,cr$
+return 
+
+rem --- Display step
+display_step: 
+    let message$=description$
+    gosub display_message
+return 
+
+rem --- Display step completion
+display_done: 
+    let message$=description$+"completed"
+    gosub display_message
+return 
+
+rem --- Functions
+    def fndatestamp$(q)=DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
+
+rem --- Return string value of passed STBL variable
+    def fnglobal$(q$,q1$)
+        let q1$=stbl(q$,err=globalstr_exit)
+        globalstr_exit: 
+        return q1$
+    fnend
+rem --- Strip path and optionally the suffix from a file name
+def fnbasename$(q$,q0$)
+    let q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+    if q then let q$=q$(q+1)
+    if q0$<>"" then let q=mask(q$,q0$); if q then let q$=q$(1,q-1)
+    return q$
+fnend
+def fnprogramname$(q$)
+    q$=cvs(q$(1,3),8)+"_"+cvs(q$(5,2),8)+".bbx"
+    if q$(1,2)="wo" then q$(1,2)="sf"
+    return q$
+fnend
+rem --- Exit to Codeport
+the_end: 
+    p=pos("."=tmpfile$,-1)
+    pathname$=tmpfile$(1,p)+"bbx"
+    bbxfile$=pathname$
+    pgmdir$=outputdir$
+    run "adx_codeportconv.bbj"
+finished: 
+    end

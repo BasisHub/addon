@@ -1,0 +1,405 @@
+rem glu - Financial Report Printing (Update Overlay)
+rem Program glu_financials v8.0.0 03Jun2006 (glu_ea)
+rem Created by adx_progconv.bbx v1.0.3 (06/03/2006 09:56:31)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- This program compiles the data necessary to produce the
+rem --- reports from the Summary Activity (glm-02) file. This 
+rem --- program is only run if the user has chosen NOT to reprint
+rem --- existing reports. The next overlay is glr_headings, which
+rem --- assembles the custom headings for the financial reports.
+
+    setesc std_error
+    seterr std_error
+
+rem --- Parameters
+
+    mx=8
+    my=1
+    mz=1
+    mt=3
+    period=num(begper$)
+    year=num(begyear$)
+
+rem --- Initializations
+
+    dim a[mp],u[mp],d[mt],y[mt]
+    cpn$="CPN"
+    pqy$="PQY"
+    records$=""
+    more=1
+    moredetail=1
+    morepercent=1
+    moreamounts=1
+    closed=1
+    notclosed=0
+    status=gls01a.gl_yr_closed$="Y"
+    curr_year=num(gls01a.current_year$)
+    switch status
+           case notclosed
+                if year=curr_year records$="4501"
+                if year=curr_year-1 records$="0123"
+                if year=curr_year-2 records$="23"
+           break
+           case closed
+                if year=curr_year records$="0123"
+                if year=curr_year-1 records$="23"
+                if year=curr_year+1 records$="4501"
+           break
+    swend
+
+rem --- Dimension matrices for financial reports
+
+rem --- Matrix definitions for I[X,Y,Z],J[X,Y,Z],T[X,Y,Z],S[X,Y,Z]
+
+rem --- X: 0=C-PERIOD/1=C-QTR/2=C-YEAR (Current year period, quarter and year totals)
+rem ---    3=P-PERIOD/4=P-QTR/5=P-YEAR (Prior year period, quarter and year totals)
+rem ---    6=N-PERIOD/7=N-QTR/8=N-YEAR (Next year period, quarter and year totals)
+rem --- Y: 0=Actual/1=Budget
+rem --- Z: 0=Amount/1=Units
+
+    dim f[mx],i[mx,my,mz],j[mx,my,mz],t[mx,my,mz],s[mx,my,mz]
+
+rem --- Determine starting period for quarter
+
+    begqtr=mod(period,3)
+    if begqtr=0 begqtr=3
+    begqtr=period-begqtr+1
+
+rem --- Start progress meter
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,glm01_dev,1,0,status
+
+rem --- Clear out gle-06
+
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",gle06_dev
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",gle07_dev
+
+rem --- Position GL Account Master (glm-01)
+
+    k$=""
+    if firm_id$<>"99" k$=firm_id$
+    read (glm01_dev,key="",dom=*next)
+
+rem --- Read next GL Account Master (glm-01) record
+
+    while more
+          k$=key(glm01_dev,end=*break)
+          if firm_id$<>"99" 
+:            if pos(firm_id$=k$)<>1 break
+          read record (glm01_dev) glm01a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+
+          rem --- Read GL Summary Activity (glm-02) records
+
+          dim x[mx,my,mp]
+          for r=1 to len(records$)
+              if gls01a.budget_flag$<>"Y" 
+:                if pos(records$(r,1)="135") continue
+              dim a[mp],u[mp]
+              glm02a.firm_id$=glm01a.firm_id$
+              glm02a.gl_account$=glm01a.gl_account$
+              glm02a.record_id$=records$(r,1)
+              glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$
+              find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
+              call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+              for x=0 to mp
+                  x[r-1,0,x]=a[x]
+                  x[r-1,1,x]=u[x]
+              next x
+          next r
+
+          rem --- Set normal sign based on account type
+
+          sign=1
+          if pos(glm01a.gl_acct_type$="LCI")<>0 sign=-1
+
+          rem --- Determine beginning balance for quarter
+
+          dim f[mx],i[mx,my,mz],j[mx,my,mz],t[mx,my,mz]
+          f[0]=x[0,0,0]*sign
+          f[1]=x[2,0,0]*sign
+
+          rem --- Accumulate totals
+
+          for x=0 to 1
+              for y=0 to 1
+                  t[0,x,y]=x[x,y,period]*sign
+                  t[3,x,y]=x[x+2,y,period]*sign
+                  for z=0 to period
+            
+                      rem --- Quarter
+            
+                      if z>=begqtr
+                         t[1,x,y]=t[1,x,y]+x[x,y,z]*sign
+                         t[4,x,y]=t[4,x,y]+x[x+2,y,z]*sign
+                      endif
+                      
+                      rem --- YTD
+            
+                      t[2,x,y]=t[2,x,y]+x[x,y,z]*sign
+                      t[5,x,y]=t[5,x,y]+x[x+2,y,z]*sign
+                      if z>=period continue
+                      if x<>0 continue
+                      if y<>0 continue
+                      f[4]=f[4]+x[x,y,z]*sign
+                      f[5]=f[5]+x[2,y,z]*sign
+            
+                      rem --- End of totals loop
+    
+                  next z
+              next y
+          next x
+
+          rem --- Accumulate grand totals
+
+          for x=0 to mx
+              for y=0 to my
+                  for z=0 to mz
+                      i[x,y,z]=t[x,y,z]
+                      j[x,y,z]=t[x,y,z]
+                  next z
+              next y
+          next x
+          i[2,0,0]=f[0]
+          i[5,0,0]=f[1]
+          i[1,0,0]=f[2]
+          i[4,0,0]=f[3]
+          i[0,0,0]=f[4]
+          i[3,0,0]=f[5]
+          j[2,0,0]=t[2,0,0]-f[0]
+          j[5,0,0]=t[5,0,0]-f[1]
+          j[1,0,0]=t[1,0,0]-f[2]
+          j[4,0,0]=t[4,0,0]-f[3]
+          j[0,0,0]=t[0,0,0]
+          j[3,0,0]=t[3,0,0]
+
+          rem --- Update Financial Report Amount (gle-06) & 
+          rem --- Financial Report Totals (gle-07) files
+
+          glm01_key$=glm01a.firm_id$+glm01a.gl_account$
+          if firm_id$="99" read (glm21_dev,key=glm01_key$,dom=*next) 
+:                     else read (glm11_dev,key=glm01_key$,dom=*next)
+          while moredetail
+                if firm_id$="99" k$=key(glm21_dev,end=*break) 
+:                           else k$=key(glm11_dev,end=*break)
+                if pos(glm01_key$=k$)<>1 break
+                if firm_id$="99" read record (glm21_dev,key=k$) glm21a$
+:                           else read record (glm11_dev,key=k$) glm11a$
+                if firm_id$="99" x$=glm21a.gl_rpt_no$+glm21a.gl_rpt_line$
+:                           else x$=glm11a.gl_rpt_no$+glm11a.gl_rpt_line$
+                glreport$=x$(1,2)
+                line$=x$(3,4)
+                if glreport$="00" continue
+                if cvs(glreport$,2)="" continue
+                if line$="0000" continue
+                if cvs(line$,2)="" continue
+
+                rem --- Retrieve Financial Report Detail (glm-22) and
+                rem --- Financial Report Amount (gle-06) records
+
+                gosub accumulate_totals
+                if status continue
+
+                rem --- Transfer amounts to Financial Report Amounts (gle-06)
+                rem --- record and write/update it
+
+                gle06a.firm_id$=glm22a.firm_id$
+                gle06a.gl_rpt_no$=glm22a.gl_rpt_no$
+                gle06a.gl_rpt_line$=glm22a.gl_rpt_line$
+                for x=0 to mx
+                    n=0
+                    gle06a.gl_pcn_flag$=cpn$(int(x/mt)+1,1)
+                    gle06a.gl_pqy_flag$=pqy$(mod(x,mt)+1,1)
+                    for y=0 to my
+                        for z=0 to mz
+                            y[n]=s[x,y,z]
+                            n=n+1
+                        next z
+                    next y
+                    gle06a.actual_amt=y[0]
+                    gle06a.actual_units=y[1]
+                    gle06a.budget_amt=y[2]
+                    gle06a.budget_units=y[3]
+                    gle06_key$=gle06a.firm_id$+gle06a.gl_rpt_no$+gle06a.gl_rpt_line$+
+:                              gle06a.gl_pcn_flag$+gle06a.gl_pqy_flag$
+                    gle06a$=field(gle06a$)
+                    write record (gle06_dev,key=gle06_key$) gle06a$
+                next x
+
+                rem --- Accumulate Percent?
+
+                if glm22a.input_percnt$="000" continue
+                if glm22a.accum_pct$<>"Y" continue
+
+                rem --- Retrieve Financial Report Totals (gle-07) records for
+                rem --- for percent totals and accumulate them
+
+                dim d[mt]
+                gle07a.firm_id$=firm_id$
+                gle07a.tot_type_cde$="P"
+                gle07a.total_no$=glm22a.input_percnt$
+                k$=gle07a.firm_id$+gle07a.tot_type_cde$+gle07a.total_no$
+                read (gle07_dev,key=k$,dom=*next)
+                while morepercent
+                      gle07_key$=key(gle07_dev,end=*break)
+                      if pos(k$=gle07_key$)<>1 break
+                      read record (gle07_dev,key=gle07_key$) gle07a$
+                      d[0]=gle07a.actual_amt
+                      d[1]=gle07a.actual_units
+                      d[2]=gle07a.budget_amt
+                      d[3]=gle07a.budget_units
+                      n=0
+                      x=(pos(gle07a.gl_pcn_flag$=cpn$)*mt-mt)+(pos(gle07a.gl_pqy_flag$=pqy$)-1)
+                      for y=0 to my
+                          for z=0 to mz
+                              s[x,y,z]=d[n]
+                              n=n+1
+                          next z
+                      next y
+                wend
+
+                rem --- Initialize totals array
+
+                if gle07a.gl_updt_seq$<>sequence$
+                   dim s[mx,my,mz]
+                   gle07a.gl_updt_seq$=sequence$
+                endif
+
+                rem --- Accumulate totals, transfer to Financial Report Totals (gle-07)
+                rem --- template and write/update record
+
+                gosub sum_matrix
+                last$=""
+                gle07a.firm_id$=firm_id$
+                gle07a.tot_type_cde$="P"
+                gle07a.total_no$=glm22a.input_percnt$
+                for x=0 to mx
+                    n=0
+                    gle07a.gl_pcn_flag$=cpn$(int(x/mt)+1,1)
+                    gle07a.gl_pqy_flag$=pqy$(mod(x,mt)+1,1)
+                    for y=0 to my
+                        for z=0 to mz
+                            d[n]=s[x,y,z]
+                            n=n+1
+                        next z
+                    next y
+                    gle07a.actual_amt=d[0]
+                    gle07a.actual_units=d[1]
+                    gle07a.budget_amt=d[2]
+                    gle07a.budget_units=d[3]
+                    gle07_key$=gle07a.firm_id$+gle07a.tot_type_cde$+gle07a.total_no$+
+:                              gle07a.gl_pcn_flag$+gle07a.gl_pqy_flag$
+                    gle07a$=field(gle07a$)
+                    write record (gle07_dev,key=gle07_key$) gle07a$
+                next x
+
+          rem --- End of report update loop
+
+          wend
+
+    wend
+
+rem --- Run report headings overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run pgmdir$+"glr_headings.aon",err=std_exit
+
+accumulate_totals: rem --- Accumulate totals for this report number and line
+
+    status=0
+    if x$=last$ goto sum_matrix
+    status=1
+    last$=x$
+    glm22_key$=firm_id$+x$
+    find record (glm22_dev,key=glm22_key$,dom=*return) glm22a$
+    status=0
+    if glm22a.gl_updt_seq$<>sequence$
+       dim s[mx,my,mz]
+       glm22a.gl_updt_seq$=sequence$
+       write record (glm22_dev,key=glm22_key$) glm22a$
+       goto sum_matrix
+    endif
+
+rem --- Retrieve Financial Report Amounts (gle-06) for this report and line
+
+    dim s[mx,my,mz],y[mt]
+    k$=glm22a.firm_id$+glm22a.gl_rpt_no$+glm22a.gl_rpt_line$
+    read (gle06_dev,key=k$,dom=*next)
+    while moreamounts
+          gle06_key$=key(gle06_dev,end=*break)
+          if pos(k$=gle06_key$)<>1 break
+          read record (gle06_dev) gle06a$
+          n=0
+          y[0]=gle06a.actual_amt
+          y[1]=gle06a.actual_units
+          y[2]=gle06a.budget_amt
+          y[3]=gle06a.budget_units
+          x=(pos(gle06a.gl_pcn_flag$=cpn$)*mt-mt)+(pos(gle06a.gl_pqy_flag$=pqy$)-1)
+          for y=0 to my
+              for z=0 to mz
+                  s[x,y,z]=y[n]
+                  n=n+1
+              next z
+          next y
+    wend
+
+sum_matrix: rem --- Sum array before returning
+
+    for x=0 to mx
+        for y=0 to my
+            for z=0 to mz
+                type=pos(glm22a.line_type$="BC")                
+                switch type
+                       case 1
+                            s[x,y,z]=s[x,y,z]+i[x,y,z]
+                       break
+                       case 2
+                            s[x,y,z]=s[x,y,z]+j[x,y,z]
+                       break
+                       case default
+                            s[x,y,z]=s[x,y,z]+t[x,y,z]
+                       break
+                swend
+            next z
+        next y
+    next x
+    return
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,340 @@
+rem --- Replenishment Selection Update
+rem --- Program pou_ba v8.0.0 05Dec2007 (pou_ba)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 11:18:58)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=20,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="apm-01",ids$[1]="APM_VENDMAST"
+    files$[2]="apm-02",ids$[2]="APM_VENDHIST"
+    files$[3]="apm-06",ids$[3]="APM_VENDREPL"
+    files$[4]="aps_params",ids$[4]="APS_PARAMS"
+    files$[5]="ivm-01",ids$[5]="IVM_ITEMMAST"
+    files$[6]="ivc_buycode",ids$[6]="IVC_BUYCODE"
+    files$[7]="ivs_params",ids$[7]="IVS_PARAMS"
+    files$[8]="poe-01",ids$[8]="POE_REQHDR"
+    files$[9]="poe-02",ids$[9]="POE_POHDR"
+    files$[10]="poe-06",ids$[10]="POE_ORDHDR"
+    files$[11]="poe-11",ids$[11]="POE_REQDET"
+    files$[12]="poe-16",ids$[12]="POE_ORDDET"
+    files$[13]="poe-21",ids$[13]="POE_REQPRINT"
+    files$[14]="poe-26",ids$[14]="POE_ORDTOT"
+    files$[15]="poe-31",ids$[15]="POE_REQBYREQ"
+    files$[16]="poe-36",ids$[16]="POE_REPSURP"
+    files$[17]="poe-41",ids$[17]="POE_REQBYITM"
+    files$[18]="poe-52",ids$[18]="POE_POBYREQ"
+    files$[19]="pom-02",ids$[19]="POC_LINECODE"
+    files$[20]="pos-10",ids$[20]=""
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apm01_dev=channels[1]
+    apm02_dev=channels[2]
+    apm06_dev=channels[3]
+    aps01a_dev=channels[4]
+    ivm01_dev=channels[5]
+    ivm10_dev=channels[6]
+    ivs01a_dev=channels[7]
+    poe01_dev=channels[8]
+    poe02_dev=channels[9]
+    poe06_dev=channels[10]
+    poe11_dev=channels[11]
+    poe16_dev=channels[12]
+    poe21_dev=channels[13]
+    poe26_dev=channels[14]
+    poe31_dev=channels[15]
+    poe36_dev=channels[16]
+    poe41_dev=channels[17]
+    poe52_dev=channels[18]
+    pom02_dev=channels[19]
+    pos10_dev=channels[20]
+
+rem --- Dimension string templates
+
+    dim apm01a$:templates$[1],apm02a$:templates$[2],apm06a$:templates$[3],
+:       aps01a$:templates$[4],ivm01a$:templates$[5],ivm10a$:templates$[6],
+:       ivs01a$:templates$[7],poe01a$:templates$[8],poe02a$:templates$[9],
+:       poe06a$:templates$[10],poe11a$:templates$[11],poe16a$:templates$[12],
+:       poe21a$:templates$[13],poe26a$:templates$[14],poe31a$:templates$[15],
+:       poe36a$:templates$[16],poe41a$:templates$[17],poe52a$:templates$[18],
+:       pom02a$:templates$[19],pos10a$:templates$[20]
+
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Initialization
+
+    create$="N"; rem "Create Requisition?"
+    datereq$=f0$(18,6)
+    dateord$=f0$(18,6)
+    more=1
+
+    while more
+
+rem --- Update Review Cycles?
+
+        while more
+
+            call pgmdir$+"adc_yesno.aon",0,"Update review cycle dates for all selected buyers and vendors",0,v$,v3
+            if v$="NO" or v3=4 then break
+            if v$<>"YES" then continue
+
+        wend
+
+        if v$="NO" or v3=4 then break
+
+rem --- Create Purchase Req?
+
+        while more
+
+            call pgmdir$+"adc_yesno.aon",0,"Create Purchase Requisitions",0,v$,v3
+            if v$="NO" or v3=4 then break
+            if v$<>"YES" then continue
+            create$="Y"
+            break
+
+        wend
+
+        if v$="NO" or v3=4 then break
+
+        call pgmdir$+"adc_progress.aon","N","","","","",0,poe06_dev,1,meter_num,ignore_status
+
+rem --- Disallow 'M'enu option in Error Routine
+
+        exit_ctrl=1
+
+rem --- Init Read
+
+        read (poe06_dev,key=firm_id$,dom=*next)
+
+rem --- Read Suggested Order File
+
+        while more
+
+            k$=key(poe06_dev,end=done)
+            if pos(firm_id$=k$)<>1 then break
+            read record (poe06_dev) poe06a$
+            buyer$=poe06a.buyer_code$
+            vendor$=poe06a.vendor_id$,reviewdate$=poe06a.cycle_date$
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+            find record (ivm10_dev,key=firm_id$+"F"+buyer$,dom=end_ext) ivm10f$
+            extract record (apm06_dev,key=firm_id$+vendor$+buyer$,dom=end_ext) apm06a$
+            days=buyercycledays
+            if apm06a.rev_days<>0 then let days=apm06a.rev_days
+            call pgmdir$+"adc_daydates.aon",reviewdate$,nextreviewdate$,days
+            apm06a.pri_rev_date$=reviewdate$
+            apm06a.nxt_rev_date$=nextreviewdate$
+            write record (apm06_dev,key=firm_id$+vendor$+buyer$) apm06a$
+    end_ext:
+            if create$="Y" then gosub create_req
+            remove (poe06_dev,key=k$)
+
+        wend
+
+        if pos(firm_id$=k$)<>1 then break
+
+    wend
+
+done: rem --- Done
+
+    goto std_exit
+
+create_req: rem --- Create Requisitions
+
+    dim previtem$(20)
+    read (poe16_dev,key=firm_id$+buyer$+vendor$,dom=*next)
+
+    while more
+
+        k16$=key(poe16_dev,end=*break)
+        if k16$(1,11)<>firm_id$+buyer$+vendor$ then break
+        read record (poe16_dev) poe16a$
+        itemnum$=poe16a.item_id$
+        stocklevel$=poe16a.stock_level$
+        if previtem$<>itemnum$ gosub removepoe36
+        if stocklevel$<>"I"
+            dim unitmeas$(2)
+            convfact=0
+            read record (ivm01_dev,key=firm_id$+itemnum$,dom=missing_key) ivm01a$
+            unitmeas$=ivm01a.purchase_um$
+            convfact=ivm01a.conv_factor
+        missing_key:
+            cost=poe16a.line_point
+            whse$=poe16a.warehouse_id$,sugg=poe16a.sugg_ord_qty
+            gosub callpocba
+        endif
+        remove (poe16_dev,key=k16$)
+
+    wend
+
+rem --- Use poe-26 (Totals) to process items stocked by 'I'
+
+    read (poe26_dev,key=firm_id$+buyer$+vendor$,dom=*next)
+
+    while more
+
+        k26$=key(poe26_dev,end=done_create)
+        if pos(firm_id$+buyer$+vendor$=k26$)<>1 then break
+        read record (poe26_dev) poe26a$
+        itemnum$=poe26a.item_id$
+        stocklevel$=poe26a.stock_level$
+        if stocklevel$<>"W"
+            dim unitmeas$(2)
+            convfact=0
+            read record (ivm01_dev,key=firm_id$+itemnum$,dom=missing_key1) ivm01a$
+            unitmeas$=ivm01a.purchase_um$
+            convfact=ivm01a.conv_factor
+        missing_key1:
+            cost=poe26a.est_unit_cst
+            whse$=defaultwhse$,sugg=poe26a.sugg_ord_qty
+            gosub callpocba
+        endif
+        remove (poe26_dev,key=k26$)
+
+    wend
+
+done_create:
+    return
+
+callpocba: rem --- Assign and call poc.ba to create requisition
+
+    if sugg>0
+        dim chans[12],info$[15],info[2]
+        chans[1]=apm02_dev
+        chans[2]=poe01_dev,chans[3]=poe02_dev
+        chans[4]=poe11_dev
+        chans[5]=poe52_dev,chans[6]=pom02_dev
+        chans[7]=pos10_dev
+        chans[8]=poe21_dev,chans[9]=poe31_dev
+        chans[10]=poe41_dev
+        chans[11]=sys01_dev,chans[12]=apm01_dev
+        info$[0]=firm_id$
+        info$[1]=vendor$,info$[2]="S",info$[3]=whse$
+        info$[4]=dateord$
+        info$[5]=datereq$,info$[6]=unitmeas$,info$[7]="R"
+        info$[8]=fill(3)
+        info$[9]=fill(10),info$[10]=fill(6) 
+        info$[11]=fill(10)
+        info$[12]=fill(10),info$[13]=itemnum$
+        info$[14]=fill(40)
+        info[0]=convfact
+        info[1]=cost,info[2]=sugg
+        call pgmdir$+"poc_ba.bbx",chans[all],info$[all],info[all],detailkey$,status
+    endif
+    return
+
+removepoe36: rem --- Remove 'surplus' records
+
+    read (poe36_dev,key=firm_id$+itemnum$,dom=*next)
+
+    while more
+
+        k36$=key(poe36_dev,end=*break)
+        if pos(firm_id$+itemnum$=k36$)<>1 then break
+        remove (poe36_dev,key=k36$)
+
+    wend
+    
+    previtem$=itemnum$
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run pgmdir$+"ads_process_end.aon",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

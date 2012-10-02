@@ -1,0 +1,241 @@
+rem --- Remove Unlinked PO Detail Lines
+rem --- Program pox_ba v8.0.0 06Jul2007 (pox_ba)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/06/2007 02:47:10)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=13,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[2]="poe-01",ids$[2]="POE_REQHDR"
+    files$[3]="poe-02",ids$[3]="POE_POHDR"
+    files$[4]="poe-03",ids$[4]="POE_QAHDR"
+    files$[5]="poe-04",ids$[5]="POE_RECHDR"
+    files$[6]="poe-11",ids$[6]="POE_REQDET"
+    files$[7]="poe-12",ids$[7]="POE_PODET"
+    files$[8]="poe-13",ids$[8]="POE_QADET"
+    files$[9]="poe-14",ids$[9]="POE_RECDET"
+    files$[10]="poe-23",ids$[10]="POE_QALSDET"
+    files$[11]="poe-24",ids$[11]="POE_RECLSDET"
+    files$[12]="APS_PARAMS",ids$[12]=files$[12]
+    files$[13]="IVS_PARAMS",ids$[13]=files$[13]
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    poe01_dev=channels[2]
+    poe02_dev=channels[3]
+    poe03_dev=channels[4]
+    poe04_dev=channels[5]
+    poe11_dev=channels[6]
+    poe12_dev=channels[7]
+    poe13_dev=channels[8]
+    poe14_dev=channels[9]
+    poe23_dev=channels[10]
+    poe24_dev=channels[11]
+    aps01a_dev=channels[12]
+    ivs01a_dev=channels[13]
+
+rem --- Dimension string templates
+
+    dim poe01a$:templates$[2],poe02a$:templates$[3],poe03a$:templates$[4],
+:       poe04a$:templates$[5],poe11a$:templates$[6],poe12a$:templates$[7],
+:       poe13a$:templates$[8],poe14a$:templates$[9],poe23a$:templates$[10],
+:       poe24a$:templates$[11],aps01a$:templates$[12],ivs01a$:templates$[13]
+
+rem --- Assign form input values to local variables
+
+    table$=fnget_table$("")
+    remflag$=fnget_fld_data$(table$,"remove_unlinked_detail_lines")
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Background
+
+    call pgmdir$+"syc_wc.bbx",1,0,80,1,0,4,0
+    print 'SB',@(28,3),"Processing:",'SF',
+
+rem --- Options
+
+    v4$="Do You Wish To Remove Unlinked Purchase Order Detail Lines"
+    call pgmdir$+"adc_yesno.aon",0,v4$,0,v$,v3
+    if v$<>"YES" goto std_exit
+    call pgmdir$+"adc_progress.aon","N","","","","",0,0,1,meter_num,status
+
+rem --- Requisitions
+
+    k=15
+    receipt=0
+    x$="Requisitions"
+    header_dev=poe01_dev
+    detail_dev=poe11_dev
+    gosub check_detail
+
+rem --- Purchase Orders
+
+    k=15
+    receipt=0
+    x$="Purchase Orders"
+    header_dev=poe02_dev
+    detail_dev=poe12_dev
+    gosub check_detail
+
+rem --- QA Receipts
+
+    k=22
+    receipt=1
+    x$="Quality Assurance Receipts"
+    header_dev=poe03_dev
+    detail_dev=poe13_dev
+    gosub check_detail
+
+rem --- QA Receipts Lot/Serial Detail
+
+    k=22
+    receipt=1
+    x$="Quality Assurance Lot/Serial Detail"
+    header_dev=poe03_dev
+    detail_dev=poe23_dev
+    gosub check_detail
+
+rem --- PO Receipts
+
+    k=22
+    receipt=1
+    x$="Purchase Order Receipts"
+    header_dev=poe04_dev
+    detail_dev=poe14_dev
+    gosub check_detail
+
+rem --- PO Receipts
+
+    k=22
+    receipt=1
+    x$="Purchase Order Receipts"
+    header_dev=poe04_dev
+    detail_dev=poe14_dev
+    gosub check_detail
+
+done: rem --- All done
+
+    goto std_exit
+
+check_detail: rem --- Check for unlinked detail lines
+
+    print @(40,3),x$,'CL',
+    read (detail_dev,key="",dom=*next)
+
+rem --- Read next detail
+
+    while more
+
+        let detail_key$=key(detail_dev,end=*break)
+        read (detail_dev)
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if receipt print " ",detail_key.po_no$,
+        if k=15
+            find (header_dev,key=detail_key.firm_id$+detail_key.vendor_id$+detail_key.receiver_no$,dom=rem_detail)
+        else 
+            if k=22 find (header_dev,key=detail_key.firm_id$+detail_key.vendor_id$+detail_key.receiver_no$+detail_key.po_no$,dom=rem_detail)
+        continue
+
+rem_detail: rem --- Remove unlinked detail line
+
+        remove (detail_dev,key=k$)
+
+    wend
+
+rem --- Done with current file set
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

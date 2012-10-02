@@ -1,0 +1,378 @@
+rem --- Check Printing -- General Lead Overlay
+rem --- Program prr_chkprint.aon v8.0.0 18Jun2008 (prr_ga)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/18/2008 12:10:30)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=18,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="pre-01",ids$[2]="PRE_PAYROLL"
+    files$[3]="pre-11",ids$[3]="PRE_PAYEARNG"
+    files$[4]="pre-21",ids$[4]="PRE_PAYDDCT"
+    files$[5]="pre-31",ids$[5]="PRE_PAYTAX"
+    files$[6]="prm-01",ids$[6]="PRM_EMPLMAST"
+    files$[7]="prm-02",ids$[7]="PRM_EMPLPAY"
+    files$[8]="prc_paycode",ids$[8]="PRC_PAYCODE"
+    files$[9]="prc_ddctcode",ids$[9]="PRC_DDCTCODE"
+    files$[10]="prc_taxcode",ids$[10]="PRC_TAXCODE"
+    files$[11]="prc_titlcode",ids$[11]="PRC_TITLCODE"
+    files$[12]="prc_rprtcode",ids$[12]="PRC_RPRTCODE"
+    files$[13]="prs_params",ids$[13]="PRS_PARAMS"
+    files$[14]="prs_period",ids$[14]="PRS_PERIOD"
+    files$[15]="prt-01",ids$[15]="PRT_EMPLEARN"
+    files$[16]="prt-11",ids$[16]="PRT_EMPLDDCT"
+    files$[17]="prt-21",ids$[17]="PRT_EMPLTAX"
+    files$[18]="prw-01",ids$[18]="PRW_CHCKWORK"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01a_dev=channels[1]
+    pre01a_dev=channels[2]
+    pre11a_dev=channels[3]
+    pre21a_dev=channels[4]
+    pre31a_dev=channels[5]
+    prm01a_dev=channels[6]
+    prm02a_dev=channels[7]
+    prm10a_dev=channels[8]
+    prm10b_dev=channels[9]
+    prm10c_dev=channels[10]
+    prm10f_dev=channels[11]
+    prm10h_dev=channels[12]
+    prs01a_dev=channels[13]
+    prs01b_dev=channels[14]
+    prt01a_dev=channels[15]
+    prt11a_dev=channels[16]
+    prt21a_dev=channels[17]
+    prw01a_dev=channels[18]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],pre01a$:templates$[2],pre11a$:templates$[3],
+:       pre21a$:templates$[4],pre31a$:templates$[5],prm01a$:templates$[6],
+:       prm02a$:templates$[7],prm10a$:templates$[8],prm10b$:templates$[9],
+:       prm10c$:templates$[10],prm10f$:templates$[11],prm10h$:templates$[12],
+:       prs01a$:templates$[13],prs01b$:templates$[14],prt01a$:templates$[15],
+:       prt11a$:templates$[16],prt21a$:templates$[17],prw01a$:templates$[18]
+
+rem --- Assign form input values to local variables
+
+    check_date$=Option!.getOptionData("check_date")
+    check_no$=Option!.getOptionData("check_no")
+    option$=Option!.getOptionData("report_option")
+    emp_no$=Option!.getOptionData("employee_no")
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    prs01a_key$=firm_id$+"PR00"
+    find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
+    prs01b_key$=firm_id$+"PR01"
+    find record (prs01b_dev,key=prs01b_key$,err=std_missing_params) prs01b$
+
+parameters: rem --- Parameters
+
+    dim p5$(25)
+    n1$=sysinfo.firm_name$,n2$="PR",n3$=sysinfo.task_desc$
+    dim p[5]
+    p[0]=num(prs01a.empl_no_len$)
+    p[1]=num(prs01a.max_empl_no$)
+    p[3]=num(prs01a.zip_length$)
+    p[4]=num(prs01a.precision$)
+    p[5]=num(prs01a.dept_size$)
+    printoverlay$=prs01a.chk_prnt_pgm$
+    
+initializations: rem --- Initializations
+
+    h0=0
+    l9=13
+    l=0
+    more=1
+    dim h9$(20,$0a$)
+    dim cur_amt[10],units[10],ytd_pay[10],cur_ded[10],ytd_ded[10],w[2],y[4],totals[5],msg$[2]
+    if check_date$="" then check_date$=sysinfo.system_date$
+    m0$=prs01a.empl_output$
+    m2$=prs01a.unit_mask$
+    m3$=prs01a.rate_mask$
+    m0=len(m0$)
+    m2=len(m2$)
+    if m2>7 m2$="###.00-",m2=len(m2$)
+    m8$="*#######"
+    m7$="000-00-0000"
+    m1$="######.00-"
+    m9$="*"+m1$
+    m1=len(m1$)
+    m9=len(m9$)
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYROLL","PRIMARY",pre01_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYEARNG","PRIMARY",pre11_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYDDCT","PRIMARY",pre21_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYTAX","PRIMARY",pre31_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRC_PAYCODE","PRIMARY",prm10a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRC_DDCTCODE","PRIMARY",prm10b_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRC_TAXCODE","PRIMARY",prm10c_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRC_RPRTCODE","PRIMARY",prm10h_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLEARN","PRIMARY",prt01_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLDDCT","PRIMARY",prt11_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLTAX","PRIMARY",prt21_key_tpl$,rd_table_chans$[all],status$
+
+    dim pre01a_key$:pre01_key_tpl$
+    dim pre11a_key$:pre11_key_tpl$
+    dim pre21a_key$:pre21_key_tpl$
+    dim pre31a_key$:pre31_key_tpl$
+    dim prm10a_key$:prm10a_key_tpl$
+    dim prm10b_key$:prm10b_key_tpl$
+    dim prm10c_key$:prm10c_key_tpl$
+    dim prm10h_key$:prm10h_key_tpl$
+    dim prt01a_key$:prt01_key_tpl$
+    dim prt11a_key$:prt11_key_tpl$
+    dim prt21a_key$:prt21_key_tpl$
+
+rem --- Check Pre-Check Print Flag
+
+    if prs01b.negative_chk$<>"Y" then
+        msg$[0]="Negative checks were reported on the Pre-Check Report."
+        msg$[1]="Cancel to correct and reprint Pre-Check Report"
+        msg$[2]="or OK to continue."
+        call pgmdir$+"adc_stdmessage.aon",3,msg$[all],2,-1,-1,v$,v3
+        if v3=4 then goto std_exit
+    endif
+
+     p5$=prs01b.pay_end_date$
+
+rem --- Additional File Opens
+
+    gl$="N"
+    status=0
+    call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
+    if status goto std_exit
+
+    if gl$="Y" call pgmdir$+"glc_datecheck.aon",check_date$,"Y",period$,year$,status
+    if status>99 goto std_exit
+ 
+
+end_input: rem --- Run report overlay
+
+    gosub build_heading
+    run printoverlay$,err=*next
+
+rem --- Error when tried to run print overlay
+
+    dim message$[2]
+    message$[0]="Can't Run The Print Overlay Specified In PR Parameters. Correct"
+    message$[1]="'Check Printing Program' Parameter. Press <F4> To Exit Or Press"
+    message$[2]="Any Other Key To Run Default Print Program, prr_gb.bbx."
+    call pgmdir$+"adc_stdmessage.aon",0,message$[all],2,22,-1,v$,v3
+    if v3=4 goto std_exit
+    run pgmdir$+"prr_chkprint_o1.aon"; rem "Run this default if param is unrunable
+
+build_heading: rem --- Create Headings
+
+    paycodes$=""
+    paydescs$="",dedcodes$="",deddescs$=""
+
+    read (prm10h_dev,key=firm_id$+"H",dom=*next)
+    while more
+        prm10h_key$=key(prm10h_dev,end=*break)
+        if prm10h_key.firm_id$<>firm_id$ then break
+        read record (prm10h_dev) prm10h$
+        if pos(prm10h.report_type$="BC")<>0 dedcodes$=dedcodes$+prm10h.report_type$+prm10h.report_code$,deddescs$=deddescs$+prm10h.pr_rpt_title$
+    wend
+
+    deddescs$=deddescs$+"OTHER DED."
+    print @(40,11),'cl',
+    read (prm10a_dev,key=firm_id$+"A",dom=*next)
+    while more
+        prm10a_key$=key(prm10a_dev,end=*break)
+        if prm10a_key.firm_id$<>firm_id$ then break
+        read record (prm10a_dev) prm10a$
+        paycodes$=paycodes$+prm10a.pay_code$
+        paydescs$=paydescs$+prm10a.pr_code_desc$(1,12)
+    wend
+
+    paydescs$=paydescs$+"OTHER PAY   "
+    paycodelen=len(paycodes$)
+    dedcodelen=len(dedcodes$)
+    paydesclen=len(paydescs$)
+    deddesclen=len(deddescs$)
+
+rem --- X-ref
+
+    read (prm10b_dev,key=firm_id$+"B",dom=*next)
+    while more
+        prm10b_key$=key(prm10b_dev,end=*break)
+        if prm10b_key.firm_id$<>firm_id$ then break
+        read record (prm10b_dev) prm10b$
+        u6$=u6$+"B"+prm10b.deduct_code$
+        u7$=u7$+prm10b.report_code$
+    wend
+    read (prm10c_dev,key=firm_id$+"C",dom=*next)
+    while more
+        prm10c_key$=key(prm10c_dev,end=*break)
+        if prm10c_key.firm_id$<>firm_id$ then break
+        read record (prm10c_dev) prm10c$
+        u6$=u6$+"C"+prm10c.tax_code$
+        u7$=u7$+prm10c.report_code$
+    wend
+    print @(40,11),'cl',
+
+    if paycodelen<>0 or dedcodelen<>0 then return
+
+rem --- ??? What is the message displayed if paycodelen or dedcodelen is 0?
+    rem let v0$="S",v1$="C",v2$="",v3$="",v4$="PR_CODES_WARNING",v0=1,v1=fnv(v4$),v2=22
+    rem print @(v1,v2),'rb',
+    
+    exitto std_exit
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        if cvs(q$,2)="" return ""
+        if pos("9"<>q$)=0 return q$
+        testdate$=""
+        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        return testdate$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

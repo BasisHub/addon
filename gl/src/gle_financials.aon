@@ -1,0 +1,220 @@
+rem gle - Financial Report Printing (Lead Overlay)
+rem Program gle_financials v8.0.0 03Jun2006
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- This program is the lead overlay for financial report
+rem --- generation and printing. The following sequence of programs
+rem --- are run:
+
+rem --- glu_financials: Compiles the data necessary to produce the
+rem ---                 reports from the Summary Activity (glm-02)
+rem ---                 file. This program is only run if the user
+rem ---                 has chosen NOT to reprint existing reports.
+rem --- glr_headings  : Assembles the headings for the financial reports
+rem ---                 by replacing heading tokens with actual values.
+rem ---                 This program is the next overlay when the user has
+rem ---                 chosen to reprint existing reports.
+rem --- glr_financials: Produces the custom financial reports from 
+rem ---                 either existing data (when reprinting) or from
+rem ---                 the new data compiled by glu_financials.
+
+rem --- Arguments provided by the input form are
+
+rem --- BEGPER$ : Fiscal period for the reports
+rem --- BEGYEAR$: Fiscal year for the reports
+rem --- REPRINT$: Reprint flag (Y/N)
+
+rem --- The list of reports to be printed is contained in the 
+rem --- Financial Report Selections (gle-04) table.
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=15,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]=files$[1]
+    files$[2]="gle-04",ids$[2]="GLE_FINANCIALRPT"
+    files$[3]="gle-06",ids$[3]="GLE_FINANCIALAMT"
+    files$[4]="gle-07",ids$[4]="GLE_FINANCIALTOT"
+    files$[5]="gle-08",ids$[5]="GLE_13PERIODAMT"
+    files$[6]="gle-09",ids$[6]="GLE_13PERIODTOT"
+    files$[7]="glm-01",ids$[7]="GLM_ACCT"
+    files$[8]="glm-02",ids$[8]="GLM_ACCTSUMMARY"
+    files$[9]="glm-11",ids$[9]="GLM_FINASSIGN"
+    files$[10]="glm-12",ids$[10]="GLM_FINMASTER"
+    files$[11]="glm-13",ids$[11]="GLM_FINHEADING"
+    files$[12]="glm-21",ids$[12]="GLM_COFINASSIGN"
+    files$[13]="glm-22",ids$[13]="GLM_FINDETAIL"
+    files$[14]="glm-32",ids$[14]="GLM_FINCOLUMNS"
+    files$[15]="gls_financials",ids$[15]=files$[15]
+    options$[2]="L"
+    options$[3]="L"
+    options$[13]="L"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    gle04_dev=channels[2]
+    gle06_dev=channels[3]
+    gle07_dev=channels[4]
+    gle08_dev=channels[5]
+    gle09_dev=channels[6]
+    glm01_dev=channels[7]
+    glm02_dev=channels[8]
+    glm11_dev=channels[9]
+    glm12_dev=channels[10]
+    glm13_dev=channels[11]
+    glm21_dev=channels[12]
+    glm22_dev=channels[13]
+    glm32_dev=channels[14]
+    gls01c_dev=channels[15]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],gle04a$:templates$[2],gle06a$:templates$[3],gle07a$:templates$[4],gle08a$:templates$[5],
+:       gle09a$:templates$[6],glm01a$:templates$[7],glm02a$:templates$[8],glm11a$:templates$[9],
+:       glm12a$:templates$[10],glm13a$:templates$[11],glm21a$:templates$[12],glm22a$:templates$[13],
+:       glm32a$:templates$[14],gls01c$:templates$[15]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    total_pers=num(gls01a.total_pers$)
+    acctlen=num(gls01a.acct_length$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",m2$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","R","",m3$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","P","",m4$,0,0
+    mp=13
+
+rem --- Assign input values to local variables
+
+    begper$=Option!.getOptionData("PERIOD")
+    begyear$=Option!.getOptionData("YEAR")
+    reprint$=Option!.getOptionData("REPRINT")
+    if cvs(begper$,2)="" begper$=gls01a.current_per$
+    if cvs(begyear$,2)="" begyear$=gls01a.current_year$
+    reprint=reprint$="Y"
+
+rem --- Retrieve GL Financial Report Parameter record and either update it
+rem --- or create it if necessary
+
+    gls01c.firm_id$=firm_id$
+    gls01c.gl$="GL"
+    gls01c.sequence_02$="02"
+    gls01c.period$=begper$
+    gls01c.year$=begyear$
+    gls01c.gl_updt_seq_01$="0"
+    gls01c.gl_updt_seq_02$="0"
+    gls01c.print_flag_01$="0"
+    gls01c.print_flag_02$="0"
+    gls01c_key$=firm_id$+"GL02"
+    find record (gls01c_dev,key=gls01c_key$,err=*next) gls01c$
+    sequence=num(gls01c.gl_updt_seq_01$)
+    sequence$=str(sequence)
+    gls01c$=field(gls01c$)
+    write record (gls01c_dev,key=gls01c_key$) gls01c$
+    if reprint=0
+       sequence=sequence+1
+       if sequence>9 sequence=0
+       sequence$=str(sequence$)
+       gls01c.gl_updt_seq_01$=sequence$
+       gls01c.period$=begper$
+       gls01c.year$=begyear$
+       gls01c$=field(gls01c$)
+       write record (gls01c_dev,key=gls01c_key$) gls01c$
+    endif
+
+rem --- Initializations
+
+    overlay=0
+    financials=1
+    report$="glr_financials.aon"
+    overlay$="glu_financials.aon"
+    if reprint then overlay$="glr_headings.aon"
+
+rem --- Position file and run next overlay (report or update)
+
+    read (gle04_dev,key=firm_id$,dom=*next)
+    run pgmdir$+overlay$,err=std_exit
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_missing_params_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

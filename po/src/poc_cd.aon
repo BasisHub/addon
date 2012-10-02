@@ -1,0 +1,274 @@
+rem --- Purge Purchase Calendar
+rem --- Program poc_cd v8.0.0 19Dec2007 (poc_cd)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/19/2007 12:02:07)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+    enter filename$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+sysinfo",err=*next)
+    milestone=num(stbl("+milestone",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps-01a",ids$[1]=""
+    files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
+    files$[3]="pom-01",ids$[3]="POM_CALENDAR"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01a_dev=channels[1]
+    ivs01a_dev=channels[2]
+    pom01_dev=channels[3]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],ivs01a$:templates$[2],pom01a$:templates$[3]
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Open/Lock Files
+
+    files=2
+    dim files$[files],options$[files],channels[files]
+    files$[1]="sys-01"
+    files$[2]=filename$
+    call pgmdir$+"adc_fileopen.aon",1,1,2,files$[all],options$[all],channels[all],batch,status
+    if status then goto std_exit
+    sys01_dev=channels[1]
+    pom01_dev=channels[2]
+
+rem --- Parameters
+
+    find record (sys01_dev,key="T"+fid(0),dom=std_missing_params) sys01t$
+    firm_id$=sys01a.firm_id$
+
+rem --- Init Data
+
+    dim a0$(6),a1$(31)
+    purge$=sysinfo.system_date$
+    more =1
+
+rem --- Display Resource
+
+    dim resparams$[20],resparams[20]
+    resaction$=""
+    resparams$[0]=pgm(-2)
+    call pgmdir$+"syc_ra.bbx",resaction$,resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+    if status then goto std_exit
+
+rem --- Get First Day Scheduled
+
+    call pgmdir$+"poc_ce.bbx",pom01_dev,firm_id$,begdate$,enddate$,status
+    v1$="None"
+    v2$="None"
+    if begdate$<>"" then let v1$=fndate$(begdate$),v2$=fndate$(enddate$)
+    call pgmdir$+"syc_df.bbx",0,3000,my_context,status; call pgmdir$+"syc_df.bbx",0,3001,my_context,status
+    gosub display_fields
+
+label1:
+
+    while more
+
+        i0=1; break
+
+    date_purge_through: rem --- Date To Purge Through
+
+        v4$="Enter Date To Purge Through (<F1>=Last)"
+        v0$="D"
+        v1$="KEC",v2$=purge$,v3$="",v0=3,v1=40,v2=5,control_id=3002
+        on v3 goto label2,last_date,date_purge_through,date_purge_through,std_exit,label2,std_exit
+
+    label2:
+
+        purge$=v$
+        if cvs(v$,2)<>"" then call pgmdir$+"syc_rs.bbx","",my_context,3002,fndate$(purge$),0,"",status
+        break
+
+    last_date: rem --- Last date
+
+        if v3=1 then let v$=""
+        if v$="" then gosub clear_text; let purge$=enddate$; call pgmdir$+"syc_rs.bbx","",my_context,13002,"Last",0,"",status; call pgmdir$+"syc_rs.bbx","",my_context,3002,"",0,"",status
+        break
+
+    wend
+
+flow_control:
+
+    switch v3
+    case 0
+    case 1
+    case 3; let i0=i0+1; break
+    case 2; if i0<i0_nonkey1 then let i0=max(0,i0-1) else let i0=max(i0_nonkey1,i0-1) fi; break
+    case 4; let i0=i0_done; break
+    case default; exitto done_v3
+    swend
+    on i0 goto label1,label1,date_purge_through,done,done
+
+done: rem --- Correct?
+
+    while more
+
+        if validate then let validate=0; break
+        gosub display_fields
+        v0$="S"
+        v1$="KC",v2$="N",v3$="",v4$="ITAC=Y",v0=6,v1=fnv(v4$),v2=22,control_id=i0-i0_done+1
+
+    done_v3:
+
+        action=pos(v$="YN")
+        switch action
+
+            case 1
+
+            validate_input:
+
+                validate=1
+                old_control_id=0
+
+            case 2
+
+            do_nonkey1:
+
+                v3=0
+                i0=i0_nonkey1-1
+
+            case default
+                goto flow_control
+        swend
+
+    wend
+
+end_input: rem --- Run report overlay
+
+    if purge$="" then goto std_exit
+    purge$=fndate$(purge$)
+    purge$=fnyy_yy21$(purge$(7,2))+purge$(1,2)+purge$(4,2)
+    call pgmdir$+"adc_progress.aon","N","","","","",0,pom01_dev,1,meter_num,ignore_status
+    read (pom01_dev,key=firm_id$,dom=*next)
+
+rem --- Purge Records
+
+    while more
+
+        pom01a_key$=key(pom01_dev,end=std_exit)
+        if pos(firm_id$=pom01a_key$)<>1 then goto std_exit
+        if pom01a_key$(3,4)>purge$(1,4) then goto std_exit
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if pom01a_key$(3,4)<purge$(1,4) remove (pom01_dev,key=pom01a_key$); continue
+        read record (pom01_dev) pom01a$
+        pom01a$(8,num(purge$(5,2)))=""
+        write record (pom01_dev,key=pom01a_key$) pom01a$
+        if cvs(pom01a$(8,31),2)="" remove (pom01_dev,key=pom01a_key$)
+
+    wend
+
+display_fields:
+
+    control_id=3000
+    cid_cnt=0
+
+    while more
+
+        if cid_cnt=0 then if begdate$="" then let disp_inp$="",disp_desc$="None" else let disp_inp$=fndate$(begdate$),disp_desc$=""
+        if cid_cnt=1 then if enddate$="" then let disp_inp$=enddate$,disp_desc$="None" else let disp_inp$=fndate$(enddate$),disp_desc$=""
+        if cid_cnt=2 then if purge$=enddate$ then let disp_inp$="",disp_desc$="Last" else let disp_inp$=fndate$(purge$),disp_desc$=""
+        call pgmdir$+"syc_rs.bbx","",my_context,control_id,disp_inp$,0,"",status
+        call pgmdir$+"syc_rs.bbx","",my_context,control_id+10000,disp_desc$,0,"",status
+        cid_cnt=cid_cnt+1; let control_id=control_id+1
+        if cid_cnt>i0_done-1 then break
+
+    wend
+
+    disp_inp$=""
+    disp_desc$=""
+    return
+    
+clear_text:
+
+    call pgmdir$+"syc_rs.bbx","",my_context,control_id,"",0,"",status
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run pgmdir$+"ads_process_end.aon",err=*next
+    release
+rem #endinclude std_exit.src
+
+    end

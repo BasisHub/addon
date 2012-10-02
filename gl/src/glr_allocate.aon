@@ -1,0 +1,455 @@
+                                                                                                                                                                                                                         rem glr - Allocation Entry Register (Report Overlay)
+rem Program glr_allocate v8.0.0 11May2006 (glr_qb)
+rem Created by adx_progconv.bbx v1.0.3 (05/11/2006 04:31:16)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+            setesc std_error
+            seterr std_error
+
+rem --- Document initializations
+
+            OutVect!=bbjAPI().getSysGui().makeVector()
+            HdrVect!=bbjAPI().getSysGui().makeVector()
+            BrkVect!=bbjAPI().getSysGui().makeVector()
+            TotVect!=bbjAPI().getSysGui().makeVector()
+            rep_date$=date(0:"%Mz/%Dz/%Yd")
+            rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+            rep_time$=date(0:"%hz:%mz %p")
+            rep_time_stamp$=date(0:"%Hz%mz%sz")
+            rep_prog$=pgm(-2)
+
+rem --- Retrieve the program path
+
+           pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+            sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+            dim sysinfo$:sysinfo_template$
+            sysinfo$=stbl("+SYSINFO",err=*next)
+            firm_id$=sysinfo.firm_id$
+
+rem --- Initialize +GLCONTROL and get work file name
+
+            source$=fnbasename$(pgm(-2),"")
+            call pgmdir$+"glc_ctlcreate.aon",err=std_exit,source$,"GL",glw11$,gl$,status
+            if status goto std_exit
+
+rem --- Open/Lock files
+
+            files=7,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+            files$[2]="glm-01",ids$[2]="GLM_ACCT"
+            files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
+            files$[4]="glm-03",ids$[4]="GLC_JOURNALCODE"
+            files$[5]="gle-03",ids$[5]="GLE_ALLOCHDR"
+            files$[6]="gle-13",ids$[6]="GLE_ALLOCDET"
+            files$[7]=glw11$,ids$[7]="GLW_DAILYDETAIL"
+            options$[7]="CL"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit
+            gls01_dev=channels[1]
+            glm01_dev=channels[2]
+            glm02_dev=channels[3]
+            glm03_dev=channels[4]
+            gle03_dev=channels[5]
+            gle13_dev=channels[6]
+            glw11_dev=channels[7]
+
+rem --- Dimension string templates
+
+        dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3],glm03a$:templates$[4],
+:       gle03a$:templates$[5],gle13a$:templates$[6],glw11a$:templates$[7]
+        glcontrol_template$=stbl("+GLCONTROL_TPL",err=*next)
+        dim glcontrol$:glcontrol_template$
+
+rem --- Assign input values to local variables
+
+        period$=Option!.getOptionData("PERIOD")
+        year$=Option!.getOptionData("YEAR")
+
+rem --- Retrieve parameter records
+
+        gls01a_key$=firm_id$+"GL00"
+        find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+        glcontrol$=stbl("+GLCONTROL",err=*next)
+        m0$=gls01a.acct_output$
+        m1$=gls01a.amount_mask$
+        m2$=gls01a.unit_mask$
+        acctlen=num(gls01a.acct_length$)
+        m4$="##0.00%"
+        m4=len(m4$)
+        call pgmdir$+"adc_sizemask.aon",m2$,m2,7,10
+        call pgmdir$+"adc_sizemask.aon",m1$,m1,7,10
+        if cvs(period$,2)="" period$=gls01a.current_per$
+        if cvs(year$,2)="" year$=gls01a.current_year$
+
+
+rem --- Initializations
+
+        precision 2
+        dim pctline$(m4,"-"),amtline$(m1-1,"-"),unitline$(m2-1,"-"),totals[2],w[2],o[5]
+        dim headings$[2]
+        headings$[0]=cvs(sysinfo.firm_name$,2)
+        headings$[1]=cvs(sysinfo.task_desc$,2)
+        h0=80
+        width=h0
+        more=1
+        moredetail=1
+        balanced=0
+        period=num(period$)
+        year=num(year$)
+        unithdr$=""
+        if gls01a.units_flag$<>"Y" unitline$=""
+        headings$[2]="For period: "+period$+"/"+year$
+        recs=0
+
+rem --- Document columns
+
+    
+        dim columns$[5,10]
+        columns=5
+        columns$[0,0]="Source Acct",     columns$[0,1]="C",columns$[0,2]="10"
+        columns$[1,0]="Allocate To",columns$[1,1]="C",columns$[1,2]="10"
+        columns$[2,0]="Description",        columns$[2,1]="C",columns$[2,2]="25"
+        columns$[3,0]="Percent",            columns$[3,1]="N",columns$[3,2]=str(len(m4$)),columns$[3,3]=m4$
+        columns$[4,0]="Amount",             columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$
+        columns$[5,0]="Units",              columns$[5,1]="N",columns$[5,2]=str(len(m2$)),columns$[5,3]=m2$
+    
+
+init_progress_meter: rem --- initialize the progress meter and position the file
+
+       call pgmdir$+"adc_progress.aon","N","","","","",0,gle03_dev,1,meter_num,status
+
+rem --- Which glm-02 record?
+
+        record$="0"
+        if gls01a.gl_yr_closed$<>"Y" record$="4"
+
+rem --- Get posting date, retrieve journal record and position file
+
+        call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,x$,gldate$,status
+        glm03_key$=firm_id$+glcontrol.journal_id$
+        glm03a.code_desc$="Unknown Journal ID"
+        find record (glm03_dev,key=glm03_key$,dom=*next)glm03a$
+        read (gle03_dev,key=firm_id$,dom=*next)
+ 
+rem --- Get next gle-03 record
+
+    while more
+    
+          gle03_key$=key(gle03_dev,end=*break)
+          if pos(firm_id$=gle03_key$)<>1 break
+          recs=recs+1
+          read record (gle03_dev)gle03a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Additional File Reads
+
+          dim totals[2]
+          glm01a.gl_account$=gle03a.gl_account$
+          glm01a.gl_acct_desc$="(Not On File)"
+          glm01_key$=firm_id$+gle03a.gl_account$
+          glm02_key$=firm_id$+gle03a.gl_account$+record$
+          find record (glm01_dev,key=glm01_key$,dom=*next)glm01a$
+          find record (glm02_dev,key=glm02_key$,dom=*next)glm02a$
+
+rem --- Accumulate total to allocate
+
+          gle03a.gl_post_amt=nfield(glm02a$,"period_amt_"+str(period:"00"))
+          gle03a_units=0
+          if gls01a.units_flag$="Y" gle03a.units=nfield(glm02a$,"period_units_"+str(period:"00"))
+
+rem --- Generate recap
+
+          account$=gle03a.gl_account$
+          amount=-gle03a.gl_post_amt
+          units=0
+          ref1$="Source"
+          ref2$=""
+          ref3$=""
+          memo$=glm03a.code_desc$
+          if gls01a.units_flag$="Y" units=-gle03a.units
+          gosub glrecap
+
+rem --- Print header
+
+         
+          units$=""
+          if gls01a.units_flag$="Y" units$=str(gle03a.units:m2$)
+         
+            abc=fnblank(6)
+            OutVect!.addItem(fnmask$(glm01a.gl_account$(1,acctlen),m0$))
+            OutVect!.addItem("")
+            OutVect!.addItem(glm01a.gl_acct_desc$)
+            OutVect!.addItem("")
+            OutVect!.addItem (str(gle03a.gl_post_amt))
+            OutVect!.addItem(units$)
+            abc=fnblank(6)  
+
+rem --- Position gle-13
+
+          read (gle13_dev,key=gle03_key$,dom=*next)
+
+rem --- Read next detail record
+
+          while moredetail
+                k$=key(gle13_dev,end=*break)
+                if pos(gle03_key$=k$)<>1 break
+                read record (gle13_dev)gle13a$
+
+rem --- Last detail?
+
+                last=1
+                k$=key(gle13_dev,end=get_account)
+                if pos(gle03_key$=k$)=1 last=0
+
+get_account: rem --- Retrieve account master for this line
+
+                glm01a.gl_account$=gle13a.gl_dest_acct$
+                glm01a.gl_acct_desc$="(Not On File)"
+                glm01_key$=firm_id$+gle13a.gl_dest_acct$
+                find record (glm01_dev,key=glm01_key$,dom=*next)glm01a$
+
+                rem --- Calculate amount to be allocated to this account
+
+                gle13a.gl_post_amt=(gle03a.gl_post_amt*gle13a.percentage)/100
+                if gls01a.units_flag$="Y" gle13a.units=(gle03a.units*gle13a.percentage)/100
+
+                rem --- If last detail, check for rounding problems
+
+                if last=0 goto print_detail
+                x=gle03a.gl_post_amt-(totals[1]+gle13a.gl_post_amt)
+                if abs(x)>0 gle13a.gl_post_amt=gle13a.gl_post_amt+x
+                if gls01a.units_flag$<>"Y" goto print_detail
+                x=gle03a.units-(totals[2]+gle13a.units)
+                if abs(x)<=1 gle13a.units=gle13a.units+x
+
+print_detail: rem --- Print a record
+                
+                units$=""
+                units=0
+                if gls01a.units_flag$="Y" units$=str(gle13a.units:m2$),
+:                                         units=gle13a.units
+
+                OutVect!.addItem("")
+                OutVect!.addItem(fnmask$(glm01a.gl_account$(1,acctlen),m0$))
+                OutVect!.addItem(glm01a.gl_acct_desc$)
+                OutVect!.addItem (str(gle13a.percentage))
+                OutVect!.addItem (str(gle13a.gl_post_amt))
+                OutVect!.addItem(units$)
+         
+
+                rem --- Accumulate totals
+
+                totals[0]=totals[0]+gle13a.percentage
+                totals[1]=totals[1]+gle13a.gl_post_amt
+                totals[2]=totals[2]+gle13a.units
+
+                rem --- Update gle-13 record
+
+                gle13a$=field(gle13a$)
+                write record (gle13_dev,key=gle13a.firm_id$+gle13a.gl_account$+gle13a.line_no$)gle13a$
+
+                rem --- Generate recap
+
+                account$=gle13a.gl_dest_acct$
+                memo$=glm03a.code_desc$
+                amount=gle13a.gl_post_amt
+                ref1$="Target"
+                ref2$=fnmask$(gle03a.gl_account$(1,acctlen),m0$)
+                ref3$="Line "+gle13a.line_no$
+                gosub glrecap
+
+            rem --- Loop back for next detail
+
+          wend
+
+rem --- Print transaction totals
+
+          warning$=""
+          if totals[0]<>100 warning$="Entry Must Equal 100% ---->",balanced=1
+          if gls01a.units_flag$="Y" units$=str(totals[2]:m2$)
+
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+            abc=fnblank(1)
+            OutVect!.addItem(warning$)
+            OutVect!.addItem("Total For Entry")
+            OutVect!.addItem(str(totals[0]))
+            OutVect!.addItem(str(totals[1]))
+            OutVect!.addItem(units$)
+
+rem --- Update gle-03 record
+
+          gle03a$=field(gle03a$)
+          write record (gle03_dev)gle03a$
+
+      rem --- Loop back for next header
+
+    wend
+
+
+rem --- All Done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+  
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+    update$=pgmdir$+"glu_allocate.aon"
+    if balanced
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
+    endif
+
+    next_overlay$=pgmdir$+"glr_recap_DO.aon"
+    goto std_exit
+
+glrecap: rem --- Standard GL Recap Routine
+
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,glt14_dev,account$,gldate$,ref1$,
+:                                            ref2$,ref3$,memo$,amount,units,status
+    return
+
+Display_Message: rem --- Display Message Routine
+
+    msg_id$="AON_REG_ERRS"
+    gosub disp_message
+    if pos("PASSVALID"=msg_opt$)<>0 special_flag$="Y"
+    return
+
+rem --- Functions
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_missing_params_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+   run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+std_exit_no_report:
+
+   call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+   release
+
+rem #endinclude std_end.src
+
+    end

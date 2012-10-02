@@ -1,0 +1,483 @@
+rem --- Customer Ranking Report
+rem --- Program arr_ranking v8.0.0 29Dec2006 (arr_kb)
+rem --- Created by adx_codeport.bbx v1.1.5 (12/29/2006 08:56:06)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+	setesc std_error
+	seterr std_error
+
+rem --- Retrieve the program path
+
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+	files=8,begfile=1,endfile=files
+	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+	files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+	files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
+	files$[3]="arm-02",ids$[3]="ARM_CUSTDET"
+	files$[4]="arm-06",ids$[4]="ARM_CUSTPMTS"
+	files$[5]="arc_salecode",ids$[5]="ARC_SALECODE"
+	files$[6]="arw-06",ids$[6]="ARW_RANKING"
+    files$[7]="arc_terrcode",ids$[7]="ARC_TERRCODE"
+    files$[8]="arc_custtype",ids$[8]="ARC_CUSTTYPE"
+    options$[6]="CL"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ars01_dev=channels[1]
+    arm01_dev=channels[2]
+    arm02_dev=channels[3]
+    arm06_dev=channels[4]
+    arc_salecode_dev=channels[5]
+    arw06_dev=channels[6]
+    arc_terrcode_dev=channels[7]
+    arc_custtype_dev=channels[8]
+
+rem --- Dimension string templates
+    
+    dim ars01a$:templates$[1],arm01a$:templates$[2],arm02a$:templates$[3]
+    dim arm06a$:templates$[4],arm10f$:templates$[5],arw06a$:templates$[6]
+    dim arm10h$:templates$[7],arm10l$:templates$[8]
+
+rem --- Assign form input values to local variables
+
+    method$=option!.getOptionData("REPORT_TYPE")
+    sequence$=option!.getOptionData("REPORT_SEQUENCE")
+    col_format$=option!.getOptionData("COL_FORMAT")
+    page_break$=option!.getOptionData("PAGE_BREAK")
+
+rem --- Retrieve parameter records
+
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0    
+    m4$="-##0.00%"
+    m5$="######0"
+    m9$="000000000.00-"
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,12,15
+    m0=len(m0$)
+    m1=len(m1$)
+    m4=len(m4$)
+    m5=len(m5$)
+
+rem --- Initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+    headings=3
+    dim headings$[headings+1],o[8],customer[5],subtotals[5],totals[5]
+    done=0
+    more=1
+    morecodes=pos(sequence$="STY")
+    rank=0
+    nf$="(Not on file)"
+    artype$=fill(2)
+    when$=sysinfo.system_date$
+    clock$=""
+    recap$=""
+    lastcode$=""
+    subheading$=""
+    by$="Customer ID"
+    id$=""
+    if sequence$="S"
+    dim code_template$:fattr(arm10f$)
+    by$="Salesperson"
+    id$="F"
+    code_dev=arc_salecode_dev
+    endif
+    if sequence$="T" 
+	dim code_template$:fattr(arm10h$) 
+	by$="Territory"
+       	id$="H"
+        code_dev=arc_terrcode_dev
+    endif
+    if sequence$="Y" 
+	dim code_template$:fattr(arm10l$) 
+	by$="Customer Type"
+	id$="L"
+        code_dev=arc_custtype_dev
+    endif
+    rankby$="MTD Sales"
+    if method$="2" rankby$="MTD Gross Profit"
+    if method$="3" rankby$="MTD Gross Profit Percentage"
+    if method$="4" rankby$="YTD Sales"
+    if method$="5" rankby$="YTD Gross Profit"
+    if method$="6" rankby$="YTD Gross Profit Percentage"
+    if method$="C" rankby$="Customer ID"
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$+" By "+by$
+    headings$[2]="Ranked by "+rankby$
+    if sequence$<>"N" headings$[3]="[HEADER]"
+
+    columns=8
+    dim columns$[columns,10]
+    columns$[0,0]="Cust ID",columns$[0,1]="C",columns$[0,2]="8"
+    columns$[1,0]="Name",columns$[1,1]="C",columns$[1,2]="30"
+    columns$[2,0]="MTD Sales",columns$[2,1]="N",columns$[2,2]=str(len(m1$)),columns$[2,3]=m1$,columns$[2,10]="T"
+    columns$[3,0]="MTD Profit",columns$[3,1]="N",columns$[3,2]=str(len(m1$)),columns$[3,3]=m1$,columns$[3,10]="T"
+    columns$[4,0]="MTD Prof %",columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
+    columns$[5,0]="YTD Sales",columns$[5,1]="N",columns$[5,2]=str(len(m1$)),columns$[5,3]=m1$,columns$[5,10]="T"
+    columns$[6,0]="YTD Profit",columns$[6,1]="N",columns$[6,2]=str(len(m1$)),columns$[6,3]=m1$,columns$[6,10]="T"
+    columns$[7,0]="YTD Prof %",columns$[7,1]="N",columns$[7,2]=str(len(m1$)),columns$[7,3]=m1$,columns$[7,10]="T"
+    columns$[8,0]="Rank",columns$[8,1]="N",columns$[8,2]=str(len(m5$)),columns$[8,3]=m5$
+
+rem --- Determine number of codes (if necessary)
+
+    if morecodes
+        keyprefix$=firm_id$+id$
+	read (code_dev,key=keyprefix$,dom=*proceed)
+    endif
+    while morecodes
+	k$=key(code_dev,end=*break)
+	if pos(keyprefix$=k$)<>1 break
+	read record (code_dev,key=k$) code_template$
+	if sequence$="S" code$=code_template.slspsn_code$
+	if sequence$="T" code$=code_template.territory$
+	if sequence$="Y" code$=code_template.customer_type$
+        recap$=recap$+code$
+    wend
+    x=max(len(recap$)/3,1)*2
+    dim recap[x,5]
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm06_dev,1,meter_num,status
+
+rem --- Sort Customer Payment (arm-06) records by specified criteria
+
+	read (arm06_dev,key=firm_id$,dom=*next)
+	while more
+		k$=key(arm06_dev,end=*break)
+		if pos(firm_id$=k$)<>1 break
+		read record (arm06_dev,key=k$) arm06a$
+		call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status 
+		k$=arm06a.firm_id$+arm06a.customer_id$+artype$
+		find record (arm02_dev,key=k$,dom=*continue) arm02a$
+		code$=""
+		if sequence$="S" code$=arm02a.slspsn_code$
+		if sequence$="T" code$=arm02a.territory$
+		if sequence$="Y" code$=arm02a.customer_type$
+
+		rem --- Build and write Ranking Report Sort (arw-06) record
+
+		amount=0
+		gosub profit
+		if method$="1" amount=arm06a.mtd_sales
+		if method$="2" amount=mtd_profit
+		if method$="3" amount=mtd_percent
+		if method$="4" amount=arm06a.ytd_sales
+		if method$="5" amount=ytd_profit
+		if method$="6" amount=ytd_percent
+		if method$<>"C" amount=amount-99999999
+		arw06a.firm_id$=arm06a.firm_id$
+		arw06a.ranking_sort$=code$
+		arw06a.rank_code$=str(amount:m9$)
+		arw06a.customer_id$=arm06a.customer_id$
+		arw06a$=field(arw06a$)
+		write (arw06_dev) arw06a$
+	wend
+
+rem --- Start progress meter and position file
+
+	read (arw06_dev,key=firm_id$,dom=*next)
+
+rem --- Read next sort file record
+
+	while more
+		k$=key(arw06_dev,end=*break)
+		if pos(firm_id$=k$)<>1 break
+		read record (arw06_dev) arw06a$
+
+		rem --- Retrieve Customer Master (arm-01) and Payment (arm-06) records
+
+		dim arm01a$:fattr(arm01a$),arm06a$:fattr(arm06a$),customer[5]
+		k$=arw06a.firm_id$+arw06a.customer_id$
+		find record (arm01_dev,key=k$,dom=*continue) arm01a$
+		find record (arm06_dev,key=k$,dom=*continue) arm06a$
+
+		rem --- Level break?
+
+		if morecodes if arw06a.ranking_sort$<>lastcode$ gosub code_break
+
+		rem --- Print detail line
+
+		gosub profit
+		rank=rank+1
+		customer[0]=arm06a.mtd_sales
+		customer[1]=mtd_profit
+		customer[2]=mtd_percent
+		customer[3]=arm06a.ytd_sales
+		customer[4]=ytd_profit
+		customer[5]=ytd_percent
+
+		OutVect!.addItem(fnmask$(arm06a.customer_id$(1,customer_size),m0$))
+		OutVect!.addItem(arm01a.customer_name$)
+		OutVect!.addItem(str(customer[0]))
+		OutVect!.addItem(str(customer[1]))
+		OutVect!.addItem(str(customer[2]))
+		OutVect!.addItem(str(customer[3]))
+		OutVect!.addItem(str(customer[4]))
+		OutVect!.addItem(str(customer[5]))
+		OutVect!.addItem(str(rank))
+
+		lines=lines+1
+
+		rem --- Accumulate totals
+
+		for x=0 to 5
+			subtotals[x]=subtotals[x]+customer[x]
+			totals[x]=totals[x]+customer[x]
+		next
+
+		rem --- Accumulate totals by code
+
+		if morecodes=0 continue
+		x=pos(lastcode$=recap$,3)
+		if x=0 continue
+		x=int(x/3)+1
+		recap[x,0]=recap[x,0]+customer[0]
+		recap[x,1]=recap[x,1]+customer[1]
+		recap[x,3]=recap[x,3]+customer[3]
+		recap[x,4]=recap[x,4]+customer[4]
+
+		rem --- Loop back for next sort record
+
+	wend
+
+rem --- All done
+
+	done=1
+	gosub code_break
+
+rem --- Print report recap by code
+
+	recap$=cvs(recap$,2)
+	if recap$="" more=0
+	if method$="C" more=0
+	subheading$="Totals by "+by$
+
+        if page_break$="Y"
+            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+            HdrVect!.addItem(subheading$)
+        endif    
+
+	while more
+		rank=0
+		codes=int(len(recap$)/3)
+		for x=1 to codes
+			rank=rank+1
+			code$=recap$(((x-1)*3)+1,3)
+			description$=fncode$(code_dev,keyprefix$+code$,fattr(code_template$))
+			recap[x,2]=fnpercentage(recap[x,0],recap[x,1])
+			recap[x,5]=fnpercentage(recap[x,3],recap[x,4])
+			OutVect!.addItem(code$)
+			OutVect!.addItem(description$)
+			OutVect!.addItem(str(recap[x,0]))
+			OutVect!.addItem(str(recap[x,1]))
+			OutVect!.addItem(str(recap[x,2]))
+			OutVect!.addItem(str(recap[x,3]))
+			OutVect!.addItem(str(recap[x,4]))
+			OutVect!.addItem(str(recap[x,5]))
+			OutVect!.addItem(str(rank))
+		next x
+		break
+	wend
+
+rem --- Print total for the report
+
+	totals[2]=fnpercentage(totals[0],totals[1])
+	totals[5]=fnpercentage(totals[3],totals[4])
+
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+	OutVect!.addItem("")
+	OutVect!.addItem("Totals for Report")
+	OutVect!.addItem(str(totals[0]))
+	OutVect!.addItem(str(totals[1]))
+	OutVect!.addItem(str(totals[2]))
+	OutVect!.addItem(str(totals[3]))
+	OutVect!.addItem(str(totals[4]))
+	OutVect!.addItem(str(totals[5]))
+	OutVect!.addItem("")
+
+rem --- All done
+
+	goto std_exit
+
+code_break: rem --- Code break
+
+	if lastcode$<>""
+		subtotals[2]=fnpercentage(subtotals[0],subtotals[1])
+		subtotals[5]=fnpercentage(subtotals[3],subtotals[4])
+
+                TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+		OutVect!.addItem("")
+		OutVect!.addItem("Totals for "+subheading$)
+		OutVect!.addItem(str(subtotals[0]))
+		OutVect!.addItem(str(subtotals[1]))
+		OutVect!.addItem(str(subtotals[2]))
+		OutVect!.addItem(str(subtotals[3]))
+		OutVect!.addItem(str(subtotals[4]))
+		OutVect!.addItem(str(subtotals[5]))
+		OutVect!.addItem("")
+
+		for curr_col=1 to 9;OutVect!.addItem("");next curr_col
+
+	endif
+
+	if done return
+	dim subtotals[5]
+	rank=0
+	code$=arw06a.ranking_sort$
+	description$=fncode$(code_dev,keyprefix$+code$,fattr(code_template$))
+	subheading$=by$+" "+code$+" "+description$
+	if sequence$<>"N" and page_break$="Y"
+		BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+		HdrVect!.addItem(subheading$)
+	endif
+	lastcode$=code$
+	lines=maxlines+1
+
+	return
+
+profit: rem --- Calculate gross profit and gross profit percentage
+
+	mtd_percent=0
+	ytd_percent=0
+	mtd_profit=arm06a.mtd_sales-arm06a.mtd_cost
+	ytd_profit=arm06a.ytd_sales-arm06a.ytd_cost
+	mtd_percent=fnpercentage(arm06a.mtd_sales,mtd_profit)
+	ytd_percent=fnpercentage(arm06a.ytd_sales,ytd_profit)
+
+	return
+		 
+rem --- Functions
+
+rem --- Miscellaneous functions
+
+	def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- fncode$: Retrieve code record and return code description
+
+	def fncode$(q,q$,q1$)
+		dim q2$:q1$
+		q2.code_desc$="(Not on File)"
+		find record (q,key=q$,dom=*next) q2$
+		q3$=q2.code_desc$
+		return q3$
+	fnend
+
+rem --- fnpercentage: Calculate gross profit percentage
+
+	def fnpercentage(q1,q2)
+		q3=0
+		if q1<>0 q3=(q2*100)/q1
+		q3=min(q3,999.99)
+		q3=max(q3,-999.99)
+		return q3
+	fnend
+
+rem --- Functions used to retrieve form values
+
+	def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+	def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+	def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+	def fnmask$(q1$,q2$)
+		if q2$="" q2$=fill(len(q1$),"0")
+		return str(-num(q1$,err=*next):q2$,err=*next)
+		q=1
+		q0=0
+		while len(q2$(q))
+			if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+			q=q+1
+		wend
+		if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+		return str(q1$:q2$)
+	fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+	rd_err_text$=""
+	if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+	call stbl("+DIR+SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+	if pos("EXIT"=rd_err_act$) goto std_error_exit
+	if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+	if pos("RETRY"=rd_err_act$) retry
+
+std_error_exit:
+	
+	master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=std_error_release)
+	if cvs(sysinfo.user_id$,2)=master_user$ escape
+	
+std_error_release:
+
+	status=999
+	if pgm(-1)<>pgm(-2) exit 
+	release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+	rd_err_text$=""
+	if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+	pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+	call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+	
+	master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+	if cvs(sysinfo.user_id$,2)=master_user$ escape
+	
+std_missing_params_release:
+
+	status=999
+	if pgm(-1)<>pgm(-2) exit 
+	release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status 
+	run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+	release
+
+rem #endinclude std_end.src
+			
+	end

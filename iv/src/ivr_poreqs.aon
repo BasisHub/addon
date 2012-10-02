@@ -1,0 +1,346 @@
+rem ivr - Open Purchase Requisitions Report
+
+rem Created from ivr_openpo 01/08/2008.CAH
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem This report has been modified for output to vector/grid (OutVect!), instead of directly to printer
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    sys_date$=sysinfo.system_date$
+    firm_name$=sysinfo.firm_name$
+    task_desc$=sysinfo.task_desc$
+
+rem --- Open/Lock files
+
+    files=7,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ivs_params",ids$[1]="IVS_PARAMS"
+    files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
+    files$[3]="poe-01",ids$[3]="POE_REQHDR"
+    files$[4]="poe-11",ids$[4]="POE_REQDET"
+    files$[5]="ivc_whsecode",ids$[5]="IVC_WHSECODE"
+    files$[6]="apm-01",ids$[6]="APM_VENDMAST"
+    files$[7]="pom-02",ids$[7]="POC_LINECODE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ivs01_dev=channels[1]
+    ivm01_dev=channels[2]
+    poe01_dev=channels[3]
+    poe11_dev=channels[4]
+    ivm10_dev=channels[5]
+    apm01_dev=channels[6]
+    pom02_dev=channels[7]
+
+rem --- Dimension string templates
+
+    dim ivs01a$:templates$[1],ivm01a$:templates$[2],poe01a$:templates$[3],
+:       poe11a$:templates$[4],ivm10c$:templates$[5],apm01a$:templates$[6],
+:       pom02a$:templates$[7]
+
+rem --- Assign form input values to local variables
+    
+    begdate$=option!.getOptionData("PICK_DATE_1")
+    enddate$=option!.getOptionData("PICK_DATE_2")
+    whse$=option!.getOptionData("WAREHOUSE_ID")
+    begitem$=option!.getOptionData("ITEM_ID")
+
+rem --- Retrieve parameter records
+
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+    dim p[5]
+    P[0]=num(ivs01a.item_id_len$)
+    p[3]=num(ivs01a.desc_len_01$)
+    p[4]=num(ivs01a.desc_len_02$)
+    p[5]=num(ivs01a.desc_len_03$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",m1$,0,m1
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","U","",m2$,0,m2
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",m3$,0,m3
+
+    call stbl("+DIR_PGM")+"adc_sizemask.aon",m1$,m1,12,15
+    call stbl("+DIR_PGM")+"adc_sizemask.aon",m2$,m2,10,15
+    call stbl("+DIR_PGM")+"adc_sizemask.aon",m2$,m2,9,15
+
+rem --- Initializations
+
+    dim o[3],d[1],b0$(200),b[13],c0$(52),c1$(64),c[17],d0$(8),d1$(30)
+    width=132,h0=width-1,l9=59,l=l9+1
+    o[2]=h0-m1
+    o[1]=o[2]-m2
+    o[0]=o[1]-m2
+    d[1]=o[0]-20
+    d[0]=d[1]-19
+    dw=d[0]-15
+
+    gosub init_head;rem "initialize headings
+
+rem --- Loop Starting
+
+    sql_prep$="select firm_id, item_id, warehouse_id, vendor_id, req_no, "
+    sql_prep$=sql_prep$+"po_line_no, reqd_date, unit_measure, "
+    sql_prep$=sql_prep$+"unit_cost, req_qty "
+    sql_prep$=sql_prep$+"FROM poe_reqdet INNER JOIN poc_linecode ON "
+    sql_prep$=sql_prep$+"poe_reqdet.firm_id=poc_linecode.firm_id AND "
+    sql_prep$=sql_prep$+"poe_reqdet.po_line_code=poc_linecode.po_line_code "
+    where_clause$="WHERE poe_reqdet.firm_id = '"+firm_id$+"' AND poc_linecode.line_type='S' AND "
+    if whse$<>"" where_clause$=where_clause$+"poe_reqdet.warehouse_id = '"+whse$+"' AND "
+    if begitem$<>"" where_clause$=where_clause$+"poe_reqdet.item_id = '"+begitem$+"' AND "
+    if begdate$<>"" where_clause$=where_clause$+"poe_reqdet.reqd_date >= '"+begdate$+"' AND "
+    if enddate$<>"" where_clause$=where_clause$+"poe_reqdet.reqd_date <= '"+enddate$+"' AND "
+
+    where_clause$=cvs(where_clause$,2)
+    if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
+    if where_clause$<>"" sql_prep$=sql_prep$+where_clause$
+
+    sql_chan=1
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
+rem --- Position files
+
+    call stbl("+DIR_PGM")+"adc_progress.aon","NC","","","","",0,poe11_dev,1,meter_num,status
+
+    while 1
+        read_tpl$=sqlfetch(sql_chan,err=*break)
+        readrecord (poe11_dev,key=firm_id$+read_tpl.vendor_id$+read_tpl.req_no$+read_tpl.po_line_no$)poe11a$
+        call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        dim status$(3)
+        find record (apm01_dev,key=poe11a.firm_id$+poe11a.vendor_id$,dom=*next) apm01a$
+        findrecord(pom02_dev,key=firm_id$+poe11a.po_line_code$,dom=*next)pom02a$
+
+rem --- Assign data
+
+        ordnum$=poe11a.req_no$
+        reqdate$=fndate$(poe11a.reqd_date$)
+        seqno$=poe11a.po_line_no$
+        UM$=poe11a.unit_measure$
+        drop$=fill(3);if pom02a.dropship$="Y" then let drop$="Yes"
+        cost=poe11a.unit_cost
+        qty=poe11a.req_qty
+        totqty=totqty+qty
+        vend$=apm01a.vendor_id$+" "+apm01a.vendor_name$
+
+rem --- Store detail line
+
+        OutVect!.addItem(ordnum$)
+        OutVect!.addItem(seqno$)
+        OutVect!.addItem(reqdate$)
+        OutVect!.addItem(vend$)
+        OutVect!.addItem(UM$)
+        OutVect!.addItem(drop$)
+        OutVect!.addItem(str(cost:m3$))
+        OutVect!.addItem(str(qty:m2$))
+
+        l=l+1
+
+    wend
+
+done: rem --- All done
+
+    wkx=fnblank(2)
+    OutVect!.addItem("Total")
+    wkx=fnblank(4)
+    OutVect!.addItem(str(totqty:m2$))
+
+    goto std_exit
+
+init_head: rem --- Initialize HEADINGS$
+
+rem --- date/time 
+	OutVect!=bbjAPI().getSysGui().makeVector()
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+		rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+		rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- miscellaneous headings
+
+    dim headings$[3]
+    ivm01a.firm_id$=firm_id$,ivm01a.item_id$=begitem$
+    find record(ivm01_dev,key=ivm01a.firm_id$+pad(ivm01a.item_id$,fnfldlen(fattr(ivm01a$),"ITEM_ID")),dom=*next)ivm01a$
+    find record (ivm10_dev,key=firm_id$+"C"+whse$,dom=*next) ivm10c$
+    x$="Warehouse: "+whse$+" "+cvs(ivm10c.short_name$,2)
+    desc$=cvs(ivm01a.item_desc$,3)
+    x1$="Item: "
+    if begitem$<>"" x1$=x1$+begitem$ else x1$=x1$+"First"
+    x1$=x1$+" "+desc$
+    h1$=x1$
+    h2$=x$
+    headings$[0]=firm_name$
+    headings$[1]=task_desc$
+    headings$[2]=h1$
+    headings$[3]=h2$
+
+rem --- column headings
+	dim columns$[7,10]
+		columns$[0,0]="Req #",columns$[0,1]="C",columns$[0,2]="15"
+		columns$[1,0]="Seq",columns$[1,1]="C",columns$[1,2]="5"
+		columns$[2,0]="Required",columns$[3,1]="C",columns$[3,2]="15"
+		columns$[3,0]="Vendor",columns$[2,1]="C",columns$[2,2]="30"
+		columns$[4,0]="UM",columns$[4,1]="C",columns$[4,2]="5"
+		columns$[5,0]="Drop",columns$[5,1]="C",columns$[5,2]="5"
+		columns$[6,0]="Unit Cost",columns$[6,1]="N",columns$[6,2]="15",columns$[6,3]=m3$
+		columns$[7,0]="Quantity",columns$[7,1]="N",columns$[7,2]="15",columns$[7,3]=m2$
+
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_data$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$)=cvs(q$,32)
+rem --- old format using params: def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- Find length of field
+    def fnfldlen(q$,q1$)
+        dim q2$:q$
+        wkq$=fattr(q2$,q1$)
+        wkq=dec(wkq$(10,2))
+        return wkq
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call stbl("+DIR_PGM")+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

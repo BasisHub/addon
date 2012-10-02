@@ -1,0 +1,481 @@
+rem --- Dropship Line Item Maintenance Entry
+rem --- Program poc_ds v8.0.0 17Dec2007 (poc_ds)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/17/2007 04:23:21)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+    enter type$,action$,channels[all],params[all],params$[all],line,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+dir_pgm",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+sysinfo",err=*next)
+    milestone=num(stbl("+milestone",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=7,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps-01a",ids$[1]=""
+    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
+    files$[3]="arm-03",ids$[3]="ARM_CUSTSHIP"
+    files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
+    files$[5]="ope-01",ids$[5]="OPE_ORDHDR"
+    files$[6]="ope-11",ids$[6]="OPE_ORDDET"
+    files$[7]="ope-31",ids$[7]="OPE_ORDSHIP"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01a_dev=channels[1]
+    arm01_dev=channels[2]
+    arm03_dev=channels[3]
+    ivs01a_dev=channels[4]
+    ope01_dev=channels[5]
+    ope11_dev=channels[6]
+    ope31_dev=channels[7]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],arm01a$:templates$[2],arm03a$:templates$[3],
+:       ivs01a$:templates$[4],ope01a$:templates$[5],ope11a$:templates$[6],
+:       ope31a$:templates$[7]
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Open/Lock Files
+
+    arm01_dev=channels[1]
+    arm03_dev=channels[2],ope01_dev=channels[3]
+    ope11_dev=channels[4]
+    ope31_dev=channels[5]
+
+rem --- Determine interface
+
+    call pgmdir$+"syc_dg.bbx",sysgui_dev,event$,event_len,sysfin$,sysfin,ui$,status
+    if status then goto std_exit
+
+rem --- Parameters
+
+    dim y1$(32)
+    firm_id$=params$[0]
+    m0$=params$[1],w2$=params$[2],ar$=params$[3]
+    op$=params$[4]
+    y1$(1)=params$[5],custlen=params[0]
+
+rem --- Initializations
+
+    dim message$[2]
+    m0=len(m0$)
+    width=80,height=10,win_x=0,win_y=line-height,status=0
+    title$="Drop Shipment Information"
+    o=12+m0,s=o+20,order$="Order:"
+    if y1$(22,1)<>"Y" then let title$="Customer/Sales Order Information"
+    if op$="N" then let order$="",s=36
+    if s<36 then let s=36
+
+rem --- AR and/or OP required for drop shipments
+
+    if ar$<>"Y" 
+        status=11
+        message$[0]="Accounts Receivable Or Order Processing Is Required In"
+        message$[1]="Order To Use Drop Shipments (<Enter>=Continue)"
+        call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
+        goto std_exit
+    endif
+
+    display_resource: rem --- Display Resource
+
+    dim resparams$[20],resparams[20]
+    resparams$[0]=pgm(-2)
+    resparams$[1]=pgm(-2)
+    resparams$[6]=title$
+    if ui$<>"W" then call pgmdir$+"syc_wa.bbx",0,width,height,win_x,win_y,title$,name$
+    call pgmdir$+"syc_ra.bbx","",resparams$[all],resparams[all],vmenu$[all],vmenu[all],vtool$[all],vtool[all],status
+    if status then goto std_exit
+    gosub display_fields
+
+rem --- Start At ITAIC for GUI
+
+    while more
+
+        if ui$="W" then break
+
+    customer: rem --- Customer
+        
+        flag=0
+        while more
+
+            v4$="Enter A Valid Customer Number (<F3>=Lookup)"
+            i0=0
+            v0$="M"
+            v1$="CKE",v2$=w2$(11,custlen),v3$=m0$,v0=6,v1=11,v2=0,control_id=3000
+            on v3 goto ret_cust,customer,customer,label1,flow_control,ret_cust,flow_control
+
+        label1:
+            call pgmdir$+"syc_lc.bbx",v$
+
+        ret_cust: rem --- Retrieve customer
+
+            gosub d_customer
+            if !error
+                w2$(11,6)=arm01a.customer_no$
+                flag=1
+                break
+            endif
+
+        wend
+        
+        if flag then break
+
+    order_number: rem --- Order Number
+
+        v4$="Sales Order For This PO Line Item (<F3>=Lookup)"
+        v0$="Z"
+        v1$="C",v2$=w2$(17,7),v3$="",v0=7,v1=o+7,v2=0,control_id=3001
+        on v3 goto label3,order_number,flow_control,label2,flow_control,label3,flow_control
+
+    label2:
+
+        v$=w2$(11,6)
+        call pgmdir$+"syc_lo.bbx",v$,"O"
+
+    label3:
+
+        ope01a.firm_id$=firm_id$
+        ope01a.ar_type$="  "
+        ope01a.customer_id$=w2$(11,6)
+        ope01a.order_no$=v$
+        ope01a.sequence_000$="000"
+        find record (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.sequence_000$,dom=order_number) ope01a$
+        w2$(17,7)=v$
+        w2$(27,6)=ope01a.shipto_no$,v$=w2$(27,6)
+        call pgmdir$+"syc_rs.bbx","",my_context,3001,w2$(17,7),0,"",ignore_status
+        gosub d_shipto
+        break
+
+    order_lineitem: rem --- Order Line Item
+
+        v4$="Sales Order Line Item For This PO Line Item"
+        v0$="Z"
+        v1$="C",v2$=w2$(24,3),v3$="",v0=3,v1=o+15,v2=0,control_id=3002
+        on v3 goto label4,order_lineitem,flow_control,order_lineitem,flow_control,label4,flow_control
+
+    label4:
+
+        w0$(1)=firm_id$+"  "+w2$(11,13)+v$
+        find (ope11_dev,key=w0$,dom=order_lineitem)
+        w2$(24,3)=v$
+        break
+
+    shipto_num: rem --- Ship-to Number
+
+        if op$="Y" then break
+        v4$="Ship-To Number For This Customer (<F1>=None/<F3>=Lookup)"
+        v0$="Z"
+        v1$="C",v2$=w2$(27,6),v3$="",v0=6,v1=s+9,v2=0,error=0,control_id=3003
+        on v3 goto label6,no_shipto,flow_control,label5,flow_control,label6,flow_control
+
+    label5:
+
+        x$=w2$(11,6)
+        call pgmdir$+"syc_lt.bbx","S",x$,v$
+
+    label6:
+
+        if v$<>"" 
+            gosub d_shipto
+            if error then goto shipto_num
+            w2$(27,6)=v$
+        else
+
+        no_shipto: rem --- No ship-to
+
+            v$=""
+            w2$(27,6)=v$
+            gosub d_shipto
+        endif
+
+        break
+
+    wend
+
+flow_control: rem --- Flow Control
+
+    switch v3
+    case 0
+    case 1
+    case 3; let i0=i0+1; break
+    case 2
+    if i0<i0_nonkey1 then let i0=max(0,i0-1) else let i0=max(i0_nonkey1,i0-1)
+    break
+    case 4; exitto start_done
+    case default; exitto done_v3
+    swend
+
+next_field:
+    
+    while more
+
+        on i0 goto customer,order_number,order_lineitem,shipto_num,done
+
+    start_done: let i0=i0=i0_itaic
+
+    done: rem --- Correct?
+
+        if validate then let validate=0;break
+        v0$="S"
+        v1$="KC",v2$="Y",v3$="",v4$="ITAC=Y",v0=6,v1=0,v2=22,control_id=i0-i0_done+1
+
+    done_v3:
+        on v3 goto done_test,done,done,done,cancel,validate_input,cancel,done
+    done_test:
+        on pos(v$="YN") goto flow_control,validate_input,do_nonkey1
+
+        action=pos(v$="YN")
+        switch action
+            case 1
+                validate_input:
+                    validate=1
+                    old_control_id=0
+            case 2
+                do_nonkey1:
+                    v3=0
+                    i0=i0_nonkey1
+                    continue
+            case default
+                goto flow_control
+        swend
+        
+    cancel:
+        exitto std_exit
+        
+    wend
+
+    end_input: rem --- Customer number is required
+
+    while more
+
+        status=11
+        if cvs(w2$(11,6),2)<>""
+
+            arm01a.firm_id$=firm_id$
+            arm01a.customer_no$=w2$(11,6)
+            find (arm01_dev,key=arm01a.firm_id$+arm01a.customer_no$,dom=*break)
+            status=0
+
+            rem --- Order/Line number are required if OP is installed
+
+            if op$<>"N"
+                w0$(1)=firm_id$+"  "+w2$(11,16)
+                status=11
+                find (ope11_dev,key=w0$,dom=*break)
+                status=0
+            endif
+
+        endif
+
+        break
+      
+    wend
+
+ret_updated_rec: rem --- Return updated record
+
+    params$[2]=w2$
+    if status<>0 
+        message$[0]="A Valid Customer And Order/Line Number (If Order Processing"
+        message$[1]="Is Installed) Should Be Entered For Special Order Items And"
+        message$[2]="Drop Shipments (<Enter>=Continue)"
+        call pgmdir$+"adc_stdmessage.aon",2,message$[all],2,22,-1,v$,v3
+    endif
+
+    goto std_exit
+
+display_fields: rem --- Display Fields
+
+    v$=w2$(11,6)
+    gosub d_customer
+    if op$="Y" then call pgmdir$+"syc_rs.bbx","",my_context,3001,w2$(17,7),0,"",ignore_status
+    if op$="Y" then call pgmdir$+"syc_rs.bbx","",my_context,3002,w2$(24,3),0,"",ignore_status
+    v$=w2$(27,6)
+    gosub d_shipto
+    return
+
+d_customer: rem --- Retrieve and display customer
+    
+    arm01a.firm_id$=firm_id$
+    arm01a.customer_no$=v$
+    error=11
+    find record (arm01_dev,key=arm01a.firm_id$+arm01a.customer_no$,dom=label7) arm01a$
+    x$=arm01a.addr_line_1$+arm01a.addr_line_2$+arm01a.addr_line_3$+arm01a.addr_line_4$+arm01a.city$+arm01a.state_code$+arm01a.zip_code$
+    error=0
+    call pgmdir$+"adc_address.aon",x$,24,5,9,30
+
+rem --- Display, Cust No, Name & Address Lines
+
+    call pgmdir$+"syc_rs.bbx","",my_context,3000,fnmask$(arm01a.customer_no$,m0$),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3004,arm01a.cust_name$,0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3005,x$(31,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3006,x$(61,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3007,x$(91,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3008,x$(121,30),0,"",ignore_status
+label7:
+    return
+
+d_shipto: rem --- Retrieve and display ship-to
+
+    if op$="Y" then if num(v$,err=label8)<>99
+
+        if cvs(v$,2)<>"" 
+
+        label8:
+
+            arm03a.firm_id$=firm_id$
+            arm03a.customer_id$=w2$(11,6)
+            arm03a.shipto_no$=v$
+            error=11
+            find record (arm03_dev,key=arm03a.firm_id$+arm03a.customer_id$+arm03a.shipto_no$,dom=label9) arm03a$
+            x$=arm03a.addr_line_1$+arm03a.addr_line_2$+arm03a.city$+arm03a.state_code$+fill(48)+arm03a.zip_code$
+            call pgmdir$+"adc_address.aon",x$,24,5,9,30
+            x9$=x$
+            x1$=arm03a.name$,x0$=v$
+            gosub d_shiptoii
+
+        else
+            x9$=fill(151," ")
+            x1$=fill(30," "),x0$="SAME"
+            gosub d_shiptoii
+
+        endif
+
+        return
+
+    else
+
+    manual_shipto: rem --- Manual Ship-to
+
+        ope31a.firm_id$=firm_id$
+        ope31a.customer_id$=w2$(11,13)
+        ope31a.order_no$=w2$(11,13)
+        ope31a.name$=""
+        ope31a.addr_line_1$=""
+        ope31a.addr_line_2$=""
+        ope31a.addr_line_3$=""
+        ope31a.addr_line_4$=""
+        ope31a.city$=""
+        ope31a.state_code$=""
+        ope31a.zip_code$=""
+        ope31a.reserved_str$=""
+        find record (ope31_dev,key=ope31a.firm_id$+ope31a.customer_id$+ope31a.order_no$,dom=*next) ope31a$
+        x$=ope31a.addr_line_1$+ope31a.addr_line_2$+ope31a.city$+ope31a.state_code$+fill(48)+ope31a.zip_code$
+        call pgmdir$+"adc_address.aon",x$,24,5,9,30
+        x9$=x$
+        x1$=ope31a.name$,x0$=v$
+        gosub d_shiptoii
+
+    endif
+
+label9:
+
+    return
+
+d_shiptoii: rem --- Display ship-to II
+
+    if x0$<>"SAME" then call pgmdir$+"syc_rs.bbx","",my_context,3003,x0$,0,"",ignore_status
+    if x0$="SAME" then call pgmdir$+"syc_rs.bbx","",my_context,13003,x0$,0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3010,x1$,0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3011,x9$(1,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3012,x9$(31,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3013,x9$(61,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3014,x9$(91,30),0,"",ignore_status
+    call pgmdir$+"syc_rs.bbx","",my_context,3015,x9$(121,30),0,"",ignore_status
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+rem #endinclude std_exit.src
+
+    end

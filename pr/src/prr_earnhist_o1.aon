@@ -1,0 +1,388 @@
+rem --- Earnings History Report 2
+rem --- Program prr_earnhist_o1 v8.0.0 04Jun2008 (prr_wb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/04/2008 10:18:37)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=6,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="prm-01",ids$[1]="PRM_EMPLMAST"
+    files$[2]="PRC_PAYCODE",ids$[2]="PRC_PAYCODE"
+    files$[3]="PRC_DEPTCODE",ids$[3]="PRC_DEPTCODE"
+    files$[4]="PRC_RPRTCODE",ids$[4]="PRC_RPRTCODE"
+    files$[5]="PRS_PARAMS",ids$[5]="PRS_PARAMS"
+    files$[6]="prt-01",ids$[6]="PRT_EMPLEARN"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    prm01a_dev=channels[1]
+    prm10a_dev=channels[2]
+    prm10e_dev=channels[3]
+    prm10h_dev=channels[4]
+    prs01a_dev=channels[5]
+    prt01a_dev=channels[6]
+
+rem --- Dimension string templates
+
+    dim prm01a$:templates$[1],prm10a$:templates$[2],prm10e$:templates$[3],prm10h$:templates$[4],
+:       prs01a$:templates$[5],prt01a$:templates$[6]
+
+rem --- Retrieve parameter records
+
+    prs01a_key$=firm_id$+"PR00"
+    find record (prs01a_dev,key=prs01a_key$,err=std_missing_params) prs01a$
+
+rem --- Initializations
+
+    headings=3,width=132,page=0,when$=sysinfo.system_date$,clock$=""
+    dim headings$[headings],head$[10]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    if option$="M" then let headings$[2]="Month-To-Date" else if option$="Q" then let headings$[2]="Quarter "+str(qtr) else if option$="Y" then let headings$[2]="Year-To-Date Thru Quarter "+str(qtr)
+    dim r[7],s[7],t[7],u[7],w[2],x[7],y[7]
+    m0$=prs01a.empl_output$
+    m1$=prs01a.amount_mask$
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,8,13
+    m0=20
+    m9$="000-00-0000"
+    more=1
+
+rem --- Get key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRC_RPRTCODE","PRIMARY",prm10h_prikey_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRT_EMPLEARN","PRIMARY",prt01a_prikey_tpl$,rd_table_chans$[all],status$
+
+rem --- Build Headings
+
+    u0$=""
+    cnt=0
+    dim prm10h_key$:prm10h_prikey_tpl$
+    read (prm10h_dev,key=firm_id$+"H"+"A",dom=*next)
+    while more
+        prm10h_key$=key(prm10h_dev,end=*break)
+        if prm10h_key.firm_id$+prm10h_key.record_id_h$+prm10h_key.report_type$<>firm_id$+"H"+"A" then break
+        read record (prm10h_dev) prm10h$
+        u0$=u0$+prm10h.report_code$
+        cnt=cnt+1
+        head$[cnt]=prm10h.pr_rpt_title$
+    wend
+
+rem --- Column Headings
+
+    dim columns$[cnt+2,10]
+    columns=cnt+3
+    columns$[0,0]="Employee No & Name", columns$[0,1]="C",columns$[0,2]="20"
+    for i=1 to cnt
+        columns$[i,0]=head$[i]+" $/hrs", columns$[i,1]="N",columns$[i,2]="14",columns$[i,3]=m1$,columns$[i,10]="T"
+    next i
+    columns$[cnt+1,0]="Other Pay $/hrs", columns$[cnt+1,1]="N",columns$[cnt+1,2]="14",columns$[cnt+1,3]=m1$,columns$[cnt+1,10]="T"
+    columns$[cnt+2,0]="Total Pay $/hrs", columns$[cnt+2,1]="N",columns$[cnt+2,2]="14",columns$[cnt+2,3]=m1$,columns$[cnt+2,10]="T"
+
+rem --- Init Read
+
+    call pgmdir$+"adc_progress.aon","CN","","","","",0,prm01a_dev,1,meter_num,ignore_status
+    read (prm01a_dev,key=firm_id$,dom=*next)
+
+rem --- Main Read
+
+    while more
+
+        read record (prm01a_dev,end=done) prm01a$
+        if prm01a.firm_id$<>firm_id$ then break
+        q=pos("  "=prm01a.empl_surname$)-1
+        if q<1 then let q=16
+
+        x1$=prm01a.empl_surname$(1,q)+", "+prm01a.empl_givname$(1,1)+"."
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+
+rem --- Breaks
+
+        if prm01a.employee_no$(1,2)<>t0$ then gosub dept_brk
+
+rem --- Print Heading
+
+        OutVect!.addItem(fnmask$(prm01a.employee_no$,m0$))
+
+rem --- Detail
+
+        dim x[7],y[7]
+        dim prt01a_key$:prt01a_prikey_tpl$
+        read (prt01a_dev,key=prm01a.firm_id$+prm01a.employee_no$+"A",dom=*next)
+        while more
+            prt01a_key$=key(prt01a_dev,end=*break)
+            if prt01a_key.firm_id$+prt01a_key.employee_no$+prt01a_key.record_id_a$<>prm01a.firm_id$+prm01a.employee_no$+"A" then break
+            read record (prt01a_dev) prt01a$
+            find record (prm10a_dev,key=firm_id$+"A"+prt01a.pay_code$,dom=*continue) prm10a$
+            x=pos(prm10a.report_code$=u0$,2)
+            if x>0 then let x=int(x/2)+1
+            if x>6 then let x=0
+
+rem --- Dollars/Units
+
+            if option$="M" then let w[1]=prt01a.mtd_units,w[2]=prt01a.mtd_amount
+            if option$="Q" then let w[1]=num(field(prt01a$,"qtr_units_"+str(qtr:"00"))),w[2]=num(field(prt01a$,"qtr_amt_"+str(qtr:"00")))
+            if option$="Y"
+                w[1]=0
+                w[2]=0
+                for w0=1 to qtr
+                    w[1]=w[1]+num(field(prt01a$,"qtr_units_"+str(w0:"00")))
+                    w[2]=w[2]+num(field(prt01a$,"qtr_amt_"+str(w0:"00")))
+                next w0 
+            endif
+            x[x]=x[x]+w[2]
+            y[x]=y[x]+w[1],t[x]=t[x]+w[2],u[x]=u[x]+w[1],r[x]=r[x]+w[2],s[x]=s[x]+w[1]
+            x[7]=x[7]+w[2]
+            y[7]=y[7]+w[1],t[7]=t[7]+w[2],u[7]=u[7]+w[1],r[7]=r[7]+w[2],s[7]=s[7]+w[1]
+        wend
+
+rem --- Print
+        for f=1 to 6
+           if x[f]<>0 then OutVect!.addItem(str(x[f])) else x=fnblank(1)
+        next f
+        if x[0]<>0 then OutVect!.addItem(str(x[0])) else x=fnblank(1)
+        OutVect!.addItem(str(x[7]))
+        OutVect!.addItem(x1$)
+        for f=1 to 6
+            if y[f]<>0 then OutVect!.addItem(str(y[f])) else x=fnblank(1)
+        next f
+        if y[0]<>0 then OutVect!.addItem(str(y[0])) else x=fnblank(1)
+        OutVect!.addItem(str(y[7]))
+        OutVect!.addItem("("+fnmask$(prm01a.soc_sec_no$,m9$)+")")
+        x=fnblank(columns-1)
+        x=fnblank(columns)
+        l=l+4
+    wend
+
+done: rem --- Totals
+
+    t9$="E"
+    gosub dept_brk
+    TotVect!.addItem(str(OutVect!.size()/(columns)))
+    OutVect!.addItem("Grand Totals:")
+    OutVect!.addItem(str(t[1]))
+    OutVect!.addItem(str(t[2]))
+    OutVect!.addItem(str(t[3]))
+    OutVect!.addItem(str(t[4]))
+    OutVect!.addItem(str(t[5]))
+    OutVect!.addItem(str(t[6]))
+    OutVect!.addItem(str(t[0]))
+    OutVect!.addItem(str(t[7]))
+    x=fnblank(1)
+    OutVect!.addItem(str(u[1]))
+    OutVect!.addItem(str(u[2]))
+    OutVect!.addItem(str(u[3]))
+    OutVect!.addItem(str(u[4]))
+    OutVect!.addItem(str(u[5]))
+    OutVect!.addItem(str(u[6]))
+    OutVect!.addItem(str(u[0]))
+    OutVect!.addItem(str(u[7]))
+    x=fnblank(columns)
+
+
+rem --- Done
+
+    goto std_exit
+
+dept_brk: rem --- Dept Break
+
+    if t0$<>"" and p[3]<>0
+        TotVect!.addItem(str(OutVect!.size()/(columns)))
+        OutVect!.addItem("Dept Totals:")
+        OutVect!.addItem(str(r[1]))
+        OutVect!.addItem(str(r[2]))
+        OutVect!.addItem(str(r[3]))
+        OutVect!.addItem(str(r[4]))
+        OutVect!.addItem(str(r[5]))
+        OutVect!.addItem(str(r[6]))
+        OutVect!.addItem(str(r[0]))
+        OutVect!.addItem(str(r[7]))
+        x=fnblank(1)
+        OutVect!.addItem(str(s[1]))
+        OutVect!.addItem(str(s[2]))
+        OutVect!.addItem(str(s[3]))
+        OutVect!.addItem(str(s[4]))
+        OutVect!.addItem(str(s[5]))
+        OutVect!.addItem(str(s[6]))
+        OutVect!.addItem(str(s[0]))
+        OutVect!.addItem(str(s[7]))
+        x=fnblank(columns)
+        l=l+3
+    endif
+
+    if t9$="E" then return
+    dim r[7],s[7]
+    t0$=prm01a.employee_no$(1,2)
+    if p[3]=0 then return
+    h3$=""
+    find record (prm10e_dev,key=firm_id$+"E"+prm01a.dept_code$,dom=label1) prm10e$
+    h3$=prm10e.code_desc$
+label1:
+    OutVect!.addItem(t0$+" "+h3$)
+    x=fnblank(columns*2-1)
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

@@ -1,0 +1,247 @@
+rem glr - Budget Revision Code Listing (Report Overlay)
+rem Program glr_budgetmaster v8.0.0 18Jun2006 (glm_mb)
+rem Created by adx_progconv.bbx v1.0.3 (06/18/2006 05:56:47)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glm-08"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    glm08_dev=channels[1]
+
+rem --- Dimension string templates
+
+    dim glm08a$:templates$[1]
+
+rem --- Retrieve miscellaneous templates
+
+    files=1,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="gls-01A"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
+
+rem --- Dimension miscellaneous string templates
+
+    dim gls01a$:templates$[1]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (ads01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    acctlen=num(gls01a.acct_length$)
+    m0$=gls01a.acct_output$
+    m1$=gls01a.amount_mask$
+    m4$="-##0.00%"
+    m0=len(m0$)
+    m1=len(m1$)
+    headings=1
+
+rem --- Initializations
+
+    dim o[6],headings$[headings]
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+    more=1
+    page=0
+    l9=59
+    l=l9+1
+    number=0
+    width=132
+    clock$=""
+    when$=sysinfo.system_date$
+    h1=16
+    h2=max(14,m0+10)
+    h3=max(12,m1+10)
+    o[0]=0
+    o[1]=7
+    o[2]=10
+    o[3]=40
+    o[6]=width-h3
+    o[5]=o[6]-h2-2
+    o[4]=o[5]-h1-3
+
+rem --- Section Headings
+
+    dim h1$(h1,"-"),h2$(h2,"-"),h3$(h3,"-")
+    x$=" Dates "
+    h1$(fncenter(x$,h1),len(x$))=x$
+    x$=" GL Accounts "
+    h2$(fncenter(x$,h2),len(x$))=x$
+    x$=" Other Info "
+    h3$(fncenter(x$,h3),len(x$))=x$
+
+rem --- Open the output device, start the progress meter and position the file
+
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status goto std_exit
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm08_dev,1,meter_num,status
+    read (glm08_dev,key=firm_id$,dom=*next)
+
+rem --- Get next Budget Revision (glm-08) record
+
+    while more
+          k$=key(glm08_dev,end=*break)
+          if pos(firm_id$=k$)<>1 break
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          read record (glm08_dev,key=k$) glm08a$
+
+          rem --- Initialize print fields
+
+          source$=""
+          created$=fndate$(glm08a.created_date$)
+          revision$=fndate$(glm08a.lstrev_date$)
+          if cvs(glm08a.beg_gl_acct$,2)="" begacct$="First" 
+:                                     else begacct$=fnmask$(glm08a.beg_gl_acct$(1,acctlen),m0$)
+          if cvs(glm08a.end_gl_acct$,2)="" endacct$="Last" 
+:                                     else endacct$=fnmask$(glm08a.end_gl_acct$(1,acctlen),m0$)
+          if cvs(glm08a.gl_wildcard$,2)="" wildcard$="None" 
+:                                     else wildcard$=glm08a.gl_wildcard$
+          if glm08a.amt_or_pct$="P" amtpct$="Percent",mask$=m4$ 
+:                              else amtpct$="Amount",mask$=m1$
+          if glm08a.overwrite$="Y" overwrite$="Yes" 
+:                             else overwrite$="No"
+          call pgmdir$+"glc_suminfo.aon",glm08_dev,glm18_dev,firm_id$,glm08a.source_code$,
+:                                        glm08a.amt_or_units$,source$,x$,status
+          source$=glm08a.source_code$+" "+source$
+
+          rem --- Print detail lines
+
+         if l+4>l9 gosub report_heading
+         print (printer_dev)@(o[0]),glm08a.budget_code$,@(o[1]),glm08a.amt_or_units$,
+:                           @(o[2]),glm08a.description$,@(o[3]),source$,
+:                           @(o[4])," Created ",created$,@(o[5]),"Beginning ",begacct$,
+:                           @(o[6]),"  Amt/Pct ",amtpct$
+         print (printer_dev)@(o[2]),glm08a.rev_title$,@(o[4])," Revised ",revision$,
+:                           @(o[5]),"   Ending ",endacct$,@(o[6]),"    Value ",glm08a.amtpct_val:mask$
+         print (printer_dev)@(o[5])," Wildcard ",wildcard$,@(o[6]),"Overwrite ",overwrite$
+         print (printer_dev)""
+         l=l+4
+         number=number+1
+
+         rem --- Loop back for next record
+
+    wend
+
+rem --- All Done
+
+    if l+1>l9 gosub report_heading
+    print (printer_dev) str(number)," Budget Revision(s)"
+    goto std_exit
+
+report_heading: rem --- Report Heading
+
+    l=headings+1
+    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
+    if status exitto std_exit
+    print (printer_dev) ""
+    print (printer_dev) @(o[0]),"Code",@(o[1]-1),"A/U",@(o[2]),"Description/Title",@(o[3]),"Source",
+:                       @(o[4]+1),h1$,@(o[5]),h2$,@(o[6]),h3$
+    let l=l+2
+    return
+
+rem --- Functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:     str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit:
+    
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
+std_missing_params_release:
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

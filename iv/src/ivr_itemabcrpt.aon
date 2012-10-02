@@ -1,0 +1,243 @@
+rem --- ABC Analysis Report (Input Overlay)
+rem --- Program ivr_itemabcrpt.aon v8.0.0 09Jul2007 (ivr_pa)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/09/2007 11:52:43)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=15,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ivc_whsecode",ids$[1]="IVC_WHSECODE"
+    files$[2]="ive-07",ids$[2]="IVE_ABCITEM"
+    files$[3]="ive-17",ids$[3]="IVE_ABCWHSE"
+    files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
+    files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
+    files$[6]="ivm-03",ids$[6]="IVX_ITEMWHSE"
+    files$[7]="ivm-12",ids$[7]="IVM_ITEMACT"
+    files$[8]="ivs_abcitem",ids$[8]="IVS_ABCITEM"
+    files$[9]="ivs_abcwhse",ids$[9]="IVS_ABCWHSE"
+    files$[10]="ivw-07",ids$[10]="IVW_ABCITEM"
+    files$[11]="ivw-17",ids$[11]="IVW_ABCWHSE"
+    files$[12]="gls_params",ids$[12]="GLS_PARAMS"
+    files$[13]="ivs_params",ids$[13]="IVS_PARAMS"
+    files$[14]="ivs_abcparam",ids$[14]="IVS_ABCPARAM"    
+    files$[15]="ivm-03",ids$[15]="IVX_ITEMWHSE"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    ivm10c_dev=channels[1]
+    ive07_dev=channels[2]
+    ive17_dev=channels[3]
+    ivm01_dev=channels[4]
+    ivm02_dev=channels[5]
+    ivm03g_dev=channels[6]
+    ivm12_dev=channels[7]
+    ivs10i_dev=channels[8]
+    ivs10w_dev=channels[9]
+    ivw07_dev=channels[10]
+    ivw17_dev=channels[11]
+    gls01a_dev=channels[12]
+    ivs01a_dev=channels[13]
+    ivs01c_dev=channels[14] 
+    ivm03g_dev2=channels[15]
+
+rem --- Dimension string templates
+
+    dim ivm10c$:templates$[1],ive07a$:templates$[2],ive17a$:templates$[3],ivm01a$:templates$[4],
+:       ivm02a$:templates$[5],ivm03g$:templates$[6],ivm12a$:templates$[7],
+:       ivs10i$:templates$[8],ivs10w$:templates$[9],ivw07a$:templates$[10],
+:       ivw17a$:templates$[11],gls01a$:templates$[12],ivs01a$:templates$[13],
+:       ivs01c$:templates$[14]
+
+rem --- Assign form input values to local variables
+
+    update$=option!.getOptionData("report_option")
+    value$=option!.getOptionData("pick_listbutton")
+    level$=option!.getOptionData("rpt_level")
+    begwhse$=option!.getOptionData("warehouse_id_1")
+    endwhse$=option!.getOptionData("warehouse_id_2")
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    ivs01c_key$=firm_id$+"IV02"
+    find record (ivs01c_dev,key=ivs01c_key$,err=std_missing_params) ivs01c$
+   
+rem --- Parameters
+
+    dim p[5],g[1],percents[25],factors[25],ivchannels[20]
+    p[0]=num(ivs01a.item_id_len$)
+    p[1]=num(ivs01a.precision$)
+    g[0]=num(gls01a.total_pers$)
+    p[3]=num(ivs01a.desc_len_01$)
+    p[4]=num(ivs01a.desc_len_02$)
+    p[5]=num(ivs01a.desc_len_03$)
+
+    precision p[1]
+    baseperiod$=ivs01a.current_per$+ivs01a.current_year$
+    curperiod$=baseperiod$
+    when$=sysinfo.system_date$
+    x$=fndate$(when$)
+    day_of_mth=num(x$(4,2))
+    more=1
+    ivchannels[1]=ivm01_dev
+    ivchannels[2]=ivm02_dev
+    ivchannels[3]=ivm03g_dev2
+    ivchannels[12]=ivm12_dev
+
+    call "adc_clearfile.aon",ivw07_dev
+    call "adc_clearfile.aon",ivw17_dev
+
+   seterr initializations
+
+    factors[0]=ivs01c.abc_factors_01,percents[0]=ivs01c.abc_percents_01
+    factors[1]=ivs01c.abc_factors_02,percents[1]=ivs01c.abc_percents_02
+    factors[2]=ivs01c.abc_factors_03,percents[2]=ivs01c.abc_percents_03
+    factors[3]=ivs01c.abc_factors_04,percents[3]=ivs01c.abc_percents_04
+    factors[4]=ivs01c.abc_factors_05,percents[4]=ivs01c.abc_percents_05
+    factors[5]=ivs01c.abc_factors_06,percents[5]=ivs01c.abc_percents_06
+    factors[6]=ivs01c.abc_factors_07,percents[6]=ivs01c.abc_percents_07
+    factors[7]=ivs01c.abc_factors_08,percents[7]=ivs01c.abc_percents_08
+    factors[8]=ivs01c.abc_factors_09,percents[8]=ivs01c.abc_percents_09
+    factors[9]=ivs01c.abc_factors_10,percents[9]=ivs01c.abc_percents_10
+    factors[10]=ivs01c.abc_factors_11,percents[10]=ivs01c.abc_percents_11
+    factors[11]=ivs01c.abc_factors_12,percents[11]=ivs01c.abc_percents_12
+    factors[12]=ivs01c.abc_factors_13,percents[12]=ivs01c.abc_percents_13
+    factors[13]=ivs01c.abc_factors_14,percents[13]=ivs01c.abc_percents_14
+    factors[14]=ivs01c.abc_factors_15,percents[14]=ivs01c.abc_percents_15
+    factors[15]=ivs01c.abc_factors_16,percents[15]=ivs01c.abc_percents_16
+    factors[16]=ivs01c.abc_factors_17,percents[16]=ivs01c.abc_percents_17
+    factors[17]=ivs01c.abc_factors_18,percents[17]=ivs01c.abc_percents_18
+    factors[18]=ivs01c.abc_factors_19,percents[18]=ivs01c.abc_percents_19
+    factors[19]=ivs01c.abc_factors_20,percents[19]=ivs01c.abc_percents_20
+    factors[20]=ivs01c.abc_factors_21,percents[20]=ivs01c.abc_percents_21
+    factors[21]=ivs01c.abc_factors_22,percents[21]=ivs01c.abc_percents_22
+    factors[22]=ivs01c.abc_factors_23,percents[22]=ivs01c.abc_percents_23
+    factors[23]=ivs01c.abc_factors_24,percents[23]=ivs01c.abc_percents_24
+    factors[24]=ivs01c.abc_factors_25,percents[24]=ivs01c.abc_percents_25
+    factors[25]=ivs01c.abc_factors_26,percents[25]=ivs01c.abc_percents_26
+
+initializations:
+
+    seterr std_error
+
+rem --- Resize masks
+
+    call pgmdir$+"adc_getmask.aon","","IV","A",imask$,m1$,0,0
+    call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,0
+    call pgmdir$+"adc_getmask.aon","","IV","C",imask$,m3$,0,0
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,6,15
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,8,12
+    call pgmdir$+"adc_sizemask.aon",m3$,m3,5,12
+   
+rem --- Retrieve key template
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMWHSE","PRIMARY",ivm03g_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMMAST","PRIMARY",ivm01_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","PRIMARY",ivm02_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVE_ABCITEM","PRIMARY",ive07_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVW_ABCITEM","PRIMARY",ivw07_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVW_ABCWHSE","PRIMARY",ivw17_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVE_ABCWHSE","PRIMARY",ive17_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVS_ABCITEM","PRIMARY",ivs10i_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVS_ABCWHSE","PRIMARY",ivs10w_key_tpl$,table_chans$[all],status$
+
+    dim ivm03g_key$:ivm03g_key_tpl$,
+:	ivm01a_key$:ivm01_key_tpl$,
+:	ivm02a_key$:ivm02_key_tpl$,
+:	ive07a_key$:ive07_key_tpl$,
+:	ive17a_key$:ive17_key_tpl$,
+:	ivw07a_key$:ivw07_key_tpl$,
+:	ivw17a_key$:ivw17_key_tpl$,
+:	ivs10i_key$:ivs10i_key_tpl$,
+:	ivs10w_key$:ivs10w_key_tpl$
+
+rem --- Run next overlay
+
+    run pgmdir$+"ivr_itemabcrpt_o1.aon"
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:   str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    rem run pgmdir$+"ads_process_end.aon",err=*next
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

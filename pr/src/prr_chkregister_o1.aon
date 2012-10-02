@@ -1,0 +1,406 @@
+rem --- Check Register (G/L Summary)
+rem --- Program prr_hb v8.0.0 11Jun2008 (prr_hb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (06/11/2008 09:44:56)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Parameters
+
+    dim glcontrol$(740)
+    if gl$<>"Y" then goto done
+    glcontrol$(1)=stbl("+GLCONTROL",err=done)
+    if glcontrol$(50,1)<>"Y" then goto done
+
+rem --- Initializations
+
+    dim x[1],channels[3],info$[20],info[20]
+    m0=len(m0$)
+    info[0]=g[4]
+    info[1]=num(prs01b.accrual_days$)
+    info$[2]=prs01a.tax_acc_flag$
+    info$[3]=gldate$(1,3)
+    info$[4]=chkdate$
+    channels[0]=glm01_dev
+    channels[1]=glw11_dev
+    channels[3]=prm10_dev
+    gosub get_accrl_date
+    info$[8]=end$
+    more=1
+   
+rem retrieve template for FILE record key
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRW_CHCKWORK","PRIMARY",prw01a_key_tpl$,table_chans$[all],status$
+    dim prw01a_key$:prw01a_key_tpl$
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYEARNG","PRIMARY",pre11a_key_tpl$,table_chans$[all],status$
+    dim pre11a_key$:pre11a_key_tpl$
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYDDCT","PRIMARY",pre21a_key_tpl$,table_chans$[all],status$
+    dim pre21a_key$:pre21a_key_tpl$
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYTAX","PRIMARY",pre31a_key_tpl$,table_chans$[all],status$
+    dim pre31a_key$:pre31a_key_tpl$
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","PRE_PAYCONT","PRIMARY",pre41a_key_tpl$,table_chans$[all],status$
+    dim pre41a_key$:pre41a_key_tpl$
+
+
+rem --- Display Resource
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,prw01_dev,1,meter_num,status
+
+rem --- Position File
+
+    read (prw01_dev,key=firm_id$,dom=*next)
+
+rem --- Read next pre-01 header
+    while more
+
+        prw01a_key$=key(prw01_dev,end=done)
+        if pos(firm_id$=prw01a_key$)<>1 then goto done
+        read record (prw01_dev) prw01a$
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if prw01a.pr_chk_type$="V" then continue
+
+        pre01a.firm_id$=firm_id$
+        pre01a.employee_no$=prw01a.employee_no$
+        pre01a.check_type$=prw01a.pr_chk_type$
+        pre01a.sequence_num$=prw01a.sequence_num$
+        pre01a.check_no$=prw01a.check_no$
+
+        if prw01a.pr_chk_type$="C" then pre01a.check_no$=""
+        read record (pre01_dev,key=pre01a.firm_id$+pre01a.employee_no$+pre01a.check_type$+pre01a.sequence_num$+pre01a.check_no$,dom=*continue) pre01a$
+
+rem --- Employee break?
+
+        if pre01a.firm_id$+pre01a.employee_no$<>t0$ then gosub employee_break
+
+rem --- Perform G/L Initialization
+
+        savea0$=pre01a.firm_id$+pre01a.employee_no$+pre01a.check_type$+pre01a.sequence_num$+pre01a.check_no$+pre01a.check_date$+
+:               pre01a.pay_period$+pre01a.comp_chk_no$
+        t0=0,t1=0,t2=0
+        info$[0]=fnmask$(pre01a.employee_no$(1,p[0]),m0$)
+        info$[1]=memo$
+        info$[4]=prw01a.check_date$
+        info$[5]=pre01a.firm_id$+pre01a.employee_no$+pre01a.check_type$+pre01a.sequence_num$+pre01a.check_no$+pre01a.check_date$+
+:                pre01a.pay_period$+pre01a.comp_chk_no$
+        info$[6]=s0$
+        call pgmdir$+"prc_gengglposting.aon",0,channels[all],info$[all],info[all]
+
+rem --- Read next Entry detail
+rem --- Earnings
+
+        read (pre11_dev,key=savea0$(1,21),dom=*next)
+        while more
+            pre11a_key$=key(pre11_dev,end=*break)
+            if pos(savea0$(1,21)=pre11a_key$)<>1 then break
+            read record (pre11_dev) pre11a$
+
+            info$[5]=pre11a.firm_id$+pre11a.employee_no$+pre11a.check_type$+pre11a.sequence_num$+pre11a.check_no$+pre11a.record_id_a$+
+:                    pre11a.pr_entry_seq$+pre11a.pay_code$+pre11a.title_code$+pre11a.dept_code$+pre11a.reserved_str$
+            info$[6]=s0$
+            info$[6]=pre11a.dept_code$
+            info[2]=pre11a.extended_amt
+            info[3]=pre11a.units
+
+            find record (prm10_dev,key=firm_id$+"A"+pre11a.pay_code$,dom=*next) prm10a$
+            if pos(prm10a.productive$="AC")=0 then info[3]=0
+            call pgmdir$+"prc_ga.bbx",2,channels[all],info$[all],info[all]
+            v0$=pre11a.dept_code$
+            gosub accumulate_depts
+        wend
+
+rem --- Deductions
+
+        read (pre21_dev,key=savea0$(1,21),dom=*next)
+        while more
+            pre21a_key$=key(pre21_dev,end=*break)
+            if pos(savea0$(1,21)=pre21a_key$)<>1 then break
+            read record (pre21_dev) pre21a$
+            info$[5]=pre21a.firm_id$+pre21a.employee_no$+pre21a.check_type$+pre21a.sequence_num$+pre21a.check_no$+pre21a.record_id_b$+
+:                    pre21a.pr_entry_seq$+pre21a.deduct_code$+pre21a.reserved_str$
+            info$[6]=s0$
+            info[2]=pre21a.deduct_amt
+            info[3]=0
+            t1=t1+pre21a.deduct_amt
+            call pgmdir$+"prc_ga.bbx",2,channels[all],info$[all],info[all]
+        wend
+
+rem --- Taxes
+        tblename=0
+        read (pre31_dev,key=savea0$(1,21),dom=*next)
+        while more
+            pre31a_key$=key(pre31_dev,end=*break)
+            if pos(savea0$(1,21)=pre31a_key$)<>1 then break
+            read record (pre31_dev) pre31a$
+            info$[5]=pre31a.firm_id$+pre31a.employee_no$+pre31a.check_type$+pre31a.sequence_num$+pre31a.check_no$+pre31a.record_id_c$+
+:                    pre31a.pr_entry_seq$+pre31a.tax_code$+pre31a.tax_tbl_code$+pre31a.reserved_str$
+            info$[6]=s0$
+            tblename=3
+            ra$=pre31a.record_id_c$
+            gosub calculate
+        wend
+
+rem --- Contributions
+        tblename=0
+        read (pre41_dev,key=savea0$(1,21),dom=*next)
+        while more
+            pre41a_key$=key(pre41_dev,end=*break)
+            if pos(savea0$(1,21)=pre41a_key$)<>1 then break
+            read record (pre41_dev) pre41a$
+            info$[5]=pre41a.firm_id$+pre41a.employee_no$+pre41a.check_type$+pre41a.sequence_num$+pre41a.check_no$+pre41a.record_id_d$+
+:                    pre41a.pr_entry_seq$+pre41a.contrib_code$+pre41a.reserved_str$
+            info$[6]=s0$
+            tblename=4
+            ra$=pre31a.record_id_d$
+            gosub calculate
+        wend
+
+rem --- Generate summary posting for check
+
+        info[2]=(-t0)+t1+t2
+        call pgmdir$+"prc_ga.aon",1,channels[all],info$[all],info[all]
+    wend
+
+
+
+done: rem --- All Done
+
+    if gl$="Y" then
+        overlay$=pgmdir$+"glr_recap_DO.aon"
+        out_action$="PRT-PDF"
+        next_overlay$=overlay$
+        goto std_exit
+    endif
+
+    run update$,err=std_exit
+
+accumulate_depts: rem --- Accumulate departments
+
+    while more
+        x=pos(v0$=q9$)
+        if x=0 then
+            q9$=q9$+v0$
+            continue
+        endif
+        q[int(x/2)]=q[int(x/2)]+pre11a.extended_amt
+        t0=t0+pre11a.extended_amt
+        break
+    wend
+
+    return
+
+employee_break: rem --- Employee Break
+
+    dim q[20]
+    t0$=pre01a.firm_id$+pre01a.employee_no$
+    s0$="  "
+    memo$="Unknown Employee"
+    q9$=""
+    find record (prm01_dev,key=t0$,dom=rtn) prm01a$
+    s0$=prm01a.dept_code$
+    memo$=cvs(prm01a.empl_givname$,2)+" "+cvs(prm01a.empl_surname$,2)
+rtn:
+    return
+
+get_accrl_date: rem --- Get Accrual Date (End Date Of Next Period)
+
+    call pgmdir$+"adc_peryear.aon",firm_id$,sys01_dev,gldate$,period$,year$
+    period=num(period$)+1
+    fisc_yr=fnyy_year(year$)
+    if period>g[0] then period=1,fisc_yr=fisc_yr+1
+    call pgmdir$+"adc_perioddates.aon",sys01_dev,period,fisc_yr,begin$,end$,status
+    return
+
+
+calculate: rem --- Calculate Taxes & Contributions
+
+    if tblename=3 then
+        info$[5]=pre31a.firm_id$+pre31a.employee_no$+pre31a.check_type$+pre31a.sequence_num$+pre31a.check_no$+pre31a.record_id_c$+
+:                pre31a.pr_entry_seq$+pre31a.tax_code$+pre31a.tax_tbl_code$+pre31a.reserved_str$
+        info$[6]=s0$
+        q0=pre31a.tax_amount
+        q2=pre31a.tax_amount
+    endif
+    if tblename=4 then
+        info$[5]=pre41a.firm_id$+pre41a.employee_no$+pre41a.check_type$+pre41a.sequence_num$+pre41a.check_no$+pre41a.record_id_d$+
+:                pre41a.pr_entry_seq$+pre41a.contrib_code$+pre41a.reserved_str$
+        info$[6]=s0$
+        q0=pre41a.contrib_amt
+        q2=pre41a.contrib_amt
+    endif
+
+    q3=t0
+    q7=0
+    if q3=0 then q9$=""
+
+    if q9$="" then
+        q9$=prm01a.dept_code$
+        if tblename=3 then
+            q[0]=pre31a.tax_amount
+            q3=pre31a.tax_amount
+        else    
+            if tblename=4 then
+                q[0]=pre41a.contrib_amt
+                q3=pre41a.contrib_amt
+            endif
+        endif
+    endif
+
+    for q9=1 to len(q9$) step 2
+        info$[6]=q9$(q9,2)
+        q4=0
+        if q3<>0 then q4=q[int(q9/2)]*100/q3
+        v0=q0*q4/100
+        v1=0
+        if q9+2>len(q9$) and q7+v0<>q2 then v0=q2-q7
+        q7=q7+v0
+        info[2]=v0
+        call pgmdir$+"prc_ga.bbx",2,channels[all],info$[all],info[all]
+        if ra$="C" then t2=t2+v0
+    next q9
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)=fill(10,cvs(q$(1,3)+fill(pos("9"<q$(1,5))>0)+q$(4,2)+
+:                      fill(ABS(pos("A">=q$(1,6))>0)-pos("0">q$(6,4))>0,"-")+
+:                      q$(6,4)+fill(10),16))
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end
