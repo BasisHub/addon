@@ -1,3 +1,13 @@
+[[APE_PAYSELECT.AOPT-DELA]]
+rem --- Turn all selected invoices off
+
+	on_value$="N"
+	gosub set_value
+[[APE_PAYSELECT.AOPT-SELA]]
+rem --- Turn all selected invoices on
+
+	on_value$="Y"
+	gosub set_value
 [[APE_PAYSELECT.ARAR]]
 rem --- If mult AP types = N, disable AP Type field
 
@@ -499,6 +509,116 @@ rem ==========================================================================
 
 	vend_len=num(callpoint!.getTableColumnAttribute("APE_PAYSELECT.VENDOR_ID","MAXL"))
 	vend$=pad(new_vend$,vend_len,"L","0")
+
+	return
+
+rem ==========================================================================
+set_value: rem --- Set Check Values for all rows - on/off
+		rem --- on_value$="Y" to set all to on
+		rem --- on_value$="N" to set all to off
+rem ==========================================================================
+
+	apm01_dev = fnget_dev("APM_VENDMAST")
+	dim apm01a$:fnget_tpl$("APM_VENDMAST")
+	apt01_dev = fnget_dev("APT_INVOICEHDR")
+	dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
+
+	SysGUI!.setRepaintEnabled(0)
+
+	gridInvoices!       = UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
+	vectInvoices!       = UserObj!.getItem(num(user_tpl.vectInvoicesOfst$))
+	vectInvoicesMaster! = UserObj!.getItem(num(user_tpl.vectInvoicesMasterOfst$))
+
+	TempRows! = gridInvoices!.getSelectedRows()
+	numcols   = gridInvoices!.getNumColumns()
+
+	vect_size = num(vectInvoicesMaster!.size())
+	rows = 0
+
+	for x=1 to vect_size step user_tpl.MasterCols
+		if vectInvoicesMaster!.getItem(x-1)="Y"
+			rows=rows+1
+		endif
+	next x
+
+	if rows > 0 then
+		for curr_row=1 to rows
+			row_no = curr_row-1
+
+		rem --- set as checked
+			if on_value$="Y" then 
+				read record (apm01_dev, key=firm_id$+
+:					gridInvoices!.getCellText(row_no,3), dom=*next) apm01a$
+
+rem --- Following lines removed to allow payment of open invoices for a held vendor
+rem				if apm01a.hold_flag$="Y" then
+rem					msg_id$="AP_VEND_HOLD"
+rem					gosub disp_message
+rem					break
+rem				endif
+
+				read record (apt01_dev, key=firm_id$+
+:					gridInvoices!.getCellText(row_no,2)+
+:					gridInvoices!.getCellText(row_no,3)+
+:					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
+
+				if apt01a.hold_flag$="Y" then
+					msg_id$="AP_INV_HOLD"
+					gosub disp_message
+					continue
+				endif
+
+				gridInvoices!.setCellState(row_no,0,1)
+
+				if callpoint!.getColumnData("APE_PAYSELECT.INCLUDE_DISC")="Y" or
+:					apt01a.disc_date$ >= sysinfo.system_date$
+:				then
+					gridInvoices!.setCellText(row_no, 9, apt01a.discount_amt$)
+				endif
+
+				payment_amt = num(gridInvoices!.getCellText(row_no,8)) - num(gridInvoices!.getCellText(row_no,9)) - apt01a.retention
+				gridInvoices!.setCellText(row_no, 10, str(payment_amt))
+				vectInvoices!.setItem(row_no * numcols, "Y")
+				dummy = fn_setmast_flag(
+:					vectInvoices!.getItem(row_no*numcols+2),
+:					vectInvoices!.getItem(row_no*numcols+3),
+:					vectInvoices!.getItem(row_no*numcols+5),
+:					"Y",
+:					gridInvoices!.getCellText(row_no,8)
+:				)
+				dummy = fn_setmast_amts(
+:					vectInvoices!.getItem(row_no*numcols+2),
+:					vectInvoices!.getItem(row_no*numcols+3),
+:					vectInvoices!.getItem(row_no*numcols+5),
+:					gridInvoices!.getCellText(row_no, 9),
+:					str(payment_amt)
+:				)
+
+		rem --- Checked -> not checked
+
+			else
+				gridInvoices!.setCellState(row_no,0,0)
+				gridInvoices!.setCellText(row_no,9,"0.00")
+				gridInvoices!.setCellText(row_no,10,"0.00")
+				dummy = fn_setmast_flag(
+:					vectInvoices!.getItem(row_no*numcols+2),
+:					vectInvoices!.getItem(row_no*numcols+3),
+:					vectInvoices!.getItem(row_no*numcols+5),
+:					"N",
+:					"0"
+:				)
+				dummy = fn_setmast_amts(
+:					vectInvoices!.getItem(row_no*numcols+2),
+:					vectInvoices!.getItem(row_no*numcols+3),
+:					vectInvoices!.getItem(row_no*numcols+5),
+:					"0",
+:					"0"
+:				)
+			endif
+		next curr_row
+	endif
+
+	SysGUI!.setRepaintEnabled(1)
 
 	return
 

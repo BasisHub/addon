@@ -1,5 +1,5 @@
-rem --- Batch Invoice Printing
-rem --- Program opr_invoice v8.0.0 12Jun2009 (opr_ga)
+rem --- Batch Picklist Printing
+rem --- Program opr_picklist v8.0.0 12Jun2009 (opr_na)
 rem --- Created by adx_codeport.bbj v1.1.5 (06/12/2009 11:58:46)
 
 rem --- AddonSoftware Version 8.0.0 - 12Jun2009
@@ -30,25 +30,28 @@ rem --- Retrieve sysinfo data
 
 rem --- Open File(s)
 
-	num_files=2
+	num_files=3
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1] = "OPE_PRNTLIST", open_opts$[1] = "OTA"
     open_tables$[2] = "OPE_ORDHDR",   open_opts$[2] = "OTA"
+    open_tables$[3] = "OPE_ORDDET",   open_opts$[3] = "OTA"
     
     gosub open_tables
     
     ope04_dev = num(open_chans$[1])
     ope01_dev = num(open_chans$[2])
+	ope11_dev = num(open_chans$[3])
     
     dim ope04a$:open_tpls$[1]
     dim ope01a$:open_tpls$[2]
-
+    dim ope11a$:open_tpls$[3]
+	
 rem --- Assign form input values to local variables
 
-    rem *** what does this do? restart$ = option!.getOptionData("pick_check"); rem p6$
-    cust_id$ = option!.getOptionData("customer_id"); rem p5$
-
+    cust_id$ = option!.getOptionData("customer_id")
+    which_ones$=option!.getOptionData("PRINT_LIST");rem picklists, quotes, or both
+	
 rem --- Initialize Data
 
     declare BBjVector custIds!
@@ -61,36 +64,24 @@ rem --- Initialize Data
 
 rem --- Initial Read
 
-    read (ope04_dev, key=firm_id$+"I"+"  "+cust_id$, dom=*next)
+    read (ope04_dev, key=firm_id$+"O"+"  "+cust_id$, dom=*next)
 
 rem --- Main Read, create customer and order vectors
 
     while 1
 
         read record (ope04_dev, end=*break) ope04a$
-        if ope04a$.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"I" then break
+        if ope04a$.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"O" then break
 
         if start_block then
             bad_record = 1
             extract record (ope01_dev, key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
+	        if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") then continue
             bad_record = 0
         endif
 
         if bad_record then
-            remove (ope04_dev, key=firm_id$+"I"+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
-            continue
-        endif
-        
-        if ope01a.invoice_type$ = "V" then continue
-        
-        if ope01a.ordinv_flag$ = "I" then
-            if ope01a.print_status$ = "Y" then continue
-            if ope01a.print_status$<>"B" and ope01a.lock_status$="Y" then continue
-            ope01a.lock_status$ = "Y"
-            ope01a$ = field(ope01a$)
-            write record (ope01_dev) ope01a$
-        else
-            remove (ope04_dev, key=firm_id$+"I  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
+            remove (ope04_dev, key=firm_id$+"O"+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
             continue
         endif
         
@@ -98,7 +89,7 @@ rem --- Main Read, create customer and order vectors
         orderNos!.addItem( ope01a.order_no$ )
         
     wend
-    
+
 rem --- Did we find any invoices to print?    
     
     if custIds!.size() = 0 or orderNos!.size() = 0 then
@@ -107,9 +98,9 @@ rem --- Did we find any invoices to print?
         goto std_exit
     endif
     
-rem --- Call the invoice printing program with the vectors
-    
-    call pgmdir$+"opc_invoice.aon::batch_inv", custIds!, orderNos!, option!, table_chans$[all], status
+rem --- Call the picklist printing program with the vectors
+
+    call pgmdir$+"opc_picklist.aon::batch_pick", custIds!, orderNos!, option!, table_chans$[all], status
     goto std_exit
     
 open_tables: rem --- Open Tables

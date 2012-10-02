@@ -1,3 +1,8 @@
+[[OPE_ORDHDR.TAX_CODE.AVAL]]
+rem --- Set code in the Order Helper object
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setTaxCode(callpoint!.getColumnData("OPE_ORDHDR.TAX_CODE"))
 [[OPE_ORDHDR.AOPT-CRAT]]
 print "Hdr:AOPT:CRAT"; rem debug
 
@@ -69,6 +74,8 @@ rem --- Reset all previous values
 	user_tpl.new_order = 1
 	user_tpl.credit_limit_warned = 0
 	user_tpl.shipto_warned = 0
+
+	callpoint!.setDevObject("reprintable",0)
 [[OPE_ORDHDR.BREX]]
 print "Hdr:BREX"; rem debug
 
@@ -114,8 +121,50 @@ rem --- Calculate taxes and write it back
 
 rem --- Credit action
 
-	if ordHelp!.setOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
+	if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
 		gosub do_credit_action
+	endif
+
+rem --- Does the total of lot/serial# match the qty ordered for each detail line?
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setLotSerialFlag( user_tpl.lotser_flag$ )
+
+	if user_tpl.lotser_flag$ <> "N" then
+
+		declare BBjVector recs!
+		recs! = BBjAPI().makeVector()
+
+		recs! = cast( BBjVector, gridVect!.getItem(0) )
+		dim gridrec$:dtlg_param$[1,3]
+
+	rem --- Detail loop
+
+		if recs!.size() then
+			for row=0 to recs!.size()-1
+				gridrec$ = recs!.getItem(row)
+
+				if ordHelp!.isLottedSerial(gridrec.item_id$) then
+					lot_ser_total = ordHelp!.totalLotSerialAmount( gridrec.internal_seq_no$ )
+
+					if lot_ser_total <> gridrec.qty_ordered then
+						if user_tpl.lotser_flag$ = "L" then
+							lot_ser$ = "lots"
+						else
+							lot_ser$ = "serial numbers"
+						endif
+					
+						msg_id$ = "OP_ITEM_LS_TOTAL"
+						dim msg_tokens$[3]
+						msg_tokens$[0] = str(gridrec.qty_ordered)
+						msg_tokens$[1] = cvs(gridrec.item_id$, 2)
+						msg_tokens$[2] = lot_ser$
+						msg_tokens$[3] = str(lot_ser_total)
+						gosub disp_message
+					endif
+				endif
+			next row
+		endif
 	endif
 [[OPE_ORDHDR.AOPT-PRNT]]
 print "Hdr:AOPT:PRNT"; rem debug
@@ -136,10 +185,11 @@ rem --- Print a counter Picking Slip
 
 	rem --- Can't print until released from credit
 
-		gosub force_print_status
+rem		gosub force_print_status; rem --- don't think I want to do this, causes problems downstream
 		gosub do_credit_action
 
-		if pos(action$ = "XU") or (action$ = "R" and callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "N") then 
+rem		if pos(action$ = "XU") or (action$ = "R" and callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "N") then 
+		if pos(action$ = "XUS") or (action$ = "R" and str(callpoint!.getDevObject("document_printed")) <> "Y") then 
 
 		rem --- Couldn't do credit action, or did credit action w/ no problem, or released from credit but didn't print
 
@@ -147,7 +197,8 @@ rem --- Print a counter Picking Slip
 			user_tpl.do_end_of_form = 0
 			callpoint!.setStatus("NEWREC")
 		else
-			if action$ = "R" and callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "Y" then 
+rem			if action$ = "R" and callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "Y" then 
+			if action$ = "R" and str(callpoint!.getDevObject("document_printed")) = "Y" then 
 
 			rem --- Released from credit and did print
 
@@ -315,7 +366,7 @@ rem --- Enable buttons as appropriate
 		else
 			callpoint!.setOptionEnabled("DINV",0)
 			callpoint!.setOptionEnabled("CINV",0)
-			callpoint!.setOptionEnabled("RPRT",1)
+			callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
 			callpoint!.setOptionEnabled("CRAT",1)
@@ -390,28 +441,8 @@ rem --- Reprint order?
 		ar_type$  = callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
 		reprint   = 0
 		gosub check_if_reprintable
-
-		if reprintable then 
-			msg_id$="OP_REPRINT_ORDER"
-			gosub disp_message
-			
-			if msg_opt$ = "Y" then
-				if user_tpl.credit_installed$ = "Y" and 
-:					user_tpl.pick_hold$ = "N" 			and 
-:					callpoint!.getColumnData("OPE_ORDHDR.CREDIT_FLAG") = "C" 
-:				then
-					msg_id$="OP_ORD_ON_CR_HOLD"
-				else
-					msg_id$="OP_ORD_PRINT_BATCH"
-					callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG", "Y")
-					print "---Reprint_flag set to Y"; rem debug
-					callpoint!.setColumnData("OPE_ORDHDR.PRINT_STATUS", "N")
-					gosub add_to_batch_print
-				endif
-
-				gosub disp_message
-			endif
-		endif
+	else
+		callpoint!.setDevObject("reprintable",1)
 	endif
 
 rem --- Show customer data
@@ -452,7 +483,7 @@ rem --- Backorder and Credit Hold
 rem --- Enable buttons
 
 	callpoint!.setOptionEnabled("PRNT",1)
-	callpoint!.setOptionEnabled("RPRT",1)
+	callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
 	callpoint!.setOptionEnabled("TTLS",1)
 
 rem --- Set all previous values
@@ -1347,43 +1378,39 @@ check_lock_flag: rem --- Check manual record lock
 rem ==========================================================================
 
 	locked=0
-	on pos( callpoint!.getColumnData("OPE_ORDHDR.LOCK_STATUS") = "NYS12" ) goto 
-:		end_lock,end_lock,locked,on_invoice,update_stat,update_stat
 
-locked:
+	switch pos( callpoint!.getColumnData("OPE_ORDHDR.LOCK_STATUS") = "NYS12" )
+		case 2
+			msg_id$="ORD_LOCKED"
+			dim msg_tokens$[1]
 
-	msg_id$="ORD_LOCKED"
-	dim msg_tokens$[1]
+			if callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS")="B" then 
+				msg_tokens$[1]=" by Batch Printing"
+				gosub disp_message
 
-	if callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS")="B" then 
-		msg_tokens$[1]=" by Batch Print."
-		gosub disp_message
+				if msg_opt$="Y"
+					callpoint!.setColumnData("OPE_ORDHDR.LOCK_STATUS","N")
+					callpoint!.setStatus("SAVE")
+				else
+					locked=1
+				endif
+			endif
 
-		if msg_opt$="Y"
-			callpoint!.setColumnData("OPE_ORDHDR.LOCK_STATUS","N")
-			callpoint!.setStatus("SAVE")
-		else
+			break
+
+		case 3
+			msg_id$="ORD_ON_REG"
+			gosub disp_message
 			locked=1
-		endif
+			break
 
-	endif
-
-	goto end_lock
-
-on_invoice:
-
-	msg_id$="ORD_ON_REG"
-	gosub disp_message
-	locked=1
-	goto end_lock
-
-update_stat:
-
-	msg_id$="INVOICE_IN_UPDATE"
-	gosub disp_message
-	locked=1
-
-end_lock:
+		case 4
+		case 5
+			msg_id$="INVOICE_IN_UPDATE"
+			gosub disp_message
+			locked=1
+			break
+	swend
 
 	return
 
@@ -1766,7 +1793,7 @@ check_if_reprintable: rem --- Are There Reprintable Detail Lines?
                       rem      IN: ar_type$
                       rem          cust_id$
                       rem          order_no$
-                      rem     OUT: reprintable = 1/0
+                      rem     OUT: reprintable = 1/0 (stored in devObject)
 rem ==========================================================================
 
 	reprintable = 0
@@ -1784,6 +1811,8 @@ rem ==========================================================================
 			break
 		endif
 	wend
+
+	callpoint!.setDevObject("reprintable",reprintable)
 
 	return 
 
@@ -1813,30 +1842,53 @@ rem ==========================================================================
 	order_no$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 	action$   = "X"; rem Never called opc_creditaction.aon
 
+rem --- Should we call Credit Action?
+
 	if user_tpl.credit_installed$ = "Y" and inv_type$ <> "P" and cvs(cust_id$, 2) <> "" and cvs(order_no$, 2) <> "" then
 		callpoint!.setDevObject("run_by", "order")
 		call user_tpl.pgmdir$+"opc_creditaction.aon", cust_id$, order_no$, table_chans$[all], callpoint!, action$, status
 		if status = 999 then goto std_exit
 
+	rem --- Delete the order
+
+		if action$ = "D" then 
+			callpoint!.setStatus("DELETE")
+			return
+		endif
+
 		if pos(action$="HC")<>0 then
+
+		rem --- Order on hold
+
 			callpoint!.setColumnData("OPE_ORDHDR.CREDIT_FLAG","C")
 		else
 			if action$="R" then
+
+			rem --- Order released
+
 				callpoint!.setColumnData("OPE_ORDHDR.CREDIT_FLAG","R")	
 				terms$ = str(callpoint!.getDevObject("new_terms_code"))
-				callpoint!.setColumnData("OPE_ORDHDR.TERMS_CODE", terms$)
+
+				if terms$ <> "" then
+					callpoint!.setColumnData("OPE_ORDHDR.TERMS_CODE", terms$)
+				endif
 			else
 				callpoint!.setColumnData("OPE_ORDHDR.CREDIT_FLAG","")			
 			endif
 		endif
 
-		if action$ = "D" then 
-			callpoint!.setStatus("DELETE")
-		endif
+	rem --- Order was printed within the credit action program
 
 		if str(callpoint!.getDevObject("document_printed")) = "Y" then 
 			callpoint!.setColumnData("OPE_ORDHDR.PRINT_STATUS", "Y")
 		endif
+
+	rem --- Write these flags back to the disk
+
+		gosub get_disk_rec
+		ordhdr_rec$ = field(ordhdr_rec$)
+		write record (ordhdr_dev) ordhdr_rec$
+		callpoint!.setStatus("SETORIG")		
 
 	endif
 
@@ -1860,9 +1912,12 @@ rem ==========================================================================
 		callpoint!.setStatus("SETORIG")
 	endif
 
-	call user_tpl.pgmdir$+"opc_picklist.aon", cust_id$, order_no$, callpoint!, table_chans$[all], status
+	call user_tpl.pgmdir$+"opc_picklist.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
 	if status = 999 then goto std_exit
 	callpoint!.setColumnData("OPE_ORDHDR.PRINT_STATUS", "Y")
+
+	msg_id$ = "OP_PICKLIST_DONE"
+	gosub disp_message
 
 	print "out"; rem debug
 

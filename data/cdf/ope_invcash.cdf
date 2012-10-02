@@ -1,3 +1,7 @@
+[[OPE_INVCASH.BREX]]
+rem --- Set invoice printing global
+
+	callpoint!.setDevObject( "print_invoice", callpoint!.getColumnData("<<DISPLAY>>.PRINT") )
 [[OPE_INVCASH.ARAR]]
 print "OPE_INVCASH:ARAR"; rem debug
 
@@ -190,3 +194,7 @@ rem --- Open files
 rem --- Global string templates
 
 	dim user_tpl$:"ext_price:n(15), taxable:n(15), ext_cost:n(15)"
+
+rem --- Print Invoice global
+
+	callpoint!.setDevObject("print_invoice", "N")

@@ -865,34 +865,6 @@ rem --- Warehouse and Item must be correct
 
 	endif
 
-rem --- Does the total of lot/serial# match the qty ordered?
-
-	item_id$ = item$
-	gosub lot_ser_check
-
-	if lotted$ = "Y" and user_tpl.lotser_flag$ <> "N" then
-		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-		lot_ser_total = ordHelp!.totalLotSerialAmount( callpoint!.getColumnData("OPE_ORDDET.INTERNAL_SEQ_NO") )
-		qty_ord = num( callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED") )
-
-		if lot_ser_total <> qty_ord then
-			if user_tpl.lotser_flag$ = "L" then
-				lot_ser$ = "Lots"
-			else
-				lot_ser$ = "Serial Numbers"
-			endif
-		
-			msg_id$ = "OP_LOT_SER_TOTAL"
-			dim msg_tokens$[2]
-			msg_tokens$[0] = str(qty_ord)
-			msg_tokens$[1] = lot_ser$
-			msg_tokens$[2] = str(lot_ser_total)
-			gosub disp_message
-			rem callpoint!.setFocus(this_row,"OPE_ORDDET.QTY_ORDERED")
-			rem break; rem --- exit callpoint
-		endif
-	endif
-
 rem --- Set taxable amount
 
 	if user_tpl.line_taxable$ = "Y" and 

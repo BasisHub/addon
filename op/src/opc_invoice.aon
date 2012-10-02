@@ -6,26 +6,52 @@ rem --- AddonSoftware Version 8.0.0 - 27Jul2009
 rem --- Copyright (c) 1981-2009 AddonSoftware
 rem --- All Rights Reserved
 
-rem ***NOTE*** this program is used for printing "on demand" invoices only.  opr_invoice.aon
-rem and its overlay are used for batch printing.  They contain much of the same code.  If 
-rem you make a change here, check opc_invoice.aon to see if it needs to be made there too.
-rem 
-rem At some point we should merge these programs or create a third program to do the guts of
-rem the work while the originals become stubs.  That is to say, we shouldn't have two programs 
-rem that print invoices; only one. 
+rem --- Send in a list of customer IDs and order numbers to print.
 
     setesc std_error
     seterr std_error
 
+on_demand: rem --- Entry point for on-denamd invoices    
+    
     enter cust_id$, order_no$, callpoint!, table_chans$[all], status
+    
+    custIds! = BBjAPI().makeVector()
+    orderNos! = BBjAPI().makeVector()
 
-rem --- Use statements
+    custIds!.addItem( cust_id$ )
+    orderNos!.addItem( order_no$ )   
+    
+    type = 1
+    goto done_with_enter
+    
+batch_inv: rem --- Batch printing of invoices
+
+    enter custIds!, orderNos!, option!, table_chans$[all], status
+    
+    type = 2
+    goto done_with_enter
+ 
+historical: rem --- Historical invoice printing (not implemented)
+
+    enter custIds!, orderNos!, table_chans$[all], status
+    
+    type = 3
+    goto done_with_enter
+
+done_with_enter:
+
+rem --- Types of calls
+
+    on_demand  = 1
+    batch_inv  = 2
+    historical = 3
+    
+rem --- Use statements and Declares
 
     use ::ado_func.src::func
     use ::ado_pdf.src::PDFHelper
     use ::sys/prog/bao_callpoint.bbj::Callpoint
-    
-    declare Callpoint callpoint!
+    use ::sys/prog/bao_option.bbj::Option
 
     use java.awt.Font
     use java.lang.Float
@@ -33,6 +59,11 @@ rem --- Use statements
     use javax.print.attribute.standard.MediaPrintableArea
     use javax.print.attribute.standard.MediaSizeName
     use javax.print.attribute.standard.OrientationRequested
+    
+    declare Callpoint callpoint!
+    declare Option option!
+    declare BBjVector custIds!
+    declare BBjVector orderNos!
 
 rem --- Retrieve the program path
 
@@ -51,6 +82,12 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:stbl("+SYSINFO_TPL")
     sysinfo$=stbl("+SYSINFO")
     firm_id$=sysinfo.firm_id$
+    
+rem --- Anything to print?
+
+    if custIds!.size() = 0 or orderNos!.size() = 0 then
+        goto nothing_printed
+    endif
 
 rem --- Derive/set path and filename for logo to go on form
 
@@ -65,65 +102,77 @@ rem --- Derive/set path and filename for logo to go on form
 
     chdir curr_path$
 
-rem --- Open/Lock files
+rem --- Open Files    
+    
+	num_files=20
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
-    files=20,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="arm-01",       ids$[1]="ARM_CUSTMAST"
-    files$[2]="arm-02",       ids$[2]="ARM_CUSTDET"
-    files$[3]="arm-03",       ids$[3]="ARM_CUSTSHIP"
-    files$[4]="arc_termcode", ids$[4]="ARC_TERMCODE"
-    files$[5]="arc_cashcode", ids$[5]="ARC_CASHCODE"
-    files$[6]="arc_salecode", ids$[6]="ARC_SALECODE"
-    files$[7]="ars_report",   ids$[7]="ARS_REPORT"
-    files$[8]="ivm-01",       ids$[8]="IVM_ITEMMAST"
-    files$[9]="ivs_params",   ids$[9]="IVS_PARAMS"
-    files$[10]="ope-01",      ids$[10]="OPE_ORDHDR"
-    files$[11]="ope-04",      ids$[11]="OPE_PRNTLIST"
-    files$[12]="ope-11",      ids$[12]="OPE_ORDDET"
-    files$[13]="ope-21",      ids$[13]="OPE_ORDLSDET"
-    files$[14]="ope-31",      ids$[14]="OPE_ORDSHIP"
-    files$[15]="ope-41",      ids$[15]="OPE_INVCASH"
-    files$[16]="opm-02",      ids$[16]="OPC_LINECODE"
-    files$[17]="opm-04",      ids$[17]="OPC_MSG_HDR"
-    files$[18]="opm-09",      ids$[18]="OPM_CUSTJOBS"
-    files$[19]="opm-14",      ids$[19]="OPC_MSG_DET"
-    files$[20]="ars_params",  ids$[20]="ARS_PARAMS"
-
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-
-    arm01_dev=channels[1]
-    arm02_dev=channels[2]
-    arm03_dev=channels[3]
-    arm10_dev=channels[4]
-    arm10c_dev=channels[5]
-    arm10f_dev=channels[6]
-    ars_report_dev=channels[7]
-    ivm01_dev=channels[8]
-    ivs01a_dev=channels[9]
-    ope01_dev=channels[10]
-    ope04_dev=channels[11]
-    ope11_dev=channels[12]
-    ope21_dev=channels[13]
-    ope31_dev=channels[14]
-    ope41_dev=channels[15]
-    opm02_dev=channels[16]
-    opm04_dev=channels[17]
-    opm09_dev=channels[18]
-    opm14_dev=channels[19]
-    ars01a_dev=channels[20]
-
-rem --- Dimension string templates
-
-    dim arm01a$:templates$[1],arm01a1$:templates$[1],arm02a$:templates$[2],arm03a$:templates$[3]
-    dim arm10a$:templates$[4],arm10c$:templates$[5],arm10f$:templates$[6]
-    dim ars01b$:templates$[7],ivm01a$:templates$[8],ivs01a$:templates$[9]
-    dim ope01a$:templates$[10],ope04a$:templates$[11],ope11a$:templates$[12]
-    dim ope21a$:templates$[13],ope31a$:templates$[14],ope41a$:templates$[15]
-    dim opm02a$:templates$[16],opm04a$:templates$[17],opm09a$:templates$[18]
-    dim opm14a$:templates$[19],ars01a$:templates$[20]
-
+    open_tables$[1]="ARM_CUSTMAST",  open_opts$[1] = "OTA"
+    open_tables$[2]="ARM_CUSTDET",   open_opts$[2] = "OTA"
+    open_tables$[3]="ARM_CUSTSHIP",  open_opts$[3] = "OTA"
+    open_tables$[4]="ARC_TERMCODE",  open_opts$[4] = "OTA"
+    open_tables$[5]="ARC_CASHCODE",  open_opts$[5] = "OTA"
+    open_tables$[6]="ARC_SALECODE",  open_opts$[6] = "OTA"
+    open_tables$[7]="ARS_REPORT",    open_opts$[7] = "OTA"
+    open_tables$[8]="IVM_ITEMMAST",  open_opts$[8] = "OTA"
+    open_tables$[9]="IVS_PARAMS",    open_opts$[9] = "OTA"
+    open_tables$[10]="OPE_ORDHDR",   open_opts$[10] = "OTA"
+    open_tables$[11]="OPE_PRNTLIST", open_opts$[11] = "OTA"
+    open_tables$[12]="OPE_ORDDET",   open_opts$[12] = "OTA"
+    open_tables$[13]="OPE_ORDLSDET", open_opts$[13] = "OTA"
+    open_tables$[14]="OPE_ORDSHIP",  open_opts$[14] = "OTA"
+    open_tables$[15]="OPE_INVCASH",  open_opts$[15] = "OTA"
+    open_tables$[16]="OPC_LINECODE", open_opts$[16] = "OTA"
+    open_tables$[17]="OPC_MSG_HDR",  open_opts$[17] = "OTA"
+    open_tables$[18]="OPM_CUSTJOBS", open_opts$[18] = "OTA"
+    open_tables$[19]="OPC_MSG_DET",  open_opts$[19] = "OTA"
+    open_tables$[20]="ARS_PARAMS",   open_opts$[20] = "OTA"
+    
+    gosub open_tables
+    
+    arm01_dev      = num(open_chans$[1])
+    arm02_dev      = num(open_chans$[2])
+    arm03_dev      = num(open_chans$[3])
+    arm10_dev      = num(open_chans$[4])
+    arm10c_dev     = num(open_chans$[5])
+    arm10f_dev     = num(open_chans$[6])
+    ars_report_dev = num(open_chans$[7])
+    ivm01_dev      = num(open_chans$[8])
+    ivs01a_dev     = num(open_chans$[9])
+    ope01_dev      = num(open_chans$[10])
+    ope04_dev      = num(open_chans$[11])
+    ope11_dev      = num(open_chans$[12])
+    ope21_dev      = num(open_chans$[13])
+    ope31_dev      = num(open_chans$[14])
+    ope41_dev      = num(open_chans$[15])
+    opm02_dev      = num(open_chans$[16])
+    opm04_dev      = num(open_chans$[17])
+    opm09_dev      = num(open_chans$[18])
+    opm14_dev      = num(open_chans$[19])
+    ars01a_dev     = num(open_chans$[20])
+    
+    dim arm01a$:open_tpls$[1]
+    dim arm01a1$:open_tpls$[1]
+    dim arm02a$:open_tpls$[2]
+    dim arm03a$:open_tpls$[3]
+    dim arm10a$:open_tpls$[4]
+    dim arm10c$:open_tpls$[5]
+    dim arm10f$:open_tpls$[6]
+    dim ars01b$:open_tpls$[7]
+    dim ivm01a$:open_tpls$[8]
+    dim ivs01a$:open_tpls$[9]
+    dim ope01a$:open_tpls$[10]
+    dim ope04a$:open_tpls$[11]
+    dim ope11a$:open_tpls$[12]
+    dim ope21a$:open_tpls$[13]
+    dim ope31a$:open_tpls$[14]
+    dim ope41a$:open_tpls$[15]
+    dim opm02a$:open_tpls$[16]
+    dim opm04a$:open_tpls$[17]
+    dim opm09a$:open_tpls$[18]
+    dim opm14a$:open_tpls$[19]
+    dim ars01a$:open_tpls$[20]
+    
 rem --- Parameters (company addresses)
 
     find record (ivs01a_dev, key=firm_id$+"IV00", err=std_missing_params) ivs01a$
@@ -188,6 +237,7 @@ rem --- Create PDF printer, set attributes, and create PDF helper object
     declare PDFHelper pdf!
 
     myBBjPrinter! = BBjAPI().getBBjPrinter(1,err=*next)
+    
     if myBBjPrinter!=null()
         msg_id$="AD_NOPRINTER"
         gosub disp_message
@@ -197,28 +247,37 @@ rem --- Create PDF printer, set attributes, and create PDF helper object
     myBBjPrinter!.setAttributes(requestAttributes!)
     docPrint! = myBBjPrinter!.getForm(0)
     pdf! = new PDFHelper(textfont!)
-
+    
+rem --- "Tabs" for element placement
+    
+    page_width = 568
+    top_of_address = 126
+    top_of_ribbon = 234
+    top_of_detail = 294
+    bottom_of_detail = 648
+    
+rem --- Set double_spaced = 0 for single spacing
+    
+    double_spaced = 1  
+    
 rem --- Initialize Data
 
     precision num(ivs01a.precision$)
 
-    address=30
-    page=0
-    line=0
-    maxline=28
-    headings=0
+    address = 30
+    page = 0
+    maxline = 27
     when$=sysinfo.system_date$
     zip_len = num(ars01a.zip_length$)
 
-    dim headings$[headings]
-    
     call pgmdir$+"adc_getmask.aon","","AR","I","",m0$,0,m0
     call pgmdir$+"adc_getmask.aon","","AR","A","",m1$,0,m1
     call pgmdir$+"adc_getmask.aon","","AR","U","",m2$,0,m2
     call pgmdir$+"adc_getmask.aon","","AR","R","",m3$,0,m3    
-
-    price_mask$=m3$
-    ext_mask$=m1$
+    
+    m2 = len(m2$)
+    price_mask$ = m3$
+    ext_mask$ = m1$
 
     call pgmdir$+"adc_sizemask.aon",price_mask$,price_mask,11,11
     call pgmdir$+"adc_sizemask.aon",ext_mask$,ext_mask,12,12
@@ -226,19 +285,30 @@ rem --- Initialize Data
     func.setLen1( int(num(ivs01a.desc_len_01$)) )
     func.setLen2( int(num(ivs01a.desc_len_02$)) )
     func.setLen3( int(num(ivs01a.desc_len_03$)) )
-
+    
     nothing_printed = 1
+    
+    if type = on_demand then
+        alias$ = callpoint!.getAlias()
+    else
+        alias$ = option!.getAlias()
+    endif
+    
+    if type = batch_inv then 
+        adhoc_message$ = option!.getOptionData("pick_text")
+    endif
 
-rem --- Initial Read
-
-    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",len(m0$)+8,ope04_dev,1,0,status
+    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",0,0,1,0,status
     if status = 999 then goto std_exit
 
-    find record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=display) ope01a$
+rem --- Main Read
 
-rem --- Main Read (no loop, mostly for the breaks)
-
-    while 1
+    for next_item = 0 to custIds!.size() - 1
+    
+        cust_id$ = str( custIds!.getItem(next_item) )
+        order_no$ = str( orderNos!.getItem(next_item) )
+    
+        find record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*continue) ope01a$
 
         if ope01a.cash_sale$ = "Y" then
             arm10c.code_desc$  = "Invalid Receipt Code"
@@ -250,7 +320,7 @@ rem --- Main Read (no loop, mostly for the breaks)
             endif
         endif
 
-        if ope01a.invoice_type$ = "V" then break
+        if ope01a.invoice_type$ = "V" then continue
 
     rem --- Get a barista document ID
 
@@ -264,11 +334,27 @@ rem --- Main Read (no loop, mostly for the breaks)
 :           "PDF", 
 :           docdir$, 
 :           "pdf", 
-:           callpoint!.getAlias(), 
+:           alias$, 
 :           "C", 
 :           ope01a.customer_id$, 
 :           table_chans$[all], 
 :           "DOC_ID"
+
+    rem --- Create PDF physical file
+
+        declare BBjForm docPDF!
+
+        prtr_dev = unt
+        pdf_doc$ = docdir$ + new_doc_id$ + ".pdf"
+        start_block = 1
+
+        if start_block
+            open (prtr_dev,err=*endif)pdf_doc$
+            close (prtr_dev)
+            erase pdf_doc$
+        endif
+
+        docPDF! = BBjAPI().getBBjPDFForm(pdf_doc$, requestAttributes!)
 
     rem --- Heading (bill-to address)
 
@@ -279,7 +365,7 @@ rem --- Main Read (no loop, mostly for the breaks)
         declare BBjTemplatedString arm03!
         declare BBjTemplatedString ope31!
         
-        arm01! = BBjAPI().makeTemplatedString(fattr(arm01a1$))
+        arm01! = BBjAPI().makeTemplatedString(fattr(arm01a$))
         ope31! = BBjAPI().makeTemplatedString(fattr(ope31a$))
         arm03! = BBjAPI().makeTemplatedString(fattr(arm03a$))
 
@@ -390,68 +476,74 @@ rem --- Main Read (no loop, mostly for the breaks)
 
         rem --- Any Serial/Lot #'s?
 
-            if pos(ivs01a.lotser_flag$="LS")=0 then continue
-            if pos(opm02a.line_type$="PS")=0 then continue
-            if ivm01a.lotser_item$<>"Y" then continue
+            if pos(ivs01a.lotser_flag$="LS") = 0 or pos(opm02a.line_type$="PS") = 0 or ivm01a.lotser_item$ <> "Y" then
+                line = line + double_spaced
+                continue
+            endif
 
-        rem --- OK, There Are Lots
+        rem --- Yes, Lot / Serial inits
 
-            pdf!.setPage(pagePrint!)
-            orig_line = line
+            total_ls = 0
+            read (ope21_dev, key=firm_id$+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$, dom=*next)
+            
+        rem --- Lot / Serial loop
 
             while 1
+                read record (ope21_dev, end=*break) ope21a$; rem t0$, t1$, t[all]
+                if firm_id$                <> ope21a.firm_id$        then break
+                if ope11a.customer_id$     <> ope21a.customer_id$    then break
+                if ope11a.order_no$        <> ope21a.order_no$       then break
+                if ope11a.internal_seq_no$ <> ope21a.orddet_seq_ref$ then break
 
-                total_ls = 0
-                line = orig_line
-
-                read (ope21_dev, key=firm_id$+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$, dom=*next)
-
-                while 1
-                    read record (ope21_dev, end=*break) ope21a$; rem t0$, t1$, t[all]
-                    if firm_id$                <> ope21a.firm_id$        then break
-                    if ope11a.customer_id$     <> ope21a.customer_id$    then break
-                    if ope11a.order_no$        <> ope21a.order_no$       then break
-                    if ope11a.internal_seq_no$ <> ope21a.orddet_seq_ref$ then break
-
-                    if ope21a.qty_ordered then
-                        gosub print_lotser_no
-                        total_ls=total_ls+ope21a.qty_shipped
-                    endif
-                wend
-
-                if total_ls < ope11a.qty_shipped then
-                rem dim t1$(20,"_"),t[2]
-                    ope21a.lotser_no$ = fill(20, "_")
-                    ope21a.qty_ordered = 0
-                    ope21a.qty_shipped = 0
-                    ope21a.unit_cost   = 0
-
-                    for y=1 to ope11a.qty_shipped - total_ls
-                        gosub print_lotser_no
-                        if ivs01a.lotser_flag$="L" then break
-                    next y
+                if ope21a.qty_ordered then
+                    gosub print_lotser_no
+                    total_ls=total_ls+ope21a.qty_shipped
                 endif
-
-                if pdf!.getPage() = pagePDF! then break
-                pdf!.setPage(pagePDF!)
-
             wend
             
+        rem --- Print spaces to fill in missing lots/serial#s
+
+            if total_ls < ope11a.qty_shipped then
+                ope21a.lotser_no$ = fill(20, "_")
+                ope21a.qty_ordered = 0
+                ope21a.qty_shipped = 0
+                ope21a.unit_cost   = 0
+
+                for y=1 to ope11a.qty_shipped - total_ls
+                    gosub print_lotser_no
+                    if ivs01a.lotser_flag$="L" then break
+                next y
+            endif
+            
+            line = line + double_spaced
+            
+        rem --- End of detail lines
+
         wend
 
     rem --- Total
 
         gosub print_total
+        
+        if type = batch_inv then
+            ope01a.print_status$ = "B"
+            ope01a$ = field(ope01a$)
+            write record (ope01_dev) ope01a$
+        endif
+        
         nothing_printed = 0
-        break
+        
+    rem --- End of invoice
 
-    wend
+    next next_item
 
 display: rem --- Display PDF
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
     if status = 999 then goto std_exit
 
+nothing_printed:    
+    
     if nothing_printed then
         docPrint!.cancel()
         msg_id$="DOC_OUTPUT_NODATA"
@@ -463,14 +555,47 @@ display: rem --- Display PDF
 
 rem --- Updates and final processing
 
-rem gosub open_cash_box
-    gosub order_update
+    if type = on_demand then
+        rem gosub open_cash_box
+        gosub order_update
+    endif 
+    
+    if type = batch_inv then
+        msg_id$ = "OP_INVOICE_UPDATE"
+        gosub disp_message
+        if msg_opt$<>"Y" then goto std_exit
+
+        call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Updating","",0,0,1,0,status
+        if status = 999 then goto std_exit
+
+        read (ope04_dev,key=firm_id$+"I",dom=*next)
+
+    rem --- Update loop
+
+        start_block = 1
+
+        while 1
+            read record (ope04_dev, end=*break) ope04a$
+            if ope04a.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"I" then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+            if status = 999 then exitto std_exit
+
+            if start_block then
+                extract record (ope01_dev,key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
+                if ope01a.print_status$="B" then gosub order_update
+            endif
+        wend
+    endif
+    
+    if type = historical then
+        read (ope01_dev, key=firm_id$+"  "+ope01a.customer_id$, dom=*next)
+        read record (arm01_dev,key=firm_id$+ope01a.customer_id$) arm01a1$
+        read record (arm02_dev,key=firm_id$+ope01a.customer_id$+"  ") arm02a$
+    endif    
 
 all_done: rem --- Exit
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-    if status = 999 then goto std_exit
-
     goto std_exit
 
 open_cash_box: rem --- Cash Box Open (not implemented yet)
@@ -507,34 +632,14 @@ order_update: rem --- Update order's status
     ope01a.lock_status$  = "N"
     ope01a$ = field(ope01a$)
     write record (ope01_dev) ope01a$
-    callpoint!.setStatus("SETORIG")
-
+    if type = on_demand then callpoint!.setStatus("SETORIG")
+    
     return
 
 report_heading: rem --- Report Heading
 
-rem --- Create PDF physical file, if needed
-
-    declare BBjForm docPDF!
-
-    while pdf_doc$ = ""
-        prtr_dev = unt
-        pdf_doc$ = docdir$ + new_doc_id$ + ".pdf"
-        start_block = 1
-
-        if start_block
-            open (prtr_dev,err=*endif)pdf_doc$
-            close (prtr_dev)
-            erase pdf_doc$
-        endif
-
-        docPDF! = BBjAPI().getBBjPDFForm(pdf_doc$, requestAttributes!)
-    wend
-
     line = 0
     page = page + 1
-rem order$ = ope01a.order_no$
-rem invoice$ = ope01a.ar_inv_no$
 
 rem --- Create pages from both physical and display objects   
 
@@ -560,28 +665,28 @@ rem --- Create pages from both physical and display objects
 
     rem --- Bill To
 
-        pdf!.drawBox(0, 126, 45, 96, light_gray!, light_gray!); rem gray box
-        pdf!.setText(0, 132, 40, 0, "Bill To", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.drawBox(0, top_of_address, 45, 96, light_gray!, light_gray!); rem gray box
+        pdf!.setText(0, top_of_address+6, 40, 0, "Bill To", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
 
-        pdf!.setText(50, 132, b$(1,address))
-        pdf!.setText(50, 144, b$(31,address))
-        pdf!.setText(50, 156, b$(61,address))
-        pdf!.setText(50, 168, b$(91,address))    
-        pdf!.setText(50, 180, b$(121,address))
-        pdf!.setText(50, 192, b$(151,address))
+        pdf!.setText(50, top_of_address+6+12*0, b$(1,address))
+        pdf!.setText(50, top_of_address+6+12*1, b$(31,address))
+        pdf!.setText(50, top_of_address+6+12*2, b$(61,address))
+        pdf!.setText(50, top_of_address+6+12*3, b$(91,address))    
+        pdf!.setText(50, top_of_address+6+12*4, b$(121,address))
+        pdf!.setText(50, top_of_address+6+12*5, b$(151,address))
 
     rem --- Ship to
 
-        pdf!.drawBox(284, 126, 45, 96, light_gray!, light_gray!); rem gray box
-        pdf!.drawBox(0, 126, 568, 96); rem outer frame
-        pdf!.setText(284, 132, 40, 0, "Ship To", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.drawBox(284, top_of_address, 45, 96, light_gray!, light_gray!); rem gray box
+        pdf!.drawBox(0, top_of_address, page_width, 96); rem outer frame
+        pdf!.setText(284, top_of_address+6, 40, 0, "Ship To", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
 
-        pdf!.setText(334, 132, c$(1,address))
-        pdf!.setText(334, 144, c$(31,address))
-        pdf!.setText(334, 156, c$(61,address))
-        pdf!.setText(334, 168, c$(91,address))    
-        pdf!.setText(334, 180, c$(121,address))
-        pdf!.setText(334, 192, c$(151,address))
+        pdf!.setText(334, top_of_address+6+12*0, c$(1,address))
+        pdf!.setText(334, top_of_address+6+12*1, c$(31,address))
+        pdf!.setText(334, top_of_address+6+12*2, c$(61,address))
+        pdf!.setText(334, top_of_address+6+12*3, c$(91,address))    
+        pdf!.setText(334, top_of_address+6+12*4, c$(121,address))
+        pdf!.setText(334, top_of_address+6+12*5, c$(151,address))
 
     rem --- Info Box
 
@@ -601,59 +706,68 @@ rem --- Create pages from both physical and display objects
         pdf!.setText(496, 46, func.formatDate(ope01a.invoice_date$))
         pdf!.setText(496, 66, ope01a.ar_inv_no$)
         pdf!.setText(496, 86, ope01a.order_no$)
-
+        
+        if type = historical then
+            pdf!.setText(496, 102, 54, 102, "DUPLICATE", boldfont!, pdf!.CENTER_JUSTIFY())
+        endif
+        
+    rem --- Ad hoc message
+    
+        if type = batch_inv then
+            pdf!.setText(76, 108, 416, 0, adhoc_message$, italicfont!, pdf!.CENTER_JUSTIFY())
+        endif
+        
     rem --- Ribbon info
 
-        pdf!.drawBox(0, 234, 568, 14, light_gray!, light_gray!); rem gray bar    
-        pdf!.drawBox(0, 234, 568, 48); rem outer frame
+        pdf!.drawBox(0, top_of_ribbon, page_width, 14, light_gray!, light_gray!); rem gray bar    
+        pdf!.drawBox(0, top_of_ribbon, page_width, 48); rem outer frame
 
-        pdf!.setText(2,     234+2, 132-72,  0, "Order Date", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        pdf!.setText(66+2,  234+2, 204-180, 0, "Sls",        boldfont!, pdf!.LEFT_JUSTIFY(),   light_gray!)
-        pdf!.setText(96,    234+2, 288-204, 0, "P/O Number", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
+        pdf!.setText(2,     top_of_ribbon+2, 132-72,  0, "Order Date", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
+        pdf!.setText(66+2,  top_of_ribbon+2, 204-180, 0, "Sls",        boldfont!, pdf!.LEFT_JUSTIFY(),   light_gray!)
+        pdf!.setText(96,    top_of_ribbon+2, 288-204, 0, "P/O Number", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
 
-
-        pdf!.setText(288,   234+2, 378-288, 0, "Ship Via",   boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        pdf!.setText(378,   234+2, 438-378, 0, "Ship Date",  boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        pdf!.setText(438,   234+2, 568-440, 0, "Terms",      boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
+        pdf!.setText(288,   top_of_ribbon+2, 378-288, 0,        "Ship Via",  boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
+        pdf!.setText(378,   top_of_ribbon+2, 438-378, 0,        "Ship Date", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
+        pdf!.setText(438,   top_of_ribbon+2, page_width-440, 0, "Terms",     boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
         
-        pdf!.setText(0,     234+14, 132-72,  0, func.formatDate(ope01a.order_date$),      pdf!.CENTER_JUSTIFY())
-        pdf!.setText(66+2,  234+14, 204-172, 0, ope01a.slspsn_code$,                      pdf!.LEFT_JUSTIFY())
+        pdf!.setText(0,     top_of_ribbon+14, 132-72,  0, func.formatDate(ope01a.order_date$), pdf!.CENTER_JUSTIFY())
+        pdf!.setText(66+2,  top_of_ribbon+14, 204-172, 0, ope01a.slspsn_code$,                 pdf!.LEFT_JUSTIFY())
 
+        pdf!.setText(66+2,  262+2,            288-100, 0,        arm10f.code_desc$,                     pdf!.LEFT_JUSTIFY())
+        pdf!.setText(100,   top_of_ribbon+14, 288-100, 0,        ope01a.customer_po_no$,                pdf!.LEFT_JUSTIFY())
+        pdf!.setText(288,   top_of_ribbon+14, 378-288, 0,        ope01a.ar_ship_via$,                   pdf!.CENTER_JUSTIFY())
+        pdf!.setText(378,   top_of_ribbon+14, 438-378, 0,        func.formatDate(ope01a.shipmnt_date$), pdf!.CENTER_JUSTIFY())
+        pdf!.setText(438,   top_of_ribbon+14, page_width-438, 0, ope01a.terms_code$,                    pdf!.CENTER_JUSTIFY())
+        pdf!.setText(438,   262+2,            page_width-438, 0, arm10a.code_desc$,                     pdf!.CENTER_JUSTIFY())
 
-        pdf!.setText(66+2,  262+2,  288-100, 0, arm10f.code_desc$,                        pdf!.LEFT_JUSTIFY())
-        pdf!.setText(100,   234+14, 288-100, 0, ope01a.customer_po_no$,                   pdf!.LEFT_JUSTIFY())
-        pdf!.setText(288,   234+14, 378-288, 0, ope01a.ar_ship_via$,                      pdf!.CENTER_JUSTIFY())
-        pdf!.setText(378,   234+14, 438-378, 0, func.formatDate(ope01a.shipmnt_date$),    pdf!.CENTER_JUSTIFY())
-        pdf!.setText(438,   234+14, 568-438, 0, ope01a.terms_code$,                       pdf!.CENTER_JUSTIFY())
-        pdf!.setText(438,   262+2,  568-438, 0, arm10a.code_desc$,                        pdf!.CENTER_JUSTIFY())
-
-        pdf!.drawVLine( 66, 234, 48)
-        pdf!.drawVLine( 98, 234, 28)
+        pdf!.drawVLine( 66, top_of_ribbon, 48)
+        pdf!.drawVLine( 98, top_of_ribbon, 28)
         pdf!.drawHLine( 98, 262, 190)
-        pdf!.drawVLine(288, 234, 48)
-        pdf!.drawVLine(378, 234, 48)
-        pdf!.drawVLine(438, 234, 48)
+        pdf!.drawVLine(288, top_of_ribbon, 48)
+        pdf!.drawVLine(378, top_of_ribbon, 48)
+        pdf!.drawVLine(438, top_of_ribbon, 48)
 
     rem --- Detail box and headings
 
-        pdf!.drawBox(0,   294, 568, 14, light_gray!, light_gray!); rem gray box
-        pdf!.drawBox(0,   648, 568, 72)
-        pdf!.drawBox(387, 648, 181, 72, light_gray!)
-        pdf!.drawBox(0,   294, 568, 354); rem outer frame
+        pdf!.drawBox(0,   top_of_detail,    page_width, 14, light_gray!, light_gray!); rem gray box
+        pdf!.drawBox(0,   bottom_of_detail, page_width, 72)
+        pdf!.drawBox(387, bottom_of_detail, 181,        72, light_gray!)
+        pdf!.drawBox(0,   top_of_detail,    page_width, 354); rem outer frame
 
-        pdf!.setText(2,     294+2, 45-2, 0, "Order",      boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(45,    294+2, 45-2, 0, "Ship",       boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(90,    294+2, 45-2, 0, "B/O",        boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(135+2, 294+2, "Item# / Description", boldfont!,                       light_gray!)
-        pdf!.setText(360+2, 294+2, "UM",                  boldfont!,                       light_gray!)
-        pdf!.setText(387,   294+2, 90-2, 0, "Price",      boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(477,   294+2, 90-2, 0, "Extended",   boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(2,     top_of_detail+2, 45-2, 0, "Order",      boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(45,    top_of_detail+2, 45-2, 0, "Ship",       boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(90,    top_of_detail+2, 45-2, 0, "B/O",        boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(135+2, top_of_detail+2, "Item# / Description", boldfont!,                       light_gray!)
+        pdf!.setText(360+2, top_of_detail+2, "UM",                  boldfont!,                       light_gray!)
+        pdf!.setText(387,   top_of_detail+2, 90-2, 0, "Price",      boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(477,   top_of_detail+2, 90-2, 0, "Extended",   boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
 
-        pdf!.drawVLine(45,  294, 354)
-        pdf!.drawVLine(90,  294, 354)
-        pdf!.drawVLine(135, 294, 354)
-        pdf!.drawVLine(360, 294, 354)
-        pdf!.drawVLine(387, 294, 354)
+        pdf!.drawVLine(45,  top_of_detail, 354)
+        pdf!.drawVLine(90,  top_of_detail, 354)
+        pdf!.drawVLine(135, top_of_detail, 354)
+        pdf!.drawVLine(360, top_of_detail, 354)
+        pdf!.drawVLine(387, top_of_detail, 354)
+        pdf!.drawVLine(477, top_of_detail, 426)
 
     rem --- Duplicate what was done on pagePrint!; if both pages have updated, we're done
 
@@ -667,10 +781,10 @@ rem --- Create pages from both physical and display objects
 line_detail: rem --- Item Detail
 
     if line+1 > maxline then gosub cont; rem Never split item ID and description
-
-    pdf!.setPage(pagePrint!)
-    lines_used = 2
+    
+    lines_used = 1
     this_y% = fnline2y%(line)
+    pdf!.setPage(pagePrint!)
 
     while 1
 
@@ -702,7 +816,7 @@ line_detail: rem --- Item Detail
 
         if pos(opm02a.line_type$="SP") then
             pdf!.setText(135+2, fnline2y%(line+1), item_desc$)
-            lines_used = 3
+            lines_used = 2
         endif
 
         if pdf!.getPage() = pagePDF! then break
@@ -716,25 +830,42 @@ line_detail: rem --- Item Detail
 
 print_lotser_no: rem --- Serial #'s Here
 
-    if line > maxline-1 then
+    if line > maxline then
         gosub cont
+        
         if pos(opm02a.line_type$=" SP")<>0 then
-            pdf!.setText(135+2, fnline2y%(line), ope11a.item_id$+" (Continued)")
+            pdf!.setPage(pagePrint!)
+            
+            while 1
+                pdf!.setText(135+2, fnline2y%(line), ope11a.item_id$+" (Continued)")
+                if pdf!.getPage() = pagePDF! then break
+                pdf!.setPage(pagePDF!)
+            wend
+            
             line = line + 1
         endif
     endif
+    
+    pdf!.setPage(pagePrint!)
+    
+    while 1
 
-    if ivs01a.lotser_flag$<>"L" then
-        pdf!.setText(135+2, fnline2y%(line), "S/N: "+ope21a.lotser_no$)
-    else
-        if ope21a.qty_shipped then 
-            amount$ = str(ope21a.qty_shipped:m2$)
-        else 
-            amount$ = fill(m2,"_")
+        if ivs01a.lotser_flag$<>"L" then
+            pdf!.setText(135+2, fnline2y%(line), "S/N: "+ope21a.lotser_no$)
+        else
+            if ope21a.qty_shipped then 
+                amount$ = str(ope21a.qty_shipped:m2$)
+            else 
+                amount$ = fill(m2,"_")
+            endif
+
+            pdf!.setText(135+2, fnline2y%(line), "Lot: "+ope21a.lotser_no$+"   Shipped: "+amount$)
         endif
-
-        pdf!.setText(135+2, fnline2y%(line), "Lot: "+ope21a.lotser_no$+"   Shipped: "+amount$)
-    endif
+        
+        if pdf!.getPage() = pagePDF! then break
+        pdf!.setPage(pagePDF!)
+        
+    wend
 
     line = line + 1
 
@@ -755,27 +886,28 @@ print_total: rem --- Total
         gosub messages
         if ope01a.cash_sale$="Y" then gosub paid_info
 
-        pdf!.setText(387+2, 648+0*12+2, sales_or_cr$, italicfont!, light_gray!)
-        pdf!.setText(387+2, 648+1*12+2, "Discount",   italicfont!, light_gray!) 
-        pdf!.setText(387+2, 648+2*12+2, "Sales Tax",  italicfont!, light_gray!)
-        pdf!.setText(387+2, 648+3*12+2, "Freight",    italicfont!, light_gray!)
-        pdf!.setText(387+2, 648+4*12+2, "Total Due",  boldfont!,   light_gray!)
+        pdf!.setText(387+2, bottom_of_detail+0*12+2, sales_or_cr$, italicfont!, light_gray!)
+        pdf!.setText(387+2, bottom_of_detail+1*12+2, "Discount",   italicfont!, light_gray!) 
+        pdf!.setText(387+2, bottom_of_detail+2*12+2, "Sales Tax",  italicfont!, light_gray!)
+        pdf!.setText(387+2, bottom_of_detail+3*12+2, "Freight",    italicfont!, light_gray!)
+        pdf!.setText(387+2, bottom_of_detail+4*12+2, "Total Due",  boldfont!,   light_gray!)
 
-        total_amt = total_sale+ope01a.tax_amount-ope01a.discount_amt+ope01a.freight_amt
-        pdf!.setText(477, 648+0*12+2, 90-2, 0, str(total_sale:m1$),           pdf!.RIGHT_JUSTIFY(), light_gray!)     
-        pdf!.setText(477, 648+1*12+2, 90-2, 0, str(-ope01a.discount_amt:m1$), pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(477, 648+2*12+2, 90-2, 0, str(ope01a.tax_amount:m1$),    pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(477, 648+3*12+2, 90-2, 0, str(ope01a.freight_amt:m1$),   pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(477, 648+4*12+2, 90-2, 0, str(total_amt:m1$), boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
+        total_amt = total_sale + ope01a.tax_amount - ope01a.discount_amt + ope01a.freight_amt
+        
+        pdf!.setText(477, bottom_of_detail+0*12+2, 90-2, 0, str(total_sale:m1$),           pdf!.RIGHT_JUSTIFY(), light_gray!)     
+        pdf!.setText(477, bottom_of_detail+1*12+2, 90-2, 0, str(-ope01a.discount_amt:m1$), pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(477, bottom_of_detail+2*12+2, 90-2, 0, str(ope01a.tax_amount:m1$),    pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(477, bottom_of_detail+3*12+2, 90-2, 0, str(ope01a.freight_amt:m1$),   pdf!.RIGHT_JUSTIFY(), light_gray!)
+        pdf!.setText(477, bottom_of_detail+4*12+2, 90-2, 0, str(total_amt:m1$), boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
 
-        pdf!.drawVLine(477, 294, 426)
+        rem pdf!.drawVLine(477, top_of_detail, 426)
 
         if pdf!.getPage() = pagePDF! then break
         pdf!.setPage(pagePDF!)
     wend
 
     docPDF!.print()
-    call pgmdir$+"adc_rptcontrol.aon","OPE_INVHDR",ope01a.customer_id$,"C",new_doc_id$,"pdf"
+    call pgmdir$+"adc_rptcontrol.aon", alias$, ope01a.customer_id$, "C", new_doc_id$, "pdf"
 
     return
 
@@ -784,9 +916,7 @@ cont: rem --- Continued
     pdf!.setPage(pagePrint!)
 
     while 1
-
-        pdf!.setText(477, 648+2, 91, 0, "(Continued)", italicfont!, pdf!.RIGHT_JUSTIFY())
-
+        pdf!.setText(477, bottom_of_detail+2, 91, 0, "(Continued)", italicfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
         if pdf!.getPage() = pagePDF! then break
         pdf!.setPage(pagePDF!)
     wend
@@ -813,14 +943,12 @@ messages: rem --- Print Messages
         for j=1 to len(message$) step 40
             if mline > 4 then break; rem can't handle more than 10 lines
             
-            pdf!.setText(0+2, mline*12+648+2, message$(j,40), smallfont!)
+            pdf!.setText(0+2, mline*12+bottom_of_detail+2, message$(j,40), smallfont!)
+            
             if len(message$)>j+200
-
-
-
-
-                pdf!.setText(200+2, mline*12+648+2, message$(j+200,40), smallfont!)
-            endif    
+                pdf!.setText(200+2, mline*12+bottom_of_detail+2, message$(j+200,40), smallfont!)
+            endif  
+            
             mline = mline + 1
         next j
     endif
@@ -840,8 +968,8 @@ paid_info: rem --- Print Paid Info
     endif
     
     paid_text$ = paid_text$ + " NAME: " + ope41a.customer_name$
-    if mline >=5 then gosub cont
-    pdf!.setText(0+2, 5*12+648+2, paid_text$)
+    rem if mline >=5 then gosub cont
+    pdf!.setText(0+2, 5*12+bottom_of_detail+2, paid_text$, light_gray!)
     
     return
 
@@ -864,20 +992,43 @@ build_msg: rem --- message$ is a string of message details, step 40
     endif
 
     return
+    
+open_tables: rem --- Open Tables
+
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
 
 disp_message: rem --- Display Message Dialog
 
-    call sypdir$+"bac_message.bbj",
-:       msg_id$,
-:       msg_tokens$[all],
-:       msg_opt$,
-:       table_chans$[all]
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
 
-    return   
+	return
 
 rem --- Functions
 
-    def fnline2y%(tmp0)=(tmp0*12)+12+294+2
+    def fnline2y%(tmp0)=(tmp0*12)+12+top_of_detail+2
 
 rem #include std_error.src
 
