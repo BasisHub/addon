@@ -409,33 +409,32 @@ rem --- Is previous record an order and not void?
 	file_name$ = "OPE_ORDHDR"
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
-	start_block = 1
 
+	hit_eof=0
 	while 1
-		if start_block then
-			p_key$ = keyp(ope01_dev, end=*endif)
-			read record (ope01_dev, key=p_key$) ope01a$
+		p_key$ = keyp(ope01_dev, end=eof_pkey)
+		read record (ope01_dev, key=p_key$) ope01a$
 
-			if ope01a.firm_id$ = firm_id$ then 
-				if ope01a.ordinv_flag$ = "O" and ope01a.invoice_type$ <> "V" then
-					user_tpl.first_read = 0
-					break
-				else
-					read (ope01_dev, dir=-1, end=*endif)
-					continue
-				endif
+		if ope01a.firm_id$ = firm_id$ then 
+			if ope01a.ordinv_flag$ = "O" and ope01a.invoice_type$ <> "V" then
+				rem --- Have a keeper, stop looking
+				break
+			else
+				rem --- Keep looking
+				read (ope01_dev, key=p_key$, dir=0)
+				continue 
 			endif
 		endif
+		rem --- End-of-firm
 
-	rem --- If EOF or past firm, rewind to last record in this firm, unless it's the first read
-
-		if user_tpl.first_read then
+eof_pkey: rem --- If end-of-file or end-of-firm, rewind to last record in this firm
+		read (ope01_dev, key=firm_id$+$ff$, dom=*next)
+		hit_eof=hit_eof+1
+		if hit_eof>1 then
 			msg_id$ = "OP_ALL_WRONG_TYPE"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
 			break
-		else
-			read (ope01_dev, key=firm_id$+$ff$, dom=*next, end=*break)
 		endif
 	wend
 [[OPE_ORDHDR.SHIPTO_NO.BINP]]
@@ -535,7 +534,6 @@ rem --- Is next record an order and not void?
 	file_name$ = "OPE_ORDHDR"
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
-	start_block = 1
 
 rem --- Position the file at the correct record
 
@@ -557,30 +555,30 @@ rem --- Position the file at the correct record
 		wend
 	endif
 
+	hit_eof=0
 	while 1
-		if start_block then
-			read record (ope01_dev, dir=0, end=*endif) ope01a$
+		read record (ope01_dev, dir=0, end=eof) ope01a$
 
-			if ope01a.firm_id$ = firm_id$ then
-				if ope01a.ordinv_flag$ = "O" and ope01a.invoice_type$ <> "V" then
-					user_tpl.first_read = 0
-					break
-				else
-					read (ope01_dev, end=*endif)
-					continue
-				endif
+		if ope01a.firm_id$ = firm_id$ then
+			if ope01a.ordinv_flag$ = "O" and ope01a.invoice_type$ <> "V" then
+				rem --- Have a keeper, stop looking
+				break
+			else
+				rem --- Keep looking
+				read (ope01_dev, end=*endif)
+				continue
 			endif
 		endif
+		rem --- End-of-firm
 
-	rem --- If EOF or wrong firm, rewind to first record of the firm, unless it's the first read
-		
-		if user_tpl.first_read then
+eof: rem --- If end-of-file or end-of-firm, rewind to first record of the firm
+		read (ope01_dev, key=firm_id$, dom=*next)
+		hit_eof=hit_eof+1
+		if hit_eof>1 then
 			msg_id$ = "OP_ALL_WRONG_TYPE"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
 			break
-		else
-			read (ope01_dev, key=firm_id$, dom=*next)
 		endif
 	wend
 [[OPE_ORDHDR.ADIS]]
@@ -756,7 +754,6 @@ rem --- Remove from ope-04
 rem --- Set flags
 
 	user_tpl.record_deleted = 1
-	user_tpl.first_read     = 1
 
 rem --- clear availability
 
@@ -1394,10 +1391,6 @@ rem --- Write/Remove manual ship to file
 		ordship_tpl$ = field(ordship_tpl$)
 		write record (ordship_dev) ordship_tpl$
 	endif
-
-rem --- Set flag
-
-	user_tpl.first_read = 0
 [[OPE_ORDHDR.<CUSTOM>]]
 rem ==========================================================================
 display_customer: rem --- Get and display Bill To Information
@@ -2463,7 +2456,6 @@ rem --- Setup user_tpl$
 :		"new_order:u(1), " +
 :		"credit_limit_warned:u(1), " +
 :		"shipto_warned:u(1), " +
-:		"first_read:u(1), " +
 :		"line_prod_type_pr:c(1)"
 
 	dim user_tpl$:tpl$
@@ -2494,7 +2486,6 @@ rem --- Setup user_tpl$
 	user_tpl.new_order         = 0
 	user_tpl.credit_limit_warned = 0
 	user_tpl.shipto_warned     = 0
-	user_tpl.first_read        = 1
 
 rem --- Columns for the util disableCell() method
 

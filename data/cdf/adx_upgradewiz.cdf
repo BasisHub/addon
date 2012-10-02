@@ -844,12 +844,8 @@ fill_app_grid: rem --- Fill the app grid with data in appRowVect!
 			rem --- Set install checkbox
 			if appRowVect!.getItem(i+2) = "y" then 
 				appGrid!.setCellStyle(row, 2, SysGUI!.GRID_STYLE_CHECKED)
-				appGrid!.setCellEditable(row,3,1); rem Copy
-				appGrid!.setCellEditable(row,5,1); rem Target
 			else
 				appGrid!.setCellStyle(row, 2, SysGUI!.GRID_STYLE_UNCHECKED)
-				appGrid!.setCellEditable(row,3,0); rem Copy
-				appGrid!.setCellEditable(row,5,0); rem Target
 			endif
 			appGrid!.setCellText(row, 2, "")
 
@@ -896,7 +892,6 @@ rem ==========================================================================
 		if onoff then
 			rem --- Checked
 			appGrid!.setCellStyle(e!.getRow(),2,SysGUI!.GRID_STYLE_CHECKED); rem Install
-			appGrid!.setCellEditable(e!.getRow(),3,1); rem Copy
 			sourceDir$=appRowVect!.get(index+4)
 			appGrid!.setCellText(e!.getRow(),4,sourceDir$); rem Source
 
@@ -908,25 +903,10 @@ rem ==========================================================================
 		else
 			rem --- Unchecked
 			appGrid!.setCellStyle(e!.getRow(),2,SysGUI!.GRID_STYLE_UNCHECKED); rem Install
-			appGrid!.setCellStyle(e!.getRow(),3,SysGUI!.GRID_STYLE_UNCHECKED); rem Copy
-			appGrid!.setCellEditable(e!.getRow(),3,0); rem Copy
-			appGrid!.setCellText(e!.getRow(),4,""); rem Source
-			appGrid!.setCellText(e!.getRow(),5,""); rem Target
-			appGrid!.setCellEditable(e!.getRow(),5,0); rem Target
 
 			rem --- Update appRowVect! for unchecked install
 			appRowVect!.removeItem(index+2)
 			appRowVect!.insertItem(index+2, "n"); rem Install
-			appRowVect!.removeItem(index+3)
-			appRowVect!.insertItem(index+3, "n"); rem Copy
-			appRowVect!.removeItem(index+4)
-			appRowVect!.insertItem(index+4, ""); rem Source
-			appRowVect!.removeItem(index+5)
-			appRowVect!.insertItem(index+5, ""); rem Target
-
-			rem --- Update stblRowVect! for uncopied application
-			appName$=appRowVect!.get(index+0)
-			gosub remove_app_stbl_vector
 		endif
 	endif
 

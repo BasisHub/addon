@@ -271,6 +271,10 @@ rem --- Force focus on Warehouse when Line Code entry is skipped
 	if callpoint!.getDevObject("skipLineCode") = "Y" then
 		callpoint!.setDevObject("skipLineCode","N"); rem --- skip line code entry only once
 		callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_INVDET.WAREHOUSE_ID")
+
+		rem --- initialize detail line for default line_code
+		line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
+		gosub line_code_init
 		break
 	endif
 [[OPE_INVDET.ITEM_ID.BINP]]
@@ -1799,22 +1803,13 @@ rem ==========================================================================
 	return
 
 rem ==========================================================================
-#include std_missing_params.src
+line_code_init: rem --- Initialize detail line for this line_code
 rem ==========================================================================
 
-rem ==========================================================================
-rem 	Use util object
-rem ==========================================================================
-
-	use ::ado_util.src::util
-[[OPE_INVDET.LINE_CODE.AVAL]]
-rem --- Set enable/disable based on line type
-
-	line_code$ = callpoint!.getUserInput()
+	rem --- Set enable/disable based on line type
 	gosub disable_by_linetype
 
-rem --- Has line code changed?
-
+	rem --- Has line code changed?
 	if line_code$ <> user_tpl.prev_line_code$ then
 		user_tpl.prev_line_code$=line_code$
 		callpoint!.setColumnData("OPE_INVDET.MAN_PRICE", "N")
@@ -1842,19 +1837,33 @@ rem --- Has line code changed?
 		gosub clear_all_numerics
 		gosub clear_avail
 		user_tpl.item_wh_failed = 1
-
 	endif
 
-rem --- Disable / Enable Backorder and Qty Shipped
-
+	rem --- Disable / Enable Backorder and Qty Shipped
 	gosub able_backorder
 	gosub able_qtyshipped
 
-rem --- set Product Type if indicated by line code record
-
+	rem --- set Product Type if indicated by line code record
 	if opc_linecode.prod_type_pr$ = "D" 
 		callpoint!.setColumnData("OPE_INVDET.PRODUCT_TYPE", opc_linecode.product_type$)
 	endif	
 	if opc_linecode.prod_type_pr$ = "N"
 		callpoint!.setColumnData("OPE_INVDET.PRODUCT_TYPE", "")
 	endif
+
+	return
+
+rem ==========================================================================
+#include std_missing_params.src
+rem ==========================================================================
+
+rem ==========================================================================
+rem 	Use util object
+rem ==========================================================================
+
+	use ::ado_util.src::util
+[[OPE_INVDET.LINE_CODE.AVAL]]
+rem --- Initialize detail line for this line_code
+
+	line_code$ = callpoint!.getUserInput()
+		gosub line_code_init
