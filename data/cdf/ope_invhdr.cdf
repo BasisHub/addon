@@ -837,15 +837,14 @@ rem --- Check locked status
 	endif
 
 rem --- Check Print flag
-rem --- rem'ing entire routine per VAR discussion; only check print flag when making an invoice (make invoice button)
 
-rem	gosub check_print_flag
+	gosub check_print_flag
 
-rem	if locked then
-rem		user_tpl.do_end_of_form = 0
-rem		callpoint!.setStatus("ABORT")
-rem		break; rem --- exit callpoint
-rem	endif
+	if locked then
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
 
 rem --- Show customer data
 	

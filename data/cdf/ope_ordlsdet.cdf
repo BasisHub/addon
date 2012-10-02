@@ -368,6 +368,8 @@ rem --- Inits
 
 	use java.util.HashMap
 
+	declare HashMap committedNow!
+
 	dim user_tpl$:"invoice_noninventory:u(1), left_to_ord:n(1*), prev_ord:n(1*)"
 	user_tpl.invoice_noninventory = 0
 	user_tpl.left_to_ord = num(callpoint!.getDevObject("ord_qty"))
@@ -412,8 +414,9 @@ rem --- Non-inventoried items from Invoice Entry do not have to exist
 
 rem --- Set data for the lookup form
 
-	wh$   = callpoint!.getDevObject("wh")
-	item$ = callpoint!.getDevObject("item")
+	wh$     = callpoint!.getDevObject("wh")
+	item$   = callpoint!.getDevObject("item")
+	ord_qty = num( callpoint!.getDevObject("ord_qty") )
 	lsmast_dev = fnget_dev("IVM_LSMASTER")
 
 rem --- See if there are any open lots
@@ -428,7 +431,12 @@ rem --- See if there are any open lots
 		dflt_data$[2,0] = "WAREHOUSE_ID"
 		dflt_data$[2,1] = wh$
 		dflt_data$[3,0] = "LOTS_TO_DISP"
-		dflt_data$[3,1] = "O"; rem --- default to open lots
+
+		if ord_qty > 0 then
+			dflt_data$[3,1] = "O"; rem --- default to open lots
+		else
+			dflt_data$[3,1] = "C"; rem --- closed lots for returns 
+		endif
 
 	rem --- Call the lookup form
 	rem      IN: call/enter list
@@ -470,7 +478,7 @@ rem --- See if there are any open lots
 			print "---lot selected..."; rem debug
 			lot_avail = num(callpoint!.getDevObject("selected_lot_avail"))
 
-			if !lot_avail then
+			if !lot_avail and ord_qty > 0 then
 				msg_id$ = "OP_LOT_NONE_AVAIL"
 				dim msg_tokens$[1]
 				msg_tokens$[1] = lot_ser$
@@ -482,18 +490,18 @@ rem --- See if there are any open lots
 
 			print "---lot qty available:", lot_avail; rem debug
 			lot_cost = num(callpoint!.getDevObject("selected_lot_cost"))
-			ord_qty  = min(lot_avail, user_tpl.left_to_ord)
+			qty_ord  = min( abs(lot_avail), abs(user_tpl.left_to_ord) ) * sgn(ord_qty)
 
 			callpoint!.setColumnData( "OPE_ORDLSDET.LOTSER_NO", ls_no$ )
-			callpoint!.setColumnData( "OPE_ORDLSDET.QTY_ORDERED", str(ord_qty) )
-			rem callpoint!.setTableColumnAttribute("OPE_ORDLSDET.QTY_SHIPPED","DFLT", str(ord_qty))
-			print "---Set qty ord:", ord_qty; rem debug
+			callpoint!.setColumnData( "OPE_ORDLSDET.QTY_ORDERED", str(qty_ord) )
+			rem callpoint!.setTableColumnAttribute("OPE_ORDLSDET.QTY_SHIPPED","DFLT", str(qty_ord))
+			print "---Set qty ord:", qty_ord; rem debug
 
-			user_tpl.left_to_ord = user_tpl.left_to_ord - ord_qty
+			user_tpl.left_to_ord = ( abs(user_tpl.left_to_ord) - abs(qty_ord) ) * sgn(ord_qty)
 			print "---Left to Ord:", user_tpl.left_to_ord; rem debug
 
-			callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED", str(ord_qty))
-			print "---Set shipped:", ord_qty; rem debug
+			callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED", str(qty_ord))
+			print "---Set shipped:", qty_ord; rem debug
 
 			callpoint!.setColumnData("OPE_ORDLSDET.UNIT_COST", str(lot_cost))
 			callpoint!.setStatus("MODIFIED;REFRESH")
@@ -520,9 +528,10 @@ rem --- Non-inventoried items from Invoice Entry do not have to exist (but can't
 
 rem --- Validate open lot number
 
-	wh$    = callpoint!.getDevObject("wh")
-	item$  = callpoint!.getDevObject("item")
- 	ls_no$ = callpoint!.getUserInput()
+	wh$     = callpoint!.getDevObject("wh")
+	item$   = callpoint!.getDevObject("item")
+ 	ls_no$  = callpoint!.getUserInput()
+	ord_qty = num( callpoint!.getDevObject("ord_qty") )
 
 	file_name$ = "IVM_LSMASTER"
 	lsmast_dev = fnget_dev(file_name$)
@@ -543,7 +552,7 @@ rem --- Validate open lot number
 		break; rem --- exit callpoint
 	endif
 
-	if lsmast_tpl.closed_flag$ = "C" then
+	if lsmast_tpl.closed_flag$ = "C" and ord_qty > 0 then
 		msg_id$ = "IV_SERLOT_CLOSED"
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
