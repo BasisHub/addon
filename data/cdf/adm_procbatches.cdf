@@ -1,7 +1,3 @@
-[[ADM_PROCBATCHES.DESCRIPTION.BINP]]
-rem --- Save the record
-
-	callpoint!.setStatus("SAVE")
 [[ADM_PROCBATCHES.BATCH_NO.AVAL]]
 rem --- don't allow user to assign new batch# -- use Barista seq# (BATCH_NO)
 rem --- if user made null entry (to assign next seq automatically) then getRawUserInput() will be empty
@@ -60,16 +56,12 @@ x$=stbl("+BATCH_NO",callpoint!.getColumnData("ADM_PROCBATCHES.BATCH_NO"))
 
 lock_table$=callpoint!.getAlias()
 lock_record$=firm_id$+callpoint!.getColumnData("ADM_PROCBATCHES.PROCESS_ID")+callpoint!.getColumnData("ADM_PROCBATCHES.BATCH_NO")
-lock_type$="L"
+lock_type$="S"
 lock_status$=""
 lock_disp$="M"
 
 call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+
 if lock_status$=""
 	callpoint!.setStatus("EXIT")
-else
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
 endif

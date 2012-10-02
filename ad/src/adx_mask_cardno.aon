@@ -1,0 +1,190 @@
+rem ==========================================================================
+rem --- adx_mask_cardno.aon
+rem --- Utility to process Cash Sale files (ope/opt-41) and mask any existing  
+rem --- credit card numbers so only final digits are visible. 
+rem --- 
+rem --- AddonSoftware
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    begin
+    rem -- remove begin if hooking up to menu in future
+ 
+    setesc std_error
+    seterr std_error
+
+    rem --- Set needed STBLs if missing
+    need_stbls=1
+    x$=stbl("+SYSINFO_TPL",err=*next); need_stbls=0
+    if need_stbls then call stbl("+DIR_SYP")+"bas_process_beg.bbj",stbl("+USER_ID"),rd_table_chans$[all]
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    sysinfo.task_desc$="Mask Credit Card Numbers"
+    x$=stbl("+SYSINFO",sysinfo$)
+
+rem --- Get user approval to proceed
+
+    msg_id$="AON_RUN_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Open File(s)
+
+	num_files=3
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="OPE_INVCASH", open_opts$[1]="OTA"
+	open_tables$[2]="OPT_INVCASH", open_opts$[2]="OTA"    
+    open_tables$[3]="ARC_CASHCODE", open_opts$[3]="OTA"
+
+	gosub open_tables
+
+    ope_invcash_dev=num(open_chans$[1]);dim ope_invcash$:open_tpls$[1]
+    opt_invcash_dev=num(open_chans$[2]);dim opt_invcash$:open_tpls$[2]    
+    arc_cashcode_dev=num(open_chans$[3]);dim arc_cashcode$:open_tpls$[3]
+
+rem --- Process credit card type records
+
+    proc_dev=ope_invcash_dev
+    dim proc_rec$:fattr(ope_invcash$)
+    gosub process_file
+    proc_dev=opt_invcash_dev
+    dim proc_rec$:fattr(opt_invcash$)
+    gosub process_file
+    
+    goto std_exit
+
+process_file:
+rem --- process ope/opt-41    
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,proc_dev,1,meter_num,status
+
+    while 1   
+        readrecord (proc_dev,end=*break)proc_rec$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        readrecord(arc_cashcode_dev,key=firm_id$+"C"+proc_rec.cash_rec_cd$,dom=*next)arc_cashcode$
+        if arc_cashcode.trans_type$="P"
+            cc_status$=""
+            cc_card$=""
+            cc_card_raw$=cvs(proc_rec.payment_id$,3)
+            for x=1 to len(cc_card_raw$)
+                if cc_card_raw$(x,1)>="0" and cc_card_raw$(x,1)<="9"
+                    cc_card$=cc_card$+cc_card_raw$(x,1)
+                endif
+            next x           
+            if len(cc_card$)>4
+                gosub mod10_check              
+                if cc_status$=""
+                    cc_card_raw$(1,len(cc_card_raw$)-4)=fill(len(cc_card_raw$)-4,"X")
+                    proc_rec.payment_id$=cc_card_raw$                
+                    writerecord(proc_dev)proc_rec$
+                endif
+            endif
+        endif
+    wend
+    
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
+	return
+
+mod10_check:
+
+    cc_digits$ = ""
+    cc_curr_digit = 0
+
+    for cc_temp = len(cc_card$) to 1 step -1
+        cc_curr_digit = cc_curr_digit + 1
+        cc_no = num(cc_card$(cc_temp,1)) * iff(mod(cc_curr_digit,2)=0, 2, 1)
+        cc_digits$ = str(cc_no) + cc_digits$
+    next cc_temp
+
+    cc_total = 0
+    for cc_temp = 1 to len(cc_digits$)
+        cc_total = cc_total + num(cc_digits$(cc_temp, 1))
+    next cc_temp
+
+    if mod(cc_total, 10) <> 0 then cc_status$ = "INVALID"
+
+    return
+
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto exit_prog
+    endif
+
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),err_text$,err_act$
+    if pos("EXIT"=err_act$) goto std_error_exit
+    if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+    if pos("RETRY"=err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: rem --- end pgm; update not run
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

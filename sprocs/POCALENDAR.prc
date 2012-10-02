@@ -1,5 +1,13 @@
-rem --- POCALENDAR -- sproc to return specified records from PO Calendar for display in Jasper
-rem --- Feb 09.CAH
+rem ----------------------------------------------------------------------------
+rem Program: POCALENDAR.prc -- sproc to return specified records from PO Calendar for display in Jasper
+rem Description: returns specified records from PO Calendar for display in Jasper
+rem
+rem Author(s): C. Hawkins
+rem
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
+
 seterr error_routine
 
 use java.util.Calendar

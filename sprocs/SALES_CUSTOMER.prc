@@ -1,3 +1,8 @@
+rem SALES_CUSTOMER.prc
+rem 
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
 rem ' Return invoices by customer for a given month period
 rem ' SETERR ERROR_ROUTINE
 

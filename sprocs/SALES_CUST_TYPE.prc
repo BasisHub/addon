@@ -1,3 +1,9 @@
+rem SALES_CUST_TYPE.prc
+rem 
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
+
 rem ' Return sales totals by customer type for a given month period
 rem ' SETERR ERROR_ROUTINE
 

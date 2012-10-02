@@ -4,6 +4,9 @@ rem Description: Stored Procedure to get the header and footer informations to p
 rem
 rem Author(s): S. Birster
 rem Revised: 02.23.2011
+rem
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
 rem Set of utility methods

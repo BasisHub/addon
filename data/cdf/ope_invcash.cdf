@@ -1,3 +1,50 @@
+[[OPE_INVCASH.BWAR]]
+rem --- if a credit card transaction, perform mod10 check on cc# field and mask
+
+	wtype$=callpoint!.getDevObject("cash_code_type")
+	ccmask$="X"
+	ccmask$=stbl("+CARD_FILL_CHAR",ERR=*next)
+	if wtype$="P"
+		cc_card_raw$=cvs(callpoint!.getColumnData("OPE_INVCASH.PAYMENT_ID"),3)
+		cc_card$=""
+		cc_status$=""
+		for x=1 to len(cc_card_raw$)
+			if cc_card_raw$(x,1)>="0" and cc_card_raw$(x,1)<="9"
+				cc_card$=cc_card$+cc_card_raw$(x,1)
+			endif
+		next x
+		if len(cc_card$)>4 
+			gosub mod10_check
+			if cc_status$=""
+			cc_card_raw$(1,len(cc_card_raw$)-4)=fill(len(cc_card_raw$)-4,ccmask$)
+			callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID",cc_card_raw$)
+		endif
+	endif
+[[OPE_INVCASH.<CUSTOM>]]
+rem ==============================================
+rem -- mod10_check; see if payment ID field contains valid cc# format
+rem -- incoming cc_card$ is the ope_invcash.payment_id field
+rem -- return cc_status$ of blank or INVALID
+rem ==============================================
+mod10_check:
+
+    cc_digits$ = ""
+    cc_curr_digit = 0
+
+    for cc_temp = len(cc_card$) to 1 step -1
+        cc_curr_digit = cc_curr_digit + 1
+        cc_no = num(cc_card$(cc_temp,1)) * iff(mod(cc_curr_digit,2)=0, 2, 1)
+        cc_digits$ = str(cc_no) + cc_digits$
+    next cc_temp
+
+    cc_total = 0
+    for cc_temp = 1 to len(cc_digits$)
+        cc_total = cc_total + num(cc_digits$(cc_temp, 1))
+    next cc_temp
+
+    if mod(cc_total, 10) <> 0 then cc_status$ = "INVALID"
+
+    return
 [[OPE_INVCASH.BREX]]
 rem --- Set invoice printing global
 
@@ -105,6 +152,7 @@ rem --- Validate cash receipt code
 
 	if start_block then
 		find record (fnget_dev(file_name$), key=firm_id$+"C"+code$, dom=*endif) cashcode_rec$
+		callpoint!.setDevObject("cash_code_type",cashcode_rec.trans_type$)
 		found = 1
 	endif
 
@@ -198,3 +246,4 @@ rem --- Global string templates
 rem --- Print Invoice global
 
 	callpoint!.setDevObject("print_invoice", "N")
+	callpoint!.setDevObject("cash_code_type","")

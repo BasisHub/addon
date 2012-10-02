@@ -1,3 +1,9 @@
+rem PICKLST_DETAIL.prc
+rem 
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
+
 rem Declare some variables ahead of time
 declare BBjStoredProcedureData sp!
 declare BBjRecordSet rs!

@@ -1,4 +1,9 @@
-rem ' Return invoice detial by invoice number
+rem SALES_INVOICE_DETAIL.prc
+rem 
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
+rem ' Return invoice detail by invoice number
 rem ' SETERR ERROR_ROUTINE
 
 rem ' Declare some variables ahead of time

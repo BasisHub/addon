@@ -12,7 +12,7 @@ rem --- remove software lock on batch, if batching
 	if num(batch$)<>0
 		lock_table$="ADM_PROCBATCHES"
 		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
-		lock_type$="U"
+		lock_type$="X"
 		lock_status$=""
 		lock_disp$=""
 		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$

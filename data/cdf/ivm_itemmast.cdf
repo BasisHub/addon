@@ -672,7 +672,7 @@ rem --- additional file opens, depending on which apps are installed, param valu
 	endif
 
 	if wo$="Y" then 
-		more_files$=more_files$+"SFE_WOMASTER;SFE_WOMATL;"
+		more_files$=more_files$+"SFE_WOMASTR;SFE_WOMATL;"
 		files=files+2
 	endif
 

@@ -1,5 +1,10 @@
-rem --- VENDOR_INVOICES - used to create Vendor Open Invoice rpt via iReport
+rem --- VENDOR_INVOICES
+rem --- used to create Vendor Open Invoice rpt via iReport
 rem --- Dec 08.CAH
+rem
+rem --- AddonSoftware
+rem --- Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
 seterr error_routine
 
 rem --- Declare some variables ahead of time

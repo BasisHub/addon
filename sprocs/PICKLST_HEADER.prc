@@ -1,3 +1,9 @@
+rem PICKLST_HEADER.prc
+rem 
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
+
 use ::ado_func.src::func
 
 rem Declare some variables ahead of time

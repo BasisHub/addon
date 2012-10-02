@@ -4,6 +4,9 @@ rem Description: Stored Procedure to get the BOM Costing info into iReports
 rem
 rem Author(s): J. Brewer
 rem Revised: 08.25.2011
+rem
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
 rem --- Set of utility methods

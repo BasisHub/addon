@@ -2252,19 +2252,12 @@ get_comm_percent: rem --- Get commission percent from salesperson file
                   rem      IN: slsp$ - salesperson code
 rem ==========================================================================
 
-return;rem --- Remove this line if the client decides they want to see the Commission percent
-
 	file$ = "ARC_SALECODE"
 	salecode_dev = fnget_dev(file$)
 	dim salecode_rec$:fnget_tpl$(file$)
 
-	start_block = 1
-
-	if start_block then
-		find record (salecode_dev, key=firm_id$+"F"+slsp$, dom=*endif) salecode_rec$
-		callpoint!.setColumnData("OPE_INVHDR.COMM_PERCENT", salecode_rec.comm_rate$)
-		callpoint!.setStatus("REFRESH")
-	endif
+	find record (salecode_dev, key=firm_id$+"F"+slsp$, dom=*next) salecode_rec$
+	callpoint!.setColumnData("OPE_INVHDR.COMM_PERCENT", salecode_rec.comm_rate$)
 
 	return
 

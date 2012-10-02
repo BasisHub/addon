@@ -1,5 +1,10 @@
-rem --- VENDOR_INVOICE_DET - detail for Vendor Open Invoice rpt (hyperlinked)
+rem --- VENDOR_INVOICE_DET.prc
+rem --- detail for Vendor Open Invoice rpt (hyperlinked)
 rem --- Dec 08.CAH
+rem
+rem --- AddonSoftware
+rem --- Copyright BASIS International Ltd.
+rem ----------------------------------------------------------------------------
 seterr error_routine
 
 rem --- Declare some variables ahead of time

@@ -3,7 +3,7 @@ rem --- Program apr_vendinv v8.0.0 23May2007 (apm_mf)
 rem --- Created by adx_codeport.bbx v1.1.5 (05/23/2007 10:46:54)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
-rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
         setesc std_error
@@ -81,6 +81,7 @@ rem --- Initializations
         dim heading$(width-2),footing$(width-2),msg$[0]
 
         call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",mask$,0,0
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","I","",vend_mask$,0,vend_len
 
         call dir_pgm$+"adc_progress.aon","N","","","","",0,apt01_dev,1,meter_num,status
 
@@ -97,18 +98,19 @@ rem --- date/time
 
 rem --- column headings
 
-        dim columns$[8,10]
-        if aps01a.ret_flag$<>"Y" dim columns$[7,10]
-        columns$[0,0]=Translate!.getTranslation("AON_INVOICE_NO"),columns$[0,1]="C",columns$[0,2]="15"
-        columns$[1,0]=Translate!.getTranslation("AON_TRANSACTION"),columns$[1,1]="C",columns$[1,2]="20"
-        columns$[2,0]=Translate!.getTranslation("AON_DATE"),columns$[2,1]="C",columns$[2,2]="15"
-        columns$[3,0]=Translate!.getTranslation("AON_DUE"),columns$[3,1]="C",columns$[3,2]="15"
-        columns$[4,0]="PG",columns$[4,1]="C",columns$[4,2]="5"
-        columns$[5,0]="H",columns$[5,1]="C",columns$[5,2]="5"
-        columns$[6,0]=Translate!.getTranslation("AON_AMOUNT"),columns$[6,1]="N",columns$[6,2]="15",columns$[6,3]=mask$
-        columns$[7,0]=Translate!.getTranslation("AON_DISCOUNT"),columns$[7,1]="N",columns$[7,2]="15",columns$[7,3]=mask$
+        dim columns$[9,10]
+        if aps01a.ret_flag$<>"Y" dim columns$[8,10]
+		columns$[0,0]=Translate!.getTranslation("AON_VENDOR"),columns$[0,1]="C",columns$[0,2]="8"
+        columns$[1,0]=Translate!.getTranslation("AON_INVOICE_NO"),columns$[1,1]="C",columns$[1,2]="15"
+        columns$[2,0]=Translate!.getTranslation("AON_TRANSACTION"),columns$[2,1]="C",columns$[2,2]="20"
+        columns$[3,0]=Translate!.getTranslation("AON_DATE"),columns$[3,1]="C",columns$[3,2]="15"
+        columns$[4,0]=Translate!.getTranslation("AON_DUE"),columns$[4,1]="C",columns$[4,2]="15"
+        columns$[5,0]="PG",columns$[5,1]="C",columns$[5,2]="5"
+        columns$[6,0]="H",columns$[6,1]="C",columns$[6,2]="5"
+        columns$[7,0]=Translate!.getTranslation("AON_AMOUNT"),columns$[7,1]="N",columns$[7,2]="15",columns$[7,3]=mask$
+        columns$[8,0]=Translate!.getTranslation("AON_DISCOUNT"),columns$[8,1]="N",columns$[8,2]="15",columns$[8,3]=mask$
         if aps01a.ret_flag$="Y"
-            columns$[8,0]=Translate!.getTranslation("AON_RETENTION"),columns$[8,1]="N",columns$[8,2]="15",columns$[8,3]=mask$
+            columns$[9,0]=Translate!.getTranslation("AON_RETENTION"),columns$[9,1]="N",columns$[9,2]="15",columns$[9,3]=mask$
         endif
 
 rem --- miscellaneous headings
@@ -178,6 +180,14 @@ next_apt01: rem --- Read next invoice
 			endif
 		endif
 		
+rem --- Vendor Break
+
+		if last_vendor$="" last_vendor$=k.vendor_id$
+		if k.vendor_id$<>last_vendor$
+			gosub vendor_total
+			last_vendor$=k.vendor_id$
+		endif
+		
 rem --- Invoice header
 
         read record (apt01_dev,key=k$) apt01a$
@@ -196,6 +206,7 @@ reposition_invhdr: rem --- Reposition to invoice header if OK to display
         recs=recs+1
 rem --- Header window record
 
+		OutVect!.addItem(fnmask$(apt01a.vendor_id$(1,vend_len),vend_mask$))
         OutVect!.addItem(apt01a.ap_inv_no$)
         wk$=Translate!.getTranslation("AON_INVOICE");if apt01a.mc_inv_flag$="M" then wk$(1,2)=Translate!.getTranslation("AON_MI_INVOICE")
         OutVect!.addItem(wk$)
@@ -233,6 +244,7 @@ next_apt11: rem --- Detail window record
         swend
 
         OutVect!.addItem("")
+        OutVect!.addItem("")
         OutVect!.addItem(trans$)
         OutVect!.addItem(fndate$(apt11a.trans_date$))
         xwk=fnblank(3)
@@ -259,7 +271,7 @@ no_more_invoices: rem --- No more invoices
 
         if inv_found
             gosub inv_total
-            gosub vendor_total
+			gosub vendor_total
         else
             OutVect!.addItem(Translate!.getTranslation("AON_NO_INVOICES"))
             xwk=fnblank(7+(aps01a.ret_flag$="Y"))
@@ -271,18 +283,25 @@ finished: rem --- All done
 
 vendor_total: rem --- Vendor Total
 
-        OutVect!.addItem("")
-        OutVect!.addItem(Translate!.getTranslation("AON_VENDOR_TOTAL"))
-        xwk=fnblank(4)
-        OutVect!.addItem(str(baltotal))
-        xwk=fnblank(1+(aps01a.ret_flag$="Y"))
-        inv_found=1
+		OutVect!.addItem(fnmask$(last_vendor$(1,vend_len),vend_mask$))
+		OutVect!.addItem("")
+		OutVect!.addItem(Translate!.getTranslation("AON_VENDOR_TOTAL"))
+		xwk=fnblank(4)
+		OutVect!.addItem(str(baltotal))
+		xwk=fnblank(1+(aps01a.ret_flag$="Y"))
+		
+		xwk=fnblank(9+(aps01a.ret_flag$="Y"))
+		
+		inv_found=1
+		baltotal=0
+		
         return
 
 inv_total: rem --- Invoice Total
 
         if t0$="" goto first_inv_total
         if detail$="N" goto first_inv_total
+		OutVect!.addItem("")
         OutVect!.addItem("")
         OutVect!.addItem(Translate!.getTranslation("AON_INVOICE_TOTAL"))
         xwk=fnblank(4)
