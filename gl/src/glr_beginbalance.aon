@@ -49,6 +49,17 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif    
 
 rem --- Open/Lock files
 
@@ -126,6 +137,7 @@ rem --- Initializations
     unithdr$=""
     headings$[0]=cvs(sysinfo.firm_name$,2)
     headings$[1]=cvs(sysinfo.task_desc$,2)
+    total_recs=0    
 
 rem --- Optional heading
 
@@ -154,13 +166,13 @@ rem --- Document columns
 
     columns=4
     dim columns$[columns,4]
-    columns$[0,0]="Account",columns$[0,1]="M",columns$[0,2]="10"
+    columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]="10"
     columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="30"
     columns$[2,0]="Debits",columns$[2,1]="N",columns$[2,2]="10"
     columns$[3,0]="Credits",columns$[3,1]="N",columns$[3,2]="10"
     columns$[4,0]="Units",columns$[4,1]="N",columns$[4,2]="10"
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",m0,glm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","GLM_ACCT","","","",m0,glm01_dev,1,meter_num,status
     read (glm01_dev,key=firm_id$,dom=*next)
 
 rem --- Read next account master
@@ -169,7 +181,8 @@ rem --- Read next account master
           k$=key(glm01_dev,end=*break)
           if pos(firm_id$=k$)<>1 break
           read record (glm01_dev)glm01a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Retrieve account summary record
 
@@ -179,15 +192,15 @@ rem --- Read next account master
 
           rem --- Calculate beginning balance
 
-          amount=0
-          units=0
+          amount=a[0]
+          units=u[0]
           for x=1 to total_pers
               amount=amount+a[x]
               if gls01a.units_flag$="Y" units=units+u[x]
           next x
 
-          rem --- Don't create a beginning balance record for asset, liability,
-          rem --- capital or retained earnings account.
+          rem --- Don't create a beginning balance record if this is not an asset, liability,
+          rem --- or capital acct, or if it IS the retained earnings account.
 
           if pos(glm01a.gl_acct_type$="ALC")=0 goto totals
           if glm01a.gl_account$=gls01b.gl_account$ goto totals
@@ -234,7 +247,9 @@ rem --- Update retained earnings account in the work file
 rem --- Run update overlay
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    wait 1; rem --- give this progress meter a chance to clear before displaying next one
     next_overlay$=pgmdir$+"glu_beginbalance.aon"
+
     goto std_exit
 
 print_detail: rem --- Print detail line

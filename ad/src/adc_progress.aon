@@ -13,8 +13,8 @@ rem ---               C = Cancel allowed by user (only used with N)
 rem ---               D = Delete progress meter
 rem ---               N = Create new progress meter
 rem ---               S = Show progress meter
-rem --- RESERVED3$  : Reserved for future use
-rem --- RESERVED4$  : Reserved for future use
+rem --- FILENAME$   : Table name; when creating meter, sizes it correctly by getting rec count for given firm
+rem --- SUBTITLE$   : Used to supplement title with additional info (like "sorting...")
 rem --- RESERVED1$  : Reserved for future use
 rem --- RESERVED2$  : Reserved for future use
 rem --- RESERVED1   : Reserved for future use
@@ -27,7 +27,7 @@ rem --- STATUS      : Status/0=No Error (Returned)
 
     seterr std_error
     setesc std_error
-    enter action$,reserved3$,reserved4$,reserved1$,reserved2$,reserved1,channel,
+    enter action$,filename$,subtitle$,reserved1$,reserved2$,reserved1,channel,
 :         number,reserved2,status
 
 rem --- Retrieve sysinfo data
@@ -35,10 +35,11 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=fnglobal$("+SYSINFO_TPL","")
     dim sysinfo$:sysinfo_template$
     sysinfo$=fnglobal$("+SYSINFO","")
+    firm_id$=sysinfo.firm_id$
 
 rem --- Initializations
 
-	declare BBjNamespace rdGroupSpace!
+    declare BBjNamespace rdGroupSpace!
 
     status=0
     process_task$="+process_task"
@@ -49,12 +50,32 @@ rem --- Initializations
 create_meter: rem --- Create progress meter
 
     if pos("N"=action$)
-       xfin$=xfin(channel)
-       if len(xfin$)>=80 then maxrec$=str(dec($00$+xfin$(77,4))) else maxrec$="0"
-       create$="C"
-       option$=""
-       if pos("C"=action$) then option$="CNC"
-       arguments$=process_id$+"^"+create$+"^"+title$+"^"+option$+"^"+maxrec$+"^"
+
+        xfin$=xfin(channel)
+        if len(xfin$)>=80 then maxrec$=str(dec($00$+xfin$(77,4))) else maxrec$="0"
+        
+        if cvs(filename$,3)<>""
+
+           dbname$=stbl("+DBNAME",err=*next)
+           while dbname$<>""
+               sqlchan=sqlunt
+               sqlopen(sqlchan,err=*break)dbname$
+               sqlprep$="SELECT COUNT(*) FROM "+filename$+" WHERE FIRM_ID='"+firm_id$+"'"
+               sqlprep(sqlchan,err=*break)sqlprep$
+               dim read_tpl$:sqltmpl(sqlchan)
+               sqlexec(sqlchan,err=*break)
+               read_tpl$=sqlfetch(sqlchan,err=*break) 
+               maxrec$=read_tpl$
+               break
+           wend
+  
+        endif
+    
+        create$="C"
+        option$=""
+        if pos("C"=action$) then option$="CNC"
+        if cvs(subtitle$,3)<>"" then title$=title$+": "+subtitle$
+        arguments$=process_id$+"^"+create$+"^"+title$+"^"+option$+"^"+maxrec$+"^"
     endif
 
 update_meter: rem --- Update progress meter
@@ -79,7 +100,7 @@ delete_meter: rem ---Delete progress meter
 rem --- Update namespace accordingly
 
     rdGroupSpace!.setValue(process_task$,arguments$)
-	if pos("D"=action$) then wait 0.25; rem get the process a second to wake up
+    if pos("D"=action$) then wait 0.25; rem get the process a second to wake up
 
 rem --- All done
 

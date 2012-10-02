@@ -11,10 +11,11 @@ rem --- All Rights Reserved
 
 rem --- Document initializations
 
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+    
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -25,14 +26,6 @@ rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
-rem --- Retrieve sysinfo data
-
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-    firm_id$=sysinfo.firm_id$
-
 rem --- Init Data
 
     precision ivprecision
@@ -40,6 +33,7 @@ rem --- Init Data
     printwtot$="N"
     dim itemnum$(20),itemdesc$(60),whsename$(24)
     more=1
+    testdate$=""
     
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQDET","PRIMARY",poe11a_key_tpl$,rd_table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQDET","WHSE_ITEM",poe11a_key_whsetpl$,rd_table_chans$[all],status$
@@ -53,6 +47,9 @@ rem --- Headings and print positions
     page=0
     l9=59
     l=l9+1
+    recs=0
+    total_recs=0
+    
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
     gosub assignheads
@@ -62,9 +59,9 @@ rem --- Headings and print positions
     dim columns$[12,10]
     columns = 12
     columns$[0,0]="Item",               columns$[0,1]="C",columns$[0,2]="4"
-    columns$[1,0]="Req #",              columns$[1,1]="C",columns$[1,2]="15"
-    columns$[2,0]="Seq",                columns$[2,1]="C",columns$[2,2]="4"
-    columns$[3,0]="Vendor",             columns$[3,1]="C",columns$[3,2]="22"
+    columns$[1,0]="Req #",              columns$[1,1]="C",columns$[1,2]="10"
+    rem --- dropping isn/line# per VARS; columns$[2,0]="Seq",                columns$[2,1]="C",columns$[2,2]="8"
+    columns$[3,0]="Vendor",             columns$[3,1]="C",columns$[3,2]="30"
     columns$[4,0]="UM",                 columns$[4,1]="C",columns$[4,2]="4"
     columns$[5,0]="Date^Required",      columns$[5,1]="C",columns$[5,2]="8"
     columns$[6,0]="Date^Promised",      columns$[6,1]="C",columns$[6,2]="8"
@@ -74,71 +71,75 @@ rem --- Headings and print positions
     columns$[10,0]="Unit^Cost",         columns$[10,1]="N",columns$[10,2]="8"
     columns$[11,0]="Extension",         columns$[11,1]="N",columns$[11,2]="10",columns$[11,10]="T"
     columns$[12,0]="Quantity^On Order", columns$[12,1]="N",columns$[12,2]="8"
-    
 
 rem --- Position files
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,poe11a_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","POE_REQDET","","","",0,poe11a_dev,1,meter_num,status
+
+rem --- Build sql statement
+
+    sql_prep$="select poe_reqdet.firm_id, poe_reqdet.warehouse_id, poe_reqdet.item_id, "
+    sql_prep$=sql_prep$+"poe_reqdet.req_no, poe_reqdet.internal_seq_no, poe_reqdet.reqd_date, "
+    sql_prep$=sql_prep$+"poe_reqdet.promise_date, poe_reqdet.not_b4_date, "
+    sql_prep$=sql_prep$+"poe_reqhdr.vendor_id, poe_reqhdr.ord_date "
+    sql_prep$=sql_prep$+"from poe_reqdet, poe_reqhdr "
+
+    where_clause$="where poe_reqdet.firm_id = '"+firm_id$+"' AND "
+    where_clause$=where_clause$+"poe_reqdet.firm_id = poe_reqhdr.firm_id AND "
+    where_clause$=where_clause$+"poe_reqdet.req_no = poe_reqhdr.req_no"
+
+    if reqfrom$<>"" where_clause$=where_clause$+" AND poe_reqdet.req_no >= '" +reqfrom$+ "'"
+    if reqthru$<>"" where_clause$=where_clause$+" AND poe_reqdet.req_no <= '" +reqthru$+ "'"
+    if whsefrom$<>"" where_clause$=where_clause$+" AND poe_reqdet.warehouse_id >= '" +whsefrom$+ "'"
+    if whsethru$<>"" where_clause$=where_clause$+" AND poe_reqdet.warehouse_id <= '" +whsethru$+ "'"
+    if itemfrom$<>"" where_clause$=where_clause$+" AND poe_reqdet.item_id >= '" +itemfrom$+ "'"
+    if itemthru$<>"" where_clause$=where_clause$+" AND poe_reqdet.item_id <= '" +itemthru$+ "'"    
+    if vendfrom$<>"" where_clause$=where_clause$+" AND poe_reqhdr.vendor_id >= '" +vendfrom$+ "'"
+    if vendthru$<>"" where_clause$=where_clause$+" AND poe_reqhdr.vendor_id <= '" +vendthru$+ "'"
+
+    gosub get_whichdate
+    if testdate$<>""
+        if datefrom$<>"" where_clause$=where_clause$+ " AND "+testdate$+" >= '" + datefrom$+ "'"
+        if datethru$<>"" where_clause$=where_clause$+ " AND "+testdate$+" <= '" + datethru$+ "'"
+    endif
+
+    order_by$=" order by poe_reqdet.warehouse_id,poe_reqdet.item_id,poe_reqdet.req_no,poe_reqdet.internal_seq_no"
+
+    sql_prep$=sql_prep$ + where_clause$ + order_by$
+    sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
 rem --- Init Sort File
-   
-    dim poe11a_altkey$:poe11a_key_whsetpl$
-    if whsefrom$="" firstwhse$=fill(2) else firstwhse$=whsefrom$
-
-    read (poe11_dev2,key=firm_id$+firstwhse$+"S"+itemfrom$,knum=2,dom=*next)
-    if itemfrom$<>"" read(poe11_dev2,key=firm_id$+firstwhse$+"S"+itemfrom$+reqfrom$,knum=2,dom=*next)
 
     while more
 
-        poe11a_altkey$=key(poe11_dev2,knum=2,end=*break)
-        if poe11a_altkey.firm_id$<>firm_id$ break
-        sortkey$=firm_id$+poe11a_altkey.vendor_id$+poe11a_altkey.req_no$+poe11a_altkey.po_line_no$
-        read (poe11_dev2,end=done)
+        read_tpl$=sqlfetch(sql_chan,err=*break)
 
 rem --- Find corresponding detail line
 
-        find record (poe11a_dev,key=sortkey$,dom=*next) poe11a$
-        if poe11a.firm_id$+poe11a.vendor_id$+poe11a.req_no$+poe11a.po_line_no$<>sortkey$ then continue
+        read record (poe01a_dev,key=read_tpl.firm_id$+read_tpl.req_no$,dom=*next) poe01a$
+        read record (poe11a_dev,key=read_tpl.firm_id$+read_tpl.req_no$+read_tpl.internal_seq_no$,dom=*next) poe11a$
 
-rem --- Test Req Detail ranges
+        linetype$="N"
 
-            if poe11a.warehouse_id$+poe11a.item_id$=poe11a_altkey.warehouse_id$+poe11a_altkey.item_id$ then
-                if whsefrom$="" or poe11a.warehouse_id$>=whsefrom$ then
-                    if whsethru$="" or poe11a.warehouse_id$<=whsethru$ then
-                        if itemfrom$="" or poe11a.item_id$>=itemfrom$ then
-                            if itemthru$="" or poe11a.item_id$<=itemthru$ then
-                                if reqfrom$="" or poe11a.req_no$>=reqfrom$ then
-                                    if reqthru$="" or poe11a.req_no$<=reqthru$ then
-                                        if vendfrom$="" or poe11a.vendor_id$>=vendfrom$ then
-                                            if vendthru$="" or poe11a.vendor_id$<=vendthru$ then
-                                                gosub gettestdate_detail
-       
-            
-                if datefrom$="" or testdated$>=datefrom$ then
-                if datethru$="" or testdated$<=datethru$  
-           
-                    linetype$="N"
-                  
-                    p02_key$=poe11a.firm_id$+poe11a.po_line_code$
-                    find record (pom02a_dev,key=p02_key$,dom=*next) pom02a$
-                    linetype$=pom02a.line_type$
+        p02_key$=poe11a.firm_id$+poe11a.po_line_code$
+        find record (pom02a_dev,key=p02_key$,dom=*next) pom02a$
+        linetype$=pom02a.line_type$
 
-                    if linetype$<>"S" continue
+        if linetype$<>"S" continue
 
 rem --- Test breaks; print line
-                        call pgmdir$+"adc_progress.aon","S","","","","",0,poe11a_dev,1,meter_num,status
 
-        if status<>0 goto std_exit
-                       gosub testbreaks
-                        gosub printdetail
-
-                    endif
-
-                endif
-
-            endif
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        if status = 999 then goto std_exit
         
-        endif
+        gosub testbreaks
+        gosub printdetail
+        recs=recs+1
 
 rem --- Accumulate totals; then get next sort file record
 
@@ -154,6 +155,12 @@ rem --- Accumulate totals; then get next sort file record
     wend
 
 done: rem --- All Done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     if l+2>l9 gosub set_lines
     gosub itemtotals
@@ -182,12 +189,12 @@ printdetail: rem --- Set up variables
     reqqty$=str(reqqty:m2$)
     unitcost$=str(poe11a.unit_cost:m3$)
     reqnum$=poe11a.req_no$
-    vendor$=poe11a.vendor_id$
+    vendor$=poe01a.vendor_id$
 
 rem --- Get vendor's name
 
     vendname$="Not On File"+fill(19)
-    a01_key$=poe11a.firm_id$+poe11a.vendor_id$
+    a01_key$=poe01a.firm_id$+poe01a.vendor_id$
     find record (apm01a_dev,key=a01_key$,dom=get_ext) apm01a$
     vendname$=apm01a.vendor_name$
 
@@ -201,8 +208,8 @@ rem --- Print detail line
   
     xwk = fnblank(1)
     OutVect!.addItem(reqnum$)
-    OutVect!.addItem(poe11a.po_line_no$)
-    OutVect!.addItem(str(fnmask$(vendor$(1,vendlen),vendomask$)) + vendname$(1,24))
+    OutVect!.addItem(fnisn$(poe11a.internal_seq_no$))
+    OutVect!.addItem(str(fnmask$(vendor$(1,vendlen),vendomask$))+" "+vendname$(1,24))
     OutVect!.addItem(unitmeas$)
     OutVect!.addItem(datereq$)
     OutVect!.addItem(dateprom$)
@@ -234,7 +241,6 @@ assignheads: rem --- Assign headings variables
     if datethru$="" datet$="Last" else datet$=fndate$(datethru$)
     headings$[1]=headings$[1](1,len(sysinfo.task_desc$))+" For Warehouse "+whse$+" "+cvs(whsename$,2)
 
-
     headings$[2]="From Vendor: "+ vendf$
     headings$[2]=headings$[2] + " -- To Vendor: " + vendt$
     headings$[3]="From Item: "+ itemf$
@@ -246,7 +252,7 @@ assignheads: rem --- Assign headings variables
 
     return
 
-gettestdate_detail: rem --- Determine date to use when testing range in detail
+get_whichdate: rem --- Determine date to use when testing range
 
     action=pos(whichdate$="OPRD")
     date_ordered=1
@@ -256,15 +262,16 @@ gettestdate_detail: rem --- Determine date to use when testing range in detail
 
     switch action
         case date_ordered
+            testdate$="poe_reqhdr.ord_date"
             break
         case date_promised
-            testdated$=poe11a.promise_date$
+            testdate$="poe_reqdet.promise_date"
             break
         case date_required
-            testdated$=poe11a.reqd_date$
+            testdate$="poe_reqdet.reqd_date"
             break
         case date_dont_del_before
-            testdated$=poe11a.not_b4_date$
+            testdate$="poe_reqdet.not_b4_date"
             break
         case default
             break
@@ -286,6 +293,7 @@ testbreaks: rem --- Test for Breaks
     if printwtot$="Y" gosub whsetotals
     gosub newwhse
     gosub newitem
+    
     return
 
 newwhse: rem --- New Warehouse
@@ -298,6 +306,7 @@ newwhse: rem --- New Warehouse
     find record (ivm10c_dev,key=firm_id$+"C"+whse$,dom=set_lines) ivm10c$
     whsename$=ivm10c.short_name$
     gosub set_lines
+    
     return
 
 newitem: rem --- New Item
@@ -312,6 +321,7 @@ newitem: rem --- New Item
     find record (ivm01a_dev,key=i01_key$,dom=brnch1) ivm01a$
 rem    ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desclen[1],desclen[2],desclen[3])
     itemdesc$(1)=fnitem$(ivm01a.item_desc$,desclen[1],desclen[2],desclen[3])
+    
 brnch1:
 
     i02_key$=firm_id$+poe11a.warehouse_id$+poe11a.item_id$
@@ -322,9 +332,8 @@ brnch1:
  
     xwk = fnblank(13)
     OutVect!.addItem(itemnum$(1,itemlen))
-    xwk = fnblank(2)
     OutVect!.addItem(itemdesc$)
-    xwk = fnblank(8)
+    xwk = fnblank(10)
     OutVect!.addItem(str(qtyonorder:m2$))
 
     l=l+1
@@ -342,6 +351,7 @@ whsetotals: rem --- Print Warehouse total
     xwk = fnblank(1)
     xwk = fnblank(13)
     l=l+2
+    
     return
 
 itemtotals: rem --- Print Item total
@@ -357,7 +367,6 @@ itemtotals: rem --- Print Item total
     xwk = fnblank(1)
     OutVect!.addItem(str(itemtot:m1$))
     xwk = fnblank(1)
-    
 
     let l=l+2
     return
@@ -367,7 +376,22 @@ calc_extension: rem --- Calc extension
     precision 2
     let extension=poe11a.unit_cost*reqqty,extension$=str(extension:m1$)
     precision ivprecision
+    
     return
+
+rem --- misc functions
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem --- fnisn to display partial ISN (defined 12 char)
+
+    def fnisn$(q$)=q$(7)
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -406,16 +430,14 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         return str(q1$:q2$)
     fnend
 
-rem --- fnBlank : Create blank cells in OutVect!. No return value
-   
-    def fnblank(q0)
-        for q1=1 to q0
-            OutVect!.addItem("")
-        next q1
-        return q1
-    fnend
-
 rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem #include std_error.src
 
@@ -472,5 +494,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

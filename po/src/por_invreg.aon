@@ -168,6 +168,9 @@ rem --- Parameters
     if cash goto l500
     call pgmdir$+"glc_ctlcreate.aon",err=l500,source$,n2$,glw11$,gl$,status
     if status goto std_exit
+    process_id$=stbl("+PROCESS_ID")
+    batch_no$=stbl("+BATCH_NO")
+    
     if gl$<>"Y" goto l500
     call pgmdir$+"adc_application.aon","SF",info$[all]
     sf$=info$[20]
@@ -246,7 +249,8 @@ rem --- line is added to OutVect! (OutVect!.addItem(pbuf$))
 
 rem --- Additional file opens
 
-    if distcode$="Y"then files$[30]="arc_distcode",ids$[30]="ARC_DISTCODE"
+    if distcode$="Y"
+        files$[30]="arc_distcode",ids$[30]="ARC_DISTCODE"
         call pgmdir$+"adc_fileopen.aon",action,30,30,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
         if status goto std_exit
@@ -254,17 +258,18 @@ rem --- Additional file opens
         dim arm10d$:templates$[30]
     endif
 
-    if pos(pos01a.land_method$="QC") then files$[31]="pow-17",ids$[31]="POW_INVLAND",options$[31]="C"
+    if pos(pos01a.land_method$="QC")
+        files$[31]="pow-17",ids$[31]="POW_INVLAND",options$[31]="C"
         call pgmdir$+"adc_fileopen.aon",action,31,31,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
         if status goto std_exit
         pow17_dev=channels[31]
         dim pow17a$:templates$[31]
     endif
-
+    
     if gl$="Y"
         files$[32]="glm-01",ids$[32]="GLM_ACCT"
-        files$[33]=glw11$,options$[33]="CL"
+        files$[33]="glw-11",ids$[33]="GLW_DAILYDETAIL";REM --- not used as of batch implementation; ,options$[33]="CL"
         files$[34]="glt-04",ids$[34]="GLE_DAILYDETAIL"
 
         call pgmdir$+"adc_fileopen.aon",action,32,34,files$[all],options$[all],
@@ -276,6 +281,11 @@ rem --- Additional file opens
         dim glm01a$:templates$[32]
         dim glt04a$:templates$[34]
         xref_dev=0
+        
+        rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+        
     endif
 
     if sf$="Y"
@@ -321,6 +331,7 @@ rem --- Remaining print positions
     if level$="L" og[2]=ol[8]
     tw=min(op[7]-op[5],23)
     gw=og[2]-og[1]-1
+    recs=0
 
 rem --- Position file
 
@@ -388,6 +399,7 @@ rem --- Print invoice header
     pbuf$(oi[10]+1)=retention$
     OutVect!.addItem(pbuf$)
     l=l+3
+    recs=recs+1
     glskip=0
     if cvs(poe05a.ap_inv_memo$,3)<>"" glskip=1
 
@@ -457,6 +469,7 @@ l2100: rem --- Read history header and original terms
         pbuf$(op[7]+1)=str(receivers[receiver]:m1$)
         OutVect!.addItem(pbuf$)
         l=l+1
+        recs=recs+1
         first=0
         glskip=1
         seq$=""
@@ -573,6 +586,7 @@ rem --- Print it
     pbuf$(og[2]+1)=str(poe35a.gl_post_amt:m1$)
     OutVect!.addItem(pbuf$)
     l=l+1
+    recs=recs+1
     first=0
     glskip=1
 
@@ -621,6 +635,12 @@ l3900: rem --- Loop back for next header
     goto l1000
 
 done: rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     done=1
     gosub l6000
@@ -740,6 +760,7 @@ l5600: rem --- Display Standard Line
     pbuf$(ol[7]+1)=str(poe25a.unit_cost:m3$)
     pbuf$(ol[8]+1)=str(extension:m1$)
     OutVect!.addItem(pbuf$)
+    recs=recs+1
     goto l5900
 
 l5700: rem --- Display Non-Stock Line
@@ -751,6 +772,7 @@ l5700: rem --- Display Non-Stock Line
     pbuf$(ol[7]+1)=str(poe25a.unit_cost:m3$)
     pbuf$(ol[8]+1)=str(extension:m1$)
     OutVect!.addItem(pbuf$)
+    recs=recs+1
     goto l5900
 
 l5800: rem --- Display Other Line
@@ -759,6 +781,7 @@ l5800: rem --- Display Other Line
     pbuf$(ol[7]+1)=str(poe25a.unit_cost:m3$)
     pbuf$(ol[8]+1)=str(extension:m1$)
     OutVect!.addItem(pbuf$)
+    recs=recs+1
 
 l5900: rem --- Display PO and Receiver
     
@@ -768,9 +791,11 @@ l5900: rem --- Display PO and Receiver
     let l=l+2,first=0
     if cvs(poe25a.po_no$,3)="" goto l5990
     dim pbuf$(width)
-    pbuf$(ol[3]+1)="PO # "+poe25a.po_no$+"-"+poe25a.po_int_seq_ref$+" Rec # "+poe25a.receiver_no$
+    rem --- taking out isn; pbuf$(ol[3]+1)="PO # "+poe25a.po_no$+"-"+poe25a.po_int_seq_ref$+" Rec # "+poe25a.receiver_no$
+    pbuf$(ol[3]+1)="PO # "+poe25a.po_no$+ " Rec # "+poe25a.receiver_no$
     OutVect!.addItem(pbuf$)
     let l=l+1
+    recs=recs+1
 l5990:
     return
 
@@ -954,6 +979,13 @@ rem --- fnglobal$: Return string value of passed STBL variable
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -1007,5 +1039,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

@@ -348,7 +348,7 @@ rem --- get/display Inventory Detail info
 
 	while 1
 		read record(ivm_itemwhse_dev,end=*break)ivm_itemwhse$
-		if ivm_itemwhse.firm_id$<>firm_id$ or ivm_itemwhse.item_id$<>callpoint!.getDevObject("find_item") then break
+		if pos(ivm_itemwhse.firm_id$+ivm_itemwhse.item_id$=callpoint!.getDevObject("find_item"))<>1 then break
 		on_hand=on_hand+ivm_itemwhse.qty_on_hand
 		committed=committed+ivm_itemwhse.qty_commit
 		on_order=on_order+ivm_itemwhse.qty_on_order

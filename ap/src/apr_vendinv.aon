@@ -26,9 +26,9 @@ rem --- Open/Lock files
 
         files=3,begfile=1,endfile=files
         dim files$[files],options$[files],chans$[files],templates$[files]
-        files$[1]="APS_PARAMS";rem " --- aps-01"
-        files$[2]="APT_INVOICEHDR";rem " --- apt-01
-        files$[3]="APT_INVOICEDET";rem " --- apt-11
+        files$[1]="aps_params";rem " --- aps-01"
+        files$[2]="apt_invoicehdr";rem " --- apt-01
+        files$[3]="apt_invoicedet";rem " --- apt-11
         for wkx=begfile to endfile
             options$[wkx]="OTA"
         next wkx
@@ -63,15 +63,15 @@ rem --- Retrieve parameter records
         find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
 
 rem --- Set A/P Type if multiple types not installed
-
+	
         if aps01a.multi_types$<>"Y"
-            aptype$=fattr(apt01a$,"AP_TYPE")
-            aptype_len=dec(aptype$(10,2))
-            dim ap_type$(aptype_len)
+	    rem ' use the ap_type from aps_params
+            ap_type$=aps01a.ap_type$
         endif
         
 rem --- Initializations
 
+        recs=0
         width=80
         height=18
         win_x=0
@@ -173,14 +173,14 @@ rem --- Display invoice totals
 reposition_invhdr: rem --- Reposition to invoice header if OK to display
 
         if found read (apt01_dev,key=apt01a$(1,len(apt01ak0$)))
-
+        recs=recs+1
 rem --- Header window record
 
         OutVect!.addItem(apt01a.ap_inv_no$)
         wk$="Invoice";if apt01a.mc_inv_flag$="M" then wk$(1,2)="MI Invoice"
         OutVect!.addItem(wk$)
         OutVect!.addItem(fndate$(apt01a.invoice_date$))
-        OutVect!.addItem(fndate$(apt01a.accting_date$))
+        OutVect!.addItem(fndate$(apt01a.inv_due_date$))
         OutVect!.addItem(apt01a.payment_grp$)
         OutVect!.addItem(apt01a.hold_flag$)
         OutVect!.addItem(apt01a.invoice_amt$)
@@ -199,8 +199,8 @@ rem --- Header window record
 next_apt11: rem --- Detail window record
 
         read record (apt11_dev,end=next_apt01) apt11a$
-	if apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ <>
-:		apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ goto next_apt01
+    if apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ <>
+:       apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ goto next_apt01
         detail$="Y"
 
         switch asc(apt11a.trans_type$)
@@ -230,6 +230,12 @@ apt11_loop: rem --- Loop back for next invoice
         goto next_apt11
 
 no_more_invoices: rem --- No more invoices
+
+        if recs=0
+            msg_id$="DOC_OUTPUT_NODATA"
+            gosub disp_message
+            goto std_exit_no_report
+        endif
 
         if inv_found
             gosub inv_total
@@ -275,8 +281,8 @@ calc_balance: rem --- Retrieve payment and adjustments
         read (apt11_dev,key=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$,dom=*next)
 next_calc_balance:
         read record (apt11_dev,end=end_calc_balance) apt11a$
-	if apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ <>
-:		apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ goto end_calc_balance
+    if apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$ <>
+:       apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ goto end_calc_balance
         let found=1
         if apt11a.trans_type$="A" invoice=invoice+num(apt11a.trans_amt$) else applied=applied+num(apt11a.trans_amt$)
         goto next_calc_balance
@@ -363,6 +369,13 @@ rem --- Create blank line in OutVect! (no return value wanted or needed)
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -419,4 +432,9 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 rem #endinclude std_end.src
 
+std_exit_no_report:
+
+    OutVect!=null()
+    goto std_exit
+    
     end

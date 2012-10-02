@@ -32,6 +32,9 @@ rem --- Retrieve sysinfo data
         dim sysinfo$:sysinfo_template$
         sysinfo$=stbl("+SYSINFO",err=*next)
         firm_id$=sysinfo.firm_id$
+        
+        milestone=50
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)         
 
 rem --- Open/Lock files
 
@@ -77,6 +80,7 @@ rem --- Initializations
         headings=4
         dim headings$[headings],o[9]
         more=1
+        recs=0
         page=0
         width=80
         maxlines=59
@@ -87,6 +91,8 @@ rem --- Initializations
         when$=sysinfo.system_date$
         clock$=""
         artype$=fill(2)
+        total_recs=0
+        
         if begcustomer$="" x$="From the First Customer" 
 :                 else x$="From Customer "+fnmask$(begcustomer$(1,customer_size),m0$)
         x$=x$+" Through "
@@ -125,7 +131,7 @@ rem --- Define print positions
 
 rem --- Open printer, start progress meter and position Customer Master file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","ARM_CUSTMAST","","","",0,arm01_dev,1,meter_num,status
 
     while begcustomer$<>""
           read (arm01_dev,key=firm_id$+begcustomer$)
@@ -140,7 +146,8 @@ rem --- Read next Customer Master (arm-01) record
           if pos(firm_id$=arm01_key$)<>1 break
           read record (arm01_dev,key=arm01_key$) arm01a$
           if endcustomer$<>"" if arm01a.customer_id$>endcustomer$ break
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status 
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Read customer detail records
 
@@ -161,15 +168,18 @@ rem --- Read next Customer Master (arm-01) record
                 if art01a.invoice_date$>thrudate$ continue
                 type$=fntype$(art01a.invoice_type$)
                 if first gosub customer_heading
-                                        OutVect!.addItem(art01a.ar_inv_no$)
-                                        OutVect!.addItem(fndate$(art01a.invoice_date$))
-                                        OutVect!.addItem(fndate$(art01a.inv_due_date$))
-                                        OutVect!.addItem(art01a.ar_terms_code$)
-                                        OutVect!.addItem(type$)
-                                        OutVect!.addItem(str(art01a.invoice_amt))
-                                        xwk=fnblank(2)
-                                        OutVect!.addItem(str(art01a.disc_allowed))
+
+                OutVect!.addItem(art01a.ar_inv_no$)
+                OutVect!.addItem(fndate$(art01a.invoice_date$))
+                OutVect!.addItem(fndate$(art01a.inv_due_date$))
+                OutVect!.addItem(art01a.ar_terms_code$)
+                OutVect!.addItem(type$)
+                OutVect!.addItem(str(art01a.invoice_amt))
+                xwk=fnblank(2)
+                OutVect!.addItem(str(art01a.disc_allowed))
                 lines=lines+1
+                recs=recs+1
+
                 printed=1
                 custinv=custinv+art01a.invoice_amt
                 custdis=custdis+art01a.disc_allowed
@@ -187,74 +197,80 @@ rem --- Read next Customer Master (arm-01) record
                       if art11a.trans_date$>thrudate$ continue
                       detail=1
                       type$=fntype$(art11a.trans_type$)
-                                              OutVect!.addItem("")
-                                              OutVect!.addItem(fndate$(art11a.trans_date$))
-                                              OutVect!.addItem(art11a.refchk_no$)
-                                              OutVect!.addItem("")
-                                              OutVect!.addItem(type$)
-                                              OutVect!.addItem("")
-                                              OutVect!.addItem(str(art11a.trans_amt))
-                                              OutVect!.addItem("")
-                                              OutVect!.addItem(str(art11a.adjdisc_amt))
-                                              lines=lines+1
-                                              applied=applied+art11a.trans_amt
-                                              custapp=custapp+art11a.trans_amt
-                                              custdis=custdis+art11a.adjdisc_amt
+                      OutVect!.addItem("")
+                      OutVect!.addItem(fndate$(art11a.trans_date$))
+                      OutVect!.addItem(art11a.refchk_no$)
+                      OutVect!.addItem("")
+                      OutVect!.addItem(type$)
+                      OutVect!.addItem("")
+                      OutVect!.addItem(str(art11a.trans_amt))
+                      OutVect!.addItem("")
+                      OutVect!.addItem(str(art11a.adjdisc_amt))
+                      lines=lines+1
+                      applied=applied+art11a.trans_amt
+                      custapp=custapp+art11a.trans_amt
+                      custdis=custdis+art11a.adjdisc_amt
                 wend
 
                 rem --- Print invoice total and loop back for next invoice header
 
                 if detail=0 continue
-                                    balance=art01a.invoice_amt+applied
-                                    xwk=fnblank(4)
-                                    OutVect!.addItem("Total")
-                                    xwk=fnblank(2)
-                                    OutVect!.addItem(str(balance))
-                                    OutVect!.addItem("")
-                                    lines=lines+1
+                balance=art01a.invoice_amt+applied
+                xwk=fnblank(4)
+                OutVect!.addItem("Total")
+                xwk=fnblank(2)
+                OutVect!.addItem(str(balance))
+                OutVect!.addItem("")
+                lines=lines+1
 
           wend
                 
           rem --- Print customer total and loop back for next Customer Master
 
           if printed=0 continue
-                                  balance=custinv+custapp
+          balance=custinv+custapp
 
-                                  TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-                                  xwk=fnblank(4)
-                                  OutVect!.addItem("Customer Total")
-                                  OutVect!.addItem(str(custinv))
-                                  OutVect!.addItem(str(custapp))
-                                  OutVect!.addItem(str(balance))
-                                  OutVect!.addItem(str(custdis))
-                                  lines=lines+1
-                                  reportinv=reportinv+custinv
-                                  reportapp=reportapp+custapp
-                                  reportdis=reportdis+custdis
+          TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+          xwk=fnblank(4)
+          OutVect!.addItem("Customer Total")
+          OutVect!.addItem(str(custinv))
+          OutVect!.addItem(str(custapp))
+          OutVect!.addItem(str(balance))
+          OutVect!.addItem(str(custdis))
+          lines=lines+1
+          reportinv=reportinv+custinv
+          reportapp=reportapp+custapp
+          reportdis=reportdis+custdis
     wend
 
 rem --- All done
-                                    balance=reportinv+reportapp
-                                    xwk=fnblank(9)
-                                    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-                                    xwk=fnblank(4)
-                                    OutVect!.addItem("Report Total")
-                                    OutVect!.addItem(str(reportinv))
-                                    OutVect!.addItem(str(reportapp))
-                                    OutVect!.addItem(str(balance))
-                                    OutVect!.addItem(str(reportdis))
-                                    goto std_exit
 
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
+    balance=reportinv+reportapp
+    xwk=fnblank(9)
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+    xwk=fnblank(4)
+    OutVect!.addItem("Report Total")
+    OutVect!.addItem(str(reportinv))
+    OutVect!.addItem(str(reportapp))
+    OutVect!.addItem(str(balance))
+    OutVect!.addItem(str(reportdis))
+    goto std_exit
 
 customer_heading: rem --- Print customer heading
 
-                                   BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-                                   OutVect!.addItem(arm01a.customer_id$+" "+arm01a.customer_name$)
-                                   xwk=fnblank(8)
-                                   lines=lines+2
-                                   first=0
-                                   return
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    OutVect!.addItem(arm01a.customer_id$+" "+arm01a.customer_name$)
+    xwk=fnblank(8)
+    lines=lines+2
+    first=0
+
+    return
 
 rem --- Functions
 
@@ -310,6 +326,14 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         next q1
         return q1
     fnend
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (01Apr2006)
@@ -368,5 +392,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

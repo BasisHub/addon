@@ -18,22 +18,28 @@ if user_tpl.gl_post$="N" then
 	gosub disable_fields
 endif
 [[OPS_PARAMS.BSHO]]
-num_files=2
-dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
-open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
+rem --- Inits
 
-gosub open_tables
+	use ::ado_util.src::util
 
-gls01_dev=num(open_chans$[1])
-ars01_dev=num(open_chans$[2])
+rem --- Open files
+
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
+
+	gosub open_tables
+
+	gls01_dev=num(open_chans$[1])
+	ars01_dev=num(open_chans$[2])
 
 rem --- Dimension string templates
 
-dim gls01a$:open_tpls$[1]
-dim ars01a$:open_tpls$[2]
+	dim gls01a$:open_tpls$[1]
+	dim ars01a$:open_tpls$[2]
 
-rem --- check to see if main AR param rec (firm/AR/00) exists; if not, tell user to set it up first
+rem --- Check to see if main AR param rec (firm/AR/00) exists; if not, tell user to set it up first
 
 	ars01a_key$=firm_id$+"AR00"
 	find record (ars01_dev,key=ars01a_key$,err=*next) ars01a$
@@ -73,6 +79,11 @@ rem --- Retrieve parameter/application data
 	user_tpl.iv_installed$=iv$
 	user_tpl.bank_rec$=br$
 	user_tpl.gl_post$=gl_post$
+
+rem --- Resize window
+
+	util.resizeWindow(Form!, SysGui!)
+
 [[OPS_PARAMS.<CUSTOM>]]
 validate_cmt_lines:
 rem make sure beg/end cmt lines are blank or >0, <99, and that beg < end

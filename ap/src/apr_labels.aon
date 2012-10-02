@@ -6,6 +6,13 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
+rem --- this is one of only one or two pgms in the Barista version of Addon that 
+rem --- use adc_printer to open the printer device (based on the printer selected in
+rem --- Barista's File ==> processing settings, default printer).
+
+rem --- depending on the alias line in your barista.cfg, you may need to adjust the 
+rem --- label specifications in the AP Params record to get a printout.
+
     setesc std_error
     seterr std_error
 
@@ -18,8 +25,11 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    
 
 rem --- Open/Lock files
 
@@ -51,6 +61,7 @@ rem --- Assign form input values to local variables
     begzip$=Option!.getOptionData("ZIP_CODE_1")
     endzip$=Option!.getOptionData("ZIP_CODE_2")
     labels=num(labels$)
+    vend_type$=Option!.getOptionData("VENDOR_TYPE")
 
 rem --- Retrieve parameter records
 
@@ -87,7 +98,7 @@ rem --- Initializations
        keyfield$="ZIP_CODE"
     endif
     endvaluelen=len(endvalue$)
-
+    total_recs=0
 
 rem --- Print test patterns until the user is satisfied
 
@@ -107,6 +118,7 @@ rem --- Print test patterns until the user is satisfied
         close (printer_dev)
         msg_id$="ANOTHER_PATTERN"
     wend
+
     if msg_opt$="C" goto std_exit
 
     close (printer_dev,err=*next)    
@@ -116,7 +128,7 @@ rem --- Print test patterns until the user is satisfied
 
 rem --- Start the progress meter and position the file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","APM_VENDMAST","","","",0,apm01_dev,1,meter_num,status
     read record(apm01_dev,key=firm_id$+begvalue$,knum=keynum,dir=0,dom=*next)apm01a$
 
 rem --- Read next Vendor Master (apm-01) record
@@ -127,8 +139,13 @@ rem --- Read next Vendor Master (apm-01) record
           if endvaluelen > 0 then
              vendfield$=pad(cvs(field(apm01a$,keyfield$),3),endvaluelen)
              if vendfield$>endvalue$ break
-
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          endif
+          
+          if vend_type$="P" and apm01a.temp_vend$="Y" then continue
+          if vend_type$="T" and apm01a.temp_vend$<>"Y" then continue
+         
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Print the label(s) for this vendor
 

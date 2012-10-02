@@ -1,4 +1,18 @@
+[[OPE_ORDDATES.DEF_STATION.AVAL]]
+rem --- Set STBL
+
+	ignore$ = stbl("OPE_DEF_STATION", callpoint!.getUserInput())
+[[OPE_ORDDATES.DEF_SHIP.AVAL]]
+rem --- Set STBL
+
+	ignore$ = stbl("OPE_DEF_SHIP", callpoint!.getUserInput())
+[[OPE_ORDDATES.DEF_COMMIT.AVAL]]
+rem --- Set STBL
+
+	ignore$ = stbl("OPE_DEF_COMMIT", callpoint!.getUserInput())
 [[OPE_ORDDATES.BSHO]]
+print "ORDDATES:BSHO"; rem debug
+
 rem --- Open File(s)
 	
 	num_files=2
@@ -37,14 +51,11 @@ rem --- Set this user's or param's default POS station
 		endif
 	endif
 [[OPE_ORDDATES.BEND]]
-rem --- Set values into STBLs
-
-	ignore$ = stbl("OPE_DEF_SHIP",    callpoint!.getColumnData("OPE_ORDDATES.DEF_SHIP") )
-	ignore$ = stbl("OPE_DEF_COMMIT",  callpoint!.getColumnData("OPE_ORDDATES.DEF_COMMIT") )
-	ignore$ = stbl("OPE_DEF_STATION", callpoint!.getColumnData("OPE_ORDDATES.DEF_STATION") )
-
-	release
+print "ORDDATES:BEND"; rem debug
+release; rem --- if ditching this form, don't run order entry either, just release
 [[OPE_ORDDATES.ARAR]]
+print "ORDDATES:ARAR"; rem debug
+
 rem --- Setup default dates
 
 	ars01_dev = fnget_dev("ARS_PARAMS")

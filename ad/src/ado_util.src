@@ -6,33 +6,56 @@ rem ==========================================================================
 
     use ::sys/prog/bao_callpoint.bbj::Callpoint
     use ::ado_func.src::func
+    use ::adc_array.aon::ArrayObject
+    
+    use java.util.HashMap
 
     class public util
 
     rem --- width/height for adjusting window
+    
         field public static BBjInt ExtraWidth% = 10
         field public static BBjInt ExtraHeight% = 10
+        
     rem --- width/height for adjusting screen
+    
         field public static BBjInt LessWidth% = 40
         field public static BBjInt LessHeight% = 40
+        
     rem --- Constants
+    
         field private static BBjInt CHILD_WINDOW% = 2
         field private static BBjInt GROUP_BOX% = 21
         field private static BBjInt PUSH_BUTTON% = 11
+        field private static BBjInt LIST_BUTTON% = 19
         field private static BBjInt ENABLE% = 1
         field private static BBjInt DISABLE% = 0
-    rem --- These IDs are set by Barista
-        field private static BBjInt CHILD_WINDOW_ID% = 1109
+        
+    rem --- ID(s) set by Barista
+    
         field private static BBjInt GRID_ID% = 5900
+        
     rem --- Enable/Disable colors for grid cells
+    
         field public static BBjColor EnableColor!
         field public static BBjColor DisableColor!
+        
     rem --- Enable/Disable values for maintenance forms
+    
         field public static BBjString EnableValue$ = ""
         field public static BBjString DisableValue$ = "I"
+        
     rem --- Misc
-        field private static BBjInt Resized% = 0
-
+    
+        field private static BBjInt resized% = 0
+        field private static BBjString className$ = "util"
+        field private static BBjNumber START_BLOCK = 0
+        
+    rem --- table_chans$[all] array fields
+    
+        field private static ArrayObject TableChans!
+        field private static HashMap devs!
+        field private static HashMap tmpls!
 
     rem ==========================================================================
     rem --- Resize a Baritsa window after custom controls have been placed on it.
@@ -51,49 +74,96 @@ rem ==========================================================================
             declare java.awt.Dimension ScreenSize!
             declare BBjControl this_ctrl!
 
-            controls!     = Form!.getAllControls()
-            ScreenSize!   = SysGUI!.getSystemMetrics().getScreenSize()
-            screen_width  = ScreenSize!.width - #LessWidth%
-            screen_height = ScreenSize!.height - #LessHeight%
-            new_width = 0
-            new_height = 0
+            controls!      = Form!.getAllControls()
+            ScreenSize!    = SysGUI!.getSystemMetrics().getScreenSize()
+            screen_width   = ScreenSize!.width - #LessWidth%
+            screen_height  = ScreenSize!.height - #LessHeight%
+            new_width      = 0
+            new_height     = 0
             no_buttons_yet = 1
+            extra_height   = #ExtraHeight%
+            
+            rem debug
+            declare HashMap type!
+            type! = new HashMap()
+            type!.put(1, "Top level window")
+            type!.put(2, "Child window with border")
+            type!.put(7, "Child window without border")
+            type!.put(11, "Push button control")
+            type!.put(12, "Radio button control")
+            type!.put(13, "Check box control")
+            type!.put(14, "Horizontal scroll bar control")
+            type!.put(15, "Vertical scroll bar control")
+            type!.put(16, "Edit control")
+            type!.put(17, "Static text control")
+            type!.put(18, "List box control")
+            type!.put(19, "List button control")
+            type!.put(20, "List edit control")
+            type!.put(21, "Group box control")
+            type!.put(22, "Custom edit control")
+            type!.put(100, "Menu item")
+            type!.put(101, "Checkable menu item")
+            type!.put(102, "Status bar control")
+            type!.put(103, "Tool button control")
+            type!.put(104, "INPUTE control")
+            type!.put(105, "INPUTN control")
+            type!.put(106, "Tab control")
+            type!.put(107, "Grid control")
+            type!.put(108, "Iamge control")
+            type!.put(109, "Tree control")
+            type!.put(112, "Progress controls")
+            type!.put(114, "INPUTD controls")
+            
+            rem print 'show'; rem debug
 
         rem --- Roll throught all controls, setting the max width and height
             for i=0 to controls!.size() - 1
                 this_ctrl! = cast(BBjControl, controls!.getItem(i))
                 type = this_ctrl!.getControlType()
+                
+                rem print "type", type, ", ", type!.get(type); rem debug
 
-            rem --- Group boxes dimesions can mess up the calculation
+            rem --- Group boxes dimensions can mess up the calculation
                 if type = #GROUP_BOX% then continue
 
             rem --- Push Buttons (e.g. "OK", "Cancel") need extra room at the bottom
                 if type = #PUSH_BUTTON% then
+                
+                    rem print "x, y, w, h:", this_ctrl!.getX(), ", ", this_ctrl!.getY(), ", ", this_ctrl!.getWidth(), ", ", this_ctrl!.getHeight(); rem debug
+                    rem print "text, if any: ", this_ctrl!.getText(); rem debug
 
-                    if no_buttons_yet then
-                        #ExtraHeight% = #ExtraHeight% + int(this_ctrl!.getHeight()) + 5
+                    if no_buttons_yet and this_ctrl!.getX() > 0 and this_ctrl!.getY() > 0 then
+                        extra_height = extra_height + int(this_ctrl!.getHeight()) + 25
                         no_buttons_yet = 0
+                        rem print "adding extra height"; rem debug
                     endif
 
                 else
 
                 rem --- Most controls go here
                     new_width  = max( new_width,  this_ctrl!.getX() + this_ctrl!.getWidth() )
-                    new_height = max( new_height, this_ctrl!.getY() + this_ctrl!.getHeight() )
+                    if type <> #LIST_BUTTON% then new_height = max( new_height, this_ctrl!.getY() + this_ctrl!.getHeight() )
+                    rem print "x, y, w, h:", this_ctrl!.getX(), ", ", this_ctrl!.getY(), ", ", this_ctrl!.getWidth(), ", ", this_ctrl!.getHeight(); rem debug
+                    rem print "text, if any: ", this_ctrl!.getText(); rem debug
 
                 endif
+                
+                rem input "<enter> to continue: ", *; rem debug
+                
             next i
 
-        rem --- If the current form fits or is bigger, we're done
-            if Form!.getWidth() >= new_width + #ExtraWidth% and Form!.getHeight() >= new_height + #ExtraHeight% then
+        rem --- If the current form fits or is bigger, we're done (except if there's buttons)
+            if Form!.getWidth() >= new_width + #ExtraWidth% and Form!.getHeight() >= new_height + extra_height then
+                rem print "form is bigger tha calculated size, exitting"; rem debug
                 methodret
             endif
 
         rem --- Set new size, but not bigger than the screen
             new_width = min( screen_width, new_width + #ExtraWidth% )
-            new_height = min( screen_height, new_height + #ExtraHeight% )
+            new_height = min( screen_height, new_height + extra_height )
             Form!.setSize(new_width, new_height)
-            #Resized% = 1
+            #resized% = 1
+            rem print "Resizing form..."; rem debug
 
         rem --- Will the form still fit on the screen?
             new_position = 0
@@ -113,12 +183,14 @@ rem ==========================================================================
             if new_position then
                 Form!.setLocation(form_x, form_y)
             endif
-
+            
+            rem input "<enter> to continue: ", *; rem debug
+            
         methodend
 
     rem --- Has this form been resized?
         method public static BBjInt alreadyResized()
-            methodret #Resized%
+            methodret #resized%
         methodend
 
 
@@ -145,8 +217,45 @@ rem ==========================================================================
                         break
                     endif
                 else
-
                     if pos(p_text$ = this_ctrl!.getText()) then
+                        found = 1
+                        break
+                    endif
+                endif
+            next i
+
+            if found then
+                methodret this_ctrl!
+            else
+                methodret null()
+            endif
+
+        methodend
+
+    rem ==========================================================================
+    rem 	Find a control from its control ID
+    rem ==========================================================================
+
+        method public static BBjControl findControlByID(BBjWindow Form!, BBjInt p_id%)
+
+            declare BBjVector controls!
+            declare BBjControl this_ctrl!
+
+            controls! = Form!.getAllControls()
+            found = 0
+
+            for i = 0 to controls!.size() - 1
+                this_ctrl! = cast(BBjControl, controls!.getItem(i))
+
+                if this_ctrl!.getControlType() = #CHILD_WINDOW%
+                    this_ctrl! = #findControlByID( cast(BBjWindow, this_ctrl!), p_id% ) 
+
+                    if this_ctrl! <> null() then
+                        found = 1
+                        break
+                    endif
+                else
+                    if p_id% = this_ctrl!.getID() then
                         found = 1
                         break
                     endif
@@ -275,6 +384,7 @@ rem ==========================================================================
     rem ==========================================================================	
 
     rem --- Get the Barista grid and set enable/disable colors
+    
         method protected static BBjStandardGrid getGridAbleColors(BBjTopLevelWindow Form!)
         
             declare BBjStandardGrid grid!
@@ -287,6 +397,7 @@ rem ==========================================================================
         methodend
 
     rem --- Set a grid's enable/disable colors 
+    
         method public static void setGridAbleColors(BBjStandardGrid grid!)
 
             if #EnableColor! = null() then
@@ -305,82 +416,73 @@ rem ==========================================================================
     rem ==========================================================================	
 
     rem --- Disable several columns
+    
         method public static void disableGridColumns(BBjTopLevelWindow Form!,  BBjVector cols!)
             #ableGridColumns(Form!, cols!, #DISABLE%)
         methodend
 
     rem --- Disable several columns, custom grid
+    
         method public static void disableGridColumns(BBjStandardGrid grid!,  BBjVector cols!)
             #ableGridColumns(grid!, cols!, #DISABLE%)
         methodend
 
     rem --- Enable several columns
+    
         method public static void enableGridColumns(BBjTopLevelWindow Form!,  BBjVector cols!)
             #ableGridColumns(Form!, cols!, #ENABLE%)
         methodend
 
     rem --- Enable several columns, custom grid
+    
         method public static void enableGridColumns(BBjStandardGrid grid!,  BBjVector cols!)
             #ableGridColumns(grid!, cols!, #ENABLE%)
         methodend
 
     rem --- One column (no vector)
-        method public static void ableGridColumn(BBjTopLevelWindow Form!, BBjInt col%, BBjInt able%)
+    
+        method public static void ableGridColumn(BBjTopLevelWindow Form!, BBjNumber col, BBjInt able%)
             declare BBjVector cols!
             cols! = BBjAPI().makeVector()
-            cols!.addItem(col%)
+            cols!.addItem(int(col))
             #ableGridColumns(Form!, cols!, able%)
         methodend
 
     rem --- One column (no vector) for customer grid
-        method public static void ableGridColumn(BBjStandardGrid grid!, BBjInt col%, BBjInt able%)
+    
+        method public static void ableGridColumn(BBjStandardGrid grid!, BBjNumber col, BBjInt able%)
             declare BBjVector cols!
             cols! = BBjAPI().makeVector()
-            cols!.addItem(col%)
+            cols!.addItem(int(col))
             #ableGridColumns(grid!, cols!, able%)
         methodend
 
-    rem --- Disable one column
-        method public static void disableGridColumn(BBjTopLevelWindow Form!, BBjInt col%)
-            #ableGridColumn(Form!, col%, #DISABLE%)
-        methodend
-
-    rem --- Disable one column, custom grid
-        method public static void disableGridColumn(BBjStandardGrid grid!, BBjInt col%)
-            #ableGridColumn(grid!, col%, #DISABLE%)
-        methodend
-
     rem --- Disable, Allow number (as opposed to Int)
+    
         method public static void disableGridColumn(BBjTopLevelWindow Form!, BBjNumber col)
-            if col >= 0 then #disableGridColumn(Form!, int(col))
+            if col >= 0 then #ableGridColumn(Form!, col, #DISABLE%)
         methodend
 
     rem --- Disable, Allow number (as opposed to Int), custom grid
+    
         method public static void disableGridColumn(BBjStandardGrid grid!, BBjNumber col)
-            if col >= 0 then #disableGridColumn(grid!, int(col))
-        methodend
-
-    rem --- Assume Enable
-        method public static void enableGridColumn(BBjTopLevelWindow Form!, BBjInt col%)
-            #ableGridColumn(Form!, col%, #ENABLE%)
-        methodend
-
-    rem --- Assume Enable, custom grid
-        method public static void enableGridColumn(BBjStandardGrid grid!, BBjInt col%)
-            #ableGridColumn(grid!, col%, #ENABLE%)
+            if col >= 0 then #ableGridColumn(grid!, col, #DISABLE%)
         methodend
 
     rem --- Enable, Allow number (as opposed to Int)
+    
         method public static void enableGridColumn(BBjTopLevelWindow Form!, BBjNumber col)
-            if col >= 0 then #enableGridColumn(Form!, int(col))
+            if col >= 0 then #ableGridColumn(Form!, col, #ENABLE%)
         methodend
 
     rem --- Enable, Allow number (as opposed to Int), custom grid
+    
         method public static void enableGridColumn(BBjStandardGrid grid!, BBjNumber col)
-            if col >= 0 then #enableGridColumn(grid!, int(col))
+            if col >= 0 then #ableGridColumn(grid!, col, #ENABLE%)
         methodend
 
     rem --- Accessor methods for ENABLE/DISABLE
+    
         method public static BBjInt DISABLE()
             methodret #DISABLE%
         methodend
@@ -399,10 +501,10 @@ rem ==========================================================================
     rem 	pass it manually.
     rem ==========================================================================
 
-        method public static void ableGridCells(BBjTopLevelWindow Form!, BBjVector cols!, BBjInt able%, BBjInt row%)
+        method public static void ableGridCells(BBjTopLevelWindow Form!, BBjVector cols!, BBjInt able%, BBjNumber row)
             declare BBjStandardGrid grid!
             grid! = #getGridAbleColors(Form!)
-            #ableGridCellsWork(grid!, cols!, able%, row%)
+            #ableGridCellsWork(grid!, cols!, able%, row)
         methodend
 
     rem ==========================================================================
@@ -412,9 +514,9 @@ rem ==========================================================================
     rem 	grid yourself, so you pass the grid object instead of the Form!
     rem ==========================================================================	
 
-        method public static void ableGridCells(BBjStandardGrid grid!, BBjVector cols!, BBjInt able%, BBjInt row%)
+        method public static void ableGridCells(BBjStandardGrid grid!, BBjVector cols!, BBjInt able%, BBjNumber row)
             #setGridAbleColors(grid!)
-            #ableGridCellsWork(grid!, cols!, able%, row%)
+            #ableGridCellsWork(grid!, cols!, able%, row)
         methodend
 
     rem ==========================================================================	
@@ -423,8 +525,10 @@ rem ==========================================================================
     rem 	This method does most of the actual work.
     rem ==========================================================================
 
-        method protected static void ableGridCellsWork(BBjStandardGrid grid!, BBjVector cols!, BBjInt able%, BBjInt row%)	
+        method protected static void ableGridCellsWork(BBjStandardGrid grid!, BBjVector cols!, BBjInt able%, BBjNumber row)	
 
+            row% = int(row)
+        
             if row% = -1 then
                 row = grid!.getSelectedRow()
             else
@@ -455,119 +559,117 @@ rem ==========================================================================
     rem ==========================================================================	
 
     rem --- Disable several cells, default row
+    
         method public static void disableGridCells(BBjTopLevelWindow Form!,  BBjVector cols!)
             #ableGridCells(Form!, cols!, #DISABLE%, -1)
         methodend
 
     rem --- Disable several cells, default row, custom grid
+    
         method public static void disableGridCells(BBjStandardGrid grid!,  BBjVector cols!)
             #ableGridCells(grid!, cols!, #DISABLE%, -1)
         methodend
 
     rem --- Disable several cells, pass row
+    
         method public static void disableGridCells(BBjTopLevelWindow Form!,  BBjVector cols!, BBjNumber row)
-            #ableGridCells(Form!, cols!, #DISABLE%, int(row))
+            #ableGridCells(Form!, cols!, #DISABLE%, row)
         methodend
 
     rem --- Disable several cells, pass row, custom grid
+    
         method public static void disableGridCells(BBjStandardGrid grid!,  BBjVector cols!, BBjNumber row)
-            #ableGridCells(grid!, cols!, #DISABLE%, int(row))
+            #ableGridCells(grid!, cols!, #DISABLE%, row)
         methodend
 
     rem --- Enable several cells, default row
+    
         method public static void enableGridCells(BBjTopLevelWindow Form!,  BBjVector cols!)
             #ableGridCells(Form!, cols!, #ENABLE%, -1)
         methodend
 
     rem --- Enable several cells, default row, custom grid
+    
         method public static void enableGridCells(BBjStandardGrid grid!,  BBjVector cols!)
             #ableGridCells(grid!, cols!, #ENABLE%, -1)
         methodend
 
     rem --- Enable several cells, pass row
+    
         method public static void enableGridCells(BBjTopLevelWindow Form!,  BBjVector cols!, BBjNumber row)
-            #ableGridCells(Form!, cols!, #ENABLE%, int(row))
+            #ableGridCells(Form!, cols!, #ENABLE%, row)
         methodend
 
     rem --- Enable several cells, pass row, custom grid
+    
         method public static void enableGridCells(BBjStandardGrid grid!,  BBjVector cols!, BBjNumber row)
-            #ableGridCells(grid!, cols!, #ENABLE%, int(row))
+            #ableGridCells(grid!, cols!, #ENABLE%, row)
         methodend
 
     rem --- One cell (no vector)
-        method public static void ableGridCell(BBjTopLevelWindow Form!, BBjInt col%, BBjInt able%, BBjInt row%)
+    
+        method public static void ableGridCell(BBjTopLevelWindow Form!, BBjNumber col, BBjInt able%, BBjNumber row)
             declare BBjVector cols!
             cols! = BBjAPI().makeVector()
-            cols!.addItem(col%)
-            #ableGridCells(Form!, cols!, able%, row%)
+            cols!.addItem(int(col))
+            #ableGridCells(Form!, cols!, able%, row)
         methodend
 
     rem --- One cell (no vector), custom grid
-        method public static void ableGridCell(BBjStandardGrid grid!, BBjInt col%, BBjInt able%, BBjInt row%)
+    
+        method public static void ableGridCell(BBjStandardGrid grid!, BBjNumber col, BBjInt able%, BBjNumber row)
             declare BBjVector cols!
             cols! = BBjAPI().makeVector()
-            cols!.addItem(col%)
-            #ableGridCells(grid!, cols!, able%, row%)
+            cols!.addItem(int(col))
+            #ableGridCells(grid!, cols!, able%, row)
         methodend
 
     rem --- Disable one cell, default row
-        method public static void disableGridCell(BBjTopLevelWindow Form!, BBjInt col%)
-            #ableGridCell(Form!, col%, #DISABLE%, -1)
+    
+        method public static void disableGridCell(BBjTopLevelWindow Form!, BBjNumber col)
+            #ableGridCell(Form!, col, #DISABLE%, -1)
         methodend
 
     rem --- Disable one cell, default row, custom grid
-        method public static void disableGridCell(BBjStandardGrid grid!, BBjInt col%)
-            #ableGridCell(grid!, col%, #DISABLE%, -1)
+    
+        method public static void disableGridCell(BBjStandardGrid grid!, BBjNumber col)
+            #ableGridCell(grid!, col, #DISABLE%, -1)
         methodend
 
     rem --- Disable one cell, pass row
-        method public static void disableGridCell(BBjTopLevelWindow Form!, BBjInt col%, BBjNumber row)
-            #ableGridCell(Form!, col%, #DISABLE%, int(row))
+    
+        method public static void disableGridCell(BBjTopLevelWindow Form!, BBjNumber col, BBjNumber row)
+            #ableGridCell(Form!, col, #DISABLE%, row)
         methodend
 
     rem --- Disable one cell, pass row, custom grid
-        method public static void disableGridCell(BBjStandardGrid grid!, BBjInt col%, BBjNumber row)
-            #ableGridCell(grid!, col%, #DISABLE%, int(row))
-        methodend
-
-    rem --- Disable, Allow number (as opposed to Int)
-        method public static void disableGridCell(BBjTopLevelWindow Form!, BBjNumber col)
-            if col >=0 then #disableGridCell(Form!, int(col))
-        methodend
-
-    rem --- Disable, Allow number (as opposed to Int), custom grid
-        method public static void disableGridCell(BBjStandardGrid grid!, BBjNumber col)
-            if col >=0 then #disableGridCell(grid!, int(col))
+    
+        method public static void disableGridCell(BBjStandardGrid grid!, BBjNumber col, BBjNumber row)
+            #ableGridCell(grid!, col, #DISABLE%, row)
         methodend
 
     rem --- Enable one cell, default row
-        method public static void enableGridCell(BBjTopLevelWindow Form!, BBjInt col%)
-            #ableGridCell(Form!, col%, #ENABLE%, -1)
+    
+        method public static void enableGridCell(BBjTopLevelWindow Form!, BBjNumber col)
+            #ableGridCell(Form!, col, #ENABLE%, -1)
         methodend
 
     rem --- Enable one cell, default row, custom grid
-        method public static void enableGridCell(BBjStandardGrid grid!, BBjInt col%)
-            #ableGridCell(grid!, col%, #ENABLE%, -1)
+    
+        method public static void enableGridCell(BBjStandardGrid grid!, BBjNumber col)
+            #ableGridCell(grid!, col, #ENABLE%, -1)
         methodend
 
     rem --- Enable one cell, pass row
-        method public static void enableGridCell(BBjTopLevelWindow Form!, BBjInt col%, BBjNumber row)
-            #ableGridCell(Form!, col%, #ENABLE%, int(row))
+    
+        method public static void enableGridCell(BBjTopLevelWindow Form!, BBjNumber col, BBjNumber row)
+            #ableGridCell(Form!, col, #ENABLE%, row)
         methodend
 
     rem --- Enable one cell, pass row, custom grid
-        method public static void enableGridCell(BBjStandardGrid grid!, BBjInt col%, BBjNumber row)
-            #ableGridCell(grid!, col%, #ENABLE%, int(row))
-        methodend
-
-    rem --- Enable, Allow number (as opposed to Int)
-        method public static void enableGridCell(BBjTopLevelWindow Form!, BBjNumber col)
-            if col >=0 then #enableGridCell(Form!, int(col))
-        methodend
-
-    rem --- Enable, Allow number (as opposed to Int), custom grid
-        method public static void enableGridCell(BBjStandardGrid grid!, BBjNumber col)
-            if col >=0 then #enableGridCell(grid!, int(col))
+    
+        method public static void enableGridCell(BBjStandardGrid grid!, BBjNumber col, BBjNumber row)
+            #ableGridCell(grid!, col, #ENABLE%, row)
         methodend
 
 
@@ -606,11 +708,13 @@ rem ==========================================================================
         methodend
 
     rem --- Disable several fields
+    
         method public static void disableFields(Callpoint callpoint!, BBjVector fields!)
             #ableFields(callpoint!, fields!, #DisableValue$)
         methodend
 
     rem --- Disable one field
+    
         method public static void disableField(Callpoint callpoint!, BBjString fld$)
             declare BBjVector fields!
             fields! = BBjAPI().makeVector()
@@ -619,11 +723,13 @@ rem ==========================================================================
         methodend
 
     rem --- Enable several fields
+    
         method public static void enableFields(Callpoint callpoint!, BBjVector fields!)
             #ableFields(callpoint!, fields!, #EnableValue$)
         methodend
 
     rem --- Enable one field
+    
         method public static void enableField(Callpoint callpoint!, BBjString fld$)
             declare BBjVector fields!
             fields! = BBjAPI().makeVector()
@@ -653,16 +759,25 @@ rem ==========================================================================
 
         force_edit_row_col: 
             throw "util: forceEdit(): Row or column is invalid", 256
-            methodret
 
         force_edit_select: 
             throw "util: forceEdit(): Can't select this cell", 257
-            methodret
 
         force_edit_start: 
             throw "util: forceEdit(): Can't start editing this cell", 258
-            methodret
 
+        methodend
+        
+    rem --- Force focus but use the selected row
+    
+        method public static void forceEdit(BBjTopLevelWindow Form!, BBjNumber col)
+            row = #getGrid(Form!).getSelectedRow()
+            
+            if row = -1 then
+                throw "util: forceEdit(): No row is selected", 259
+            endif
+            
+            #forceEdit(Form!, row, col)
         methodend
 
 
@@ -687,17 +802,129 @@ rem ==========================================================================
     rem ==========================================================================
 
         method public static BBjControl getControl(Callpoint callpoint!, BBjString data_name$)
-
+        
             declare BBjSysGui sysGui!
             sysGui! = BBjAPI().getSysGui()
-
+            
             control_context = num( callpoint!.getTableColumnAttribute(data_name$, "CTLC") )
             control_id      = num( callpoint!.getTableColumnAttribute(data_name$, "CTLI") )
 
             methodret sysGui!.getWindow(control_context).getControl(control_id)
-
+            
         methodend
+        
+    rem ==========================================================================
+    rem 
+    rem --- In some situations, callpoint! does not return the correct context for
+    rem --- the control.  Then we have to search the whole form! and child windows
+    rem --- for the control.
+    rem
+    rem ==========================================================================
+        
+        method public static BBjControl getControl(BBjTopLevelWindow Form!, Callpoint callpoint!, BBjString data_name$)
+            control_id% = int(num( callpoint!.getTableColumnAttribute(data_name$, "CTLI") ))
+            methodret #findControlByID(form!, control_id%)
+        methodend
+        
 
+    rem ==========================================================================
+    rem 
+    rem --- table_chans$[all] as objects
+    rem 
+    rem ==========================================================================
+    
+        method public static void setTableChans(ArrayObject p_table_chans!)
+            #TableChans! = p_table_chans!
+            #devs! = new HashMap()
+            #tmpls! = new HashMap()
+            devs$ = p_table_chans!.getElement(0,0)
+            
+            if devs$<>"" then 
+                for i = 1 to len(devs$) step 20
+                    data_name$ = cvs(devs$(i,17), 2)
+                    
+                    if data_name$<>"" then
+                        dev = num(devs$(i+17,3), err=*endif)
+                        rem tmpl$ = p_table_chans!.getElement(int((i+19)/20), 0)
+                        tmpl$ = p_table_chans!.getElement(int(dev), 0)
+                        
+                        if dev and tmpl$<>"" then 
+                            #devs!.put(data_name$, dev)
+                            #tmpls!.put(data_name$, tmpl$)
+                        endif
+                    endif
+                next i
+            endif
+            
+        methodend
+        
+        method public static BBjInt isTableChansSet()
+            if #TableChans! = null() then
+                methodret 0
+            else
+                methodret 1
+            endif
+        methodend
+        
+    rem --- Get a device (channel) from a data name
+    
+        method public static BBjInt getDev(BBjString p_data_name$)
+        
+            if #devs! = null() then
+                throw #className$+": Need to call setTableChans() first", 260
+            else
+                if #devs!.containsKey(p_data_name$) then
+                    methodret int(num(#devs!.get(p_data_name$)))
+                else
+                    throw #className$+": getDev(): Cannot find "+p_data_name$, 11
+                endif
+            endif
+            
+        methodend
+        
+    rem --- Get a template from a data name
+    
+        method public static BBjString getTmpl(BBjString p_data_name$)
+        
+            if #tmpls! = null() then
+                throw #className$+": Need to call setTableChans() first", 261
+            else
+                if #tmpls!.containsKey(p_data_name$) then
+                    methodret str(#tmpls!.get(p_data_name$))
+                else
+                    throw #className$+": getTmpl(): Cannot find "+p_data_name$, 11
+                endif
+            endif
+            
+        methodend
+        
+    rem ==========================================================================
+    rem
+    rem --- Copy Barista column data to string template
+    rem 
+    rem ==========================================================================
+    
+        method public static BBjString copyFields(BBjString p_tmpl$, Callpoint callpoint!)
+        
+            col_list$ = callpoint!.getTableColumns()
+            alias$    = callpoint!.getAlias()
+            p_tmpl$   = cvs(p_tmpl$, 4)
+            dim rec$:p_tmpl$
+            
+            for i=1 to len(col_list$) step 40
+                col$ = cvs(col_list$(i, 40), 2)
+                if pos(alias$ = col$) <> 1 then continue
+                p = pos("." = col$)
+                name$ = col$(p+1)
+                
+                if pos("," + name$ + ":" = "," + p_tmpl$) then
+                    field rec$, name$ = callpoint!.getColumnData(col$)
+                endif
+            next i
+        
+            methodret rec$
+            
+        methodend
 
     rem ==========================================================================
     rem
@@ -706,17 +933,19 @@ rem ==========================================================================
     rem ==========================================================================
 
     rem --- Return the detail grid control
+    
         method public static BBjStandardGrid getGrid(BBjTopLevelWindow Form!)
-            declare BBjStandardGrid grid!
-            grid! = cast(BBjStandardGrid, Form!.getChildWindow(#CHILD_WINDOW_ID%).getControl(#GRID_ID%))
-            methodret grid!
+            declare BBjChildWindow child!
+            child! = #getChild(Form!)
+            methodret cast(BBjStandardGrid, child!.getControl(#GRID_ID%))
         methodend
 
     rem --- Return the child window control
+    
         method public static BBjChildWindow getChild(BBjTopLevelWindow Form!)
-            declare BBjChildWindow child!
-            child! = cast(BBjChildWindow, Form!.getChildWindow(#CHILD_WINDOW_ID%))
-            methodret child!
+            detail_grid_win% = 1109
+            detail_grid_win% = int( num(stbl("+DETAIL_GRID_WIN", err=*next)) )
+            methodret cast(BBjChildWindow, Form!.getChildWindow(detail_grid_win%))
         methodend
 
 

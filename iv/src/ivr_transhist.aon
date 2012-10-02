@@ -8,7 +8,6 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-
     seterr std_error
     setesc std_error
 
@@ -18,10 +17,11 @@ rem --- Retrieve the program path
 
 rem --- Document initializations
 
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+    
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -37,6 +37,9 @@ rem --- Retrieve sysinfo data
     firm_name$=sysinfo.firm_name$
     task_desc$=sysinfo.task_desc$
     sys_date$=sysinfo.system_date$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next))
 
 rem --- Open files
 
@@ -137,6 +140,7 @@ rem --- Initializations
         call pgmdir$+"adc_getmask.aon","CUSTOMER_ID","","",imask$,x9$,0,x8
         x9=len(x9$)
     endif
+    
     if ap$="Y" then
         find record (aps01_dev,key=firm_id$+"AP00",dom=std_missing_params) aps01a$
         call pgmdir$+"adc_getmask.aon","VENDOR_ID","","",imask$,x7$,0,x6
@@ -197,6 +201,7 @@ init_headings: rem --- Initialize HEADINGS$
     if beg_date$<>"" x1$=fndate$(beg_date$)
     if end_date$<>"" x2$=fndate$(end_date$)
     headings$[2]="From "+x1$+" Through "+x2$
+    
     if all$="Y" then
         headings$[3]="For All Transaction Types"
     else
@@ -228,11 +233,12 @@ rem --- column headings
     columns$[7,0]="Balance",                columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$
 
 
-    call stbl("+DIR_PGM")+"adc_progress.aon","NC","","","","",0,ivt04_dev,1,meter_num,status
+    call stbl("+DIR_PGM")+"adc_progress.aon","NC","IVT_ITEMTRAN","","","",0,ivt04_dev,1,meter_num,status
 
 rem --- Position files
 
 	no_records = 1
+    total_recs = 0
     read (ivt04_dev,key=firm_id$+cvs(beg_whse$,2),dom=*next)
 
 rem --- Get next record
@@ -242,6 +248,9 @@ rem --- Get next record
         if pos(firm_id$=ivt04a.firm_id$)<>1 break
         whse$=ivt04a.warehouse_id$
         item$=ivt04a.item_id$
+        
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
 rem --- Valid Warehouse/Item?
 
@@ -264,8 +273,6 @@ rem --- Valid Product/Type/Date?
 rem --- Level breaks?
 
         if all$="Y" and item$<>t1$ gosub get_beg_bal
-        call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-
         if whse$<>t0$ gosub whse_break
         if item$<>t1$ gosub item_break
         balance=balance+ivt04a.trans_qty
@@ -283,6 +290,7 @@ rem --- Build Totals Array
             if x=0 item_tot$=item_tot$+type$; continue
             break
         wend
+        
         x=(x+3)/4
         item_qty[x]=item_qty[x]+ivt04a.trans_qty
         item_ext[x]=item_ext[x]+ivt04a.trans_qty*ivt04a.unit_cost
@@ -319,12 +327,12 @@ print_detail: rem --- Print detail line
 done: rem --- All done
 
 	if no_records then            
-            msg_id$="DOC_OUTPUT_NODATA"
-            gosub disp_message
-            goto std_exit_no_report
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
 	else
-            done=1
-            gosub item_break
+        done=1
+        gosub item_break
 	endif
 	
     goto std_exit
@@ -347,6 +355,7 @@ item_break: rem --- Item Break
         if len(item_tot$)<>0 then
             xwk=fnblank(columns)
             TotVect!.addItem(str(OutVect!.size()/(columns)))
+            
             for x=1 to len(item_tot$) step 4
                 xwk=fnblank(3)
                 OutVect!.addItem("     "+item_tot$(x,4)+" Total")           
@@ -357,6 +366,7 @@ item_break: rem --- Item Break
                 net_qty=net_qty+item_qty[(x+3)/4]
                 net_ext=net_ext+item_ext[(x+3)/4]
             next x
+            
             if all$<>"N" 
                 xwk=fnblank(3)
                 OutVect!.addItem("     Net Change")
@@ -368,6 +378,7 @@ item_break: rem --- Item Break
            endif
         endif
     endif
+    
     if done then return
     dim item_qty[9],item_ext[9]
     t1$=ivt04a.item_id$
@@ -375,7 +386,9 @@ item_break: rem --- Item Break
     net_qty=0
     net_ext=0
     wkdesc$=fnitem$(ivm01a.item_desc$)
+    
 rem --- old format using params: wkdesc$=fnitem$(wkdesc$,p[5],p[6],p[7])
+
     subhead1$=t1$(1,p[0])+" "+wkdesc$
     subhead2$="Product type: "+ivm01a.product_type$
     return
@@ -414,6 +427,7 @@ get_beg_bal: rem --- Determine starting beginning balance
         if ivt04b.trans_date$>=beg_date$ break
         let balance=balance+ivt04b.trans_qty
     wend
+    
     return
     
 rem #include std_functions.src

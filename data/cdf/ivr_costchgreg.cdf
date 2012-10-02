@@ -20,6 +20,12 @@ rem --- Get default date from first record
 
 arec_end:
 [[IVR_COSTCHGREG.BSHO]]
+rem --- Get Batch information
+rem --- this will let oper set up or select a batch (if batching turned on)
+rem --- stbl("+BATCH_NO) will either be zero (not batching) or contain the batch#
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+
 rem --- Open file
 
 	num_files=1

@@ -1,11 +1,33 @@
+[[APM_VENDHIST.BTBL]]
+rem --- Retrieve parameter data
+
+	aps01_dev=fnget_dev("APS_PARAMS")
+	dim aps01a$:fnget_tpl$("APS_PARAMS")
+	aps01a_key$=firm_id$+"AP00"
+	find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$ 
+
+rem -- store info needed for validation, etc., in user_tpl$
+	dim user_tpl$:"multi_types:c(1),multi_dist:c(1),ret_flag:c(1),dflt_ap_type:c(2)"
+	user_tpl.multi_types$=aps01a.multi_types$
+	user_tpl.multi_dist$=aps01a.multi_dist$
+	user_tpl.ret_flag$=aps01a.ret_flag$
+ 	user_tpl.dflt_ap_type$=aps01a.ap_type$
+
+if user_tpl.multi_dist$="Y"
+	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",1)
+else
+	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",-1)
+endif
+
+rem --- disable access to AP Type if not using multi types
+
+if user_tpl.multi_types$<>"Y"
+	callpoint!.setTableColumnAttribute("APM_VENDHIST.AP_TYPE","PVAL",$22$+user_tpl.dflt_ap_type$+$22$)
+endif
 [[APM_VENDHIST.PAYMENT_GRP.AVAL]]
 if callpoint!.getUserInput()=""
 	callpoint!.setUserInput("  ")
 	callpoint!.setStatus("REFRESH")
-endif
-[[APM_VENDHIST.ARAR]]
-if user_tpl.multi_types$<>"Y"
-	callpoint!.setColumnData("APM_VENDHIST.AP_TYPE","  ")
 endif
 [[APM_VENDHIST.BDEL]]
 rem --- disallow deletion of apm-02 if any of the buckets are non-zero, or if referenced in apt-01 (open invoices)
@@ -102,42 +124,6 @@ if user_tpl$.multi_types$<>"Y"
 	callpoint!.setStatus("REFRESH")
 
 endif
-[[APM_VENDHIST.BSHO]]
-rem --- Retrieve miscellaneous templates
-
-
-	files=1,begfile=1,endfile=files
-	dim ids$[files],templates$[files]
-	ids$[1]="aps-01A:APS_PARAMS";rem  aps-01
-	
-	call stbl("+DIR_PGM")+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
-        if status goto std_exit
-
-rem --- Dimension miscellaneous string templates
-
-	dim aps01a$:templates$[1]
-
-rem --- Retrieve parameter data
-
-	aps01_dev=fnget_dev("APS_PARAMS")
-	aps01a_key$=firm_id$+"AP00"
-	find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$ 
-
-rem -- store info needed for validation, etc., in user_tpl$
-	dim user_tpl$:"multi_types:c(1),multi_dist:c(1),ret_flag:c(1)"
-	user_tpl.multi_types$=aps01a.multi_types$
-	user_tpl.multi_dist$=aps01a.multi_dist$
-	user_tpl.ret_flag$=aps01a.ret_flag$
-
-if user_tpl.multi_types$<>"Y"
-	ctl_name$="APM_VENDHIST.AP_TYPE"
-	ctl_stat$="I"
-	gosub disable_fields
-else
-	ctl_name$="APM_VENDHIST.AP_TYPE"
-	ctl_stat$=" "
-	gosub disable_fields
-endif
 [[APM_VENDHIST.<CUSTOM>]]
 disable_fields:
 	rem --- used to disable/enable controls depending on parameter settings
@@ -150,6 +136,21 @@ disable_fields:
 	callpoint!.setAbleMap(wmap$)
 	callpoint!.setStatus("ABLEMAP-REFRESH-ACTIVATE")
 
+return
+
+display_default_rec:
+
+	apm_vendhist_dev=fnget_dev("APM_VENDHIST")
+	dim apm_vendhist_tpl$:fnget_tpl$("APM_VENDHIST")
+	while 1
+		readrecord(apm_vendhist_dev,key=firm_id$+
+:			callpoint!.getColumnData("APM_VENDHIST.VENDOR_ID")+
+:			user_tpl.dflt_ap_type$,dom=*break)apm_vendhist_tpl$
+		callpoint!.setStatus("RECORD:["+firm_id$+
+:			callpoint!.getColumnData("APM_VENDHIST.VENDOR_ID")+
+:			user_tpl.dflt_ap_type$+"]")
+		break
+	wend
 return
 
 #include std_missing_params.src

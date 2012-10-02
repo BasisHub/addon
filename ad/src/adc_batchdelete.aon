@@ -8,15 +8,15 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-rem --- NOTE: This program is a null operation until batching is
-rem ---       implemented.
+rem --- NOTE: Since batching changed w/ Addon via Barista, we no longer have
+rem ---       batched entry files.  
+rem ---       This pgm just deletes batch record from adm_procbatches.
 
 rem --- STATUS      : 0=No Error (Returned)
 
     seterr std_error
     setesc std_error
     enter status
-    goto std_exit
 
 rem --- Retrieve the program path
 
@@ -32,102 +32,34 @@ rem --- Retrieve sysinfo data
 rem --- Batched Process?
 
     status=0
-    process$=stbl("+PROCESS",err=std_exit)
-    batch=num(process$(13,3))
-    batch$="."+str(batch:"000")
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")
+    batch=num(batch_no$)
     if batch=0 goto std_exit
 
 rem --- Open Files
 
-    files=3
-    dim files$[files],options$[files],channels[files]
-    files$[1]="sym-39",files$[2]="sym-49",files$[3]="sym-59"
-    call pgmdir$+"adc_fileopen.aon",1,1,3,files$[all],options$[all],channels[all],btch,status
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="adm-49",ids$[1]="ADM_PROCBATCHES"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
-    sym39_dev=channels[1]
-    sym49_dev=channels[2]
-    sym59_dev=channels[3]
+    
+    adm49_dev=channels[1]
+    
+    dim adm49a$:templates$[1]
 
-initializations: rem --- Initializations
-
-    b_list$=""
-
-rem --- Build List Of Batched Files
-
-    read (sym39_dev,key=process$(1,10),dom=l1020)
-l1020:
-    k$=key(sym39_dev,end=l1090)
-    if pos(process$(1,10)=k$)<>1 goto l1090
-    read (sym39_dev)
-    x$=cvs(k$(11),2)+batch$+fill(10)
-    b_list$=b_list$+x$(1,10)
-    goto l1020
-l1090:
-    if len(b_list$)=0 goto done
-
-rem --- Close Batched Files
-
-    chnls$=chn
-    for x=1 to len(chnls$) step 2
-        chnl=dec(chnls$(x,2),err=l1290)
-        f$=fid(chnl,err=l1290)
-        if len(f$)<9 goto l1290
-        f$=cvs(f$(9),2)
-        if pos("/"=f$)>0 f$=f$(pos("/"=f$,-1)+1)
-        if pos(f$=b_list$,10)>0 close (chnl,err=l1290)
-    l1290:
-    next x
-
-rem --- Verify Batched Files Not Being Used
-
-    b_files=len(b_list$)/10
-    dim b_files$[b_files],b_opts$[b_files],b_chnls[b_files]
-    for x=1 to b_files
-        b_files$[x]=cvs(b_list$(x*10-9,10),2)
-        b_opts$[x]="LF"
-    next x
-    call pgmdir$+"adc_fileopen.aon",1,1,b_files,b_files$[all],b_opts$[all],b_chnls[all],btch,status
-    if status goto l4200
-
-rem --- Delete Batched Files
-
-    for x=1 to b_files
-        close (b_chnls[x],err=l2050)
-    l2050:
-        erase b_files$[x],err=l4400
-    next x
 
 rem --- Remove Batch Records
-    remove (sym49_dev,key=batch$(2))
-l2250: remove (sym59_dev,key=process$(1,12)+batch$(2),err=l2250)
+
+    remove (adm49_dev,key=firm_id$+process_id$+batch_no$,err=*next)
 
 done: rem --- Exit - Normal
 
     goto std_exit
 
-l4200: rem --- Exit - Can't Delete Batch
-
-    for x=1 to b_files
-        close (b_chnls[x],err=l4230)
-    l4230:
-    next x
-    tokens=1
-    dim tokens$[tokens]
-    tokens$[1]=batch$(2)
-    call pgmdir$+"syc_xb.bbx",2,"CANNOT_DELETE_BATCH_%1",tokens$[all],tokens,-1,-1,v$,v3
-    goto std_exit
-
-l4400: rem --- Exit - Error While Deleting Batch
-
-    for x=1 to b_files
-        close (b_chnls[x],err=l4430)
-    l4430:
-    next x
-    tokens=1
-    dim tokens$[tokens]
-    tokens$[1]=batch$(2)
-    call pgmdir$+"syc_xb.bbx",2,"ERROR_DELETING_BATCH_%1",tokens$[all],tokens,-1,-1,v$,v3
-    goto std_error_release
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -186,9 +118,8 @@ std_error: rem --- Standard error handler (01Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
-    call pgmdir$+"adc_error.aon",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry

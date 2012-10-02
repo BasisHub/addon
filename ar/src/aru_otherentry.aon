@@ -12,12 +12,8 @@ rem --- Charge Register and the Conversion Invoice Register.
     setesc std_error
     seterr std_error
 
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
-
-rem --- Open/Lock files
-
-    close (printer_dev,err=*next)
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Initializations
 
@@ -32,7 +28,6 @@ rem --- Get user approval to proceed
     msg_tokens$[1]=x.task_desc$
     gosub disp_message
     if msg_opt$<>"Y" then goto std_exit_no_update
-rem    goto std_exit_no_update;rem temp until update tested.CAH
 
 rem --- Should GL be updated (if it's being used)?
 
@@ -45,13 +40,13 @@ rem --- Should GL be updated (if it's being used)?
 rem --- Start progress meter and position invoice file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,are02_dev,1,meter_num,status
-    read (are02_dev,key=firm_id$,dom=*next)
+    read (are02_dev,key=firm_id$+batch_no$,dom=*next)
 
 rem --- Read next Invoice (are-02) record
 
     while more
           are02_key$=key(are02_dev,end=*break)
-          if pos(firm_id$=are02_key$)<>1 break
+          if pos(firm_id$+batch_no$=are02_key$)<>1 break
           read record (are02_dev) are02a$
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
@@ -78,7 +73,7 @@ rem --- Read next Invoice (are-02) record
 
           rem --- Delete Invoice (are-02) record and loop back for the next one
 
-          remove (are02_dev,key=are02_key$)
+          remove (are02_dev,key=are02a.firm_id$+are02a.ar_type$+are02a.customer_id$+are02a.ar_inv_no$)
 
     wend
 
@@ -87,6 +82,7 @@ rem --- All done
     if gl$="Y"
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
        call pgmdir$+"glc_ctlupdate.aon",status
+       call pgmdir$+"glc_ctldelete.aon",status       
     endif
     call pgmdir$+"adc_batchdelete.aon",status
     goto std_exit
@@ -131,6 +127,11 @@ std_exit: rem --- Standard program end (01Mar2006)
 
 std_exit_no_update:
 
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

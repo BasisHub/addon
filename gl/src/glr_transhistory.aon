@@ -21,7 +21,11 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
-
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    total_recs=0
+    
 rem --- Open/Lock files
 
     files=5,begfile=1,endfile=files
@@ -74,7 +78,6 @@ rem --- Retrieve parameter records
     call "adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     call "adc_getmask.aon","","GL","A","",m1$,0,m1
     call "adc_getmask.aon","","GL","U","",m2$,0,m2
-    acctlen=num(gls01a.acct_length$)
     mp=13
     headings=4
     inquiry$=cvs(inquiry$,2)
@@ -125,7 +128,7 @@ rem --- Summary Report Heading
 
         columns=5
         dim columns$[5,10]
-        columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]=str(acctlen),columns$[0,3]=m0$
+        columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]=str(m0),columns$[0,3]=m0$
         columns$[1,0]="Date",columns$[1,1]="C",columns$[1,2]="10"
         columns$[2,0]="Jrnl",columns$[2,1]="C",columns$[2,2]="50"
         columns$[3,0]="Debits",columns$[3,1]="N",columns$[3,2]=str(len(m1$)),columns$[3,3]=m1$,columns$[3,10]="T"
@@ -140,7 +143,7 @@ rem --- Detail Report Heading
 
         columns=10
         dim columns$[10,10]
-        columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]=str(acctlen),columns$[0,3]=m0$
+        columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]=str(m0),columns$[0,3]=m0$
         columns$[1,0]="Date",columns$[1,1]="C",columns$[1,2]="10"
         columns$[2,0]="Jrnl",columns$[2,1]="C",columns$[2,2]="5"
         columns$[3,0]="Audit #",columns$[3,1]="C",columns$[3,2]="10"
@@ -159,9 +162,9 @@ rem --- Initialize report headings
     headings$[0]=cvs(sysinfo.firm_name$,2)
     headings$[1]=cvs(sysinfo.task_desc$,2)
     if cvs(begacct$,2)="" x$="First Account"
-:                    else x$="Account "+fnmask$(begacct$(1,acctlen),m0$)
+:                    else x$="Account "+fnmask$(begacct$(1,m0),m0$)
     if cvs(endacct$,2)="" y$="Last Account"
-:                    else y$="Account "+fnmask$(endacct$(1,acctlen),m0$)
+:                    else y$="Account "+fnmask$(endacct$(1,m0),m0$)
     x$="From "+x$+" Through "+y$
     if cvs(wildcard$,2)<>"" then x$=x$+" (Wildcard "+$22$+cvs(wildcard$,2)+$22$+")"
     headings$[2]=x$
@@ -207,7 +210,7 @@ rem --- Determine which years for GL summary (glm-02) records
 
 rem --- Start progress meter
 
-    call stbl("+DIR_PGM")+"adc_progress.aon","NC","","","","",0,glt06_dev,1,meter_num,status
+    call stbl("+DIR_PGM")+"adc_progress.aon","NC","GLT_TRANSDETAIL","","","",0,glt06_dev,1,meter_num,status
     glt06_key$=firm_id$
     if cvs(begacct$,2)<>"" then glt06_key$=glt06_key$+begacct$
     read (glt06_dev,key=glt06_key$,dom=*next)
@@ -219,7 +222,8 @@ rem --- Read next transaction history (glt-06) record
           k$=key(glt06_dev,end=*break)
           if pos(firm_id$=k$)<>1 break
           read record (glt06_dev,key=k$)glt06a$
-          call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           transdate$=glt06a.posting_year$+glt06a.posting_per$
           if endacct$<>"" if glt06a.gl_account$>endacct$ break
           if transdate$<starting$ continue
@@ -228,8 +232,8 @@ rem --- Read next transaction history (glt-06) record
 
           gosub wildcard
           if status continue
-		  
-		  nothing_to_print=0
+          
+          nothing_to_print=0
 
           rem --- Level breaks?
 
@@ -297,28 +301,36 @@ rem --- Read next transaction history (glt-06) record
 
 rem --- All Done
 
+    if nothing_to_print
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        OutVect!=null()  
+        goto std_exit
+rem        goto std_exit_no_report
+    endif
+
     done=1
     gosub account_break
-	
-	if nothing_to_print then
-		if detail$ = "D" then
-			ignore = fnblank(4)
-			OutVect!.addItem("Nothing to print within these parameters")
-			ignore = fnblank(6)
-		else
-			ignore = fnblank(2)
-			OutVect!.addItem("Nothing to print within these parameters")
-			ignore = fnblank(3)
-		endif
-	else
-		total$="Total For Report"
-		debits=rt[0]
-		credits=rt[1]
-		units=rt[2]
-		amount=debits+credits
-		if amount<>0 then gosub print_totals
-	endif
-	
+    
+    if nothing_to_print then
+        if detail$ = "D" then
+            ignore = fnblank(4)
+            OutVect!.addItem("Nothing to print within these parameters")
+            ignore = fnblank(6)
+        else
+            ignore = fnblank(2)
+            OutVect!.addItem("Nothing to print within these parameters")
+            ignore = fnblank(3)
+        endif
+    else
+        total$="Total For Report"
+        debits=rt[0]
+        credits=rt[1]
+        units=rt[2]
+        amount=debits+credits
+        if amount<>0 then gosub print_totals
+    endif
+    
     goto std_exit
 
 account_heading: rem --- Account Heading
@@ -416,7 +428,7 @@ account_break: rem --- Account number break
         total$="Account total"
         x$="",y$=""
     else
-        total$="Total For Account "+fnmask$(glm01a.gl_account$(1,acctlen),m0$)
+        total$="Total For Account "+fnmask$(glm01a.gl_account$(1,m0),m0$)
     endif
     debits=at[0]
     credits=at[1]
@@ -453,7 +465,7 @@ new_account: rem --- New account
     glm01a.gl_acct_desc$="(Not On File)"
     glm01_key$=glm01a.firm_id$+glm01a.gl_account$
     find record (glm01_dev,key=glm01_key$,dom=*next)glm01a$
-    h0$=fnmask$(glm01a.gl_account$(1,acctlen),m0$)+" "+glm01a.gl_acct_desc$
+    h0$=fnmask$(glm01a.gl_account$(1,m0),m0$)+" "+glm01a.gl_acct_desc$
     export_acct$=glm01a.gl_account$
     export_desc$=glm01a.gl_acct_desc$
 
@@ -629,7 +641,7 @@ wildcard: rem --- Test account number against specified wildcard mask
     status=0
     if wildcard$="" return
     if wildcard<>len(wildcard$) wildcard=len(wildcard$)
-    x$=fnmask$(glt06a.gl_account$(1,acctlen),m0$)
+    x$=fnmask$(glt06a.gl_account$(1,m0),m0$)
     for x=1 to wildcard
         if wildcard$(x,1)="?" continue
         if x$(x,1)<>wildcard$(x,1) status=1
@@ -671,6 +683,12 @@ rem --- Create blank line in OutVect! (no return value wanted or needed)
         return q1
     fnend
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem #include std_error.src
 
@@ -732,10 +750,16 @@ std_exit: rem --- Standard program end (01Mar2006)
     close (glm02_dev,err=*next)
     close (glm03_dev,err=*next)
     close (glt06_dev,err=*next)
-    run stbl("+DIR_PGM")+menu$,err=*next
+
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

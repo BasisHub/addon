@@ -27,8 +27,10 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)        
 
 rem --- Open/Lock files
 
@@ -102,10 +104,13 @@ rem --- Initializations
     maxlines=59
     lines=maxlines+1
     morecustomers=1
+    recs=0
     when$=sysinfo.system_date$
     clock$=""
     artype$=fill(2)
     nf$="(Not on File)"
+    total_recs=0
+    
     keynum=0
     begvalue$=begcust$
     endvalue$=endcust$
@@ -167,7 +172,7 @@ rem --- Define print positions
 rem --- Open printer, start progress meter and position Customer Master (arm-01) file
 
     read(arm01_dev,key=firm_id$,knum=keynum,dom=*next)
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","ARM_CUSTMAST","","","",0,arm01_dev,1,meter_num,status
     k$=firm_id$
     while begvalue$<>""
         read (arm01_dev,key=firm_id$+cvs(begvalue$,2),knum=keynum,dom=no_find)
@@ -190,7 +195,8 @@ rem --- Read next Customer Master (arm-01) record
           endif
           if endvalue$<>"" if k$(3,endvalue)>endvalue$ break
           read record (arm01_dev,knum=keynum,key=k$) arm01a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           if sequence$="C" if endvalue$<>"" if arm01a.customer_id$>endvalue$ break
           if sequence$="A" if endvalue$<>"" if arm01a.alt_sequence$>endvalue$ break
 
@@ -247,6 +253,7 @@ rem --- Read next Customer Master (arm-01) record
 
           outVect!.addItem(arm02a.ar_terms_code$+"  "+arm10a.code_desc$(1,tw))
           xwk=fnblank(11)
+          recs=recs+1
 
           number=number+1
           totals[1]=totals[1]+arm02a.aging_future
@@ -263,6 +270,12 @@ rem --- Read next Customer Master (arm-01) record
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     xwk=fnblank(12)
 
@@ -351,6 +364,11 @@ std_error_release:
 
 rem #endinclude std_error.src
 
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
@@ -382,5 +400,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

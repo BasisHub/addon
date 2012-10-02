@@ -20,6 +20,20 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif    
+    
+rem --- see if batching (batching.CAH)
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")
 
 rem --- Open/Lock files
 
@@ -36,11 +50,11 @@ rem --- Open/Lock files
     files$[9]="art-11",ids$[9]="ART_INVDET"
     files$[10]="gls_params",ids$[10]="GLS_PARAMS"
     files$[11]="arc_distcode",ids$[11]="ARC_DISTCODE"
-    options$[2]="L"
-    options$[3]="L"
+    if num(batch_no$)=0 then options$[2]="L";rem lock if not batching.CAH
+    if num(batch_no$)=0 then options$[3]="L";rem lock if not batching.CAH
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     ars01_dev=channels[1]
     are05_dev=channels[2]
     are15_dev=channels[3]
@@ -77,36 +91,38 @@ rem --- Retrieve parameter records
     m0=len(m0$)
     m1=len(m1$)
     application$="AR"
+    
+rem --- Is General Ledger installed and being used?
+rem --- as of v9, glw11$ no longer used.  Always use actual glw-11 file (batching.CAH)
+    
     gl$="N"
-    status=0
+    status=0    
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
-    if status goto std_exit
+    if status goto std_exit_no_report
 
     application$="OP"
     call pgmdir$+"adc_application.aon",application$,info$[all]
     op$=info$[20]
 
-rem --- Initializations
-
 rem --- OutVect! for DocOut, date/time 
 
-	OutVect!=bbjAPI().getSysGui().makeVector()
+    OutVect!=bbjAPI().getSysGui().makeVector()
         TotVect!=bbjAPI().getSysGui().makeVector()
-	rep_date$=date(0:"%Mz/%Dz/%Yd")
-		rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-	rep_time$=date(0:"%hz:%mz %p")
-		rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
         rep_prog$=pgm(-2)
 
 rem --- column headings
-	dim columns$[5,10]
+    dim columns$[5,10]
         columns=5
-		columns$[0,0]="Invoice",columns$[0,1]="C",columns$[0,2]="15"
-		columns$[1,0]="Date",columns$[1,1]="C",columns$[1,2]="15"
-		columns$[2,0]="Cust ID",columns$[2,1]="C",columns$[2,2]="15"
-		columns$[3,0]="Name",columns$[3,1]="C",columns$[3,2]="30"
-		columns$[4,0]="Distribution/Terms",columns$[4,1]="C",columns$[4,2]="30"
-		columns$[5,0]="Amount",columns$[5,1]="N",columns$[5,2]="15",columns$[5,3]=m1$,columns$[5,10]="T"
+        columns$[0,0]="Invoice",columns$[0,1]="C",columns$[0,2]="15"
+        columns$[1,0]="Date",columns$[1,1]="C",columns$[1,2]="15"
+        columns$[2,0]="Cust ID",columns$[2,1]="C",columns$[2,2]="15"
+        columns$[3,0]="Name",columns$[3,1]="C",columns$[3,2]="30"
+        columns$[4,0]="Distribution/Terms",columns$[4,1]="C",columns$[4,2]="30"
+        columns$[5,0]="Amount",columns$[5,1]="N",columns$[5,2]="15",columns$[5,3]=m1$,columns$[5,10]="T"
 
     headings=2
     dim headings$[headings],o[5]
@@ -124,6 +140,7 @@ rem --- column headings
     clock$=""
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"
     recs=0
 
 rem --- Initialize print positions
@@ -145,12 +162,12 @@ rem --- Additional file opens
     if gl$="Y"
        files$[1]="glm-01",ids$[1]="GLM_ACCT"
        files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
-       files$[3]=glw11$
-       options$[3]="CL"
+       files$[3]="glw-11",ids$[3]="GLW_DAILYDETAIL"
+       rem --- options$[3]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
     endif
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     glm01_dev=channels[1]
     glt04_dev=channels[2]
     glw11_dev=channels[3]
@@ -164,19 +181,24 @@ rem --- Get user approval to proceed
     msg_tokens$[1]=x.task_desc$
     gosub disp_message
     if msg_opt$<>"Y" then goto std_exit_no_report
+    
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
 
-rem --- Open printer, start progress meter and position header file
+    if gl$="Y"
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif
+    
+rem --- Start progress meter and position header file
 
-rem ---     call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-rem ---     if status goto std_exit
     call pgmdir$+"adc_progress.aon","N","","","","",0,are05_dev,1,meter_num,status
-    read (are05_dev,key=firm_id$,dom=*next)
+    read (are05_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Read next Invoice Header (are-05) record
 
     while moreheaders
          read record (are05_dev,end=*break) are05a$
-         if are05a.firm_id$<>firm_id$ break
+         if are05a.firm_id$<>firm_id$ or are05a.batch_no$<>batch_no$ then break
 
          if are05a.print_status$<>"Y"
              continue
@@ -248,33 +270,22 @@ rem --- Read the next Invoice Detail (are-15) record
           wend
 
 rem --- Print the invoice
+         
+          OutVect!.addItem(are05a.ar_inv_no$)
+          OutVect!.addItem(fndate$(are05a.inv_date$))
+          OutVect!.addItem(fnmask$(are05a.customer_id$(1,customer_size),m0$))
+          OutVect!.addItem(customer$)
+          OutVect!.addItem(arm10d.ar_dist_code$+" "+arm10d.code_desc$)
+          OutVect!.addItem(str(extension))
 
+          OutVect!.addItem("")
+          OutVect!.addItem(adjustment$)
+          OutVect!.addItem("")
+          OutVect!.addItem("")
+          OutVect!.addItem(arm10a.ar_terms_code$+" "+arm10a.code_desc$)
+          OutVect!.addItem("")
 
-rem ---           if lines+3>maxlines gosub report_heading
-rem ---           print (printer_dev) ""
-rem ---           print (printer_dev) @(o[0]),are05a.ar_inv_no$,@(o[1]),fndate$(are05a.inv_date$),
-rem --- :                             @(o[2]),fnmask$(are05a.customer_id$(1,customer_size),m0$),
-rem --- :                             @(o[3]),customer$,@(o[4]),arm10d.ar_dist_code$," ",arm10d.code_desc$,
-rem --- :                             @(o[5]),extension:m1$
-rem ---           print (printer_dev) @(o[1]),adjustment$,@(o[4]),arm10a.ar_terms_code$," ",arm10a.code_desc$
-
-		  
-
-		  OutVect!.addItem(are05a.ar_inv_no$)
-		  OutVect!.addItem(fndate$(are05a.inv_date$))
-		  OutVect!.addItem(fnmask$(are05a.customer_id$(1,customer_size),m0$))
-		  OutVect!.addItem(customer$)
-		  OutVect!.addItem(arm10d.ar_dist_code$+" "+arm10d.code_desc$)
-		  OutVect!.addItem(str(extension))
-
-		  OutVect!.addItem("")
-		  OutVect!.addItem(adjustment$)
-		  OutVect!.addItem("")
-		  OutVect!.addItem("")
-		  OutVect!.addItem(arm10a.ar_terms_code$+" "+arm10a.code_desc$)
-		  OutVect!.addItem("")
-
-		  xwk=fnblank(6);rem --- blank line
+          xwk=fnblank(6);rem --- blank line
 
           lines=lines+3
           total=total+extension
@@ -303,7 +314,7 @@ rem --- All done
         gosub disp_message
         goto std_exit_no_report
     endif
-						
+                        
     TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     xwk=fnblank(4)
     OutVect!.addItem("Report Total")
@@ -315,39 +326,29 @@ rem --- Destroy progress meter and run next overlay
 
     update$=pgmdir$+"aru_invoiceentry.aon"
     if errors
-    	gosub Display_Message
-    	if special_flag$<>"Y" then update$=""
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
     endif
 
     overlay$=update$
 
     if gl$="Y" overlay$=pgmdir$+"glr_recap.aon"
-rem --- run overlay$,err=std_exit
 
-	out_action$="PRT-PDF"
-	next_overlay$=overlay$
-	goto std_exit
+    out_action$="PRT-PDF"
+    next_overlay$=overlay$
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
 
-report_heading: rem --- Report Heading -- not used in DocOut version
-
-    lines=headings+1
-    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
-    if status exitto std_exit
-    print (printer_dev) @(o[0]),"Invoice",@(o[1]),"Date",@(o[2]),"Customer",@(o[4]),"Distribution/Terms",
-:                       @(width-7),"Amount"
-    lines=lines+1
-    return
 
 voided: rem --- Print Void
-
-rem ---     if lines+2>maxlines gosub report_heading
-rem ---     print (printer_dev) ""
-rem ---     print (printer_dev) @(o[0]),are05a.ar_inv_no$,@(o[1]),"(Voided)"
-	
-	OutVect!.addItem(are05a.ar_inv_no$)
-	OutVect!.addItem("(Voided)")
-	xwk=fnblank(4)
-	xwk=fnblank(6)
+    
+    OutVect!.addItem(are05a.ar_inv_no$)
+    OutVect!.addItem("(Voided)")
+    xwk=fnblank(4)
+    xwk=fnblank(6)
     lines=lines+2
     return
 
@@ -487,13 +488,22 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
-std_exit: rem --- Standard program end (01Mar2006)
-
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-
 std_exit_no_report:
 
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 
 rem #endinclude std_end.src

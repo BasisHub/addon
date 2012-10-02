@@ -6,172 +6,191 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-        seterr std_error
-        setesc std_error
+    seterr std_error
+    setesc std_error
 
 rem --- Document initializations
 
-        OutVect!=bbjAPI().getSysGui().makeVector()
-        HdrVect!=bbjAPI().getSysGui().makeVector()
-        BrkVect!=bbjAPI().getSysGui().makeVector()
-        rep_date$=date(0:"%Mz/%Dz/%Yd")
-        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-        rep_time$=date(0:"%hz:%mz %p")
-        rep_time_stamp$=date(0:"%Hz%mz%sz")
-        rep_prog$=pgm(-2)
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Init Data
 
-        headings=4
-        h=0
-        width=132
-        clock$=""
-        dim headings$[headings]
-        headings$[0]=sysinfo.firm_name$
-        headings$[1]=sysinfo.task_desc$
-        headings$[3]="All Below Safety Stock Items"
-        if num(include$)<>0 then headings$[3]=headings$[3]+" Since "+fndate$(include$)
-        if begprod$="" headings$[4]="From Product: First" else headings$[4]="From Product: "+begprod$                
-        if endprod$="" headings$[4]=headings$[4]+" -- To Product: Last" else headings$[4]=headings$[4]+" -- To Product: "+endprod$
-        headings$[2]="[HEADER]"
-        more=1
+    headings=4
+    h=0
+    width=132
+    clock$=""
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    headings$[3]="All Below Safety Stock Items"
+    if num(include$)<>0 then headings$[3]=headings$[3]+" Since "+fndate$(include$)
+    if begprod$="" headings$[4]="From Product: First" else headings$[4]="From Product: "+begprod$                
+    if endprod$="" headings$[4]=headings$[4]+" -- To Product: Last" else headings$[4]=headings$[4]+" -- To Product: "+endprod$
+    headings$[2]="[HEADER]"
+    more=1
+    recs=0
+    total_recs=0
 
 rem --- Column headings
 
-        dim columns$[8,10]
-        columns=9
-        columns$[0,0]="Whs",                     columns$[0,1]="C",columns$[0,2]="5"
-        columns$[1,0]="Item/Description",        columns$[1,1]="C",columns$[1,2]="15"
-        columns$[2,0]="Prod^Code",               columns$[2,1]="C",columns$[2,2]="5"
-        columns$[3,0]="Cycle^Code",              columns$[3,1]="C",columns$[3,2]="5"
-        columns$[4,0]="Location",                columns$[4,1]="C",columns$[4,2]="10"
-        columns$[5,0]="Buyer^Code",              columns$[5,1]="C",columns$[5,2]="5"
-        columns$[6,0]="Vendor",                  columns$[6,1]="C",columns$[6,2]="20"
-        columns$[7,0]="Date^Flagged",            columns$[7,1]="C",columns$[7,2]="8"
-        columns$[8,0]="On Hand",                 columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m2$
+    dim columns$[9,10]
+    columns=10
+    columns$[0,0]="Whs",                     columns$[0,1]="C",columns$[0,2]="5"
+    columns$[1,0]="Item/Description",        columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="Prod^Code",               columns$[2,1]="C",columns$[2,2]="5"
+    columns$[3,0]="Cycle^Code",              columns$[3,1]="C",columns$[3,2]="5"
+    columns$[4,0]="Location",                columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Buyer^Code",              columns$[5,1]="C",columns$[5,2]="5"
+    columns$[6,0]="Vendor",                  columns$[6,1]="C",columns$[6,2]="20"
+    columns$[7,0]="Date^Flagged",            columns$[7,1]="C",columns$[7,2]="8"
+    columns$[8,0]="On Hand",                 columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m2$
+    columns$[9,0]="Safety Stock",            columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m2$
 
 rem --- Background
 
-        call pgmdir$+"adc_progress.aon","N","","","","",0,ivm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","IVM_ITEMMAST","","","",0,ivm01_dev,1,meter_num,status
 
 rem --- Init Read
 
-        if sequence$="I" read (ivt05_dev,key=firm_id$,dom=*next)
-        if sequence$<>"I" then
-            sql_prep$=sql_prep$+""
-			sql_prep$=sql_prep$+"SELECT ivm_itemwhse.item_id, ivm_itemwhse.warehouse_id, ivm_itemmast.product_type "
-            sql_prep$=sql_prep$+"  FROM ivm_itemwhse INNER JOIN ivm_itemmast "
-            sql_prep$=sql_prep$+"    ON ivm_itemwhse.item_id = ivm_itemmast.item_id AND "
-            sql_prep$=sql_prep$+"       ivm_itemwhse.firm_id = ivm_itemmast.firm_id "
-            where_clause$ =     " WHERE ivm_itemwhse.firm_id = '"+firm_id$+"' AND "
-            if sequence$="P" then 
-                if begprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type >= '"+begprod$+"' AND "
-                if endprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type <= '"+endprod$+"' AND "
-            endif
-            where_clause$=cvs(where_clause$,2)
-            if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
-            if sequence$="C" then where_clause$=where_clause$+" ORDER BY ivm_itemwhse.warehouse_id, ivm_itemwhse.pi_cyclecode "
-            if sequence$="P" then where_clause$=where_clause$+" ORDER BY ivm_itemwhse.warehouse_id, ivm_itemmast.product_type "
-            if where_clause$<>"" sql_prep$=sql_prep$+where_clause$
-
-            sql_chan=sqlunt
-            sqlopen(sql_chan,err=*next)stbl("+DBNAME")
-            sqlprep(sql_chan)sql_prep$
-            dim read_tpl$:sqltmpl(sql_chan)
-            sqlexec(sql_chan)
+    if sequence$="I" read (ivt05_dev,key=firm_id$,dom=*next)
+    
+    if sequence$<>"I" then
+        sql_prep$=sql_prep$+""
+        sql_prep$=sql_prep$+"SELECT ivm_itemwhse.item_id, ivm_itemwhse.warehouse_id, ivm_itemmast.product_type "
+        sql_prep$=sql_prep$+"  FROM ivm_itemwhse INNER JOIN ivm_itemmast "
+        sql_prep$=sql_prep$+"    ON ivm_itemwhse.item_id = ivm_itemmast.item_id AND "
+        sql_prep$=sql_prep$+"       ivm_itemwhse.firm_id = ivm_itemmast.firm_id "
+        where_clause$ =     " WHERE ivm_itemwhse.firm_id = '"+firm_id$+"' AND "
+        
+        if sequence$="P" then 
+            if begprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type >= '"+begprod$+"' AND "
+            if endprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type <= '"+endprod$+"' AND "
         endif
         
+        where_clause$=cvs(where_clause$,2)
+        if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
+        if sequence$="C" then where_clause$=where_clause$+" ORDER BY ivm_itemwhse.warehouse_id, ivm_itemwhse.pi_cyclecode "
+        if sequence$="P" then where_clause$=where_clause$+" ORDER BY ivm_itemwhse.warehouse_id, ivm_itemmast.product_type "
+        if where_clause$<>"" sql_prep$=sql_prep$+where_clause$
+
+        sql_chan=sqlunt
+        sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+        sqlprep(sql_chan)sql_prep$
+        dim read_tpl$:sqltmpl(sql_chan)
+        sqlexec(sql_chan)
+    endif
+
 rem --- Main Read
 
-        while more
-            found=0
-            if sequence$<>"I"
-                read_tpl$=sqlfetch(sql_chan,err=*break) 
-                product$=read_tpl.product_type$
-                item$=read_tpl.item_id$
-                whse$=read_tpl.warehouse_id$
-                ivt05a_key$=firm_id$+whse$+item$
-            endif
-rem --- ivt-05 sort - whse/item
-            if sequence$="I" then 
-                ivt05a_key$=key(ivt05_dev,end=*break)
-                if pos(firm_id$=ivt05a_key$)<>1 then break
-            endif
-
-            read record (ivt05_dev,key=ivt05a_key$,dom=*continue) ivt05a$
-            if num(include$)<>0 and ivt05a.writtn_date$<include$ then continue
-            if ivt05a_key.warehouse_id$<>t0$ gosub whsebreak
-            if sequence$="P" and product$<>t1$ gosub product_break
-
-rem --- Additional Reads
-
-            call pgmdir$+"adc_progress.aon","S","","","",ivt05a.warehouse_id$+" "+ivt05a_key.item_id$,0,0,1,0,ignore_status
-            
-            find record (ivm02_dev,key=ivt05a_key$,dom=remove_record) ivm02a$
-            find record (ivm01_dev,key=firm_id$+ivt05a.item_id$,dom=remove_record) ivm01a$
-            found=1
-            desc$=cvs(ivm01a.item_desc$,2)
-
-rem --- Get vendor info
-
-            if ap$="Y" then     
-                apm01a.vendor_name$="Not on file"
-                find record (apm01_dev,key=firm_id$+ivm02a.vendor_id$,dom=*next) apm01a$
-                vend_name$=apm01a.vendor_name$
-            endif
+    while more
+        found=0
         
-             OutVect!.addItem(ivt05a.warehouse_id$)
-             OutVect!.addItem(ivt05a.item_id$)
-             OutVect!.addItem(ivm01a.product_type$)
-             OutVect!.addItem(ivm02a.pi_cyclecode$)
-             OutVect!.addItem(ivm02a.location$)
-             OutVect!.addItem(ivm02a.buyer_code$)
-             OutVect!.addItem(fnmask$(ivm02a.vendor_id$,m0$))
-             OutVect!.addItem(fndate$(ivt05a.writtn_date$))
-             OutVect!.addItem(str(ivm02a.qty_on_hand:m2$))
-             OutVect!.addItem("")
-             OutVect!.addItem("     "+desc$)
-             xwk=fnblank(columns-5)
-             OutVect!.addItem("     "+vend_name$)
-             xwk=fnblank(2)
-             count=count+1
+        if sequence$<>"I"
+            read_tpl$=sqlfetch(sql_chan,err=*break) 
+            product$=read_tpl.product_type$
+            item$=read_tpl.item_id$
+            whse$=read_tpl.warehouse_id$
+            ivt05a_key$=firm_id$+whse$+item$
+        endif
+        
+    rem --- ivt-05 sort - whse/item
+    
+        if sequence$="I" then 
+            ivt05a_key$=key(ivt05_dev,end=*break)
+            if pos(firm_id$=ivt05a_key$)<>1 then break
+        endif
 
-remove_record: rem --- Remove ivt-05 record
-            if found=0 then 
-                remove (ivt05_dev,key=ivt05a_key$,dom=*next)
-            endif
-        wend
+        read record (ivt05_dev,key=ivt05a_key$,dom=*continue) ivt05a$
+        if num(include$)<>0 and ivt05a.writtn_date$<include$ then continue
+        if ivt05a_key.warehouse_id$<>t0$ gosub whsebreak
+        if sequence$="P" and product$<>t1$ gosub product_break
+
+    rem --- Additional Reads
+
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+
+        find record (ivm02_dev,key=ivt05a_key$,dom=remove_record) ivm02a$
+        find record (ivm01_dev,key=firm_id$+ivt05a.item_id$,dom=remove_record) ivm01a$
+        found=1
+        desc$=cvs(ivm01a.item_desc$,2)
+
+    rem --- Get vendor info
+
+        if ap$="Y" then     
+            apm01a.vendor_name$="Not on file"
+            find record (apm01_dev,key=firm_id$+ivm02a.vendor_id$,dom=*next) apm01a$
+            vend_name$=apm01a.vendor_name$
+        endif
+
+        OutVect!.addItem(ivt05a.warehouse_id$)
+        OutVect!.addItem(ivt05a.item_id$)
+        OutVect!.addItem(ivm01a.product_type$)
+        OutVect!.addItem(ivm02a.pi_cyclecode$)
+        OutVect!.addItem(ivm02a.location$)
+        OutVect!.addItem(ivm02a.buyer_code$)
+        OutVect!.addItem(fnmask$(ivm02a.vendor_id$,m0$))
+        OutVect!.addItem(fndate$(ivt05a.writtn_date$))
+        OutVect!.addItem(str(ivm02a.qty_on_hand))
+        OutVect!.addItem(str(ivm02a.safety_stock))
+        OutVect!.addItem("")
+        OutVect!.addItem("     "+desc$)
+        xwk=fnblank(columns-5)
+        OutVect!.addItem("     "+vend_name$)
+        xwk=fnblank(3)
+        count=count+1
+        recs=recs+1
+
+    remove_record: rem --- Remove ivt-05 record
+        if found=0 then 
+            remove (ivt05_dev,key=ivt05a_key$,dom=*next)
+        endif
+    wend
 
 done: rem --- End
 
-        if count>0 then gosub print_count
-        goto std_exit
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    if count>0 then gosub print_count
+    goto std_exit
 
 whsebreak: rem --- Warehouse Break
 
-        if count>0 then gosub print_count
-        t0$=ivt05a_key.warehouse_id$
-        find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
-        ivm10c_h3$="Warehouse Code: "+t0$+" "+ivm10c.short_name$
-        BrkVect!.addItem(str(OutVect!.size()/(columns)))
-        HdrVect!.addItem(ivm10c_h3$)
-        count=0
-        if sequence$="P" then gosub product_break
-        return
+    if count>0 then gosub print_count
+    t0$=ivt05a_key.warehouse_id$
+    find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
+    ivm10c_h3$="Warehouse Code: "+t0$+" "+ivm10c.short_name$
+    BrkVect!.addItem(str(OutVect!.size()/(columns)))
+    HdrVect!.addItem(ivm10c_h3$)
+    count=0
+    if sequence$="P" then gosub product_break
+    return
 
 product_break: rem --- Sort Sub Total
 
-        t1$=product$,ivm10a.code_desc$="Not on file"
-        find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
-        head$=t1$+" "+ivm10a.code_desc$
-        head$=cvs(head$,2)
-        xwk=fnblank(columns)
-        OutVect!.addItem(head$)
-        xwk=fnblank(columns-1)
-        xwk=fnblank(columns)
-        return
+    t1$=product$,ivm10a.code_desc$="Not on file"
+    find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
+    head$=t1$+" "+ivm10a.code_desc$
+    head$=cvs(head$,2)
+    xwk=fnblank(columns)
+    OutVect!.addItem(head$)
+    xwk=fnblank(columns-1)
+    xwk=fnblank(columns)
+    return
 
-print_count:
+print_count: 
 
     qwk=fnblank(columns)
     qwk=fnblank(columns)
@@ -185,9 +204,9 @@ rem --- Functions used to retrieve form values
 
     def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
     def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+:       cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
     def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+:       cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
     def fnget_table$(q0$)=rd_alias_id$
 
 rem --- Miscellaneous functions
@@ -219,8 +238,8 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         q=1
         q0=0
         while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
@@ -232,7 +251,8 @@ rem --- fnbasename$: Strip path and optionally the suffix from a file name
         q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
         if q then q$=q$(q+1)
         if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
+        return q$
+    fnend
 
 rem --- fnglobal: Return numeric value of passed stbl variable
 
@@ -248,7 +268,7 @@ rem --- fnglobal$: Return string value of passed STBL variable
         return q1$
     fnend
 rem --- fnBlank : Create blank cells in OutVect!. No return value
-   
+
     def fnblank(q0)
         for q1=1 to q0
             OutVect!.addItem("")
@@ -258,6 +278,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -266,17 +293,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
     call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:   str(err:"000"),rd_err_text$,rd_err_act$
+:       str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -291,14 +318,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -313,5 +340,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

@@ -53,8 +53,10 @@ rem --- Initializations
     period$[0]=begyear$+begper$
     period$[1]=endyear$+endper$
     more=1
+    recs=0
+    total_recs=0
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,ivm07_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","IVM_LSMASTER","","","",0,ivm07_dev,1,meter_num,status
     if status = 999 then goto std_exit
 
 rem --- Report headings
@@ -128,7 +130,11 @@ rem --- Get next lot/serial master
             x$=ivm08a_key.item_id$+" "+ivm08a_key.warehouse_id$+" "+ivm08a_key.lotser_no$
         endif
 
-rem --- Retrieve lot/serial master
+    rem --- Retrieve lot/serial master
+
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        if status = 999 then goto std_exit
 
         read record (ivm07_dev) ivm07a$
         if ocb$="O" and ivm07a.qty_on_hand=0 continue
@@ -142,10 +148,7 @@ rem --- Retrieve lot/serial master
         if begprod$<>"" and ivm01a.product_type$<begprod$ continue
         if endprod$<>"" and ivm01a.product_type$>endprod$ continue
 
-activity: rem --- Retrieve item and activity
-
-        call pgmdir$+"adc_progress.aon","S","","","",ivm07a_key.lotser_no$,0,0,1,meter_num,status
-        if status = 999 then exitto std_exit
+    activity: rem --- Retrieve item and activity
 
         dim item$[3],activity[12]
         action$="L"
@@ -158,7 +161,7 @@ activity: rem --- Retrieve item and activity
         call pgmdir$+"ivc_periodqty.aon",selection$,"",activity[all],balance,status
         if status = 999 then exitto std_exit
 
-rem --- Format detail line fields
+    rem --- Format detail line fields
 
         receipt$=ivm07a.lstrec_date$
         issued$=ivm07a.lstsal_date$
@@ -175,7 +178,7 @@ rem --- Format detail line fields
             vendor_name$=apm01a.vendor_name$
         endif
 
-rem --- Print detail line by item
+    rem --- Print detail line by item
 
         if sequence$="I" then
             if ivm07a_key.warehouse_id$<>t0$ gosub whse_break
@@ -201,18 +204,20 @@ rem --- Print detail line by item
             OutVect!.addItem(str(activity[8]))
             OutVect!.addItem(str(activity[7]))
             OutVect!.addItem("")
-            number=number+1              
+            number=number+1
+            recs=recs+1
 
-rem --- Accumulate item totals
+        rem --- Accumulate item totals
 
             for x=0 to 11
                 item[x]=item[x]+activity[x]
             next x
+
             item[12]=item[12]+balance
             continue
         endif
 
-rem --- Print detail line by lot/serial number
+    rem --- Print detail line by lot/serial number
 
         if sequence$="L"then  
             if ivm07a_key.item_id$<>t1$ gosub assign_item_head
@@ -237,11 +242,18 @@ rem --- Print detail line by lot/serial number
             OutVect!.addItem(str(activity[8]))
             OutVect!.addItem(str(activity[7]))
             OutVect!.addItem("")
-            number=number+1  
+            number=number+1
+            recs=recs+1
         endif
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     if number<>0 then
         done=1
@@ -305,7 +317,7 @@ item_break: rem --- Item Break
 
     return
 
-assign_item_head:
+assign_item_head: 
 
     if !done then
         dim item[12]
@@ -333,6 +345,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         return q1
     fnend
 
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -340,17 +359,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:   str(err:"000"),rd_err_text$,rd_err_act$
+:       str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -365,14 +384,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -388,5 +407,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

@@ -1,3 +1,72 @@
+[[IVE_TRANSHDR.BDEL]]
+rem -- uncommit any Issue, Commit, or *negative* Adjustment trans in dtl grid that aren't already deleted
+
+	rem --- don't bother if doing Receipts	
+	if pos(user_tpl.trans_type$ <>"R")  then 
+
+		recVect!=GridVect!.getItem(0)
+		dim gridrec$:dtlg_param$[1,3]
+		numrecs=recVect!.size()
+
+		if numrecs>0
+
+			status = 999
+			call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+			if status then goto std_exit;rem really? how about setStatus("EXIT")?
+
+			for reccnt=0 to numrecs-1
+				gridrec$=recVect!.getItem(reccnt)
+
+				rem --- process non-null, non-deleted recs that aren't positive adjustments (i.e., issues, commits, or negative adjustments)
+				if cvs(gridrec$,3)<> "" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y" and (user_tpl.trans_type$<>"A" or num(gridrec.trans_qty$)<0)
+										
+					rem --- Uncommit quantity
+
+					curr_whse$   = gridrec.warehouse_id$
+					curr_item$   = gridrec.item_id$
+					curr_qty     = num(gridrec.trans_qty$)
+					curr_lotser$ = gridrec.lotser_no$
+
+					if curr_whse$ <> "" and curr_item$ <> "" and curr_qty <> 0 then 
+						print "uncommitting item ", curr_item$, ", amount", curr_qty; rem debug
+
+						items$[1] = curr_whse$
+						items$[2] = curr_item$
+						items$[3] = curr_lotser$
+
+						rem --- Adjustments reverse the commitment
+						rem --- and we're only in here if it's an Issue, Commit, or *negative* adjustment (i.e., issue)
+						if user_tpl.trans_type$ = "A" then
+							refs[0] = -curr_qty
+						else
+							refs[0] = curr_qty
+						endif
+
+						call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+					endif
+				endif
+			next reccnt
+		endif
+
+	endif
+[[IVE_TRANSHDR.BEND]]
+rem --- remove software lock on batch, if batching
+
+	batch$=stbl("+BATCH_NO",err=*next)
+	if num(batch$)<>0
+		lock_table$="ADM_PROCBATCHES"
+		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
+		lock_type$="U"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+	endif
+[[IVE_TRANSHDR.BTBL]]
+rem --- Get Batch information
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("IVE_TRANSHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
 [[IVE_TRANSHDR.AREA]]
 print "HEADER: after record read (AREA)"; rem debug
 

@@ -8,8 +8,9 @@ rem --- All Rights Reserved
 
 rem --- This program determines whether or not GL is installed and being 
 rem --- used, creates the +GLCONTROL global variable (used to control
-rem --- GL postings and opens/defines the GL transaction work table if
-rem --- one is necessary.
+rem --- GL postings); as of v9, it no longer opens/defines the GL transaction work file,
+rem --- because all work file records now written to the actual glw-11 file, with process id
+rem --- and batch number as part of the key.
 
 rem --- caller$     : Calling program or current table (Input)
 rem --- application$: Calling application (Input)
@@ -48,8 +49,23 @@ rem --- Initialize arguments in case of an early exit
     table$=""
     gl$="N"
     status=0
-    glw11_dev=0
     module_id$=application$
+
+    rem --- Retrieve miscellaneous templates
+
+    files=2,begfile=1,endfile=files
+    dim ids$[files],templates$[files]               
+    ids$[1]="+GLCONTROL"
+    ids$[2]="+PROCESS"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status break
+
+    rem --- Dimension miscellaneous string templates
+
+    dim process$:templates$[2]
+    glcontrol_tpl$=templates$[1]
+    dim glcontrol$:glcontrol_tpl$
+    x$=stbl("+GLCONTROL_TPL",glcontrol_tpl$)              
 
 rem --- Remaining initializations
 
@@ -57,7 +73,7 @@ rem --- Remaining initializations
     more=1
     action=0
     message$=""
-	app_comp$=stbl("+AON_APPCOMPANY")
+    app_comp$=stbl("+AON_APPCOMPANY")
 
     while more
 
@@ -106,20 +122,6 @@ rem --- Remaining initializations
           dim ivs01a$:templates$[5],prs01a$:templates$[6],sfs01a$:templates$[7]
           dim adm19a$:templates$[8],glm03a$:templates$[9],glm06a$:templates$[10]
 
-          rem --- Retrieve miscellaneous templates
-
-          files=2,begfile=1,endfile=files
-          dim ids$[files],templates$[files]               
-          ids$[1]="+GLCONTROL"
-          ids$[2]="+PROCESS"
-          call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
-          if status break
-
-          rem --- Dimension miscellaneous string templates
-
-          dim process$:templates$[2]
-          glcontrol_tpl$=templates$[1]
-
           num_files=1
           dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
           open_tables$[1]="ADM_MODULES",open_opts$[1]="OTA"
@@ -148,8 +150,8 @@ rem       message$="The GL suspense account record is missing for this firm."
 
           rem --- Retrieve application (adm-04) record for the calling application
           
-		  adm04_key$=app_comp$+pad(application$,3)
-		  message$="Missing application record for "+adm04_key$+"."
+          adm04_key$=app_comp$+pad(application$,3)
+          message$="Missing application record for "+adm04_key$+"."
           find record (adm04_dev,key=adm04_key$,dom=*break) adm04a$
 
           rem --- Retrieve the current period and year for the calling application
@@ -195,15 +197,12 @@ rem --- Field length parameters
     program_name=24
 
 rem --- Initializations
-
     dim process_id$(process_id),process_table$(tablelen),program_name$(program_name)
     dim audit_mask$(audit,"0")
     program_name$(1)=fnbasename$(caller$,"_cpt.bbj")
     process_table$(1)=cvs(program_name$,4)
-    glw11$="glw-11"
     sysperiod$=period$
     sysyear$=year$
-    batch$=""
     action=0
     status=0
     message$=""
@@ -219,11 +218,11 @@ rem --- or returned.
 
           notprocess=1
           keynum=1
-          value$=process_table$
+          value$=firm_id$+process_table$
           gosub get_process
           if notprocess
              keynum=2
-             value$=program_name$
+             value$=firm_id$+program_name$
              gosub get_process
           endif
 
@@ -241,9 +240,9 @@ rem --- or returned.
                 message$="The Posting Control record for this task is missing. Use the"+$0A$+
 :                        "Process Maintenance task to define the parameters for this task."
                 value$=""
-                if keynum=1 value$=process_table$
-                if keynum=2 value$=program_name$
-                value$=value$+firm_id$+process_id$
+                if keynum=1 value$=firm_id$+process_table$
+                if keynum=2 value$=firm_id$+program_name$
+                value$=value$+process_id$
                 read (glm06_dev,key=value$,knum=keynum,dom=*next)
                 k$=key(glm06_dev,knum=keynum,err=*break)
                 if pos(value$=k$)<>1 break
@@ -258,7 +257,6 @@ rem --- or returned.
           rem --- Initialize posting control global variable (+GLCONTROL) with
           rem --- values from the parameter records
 
-          dim glcontrol$:glcontrol_tpl$
           glcontrol.firm_id$=firm_id$
           glcontrol.system_id$=adm04_key$
           glcontrol.post_gl$=adm04a.post_gl$
@@ -301,7 +299,7 @@ rem --- or returned.
           glcontrol.amount_mask$=glm1$
           call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",glm2$,0,0
           glcontrol.unit_mask$=glm2$
-          call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","P","",glm30$,0,0
+          call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","P","",glm3$,0,0
           glcontrol.percent_mask$=glm3$
 
           rem --- Set posting control global variable (+GLCONTROL) fields based 
@@ -328,13 +326,6 @@ rem --- or returned.
                 glm06a$=field(glm06a$)
                 write record (glm06_dev) glm06a$
 
-                rem --- If this is a batched process we'll need the batch number 
-                rem --- to define the transaction work table (if necessary)
-
-                if glm06a.gl_work_file$="Y"
-                   process$=stbl("+PROCESS",err=*next)
-                   if cvs(process.batch_no$,3)<>"" batch$="."+process.batch_no$
-                endif
                 break
           wend
 
@@ -428,56 +419,6 @@ rem --- or returned.
           rem --- Create +GLCONTROL and +GLCONTROL_TPL stbl variables
 
           x$=stbl("+GLCONTROL",glcontrol$)
-          x$=stbl("+GLCONTROL_TPL",glcontrol_tpl$)
-
-          rem --- If the caller is part of a process and a transaction work table 
-          rem --- is required then we need to verify that the table exists and
-          rem --- create it if it doesn't.
-
-          attempts=0
-          while process
-                if glm06a.gl_work_file$<>"Y" break
-                table$=cvs(glm06a.file_name$,2)
-                if table$="" table$=glw11$
-
-                rem --- Attempt to open the transaction work table. Note that the
-                rem --- template returned is glw-11 regardless of the actual table
-                rem --- name
-
-                files=1,begfile=1,endfile=files,found=1
-                dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-                files$[1]=table$,ids$[1]="GLE_DAILYDETAIL"
-                options$[1]="F"
-                call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                               ids$[all],templates$[all],channels[all],batch,status
-
-                if status found=0
-                glw11_dev=channels[1]
-                if glw11_dev=0 found=0
-                if found break
-                if status=1 break; rem status should be 1 if err 0 on open; don't try to create
-
-                rem --- Have we already tried to create/open it?
-
-                if attempts break
-                attempts=attempts+1
-
-                rem --- Create a table that mirrors the definition of glw-11
-
-                call pgmdir$+"adc_makelike.aon",table$+batch$,glw11$,status
-                if status break
-          wend
-               
-              rem --- Was the transaction work table successfully opened/created?
-
-              if glm06a.gl_work_file$="Y" and found=0
-                 action=1
-                 status=12
-                 message$="Unable to creat GL summary table ("+$22$+table$+batch$+$22$+")"
-                 break
-              endif
-
-          
 
           rem --- Posting control is in place and no errors were encountered
 
@@ -525,37 +466,40 @@ get_process: rem --- Using the firm id and the table/program name, attempt to re
        process_id$=k$(len(value$)+1,process_id)
        sequence$=k$((len(k$)-sequence)+1)
        process$=stbl("+PROCESS",err=*proceed)
+       xwk$=stbl("+PROCESS_ID",err=*next)
+       if xwk$<>"" and xwk$<>process_id$ then escape;rem --- probably don't have process set up correctly.CAH
+       x$=stbl("+PROCESS_ID",process_id$)
        notprocess=0
     endif
     return
 open_tables:rem --- Open Tables
 
-	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:		open_beg,
-:		open_end,
-:		open_tables$[all],
-:		open_opts$[all],
-:		open_chans$[all],
-:		open_tpls$[all],
-:		table_chans$[all],
-:		open_batch,
-:		open_status$
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
 
-	if open_status$<>""
-		msg_id$="ENTRY_OPEN_ERROR"
-		dim msg_tokens$[1]
-			msg_tokens$[1]=open_status$
-		gosub disp_message
-		goto std_exit
-	endif
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
 
-	return
+    return
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
+    return
 
 
 rem --- Functions
@@ -626,6 +570,5 @@ std_exit: rem --- Exit program
     close (adm19_dev,err=*next)
     close (glm03_dev,err=*next)
     close (glm06_dev,err=*next)
-    close (glw11_dev,err=*next)
     exit
     end

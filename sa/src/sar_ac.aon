@@ -15,29 +15,21 @@ rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)    
 
-rem --- Retrieve sysinfo data
-
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-    firm_id$=sysinfo.firm_id$
-
 rem --- Open/Lock files
 
     files=1,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="sas_params"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
+:       ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
     sas01_dev=channels[1]
 
 rem --- IOLists
 
-    saw00a: iolist a0$,qnty[all],cost[all],sales[all]
-    sam00a: iolist x0$,q[all],c[all],s[all]
-    descchana: iolist x$[all]
+saw00a: iolist a0$,qnty[all],cost[all],sales[all]
+sam00a: iolist x0$,q[all],c[all],s[all]
+descchana: iolist x$[all]
 
 rem --- Retrieve miscellaneous templates
 
@@ -51,11 +43,6 @@ rem --- Dimension miscellaneous string templates
 
     dim sas01a$:templates$[1]
 
-rem --- Assign form input values to local variables
-
-    table$=fnget_table$("")
-    value_01$=fnget_fld_data$(table$,"dataname_01")
-
 rem --- Retrieve parameter records
 
     sas01a_key$=firm_id$+"SA00"
@@ -66,9 +53,11 @@ rem --- Parameters
     gosub get_sort_parameters
     dim wpos[nmbr]; rem "Key positions of segments in 'sorted' Work file
     wpos[0]=3
+
     for i=1 to nmbr
         wpos[i]=2+kpos[i]+sort_size-fldlen[0]
     next i
+
     if action=21
         wpos[0]=19
         wpos[1]=19
@@ -76,6 +65,7 @@ rem --- Parameters
         wpos[3]=42
         wpos[4]=48
     endif
+
     level=pos(level$=levels$)
     if pos(seq$="AD")=0 goto makeVect
     if level>1 wpos[1]=wpos[0]
@@ -85,10 +75,12 @@ rem --- Parameters
 
 rem --- Document Initializations
 
-makeVect:
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
+makeVect: 
+
+    OutVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -120,6 +112,8 @@ rem --- Initializations
     prev_seg1_head$=""
     prev_seg2_head$=""
     prev_seg3_head$=""
+    recs=0
+    total_recs=0
 
 rem --- Print positions
 
@@ -155,6 +149,7 @@ rem --- Report headings
     dim h1$(width),h2$(width),x1$[level],x2$[level]
     h=0
     literals$=""
+
     for i=1 to level
         if literals$[i]="" continue
         h=h+1
@@ -164,18 +159,22 @@ rem --- Report headings
         if begsegs$[i]="" x1$[h]=x1$[h]+"First" else x1$[h]=x1$[h]+begsegs$[i]
         if endsegs$[i]="" x2$[h]=x2$[h]+"Last" else x2$[h]=x2$[h]+endsegs$[i]
     next i
+
     dim h[h]
     if h=1 h[1]=min(fncx(x1$[1],width/2),fncx(x2$[1],width/2))
     if h=2 h[1]=1,h[2]=width-max(len(x1$[2]),len(x2$[2]))
     if h=3 h[1]=1,h[2]=min(fncx(x1$[2],width/2),fncx(x2$[2],width/2)),h[3]=width-max(len(x1$[3]),len(x2$[3]))
     if h=4 h[1]=1,h[2]=min(fncx(x1$[2],width/3),fncx(x2$[2],width/3)),h[3]=min(fncx(x1$[3],2*width/3),fncx(x2$[3],2*width/3)),h[4]=width-max(len(x1$[4]),len(x2$[4]))
+
     for i=1 to h
         h1$(h[i])=x1$[i]
         h2$(h[i])=x2$[i]
     next i
+
     literals$=literals$(2)
     headings$[3]=h1$
     headings$[4]=h2$
+
     if break$="Y"
         headings$[5]=" [HEADER]"
     endif
@@ -204,7 +203,9 @@ rem --- This works better in docout, and leaves user with less manual column siz
 
 rem --- Set Sales Anaylsis Year
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,sam_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N",file_name$,"","","",0,sam_dev,1,meter_num,status
+    if status = 999 then goto std_exit
+
     sayear$=year$
     yr=0
     t0$=""
@@ -214,6 +215,7 @@ l950: rem --- Position Sort File Pointer
     if action=21
         read (sam_dev,key=firm_id$+sayear$,knum=1,dom=*next)
     endif
+
     if action<>21
         read (sam_dev,key=firm_id$+sayear$,dom=*next)
     endif
@@ -222,10 +224,15 @@ l1000: rem --- Build Report Work File
 
     sam_k$=key(sam_dev,end=l1700)
 
-l1020:
+l1020: 
     if pos(firm_id$+sayear$=sam_k$)<>1 goto l1700
     read (sam_dev)
     i=1; rem "Begin loop
+
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
+
 
 l1050: rem --- Validate Segment Begin
 
@@ -246,7 +253,6 @@ l1150: rem --- Check Next Segment
 
     i=i+1
     if i<=segments goto l1050; rem "End loop
-    call pgmdir$+"adc_progress.aon","S","","","","",0,sam_dev,1,meter_num,status
 
 rem --- Detail Level Break?
 
@@ -320,7 +326,11 @@ l1750: rem --- Write Last Report Work File Record
 l1800: rem --- Sort Report Work File
 
     if pos(seq$="AD")=0 goto l1900
-    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
+
     read (saw00_dev,key="",dom=*next)
 
 l1830: rem --- Top of loop
@@ -328,7 +338,11 @@ l1830: rem --- Top of loop
     saw00_k$=key(saw00_dev,end=l1900)
     if pos(" "<>saw00_k$(3,sort_size)) goto l1900
     read (saw00_dev,key=saw00_k$) iol=saw00a
-    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
+
     if seq$="A" if sales[sort_key]>0 a0$(3,sort_size)=str(-sales[sort_key]:sort_mask$) else a0$(3,sort_size)=str(sort_num+sales[sort_key]:sort_mask$)
     if seq$="D" if sales[sort_key]<0 a0$(3,sort_size)=str(sales[sort_key]:sort_mask$) else a0$(3,sort_size)=str(sort_num-sales[sort_key]:sort_mask$)
     if level=1 goto l1885
@@ -336,7 +350,7 @@ l1830: rem --- Top of loop
     for i=1 to level
         a0$(wpos[i],fldlen[i])=saw00_k$(2+sort_size-fldlen[0]+kpos[i],fldlen[i])
     next i
-l1885:
+l1885: 
     write (saw00_dev,key=a0$) iol=saw00a
     remove (saw00_dev,key=saw00_k$)
 
@@ -344,7 +358,10 @@ l1885:
 
 l1900: rem --- Position Report Work File Pointer
 
-    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
+
     dim cost_tot[3],qnty_tot[3],sales_tot[3],c[3],q[3],s[3]
     done=0
     t0$=""
@@ -357,10 +374,14 @@ l2000: rem --- Process Report Work File
     saw00_k$=key(saw00_dev,end=done)
     read (saw00_dev,key=saw00_k$) iol=saw00a
     tmp$=""
+
     for i=1 to level
         if literals$[i]<>"" tmp$=tmp$+a0$(wpos[i],fldlen[i])
     next i
-    call pgmdir$+"adc_progress.aon","S","","","","",0,saw00_dev,1,meter_num,status
+
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
 
 rem --- Segment Breaks
 
@@ -395,6 +416,12 @@ rem --- Get Next Report Work File Record
 
 done: rem --- All done
 
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
     done=1
     gosub first_break
     c[all]=cost_tot[all]
@@ -404,11 +431,14 @@ done: rem --- All done
     seg2_head$=""
     seg3_head$=""
     seg4_head$=""
+
     if break$="Y" 
         BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
         HdrVect!.addItem("Total Page")
     endif    
+
     gosub print_detail
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     goto std_exit
 
@@ -419,18 +449,21 @@ print_detail: rem --- Initialize For Detail Line Print
     if pos("P"=myp$) and pos("M"=myp$) detail$=primtd$,ii=2; gosub l5900
     if pos("P"=myp$) and pos("Y"=myp$) detail$="Prior YTD",ii=3; gosub l5900
     blank=fnblank(10)
+
     return
 
 l5900: rem --- Print Detail Line
 
     if zero$="N" and q[ii]=0 and s[ii]=0 and c[ii]=0 goto l5990
     seg=1
+
     if cvs(seg1_head$,2)<>""
         OutVect!.addItem(seg1_head$)
         seg1_head$=""
     else
         blank=fnblank(1)
     endif
+
     if level>=2 
         seg=2
         if cvs(seg2_head$,2)<>"" 
@@ -442,6 +475,7 @@ l5900: rem --- Print Detail Line
     else
         blank=fnblank(1)
     endif
+
     if level>=3
         seg=3
         if cvs(seg3_head$,2)<>""
@@ -453,6 +487,7 @@ l5900: rem --- Print Detail Line
     else
         blank=fnblank(1)
     endif
+
     if level>=4
         seg=4
         seg$=a0$(wpos[seg],fldlen[seg])
@@ -461,14 +496,16 @@ l5900: rem --- Print Detail Line
     else
         blank=fnblank(1)
     endif
+
     OutVect!.addItem(detail$)
     OutVect!.addItem(str(q[ii]))
     OutVect!.addItem(str(s[ii]))
     OutVect!.addItem(str(c[ii]))
     OutVect!.addItem(str(s[ii]-c[ii]))
     OutVect!.addItem(str(fnpercent_profit(s[ii],c[ii],m4_max)))
+    recs=recs+1
 
-l5990:
+l5990: 
     return
 
 first_break: rem --- First Segment Break
@@ -477,7 +514,7 @@ first_break: rem --- First Segment Break
     if t0$="" goto l6100
     gosub second_break
     if level=1 goto l6050
-l6050:
+l6050: 
     c[all]=cost_tot1[all]
     q[all]=qnty_tot1[all]
     s[all]=sales_tot1[all]
@@ -486,9 +523,10 @@ l6050:
     seg3_head$=""
     seg4_head$=""
     gosub print_detail
-l6100:
+l6100: 
     if done goto l6190
     dim cost_tot1[3],qnty_tot1[3],sales_tot1[3]
+
     if break$="Y" 
         BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
         if types$[1]="M"
@@ -497,7 +535,8 @@ l6100:
             breakhdr$=a0$(wpos[1],inlen[1])
         endif
         HdrVect!.addItem(literals$[1]+" "+breakhdr$)
-    endif    
+    endif  
+
     t0$=a0$(wpos[1],fldlen[1])
     t1$=""
     t2$=""
@@ -506,7 +545,7 @@ l6100:
     gosub get_seg_desc
     seg1_head$=segdesc$
 
-l6190:
+l6190: 
     return
 
 second_break: rem --- Second Segment break
@@ -516,18 +555,20 @@ second_break: rem --- Second Segment break
     if t1$="" goto l6300
     gosub third_break
     if level=2 goto l6250
-l6250:
+l6250: 
     c[all]=cost_tot2[all]
     q[all]=qnty_tot2[all]
     s[all]=sales_tot2[all]
+
     if level>2 then
         seg2_head$="Total for "+t1$
         seg3_head$=""
         seg4_head$=""
     endif
+
     gosub print_detail
     if l+1>l9 goto l6300
-l6300:
+l6300: 
     if done goto l6390
     dim cost_tot2[3],qnty_tot2[3],sales_tot2[3]
     t1$=a0$(wpos[2],fldlen[2])
@@ -537,7 +578,7 @@ l6300:
     gosub get_seg_desc
     seg2_head$=segdesc$
 
-l6390:
+l6390: 
     return
 
 third_break: rem --- Third Segment break
@@ -546,27 +587,29 @@ third_break: rem --- Third Segment break
     if t2$="" goto l6500
     if level=3 goto l6450
 
-l6450:
+l6450: 
     c[all]=cost_tot3[all]
     q[all]=qnty_tot3[all]
     s[all]=sales_tot3[all]
+
     if level>3 then
         seg3_head$="Total for "+t2$
         seg4_head$=""
     endif
+
     gosub print_detail
     if l+1>l9 goto l6500
-l6500:
+l6500: 
     if done goto l6590
     dim cost_tot3[3],qnty_tot3[3],sales_tot3[3]
     t2$=a0$(wpos[3],fldlen[3])
     seg$=t2$
     seg=3
     gosub get_seg_desc
-    
+
     seg3_head$=segdesc$
 
-l6590:
+l6590: 
     return
 
 get_seg_desc: rem --- Get Description For Segment Selection
@@ -578,13 +621,13 @@ get_seg_desc: rem --- Get Description For Segment Selection
     if cvs(seg$,2)="" and literals$[seg]="Customer Ship-To" x$[descstr[seg]](descpos[seg])="Bill-To Address"
     if literals$[seg]="Customer Ship-To" descrec$[seg]=a0$(wpos[seg-1],fldlen[seg-1])
     read (descchan[seg],key=firm_id$+descrec$[seg]+seg$,dom=*next) iol=descchana
-l6850:
+l6850: 
     desc$=x$[descstr[seg]](descpos[seg],desclen[seg])
     fld$(1)=seg$
     if types$[seg]="M" fld$=fnmask$(fld$(1,inlen[seg]),omasks$[seg])
     if literals$[seg]="Item" desc$=fnitem$(x$[descstr[seg]](descpos[seg],desclen[seg]),iv_desc[1],iv_desc[2],iv_desc[3]),fld$=fld$(1,inlen[seg])
     segdesc$=fld$+"  "+desc$
-l6890:
+l6890: 
     return
 
 get_sort_parameters: rem --- Get Sort Parameters
@@ -596,7 +639,7 @@ get_sort_parameters: rem --- Get Sort Parameters
     if p=0 goto l6960
     if pos("-"=m$)>p p=p+1
     sort_mask$(sort_size-len(m$)+p,1)="."; rem "Place the decimal point
-l6960:
+l6960: 
     sort_num=num("1"+sort_mask$(2))+num(sort_mask$(1,sort_size-1)+"1"); rem "Maximum value that fits mask
     sort_key=pos(myp$(1,1)="MYP")-1
     if myp$(1,1)="P" sort_key=pos(myp$(2,1)="MYP")+1
@@ -608,10 +651,9 @@ rem --- Functions used to retrieve form values
 
     def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
     def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+:       cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
     def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
-    def fnget_table$(q0$)=rd_alias_id$
+:       cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
 
 rem --- Miscellaneous functions
 
@@ -635,8 +677,8 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         q=1
         q0=0
         while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
@@ -648,7 +690,8 @@ rem --- fnbasename$: Strip path and optionally the suffix from a file name
         q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
         if q then q$=q$(q+1)
         if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
+        return q$
+    fnend
 
 rem --- fnglobal: Return numeric value of passed stbl variable
 
@@ -665,14 +708,14 @@ rem --- fnglobal$: Return string value of passed STBL variable
     fnend
 
 rem --- Find middle of string
-    
+
     def fncx(q$,q)=int(q-len(q$)/2)
 
 rem --- FNPERCENT_PROFIT Percent Profit Calculation"
     def fnpercent_profit(q1,q2,q9)
-    if q1=0 then if q2=0 then q=0 else q=-q9
-    if q1 then q=max(min((q1-q2)/q1*100,q9),-q9)
-    return q                                              
+        if q1=0 then if q2=0 then q=0 else q=-q9
+        if q1 then q=max(min((q1-q2)/q1*100,q9),-q9)
+        return q                                              
     fnend                                                 
 
 rem --- Create blank cell in OutVect!
@@ -685,6 +728,13 @@ rem --- Create blank cell in OutVect!
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -692,17 +742,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+:       str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -717,14 +767,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -739,5 +789,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run pgmdir$+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

@@ -1,3 +1,8 @@
+[[POE_REQDET.REQ_QTY.BINP]]
+if callpoint!.getDevObject("line_type")="O"  
+	callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_REQDET.REQ_QTY",0)
+	callpoint!.setFocus("POE_REQDET.UNIT_COST")
+endif
 [[POE_REQDET.BDGX]]
 rem -- loop thru gridVect; if there are any lines not marked deleted, set the callpoint!.setDevObject("dtl_posted") to Y
 
@@ -14,7 +19,7 @@ endif
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
 
-order_lines!=callpoint!.getDevObject("so_lines_list")
+order_list!=callpoint!.getDevObject("so_lines_list")
 ldat$=callpoint!.getDevObject("so_ldat")
 
 if ldat$<>""
@@ -23,7 +28,7 @@ if ldat$<>""
 	g!=callpoint!.getDevObject("dtl_grid")
 	c!=g!.getColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")))
 	c!.removeAllItems()
-	c!.insertItems(0,order_lines!)
+	c!.insertItems(0,order_list!)
 	g!.setColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")),c!)	
 else
 	callpoint!.setColumnEnabled(-1,"POE_REQDET.SO_INT_SEQ_REF",0)
@@ -63,7 +68,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 	ok_to_write$="Y"
 
 	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="" or 
-:		cvs(callpoint!.getColumnData("POE_REQDET.WAREHOUSE_ID"),3)="" then ok_to_write$="N"
+:		cvs(callpoint!.getColumnData("POE_REQDET.WAREHOUSE_ID"),3)="" 
+		ok_to_write$="N"
+		focus_column$="POE_REQDET.PO_LINE_CODE"
+	endif
 
 	if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="SD")<>0 
 		if cvs(callpoint!.getColumnData("POE_REQDET.ITEM_ID"),3)="" or
@@ -72,15 +80,16 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 :		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0 or
 :		cvs(callpoint!.getColumnData("POE_REQDET.REQD_DATE"),3)="" 
 			ok_to_write$="N"
+			focus_column$="POE_REQDET.ITEM_ID"
 		endif
 	endif
 
 	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="N" 
-		if cvs(callpoint!.getColumnData("POE_REQDET.NS_ITEM_ID"),3)="" or
-:		num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
+		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
 :		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0 or
 :		cvs(callpoint!.getColumnData("POE_REQDET.REQD_DATE"),3)="" 	
 			ok_to_write$="N"
+			focus_column$="POE_REQDET.ORDER_MEMO"
 		endif
 	endif
 
@@ -88,22 +97,30 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
 :		cvs(callpoint!.getColumnData("POE_REQDET.REQD_DATE"),3)="" 	
 			ok_to_write$="N"
+			focus_column$="POE_REQDET.ORDER_MEMO"
 		endif
 	endif
 
-	if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="MNOV")<>0 then
-:		if cvs(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"),3)="" then ok_to_write$="N"
+	if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="MNOV")<>0 
+		if cvs(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"),3)="" 
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.ORDER_MEMO"
+		endif
+	endif
 
 	if callpoint!.getHeaderColumnData("POE_REQHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
 		if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="DSNO")<>0
-			if cvs(callpoint!.getColumnData("POE_REQDET.SO_INT_SEQ_REF"),3)="" then ok_to_write$="N"
+			if cvs(callpoint!.getColumnData("POE_REQDET.SO_INT_SEQ_REF"),3)="" 
+				ok_to_write$="N"
+				focus_column$="POE_REQDET.SO_INT_SEQ_REF"
+			endif
 		endif
 	endif
 
 	if ok_to_write$<>"Y"
 		msg_id$="PO_REQD_DET"
 		gosub disp_message
-		callpoint!.setStatus("ABORT")
+		callpoint!.setFocus(num(callpoint!.getValidationRow()),focus_column$)
 	endif
 
 	rem -- now loop thru entire gridVect to make sure SO line reference, if used, isn't used >1 time
@@ -119,7 +136,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 				rec$=dtl!.getItem(x)
 				if cvs(rec.so_int_seq_ref$,3)<>""
 					if pos(rec.so_int_seq_ref$+"^"=so_lines_referenced$)<>0 
-						dup_so_lines$="Y"
+						msg_id$="PO_DUP_SO_LINE"
+						gosub disp_message
+						callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_REQDET.SO_INT_SEQ_REF")
+						break
 					else
 						so_lines_referenced$=so_lines_referenced$+rec.so_int_seq_ref$+"^"
 					endif
@@ -128,62 +148,60 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		next x
 	endif
 
-	if dup_so_lines$="Y"
-		msg_id$="PO_DUP_SO_LINE"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	endif
-
-
 endif
 [[POE_REQDET.ITEM_ID.AINV]]
 rem --- remember row/column we're on so we can force focus when we return from synonym lookup
 
-declare BBjStandardGrid grid!
-grid! = util.getGrid(Form!)
-return_to_row = grid!.getSelectedRow()
-return_to_col = grid!.getSelectedColumn()
+if cvs(callpoint!.getUserInput(),3)<>""
 
-rem --- see if they entered a synonym, if so, display (if only one of them), if no match, or more than one match, launch bam_inquiry on synonym file
+	declare BBjStandardGrid grid!
+	grid! = util.getGrid(Form!)
+	return_to_row = grid!.getSelectedRow()
+	return_to_col = grid!.getSelectedColumn()
 
-ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
-dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
+	rem --- see if they entered a synonym, if so, display (if only one of them), if no match, or more than one match, launch bam_inquiry on synonym file
 
-read (ivm_itemsyn_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)
-read_count=0
-found_count=0
-found_item$=""
+	ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
+	dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
 
-while read_count<2
-	read record (ivm_itemsyn_dev,end=*break)ivm_itemsyn$
-	if ivm_itemsyn.firm_id$=firm_id$ and ivm_itemsyn.item_synonym$=callpoint!.getUserInput()
-		found_count=found_count+1
-		found_item$=ivm_itemsyn.item_id$
-	endif
-	read_count=read_count+1
-wend
+	read (ivm_itemsyn_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)
+	read_count=0
+	found_count=0
+	found_item$=""
 
-if found_count=1
-	callpoint!.setUserInput(found_item$)
-	callpoint!.setStatus("")
-else
-	call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMSYN","PRIMARY",key_tpl$,table_chans$[all],rd_stat$
-	dim return_key$:key_tpl$
+	while read_count<2
+		read record (ivm_itemsyn_dev,end=*break)ivm_itemsyn$
+		if ivm_itemsyn.firm_id$=firm_id$ and ivm_itemsyn.item_synonym$=callpoint!.getUserInput()
+			found_count=found_count+1
+			found_item$=ivm_itemsyn.item_id$
+		endif
+		read_count=read_count+1
+	wend
 
-	dim search_defs$[2]
-	search_defs$[0]="IVM_ITEMSYN.ITEM_SYNONYM"
-	search_defs$[1]=callpoint!.getRawUserInput()
-	search_defs$[2]="A"
-
-	call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"IVM_ITEMSYN","LOOKUP",
-:		table_chans$[all],firm_id$,"PRIMARY",return_key$,filter_defs$[all],search_defs$[all]
-	if cvs(return_key$,3)<>""
-		callpoint!.setUserInput(return_key.item_id$)	
+	if found_count=1
+		callpoint!.setUserInput(found_item$)
 		callpoint!.setStatus("")
 	else
-		callpoint!.setStatus("ABORT")
+		call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMSYN","PRIMARY",key_tpl$,table_chans$[all],rd_stat$
+		dim return_key$:key_tpl$
+
+		dim search_defs$[2]
+		search_defs$[0]="IVM_ITEMSYN.ITEM_SYNONYM"
+		search_defs$[1]=callpoint!.getRawUserInput()
+		search_defs$[2]="A"
+
+		call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"IVM_ITEMSYN","LOOKUP",
+:			table_chans$[all],firm_id$,"PRIMARY",return_key$,filter_defs$[all],search_defs$[all]
+		if cvs(return_key$,3)<>""
+			callpoint!.setUserInput(return_key.item_id$)	
+			callpoint!.setStatus("ACTIVATE")
+		else
+			callpoint!.setStatus("ABORT")
+		endif
+		util.forceEdit(Form!, return_to_row, return_to_col)
 	endif
-	util.forceEdit(Form!, return_to_row, return_to_col)
+else
+	callpoint!.setStatus("ABORT")
 endif
 [[POE_REQDET.AGCL]]
 rem print 'show';rem debug
@@ -228,6 +246,13 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs
 
 
 endif
+
+if callpoint!.getDevObject("line_type")="O" 
+	callpoint!.setColumnData("POE_REQDET.REQ_QTY","1")
+else
+	callpoint!.setColumnData("POE_REQDET.REQ_QTY","")
+endif
+
 [[POE_REQDET.REQ_QTY.AVAL]]
 rem --- call poc.ua to retrieve unit cost from ivm-05, at least that's what v6 did here
 rem --- send in: R/W for retrieve or write
@@ -270,7 +295,9 @@ callpoint!.setDevObject("total_amt",str(total_amt))
 [[POE_REQDET.ITEM_ID.AVAL]]
 	
 gosub validate_whse_item
-
+if pos("ABORT"=callpoint!.getStatus())<>0
+	callpoint!.setUserInput("")
+endif
 
 
 

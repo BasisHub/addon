@@ -1,3 +1,96 @@
+[[APE_RECURRINGHDR.BTBL]]
+rem --- Open/Lock files
+files=6,begfile=1,endfile=6
+dim files$[files],options$[files],chans$[files],templates$[files]
+files$[1]="APT_INVOICEDIST";rem --- "apt-02"
+files$[2]="APM_VENDCMTS";rem --- "apm-09
+files$[3]="APM_VENDMAST";rem --- "apm-01"
+files$[4]="APM_VENDHIST";rem --- "apm-02"
+files$[5]="APS_PARAMS";rem --- "ads-01"
+files$[6]="GLS_PARAMS";rem --- "gls-01"
+for wkx=begfile to endfile
+	options$[wkx]="OTA"
+next wkx
+call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:	begfile,
+:	endfile,
+:	files$[all],
+:	options$[all],
+:	chans$[all],
+:	templates$[all],
+:	table_chans$[all],
+:	batch,
+:	status$
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
+aps01_dev=num(chans$[5])
+gls01_dev=num(chans$[6])
+dim aps01a$:templates$[5],gls01a$:templates$[6]
+user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),glworkfile:c(16),"
+user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),units_flag:c(1),"
+user_tpl_str$=user_tpl_str$+"misc_entry:c(1),inv_in_ape03:c(1),inv_in_apt02:c(1),"
+user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_terms_cd:c(2),dflt_pymt_grp:c(2),"
+user_tpl_str$=user_tpl_str$+"disc_pct:c(5),dist_bal_ofst:c(1),inv_amt:c(10),tot_dist:c(10),open_inv_textID:c(5)"
+dim user_tpl$:user_tpl_str$
+rem --- set up UserObj! as vector to store dist bal display control
+UserObj!=SysGUI!.makeVector()
+
+rem --- Additional File Opens
+gl$="N"
+status=0
+source$=pgm(-2)
+call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AP",glw11$,gl$,status
+if status<>0 goto std_exit
+user_tpl.glint$=gl$
+user_tpl.glworkfile$=glw11$
+if gl$="Y"
+   files=2,begfile=1,endfile=2
+   dim files$[files],options$[files],chans$[files],templates$[files]
+   files$[1]="GLM_ACCT",options$[1]="OTA";rem --- "glm-01"
+   files$[2]=glw11$,options$[2]="OTAS";rem --- s means no err if tmplt not found
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:	begfile,
+:	endfile,
+:	files$[all],
+:	options$[all],
+:	chans$[all],
+:	templates$[all],
+:	table_chans$[all],
+:	batch,
+:	status$
+if status$<>"" then
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
+endif
+rem --- Retrieve parameter data
+               
+aps01a_key$=firm_id$+"AP00"
+find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+user_tpl.amt_msk$=aps01a.amount_mask$
+user_tpl.multi_types$=aps01a.multi_types$
+user_tpl.multi_dist$=aps01a.multi_dist$
+user_tpl.ret_flag$=aps01a.ret_flag$
+user_tpl.misc_entry$=aps01a.misc_entry$
+gls01a_key$=firm_id$+"GL00"
+find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+user_tpl.units_flag$=gls01a.units_flag$
+user_tpl.glyr$=gls01a.current_year$
+user_tpl.glper$=gls01a.current_per$
+user_tpl.gl_tot_pers$=gls01a.total_pers$
+
+rem --- disable access to AP Type if not using multi types
+
+if user_tpl.multi_types$<>"Y"
+	callpoint!.setTableColumnAttribute("APE_RECURRINGHDR.AP_TYPE","PVAL",$22$+aps01a.ap_type$+$22$)
+endif
 [[APE_RECURRINGHDR.AP_INV_NO.AVAL]]
 ctl_name$="APE_RECURRINGHDR.AP_DIST_CODE"
 ctl_stat$=""
@@ -8,9 +101,6 @@ gosub disable_fields
 ctl_name$="APE_RECURRINGHDR.NET_INV_AMT"
 ctl_stat$=""
 gosub disable_fields
-[[APE_RECURRINGHDR.BTBL]]
-rem --- Get Batch information
-call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),""
 [[APE_RECURRINGHDR.AREC]]
 Form!.getControl(num(user_tpl.open_inv_textID$)).setText("")
 callpoint!.setColumnData("<<DISPLAY>>.comments","")
@@ -274,46 +364,6 @@ fnend
 rem #endinclude fnget_control.src
 #include std_missing_params.src
 [[APE_RECURRINGHDR.BSHO]]
-rem --- Open/Lock files
-files=6,begfile=1,endfile=6
-dim files$[files],options$[files],chans$[files],templates$[files]
-files$[1]="APT_INVOICEDIST";rem --- "apt-02"
-files$[2]="APM_VENDCMTS";rem --- "apm-09
-files$[3]="APM_VENDMAST";rem --- "apm-01"
-files$[4]="APM_VENDHIST";rem --- "apm-02"
-files$[5]="APS_PARAMS";rem --- "ads-01"
-files$[6]="GLS_PARAMS";rem --- "gls-01"
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
-call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-if status$<>"" then
-	remove_process_bar:
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
-aps01_dev=num(chans$[5])
-gls01_dev=num(chans$[6])
-dim aps01a$:templates$[5],gls01a$:templates$[6]
-user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),glworkfile:c(16),"
-user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),units_flag:c(1),"
-user_tpl_str$=user_tpl_str$+"misc_entry:c(1),inv_in_ape03:c(1),inv_in_apt02:c(1),"
-user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_terms_cd:c(2),dflt_pymt_grp:c(2),"
-user_tpl_str$=user_tpl_str$+"disc_pct:c(5),dist_bal_ofst:c(1),inv_amt:c(10),tot_dist:c(10),open_inv_textID:c(5)"
-dim user_tpl$:user_tpl_str$
-rem --- set up UserObj! as vector to store dist bal display control
-UserObj!=SysGUI!.makeVector()
 rem --- add static label for displaying date/amount if pulling up open invoice
 inv_no!=fnget_control!("APE_RECURRINGHDR.AP_INV_NO")
 cmts!=fnget_control!("<<DISPLAY>>.COMMENTS")
@@ -329,51 +379,7 @@ rem --- add the display control holding the distribution balance to userObj!
 dist_bal!=fnget_control!("<<DISPLAY>>.DIST_BAL")
 user_tpl.dist_bal_ofst$="0"
 userObj!.addItem(dist_bal!)
-rem --- Additional File Opens
-gl$="N"
-status=0
-source$=pgm(-2)
-call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AR",glw11$,gl$,status
-if status<>0 goto std_exit
-user_tpl.glint$=gl$
-user_tpl.glworkfile$=glw11$
-if gl$="Y"
-   files=2,begfile=1,endfile=2
-   dim files$[files],options$[files],chans$[files],templates$[files]
-   files$[1]="GLM_ACCT",options$[1]="OTA";rem --- "glm-01"
-   files$[2]=glw11$,options$[2]="OTAS";rem --- s means no err if tmplt not found
-	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-if status$<>"" then
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
-endif
-rem --- Retrieve parameter data
-               
-aps01a_key$=firm_id$+"AP00"
-find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-user_tpl.amt_msk$=aps01a.amount_mask$
-user_tpl.multi_types$=aps01a.multi_types$
-user_tpl.multi_dist$=aps01a.multi_dist$
-user_tpl.ret_flag$=aps01a.ret_flag$
-user_tpl.misc_entry$=aps01a.misc_entry$
-gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-user_tpl.units_flag$=gls01a.units_flag$
-user_tpl.glyr$=gls01a.current_year$
-user_tpl.glper$=gls01a.current_per$
-user_tpl.gl_tot_pers$=gls01a.total_pers$
+
 rem --- may need to disable some ctls based on params
 if user_tpl.multi_types$="N" 
 	apm10_dev=fnget_dev("APC_TYPECODE")
@@ -408,4 +414,3 @@ if gl$="N"
 endif
 if user_tpl.misc_entry$="N" c!.setColumnEditable(2,0)
 if user_tpl.units_flag$="N" c!.setColumnEditable(4,0)
-			

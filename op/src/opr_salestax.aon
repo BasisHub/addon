@@ -2,287 +2,323 @@ rem --- Sales Tax Report
 rem --- Program opr_salestax v8.0.0 28Jan2008 (opr_salestax)
 rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/28/2008 11:50:59)
 
-
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-
-        seterr std_error
-        setesc std_error
+    seterr std_error
+    setesc std_error
 
 rem --- Document initializations
 
-        OutVect!=bbjAPI().getSysGui().makeVector()
-        HdrVect!=bbjAPI().getSysGui().makeVector()
-        BrkVect!=bbjAPI().getSysGui().makeVector()
-        TotVect!=bbjAPI().getSysGui().makeVector()
-        rep_date$=date(0:"%Mz/%Dz/%Yd")
-        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-        rep_time$=date(0:"%hz:%mz %p")
-        rep_time_stamp$=date(0:"%Hz%mz%sz")
-        rep_prog$=pgm(-2)
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+    
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Retrieve the program path
 
-        pgmdir$=stbl("+DIR_PGM",err=*next)
-       
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next))
 
 rem --- Open/Lock files
 
-        files=4,begfile=1,endfile=files
-        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-        files$[1]="ars_params",ids$[1]="ARS_PARAMS"
-        files$[2]="art-02",ids$[2]="ART_SALESTAX"
-        files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
-        files$[4]="opm-06",ids$[4]="OPC_TAXCODE"
-        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        ars01a_dev=channels[1]
-        art02_dev=channels[2]
-        ivs01a_dev=channels[3]
-        opm06_dev=channels[4]
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+    files$[2]="art-02",ids$[2]="ART_SALESTAX"
+    files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
+    files$[4]="opm-06",ids$[4]="OPC_TAXCODE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:       ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    ars01a_dev=channels[1]
+    art02_dev=channels[2]
+    ivs01a_dev=channels[3]
+    opm06_dev=channels[4]
 
 rem --- Dimension string templates
 
-        dim ars01a$:templates$[1],art02a$:templates$[2],ivs01a$:templates$[3],
+    dim ars01a$:templates$[1],art02a$:templates$[2],ivs01a$:templates$[3],
 :       opm06a$:templates$[4]
 
 rem --- Assign form input values to local variables
 
-        startdate$ = option!.getOptionData("PICK_DATE_YYYYMM_1")
-        enddate$ = option!.getOptionData("PICK_DATE_YYYYMM_2")
+    startdate$ = option!.getOptionData("PICK_DATE_YYYYMM_1")
+    enddate$ = option!.getOptionData("PICK_DATE_YYYYMM_2")
 
 rem --- Retrieve parameter records
 
-        ars01a_key$=firm_id$+"AR00"
-        find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-        ivs01a_key$=firm_id$+"IV00"
-        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    ars01a_key$=firm_id$+"AR00"
+    find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
 
 rem --- Parameters
 
-        n1$=sysinfo.firm_name$,n2$="AR",n3$=sysinfo.task_desc$
-        find record (ars01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ars01a$
+    n1$=sysinfo.firm_name$,n2$="AR",n3$=sysinfo.task_desc$
+    find record (ars01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) ars01a$
 
 rem --- Initializations
 
-        more=1
-        dim headings$[3],a[2],t[2],g[2],o[1]
-        h0=132
-        h=0,headings$[0]=n1$,headings$[1]=n3$
-        l9=42
-        l=l9+1,when$=sysinfo.system_date$,clock$="",headings=3
-        
-        call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,m1
-        call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","R","",m3$,0,m3
-        m1=len(m1$)
-        m3=len(m3$)
+    more=1
+    recs=0
+    total_recs=0
+    dim headings$[3],a[2],t[2],g[2],o[1]
+    h0=132
+    h=0,headings$[0]=n1$,headings$[1]=n3$
+    l9=42
+    l=l9+1,when$=sysinfo.system_date$,clock$="",headings=3
 
-        dim columns$[5,10]
-        columns = 5
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,m1
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","R","",m3$,0,m3
+    m1=len(m1$)
+    m3=len(m3$)
 
-        columns$[0,0]="Tax CD  Description           Rate",    columns$[0,1]="C",columns$[0,2]="30"
-        columns$[1,0]="Date",                                  columns$[1,1]="C",columns$[1,2]="8"
-        columns$[2,0]="Taxable",                               columns$[2,1]="N",columns$[2,2]="10",columns$[2,3]=m1$,columns$[2,10]="T"
-        columns$[3,0]="Tax",                                   columns$[3,1]="N",columns$[3,2]="10",columns$[3,3]=m1$,columns$[3,10]="T"
-        columns$[4,0]="Gross",                                 columns$[4,1]="N",columns$[4,2]="10",columns$[4,3]=m1$,columns$[4,10]="T"
-        columns$[5,0]="Non_Taxable",                           columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m1$,columns$[5,10]="T"
+    dim columns$[5,10]
+    columns = 5
+
+    columns$[0,0]="Tax CD  Description           Rate",    columns$[0,1]="C",columns$[0,2]="30"
+    columns$[1,0]="Date",                                  columns$[1,1]="C",columns$[1,2]="8"
+    columns$[2,0]="Taxable",                               columns$[2,1]="N",columns$[2,2]="10",columns$[2,3]=m1$,columns$[2,10]="T"
+    columns$[3,0]="Tax",                                   columns$[3,1]="N",columns$[3,2]="10",columns$[3,3]=m1$,columns$[3,10]="T"
+    columns$[4,0]="Gross",                                 columns$[4,1]="N",columns$[4,2]="10",columns$[4,3]=m1$,columns$[4,10]="T"
+    columns$[5,0]="Non_Taxable",                           columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m1$,columns$[5,10]="T"
 
 rem --- Print positions
 
-        call pgmdir$+"adc_sizemask.aon",m1$,m1,14,15
-        o[0]=23+m3
-        o[1]=o[0]+8
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,14,15
+    o[0]=23+m3
+    o[1]=o[0]+8
 
 rem --- Background
 
-        dim j$(4*m1,"-")
-        call pgmdir$+"adc_progress.aon","N","","","","",0,art02_dev,1,meter_num,status
-        call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-        if status then goto std_exit
-        if startdate$="" then
-            x0$="First"
-        else
-            x0$=startdate$(1,4)+"/"+startdate$(5,2)
-        endif
-        if enddate$="" then
-            x1$="Last"
-        else
-            x1$=enddate$(1,4)+"/"+enddate$(5,2)
-        endif
-        headings$[2]="From "+x0$+" Thru "+x1$
+    dim j$(4*m1,"-")
+    call pgmdir$+"adc_progress.aon","N","","","","",0,art02_dev,1,meter_num,status
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status then goto std_exit
+    
+    if startdate$="" then
+        x0$="First"
+    else
+        x0$=startdate$(1,2)+"/"+startdate$(3,4)
+    endif
+    
+    if enddate$="" then
+        x1$="Last"
+    else
+        x1$=enddate$(1,2)+"/"+enddate$(3,4)
+    endif
+    
+    headings$[2]="From "+x0$+" Thru "+x1$
 
 rem --- Position File
 
-        read (art02_dev,key=firm_id$,dom=*next)
+    call stbl("+DIR_PGM")+"adc_progress.aon","NC","ART_SALESTAX","","","",0,art02_dev,1,meter_num,status
+    if status = 999 then goto std_exit
 
-        rem --- Main Read
-        while more
-                read record (art02_dev,end=*break) art02a$
-                if art02a.firm_id$<>firm_id$ then break
-                if startdate$<>"" then
-                    if art02a.year$+art02a.month$<startdate$(1,6) then
-                        continue
-                    endif
-                endif
-                if enddate$<>"" then
-                    if art02a.year$+art02a.month$>enddate$(1,6) then
-                        continue
-                    endif
-                endif
-                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+    read (art02_dev,key=firm_id$,dom=*next)
 
-rem ----------- Breaks
+rem --- Main Read
 
-                if art02a.tax_code$<>t0$ then gosub Tax_Code_Breaks
+    while more
+        read record (art02_dev,end=*break) art02a$
+        
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        if status = 999 then goto std_exit
+        
+        if art02a.firm_id$<>firm_id$ then break
+        
+        if startdate$<>"" then
+            if art02a.year$+art02a.month$<startdate$(3,4)+startdate$(1,2) then
+                continue
+            endif
+        endif
+        
+        if enddate$<>"" then
+            if art02a.year$+art02a.month$>enddate$(3,4)+enddate$(1,2) then
+                continue
+            endif
+        endif
+        
+    rem --- Breaks
 
-rem ----------- Print
+        if art02a.tax_code$<>t0$ then gosub Tax_Code_Breaks
 
-                OutVect!.addItem(h3$)
-                OutVect!.addItem(art02a.month$+"/"+art02a.year$)
-                OutVect!.addItem(str(art02a.taxable_amt))
-                OutVect!.addItem(str(art02a.tax_amount))
-                OutVect!.addItem(str(art02a.gross_sales))
-                OutVect!.addItem(str((art02a.gross_sales-art02a.taxable_amt)))
-               
+    rem --- Print
 
+        OutVect!.addItem(h3$)
+        OutVect!.addItem(art02a.month$+"/"+art02a.year$)
+        OutVect!.addItem(str(art02a.taxable_amt))
+        OutVect!.addItem(str(art02a.tax_amount))
+        OutVect!.addItem(str(art02a.gross_sales))
+        OutVect!.addItem(str((art02a.gross_sales-art02a.taxable_amt)))
 
-                l=l+1
-                l0=l0+1,h3$=""
-                t[0]=t[0]+art02a.taxable_amt
-                g[0]=g[0]+art02a.taxable_amt
-                t[1]=t[1]+art02a.tax_amount
-                g[1]=g[1]+art02a.tax_amount
-                t[2]=t[2]+art02a.gross_sales
-                g[2]=g[2]+art02a.gross_sales
+        l=l+1
+        recs=recs+1
+        l0=l0+1,h3$=""
+        t[0]=t[0]+art02a.taxable_amt
+        g[0]=g[0]+art02a.taxable_amt
+        t[1]=t[1]+art02a.tax_amount
+        g[1]=g[1]+art02a.tax_amount
+        t[2]=t[2]+art02a.gross_sales
+        g[2]=g[2]+art02a.gross_sales
+
+    rem --- Loop back for next record
     
-
-rem --- Loop back for next record
-        wend
+    wend
 
 rem --- All done
 
-        t9$="E"
-        gosub Tax_Code_Breaks
-       
-        xwk = fnblank(6)
-        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
-        OutVect!.addItem("Totals For Report")
-        xwk = fnblank(2)
-        OutVect!.addItem(str(g[1]))
-        xwk = fnblank(2)
-        goto std_exit
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    t9$="E"
+    gosub Tax_Code_Breaks
+
+    xwk = fnblank(6)
+    TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+    OutVect!.addItem("Totals For Report")
+    xwk = fnblank(2)
+    OutVect!.addItem(str(g[1]))
+    xwk = fnblank(2)
+    goto std_exit
 
 
 Tax_Code_Breaks: rem --- Tax Code Breaks
 
-        if t0$<>"" then
-            if l0>=1 then
-                xwk = fnblank(6)
-                TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
-                OutVect!.addItem("             Totals For "+t0$)
-                xwk = fnblank(1)
-                OutVect!.addItem(str(t[0]))
-                OutVect!.addItem(str(t[1]))
-                OutVect!.addItem(str(t[2]))
-                OutVect!.addItem(str(t[2]-t[0]))
-                xwk = fnblank(6)
-                l=l+3
-            endif
+    if t0$<>"" then
+        if l0>=1 then
+            xwk = fnblank(6)
+            TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+            OutVect!.addItem("             Totals For "+t0$)
+            xwk = fnblank(1)
+            OutVect!.addItem(str(t[0]))
+            OutVect!.addItem(str(t[1]))
+            OutVect!.addItem(str(t[2]))
+            OutVect!.addItem(str(t[2]-t[0]))
+            xwk = fnblank(6)
+            l=l+3
         endif
+    endif
 
-        if t9$<>"" then
-            return
-        endif
-        for x=0 to 2
-          t[x]=0
-        next x
-        rem dim x0$(4),x1$(60),t[2]
-        t0$=art02a.tax_code$
-        l0=0
-        opm06a.code_desc$="Unknown Tax Code"
-        x0=0
-        find record (opm06_dev,key=firm_id$+t0$,dom=*next) opm06a$
-        x0=opm06a.tax_rate
-        h3$=t0$+"        "+opm06a.code_desc$+str(x0:m3$)
-
+    if t9$<>"" then
         return
+    endif
+    
+    for x=0 to 2
+        t[x]=0
+    next x
+    
+rem dim x0$(4),x1$(60),t[2]
+    t0$=art02a.tax_code$
+    l0=0
+    opm06a.code_desc$="Unknown Tax Code"
+    x0=0
+    find record (opm06_dev,key=firm_id$+t0$,dom=*next) opm06a$
+    x0=opm06a.tax_rate
+    h3$=t0$+"        "+opm06a.code_desc$+str(x0:m3$)
+
+    return
 
 
 rem --- fnBlank : Create blank cells in OutVect!. No return value
-   
-        def fnblank(q0)
-            for q1=1 to q0
-                OutVect!.addItem("")
-            next q1
-            return q1
-        fnend
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem --- #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
 
-        rd_err_text$=""
-        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-        call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
-        if pos("EXIT"=rd_err_act$) goto std_error_exit
-        if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
-        if pos("RETRY"=rd_err_act$) retry
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
 
-std_error_exit:
-        master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=std_error_release)
-        if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
 
-std_error_release:
-        status=999
-        if pgm(-1)<>pgm(-2) exit
-        release
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
 
 rem --- #endinclude std_error.src
 rem --- #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
 
-        rd_err_text$=""
-        if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-        pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-        call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:       str(err:"000"),rd_err_text$,rd_err_act$
 
-std_missing_params_exit:
-        master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
-        if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
 
-std_missing_params_release:
-        status=999
-        if pgm(-1)<>pgm(-2) exit
-        release
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
 
 rem --- #endinclude std_missing_params.src
 
 rem --- #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
-        call stbl("+DIR_PGM")+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-        run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-        release
+    call stbl("+DIR_PGM")+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
 
 rem --- #endinclude std_end.src
 
-        end
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
+
+    end

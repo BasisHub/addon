@@ -32,6 +32,9 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -64,6 +67,7 @@ rem --- Assign form input values to local variables
     endvendor$=Option!.getOptionData("VENDOR_ID_2")
     thrudate$=Option!.getOptionData("REPORT_DATE")
     export_fmt$=Option!.getOptionData("EXPORT_FMT")
+    vend_type$=Option!.getOptionData("VENDOR_TYPE")
 
 rem --- Retrieve parameter records
 
@@ -92,6 +96,8 @@ rem --- Initializations
     nf$="(Not on file)"
     when$=sysinfo.system_date$
     clock$=""
+    total_recs=0
+    
     if begvendor$="" x$="From the First Vendor" 
 :               else x$="From Vendor "+fnmask$(begvendor$(1,vendor_size),m0$)
     x$=x$+" Through "
@@ -135,7 +141,7 @@ rem    if retention$="Y" o[8]=width-m1+1
 
 rem --- Start progress meter and position Vendor Master file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","APM_VENDMAST","","","",0,apm01_dev,1,meter_num,status
     while begvendor$<>""
           read (apm01_dev,key=firm_id$+begvendor$)
           read (apm01_dev,dir=-1,err=*next)
@@ -149,8 +155,12 @@ rem --- Read next Vendor Master (apm-01) record
           if pos(firm_id$=apm01_key$)<>1 break
           read record (apm01_dev,key=apm01_key$) apm01a$
           if endvendor$<>"" if apm01a.vendor_id$>endvendor$ break
+          
+          if vend_type$="P" and apm01a.temp_vend$="Y" then continue
+          if vend_type$="T" and apm01a.temp_vend$<>"Y" then continue          
 
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status 
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Read vendor detail records
 
@@ -164,7 +174,6 @@ rem --- Read next Vendor Master (apm-01) record
 
                 rem --- Print invoices
 
-                balance=0
                 x$=""
                 if retention$="Y" x$="Retention"
                 vendor$=apm02a.firm_id$+apm02a.ap_type$+apm02a.vendor_id$
@@ -219,6 +228,7 @@ rem --- Read next Vendor Master (apm-01) record
                             if cvs(thrudate$,2)<>"" 
                                 if apt11a.trans_date$>thrudate$ continue
                             endif    
+
                             detail=1
                             type$=apt11a.trans_type$
                             amount$=""
@@ -264,6 +274,7 @@ rem --- Read next Vendor Master (apm-01) record
               xwk=fnblank(2)
               total=total+balance
               xwk=fnblank(10)
+              balance=0
           endif
           
     wend

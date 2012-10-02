@@ -6,8 +6,8 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-rem --- This register/update combination is used for both the Finance
-rem --- Charge Register and the Conversion Invoice Register.
+rem --- This register is for Finance Charges
+rem --- The update (aru_otherentry.aon) is also used by Conversion Invoices
 
     seterr std_error
     setesc std_error
@@ -35,6 +35,12 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+rem --- see if batching (batching.CAH)
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")        
 
 rem --- Open/Lock files
 
@@ -46,10 +52,10 @@ rem --- Open/Lock files
     files$[4]="arc_distcode",ids$[4]="ARC_DISTCODE"
     files$[5]="art-01",ids$[5]="ART_INVHDR"
     files$[6]="gls_params",ids$[6]="GLS_PARAMS"
-    options$[2]="L"
+    if num(batch_no$)=0 then options$[2]="L";rem lock if not batching.CAH
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     ars01_dev=channels[1]
     are02_dev=channels[2]
     arm01_dev=channels[3]
@@ -79,10 +85,15 @@ rem --- Retrieve parameter records
     m0=len(m0$)
     m1=len(m1$)
     application$="AR"
+    
+rem --- Is General Ledger installed and being used?
+rem --- as of v9, glw11$ no longer used.  Always use actual glw-11 file (batching.CAH)
+    
     gl$="N"
     status=0
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
-    if status goto std_exit
+    if status goto std_exit_no_report
+    
     application$="OP"
     call stbl("+DIR_PGM")+"adc_application.aon",application$,info$[all]
     op$=info$[20]
@@ -105,6 +116,7 @@ rem --- Initializations
     clock$=""
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"    
     recs=0
 
 rem --- set rd_alias_id$, if needed, for DocOut Settings
@@ -156,12 +168,12 @@ rem --- Additional file opens
     if gl$="Y"
        files$[1]="glm-01",ids$[1]="GLM_ACCT"
        files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
-       files$[3]=glw11$,ids$[3]=""
-       options$[3]="CL"
+       files$[3]="glw-11",ids$[3]="GLW_DAILYDETAIL"
+       rem --- options$[3]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
     endif
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     glm01_dev=channels[1]
     glt04_dev=channels[2]
     glw11_dev=channels[3]
@@ -182,17 +194,24 @@ rem --- Should GL be updated (if it's being used)?
     msg_id$="AR_POST_GL"
     gosub disp_message
     if msg_opt$<>"Y" gl$="N"
+    
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+    if gl$="Y"
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif
 
 rem --- start progress meter and position invoice file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,are02_dev,1,meter_num,status
-    read (are02_dev,key=firm_id$,dom=*next)
+    read (are02_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Read next Invoice (are-02) record
 
     while more
           k$=key(are02_dev,end=*break)
-          if pos(firm_id$=k$)<>1 break
+          if pos(firm_id$+batch_no$=k$)<>1 break
           recs=recs+1
           read record (are02_dev) are02a$
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
@@ -285,8 +304,8 @@ rem --- Destroy progress meter and run next overlay
 
     update$=pgmdir$+"aru_otherentry.aon"
     if errors
-    	gosub Display_Message
-    	if special_flag$<>"Y" then update$=""
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
     endif
 
     overlay$=update$
@@ -294,8 +313,11 @@ rem --- Destroy progress meter and run next overlay
 
     out_action$="PRT-PDF"
     next_overlay$=overlay$
-    goto std_exit
-    
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif       
 
 set_linecount: rem --- Report Heading
 
@@ -407,13 +429,22 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
-std_exit: rem --- Standard program end (01Mar2006)
-
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-
 std_exit_no_report:
 
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 
 rem #endinclude std_end.src

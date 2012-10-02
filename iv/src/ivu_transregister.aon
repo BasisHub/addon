@@ -6,223 +6,209 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-	setesc std_error
-	seterr std_error
+    setesc std_error
+    seterr std_error
 
 rem --- Retrieve the program path
 
-	pgmdir$=""
-	pgmdir$=stbl("+dir_pgm",err=*next)
+    pgmdir$=""
+    pgmdir$=stbl("+dir_pgm",err=*next)
 
 rem --- Retrieve sysinfo data
 
-	sysinfo_template$=stbl("+SYSINFO_TPL")
-	dim sysinfo$:sysinfo_template$
-	sysinfo$=stbl("+SYSINFO")
-	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-	firm_id$=sysinfo.firm_id$
-	
+    sysinfo_template$=stbl("+SYSINFO_TPL")
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO")
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+        
 rem --- Run Update?
 
-	msg_id$="AON_UPDT_QUERY"
-	dim msg_tokens$[1]
-	msg_tokens$[1]=sysinfo.task_desc$
-	gosub disp_message
-	if msg_opt$<>"Y" then goto std_exit
-	
+    msg_id$="AON_UPDT_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+    
 rem --- Open/Lock files
 
-	files=30,begfile=1,endfile=20
-	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-	files$[5]="ive-01",ids$[5]="IVE_TRANSHDR"
-	files$[6]="ive-11",ids$[6]="IVE_TRANSDET"
-	files$[7]="ivm-01",ids$[7]="IVM_ITEMMAST"
-	files$[8]="ivm-02",ids$[8]="IVM_ITEMWHSE"
-	files$[10]="ivm-05",ids$[10]="IVM_ITEMVEND"
-	files$[13]="ivc_trancode",ids$[13]="IVC_TRANCODE"
-	files$[14]="ivm-12",ids$[14]="IVM_ITEMACT"
-	files$[16]="ivs_params",ids$[16]="IVS_PARAMS"
-	files$[20]="ivt-04",ids$[20]="IVT_ITEMTRAN"
-	
-	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+    files=30,begfile=1,endfile=20
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[10]="ivm-05",ids$[10]="IVM_ITEMVEND"
+    files$[14]="ivm-12",ids$[14]="IVM_ITEMACT"
+    files$[20]="ivt-04",ids$[20]="IVT_ITEMTRAN"
+    
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-	if status then goto std_exit
-	
-	ive01_dev=channels[5]
-	ive11_dev=channels[6]
-	ivm01_dev=channels[7]
-	ivm02_dev=channels[8]
-	ivm05_dev=channels[10]
-	ivm10_dev=channels[13]
-	ivm12_dev=channels[14]
-	ivs01a_dev=channels[16]
-	ivt04_dev=channels[20]
+    if status then goto std_exit_no_update
+    
+    ivm05_dev=channels[10]
+    ivm12_dev=channels[14]
+    ivt04_dev=channels[20]
 
-rem --- Dimension string templates
-
-	dim ive01a$:templates$[5]
-	dim ive11a$:templates$[6]
-	dim ivm01a$:templates$[7]
-	dim ivm02a$:templates$[8]
-	dim ivm10b$:templates$[13]
-	dim ivs01a$:templates$[16]
 
 rem --- Retrieve parameter records
 
-	ivs01a_key$=firm_id$+"IV00"
-	find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    ivs01a_key$=firm_id$+"IV00"
+    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
 
     if pos(ivs01a.lotser_flag$="LS") then ls$="Y" else ls$="N"
     if pos(ivs01a.lifofifo$="LF") then lf$="Y" else lf$="N"
-	
-	rem --- Is the GL module installed?
-	gl$="N"
-	call pgmdir$+"adc_application.aon","GL",info$[all]
-	
-	if info$[20]="Y" then 
-		call pgmdir$+"adc_application.aon","IV",info$[all]
-		
-		rem --- Does IV post to GL?
-		gl$=info$[9]
-	endif
+    
+    rem --- Is the GL module installed?
+    gl$="N"
+    call pgmdir$+"adc_application.aon","GL",info$[all]
+    
+    if info$[20]="Y" then 
+        call pgmdir$+"adc_application.aon","IV",info$[all]
+        
+        rem --- Does IV post to GL?
+        gl$=info$[9]
+    endif
 
 rem --- Additional File Opens
 
-	if gl$="Y" then
-		begfile=21,endfile=22
-		files$[21]="glm-01",ids$[21]="GLM_ACCT"
-		files$[22]="glt-04",ids$[22]="GLE_DAILYDETAIL"
-		
-		call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-		if status then goto std_exit
-		
-		glm01_dev=channels[21]
-		glt04_dev=channels[22]
-	endif
+    if gl$="Y" then
+        begfile=21,endfile=22
+        files$[21]="glm-01",ids$[21]="GLM_ACCT"
+        files$[22]="glt-04",ids$[22]="GLE_DAILYDETAIL"
+        
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+        if status then goto std_exit_no_update
+        
+        glm01_dev=channels[21]
+        glt04_dev=channels[22]
+    endif
 
-	rem --- Lot / Serial number?
-	if ls$="Y" then
-		begfile=23,endfile=27
-		files$[23]="ivm-07",ids$[23]="IVM_LSMASTER"
-		files$[24]="ivm-17",ids$[24]="IVM_LSACT"
-		files$[25]="ivt-01",ids$[25]="IVT_LSTRANS"
-		files$[26]="ivt-02",ids$[26]="IVX_LSCUST"
-		files$[27]="ivt-03",ids$[27]="IVX_LSVEND"
+    rem --- Lot / Serial number?
+    if ls$="Y" then
+        begfile=23,endfile=27
+        files$[23]="ivm-07",ids$[23]="IVM_LSMASTER"
+        files$[24]="ivm-17",ids$[24]="IVM_LSACT"
+        files$[25]="ivt-01",ids$[25]="IVT_LSTRANS"
+        files$[26]="ivt-02",ids$[26]="IVX_LSCUST"
+        files$[27]="ivt-03",ids$[27]="IVX_LSVEND"
 
-		call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-		if status then goto std_exit
-		
-		ivm07_dev=channels[23]
-		ivm17_dev=channels[24]
-		ivt01_dev=channels[25]
-		ivt02_dev=channels[26]
-		ivt03_dev=channels[27]
-	endif
-	
-	rem --- LIFO/FIFO?
-	if lf$="Y" then
-		begfile=28,endfile=28
-		files$[28]="ivm-04",ids$[28]="IVM_ITEMTIER"
-		call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-		ivm04_dev=channels[28]
-	endif
-		
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+        if status then goto std_exit_no_update
+        
+        ivm07_dev=channels[23]
+        ivm17_dev=channels[24]
+        ivt01_dev=channels[25]
+        ivt02_dev=channels[26]
+        ivt03_dev=channels[27]
+    endif
+    
+    rem --- LIFO/FIFO?
+    if lf$="Y" then
+        begfile=28,endfile=28
+        files$[28]="ivm-04",ids$[28]="IVM_ITEMTIER"
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+        ivm04_dev=channels[28]
+    endif
+        
 rem --- Init Data
 
-	precision num(ivs01a.precision$)
-	dim files[44],item$[3]
-	rem dim a0$(50),b0$(22),b1$(60)
-	rem dim c0$(24),c1$(64),y0$(32),y1$(g[4]),x0$(32),x1$(8*g[4])
-	rem dim w0$(53),w1$(22),w2$(67),w[2]
-	
-	files[1]=ivm01_dev
-	files[2]=ivm02_dev
-	files[4]=ivm04_dev
-	files[5]=ivm05_dev
-	files[7]=ivm07_dev
-	files[12]=ivm12_dev
-	files[17]=ivm17_dev
-	files[41]=ivt01_dev
-	files[42]=ivt02_dev
-	files[43]=ivt03_dev
-	files[44]=ivt04_dev
-	
-	more=1
-	
+    precision num(ivs01a.precision$)
+    dim files[44],item$[3]
+    rem dim a0$(50),b0$(22),b1$(60)
+    rem dim c0$(24),c1$(64),y0$(32),y1$(g[4]),x0$(32),x1$(8*g[4])
+    rem dim w0$(53),w1$(22),w2$(67),w[2]
+    
+    files[1]=ivm01_dev
+    files[2]=ivm02_dev
+    files[4]=ivm04_dev
+    files[5]=ivm05_dev
+    files[7]=ivm07_dev
+    files[12]=ivm12_dev
+    files[17]=ivm17_dev
+    files[41]=ivt01_dev
+    files[42]=ivt02_dev
+    files[43]=ivt03_dev
+    files[44]=ivt04_dev
+    
+    more=1
+    
+rem --- Initialize update arrays
+
+    call pgmdir$+"ivc_itemupdt.aon::init",files[all],ivs01a$,item$[all],refs$[all],refs[all],rd_table_chans$[all],ignore_status
+    
+    
 rem --- Position header file
 
-	call pgmdir$+"adc_progress.aon","N","","","","",0,ive01_dev,1,meter_num,ignore_status
+    call pgmdir$+"adc_progress.aon","N","","","","",0,ive01_dev,1,meter_num,ignore_status
 
-	read (ive01_dev,key=firm_id$,dom=*next)
+    read (ive01_dev,key=firm_id$+batch_no$,knum=3,dom=*next)
 
-	while more
+    while more
 
-		ive01_key$=key(ive01_dev,end=*break)
-		if pos(firm_id$=ive01_key$)<>1 then break
-		read record (ive01_dev) ive01a$
+        ive01_key$=key(ive01_dev,end=*break)
+        if pos(firm_id$+batch_no$=ive01_key$)<>1 then break
+        read record (ive01_dev) ive01a$
 
 rem --- Transaction Code
 
-		rem dim y1$(g[4],"0")
-		find record (ivm10_dev,key=firm_id$+"B"+ive01a.trans_code$,dom=*next) ivm10b$
+        rem dim y1$(g[4],"0")
+        find record (ivm10b_dev,key=firm_id$+"B"+ive01a.trans_code$,dom=*next) ivm10b$
 
 rem --- Position detail file
 
-		read (ive11_dev,key=ive01a.firm_id$+ive01a.iv_trans_no$,dom=*next)
+        read (ive11_dev,key=ive01a.firm_id$+ive01a.iv_trans_no$,dom=*next)
 
-		while more
+        while more
 
-			ive11a_key$=key(ive11_dev,end=*break)
-			
-			if pos(ive01a.firm_id$+ive01a.iv_trans_no$=ive11a_key$)<>1 then break
-			read record (ive11_dev) ive11a$
-			call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            ive11a_key$=key(ive11_dev,end=*break)
+            
+            if pos(ive01a.firm_id$+ive01a.iv_trans_no$=ive11a_key$)<>1 then break
+            read record (ive11_dev) ive11a$
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
-			if pos(ivm10b.trans_type$="AIR") then 
-				
+            if pos(ivm10b.trans_type$="AIR") then 
+                
 rem --- Item Number
 
-				dim item$[3],ref$[11],ref[3]; rem ,z0$(g[4])
-				find record (ivm01_dev,key=firm_id$+ive11a.item_id$,dom=*endif) ivm01a$
+                dim item$[3],ref$[11],ref[3]; rem ,z0$(g[4])
+                find record (ivm01_dev,key=firm_id$+ive11a.item_id$,dom=*endif) ivm01a$
 
-				item$[1]=ive11a.warehouse_id$
-				item$[2]=ive11a.item_id$
-				item$[3]=ive11a.lotser_no$
-				action$="I"+ivm10b.trans_type$
-				ref$[0]=ive01a.trans_date$
-				ref$[2]=ive01a.iv_trans_no$
-				ref$[4]=ive01a.trans_code$
-				ref[0]=ive11a.trans_qty
-				ref[1]=ive11a.unit_cost
-				ref$[7]=ive11a.gl_account$
-				ref$[8]=ive01a.trans_cmt$
+                item$[1]=ive11a.warehouse_id$
+                item$[2]=ive11a.item_id$
+                item$[3]=ive11a.lotser_no$
+                action$="I"+ivm10b.trans_type$
+                ref$[0]=ive01a.trans_date$
+                ref$[2]=ive01a.iv_trans_no$
+                ref$[4]=ive01a.trans_code$
+                ref[0]=ive11a.trans_qty
+                ref[1]=ive11a.unit_cost
+                ref$[7]=ive11a.gl_account$
+                ref$[8]=ive01a.trans_cmt$
 
-				if ls$="Y" then let ref$[10]=ive11a.ls_location$,ref$[11]=ive11a.ls_comments$
-				if ivm10b.trans_type$="I" then let ref[0]=-ref[0]
+                if ls$="Y" then let ref$[10]=ive11a.ls_location$,ref$[11]=ive11a.ls_comments$
+                if ivm10b.trans_type$="I" then let ref[0]=-ref[0]
 
 rem --- Inventory updates
 
-				call pgmdir$+"ivc_itemupdt.aon",action$,files[all],ivs01a$,item$[all],ref$[all],ref[all],rd_table_chans$[all],ignore_status
-			
-			endif
+                call pgmdir$+"ivc_itemupdt.aon",action$,files[all],ivs01a$,item$[all],ref$[all],ref[all],rd_table_chans$[all],ignore_status
+            
+            endif
 
 rem --- Remove detail and loop back for next
 
-			remove (ive11_dev,key=ive11a_key$,dom=*next)
+            remove (ive11_dev,key=ive11a_key$,dom=*next)
 
-		wend
+        wend
 
 rem --- Remove Header Here
 
-		remove (ive01_dev,key=ive01_key$,dom=*next)
+        remove (ive01_dev,key=ive01a.firm_id$+ive01a.iv_trans_no$,dom=*next)
 
-	wend
+    wend
 
 rem --- All done
 
     if gl$="Y"
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,ignore_status
        call pgmdir$+"glc_ctlupdate.aon",ignore_status
+       call pgmdir$+"glc_ctldelete.aon",status       
     endif
     call pgmdir$+"adc_batchdelete.aon",err=*next,ignore_status
     goto std_exit
@@ -296,7 +282,7 @@ rem #include disp_message.src
 disp_message:rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
-	
+    
 return
 
 rem #include std_error.src
@@ -347,9 +333,23 @@ rem #endinclude std_missing_params.src
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    run stbl("DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

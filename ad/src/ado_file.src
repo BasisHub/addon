@@ -1,0 +1,477 @@
+rem ==========================================================================
+rem --- Object representation of an open file and methods to work on it
+rem --- Program ado_file.src v8.0.0 01Jan2010
+rem --- Copyright 2008-2010, BASIS International, Ltd.
+rem ==========================================================================
+
+    use java.util.HashMap
+
+    class public FileObject
+    
+        field private BBjString fileAlias$
+        field private BBjString fileName$
+        field private BBjString fullPath$
+        field private BBjString fileDesc$
+        field private BBjString fileTmpl$
+        field private BBjTemplatedString fileRec!
+        field private BBjInt channel%
+        field private BBjInt eof% = -1
+        field private static HashMap openFiles!
+        field private static BBjNumber START_BLOCK = 1
+        field private static BBjNumber TRUE = 1
+        field private static BBjNumber FALSE = 0
+        
+    rem --- Barista table data
+        
+        field private static BBjInt ddmTablesChan% = 0
+        field private static BBjInt ddmTableTplsChan% = 0
+        field private static BBjString baristaDataPath$
+    
+    rem ==========================================================================
+    rem --- Constructor (private, use getInstance)
+    rem ==========================================================================
+    
+        method private FileObject(BBjString p_alias$)
+        
+            #setBaristaTables()
+
+            found = 0
+            alias$ = p_alias$
+            
+            while !found
+                if #START_BLOCK then
+                    read (#ddmTablesChan%, key=pad(p_alias$, 16), dom=*endif ) *, file_desc$, file_name$, file_path$
+                    found = 1
+                    #fileName$ = file_name$
+                    #fileAlias$ = file_alias$
+                    #fileDesc$ = file_desc$
+                    
+                    if pos( "[" = file_path$ ) = 1 and pos( "]" = file_path$ ) = len(file_path$) then
+                        path$ = ""
+                        path$ = stbl( file_path$(2, len(file_path$) - 2), err=*next )
+                        #fullPath$ = #addFinalSlash(path$) + #fileName$
+                    else
+                        #fullPath$ = #addFinalSlash(file_path$) + #fileName$
+                    endif
+                endif
+                
+                if !found then
+                    file_name$ = alias$
+                    read (#ddmTablesChan%, knum=2, key=pad(file_name$, 30, $00$), dom=*next)
+                    eof = 1
+                    k$ = key(#ddmTablesChan%, end=*endif)
+                    eof = 0
+                    
+                    if pos(pad(file_name$, 30, $00$) = k$) = 1 then
+                        alias$ = k$(31,16)
+                    else
+                        throw "FileObject: could not find """ + file_name$ + """ in ddm_tables.bat", 11
+                    endif
+                endif
+                
+                if eof then
+                    throw "FileObject: could not find """ + file_name$ + """ in ddm_tables.bat", 11
+                endif
+            wend
+            
+            found = 0
+            
+            if #START_BLOCK then
+                read (#ddmTableTplsChan%, key=pad(p_alias$, 16), dom=*endif ) *, *, file_tmpl$
+                found = 1
+                #fileTmpl$ = file_tmpl$
+            endif
+            
+            if !found then
+                throw "FileObject: could not find template for """ + p_alias$ + """ in ddm_table_tpls.bat", 11
+            endif
+            
+            #fileRec! = BBjAPI().makeTemplatedString(#fileTmpl$)
+            
+        methodend
+    
+    rem ==========================================================================
+    rem --- Get instance of object here
+    rem ==========================================================================
+    
+        method public static FileObject getInstance(BBjString p_alias$)
+        
+            declare FileObject this_file!
+            this_file! = new FileObject( p_alias$ )
+            
+            if #openFiles! = null() then #openFiles! = new HashMap()
+            
+            if #openFiles!.containsKey( p_alias$ ) then
+                methodret cast( FileObject, #openFiles!.get( p_alias$ ) )
+            else
+                methodret #openFile( this_file! )
+            endif
+            
+        methodend
+        
+    rem ==========================================================================  
+    rem --- Set the Barista table channel for ddm_tables, ddm_table_tpls
+    rem ==========================================================================
+    
+        method private void setBaristaTables()
+        
+            if #baristaDataPath$ = "" then
+                path$ = ""
+                path$ = stbl("+DIR_BRD", err=*next)
+                #baristaDataPath$ = #addFinalSlash(path$)
+            endif
+            
+            if #ddmTablesChan% = 0
+                chan = unt
+                opened = 0
+            
+                if #START_BLOCK then
+                    open (chan, err=*endif) #baristaDataPath$ + "ddm_tables.dat"
+                    opened = 1
+                endif
+                
+                if !opened then
+                    throw "FileObject: could not open """ + #baristaDataPath$ + "ddm_tables.dat""", err
+                endif
+                
+                #ddmTablesChan% = int(chan)
+            endif        
+            
+            if #ddmTableTplsChan% = 0
+                chan = unt
+                opened = 0
+            
+                if #START_BLOCK then
+                    open (chan, err=*endif) #baristaDataPath$ + "ddm_table_tpls.dat"
+                    opened = 1
+                endif
+                
+                if !opened then
+                    throw "FileObject: could not open """ + #baristaDataPath$ + "ddm_table_tpls.dat""", err
+                endif
+                
+                #ddmTableTplsChan% = int(chan)
+            endif        
+            
+        methodend
+        
+    rem ==========================================================================   
+    rem --- Open file and set channel
+    rem ==========================================================================
+    
+        method private static FileObject openFile(FileObject p_file!)
+            
+            chan = unt
+            opened = 0
+            
+            if #START_BLOCK then
+                open (chan, err=*endif) p_file!.getFullPath()
+                opened = 1
+            endif
+            
+            if !opened then
+                throw "FileObject: could not open file """ + p_file!.getFullPath() + """", err
+            endif
+            
+            p_file!.setChannel( int(chan) )
+            #openFiles!.put( p_file!.getAlias(), p_file! )
+            
+            methodret p_file!
+
+        methodend
+    
+    rem ==========================================================================
+    rem --- Read a record
+    rem ==========================================================================
+        
+        method public BBjTemplatedString readRecord(BBjString p_key$)
+            
+            found = 0
+            #eof% = -1
+            
+            if #START_BLOCK then
+                rem the follow syntax is legal but throws a warning when type-checking
+                read record (#channel%, key=p_key$, dom=*endif) #fileRec!
+                found = 1
+            endif
+            
+            if found then
+                methodret #fileRec!
+            else
+                throw "FileObject: cannot file key " + p_key$, 11
+            endif
+            
+        methodend
+
+    rem ==========================================================================
+    rem --- Read a string field
+    rem ==========================================================================
+    
+        method public BBjString readStringField(BBjString p_key$, BBjString p_field$)
+        
+            declare BBjTemplatedString rec!
+            rec! = #readRecord(p_key$)
+            #eof% = -1
+            methodret rec!.getFieldAsString(p_field$)
+        
+        methodend
+
+    rem ==========================================================================
+    rem --- Read a number field
+    rem ==========================================================================
+    
+        method public BBjNumber readNumberField(BBjString p_key$, BBjString p_field$)
+        
+            declare BBjTemplatedString rec!
+            rec! = #readRecord(p_key$)
+            #eof% = -1
+            methodret rec!.getFieldAsNumber(p_field$)
+        
+        methodend
+        
+    rem ==========================================================================
+    rem --- Get a string field from the current record
+    rem ==========================================================================
+    
+        method public BBjString getStringField(BBjString p_field$)
+        
+            if #eof% = #TRUE or #fileRec! = null() then
+                methodret ""
+            else
+                got_field = 0
+                fld$ = #fileRec!.getFieldAsString(p_field$, err=*endif)
+                got_field = 1
+            endif
+            
+            if got_field then
+                methodret fld$
+            else
+                throw "FileObject: Could not find """ + p_field$ + """ in record", 47
+            endif
+        
+        methodend
+        
+    rem ==========================================================================
+    rem --- Get a number field from the current record
+    rem ==========================================================================
+    
+        method public BBjNumber getNumberField(BBjString p_field$)
+        
+            if #eof% = #TRUE or #fileRec! = null() then
+                methodret 0
+            else
+                got_field = 0
+                fld = #fileRec!.getFieldAsNumber(p_field$, err=*endif)
+                got_field = 1
+            endif
+            
+            if got_field then
+                methodret fld
+            else
+                throw "FileObject: Could not find """ + p_field$ + """ in record", 47
+            endif
+            
+        methodend
+        
+    rem ==========================================================================
+    rem --- Are we at the end of the file?
+    rem ==========================================================================   
+
+        method public BBjInt hasNext()
+        
+            if #eof% <> -1 then
+                methodret !#eof%
+            else
+                #eof% = 1
+            
+                if #START_BLOCK then
+                    ignore$ = key(#channel%, end=*endif) 
+                    #eof% = 0
+                endif
+                
+                methodret !#eof%
+            endif
+            
+        methodend
+        
+    rem ==========================================================================
+    rem --- Partial Read
+    rem ==========================================================================   
+    
+        method public void partialRead(BBjString p_part$)
+        
+            read (#channel%, key=p_part$, dom=*next)
+            #eof% = -1
+        
+        methodend
+        
+    rem ==========================================================================
+    rem --- Read next record; set EOF
+    rem ==========================================================================   
+    
+        method public BBjTemplatedString readNext()
+        
+            #eof% = 1
+        
+            if #START_BLOCK then
+                read record (#channel%, end=*endif) #fileRec!
+                #eof% = 0
+            endif
+            
+            if #eof% then #fileRec! = null()
+            methodret #fileRec!
+                
+        methodend
+    
+    rem ==========================================================================
+    rem --- Close this file's channel and remove from the open channels list
+    rem ==========================================================================
+        
+        method public void close()
+            if #channel% then close(#channel%, err=*next)
+            #openFiles!.remove(#fileAlias$)
+        methodend
+        
+    rem ==========================================================================
+    rem --- Close all open channels
+    rem ==========================================================================
+        
+        method public static void closeAll()
+        
+            declare FileObject file!
+        
+            if #ddmTablesChan% then close( #ddmTablesChan%, err=*next)
+            if #ddmTableTplsChan% then close ( #ddmTableTplsChan%, err=*next)
+            
+            while #openFiles!.keySet().iterator().hasNext()
+                alias$ = str( #openFiles!.keySet().iterator().next() )
+                file! = cast( FileObject, #openFiles!.get(alias$) )
+                file!.close()
+                #openFiles!.remove(alias$)
+            wend
+            
+        methodend
+        
+    rem ==========================================================================
+    rem --- Add final slash to path
+    rem ==========================================================================
+    
+        method public BBjString addFinalSlash(BBjString p_path$)
+        
+            if  p_path$ <> "" and 
+:               p_path$( len(p_path$), 1 ) <> "/" and 
+:               p_path$( len(p_path$), 1 ) <> "\" 
+:           then 
+                p_path$ = p_path$ + "/"
+            endif
+            
+            methodret p_path$
+            
+        methodend
+        
+    rem ==========================================================================
+    rem --- Accessors
+    rem ==========================================================================
+    
+        method public BBjString getAlias()
+            methodret #fileAlias$
+        methodend
+    
+        method public BBjString getName()
+            methodret #fileName$
+        methodend
+        
+        method public BBjString getFullPath()
+            methodret #fullPath$
+        methodend
+        
+        method public BBjString getTmpl()
+            methodret #fileTmpl$
+        methodend
+        
+        method public BBjString getDesc()
+            methodret #fileDesc$
+        methodend
+        
+        method public BBjTemplatedString getRecord()
+            methodret #fileRec!
+        methodend
+        
+        method public BBjInt getChannel()
+            methodret #channel%
+        methodend
+        
+        method private void setChannel(BBjInt p_chan%)
+            #channel% = p_chan%
+        methodend
+    
+    classend
+
+rem ==========================================================================    
+rem --- Testing
+rem ==========================================================================    
+
+    use ::ado_file.src::File
+    declare FileObject vendMast!
+    declare BBjTemplatedString rec!
+
+    vendMast! = FileObject.getInstance("APM_VENDMAST")
+    print "File name for ", vendMast!.getAlias(), ": ", vendMast!.getName()
+    print "Description: ", vendMast!.getDesc()
+    print "Template: ", vendMast!.getTmpl()
+    
+    firm_id$ = "01"
+    vend_id$ = "000100"
+    rec! = vendMast!.readRecord(firm_id$ + vend_id$)
+    print "Record for " + firm_id$ + vend_id$ + ":"
+    print rec!.getString()
+    print "Vendor name from rec!: ", rec!.getFieldAsString("vendor_name")
+    print "Vendor name from object (read): ", vendMast!.readStringField(firm_id$ + vend_id$, "vendor_name")
+    print "Vendor name from object (get): ", vendMast!.getStringField("vendor_name")
+    
+rem --- Test a loop using only the object
+
+    print ""
+    input "Loop using only the vendMast! object, press <enter> ", *
+    
+    vendMast!.partialRead(firm_id$)
+    
+    while vendMast!.readNext() <> null()
+        if vendMast!.getStringField("firm_id") <> firm_id$ then break
+        print "Vendor: ", vendMast!.getStringField("vendor_id"), ", ", vendMast!.getStringField("vendor_name")
+    wend
+    
+rem --- Another way using rec!
+
+    print ""
+    input "Loop using the rec! object, press <enter> ", *
+
+    vendMast!.partialRead(firm_id$)
+    
+    while 1
+        rec! = vendMast!.readNext() 
+        if vendMast!.hasNext() = 0 then break
+        if rec!.getFieldAsString("firm_id") <> firm_id$ then break
+        print "Vendor: ", rec!.getFieldAsString("vendor_id"), ", ", rec!.getFieldAsString("vendor_name")
+    wend
+    
+rem --- Yet another way using rec$
+
+    print ""
+    input "Loop using traditional reads, press <enter> ", *
+
+    dim rec$:vendMast!.getTmpl()
+    read (vendMast!.getChannel(), key=firm_id$, dom=*next)
+    
+    while 1
+        read record(vendMast!.getChannel(), end=*break) rec$
+        if rec.firm_id$ <> firm_id$ then break
+        print "Vendor: ", rec.vendor_id$, ", ", rec.vendor_name$
+    wend
+
+    escape
+    
+    FileObject.closeAll()
+
+    end
+    

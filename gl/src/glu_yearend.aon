@@ -53,33 +53,34 @@ rem --- Initializations
 
 rem --- Start progress meter
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,glm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","GLM_ACCT","roll years","","",0,glm01_dev,1,meter_num,status
+    total_recs=0
 
 rem --- Disallow 'M'enu option in Error Routine
 
     exit_ctrl=1
 
 rem --- Position File
-
     read (glm01_dev,key=firm_id$,dom=*next)
 
 rem --- Read next glm-02 record
 
     while more
-        glm01_key$=key(glm01_dev,end=done)
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        if pos(firm_id$=glm01_key$)<>1 goto done
-        read (glm01_dev)
+        read record (glm01_dev,end=*break)glm01a$
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        if glm01a.firm_id$<>firm_id$ then break
 
 rem --- Roll glm-02 records
 
         for x=1 to begrec
     
 rem --- Retrieve glm-02 record
-    
+
             dim glm02a$:fattr(glm02a$)
-            glm02_key$=glm01_key$+begrec$(x,1)
-            read record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
+            glm02a.firm_id$=firm_id$,glm02a.gl_account$=glm01a.gl_account$
+            glm02a.record_id$=begrec$(x,1)
+            read record (glm02_dev,key=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$,dom=*next) glm02a$
 
             glm02a.record_id$=endrec$(x,1)
             write record (glm02_dev,key=glm02_key$) glm02a$
@@ -87,8 +88,8 @@ rem --- Retrieve glm-02 record
 rem --- Remove next year records after roll
     
             if pos(begrec$(x,1)="45")=0 continue
-            glm02_key$(len(glm02_key$),1)=begrec$(x,1)
-            remove (glm02_dev,key=glm02_key$,dom=*next)
+            glm02a.record_id$=begrec$(x,1)            
+            remove (glm02_dev,key=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$,dom=*next)
     
         next x
 
@@ -222,11 +223,13 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
     msg_id$="UPDATE_COMPLETE"
     dim msg_tokens$[1]
     msg_opt$=""
     gosub disp_message
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    
     run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src

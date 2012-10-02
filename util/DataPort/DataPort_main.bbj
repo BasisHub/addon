@@ -9,21 +9,39 @@ rem  +-----------------------------------------+
 rem
 rem --- This overlay creates templates for version 6/7 data files using
 rem --- the Addon dictionary files ddm-01, ddm-03 and ddm-04 and then
-rem --- copied to Addon 8 data files after performing date format changes.
+rem --- copies to Addon 8 data files after performing date format changes.
 rem --- Normalization of data files will also be done in this program.
 rem
+
+use java.util.Iterator
+
+
 rem --- Dictionary file templates
 dim ddm01$:"data_name:c(12*),description:c(30),lstrev:c(6),data_type:c(1),reserved_str:c(68*),fld_length:n(3*),display_len:n(3*),reserved_num:n(1*)"
 dim ddm03$:"file_name:c(6),record_id:c(1*),description:c(30),reserved_str:c(33*),reserved_num:n(3*)"
 dim ddm04$:"file_name:c(6),record_id:c(1),layout_seq:c(3*),data_name:c(12),reserved_str1:c(41),fld_sep:c(1),reserved_str2:c(68*),reserved_num:n(1*),fld_repeats:n(3*),fld_occurs:n(3)"
 
-rem --- Open message table for use at the end of processing
+rem --- Open files and/or retrieve templates that may be needed for PO file conversion
 
-    num_files=1
-    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-    open_tables$[1]="ADS_SEQUENCES",open_opts$[1]="OTA"
+    num_files=7
+    dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
+    rd_open_tables$[1]="ADS_SEQUENCES",rd_open_opts$[1]="OTA"
+    rd_open_tables$[2]="ARM_CUSTMAST",rd_open_opts$[2]="T"
+    rd_open_tables$[3]="ARM_CUSTSHIP",rd_open_opts$[3]="T"
+    rd_open_tables$[4]="OPE_ORDSHIP",rd_open_opts$[4]="T"
+    rd_open_tables$[5]="OPT_INVSHIP",rd_open_opts$[5]="T"
+    rd_open_tables$[6]="OPE_ORDHDR",rd_open_opts$[6]="T"
+    rd_open_tables$[7]="OPT_INVHDR",rd_open_opts$[7]="T"
+    
     gosub open_tables
-    ads_sequences_dev=num(open_chans$[1]),ads_sequences_tpl$=open_tpls$[1]
+    
+    ads_sequences_dev=num(rd_open_chans$[1]),ads_sequences_tpl$=rd_open_tpls$[1]
+    arm_custmast_tpl$=rd_open_tpls$[2]
+    arm_custship_tpl$=rd_open_tpls$[3]
+    ope_ordship_tpl$=rd_open_tpls$[4]
+    opt_invship_tpl$=rd_open_tpls$[5]
+    ope_ordhdr_tpl$=rd_open_tpls$[6]
+    opt_invhdr_tpl$=rd_open_tpls$[7]
 
 rem --- Set the hook for dealer custom call
 
@@ -183,6 +201,38 @@ while 1
 wend
 close (field_translations)
 
+rem --- read new_field_defaults into hash map
+
+new_field_defaults! = new java.util.HashMap()
+dim new_field_defaults$:"filename:c(16*=124),fieldname:c(16*=124),default_value:c(16*=)"
+new_field_defaults = unt
+open (new_field_defaults)filedir$+"new_field_defaults"
+while 1
+   read (new_field_defaults,end=*break)new_field_defaults$
+   if len(new_field_defaults$) then
+      keyval$ = cvs(new_field_defaults.filename$,7)+"."+cvs(new_field_defaults.fieldname$,3)
+      dataval$ = cvs(new_field_defaults.default_value$,7)
+      new_field_defaults!.put(keyval$,dataval$)
+   endif
+wend
+close (new_field_defaults)
+
+
+rem --- read po file names into hash map
+
+po_files! = new java.util.HashMap()
+dim po_files$:"det_filename:c(16*=124),hdr_filename:c(16*=)"
+po_files = unt
+open (po_files)filedir$+"po_files"
+while 1
+   read (po_files,end=*break)po_files$
+   if len(po_files$) then
+      keyval$ = cvs(po_files.det_filename$,3)
+      dataval$ = cvs(po_files.hdr_filename$,3)
+      po_files!.put(keyval$,dataval$)
+   endif
+wend
+close (po_files)
 
 rd_meter_data$="DataPort Start Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")
 rd_meter_proc_recs=rd_meter_total_recs
@@ -311,14 +361,14 @@ next_ddm04:
           rd_col_occurs_sfx$="_"+str(rd_curr_occur+rd_occur_adj:"00")
        endif
 
-	   	   rem --- Remove slashes from data name
-	   data_name$ = ddm04.data_name$
-	   s_pos = pos("/" = data_name$)
+           rem --- Remove slashes from data name
+       data_name$ = ddm04.data_name$
+       s_pos = pos("/" = data_name$)
 
-	   while s_pos
-	      data_name$ = data_name$(1, s_pos-1) + data_name$(s_pos+1)
-		  s_pos = pos("/" = data_name$)
-	   wend
+       while s_pos
+          data_name$ = data_name$(1, s_pos-1) + data_name$(s_pos+1)
+          s_pos = pos("/" = data_name$)
+       wend
 
        rem ' field names can only contain [A-Z0-9_]
        data_name$=tbl(cvs(data_name$,7),tbl=az_09)
@@ -331,7 +381,7 @@ next_ddm04:
          endif
        endif    
        if rd_col_occurs$="YES" or rd_occur_adj>0
-         if rd_curr_occur+rd_occur_adj=rd_col_occurs and datatype$="C" or			datatype$<>"C"
+         if rd_curr_occur+rd_occur_adj=rd_col_occurs and datatype$="C" or           datatype$<>"C"
            if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E"
              if rd_temp_seg$(len(rd_temp_seg$),1)<>"*"
                rd_temp_seg$=rd_temp_seg$+"*"
@@ -390,7 +440,7 @@ end_ddm04:
     endif
 
     rem ' Do we need to set the shipto type?
-    ar_shipto = table_alias$="OPE_ORDHDR" or table_alias$="OPT_ORDHDR"
+    ar_shipto = table_alias$="OPE_ORDHDR" or table_alias$="OPT_INVHDR"
 
     rem ' Correlate old fieldnames to new fieldnames
     dim new_fieldlist$:fields$
@@ -416,28 +466,13 @@ end_ddm04:
     if record_id_field$<>"" and field(old_rec$,record_id_field$,err=*continue)<>ddm03.record_id$ then
        goto next_rec
     endif
-    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) +					  field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
+    if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) +                      field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
        goto next_rec
     endif
 
     rem --- start field loop
 
         for field=1 to fields
-
-rem --- Check for and warn if PO detail files contain Drop Ship information
-
-        if new_datafile$="poe-11" or new_datafile$="poe-12"
-            if cvs(old_fieldlist.name$[field],3)="CUSTOMER_NBR" or	           cvs(old_fieldlist.name$[field],3)="ORDER_NUMBER" or			   cvs(old_fieldlist.name$[field],3)="LINE_NUMBER" or			   cvs(old_fieldlist.name$[field],3)="SHIPTO_NBR"
-                if cvs(field(old_rec$,old_fieldlist.name$[field],err=*continue),3)<>""
-                    if new_datafile$="poe-11"
-                        print (err_dev)"There is Drop Ship information in Requisition "+old_rec.req_number$+" in line "+old_rec.po_line_nbr$+" - "+cvs(old_fieldlist.name$[field],3)+"="+cvs(field(old_rec$,old_fieldlist.name$[field]),3)+"."
-                    else
-                        print (err_dev)"There is Drop Ship information in Purchase Order "+old_rec.po_number$+" in line "+old_rec.po_line_nbr$+" - "+cvs(old_fieldlist.name$[field],3)+"="+cvs(field(old_rec$,old_fieldlist.name$[field]),3)+"."
-                    endif
-                    dropship$="Y"
-                endif
-            endif
-        endif
 
 rem --- Retrieve value$ if applicable
 
@@ -459,7 +494,11 @@ rem --- Populate new internal sequence from old display sequence
         int_seq! = internal_seq!.get(keyval$)
         if int_seq! <> null() then
             int_seq$ = int_seq!
-            field new_rec$,int_seq$=str(num(value$):"000000000000")
+            if pos(cvs(int_seq$,3)+$0a$=new_fieldlist$)<>0
+                if cvs(value$,3)<>"" then value$=str(num(value$):"000000000000")
+            else
+                field new_rec$,int_seq$=str(num(value$):"000000000000")
+            endif
         endif
 
 rem --- check for specific values that can't be found any other way
@@ -528,9 +567,9 @@ rem --- Set blank Credit Hold (Y;N;E) field values to N
         endif
 
         rem --- set Stocking Level to "W" for all items
-		if cvs(new_fieldlist.name$[field],3)="STOCK_LEVEL"
-			value$="W"
-		endif
+        if cvs(new_fieldlist.name$[field],3)="STOCK_LEVEL"
+            value$="W"
+        endif
 
 rem --- Call custom program - Note - there is no CALL/ENTER list, so all variables will be 
 rem     available. Common usages for this would be things like data conversion, since value$
@@ -545,21 +584,21 @@ rem --- Check value of new field for blanks if part of primary key
         if pos(new_fieldlist.name$[field]+$0a$=key_temp$)>0
             if cvs(value$,2)=""
                 if pos(new_fieldlist.name$[field]+$0a$=blank_fields$)=0
-                	if field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))=null()
-	                    blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
-	                    print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" has a blank value and no translation specified." 
-	                endif
- 				endif    
+                    if field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))=null()
+                        blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
+                        print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" has a blank value and no translation specified." 
+                    endif
+                endif    
             endif
         endif
 
 rem --- if this field.value is listed in flat file "field_translations" then translate to new value
 
-		translate_value!=field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))
-		if translate_value!<>null()
-			translate_value$=str(translate_value!)
-			value$=translate_value$
-		endif
+        translate_value!=field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))
+        if translate_value!<>null()
+            translate_value$=str(translate_value!)
+            value$=translate_value$
+        endif
 
  rem --- date formatting
 
@@ -620,11 +659,11 @@ rem --- if this field.value is listed in flat file "field_translations" then tra
 
         value$=cvs(value$,16)
 
-		rem --- probably need logic here to read ddm_elements, and make sure that 
-		rem --- delimited elements that are marked as left/space padded actually get padded
-		rem --- right now, padding doesn't happen, but isn't causing widespread problem (CAH; Apr09)
+        rem --- probably need logic here to read ddm_elements, and make sure that 
+        rem --- delimited elements that are marked as left/space padded actually get padded
+        rem --- right now, padding doesn't happen, but isn't causing widespread problem (CAH; Apr09)
 
-		        field new_rec$,new_fieldlist.name$[field]=value$
+                field new_rec$,new_fieldlist.name$[field]=value$
 
             next field
 
@@ -657,13 +696,18 @@ write_record:
     else
        writerecord(new_file,dom=duplicate_record,err=write_err)new_rec$
     endif
+
+    po_det$=new_datafile$
+    po_file! = po_files!.get(po_det$)
+    if po_file! <> null() and cvs(old_rec.customer_nbr$,3)<>""then gosub convert_po_files
+        
     goto next_rec
 
 duplicate_record:
 
     if cvs(new_datafile$,2)="glm-06" or cvs(new_datafile$,2)="adm-19" or cvs(new_datafile$,2)="opm-14" goto next_rec
     dupe_rec$="Y"
-    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"PRIMARY",key_temp1$,table_chans$[all],rd_stat$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"",key_temp1$,rd_table_chans$[all],rd_stat$
     if len(key_temp1$)>0
         dim dupe_key$:key_temp1$
         dupe_key$=new_rec$
@@ -770,10 +814,9 @@ end_read_normalize_xref:
 rem --- Now go populate masks and sequences
 
     if source_version=6 gosub version6_files
+    if source_version=7 gosub version7_files
     gosub make_masks
-rem    gosub make_messages
-rem    gosub make_printplus
-
+        
     if temp_vend_ok$="N"
         rd_meter_data$="Temporary vendor records found not ported. See error file."
         rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
@@ -814,14 +857,6 @@ rem    gosub make_printplus
         print "   Invalid dates exist in the ported data. See error file for details."
     endif
 
-    if dropship$="Y" 
-        rd_meter_data$="Drop ship information exists in the source data. See error file for details."
-        rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
-        rd_meter_action$="LST"
-        gosub disp_meter        
-        print "   Drop ship information exists in the ported data. See error file for details."
-    endif
-
 rem --- Populate sequence record(s)
 
     if len(firms$)>0
@@ -856,10 +891,210 @@ rem --- Populate sequence record(s)
 
     release
 
+version7_files:
+
+    ops10_dev=unt
+    open (ops10_dev,err=endof_v7cash_sales)source_folder$+"/"+cvs("ops-10",version_cvs)
+    
+    new_file=unt
+    datafile$=cvs("ars_mtdcash",8)
+    table_alias$="ARS_MTDCASH"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v7cash_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then goto start_v7cash
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+
+get_v7cash_template:
+
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
+    dim ids$[1],templates$[1]
+    ids$[1]="ARS_MTDCASH"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status 
+        print "   Could not find v8 template file for ARS_MTDCASH. File skipped."
+        print (err_dev) "Could not find v8 template file for ARS_MTDCASH. File skipped."
+        goto start_v7cash
+    endif
+    dim new_rec$:templates$[1]
+    while 1
+    	k$=key(ops10_dev,end=*break)
+    	if k$(3,1)<>"C" 
+    	    read(ops10_dev)
+    	    continue
+    	endif    
+    	dim ops10[6]
+    	read(ops10_dev,key=k$)ops10_0$,ops10[all]
+    	new_rec.firm_id$=k$(1,2)
+    	new_rec.record_id_c$="C"
+    	new_rec.mtd_cash=ops10[0]
+    	new_rec.mtd_csh_disc=ops10[1]
+    	new_rec.mtd_csh_gl=ops10[2]
+    	new_rec.nxt_mtd_cash=ops10[3]
+    	new_rec.nmtd_cash_ds=ops10[4]
+    	new_rec.nmtd_cashgl=ops10[5]
+    	new_rec$=field(new_rec$)
+    	writerecord(new_file)new_rec$
+    wend
+    
+start_v7cash:
+
+    new_file=unt
+    datafile$=cvs("ops_mtdsales",8)
+    table_alias$="OPS_MTDSALES"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v7sales_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then goto endof_v7cash_sales
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+
+get_v7sales_template:
+
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
+    dim ids$[1],templates$[1]
+    ids$[1]="OPS_MTDSALES"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status 
+        print "   Could not find v8 template file for OPS_MTDSALES. File skipped."
+        print (err_dev) "Could not find v8 template file for OPS_MTDSALES. File skipped."
+        goto endof_v7cash_sales
+    endif
+    dim new_rec$:templates$[1]
+    read(ops10_dev,key="",dom=*next)
+    while 1
+    	k$=key(ops10_dev,end=*break)
+    	if k$(3,1)<>"S" 
+    		read(ops10_dev)
+    		continue
+    	endif	
+    	dim ops10[15]
+    	read(ops10_dev,key=k$)ops10_0$,ops10[all]
+    	new_rec.firm_id$=k$(1,2)
+    	new_rec.record_id_s$="S"
+    	new_rec.mtd_sales=ops10[0]
+    	new_rec.mtd_returns=ops10[1]
+    	new_rec.mtd_tax=ops10[2]
+    	new_rec.mtd_freight=ops10[3]
+    	new_rec.mtd_cost=ops10[4]
+    	new_rec.mtd_discount=ops10[5]
+    	new_rec.mtd_csh_sale=ops10[6]
+    	new_rec.nmtd_sales=ops10[8]
+    	new_rec.nmtd_returns=ops10[9]
+    	new_rec.nmtd_tax=ops10[10]
+    	new_rec.nxt_mtd_frgt=ops10[11]
+    	new_rec.nxt_mtd_cost=ops10[12]
+    	new_rec.nxt_mtd_disc=ops10[13]
+    	new_rec.nmtd_cashsl=ops10[14]
+    	new_rec$=field(new_rec$)
+    	writerecord(new_file)new_rec$
+    wend
+
+endof_v7cash_sales:
+
+    return
+    
 version6_files:
 
+    ars10_dev=unt
+    open (ars10_dev,err=endof_v6cash_sales)source_folder$+"/"+cvs("ars-10",version_cvs)
+    
+    new_file=unt
+    datafile$=cvs("ars_mtdcash",8)
+    table_alias$="ARS_MTDCASH"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v6cash_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then goto start_v6cash
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+
+get_v6cash_template:
+
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
+    dim ids$[1],templates$[1]
+    ids$[1]="ARS_MTDCASH"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status 
+        print "   Could not find v8 template file for ARS_MTDCASH. File skipped."
+        print (err_dev) "Could not find v8 template file for ARS_MTDCASH. File skipped."
+        goto start_v6cash
+    endif
+    dim new_rec$:templates$[1]
+    while 1
+    	k$=key(ars10_dev,end=*break)
+    	if k$(3,1)<>"C" 
+    	    read(ars10_dev)
+    	    continue
+    	endif    
+    	dim ars10[6]
+    	read(ars10_dev,key=k$)ars10_0$,ars10[all]
+    	new_rec.firm_id$=k$(1,2)
+    	new_rec.record_id_c$="C"
+    	new_rec.mtd_cash=ars10[0]
+    	new_rec.mtd_csh_disc=ars10[1]
+    	new_rec.mtd_csh_gl=ars10[2]
+    	new_rec.nxt_mtd_cash=ars10[3]
+    	new_rec.nmtd_cash_ds=ars10[4]
+    	new_rec.nmtd_cashgl=ars10[5]
+    	new_rec$=field(new_rec$)
+    	writerecord(new_file)new_rec$
+    wend
+    
+start_v6cash:
+
+    new_file=unt
+    datafile$=cvs("ops_mtdsales",8)
+    table_alias$="OPS_MTDSALES"
+    open (new_file,err=*next)destin_folder$+"/"+datafile$;goto get_v6sales_template
+    call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
+    if len(status$) then goto endof_v6cash_sales
+    new_file=unt
+    open (new_file)destin_folder$+"/"+datafile$
+
+get_v6sales_template:
+
+    call stbl("+DIR_PGM")+"adc_clearfile.aon",new_file
+    dim ids$[1],templates$[1]
+    ids$[1]="OPS_MTDSALES"
+    call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
+    if status 
+        print "   Could not find v8 template file for OPS_MTDSALES. File skipped."
+        print (err_dev) "Could not find v8 template file for OPS_MTDSALES. File skipped."
+        goto endof_v6cash_sales
+    endif
+    dim new_rec$:templates$[1]
+    read(ars10_dev,key="",dom=*next)
+    while 1
+    	k$=key(ars10_dev,end=*break)
+    	if k$(3,1)<>"S" 
+    		read(ars10_dev)
+    		continue
+    	endif	
+    	dim ars10[15]
+    	read(ars10_dev,key=k$)ars10_0$,ars10[all]
+    	new_rec.firm_id$=k$(1,2)
+    	new_rec.record_id_s$="S"
+    	new_rec.mtd_sales=ars10[0]
+    	new_rec.mtd_returns=ars10[1]
+    	new_rec.mtd_tax=ars10[2]
+    	new_rec.mtd_freight=ars10[3]
+    	new_rec.mtd_cost=ars10[4]
+    	new_rec.mtd_discount=ars10[5]
+    	new_rec.mtd_csh_sale=ars10[6]
+    	new_rec.nmtd_sales=ars10[8]
+    	new_rec.nmtd_returns=ars10[9]
+    	new_rec.nmtd_tax=ars10[10]
+    	new_rec.nxt_mtd_frgt=ars10[11]
+    	new_rec.nxt_mtd_cost=ars10[12]
+    	new_rec.nxt_mtd_disc=ars10[13]
+    	new_rec.nmtd_cashsl=ars10[14]
+    	new_rec$=field(new_rec$)
+    	writerecord(new_file)new_rec$
+    wend
+
+endof_v6cash_sales:
+
     arm10_dev=unt
-    open (arm10_dev)source_folder$+"/"+cvs("arm-10",version_cvs)
+    open (arm10_dev,err=end_of_msgs)source_folder$+"/"+cvs("arm-10",version_cvs)
 
     new_file=unt
     datafile$=cvs("opm-04",8)
@@ -933,7 +1168,7 @@ get_opm14_template:
         next x
     wend
 end_of_msgs:
-    close (new_file)
+    close (new_file,err=*next)
     new_file=0
 return
 
@@ -942,7 +1177,7 @@ make_masks:
 rem --- First try to create the ars_custdflt record"
 
     sys01_dev=unt
-    open (sys01_dev)source_folder$+"/"+cvs("sys-01",version_cvs)
+    open (sys01_dev,err=no_masks)source_folder$+"/"+cvs("sys-01",version_cvs)
 
     new_file=unt
     datafile$=cvs("ars_custdflt",8)
@@ -987,21 +1222,21 @@ read_dflt_hdr:
     check_blank_codes:
 rem --- translate any codes from custdflt if listed in flat file "field_translations" 
 
-	tmp$=fattr(new_rec$,"")
-	tmp=pos($0A$=tmp$,1,0)
-	dim tmp_fieldlist$:"name["+str(tmp)+"]:c(20*)"
-	tmp_fieldlist$=tmp$
+    tmp$=fattr(new_rec$,"")
+    tmp=pos($0A$=tmp$,1,0)
+    dim tmp_fieldlist$:"name["+str(tmp)+"]:c(20*)"
+    tmp_fieldlist$=tmp$
 
-		for field=1 to tmp
-		value$=field(new_rec$,tmp_fieldlist.name$[field])
-		translate_value!=field_translations!.get(tmp_fieldlist.name$[field]+"."+cvs(value$,3))
-		if translate_value!<>null()
-			translate_value$=str(translate_value!)
-			field new_rec$,tmp_fieldlist.name$[field]=translate_value$
-		endif
-	next field
+        for field=1 to tmp
+        value$=field(new_rec$,tmp_fieldlist.name$[field])
+        translate_value!=field_translations!.get(tmp_fieldlist.name$[field]+"."+cvs(value$,3))
+        if translate_value!<>null()
+            translate_value$=str(translate_value!)
+            field new_rec$,tmp_fieldlist.name$[field]=translate_value$
+        endif
+    next field
 
-		return
+        return
 
 no_cust_default:
     masks_dev=unt
@@ -1171,7 +1406,153 @@ no_cust_default:
     end_mask:
     wend
 
+    no_masks:
     return
+    
+convert_po_files:
+
+    po_hdr$=po_file!
+    rem --- open hdr file - 
+    rem --- Open manually, because we want to open in our target dir, 
+    rem --- which isn't necessarily the data dir specified in ddm_tables.
+    rem --- So use open_tables to just return actual file name and template for the alias,
+    rem --- then open using destin_folder$
+
+    num_files=1
+    dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
+    rd_open_tables$[1]=po_hdr$,rd_open_opts$[1]="TA"
+    gosub open_tables
+    po_hdr_dev=unt
+    po_hdr_file$=rd_open_tables$[1]
+    dim po_hdr_rec$:rd_open_tpls$[1]
+    po_hdr_file$=po_hdr_file$(max(pos("/"=po_hdr_file$,-1,1),pos("\"=po_hdr_file$,-1,1))+1)
+    open (po_hdr_dev,err=hdr_open_err)destin_folder$+"/"+po_hdr_file$
+
+    rem --- get key template and load it w/ key fields from detail rec
+    call stbl("+DIR_SYP")+"bac_key_template.bbj",po_hdr$,"",key_fieldlist$,rd_table_chans$[all],rd_stat$
+    key_fields=pos(","=key_fieldlist$,1,0)+1            
+    dim key_fields$:"name["+str(key_fields)+"]:c(20*)"
+    dim po_hdr_key$:key_fieldlist$
+    key_fields$=fattr(po_hdr_key$,"")
+    for xwk=1 to key_fields
+        field po_hdr_key$,key_fields.name$[xwk] = field(new_rec$,key_fields.name$[xwk])
+    next xwk
+    
+    rem --- read header and update cust/order/shipto w/ data from old detail rec, set dropship flag
+    read record (po_hdr_dev,key=po_hdr_key$)po_hdr_rec$
+    if cvs(po_hdr_rec.customer_id$,3)<>"" and cvs(po_hdr_rec.customer_id$,3)<>cvs(old_rec.customer_nbr$,3)
+        rem --- put out log entry that the po (req, po or receipt) refers to more than one cust/order
+        print (err_dev)"There appears to be more than one customer order referenced in "+po_hdr_file$+" key "+po_hdr_key$+"."
+        print (err_dev)"Replacing customer "+po_hdr_rec.customer_id$+" with "+old_rec.customer_nbr$+"."
+    endif
+    po_hdr_rec.dropship$="Y"
+    po_hdr_rec.customer_id$=old_rec.customer_nbr$
+    po_hdr_rec.order_no$=old_rec.order_number$
+    po_hdr_rec.shipto_no$=old_rec.shipto_nbr$
+    po_hdr_rec$=field(po_hdr_rec$)
+    
+    rem --- now read cust ship-to or cust mast and fill in po hdr's dropship address fields
+    if cvs(old_rec.shipto_nbr$,3)=""
+        arm_custmast_dev=unt
+        dim rec$:arm_custmast_tpl$
+        addr_file$="arm-01"
+        open (arm_custmast_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+        while 1
+            read record (arm_custmast_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$,dom=*break)rec$
+            po_hdr_rec.ds_name$=rec.customer_name$            
+            gosub fill_dropship_address
+            break
+        wend
+        close (arm_custmast_dev)       
+    else
+        if num(cvs(old_rec.shipto_nbr$,3))>0 and num(cvs(old_rec.shipto_nbr$,3))<99
+            arm_custship_dev=unt
+            dim rec$:arm_custship_tpl$
+            addr_file$="arm-03"
+            open (arm_custship_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+            while 1
+                read record (arm_custship_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$+po_hdr_rec.shipto_no$,dom=*break)rec$
+                po_hdr_rec.ds_name$=rec.name$
+                gosub fill_dropship_address
+                break
+            wend
+            close (arm_custship_dev)          
+        else
+            if num(cvs(old_rec.shipto_nbr$,3))=99
+                rem --- read ope31 or opt-01/31 for manual (99) shipto
+                ope_ordship_dev=unt
+                dim rec$:ope_ordship_tpl$
+                addr_file$="ope-31"
+                order_found=0
+                open (ope_ordship_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+                while 1
+                    read record (ope_ordship_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$+po_hdr_rec.order_no$,dom=*break)rec$
+                    po_hdr_rec.ds_name$=rec.name$            
+                    gosub fill_dropship_address
+                    order_found=1
+                    break
+                wend
+                close (ope_ordship_dev)
+                if !order_found
+                    opt_invhdr_dev=unt
+                    dim opt_invhdr$:opt_invhdr_tpl$
+                    addr_file$="opt-01"
+                    open (opt_invhdr_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+                    opt_invship_dev=unt
+                    dim rec$:opt_invship_tpl$
+                    addr_file$="opt-31"
+                    open (opt_invship_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+                    while 1
+                        read record (opt_invhdr_dev,key=po_hdr_rec.firm_id$+opt_invhdr.ar_type$+po_hdr_rec.customer_id$+po_hdr_rec.order_no$,knum=3,dom=*break)opt_invhdr$
+                        read record (opt_invship_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$+opt_invhdr.ar_inv_no$,dom=*break)rec$
+                        po_hdr_rec.ds_name$=rec.name$            
+                        gosub fill_dropship_address
+                        break
+                    wend
+                    close (opt_invhdr_dev)
+                    close (opt_invship_dev)
+                endif                           
+            else
+                rem --- invalid shipto
+                po_hdr_rec.addr_line_1$="Unknown address"
+            endif
+        endif
+    endif
+    write record (po_hdr_dev)po_hdr_rec$
+    
+return
+
+    hdr_open_err:
+    
+    rd_meter_data$="PO header file" + po_hdr_file$ + "not found in destination directory. Dropship info not converted."
+    rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+    rd_meter_action$="LST"
+    gosub disp_meter
+    print (err_dev)"Processing PO detail file " + new_datafile$ + ", record: " + old_rec$+"."+$0a$+"Cannot convert dropship fields because corresponding PO header file not found."
+    
+return
+
+    addr_open_err:
+    
+    rd_meter_data$="File" + addr_file$ + "not found in destination directory. Dropship address not converted."
+    rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+    rd_meter_action$="LST"
+    gosub disp_meter
+    print (err_dev)"Processing PO detail file " + new_datafile$ + ", record: " + old_rec$+"."+$0a$+"Cannot insert dropship address in header file because file "+addr_file$+" not found."
+
+return
+
+fill_dropship_address:
+
+    po_hdr_rec.ds_addr_line_1$=rec.addr_line_1$
+    po_hdr_rec.ds_addr_line_2$=rec.addr_line_2$
+    po_hdr_rec.ds_addr_line_3$=rec.addr_line_3$
+    po_hdr_rec.ds_addr_line_4$=rec.addr_line_4$
+    po_hdr_rec.ds_city$=rec.city$
+    po_hdr_rec.ds_state_cd$=rec.state_code$
+    po_hdr_rec.ds_zip_code$=rec.zip_code$
+    
+return
 
 get_new_template:
     new_datafile$=cvs(datafile$,8)
@@ -1205,7 +1586,7 @@ get_new_template:
        goto eof
     endif
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"PRIMARY",key_temp$,table_chans$[all],rd_stat$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"",key_temp$,rd_table_chans$[all],rd_stat$
     while pos(",reserved_str:c(1)"=key_temp$)<>0
         key_temp$=key_temp$(1,pos(",reserved_str:c(1)"=key_temp$)-1)+key_temp$(pos(",reserved_str:c(1)"=key_temp$)+18)
     wend
@@ -1223,7 +1604,9 @@ get_new_template:
     lock (new_file)
     a=msgbox(new_datafile$+" already exists in destination folder. Do you want to overwrite data?",3+32+65536,"DataPort")
     if a=6 then
-       return; rem ' Yes-Overwrite
+       close (new_file)
+       erase destin_folder$+"/"+new_datafile$
+       goto check_for_definition
     endif
     if a=7 then
        goto eof; rem ' No-Skip
@@ -1257,6 +1640,22 @@ check_for_definition:
           escape
        endif
     endif
+
+    rem --- see if this table has any new fields (i.e., that weren't in v6)
+    rem --- if so, set default value based on new_field_defaults flat file
+    rem --- new_rec$ only dim'd once/file, so setting the values once here should carry into every record
+    if source_version=6
+        new_rec_fields!=new_field_defaults!.keySet().iterator()
+        while new_rec_fields!.hasNext()
+            new_rec_field$ = str(new_rec_fields!.next())
+            if pos(cvs(table_alias$,3)=new_rec_field$)=1
+                new_rec_value$=new_field_defaults!.get(new_rec_field$)
+                new_rec_fieldname$=new_rec_field$(pos("."=new_rec_field$)+1)
+                field new_rec$,new_rec_fieldname$=new_rec_value$
+            endif
+        wend
+    endif
+    
 return
 
 undefined_file:
@@ -1430,18 +1829,35 @@ return; rem ' reformat_address
 
 disp_meter:rem --- Display Progress Meter
 
-    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",	   rdSysGUI!,	   rdWindow!,	   rdMeterWin!,	   rd_meter_title$,	   rd_meter_total_recs,	   rd_meter_proc_recs,	   rd_meter_data$,      rd_meter_action$
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
+:       rdSysGUI!,
+:       rdWindow!,
+:       rdMeterWin!,
+:       rd_meter_title$,
+:       rd_meter_total_recs,
+:       rd_meter_proc_recs,
+:       rd_meter_data$, 
+:       rd_meter_action$
 
     return
 
 open_tables:rem --- Open Tables
 
-    call stbl("+DIR_SYP")+"bac_open_tables.bbj",	   open_beg,	   open_end,	   open_tables$[all],	   open_opts$[all],	   open_chans$[all],	   open_tpls$[all],	   table_chans$[all],	   open_batch,	   open_status$
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       rd_open_beg,
+:       rd_open_end,
+:       rd_open_tables$[all],
+:       rd_open_opts$[all],
+:       rd_open_chans$[all],
+:       rd_open_tpls$[all],
+:       rd_table_chans$[all],
+:       rd_open_batch,
+:       rd_open_status$
 
-    if open_status$<>""
-        msg_id$="ENTRY_OPEN_ERROR"
-        dim msg_tokens$[1]
-        msg_tokens$[1]=open_status$
+    if rd_open_status$<>""
+        rd_msg_id$="ENTRY_OPEN_ERROR"
+        dim rd_msg_tokens$[1]
+        rd_msg_tokens$[1]=rd_open_status$
         gosub disp_message
         release
     endif
@@ -1450,7 +1866,7 @@ open_tables:rem --- Open Tables
 
 disp_message:rem --- Display Message Dialog
 
-    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",rd_msg_id$,rd_msg_tokens$[all],rd_msg_opt$,rd_table_chans$[all]
     return
 
 eoj:

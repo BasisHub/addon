@@ -1,3 +1,101 @@
+[[POE_RECDET.PO_LINE_CODE.AVEC]]
+if callpoint!.getDevObject("line_type")="O" 
+	callpoint!.setColumnData("POE_RECDET.QTY_ORDERED","1")
+	callpoint!.setColumnData("POE_RECDET.QTY_RECEIVED","1")
+else
+	callpoint!.setColumnData("POE_RECDET.QTY_ORDERED","")
+endif
+
+callpoint!.setStatus("REFRESH")
+[[POE_RECDET.AOPT-LENT]]
+rem --- Save current row/column so we'll know where to set focus when we return from lot lookup
+
+	declare BBjStandardGrid grid!
+	grid! = util.getGrid(Form!)
+	return_to_row = grid!.getSelectedRow()
+	return_to_col = grid!.getSelectedColumn()
+
+rem --- Go get Lot Numbers
+
+	item_id$ = callpoint!.getColumnData("POE_RECDET.ITEM_ID")
+rem	gosub lot_ser_check
+
+rem --- Is this item lot/serial?
+
+	ivm_itemmast=fnget_dev("IVM_ITEMMAST")
+	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
+
+	read record (ivm_itemmast,key=firm_id$+item_id$,dom=*break)ivm_itemmast$
+
+	if ivm_itemmast.lotser_item$="Y" and ivm_itemmast.inventoried$="Y"
+	
+		receiver_no$   = callpoint!.getColumnData("POE_RECDET.RECEIVER_NO")
+		po_int_seq_ref$ = callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO")
+		po_no$=callpoint!.getColumnData("POE_RECDET.PO_NO")
+		unit_cost$=callpoint!.getColumnData("POE_RECDET.UNIT_COST")
+		qty_received=num(callpoint!.getColumnData("POE_RECDET.QTY_RECEIVED"))
+
+		grid!.focus()
+		dim dflt_data$[4,1]
+		dflt_data$[1,0] = "RECEIVER_NO"
+		dflt_data$[1,1] = receiver_no$
+		dflt_data$[2,0] = "PO_INT_SEQ_REF"
+		dflt_data$[2,1] = po_int_seq_ref$
+		dflt_data$[3,0]="PO_NO"
+		dflt_data$[3,1]=po_no$
+		dflt_data$[4,0]="UNIT_COST"
+		dflt_data$[4,1]=unit_cost$
+
+		callpoint!.setDevObject("ls_po_no",po_no$)
+		callpoint!.setDevObject("ls_unit_cost",unit_cost$)
+		callpoint!.setDevObject("ls_qty_received",qty_received)
+
+		lot_pfx$ = firm_id$+receiver_no$+po_int_seq_ref$
+
+		call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:			"POE_RECLSDET", 
+:			stbl("+USER_ID"), 
+:			"MNT", 
+:			lot_pfx$, 
+:			table_chans$[all], 
+:			dflt_data$[all]
+
+		if callpoint!.getDevObject("lot_or_serial")="S"
+			ivm_lsmaster_dev=fnget_dev("IVM_LSMASTER")
+			dim ivm_lsmaster$:fnget_tpl$("IVM_LSMASTER")
+			poe_reclsdet_dev=fnget_dev("POE_RECLSDET")
+			dim poe_reclsdet$:fnget_tpl$("POE_RECLSDET")
+			rcvr_no$=callpoint!.getColumnData("POE_RECDET.RECEIVER_NO")
+			int_seq$=callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO")
+			wh$=callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID")
+			item$=callpoint!.getColumnData("POE_RECDET.ITEM_ID")
+
+			read(poe_reclsdet_dev,key=firm_id$+rcvr_no$+int_seq$,dom=*next)
+			while 1
+				poe_reclsdet_key$=key(poe_reclsdet_dev,end=*break)
+				if pos(firm_id$+rcvr_no$+int_seq$=poe_reclsdet_key$)<>1 break
+				readrecord(poe_reclsdet_dev,key=poe_reclsdet_key$)poe_reclsdet$
+				readrecord(ivm_lsmaster_dev,key=firm_id$+wh$+item$+poe_reclsdet.lotser_no$,dom=*continue)ivm_lsmaster$
+				if ivm_lsmaster.qty_on_hand>0
+					remove (poe_reclsdet_dev,key=poe_reclsdet_key$)
+					msg_id$="IV_SER_ZERO_QOH"
+					gosub disp_message
+				endif
+			wend
+		endif
+
+
+		callpoint!.setStatus("ACTIVATE")
+
+		rem --- Return focus to where we were (Detail line grid)
+
+		util.forceEdit(Form!, return_to_row, return_to_col)
+	endif
+[[POE_RECDET.QTY_ORDERED.BINP]]
+if callpoint!.getDevObject("line_type")="O"  
+	callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_RECDET.QTY_ORDERED",0)
+	callpoint!.setFocus("POE_RECDET.UNIT_COST")
+endif
 [[POE_RECDET.QTY_RECEIVED.AVAL]]
 
 gosub update_header_tots
@@ -171,7 +269,29 @@ if ivm_itemmast.lotser_item$="Y" and ivm_itemmast.inventoried$="Y"
 :		lot_pfx$, 
 :		table_chans$[all], 
 :		dflt_data$[all]
+	if callpoint!.getDevObject("lot_or_serial")="S"
+		ivm_lsmaster_dev=fnget_dev("IVM_LSMASTER")
+		dim ivm_lsmaster$:fnget_tpl$("IVM_LSMASTER")
+		poe_reclsdet_dev=fnget_dev("POE_RECLSDET")
+		dim poe_reclsdet$:fnget_tpl$("POE_RECLSDET")
+		rcvr_no$=callpoint!.getColumnData("POE_RECDET.RECEIVER_NO")
+		int_seq$=callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO")
+		wh$=callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID")
+		item$=callpoint!.getColumnData("POE_RECDET.ITEM_ID")
 
+		read(poe_reclsdet_dev,key=firm_id$+rcvr_no$+int_seq$,dom=*next)
+		while 1
+			poe_reclsdet_key$=key(poe_reclsdet_dev,end=*break)
+			if pos(firm_id$+rcvr_no$+int_seq$=poe_reclsdet_key$)<>1 break
+			readrecord(poe_reclsdet_dev,key=poe_reclsdet_key$)poe_reclsdet$
+			readrecord(ivm_lsmaster_dev,key=firm_id$+wh$+item$+poe_reclsdet.lotser_no$,dom=*continue)ivm_lsmaster$
+			if ivm_lsmaster.qty_on_hand>0
+				remove (poe_reclsdet_dev,key=poe_reclsdet_key$)
+				msg_id$="IV_SER_ZERO_QOH"
+				gosub disp_message
+			endif
+		wend
+	endif
 	callpoint!.setStatus("ACTIVATE")
 
 endif
@@ -203,51 +323,56 @@ callpoint!.setDevObject("po_rows","")
 [[POE_RECDET.ITEM_ID.AINV]]
 rem --- remember row/column we're on so we can force focus when we return from synonym lookup
 
-declare BBjStandardGrid grid!
-grid! = util.getGrid(Form!)
-return_to_row = grid!.getSelectedRow()
-return_to_col = grid!.getSelectedColumn()
+if cvs(callpoint!.getUserInput(),3)<>""
 
-rem --- see if they entered a synonym, if so, display (if only one of them), if no match, or more than one match, launch bam_inquiry on synonym file
+	declare BBjStandardGrid grid!
+	grid! = util.getGrid(Form!)
+	return_to_row = grid!.getSelectedRow()
+	return_to_col = grid!.getSelectedColumn()
 
-ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
-dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
+	rem --- see if they entered a synonym, if so, display (if only one of them), if no match, or more than one match, launch bam_inquiry on synonym file
 
-read (ivm_itemsyn_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)
-read_count=0
-found_count=0
-found_item$=""
+	ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
+	dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
 
-while read_count<2
-	read record (ivm_itemsyn_dev,end=*break)ivm_itemsyn$
-	if ivm_itemsyn.firm_id$=firm_id$ and ivm_itemsyn.item_synonym$=callpoint!.getUserInput()
-		found_count=found_count+1
-		found_item$=ivm_itemsyn.item_id$
-	endif
-	read_count=read_count+1
-wend
+	read (ivm_itemsyn_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)
+	read_count=0
+	found_count=0
+	found_item$=""
 
-if found_count=1
-	callpoint!.setUserInput(found_item$)
-	callpoint!.setStatus("")
-else
-	call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMSYN","PRIMARY",key_tpl$,table_chans$[all],rd_stat$
-	dim return_key$:key_tpl$
+	while read_count<2
+		read record (ivm_itemsyn_dev,end=*break)ivm_itemsyn$
+		if ivm_itemsyn.firm_id$=firm_id$ and ivm_itemsyn.item_synonym$=callpoint!.getUserInput()
+			found_count=found_count+1
+			found_item$=ivm_itemsyn.item_id$
+		endif
+		read_count=read_count+1
+	wend
 
-	dim search_defs$[2]
-	search_defs$[0]="IVM_ITEMSYN.ITEM_SYNONYM"
-	search_defs$[1]=callpoint!.getRawUserInput()
-	search_defs$[2]="A"
-
-	call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"IVM_ITEMSYN","LOOKUP",
-:		table_chans$[all],firm_id$,"PRIMARY",return_key$,filter_defs$[all],search_defs$[all]
-	if cvs(return_key$,3)<>""
-		callpoint!.setUserInput(return_key.item_id$)	
+	if found_count=1
+		callpoint!.setUserInput(found_item$)
 		callpoint!.setStatus("")
 	else
-		callpoint!.setStatus("ABORT")
+		call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMSYN","PRIMARY",key_tpl$,table_chans$[all],rd_stat$
+		dim return_key$:key_tpl$
+
+		dim search_defs$[2]
+		search_defs$[0]="IVM_ITEMSYN.ITEM_SYNONYM"
+		search_defs$[1]=callpoint!.getRawUserInput()
+		search_defs$[2]="A"
+
+		call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"IVM_ITEMSYN","LOOKUP",
+:			table_chans$[all],firm_id$,"PRIMARY",return_key$,filter_defs$[all],search_defs$[all]
+		if cvs(return_key$,3)<>""
+			callpoint!.setUserInput(return_key.item_id$)	
+			callpoint!.setStatus("")
+		else
+			callpoint!.setStatus("ABORT")
+		endif
+		util.forceEdit(Form!, return_to_row, return_to_col)
 	endif
-	util.forceEdit(Form!, return_to_row, return_to_col)
+else
+	callpoint!.setStatus("ABORT")
 endif
 [[POE_RECDET.AGRE]]
 
@@ -258,7 +383,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 	ok_to_write$="Y"
 
 	if cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="" or 
-:		cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" then ok_to_write$="N"
+:		cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" 
+			ok_to_write$="N"
+			focus_column$="POE_RECDET.PO_LINE_CODE"
+	endif
 
 	if pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="SD")<>0 
 		if cvs(callpoint!.getColumnData("POE_RECDET.ITEM_ID"),3)="" or
@@ -267,15 +395,16 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 :		num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))<=0 or
 :		cvs(callpoint!.getColumnData("POE_RECDET.REQD_DATE"),3)="" 
 			ok_to_write$="N"
+			focus_column$="POE_RECDET.ITEM_ID"
 		endif
 	endif
 
 	if cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="N" 
-		if cvs(callpoint!.getColumnData("POE_RECDET.NS_ITEM_ID"),3)="" or
-:		num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))<0 or
+		if num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))<0 or
 :		num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))<=0 or
 :		cvs(callpoint!.getColumnData("POE_RECDET.REQD_DATE"),3)="" 	
 			ok_to_write$="N"
+			focus_column$="POE_RECDET.ORDER_MEMO"
 		endif
 	endif
 
@@ -283,22 +412,30 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		if num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))<0 or
 :		cvs(callpoint!.getColumnData("POE_RECDET.REQD_DATE"),3)="" 	
 			ok_to_write$="N"
+			focus_column$="POE_RECDET.ORDER_MEMO"
 		endif
 	endif
 
-	if pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="MNOV")<>0 then
-:		if cvs(callpoint!.getColumnData("POE_RECDET.ORDER_MEMO"),3)="" then ok_to_write$="N"
+	if pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="MNOV")<>0 
+		if cvs(callpoint!.getColumnData("POE_RECDET.ORDER_MEMO"),3)="" 
+			ok_to_write$="N"
+			focus_column$="POE_RECDET.ORDER_MEMO"
+		endif
+	endif
 
 	if callpoint!.getHeaderColumnData("POE_RECHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
 		if pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="DSNO")<>0
-			if cvs(callpoint!.getColumnData("POE_RECDET.SO_INT_SEQ_REF"),3)="" then ok_to_write$="N"
+			if cvs(callpoint!.getColumnData("POE_RECDET.SO_INT_SEQ_REF"),3)="" 
+				ok_to_write$="N"
+				focus_column$="POE_RECDET.SO_INT_SEQ_REF"
+			endif
 		endif
 	endif
 
 	if ok_to_write$<>"Y"
 		msg_id$="PO_REQD_DET"
 		gosub disp_message
-		callpoint!.setStatus("ABORT")
+		callpoint!.setFocus(num(callpoint!.getValidationRow()),focus_column$)
 	endif
 	
 	rem -- now loop thru entire gridVect to make sure SO line reference, if used, isn't used >1 time
@@ -314,21 +451,17 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 				rec$=dtl!.getItem(x)
 				if cvs(rec.so_int_seq_ref$,3)<>""
 					if pos(rec.so_int_seq_ref$+"^"=so_lines_referenced$)<>0 
-						dup_so_lines$="Y"
+						msg_id$="PO_DUP_SO_LINE"
+						gosub disp_message
+						callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.SO_INT_SEQ_REF")
+						break
 					else
 						so_lines_referenced$=so_lines_referenced$+rec.so_int_seq_ref$+"^"
 					endif
 				endif
 			endif
 		next x
-	endif
-
-	if dup_so_lines$="Y"
-		msg_id$="PO_DUP_SO_LINE"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	endif
-	
+	endif	
 
 endif
 [[POE_RECDET.AGRN]]
@@ -340,6 +473,9 @@ callpoint!.setDevObject("cost_this_row",callpoint!.getColumnData("POE_RECDET.UNI
 rem print "AGRN "
 rem print "qty this row: ",callpoint!.getDevObject("qty_this_row")
 rem print "cost this row: ",callpoint!.getDevObject("cost_this_row")
+
+item_id$=callpoint!.getColumnData("POE_RECDET.ITEM_ID")
+gosub enable_serial
 [[POE_RECDET.UNIT_COST.AVAL]]
 gosub update_header_tots
 callpoint!.setDevObject("cost_this_row",num(callpoint!.getUserInput()))
@@ -394,7 +530,7 @@ wend
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
 
-order_lines!=callpoint!.getDevObject("so_lines_list")
+order_list!=callpoint!.getDevObject("so_lines_list")
 ldat$=callpoint!.getDevObject("so_ldat")
 
 if ldat$<>""
@@ -403,7 +539,7 @@ if ldat$<>""
 	g!=callpoint!.getDevObject("dtl_grid")
 	c!=g!.getColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")))
 	c!.removeAllItems()
-	c!.insertItems(0,order_lines!)
+	c!.insertItems(0,order_list!)
 	g!.setColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")),c!)	
 else
 	callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",0)
@@ -476,10 +612,18 @@ rem if cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" or cvs(call
 		callpoint!.setColumnData("POE_RECDET.WO_SEQ_REF","")
 
 endif
+
+
 [[POE_RECDET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
 
 gosub validate_whse_item
+if pos("ABORT"=callpoint!.getStatus())<>0
+	callpoint!.setUserInput("")
+endif
+
+item_id$=callpoint!.getUserInput()
+gosub enable_serial
 [[POE_RECDET.<CUSTOM>]]
 update_line_type_info:
 
@@ -531,6 +675,11 @@ validate_whse_item:
 return
 	
 missing_warehouse:
+
+	msg_id$="IV_ITEM_WHSE_INVALID"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=whse$
+	gosub disp_message
 	callpoint!.setStatus("ABORT")
 
 return
@@ -609,3 +758,20 @@ call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs
 if status then exitto std_exit
 
 return
+
+rem --- Enable/Disable Serial Button
+enable_serial:
+
+rem "IN: item_id$
+
+	ivm_itemmast=fnget_dev("IVM_ITEMMAST")
+	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
+
+	callpoint!.setOptionEnabled("LENT",0)
+	read record (ivm_itemmast,key=firm_id$+item_id$,dom=*return)ivm_itemmast$
+
+	if ivm_itemmast.lotser_item$="Y" and ivm_itemmast.inventoried$="Y"
+		callpoint!.setOptionEnabled("LENT",1)
+	endif
+
+	return

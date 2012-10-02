@@ -1,3 +1,8 @@
+[[GLE_RECJEDET.ADGE]]
+rem --- set default memo to the description from the header
+
+callpoint!.setTableColumnAttribute("GLE_RECJEDET.GL_POST_MEMO","DFLT",callpoint!.getHeaderColumnData("GLE_RECJEHDR.DESCRIPTION"))
+
 [[GLE_RECJEDET.AUDE]]
 rem --- recal/display tots after deleting a grid row
 gosub calc_grid_tots

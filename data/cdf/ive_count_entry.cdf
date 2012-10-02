@@ -509,6 +509,8 @@ count_error:
 	failed = 1
 
 parse_count_end:
+	print "---failed =", failed; rem debug
+	print "out"; rem debug
 	return
 
 
@@ -524,13 +526,23 @@ rem --- Test and total count string
 	gosub parse_count
 
 	if failed then
+		print "---Failed in parse_count"; rem debug
 		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
 	endif
 
 rem --- Serial number count must be one
 
 	if user_tpl.this_item_lot_ser and user_tpl.lotser_flag$ = "S" and total <> 1
 		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
+
+rem --- Flag that this record was entered
+
+	if cvs(callpoint!.getUserInput(), 2) <> "" then 
+		user_tpl.entered_flag$ = "Y"
+		print "---Set entered flag"; rem debug
 	endif
 [[IVE_COUNT_ENTRY.BSHO]]
 rem print 'show',"BSHO"; rem debug

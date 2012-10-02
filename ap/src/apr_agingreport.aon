@@ -30,8 +30,10 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
 
 rem --- Open/Lock files
 
@@ -74,13 +76,13 @@ rem --- Assign form input values to local variables
     discount$=Option!.getOptionData("INCLUDE_DISC")
     export_format$=Option!.getOptionData("EXPORT_FORMAT")
     rd_alias_id$=Option!.getAlias()    
-	
+    
     if export_format$="Y" then
         if len(rd_alias_id$)>15 then rd_alias_id$=rd_alias_id$(1,15)
         rd_alias_id$=rd_alias_id$+"X"
     endif
     
-	days=num(days$,err=*next)
+    days=num(days$,err=*next)
     method=pos(method$="PD")
     sorting=sequence$="A"
     detail=level$="D"
@@ -104,7 +106,7 @@ rem --- Retrieve parameter records
     m1=len(m1$)
     periodend$=""
     maxperiods=num(gls01a.total_pers$)
-	
+    
     for x=1 to maxperiods
         periodend$=periodend$+field(gls01a$,"per_ending_"+str(x:"00"))
     next x
@@ -112,7 +114,7 @@ rem --- Retrieve parameter records
 rem --- Initializations
 
     dim headings$[8],o[12]
-    dim pt[4],pr[4],rt[4],rr[4],at[4],ar[4],vt[3],vr[4],it[2]
+    dim pt[4],pr[4],rt[4],rr[4],at[4],ar[4],vt[4],vr[4],it[2]
 
     typebreak_flag = 0; rem -- Flag for  typebreak  
 
@@ -133,7 +135,8 @@ rem --- Initializations
     lastvendor$=""
     clock$=""
     when$=sysinfo.system_date$
-	
+    total_recs=0
+    
     header2$="All Activity Based On "
     if option$="I" header2$=header2$+"Invoice Date"
     if option$="D" header2$=header2$+"Due Date"
@@ -143,94 +146,101 @@ rem --- Initializations
     if detail and discounts header2$=header2$+" With Discounts"
     headings$[0]=sysinfo.firm_name$
     headings$[2]=header2$
-	
+    
     if multitypes
        headings=7
        offset=2
     endif
-	
+    
     if sequence$="V"
        channel=apt01_dev
+       channel_name$="APT_INVOICEHDR"
        headings$[1]=header1$+" By Vendor Number"
     endif
-	
+    
     if sequence$="A" 
        channel=apw02_dev
+       channel_name$="APW_INVOICENAME"
        headings$[1]=header1$+" By Alternate Sequence"
     endif
-	
-    headings$[3]="[HEADER]"
+    
+    if multitypes then headings$[3]="[HEADER]"
 
 rem --- Determine period beginning and ending dates based on the aging method selected
 
     switch method
 
-		rem --- By period
+        rem --- By period
 
-		case byperiod
+        case byperiod
 
-			rem --- Determine which period the aging date falls into
+            rem --- Determine which period the aging date falls into
 
-			year=num(agingdate$(1,4))
-			mmdd$=agingdate$(5,4)
-			
-			for x=1 to maxperiods
-				period=x
-				if mmdd$>periodend$((x*4)-3,4) continue
-				if x=1 if mmdd$>periodend$((maxperiods*4)-3,4) break
-				if x>1 if mmdd$>periodend$(((x-1)*4)-3,4) break
-				if x=1 if periodend$((x*4)-3,4)<periodend$(maxperiods*4-3,4) break
-				if x>1 if periodend$((x*4)-3,4)<periodend$((x-1)*4-3,4) break
-			next x
+            year=num(agingdate$(1,4))
+            mmdd$=agingdate$(5,4)
+            
+            for x=1 to maxperiods
+                period=x
+                if mmdd$>periodend$((x*4)-3,4) continue
+                if x=1 if mmdd$>periodend$((maxperiods*4)-3,4) break
+                if x>1 if mmdd$>periodend$(((x-1)*4)-3,4) break
+                if x=1 if periodend$((x*4)-3,4)<periodend$(maxperiods*4-3,4) break
+                if x>1 if periodend$((x*4)-3,4)<periodend$((x-1)*4-3,4) break
+            next x
 
-			rem --- Get current period beginning and ending dates
+            rem --- Get current period beginning and ending dates
 
-			if agingdate$(5,2)<periodend$(1,2) year=year-1
-			call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begperiod$,endperiod$,status
-			begdates$=begperiod$
-			enddates$=endperiod$
+            if agingdate$(5,2)<periodend$(1,2) year=year-1
+            call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begperiod$,endperiod$,status
+            begdates$=begperiod$
+            enddates$=endperiod$
 
-			rem --- Calculate prior period beginning and ending dates
+            rem --- Calculate prior period beginning and ending dates
 
-			base=period
-			base_yr=year
-			
-			for x=1 to 3
-				period=base-x
-				
-				if period<1
-				   period=maxperiods+period
-				   year=base_yr-1
-				endif
-				
-				call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begperiod$,endperiod$,status
-				begdates$=begdates$+begperiod$
-				enddates$=enddates$+endperiod$
-			next x
-			
-		break
+            base=period
+            base_yr=year
+            
+            for x=1 to 3
+                period=base-x
+                
+                if period<1
+                   period=maxperiods+period
+                   year=base_yr-1
+                endif
+                
+                call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begperiod$,endperiod$,status
+                begdates$=begdates$+begperiod$
+                enddates$=enddates$+endperiod$
+            next x
+            
+        break
 
-		rem --- By days
+        rem --- By days
 
-		case bydays
-			begdates$=""
-			enddates$=""
-			
-			for x=0 to 3
-				newdate$=""
-				difference=(-days)*(x+1)-1
-				call pgmdir$+"adc_daydates.aon",agingdate$,newdate$,difference
-				begdates$=begdates$+newdate$
-				newdate$=""
-				difference=(-days)*x
-				call pgmdir$+"adc_daydates.aon",agingdate$,newdate$,difference
-				enddates$=enddates$+newdate$
-			next x
-			
-		break
+        case bydays
+            begdates$=""
+            enddates$=""
+                        
+                        rem setup the asked for report date as the date to start the count back with (plus the increment)       
+                        thisdate=jul(num(agingdate$(1,4)),num(agingdate$(5,2)),num(agingdate$(7,2))) + 1
 
-		case default
-		break
+                        rem build the end & start date strings from curr to previous dates
+                        for x=0 to 3
+                                enddate$=date(thisdate-1,"%Y%Mz%Dz")
+                                rem count back # days specified in the entry screen
+                                thisdate=thisdate-days
+                                rem this gets us the start date for this period
+                                begdate$=date(thisdate,"%Y%Mz%Dz")
+                                enddates$=enddates$+enddate$
+                                begdates$=begdates$+begdate$    
+            next x
+                                
+
+            
+        break
+
+        case default
+        break
 
     swend
 
@@ -262,53 +272,65 @@ rem --- Headings and print positions
     endif
 
     if export_format$="Y" then
-        columns=14
+        if detail then
+            columns=14
+        else
+            columns=9
+        endif
+        
         dim columns$[columns,10]
-        columns$[0,0]="Vendor ID",          columns$[0,1]="C",columns$[0,2]="10"
+        columns$[0,0]="Vendor ID",          columns$[0,1]="C",columns$[0,2]="8"
         columns$[1,0]="Name",               columns$[1,1]="C",columns$[1,2]="20"
         columns$[2,0]="Phone",              columns$[2,1]="C",columns$[2,2]="10"        
         columns$[3,0]="Alt Seq",            columns$[3,1]="C",columns$[3,2]="10"        
     else
-        columns=12
+        if detail then
+            columns=12
+        else
+            columns=7
+        endif
         dim columns$[columns,10]
         columns$[0,0]="Vendor ID^Name",          columns$[0,1]="C",columns$[0,2]="20"
         columns$[1,0]="Alt Seq^Phone",           columns$[1,1]="C",columns$[1,2]="10"
     endif
+
+    if summary=0
+        columns$[columns-10,0]=head2$,  columns$[columns-10,1]="C", columns$[columns-10,2]="8"
+        columns$[columns-9,0]=head3$,   columns$[columns-9,1]="C",  columns$[columns-9,2]="8"
+        columns$[columns-8,0]=head4$,   columns$[columns-8,1]="C",  columns$[columns-8,2]="8"
+        columns$[columns-7,0]=head5$,   columns$[columns-7,1]="C",  columns$[columns-7,2]="3"
+        columns$[columns-6,0]=head6$,   columns$[columns-6,1]="C",  columns$[columns-6,2]="3"
+    endif
     
-    columns$[columns-10,0]=head2$,  columns$[columns-10,1]="C", columns$[columns-10,2]="8"
-    columns$[columns-9,0]=head3$,   columns$[columns-9,1]="C",  columns$[columns-9,2]="8"
-    columns$[columns-8,0]=head4$,   columns$[columns-8,1]="C",  columns$[columns-8,2]="8"
-    columns$[columns-7,0]=head5$,   columns$[columns-7,1]="C",  columns$[columns-7,2]="3"
-    columns$[columns-6,0]=head6$,   columns$[columns-6,1]="C",  columns$[columns-6,2]="3"
-    columns$[columns-5,0]="Future", columns$[columns-5,1]="N",  columns$[columns-5,2]=str(m1-2), columns$[columns-5,3]=m1$, columns$[columns-5,10]="T"
-    columns$[columns-4,0]=date1$,   columns$[columns-4,1]="N",  columns$[columns-4,2]=str(m1-2), columns$[columns-4,3]=m1$, columns$[columns-4,10]="T"
-    columns$[columns-3,0]=date2$,   columns$[columns-3,1]="N",  columns$[columns-3,2]=str(m1-2), columns$[columns-3,3]=m1$, columns$[columns-3,10]="T"
-    columns$[columns-2,0]=date3$,   columns$[columns-2,1]="N",  columns$[columns-2,2]=str(m1-2), columns$[columns-2,3]=m1$, columns$[columns-2,10]="T"
-    columns$[columns-1,0]=date4$,   columns$[columns-1,1]="N",  columns$[columns-1,2]=str(m1-2), columns$[columns-1,3]=m1$, columns$[columns-1,10]="T"
-    columns$[columns,0]="Total",    columns$[columns,1]="N",    columns$[columns,2]=str(m1-2),   columns$[columns,3]=m1$,   columns$[columns,10]="T"
+    columns$[columns-5,0]="Future", columns$[columns-5,1]="N",  columns$[columns-5,2]=str(m1-3), columns$[columns-5,3]=m1$, columns$[columns-5,10]="T"
+    columns$[columns-4,0]=date1$,   columns$[columns-4,1]="N",  columns$[columns-4,2]=str(m1-3), columns$[columns-4,3]=m1$, columns$[columns-4,10]="T"
+    columns$[columns-3,0]=date2$,   columns$[columns-3,1]="N",  columns$[columns-3,2]=str(m1-3), columns$[columns-3,3]=m1$, columns$[columns-3,10]="T"
+    columns$[columns-2,0]=date3$,   columns$[columns-2,1]="N",  columns$[columns-2,2]=str(m1-3), columns$[columns-2,3]=m1$, columns$[columns-2,10]="T"
+    columns$[columns-1,0]=date4$,   columns$[columns-1,1]="N",  columns$[columns-1,2]=str(m1-3), columns$[columns-1,3]=m1$, columns$[columns-1,10]="T"
+    columns$[columns,0]="Total",    columns$[columns,1]="N",    columns$[columns,2]=str(m1-3),   columns$[columns,3]=m1$,   columns$[columns,10]="T"
 
 rem --- Define print positions
 
     o[12]=width-m1
     o[0]=0
     o[1]=o[0]+m0+1
-	
+    
     for x=11 to 7 step -1
         o[x]=o[x+1]-m1
     next x
-	
+    
     if summary
        for x=2 to 6
            o[x]=o[7]
        next x
-	   
+       
        if sequence$="A"
           o[1]=o[0]+m0+12
        endif
-	   
+       
        w=o[7]-1
     endif
-	
+    
     if detail
        o[6]=o[7]-2
        o[5]=o[6]-3
@@ -324,204 +346,210 @@ rem --- Initialize remaining report headings
     dim header1$(width),header2$(width)
     retention$="Retention"
     if summary headings=headings+1
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apt01_dev,1,meter_num,status
-	
+    
 rem --- Sort Invoice Headers (apt-01) by vendor alternate sequence
 
     if sorting then 
 
-		read (apt01_dev,key=firm_id$,dom=*next)
+        read (apt01_dev,key=firm_id$,dom=*next)
+        call pgmdir$+"adc_progress.aon","NC","APT_INVOICEHDR","sorting","","",0,apt01_dev,1,meter_num,status
+        
+        rem --- Read next invoice record
 
-		rem --- Read next invoice record
+        while moreheaders
+        
+            k$=key(apt01_dev,end=*break)
+            if pos(firm_id$=k$)<>1 then break
+            
+            read record (apt01_dev) apt01a$
+            total_recs=total_recs+1
+            if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
-		while moreheaders
-		
-			k$=key(apt01_dev,end=*break)
-			if pos(firm_id$=k$)<>1 then break
-			
-			read record (apt01_dev) apt01a$
-			call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            rem --- Retrieve vendor master record if necessary
 
-			rem --- Retrieve vendor master record if necessary
+            if pos("TEMP"=apt01a.vendor_id$)=1
+               lastvendor$=apt01a.vendor_id$
+               apm01a.alt_sequence$=apt01a.vendor_id$
+            endif
+            
+            if lastvendor$<>apt01a.vendor_id$
+               dim apm01a$:fattr(apm01a$)
+               lastvendor$=apt01a.vendor_id$
+               apm01a.firm_id$=apt01a.firm_id$
+               apm01a.vendor_id$=apt01a.vendor_id$
+               k$=apm01a.firm_id$+apm01a.vendor_id$
+               find record (apm01_dev,key=k$,dom=*next) apm01a$
+            endif
 
-			if pos("TEMP"=apt01a.vendor_id$)=1
-			   lastvendor$=apt01a.vendor_id$
-			   apm01a.alt_sequence$=apt01a.vendor_id$
-			endif
-			
-			if lastvendor$<>apt01a.vendor_id$
-			   dim apm01a$:fattr(apm01a$)
-			   lastvendor$=apt01a.vendor_id$
-			   apm01a.firm_id$=apt01a.firm_id$
-			   apm01a.vendor_id$=apt01a.vendor_id$
-			   k$=apm01a.firm_id$+apm01a.vendor_id$
-			   find record (apm01_dev,key=k$,dom=*next) apm01a$
-			endif
+            rem --- Write sort record
 
-			rem --- Write sort record
+            dim apw02a$:fattr(apw02a$)
+            apw02a.firm_id$=apt01a.firm_id$
+            apw02a.ap_type$=apt01a.ap_type$
+            apw02a.alt_sequence$=apm01a.alt_sequence$
+            apw02a.vendor_id$=apt01a.vendor_id$
+            apw02a.ap_inv_no$=apt01a.ap_inv_no$
+            apw02a.sequence_00$=apt01a.sequence_00$
+            k$=apw02a.firm_id$+apw02a.ap_type$+apw02a.alt_sequence$+apw02a.vendor_id$+
+:               apw02a.ap_inv_no$+apw02a.sequence_00$
+            write record (apw02_dev,key=k$) apw02a$
 
-			dim apw02a$:fattr(apw02a$)
-			apw02a.firm_id$=apt01a.firm_id$
-			apw02a.ap_type$=apt01a.ap_type$
-			apw02a.alt_sequence$=apm01a.alt_sequence$
-			apw02a.vendor_id$=apt01a.vendor_id$
-			apw02a.ap_inv_no$=apt01a.ap_inv_no$
-			apw02a.sequence_00$=apt01a.sequence_00$
-			k$=apw02a.firm_id$+apw02a.ap_type$+apw02a.alt_sequence$+apw02a.vendor_id$+
-:				apw02a.ap_inv_no$+apw02a.sequence_00$
-			write record (apw02_dev,key=k$) apw02a$
+           rem --- Loop back for next record
 
-		   rem --- Loop back for next record
+        wend
 
-		wend
+        rem --- Sorting completed
 
-		rem --- Sorting completed
-
-		call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-		
-	endif
+        call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+        wait 1; rem --- gives first progress meter a chance to clear; less confusing to the eye
+    endif
 
 rem --- Start progress meter and position driver file
 
     lastvendor$=""
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    total_recs=0
+    call pgmdir$+"adc_progress.aon","NC",channel_name$,"","","",0,channel,1,meter_num,status
     read (channel,key=firm_id$,dom=*next)
 
 rem --- Read next Invoice Header (apt-01) record
   
     while moreheaders
-		k$=key(channel,end=*break)
-		if pos(firm_id$=k$)<>1 then break
-		
-		if sequence$="A"
-			read record (apw02_dev,key=k$) apw02a$
-			apt01a.firm_id$=apw02a.firm_id$
-			apt01a.ap_type$=apw02a.ap_type$
-			apt01a.vendor_id$=apw02a.vendor_id$
-			apt01a.ap_inv_no$=apw02a.ap_inv_no$
-			apt01a.sequence_00$=apw02a.sequence_00$
-			k$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
-		endif
-		
-		read record (apt01_dev,key=k$,dom=*continue) apt01a$
-		call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        k$=key(channel,end=*break)
+        if pos(firm_id$=k$)<>1 then break
+        
+        if sequence$="A"
+            read record (apw02_dev,key=k$) apw02a$
+            apt01a.firm_id$=apw02a.firm_id$
+            apt01a.ap_type$=apw02a.ap_type$
+            apt01a.vendor_id$=apw02a.vendor_id$
+            apt01a.ap_inv_no$=apw02a.ap_inv_no$
+            apt01a.sequence_00$=apw02a.sequence_00$
+            k$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
+        endif
+        
+        read record (apt01_dev,key=k$,dom=*continue) apt01a$
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        
+        rem --- Level breaks
 
-		rem --- Level breaks
+        if apt01a.ap_type$<>lasttype$ then gosub type_break
+        if apt01a.vendor_id$<>lastvendor$ then gosub vendor_break
 
-		if apt01a.ap_type$<>lasttype$ then gosub type_break
-		if apt01a.vendor_id$<>lastvendor$ then gosub vendor_break
+        rem --- Initializations for this invoice
 
-		rem --- Initializations for this invoice
+        dim it[2]
+        it[0]=apt01a.invoice_amt
+        it[1]=apt01a.discount_amt
+        it[2]=apt01a.retention
+        future=apt01a.invoice_amt
+        invoice$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
 
-		dim it[2]
-		it[0]=apt01a.invoice_amt
-		it[1]=apt01a.discount_amt
-		it[2]=apt01a.retention
-		future=apt01a.invoice_amt
-		invoice$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
+        rem --- Position Invoice Detail (apt-11) file
 
-		rem --- Position Invoice Detail (apt-11) file
+        read (apt11_dev,key=invoice$,dom=*next)
 
-		read (apt11_dev,key=invoice$,dom=*next)
+        rem --- Calculate invoice totals by including any detail transactions
 
-		rem --- Calculate invoice totals by including any detail transactions
+        while moredetail
+            k$=key(apt11_dev,end=*break)
+            if pos(invoice$=k$)<>1 then break
+            
+            read record (apt11_dev) apt11a$
+            if cvs(apt11a.trans_type$,2)="" then continue
+            if include=0 and apt11a.trans_date$>agingdate$ then continue
 
-		while moredetail
-			k$=key(apt11_dev,end=*break)
-			if pos(invoice$=k$)<>1 then break
-			
-			read record (apt11_dev) apt11a$
-			if cvs(apt11a.trans_type$,2)="" then continue
-			if include=0 and apt11a.trans_date$>agingdate$ then continue
-			
-			it[0]=it[0]+apt11a.trans_amt
-			it[1]=it[1]+apt11a.trans_disc
-			it[2]=it[2]+apt11a.trans_ret
-		wend
+            it[0]=it[0]+apt11a.trans_amt
+            it[1]=it[1]+apt11a.trans_disc
+            it[2]=it[2]+apt11a.trans_ret
+        wend
 
-		rem --- Assign the chosen date for aging purposes
+        rem --- Assign the chosen date for aging purposes
 
-		if option$="I" then dateused$=apt01a.invoice_date$
-		if option$="A" then dateused$=apt01a.accting_date$
-		
-		if option$="D" then
-			dateused$=apt01a.inv_due_date$
-			
-			if discounts and apt01a.disc_date$>=agingdate$ and apt01a.disc_date$<>apt01a.invoice_date$ then 
-				dateused$=apt01a.disc_date$
-				it[0]=it[0]-it[1]
-			endif
-			
-		endif
+        if option$="I" then dateused$=apt01a.invoice_date$
+        if option$="A" then dateused$=apt01a.accting_date$
+        
+        if option$="D" then
+            dateused$=apt01a.inv_due_date$
+            
+            if discounts and apt01a.disc_date$>=agingdate$ and apt01a.disc_date$<>apt01a.invoice_date$ then 
+                dateused$=apt01a.disc_date$
+                it[0]=it[0]-it[1]
+            endif
+            
+        endif
 
-		rem --- Age this invoice
+        rem --- Age this invoice
 
-		if include=0 and dateused$>agingdate$
-			if it[0]=future or detail then continue
-			it[0]=it[0]-future
-		endif
+        if include=0 and dateused$>agingdate$
+            if it[0]=future or detail then continue
+            it[0]=it[0]-future
+        endif
 
-		rem --- No reason to continue if it's a zero balance invoice
+        rem --- No reason to continue if it's a zero balance invoice
 
-		if it[0]=0 then continue
+        if it[0]=0 then continue
 
-		rem --- Age this invoice
+        rem --- Age this invoice
 
-		printed=printed+1
-		period=pos(dateused$>enddates$,8)
-		if period=0 then period=4 else period=int(period/8)
+        printed=printed+1
+        period=pos(dateused$>enddates$,8)
 
-		rem --- Accumulate totals
+                rem --- if the dateused is not greater than any of the end dates, put to first
 
-		vt[period]=vt[period]+it[0]
-		at[period]=at[period]+it[0]
-		rt[period]=rt[period]+it[0]
-		ar[period]=ar[period]+it[2]
-		rr[period]=rr[period]+it[2]
+        if period=0 then period=4 else period=int(period/8)
 
-		rem --- Print invoice if this is a detail report
+        rem --- Accumulate totals
 
-		if summary then continue
+        vt[period]=vt[period]+it[0]
+        at[period]=at[period]+it[0]
+        rt[period]=rt[period]+it[0]
+        ar[period]=ar[period]+it[2]
+        rr[period]=rr[period]+it[2]
 
-		if export_format$="Y"
-			OutVect!.addItem(apm01a.vendor_id$)
-			OutVect!.addItem(apm01a.vendor_name$)
-			OutVect!.addItem(phone$)
-			OutVect!.addItem(apm01a.alt_sequence$)
-		else
-			if vendor$<>""
-				xwk = fnblank(columns+1)
-				OutVect!.addItem(apm01a.vendor_id$)
-				OutVect!.addItem(apm01a.alt_sequence$)
-				xwk=fnblank(columns-1)
-				OutVect!.addItem(apm01a.vendor_name$)
-				OutVect!.addItem(phone$)
-				lines=lines+2
-				vendor$=""
-			else
-				xwk=fnblank(2)
-			endif
-		endif
+        rem --- Print invoice if this is a detail report
 
-		OutVect!.addItem(apt01a.reference$)
-		OutVect!.addItem(apt01a.ap_inv_no$)
-		OutVect!.addItem(fndate$(dateused$))
-		OutVect!.addItem(apt01a.payment_grp$)
-		OutVect!.addItem(apt01a.hold_flag$)
-		
-		for x=0 to 4
-			if x=period
-				OutVect!.addItem(str(it[0]))
-			else
-				OutVect!.addItem("")
-			endif
-		next x
-		
-		OutVect!.addItem(str(it[0]))
+        if summary then continue
 
-		lines=lines+1
+        if export_format$="Y"
+            OutVect!.addItem(apm01a.vendor_id$)
+            OutVect!.addItem(apm01a.vendor_name$)
+            OutVect!.addItem(phone$)
+            OutVect!.addItem(apm01a.alt_sequence$)
+        else
+            if vendor$<>""
+                xwk = fnblank(columns+1)
+                OutVect!.addItem(apm01a.vendor_id$)
+                OutVect!.addItem(apm01a.alt_sequence$)
+                xwk=fnblank(columns-1)
+                OutVect!.addItem(apm01a.vendor_name$)
+                OutVect!.addItem(phone$)
+                lines=lines+2
+                vendor$=""
+            else
+                xwk=fnblank(2)
+            endif
+        endif
 
-		rem --- Loop back for next record
+        OutVect!.addItem(apt01a.reference$)
+        OutVect!.addItem(apt01a.ap_inv_no$)
+        OutVect!.addItem(fndate$(dateused$))
+        OutVect!.addItem(apt01a.payment_grp$)
+        OutVect!.addItem(apt01a.hold_flag$)
+        
+        for x=0 to 4
+            if x=period
+                OutVect!.addItem(str(it[0]))
+            else
+                OutVect!.addItem("")
+            endif
+        next x
+        
+        OutVect!.addItem(str(it[0]))
+
+        lines=lines+1
+
+        rem --- Loop back for next record
 
     wend
 
@@ -530,12 +558,12 @@ rem --- All done
     done=1
     gosub type_break
     total$="Totals For Report"
-	
+    
     for x=0 to 4
         pt[x]=rt[x]
         pr[x]=rr[x]
     next x
-	
+    
     gosub print_total
     goto std_exit
 
@@ -544,7 +572,7 @@ print_total: rem --- Print totals
     if export_format$="Y" then return
     totamt=0
     totret=0
-	
+    
     for x=0 to 4
         totamt=totamt+pt[x]
         totret=totret+pr[x]
@@ -552,9 +580,9 @@ print_total: rem --- Print totals
 
     TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     OutVect!.addItem(total$)
-	
-    if export_format$="Y"
-        xwk=fnblank(8)
+   
+	if summary
+        xwk=fnblank(9)
     else
         xwk=fnblank(6)
     endif    
@@ -572,113 +600,132 @@ print_total: rem --- Print totals
 type_break: rem --- AP Type break
 
     if lasttype$<>"" then 
-		gosub vendor_break
-		
-		if multitypes
-			total$="Totals for "+aptype$
-			typebreak_flag = 1
-			
-			for x=0 to 4
-				pt[x]=at[x]
-				pr[x]=ar[x]
-			next x
-			
-			gosub print_total
-		endif
-		
-	endif	
-	
+        gosub vendor_break
+        
+        if multitypes
+            total$="Totals for "+aptype$
+            typebreak_flag = 1
+            
+            for x=0 to 4
+                pt[x]=at[x]
+                pr[x]=ar[x]
+            next x
+            
+            gosub print_total
+        endif
+        
+    endif   
+    
     if multitypes and !(done) then 
-	    dim apm10a$:fattr(apm10a$),at[4],ar[4]
-	    apm10a.firm_id$=apt01a.firm_id$
-	    apm10a.record_id_a$="A"
-	    apm10a.ap_type$=apt01a.ap_type$
-	    apm10a.code_desc$=nf$
-		
-	    k$=apm10a.firm_id$+apm10a.record_id_a$+apm10a.ap_type$
-	    find record (apm10_dev,key=k$,dom=*next) apm10a$
-	    lasttype$=apm10a.ap_type$
-		
-	    aptype$="AP Type "+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
-	    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-	    HdrVect!.addItem(aptype$)
-	    lines=maxlines+1
-	endif
-	
+        dim apm10a$:fattr(apm10a$),at[4],ar[4]
+        apm10a.firm_id$=apt01a.firm_id$
+        apm10a.record_id_a$="A"
+        apm10a.ap_type$=apt01a.ap_type$
+        apm10a.code_desc$=nf$
+        
+        k$=apm10a.firm_id$+apm10a.record_id_a$+apm10a.ap_type$
+        find record (apm10_dev,key=k$,dom=*next) apm10a$
+        lasttype$=apm10a.ap_type$
+        
+        aptype$="AP Type "+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        HdrVect!.addItem(aptype$)
+        lines=maxlines+1
+    endif
+    
     return
 
 vendor_break: rem --- Vendor break
 
     if lastvendor$<>"" then
-	
-		if detail and printed>=1 then 
-			total$="Totals for Vendor "+vendorid$
-			typebreak_flag = 0
-			
-			for x=0 to 4
-				pt[x]=vt[x]
-				pr[x]=vr[x]
-			next x
-			
-			flag=retention
-			retention=0
-			gosub print_total
-			retention=flag
-		endif
-		
-		if summary and export_format$<>"Y" and printed
-			totamt=0
-			
-			for x=0 to 4
-				totamt=totamt+vt[x]
-			next x
+    
+        if detail and printed>=1 then 
+            total$="Totals for Vendor "+vendorid$
+            typebreak_flag = 0
+            
+            for x=0 to 4
+                pt[x]=vt[x]
+                pr[x]=vr[x]
+            next x
+            
+            flag=retention
+            retention=0
+            gosub print_total
+            retention=flag
+        endif
+        
+        if summary and export_format$<>"Y" and printed
+            totamt=0
+            
+            for x=0 to 4
+                totamt=totamt+vt[x]
+            next x
 
-			xwk = fnblank(columns+1)
-			OutVect!.addItem(apm01a.vendor_id$)
-			OutVect!.addItem(apm01a.alt_sequence$)
-			xwk=fnblank(columns-1)
-			OutVect!.addItem(apm01a.vendor_name$)
-			OutVect!.addItem(phone$)
+            xwk = fnblank(columns+1)
+            OutVect!.addItem(apm01a.vendor_id$)
+            OutVect!.addItem(apm01a.alt_sequence$)
+            xwk=fnblank(columns-1)
+            OutVect!.addItem(apm01a.vendor_name$)
+            OutVect!.addItem(phone$)
 
-			xwk = fnblank(5)
-			OutVect!.addItem(str(vt[0]))
-			OutVect!.addItem(str(vt[1]))
-			OutVect!.addItem(str(vt[2]))
-			OutVect!.addItem(str(vt[3]))
-			OutVect!.addItem(str(vt[4]))
-			OutVect!.addItem(str(totamt))
+            OutVect!.addItem(str(vt[0]))
+            OutVect!.addItem(str(vt[1]))
+            OutVect!.addItem(str(vt[2]))
+            OutVect!.addItem(str(vt[3]))
+            OutVect!.addItem(str(vt[4]))
+            OutVect!.addItem(str(totamt))
 
-			lines=lines+2
-		endif
-		
-	endif	
-	
+            lines=lines+2
+        endif
+
+        if summary and export_format$="Y" and printed
+            totamt=0
+            
+            for x=0 to 4
+                totamt=totamt+vt[x]
+            next x
+
+            OutVect!.addItem(apm01a.vendor_id$)
+            OutVect!.addItem(apm01a.vendor_name$)
+            OutVect!.addItem(phone$)
+            OutVect!.addItem(apm01a.alt_sequence$)
+            OutVect!.addItem(str(vt[0]))
+            OutVect!.addItem(str(vt[1]))
+            OutVect!.addItem(str(vt[2]))
+            OutVect!.addItem(str(vt[3]))
+            OutVect!.addItem(str(vt[4]))
+            OutVect!.addItem(str(totamt))
+
+            lines=lines+1
+        endif
+    endif   
+    
     if !(done) then 
-	    dim vt[4],vr[4]
-	    lastvendor$=apt01a.vendor_id$
-	    altseq$=""
-	    printed=0
-		
-	    dim apm01a$:fattr(apm01a$)
-	    apm01a.firm_id$=apt01a.firm_id$
-	    apm01a.vendor_id$=apt01a.vendor_id$
-	    apm01a.vendor_name$=nf$
-		
-	    k$=apm01a.firm_id$+apm01a.vendor_id$
-	    find record (apm01_dev,key=k$,dom=*proceed) apm01a$
-		
-	    if sequence$="A"
-	       altseq$=apm01a.alt_sequence$+" "
-	    endif
-		
-	    call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.phone_no$,2),"",phone_mask$
-	    phone$=cvs(apm01a.phone_no$,2)
-	    phone$=str(phone$:phone_mask$,err=*next)
-		
-	    vendorid$=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
-	    vendor$=altseq$+vendorid$+" "+apm01a.vendor_name$
-	endif
-	
+        dim vt[4],vr[4]
+        lastvendor$=apt01a.vendor_id$
+        altseq$=""
+        printed=0
+        
+        dim apm01a$:fattr(apm01a$)
+        apm01a.firm_id$=apt01a.firm_id$
+        apm01a.vendor_id$=apt01a.vendor_id$
+        apm01a.vendor_name$=nf$
+        
+        k$=apm01a.firm_id$+apm01a.vendor_id$
+        find record (apm01_dev,key=k$,dom=*proceed) apm01a$
+        
+        if sequence$="A"
+           altseq$=apm01a.alt_sequence$+" "
+        endif
+        
+        call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.phone_no$,2),"",phone_mask$
+        phone$=cvs(apm01a.phone_no$,2)
+        phone$=str(phone$:phone_mask$,err=*next)
+        
+        vendorid$=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+        vendor$=altseq$+vendorid$+" "+apm01a.vendor_name$
+    endif
+    
     return
 
 rem --- Functions

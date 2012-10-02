@@ -1,3 +1,21 @@
+[[SAR_TERRITORY.BFMC]]
+rem --- open files
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="SAM_TERRITRY",open_opts$[1]="OTA"
+	open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
+	gosub open_tables
+	sas01_dev=num(open_chans$[2]),sas01a$=open_tpls$[2]
+	dim sas01a$:sas01a$
+	read record (sas01_dev,key=firm_id$+"SA00")sas01a$
+
+rem --- create list for available levels
+
+	ldat_list$=pad("Territory",20)+"~"+"T;"
+	if pos(sas01a.terrcode_lev$="PI") ldat_list$=ldat_list$+pad("Product",20)+"~"+"P;"
+	if pos(sas01a.terrcode_lev$="I") ldat_list$=ldat_list$+pad("Item",20)+"~"+"I;"
+
+	callpoint!.setTableColumnAttribute("SAR_TERRITORY.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_TERRITORY.ASVA]]
 rem --- Check selected level against allowable level
 	allow=pos(user_tpl.high_level$=user_tpl.sa_levels$)
@@ -37,12 +55,8 @@ dim user_tpl$:"sa_levels:c(3),high_level:c(1)"
 user_tpl.sa_levels$="TPI"
 user_tpl.high_level$=sas_params.terrcode_lev$
 [[SAR_TERRITORY.BSHO]]
-	num_files=2
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="SAM_TERRITRY",open_opts$[1]="OTA"
-	open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
-	gosub open_tables
-	sas01_dev=num(open_chans$[2]),sas01a$=open_tpls$[2]
+	sas01_dev=fnget_dev("SAS_PARAMS")
+	sas01a$=fnget_tpl$("SAS_PARAMS")
 	dim sas01a$:sas01a$
 	read record (sas01_dev,key=firm_id$+"SA00")sas01a$
 	if sas01a.by_territory$<>"Y"

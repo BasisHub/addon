@@ -6,6 +6,14 @@ rem --- Is item code blank?
 		gosub disp_message
 		callpoint!.setFocus("IVM_ITEMMAST.ITEM_ID")
 	endif
+
+	if cvs(callpoint!.getColumnData("IVM_ITEMMAST.ITEM_DESC"),3)="" then 
+		msg_id$="IV_BLANK_DESC"
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+		endif	
+	endif
 [[IVM_ITEMMAST.LOTSER_ITEM.AVAL]]
 rem --- Can't change flag is there is QOH
 
@@ -81,6 +89,10 @@ rem --- Save old Bar Code and UPC Code for Synonym Maintenance
 
 	user_tpl.old_barcode$=callpoint!.getColumnData("IVM_ITEMMAST.BAR_CODE")
 	user_tpl.old_upc$=callpoint!.getColumnData("IVM_ITEMMAST.UPC_CODE")
+
+rem --- store lot/serialized flag in devObject for use later
+
+	callpoint!.setDevObject("lot_serial_item",callpoint!.getColumnData("IVM_ITEMMAST.LOTSER_ITEM"))
 [[<<DISPLAY>>.ITEM_DESC_SEG_3.AVAL]]
 rem --- Set this section back into desc, if modified
 
@@ -187,7 +199,7 @@ rem --- Populate Stocking Info in Warehouses
 	dim dflt_data$[6,1]
 	dflt_data$[1,0]="ITEM_ID"
 	dflt_data$[1,1]=cp_item_id$
-	ivs10d_dev=fnget_dev("IVS_DEFAULT")
+	ivs10d_dev=fnget_dev("IVS_DEFAULTS")
 	ivs10d_tpl$=fnget_tpl$("IVS_DEFAULTS")
 	dim ivs10d$:ivs10d_tpl$
 	read record (ivs10d_dev,key=firm_id$+"D") ivs10d$
@@ -260,24 +272,6 @@ rem --- See if Auto Numbering in effect
 		endif
 	endif
 [[IVM_ITEMMAST.AWRI]]
-rem --- Populate ivm-02 with Product Type
-
-	ivm02_dev=fnget_dev("IVM_ITEMWHSE")
-	dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
-
-	item$      = callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
-	prod_type$ = callpoint!.getColumnData("IVM_ITEMMAST.PRODUCT_TYPE")
-
-	read (ivm02_dev, key=firm_id$+item$, knum=2, dom=*next) 
-
-	while 1
-		read record (ivm02_dev, end=*break) ivm02a$
-		if ivm02a.firm_id$<>firm_id$ or ivm02a.item_id$<>item$ then break
-		ivm02a.product_type$ = prod_type$
-		ivm02a$ = field(ivm02a$)
-		write record (ivm02_dev) ivm02a$
-	wend
-
 rem --- Write synonyms of the Item Number, UPC Code and Bar Code
 	ivm_itemsyn_dev=fnget_dev("IVM_ITEMSYN")
 	dim ivm_itemsyn$:fnget_tpl$("IVM_ITEMSYN")
@@ -316,6 +310,10 @@ rem --- Add new UPC Code and Bar Code
 
 	user_tpl.old_barcode$=callpoint!.getColumnData("IVM_ITEMMAST.BAR_CODE")
 	user_tpl.old_upc$=callpoint!.getColumnData("IVM_ITEMMAST.UPC_CODE")
+
+rem --- store lot/serialized flag in devObject for use later
+
+	callpoint!.setDevObject("lot_serial_item",callpoint!.getColumnData("IVM_ITEMMAST.LOTSER_ITEM"))
 [[IVM_ITEMMAST.BDEL]]
 rem --- Allow this item to be deleted?
 
@@ -489,7 +487,7 @@ rem --- Setup user_tpl$
 	dim user_tpl$:"sa:c(1)," +
 :                "desc_len_01:n(1*), desc_len_02:n(1*), desc_len_03:n(1*)," +
 :                "prev_desc_seg_1:c(1*), prev_desc_seg_2:c(1*), prev_desc_seg_3:c(1*)," +
-:		"old_upc:c(1*),old_barcode:c(1*)"
+:                "old_upc:c(1*),old_barcode:c(1*)"
 
 	user_tpl.sa$=sa$
 
@@ -501,7 +499,7 @@ rem --- Set user labels and lengths for description segments
 
 	util.changeText(Form!, "Segment Description 1:", cvs(ivs01a.user_desc_lb_01$, 2) + ":")
 	callpoint!.setTableColumnAttribute("<<DISPLAY>>.ITEM_DESC_SEG_1", "MAXL", str(user_tpl.desc_len_01))
-	first_desc!=util.getControl(callpoint!,"<<DISPLAY>>.ITEM_DESC_SEG_1")
+	first_desc!=util.getControl(Form!,callpoint!,"<<DISPLAY>>.ITEM_DESC_SEG_1")
 	first_desc!.setMask(fill(user_tpl.desc_len_01,"X"))
 
 	if cvs(ivs01a.user_desc_lb_02$, 2) <> "" then
@@ -512,7 +510,7 @@ rem --- Set user labels and lengths for description segments
 
 	if user_tpl.desc_len_02 <> 0 then
 		callpoint!.setTableColumnAttribute("<<DISPLAY>>.ITEM_DESC_SEG_2", "MAXL", str(user_tpl.desc_len_02))
-		second_desc!=util.getControl(callpoint!,"<<DISPLAY>>.ITEM_DESC_SEG_2")
+		second_desc!=util.getControl(Form!,callpoint!,"<<DISPLAY>>.ITEM_DESC_SEG_2")
 		second_desc!.setMask(fill(user_tpl.desc_len_02,"X"))
 	else
 		callpoint!.setColumnEnabled("<<DISPLAY>>.ITEM_DESC_SEG_2", -1)
@@ -526,7 +524,7 @@ rem --- Set user labels and lengths for description segments
 
 	if user_tpl.desc_len_03 <>0 then
 		callpoint!.setTableColumnAttribute("<<DISPLAY>>.ITEM_DESC_SEG_3", "MAXL", str(user_tpl.desc_len_03))
-		third_desc!=util.getControl(callpoint!,"<<DISPLAY>>.ITEM_DESC_SEG_3")
+		third_desc!=util.getControl(Form!,callpoint!,"<<DISPLAY>>.ITEM_DESC_SEG_3")
 		third_desc!.setMask(fill(user_tpl.desc_len_03,"X"))
 	else
 		callpoint!.setColumnEnabled("<<DISPLAY>>.ITEM_DESC_SEG_3", -1)

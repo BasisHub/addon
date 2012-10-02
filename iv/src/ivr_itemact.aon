@@ -13,19 +13,19 @@ rem  +-----------------------------------------+
 
 rem --- Use function object, Option object
 
-	use ::ado_func.src::func
-	use ::sys/prog/bao_option.bbj::Option
+    use ::ado_func.src::func
+    use ::sys/prog/bao_option.bbj::Option
 
 rem --- Retrieve the program path
 
-	pgmdir$ = ""
+    pgmdir$ = ""
     pgmdir$ = stbl("+DIR_PGM",err=*next)
 
 rem --- Document initializations
 
-	declare BBjVector OutVect!
-	declare BBjVector BrkVect!
-	declare BBjVector HdrVect!
+    declare BBjVector OutVect!
+    declare BBjVector BrkVect!
+    declare BBjVector HdrVect!
 
     OutVect!=bbjAPI().makeVector()
     BrkVect!=bbjAPI().makeVector()
@@ -45,8 +45,11 @@ rem --- Retrieve sysinfo data
     firm_name$=sysinfo.firm_name$
     task_desc$=sysinfo.task_desc$
     sys_date$=sysinfo.system_date$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next))
 
-rem --- Open files
+    rem --- Open files
 
     files=7,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
@@ -73,12 +76,12 @@ rem --- Open files
 rem --- Dimension string templates
 
     dim gls01a$:templates$[1],ivm01a$:templates$[2],ivm02a$:templates$[3],
-:           ivm10a$:templates$[4],ivm12a$:templates$[5],ivs01a$:templates$[6],
-:           ivm10c$:templates$[7]
+:       ivm10a$:templates$[4],ivm12a$:templates$[5],ivs01a$:templates$[6],
+:       ivm10c$:templates$[7]
 
 rem --- Assign form input values to local variables
 
-	declare Option option!
+    declare Option option!
 
     period1$=option!.getOptionData("period_year_1")
     begyear$=period1$(3),begper$=period1$(1,2)
@@ -130,10 +133,12 @@ rem --- Initializations
     period$[1]=endyear$+endper$
     headings$[2]="From Period "+begper$+" "+begyear$+" Through Period "+endper$+" "+endyear$
     more=1
+    recs=0
+    total_recs=0
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",7+p[0],ivm01a_dev,1,0,status
+    call pgmdir$+"adc_progress.aon","N","IVM_ITEMMAST","","Printing","",7+p[0],ivm01a_dev,1,0,status
     if status = 999 then goto std_exit
 
 rem --- Report headings
@@ -148,7 +153,7 @@ rem --- Report headings
 
 rem ----  column heading
 
-	dw = width - m2*6 - 7 - 5
+    dw = width - m2*6 - 7 - 5
 
     dim columns$[7,10]
     columns=8
@@ -196,11 +201,11 @@ rem --- Main Read
         whse$     = read_tpl.warehouse_id$
         product$  = read_tpl.product_type$
         item$     = read_tpl.item_id$
-        x$ = whse$+" "+product$+" "+item$(1,p[0])
 
 rem --- Level breaks?
 
-        call pgmdir$+"adc_progress.aon","S","","","",x$,0,0,1,meter_num,status
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
         if status = 999 then exitto std_exit
 
         if whse$<>t0$ gosub whse_break
@@ -209,13 +214,13 @@ rem --- Level breaks?
 rem --- Retrieve item and activity
 
         dim item$[2]
-		dim activity[12]
-		dim description$(dw)
+        dim activity[12]
+        dim description$(dw)
         find record (ivm01a_dev, key=firm_id$+item$, dom=*continue) ivm01a$
         if type$<>"" and ivm01a.item_type$<>type$ then continue
         description$(1) = func.displayDesc(ivm01a.item_desc$, p[3], p[4], p[5])
         item$[0]=firm_id$
-		item$[1]=whse$
+        item$[1]=whse$
         item$[2]=item$
         action$=""
 
@@ -247,12 +252,19 @@ rem --- Print detail line
         xwk=fnblank(1)
 
         number=number+1
+        recs=recs+1
 
 rem --- Loop back for next record
 
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     if number = 0 then OutVect!.addItem("No Inventory Activity Found")
     goto std_exit
@@ -297,6 +309,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
     fnend
 
 rem #include std_error.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 std_error: rem --- Standard error handler (01Apr2006)
 
@@ -350,5 +369,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     if status=0 then run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

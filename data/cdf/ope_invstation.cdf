@@ -1,3 +1,9 @@
+[[OPE_INVSTATION.BEND]]
+release; rem --- if ditching this form, don't run invoice entry either, just release
+[[OPE_INVSTATION.DEF_STATION.AVAL]]
+rem --- set STBL
+
+	ignore$ = stbl("OPE_DEF_STATION", callpoint!.getUserInput())
 [[OPE_INVSTATION.BSHO]]
 rem --- Open File(s)
 	
@@ -36,8 +42,3 @@ rem --- Set this user's or param's default POS station
 			callpoint!.setTableColumnAttribute("OPE_INVSTATION.DEF_STATION", "DFLT", params_rec.default_station$)
 		endif
 	endif
-[[OPE_INVSTATION.BEND]]
-rem --- Set value into an STBL so calling program can access it
-
-	ignore$ = stbl("OPE_DEF_STATION", callpoint!.getColumnData("OPE_INVSTATION.DEF_STATION"))
-	release

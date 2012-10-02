@@ -45,7 +45,7 @@ rem --- [1] = Reference 1      [8] = Transaction Comment
 rem --- [2] = Reference 2      [9] = Finished Item (BI/WI/WO)
 rem --- [3] = Reference 3     [10] = Lot/Serial Location
 rem --- [4] = Reference 4     [11] = Lot/Serial Comment
-rem --- [5] = Sequence Nbr    [12] = Drop Ship Flag
+rem --- [5] = Sequence Nbr    [12] = Dropship Flag
 rem --- [6] = OP/PO Line Code
 rem --- REFS[n]    : Reference Information (input)
 rem --- [0] = Quantity       
@@ -137,7 +137,7 @@ rem --- Parameters
     p[0]=ivs01a.item_id_len
     p[1]=num(ivs01a.precision$)
     p[2]=ivs01a.ls_no_len
-    ls=pos(ivs01a.lotser_flag$="LS")
+    ls_flag=pos(ivs01a.lotser_flag$="LS")
     lf=pos(ivs01a.lifofifo$="LF")
     current_per$=ivs01a.current_per$
     current_year$=ivs01a.current_year$
@@ -200,12 +200,13 @@ rem --- Retrieve ivm-01 Item Master
 
     ivm01k0$=firm_id$+item$
     find record (ivm01_dev,key=ivm01k0$,dom=missing_record_error) ivm01a$
-    if ls then ls = (ivm01a.lotser_item$ = "Y")
+    if ls_flag then ls = (ivm01a.lotser_item$ = "Y")
 
 rem --- ivm-01 Item Master
 
     if dropship=0 and last<>0
-        ivm01a.lstrec_date$ = fnl$(ivm01a.lstrec_date$, ymd$)
+        field ivm01a$, last$[last] = fnl$( field(ivm01a$,last$[last]), ymd$ )
+        rem ivm01a.lstrec_date$ = fnl$(ivm01a.lstrec_date$, ymd$)
         ivm01a$=field(ivm01a$)
         write record (ivm01_dev) ivm01a$
     endif
@@ -229,11 +230,13 @@ rem --- Adjust remaining fields
 
     location$=ivm02a.location$
     if action$="PI" then ivm02a.landed_cost=refs[4]
+    
     if action$="PH" and cvs(lotser$,2)="" then 
         ivm02a.lstphy_date$=ymd$
         ivm02a.select_phys$="N"
         ivm02a.physical_cnt=refs[5]
     endif
+    
     ivm02a$=field(ivm02a$)
     write record (ivm02_dev) ivm02a$
 
@@ -406,7 +409,7 @@ rem --- ivm-12 Inventory Activity
 rem --- ivt-04 Inventory Transactions
 
     if pos(action$="IC,PO,OE,CO,UC,TA,OO,PI",3) then goto update_lot_serial
-
+    
     ivt04a.firm_id$=firm_id$
     ivt04a.warehouse_id$=whse$
     ivt04a.item_id$=item$
@@ -427,15 +430,15 @@ rem --- ivt-04 Inventory Transactions
 
 rem --- Update existing ivt-04 record
 
-    if  trans$(code,2) = ivt04a.trans_source$ and
-:       refs$[1] = ivt04a.trans_ref_1$ and
-:       refs$[2] = ivt04a.trans_ref_2$ and  
-:       refs$[3] = ivt04a.trans_ref_3$ and
-:       refs$[4] = ivt04a.trans_ref_4$ and
-:       refs$[5] = ivt04a.trans_seq$ and
-:       ivm01a.unit_of_sale$ = ivt04a.unit_measure$ and
-:       ( ( pos(action$="PORC",2)     and ivt04a.line_code$ = refs$[6] ) or
-:       ( pos(action$="PORC",2) = 0 and ivt04a.po_line_code$ = refs$[6] ) )
+    if  cvs(trans$(code,2),3) = cvs(ivt04a.trans_source$,3) and
+:       cvs(refs$[1],3) = cvs(ivt04a.trans_ref_1$,3) and
+:       cvs(refs$[2],3) = cvs(ivt04a.trans_ref_2$,3) and  
+:       cvs(refs$[3],3) = cvs(ivt04a.trans_ref_3$,3) and
+:       cvs(refs$[4],3) = cvs(ivt04a.trans_ref_4$,3) and
+:       cvs(refs$[5],3) = cvs(ivt04a.trans_seq$,3) and
+:       cvs(ivm01a.unit_of_sale$,3) = cvs(ivt04a.unit_measure$,3) and
+:       ( ( pos(action$="PORC",2)=0     and cvs(ivt04a.line_code$,3) = cvs(refs$[6],3) ) or
+:       ( pos(action$="PORC",2) and cvs(ivt04a.po_line_code$,3) = cvs(refs$[6],3) ) )
 :   then
         ivt04a.trans_qty=ivt04a.trans_qty+qty
         if action$="BB" and cvs(lotser$,2)="" then ivt04a.trans_qty=qty
@@ -443,6 +446,8 @@ rem --- Update existing ivt-04 record
         if refs[2]<>0 then ivt04a.unit_price=refs[2]
         ivt04a$=field(ivt04a$)
         write record (ivt04_dev) ivt04a$
+    else
+        goto write_trans_rec
     endif
 
     goto update_lot_serial
@@ -553,7 +558,7 @@ lot_serial_trans: rem --- ivt-01 Lot/Serial Transactions
         ivt01a.lotser_no$=lotser$
         ivt01a.trans_date$=ymd$
         channel=ivt01_dev
-        if dropship then location$="Drop Ship"
+        if dropship then location$="Dropship"
         gosub init_trans_hist_rec
         ivt01a$=field(ivt01a$)
         write record (ivt01_dev) ivt01a$
@@ -612,7 +617,7 @@ missing_record_error: rem --- Missing record
     msg_tokens$[1] = item$
     msg_tokens$[2] = whse$
     msg_tokens$[3] = pgm(-2)
-    gosub disp_message
+    rem gosub disp_message
     status=11
     goto std_exit
 
@@ -621,7 +626,7 @@ no_item_error: rem --- No inventory item passed
     msg_id$="IV_NO_ITEM_PASSED_IN"
     dim msg_tokens$[1]
     msg_tokens$[1] = pgm(-2)
-    gosub disp_message
+    rem gosub disp_message
     status=901
     goto std_exit
 
@@ -700,7 +705,7 @@ update_comtd_on_order: rem --- Update IVM-02/IVM-07 committed and on order
     endif
 
     if !(dropship) then 
-        if pos(action$="CO,IC,II,OE,OP,TO,WI",3) then 
+        if pos(action$="CO,IC,II,OE,OP,TO,WI",3) or (action$="IA" and qty<0) then 
             ivmwk.qty_commit=ivmwk.qty_commit+qty
         else 
             if action$="UC" then 
@@ -838,6 +843,7 @@ rem --- Functions used to retrieve form values
 rem --- Date/time handling functions
 
 rem --- Return 1 if valid date, 0 if invalid
+
     def fndate(q$)
         q=0
         q=jul(q$, "%Yl%Mz%Dz", err=*next)
@@ -849,11 +855,10 @@ rem --- Return 1 if valid date, 0 if invalid
 rem --- fnl$: return greater of two dates, or spaces if both dates null/empty
 
     def fnl$(q1$,q2$)
-        if cvs(q1$,2)="" dim q1$(8,"Z")
-        if cvs(q2$,2)="" dim q2$(8,"Z")
+        if cvs(q1$,2)="" dim q1$(8)
+        if cvs(q2$,2)="" dim q2$(8)
         q$=q1$
         if q2$>q1$ q$=q2$
-        if pos("Z"<>q$)=0 dim q$(8)
         return q$
     fnend
 

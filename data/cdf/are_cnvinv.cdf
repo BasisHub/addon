@@ -1,3 +1,22 @@
+[[ARE_CNVINV.BEND]]
+rem --- remove software lock on batch, if batching
+
+	batch$=stbl("+BATCH_NO",err=*next)
+	if num(batch$)<>0
+		lock_table$="ADM_PROCBATCHES"
+		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
+		lock_type$="U"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+	endif
+[[ARE_CNVINV.BTBL]]
+rem --- Get Batch information
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("ARE_CNVINV.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
+
 [[ARE_CNVINV.BSHO]]
 rem --- Open/Lock files
 	files=7,begfile=1,endfile=7

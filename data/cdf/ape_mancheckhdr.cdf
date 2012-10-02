@@ -1,3 +1,26 @@
+[[APE_MANCHECKHDR.VENDOR_ID.BINP]]
+rem --- set devObject with AP Type and a temp vend indicator, so if we decide to set up a temporary vendor from here,
+rem --- we'll know which AP type to use, and we can automatically set the temp vendor flag in the vendor master
+
+callpoint!.setDevObject("passed_in_temp_vend","Y")
+callpoint!.setDevObject("passed_in_AP_type",callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE"))
+[[APE_MANCHECKHDR.BEND]]
+rem --- remove software lock on batch, if batching
+
+	batch$=stbl("+BATCH_NO",err=*next)
+	if num(batch$)<>0
+		lock_table$="ADM_PROCBATCHES"
+		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
+		lock_type$="U"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+	endif
+[[APE_MANCHECKHDR.BTBL]]
+rem --- Get Batch information
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("APE_MANCHECKHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[APE_MANCHECKHDR.BWRI]]
 rem --- make sure we have entered mandatory elements of header, and that ap_type/vendor are valid together
 
@@ -43,97 +66,6 @@ rem --- one or more ape-12 recs, then come back to main form and abort, which wo
 			endif
 		next reccnt		
 	endif
-[[APE_MANCHECKHDR.AOPT-OINV]]
-rem -- call inquiry program to view open invoices this vendor
-rem -- only allow if trans_type is manual (vs reversal/void)
-
-trans_type$ = callpoint!.getColumnData("APE_MANCHECKHDR.TRANS_TYPE")
-ap_type$    = callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
-vendor_id$  = callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
-
-if trans_type$ = "M" then 
-	if ap_type$ <> "" and vendor_id$ <> "" then
-		key_pfx$ = firm_id$ + ap_type$ + vendor_id$
-		call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:			gui_dev,
-:			Form!,
-:			"APT_INVOICEHDR",
-:			"LOOKUP",
-:			table_chans$[all],
-:			key_pfx$,
-:			"PRIMARY",
-:			rd_key$
-		if rd_key$<>""
-			apt01_dev=fnget_dev("APT_INVOICEHDR")
-			dim apt01a$: fnget_tpl$("APT_INVOICEHDR")
-			apt11_dev=fnget_dev("APT_INVOICEDET")
-			dim apt11a$:fnget_tpl$("APT_INVOICEDET")
-			ape22_dev1=user_tpl.ape22_dev1
-			dim ape22a$:fnget_tpl$("APE_MANCHECKDET")
-			call stbl("+DIR_SYP")+"bac_key_template.bbj","APE_MANCHECKDET","ALT_KEY_01",ape22_key1$,rd_table_chans$[all],status$
-			while 1
-				readrecord(apt01_dev,key=rd_key$,dom=*break)apt01a$
-				if apt01a.selected_for_pay$="Y"
-					callpoint!.setMessage("AP_INV_IN_USE:Check")
-					break
-				endif
-				dim ape22_key$:ape22_key1$
-				read(ape22_dev1,key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$,knum=1,dom=*next)
-				ape22_key$=key(ape22_dev1,end=*next)
-				if pos(firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$=ape22_key$)=1 and
-:					ape22_key.check_no$<>callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")
-					callpoint!.setMessage("AP_INV_IN_USE:Manual Check")
-					break
-				endif
-				apt01_key$=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
-				inv_amt=num(apt01a.invoice_amt$)
-				disc_amt=num(apt01a.discount_amt$)
-				ret_amt=num(apt01a.retention$)
-				apt11_key$=apt01_key$
-				read(apt11_dev,key=apt11_key$,dom=*next)
-				while 1
-					readrecord(apt11_dev,end=*break)apt11a$
-					if apt11a$(1,len(apt11_key$))=apt11_key$
-						inv_amt=inv_amt+num(apt11a.trans_amt$)
-						disc_amt=disc_amt+num(apt11a.trans_disc$)
-						ret_amt=ret_amt+num(apt11a.trans_ret$)
-					else
-						break
-					endif
-				wend
-				ape22a.firm_id$=firm_id$
-				ape22a.ap_type$=apt01a.ap_type$
-				ape22a.check_no$=callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")
-				ape22a.vendor_id$=callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
-				ape22a.ap_inv_no$=apt01a.ap_inv_no$
-				ape22a.sequence_00$="00"
-				ape22a.ap_dist_code$=apt01a.ap_dist_code$
-				ape22a.invoice_date$=apt01a.invoice_date$
-				ape22a.invoice_amt=inv_amt
-				ape22a.discount_amt=disc_amt
-				ape22a.retention=ret_amt
-				ape22a.net_paid_amt=inv_amt-disc_amt-ret_amt
-				ape22_key$=firm_id$+ape22a.ap_type$+ape22a.check_no$+ape22a.vendor_id$+ape22a.ap_inv_no$+"00"
-				ape22a$=field(ape22a$)
-				writerecord(ape22_dev1,key=ape22a_key$)ape22a$
-				ape02_key$=firm_id$+ape22a.ap_type$+callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")+ape22a.vendor_id$
-				callpoint!.setStatus("RECORD:["+ape02_key$+"]")
-				gosub calc_tots
-				callpoint!.setColumnData("<<DISPLAY>>.DISP_TOT_INV",str(tinv))
-			   callpoint!.setColumnData("<<DISPLAY>>.DISP_TOT_DISC",str(tdisc))
-				callpoint!.setColumnData("<<DISPLAY>>.DISP_TOT_RETEN",str(tret))
-				callpoint!.setColumnData("<<DISPLAY>>.DISP_TOT_CHECK",str(tinv-tdisc-tret))
-				break
-			wend
-		endif
-	else
-		callpoint!.setMessage("AP_NO_TYPE_OR_VENDOR")
-		callpoint!.setStatus("ABORT")
-	endif
-else
-	callpoint!.setMessage("AP_NO_INV_INQ")
-	callpoint!.setStatus("ABORT")
-endif
 [[APE_MANCHECKHDR.AOPT-OCHK]]
 rem -- call inquiry program to view open check file; plug check#/vendor id if those fields are still blank on form
 key_pfx$=callpoint!.getColumnData("APE_MANCHECKHDR.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
@@ -185,11 +117,13 @@ disable_grid:
 	c!=w!.getControl(5900)
 	c!.setEnabled(0)
 return
+
 enable_grid:
 	w!=Form!.getChildWindow(1109)
 	c!=w!.getControl(5900)
 	c!.setEnabled(1)
 return
+
 disable_fields:
 	rem --- used to disable/enable controls depending on parameter settings
 	rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space to disable/enable
@@ -200,6 +134,7 @@ disable_fields:
 	callpoint!.setAbleMap(wmap$)
 	callpoint!.setStatus("ABLEMAP-REFRESH")
 return
+
 calc_tots:
 	recVect!=GridVect!.getItem(0)
 	dim gridrec$:dtlg_param$[1,3]
@@ -214,6 +149,7 @@ calc_tots:
 		next reccnt
 	endif
 return
+
 disp_tots:
     rem --- get context and ID of display controls for totals, and redisplay w/ amts from calc_tots
     
@@ -226,6 +162,7 @@ disp_tots:
     tchk!=UserObj!.getItem(num(user_tpl.tchk_vpos$))
     tchk!.setValue(tinv-tdisc-tret)
     return
+
 get_vendor_history:
 	apm02_dev=fnget_dev("APM_VENDHIST")				
 	dim apm02a$:fnget_tpl$("APM_VENDHIST")
@@ -243,6 +180,7 @@ get_vendor_history:
 			vend_hist$="Y"
 	endif
 return
+
 #include std_missing_params.src
 [[APE_MANCHECKHDR.VENDOR_ID.AVAL]]
 	print "Head: VENDOR_ID.AVAL (After Column Validation)"; rem debug
@@ -254,6 +192,7 @@ return
 		if user_tpl.multi_types$="Y"
 			msg_id$="AP_NOHIST"
 			gosub disp_message
+			callpoint!.setStatus("CLEAR;NEWREC")
 		endif
 	endif
 [[APE_MANCHECKHDR.TRANS_TYPE.AVAL]]
@@ -278,15 +217,22 @@ if callpoint!.getUserInput()="M"
 endif
 [[APE_MANCHECKHDR.CHECK_DATE.AVAL]]
 print "in check date aval"
+
 gl$=user_tpl.glint$
 ckdate$=callpoint!.getUserInput()
-if gl$="Y" 
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",ckdate$,"Y",per$,yr$,status
-	if status>99
-		callpoint!.setStatus("ABORT")
-	else
-		user_tpl.glyr$=yr$
-		user_tpl.glper$=per$
+
+if gl$="Y"
+	if user_tpl.glyr$<>""
+		call stbl("+DIR_PGM")+"glc_datecheck.aon",ckdate$,"N",per$,yr$,status
+		if user_tpl.glyr$<>yr$ or user_tpl.glper$<>per$
+			call stbl("+DIR_PGM")+"glc_datecheck.aon",ckdate$,"Y",per$,yr$,status
+			if status>99
+				callpoint!.setStatus("ABORT")
+			else
+				user_tpl.glyr$=yr$
+				user_tpl.glper$=per$
+			endif
+		endif
 	endif
 endif
 [[APE_MANCHECKHDR.AOPT-VCMT]]
@@ -312,21 +258,27 @@ call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :	"",
 :	dflt_data$[all]
 [[APE_MANCHECKHDR.BSHO]]
-rem --- disable ap type control if param for multi-types is N
-if user_tpl.multi_types$="N" 
-	ctl_name$="APE_MANCHECKHDR.AP_TYPE"
-	ctl_stat$="I"
-	gosub disable_fields
-endif
+rem --- Disable ap type control if param for multi-types is N
+
+	if user_tpl.multi_types$="N" 
+		ctl_name$="APE_MANCHECKHDR.AP_TYPE"
+		ctl_stat$="I"
+		gosub disable_fields
+	endif
 			
-rem --- disable some grid columns
-w!=Form!.getChildWindow(1109)
-c!=w!.getControl(5900)
-c!.setColumnEditable(6,0)
-c!.setColumnEditable(7,0)
-if user_tpl.multi_types$="N" c!.setColumnEditable(2,0)
+rem --- Disable some grid columns
+
+	w!=Form!.getChildWindow(1109)
+	c!=w!.getControl(5900)
+	c!.setColumnEditable(6,0)
+	c!.setColumnEditable(7,0)
+	if user_tpl.multi_types$="N" c!.setColumnEditable(2,0)
+
+rem --- Disable button
+
+	callpoint!.setOptionEnabled("OINV",0)
 [[APE_MANCHECKHDR.AWIN]]
-rem --- print 'show',; rem debug
+rem print 'show',; rem debug
 
 rem --- Open/Lock files
 files=30,begfile=1,endfile=12
@@ -371,7 +323,7 @@ user_tpl_str$="firm_id:c(2),glint:c(1),glyr:c(4),glper:c(2),glworkfile:c(16),"
 user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"misc_entry:c(1),post_closed:c(1),units_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"existing_tran:c(1),open_check:c(1),existing_invoice:c(1),reuse_chk:c(1),"
-user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),"
+user_tpl_str$=user_tpl_str$+"dflt_ap_type:c(2),dflt_dist_cd:c(2),dflt_gl_account:c(10),"
 user_tpl_str$=user_tpl_str$+"tinv_vpos:c(1),tdisc_vpos:c(1),tret_vpos:c(1),tchk_vpos:c(1),"
 user_tpl_str$=user_tpl_str$+"ap_type_vpos:c(1),vendor_id_vpos:c(1),ape22_dev1:n(5)"
 dim user_tpl$:user_tpl_str$
@@ -446,6 +398,7 @@ aps01a_key$=firm_id$+"AP00"
 find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
 user_tpl.amt_msk$=aps01a.amount_mask$
 user_tpl.multi_types$=aps01a.multi_types$
+user_tpl.dflt_ap_type$=aps01a.ap_type$
 user_tpl.multi_dist$=aps01a.multi_dist$
 user_tpl.ret_flag$=aps01a.ret_flag$
 user_tpl.misc_entry$=aps01a.misc_entry$
@@ -546,6 +499,12 @@ c!.setColumnEditable(1,1)
 c!.setColumnEditable(6,0)
 c!.setColumnEditable(7,0)
 if user_tpl.multi_dist$="N" c!.setColumnEditable(2,0)
+
+rem --- if not multi-type then set the defalut AP Type
+if user_tpl.multi_types$="N" then
+	callpoint!.setColumnData("APE_MANCHECKHDR.AP_TYPE",user_tpl.dflt_ap_type$)
+endif
+
 [[APE_MANCHECKHDR.AREA]]
 print "Head: AREA (After Record Read)"; rem debug
 print "open_check$ is reset"; rem debug

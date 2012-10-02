@@ -133,6 +133,7 @@ rem --- Parameters
     sf$="N"
     ls$="N"
     lf$="N"
+    recs=0
 
     vendlen=num(aps01a.vendor_size$)
     i[0]=ivs01a.item_id_len
@@ -165,6 +166,8 @@ rem --- Parameters
     source$=pgm(-2)
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
     if status goto std_exit
+    process_id$=stbl("+PROCESS_ID")
+    batch_no$=stbl("+BATCH_NO")
 
 rem --- Initializations
 
@@ -264,7 +267,7 @@ rem --- Additional File Opens
 
     if gl$<>"N"
         files$[26]="glm-01",ids$[26]="GLM_ACCT"
-        files$[27]=glw11$,options$[27]="CL"
+        files$[27]="glw-11",ids$[27]="GLW_DAILYDETAIL";rem no longer clearing entire file; ,options$[27]="CL"
 
         call pgmdir$+"adc_fileopen.aon",action,26,27,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -274,6 +277,12 @@ rem --- Additional File Opens
         glw11_dev=channels[27]
 
         dim glm01a$:templates$[26]
+        
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+        
     endif
 
     if sf$<>"N"
@@ -390,7 +399,7 @@ l1900: rem --- Standard line
     if l+2>l9 gosub report_heading
     
     dim pbuf$(width)
-    pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
+    rem pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
     pbuf$(o[1]+1)=poe14a.po_line_code$
     pbuf$(o[2]+1)=poe14a.warehouse_id$
     pbuf$(o[3]+1)=poe14a.item_id$
@@ -404,6 +413,7 @@ l1900: rem --- Standard line
     pbuf$(o[11]+1)=str(po_extension:m1$)
     pbuf$(o[12]+1)=poe14a.location$
     OutVect!.addItem(pbuf$)
+    recs=recs+1
    
     dim pbuf$(width)
     pbuf$(o[3]+1)=description$
@@ -417,7 +427,7 @@ l2000: rem --- Non-stock line
     if l+2>l9 gosub report_heading
     
     dim pbuf$(width)
-    pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
+    rem pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
     pbuf$(o[1]+1)=poe14a.po_line_code$
     pbuf$(o[2]+1)=poe14a.warehouse_id$
     pbuf$(o[3]+1)=poe14a.item_id$
@@ -429,6 +439,7 @@ l2000: rem --- Non-stock line
     pbuf$(o[11]+1)=str(po_extension:m1$)
     pbuf$(o[12]+1)=poe14a.location$
     OutVect!.addItem(pbuf$)
+    recs=recs+1
     
     dim pbuf$(width)   
     pbuf$(o[3]+1)=poe14a.order_memo$
@@ -441,11 +452,12 @@ l2100: rem --- Vendor part number line
 
     if l+1>l9 gosub report_heading
     dim pbuf$(width)
-    pbuf$(o[0]+1)=fnisn(poe14a.internal_seq_no$)
+    rem pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
     pbuf$(o[1]+1)=poe14a.po_line_code$
     pbuf$(o[2]+1)=poe14a.warehouse_id$
     pbuf$(o[3]+1)=poe14a.item_id$
     OutVect!.addItem(pbuf$)    
+    recs=recs+1
 
     l=l+1
     goto l2400
@@ -454,11 +466,12 @@ l2200: rem --- Message line
 
     if l+1>l9 gosub report_heading
     dim pbuf$(width)    
-    pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
+    rem pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
     pbuf$(o[1]+1)=poe14a.po_line_code$
     pbuf$(o[2]+1)=poe14a.warehouse_id$
     pbuf$(o[3]+1)=poe14a.order_memo$
     OutVect!.addItem(pbuf$)    
+    recs=recs+1
 
     l=l+1
     goto l2400
@@ -467,13 +480,14 @@ l2300: rem --- Other type line
 
     if l+2>l9 gosub report_heading
     dim pbuf$(width)        
-    pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
+    rem pbuf$(o[0]+1)=fnisn$(poe14a.internal_seq_no$)
     pbuf$(o[1]+1)=poe14a.po_line_code$
     pbuf$(o[2]+1)=poe14a.warehouse_id$
     pbuf$(o[10]+1)=str(poe14a.unit_cost:m3$)
     pbuf$(o[11]+1)=str(po_extension:m1$)
     pbuf$(o[12]+1)=poe14a.location$
     OutVect!.addItem(pbuf$)
+    recs=recs+1
     
     dim pbuf$(width)    
     pbuf$(o[3]+1)=poe14a.order_memo$
@@ -507,8 +521,9 @@ rem --- Print detail line
     pbuf$(o[7]+1)=str(poe24a.qty_received:m2$)
     pbuf$(o[10]+1)=str(poe24a.unit_cost:m3$)
     pbuf$(o[11]+1)=str(extension:m1$)
-    OutVect!.addItem(pbuf$)    
+    OutVect!.addItem(pbuf$)
     l=l+1
+    recs=recs+1
     total=total+poe24a.qty_received
     lastseq=num(poe24a.sequence_no$)
     goto l2500
@@ -534,8 +549,8 @@ l2900: rem --- Print lines for missing lot/serial numbers
         lastseq=lastseq+1
         dim pbuf$(width)        
         pbuf$(o[3]+1)=lsdesc$+" "+str(lastseq:"000-")+x$
-        OutVect!.addItem(pbuf$)    
-        
+        OutVect!.addItem(pbuf$)
+        recs=recs+1
     next x
 
 l3000: rem --- Generate GL Recap Postings
@@ -689,17 +704,25 @@ rem --- Print list of lines with lot/serial number differences
         dim pbuf$(width)
         pbuf$(o[0]+1)=fnmask$(apm01a.vendor_id$,m0$)+" "+apm01a.vendor_name$
         pbuf$(o[1]+1)=k.receiver_no$
-        pbuf$(o[2]+1)=poe14a.po_no$+"-"+fnisn$(poe14a.internal_seq_no$)
+        pbuf$(o[2]+1)=poe14a.po_no$;rem +"-"+fnisn$(poe14a.internal_seq_no$)
         pbuf$(o[3]+1)=str(lineqty[x]:m2$)
         pbuf$(o[4]+1)=str(factor[x]:m5$)
         pbuf$(o[5]+1)=str(stock:m2$)
         pbuf$(o[6]+1)=str(lsqty[x]:m2$)
         pbuf$(o[7]+1)=str(dif:m2$)
         OutVect!.addItem(pbuf$)
+        recs=recs+1
         let l=l+1
     next x
 
 l4900: rem --- Run next overlay
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
     if number=0 goto std_exit
     run pgmdir$+"por_recptreg_o1.aon"
 
@@ -724,7 +747,7 @@ rem    if status exitto std_exit
     OutVect!.addItem(pbuf$)
     
     dim pbuf$(width)
-    pbuf$(o[0]+1)="Seq"
+    pbuf$(o[0]+1)="";rem used to be Seq; dropping it per VARs
     pbuf$(o[1]+1)="Cd"
     pbuf$(o[2]+1)="Wh"
     pbuf$(o[3]+1)="Item"
@@ -795,7 +818,7 @@ l5400: rem --- Subheading for lot/serial number errors
     dim pbuf$(width)    
     pbuf$(o[0]+1)="Vendor"
     pbuf$(o[1]+1)="Receiver"
-    pbuf$(o[2]+1)="PO #    Seq"
+    pbuf$(o[2]+1)="PO #       ";rem used to be "PO #    Seq"... dropping seq per VARs
     pbuf$(o[3]+1+m2-10)="Qty Rec'd"
     pbuf$(o[4]+1+m5-7)="Factor"
     pbuf$(o[5]+1+m2-10)="Qty Rec'd"
@@ -988,5 +1011,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

@@ -1,3 +1,6 @@
+[[APE_INVOICEDET.AGCL]]
+rem --- set preset val for batch_no
+callpoint!.setTableColumnAttribute("APE_INVOICEDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[APE_INVOICEDET.AUDE]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots

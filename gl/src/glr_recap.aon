@@ -21,67 +21,69 @@ rem --- UPDATE$     : Name of update overlay to run (or null)
 rem --- GLW11_DEV   : Summary work file channel number
 rem --- HEADINGS$[*]: Standard report headings array
 rem --- ACTION$     : D = Perform date verification
+rem --- +BATCH_NO   : batch# stbl, zero if not batching
+rem --- +PROCESS_ID : process id stbl (shouldn't be in here if not part of a process)
 
-	setesc std_error
-	seterr std_error
+    setesc std_error
+    seterr std_error
 
-	rd_alias_id$="<GL_RECAP>";rem dummy id to allow save for column size settings
-	next_overlay$="";rem --- clear next_var and outvect! so bas_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
+    rd_alias_id$="<GL_RECAP>";rem dummy id to allow save for column size settings
+    next_overlay$="";rem --- clear next_var and outvect! so bas_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Open/Lock files
 
-	files=3,begfile=1,endfile=files
-	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-	files$[1]="gls_params",ids$[1]=files$[1]
-	files$[2]="glm-01",ids$[2]="GLM_ACCT"
-	files$[3]="glm-03",ids$[3]="GLC_JOURNALCODE"
-	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]=files$[1]
+    files$[2]="glm-01",ids$[2]="GLM_ACCT"
+    files$[3]="glm-03",ids$[3]="GLC_JOURNALCODE"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-	if status goto std_exit
-	gls01_dev=channels[1]
-	glm01_dev=channels[2]
-	glm03_dev=channels[3]
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm01_dev=channels[2]
+    glm03_dev=channels[3]
 
 rem --- Dimension string templates
 
-	dim gls01a$:templates$[1],glm01a$:templates$[2],glm03a$:templates$[3]
+    dim gls01a$:templates$[1],glm01a$:templates$[2],glm03a$:templates$[3]
 
 rem --- Retrieve miscellaneous templates
 
-	files=1,begfile=1,endfile=files
-	dim ids$[files],templates$[files]
-	ids$[1]="glw-11:GLW_DAILYDETAIL"
-	call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
-	if status goto std_exit
+    files=1,begfile=1,endfile=files
+    dim ids$[files],templates$[files]
+    ids$[1]="glw-11:GLW_DAILYDETAIL"
+    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
+    if status goto std_exit
 
 rem --- Dimension miscellaneous string templates
 
-	dim glw11a$:templates$[1]
+    dim glw11a$:templates$[1]
 
 rem --- Retrieve parameter records
 
-	gls01a_key$=sysinfo.firm_id$+"GL00"
-	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 
 rem --- Parameters
 
-	glcontrol_tpl$=stbl("+GLCONTROL_TPL",err=next_overlay)
-	dim glcontrol$:glcontrol_tpl$
-	glcontrol$=stbl("+GLCONTROL",err=*next)
-	if glcontrol.gl_work_file$<>"Y" goto next_overlay
+    glcontrol_tpl$=stbl("+GLCONTROL_TPL",err=next_overlay)
+    dim glcontrol$:glcontrol_tpl$
+    glcontrol$=stbl("+GLCONTROL",err=*next)
+    if glcontrol.gl_work_file$<>"Y" goto next_overlay
 
 rem --- OutVect! for DocOut, date/time 
 
-	OutVect!=bbjAPI().getSysGui().makeVector()
-	BrkVect!=bbjAPI().getSysGui().makeVector()
-	HdrVect!=bbjAPI().getSysGui().makeVector()
-	TotVect!=bbjAPI().getSysGui().makeVector()
-	rep_date$=date(0:"%Mz/%Dz/%Yd")
-	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-	rep_time$=date(0:"%hz:%mz %p")
-	rep_time_stamp$=date(0:"%Hz%mz%sz")
-	rep_prog$=pgm(-2)
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Initializations
 
@@ -119,6 +121,11 @@ rem    errors=0
     l1=0
     m=m0
     if m<8 m=8
+    process_id$=stbl("+PROCESS_ID")
+    batch_no$=stbl("+BATCH_NO")
+    recs=0
+    total_recs=0
+    if milestone=0 then milestone=50
 
 rem --- column headings
 
@@ -146,47 +153,47 @@ rem --- Initialize Print Positions
 
 rem --- Build heading strings
 
-	if sequence$="A" hdr$(o[0]+3)="Date"
-	hdr$(o[1]+1)="Account"
-	hdr$(o[2]+1)="Description/Memo/Reference"
-	if width>80 hdr$(o[2]+1)="Description"
-	hdr$(o[3]+1)="Memo/Reference"
-	hdr$(o[4]+1+m1-7)="Debits"
-	hdr$(o[5]+1+m1-8)="Credits"
+    if sequence$="A" hdr$(o[0]+3)="Date"
+    hdr$(o[1]+1)="Account"
+    hdr$(o[2]+1)="Description/Memo/Reference"
+    if width>80 hdr$(o[2]+1)="Description"
+    hdr$(o[3]+1)="Memo/Reference"
+    hdr$(o[4]+1+m1-7)="Debits"
+    hdr$(o[5]+1+m1-8)="Credits"
 
 rem --- Display Resource
 
-	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-	call pgmdir$+"adc_progress.aon","NC","","","","",0,glw11_dev,1,0,status
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    call pgmdir$+"adc_progress.aon","NC","","GL recap","","",0,glw11_dev,1,0,status
 
 rem --- Report Headings
 
-	dim work$[1]
-	work$[0]=headings$[0]
-	work$[1]=headings$[1]
-	headings=2
-	dim headings$[headings+1]
-	headings$[0]=work$[0]
-	headings$[1]=work$[1]
-	headings$[2]="General Ledger Summary"
-	headings$[3]="[HEADER]"
+    dim work$[1]
+    work$[0]=headings$[0]
+    work$[1]=headings$[1]
+    headings=2
+    dim headings$[headings+1]
+    headings$[0]=work$[0]
+    headings$[1]=work$[1]
+    headings$[2]="General Ledger Summary"
+    headings$[3]="[HEADER]"
 
 rem --- Position File
-
-	read (glw11_dev,key=firm_id$,dom=*next)
-		 
+    read (glw11_dev,key=firm_id$+process_id$+batch_no$,dom=*next)
+         
 rem --- Get next glw-11 key
 
     while more
-          
+
           k$=key(glw11_dev,end=*break)
-          if pos(firm_id$=k$)=0 break
+          if pos(firm_id$+process_id$+batch_no$=k$)<>1 break
           glstatus=0
 
 rem --- Read next glw-11 record
 
           read record (glw11_dev,key=k$)glw11a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
 rem --- Level breaks?
 
@@ -235,7 +242,8 @@ rem             xwk=fnblank(6)
 rem             lf$=""
 rem          endif
           l1=l1+1
-		  
+          recs=recs+1
+          
 rem --- Print reference information?
 
           ref$=ref1$+" "+ref2$+" "+ref3$
@@ -254,7 +262,7 @@ rem --- Print reference information?
 
           if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,glw11a.trns_date$,glstatus,
 :                                                     l,errors,status
-          if stbl("+DTWARN_MSG",err=*endif)<>""
+          if stbl("+DTWARN_MSG",err=*endif)<>"" and report$="Y"
               xwk=fnblank(2)
               OutVect!.addItem(stbl("+DTWARN_MSG"))
               xwk=fnblank(3)
@@ -276,6 +284,12 @@ rem --- Print reference information?
     wend
 
 rem --- All Done
+
+    if recs=0 and report$="Y"
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     done=1
     if sequence$="A" gosub journal_break
@@ -332,19 +346,19 @@ register_errors: rem --- Register errors
 next_overlay: rem --- Run update overlay
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-	
+
     if OutVect!<>null() then 
-		next_overlay$=update$
-		out_action$="PRT"
-		goto std_exit
-	    rem --- run update$,err=std_exit -- DocOut will run next pgm for us
+        next_overlay$=update$
+        out_action$="PRT"
+        goto std_exit
+        rem --- run update$,err=std_exit -- DocOut will run next pgm for us
     else
-		next_overlay$=""
-		out_action$=""
-		run update$,err=std_exit
+        next_overlay$=""
+        out_action$=""
+        run update$,err=std_exit
     endif
 
-	rem --- run update$,err=std_exit -- DocOut will run next pgm for us
+    rem --- run update$,err=std_exit -- DocOut will run next pgm for us
 
 report_heading: rem --- Report Heading
 
@@ -397,11 +411,12 @@ date_break: rem --- Date break
     if sequence$="A" goto date_break_exit
     if t0$="" goto new_date
     gosub account_break
-    gosub journal_break
     total$="Totals For "+fndate$(t0$)
     debits=dt[0]
     credits=dt[1]
     gosub print_totals
+    gosub journal_break        
+
 
 new_date: rem --- New date
 
@@ -415,7 +430,7 @@ date_break_exit:
 
 journal_break: rem --- Journal break
 
-    if t1$="" goto new_journal
+    if t1$="" then goto new_journal
     if sequence$="A" gosub period_break
 
 new_journal: rem --- New Sequence
@@ -429,8 +444,8 @@ new_journal: rem --- New Sequence
     lf$=""
     find record (glm03_dev,key=glm03_key$,dom=*next)glm03a$
     jh$="Journal "+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2),l=l9+1
-	BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-	HdrVect!.addItem(jh$)
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(jh$)
 journal_break_exit:
     return
 
@@ -443,7 +458,7 @@ period_break: rem --- Period break
     debits=at[0]
     credits=at[1]
     gosub print_totals
-
+    
 new_period: rem --- New period
 
     if done goto period_break_exit
@@ -539,10 +554,10 @@ rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
-	
+    return
+    
 rem #endinclude disp_message.src
 
 rem #include std_error.src
@@ -597,6 +612,10 @@ std_exit: rem --- Standard program end (01Mar2006)
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+std_exit_no_report:
+
     release
 
 rem #endinclude std_end.src

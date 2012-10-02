@@ -10,9 +10,9 @@ rem  +-----------------------------------------+
 
     setesc std_error
     seterr std_error
-	
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
+    
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Retrieve the program path
 
@@ -28,30 +28,29 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gle-01",ids$[1]="GLE_JRNLHDR"
     files$[2]="gle-11",ids$[2]="GLE_JRNLDET"
     files$[3]="glm-07",ids$[3]="GLC_CYCLECODE"
-
+    files$[4]="adm-39",ids$[4]="ADM_PROCTABLES"
+    files$[5]="adm-09",ids$[5]="ADM_PROCMASTER"
+    
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_update
 
-    rem gle-02/12 already open from register on gle01_dev and gle11_dev
-    rem so set gle02_dev and gle12_dev to gle01_dev and gle11_dev,
-    rem then set gle01_dev and gle11_dev to channels for gle-01 and gle-11,
-    rem just opened above
+    rem gle-02/12 already open from register 
 
-    gle02_dev=gle01_dev
-    gle12_dev=gle11_dev
     gle01_dev=channels[1]
     gle11_dev=channels[2]
     glm07_dev=channels[3]
+    adm39_dev=channels[4]
+    adm09_dev=channels[5]
 
 rem --- Dimension string templates
 
-    dim gle01a$:templates$[1],gle11a$:templates$[2],glm07a$:templates$[3]
+    dim gle01a$:templates$[1],gle11a$:templates$[2],glm07a$:templates$[3],adm39a$:templates$[4],adm09a$:templates$[5]
 
 rem --- Initializations
 
@@ -69,6 +68,21 @@ rem --- Options
     msg_tokens$[1]=x.task_desc$
     gosub disp_message
     if msg_opt$<>"Y" goto std_exit_no_update
+    
+rem --- check process tables file to see if gle-01/11 present
+rem --- if so, get process id, see if batching is turned on, and call adc_getbatch
+
+    read (adm39_dev,key=firm_id$+"GLE_JRNLHDR",knum=1,dom=*next)
+    read record (adm39_dev,end=*next)adm39a$
+    if adm39a.firm_id$=firm_id$ and pos("GLE_JRNLHDR"=adm39a.dd_table_alias$)=1 
+        read record (adm09_dev,key=firm_id$+adm39a.process_id$,dom=*next)adm09a$
+        if adm09a.batch_entry$="Y"
+            call stbl("+DIR_PGM")+"adc_getbatch.aon",adm39a.dd_table_alias$,"",rd_table_chans$[all]
+        endif
+    endif
+    
+    batch_no$=stbl("+BATCH_NO")
+    
 
 rem --- Start progress meter and position file
 
@@ -81,19 +95,25 @@ rem --- gle-01/11 Journal Entry files.
     while more
           gle02_key$=key(gle02_dev,end=*break)
           if pos(firm_id$=gle02_key$)<>1 break
-          read record (gle02_dev)gle01a$
+          read record (gle02_dev)gle02a$
+          call stbl("+DIR_PGM")+"adc_copyfile.aon",gle02a$,gle01a$,status
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
           if cycle$<>"" if gle01a.cycle_code$<>cycle$ then continue
           reversal=cvs(gle01a.reverse_date$,2)<>"" 
           if reversal=0 gosub end_of_month
           if reversal if cycle_reversal$="C" gosub calculation
           if reversal if cycle_reversal$="D" gosub bydate
+          gle01a.batch_no$=batch_no$
+          gle01a$=field(gle01a$)
           write record (gle01_dev)gle01a$
           read (gle12_dev,key=gle02_key$,dom=*next)
           while moredetail
                 k$=key(gle12_dev,end=*break)
                 if pos(gle02_key$=k$)<>1 break
-                read record (gle12_dev)gle11a$
+                read record (gle12_dev)gle12a$
+                call stbl("+DIR_PGM")+"adc_copyfile.aon",gle12a$,gle11a$,status                
+                gle11a.batch_no$=batch_no$
+                gle11a$=field(gle11a$)
                 write record (gle11_dev)gle11a$
           wend
           dim glm07a$:fattr(glm07a$)
@@ -181,7 +201,7 @@ disp_message:rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
     return
-	
+    
 rem #endinclude disp_message.src
 
 rem #include std_error.src
@@ -212,10 +232,10 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-	msg_id$="UPDATE_COMPLETE"
-	dim msg_tokens$[1]
-	msg_opt$=""
-	gosub disp_message
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
 
 std_exit_no_update:
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status

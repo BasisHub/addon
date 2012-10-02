@@ -28,6 +28,9 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -51,7 +54,8 @@ rem --- Assign form input values to local variables
 
     begvendor$=option!.getOptionData("VENDOR_ID_1")
     endvendor$=option!.getOptionData("VENDOR_ID_2")
-
+    vend_type$=option!.getOptionData("VENDOR_TYPE")
+    
 rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
@@ -68,6 +72,7 @@ rem --- Initializations
     page=0
     width=80
     total=0
+    recs=0
     maxlines=59
     moreheaders=1
     moredetail=1
@@ -76,6 +81,7 @@ rem --- Initializations
     clock$=""
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
+    total_recs=0
 
 rem --- Column Headings
 
@@ -96,7 +102,7 @@ rem --- Initialize print positions
 
 rem --- Start progress meter and position Vendor Master file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","APM_VENDMAST","","","",0,apm01_dev,1,meter_num,status
     while begvendor$<>""
           read (apm01_dev,key=firm_id$+begvendor$)
           read (apm01_dev,dir=-1,err=*next)
@@ -110,7 +116,12 @@ rem --- Read next Vendor Master (apm-01) record
           if pos(firm_id$=apm01_key$)<>1 break
           read record (apm01_dev,key=apm01_key$) apm01a$
           if endvendor$<>"" if apm01a.vendor_id$>endvendor$ break
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          
+          if vend_type$="P" and apm01a.temp_vend$="Y" then continue
+          if vend_type$="T" and apm01a.temp_vend$<>"Y" then continue
+          
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Initializations for this vendor
 
@@ -140,6 +151,7 @@ rem --- Read next Vendor Master (apm-01) record
                 OutVect!.addItem("")
                 OutVect!.addItem(apm09a.std_comments$)
                 xwk=fnblank(2)
+                recs=recs+1
                 
                 rem --- Loop back for next comment
 
@@ -150,6 +162,12 @@ rem --- Read next Vendor Master (apm-01) record
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     x$="No"
     if total x$=str(total)
@@ -211,6 +229,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         return q1
     fnend
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -268,5 +293,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

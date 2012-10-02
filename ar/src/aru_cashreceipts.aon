@@ -9,12 +9,8 @@ rem --- All Rights Reserved
     setesc std_error
     seterr std_error
 
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
-
-rem --- Open/Lock files
-
-    close (printer_dev,err=*next)
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Get user approval to update
 
@@ -29,13 +25,13 @@ rem --- Get user approval to update
 rem --- Start progress meter and position header file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,are01_dev,1,meter_num,status
-    read (are01_dev,key=firm_id$,dom=*next)
+    read (are01_dev,key=firm_id$+batch_no$,knum=2,dom=*next)
 
 rem --- Read next Cash Receipts Header (are-01) record
 
     while moreheaders
           are01a_key$=key(are01_dev,end=*break)
-          if pos(firm_id$=are01a_key$)<>1 break
+          if pos(firm_id$+batch_no$=are01a_key$)<>1 break
           read record (are01_dev) are01a$
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
@@ -271,7 +267,6 @@ rem --- Read next Cash Receipts Header (are-01) record
                          arm06a.nmtd_no_pay=arm06a.nmtd_no_pay+1
                       endif
                       arm06a.lstpay_date$=are11a.receipt_date$
-                      arm06a.avg_days=avgdays
                       arm06a.no_payments=payments
                       arm06a$=field(arm06a$)
                       write record (arm06_dev,key=k$) arm06a$
@@ -363,7 +358,7 @@ rem --- Read next Cash Receipts Header (are-01) record
                 k$=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$ 
                 find record (arm02_dev,key=k$,dom=*next) arm02a$
                 arm02a.lstpay_date$=are01a.receipt_date$
-                arm02a.aging_cur=arm02a.aging_cur-total
+                arm02a.aging_cur=arm02a.aging_cur+total
                 arm02a$=field(arm02a$)
                 write record (arm02_dev,key=k$) arm02a$
                 break
@@ -387,7 +382,7 @@ rem --- Read next Cash Receipts Header (are-01) record
 
           rem --- Delete Cash Receipts Header (are-01) record and loop back for the next one
 
-          remove (are01_dev,key=are01a_key$)
+          remove (are01_dev,key=receipt$)
     wend
 
 rem --- All done
@@ -395,6 +390,7 @@ rem --- All done
     if gl$="Y"
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
        call pgmdir$+"glc_ctlupdate.aon",status
+       call pgmdir$+"glc_ctldelete.aon",status
     endif
     call pgmdir$+"adc_batchdelete.aon",status
     goto std_exit
@@ -497,6 +493,11 @@ std_exit: rem --- Standard program end (01Mar2006)
 
 std_exit_no_update:
 
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
