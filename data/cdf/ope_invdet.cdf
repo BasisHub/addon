@@ -1134,24 +1134,29 @@ rem ==========================================================================
 calculate_discount: rem --- Calculate Discount Amount
 rem ==========================================================================
 
-	disc_code$=callpoint!.getDevObject("disc_code")
+	rem --- Don't update discount unless extended price has changed,
+	rem --- otherwise might overwrite manually entered discount.
+	if user_tpl.prev_ext_price<>num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE"))
+		disc_code$=callpoint!.getDevObject("disc_code")
 
-	file_name$ = "OPC_DISCCODE"
-	disccode_dev = fnget_dev(file_name$)
-	dim disccode_rec$:fnget_tpl$(file_name$)
+		file_name$ = "OPC_DISCCODE"
+		disccode_dev = fnget_dev(file_name$)
+		dim disccode_rec$:fnget_tpl$(file_name$)
 
-	find record (disccode_dev, key=firm_id$+disc_code$, dom=*next) disccode_rec$
+		find record (disccode_dev, key=firm_id$+disc_code$, dom=*next) disccode_rec$
 
-	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	if ordHelp!.getInv_type() = "" then
-		ttl_ext_price = 0
-	else
-		ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
+		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+		if ordHelp!.getInv_type() = "" then
+			ttl_ext_price = 0
+		else
+			ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
+		endif
+
+		disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
+		callpoint!.setHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT",str(disc_amt))
 	endif
 
-	disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
-	callpoint!.setHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT",str(disc_amt))
-
+	disc_amt=num(callpoint!.getHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	gosub calc_grid_totals
 
 	return
@@ -1174,7 +1179,7 @@ rem ==========================================================================
 	endif
 
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.FREIGHT_AMT"))
-	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable)
+	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable, ttl_ext_price)
 
 	return
 

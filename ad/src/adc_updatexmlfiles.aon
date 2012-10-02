@@ -9,7 +9,7 @@ rem --- All Rights Reserved
 rem ==========================================================================
 
 
-rem --- NEWSYCNLOC$    : Location of target data/sync directory being updated (Input)
+rem --- NEWSYNCLOC$    : Location of target data/sync directory being updated (Input)
 rem --- OLDSYNCLOC$    : Location of source data/sync directory for upgrades (Input)
 rem --- SYNCBACKUPDIR$ : Location of sync backup directory for upgrades (Input)
 rem --- UPGRADE%       : 0=Not an upgrade so don't copy sync backup XMLs
@@ -75,6 +75,7 @@ rem  * Utility Class for copying and updating sync XML files created via Barista
 rem  * utility Create Sync File Backup
 rem  */
     use java.io.File
+    use java.util.HashMap
     use java.util.Vector
     use ::bbtranslator.bbj::BBTranslator
     use ::ado_file.src::FileObject
@@ -146,11 +147,15 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
 				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
                 #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new SequencesFilter())
             endif
+			
+			rem --- get current version from adm_modules~*.xml in data/sync dir
+			declare HashMap newVers!
+			newVers! = #getModuleVersion(new File(aonDir$ + "/data/sync"))
             
             rem --- update xml files in data/sync dir
-            #updateXmlFiles(new File(newSyncLoc$))
+            #updateXmlFiles(new File(aonDir$ + "/data/sync"))
             rem --- update xml files in data/admin_backup dir
-            #updateXmlFiles(new File(aonDir$ + "/data/admin_backup"))
+            #updateXmlFiles(new File(aonDir$ + "/data/admin_backup"), newVers!)
 
             #closeLog()
             #destroyProgressMeter()
@@ -207,11 +212,87 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
         methodend
 
         rem /**
+        rem  * Gets version number from <VERSION_ID> line in adm_modules~*.xml files.
+        rem  *
+        rem  * Returns a HashMap of the <VERSION_ID> in the adm_modules~*.xml files in 
+		rem  * the given directory. The HashMap is keyed by the <ASC_PROD_ID> in the 
+		rem  * adm_modules~*.xml files.
+        rem  *
+        rem  * @param File dir!
+		rem  * @return HashMap <VERSION_ID> keyed by <ASC_PROD_ID>
+        rem  */
+        method private HashMap getModuleVersion(File dir!)
+			declare HashMap newVers!
+			newVers! = new HashMap()
+        
+            rem --- Validate directory
+            if dir! <> null() and dir!.exists() and dir!.isDirectory() and dir!.list() <> null()
+				declare Vector fileVector!
+				declare File xml!
+				fileVector! = new Vector(java.util.Arrays.asList(dir!.list(new NonConsolidatedAdmModules())))
+				aonDir$ = #parseAonPath(dir!.getPath())
+				startProdIdTag$ = "<ASC_PROD_ID>"
+				startProdIdTagLen = len(startProdIdTag$)
+				endProdIdTag$ = "</ASC_PROD_ID>"
+				startVersionTag$ = "<VERSION_ID>"
+				startVersionTagLen = len(startVersionTag$)
+				endVersionTag$ = "</VERSION_ID>"
+
+				rem --- read non-consolidated adm_modules~01007514\w*\.xml files (consolidated and non-consolidated)
+				if(fileVector!.size()>0) then
+					for i=0 to fileVector!.size()-1
+						module$=""
+						version$=""
+						name$ = cast(BBjString, fileVector!.get(i))
+						xml! = new File(dir!, name$)
+						sourceChan=unt
+						open(sourceChan,isz=-1)xml!.getPath()
+						while 1
+							read(sourceChan,end=*break)record$
+
+							rem --- get module ID in <ASC_PROD_ID> lines
+							if(pos(startProdIdTag$=record$)) then
+								module$ = record$(pos(startProdIdTag$=record$) + startProdIdTagLen)
+								module$ = cvs(module$(1, pos(endProdIdTag$=module$) - 1),3)
+							endif
+
+							rem --- get version in <VERSION_ID> line
+							if(pos(startVersionTag$=record$)) then
+								version$ = record$(pos(startVersionTag$=record$) + startVersionTagLen)
+								version$ = cvs(version$(1, pos(endVersionTag$=version$) - 1),3)
+							endif
+							
+							rem --- add module's version to the HashMap
+							if module$<>"" and version$<>"" then
+								newVers!.put(module$, version$)
+								break
+							endif
+		
+						wend
+						close(sourceChan)
+					next i
+				endif
+            endif
+            
+            methodret newVers!
+        methodend
+
+        rem /**
         rem  * Update XML files in directory. 
         rem  *
         rem  * @param File dir!
         rem  */
         method private void updateXmlFiles(File dir!)
+            #updateXmlFiles(dir!, null())
+        methodend
+
+        rem /**
+        rem  * Update XML files in directory. 
+        rem  *
+        rem  * @param File dir!
+		rem  * @param HashMap newVers!
+        rem  */
+        method private void updateXmlFiles(File dir!, HashMap newVers!)
         
             rem --- Validate directory
             if dir! = null() or !dir!.exists() or !dir!.isDirectory() or dir!.list() = null()
@@ -222,6 +303,12 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
             declare File xml!
             fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
             aonDir$ = #parseAonPath(dir!.getPath())
+			startProdIdTag$ = "<ASC_PROD_ID>"
+			startProdIdTagLen = len(startProdIdTag$)
+			endProdIdTag$ = "</ASC_PROD_ID>"
+			startVersionTag$ = "<VERSION_ID>"
+			startVersionTagLen = len(startVersionTag$)
+			endVersionTag$ = "</VERSION_ID>"
             startLocalPath$ = "<LOCALE_PATH>"
             startLocalPathLen = len(startLocalPath$)
             endLocalPath$ = "</LOCALE_PATH>"
@@ -237,8 +324,8 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                     xml! = new File(dir!, name$)
                     
                     rem --- update adm_modules~*.xml files (consolidated and non-consolidated)
-                    if cast(BBjString, name$).matches("adm_modules~\[01007514..\]\.xml") or
-:                      cast(BBjString, name$).matches("adm_modules~01007514..\.xml")
+                    if cast(BBjString, name$).matches("adm_modules~\[01007514\w*\]\.xml") or
+:                      cast(BBjString, name$).matches("adm_modules~01007514\w*\.xml")
                         #incrementProgressMeter("updating: " + xml!.getPath())
                         #log("UPDATED: " + xml!.getPath())
                         
@@ -261,6 +348,23 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                         open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")xml!.getPath()
                         while 1
                             read(sourceChan,end=*break)record$
+
+							rem --- get module ID in <ASC_PROD_ID> lines
+							if(pos(startProdIdTag$=record$)) then
+								module$ = record$(pos(startProdIdTag$=record$) + startProdIdTagLen)
+								module$ = cvs(module$(1, pos(endProdIdTag$=module$) - 1),3)
+							endif
+
+                            rem --- replace version in <VERSION_ID> lines
+							rem --- assumes <VERSION_ID> line comes after <ASC_PROD_ID> line
+                            if(pos(startVersionTag$=record$)) and newVers!<>null() and newVers!.containsKey(module$) then
+                                #log("  <<< " + record$)
+                                line$ = record$(1,pos(startVersionTag$=record$) + startVersionTagLen - 1)
+                                line$ = line$ + cast(BBjString, newVers!.get(module$))
+                                line$ = line$ + record$(pos(endVersionTag$=record$, -1))
+                                record$ = line$
+                                #log("  >>> " + record$)
+                            endif
 
                             rem --- replace path in <LOCALE_PATH> lines
                             if(pos(startLocalPath$=record$)) then
@@ -489,4 +593,20 @@ rem  */
         
     classend
     
+rem /**
+rem  * FilenameFilter Class to filter adm_modules~01007514\w*\.xml files.
+rem  */
+
+    class public NonConsolidatedAdmModules implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.matches("adm_modules~01007514\w*\.xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
+        methodend
+        
+    classend
+
     end

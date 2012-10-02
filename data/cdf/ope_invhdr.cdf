@@ -141,7 +141,9 @@ rem --- Calculate Taxes
 
 	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")))
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,
+:										num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+:										num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
 	callpoint!.setStatus("REFRESH")
 [[OPE_INVHDR.ARAR]]
@@ -269,6 +271,7 @@ rem --- Set discount code for use in Order Totals
 
 	disc_amt = new_disc_amt
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	gosub calculate_tax
 	gosub disp_totals
 [[OPE_INVHDR.AOPT-CASH]]
 rem --- Customer wants to pay cash; Launch invoice totals first
@@ -419,7 +422,9 @@ rem --- Calculate taxes and write it back
 	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
 	gosub get_disk_rec
-	ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")))
+	ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,
+:												num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+:												num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
 	callpoint!.setStatus("SETORIG")
@@ -509,7 +514,7 @@ rem --- Force focus on the Totals tab
 				callpoint!.setMessage("OP_TOTALS_TAB")
 				callpoint!.setFocus("OPE_INVHDR.FREIGHT_AMT")
 				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT")
+				callpoint!.setStatus("ABORT-ACTIVATE")
 				break
 			endif
 		endif
@@ -850,7 +855,7 @@ rem --- Remove committments for detail records by calling ATAMO
 				callpoint!.setMessage("OP_TOTALS_TAB")
 				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
 				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT")
+				callpoint!.setStatus("ABORT-ACTIVATE")
 				break
 			endif
 		endif
@@ -898,7 +903,7 @@ rem --- Previous record must be an invoice
 				callpoint!.setMessage("OP_TOTALS_TAB")
 				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
 				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT")
+				callpoint!.setStatus("ABORT-ACTIVATE")
 				break
 			endif
 		endif
@@ -2407,7 +2412,9 @@ rem IN: freight_amt
 rem ==========================================================================
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")))
+	tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,
+:										num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+:										num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 
 	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
 	callpoint!.setStatus("REFRESH")

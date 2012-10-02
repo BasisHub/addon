@@ -44,7 +44,8 @@ rem --- Calculate Taxes
 	discount_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	taxable_amt = num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt, taxable_amt)
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt, taxable_amt,
+:										num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_ORDHDR.TAX_AMOUNT",str(tax_amount))
 [[OPE_ORDHDR.TAX_CODE.AVAL]]
 rem --- Set code in the Order Helper object
@@ -56,7 +57,9 @@ rem --- Calculate Taxes
 
 	discount_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT")))
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,
+:										num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT")),
+:										num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_ORDHDR.TAX_AMOUNT",str(tax_amount))
 	callpoint!.setStatus("REFRESH")
 [[OPE_ORDHDR.AOPT-CRAT]]
@@ -88,7 +91,7 @@ rem --- Set discount code for use in Order Totals
 
 	disc_amt = new_disc_amt
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
-
+	gosub calculate_tax
 	gosub disp_totals
 [[OPE_ORDHDR.AREC]]
 rem --- Clear availability information
@@ -298,7 +301,7 @@ rem --- Force focus on the Totals tab
 				callpoint!.setMessage("OP_TOTALS_TAB")
 				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
 				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT")
+				callpoint!.setStatus("ABORT-ACTIVATE")
 				break
 			endif
 		endif
@@ -386,7 +389,7 @@ print "Hdr:BPRK"; rem debug
 				callpoint!.setMessage("OP_TOTALS_TAB")
 				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
 				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT")
+				callpoint!.setStatus("ABORT-ACTIVATE")
 				break
 			endif
 		endif
@@ -512,7 +515,7 @@ print "Hdr:BNEK"; rem debug
 				callpoint!.setMessage("OP_TOTALS_TAB")
 				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
 				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT")
+				callpoint!.setStatus("ABORT-ACTIVATE")
 				break
 			endif
 		endif
@@ -1239,6 +1242,11 @@ rem --- Convert Quote?
 			gosub disp_message
 
 			if msg_opt$ = "Y" then 
+				rem --- Print pick list in next batch
+				order_no$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
+				gosub add_to_batch_print
+				callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG","")
+	
 				callpoint!.setColumnData("OPE_ORDHDR.PRINT_STATUS","N")
 				callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S")
 				ope11_dev        = fnget_dev("OPE_ORDDET")
@@ -1307,6 +1315,9 @@ rem --- Convert Quote?
 				callpoint!.setDevObject("msg_quote","N")
 				callpoint!.setDevObject("msg_printed","N")
 				call user_tpl.pgmdir$+"opc_creditmsg.aon","H",callpoint!,UserObj!
+
+				rem --- Reload detail grid with updated ope-11 (ope_orddet) records
+				callpoint!.setStatus("REFGRID")
 			endif
 		endif
 	endif
@@ -2219,7 +2230,9 @@ rem IN: freight_amt
 rem ==========================================================================
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT")))
+	tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,
+:										num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT")),
+:										num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")))
 
 	callpoint!.setColumnData("OPE_ORDHDR.TAX_AMOUNT",str(tax_amount))
 	callpoint!.setStatus("REFRESH")

@@ -566,7 +566,7 @@ rem --- Return Taxable Amount from detail line vector
 
     rem --- Calculate Tax Amount
 
-        method public BBjNumber calculateTax(BBjNumber p_discount_amt, BBjNumber p_freight_amt, BBjNumber p_taxable)
+        method public BBjNumber calculateTax(BBjNumber p_discount_amt, BBjNumber p_freight_amt, BBjNumber p_taxable, BBjNumber p_total_sales)
 
         rem --- Files
 
@@ -598,25 +598,21 @@ rem --- Return Taxable Amount from detail line vector
                 throw #className$ + ": calculateTax(): tax code """ + #TaxCode$ + """ not found", 11
             endif
 
+		rem --- Split discount between taxable and non-taxable
+			taxableRatio = 1
+			if p_total_sales = 0 then
+				taxableRatio = 0.5
+			else
+				taxableRatio = abs(p_taxable)/(abs(p_taxable)+ abs(p_total_sales-p_taxable))
+			endif
+
         rem --- Changes to taxable amount
 
-            if #getTaxable() > 0 then
-                taxable_amt = max(#getTaxable() - p_discount_amt, 0)
-            else
-                if #getTaxable() < 0 then
-                    taxable_amt = min(#getTaxable() - p_discount_amt, 0)
-                else
-                    taxable_amt = 0
-                endif
-            endif
-
-        rem --- New taxable amount - jpb
-        
             if p_taxable > 0 then
-                taxable_amt = max(p_taxable - p_discount_amt, 0)
+                taxable_amt = max(p_taxable - p_discount_amt * taxableRatio, 0)
             else
                 if p_taxable < 0 then
-                    taxable_amt = min(p_taxable - p_discount_amt, 0)
+                    taxable_amt = min(p_taxable - p_discount_amt * taxableRatio, 0)
                 else
                     taxable_amt = 0
                 endif
@@ -637,20 +633,29 @@ rem --- Return Taxable Amount from detail line vector
 
         rem --- Do multi-level taxes
 
+			totalMultiLevelRate = 0
+			totalMultiLevelTax = 0
             for i=1 to 10
                 tax_code$ = field(taxcode_rec$, "AR_TOT_CODE_" + str(i:"00"))
                 if cvs(tax_code$,2) = "" then continue
-                find record (#taxcodeDev%, key=firm_id$+tax_code$, dom=*continue) taxcode_rec2$
+                find record (#taxcodeDev%, key=#firm_id$+tax_code$, dom=*continue) taxcode_rec2$
                 tax_calc = round(taxcode_rec2.tax_rate * taxable_amt / 100, 2)
+				totalMultiLevelRate = totalMultiLevelRate + taxcode_rec2.tax_rate
+				totalMultiLevelTax = totalMultiLevelTax + tax_calc
 
                 if taxcode_rec2.op_max_limit <> 0 and abs(tax_calc) > taxcode_rec2.op_max_limit then
+					totalMultiLevelRate = totalMultiLevelRate - taxcode_rec2.tax_rate
+					totalMultiLevelTax = totalMultiLevelTax - tax_calc
                     tax_calc = taxcode_rec2.op_max_limit * sgn(tax_calc)
                 endif
 
                 tax_amount = tax_amount + tax_calc
             next i
+			
+		rem --- Correct penny rounding errors
+			roundingError = totalMultiLevelTax - round(totalMultiLevelRate * taxable_amt / 100, 2)
 
-            methodret tax_amount
+            methodret tax_amount + roundingError
 
         methodend
 
