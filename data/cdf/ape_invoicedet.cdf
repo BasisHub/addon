@@ -26,7 +26,7 @@ if user_tpl.glint$="Y"
 
 	if r=0 and cvs(callpoint!.getColumnData("APE_INVOICEDET.GL_ACCOUNT"),3)=""
 		callpoint!.setColumnData("APE_INVOICEDET.GL_ACCOUNT",user_tpl.dflt_gl_account$)
-		callpoint!.setStatus("REFRESH:APE_INVOICEDET.GL_ACCOUNT")
+		callpoint!.setStatus("MODIFIED-REFRESH:APE_INVOICEDET.GL_ACCOUNT")
 	endif
 
 endif

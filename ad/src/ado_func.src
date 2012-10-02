@@ -1,0 +1,216 @@
+rem ==========================================================================
+rem --- A set of utility methods to replace some Addon functions
+rem --- Program ado_func.src v8.0.0 02Feb2009
+rem --- Copyright 2008-2009, BASIS International, Ltd.
+rem ==========================================================================
+
+class public func
+
+	rem ==========================================================================
+	rem --- Display segmented description (fnitem$)
+	rem ==========================================================================
+	
+	field public static BBjInt len1% = 0
+	field public static BBjInt len2% = 0
+	field public static BBjInt len3% = 0
+	
+	method public static BBjString displayDesc(BBjString p_desc$, BBjInt p_len_1%, BBjInt p_len_2%, BBjInt p_len_3%)
+		
+		rem --- Sanity checks
+		if p_desc$ = "" then methodret ""
+		if p_len_1% = 0 then methodret p_desc$
+		
+		#len1% = p_len_1%
+		#len2% = p_len_2%
+		#len3% = p_len_3%
+		methodret #dispDesc(p_desc$)
+		
+	methodend
+	
+	rem --- Allow number (not just ints) to pass
+	method public static BBjString displayDesc(BBjString p_desc$, BBjNumber p_len_1, BBjNumber p_len_2, BBjNumber p_len_3)
+		methodret #displayDesc(p_desc$, int(p_len_1), int(p_len_2), int(p_len_3))
+	methodend
+	
+	rem --- Internal only, the heart of the function
+	method protected static BBjString dispDesc(BBjString p_desc$)
+		desc$ = pad(p_desc$, #len1% +  #len2% + #len3%)
+		methodret cvs( desc$(1, #len1%) + " " + desc$(#len1% + 1, #len2%) + " " + desc$(#len1% + #len2% + 1, #len3%), 32)
+	methodend
+	
+	rem --- Method passed without lengths may need to lookup parameters
+	method public static BBjString displayDesc(BBjString p_desc$)
+		if #len1% = 0 then #getDescLens()
+		
+		if #len1% then
+			methodret #dispDesc(p_desc$) 
+		else
+			methodret p_desc$
+		endif
+	methodend
+	
+	rem --- Get description lengths
+	method protected static void getDescLens()
+	
+		rem --- Open IV param file
+		call stbl("+DIRSYP",err=getDescLensDone) + "bac_open_table.bbj", 
+:			err=getDescLensDone, 
+:			"IVS_PARAMS", 
+:			"OTA", 
+:			table_chans$[all], 
+:			open_chan, 
+:			table_tpl$, 
+:			proc_mssg$ 
+
+		if proc_mssg$ <> "" then goto getDescLensDone
+		
+		rem --- Get firm
+		dim sysinfo$:stbl("+SYSINFO_TPL", err=getDescLensDone)
+		sysinfo$ = stbl("+SYSINFO", err=getDescLensDone)
+		
+		rem --- Get IV parameter record
+		dim param_rec$:table_tpl$
+		find record (open_chan, key=sysinfo.firm_id$+"IV00", dom=getDescLensDone) param_rec$
+		
+		rem --- Set lengths
+		#len1% = param_rec.desc_len_01%
+		#len2% = param_rec.desc_len_02%
+		#len3% = param_rec.desc_len_03%
+		
+		getDescLensDone:
+	methodend
+	
+	rem ==========================================================================
+	rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+	rem ==========================================================================
+
+    method public static BBjString alphaMask(BBjString p_in$, BBjString p_msk$)
+	
+        if p_msk$="" then p_msk$ = fill( len(p_in$), "0" )
+        methodret str( -num(p_in$, err=*next):p_msk$, err=*next )
+		
+        ptr = 1
+        neg_char = 0
+		
+        while ptr <= len(p_msk$)
+		
+			if pos( p_msk$(ptr,1) = "-()" ) then 
+				neg_char = neg_char + 1 
+			else 
+				p_msk$(ptr,1) = "X"
+			endif
+				
+              ptr = ptr + 1
+        wend
+		
+        if len(p_in$) > len(p_msk$) - neg_char then p_in$ = p_in$(1, len(p_msk$) - neg_char)
+        methodret str(p_in$:p_msk$)
+		
+    methodend
+
+	rem ==========================================================================
+	rem --- fndate$: Convert YYYYMMDD to MM/DD/YY
+	rem ==========================================================================
+	
+	method public static BBjString formatDate(BBjString p_date$)
+	
+		this_jul = jul(p_date$, "%Yl%Mz%Dz", err=format_date_err)
+		methodret date(this_jul, err=format_date_err)
+		
+	format_date_err:
+		methodret p_date$
+		
+	methodend
+	
+	
+	rem ==========================================================================
+	rem --- get number of GL periods from GL param file; nothing sent in, #periods out
+	rem ==========================================================================
+	
+	method public static BBjString getNumPeriods()
+	
+		rem --- Open GL param file
+		call stbl("+DIR_SYP",err=getNumPeriodsDone) + "bac_open_table.bbj", 
+:			err=getNumPeriodsDone, 
+:			"GLS_PARAMS", 
+:			"OTA", 
+:			table_chans$[all], 
+:			open_chan, 
+:			table_tpl$, 
+:			proc_mssg$ 
+
+		if proc_mssg$ <> "" then goto getNumPeriodsDone
+
+		rem --- Get firm
+		dim sysinfo$:stbl("+SYSINFO_TPL", err=getNumPeriodsDone)
+		sysinfo$ = stbl("+SYSINFO", err=getNumPeriodsDone)
+
+		rem --- Get GL parameter record
+		dim param_rec$:table_tpl$
+		find record (open_chan, key=sysinfo.firm_id$+"GL00", dom=getNumPeriodsDone) param_rec$
+
+		methodret str(num(param_rec.total_pers$):"00")
+
+
+		getNumPeriodsDone:
+		methodret "12"
+	methodend
+	
+
+classend
+
+rem ==========================================================================
+rem --- Testing
+rem ==========================================================================
+
+	rem --- fnitem$()
+	
+	print fill(79, "="), 'lf', "fnitem$()..."
+	print func.displayDesc("Getting Description Lengths")
+	print func.displayDesc("Stored Description Lengths")
+
+	dim p[5]
+	p[3] = 30
+	p[4] = 0
+	p[5] = 0
+	dim desc$(60)
+	desc$(1) = "Passed Description Lengths"
+	print func.displayDesc(desc$, p[3], p[4], p[5])
+	desc$ = "Short Description"
+	print func.displayDesc(desc$, p[3], p[4], p[5])
+	
+	p[3] = 20
+	p[4] = 20
+	p[5] = 20
+	dim desc$(60)
+	desc$(1) = "Foo: Segment 1"
+	desc$(21) = "Segement 2"
+	desc$(41) = "Segement 3"
+	print func.displayDesc(desc$, p[3], p[4], p[5])
+	
+	print "Zero lengths passed..."
+	print func.displayDesc(desc$, 0, 0, 0)
+	
+	print "Null description passed..."
+	print func.displayDesc("", p[3], p[4], p[5])
+	
+	rem --- fnmask$()
+	
+	print fill(79, "="), 'lf', "fnmask$()..."
+	print func.alphaMask("111223333", "###-##-####")
+	print func.alphaMask("AABBBB", "##-####")
+	print func.alphaMask("111223333", "(###) ##-####")
+	
+	rem  -- fndate$()
+	
+	print fill(79, "="), 'lf', "fndate$()..."
+	print func.formatDate("20080230")
+	print func.formatDate("20080229")
+	print func.formatDate("20081232")
+	print func.formatDate("20081224")
+	print func.formatDate("nonsense")
+	print func.formatDate("short")
+	print func.formatDate("")
+	
+	end
+	

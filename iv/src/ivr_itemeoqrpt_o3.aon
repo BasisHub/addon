@@ -8,15 +8,13 @@ rem --- All Rights Reserved
     seterr std_error
     setesc std_error
 
-    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-    OutVect!=null()
+    next_overlay$=""; rem --- clear next_var so bas_process_end doesn't loop...i.e., don't run anything after this
 
 rem --- Document initializations
 
     OutVect!=bbjAPI().getSysGui().makeVector()
     HdrVect!=bbjAPI().getSysGui().makeVector()
     BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -30,19 +28,20 @@ rem --- Initialize HEADINGS$
     
 rem --- Column Headings
 
-    dim columns$[13,10]
-    columns=14
-    columns$[0,0]="Item^Description",       columns$[0,1]="C",   columns$[0,2]="10"
+	columns=13
+    dim columns$[columns,10]
+    
+    columns$[0,0]="Item^Description",       columns$[0,1]="C",   columns$[0,2]=str(p[0])
     columns$[1,0]="ABC^Code",               columns$[1,1]="C",   columns$[1,2]="5"
     columns$[2,0]="Lead^Time",              columns$[2,1]="C",   columns$[2,2]="5"
-    columns$[3,0]="Cost",                   columns$[3,1]="N",   columns$[3,2]="10",columns$[3,3]=m3$
-    columns$[4,0]="Avg^Period",             columns$[4,1]="N",   columns$[4,2]="10",columns$[4,3]=m2$
-    columns$[5,0]="Act^Annual",             columns$[5,1]="N",   columns$[5,2]="10",columns$[5,3]=m2$
-    columns$[6,0]="Wgt^Period",             columns$[6,1]="N",   columns$[6,2]="10",columns$[6,3]=m2$
-    columns$[7,0]="Est^Annual",             columns$[7,1]="N",   columns$[7,2]="10",columns$[7,3]=m2$
-    columns$[8,0]="Saftey Stock^Old/New",   columns$[8,1]="N",   columns$[8,2]="10",columns$[8,3]=m2$
+    columns$[3,0]="Cost",                   columns$[3,1]="N",   columns$[3,2]=str(m3),  columns$[3,3]=m3$
+    columns$[4,0]="Avg^Period",             columns$[4,1]="N",   columns$[4,2]=str(m2),  columns$[4,3]=m2$
+    columns$[5,0]="Act^Annual",             columns$[5,1]="N",   columns$[5,2]=str(m2),  columns$[5,3]=m2$
+    columns$[6,0]="Wgt^Period",             columns$[6,1]="N",   columns$[6,2]=str(m2),  columns$[6,3]=m2$
+    columns$[7,0]="Est^Annual",             columns$[7,1]="N",   columns$[7,2]=str(m2),  columns$[7,3]=m2$
+    columns$[8,0]="Saftey Stk^Old/New",     columns$[8,1]="N",   columns$[8,2]=str(m2),  columns$[8,3]=m2$
     columns$[9,0]="",                       columns$[9,1]="C",   columns$[9,2]="3"
-    columns$[10,0]="Order Point^Old/New",   columns$[10,1]="N",  columns$[10,2]="10",columns$[10,3]=m2$
+    columns$[10,0]="Order Point^Old/New",   columns$[10,1]="N",  columns$[10,2]=str(m2), columns$[10,3]=m2$
     columns$[11,0]="",                      columns$[11,1]="C",  columns$[11,2]="3"
     columns$[12,0]="EOQ^Old/New",           columns$[12,1]="N",  columns$[12,2]="10"
     columns$[13,0]="",                      columns$[13,1]="C",  columns$[13,2]="3"
@@ -53,11 +52,14 @@ rem --- Column Headings
         t1$=""
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         first$=firm_id$+begwhse$
+		no_records = 1
         read (ivw21_dev,key=first$,dom=*next)
+		
         while more
+		
             ivw21a_key$=key(ivw21_dev,end=*break)
             if pos(firm_id$=ivw21a_key$)<>1 break
-            if begwhse$<>"" and ivw21a_key.warehouse_id$>endwhse$ break
+            if begwhse$<>"" and ivw21a_key.warehouse_id$>endwhse$ break; rem why?  isn't this already done?
             call pgmdir$+"adc_progress.aon","S","","","",ivw21a_key.warehouse_id$+" "+ivw21a_key.product_type$+" "+ivw21a_key.item_id$,0,0,1,meter_num,status
             read record (ivw21_dev) ivw21a$
 
@@ -69,19 +71,25 @@ rem --- Level break?
 rem --- Process work file record
 
             unitcost=ivw21a.unit_cost
-            if ivw21a.stock_level$<>"W" continue
+            if ivw21a.stock_level$<>"W" then continue
+			
             if h9$<>"" then
-                xwk=fnblank(columns)
+                xwk=fnblank(columns+1)
                 OutVect!.addItem(h9$)
-                xwk=fnblank(columns-1)
                 xwk=fnblank(columns)
+                xwk=fnblank(columns+1)
                 h9$=""
             endif
+			
             average=ivw21a.usage_qty_01/g[0]
             weighted=ivw21a.usage_qty_02/g[0]
             oldeoq$=str(ivw21a.eoq_01:m2$)
             neweoq$=str(ivw21a.eoq_02:m2$)
-            if carry=0 or unitcost=0 oldeoq$=zerocost1$,neweoq$=zerocost2$
+            
+			if carry=0 or unitcost=0 then 
+				oldeoq$=zerocost1$
+				neweoq$=zerocost2$
+			endif
 
             OutVect!.addItem(ivw21a.item_id$)
             OutVect!.addItem(ivw21a.abc_code$)
@@ -97,6 +105,7 @@ rem --- Process work file record
             OutVect!.addItem(ivw21a.ord_pnt_code$)
             OutVect!.addItem(oldeoq$)
             OutVect!.addItem(ivw21a.eoq_code$)
+			
             OutVect!.addItem("   "+ivw21a.item_desc$)
             xwk=fnblank(7)
             OutVect!.addItem(str(ivw21a.safety_stock_02))
@@ -105,12 +114,21 @@ rem --- Process work file record
             OutVect!.addItem("")
             OutVect!.addItem(neweoq$)
             OutVect!.addItem("")
+			
+			no_records = 0
+			
         wend
+		
     endif
 
 rem --- All done
     
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+	
+	if no_records then
+		OutVect!.addItem("There is nothing to print within these parameters")
+		xwk=fnblank(columns)
+	endif
 
 rem --- Chain to next overlay
     
@@ -120,9 +138,10 @@ rem --- Chain to next overlay
 warehouse_break: rem --- Warehouse Break
 
     gosub product_break
-    t0$=ivw21a.warehouse_id$,ivm10c.short_name$="(Not On File)",l=l9+1
+    t0$=ivw21a.warehouse_id$
+	ivm10c.short_name$="(Not On File)"
     find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
-    BrkVect!.addItem(str(OutVect!.size()/(columns)))
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
     HdrVect!.addItem("Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2))
     return
 

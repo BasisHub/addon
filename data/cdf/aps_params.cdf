@@ -15,7 +15,14 @@ rem --- Open/Lock files
 	files$[2]="gls_params",ids$[2]="GLS_PARAMS"
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-	if status goto std_exit
+	if status then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+	 	release
+	endif
+
 	aps01_dev=channels[1]
 	gls01_dev=channels[2]
 rem --- Dimension string templates

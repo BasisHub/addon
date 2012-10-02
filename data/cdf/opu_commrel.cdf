@@ -12,4 +12,4 @@ callpoint!.setColumnData("OPU_COMMREL.LAST_COMMIT",ars01a.lstcom_date$)
 callpoint!.setColumnData("OPU_COMMREL.COMMIT_THRU",next$)
 callpoint!.setStatus("REFRESH")
 [[OPU_COMMREL.<CUSTOM>]]
-rem #include std_missing_params.src
+#include std_missing_params.src

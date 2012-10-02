@@ -173,6 +173,25 @@ if status<=99
 		endif
 	endif
 endif
+
+rem "check vend hist file to be sure this vendor/ap type ok together; also make sure all key fields are entered
+
+dont_write$=""
+if cvs(callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE"),3)="" or
+:	cvs(callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID"),3)="" or
+:	cvs(callpoint!.getColumnData("APE_INVOICEHDR.AP_INV_NO"),3)="" then dont_write$="Y"
+
+vendor_id$ = callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID")
+gosub get_vendor_history
+if vend_hist$="" and user_tpl.multi_types$="Y" then dont_write$="Y"
+
+if dont_write$="Y"
+	msg_id$="AP_INVOICEWRITE"
+	gosub disp_message
+	callpoint!.setStatus("ABORT")
+endif
+
+
 	
 [[APE_INVOICEHDR.NET_INV_AMT.AVAL]]
 rem re-calc discount amount based on net x disc %
@@ -202,7 +221,6 @@ gosub get_vendor_history
 if vend_hist$="" and user_tpl.multi_types$="Y"
 	msg_id$="AP_NOHIST"
 	gosub disp_message
-	callpoint!.setStatus("CLEAR-NEWREC")
 endif
 [[APE_INVOICEHDR.ACCTING_DATE.AVAL]]
 rem make sure accting date is in an appropriate GL period
@@ -218,6 +236,7 @@ if gl$="Y"
 	endif
 endif
 [[APE_INVOICEHDR.ADIS]]
+
 rem --- get disc % assoc w/ terms in this rec, and disp distributed bal
 	apm10c_dev=fnget_dev("APC_TERMSCODE")
 	dim apm10c$:fnget_tpl$("APC_TERMSCODE")
@@ -239,7 +258,7 @@ rem --- get disc % assoc w/ terms in this rec, and disp distributed bal
 		callpoint!.setStatus("REFRESH")
 	else
 		rem terms code missing
-		callpoint!.setStatus("ABORT")
+		rem callpoint!.setStatus("ABORT")
 	endif
 [[APE_INVOICEHDR.AP_TERMS_CODE.AVAL]]
 rem re-calc due and discount dates based on terms code
@@ -378,7 +397,13 @@ call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	table_chans$[all],
 :	batch,
 :	status$
-if status$<>"" goto std_exit
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 aps01_dev=num(chans$[6])
 gls01_dev=num(chans$[7])
 dim aps01a$:templates$[6],gls01a$:templates$[7]
@@ -429,7 +454,12 @@ if gl$="Y"
 :	table_chans$[all],
 :	batch,
 :	status$
-if status$<>"" goto std_exit
+if status$<>"" then
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 endif
 rem --- Retrieve parameter data
                
@@ -478,4 +508,3 @@ endif
 if user_tpl.misc_entry$="N" c!.setColumnEditable(2,0)
 if user_tpl.units_flag$="N" c!.setColumnEditable(4,0)
 		
-

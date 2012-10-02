@@ -1,0 +1,637 @@
+rem apm - Vendor Detail Listing
+rem Program apr_detail v8.0.0 17Aug2006 (apm_mg)
+rem Created by adx_progconv.bbx v1.0.3 (08/17/2006 11:12:14)
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright (c) 1981-2006 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=13,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="aps_params",ids$[1]="APS_PARAMS";rem "aps-01
+    files$[2]="apm-01",ids$[2]="APM_VENDMAST"
+    files$[3]="apm-02",ids$[3]="APM_VENDHIST"
+    files$[4]="apm-05",ids$[4]="APM_VENDADDR"
+    files$[6]="apm-09",ids$[6]="APM_VENDCMTS"
+    files$[7]="gls_params",ids$[7]="GLS_PARAMS";rem "gls-01A
+    files$[8]="apt-01",ids$[8]="APT_INVOICEHDR"
+    files$[9]="apt-11",ids$[9]="APT_INVOICEDET"
+    files$[10]="apc_typecode",ids$[10]="APC_TYPECODE";rem "apm-10A
+    files$[11]="apc_distribution",ids$[11]="APC_DISTRIBUTION";rem "apm-10B
+    files$[12]="apc_termscode",ids$[12]="APC_TERMSCODE";rem "apm-10C
+    files$[13]="apc_paymentgroup",ids$[13]="APC_PAYMENTGROUP";rem "apm-10B
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    aps01_dev=channels[1]
+    apm01_dev=channels[2]
+    apm02_dev=channels[3]
+    apm05_dev=channels[4]
+    apm09_dev=channels[6]
+ 
+    gls01_dev=channels[7]
+    apt01_dev=channels[8]
+    apt11_dev=channels[9]
+
+    apm10a_dev=channels[10]
+    apm10b_dev=channels[11]
+    apm10c_dev=channels[12]
+    apm10d_dev=channels[13]
+
+rem --- Dimension string templates
+
+    dim aps01a$:templates$[1],apm01a$:templates$[2],apm02a$:templates$[3],apm05a$:templates$[4],
+:       apm09a$:templates$[6],gls01a$:templates$[7],apt01a$:templates$[8],apt11a$:templates$[9],
+:       apm10a$:templates$[10],apm10b$:templates$[11],apm10c$:templates$[12],apm10d$:templates$[13]
+
+
+rem --- Assign form input values to local variables
+
+    begvendor$=option!.getOptionData("VENDOR_ID_1")
+    endvendor$=option!.getOptionData("VENDOR_ID_2")
+    comments$=option!.getOptionData("PICK_CHECK")
+
+rem --- Is General Ledger installed and in use?
+
+    dim info$[20]
+    call pgmdir$+"adc_application.aon","AP",info$[all]
+    gl$=info$[9]
+
+rem --- Retrieve parameter records
+
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    call pgmdir$+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+    call pgmdir$+"adc_getmask.aon","","AP","A","",m1$,0,0
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,9,15
+    multiple_types$=aps01a.multi_types$
+    multiple_distributions$=aps01a.multi_dist$
+    retention$=aps01a.ret_flag$
+    m8$="(###) ###-####"
+    m0=len(m0$)
+    m1=len(m1$)
+
+    gls01a_key$=firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    call pgmdir$+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
+
+rem --- Initializations
+
+    headings=2
+    dim headings$[headings],o[7]
+    more=1
+    page=0
+    width=80
+    maxlines=59
+    lines=maxlines+1
+    morevendors=1
+    moreheaders=1
+    moredetail=1
+    morecomments=1
+    if comments$<>"Y" morecomments=0
+    nf$="(Not on file)"
+    when$=sysinfo.system_date$
+    clock$=""
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    dim columns$[0,10]
+    columns$[0,0]="  ",columns$[0,1]="C",columns$[0,2]="100"
+
+rem --- Define print positions for the invoice history listing
+
+    o[0]=1
+    o[1]=12
+    o[2]=21
+    o[3]=30
+    o[4]=33
+    o[7]=width-2
+    if retention$="Y" o[7]=width-m1
+    o[6]=o[7]-m1
+    o[5]=o[6]-m1 
+
+rem --- Additional file opens
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    if gl$="Y" 
+       files$[1]="glm-01",ids$[1]="GLM_ACCT"
+       call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                      ids$[all],templates$[all],channels[all],batch,status
+    endif
+    if status goto std_exit
+    glm01_dev=channels[1]
+
+rem --- Dimension string templates
+
+    if gl$="Y" dim glm01a$:templates$[1]
+
+rem --- Start progress meter and position Vendor Master file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,apm01_dev,1,meter_num,status
+    while begvendor$<>""
+          read (apm01_dev,key=firm_id$+begvendor$)
+          read (apm01_dev,dir=-1,err=*next)
+          begvendor$=""
+    wend
+
+rem --- Read next Vendor Master (apm-01) record
+
+    while morevendors
+          apm01_key$=key(apm01_dev,end=*break)
+          if pos(firm_id$=apm01_key$)<>1 break
+          read record (apm01_dev,key=apm01_key$) apm01a$
+          if endvendor$<>"" if apm01a.vendor_id$>endvendor$ break
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status 
+
+          rem --- Print vendor master information
+          gosub vendor_heading
+          lines=lines+8
+          dim pbuf$(width)
+            pbuf$(5)="Address: "+apm01a.addr_line_1$;pbuf$(46)="Account ID: "+apm01a.vendor_acct$
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+            pbuf$(16)=apm01a.addr_line_2$;pbuf$(44)="Alt Sequence: "+apm01a.alt_sequence$
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+            pbuf$(8)="City: "+apm01a.city$;pbuf$(43)="Hold Invoices? "+apm01a.hold_flag$
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+            call stbl("+DIR_SYP")+"bac_getmask.bbj","P",cvs(apm01a.zip_code$,2),"",postal_mask$
+            postal$=cvs(apm01a.zip_code$,2)
+            postal$=str(postal$:postal_mask$,err=*next)
+            pbuf$(7)="State: "+apm01a.state_code$;pbuf$(18)="Zip/Postal: "+postal$;pbuf$(45)="Date Opened: "+fndate$(apm01a.opened_date$)
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+          call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.phone_no$,2),"",phone_mask$
+          phone$=cvs(apm01a.phone_no$,2)
+          phone$=str(phone$:phone_mask$,err=*next)
+            pbuf$(3)="Telephone: "+phone$;pbuf$(29)="Ext: "+apm01a.phone_exten$;pbuf$(46)="Federal ID: "+apm01a.federal_id$
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+          call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.fax_no$,2),"",fax_mask$
+          fax$=cvs(apm01a.fax_no$,2)
+          fax$=str(fax$:fax_mask$,err=*next)
+            pbuf$(3)="Fax Phone: "+fax$;pbuf$(50)="F.O.B.: "+apm01a.fob$
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+            pbuf$(5)="Contact: "+apm01a.contact_name$;pbuf$(48)="Ship Via: "+apm01a.ap_ship_via$
+          OutVect!.addItem(pbuf$)
+          dim pbuf$(width)
+            pbuf$(52)="1099? "+apm01a.vendor_1099$
+          OutVect!.addItem(pbuf$)
+
+          rem --- Print vendor comments
+
+          while morecomments
+                gosub comments_heading
+                read (apm09_dev,key=apm01_key$,dom=*next)
+                while moredetail
+                      k$=key(apm09_dev,end=*break)
+                      if pos(apm01_key$=k$)<>1 break
+                      read record (apm09_dev,key=k$) apm09a$
+                      dim pbuf$(width)
+                      pbuf$(1)=apm09a.sequence_num$+" "+apm09a.std_comments$
+                      OutVect!.addItem(pbuf$)
+                      lines=lines+1
+                wend
+                break
+          wend
+
+          rem --- Print purchase addresses
+
+          first=1
+          read (apm05_dev,key=apm01_key$,dom=*next)
+          while moredetail
+                k$=key(apm05_dev,end=*break)
+                if pos(apm01_key$=k$)<>1 break
+                read record (apm05_dev,key=k$) apm05a$
+                if first gosub purchases_heading else OutVect!.addItem("")
+                dim pbuf$(width)
+                    pbuf$(3)="Purchase ID: "+apm05a.purch_addr$
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm05a.phone_no$,2),"",phone_mask$
+                phone$=cvs(apm05a.phone_no$,2)
+                phone$=str(phone$:phone_mask$,err=*next)
+                    pbuf$(1)="Purchase Name: "+apm05a.name$;pbuf$(47)="Telephone: "+phone$+" Ext: "+apm05a.phone_exten$
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm05a.fax_no$,2),"",fax_mask$
+                fax$=cvs(apm05a.fax_no$,2)
+                fax$=str(fax$:fax_mask$,err=*next)
+                    pbuf$(7)="Address: "+apm05a.addr_line_1$;pbuf$(47)="Fax Phone: "+fax$
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                    pbuf$(16)=apm05a.addr_line_2$;pbuf$(49)="Contact: "+apm05a.contact_name$
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                    pbuf$(10)="City: "+apm05a.city$;pbuf$(50)="F.O.B.: "+apm05a.fob$
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                    call stbl("+DIR_SYP")+"bac_getmask.bbj","P",cvs(apm05a.zip_code$,2),"",postal_mask$
+                    postal$=cvs(apm05a.zip_code$,2)
+                    postal$=str(postal$:postal_mask$,err=*next)
+                    pbuf$(9)="State: "+apm05a.state_code$; pbuf$(20)="Zip/Postal: "+postal$;pbuf$(48)="Ship Via: "+apm05a.ap_ship_via$
+                OutVect!.addItem(pbuf$)
+                lines=lines+6
+                first=0
+          wend
+
+          rem --- Print vendor detail records
+
+          first=1
+          read (apm02_dev,key=apm01_key$,dom=*next)
+          while more
+                k$=key(apm02_dev,end=*break)
+                if pos(apm01_key$=k$)<>1 break
+                read record (apm02_dev) apm02a$
+                if first gosub detail_heading else OutVect!.addItem("")
+                rem --- Retrieve AP Type code and description
+
+                aptype$=fill(6)+"AP Type: Not applicable"
+                if multiple_types$="Y"
+                   dim apm10a$:fattr(apm10a$)
+                   apm10a.firm_id$=firm_id$
+                   apm10a.ap_type$=apm02a.ap_type$
+                   apm10a.code_desc$=nf$
+                   apm10_key$=apm10a.firm_id$+"A"+apm10a.ap_type$
+                   find record (apm10a_dev,key=apm10_key$,dom=*proceed) apm10a$
+                   aptype$=fill(6)+"AP Type: "+apm10a.ap_type$+" "+apm10a.code_desc$
+                endif
+
+                rem --- Retrieve distribution code and description
+
+                distribution$=" Distribution: Not applicable"
+                if multiple_distributions$="Y"
+                   dim apm10b$:fattr(apm10b$)
+                   apm10b.firm_id$=firm_id$
+                   apm10b.ap_dist_code$=apm02a.ap_dist_code$
+                   apm10b.code_desc$=nf$
+                   apm10_key$=apm10b.firm_id$+"B"+apm10b.ap_dist_code$
+                   find record (apm10b_dev,key=apm10_key$,dom=*proceed) apm10b$
+                   distribution$=" Distribution: "+apm10b.ap_dist_code$+" "+apm10b.code_desc$
+                endif
+
+                rem --- Retrieve terms code and description
+
+                dim apm10c$:fattr(apm10c$)
+                apm10c.firm_id$=firm_id$
+                apm10c.terms_codeap$=apm02a.ap_terms_code$
+                apm10c.code_desc$=nf$
+                apm10_key$=apm10c.firm_id$+"C"+apm10c.terms_codeap$
+                find record (apm10c_dev,key=apm10_key$,dom=*next) apm10c$
+
+                rem --- Retrieve payment group and description
+
+                dim apm10d$:fattr(apm10d$)
+                apm10d.firm_id$=firm_id$
+                apm10d.payment_grp$=apm02a.payment_grp$
+                apm10d.code_desc$=nf$
+                apm10_key$=apm10d.firm_id$+"D"+apm10d.payment_grp$
+                find record (apm10d_dev,key=apm10_key$,dom=*next) apm10d$
+
+                rem --- Print codes and descriptions
+
+                dim pbuf$(width)
+                    pbuf$(1,len(aptype$))=aptype$
+                    pbuf$(43)="Payment Group: "+apm10d.payment_grp$+" "+apm10d.code_desc$
+                OutVect!.addItem(pbuf$) 
+                dim pbuf$(width)
+                    pbuf$(1,len(distribution$))=distribution$
+                    pbuf$(43)="Terms Code: "+apm10c.terms_codeap$+" "+apm10c.code_desc$
+                OutVect!.addItem(pbuf$) 
+
+                rem --- Retrieve print GL account information if GL is in use
+
+                if gl$="Y"
+                   dim glm01a$:fattr(glm01a$)
+                   glm01a.firm_id$=firm_id$
+                   glm01a.gl_account$=apm02a.gl_account$
+                   glm01a.gl_acct_desc$=nf$
+                   glm01_key$=glm01a.firm_id$+glm01a.gl_account$
+                   find record (glm01_dev,key=glm01_key$,dom=*proceed) glm01a$
+                   dim pbuf$(width)
+                       pbuf$(4)="GL Account: "+fnmask$(apm02a.gl_account$(1,acct_length),g0$)+" "+glm01a.gl_acct_desc$
+                   OutVect!.addItem(pbuf$) 
+                   lines=lines+1
+                endif
+                OutVect!.addItem("")
+                lines=lines+1
+
+                rem --- Print amounts and dates
+
+                x$=""
+                if retention$="Y" x$="Open Retention: "+str(apm02a.open_ret:m1$)
+                dim pbuf$(width)
+                    pbuf$(1)="Open Invoices: "+str(apm02a.open_invs:m1$),pbuf$(42)=x$
+                OutVect!.addItem(pbuf$)
+                OutVect!.addItem("")
+                dim pbuf$(width)
+                    pbuf$(1)="Last Invoice: "+fndate$(apm02a.lstinv_date$);pbuf$(44)="Last Payment: "+fndate$(apm02a.lstpay_date$)
+                OutVect!.addItem(pbuf$)
+                OutVect!.addItem("")
+                dim pbuf$(width)
+                    pbuf$((16+m1)-10)="Purchases";pbuf$((31+m1)-10)="Discounts";pbuf$((46+m1)-9)="Payments";pbuf$((61+m1)-14)="Calendar Year"
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                    pbuf$(3)="Current YTD: "+str(apm02a.ytd_purch:m1$)
+                    pbuf$(31,m1)=str(apm02a.ytd_discs:m1$)
+                    pbuf$(46,m1)=str(apm02a.ytd_payments:m1$)
+                    pbuf$(61,m1)=str(apm02a.cur_cal_pmts:m1$)
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                    pbuf$(4)="Prior Year: "+str(apm02a.pyr_purch:m1$)
+                    pbuf$(31,m1)=str(apm02a.pri_yr_discs:m1$)
+                    pbuf$(46,m1)=str(apm02a.pyr_payments:m1$)
+                    pbuf$(61,m1)=str(apm02a.pri_cal_pmt:m1$)
+                OutVect!.addItem(pbuf$)
+                dim pbuf$(width)
+                    pbuf$(5)="Next Year: "+str(apm02a.nyr_purch:m1$)
+                    pbuf$(31,m1)=str(apm02a.nyr_disc:m1$)
+                    pbuf$(46,m1)=str(apm02a.nyr_payments:m1$)
+                    pbuf$(61,m1)=str(apm02a.nxt_cyr_pmts:m1$)
+                OutVect!.addItem(pbuf$)
+                lines=lines+8
+          
+                rem --- Print invoices
+
+                balance=0
+                x$=""
+                if retention$="Y" x$="Retention"
+                gosub invoice_heading
+                vendor$=apm02a.firm_id$+apm02a.ap_type$+apm02a.vendor_id$
+                read (apt01_dev,key=vendor$,dom=*next)
+
+                rem --- Read next invoice header record
+
+                while moreheaders
+                      apt01_key$=key(apt01_dev,end=*break)
+                      if pos(vendor$=apt01_key$)<>1 break
+                      read record (apt01_dev) apt01a$
+                      amount$=""
+                      if retention$="Y" amount$=str(apt01a.retention:m1$)
+                      dim pbuf$(width)
+                          pbuf$(o[0])=apt01a.ap_inv_no$;pbuf$(o[1])=fndate$(apt01a.invoice_date$);pbuf$(o[2])=fndate$(apt01a.inv_due_date$)
+                          pbuf$(o[4])=apt01a.hold_flag$;pbuf$(o[5])=str(apt01a.invoice_amt:m1$)
+                          pbuf$(o[6])=str(apt01a.discount_amt:m1$);pbuf$(o[7])=amount$
+                      OutVect!.addItem(pbuf$)
+                      lines=lines+1
+                      amount=apt01a.invoice_amt
+                      discount=apt01a.discount_amt
+                      retention=apt01a.retention
+                      balance=balance+apt01a.invoice_amt
+                      detail=0
+                      apt01_key$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+
+:                                apt01a.ap_inv_no$
+                      read (apt11_dev,key=apt01_key$,dom=*next)
+
+                      rem --- Read next invoice detail record
+
+                      while moredetail
+                            k$=key(apt11_dev,end=*break)
+                            if pos(apt01_key$=k$)<>1 break
+                            read record (apt11_dev) apt11a$
+                            detail=1
+                            type$=apt11a.trans_type$
+                            amount$=""
+                            if retention$="Y" amount$=str(apt11a.trans_ret:m1$)
+                            if apt11a.trans_type$="S" type$="M" 
+                            dim pbuf$(width)
+                                pbuf$(o[0]+1)=type$+" "+apt11a.trans_ref$;pbuf$(o[1])=fndate$(apt11a.trans_date$)
+                                pbuf$(o[5])=str(apt11a.trans_amt:m1$);pbuf$(o[6])=str(apt11a.trans_disc:m1$);pbuf$(o[7])=amount$
+                            OutVect!.addItem(pbuf$)
+                            lines=lines+1
+                            amount=amount+apt11a.trans_amt
+                            discount=discount+apt11a.trans_disc
+                            retention=retention+apt11a.trans_ret
+                            balance=balance+apt11a.trans_amt
+                      wend
+
+                      rem --- Print invoice total if there were any detail transactions
+
+                      if detail=0 continue
+                      amount$=""
+                      if retention$="Y" amount$=str(retention:m1$)
+                      dim pbuf$(width)
+                           pbuf$(o[4]-1)="Total";pbuf$(o[5])=str(amount:m1$);pbuf$(o[6])=str(discount:m1$);pbuf$(o[7])=amount$
+                      OutVect!.addItem(pbuf$)
+                      lines=lines+1
+
+                      rem --- Loop back for next invoice header
+
+                wend
+
+                rem --- Print vendor balance for this AP Type
+
+                dim pbuf$(width)
+                    pbuf$(o[4]-3)="Balance";pbuf$(o[5])=str(balance:m1$)
+                OutVect!.addItem(pbuf$)
+                lines=lines+1
+                
+                rem --- Loop back for next Vendor Detail
+
+          wend
+
+          rem --- Loop back for next Vendor Master
+
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+vendor_heading: rem --- Report heading
+
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    lines=heading+1
+    dim pbuf$(width)
+    pbuf$(6)="Vendor: "+fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)+" "+apm01a.vendor_name$
+    OutVect!.addItem(pbuf$)
+    OutVect!.addItem("")
+    lines=lines+2
+    first=1
+    return
+
+comments_heading: rem --- Comments subheading
+
+    OutVect!.addItem("")
+    dim pbuf$(width)
+    pbuf$(1)=fnheader$("Comments",width)
+    OutVect!.addItem(pbuf$)
+    lines=lines+2
+    return
+
+payto_heading: rem --- Pay-to subheading
+
+    OutVect!.addItem("")
+    dim pbuf$(width)
+        pbuf$(1)=fnheader$("Pay-To Information",width)
+    OutVect!.addItem(pbuf$)
+    lines=lines+2
+    return
+
+purchases_heading: rem --- Purchases subheading
+
+    OutVect!.addItem("")
+    dim pbuf$(width)
+        pbuf$(1)=fnheader$("Purchase Address Information",width)
+    OutVect!.addItem(pbuf$)
+    lines=lines+2
+    return
+
+detail_heading: rem --- Vendor detail subheading
+
+    OutVect!.addItem("")
+    dim pbuf$(width)
+        pbuf$(1)=fnheader$("Vendor Detail Information",width)
+    OutVect!.addItem(pbuf$)
+    lines=lines+2
+    return
+
+invoice_heading: rem --- Invoice history subheading
+
+    OutVect!.addItem("")
+    dim pbuf$(width)
+        pbuf$(1)=fnheader$("Invoice History",width)
+    OutVect!.addItem(pbuf$)
+    dim pbuf$(width)
+        pbuf$(o[0])="Invoice";pbuf$(o[1])="Date";pbuf$(o[2])="Due Date";pbuf$(o[3])="Pg";pbuf$(o[4])="H"
+        pbuf$(o[5]+m1-7)="Amount";pbuf$(o[6]+m1-9)="Discount";pbuf$(o[7]+m1-10)=x$
+    OutVect!.addItem(pbuf$)
+    lines=lines+3
+    return
+
+rem --- Functions
+
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+
+rem --- Assemble and return subheading
+
+    def fnheader$(q$,q)
+        dim q1$(q,"-")
+        q1=len(q$)+2
+        q1$(15,q1)=" "+q$+" "
+        return q1$
+    fnend
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_missing_params_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+done: 
+    end

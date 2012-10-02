@@ -1,3 +1,12 @@
+[[IVM_ITEMMAST.ADIS]]
+rem --- Display Description segments
+
+	desc$ = callpoint!.getColumnData("IVM_ITEMMAST.ITEM_DESC")
+	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_1", desc$(1, user_tpl.desc_len_1))
+	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_2", desc$(user_tpl.desc_len_1 + 1, user_tpl.desc_len_2))
+	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_3", desc$(user_tpl.desc_len_1 + user_tpl.desc_len_2 + 1, user_tpl.desc_len_3))
+	callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$, user_tpl.desc_len_1, user_tpl.desc_len_2, user_tpl.desc_len_3))
+	callpoint!.setStatus("REFRESH")
 [[IVM_ITEMMAST.MSRP.AVAL]]
 if num(callpoint!.getUserInput())<0 then
 	callpoint!.setStatus("ABORT")
@@ -168,43 +177,48 @@ if num(callpoint!.getUserInput())<0 or fpt(num(callpoint!.getUserInput())) then 
 [[IVM_ITEMMAST.ABC_CODE.AVAL]]
 if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and callpoint!.getUserInput()<>" " callpoint!.setStatus("ABORT")
 [[IVM_ITEMMAST.AREC]]
-rem -- get default values for new record from ivs-10D, IVS_DEFAULTS
-ivs10_dev=fnget_dev("IVS_DEFAULTS")
-dim ivs10d$:fnget_tpl$("IVS_DEFAULTS")
-callpoint!.setColumnData("IVM_ITEMMAST.ALT_SUP_FLAG","N")
-callpoint!.setColumnData("IVM_ITEMMAST.CONV_FACTOR","1")
-callpoint!.setColumnData("IVM_ITEMMAST.ORDER_POINT","D")
-callpoint!.setColumnData("IVM_ITEMMAST.BAR_CODE",callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID"))
-findrecord(ivs10_dev,key=firm_id$+"D",dom=*next)ivs10d$
-callpoint!.setColumnData("IVM_ITEMMAST.PRODUCT_TYPE",ivs10d.product_type$)
-callpoint!.setColumnData("IVM_ITEMMAST.UNIT_OF_SALE",ivs10d.unit_of_sale$)
-callpoint!.setColumnData("IVM_ITEMMAST.PURCHASE_UM",ivs10d.purchase_um$)
-callpoint!.setColumnData("IVM_ITEMMAST.TAXABLE_FLAG",ivs10d.taxable_flag$)
-callpoint!.setColumnData("IVM_ITEMMAST.BUYER_CODE",ivs10d.buyer_code$)
-callpoint!.setColumnData("IVM_ITEMMAST.LOTSER_ITEM",ivs10d.lotser_item$)
-callpoint!.setColumnData("IVM_ITEMMAST.INVENTORIED",ivs10d.inventoried$)
-callpoint!.setColumnData("IVM_ITEMMAST.ITEM_CLASS",ivs10d.item_class$)
-callpoint!.setColumnData("IVM_ITEMMAST.STOCK_LEVEL","W")
-callpoint!.setColumnData("IVM_ITEMMAST.ABC_CODE",ivs10d.abc_code$)
-callpoint!.setColumnData("IVM_ITEMMAST.EOQ_CODE",ivs10d.eoq_code$)
-callpoint!.setColumnData("IVM_ITEMMAST.ORD_PNT_CODE",ivs10d.ord_pnt_code$)
-callpoint!.setColumnData("IVM_ITEMMAST.SAF_STK_CODE",ivs10d.saf_stk_code$)
-callpoint!.setColumnData("IVM_ITEMMAST.ITEM_TYPE",ivs10d.item_type$)
-callpoint!.setColumnData("IVM_ITEMMAST.GL_INV_ACCT",ivs10d.gl_inv_acct$)
-callpoint!.setColumnData("IVM_ITEMMAST.GL_COGS_ACCT",ivs10d.gl_cogs_acct$)
-callpoint!.setColumnData("IVM_ITEMMAST.GL_PUR_ACCT",ivs10d.gl_pur_acct$)
-callpoint!.setColumnData("IVM_ITEMMAST.GL_PPV_ACCT",ivs10d.gl_ppv_acct$)
-callpoint!.setColumnData("IVM_ITEMMAST.GL_INV_ADJ",ivs10d.gl_inv_adj$)
-callpoint!.setColumnData("IVM_ITEMMAST.GL_COGS_ADJ",ivs10d.gl_cogs_adj$)
-if user_tpl.sa$ <> "Y" then
-	callpoint!.setColumnData("IVM_ITEMMAST.SA_LEVEL","N")
-else
-	ivm10_dev=fnget_dev("IVC_PRODCODE")
-	dim ivm10a$:fnget_tpl$("IVC_PRODCODE")
-	findrecord(ivm10_dev,key=firm_id$+"A"+ivs10d.product_type$,dom=*next)ivm10a$
-	callpoint!.setColumnData("IVM_ITEMMAST.SA_LEVEL",ivm10a.sa_level$)
-endif
-callpoint!.setStatus("REFRESH")
+rem -- Get default values for new record from ivs-10D, IVS_DEFAULTS
+
+	ivs10_dev=fnget_dev("IVS_DEFAULTS")
+	dim ivs10d$:fnget_tpl$("IVS_DEFAULTS")
+	callpoint!.setColumnData("IVM_ITEMMAST.ALT_SUP_FLAG","N")
+	callpoint!.setColumnData("IVM_ITEMMAST.CONV_FACTOR","1")
+	callpoint!.setColumnData("IVM_ITEMMAST.ORDER_POINT","D")
+	callpoint!.setColumnData("IVM_ITEMMAST.BAR_CODE",callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID"))
+
+	findrecord(ivs10_dev,key=firm_id$+"D",dom=*next)ivs10d$
+
+	callpoint!.setColumnData("IVM_ITEMMAST.PRODUCT_TYPE",ivs10d.product_type$)
+	callpoint!.setColumnData("IVM_ITEMMAST.UNIT_OF_SALE",ivs10d.unit_of_sale$)
+	callpoint!.setColumnData("IVM_ITEMMAST.PURCHASE_UM",ivs10d.purchase_um$)
+	callpoint!.setColumnData("IVM_ITEMMAST.TAXABLE_FLAG",ivs10d.taxable_flag$)
+	callpoint!.setColumnData("IVM_ITEMMAST.BUYER_CODE",ivs10d.buyer_code$)
+	callpoint!.setColumnData("IVM_ITEMMAST.LOTSER_ITEM",ivs10d.lotser_item$)
+	callpoint!.setColumnData("IVM_ITEMMAST.INVENTORIED",ivs10d.inventoried$)
+	callpoint!.setColumnData("IVM_ITEMMAST.ITEM_CLASS",ivs10d.item_class$)
+	callpoint!.setColumnData("IVM_ITEMMAST.STOCK_LEVEL","W")
+	callpoint!.setColumnData("IVM_ITEMMAST.ABC_CODE",ivs10d.abc_code$)
+	callpoint!.setColumnData("IVM_ITEMMAST.EOQ_CODE",ivs10d.eoq_code$)
+	callpoint!.setColumnData("IVM_ITEMMAST.ORD_PNT_CODE",ivs10d.ord_pnt_code$)
+	callpoint!.setColumnData("IVM_ITEMMAST.SAF_STK_CODE",ivs10d.saf_stk_code$)
+	callpoint!.setColumnData("IVM_ITEMMAST.ITEM_TYPE",ivs10d.item_type$)
+	callpoint!.setColumnData("IVM_ITEMMAST.GL_INV_ACCT",ivs10d.gl_inv_acct$)
+	callpoint!.setColumnData("IVM_ITEMMAST.GL_COGS_ACCT",ivs10d.gl_cogs_acct$)
+	callpoint!.setColumnData("IVM_ITEMMAST.GL_PUR_ACCT",ivs10d.gl_pur_acct$)
+	callpoint!.setColumnData("IVM_ITEMMAST.GL_PPV_ACCT",ivs10d.gl_ppv_acct$)
+	callpoint!.setColumnData("IVM_ITEMMAST.GL_INV_ADJ",ivs10d.gl_inv_adj$)
+	callpoint!.setColumnData("IVM_ITEMMAST.GL_COGS_ADJ",ivs10d.gl_cogs_adj$)
+
+	if user_tpl.sa$ <> "Y" then
+		callpoint!.setColumnData("IVM_ITEMMAST.SA_LEVEL","N")
+	else
+		ivm10_dev=fnget_dev("IVC_PRODCODE")
+		dim ivm10a$:fnget_tpl$("IVC_PRODCODE")
+		findrecord(ivm10_dev,key=firm_id$+"A"+ivs10d.product_type$,dom=*next)ivm10a$
+		callpoint!.setColumnData("IVM_ITEMMAST.SA_LEVEL",ivm10a.sa_level$)
+	endif
+
+	callpoint!.setStatus("REFRESH")
 [[IVM_ITEMMAST.WEIGHT.AVAL]]
 if num(callpoint!.getUserInput())<0 or num(callpoint!.getUserInput())>9999.99 callpoint!.setStatus("ABORT")
 [[IVM_ITEMMAST.ASHO]]
@@ -212,7 +226,13 @@ callpoint!.setStatus("ABLEMAP-REFRESH")
 [[IVM_ITEMMAST.<CUSTOM>]]
 #include std_missing_params.src
 [[IVM_ITEMMAST.BSHO]]
+rem --- Inits
+
+	use ::ado_util.src::util
+	use ::ado_func.src::func
+
 rem --- Open/Lock files
+
 	num_files=6
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVS_PARAMS",open_opts$[1]="OTA"
@@ -221,41 +241,50 @@ rem --- Open/Lock files
 	open_tables$[4]="ARS_PARAMS",open_opts$[4]="OTA"
 	open_tables$[5]="IVM_ITEMWHSE",open_opts$[5]="OTA"
 	open_tables$[6]="IVS_NUMBERS",open_opts$[6]="OTA"
+
 	gosub open_tables
 	if status$<>""  goto std_exit
+
 	ivs01_dev=num(open_chans$[1]),ivs01d_dev=num(open_chans$[2]),gls01_dev=num(open_chans$[3])
 	ars01_dev=num(open_chans$[4]),ivm02_dev=num(open_chans$[5]),ivs10_dev=num(open_chans$[6])
+
 rem --- Dimension miscellaneous string templates
+
 	dim ivs01a$:open_tpls$[1],ivs01d$:open_tpls$[2],gls01a$:open_tpls$[3],ars01a$:open_tpls$[4]
 	dim ivm02a$:open_tpls$[5],ivs10n$:open_tpls$[6]
+
 rem --- init/parameters
-disable_str$=""
-enable_str$=""
-dim info$[20]
-ivs01a_key$=firm_id$+"IV00"
-find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-dir_pgm1$=stbl("+DIR_PGM",err=*next)
-call dir_pgm1$+"adc_application.aon","AR",info$[all]
-ar$=info$[20]
-call dir_pgm1$+"adc_application.aon","AP",info$[all]
-ap$=info$[20]
-call dir_pgm1$+"adc_application.aon","BM",info$[all]
-bm$=info$[20]
-call dir_pgm1$+"adc_application.aon","GL",info$[all]
-gl$=info$[20]
-call dir_pgm1$+"adc_application.aon","OP",info$[all]
-op$=info$[20]
-call dir_pgm1$+"adc_application.aon","PO",info$[all]
-po$=info$[20]
-call dir_pgm1$+"adc_application.aon","SF",info$[all]
-wo$=info$[20]
-call dir_pgm1$+"adc_application.aon","SA",info$[all]
-sa$=info$[20]
+
+	disable_str$=""
+	enable_str$=""
+	dim info$[20]
+	ivs01a_key$=firm_id$+"IV00"
+	find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+	dir_pgm1$=stbl("+DIR_PGM",err=*next)
+	call dir_pgm1$+"adc_application.aon","AR",info$[all]
+	ar$=info$[20]
+	call dir_pgm1$+"adc_application.aon","AP",info$[all]
+	ap$=info$[20]
+	call dir_pgm1$+"adc_application.aon","BM",info$[all]
+	bm$=info$[20]
+	call dir_pgm1$+"adc_application.aon","GL",info$[all]
+	gl$=info$[20]
+	call dir_pgm1$+"adc_application.aon","OP",info$[all]
+	op$=info$[20]
+	call dir_pgm1$+"adc_application.aon","PO",info$[all]
+	po$=info$[20]
+	call dir_pgm1$+"adc_application.aon","SF",info$[all]
+	wo$=info$[20]
+	call dir_pgm1$+"adc_application.aon","SA",info$[all]
+	sa$=info$[20]
+
 rem --- Setup user_tpl$
+
 	dim user_tpl$:"ar:c(1),ap:c(1),bm:c(1),gl:c(1),op:c(1),po:c(1),wo:c(1),sa:c(1),"+
-:	"num_pers:n(2),cur_per:n(2),cur_yr:n(4)"
+:	"num_pers:n(2),cur_per:n(2),cur_yr:n(4),desc_len_1:u(2),desc_len_2:u(2),desc_len_3:u(2)"
+
 	user_tpl.ar$=ar$
 	user_tpl.ap$=ap$
 	user_tpl.bm$=bm$
@@ -264,9 +293,21 @@ rem --- Setup user_tpl$
 	user_tpl.po$=po$
 	user_tpl.wo$=wo$
 	user_tpl.sa$=sa$
+
 	user_tpl.num_pers=num(gls01a.total_pers$)
 	user_tpl.cur_per=num(gls01a.current_per$)
 	user_tpl.cur_yr=num(gls01a.current_year$)
+
+	user_tpl.desc_len_1 = num(ivs01a.desc_len_01$)
+	user_tpl.desc_len_2 = num(ivs01a.desc_len_02$)
+	user_tpl.desc_len_3 = num(ivs01a.desc_len_03$)
+
+rem --- Set user labels for description segments 
+
+	util.changeText(Form!, "Segment Description 1:", cvs(ivs01a.user_desc_lb_01$, 2) + ":")
+	util.changeText(Form!, "Segment Description 2:", cvs(ivs01a.user_desc_lb_02$, 2) + ":")
+	util.changeText(Form!, "Segment Description 3:", cvs(ivs01a.user_desc_lb_03$, 2) + ":")
+
 rem --- Disable option menu items
 if ap$<>"Y" disable_str$=disable_str$+"IVM_ITEMVEND;"; rem --- this is a detail window, give alias name
 if pos(ivs01a.lifofifo$="LF")=0 disable_str$=disable_str$+"LIFO;"; rem --- these are AOPTions, give AOPT code only
@@ -302,7 +343,12 @@ if files
 	next wkx
 	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                 	chans$[all],templates$[all],table_chans$[all],batch,status$
-	if status$<>"" goto std_exit
+	if status$<>"" then
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
 endif
 
 rem --- if gl installed, does it interface to inventory?

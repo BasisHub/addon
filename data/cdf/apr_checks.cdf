@@ -16,6 +16,15 @@ rem --- See if we need to disable AP Type
 	files$[1]="aps_params",ids$[1]="APS_PARAMS"; rem  aps-01
 	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                         ids$[all],templates$[all],channels[all],batch,status
+	if status then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+	 	release
+	endif
+
+
 	aps01_dev=channels[1]
 rem --- Dimension string templates
 	dim aps01a$:templates$[1]

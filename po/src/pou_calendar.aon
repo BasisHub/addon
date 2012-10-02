@@ -1,0 +1,163 @@
+rem --- Purge Purchase Calendar
+rem --- Program poc_cd v8.0.0 19Dec2007 (poc_cd)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/19/2007 12:02:07)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+    
+ rem --- Use for type checking
+
+	use ::sys/prog/bao_option.bbj::Option
+   
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+    
+rem --- Init Data
+
+	purge$=sysinfo.system_date$
+	more =1
+
+rem --- Assign form input values to local variables
+
+	declare Option option!    
+	purge$=option!.getOptionData("PURGE_THROUGH")
+	filename$=option!.getOptionData("FILENAME");rem set to pom_calendar or sfm_opcalndr
+    if cvs(purge$,3)="" then goto std_exit
+
+rem --- Open all files
+
+	num_files = 1
+	open_beg  = 1
+	open_end  = 1
+	
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	
+	open_tables$[1]=filename$,open_opts$[1]="OTA"
+
+	gosub open_tables
+
+	pom_calendar_dev=num(open_chans$[1])
+	dim pom_calendar$:open_tpls$[1]
+	
+	call pgmdir$+"adc_progress.aon","NC","","","","",0,pom_calendar_dev,1,meter_num,status
+
+rem --- init read
+
+    read (pom_calendar_dev,key=firm_id$,dom=*next)
+rem --- Purge Records
+
+    while more
+
+        k$=key(pom_calendar_dev,end=std_exit);readrecord (pom_calendar_dev,key=k$)pom_calendar$
+        if pom_calendar.firm_id$<>firm_id$ then goto std_exit
+        if pom_calendar.year$+pom_calendar.month$>purge$(1,6) then goto std_exit
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if pom_calendar.year$+pom_calendar.month$<purge$(1,6) then remove (pom_calendar_dev,key=k$); continue
+ 		rem --- clear out partial record
+ 		for x=1 to num(purge$(7,2))
+        	field pom_calendar$,"DAY_STATUS_"+str(x:"00") = ""
+        next x
+        all_blank=1
+        for x=1 to num(pom_calendar.days_in_mth$)
+        	if cvs(field(pom_calendar$,"DAY_STATUS_"+str(x:"00")),3)<>"" then all_blank=0       
+        next x
+        rem --- if all days not blank, write back, else remove
+        if all_blank=0
+        	write record (pom_calendar_dev,key=k$) pom_calendar$
+        else
+        	remove (pom_calendar_dev,key=k$)
+		endif
+    wend
+    
+    goto std_exit
+    
+open_tables: rem --- Call the open tables routine
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+		status=912
+		exitto std_exit
+	endif
+
+	return	
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+	return        
+
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_exit.src
+
+    end

@@ -1,13 +1,29 @@
 rem --- build_sprocs.aon
 rem --- prototype for table-driven sproc definition
 
-rem --- for now, this program has hard-coded logic to create the VENDOR_INVOICES and
-rem --- VENDOR_INVOICE_DET sprocs... idea is to make an admin table in Addon (Barista?) that contains
+rem --- for now, this program has hard-coded logic to create the following SPROCs:
+rem --- VENDOR_INVOICES
+rem --- VENDOR_INVOICE_DET
+rem --- POCALENDAR
+
+rem --- idea is to make an admin table in Addon (Barista?) that contains
 rem --- name, params, .prc loc and .cfg loc so as we deploy, we can run this program
 rem --- as part of install/init, and see to it that sprocs are defined.
 
     seterr std_error
     setesc std_error
+    
+	if argc>1
+		for curr_argv=1 to argc-1
+			temp_argv$=argv(curr_argv)
+			if pos("-u"=temp_argv$)=1 user_id$=stbl("+USER_ID",temp_argv$(3));rem User ID
+			if pos("-l"=temp_argv$)=1 launch_source$=temp_argv$(3);rem Launch source
+		next curr_argv
+	endif
+
+
+	call stbl("+DIR_SYP")+"bas_process_beg.bbj",stbl("+USER_ID"),rd_table_chans$[all]
+
 
 rem --- Retrieve the program path
 
@@ -19,17 +35,41 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
-
-rem --- retrieve data from OE form
-
-    database$=Option!.getOptionData("DATABASE")
-    sproc_path$=cvs(Option!.getOptionData("SPROC_PATH"),3)
-    barista_cfg_path$=cvs(Option!.getOptionData("BARISTA_CFG_PATH"),3)
+    milestone=1
     
-rem -- init
+rem --- Open File(s)
+	
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADS_AUTOLAUNCH",open_opts$[1]="OTA"
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,0,1,meter_num,status
+	gosub open_tables
+
+	ads_autolaunch=num(open_chans$[1]);dim ads_autolaunch$:open_tpls$[1]
+
     
+rem --- init
+
+	database$=stbl("+DBNAME",err=std_exit)
+	wdir$=dir("")
+	chdir(stbl("+DIR_SPROCS",err=*next))
+	sproc_dir$=dir("")
+	chdir wdir$
+	sproc_path$=dsk("")+sproc_dir$
+	barista_cfg_path$=dsk("")+dir("")+stbl("+DIR_CFG")
+    
+rem --- init progress meter
+
+	total_recs=9;rem alter as more 'create procedure' statements are added - eventually will be table driven
+	curr_rec=0
+	task_val$="BUILDSPROC"
+	task_desc$="Create SPROC Defs"
+
+	progress! = bbjAPI().getGroupNamespace()
+	progress!.setValue("+process_task",task_val$+"^C^"+task_desc$+"^CNC^"+str(total_recs)+"^")
+
+rem --- init for sql
+
     chan = sqlunt
     SQLOPEN(chan) database$
     
@@ -54,17 +94,112 @@ rem -- main loop (this will eventually be table-driven)
 
     gosub create_sproc_def
     
+	sqlprep$="CREATE PROCEDURE VENDORDETAIL "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID_1 CHAR(6) IN, VENDOR_ID_2 CHAR(6) IN, "
+	sqlprep$=sqlprep$+"BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"VENDORDETAIL.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Detail Report'"
+
+	gosub create_sproc_def
+	
+	sqlprep$="CREATE PROCEDURE VENDORDETAIL_CMTS "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID CHAR(6) IN, BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"VENDORDETAIL_CMTS.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Detail Report - Comments'"
+
+	gosub create_sproc_def
+
+	sqlprep$="CREATE PROCEDURE VENDORDETAIL_PURCH "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID CHAR(6) IN, BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"VENDORDETAIL_PURCH.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Detail Report - Purch Addrs'"
+
+	gosub create_sproc_def
+
+	sqlprep$="CREATE PROCEDURE VENDORDETAIL_HIST "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID CHAR(6) IN, BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"VENDORDETAIL_HIST.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Detail Report - History'"
+
+	gosub create_sproc_def
+
+	sqlprep$="CREATE PROCEDURE VENDORDETAIL_INVHDR "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID CHAR(6) IN, AP_TYPE CHAR(2) IN, BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"VENDORDETAIL_INVHDR.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Detail Report - Invoice Headers'"
+
+	gosub create_sproc_def
+
+	sqlprep$="CREATE PROCEDURE VENDORDETAIL_INVDET "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, VENDOR_ID CHAR(6) IN, AP_TYPE CHAR(2) IN, "
+	sqlprep$=sqlprep$+"AP_INV_NO CHAR(10) IN, BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"VENDORDETAIL_INVDET.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Vendor Detail Report - Invoice Detail'"
+
+	gosub create_sproc_def
+	    
+	sqlprep$="CREATE PROCEDURE POCALENDAR "
+	sqlprep$=sqlprep$+"(FIRM_ID CHAR(2) IN, BEGINNING_YEAR CHAR(4) IN, BEGINNING_MONTH CHAR(2) IN, "
+	sqlprep$=sqlprep$+"ENDING_YEAR CHAR(4) IN, ENDING_MONTH CHAR(2) IN, BARISTA_WD VARCHAR(50) IN) "
+	sqlprep$=sqlprep$+"'"+sproc_path$+"POCALENDAR.prc' '"+barista_cfg_path$+"barista.cfg' "
+	sqlprep$=sqlprep$+"RESULT_SET "
+	sqlprep$=sqlprep$+"{_begin_}{_end_} 'Purchase Calendar'"
+
+	gosub create_sproc_def
+
+    
 done:
+
 sqlclose(chan)
+
+update_status:rem --- Update AutoLaunch Status
+
+	extractrecord(ads_autolaunch,key="BUILDSPROC")ads_autolaunch$
+	ads_autolaunch.process_status$="C"
+	ads_autolaunch.trans_date$=date(0:"%Yl%Mz%Dz")
+	ads_autolaunch.trans_time$=date(0:"%Hz%mz%sz")
+	ads_autolaunch$=field(ads_autolaunch$)
+	writerecord(ads_autolaunch)ads_autolaunch$
+
 goto std_exit
 
 create_sproc_def:
     SQLPREP(chan) sqlprep$
-    SQLEXEC(chan)
-    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+    SQLEXEC(chan,err=*next)
+	curr_rec=curr_rec+1
+	if mod(curr_rec,milestone)=0
+		progress!.setValue("+process_task",task_val$+"^U^"+str(curr_rec)+"^")
+	endif
 return
 
+open_tables:rem -----<Open Tables
 
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto exit_prog
+	endif
+
+	return
 
 disp_message:rem --- Display Message Dialog
 
@@ -76,13 +211,13 @@ rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
 
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
     call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
-    if pos("RETRY"=rd_err_act$) retry
+:                                str(err),err_text$,err_act$
+    if pos("EXIT"=err_act$) goto std_error_exit
+    if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+    if pos("RETRY"=err_act$) retry
 std_error_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
@@ -101,7 +236,12 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+	if pos("SPROC_UPDT"=sysinfo.menu_option_id$)<>0
+		msg_id$="AD_SPROC_UPDT"
+		gosub disp_message;rem only display message if running stand-alone
+	endif
+	
+	progress!.setValue("+process_task",task_val$+"^D^")
     run stbl("DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 

@@ -1,132 +1,140 @@
-rem --- Print Purchase Calendar
-rem --- Program por_ua v8.0.0 06Jul2007 (por_ua)
-rem --- Created by adx_codeport.bbx v1.1.5 (07/06/2007 02:43:16)
+rem Vendor Open Invoice Listing
+rem Proprietary Software. BASIS International Ltd.
+rem Program ID: apr_vendinv_irpt.aon  <Dec 10, 2008>
 
-rem --- AddonSoftware Version 8.0.0 - 01Jan2007
-rem --- Copyright (c) 1981-2007 AddonSoftware
-rem --- All Rights Reserved
+	use ::bbjasper.bbj::BBJasperReport
+	use ::bbjasper.bbj::BBJasperViewerWindow
 
-    seterr std_error
-    setesc std_error
+	ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+	screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+	screen_height = ScreenSize!.height - 50
+	
+rem --- Get HashMap of Values in Options Entry Form
 
-rem --- Retrieve the program path
-
-    pgmdir$=stbl("+DIR_PGM",err=*next)
+	params! = Option!.getOptionMap()
 
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_tpl$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	user_id$=sysinfo.user_id$
+	proc_date$=date(jul(num(sysinfo.system_date$(1,4)),num(sysinfo.system_date$(5,2)),num(sysinfo.system_date$(7,2))):stbl("+DATE_MASK"))
     firm_id$=sysinfo.firm_id$
+    	
+rem --- Set additional params
 
-rem --- Open/Lock files
+    params!.put("FIRM_ID",firm_id$)
+    params!.put("BARISTA_WD",dir(""))		
 
-    files=2,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="pom-01",ids$[1]="POM_CALENDAR"
-    files$[2]="IVS_PARAMS",ids$[2]="IVS_PARAMS"
+rem --- Make Document Archive Record and Get ID
 
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-    pom01_dev=channels[1]
-    ivs01a_dev=channels[2]
+	rep_date$=date(0:stbl("+DATE_MASK"))
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
 
-rem --- Dimension string templates
+	rd_source_alias$=rd_alias_id$
+	rd_source_type$="O"
+	rd_doc_source$="E"
+	rd_doc_ext$="JAS"
+	rd_archive_action$=rd_out_status$
 
-    dim pom01a$:templates$[1],ivs01a$:templates$[2]
+call rd_dir_syp$+"bac_documents.bbj",
+:		rd_doc_id$,
+:		rep_date_stamp$,
+:		rep_time_stamp$,
+:		rd_doc_source$,
+:		rd_doc_ext$,
+:		rd_doc_path$,
+:		rd_source_type$,
+:		rd_source_alias$,
+:		rd_source_id$,
+:		rd_source_ref$,
+:		rd_table_chans$[all],
+:		"DOC_ID-NOREPRINT"
 
-rem --- Assign form input values to local variables
+rem --- Document Output Report Parameters
 
-    begdate$=option!.getOptionData("first_date")
-    enddate$=option!.getOptionData("last_date")
-    begmonth$=option!.getOptionData("beginning_month")
-    begyear$=option!.getOptionData("beginning_year")
-    endmonth$=option!.getOptionData("ending_month")
-    endyear$=option!.getOptionData("ending_year")
+    params!.put("DOC_NO",rd_doc_id$)
+    params!.put("DATE_REP",rep_date$+"  "+rep_time$)
+    
+rem --- Set Report Name & Subreport directory
 
-rem --- Assigning sample datas due to call pont editor not working 
-    begdate$="12/01/2007"
-    enddate$="05/02/2008"
-    begmonth$="01"
-    begyear$="2007"
-    endmonth$="02"
-    endyear$="2008"
-rem --- Assigning sample datas due to call pont editor not working 
+	reportDir$ = stbl("+DIR_REPORTS",err=*next)
+rem	reportDir$=reportDir$+"testing/";rem testing SQL vs SPROC driven; rem this for SQL version CH
+	reportTitle$="Purchase Calendar"
+	temp = unt
+	open (temp)reportDir$
+	reportDir$ = fid(temp)(9)+"/"
+	close (temp)
+	reportBaseName$ = "POCalendar"
+	filename$ = reportDir$ + reportBaseName$ + ".jasper"
 
-rem --- Retrieve parameter records
+    declare BBJasperReport report!
+        
+    report! = new BBJasperReport(filename$,"jdbc:basis:localhost?database="+stbl("+DBNAME")+"&user=guest")
+	report!.putParams(params!)
 
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+	locale$ = stbl("!LOCALE")
+	locale$ = stbl("+USER_LOCALE",err=*next)
+	report!.setLocale(locale$)
 
-rem --- Call report printing subroutine
+rem --- Fill Report and Show
 
-    run pgmdir$+"por_calendar_o1.aon"
+    declare BBJasperViewerWindow viewerWindow!
 
-rem --- All done
+	report!.fill()
+    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,reportTitle$,$93$)
+    viewerWindow!.setReleaseOnClose(1)
+    viewerWindow!.show(0)
+        
+rem --- Event Control
 
-    goto std_exit
+	process_events,err=*same
 
-rem --- Standard AddonSoftware functions (01Mar2006)
+	release
 
-rem --- Date/time handling functions
+connect_err:rem --- Connection Error
 
-rem #include std_error.src
+	declare java.lang.Exception Exception!
+	Exception! = bbjapi().getLastException()
+	if Exception! = null() then 
+	   x = msgbox(errmes(-1),16,"Connection Failed")
+	else
+	   x = msgbox(Exception!.getLocalizedMessage(),16,"Connection Failed")
+	endif
 
-std_error: rem --- Standard error handler (01Apr2006)
+	release
+	
+open_tables:rem --- Open Tables
 
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
-    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
-    if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
 
-rem #endinclude std_error.src
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		gosub disp_message
+		rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+		release
+	endif
 
-rem #include std_missing_params.src
+	return
+	
+disp_message:rem --- Display Message Dialog
 
-std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
+	return
 
-rem #endinclude std_missing_params.src
 
-rem #include std_end.src
-
-std_exit: rem --- Standard program end (01Mar2006)
-
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-    release
-
-rem #endinclude std_end.src
-
-    end

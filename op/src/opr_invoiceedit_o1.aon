@@ -39,8 +39,8 @@ rem --- Initialize Data
         n1$=sysinfo.firm_name$,n2$="AR",n4$=sysinfo.task_desc$
         more=1
         precision i[1]
-        dim j$(h0,"-"),j1$(30," "),j2$(h0,"=")
-        dim a0$(200),a[13],w1$(64),w[17],lf_item$[10],lf_channels[10]
+
+        dim lf_item$[10],lf_channels[10]
         dim lf_item$[10],lf_channels[10]
         dim o[4],r[3,4],s[2],t[4],t9[100,3],u[3]
         ord=0
@@ -56,17 +56,17 @@ rem     call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,m1
         m8=len(m8$)
         m9=len(m9$)
         r9$="SPN"
-        if s6$="P" then  x1$="Printed Invoices"
-        if s6$="U" then  x1$="Unprinted Invoices"
-        if s6$="A" then  x1$="All Invoices"
+        if print_stat$="P" then  x1$="Printed Invoices"
+        if print_stat$="U" then  x1$="Unprinted Invoices"
+        if print_stat$="A" then  x1$="All Invoices"
         x2$="",h8$=x1$
-        if s5$="" h9$="Invoiced By:All"  else h9$="Invoiced By: "+s5$
+        if taken_by$="" h9$="Invoiced By:All"  else h9$="Invoiced By: "+taken_by$
         if ivs01a.lotser_flag$="S" then  x2$="Ser#"
         if ivs01a.lotser_flag$="L" then  x2$="Lot#"
-        if s0$="" then  h4$="First" else h4$=s0$
-        if s1$="" then  h5$="Last"  else h5$=s1$
-        if s2$="" then  h6$="First" else h6$=s2$
-        if s3$="" then  h7$="Last"  else h7$=s3$
+        if from_cust$="" then  h4$="First" else h4$=from_cust$
+        if thru_cust$="" then  h5$="Last"  else h5$=thru_cust$
+        if from_ord$="" then  h6$="First" else h6$=from_ord$
+        if thru_ord$="" then  h7$="Last"  else h7$=thru_ord$
 
         while more
             if m2*3+m3*2+m1*3+27+i[0]<132 then break
@@ -78,7 +78,7 @@ rem     call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,m1
         dim columns$[11,10]
         columns=11
 
-rem    if s6$="P" or s6$="A" then
+rem    if print_stat$="P" or print_stat$="A" then
         columns$[0,0]="Customer^Number Name ",  columns$[0,1]="C",columns$[0,2]="15"
         columns$[1,0]="Order^Number",           columns$[1,1]="N",columns$[1,2]="12"
         columns$[2,0]="Invoice^Number",         columns$[2,1]="N",columns$[2,2]="10"
@@ -141,22 +141,22 @@ rem --- Background
 
 rem --- Initial Read
 
-    read (ope01_dev,key=firm_id$+"  "+s0$+s2$,dom=*next)
+    read (ope01_dev,key=firm_id$+"  "+from_cust$+from_ord$,dom=*next)
 
 rem --- Main Loop Starts
 
     while more
         ope01a_key$=key(ope01_dev,end=done)
         if pos(firm_id$+"  "=ope01a_key$)<>1 then break
-        if s1$<>"" and ope01a_key.firm_id$+ope01a_key.ar_type$+ope01a_key.customer_id$>firm_id$+"  "+s1$ then break
-        if s3$<>"" and ope01a_key.order_no$>s3$ then break
+        if thru_cust$<>"" and ope01a_key.firm_id$+ope01a_key.ar_type$+ope01a_key.customer_id$>firm_id$+"  "+thru_cust$ then break
+        if thru_ord$<>"" and ope01a_key.order_no$>thru_ord$ then break
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         read record (ope01_dev,key=ope01a_key$) ope01a$
-        if ope01a.ordinv_flag$<>"I" or ope01a.ar_inv_no$=j1$(1,7) then continue
-        if s5$<>"" and ope01a.ord_taken_by$<>s5$ then continue
-        if s6$<>"A" then
-            if s6$="P" and ope01a.print_status$<>"Y" then continue
-            if s6$="U" and ope01a.print_status$="Y" then continue
+        if ope01a.ordinv_flag$<>"I" or ope01a.ar_inv_no$=fill(len(ope01a.ar_inv_no$)) then continue
+        if taken_by$<>"" and ope01a.ord_taken_by$<>taken_by$ then continue
+        if print_stat$<>"A" then
+            if print_stat$="P" and ope01a.print_status$<>"Y" then continue
+            if print_stat$="U" and ope01a.print_status$="Y" then continue
         endif
 
 rem --- Heading
@@ -173,6 +173,11 @@ rem --- Void
             OutVect!.addItem(ope01a.slspsn_code$)
             OutVect!.addItem("(Void)")
             xwk=fnblank(5)
+            if page_break$="Y" and print_stat$<>"U" then
+                subheading$=""
+                BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+                HdrVect!.addItem(subheading$)
+            endif
             continue
         endif
 
@@ -206,7 +211,7 @@ rem --- Print
             endif
 label_one:
             gosub print_detail
-            s[0]=s[0]+ope11a.ext_prince
+            s[0]=s[0]+ope11a.ext_price
             s[1]=s[1]+ope11a.unit_cost*ope11a.qty_shipped
             s[2]=s[2]+ope11a.comm_percent
             s0=s0+1
@@ -254,7 +259,7 @@ done: rem --- Totals
         precision 2
 
         e9$="E"
-        if s4$="Y" and s6$<>"U" then
+        if page_break$="Y" and print_stat$<>"U" then
             subheading$=""
             BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
             HdrVect!.addItem(subheading$)
@@ -425,7 +430,7 @@ order_header: rem --- Order Header
 
         gosub terms_code
         OutVect!.addItem((ope01a.customer_id$+" "+arm01a.customer_name$))
-        OutVect!.addItem(ope11a.order_no$)
+        OutVect!.addItem(ope01a.order_no$)
         OutVect!.addItem(ope01a.ar_inv_no$)
         OutVect!.addItem(fndate$(ope01a.invoice_date$))
         OutVect!.addItem(ope01a.ord_taken_by$)
@@ -440,60 +445,70 @@ order_header: rem --- Order Header
         if ope01a.lock_status$<>"N" then
             OutVect!.addItem("Lock Flag = "+ope01a.lock_status$)
             xwk=fnblank(11)
-            
         endif
 
-        xwk=fnblank(6)
-        OutVect!.addItem("Gross Extended")
-        xwk=fnblank(5)
+        xwk=fnblank(7)
+        OutVect!.addItem("Gross")
+        OutVect!.addItem("Extended")
+        xwk=fnblank(3)
 
-        OutVect!.addItem("Ln Cd Prd Whs Item")
-        xwk=fnblank(11)
-
-        xwk=fnblank(1)
+        OutVect!.addItem("Cd Prd Whs Item")
         OutVect!.addItem("Ord")
         OutVect!.addItem("B/O")
         OutVect!.addItem("Ship")
         OutVect!.addItem("Price")
-        OutVect!.addItem("Disc Cost")
-        OutVect!.addItem("Sales Cost")
+        OutVect!.addItem("Disc")
+        OutVect!.addItem("Cost")
+        OutVect!.addItem("Sales")
+        OutVect!.addItem("Cost")
         OutVect!.addItem("Profit")
         OutVect!.addItem("GP %")
-        xwk=fnblank(3)
+        xwk=fnblank(1)
 
-        
-        return
+    return
 
 sales_total: rem --- Sales Total/Freight/Sales Tax/Invoice Total
 
         precision 2
-rem        if l+7>l9 then gosub order_header
-        OutVect!.addItem("Sales Total")
+        OutVect!.addItem("")
         OutVect!.addItem(str(ord:m2$))
         OutVect!.addItem(str(bo:m2$))
         OutVect!.addItem(str(ship:m2$))
+        xwk=fnblank(2)
+        OutVect!.addItem("Sales Total"+$00$+"R")
         OutVect!.addItem(str(s[0]:m1$))
         OutVect!.addItem(str(s[1]:m1$))
         OutVect!.addItem(str(s[0]-s[1]:m1$))
         OutVect!.addItem(str(sgn(fnd(s[0]-s[1],s[0]))*min(999.99,abs(fnd(s[0]-s[1],s[0]))):m8$))
-        OutVect!.addItem("GP %")
-        xwk=fnblank(3)
+        OutVect!.addItem("")
+
+        xwk=fnblank(6)
+        OutVect!.addItem("Sales Discount"+$00$+"R")
+        OutVect!.addItem(str(-ope01a.discount_amt:m1$))
+        xwk=fnblank(4)
+
+        xwk=fnblank(6)
+        OutVect!.addItem("Freight"+$00$+"R")
+        OutVect!.addItem(str(ope01a.freight_amt:m1$))
+        xwk=fnblank(4)
+
+        xwk=fnblank(6)
+        OutVect!.addItem("Sales Tax"+$00$+"R")
+        OutVect!.addItem(str(ope01a.tax_amount:m1$))
+        xwk=fnblank(4)
+
+        xwk=fnblank(6)
+        OutVect!.addItem("Invoice Total"+$00$+"R")
+        OutVect!.addItem(str(s[0]+ope01a.freight_amt-ope01a.discount_amt+ope01a.tax_amount:m1$))
+        xwk=fnblank(4)
 
         xwk=fnblank(12)
-        OutVect!.addItem("Sales Discount"+str(-ope01a.discount_amt:m1$))
-        xwk=fnblank(11)
 
-        xwk=fnblank(12)
-        OutVect!.addItem("Freight"+str(ope01a.freight_amt:m1$))
-        xwk=fnblank(11)
-
-        xwk=fnblank(12)
-        OutVect!.addItem("Sales Tax"+str(ope01a.tax_amount:m1$))
-        xwk=fnblank(11)
-
-        xwk=fnblank(12)
-        OutVect!.addItem("   Invoice Total"+str(s[0]+ope01a.freight_amt-ope01a.discount_amt+ope01a.tax_amount:m1$))
-        xwk=fnblank(11)
+        if page_break$="Y" and print_stat$<>"U" then
+            subheading$=""
+            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+            HdrVect!.addItem(subheading$)
+        endif
 
         u[3]=u[3]+s[0]
         t2=t2+1
@@ -523,41 +538,31 @@ serialized_inventory: rem --- Serialized/Lotted Inventory
 
 print_detail: rem --- Print Detail
 
-        gosub order_header
-        OutVect!.addItem(ope11a.line_no$+" "+ope11a.line_code$+"   "+ope11a.warehouse_id$)
-        xwk=fnblank(11)
-
-        if pos(opm02a.line_type$="M")<=0 then
-            if pos(opm02a.line_type$="O")<=0 then
-                OutVect!.addItem(ope11a.product_type$)
-                xwk=fnblank(11)
-
-                if pos(opm02a.line_type$="SP")<>0 then OutVect!.addItem(ope11a.item_id$)
-                if pos(opm02a.line_type$="SP")<>0 and pos(ivs01a.lotser_flag$="SL")<>0 and ivm01a.lotser_item$="Y" then gosub average_item_cost
-                if ser_qty<>0 then  ope11a.unit_cost=ser_cost/ser_qty
-                OutVect!.addItem(str(ope11a.qty_ordered:m2$)+str(ope11a.qty_backord:m2$)+str(ope11a.qty_shipped:m2$))
-                xwk=fnblank(11)
-            endif
-
-            xwk=fnblank(1)
-            OutVect!.addItem(str(ope11a.disc_percent:m9$))
-            OutVect!.addItem(str(ope11a.unit_price:m3$))
-            OutVect!.addItem(str(ope11a.ext_price:m1$))
-            OutVect!.addItem(str(ope11a.unit_cost:m3$))
-            OutVect!.addItem(str(ope11a.unit_cost*ope11a.qty_shipped:m1$))
-            OutVect!.addItem(str(ope11a.ext_price-ope11a.unit_cost*ope11a.qty_shipped:m1$))
-            OutVect!.addItem(str(sgn(fnd(ope11a.ext_price-ope11a.unit_cost*ope11a.qty_shipped,ope11a.ext_price))*min(999.99,abs(fnd(ope11a.ext_price-ope11a.unit_cost*ope11a.qty_shipped,ope11a.ext_price))):m8$))
-            xwk=fnblank(1)
-            if opm02a.line_type$<>"O" then
-                
-            endif
+        column1$=ope11a.line_code$+" "+ope11a.product_type$+" "+ope11a.warehouse_id$
+        if pos(opm02a.line_type$="SP")<>0
+            column1$=column1$+" "+ope11a.item_id$
         endif
-        OutVect!.addItem(desc$)
-        xwk=fnblank(11)
+        OutVect!.addItem(column1$)
+        if pos(opm02a.line_type$="SP")<>0 and pos(ivs01a.lotser_flag$="SL")<>0 and ivm01a.lotser_item$="Y" then gosub average_item_cost
+        if ser_qty<>0 then  ope11a.unit_cost=ser_cost/ser_qty
+        OutVect!.addItem(str(ope11a.qty_ordered:m2$))
+        OutVect!.addItem(str(ope11a.qty_backord:m2$))
+        OutVect!.addItem(str(ope11a.qty_shipped:m2$))
+        OutVect!.addItem(str(ope11a.unit_price:m3$))
+        OutVect!.addItem(str(ope11a.disc_percent:m9$))
+        OutVect!.addItem(str(ope11a.unit_cost:m3$))
+        OutVect!.addItem(str(ope11a.ext_price:m1$))
+        OutVect!.addItem(str(ope11a.unit_cost*ope11a.qty_shipped:m1$))
+        OutVect!.addItem(str(ope11a.ext_price-(ope11a.unit_cost*ope11a.qty_shipped):m1$))
+        OutVect!.addItem(str(sgn(fnd(ope11a.ext_price-ope11a.unit_cost*ope11a.qty_shipped,ope11a.ext_price))*min(999.99,abs(fnd(ope11a.ext_price-ope11a.unit_cost*ope11a.qty_shipped,ope11a.ext_price))):m8$))
+        OutVect!.addItem("")
 
+        OutVect!.addItem("")
+        OutVect!.addItem(desc$+$00$+"L")
+        xwk=fnblank(10)
         
         if pos(opm02a.line_type$="SP")<>0 and pos(ivs01a.lotser_flag$="SL")<>0 and ivm01a.lotser_item$="Y" then gosub serialized_inventory
-        return
+    return
 
 find_customer: rem --- Find Customer
 
@@ -586,7 +591,7 @@ lifo_fifo: rem --- LIFO/FIFO
         lf_item$[0]=firm_id$
         lf_item$[1]=ope11a.warehouse_id$
         lf_item$[2]=ope11a.item_id$
-        call pgmdir$+"ivc_lf.bbx",lf_action$,"R",lf_date$,lf_channels[all],lf_item$[all],i[1],abs(ope11a.qty_shipped),ope11a.unit_cost,ret_cost,status
+        call pgmdir$+"ivc_lifofifo.aon",lf_action$,"R",lf_date$,lf_channels[all],lf_tmpls$[all],lf_item$[all],i[1],abs(ope11a.qty_shipped),ope11a.unit_cost,ret_cost,status
 
         return
 
@@ -594,11 +599,11 @@ average_item_cost: rem --- Get Average Of Serialized/Lotted Item Cost
 
         ser_qty=0
         ser_cost=0
-        read (ope21_dev,key=ope11a_key.firm_id$+ope11a_key.ar_type$+ope11a_key.customer_id$+ope11a_key.order_no$+ope11a_key.line_no$,dom=*next)
+        read (ope21_dev,key=ope11a_key.firm_id$+ope11a_key.ar_type$+ope11a_key.customer_id$+ope11a_key.order_no$+ope11a_key.internal_seq_no$,dom=*next)
 
         while more
             ope21a_key$=key(ope21_dev,end=*break)
-            if ope21a_key.firm_id$+ope21a_key.ar_type$+ope21a_key.customer_id$+ope21a_key.order_no$+ope21a_key.line_no$<>ope11a_key.firm_id$+ope11a_key.ar_type$+ope11a_key.customer_id$+ope11a_key.order_no$+ope11a_key.line_no$ then break
+            if ope21a_key.firm_id$+ope21a_key.ar_type$+ope21a_key.customer_id$+ope21a_key.order_no$+ope21a_key.internal_seq_no$<>ope11a_key.firm_id$+ope11a_key.ar_type$+ope11a_key.customer_id$+ope11a_key.order_no$+ope11a_key.internal_seq_no$ then break
             read record (ope21_dev,key=ope21a_key$) ope21a$
             ser_cost=ser_cost+r1*r2
             ser_qty=ser_qty+r1

@@ -51,6 +51,7 @@ build_arrays:
 		readrecord(ivm01_dev,key=firm_id$+item$)ivm01a$
 		readrecord (ivcprice_dev,key=firm_id$+"E"+ivm01a.item_class$+arm02a.pricing_code$,dom=*next)ivcprice$
 		listprice=ivm02a.cur_price*(100-ivcprice.break_disc_01)/100
+		callpoint!.setColumnData("OPE_PRICEQUOTE.UNIT_PRICE_01",str(listprice))
 		description$=cvs(ivcprice.code_desc$,2)
 
 rem --- Method for pricing
@@ -95,6 +96,7 @@ rem --- Display Contract Price"
 		callpoint!.setStatus("REFRESH")
 	endif
 return
+
 rem --- Determine Price
 determine_price:
 	if ivcprice.iv_price_mth$="C"
@@ -103,7 +105,7 @@ determine_price:
 	endif
 	if ivcprice.iv_price_mth$="L"
 		factor=percent/100
-		price=listprice-listprice*factor
+		price=ivm02a.cur_price-ivm02a.cur_price*factor
 	endif
 	if ivcprice.iv_price_mth$="M"
 		factor=100/(100-percent)

@@ -1,3 +1,24 @@
+[[APE_MANCHECKDIST.AUDE]]
+gosub calc_grid_tots
+[[APE_MANCHECKDIST.ADEL]]
+gosub calc_grid_tots
+[[APE_MANCHECKDIST.<CUSTOM>]]
+calc_grid_tots:
+
+glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
+dist_amt$=glns!.getValue("dist_amt")
+new_dist=0
+dim rec$:fattr(rec_data$)
+num_recs=gridVect!.size()
+
+for wk=0 to num_recs-1
+	rec$=gridVect!.getItem(wk)
+	if cvs(rec$,3)<>""  and callpoint!.getGridRowDeleteStatus(wk)<>"Y" then new_dist=new_dist+num(rec.gl_post_amt$)
+next wk
+
+glns!.setValue("dist_amt",str(new_dist))
+
+return
 [[APE_MANCHECKDIST.BEND]]
 glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
 dist_amt$=glns!.getValue("dist_amt")
@@ -53,16 +74,5 @@ else
 endif
 	
 [[APE_MANCHECKDIST.GL_POST_AMT.AVEC]]
-glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
-dist_amt$=glns!.getValue("dist_amt")
-new_dist=0
-dim rec$:fattr(rec_data$)
-num_recs=gridVect!.size()
-for wk=0 to num_recs-1
-	rec$=gridVect!.getItem(wk)
-	if rec$<>"" then new_dist=new_dist+num(rec.gl_post_amt$)
-next wk
-
-glns!.setValue("dist_amt",str(new_dist))
-
+gosub calc_grid_tots
 	

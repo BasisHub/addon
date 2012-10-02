@@ -59,7 +59,7 @@ rem --- Dimension string templates
 
 rem --- retrieve key template
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECHDR","PRIMARY",pot04a_key0$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECHDR","VEND_PO_REC",pot04a_key2$,rd_table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_INVDET","INVBYPO",invbypo_key$,rd_table_chans$[all],status$
 
 rem --- Assign form input values to local variables
@@ -119,9 +119,9 @@ rem --- column headings
 	columns$[2,0]="Received",columns$[2,1]="C",columns$[2,2]="15"
 	columns$[3,0]="Invoice #",columns$[3,1]="C",columns$[3,2]="15"
 	columns$[4,0]="Invoiced",columns$[4,1]="C",columns$[4,2]="15"
-	columns$[5,0]="Ordered",columns$[5,1]="N",columns$[5,2]="15",columns$[5,3]=m2iv$
-	columns$[6,0]="Received",columns$[6,1]="N",columns$[6,2]="15",columns$[6,3]=m2iv$
-	columns$[7,0]="Invoiced",columns$[7,1]="N",columns$[7,2]="15",columns$[7,3]=m2iv$
+	columns$[5,0]="Ordered",columns$[5,1]="N",columns$[5,2]="15",columns$[5,3]=m1iv$
+	columns$[6,0]="Received",columns$[6,1]="N",columns$[6,2]="15",columns$[6,3]=m1iv$
+	columns$[7,0]="Invoiced",columns$[7,1]="N",columns$[7,2]="15",columns$[7,3]=m1iv$
     else
 	dim columns$[10,10]	
 	columns$[0,0]="Seq",columns$[0,1]="C",columns$[0,2]="5"
@@ -164,10 +164,10 @@ rem --- Position pot-04
     samerec=0
     endinvs=0
     ponum$=""
-    dim pot04ak0$:pot04a_key0$
-    dim k$:pot04a_key0$
-    pot04ak0.firm_id$=firm_id$,pot04ak0.vendor_id$=vendor_id$,pot04ak0.po_no$=startpo$
-    read record (pot04_dev,key=pot04ak0$,dom=*next) pot04a$
+    dim pot04ak2$:pot04a_key2$
+    dim k$:pot04a_key2$
+    pot04ak2.firm_id$=firm_id$,pot04ak2.vendor_id$=vendor_id$,pot04ak2.po_no$=startpo$
+    read record (pot04_dev,key=pot04ak2$,knum="VEND_PO_REC",dom=*next) pot04a$
 
 readpot04: rem --- Read next PO
 
@@ -213,11 +213,11 @@ next_summary:
 dodetail: rem --- Detail level inquiry
 
     if ponum$+receiver$<>prevpo$+prevrec$ gosub newpo
-    read (pot14_dev,key=pot04a$(1,len(pot04ak0$)),dom=*next)
+    read (pot14_dev,key=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$,dom=*next)
 readpot14:
     k14$=key(pot14_dev,end=nextpot04)
-    if k14$(1,len(pot04ak0$))<>pot04a$(1,len(pot04ak0$)) goto nextpot04
     read record (pot14_dev,key=k14$) pot14a$
+    if pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$<>pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$ then goto nextpot04
 
 rem ---
 
@@ -252,7 +252,6 @@ stock_buildline:
 
 nonstock: rem --- Load display strings - Non-Stock Line
 
-        xwk=fnblank(3)
         OutVect!.addItem(itemdesc$)
         OutVect!.addItem(fndate$(pot14a.reqd_date$))
         OutVect!.addItem(pot14a.unit_measure$)
@@ -345,11 +344,11 @@ reporttotal: rem --- Report Total
 
 getord_rec: rem --- Accumulate ordered and received qtys for this receipt
 
-    read (pot14_dev,key=pot04a$(1,len(pot04ak0$)),dom=*next)
+    read (pot14_dev,key=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$,dom=*next)
 loop_getord_rec:
     k14$=key(pot14_dev,end=end_getord_rec)
-    if k14$(1,len(pot04ak0$))<>pot04a$(1,len(pot04ak0$)) goto end_getord_rec
     read record (pot14_dev,key=k14$) pot14a$
+    if pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$<>pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$ then goto end_getord_rec
     unitcost=num(pot14a.unit_cost$)
     if pos(pot14a.po_line_no$=linedetail$,3)=0 ordamt=ordamt+(unitcost*num(pot14a.qty_ordered$)),linedetail$=linedetail$+pot14a.po_line_no$
     recamt=recamt+(unitcost*num(pot14a.qty_received$))
@@ -360,13 +359,13 @@ end_getord_rec:
 getinv: rem --- Get invoice data - now uses index on pot25 (knum=1, keyname=INVBYPO)
 
     dim xref$(37),c0$(20),c1$(64),d0$(23),d1$(31),d[4],invbypo$:invbypo_key$
-    if samerec=0 read (pot25_dev,key=pot04a$(1,len(pot04ak0$)),knum=1,dom=*next)
+    if samerec=0 read (pot25_dev,key=pot04a.firm_id$+pot04a.vendor_id$+pot04a.po_no$+pot04a.receiver_no$,knum=1,dom=*next)
 loop_getinv:
 
     let invbypo$=key(pot25_dev,end=end_of_pot25)
-    if invbypo$(1,len(pot04ak0$))<>pot04a$(1,len(pot04ak0$)) goto end_getinv
-    if invbypo.ap_inv_no$<>invnum$ and invnum$<>"" invnum$=invbypo.ap_inv_no$; goto end_getinv
     read record (pot25_dev,key=invbypo$)pot25a$
+    if pot25a.firm_id$+pot25a.vendor_id$+pot25a.po_no$+pot25a.receiver_no$<>pot04a.firm_id$+pot04a.vendor_id$+pot04a.po_no$+pot04a.receiver_no$ then goto end_getinv
+    if invbypo.ap_inv_no$<>invnum$ and invnum$<>"" then invnum$=invbypo.ap_inv_no$; goto end_getinv
 
 rem ---
 

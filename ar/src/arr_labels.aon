@@ -108,15 +108,18 @@ rem --- Initializations
     keynum=0
     begvalue$=begcustomer$
     endvalue$=endcustomer$
+    keyfield$="CUSTOMER_ID"
     if sequence$="A"
        keynum=2
        begvalue$=begalt$
        endvalue$=endalt$
+       keyfield$="ALT_SEQUENCE"
     endif
     if sequence$="Z"
        keynum=3
        begvalue$=begzip$
        endvalue$=endzip$
+       keyfield$="ZIP_CODE"
     endif
     begvalue$=cvs(begvalue$,2)
     endvalue=len(endvalue$)
@@ -126,10 +129,9 @@ rem --- Initializations
         headings$[4]="From "+beg_out$+" Through "+end_out$
     endif
 
-rem --- Open the printer
+rem --- Open the printer unless doing export format (which goes thru docout)
 
     if col_format$<>"Y"
-        printer_open$="N"
 
 rem --- Print test patterns until the user is satisfied
 
@@ -141,54 +143,37 @@ rem --- Print test patterns until the user is satisfied
 
         rem --- Print test pattern
 
-            if printer_open$="N"
-                call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-                if status exitto std_exit
-                printer_open$="Y"
-            endif
-            dim label$(across*width*length,"X")
+            call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+            if status exitto std_exit            
+            dim label$(across*width*6,"X")
             printed_across=1
             gosub label
+            close(printer_dev)
             msg_id$="ANOTHER_PATTERN"
         wend
         if msg_opt$="C" goto std_exit
 
-        if printer_open$="N"
-            call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-            if status goto std_exit
-        endif
+        close(printer_dev,err=*next)
+        call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+        if status goto std_exit       
     endif
     
 rem --- Start the progress meter and position the file
 
-    read(arm01_dev,key=firm_id$,knum=keynum,dom=*next)
     call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
-    while begvalue$<>""
-        read (arm01_dev,key=firm_id$+cvs(begvalue$,2),knum=keynum,dom=no_find)
-        read (arm01_dev,dir=-1,err=*next)
-no_find:
-        beg_value$=begvalue$
-        begvalue$=""
-    wend
+    read record (arm01_dev,key=firm_id$+cvs(begvalue$,2),knum=keynum,dir=0,dom=*next)arm01a$
 
 rem --- Read next Customer Master (arm-01) record
 
     while more
-          k$=key(arm01_dev,knum=keynum,end=*break)
-          if pos(firm_id$=k$)<>1 break
-          if beg_value$<>"" 
-            if k$(3,len(cvs(beg_value$,2)))<beg_value$
-                read(arm01_dev)
-                continue
-            endif
-          endif
-          if endvalue$<>"" if k$(3,endvalue)>endvalue$ break
+          read record (arm01_dev,end=*break)arm01a$
+          if arm01a.firm_id$<>firm_id$ break
+          if endvalue$<>"" if cvs(field(arm01a$,keyfield$),3)>endvalue$ break
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-          read record (arm01_dev) arm01a$
           dim arm02a$:fattr(arm02a$)
-          read record (arm02_dev,key=k$+"  ") arm02a$
+          read record (arm02_dev,key=arm01a.firm_id$+arm01a.customer_id$+"  ") arm02a$
           if cvs(labelcode$,3)<>""
-            if cvs(arm02a.label_code$,3)<>cvs(label_code$,3) continue
+            if cvs(arm02a.label_code$,3)<>cvs(labelcode$,3) continue
           endif
 
           rem --- Print the label(s) for this customer

@@ -68,7 +68,13 @@ rem --- Open/Lock files
 	rem --- options$[11]="NA";rem --- force are-15 open on 2nd device
 	call sys_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                   chans$[all],templates$[all],table_chans$[all],batch,status$
-	if status$<>"" goto std_exit
+	if status$<>"" then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
 	ads01_dev=num(chans$[1])
 	gls01_dev=num(chans$[11])
 rem --- set up UserObj! as vector
@@ -103,7 +109,12 @@ rem --- Additional File Opens
 		rem --- old pgm set options$[11]?  doesn't make sense, s/b options$[21]="C"?
 	call sys_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                   chans$[all],templates$[all],table_chans$[all],batch,status$
-		if status$<>"" goto std_exit
+	if status$<>"" then
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
 	else
 		rem --- this logic creates/sets window object w! to child window, then creates/sets control object
 		rem --- to control w/ ID 5900, (c!.getName()should be the grd_ARE_INVDET)

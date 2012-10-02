@@ -1,3 +1,69 @@
+[[POR_CALENDAR.ASVA]]
+rem --- make sure beg mo/yr and end mo/yr are in calendar, and that ending > beginning
+
+begdt$=callpoint!.getDevObject("begdt")
+enddt$=callpoint!.getDevObject("enddt")
+
+if begdt$<>""
+	if callpoint!.getColumnData("POR_CALENDAR.BEGINNING_YEAR")+
+:	callpoint!.getColumnData("POR_CALENDAR.BEGINNING_MONTH") < begdt$
+		callpoint!.setStatus("ABORT")
+endif
+
+if enddt$<>""
+	if callpoint!.getColumnData("POR_CALENDAR.ENDING_YEAR")+
+:	callpoint!.getColumnData("POR_CALENDAR.ENDING_MONTH") > enddt$
+		callpoint!.setStatus("ABORT")
+endif
+
+if callpoint!.getColumnData("POR_CALENDAR.BEGINNING_YEAR")+
+:	callpoint!.getColumnData("POR_CALENDAR.BEGINNING_MONTH") >
+:	callpoint!.getColumnData("POR_CALENDAR.ENDING_YEAR")+
+:	callpoint!.getColumnData("POR_CALENDAR.ENDING_MONTH")		
+		callpoint!.setStatus("ABORT")
+endif
+[[POR_CALENDAR.ARAR]]
+pom_calendar_dev=fnget_dev("POM_CALENDAR")
+dim pom_calendar$:fnget_tpl$("POM_CALENDAR")
+
+more=1
+firm_id$=sysinfo.firm_id$
+
+rem --- Init Data
+
+    begdt$=""
+    begdate$=""
+    enddt$=""
+    enddate$=""
+
+rem --- Retrieve first/last date scheduled
+
+    call stbl("+DIR_PGM")+"poc_firstlast.aon",pom_calendar_dev,fattr(pom_calendar$),firm_id$,begdate$,enddate$,status
+
+    if begdate$="" 
+	begdate$="None"
+    else	
+	callpoint!.setDevObject("begdt",begdate$(1,6))
+	begdate$=fndate$(begdate$)
+    endif
+    if enddate$="" 
+	enddate$="None"
+    else
+	callpoint!.setDevObject("enddt",enddate$(1,6))
+	enddate$=fndate$(enddate$)
+    endif
+  
+callpoint!.setColumnData("POR_CALENDAR.FIRST_DATE",begdate$)
+callpoint!.setColumnData("POR_CALENDAR.LAST_DATE",enddate$)
+if len(begdate$)=10
+  callpoint!.setColumnData("POR_CALENDAR.BEGINNING_MONTH",begdate$(1,2))
+  callpoint!.setColumnData("POR_CALENDAR.BEGINNING_YEAR",begdate$(7,4))
+endif
+if len(enddate$)=10
+  callpoint!.setColumnData("POR_CALENDAR.ENDING_MONTH",enddate$(1,2))
+  callpoint!.setColumnData("POR_CALENDAR.ENDING_YEAR",enddate$(7,4))
+endif
+callpoint!.setStatus("REFRESH")
 [[POR_CALENDAR.BSHO]]
 files=1,begfile=1,endfile=1
 dim files$[files],options$[files],chans$[files],templates$[files]
@@ -14,69 +80,12 @@ call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	batch,
 :	status$
 
-if status$<>"" goto std_exit
-pom01_dev=num(chans$[1])
-dim pom01a$:templates$[1]
-
-more=1
-firm_id$=sysinfo.firm_id$
-
-rem --- Init Data
-
-    begdate$=""
-    enddate$=""
-
-rem --- Position file
-
-    read (pom01_dev,key=firm_id$,dom=*next)
-rem --- Get First Day Scheduled
-
-
-    pom01a_key$=key(pom01_dev,end=label1)
-    if pos(firm_id$=pom01a_key$)=1 
-       read record (pom01_dev) pom01a$
-       for i = 1 to 31
-            workday$=field(pom01a$,"day_status_"+str(i:"00"))
-            if workday$<>" " then 
-                workday$ = str(i:"00")
-                break
-            fi    
-       next i 
-       if workday$="00" then  workday$="01"
-       begdate$=fndate$(pom01a.year$+pom01a.month$+workday$)
-    fi 
-
-label1: rem --- Position file
-
-
-    read (pom01_dev,key=firm_id$+$ff$,dom=*next)
-
-rem --- Get Last Day Scheduled
-
-    pom01a_key$=keyp(pom01_dev,end=done)
-    if pos(firm_id$=pom01a_key$)=1
-        read record (pom01_dev,key=pom01a_key$) pom01a$
-        i = 31
-	while i >= 1
-            workday$=field(pom01a$,"day_status_"+str(i:"00")) 
-            if workday$<>" " then 
-                workday$ = str(i:"00")
-                break   
-            fi    
-            i=i-1
-	wend
-        if workday$="00" then workday$="01"
-        enddate$=fndate$(pom01a.year$+pom01a.month$+workday$)
-    endif
-
-done: rem --- All done
-
-callpoint!.setColumnData("POR_CALENDAR.FIRST_DATE",begdate$)
-callpoint!.setColumnData("POR_CALENDAR.LAST_DATE",enddate$)
-callpoint!.setColumnData("POR_CALENDAR.BEGINNING_MONTH",begdate$(1,2))
-callpoint!.setColumnData("POR_CALENDAR.ENDING_MONTH",enddate$(1,2))
-callpoint!.setColumnData("POR_CALENDAR.BEGINNING_YEAR",begdate$(7,4))
-callpoint!.setColumnData("POR_CALENDAR.ENDING_YEAR",enddate$(7,4))
-callpoint!.setStatus("REFRESH")
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 [[POR_CALENDAR.<CUSTOM>]]
 #include std_missing_params.src

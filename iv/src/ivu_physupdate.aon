@@ -1,0 +1,372 @@
+rem --- Physical Inventory Update
+rem --- Program ivu_physupdate.aon v8.0.0 05Dec2007 (ivu_va)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 03:07:41)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- Run Update?
+
+    msg_id$="AON_RUN_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit
+
+rem --- Initializations
+
+    precision p[1]
+	
+    dim iv_chans[44],item$[3]
+    action$="PH"
+    more=1
+	start_block=1
+
+	call pgmdir$+"ivc_itemupdt.aon::init",iv_chans[all],ivs_params_rec$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+	call pgmdir$+"adc_progress.aon","N","","","","",0,physical_dev,1,meter_num,status
+	
+	read (physcode_dev, key=firm_id$, dom=*next)
+
+rem --- Get next cycle
+
+    while more
+	
+		read record (physcode_dev, end=*break) physcode_rec$
+		if physcode_rec.firm_id$ <> firm_id$ then break
+		if physcode_rec.pending_action$ <> "4" then continue
+
+        whse_id$    = physcode_rec.warehouse_id$
+		cycle_code$ = physcode_rec.pi_cyclecode$
+
+rem --- Position physical inventory record
+
+        lastitem$ = ""
+        lsitem$   = "N"
+        first$    = firm_id$ + whse_id$ + cycle_code$
+        read (physical_dev, key=first$, dom=*next)
+
+rem --- Read next physical inventory record
+
+        while more
+
+            physical_key$ = key(physical_dev, end=*break)
+            if pos(first$=physical_key$) <> 1 then break
+            read record (physical_dev) physical_rec$
+			
+			item_id$   = physical_rec.item_id$
+			location$  = physical_rec.location$
+
+rem --- Lotted/Serialized Item Break?
+
+			if ls$ = "Y" and pos(lastitem$=physical_key$) <> 1 then 
+				gosub lot_ser_item_break
+			endif
+
+			if ls$ <> "Y" or pos(lastitem$=physical_key$) <> 1 then 
+					
+rem --- Selected for Phys Inventory?
+
+				itemwhse_dom = 1
+				
+				if start_block then
+					find record (itemwhse_dev, key=firm_id$+whse_id$+item_id$, dom=*endif) itemwhse_rec$
+					itemwhse_dom = 0
+				endif
+				
+				if itemwhse_dom or itemwhse_rec.select_phys$ <> "Y" then 
+					remove (physical_dev, key=physical_key$)
+					continue
+				endif
+				
+				itemphysdate$ = itemwhse_rec.lstphy_date$
+			
+			endif
+			
+rem --- Got One To Update
+
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            cost          = itemwhse_rec.unit_cost
+            freezeqty     = physical_rec.freeze_qty
+            countqty      = physical_rec.act_phys_cnt
+            lastphysdate$ = physical_rec.cutoff_date$
+
+rem --- Lotted/Serialized Item 
+
+            if lsitem$ = "Y" then 
+                if cvs(physical_rec.lotser_no$,2)="" and physical_rec.freeze_qty<>0 then physical_rec.entered_flag$="Y"; rem --- Count always entered for Missing and Blank (why?)
+				
+				if start_block then
+					find record (lsmaster_dev, key=firm_id$+whse_id$+item_id$+physical_rec.lotser_no$, dom=*endif) lsmaster_rec$
+					cost=lsmaster_rec.unit_cost
+				endif
+
+                if physical_rec.entered_flag$ <> "Y" then
+                    lastphysdate$ = lsmaster_rec.lstphy_date$
+                    countqty      = lsmaster_rec.physical_cnt
+                    tot_countqty  = tot_countqty + freezeqty
+                else
+                    lotser$       = physical_rec.lotser_no$
+                    tot_countqty  = tot_countqty + countqty
+					itemphysdate$ = lastphysdate$
+					lscntntrd     = 1
+					
+                    if freezeqty <> countqty then 
+                        gosub atamo
+                        remove (physical_dev, key=physical_key$)
+                        continue
+                    endif
+                endif
+
+rem --- No Change In Lotted/Serialized On-Hand Quantity
+
+                lsmaster_rec.lstphy_date$ = lastphysdate$
+                lsmaster_rec.physical_cnt = countqty
+				lsmaster_rec$ = field(lsmaster_rec$)
+                write record (lsmaster_dev) lsmaster_rec$ 
+				
+                remove (physical_dev,key=physical_key$)
+                continue
+            endif
+
+rem --- Update Item Warehouse Detail
+
+            if physical_rec.entered_flag$ = "Y" then 
+                lotser$ = ""
+                if freezeqty <> countqty then 
+                    gosub atamo
+                    remove (physical_dev, key=physical_key$)
+                    continue
+                endif
+            else
+                lastphysdate$ = itemwhse_rec.lstphy_date$
+                countqty      = itemwhse_rec.physical_cnt
+            endif
+
+rem --- No Change In On-Hand Quantity
+
+            itemwhse_rec.select_phys$ = "N"
+            itemwhse_rec.lstphy_date$ = lastphysdate$
+			itemwhse_rec.physical_cnt = countqty
+			itemwhse_rec$ = field(itemwhse_rec$)
+            write record (itemwhse_dev) itemwhse_rec$
+
+rem --- Loop back for next physical inventory record
+
+            remove (physical_dev, key=physical_key$)
+
+rem ------- Next physical Inv rec
+
+        wend
+
+        if lsitem$="Y" then gosub lot_ser_item_break
+		
+rem --- Update cycle code record (back to zero)
+
+        find record (physcode_dev, key=firm_id$+whse_id$+cycle_code$, dom=*continue) physcode_rec$
+        physcode_rec.phys_inv_sts$   = "0"
+		physcode_rec.pending_action$ = "0"
+		physcode_rec.cutoff_date$    = ""
+		physcode_rec$ = field(physcode_rec$)
+        write record (physcode_dev) physcode_rec$
+		
+rem ------ End of Main Loop
+
+    wend
+
+rem --- All done
+
+    goto std_exit
+
+lot_ser_item_break: rem --- Lotted/Serialized Item Break, update item warehouse 
+
+    if lastitem$ <> "" and lsitem$ = "Y" then 
+		find record (itemwhse_dev, key=firm_id$+whse_id$+item_id$, dom=*endif) itemwhse_rec$
+		itemwhse_rec.select_phys$ = "N"
+		
+		if lscntntrd then 
+			itemwhse_rec.lstphy_date$ = itemphysdate$
+			itemwhse_rec.physical_cnt = tot_countqty
+		endif
+		
+		itemwhse_rec$ = field(itemwhse_rec$)
+		write record (itemwhse_dev) itemwhse_rec$
+    endif
+	
+rem --- Is Next Item Lotted/Serialized?
+
+    lsitem$ = "N"
+	
+    if physical_rec.lotser_item$ = "Y" then 
+		find record (itemmast_dev,key=firm_id$+item_id$, dom=*endif) itemmast_rec$
+		
+		if itemmast_rec.lotser_item$ = "Y" and itemmast_rec.inventoried$ = "Y" then
+			lsitem$="Y"
+		endif
+		
+		lastitem$    = firm_id$ + whse_id$ + cycle_code$ + location$ + item_id$
+		tot_countqty = 0
+		lscntntrd    = 0
+		
+	endif
+
+    return
+
+atamo: rem --- Initialize Varaibles For ATAMO Inventory Item Update Routine
+
+    dim refs$[11],refs[5]
+    item$[0] = firm_id$
+    item$[1] = whse_id$
+	item$[2] = item_id$
+	item$[3] = lotser$
+    refs$[0] = lastphysdate$
+    refs$[4] = cycle_code$
+    refs[0]  = countqty - freezeqty
+    refs[1]  = cost
+	refs[5]  = countqty
+	
+	call pgmdir$+"ivc_itemupdt.aon",action$,iv_chans[all],ivs_params_rec$,items$[all],refs$[all],refs[all],rd_table_chans$[all],status
+	
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+    if q2$="" q2$=fill(len(q1$),"0")
+    return str(-num(q1$,err=*next):q2$,err=*next)
+    q=1
+    q0=0
+    while len(q2$(q))
+        if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+        q=q+1
+    wend
+    if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+    return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+    q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+    if q then q$=q$(q+1)
+    if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+    q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+    return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+    q1$=stbl(q$,err=*next)
+    return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

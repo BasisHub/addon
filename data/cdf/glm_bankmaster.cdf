@@ -103,7 +103,14 @@ rem --- Open/Lock files
 	files$[5]="glt-15",ids$[5]="GLT_BANKOTHER",options$[5]="OTA"
 	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,1,num_files,files$[all],options$[all],
 :                              ids$[all],templates$[all],channels[all],batch,status
-	if status goto std_exit
+	if status then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+	 	release
+	endif
+
 	gls01_dev=channels[1]
 	glt06_dev=channels[2]
 	glm02_dev=channels[3]

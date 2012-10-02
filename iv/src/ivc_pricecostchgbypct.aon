@@ -1,0 +1,296 @@
+rem --- Price/Cost Change By Percentage Entry
+rem --- Program ivc_pricecostchgbypct.aon v8.0.0 18Dec2007 (ivc_ca)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/18/2007 09:44:51)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+rem  action$          : Entry Type (Input)
+rem                       C=Cost Change
+rem                       P=Price Change
+rem                       R=Price Change Reversal
+rem  entry$           : Entry File Name (Input)
+rem                       C=IVE_COSTCHG
+rem                       P=IVE_PRICECHG
+rem                       R=IVW_PRICREV
+rem  no_of_records    : Number of records written to the entry file
+rem  rd_table_chans$[]: Barista array, do not modify
+rem  status           : 0=No error (Returned)
+
+rem --- Development Note: this should be three separate programs
+
+	seterr std_error
+	setesc std_error
+	enter action$, entry$, option!, no_of_records, rd_table_chans$[all], status
+	
+rem --- Use for type checking
+
+	use ::sys/prog/bao_option.bbj::Option
+
+rem --- Retrieve the program path
+
+	pgmdir$=""
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+	sypdir$=""
+	sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Retrieve sysinfo data
+
+	sysinfo_template$=stbl("+SYSINFO_TPL")
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO")
+	firm_id$=sysinfo.firm_id$
+	
+rem --- Sanity check
+
+	status = 911
+	
+	if pos(action$="CRP") = 0 then goto std_exit
+	if entry$ <> "IVE_COSTCHG" and entry$ <> "IVE_PRICECHG" and entry$ <> "IVW_PRICREV" then goto std_exit
+	if option! = null() then goto std_exit
+	
+	status = 0
+
+rem --- Assign form input values to local variables
+	
+	declare Option option!
+	
+	if action$ = "C" then 
+		effect_date$ = option!.getOptionData("EFFECT_DATE")
+	else
+		price_code$ = option!.getOptionData("PRICE_CODE")
+	endif
+	
+	begvend$ = option!.getOptionData("VENDOR_ID_1")
+	endvend$ = option!.getOptionData("VENDOR_ID_2")
+	begwhse$ = option!.getOptionData("WAREHOUSE_ID_1")
+	endwhse$ = option!.getOptionData("WAREHOUSE_ID_2")
+	begprod$ = option!.getOptionData("PRODUCT_TYPE_1")
+	endprod$ = option!.getOptionData("PRODUCT_TYPE_2")
+	begitem$ = option!.getOptionData("ITEM_ID_1")
+	enditem$ = option!.getOptionData("ITEM_ID_2")
+	type$    = option!.getOptionData("ITEM_TYPE")
+	
+	if action$ <> "R" then 
+		percent = num( option!.getOptionData("PERCENT_CHANGE") )
+	endif
+
+rem --- Open all files
+
+	num_files = 5
+	open_beg  = 1
+	open_end  = num_files
+	
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	
+	open_tables$[1]="IVS_PARAMS",   open_opts$[1]="OTA"
+	open_tables$[3]="IVM_ITEMMAST", open_opts$[3]="OTA"
+	open_tables$[4]="IVM_ITEMWHSE", open_opts$[4]="OTA"
+	open_tables$[5]=entry$,         open_opts$[5]="OTA"
+	
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		call sypdir$+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+		status=912
+		goto std_exit
+	endif
+
+	params_dev   = num( open_chans$[1] )
+	itemmast_dev = num( open_chans$[3] )
+	itemwhse_dev = num( open_chans$[4] )
+	entry_dev    = num( open_chans$[5] )
+	
+	dim params_rec$:open_tpls$[1]
+	dim itemmast_rec$:open_tpls$[3]
+	dim itemwhse_rec$:open_tpls$[4]
+	dim entry_rec$:open_tpls$[5]
+
+rem --- Parameters
+	
+	find record (params_dev, key=firm_id$+"IV00", dom=std_missing_params) params_rec$
+
+rem --- Initializations
+	
+	precision num( params_rec.precision$ )
+	more = 1
+	
+	call pgmdir$+"adc_progress.aon","N","","","","",0,itemwhse_dev,1,0,ignore_status
+	
+rem --- Setup SQL to read through IVM_ITEMMAST
+
+	sql_prep$ = ""
+    sql_prep$ = sql_prep$ + "SELECT ivm_itemwhse.item_id, ivm_itemwhse.warehouse_id, ivm_itemmast.product_type "
+    sql_prep$ = sql_prep$ + "  FROM ivm_itemwhse INNER JOIN ivm_itemmast "
+    sql_prep$ = sql_prep$ + "    ON ivm_itemwhse.item_id = ivm_itemmast.item_id AND "
+    sql_prep$ = sql_prep$ + "       ivm_itemwhse.firm_id = ivm_itemmast.firm_id "
+    where_clause$="WHERE ivm_itemwhse.firm_id = '"+firm_id$+"' AND "
+    if begwhse$<>"" where_clause$=where_clause$+"ivm_itemwhse.warehouse_id >= '"+begwhse$+"' AND "
+    if endwhse$<>"" where_clause$=where_clause$+"ivm_itemwhse.warehouse_id <= '"+endwhse$+"' AND "
+    if begprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type >= '"+begprod$+"' AND "
+    if endprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type <= '"+endprod$+"' AND "
+    if begitem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id >= '"+begitem$+"' AND "
+    if enditem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id <= '"+enditem$+"' AND "
+	if type$<>""    where_clause$=where_clause$+"ivm_itemmast.item_type = '"+type$+"'"
+
+    where_clause$=cvs(where_clause$,2)
+    if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
+    sql_prep$=sql_prep$+where_clause$
+	
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim sql_rec$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
+rem --- Get next sort record
+
+	no_of_records = 0
+	
+	while more
+
+		sql_rec$=sqlfetch(sql_chan,err=*break)
+		
+		whse$    = sql_rec.warehouse_id$
+		product$ = sql_rec.product_type$
+		item$    = sql_rec.item_id$
+
+rem --- Read item and warehouse records
+
+		call pgmdir$+"adc_progress.aon","S","","",""," ",0,0,1,meter_num,ignore_status
+			
+		find record (itemmast_dev, key=firm_id$+item$,       dom=*continue) itemmast_rec$
+		find record (itemwhse_dev, key=firm_id$+whse$+item$, dom=*continue) itemwhse_rec$
+		
+		if itemmast_rec.stock_level$<>"W" then
+			vendor$=itemmast_rec.vendor_id$
+		else
+			vendor$=itemwhse_rec.vendor_id$
+		endif
+		
+		if begvend$<>"" and vendor$<begvend$ then continue
+		if endvend$<>"" and vendor$>endvend$ then continue
+		
+		rem if action$="R" and cvs(itemwhse_rec.cur_price_cd$,2)<>price_code$ then continue
+		if action$ <> "C" and cvs(itemwhse_rec.cur_price_cd$, 2) <> cvs(price_code$, 2) then continue
+
+rem --- Generate price/cost change record
+
+		if action$="C" then 
+
+            entry_rec.firm_id$      = firm_id$
+            entry_rec.effect_date$  = effect_date$
+            entry_rec.item_id$      = item$
+            entry_rec.warehouse_id$ = whse$
+            entry_rec.new_cost      = fnpercent_of(itemwhse_rec.unit_cost, percent)
+			
+		else
+          
+            if action$="R" then
+               
+                entry_rec.firm_id$      = firm_id$
+                entry_rec.price_code$   = price_code$
+                entry_rec.warehouse_id$ = whse$
+                entry_rec.product_type$ = product$
+                entry_rec.item_id$      = item$
+				
+            else
+			
+	            if action$="P" then
+	                
+	                entry_rec.firm_id$      = firm_id$
+	                entry_rec.price_code$   = price_code$
+	                entry_rec.warehouse_id$ = whse$
+	                entry_rec.unit_price    = fnpercent_of(itemwhse_rec.cur_price, percent)
+
+	            endif
+			endif
+        endif
+
+		entry_rec$ = field(entry_rec$)
+        write record (entry_dev) entry_rec$
+		
+		no_of_records = no_of_records + 1
+
+rem --- Loop back for next sort record
+
+	wend
+
+rem --- All done
+	
+	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+	status=0
+	goto std_exit
+
+rem --- Functions
+
+	def fnpercent_of(q1,q2)=q1+((q1*q2)/100)
+	
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+	
+rem #endinclude std_exit.src
+
+    end

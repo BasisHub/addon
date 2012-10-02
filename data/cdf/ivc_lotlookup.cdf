@@ -95,7 +95,10 @@ rem --- Create Lot Information window
 	w.x = 330, w.y = 65, w.w = 400, w.h = 225
 	callpoint!.setDevObject("child_window_dims", w$)
 
-	lotWin!=form!.addChildWindow(15000, w.x, w.y, w.w, w.h, "", $00000800$, 99)
+	cxt=SysGUI!.getAvailableContext()
+	lotWin!=form!.addChildWindow(15000, w.x, w.y, w.w, w.h, "", $00000800$, cxt)
+	SysGUI!.setContext(cxt)
+
 	lotWin!.addGroupBox(15999,5,5,380,220,"Lot/Serial Information",$$)
 	
 	lotWin!.addStaticText(15001,10,25,75,15,"Vendor:",$8000$)
@@ -143,10 +146,12 @@ rem --- Create Lot Information window
 [[IVC_LOTLOOKUP.LOTS_TO_DISP.AVAL]]
 rem -- user changed lot type -- re-read/display selected lot type
 
+	lots_to_disp$=callpoint!.getUserInput()
 	gosub read_and_display_lot_grid
 [[IVC_LOTLOOKUP.AREC]]
 rem --- item_id, warehouse_id, and type of lot (open,closed, etc.) coming from calling program
 
+	lots_to_disp$=callpoint!.getColumnData("IVC_LOTLOOKUP.LOTS_TO_DISP")
 	gosub read_and_display_lot_grid
 [[IVC_LOTLOOKUP.ACUS]]
 rem --- Process custom event -- used in this pgm to select lot and display info.
@@ -212,7 +217,6 @@ rem --- Position ivm-07 file
 	
 	whse_id$ = callpoint!.getColumnData("IVC_LOTLOOKUP.WAREHOUSE_ID")
 	item_id$ = callpoint!.getColumnData("IVC_LOTLOOKUP.ITEM_ID")
-	lots_to_disp$=callpoint!.getColumnData("IVC_LOTLOOKUP.LOTS_TO_DISP")
 	
 	read (ivm_lsmaster_dev,key=firm_id$+whse_id$+item_id$,dom=*next)
 
@@ -226,7 +230,7 @@ rem --- Position ivm-07 file
 
 		if lots_to_disp$="O" and ivm_lsmaster.closed_flag$<>" " then continue
 		if lots_to_disp$="C" and ivm_lsmaster.closed_flag$<>"C" then continue
-		if lots_to_disp$="Z" and (ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit<=0 or ivm_lsmaster.closed_flag$<>"C") then continue
+		if lots_to_disp$="Z" and (ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit<=0 or ivm_lsmaster.closed_flag$="C") then continue
 		
 		switch pos(ivm_lsmaster.closed_flag$=" CL")
 			case 1

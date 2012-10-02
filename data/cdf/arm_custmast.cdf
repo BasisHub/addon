@@ -125,7 +125,15 @@ rem --- Open/Lock files
 	files$[6]="art-01",ids$[6]="ART_INVHDR",options$[6]="OTA"
 	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,1,num_files,files$[all],options$[all],
 :                              ids$[all],templates$[all],channels[all],batch,status
-	if status goto std_exit
+
+	if status then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+	 	release
+	endif
+
 	gls01_dev=channels[1]
 	ars01_dev=channels[2]
 	ars10_dev=channels[3]

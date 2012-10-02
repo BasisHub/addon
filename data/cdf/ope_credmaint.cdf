@@ -5,11 +5,15 @@ rem --- Set dates to CCYYMMDD
 	callpoint!.setColumnData("OPE_CREDMAINT.REV_DATE",tick_date$)
 	callpoint!.setDevObject("old_tick_date",tick_date$)
 	ord_date$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_DATE")
-	ord_date$=ord_date$(5,4)+ord_date$(1,4)
-	callpoint!.setColumnData("OPE_CREDMAINT.ORDER_DATE",ord_date$)
+	if len(ord_date$)>0
+		ord_date$=ord_date$(5,4)+ord_date$(1,4)
+		callpoint!.setColumnData("OPE_CREDMAINT.ORDER_DATE",ord_date$)
+	endif
 	ship_date$=callpoint!.getColumnData("OPE_CREDMAINT.SHIPMNT_DATE")
-	ship_date$=ship_date$(5,4)+ship_date$(1,4)
-	callpoint!.setColumnData("OPE_CREDMAINT.SHIPMNT_DATE",ship_date$)
+	if len(ship_date$)>0
+		ship_date$=ship_date$(5,4)+ship_date$(1,4)
+		callpoint!.setColumnData("OPE_CREDMAINT.SHIPMNT_DATE",ship_date$)
+	endif
 
 rem --- Display Comments
 	cust_id$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
@@ -17,75 +21,94 @@ rem --- Display Comments
 [[OPE_CREDMAINT.AOPT-DELO]]
 rem --- Delete the Order or the Followup date for the Customer
 
-rem 2700 REM " --- Delete Existing Followup Date - From 4000
-rem 2710 IF POS(" "<>C$(16,7))=0 THEN LET V4$="Confirm: Do You Want To Remove The Fo
-rem llow-Up Date (Yes/No)?"; GOTO 2730
-rem rem 2720 LET V4$="Confirm: Do You Want To Delete The Order And The Date (Yes/No)?"
-rem 2730 LET V0$="S",V1$="KC",V2$="NO",V3$="",V0=3,V1=FNV(V4$),V2=22
-rem 2740 GOSUB 7000
-rem 2750 IF V$="YES" THEN GOSUB 4200; GOTO 1000
-rem 2760 IF V$="NO" OR V3=4 THEN GOTO 4000
-rem 2770 GOTO 2700
+	cust$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
+	ord$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_NO")
+	if cvs(ord$,2)=""
+		msg_id$="OP_REM_FOLLOWUP"
+	else
+		msg_id$="OP_ORD_FOLLOWUP"
+	endif
+	gosub disp_message
+	if msg_opt$="N" goto no_delete
 
-rem 4200 REM " --- Delete the order
-rem 4210 DIM A0$(117),A[10],W1$(64),W[14]
-rem 4220 LET A0$(1)=N0$+"  "+C$(10)+"000"
-rem 4230 READ (ARE03_DEV,KEY=A0$(1,20),DOM=4740)IOL=ARE03A1
-rem 4250 IF A0$(22,1)="I" THEN GOSUB WARN_INVOICE; GOTO 4795
-rem 4260 READ (ARE13_DEV,KEY=A0$(1,17),DOM=4270)
-rem 4270 LET K13$=KEY(ARE13_DEV,END=4700)
-rem 4280 IF K13$(1,17)<>A0$(1,17) THEN GOTO 4700
-rem 4285 READ (ARE13_DEV)IOL=ARE13A
-rem 4290 FIND (ARM10_DEV,KEY=N0$+"E"+W0$(21,1),DOM=4540)IOL=ARM10E
-rem 4300 IF POS(Y0$(25,1)="SP")=0 THEN GOTO 4540
-rem 4310 IF A0$(21,1)="P" THEN GOTO 4380
-rem 4320 IF Y0$(27,1)="Y" OR W1$(44,1)="N" THEN GOTO 4380
-rem 4330 REM " --- Uncommit Inventory
-rem 4340 LET ITEM$[0]=N0$,ITEM$[1]=W0$(31,2),ITEM$[2]=W0$(33,20)
-rem 4350 LET ACTION$="UC",REFS[0]=W[2]
-rem 4360 IF POS(I3$(17,1)="LS") THEN GOTO LOT_SERIAL
-rem 4370 CALL "IVC.UA",ACTION$,FILES[ALL],PARAMS[ALL],PARAMS$[ALL],ITEM$[ALL],REFS$[
-rem ALL],REFS[ALL],STATUS
-rem 4380 REMOVE (ARE07_DEV,KEY=N0$+W0$(31)+W0$(3,2)+W0$(11,10)+W0$(5,6),DOM=4390)
-rem 4390 GOTO 4490
-rem 4400 LOT_SERIAL:
-rem 4410 DIM T[2],H[11]
-rem 4420 READ (ARE23_DEV,KEY=W0$(1,20),DOM=4430)IOL=ARE23A
-rem 4430 LET K9$=KEY(ARE23_DEV,END=4490)
-rem 4440 IF K9$(1,20)<>W0$(1,20) THEN GOTO 4490
-rem 4450 READ (ARE23_DEV)IOL=ARE23A
-rem 4460 LET ITEM$[3]=T1$,REFS[0]=T[0]
-rem 4470 CALL "IVC.UA",ACTION$,FILES[ALL],PARAMS[ALL],PARAMS$[ALL],ITEM$[ALL],REFS$[
-rem ALL],REFS[ALL],STATUS
-rem 4480 REMOVE (ARE23_DEV,KEY=K9$); GOTO 4430
-rem 4490 IF W0$(26,1)<>"A" THEN GOTO 4540
-rem 4540 REMOVE (ARE13_DEV,KEY=K13$,DOM=4550)
-rem 4550 GOTO 4270
-rem 4700 REM " --- Remove Header
-rem 4710 REMOVE (ARE33_DEV,KEY=N0$+A0$(5,13),DOM=4720)
-rem 4720 REMOVE (ARE03_DEV,KEY=A0$(1,20))
-rem 4730 REMOVE (ARE04_DEV,KEY=N0$+"O"+A0$(3,15),DOM=4731)
-rem 4735 REMOVE (ARE43_DEV,KEY=A0$(1,4)+A0$(11,7)+A0$(5,6),DOM=4736)
-rem 4740 GOSUB 2200rem --- remove the tickler record
-rem 4750 REM " --- Reset Next Order Number"
-rem 4755 DIM N[4]
-rem 4760 LET N$=N0$+"N",N[2]=1000,N[3]=1000
-rem 4770 EXTRACT (ARS10_DEV,KEY=N$,DOM=4790)IOL=ARS10N
-rem 4780 IF NUM(A0$(11,7))=N[2]-1 THEN LET N[2]=NUM(A0$(11,7))
-rem 4790 WRITE (ARS10_DEV,KEY=N$)IOL=ARS10N
-rem 4795 RETURN
-rem 4800 REM " --- Hold/Unhold Customers
-rem 4810 EXTRACT (ARM02_DEV,KEY=D0$,ERR=4820)IOL=ARM02A; GOTO 4830
-rem 4820 LET V0$="S",V1$="C",V2$="",V3$="",V4$="Unable To Extract Record For Changes
-rem . <Enter> To Retry, <F4> To Exit. ",V0=1,V1=FNV(V4$),V2=22; GOSUB 7000; IF V3=4
-rem THEN GOTO 4000
-rem 4830 LET V0$="S",V1$="C",V2$=D1$(39,1),V3$="YNE",V4$="Y=Yes, N=No, E=Exempt From
-rem  Credit Hold",V0=1,V1=57,V2=10
-rem 4840 GOSUB 7000
-rem 4850 LET D1$(39,1)=V$
-rem 4860 WRITE (ARM02_DEV,KEY=D0$)IOL=ARM02A
-rem 4870 PRINT @(57,10),D1$(39,1)
-rem 4880 GOTO 4000
+	if cvs(ord$,2)="" goto del_followup
+
+rem --- Delete the order
+	ope01_dev=fnget_dev("OPE_ORDHDR")
+	dim ope01a$:fnget_tpl$("OPE_ORDHDR")
+	ope11_dev=fnget_dev("OPE_ORDDET")
+	dim ope11a$:fnget_tpl$("OPE_ORDDET")
+	opc_linecode_dev=fnget_dev("OPC_LINECODE")
+	dim opc_linecode$:fnget_tpl$("OPC_LINECODE")
+	ivs_params_dev=fnget_dev("IVS_PARAMS")
+	dim ivs_params$:fnget_tpl$("IVS_PARAMS")
+	ope_ordlsdet_dev=fnget_dev("OPE_ORDLSDET")
+	dim ope_ordlsdet$:fnget_tpl$("OPE_ORDLSDET")
+	ope_ordship_dev=fnget_dev("OPE_ORDSHIP")
+	dim ope_ordship$:fnget_tpl$("OPE_ORDSHIP")
+	ope_prntlist_dev=fnget_dev("OPE_PRNTLIST")
+	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
+
+	readrecord(ivs_params_dev,key=firm_id$+"IV00")ivs01a$
+	readrecord(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=no_delete)ope01a$
+	if ope01a.invoice_type$="I" goto no_delete
+
+	call "ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+
+	read (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=*next)
+	while 1
+		readrecord(ope11_dev,end=*break)ope11a$
+		if pos(firm_id$+ope01a.ar_type$+cust$+ord$=ope11a$)<>1 break
+		readrecord(opc_linecode_dev,key=firm_id$+ope11a.line_code$,dom=remove_line)opc_linecode$
+		if pos(opc_linecode.line_type$="SP")=0 goto remove_line
+		if ope01a.invoice_type$="P" goto remove_line
+		if opc_linecode.dropship$="Y" or ope11a.commit_flag$="N" or ope11a.dropship$="Y" goto remove_line
+		if ope11a.commit_flag$<>"Y" goto remove_line
+
+rem --- Uncommit Inventory
+
+		dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
+		readrecord(ivm_itemmast_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm_itemmast$
+		items$[1]=ope11a.warehouse_id$
+		items$[2]=ope11a.item_id$
+		action$="UC"
+		refs[0]=ope11a.qty_ordered
+		if ivm_itemmast.lotser_item$<>"Y" or ivm_itemmast.inventoried$<>"Y"
+			call "ivc_itemupdt.aon",action$,channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+			goto remove_line
+		else
+			found_lot=0
+			readrecord(ope_ordlsdet_dev,key=firm_id$+ope11a.ar_type$+cust$+
+:					ord$+ope11a.internal_seq_no$,dom=*next)
+			while 1
+				readrecord(ope_ordlsdet_dev,end=*break)ope_ordlsdet$
+				if pos(firm_id$+ope11a.ar_type$+cust$+ord$+ope11a.internal_seq_no$=ope_ordlsdet$)<>1 break
+				items$[3]=ope_ordlsdet.lotser_no$
+				refs[0]=ope_ordlsdet.qty_ordered
+				call "ivc_itemupdt.aon",action$,channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+				remove (ope_ordlsdet_dev,key=ope_ordlsdet.firm_id$+ope_ordlsdet.ar_type$+cust$+
+:					ord$+ope_ordlsdet.internal_seq_no$+ope_ordlsdet.sequence_no$)
+				found_lot=1
+			wend
+			if found_lot=0
+				call "ivc_itemupdt.aon",action$,channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+			endif
+		endif
+remove_line:
+			remove (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$+ope11a.internal_seq_no$,dom=*next)
+		endif
+	wend
+
+rem	 --- Remove Header
+	remove(ope_ordship_dev,key=firm_id$+cust$+ord$,dom=*next)
+	remove(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$)
+	remove(ope_prntlist_dev,key=firm_id$+"O"+ope01a.ar_type$+cust$+ord$,dom=*next)
+
+del_followup:
+	gosub remove_tickler
+	callpoint!.setStatus("EXIT")
+
+no_delete:
 [[OPE_CREDMAINT.AOPT-ORIV]]
 rem Order/Invoice History Inq
 	gosub update_tickler
@@ -181,28 +204,33 @@ rem --- Print the order?
 
 	msg_id$="OP_ORDREL"
 	gosub disp_message
-	if msg_opt$="N" goto no_rel
-	x$=stbl("on_demand","Y"+cust$+ord$)
-	run "opr_oderpicklst.aon"
+	if msg_opt$="Y"
+		x$=stbl("on_demand","Y"+cust$+ord$)
+		call "opr_oderpicklst.aon",cust$+ord$
+	endif
 	callpoint!.setStatus("EXIT")
 
 no_rel:
-	callpoint!.setStatus("REFRESH")
+	if pos("EXIT"=callpoint!.getStatus())=0
+		callpoint!.setStatus("REFRESH")
+	endif
 [[OPE_CREDMAINT.BSHO]]
 rem --- Open tables
-	num_files=5
+	num_files=12
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="ARM_CUSTCMTS",open_opts$[1]="OTA"
 	open_tables$[2]="OPE_ORDHDR",open_opts$[2]="OTA"
 	open_tables$[3]="ARC_TERMCODE",open_opts$[3]="OTA"
 	open_tables$[4]="OPE_CREDDATE",open_opts$[4]="OTA"
 	open_tables$[5]="ARM_CUSTDET",open_opts$[5]="OTA"
+	open_tables$[6]="OPE_ORDDET",open_opts$[6]="OTA"
+	open_tables$[7]="OPC_LINECODE",open_opts$[7]="OTA"
+	open_tables$[8]="IVS_PARAMS",open_opts$[8]="OTA"
+	open_tables$[9]="OPE_ORDLSDET",open_opts$[9]="OTA"
+	open_tables$[10]="OPE_ORDSHIP",open_opts$[10]="OTA"
+	open_tables$[11]="OPE_PRNTLIST",open_opts$[11]="OTA"
+	open_tables$[12]="IVM_ITEMMAST",open_opts$[12]="OTA"
 	gosub open_tables
-	arm05_dev=num(open_chans$[1])
-	ope01_dev=num(open_chans$[2])
-	arc_terms_dev=num(open_chans$[3])
-	ope03_dev=num(open_chans$[4])
-	arm02_dev=num(open_chans$[5])
 [[OPE_CREDMAINT.<CUSTOM>]]
 disp_cust_comments:
 	
@@ -248,6 +276,10 @@ remove_tickler:
 	ord$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_NO")
 	cust_no$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
 	remove(ope03_dev,key=firm_id$+old_tick_date$+cust_no$+ord$,dom=*next)
+	if len(ord$)=0
+		ord$=fill(num(callpoint!.getTableColumnAttribute("OPE_CREDMAINT.ORDER_NO","MAXL")))
+		remove(ope03_dev,key=firm_id$+old_tick_date$+cust_no$+ord$,dom=*next)
+	endif
 return
 [[OPE_CREDMAINT.AOPT-COMM]]
 rem --- Comment Maintenance

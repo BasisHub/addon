@@ -14,7 +14,13 @@ call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	table_chans$[all],
 :	batch,
 :	status$
-if status$<>"" goto std_exit
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 sfm04_dev=num(chans$[1])
 dim sfm04a$:templates$[1]
     more=1
@@ -51,4 +57,3 @@ callpoint!.setColumnData("SFR_CALENDAR.PERIOD1",last_date$(1,2))
 callpoint!.setColumnData("SFR_CALENDAR.YEAR",first_date$(7,4))
 callpoint!.setColumnData("SFR_CALENDAR.YEAR1",last_date$(7,4))
 callpoint!.setStatus("REFRESH")
-

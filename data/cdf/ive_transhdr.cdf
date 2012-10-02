@@ -100,7 +100,7 @@ rem --------------------------------------------------------------------------
 #include std_missing_params.src
 rem --------------------------------------------------------------------------
 [[IVE_TRANSHDR.BSHO]]
-print 'show', ; rem debug
+rem print 'show', ; rem debug
 
 rem --- Pre-inits
 	

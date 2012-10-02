@@ -1,3 +1,22 @@
+[[APE_MANCHECKHDR.BWRI]]
+rem --- make sure we have entered mandatory elements of header, and that ap_type/vendor are valid together
+
+dont_write$=""
+
+if cvs(callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_DATE"),3)="" or
+:	cvs(callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO"),3)="" or
+:	cvs(callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID"),3)="" then dont_write$="Y"
+
+vend_hist$=""
+tmp_vendor_id$=callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
+gosub get_vendor_history
+if vend_hist$<>"Y" then dont_write$="Y"
+
+if dont_write$="Y"
+	msg_id$="AP_MANCHKWRITE"
+	gosub disp_message
+	callpoint!.setStatus("ABORT")
+endif
 [[APE_MANCHECKHDR.AABO]]
 rem --- need to go thru gridVect!; any record NOT already in ape-22 (detail) should be removed from ape-12 (gl dist)
 rem --- this can happen in this program, since dist grid is launched/handled from dtl grid -- we might write out
@@ -235,10 +254,10 @@ return
 		if user_tpl.multi_types$="Y"
 			msg_id$="AP_NOHIST"
 			gosub disp_message
-			callpoint!.setStatus("ABORT")
 		endif
 	endif
 [[APE_MANCHECKHDR.TRANS_TYPE.AVAL]]
+print "in trans type aval"
 if callpoint!.getUserInput()="R"
 	msg_id$="AP_REUSE_ERR"
 	gosub disp_message
@@ -258,6 +277,7 @@ if callpoint!.getUserInput()="M"
 	gosub enable_grid							
 endif
 [[APE_MANCHECKHDR.CHECK_DATE.AVAL]]
+print "in check date aval"
 gl$=user_tpl.glint$
 ckdate$=callpoint!.getUserInput()
 if gl$="Y" 
@@ -306,7 +326,7 @@ c!.setColumnEditable(6,0)
 c!.setColumnEditable(7,0)
 if user_tpl.multi_types$="N" c!.setColumnEditable(2,0)
 [[APE_MANCHECKHDR.AWIN]]
-rem debug; print 'show',; rem debug
+rem --- print 'show',; rem debug
 
 rem --- Open/Lock files
 files=30,begfile=1,endfile=12
@@ -337,7 +357,13 @@ call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	table_chans$[all],
 :	batch,
 :	status$
-if status$<>"" goto std_exit
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 aps01_dev=num(chans$[11])
 gls01_dev=num(chans$[12])
 dim aps01a$:templates$[11],gls01a$:templates$[12]
@@ -407,7 +433,12 @@ if gl$="Y"
 :	table_chans$[all],
 :	batch,
 :	status$
-if status$<>"" goto std_exit
+if status$<>"" then
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 endif
 rem --- Retrieve parameter data
                

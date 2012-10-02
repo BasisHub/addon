@@ -204,6 +204,8 @@ return
 
 switch_value:rem --- Switch Check Values
 
+	apm01_dev=fnget_dev("APM_VENDMAST")
+	dim apm01a$:fnget_tpl$("APM_VENDMAST")
 	apt01_dev=fnget_dev("APT_INVOICEHDR")
 	dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
 
@@ -217,11 +219,23 @@ switch_value:rem --- Switch Check Values
 		for curr_row=1 to TempRows!.size()
 			row_no=num(TempRows!.getItem(curr_row-1))
 			if gridInvoices!.getCellState(row_no,0)=0
-				gridInvoices!.setCellState(row_no,0,1)
+				readrecord(apm01_dev,key=firm_id$+
+:					gridInvoices!.getCellText(row_no,3),dom=*next)apm01a$
+				if apm01a.hold_flag$="Y"
+					msg_id$="AP_VEND_HOLD"
+					gosub disp_message
+					break
+				endif
 				readrecord(apt01_dev,key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
 :					gridInvoices!.getCellText(row_no,3)+
 :					gridInvoices!.getCellText(row_no,5),dom=*next)apt01a$
+				if apt01a.hold_flag$="Y"
+					msg_id$="AP_INV_HOLD"
+					gosub disp_message
+					break
+				endif
+				gridInvoices!.setCellState(row_no,0,1)
 				if callpoint!.getColumnData("APE_PAYSELECT.INCLUDE_DISC")="Y" or
 :					apt01a.disc_date$>=sysinfo.system_date$
 					gridInvoices!.setCellText(row_no,9,apt01a.discount_amt$)
@@ -336,6 +350,7 @@ rem --- set variables using either getColumnData or getUserInput, depending on w
 				endif
 			endif
 		endif
+		if cvs(filter_vendor$,3)="" filter_vendor$=""
 
 rem --- set all excluded filtered flags to No 
 		for x=1 to vect_size step user_tpl.MasterCols
@@ -498,6 +513,7 @@ if vectInvoicesMaster!.size()
 			ape04a.invoice_amt=amt_to_pay
 			ape04a.discount_amt=disc_to_take
 			ape04a.retention=apt01a.retention
+			ape04a.orig_inv_amt=amt_to_pay; rem --- added this 3/18/08, but not sure if it's the right way to set it.CAH
 			ape04a$=field(ape04a$)
 			write record(ape04_dev)ape04a$
 		endif
@@ -659,6 +675,10 @@ if ctl_ID=num(user_tpl.gridInvoicesCtlID$)
 			break
 		case 7; rem edit stop
 			rem --- Discount Amount
+			apm01_dev=fnget_dev("APM_VENDMAST")
+			dim apm01a$:fnget_tpl$("APM_VENDMAST")
+			apt01_dev=fnget_dev("APT_INVOICEHDR")
+			dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
 			if curr_col=9
 				x=curr_row
 				inv_amt=num(gridInvoices!.getCellText(curr_row,8))
@@ -678,6 +698,26 @@ if ctl_ID=num(user_tpl.gridInvoicesCtlID$)
 				endif
 				if disc_amt<>0 or inv_amt<>0
 					if gridInvoices!.getCellState(curr_row,0)=0
+						readrecord(apm01_dev,key=firm_id$+
+:							gridInvoices!.getCellText(curr_row,3),dom=*next)apm01a$
+						if apm01a.hold_flag$="Y"
+							gridInvoices!.setCellText(curr_row,9,str(0))
+							gridInvoices!.setCellText(curr_row,10,str(0))
+							msg_id$="AP_VEND_HOLD"
+							gosub disp_message
+							break
+						endif
+						readrecord(apt01_dev,key=firm_id$+
+:							gridInvoices!.getCellText(curr_row,2)+
+:							gridInvoices!.getCellText(curr_row,3)+
+:							gridInvoices!.getCellText(curr_row,5),dom=*next)apt01a$
+						if apt01a.hold_flag$="Y"
+							gridInvoices!.setCellText(curr_row,9,str(0))
+							gridInvoices!.setCellText(curr_row,10,str(0))
+							msg_id$="AP_INV_HOLD"
+							gosub disp_message
+							break
+						endif
 						gridInvoices!.setCellState(curr_row,0,1)
 						dummy=fn_setmast_flag(vectInvoices!.getItem(curr_row*numcols+2),
 :											vectInvoices!.getItem(curr_row*numcols+3),
@@ -726,6 +766,26 @@ if ctl_ID=num(user_tpl.gridInvoicesCtlID$)
 				endif
 				if pmt_amt<>0
 					if gridInvoices!.getCellState(curr_row,0)=0
+						readrecord(apm01_dev,key=firm_id$+
+:							gridInvoices!.getCellText(curr_row,3),dom=*next)apm01a$
+						if apm01a.hold_flag$="Y"
+							gridInvoices!.setCellText(curr_row,9,str(0))
+							gridInvoices!.setCellText(curr_row,10,str(0))
+							msg_id$="AP_VEND_HOLD"
+							gosub disp_message
+							break
+						endif
+						readrecord(apt01_dev,key=firm_id$+
+:							gridInvoices!.getCellText(curr_row,2)+
+:							gridInvoices!.getCellText(curr_row,3)+
+:							gridInvoices!.getCellText(curr_row,5),dom=*next)apt01a$
+						if apt01a.hold_flag$="Y"
+							gridInvoices!.setCellText(curr_row,9,str(0))
+							gridInvoices!.setCellText(curr_row,10,str(0))
+							msg_id$="AP_INV_HOLD"
+							gosub disp_message
+							break
+						endif
 						gridInvoices!.setCellState(curr_row,0,1)
 						dummy=fn_setmast_flag(vectInvoices!.getItem(curr_row*numcols+2),
 :											vectInvoices!.getItem(curr_row*numcols+3),

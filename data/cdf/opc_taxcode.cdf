@@ -255,18 +255,6 @@ rem --- Calculate and display all the extra tax codes
 	callpoint!.setColumnData("<<DISPLAY>>.TAX_TOTAL",str(total_pct))
 	callpoint!.setStatus("REFRESH-ABLEMAP")
 [[OPC_TAXCODE.<CUSTOM>]]
-disable_ctls: rem --- disable selected control
-for dctl=1 to 11
-	dctl$=dctl$[dctl]
-	wctl$=str(num(callpoint!.getTableColumnAttribute(dctl$,"CTLI")):"00000")
-	wmap$=callpoint!.getAbleMap()
-	wpos=pos(wctl$=wmap$,8)
-	wmap$(wpos+6,1)="I"
-	callpoint!.setAbleMap(wmap$)
-	callpoint!.setStatus("ABLEMAP")
-next dctl
-return
-
 able_gl: rem --- enable/disable selected control
 	wctl$=str(num(callpoint!.getTableColumnAttribute("OPC_TAXCODE.GL_ACCOUNT","CTLI")):"00000")
 	wmap$=callpoint!.getAbleMap()
@@ -307,20 +295,20 @@ check_code: rem --- Check code
 	next taxcode
 return
 [[OPC_TAXCODE.BSHO]]
-rem --- disable display fields
-	dim dctl$[11]
-	for x=1 to 10
-		dctl$[x]="<<DISPLAY>>.TAX_RATE_"+str(x:"00")
-	next x
-	dctl$[11]="<<DISPLAY>>.TAX_TOTAL"
-	gosub disable_ctls
 rem --- Open second channel to OPC_TAXCODE
 	files=1,begfile=1,endfile=files
 	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
 	files$[1]="opm-06",ids$[1]="OPC_TAXCODE"
 	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :					ids$[all],templates$[all],channels[all],batch,status
-	if status goto std_exit
+	if status then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+	 	release
+	endif
+
 rem --- Keep info in user_tpl$
 	dim user_tpl$:"opm06_dev:n(4),opm06_tpl:c(500),this_rate:n(10),code[10]:c(10),rate[10]:n(10),this_code:c(10),gl:C(1),gl_installed:c(1)"
 	user_tpl.opm06_dev=channels[1]

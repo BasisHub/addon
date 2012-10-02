@@ -28,7 +28,14 @@ rem --- Open/Lock files
 	files$[1]="gls_params",ids$[1]="GLS_PARAMS",options$[1]="OTA"
 	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,1,num_files,files$[all],options$[all],
 :                              ids$[all],templates$[all],channels[all],batch,status
-	if status goto std_exit
+	if status then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+	 	release
+	endif
+
 	gls01_dev=channels[1]
 
 rem --- Setup user template

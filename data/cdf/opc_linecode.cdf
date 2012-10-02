@@ -53,14 +53,6 @@ rem --- setup for G/L Parameter
 	user_tpl.gl$=info$[9]
 	user_tpl.dist_dev=arc_dist_dev
 	user_tpl.dist_tpl$=arc_dist_tpl$
-rem --- Disable 3 Account Numbers
-	dctl$="<<DISPLAY>>.GL_SLS_ACCT"
-	dmap$="I"
-	gosub disable_ctl
-	dctl$="<<DISPLAY>>.GL_INV_ACCT"
-	gosub disable_ctl
-	dctl$="<<DISPLAY>>.GL_COGS_ACCT"
-	gosub disable_ctl
 [[OPC_LINECODE.ARAR]]
 rem --- re-enable all fields
 	dim dctl$[7],dmap$[7]

@@ -73,7 +73,7 @@ rem --- column headings
     columns$[0,0]="",columns$[0,1]="C",columns$[0,2]="80"
 
 Back_ground: rem --- Background
-escape
+
     if o9<>2 then
         call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
         call pgmdir$+"adc_progress.aon","N","","","","",0,ope01_dev,1,meter_num,status
@@ -108,7 +108,7 @@ rem --- Initial Read
         ope04a_key$=key(ope04_dev,end=*break)
         read (ope04_dev)
         if ope04a_key.firm_id$+ope04a_key.ordinv_flag$<>firm_id$+"O" break
-        find record (ope01_dev,key=ope04a_key.firm_id$+ope04a_key.AR_TYPE$+ope04a_key.customer_id$+ope04a_key.order_no$,dom=Remove_bad) ope01a$
+        find record (ope01_dev,key=ope04a_key.firm_id$+ope04a_key.ar_type$+ope04a_key.customer_id$+ope04a_key.order_no$,dom=Remove_bad) ope01a$
         if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") continue
 
 On_Demand: rem --- Here for on-demand printing
@@ -116,7 +116,7 @@ On_Demand: rem --- Here for on-demand printing
         if ope01a.print_status$="Y" gosub is_still_printed
         if ope01a.reprint_flag$="Y" reprint$=ope01a.print_status$,ope01a.print_status$="N"
         if pos(ope01a.print_status$="Y")<>0 continue
-        if o9=1 and pos(ope01a.LOCK_STATUS$="YS12") continue
+        if o9=1 and pos(ope01a.lock_status$="YS12") continue
         if ope01a.invoice_type$="V" continue
         if ars01c.sys_install$="Y"
             if ope01a.credit_flag$="C" and ars01c.pick_hold$="N"
@@ -254,18 +254,20 @@ rem --- OK There Are Lots
             if l+1>l9 continue
             OutVect!.addItem("")
             l=l+1
-      wend
-      gosub Total1
-      if o9=2 break
-
-      extract record (ope01_dev,key=ope01.firm_id$+ope01.ar_type$+ope01.customer_id$+ope01.order_no$,err=*continue) ope01a$
-      if ope01a.reprint_flag$="Y"
-          ope01a.print_status$=reprint$ 
-      else 
-          ope01a.print_status$="B"
-      endif
-      write record (ope01_dev,key=ope01.firm_id$+ope01.ar_type$+ope01.customer_id$+ope01.order_no$) ope01a$
+        wend
+        gosub Total1
+        if o9=2 goto After_Loop
+        extract record (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,err=*continue) ope01a$
+        if ope01a.reprint_flag$="Y"
+            ope01a.print_status$=reprint$ 
+        else 
+            ope01a.print_status$="B"
+        endif
+        ope01a$=field(ope01a$)
+        write record (ope01_dev) ope01a$
     wend
+
+After_Loop:
 
     if o9<>1 then
         after$="YES"
@@ -284,9 +286,10 @@ On_Demand1: rem --- Here for on-demand printing
             ope01a.print_status$="N"
         endif                                    
         ope01a.lock_status$="N"
-        write record (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$) ope01a$
+        ope01a$=field(ope01a$)
+        write record (ope01_dev) ope01a$
         if ope01a.print_status$="Y"
-            remove (ope04_dev,key=firm_id$+"O"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+            remove (ope04_dev,key=firm_id$+"O"+"  "+ope01a.customer_id$+ope01a.order_no$,dom=*next)
         endif                
     endif
     
@@ -294,6 +297,37 @@ ready:
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
     if o9=2 goto std_exit
+
+	if OutVect!<>null() and OutVect!.size() then
+rem		if rep_prog$<>"" then
+rem			rd_temp_chan=unt
+rem			open (rd_temp_chan,err=*endif)rep_prog$
+rem			rd_temp_fin$=xfin(rd_temp_chan)
+rem			close (rd_temp_chan)
+rem			rep_prog_stamp$=fndate_time$(rd_temp_fin$(27,4))
+rem		endif
+		call stbl("+DIR_SYP")+"bax_docout.bbj",err=*next,
+:			rdForm!,
+:			rd_alias_id$,
+:			rep_date$,
+:			rep_date_stamp$,
+:			rep_time$,
+:			rep_time_stamp$,
+:			rep_prog_stamp$,
+:			headings$[all],
+:			columns$[all],
+:			OutVect!,
+:			BrkVect!,
+:			HdrVect!,
+:			TotVect!,
+:			out_types$,
+:			out_action$,
+:			out_status$,
+:			rd_table_chans$[all]
+	endif
+
+	OutVect!=null()
+    
     msg_id$="AON_UPDT_PICK_QUERY"
     dim x$:stbl("+SYSINFO_TPL")
     dim msg_tokens$[1]
@@ -312,7 +346,8 @@ rem --- Clear Print Flags
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         extract record (ope01_dev,key=ope04a_key.firm_id$+ope04a_key.ar_type$+ope04a_key.customer_id$+ope04a_key.order_no$,dom=Clear1) ope01a$
         if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") continue
-        if ope01a.reprint_flag$="Y" or ope01a.reprint_flag$=""
+        if ope01a.reprint_flag$="Y"
+            ope01a.reprint_flag$=""
             ope01a.LOCK_STATUS$="N" 
         else
             if pos(ope01a.print_status$="B")=0 continue
@@ -324,7 +359,8 @@ rem --- Clear Print Flags
         endif
 Write1:
         if ope01a.print_status$<>"Y" ope01a.print_status$="N"
-        write record (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.sequence_000$) ope01a$
+        ope01a$=field(ope01a$)
+        write record (ope01_dev) ope01a$
 Clear1:
         if ope01a.print_status$="Y" then
             remove (ope04_dev,key=ope04a_key$)
@@ -389,7 +425,7 @@ report_heading: rem --- Report Heading
     out$(h0+29)="Item Number &"
     OutVect!.addItem(out$)
     dim out$(80)
-    out$(h0+1)="Line  Order   Ship   B/O        Description"
+    out$(h0+1)="    Order     Ship   B/O        Description"
     if ope01a.invoice_type$="P" or p8$="Y" then out$(h0+74-m4+4,5)="Price"
     if mult_wh>0 then out$(h0+48,4)="Whse"
     out$(h0+53,8)="Location"
@@ -407,9 +443,9 @@ rem --- Item detail
         gosub continue_page
     endif
     dim out$(80)
-    out$(1)=ope11a_key.internal_seq_no$
+rem    out$(1)=ope11a_key.internal_seq_no$
     if pos(opm02a.line_type$="MO")=0 then
-        out$(h0+5)=str(ope11a.qty_ordered)
+        out$(h0+1)=pad(str(ope11a.qty_ordered),9,"R")
         if ope11a.commit_flag$="N"
             out$(h0+14)="Ship:"+fndate$(ope11a.est_shp_date$)
         else 
@@ -599,7 +635,7 @@ Print_Box: rem --- Print Box
         out$(h0+70,1)="+"
         OutVect!.addItem(out$)
         l=l+9
-      
+
         if mult_wh=0 return
         if whse$<>"" and len(othwhse$)<2
             message$="All of this order to be filled from these warehouses."
@@ -693,7 +729,7 @@ is_still_printed: rem --- Verify if Pick Ticket is still printed
         ope11a_key$=key(ope11_dev,end=*break)
         if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$=ope11a_key$)<>1 then break
         read record (ope11_dev,key=ope11a_key$,dom=*continue) ope11a$
-        if ope11a.PICK_FLAG$="Y" then flag=1;break
+        if ope11a.pick_flag$="Y" then flag=1;break
     wend
     if flag=1 then 
         return
@@ -858,7 +894,11 @@ rem #endinclude std_missing_params.src
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+	if on_demand$<>"N"
+		rd_called$="YES" 
+	endif	
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src

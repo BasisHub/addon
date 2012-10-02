@@ -44,7 +44,7 @@ rem --- Commit inventory
 [[IVE_TRANSFER.ADIS]]
 print "in ADIS (After Record Display)"; rem debug
 
-rem --- Get "previous" qty, getColumnDiskData() doesn't work yet
+rem --- Get "previous" qty
 
 	user_tpl.prev_qty = num( callpoint!.getColumnData("IVE_TRANSFER.TRANS_QTY") )
 
@@ -329,7 +329,7 @@ rem --- If both warehouses are entered, they can't match
 		gosub disp_message
 	endif
 [[IVE_TRANSFER.BSHO]]
-print 'show',"in BSHO"; rem debug
+rem print 'show',"in BSHO"; rem debug
 
 rem --- Inits
 

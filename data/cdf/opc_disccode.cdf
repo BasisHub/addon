@@ -16,10 +16,15 @@ rem --- Open/Lock files
 	next wkx
 	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                   chans$[all],templates$[all],table_chans$[all],batch,status$
-	if status$<>"" goto std_exit
+	if status$<>"" then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
 	ads01_dev=num(chans$[1])
 	dim ars01a$:templates$[1]
 rem --- Retrieve parameter data/see if IV is installed
 	ars01a_key$=firm_id$+"AR00"
  	find record (ads01_dev,key=ars01a_key$,ERR=std_missing_params) ars01a$
-

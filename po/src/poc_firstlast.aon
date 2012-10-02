@@ -8,76 +8,72 @@ rem --- All Rights Reserved
 
     seterr std_error
     setesc std_error
-    enter pom01_dev,firm_id$,begdate$,enddate$,status
+    
+    enter pom01_dev,calendar_tpl$,firm_id$,begdate$,enddate$,status
 
 rem --- Retrieve the program path
 
-    pgmdir$=stbl("+dir_pgm",err=*next)
+    pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+sysinfo_tpl",err=*next)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+sysinfo",err=*next)
-    milestone=num(stbl("+milestone",err=*next),err=*next)
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
-
-rem --- Open/Lock files
-
-    files=3,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="aps_params",ids$[1]="APS_PARAMS"
-    files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
-    files$[3]="pom-01",ids$[3]="POM_CALENDAR"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-    aps01a_dev=channels[1]
-    ivs01a_dev=channels[2]
-    pom01_dev=channels[3]
-
-rem --- Dimension string templates
-
-    dim aps01a$:templates$[1],ivs01a$:templates$[2],pom01a$:templates$[3]
-
-rem --- Retrieve parameter records
-
-    aps01a_key$=firm_id$+"AP00"
-    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
 
 rem --- Init Data
 
     begdate$=""
     enddate$=""
-
+    dim pom01a$:calendar_tpl$
+    
 rem --- Position file
 
     read (pom01_dev,key=firm_id$,dom=*next)
+    workday$="00"
 
 rem --- Get First Day Scheduled
 
-    pom01a_key$=key(pom01_dev,end=label1)
-    if pos(firm_id$=pom01a_key$)=1 
-       read record (pom01_dev) pom01a$
-       workday$=str(pos(" "<>a1$):"00")
-       if workday$="00" then let workday$="01"
-       begdate$=fndate$(pom01a.month$+workday$+pom01a.year$)
-   endif 
+while 1
 
-label1: rem --- Position file
+    pom01a_key$=key(pom01_dev,end=*break)
+    if pos(firm_id$=pom01a_key$)<>1 then break
+    	read record (pom01_dev) pom01a$
+    	x=1
+    	while workday$="00"
+     		if x>pom01a.days_in_mth then break       	
+     		if cvs(field(pom01a$,"DAY_STATUS_"+str(x:"00")),3)<>"" workday$=str(x:"00")
+     		x=x+1
+       wend
+       if workday$="00" then let workday$="01"
+       begdate$=pom01a.year$+pom01a.month$+workday$
+   	break
+wend
+
+rem --- re-position file
 
     read (pom01_dev,key=firm_id$+$ff$,dom=*next)
+    workday$="00"
 
 rem --- Get Last Day Scheduled
 
-    pom01a_key$=keyp(pom01_dev,end=done)
-    if pos(firm_id$=pom01a_key$)=1
+while 1
+
+    pom01a_key$=keyp(pom01_dev,end=*break)
+    if pos(firm_id$=pom01a_key$)<>1 then break
         read record (pom01_dev,key=pom01a_key$) pom01a$
+        x=pom01a.days_in_mth
+        while workday$="00"
+        	if x<1 then break
+        	if cvs(field(pom01a$,"DAY_STATUS_"+str(x:"00")),3)<>"" workday$=str(x:"00")
+        	x=x-1
+        wend
         if workday$="00" then let workday$="01"
-        enddate$=fndate$(pom01a.month$+workday$+pom01a.year$)
-    endif
+        enddate$=pom01a.year$+pom01a.month$+workday$
+    break
+wend
 
 done: rem --- All done
 
@@ -145,7 +141,6 @@ rem #endinclude std_missing_params.src
 rem #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
-
     exit
 rem #endinclude std_exit.src
 

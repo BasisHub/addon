@@ -59,7 +59,6 @@ rem --- Check for G/L Number if Post to G/L is up
 		endif
 	endif
 [[IVC_TRANCODE.<CUSTOM>]]
-rem #include std_missing_params.src
 disable_fields:
 rem --- used to disable/enable controls depending on parameter settings
 rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space to disable/enable
@@ -70,6 +69,8 @@ rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space 
 	callpoint!.setAbleMap(wmap$)
 	callpoint!.setStatus("ABLEMAP-REFRESH")
 return
+
+#include std_missing_params.src
 [[IVC_TRANCODE.BSHO]]
 rem --- Open/Lock Files
 	files=2,begfile=1,endfile=files
@@ -78,7 +79,13 @@ rem --- Open/Lock Files
 	files$[2]="IVE_TRANSHDR",options$[2]="OTA"
 	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                 chans$[all],templates$[all],table_chans$[all],batch,status$
-	if status$<>""  goto std_exit
+	if status$<>"" then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
 	ivs01_dev=num(chans$[1])
 			
 	rem --- Dimension miscellaneous string templates
@@ -101,4 +108,3 @@ rem --- check if GL is installed
 		ctl_name$="IVC_TRANCODE.GL_ADJ_ACCT"
 		gosub disable_fields	
 	endif
-

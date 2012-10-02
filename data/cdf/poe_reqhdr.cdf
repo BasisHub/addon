@@ -1,3 +1,46 @@
+[[POE_REQHDR.ORDER_NO.AVAL]]
+rem --- if dropshipping, retrieve specified sales order and display shipto address (unless reqhdr's dropship name/address line 1 not blank)
+
+if cvs(callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID"),3)<>""
+	tmp_customer_id$=callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID")
+	tmp_order_no$=callpoint!.getUserInput()
+	if cvs(callpoint!.getColumnData("POE_REQHDR.DS_NAME"),3)+cvs(callpoint!.getColumnData("POE_REQHDR.DS_ADDR_LINE_1"),3)=""
+		gosub dropship_shipto
+	endif
+endif
+[[POE_REQHDR.CUSTOMER_ID.AVAL]]
+rem --- if dropshipping, retrieve specified sales order and display shipto address (unless reqhdr's dropship name/address line 1 not blank)
+if callpoint!.getUserInput()<>callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID") and cvs(callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID"),3)<>""
+	callpoint!.setColumnData("POE_REQHDR.ORDER_NO","")
+	callpoint!.setColumnData("POE_REQHDR.SHIPTO_NO","")
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_1","")
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_2","")
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_3","")
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_4","")
+	callpoint!.setColumnData("POE_REQHDR.DS_CITY","")
+	callpoint!.setColumnData("POE_REQHDR.DS_NAME","")
+	callpoint!.setColumnData("POE_REQHDR.DS_STATE_CD","")
+	callpoint!.setColumnData("POE_REQHDR.DS_ZIP_CODE","")
+	callpoint!.setStatus("REFRESH")
+endif
+
+if cvs(callpoint!.getColumnData("POE_REQHDR.ORDER_NO"),3)<>""
+	tmp_customer_id$=callpoint!.getUserInput()
+	tmp_order_no$=callpoint!.getColumnData("POE_REQHDR.ORDER_NO")
+	if cvs(callpoint!.getColumnData("POE_REQHDR.DS_NAME"),3)+cvs(callpoint!.getColumnData("POE_REQHDR.DS_ADDR_LINE_1"),3)=""
+		gosub dropship_shipto
+	endif
+endif
+[[POE_REQHDR.DROPSHIP.AVAL]]
+if callpoint!.getUserInput()="Y"
+	if callpoint!.getDevObject("OP_installed")<>"Y"
+		callpoint!.setColumnEnabled("POE_REQHDR.CUSTOMER_ID",0)
+		callpoint!.setColumnEnabled("POE_REQHDR.ORDER_NO",0)
+	else
+		callpoint!.setColumnEnabled("POE_REQHDR.CUSTOMER_ID",1)
+		callpoint!.setColumnEnabled("POE_REQHDR.ORDER_NO",1)
+	endif
+endif
 [[POE_REQHDR.REQ_NO.AVAL]]
 rem -- see if existing req# was entered
 if cvs(callpoint!.getColumnData("POE_REQHDR.VENDOR_ID"),2) = "" then
@@ -15,7 +58,7 @@ if cvs(callpoint!.getColumnData("POE_REQHDR.VENDOR_ID"),2) = "" then
      while 1
           read record(poe01_dev,err=*next)poe01a$
           if poe01a.firm_id$<>firm_id$ or poe01a.req_no$<>req_no$ then
-               vendor!=fnget_control!("POE_REQHDR.VENDOR_ID")
+               vendor!=util.getControl(callpoint!,"POE_REQHDR.VENDOR_ID")
                vendor!.focus() 
           else
                callpoint!.setColumnData("POE_REQHDR.VENDOR_ID",poe01a.vendor_id$)
@@ -81,7 +124,7 @@ gosub purch_addr_info
 vendor_id$=callpoint!.getUserInput()
 gosub vendor_info
 [[POE_REQHDR.<CUSTOM>]]
-vendor_info: rem --- get and siplay Vendor Information
+vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")
 	dim apm01a$:fnget_tpl$("APM_VENDMAST")
 	read record(apm01_dev,key=firm_id$+vendor_id$,dom=*next)apm01a$
@@ -118,6 +161,57 @@ whse_addr_info: rem --- get and display Warehouse Address Info
 	callpoint!.setColumnData("<<DISPLAY>>.W_ZIP_CODE",ivc_whsecode$.zip_code$)
 	callpoint!.setStatus("REFRESH")
 return
+
+dropship_shipto: rem --- get and display shipto from Sales Order if drop ship indicated, and OE installed
+
+	ope_ordhdr_dev=fnget_dev("OPE_ORDHDR")
+	arm_custmast_dev=fnget_dev("ARM_CUSTMAST")
+	arm_custship_dev=fnget_dev("ARM_CUSTSHIP")
+	ope_ordship_dev=fnget_dev("OPE_ORDSHIP")
+
+	dim ope_ordhdr$:fnget_tpl$("OPE_ORDHDR")
+	dim arm_custmast$:fnget_tpl$("ARM_CUSTMAST")
+	dim arm_custship$:fnget_tpl$("ARM_CUSTSHIP")
+	dim ope_ordship$:fnget_tpl$("OPE_ORDSHIP")
+
+	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*return)ope_ordhdr$
+	shipto_no$=ope_ordhdr.shipto_no$
+	callpoint!.setColumnData("POE_REQHDR.SHIPTO_NO",shipto_no$)
+	if cvs(shipto_no$,3)=""
+		read record (arm_custmast_dev,key=firm_id$+tmp_customer_id$,dom=*next)arm_custmast$
+		dim rec$:fattr(arm_custmast$)
+		rec$=arm_custmast$
+		gosub fill_dropship_address
+		callpoint!.setColumnData("POE_REQHDR.DS_NAME",rec.customer_name$)
+	endif
+	if num(shipto_no$,err=*endif)=99
+		read record (ope_ordship_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$,dom=*next)ope_ordship$
+		dim rec$:fattr(ope_ordship$)
+		rec$=ope_ordship$
+		gosub fill_dropship_address
+		callpoint!.setColumnData("POE_REQHDR.DS_NAME",rec.name$)
+	endif
+	if num(shipto_no$,err=*endif)>0 and num(shipto_no$,err=*endif)<99
+		read record (arm_custship_dev,key=firm_id$+tmp_customer_id$+shipto_no$,dom=*next)arm_custship$
+		dim rec$:fattr(arm_custship$)
+		rec$=arm_custship$
+		gosub fill_dropship_address
+		callpoint!.setColumnData("POE_REQHDR.DS_NAME",rec.name$)
+	endif
+
+	callpoint!.setStatus("REFRESH")
+return
+
+fill_dropship_address:
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_1",rec.addr_line_1$)
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_2",rec.addr_line_2$)
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_3",rec.addr_line_3$)
+	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_4",rec.addr_line_4$)
+	callpoint!.setColumnData("POE_REQHDR.DS_CITY",rec.city$)
+	callpoint!.setColumnData("POE_REQHDR.DS_STATE_CD",rec.state_code$)
+	callpoint!.setColumnData("POE_REQHDR.DS_ZIP_CODE",rec.zip_code$)
+return
+
 disable_ctls:
 for dctl=1 to 9
 	dctl$=dctl$[dctl]
@@ -132,8 +226,12 @@ for dctl=1 to 9
 next dctl
 return
 [[POE_REQHDR.BSHO]]
+rem --- inits
+
+	use ::ado_util.src::util
+
 rem --- Open Files
-	num_files=6
+	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
@@ -141,6 +239,8 @@ rem --- Open Files
 	open_tables$[4]="APM_VENDHIST",open_opts$[4]="OTA"
 	open_tables$[5]="IVM_ITEMWHSE",open_opts$[5]="OTA"
 	open_tables$[6]="IVM_ITEMVEND",open_opts$[6]="OTA"
+	open_tables$[7]="IVM_ITEMMAST",open_opts$[7]="OTA"
+
 	gosub open_tables
 	aps_params_dev=num(open_chans$[1]),aps_params_tpl$=open_tpls$[1]
 	ivs_params_dev=num(open_chans$[2]),ivs_params_tpl$=open_tpls$[2]
@@ -148,25 +248,23 @@ rem --- Open Files
 	apm_vendhist_dev=num(open_chans$[4]),apm_vendhist_tpl$=open_tpls$[4]
 	ivm_itemwhse_dev=num(open_chans$[5]),ivm_itemwhse_tpl$=open_tpls$[5]
 	ivm_itemvend_dev=num(open_chans$[6]),ivm_itemvend_tpl$=open_tpls$[6]
-rem --- disable display fields
-	dim dctl$[9]
-	dmap$="I"
-	dctl$[1]="<<DISPLAY>>.V_ADDR1"
-	dctl$[2]="<<DISPLAY>>.V_ADDR2"
-	dctl$[3]="<<DISPLAY>>.V_CITY"
-	dctl$[4]="<<DISPLAY>>.V_STATE"
-	dctl$[5]="<<DISPLAY>>.V_ZIP_CODE"
-	dctl$[6]="<<DISPLAY>>.V_CONTACT"
-	dctl$[7]="<<DISPLAY>>.V_PHONE"
-	dctl$[8]="<<DISPLAY>>.V_FAX"
-	gosub disable_ctls
-	dmap$="I"
-	dctl$[1]="<<DISPLAY>>.PA_ADDR1"
-	dctl$[2]="<<DISPLAY>>.PA_ADDR2"
-	dctl$[3]="<<DISPLAY>>.PA_CITY"
-	dctl$[4]="<<DISPLAY>>.PA_STATE"
-	dctl$[5]="<<DISPLAY>>.PA_ZIP_CODE"
-	gosub disable_ctls
+
+rem --- call adc_application to see if OE is installed; if so, open a couple tables for potential use if linking PO to SO for dropship
+
+	dim info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
+	callpoint!.setDevObject("OP_installed",info$[20])
+	if info$[20]="Y"
+		num_files=5
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="ARM_CUSTMAST",open_opts$[1]="OTA"
+		open_tables$[2]="ARM_CUSTSHIP",open_opts$[2]="OTA"
+		open_tables$[3]="OPE_ORDSHIP",open_opts$[3]="OTA"
+		open_tables$[4]="OPE_ORDHDR",open_opts$[4]="OTA"
+		open_tables$[5]="OPE_ORDDET",open_opts$[5]="OTA"
+		gosub open_tables
+	endif
+
 rem --- AP Params
 	dim aps_params$:aps_params_tpl$
 	read record(aps_params_dev,key=firm_id$+"AP00")aps_params$
@@ -179,6 +277,12 @@ rem --- set up UserObj! as vector
 rem --- Setup user_tpl$
 	user_tpl$="change_flag:n(1)"
 	dim user_tpl$:user_tpl$
-	
-	
 
+rem --- store default PO Line Code from POS_PARAMS
+	
+	pos_params_chn=fnget_dev("POS_PARAMS")
+	dim pos_params$:fnget_tpl$("POS_PARAMS")
+	read record(pos_params_chn,key=firm_id$+"PO00")pos_params$
+	callpoint!.setDevObject("dflt_po_line_code",pos_params.po_line_code$)
+	
+	

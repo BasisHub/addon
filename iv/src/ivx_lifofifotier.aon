@@ -1,0 +1,515 @@
+rem --- LIFO/FIFO Maintenance (Report/Update Overlay)
+rem --- Program ivx_lifofifotier v8.0.0 26Feb2009 (ivx_fb)
+rem --- Created by adx_codeport.bbj v1.1.5 (02/26/2009 03:57:46)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Use for type checking
+
+	use ::sys/prog/bao_option.bbj::Option	
+
+rem --- Retrieve the program path
+
+	pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+	sypdir$=""
+	sypdir$=stbl("+DIR_SYP",err=*next)
+	
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+	
+rem --- Assign form input values to local variables
+
+	declare Option option!
+
+    whse_id$   = option!.getOptionData("WAREHOUSE_ID")
+	selection$ = option!.getOptionData("IV_LF_TIER_PICK")
+	o0 = pos(selection$ = "ABC")
+	disgnosis = 1
+	adjustment = 2
+	rebuild = 3
+	
+rem --- Document initializations
+
+	declare BBjVector OutVect!
+	declare BBjVector HdrVect!
+	declare BBjVector BrkVect!
+	declare BBjVector TotVect!
+
+	OutVect!=BBjAPI().makeVector()
+	HdrVect!=BBjAPI().makeVector()
+	BrkVect!=BBjAPI().makeVector()
+	TotVect!=BBjAPI().makeVector()
+
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+	rep_prog$=pgm(-2)   
+	
+rem --- Open all files
+
+	num_files = 4
+	open_beg  = 1
+	open_end  = num_files
+	
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	
+	open_tables$[1]="IVS_PARAMS",   open_opts$[1]="OTA"
+	open_tables$[2]="IVM_ITEMMAST", open_opts$[2]="OTA"
+	open_tables$[3]="IVM_ITEMWHSE", open_opts$[3]="OTA"
+	open_tables$[4]="IVM_ITEMTIER", open_opts$[4]="OTA"
+
+	gosub open_tables
+
+	params_dev   = num(open_chans$[1])
+	itemmast_dev = num(open_chans$[2])
+	itemwhse_dev = num(open_chans$[3])
+	itemtier_dev = num(open_chans$[4])
+	
+	dim params_rec$:open_tpls$[1]
+	dim itemmast_rec$:open_tpls$[2]
+	dim itemwhse_rec$:open_tpls$[3]
+	dim itemtier_rec$:open_tpls$[4]
+	
+rem --- Retrieve parameter records
+
+    find record (params_dev, key=firm_id$+"IV00", err=std_missing_params) params_rec$
+	
+	dim p[5]
+    p[0]=params_rec.item_id_len
+    p[1]=num(params_rec.precision$)
+    p[3]=num(params_rec.desc_len_01$)
+    p[4]=num(params_rec.desc_len_02$)
+    p[5]=num(params_rec.desc_len_03$)
+	
+	if pos(params_rec.lotser_flag$ = "LS") then ls$ = "Y" else ls$ = "N"
+	lf$ = params_rec.lifofifo$
+
+rem --- Initializations
+
+	call pgmdir$+"ivc_itemupdt.aon::init",files[all],params_rec$,item$[all],refs$[all],refs[all],rd_table_chans$[all],ignore_status
+
+	headings=5
+    dim headings$[headings]
+	headings$[0]=sysinfo.firm_name$
+	
+	columns=4
+	dim columns$[columns,10]
+	
+    width=80
+    
+	m1$ = params_rec.amount_mask$
+	m2$ = params_rec.unit_mask$
+	m3$ = params_rec.cost_mask$
+
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,10,15
+    call pgmdir$+"adc_sizemask.aon",m2$,m2,12,15
+    call pgmdir$+"adc_sizemask.aon",m3$,m3,10,15
+	
+    precision p[1]
+	
+    dim o[4]
+	dim buffer$(width)
+	
+    o[0]=0
+    o[1]=p[0]+1
+    o[4]=width-m1
+    o[3]=o[4]-m3
+    o[2]=o[3]-m2
+	
+    buffer$(1)="Item"
+	columns$[0,0] = "Item", columns$[0,1] = "C", columns$[0,2] = str(p[0])
+    buffer$(o[1]+1)="Description"
+	columns$[1,0] = "Description", columns$[1,1] = "C", columns$[1,2] = "30"
+    number=0
+	more=1
+    when$=sysinfo.system_date$
+	
+    item$[0]=firm_id$
+    item$[1]=whse_id$
+	
+    refs$[0]=when$
+    refs$[2]="Adjust"
+	
+rem --- Diagnosis headings/print positions
+
+	if o0 = diagnosis then
+
+	    o[4]=width-m2
+	    o[3]=o[4]-m2
+	    o[2]=o[3]-m2
+	    buffer$(o[3]-7)="On Hand"
+		columns$[2,0] = "On Hand", columns$[2,1] = "N", columns$[2,2] = str(m2), columns$[2,3] = m2$
+	    buffer$(o[4]-10)=lf$+"IFO Total"
+		columns$[3,0] = lf$+"IFO Total", columns$[3,1] = "N", columns$[3,2] = str(m2), columns$[3,3] = m2$
+	    buffer$(width-10)="Difference"
+		columns$[4,0] = "Difference", columns$[4,1] = "N", columns$[4,2] = str(m2), columns$[4,3] = m2$
+	    headings$[1]="Tier Diagnosis Report"
+
+rem --- Adjustment/Rebuild headings/print positions
+
+	else
+
+	    o[4]=width-m1
+	    o[3]=o[4]-m3
+	    o[2]=o[3]-m2
+	    buffer$(o[3]-8)="Quantity"
+		columns$[2,0] = "Quantity", columns$[2,1] = "N", columns$[2,2] = str(m2), columns$[2,3] = m2$
+	    buffer$(o[4]-9)="Unit Cost"
+		columns$[3,0] = "Unit Cost", columns$[3,1] = "N", columns$[3,2] = str(m3), columns$[3,3] = m3$
+	    buffer$(width-9)="Extension"
+		columns$[4,0] = "Extension", columns$[4,1] = "N", columns$[4,2] = str(m2), columns$[4,3] = m2$
+		
+	    if o0=adjustment then  
+			headings$[1]="Tier Adjustment Register"
+		else
+			headings$[1]="Tier Rebuild Register"
+		endif
+		
+	endif
+	
+	dim description$(o[2]-o[1])
+	columns$[1,2] = str(o[2]-o[1])
+    rem headings$[4] = buffer$
+
+rem --- Build Warnings	
+
+	dim msg_tokens$[1]
+	msg_tokens$[1] = lf$
+	
+	if o0 = diagnosis then 
+		msg_id$ = "IV_LF_DIAG_WARN"
+    else
+		msg_id$ = "IV_LF_REBUILD_WARN"
+	endif
+	
+rem --- Display warning
+
+    gosub disp_message
+    if msg_opt$ = "N" then goto the_end
+
+rem --- Position file
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,0,1,meter_num,ignore_status
+    read (itemmast_dev, key=firm_id$, dom=*next)
+
+rem --- Read next ivm-01 record
+
+	while more
+
+	    k$ = key(itemmast_dev, end=*break)
+	    if pos(firm_id$ = k$) <> 1 break
+	    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+		
+	    read record (itemmast_dev) itemmast_rec$; rem a's
+		description$(1)=fnitem$(itemmast_rec.item_desc$,p[3],p[4],p[5])
+		item_id$ = itemmast_rec.item_id$
+		
+rem     Lot/Serial?
+	    if ls$ = "Y" and itemmast_rec.lotser_item$ = "Y" and itemmast_rec.inventoried$ = "Y" then continue
+		
+	    first$ = firm_id$ + whse_id$ + item_id$
+	    rem d0$(1)=first$
+	    total=0
+	    find record (itemwhse_dev, key=first$, dom=*continue) itemwhse_rec$; rem b's
+	   
+rem --- Position tier
+
+	    read record (itemtier_dev, key=first$, dom=*next) itemtier_rec$; rem d's
+
+rem --- Read next tier record
+
+		while more
+
+		    k$=key(itemtier_dev, end=*break)
+		    if pos(first$=k$)<>1 break
+			
+			if o0 = rebuild then 
+				remove (itemtier_dev, key=k$, dom=*continue)
+			else
+				read record (itemtier_dev) itemtier_rec$
+				total = total + itemtier_rec.qty_on_hand
+			endif
+
+	    wend
+
+rem --- Done accumulating tier totals
+
+	    if itemwhse_rec.qty_on_hand = total then continue
+		
+rem --- Update tier(s) if necessary
+		
+		if o0 = adjustment or o0 = rebuild then 
+
+		    action$  = "TA"
+		    item$[2] = itemmast_rec.item_id$
+		    refs[0]  = itemwhse_rec.qty_on_hand - total
+		    if refs[0]>0 then refs[1] = itemwhse_rec.unit_cost
+			
+		    call pgmdir$+"ivc_itemupdt.aon",action$,files[all],params_rec$,item$[all],refs$[all],refs[all],rd_table_chans$[all],ignore_status
+			
+		    qty  = refs[0]
+		    cost = refs[1]
+		    extension = qty*cost
+		
+		endif
+
+rem --- Which detail line?
+
+	    number=number+1
+		
+		if o0 = diagnosis then
+
+rem --- Print Diagnosis detail line
+
+			qty = itemwhse_rec.qty_on_hand - total
+			rem print (printer_dev)@(o[0]),a0$(3,p[0]),@(o[1]),description$,@(o[2]),b[0]:m2$,@(o[3]),total:m2$,@(o[4]),qty:m2$
+			OutVect!.addItem(item_id$)
+			OutVect!.addItem(description$)
+			OutVect!.addItem(itemwhse_rec.qty_on_hand$)
+			OutVect!.addItem( str(total) )
+			OutVect!.addItem( str(qty) )
+			
+		else
+		
+rem --- Print Adjustment/Rebuild detail line
+
+			rem  print (printer_dev)@(o[0]),a0$(3,p[0]),@(o[1]),description$,@(o[2]),qty:m2$,@(o[3]),cost:m3$,@(o[4]),extension:m1$
+			OutVect!.addItem(item_id$)
+			OutVect!.addItem(description$)
+			OutVect!.addItem( str(qty) )
+			OutVect!.addItem( str(cost) )
+			OutVect!.addItem( str(extension) )
+			
+		endif
+		
+rem --- Loop back for next record (continue)
+
+    wend
+
+ rem --- All done
+
+    rem print (printer_dev)""
+	ignore = fnblank_line(void)
+	
+    if number = 0 then
+		rem print (printer_dev)"Tiers Match Current On Hand Quantity For All Items"
+		OutVect!.addItem("Tiers Match Current On Hand Quantity For All Items")
+		ignore = fnblank(4)
+	else
+	    if o0 = disgnosis  then x$="Tiers Do Not Match"
+	    if o0 = adjustment then x$="Tiers Adjusted To Match"
+	    if o0 = rebuild    then x$="Single Tier Created Equal To"
+	    x$ = x$ + " Current On Hand Quantity For " + str(number) + " Items"
+	    rem print (printer_dev)x$
+		OutVect!.addItem(x$)
+		ignore = fnblank(4)
+	endif
+
+the_end: rem --- Finished (4100)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+    goto std_exit
+
+open_tables: rem --- Call the open tables routine
+
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		gosub disp_message
+		status=912
+		exitto std_exit
+	endif
+
+	return	
+	
+disp_message: rem --- Display messages
+
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		rd_table_chans$[all]	
+
+	return
+	
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return void
+    fnend 
+	
+rem --- Create a blank line.  "void" is simply a variable; it's there to remind you that this function takes no input
+
+    def fnblank_line(void)=fnblank(columns+1)
+	
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)
+        q$=cvs(q$,4)
+        if len(cvs(q$,2))<>9 and len(cvs(q$,2))<>6 return q$
+        if len(cvs(q$,2))=9
+            q1$="[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$
+            if q1<>0
+                if q$(6,4)="0000" return q$(1,5)
+            return q$(1,5)+"-"+q$(6,4)
+            endif
+        endif
+        if len(cvs(q$,2))=6
+            q1$="[a-zA-Z][0-9][a-zA-Z][0-9][a-zA-Z][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$ else return q$(1,3)+" "+q$(4,3)
+        endif
+    fnend
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

@@ -17,8 +17,20 @@ dim ddm01$:"data_name:c(12*),description:c(30),lstrev:c(6),data_type:c(1),reserv
 dim ddm03$:"file_name:c(6),record_id:c(1*),description:c(30),reserved_str:c(33*),reserved_num:n(3*)"
 dim ddm04$:"file_name:c(6),record_id:c(1),layout_seq:c(3*),data_name:c(12),reserved_str1:c(41),fld_sep:c(1),reserved_str2:c(68*),reserved_num:n(1*),fld_repeats:n(3*),fld_occurs:n(3)"
 
+rem --- Open message table for use at the end of processing
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADS_SEQUENCES",open_opts$[1]="OTA"
+    gosub open_tables
+    ads_sequences_dev=num(open_chans$[1]),ads_sequences_tpl$=open_tpls$[1]
+
 rem --- Set the hook for dealer custom call
 
+    dropship$="N"
+    invalid_date$="N"
+    dupe_rec$="N"
+    blank_fields$=""
     custom_prog$=""
     while 1
         custom_prog$=cvs(stbl("+CUSTOM_DP_PROG",err=*break),3)
@@ -188,7 +200,7 @@ next_file:
        gosub disp_meter
     endif
 
-    rem ' skip these files -- TODO: Explain why.
+    rem --- skip these files
     if pos("."=datafile$)=1 then goto next_file
     if pos("_"=datafile$)=1 then goto next_file
     if pos("z"=cvs(datafile$,8))=1 then  goto next_file
@@ -380,7 +392,7 @@ end_ddm04:
     lock (old_file)
     print "   Copying data from  "+ddm03.file_name$+ddm03.record_id$
     print(log_dev)"   Copying data from    "+ddm03.file_name$+ddm03.record_id$
-	
+    
 next_rec:
     readrecord(old_file,end=eof)old_rec$
     if source_version=6 and datafile$="ARM-10" and old_rec$(1,3)="01G" goto next_rec
@@ -393,8 +405,38 @@ next_rec:
        goto next_rec
     endif
     for field=1 to fields
+
+rem --- Check for and warn if PO detail files contain Drop Ship information
+
+        if new_datafile$="poe-11" or new_datafile$="poe-12"
+            if cvs(old_fieldlist.name$[field],3)="CUSTOMER_NBR" or
+:              cvs(old_fieldlist.name$[field],3)="ORDER_NUMBER" or
+:              cvs(old_fieldlist.name$[field],3)="LINE_NUMBER" or
+:              cvs(old_fieldlist.name$[field],3)="SHIPTO_NBR"
+                if cvs(field(old_rec$,old_fieldlist.name$[field],err=*continue),3)<>""
+                    if new_datafile$="poe-11"
+                        print (err_dev)"There is Drop Ship information in Requisition "+old_rec.req_number$+" in line "+old_rec.po_line_nbr$+" - "+cvs(old_fieldlist.name$[field],3)+"="+cvs(field(old_rec$,old_fieldlist.name$[field]),3)+"."
+                    else
+                        print (err_dev)"There is Drop Ship information in Purchase Order "+old_rec.po_number$+" in line "+old_rec.po_line_nbr$+" - "+cvs(old_fieldlist.name$[field],3)+"="+cvs(field(old_rec$,old_fieldlist.name$[field]),3)+"."
+                    endif
+                    dropship$="Y"
+                endif
+            endif
+        endif
+
+rem --- Retrieve value$ if applicable
+
         if new_fieldlist.name$[field]=$$ then continue
         value$=field(old_rec$,old_fieldlist.name$[field],err=*continue)
+
+rem --- Get list of valid firms
+        if cvs(old_fieldlist.name$[field],3)="FIRM_ID"
+            if cvs(value$,3)<>""
+                if pos(value$=firms$,2)=0
+                    firms$=firms$+value$
+                endif
+            endif
+        endif
 
 rem --- Populate new internal sequence from old display sequence
 
@@ -479,6 +521,16 @@ rem     name from the dictionary of the source data. datafile$ is the source dat
             call custom_prog$
         endif
 
+rem --- Check value of new field for blanks if part of primary key
+        if pos(new_fieldlist.name$[field]+$0a$=key_temp$)>0
+            if cvs(value$,2)=""
+                if pos(new_fieldlist.name$[field]+$0a$=blank_fields$)=0
+                    blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
+                    print (err_dev) "field "+new_fieldlist.name$[field]+" has a blank value."
+                endif    
+            endif
+        endif
+
         attr$=fattr(old_rec$,old_fieldlist.name$[field])
         fld_sep$=attr$(3,1)
         fld_typ$=attr$(1,1)
@@ -497,6 +549,10 @@ rem     name from the dictionary of the source data. datafile$ is the source dat
               else
                  value$=pad("",8)
               endif
+              if date(jul(num(value$(1,4)),num(value$(5,2)),num(value$(7,2)),err=*next),err=*next)>"" break
+              print (err_dev)"There is an invalid date in table "+new_datafile$+". Value was "+value$+" in field "+new_fieldlist.name$[field]+" and has been changed to blanks."
+              value$=""
+              invalid_date$="Y"
               break
            case 2
            case 6
@@ -513,6 +569,10 @@ rem     name from the dictionary of the source data. datafile$ is the source dat
               break
            case 8
               value$=str(num(value$(1,4))+add_year)+value$(5)
+              if date(jul(num(value$(1,4)),num(value$(5,2)),num(value$(7,2)),err=*next),err=*next)>"" break
+              print (err_dev)"There is an invalid date in table "+new_datafile$+". Value was "+value$+" in field "+new_fieldlist.name$[field]+" and has been changed to blanks."
+              value$=""
+              invalid_date$="Y"
               break
            case 255
               if len(cvs(value$,3)) then
@@ -549,16 +609,41 @@ write_record:
     if keysize then
        k$=xkgen(new_rec$,xfin$,0)
        if len(k$)>keysize then
-          writerecord(new_file,key=k$(1,keysize),err=write_err)new_rec$
+          writerecord(new_file,key=k$(1,keysize),dom=duplicate_record,err=write_err)new_rec$
        else
-          writerecord(new_file,key=k$,err=write_err)new_rec$
+          writerecord(new_file,key=k$,dom=duplicate_record,err=write_err)new_rec$
        endif
     else
-       writerecord(new_file,err=write_err)new_rec$
+       writerecord(new_file,dom=duplicate_record,err=write_err)new_rec$
+    endif
+    goto next_rec
+
+duplicate_record:
+
+    if cvs(new_datafile$,2)="glm-06" or cvs(new_datafile$,2)="adm-19" or cvs(new_datafile$,2)="opm-14" goto next_rec
+    dupe_rec$="Y"
+    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"PRIMARY",key_temp1$,table_chans$[all],rd_stat$
+    if len(key_temp1$)>0
+        dim dupe_key$:key_temp1$
+        dupe_key$=new_rec$
+        dupe_key$=field(dupe_key$)
+    endif    
+    print (err_dev)"There are duplicate records being written to "+new_datafile$+" with a key template of"
+    if len(key_temp1$)>0
+        print (err_dev)"   "+key_temp1$
+        print (err_dev)"   and values of "+dupe_key$
+        print (err_dev)"   This key will be ignored."
+    else
+        print (err_dev)"   No key could be determined. The record value is"
+        print (err_dev)"   "+new_rec$
+        print (err_dev)"   This record will be ignored."
     endif
     goto next_rec
 
 eof:
+
+    key_temp$=""
+
     if old_file then
        close (old_file)
        old_file=0
@@ -649,17 +734,79 @@ rem    gosub make_messages
 rem    gosub make_printplus
 
     if temp_vend_ok$="N"
-        rd_meter_data$="Temporary vendor records found not ported. See log file."
+        rd_meter_data$="Temporary vendor records found not ported. See error file."
         rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
         rd_meter_action$="LST"
         gosub disp_meter
-        print "   Temporary vendor records found. See log file"
-        print (log_dev)"Temporary vendor records found without a valid stbl("+$22$+"+DP_TEMP_VEND"+$22$+")."
-        print (log_dev)"Those records were excluded from the DataPort."
-        print (log_dev)"Please set this variable up in the config file and rerun the DataPort."
-    endif    
+        print "   Temporary vendor records found. See err file"
+        print (err_dev)"Temporary vendor records found without a valid stbl("+$22$+"+DP_TEMP_VEND"+$22$+")."
+        print (err_dev)"Those records were excluded from the DataPort."
+        print (err_dev)"Please set this variable up in the config file and rerun the DataPort."
+    endif
+
+    if len(blank_fields$)>0
+        rd_meter_data$="Blank values for elements in primary keys exist. See error file for details."
+        rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+        rd_meter_action$="LST"
+        gosub disp_meter        
+        print "   Blank values for elements in primary keys exist. See error file for details."
+    endif
+    while len(blank_fields$)>0
+        print (err_dev)"Element "+blank_fields$(1,pos($0a$=blank_fields$)-1)+" has a blank value."
+        print (err_dev)"  Consider converting to a non-blank value and re-running DataPort."
+        blank_fields$=blank_fields$(pos($0a$=blank_fields$)+1)
+    wend
+
+    if dupe_rec$="Y" 
+        rd_meter_data$="Duplicate keys exist in the ported data. See error file for details."
+        rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+        rd_meter_action$="LST"
+        gosub disp_meter        
+        print "   Duplicate keys exist in the ported data. See error file for details."
+    endif
+
+    if invalid_date$="Y" 
+        rd_meter_data$="Invalid dates exist in the ported data. See error file for details."
+        rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+        rd_meter_action$="LST"
+        gosub disp_meter        
+        print "   Invalid dates exist in the ported data. See error file for details."
+    endif
+
+    if dropship$="Y" 
+        rd_meter_data$="Drop ship information exists in the source data. See error file for details."
+        rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+        rd_meter_action$="LST"
+        gosub disp_meter        
+        print "   Drop ship information exists in the ported data. See error file for details."
+    endif
+
+rem --- Populate sequence record(s)
+
+    if len(firms$)>0
+        for firms=1 to len(firms$) step 2
+            dim ads_sequences$:ads_sequences_tpl$
+            ads_sequences.firm_id$=firms$(firms,2)
+            ads_sequences.seq_id$=pad("INTERNAL_SEQ_NO",16)
+            ads_sequences.description$="Internal Sequence Number"
+            ads_sequences.active$="Y"
+            ads_sequences.seq_no_increment=1
+            ads_sequences.seq_mask$="000000000000"
+            ads_sequences.seq_query_new$="N"
+            ads_sequences.asc_comp_id$="01007514"
+            ads_sequences.asc_prod_id$="AD"
+            readrecord(ads_sequences_dev,key=ads_sequences.firm_id$+ads_sequences.seq_id$,dom=*next)ads_sequences$
+            if ads_sequences.seq_last_used<1000 ads_sequences.seq_last_used=1000
+            ads_sequences$=field(ads_sequences$)
+            writerecord(ads_sequences_dev)ads_sequences$
+        next firms    
+    endif
+
     print (log_dev)$0a$+"DataPort completed"
     print (log_dev)"DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
+
+    print (err_dev)$0a$+"DataPort completed"
+    print (err_dev)"DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
 
     rd_meter_data$="DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")
     rd_meter_proc_recs=rd_meter_total_recs
@@ -687,7 +834,7 @@ get_opm04_template:
     call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
     if status 
         print "   Could not find v8 template file for OPC_MSG_HDR. OP Messages skipped."
-        print (log_dev) "Could not find v8 template file for OPC_MSG_HDR. OP Messages skipped."
+        print (err_dev) "Could not find v8 template file for OPC_MSG_HDR. OP Messages skipped."
         goto end_of_msgs
     endif
     dim new_rec$:templates$[1]
@@ -718,7 +865,7 @@ get_opm14_template:
     call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
     if status 
         print "   Could not find v8 template file for OPC_MSG_DET. OP Message details skipped."
-        print (log_dev) "Could not find v8 template file for OPC_MSG_DET. OP Message details skipped."
+        print (err_dev) "Could not find v8 template file for OPC_MSG_DET. OP Message details skipped."
         goto end_of_msgs
     endif
     dim new_rec$:templates$[1]
@@ -763,7 +910,7 @@ rem --- First try to create the ars_custdflt record"
     call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+datafile$,rd_table_chans$[all],"CREATE",status$
     if len(status$)
         print "   Could not create the customer default table. Data skipped."
-        print (log_dev) "Could not create the customer default table. Data skipped."
+        print (err_dev) "Could not create the customer default table. Data skipped."
         goto no_cust_default
     endif
     new_file=unt
@@ -774,7 +921,7 @@ get_custdflt_template:
     call stbl("+DIR_PGM")+"adc_template.aon",1,1,ids$[all],templates$[all],status
     if status 
         print "   Could not find v8 template file for ARS_CUSTDFLT. Data skipped."
-        print (log_dev) "Could not find v8 template file for ARS_CUSTDFLT. Data skipped."
+        print (err_dev) "Could not find v8 template file for ARS_CUSTDFLT. Data skipped."
         goto no_cust_default
     endif
     dim new_rec$:templates$[1]
@@ -992,8 +1139,17 @@ get_new_template:
     print "Table Alias: ",table_alias$
     if table_alias$="" then
        print "   Data File "+file_id$+" will not be ported"
-       print (log_dev)"   Data File "+file_id$+" will not be ported"
+       print (err_dev)"   Data File "+file_id$+" will not be ported"
        goto eof
+    endif
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"PRIMARY",key_temp$,table_chans$[all],rd_stat$
+    while pos(",reserved_str:c(1)"=key_temp$)<>0
+        key_temp$=key_temp$(1,pos(",reserved_str:c(1)"=key_temp$)-1)+key_temp$(pos(",reserved_str:c(1)"=key_temp$)+18)
+    wend
+    if cvs(key_temp$,2)<>""
+        dim key_temp$:key_temp$
+        key_temp$=fattr(key_temp$,"")
     endif
 
     findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=check_for_definition)ddm_table_tpls$
@@ -1021,7 +1177,7 @@ check_for_definition:
     call stbl("+DIR_SYP")+"bac_create_table.bbj",table_alias$,destin_folder$+"/"+new_datafile$,rd_table_chans$[all],"CREATE",status$
     if len(status$) then
        print "*** ERROR ***: Couldn't create "+new_datafile$+$0a$+status$
-       print (log_dev)"*** ERROR ***: Couldn't create "+new_datafile$+$0a$+status$
+       print (err_dev)"*** ERROR ***: Couldn't create "+new_datafile$+$0a$+status$
        goto eof
     endif
     print "   New file "+new_datafile$+" created in folder "+destin_folder$
@@ -1043,7 +1199,7 @@ return
 
 undefined_file:
     print "   Data File "+file_id$+" will not be ported"
-    print (log_dev)"   Data File "+file_id$+" will not be ported"
+    print (err_dev)"   Data File "+file_id$+" will not be ported"
     goto eof
 return
 
@@ -1196,7 +1352,7 @@ reformat_address:
 
     REM ' TODO: More detail here?
     if city$="" or state$="" then
-       print(log_dev)"Error copying address fields"
+       print(err_dev)"Error copying address fields"
     endif
 
     new_rec.addr_line_1$=address$(1,24)
@@ -1221,6 +1377,34 @@ disp_meter:rem --- Display Progress Meter
 :        rd_meter_data$,
 :        rd_meter_action$
 
+    return
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:	open_end,
+:	open_tables$[all],
+:	open_opts$[all],
+:	open_chans$[all],
+:	open_tpls$[all],
+:	table_chans$[all],
+:	open_batch,
+:	open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        release
+    endif
+
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
     return
 
 eoj:

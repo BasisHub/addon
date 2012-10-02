@@ -14,30 +14,37 @@ rem --- all applications.
 
 rem --- Input Arguments:
 
-rem --- PAGE        : Current report page number
-rem --- WIDTH       : Report width in characters
-rem --- HEADINGS    : Maximum element number in heading array
-rem --- HEADINGS$[*]: Standard report headings array
-rem --- RETAIN$     : Retain full report heading array if not NULL
-rem --- WHEN$       : Standard report heading date
-rem --- CLOCK$      : Standard report heading time
-rem --- COLUMN      : Column for displaying milestone
-rem --- GLM01_DEV   : glm-01 channel number
-rem --- GLW04_DEV   : glw-04 channel number
-rem --- GLS01_DEV   : gls-01 channel number
+rem --- width               : Report width in characters (optional)
+rem --- headings            : Maximum element number in heading array
+rem --- headings$[*]        : Standard report headings array
+rem --- retain$             : Retain full report heading array if not NULL
+rem --- gls01_dev           : G/L param file channel
+rem --- glw04_dev           : G/L work file channel
+rem --- glm01_dev           : G/L master file channel
+rem --- glw04a$             : A templated string for the records of glw-04
+rem --- glm01a$             : Same but for glm-01
 
     setesc std_error
     seterr std_error
 
-    next_overlay$="";rem --- clear next_var and outvect! so bas_process_end doesn't loop...i.e., don't run anything after this
-    if OutVect!<>null() OutVect!=null()
+rem --- clear next_var and outvect! so bas_process_end doesn't loop...i.e., don't run anything after this
 
+    next_overlay$=""
+    
 rem --- Document initializations
+
+	declare BBjVector OutVect!
+	declare BBjVector HdrVect!
+	declare BBjVector BrkVect!
+	declare BBjVector TotVect!
+
+	if OutVect!<>null() then OutVect!=null()
   
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+	
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -50,25 +57,24 @@ rem --- Delete old progress meter
 
 rem --- Parameters
 
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    acct_length=num(gls01a.acct_length$)
-    m0$=gls01a.acct_output$
-    m1$=gls01a.amount_mask$
-    m0=len(m0$)
-    m1=len(m1$)
-
-
+    find record (gls01_dev, key=firm_id$+"GL00", err=std_missing_params) gls01a$
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","I","",m0$,0,m0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
+rem    acct_length=num(gls0a1.acct_length$)
+rem    m0$=gls01a.acct_output$
+rem    m1$=gls01a.amount_mask$
+rem    m0=len(m0$)
+rem    m1=len(m1$)
 
 rem --- Headings and print positions
 
     dim columns$[3,10]
     columns = 3
 
-    columns$[0,0]="Account",            columns$[0,1]="C",columns$[0,2]="15"
-    columns$[1,0]="Description",        columns$[1,1]="C",columns$[1,2]="30"
-    columns$[2,0]="Debit",              columns$[2,1]="C",columns$[2,2]="10",columns$[2,10]="T"
-    columns$[3,0]="Credit",             columns$[3,1]="C",columns$[3,2]="10",columns$[3,10]="T"
+    columns$[0,0]="Account",     columns$[0,1]="C", columns$[0,2]="15"
+    columns$[1,0]="Description", columns$[1,1]="C", columns$[1,2]="30"
+    columns$[2,0]="Debit",       columns$[2,1]="N", columns$[2,2]="10", columns$[2,3]=m1$, columns$[2,10]="T"
+    columns$[3,0]="Credit",      columns$[3,1]="N", columns$[3,2]="10", columns$[3,3]=m1$, columns$[3,10]="T"
 
 rem --- Initializations
 
@@ -109,43 +115,50 @@ rem --- Start progress meter and position file
 rem --- Get next GL Summary (glw-04) record
 
     while more
-          k$=key(glw04_dev,end=*break)
-          if pos(firm_id$=k$)<>1 break
-          read record (glw04_dev,key=k$) glw04a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-          amount=glw04a.gl_post_amt
+		k$=key(glw04_dev,end=*break)
+		if pos(firm_id$=k$)<>1 break
+		read record (glw04_dev,key=k$) glw04a$
+		call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+		amount=glw04a.gl_post_amt
 
-          rem --- Retrieve account description
+		rem --- Retrieve account description
 
-          dim glm01a$:fattr(glm01a$)
-          glm01a.firm_id$=glw04a.firm_id$
-          glm01a.gl_account$=glw04a.gl_account$
-          glm01a.gl_acct_desc$=nf$
-          k$=glm01a.firm_id$+glm01a.gl_account$
-          find record (glm01_dev,key=k$,dom=*next) glm01a$
-          description$=glm01a.gl_acct_desc$
-   
-          rem --- Format detail line fields
+		dim glm01a$:fattr(glm01a$)
+		glm01a.firm_id$=firm_id$
+		glm01a.gl_account$=glw04a.gl_account$
+		glm01a.gl_acct_desc$=nf$
+		
+		find record (glm01_dev, key=firm_id$+glw04a.gl_account$, dom=*next) glm01a$
+		description$=glm01a.gl_acct_desc$
 
-          debit$=""
-          credit$=""
-          account$=fnmask$(glw04a.gl_account$(1,acct_length),m0$)
-          if amount>0 debits=debits+amount,debit$=str(amount:m1$)
-          if amount<0 credits=credits+amount,credit$=str(abs(amount):m1$)
+		rem --- Format detail line fields
 
-          rem --- Print detail line
+		debit$=""
+		credit$=""
+		account$=fnmask$(glw04a.gl_account$(1,m0),m0$)
 
-          if lines+1>maxlines gosub set_lines
-       
-          OutVect!.addItem(account$)
-          OutVect!.addItem(description$)
-          OutVect!.addItem(debit$)
-          OutVect!.addItem(credit$)
+		if amount>0 then 
+			debits=debits+amount
+			debit$=str(amount)
+		endif
 
-  
-          lines=lines+1
+		if amount<0 then 
+			credits=credits+amount
+			credit$=str(abs(amount))
+		endif
 
-          rem --- Loop back for next summary record
+		rem --- Print detail line
+
+		if lines+1>maxlines gosub set_lines
+
+		OutVect!.addItem(account$)
+		OutVect!.addItem(description$)
+		OutVect!.addItem(debit$)
+		OutVect!.addItem(credit$)
+
+		lines=lines+1
+
+		rem --- Loop back for next summary record
 
     wend
 
@@ -153,16 +166,19 @@ rem --- All done
 
     balance=debits+credits
     total$="Total For Report"
-    debit$=str(debits:m1$)
-    credit$=str(abs(credits):m1$)
+    debit$=str(debits)
+    credit$=str(abs(credits))
     gosub print_total
-    if balance=0 goto std_exit
-    debit$=""
-    credit$=""
-    total$="Balance"
-    if balance>0 debit$=str(balance:m1$)
-    if balance<0 credit$=str(abs(balance):m1$)
-    gosub print_total
+	
+    if balance then
+	    debit$=""
+	    credit$=""
+	    total$="Balance"
+	    if balance>0 then debit$=str(balance)
+	    if balance<0 then credit$=str(abs(balance))
+	    gosub print_total
+	endif
+	
     goto std_exit
 
 set_lines: rem --- Set the line count

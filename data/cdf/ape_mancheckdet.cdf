@@ -27,49 +27,64 @@ glns!.setValue("dflt_gl",user_tpl.dflt_gl_account$)
 glns!.setValue("tot_inv",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[APE_MANCHECKDET.INVOICE_AMT.AVAL]]
+rem --- if invoice # isn't in open invoice file, invoke GL Dist grid
+
 net_paid=num(callpoint!.getUserInput())-num(callpoint!.getColumnData("APE_MANCHECKDET.DISCOUNT_AMT"))
 callpoint!.setColumnData("APE_MANCHECKDET.NET_PAID_AMT",str(net_paid))
+
 glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
 glns!.setValue("dist_amt",callpoint!.getUserInput())
 glns!.setValue("dflt_dist",user_tpl.dflt_dist_cd$)
 glns!.setValue("dflt_gl",user_tpl.dflt_gl_account$)
 glns!.setValue("tot_inv",callpoint!.getUserInput())
+
 apt_invoicehdr_dev=fnget_dev("APT_INVOICEHDR")			
 dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
 ap_type$=field(apt01a$,"AP_TYPE")
 vendor_id$=field(apt01a$,"VENDOR_ID")
 ap_type$(1)=UserObj!.getItem(num(user_tpl.ap_type_vpos$)).getText()
 vendor_id$(1)=UserObj!.getItem(num(user_tpl.vendor_id_vpos$)).getText()
+
 apt01ak1$=firm_id$+ap_type$+vendor_id$+callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+
 readrecord(apt_invoicehdr_dev,key=apt01ak1$,dom=*next)apt01a$
 if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
-	rem --- save row/column so we'll know where to set focus when we return from GL Dist
-	w!=Form!.getChildWindow(1109)
-	c!=w!.getControl(5900)
-	return_to_row=c!.getSelectedRow()
-	return_to_col=c!.getSelectedColumn()
-	rem --- invoke GL Dist form
-	gosub get_gl_tots
-	user_id$=stbl("+USER_ID")
-	dim dflt_data$[1,1]
-	dflt_data$[1,0]="GL_ACCOUNT"
-	dflt_data$[1,1]=user_tpl.dflt_gl_account$
-	key_pfx$=callpoint!.getColumnData("APE_MANCHECKDET.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE")+
-:		callpoint!.getColumnData("APE_MANCHECKDET.CHECK_NO")+callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")+
-:		callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
-	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
-:	"APE_MANCHECKDIST",
-:	user_id$,
-:	"MNT",
-:	key_pfx$,
-:	table_chans$[all],
-:	"",
-:	dflt_data$[all]
-	rem --- return focus to where we were (should be discount amt on same row)
-	c!.focus()
-	c!.accept(1,err=*next)
-	c!.startEdit(return_to_row,return_to_col+1)
-	
+
+	rem --- make sure fields (ap type, vendor ID, check#) needed to build GL Dist recs are present, and that AP type/Vendor go together
+	dont_allow$=""	
+	gosub validate_mandatory_data
+
+	if dont_allow$="Y"
+		msg_id$="AP_MANCHKWRITE"
+		gosub disp_message
+	else	
+		rem --- save row/column so we'll know where to set focus when we return from GL Dist, and run GL Dist form	
+		w!=Form!.getChildWindow(1109)
+		c!=w!.getControl(5900)
+		return_to_row=c!.getSelectedRow()
+		return_to_col=c!.getSelectedColumn()
+		rem --- invoke GL Dist form
+		gosub get_gl_tots
+		user_id$=stbl("+USER_ID")
+		dim dflt_data$[1,1]
+		dflt_data$[1,0]="GL_ACCOUNT"
+		dflt_data$[1,1]=user_tpl.dflt_gl_account$
+		key_pfx$=callpoint!.getColumnData("APE_MANCHECKDET.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE")+
+:			callpoint!.getColumnData("APE_MANCHECKDET.CHECK_NO")+callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")+
+:			callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"APE_MANCHECKDIST",
+:		user_id$,
+:		"MNT",
+:		key_pfx$,
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+		rem --- return focus to where we were (should be discount amt on same row)
+		c!.focus()
+		c!.accept(1,err=*next)
+		c!.startEdit(return_to_row,return_to_col+1)
+	endif	
 endif
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
@@ -228,3 +243,29 @@ delete_gldist:
 	wend
 return
 
+validate_mandatory_data:
+
+	dont_allow$=""
+
+	if cvs(callpoint!.getHeaderColumnData("APE_MANCHECKHDR.CHECK_DATE"),3)="" or
+:		cvs(callpoint!.getHeaderColumnData("APE_MANCHECKHDR.CHECK_NO"),3)="" or
+:		cvs(callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID"),3)="" then dont_allow$="Y"
+
+	vend_hist$=""
+	tmp_vendor_id$=callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID")
+	gosub get_vendor_history
+	if vend_hist$<>"Y" then dont_allow$="Y"
+
+return
+
+get_vendor_history:
+	apm02_dev=fnget_dev("APM_VENDHIST")				
+	dim apm02a$:fnget_tpl$("APM_VENDHIST")
+	vend_hist$=""
+	readrecord(apm02_dev,key=firm_id$+tmp_vendor_id$+
+:		callpoint!.getHeaderColumnData("APE_MANCHECKHDR.AP_TYPE"),dom=*next)apm02a$
+	if apm02a.firm_id$+apm02a.vendor_id$+apm02a.ap_type$=firm_id$+tmp_vendor_id$+
+:		callpoint!.getHeaderColumnData("APE_MANCHECKHDR.AP_TYPE")
+			vend_hist$="Y"
+	endif
+return

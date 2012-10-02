@@ -23,7 +23,13 @@ files$[1]="IVS_PARAMS",options$[1]="OTA"
 files$[2]="IVM_ITEMWHSE",options$[2]="OTA"
 call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                 chans$[all],templates$[all],table_chans$[all],batch,status$
-if status$<>""  goto std_exit
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
 
 ivs01_dev=num(chans$[1])
 
