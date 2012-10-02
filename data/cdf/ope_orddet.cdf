@@ -1,3 +1,10 @@
+[[OPE_ORDDET.LINE_CODE.AINP]]
+print "Det:LINE_CODE:AINP"; rem debug
+
+rem --- Grab and print what's in the input buffer
+
+	line_code$ = callpoint!.getUserInput()
+	print "Here's the pre-validate value of UserInput: ",line_code$
 [[OPE_ORDDET.ITEM_ID.AINV]]
 print "Det:ITEM_ID.AINV"; rem debug
 

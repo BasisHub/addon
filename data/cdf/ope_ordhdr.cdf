@@ -1,3 +1,25 @@
+[[OPE_ORDHDR.FREIGHT_AMT.AVAL]]
+rem --- Recalculate totals
+
+	disc_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
+	freight_amt = num(callpoint!.getUserInput())
+
+	gosub disp_totals
+[[OPE_ORDHDR.DISCOUNT_AMT.AVAL]]
+rem --- Recalculate totals
+
+	disc_amt = num(callpoint!.getUserInput())
+	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+
+	gosub disp_totals
+[[OPE_ORDHDR.DISCOUNT_AMT.BINP]]
+rem --- Now we've been on the Totals tab
+
+	callpoint!.setDevObject("was_on_tot_tab","Y")
+[[OPE_ORDHDR.FREIGHT_AMT.BINP]]
+rem --- Now we've been on the Totals tab
+
+	callpoint!.setDevObject("was_on_tot_tab","Y")
 [[OPE_ORDHDR.BWAR]]
 rem --- Calculate Taxes
 
@@ -52,17 +74,22 @@ rem --- Set discount code for use in Order Totals
 	new_disc_amt = round(disccode_rec.disc_percent * num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")) / 100, 2)
 	callpoint!.setColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(new_disc_amt))
 
+	disc_amt = new_disc_amt
+	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+
 	gosub disp_totals
 [[OPE_ORDHDR.AREC]]
 rem --- Clear availability information
 	
 	gosub clear_avail
+	callpoint!.setDevObject("was_on_tot_tab","N")
 [[OPE_ORDHDR.ARAR]]
 print "Hdr:ARAR"; rem debug
 
 rem --- Set data
 
 	user_tpl.order_date$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_DATE")
+	callpoint!.setDevObject("was_on_tot_tab","N")
 
 rem --- Set flags
 
@@ -138,19 +165,6 @@ rem --- Is flag down?
 		break; rem --- exit callpoint
 	endif	
 
-rem --- Calculate taxes and write it back
-	
-rem jpb	discount_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
-rem jpb	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
-rem jpb	gosub get_disk_rec
-
-rem jpb	if record_found then
-rem jpb		ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt)
-rem jpb		ordhdr_rec$ = field(ordhdr_rec$)
-rem jpb		write record (ordhdr_dev) ordhdr_rec$
-rem jpb		callpoint!.setStatus("SETORIG")
-rem jpb	endif
-
 rem --- Credit action
 
 	if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
@@ -211,7 +225,6 @@ rem --- Has customer and order number been entered?
 
 rem --- Check Ship-to's
 
-	rem if !user_tpl.shipto_warned then
 		shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
 		shipto_var$  = "OPE_ORDHDR.SHIPTO_NO"
 
@@ -232,8 +245,23 @@ rem --- Check Ship-to's
 				break; rem --- exit callpoint
 			endif
 		endif
-	rem endif
 
+rem --- Check to see if we need to go to the totals tab
+
+rem --- This is going to need help from Sam to figure out how to focus on the Totals tab.
+rem	if pos(callpoint!.getDevObject("totals_warn")="24")>0
+rem		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0 then
+rem			callpoint!.setMessage("OP_TOTALS_TAB")
+rem			focusme! = util.forceFocus(callpoint!, "OPE_ORDHDR.SLSPSN_CODE")
+
+rem			focusme!.focus()
+rem			forceFocus(Callpoint callpoint!, BBjString data_name$)
+rem			getControl(Callpoint callpoint!, BBjString data_name$)
+rem			callpoint!.setFocus("OPE_ORDHDR.SLSPSN_CODE")
+rem			callpoint!.setStatus("ABORT")
+rem			break
+rem		endif
+rem	endif
 [[OPE_ORDHDR.CUSTOMER_ID.AVAL]]
 print "CUSTOMER_ID:AVAL"; rem debug
 	
@@ -282,6 +310,11 @@ rem --- Set Commission Percent
 	gosub get_comm_percent
 [[OPE_ORDHDR.AOPT-CRCH]]
 print "Hdr:AOPT:CRCH"; rem debug
+
+rem --- Force totalling open orders for credit status
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.forceTotalOpenOrders()
 
 rem --- Do credit status (management)
 
@@ -543,6 +576,7 @@ rem --- Restrict lookup to orders
 
 	if selected_key$<>"" then 
 		callpoint!.setStatus("RECORD:[" + selected_key$ +"]")
+		callpoint!.setStatus("ACTIVATE")
 	else
 		callpoint!.setStatus("ABORT")
 	endif
@@ -2026,12 +2060,12 @@ rem		ordhdr_rec$ = util.copyFields(ordhdr_tpl$, callpoint!)
 
 rem ==========================================================================
 disp_totals: rem --- Get order totals and display, save header totals
+rem IN: disc_amt
+rem IN: freight_amt
 rem ==========================================================================
 
 	ttl_ext_price = num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
-	disc_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	tax_amt = num(callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT"))
-	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	sub_tot = ttl_ext_price - disc_amt
 	net_sales = sub_tot + tax_amt + freight_amt
 
@@ -2109,6 +2143,8 @@ rem --- get AR Params
 
 	dim ars01a$:open_tpls$[4]
 	read record (num(open_chans$[4]), key=firm_id$+"AR00") ars01a$
+	if ars01a.op_totals_warn$="" ars01a.op_totals_warn$="4"
+	callpoint!.setDevObject("totals_warn",ars01a.op_totals_warn$)
 
 	dim ars_credit$:open_tpls$[7]
 	read record (num(open_chans$[7]), key=firm_id$+"AR01") ars_credit$

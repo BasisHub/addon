@@ -1,3 +1,66 @@
+[[IVM_ITEMWHSE.ARAR]]
+rem --- Get total on Open PO lines
+
+	podet_dev=fnget_dev("POE_PODET")
+	dim podet_tpl$:fnget_tpl$("POE_PODET")
+
+	whse$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
+	item$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
+	po_qty=0
+
+	read(podet_dev,key=firm_id$+whse$+item$,knum="WHSE_ITEM",dom=*next)
+
+	while 1
+		read record (podet_dev,end=*break) podet_tpl$
+		if firm_id$<>podet_tpl.firm_id$ break
+		if whse$<>podet_tpl.warehouse_id$ break
+		if item$<>podet_tpl.item_id$ break
+		po_qty = po_qty + (podet_tpl.qty_ordered - podet_tpl.qty_received)
+	wend
+
+	callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_PO",str(po_qty))
+
+rem --- Get total on Open SO lines
+
+	opdet_dev=fnget_dev("OPE_ORDDET")
+	dim opdet_tpl$:fnget_tpl$("OPE_ORDDET")
+
+	op_qty=0
+
+	read(opdet_dev,key=firm_id$+item$+whse$,knum="AO_ITEM_WH_CUST",dom=*next)
+
+	while 1
+		read record (opdet_dev,end=*break) opdet_tpl$
+		if firm_id$<>opdet_tpl.firm_id$ break
+		if whse$<>opdet_tpl.warehouse_id$ break
+		if item$<>opdet_tpl.item_id$ break
+		if opdet_tpl.commit_flag$ = "Y"
+			op_qty = op_qty + opdet_tpl.qty_ordered
+		endif
+	wend
+
+	callpoint!.setColumnData("<<DISPLAY>>.COMMIT_SO",str(op_qty))
+
+rem --- Get total on WO Finished Goods (On Order)
+
+	womast_dev=fnget_dev("SFE_WOMASTR")
+	dim womast_tpl$:fnget_tpl$("SFE_WOMASTR")
+
+	womast_qty=0
+
+	read(womast_dev,key=firm_id$+whse$+item$,knum="AO_WH_ITM_LOC_WO",dom=*next)
+
+	while 1
+		read record (womast_dev,end=*break) womast_tpl$
+		if firm_id$<>womast_tpl.firm_id$ break
+		if whse$<>womast_tpl.warehouse_id$ break
+		if item$<>womast_tpl.item_id$ break
+		if womast_tpl.wo_status$ = "O"
+			womast_qty = womast_qty + (womast_tpl.sch_prod_qty - womast_tpl.qty_cls_todt)
+		endif
+	wend
+
+	callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_WO",str(womast_qty))
 [[IVM_ITEMWHSE.BDEL]]
 rem --- Allow this warehouse to be deleted?
 
@@ -59,6 +122,15 @@ if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and callpoin
 [[IVM_ITEMWHSE.<CUSTOM>]]
 #include std_missing_params.src
 [[IVM_ITEMWHSE.BSHO]]
+rem --- Open extra tables
+
+num_files=3
+dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+open_tables$[1]="POE_PODET",open_opts$[1]="OTA"
+open_tables$[2]="OPE_ORDDET",open_opts$[2]="OTA"
+open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
+gosub open_tables
+
 rem --- Get IV params
 
 ivs01_dev=fnget_dev("IVS_PARAMS")

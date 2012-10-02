@@ -305,10 +305,6 @@ rem --- retrieve template for GLW_DAILYDETAIL record key
     call sypdir$+"bac_key_template.bbj","GLW_DAILYDETAIL","PRIMARY",glw11a_key_tpl$,table_chans$[all],status$
     dim glw11a_key$:glw11a_key_tpl$
 
-rem --- retrieve template for OPE_PRNTLIST record key
-    call sypdir$+"bac_key_template.bbj","OPE_PRNTLIST","PRIMARY",ope04a_key_tpl$,table_chans$[all],status$
-    dim ope04a_key$:ope04a_key_tpl$
-
 rem --- retrieve template for OPE_ORDDET record key
 
     call sypdir$+"bac_key_template.bbj","OPE_ORDDET","PRIMARY",ope11a_key_tpl$,table_chans$[all],status$
@@ -326,24 +322,42 @@ rem --- gosub sort_by_invno
 
 rem --- Initial Read
 
-    if seq$="C" keynum$="PRIMARY" else keynum$="ORDER_BY_CUST"
-    read (ope04_dev, key=firm_id$+"I", knum=keynum$, dom=*next)
+	sql_prep$=""
+	sql_prep$=sql_prep$+"SELECT ope_prntlist.firm_id, ope_prntlist.customer_id,"
+	sql_prep$=sql_prep$+"       ope_prntlist.order_no, ope_ordhdr.ar_inv_no"
+	sql_prep$=sql_prep$+"  FROM ope_prntlist INNER JOIN ope_ordhdr"
+	sql_prep$=sql_prep$+"     ON ope_prntlist.firm_id = ope_ordhdr.firm_id AND"
+	sql_prep$=sql_prep$+"        ope_prntlist.customer_id = ope_ordhdr.customer_id AND"
+	sql_prep$=sql_prep$+"        ope_prntlist.order_no = ope_ordhdr.order_no"
+	sql_prep$=sql_prep$+"  WHERE ope_prntlist.firm_id = '"+firm_id$+"' AND ope_prntlist.ordinv_flag='I'"
+	if seq$="C"
+		sql_prep$=sql_prep$+"  ORDER BY ope_prntlist.customer_id, ope_prntlist.order_no"
+	else
+		sql_prep$=sql_prep$+"  ORDER BY ope_ordhdr.ar_inv_no"
+	endif
+
+    sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
+rem    read (ope04_dev, key=firm_id$+"I", knum=keynum$, dom=*next)
 
 rem --- Main Read
 
     while more
         precision 4; rem s/b inventory prec?
         items$=""
-        read record (ope04_dev, end=*break) ope04a$
-        if ope04a.firm_id$ <> firm_id$ or ope04a.ordinv_flag$ <> "I" then break
+		read_tpl$=sqlfetch(sql_chan,err=*break) 
 
 rem --- Check to see if record is in use in Invoice Entry
-		call stbl("+DIR_SYP")+"bac_lock_record.bbj","OPE_INVHDR",firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$,"C","",0,table_chans$[all],lock_stat$
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj","OPE_INVHDR",firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$,"C","",0,table_chans$[all],lock_stat$
 		if lock_stat$="ERR_LOCKED"
 			continue
 		endif
 		
-        read record (ope01_dev, key=firm_id$+"  "+ope04a$.customer_id$+ope04a.order_no$, dom=*continue) ope01a$
+        read record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$, dom=*continue) ope01a$
         if ope01a.print_status$<>"Y" then continue
         
         if pos(ope01a.lock_status$="12")<>0 then 
@@ -355,7 +369,7 @@ rem --- Check to see if record is in use in Invoice Entry
             find record (ope41_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$, dom=*next) ope41a$
         endif
 
-        extract record (ope01_dev, key=firm_id$+"  "+ope04a$.customer_id$+ope04a.order_no$) ope01a$
+        extract record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$) ope01a$
         ope01a.lock_status$="S"
         ope01a$ = field(ope01a$)
         write record (ope01_dev) ope01a$

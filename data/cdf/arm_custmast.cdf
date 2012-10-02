@@ -84,6 +84,7 @@ rem --- assume this should only run if OP installed...
 		msg_opt$=""
 		gosub disp_message
 	endif
+	callpoint!.setStatus("ACTIVATE")
 [[ARM_CUSTMAST.AREC]]
 rem --- notes about defaults, other init:
 rem --- if cm$ installed, and ars01c.hold_new$ is "Y", then default arm02a.cred_hold$ to "Y"

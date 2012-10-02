@@ -11,8 +11,8 @@ rem ==========================================================================
     use java.util.HashMap
 
     class public OrderHelper
-
         field private BBjString className$ = "OrderHelper"
+        field protected static BBjInt ALWAYS_TOTAL_OPEN_ORDERS% = 1
         field private BBjString firm_id$
         field private BBjInt precision% 
         field public BBjString LotSerialFlag$
@@ -58,7 +58,7 @@ rem ==========================================================================
 
         field public BBjVector DtlVect!
         field protected BBjString Cust_id$
-        field public BBjString Order_no$
+        field protected BBjString Order_no$
         field public BBjString Inv_type$
         field public BBjString TaxCode$
 
@@ -99,7 +99,7 @@ rem ==========================================================================
             #callpoint! = pCallpoint!
             #dtl_tmpl$  = p_dtl_tmpl$
 
-            #OverCreditLimit% = -1
+            #forceTotalOpenOrders()
 
             if !util.isTableChansSet() then
                 if pTableChans! = null() then
@@ -111,21 +111,52 @@ rem ==========================================================================
 
         methodend
         
-    rem --- Setter and getter for customer ID.  Set needs to check for previous customer
-    rem --- Note: this means that #Cust_id$ = p_cust_id$ is only legal here
-    rem --- Everywhere else use #setCust_id(p_cust_id$)
-        
+        rem /**
+        rem  * Set this customer id.
+        rem  *
+        rem  * Sets the customer id, and signals to recalculate credit limit if
+        rem  * the customer id has changed.
+        rem  *
+        rem  * @param BBjString customer id
+        rem  */
         method public void setCust_id(BBjString p_cust_id$)
-            
             if p_cust_id$ <> #Cust_id$ then
-                #OverCreditLimit% = -1; rem --- signal that credit limit should be recaculated
+                #forceTotalOpenOrders()
             endif
-            
             #Cust_id$ = p_cust_id$
         methodend
         
+        rem /**
+        rem  * Get this customer id.
+        rem  *
+        rem  * @return BBjString customer id
+        rem  */
         method public BBjString getCust_id()
             methodret #Cust_id$
+        methodend
+        
+        rem /**
+        rem  * Set this order number.
+        rem  *
+        rem  * Sets the order number, and signals to recalculate credit limit if
+        rem  * the order number has changed.
+        rem  *
+        rem  * @parm BBjString order number
+        rem  */
+        method public void setOrder_no(BBjString p_order_no$)
+            if p_order_no$ <> #Order_no$ then
+                #forceTotalOpenOrders()
+            endif
+            #Order_no$ = p_order_no$
+        methodend
+        
+        rem /**
+        rem  * Get this order number.
+        rem  *
+        rem  * @return BBjString order number
+        rem  */
+        method public BBjString getOrder_no()
+            methodret #Order_no$
         methodend
 
     rem --- Total order totals from passed detail vector
@@ -321,7 +352,7 @@ rem --- Return Taxable Amount from detail line vector
         rem --- Inits
 
             #setCust_id(p_cust_id$)
-            #Order_no$ = p_order_no$
+            #setOrder_no(p_order_no$)
             #Inv_type$ = p_inv_type$
 
             #getPrecision()
@@ -461,7 +492,7 @@ rem --- Return Taxable Amount from detail line vector
             endif
 
             #setCust_id(p_cust_id$)
-            #Order_no$ = p_order_no$
+            #setOrder_no(p_order_no$)
             ttl_lot_serial = 0
             more = 1
             dim ordlsdet_rec$:#lotSerialTmpl$
@@ -523,7 +554,7 @@ rem --- Return Taxable Amount from detail line vector
 
         method public void newOrder()
             rem #Cust_id$ = ""; rem save the customer ID so some calcs don't have to be rerun
-            #Order_no$ = ""
+            #setOrder_no("")
             #Inv_type$ = ""
             #extPrice = 0
             #taxable = 0
@@ -623,18 +654,22 @@ rem --- Return Taxable Amount from detail line vector
 
         methodend
 
-    rem --- Is there a Credit Hold or over credit limit condition?
-    rem --- Set Credit Limit: use fields if set (order can be null)
+        rem /**
+        rem  * Check if this customer is on credit hold or over their credit limit.
+        rem  *
+        rem  * For this customer, sums open invoices and sums past due 
+        rem  * invoices which can be accessed using getTotalAging() and 
+        rem  * getMaxPastDue() methods. It they haven't already been totalled
+        rem  * for this customer, sums open orders, sums backorders, and sums 
+        rem  * held orders which can be accessed using getOpenOrderAmount(), 
+        rem  * getOpenBoAmount() and getHeldOrderAmount() methods. Cust_id$
+        rem  * must be set before calling this method. Setting Order_no$ is
+        rem  * optional.
+        rem  *
+        rem  * @return BBjInt 0 = not over credit limit and not on credit hold
+        rem  *                1 = over credit limit or on credit hold
+        rem  */
         method public BBjInt calcOverCreditLimit()
-            if #Cust_id$ = "" then
-                throw #className$ + ": calcOverCreditLimit(): You must setCust_id() before calling this method", 11
-            endif
-
-            methodret #calcOverCreditLimit(#Cust_id$, #Order_no$)
-        methodend
-
-        method public BBjInt calcOverCreditLimit(BBjString p_cust_id$, BBjString p_order_no$)
-
             rem --- get Total Sales Amount for this order
             this_total_sale = #getOrderTotalSales()
             
@@ -895,7 +930,7 @@ rem --- Return Taxable Amount from detail line vector
         rem  */
         method public void totalOpenOrders()
             rem --- for performance reasons, skip if open orders previously summed
-            if #OverCreditLimit% = -1 then
+            if #OverCreditLimit% = -1 or #ALWAYS_TOTAL_OPEN_ORDERS% then
                 #OpenOrderAmount = 0
                 #OpenBoAmount = 0
                 #HeldOrderAmount = 0
@@ -936,8 +971,20 @@ rem --- Return Taxable Amount from detail line vector
             endif
         methodend
 
+        rem /**
+        rem  * Force re-totalling of open orders.
+        rem  *
+        rem  * Forces re-totalling open orders in calcOverCreditLimit() and 
+        rem  * totalOpenOrders() even if #ALWAYS_TOTAL_OPEN_ORDERS% is turned
+        rem  * off in custom code.
+        rem  */
+        method public void forceTotalOpenOrders()
+            #OverCreditLimit% = -1
+        methodend
+
     rem --- Accessor methods for parameter set by calcOverCreditLimit()
 
+        rem /**
         rem  * Get credit hold reason for this customer.
         rem  *
         rem  * For this customer, returns reason for credit hold. Must execute 
@@ -949,6 +996,7 @@ rem --- Return Taxable Amount from detail line vector
             methodret #CreditHoldReason$
         methodend
 
+        rem /**
         rem  * Get sum of open invoices for this customer.
         rem  *
         rem  * For this customer, returns the sums of open invoices from 
@@ -961,6 +1009,7 @@ rem --- Return Taxable Amount from detail line vector
             methodret #TotalAging
         methodend
 
+        rem /**
         rem  * Get sum of past due invoices for this customer.
         rem  *
         rem  * For this customer, returns the sums of past due invoices from 
@@ -973,6 +1022,7 @@ rem --- Return Taxable Amount from detail line vector
             methodret #MaxPastDue
         methodend
 
+        rem /**
         rem  * Get sum of open orders for this customer.
         rem  *
         rem  * For this customer, returns the sums of open orders from 
@@ -985,6 +1035,7 @@ rem --- Return Taxable Amount from detail line vector
             methodret #OpenOrderAmount
         methodend
 
+        rem /**
         rem  * Get sum of open backorders for this customer.
         rem  *
         rem  * For this customer, returns the sums of open backorders from 
@@ -997,6 +1048,7 @@ rem --- Return Taxable Amount from detail line vector
             methodret #OpenBoAmount
         methodend
 
+        rem /**
         rem  * Get sum of held orders for this customer.
         rem  *
         rem  * For this customer, returns the sums of held orders from 
