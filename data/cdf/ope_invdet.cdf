@@ -566,6 +566,7 @@ rem --- Is this item lot/serial?
 			callpoint!.setDevObject("ord_qty",       callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
 			callpoint!.setDevObject("dropship_line", user_tpl.line_dropship$)
 			callpoint!.setDevObject("invoice_type",  callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE"))
+			callpoint!.setDevObject("unit_cost",       callpoint!.getColumnData("OPE_INVDET.UNIT_COST"))
 
 			grid!.focus()
 
@@ -1007,12 +1008,36 @@ rem --- Recalc quantities and extended price
 rem ==========================================================================
 disp_grid_totals: rem --- Get order totals and display, save header totals
 rem ==========================================================================
-
 	gosub calc_grid_totals
 
 	tamt! = UserObj!.getItem(user_tpl.ord_tot_obj)
 	tamt!.setValue(ttl_ext_price)
 	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_SALES", str(ttl_ext_price))
+	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(ttl_ext_price))
+	disc_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	sub_tot = num(callpoint!.getHeaderColumnData("<<DISPLAY>>.SUBTOTAL"))
+	tax_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.TAX_AMOUNT"))
+	freight_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	sub_tot = ttl_ext_price - disc_amt
+	net_sales = sub_tot + tax_amt + freight_amt
+	totamt! = UserObj!.getItem(num(callpoint!.getDevObject("total_sales_disp")))
+	totamt!.setValue(ttl_ext_price)
+	subamt! = UserObj!.getItem(num(callpoint!.getDevObject("subtot_disp")))
+	subamt!.setValue(sub_tot)
+	netamt! = UserObj!.getItem(num(callpoint!.getDevObject("net_sales_disp")))
+	netamt!.setValue(net_sales)
+	taxamt! = UserObj!.getItem(num(callpoint!.getDevObject("tax_amt_disp")))
+	taxamt!.setValue(ttl_tax)
+
+rem --- Only activate the next 2 lines if you have enabled the Total Cost amount on the Totals tab
+rem	costamt! = UserObj!.getItem(num(callpoint!.getDevObject("total_cost")))
+rem	costamt!.setValue(ttl_ext_cost)
+
+	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_COST",str(ttl_ext_cost))
+	callpoint!.setHeaderColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
+	callpoint!.setHeaderColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
+	callpoint!.setHeaderColumnData("OPE_INVHDR.TAX_AMOUNT", str(ttl_tax))
+
 	callpoint!.setStatus("REFRESH")
 
 	return
@@ -1026,9 +1051,17 @@ rem ==========================================================================
 
 	if ordHelp!.getInv_type() = "" then
 		ttl_ext_price = 0
+		ttl_ext_cost = 0
+		ttl_taxable = 0
 	else
-		ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)) )
+		ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
+		ttl_ext_cost = ordHelp!.totalCost( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
+		ttl_taxable = ordHelp!.totalTaxable( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
 	endif
+
+	disc_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	freight_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable)
 
 	return
 

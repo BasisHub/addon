@@ -55,7 +55,7 @@ lock_type$="L"
 lock_status$=""
 lock_disp$="M"
 
-call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 if lock_status$=""
 	callpoint!.setStatus("EXIT")
 else

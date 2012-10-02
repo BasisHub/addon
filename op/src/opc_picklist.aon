@@ -37,6 +37,7 @@ rem --- Types of calls
 	
 rem --- Use statements and Declares
 
+	use ::ado_util.src::util
     use ::ado_func.src::func
     use ::ado_pdf.src::PDFHelper
     use ::sys/prog/bao_callpoint.bbj::Callpoint
@@ -298,8 +299,17 @@ rem --- Main Read
         cust_id$ = str( custIds!.getItem(next_item) )
         order_no$ = str( orderNos!.getItem(next_item) )
 
-		read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$
+		if type = on_demand
+			ope01a$ = util.copyFields(fattr(ope01a$), callpoint!)
+		else
+			read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$
+		endif
 
+rem --- Set Firm ID for Credit Review and Release orders
+		if cvs(ope01a.firm_id$,3)=""
+			ope01a.firm_id$ = firm_id$
+		endif
+		
         if type = on_demand and ope01a.invoice_type$="S" then
             msg_id$="OP_PRINTPRICES"
             gosub disp_message
@@ -557,9 +567,10 @@ rem --- Updates and final processing
         endif  
 
         ope01a.lock_status$="N";rem --- really?  If on-demand, I'll be returning to OE w/ order up... shouldn't it be locked?
-        ope01a$=field(ope01a$)
-        write record (ordhdr_dev) ope01a$
-        callpoint!.setStatus("SETORIG")
+		if status <> 999 and type = on_demand ope01a.print_status$="Y"
+		ope01a$=field(ope01a$)
+		write record (ordhdr_dev) ope01a$
+rem        callpoint!.setStatus("SETORIG")
 
         if ope01a.print_status$="Y"
             remove (prntlist_dev,key=firm_id$+ope01a.ordinv_flag$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
@@ -608,10 +619,11 @@ rem --- Clear Print Flags
 				endif
 
 				if ope01a.print_status$<>"Y" then ope01a.print_status$="N"
+				if status <> 999 and type = on_demand ope01a.print_status$="Y"
 				ope01a$=field(ope01a$)
 				write record (ordhdr_dev) ope01a$
 			endif
-				
+			
 			if ope01a.print_status$="Y" then
 				remove (prntlist_dev,key=ope04a.firm_id$+ope04a.ordinv_flag$+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$)
 			endif  

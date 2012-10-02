@@ -66,14 +66,11 @@ rem --- Open needed files
     dim arm10a$:open_tpls$[2]
     dim ars01a$:open_tpls$[3]
     dim ivs01a$:open_tpls$[4]
-    dim ope01a$:open_tpls$[5]
     dim ope03a$:open_tpls$[7]
     dim ope11a$:open_tpls$[8]
     dim opm02a$:open_tpls$[9]
     dim ars01c$:open_tpls$[10]
     
-    ope01a_tmpl$ = open_tpls$[5]; rem save header template
-
 rem --- Retrieve parameter record(s)
 
     find record (ars01c_dev, key=firm_id$+"AR01", err=std_missing_params) ars01c$
@@ -85,7 +82,7 @@ rem --- Initialize Data
     
     if start_block then
         found = 0
-        find record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ope01a$
+        find record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) 
         found = 1
     endif
     
@@ -95,7 +92,7 @@ rem --- Initialize Data
     
 rem --- Has order/invoice been printed?
 
-    if ope01a.print_status$ = "Y" then
+    if callpoint!.getColumnData("PRINT_STATUS") = "Y" then
     
         rem --- Exit silently
     
@@ -111,14 +108,11 @@ rem --- Has order/invoice been printed?
 
 rem --- Check For Quotes
 
-    if ope01a.invoice_type$="P" then
+    if callpoint!.getColumnData("INVOICE_TYPE")="P" then
         status$="This is a Quote"
         backorderedControl!.setText(status$)
         
-        extract record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$) ope01a$
-        util.copyFields(ope01a_tmpl$, callpoint!)
-        ope01a.credit_flag$ = ""
-        write record (ope01_dev) ope01a$
+        callpoint!.setColumnData("CREDIT_FLAG","")
         callpoint!.setStatus("SETORIG")
         
         action$ = "Q"
@@ -127,7 +121,7 @@ rem --- Check For Quotes
     
 rem --- Credit memos don't get processed
 
-    if ope01a.total_sales <=0 then
+    if num(callpoint!.getColumnData("TOTAL_SALES")) <=0 then
         action$ = "M"
         backorderedControl!.setText("Credit Memo: no processing")
         goto final_updates
@@ -154,7 +148,7 @@ rem --- Is credit ok?
     if !over_credit_limit then
         status$="Credit is OK"
     else
-        if ope01a.credit_flag$="R" then 
+        if callpoint!.getColumnData("CREDIT_FLAG")="R" then 
             status$="Order is Released"
         endif
     endif
@@ -173,7 +167,7 @@ display_form: rem --- Display
     dflt_data$[1,0] = "STATUS_MESSAGE"
     dflt_data$[1,1] = credit_hold_reason$
     dflt_data$[2,0] = "AR_TERMS_CODE"
-    dflt_data$[2,1] = ope01a.terms_code$
+    dflt_data$[2,1] = callpoint!.getColumnData("TERMS_CODE")
     
     credit_action = 0
     callpoint!.setDevObject("cust_id", cust_id$)
@@ -224,7 +218,7 @@ display_form: rem --- Display
         rem --- Delete order
         
             action$="D"
-            ope01a.credit_flag$=""
+            callpoint!.setColumnData("CREDIT_FLAG","")
             break
             
         case default
@@ -239,13 +233,8 @@ rem --- Update Tickler File
 
 rem --- Update order header file
 
-    save_credit_flag$ = ope01a.credit_flag$
-    util.copyFields(ope01a_tmpl$, callpoint!)
-    ope01a.credit_flag$ = save_credit_flag$
-    ope01a.lock_status$ = "N"
-    ope01a$ =field(ope01a$)
-    write record (ope01_dev) ope01a$
-    callpoint!.setStatus("SETORIG")
+    callpoint!.setColumnData("LOCK_STATUS","N")
+    callpoint!.setStatus("SAVE")
     
     callpoint!.setDevObject("credit_action_done", "Y")
     
@@ -270,7 +259,7 @@ rem --- Find only tickler records for this order
     
     rem --- Found and no need to remove or update
     
-        if ope01a.order_date$ = ope03a.rev_date$ and ope01a.credit_flag$="C" then 
+        if callpoint!.getColumnData("ORDER_DATE") = ope03a.rev_date$ and callpoint!.getColumnData("CREDIT_FLAG")="C" then 
             update = 0
             break
         endif
@@ -284,10 +273,10 @@ rem --- Find only tickler records for this order
 
 rem --- Update tickler file with new record
     
-    if ope01a.credit_flag$="C" and update then
+    if callpoint!.getColumnData("CREDIT_FLAG")="C" and update then
         dim ope03a$:fattr(ope03a$)
         ope03a.firm_id$ = firm_id$
-        ope03a.rev_date$ = ope01a.order_date$
+        ope03a.rev_date$ = callpoint!.getColumnData("ORDER_DATE")
         ope03a.customer_id$ = cust_id$
         ope03a.order_no$ = order_no$
         write record (ope03_dev) ope03a$

@@ -135,7 +135,7 @@ rem ==========================================================================
 
     rem --- Total order totals from passed detail vector
 
-        method public BBjNumber totalSales(BBjVector pDtlVect!)
+        method public BBjNumber totalSales(BBjVector pDtlVect!, Callpoint callpoint!)
 
             if #dtl_tmpl$ = "" then
                 throw #className$+": totalSales(): You must pass the detail template to use this method", 258
@@ -164,7 +164,7 @@ rem ==========================================================================
 
                 rem --- GridRowDeleteStatus() does not return the correct status because the vector it's based on isn't built
 
-                    if cvs(dtl_rec$, 2) <> "" and #callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
+                    if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
                         read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
 
                         if dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P" then
@@ -181,6 +181,111 @@ rem ==========================================================================
             endif
 
             methodret ttl_sales
+
+        methodend
+
+    rem --- Total cost totals from passed detail vector
+
+        method public BBjNumber totalCost(BBjVector pDtlVect!, Callpoint callpoint!)
+
+            if #dtl_tmpl$ = "" then
+                throw #className$+": totalSales(): You must pass the detail template to use this method", 258
+            endif
+
+            if #Inv_type$ = "" then
+                throw #className$+": totalSales(): You must setInv_type() (header invoice type) before you use this method", 259
+            endif
+
+            if #lineCodeDev% = 0 then
+                data_name$ = "OPC_LINECODE"
+                #lineCodeDev%  = int(util.getDev(data_name$))
+                #lineCodeTmpl$ = util.getTmpl(data_name$)
+            endif
+
+            #getPrecision()
+            precision #precision%
+            ttl_cost = 0
+
+            dim dtl_rec$:#dtl_tmpl$
+            dim linecode_rec$:#lineCodeTmpl$
+
+            if pDtlVect! <> null() and pDtlVect!.size() then
+                for i = 0 to pDtlVect!.size() - 1
+                    dtl_rec$ = str(pDtlVect!.getItem(i))
+
+                    if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
+                        read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
+
+                        if dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P" then
+                            if pos(linecode_rec.line_type$="SPN") then
+                                ttl_cost = ttl_cost + (dtl_rec.unit_cost * dtl_rec.qty_shipped)
+                            endif    
+                        endif
+                    endif
+                next i
+            endif
+
+            methodret ttl_cost
+
+        methodend
+
+
+rem --- Return Taxable Amount from detail line vector
+
+        method public BBjNumber totalTaxable(BBjVector pDtlVect!, Callpoint callpoint!)
+
+            if #dtl_tmpl$ = "" then
+                throw #className$+": totalSales(): You must pass the detail template to use this method", 258
+            endif
+
+            if #Inv_type$ = "" then
+                throw #className$+": totalSales(): You must setInv_type() (header invoice type) before you use this method", 259
+            endif
+
+            if #lineCodeDev% = 0 then
+                data_name$ = "OPC_LINECODE"
+                #lineCodeDev%  = int(util.getDev(data_name$))
+                #lineCodeTmpl$ = util.getTmpl(data_name$)
+            endif
+
+            if #itemMastDev% = 0 then
+                data_name$ = "IVM_ITEMMAST"
+                #itemMastDev%  = int(util.getDev(data_name$))
+                #itemMastTmpl$ = util.getTmpl(data_name$)
+            endif
+
+            #getPrecision()
+            precision #precision%
+            ttl_taxable = 0
+
+            dim dtl_rec$:#dtl_tmpl$
+            dim linecode_rec$:#lineCodeTmpl$
+            dim item_rec$:#itemMastTmpl$
+
+            if pDtlVect! <> null() and pDtlVect!.size() then
+                for i = 0 to pDtlVect!.size() - 1
+                    dtl_rec$ = str(pDtlVect!.getItem(i))
+
+                    if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
+                        read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
+
+                        if pos(linecode_rec.line_type$ = "SP")=0 then
+                            if linecode_rec.taxable_flag$ = "Y" then
+                                ttl_taxable = ttl_taxable + dtl_rec.ext_price
+                            endif
+                        else
+                            if #itemMastDev% then
+                                find record(#itemMastDev%,key=#firm_id$+ dtl_rec.item_id$,dom=*endif)item_rec$
+                                if item_rec.taxable_flag$="Y" then
+                                    ttl_taxable = ttl_taxable + dtl_rec.ext_price
+                                endif
+                            endif
+                        endif
+                    endif
+                next i
+            endif
+
+            methodret ttl_taxable
 
         methodend
 
@@ -435,7 +540,7 @@ rem ==========================================================================
 
     rem --- Calculate Tax Amount
 
-        method public BBjNumber calculateTax(BBjNumber p_discount_amt, BBjNumber p_freight_amt)
+        method public BBjNumber calculateTax(BBjNumber p_discount_amt, BBjNumber p_freight_amt, BBjNumber p_taxable)
 
         rem --- Files
 
@@ -479,6 +584,18 @@ rem ==========================================================================
                 endif
             endif
 
+        rem --- New taxable amount - jpb
+        
+            if p_taxable > 0 then
+                taxable_amt = max(p_taxable - p_discount_amt, 0)
+            else
+                if p_taxable < 0 then
+                    taxable_amt = min(p_taxable - p_discount_amt, 0)
+                else
+                    taxable_amt = 0
+                endif
+            endif
+            
             if taxcode_rec.tax_frt_flag$ = "Y" then 
                 taxable_amt = taxable_amt + p_freight_amt
             endif

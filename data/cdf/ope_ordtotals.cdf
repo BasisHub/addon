@@ -47,6 +47,11 @@ rem --- Get Amount mask
 
 	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",amount_mask$,0,mask_len
 
+rem --- Set Current Discount amount and Freight anount from Dev Objects
+
+	callpoint!.setColumnData("OPE_ORDTOTALS.DISCOUNT_AMT",str(callpoint!.getDevObject("disc_amt")))
+	callpoint!.setColumnData("OPE_ORDTOTALS.FREIGHT_AMT",str(callpoint!.getDevObject("frt_amt")))
+
 rem --- Get current discounts
 
 	file_name$ = "OPC_DISCCODE"
@@ -97,7 +102,7 @@ rem --- Calculate and display Discount and Tax
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDTOTALS.FREIGHT_AMT"))
 	discount_amt = num(callpoint!.getColumnData("OPE_ORDTOTALS.DISCOUNT_AMT"))
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt)
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDTOTALS.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_ORDTOTALS.TAX_AMOUNT", str(tax_amount))
 
 	gosub display_fields
@@ -119,7 +124,7 @@ rem --- Save freight and recalculate tax
 	freight_amt = num(callpoint!.getUserInput())
 	callpoint!.setColumnData("OPE_ORDTOTALS.FREIGHT_AMT", str(freight_amt))
 	discount_amt = num(callpoint!.getColumnData("OPE_ORDTOTALS.DISCOUNT_AMT"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt)
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDTOTALS.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_ORDTOTALS.TAX_AMOUNT", str(tax_amount))
 
 	gosub display_fields
@@ -132,7 +137,7 @@ rem --- Save discount and recalculate tax
 	discount_amt = num(callpoint!.getUserInput())
 	callpoint!.setColumnData("OPE_ORDTOTALS.DISCOUNT_AMT", str(discount_amt))
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDTOTALS.FREIGHT_AMT"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt)
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_ORDTOTALS.TOTAL_SALES")))
 	callpoint!.setColumnData("OPE_ORDTOTALS.TAX_AMOUNT", str(tax_amount))
 
 	gosub display_fields
@@ -223,6 +228,9 @@ rem ==========================================================================
 	ordHelp!.setDiscount(  num(callpoint!.getColumnData("OPE_ORDTOTALS.DISCOUNT_AMT")) )
 	ordHelp!.setTaxAmount( num(callpoint!.getColumnData("OPE_ORDTOTALS.TAX_AMOUNT")) )
 
+	callpoint!.setDevObject("tax_amt",callpoint!.getColumnData("OPE_ORDTOTALS.TAX_AMOUNT"))
+	callpoint!.setDevObject("disc_amt",callpoint!.getColumnData("OPE_ORDTOTALS.DISCOUNT_AMT"))
+	callpoint!.setDevObject("frt_amt",callpoint!.getColumnData("OPE_ORDTOTALS.FREIGHT_AMT"))
 	return
 
 rem ==========================================================================

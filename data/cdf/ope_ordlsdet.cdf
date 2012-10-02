@@ -220,7 +220,8 @@ rem --- Warn that selected lot/serial#'s does not match order qty
 
 		msg_tokens$[3] = str(callpoint!.getDevObject("ord_qty"))
 		gosub disp_message
-		if msg_opt$ = "N" then callpoint!.setStatus("ABORT")
+		callpoint!.setDevObject("total_shipped","0")
+		break
 	endif
 
 rem --- Send back qty shipped
@@ -514,6 +515,14 @@ rem --- See if there are any open lots
 [[OPE_ORDLSDET.LOTSER_NO.AVAL]]
 print "LOTSER_NO.AVAL"; rem debug
 
+rem --- Get lot/serial record fields
+
+	wh$     = callpoint!.getDevObject("wh")
+	item$   = callpoint!.getDevObject("item")
+ 	ls_no$  = callpoint!.getUserInput()
+	ord_qty = num( callpoint!.getDevObject("ord_qty") )
+
+
 rem --- Non-inventoried items from Invoice Entry do not have to exist (but can't be blank)
 
 	if user_tpl.invoice_noninventory then
@@ -521,17 +530,25 @@ rem --- Non-inventoried items from Invoice Entry do not have to exist (but can't
 			msg_id$ = "IV_SERLOT_BLANK"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
+			valid_rec$ = "N"
+			print "valid_rec$=",valid_rec$; rem debug
 		endif
 
-		break; rem --- exit callpoint
+		unit_cost = num( callpoint!.getDevObject("unit_cost") )
+		callpoint!.setColumnData("OPE_ORDLSDET.UNIT_COST", str(unit_cost))
+		callpoint!.setStatus("MODIFIED;REFRESH")
+		print "unit_cost=",unit_cost; rem debug
+	endif
+
+	if valid_rec$="N" then 
+		break
+	endif
+
+	if user_tpl.invoice_noninventory then
+		goto set_qty_defaults
 	endif
 
 rem --- Validate open lot number
-
-	wh$     = callpoint!.getDevObject("wh")
-	item$   = callpoint!.getDevObject("item")
- 	ls_no$  = callpoint!.getUserInput()
-	ord_qty = num( callpoint!.getDevObject("ord_qty") )
 
 	file_name$ = "IVM_LSMASTER"
 	lsmast_dev = fnget_dev(file_name$)
@@ -559,7 +576,7 @@ rem --- Validate open lot number
 		break; rem --- exit callpoint
 	endif
 
-rem --- Set defaults
+set_qty_defaults: rem --- Set defaults
 
 	if num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED")) = 0 then
 		if callpoint!.getDevObject("lotser_flag")="S" then 
@@ -582,10 +599,15 @@ rem --- Set defaults
 		endif
 	endif
 
+	if user_tpl.invoice_noninventory or cvs( callpoint!.getUserInput(), 2 ) = "" then
+		goto refresh_screen
+	endif
+
 	if num(callpoint!.getColumnData("OPE_ORDLSDET.UNIT_COST")) = 0 then
 		callpoint!.setColumnData("OPE_ORDLSDET.UNIT_COST", lsmast_tpl.unit_cost$)
 	endif
 	
+refresh_screen:
 	callpoint!.setStatus("MODIFIED;REFRESH")
 [[OPE_ORDLSDET.LOTSER_NO.AINQ]]
 escape; rem ainq

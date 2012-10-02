@@ -19,7 +19,10 @@ rem --- Calculate and display summary info
 	tcst=0
 	tqty=0
 	tsls=0
-	trip_key$=firm_id$+callpoint!.getColumnData("SAM_CUSTOMER.YEAR")+callpoint!.getColumnData("SAM_CUSTOMER.CUSTOMER_ID")
+	year$=callpoint!.getColumnData("SAM_CUSTOMER.YEAR")
+	lyear$=str(num(year$)-1:"0000")
+	trip_key$=firm_id$+year$+callpoint!.getColumnData("SAM_CUSTOMER.CUSTOMER_ID")
+	ltrip_key$=firm_id$+lyear$+callpoint!.getColumnData("SAM_CUSTOMER.CUSTOMER_ID")
 	prod_type$=callpoint!.getColumnData("SAM_CUSTOMER.PRODUCT_TYPE")
 	item_no$=callpoint!.getColumnData("SAM_CUSTOMER.ITEM_ID")
 	if cvs(prod_type$,2)<>"" 
@@ -38,6 +41,45 @@ rem --- Start progress meter
 	sam_dev=	fnget_dev("SAM_CUSTOMER")
 	dim sam_tpl$:fnget_tpl$("SAM_CUSTOMER")
 	dim qty[13],cost[13],sales[13]
+
+rem --- Calculate Last Year
+
+	read(sam_dev,key=ltrip_key$,dom=*next)
+	while 1
+		read record(sam_dev,end=*break)sam_tpl$
+
+		Progress!.getValue("+process_task_"+task_id$,err=*next);break
+	
+		if pos(ltrip_key$=sam_tpl$)<>1 break
+		for x=1 to 13
+			qty[x]=qty[x]+nfield(sam_tpl$,"qty_shipped_"+str(x:"00"))
+			cost[x]=cost[x]+nfield(sam_tpl$,"total_cost_"+str(x:"00"))
+			sales[x]=sales[x]+nfield(sam_tpl$,"total_sales_"+str(x:"00"))
+		next x
+	wend
+	For x=1 to 13
+		tcst=tcst+cost[x]
+		tqty=tqty+qty[x]
+		tsls=tsls+sales[x]
+	next x
+
+	for x=1 to 13
+		callpoint!.setColumnData("<<DISPLAY>>.LY_SHIP_"+str(x:"00"),str(qty[x]))
+		callpoint!.setColumnData("<<DISPLAY>>.LY_SALES_"+str(x:"00"),str(sales[x]))
+		callpoint!.setColumnData("<<DISPLAY>>.LY_COST_"+str(x:"00"),str(cost[x]))
+	next x
+
+	callpoint!.setColumnData("<<DISPLAY>>.LY_COST_TOT",str(tcst))
+	callpoint!.setColumnData("<<DISPLAY>>.LY_SALES_TOT",str(tsls))
+	callpoint!.setColumnData("<<DISPLAY>>.LY_SHIP_TOT",str(tqty))
+
+	tcst=0
+	tsls=0
+	tqty=0
+	dim cost[13],qty[13],sales[13]
+
+rem --- Calculate This Year
+
 	read(sam_dev,key=trip_key$,dom=*next)
 	while 1
 		read record(sam_dev,end=*break)sam_tpl$
@@ -137,6 +179,17 @@ rem --- Enable key fields
 	callpoint!.setColumnData("<<DISPLAY>>.TCST","0")
 	callpoint!.setColumnData("<<DISPLAY>>.TQTY","0")
 	callpoint!.setColumnData("<<DISPLAY>>.TSLS","0")
+
+	for x=1 to 13
+		callpoint!.setColumnData("<<DISPLAY>>.LY_SHIP_"+str(x:"00"),"0")
+		callpoint!.setColumnData("<<DISPLAY>>.LY_SALES_"+str(x:"00"),"0")
+		callpoint!.setColumnData("<<DISPLAY>>.LY_COST_"+str(x:"00"),"0")
+	next x
+
+	callpoint!.setColumnData("<<DISPLAY>>.LY_COST_TOT","0")
+	callpoint!.setColumnData("<<DISPLAY>>.LY_SALES_TOT","0")
+	callpoint!.setColumnData("<<DISPLAY>>.LY_SHIP_TOT","0")
+
 	callpoint!.setStatus("REFRESH")
 [[SAM_CUSTOMER.<CUSTOM>]]
 disable_fields:
@@ -152,6 +205,47 @@ rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space 
 	return
 
 calc_totals:
+
+rem --- Calculate Last Year
+
+	year$=callpoint!.getColumnData("SAM_CUSTOMER.YEAR")
+	lyear$=str(num(year$)-1:"0000")
+	cust_no$=callpoint!.getColumnData("SAM_CUSTOMER.CUSTOMER_ID")
+	prod$=callpoint!.getColumnData("SAM_CUSTOMER.PRODUCT_TYPE")
+	item$=callpoint!.getColumnData("SAM_CUSTOMER.ITEM_ID")
+	ltrip_key$=firm_id$+lyear$+cust_no$+prod$+item$
+	sam_dev=fnget_dev("SAM_CUSTOMER")
+	dim sam_tpl$:fnget_tpl$("SAM_CUSTOMER")
+	dim qty[13],cost[13],sales[13]
+
+	while 1
+		read record(sam_dev,key=ltrip_key$,dom=*break)sam_tpl$
+
+		Progress!.getValue("+process_task_"+task_id$,err=*next);break
+	
+		if pos(ltrip_key$=sam_tpl$)<>1 break
+		for x=1 to 13
+			qty[x]=qty[x]+nfield(sam_tpl$,"qty_shipped_"+str(x:"00"))
+			cost[x]=cost[x]+nfield(sam_tpl$,"total_cost_"+str(x:"00"))
+			sales[x]=sales[x]+nfield(sam_tpl$,"total_sales_"+str(x:"00"))
+		next x
+		break
+	wend
+	For x=1 to 13
+		tcst=tcst+cost[x]
+		tqty=tqty+qty[x]
+		tsls=tsls+sales[x]
+	next x
+
+	for x=1 to 13
+		callpoint!.setColumnData("<<DISPLAY>>.LY_SHIP_"+str(x:"00"),str(qty[x]))
+		callpoint!.setColumnData("<<DISPLAY>>.LY_SALES_"+str(x:"00"),str(sales[x]))
+		callpoint!.setColumnData("<<DISPLAY>>.LY_COST_"+str(x:"00"),str(cost[x]))
+	next x
+
+	callpoint!.setColumnData("<<DISPLAY>>.LY_COST_TOT",str(tcst))
+	callpoint!.setColumnData("<<DISPLAY>>.LY_SALES_TOT",str(tsls))
+	callpoint!.setColumnData("<<DISPLAY>>.LY_SHIP_TOT",str(tqty))
 	
 	tcst=0
 	tqty=0

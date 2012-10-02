@@ -2,7 +2,15 @@
 rem --- Set code in the Order Helper object
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	ordHelp!.setTaxCode(callpoint!.getColumnData("OPE_ORDHDR.TAX_CODE"))
+	ordHelp!.setTaxCode(callpoint!.getUserInput())
+
+rem --- Calculate Taxes
+
+	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")))
+	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
+	callpoint!.setStatus("REFRESH")
 [[OPE_INVHDR.ARAR]]
 print "Hdr:ARAR"; rem debug
 
@@ -43,6 +51,8 @@ rem --- Reset all previous values
 	user_tpl.new_order = 1
 	user_tpl.credit_limit_warned = 0
 	user_tpl.shipto_warned = 0
+
+	gosub disp_totals
 [[OPE_INVHDR.AOPT-CRAT]]
 print "Hdr:AOPT:CRAT"; rem debug
 
@@ -58,6 +68,18 @@ rem --- Do Credit Action
 rem --- Set discount code for use in Order Totals
 
 	user_tpl.disc_code$ = callpoint!.getUserInput()
+
+	file_name$ = "OPC_DISCCODE"
+	disccode_dev = fnget_dev(file_name$)
+	dim disccode_rec$:fnget_tpl$(file_name$)
+
+	find record (disccode_dev, key=firm_id$+user_tpl.disc_code$, dom=*next) disccode_rec$
+	new_disc_per = disccode_rec.disc_percent
+
+	new_disc_amt = round(disccode_rec.disc_percent * num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")) / 100, 2)
+	callpoint!.setColumnData("OPE_INVHDR.DISCOUNT_AMT",str(new_disc_amt))
+
+	gosub disp_totals
 [[OPE_INVHDR.AOPT-TTLS]]
 rem --- Launch the totals form
 
@@ -181,6 +203,7 @@ rem --- Print a counter Invoice
 
 		gosub force_print_status
 		gosub do_credit_action
+
 		print "---Print Status: """, callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS"), """"; rem debug
 
 		if pos(action$ = "XU") or (action$ = "R" and callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "N") then 
@@ -241,7 +264,7 @@ rem --- Calculate taxes and write it back
 	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
 	gosub get_disk_rec
-	ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt)
+	ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")))
 	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
 	callpoint!.setStatus("SETORIG")
@@ -479,12 +502,17 @@ print "Hdr:APFE"; rem debug
 
 rem --- Enable / Disable buttons
 
-	callpoint!.setOptionEnabled("CRCH",1)
+	callpoint!.setOptionEnabled("CRCH",0)
 	gosub enable_credit_action
 
 	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" then
-		callpoint!.setOptionEnabled("DINV",1)
-		callpoint!.setOptionEnabled("CINV",1)
+		if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2) = ""
+			callpoint!.setOptionEnabled("DINV",0)
+			callpoint!.setOptionEnabled("CINV",0)
+		else
+			callpoint!.setOptionEnabled("DINV",1)
+			callpoint!.setOptionEnabled("CINV",1)
+		endif
 		callpoint!.setOptionEnabled("PRNT",0)
 		callpoint!.setOptionEnabled("MINV",0)
 	else
@@ -494,6 +522,7 @@ rem --- Enable / Disable buttons
 		else
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
+			callpoint!.setOptionEnabled("CRCH",1)
 			if user_tpl.cash_sale$="Y" then callpoint!.setOptionEnabled("CASH",1)
 
 			if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")<> "I" then
@@ -1374,11 +1403,8 @@ on_invoice:
 	msg_id$="ORD_ON_REG"
 	gosub disp_message
 
-	if msg_opt$="CANCEL" then
-		locked=1
-		callpoint!.setStatus("ABORT")
-
-	endif
+	locked=1
+	callpoint!.setStatus("ABORT")
 
 	goto end_lock
 
@@ -1855,6 +1881,13 @@ rem ==========================================================================
 do_credit_action: rem --- Launch the credit action program / form
 rem ==========================================================================
 
+rem --- Invoicing should only allow this if already on Credit Hold.
+
+	if callpoint!.getColumnData("OPE_INVHDR.CREDIT_FLAG") <> "C"
+		action$="U"
+		return
+	endif
+
 	print "in do_credit_action..."; rem debug
 
 	inv_type$ = callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE")
@@ -1957,6 +1990,8 @@ rem ==========================================================================
 get_comm_percent: rem --- Get commission percent from salesperson file
                   rem      IN: slsp$ - salesperson code
 rem ==========================================================================
+
+return;rem --- Remove this line if the client decides they want to see the Commission percent
 
 	file$ = "ARC_SALECODE"
 	salecode_dev = fnget_dev(file$)
@@ -2083,6 +2118,11 @@ rem --- Call the form
 	dflt_data$[4,0] = "FREIGHT_AMT"
 	dflt_data$[4,1] = callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT")
 
+rem --- Set Dev Objects for use in the form
+
+	callpoint!.setDevObject("disc_amt",str(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT")))
+	callpoint!.setDevObject("frt_amt",str(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT")))
+
 	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
 :		"OPE_ORDTOTALS", 
 :		stbl("+USER_ID"), 
@@ -2094,33 +2134,26 @@ rem --- Call the form
 :		user_tpl$,
 :		UserObj!
 
-rem --- Get disk record with updated form data
-
-	gosub get_disk_rec
-
 rem --- Set fields from the Order Totals form and write back
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 
-	ordhdr_rec.total_sales  = ordHelp!.getExtPrice()
-	ordhdr_rec.total_cost   = ordHelp!.getExtCost()
-	ordhdr_rec.taxable_amt  = ordHelp!.getTaxable()
-	ordhdr_rec.freight_amt  = ordHelp!.getFreight()
-	ordhdr_rec.discount_amt = ordHelp!.getDiscount()
-	ordhdr_rec.tax_amount   = ordHelp!.getTaxAmount()
+	callpoint!.setColumnData("OPE_INVHDR.TOTAL_SALES",  str(ordHelp!.getExtPrice()))
+	callpoint!.setColumnData("OPE_INVHDR.TOTAL_COST",   str(ordHelp!.getExtCost()))
+	callpoint!.setColumnData("OPE_INVHDR.TAXABLE_AMT",  str(ordHelp!.getTaxable()))
 
-	ordhdr_rec$ = field(ordhdr_rec$)
-	write record (ordhdr_dev) ordhdr_rec$
-	callpoint!.setStatus("SETORIG")
+	total_amt=num(ordHelp!.getExtPrice())
+	disc_amt=num(callpoint!.getDevObject("disc_amt"))
+	tax_amt=num(callpoint!.getDevObject("tax_amt"))
+	frt_amt=num(callpoint!.getDevObject("frt_amt"))
+	callpoint!.setColumnData("OPE_INVHDR.DISCOUNT_AMT", str(disc_amt))
+	callpoint!.setColumnData("<<DISPLAY>>.SUBTOTAL",str(total_amt - disc_amt))
+	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",   str(tax_amt))
+	callpoint!.setColumnData("OPE_INVHDR.FREIGHT_AMT", str(frt_amt))
+	callpoint!.setColumnData("<<DISPLAY>>.NET_SALES",str((total_amt - disc_amt) + tax_amt + frt_amt))
 
-	callpoint!.setColumnData("OPE_INVHDR.TOTAL_SALES",  ordhdr_rec.total_sales$)
-	callpoint!.setColumnData("OPE_INVHDR.TOTAL_COST",   ordhdr_rec.total_cost$)
-	callpoint!.setColumnData("OPE_INVHDR.TAXABLE_AMT",  ordhdr_rec.taxable_amt$)
-	callpoint!.setColumnData("OPE_INVHDR.FREIGHT_AMT",  ordhdr_rec.freight_amt$)
-	callpoint!.setColumnData("OPE_INVHDR.DISCOUNT_AMT", ordhdr_rec.discount_amt$)
-	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",   ordhdr_rec.tax_amount$)
-	callpoint!.setStatus("REFRESH")
-
+	callpoint!.setStatus("SAVE")
+	
 	return
 
 rem ==========================================================================
@@ -2163,6 +2196,25 @@ rem debug --- This is a Barista kludge
 
 	print "---Record found: ", iff(found, "yes", "no"); rem debug
 	print "out"; rem debug
+
+	return
+
+rem ==========================================================================
+disp_totals: rem --- Get order totals and display, save header totals
+rem ==========================================================================
+
+	ttl_ext_price = num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	disc_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	tax_amt = num(callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT"))
+	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	sub_tot = ttl_ext_price - disc_amt
+	net_sales = sub_tot + tax_amt + freight_amt
+
+	callpoint!.setColumnData("OPE_INVHDR.TOTAL_COST",str(ttl_ext_cost))
+	callpoint!.setColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
+	callpoint!.setColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
+
+	callpoint!.setStatus("REFRESH")
 
 	return
 [[OPE_INVHDR.ASHO]]
@@ -2359,6 +2411,12 @@ rem --- Disable display fields
 rem --- Save display control objects
 
 	UserObj!.addItem( util.getControl(callpoint!, "<<DISPLAY>>.ORDER_TOT") )
+	UserObj!.addItem( util.getControl(callpoint!, "<<DISPLAY>>.SUBTOTAL") )
+	UserObj!.addItem( util.getControl(callpoint!, "<<DISPLAY>>.NET_SALES") )
+	UserObj!.addItem( util.getControl(callpoint!, "OPE_INVHDR.TOTAL_SALES") )
+	UserObj!.addItem( util.getControl(callpoint!, "OPE_INVHDR.TOTAL_COST") )
+	UserObj!.addItem( util.getControl(callpoint!, "OPE_INVHDR.TAX_AMOUNT") )
+
 	callpoint!.setDevObject("credit_hold_control", util.getControl(callpoint!, "<<DISPLAY>>.CREDIT_HOLD")); rem used in opc_creditcheck
 	callpoint!.setDevObject("backordered_control", util.getControl(callpoint!, "<<DISPLAY>>.BACKORDERED")); rem used in opc_creditcheck
 
@@ -2377,16 +2435,16 @@ rem --- Setup user_tpl$
 :		"line_type:c(1), " +
 :		"dropship_whse:c(1), " +
 :		"def_whse:c(10), " +
-:     "avail_oh:u(1), " +
-:     "avail_comm:u(1), " +
-:     "avail_avail:u(1), " +
-:     "avail_oo:u(1), " +
-:     "avail_wh:u(1), " +
-:     "avail_type:u(1), " +
-:     "dropship_flag:u(1), " +
+:		"avail_oh:u(1), " +
+:		"avail_comm:u(1), " +
+:		"avail_avail:u(1), " +
+:		"avail_oo:u(1), " +
+:		"avail_wh:u(1), " +
+:		"avail_type:u(1), " +
+:		"dropship_flag:u(1), " +
 :		"manual_price:u(1), " +
 :		"alt_super:u(1), " +
-:     "ord_tot_obj:u(1), " +
+:		"ord_tot_obj:u(1), " +
 :		"price_code:c(2), " +
 :		"pricing_code:c(4), " +
 :		"order_date:c(8), " +
@@ -2423,8 +2481,8 @@ rem --- Setup user_tpl$
 :		"prev_ext_price:n(15), " +
 :		"prev_taxable:n(15), " +
 :		"prev_ext_cost:n(15), " +
-:     "prev_disc_code:c(1*), "+
-:     "prev_ship_to:c(1*), " +
+:		"prev_disc_code:c(1*), "+
+:		"prev_ship_to:c(1*), " +
 :		"prev_sales_total:n(15), " +
 :		"prev_unitprice:n(15), " +
 :		"is_cash_sale:u(1), " +
@@ -2453,7 +2511,7 @@ rem --- Setup user_tpl$
 	user_tpl.skip_ln_code$     = ars01a.skip_ln_code$
 	user_tpl.cash_sale$        = ars01a.cash_sale$
 	user_tpl.cash_cust$        = ars01a.customer_id$
-   user_tpl.allow_bo$         = ars01a.backorders$
+	user_tpl.allow_bo$         = ars01a.backorders$
 	user_tpl.dropship_cost$    = ars01a.dropshp_cost$
 	user_tpl.min_ord_amt       = num(ars01a.min_ord_amt$)
 	user_tpl.min_line_amt      = num(ars01a.min_line_amt$)
@@ -2526,6 +2584,12 @@ rem --- Save the indices of the controls for the Avail Window, setup in AFMC
 	user_tpl.manual_price  = 9
 	user_tpl.alt_super = 10
 	user_tpl.ord_tot_obj   = 11; rem set here in BSHO
+
+	callpoint!.setDevObject("subtot_disp","12")
+	callpoint!.setDevObject("net_sales_disp","13")
+	callpoint!.setDevObject("total_sales_disp","14")
+	callpoint!.setDevObject("total_cost","15")
+	callpoint!.setDevObject("tax_amt_disp","16")
 
 rem --- Set variables for called forms (OPE_ORDLSDET)
 
