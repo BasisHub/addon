@@ -24,14 +24,12 @@ rem --- Retrieve sysinfo data
 rem --- Initializations
 
     precision num(ivs01a.precision$)
-    dim a0$(22),a1$(160),a[8],o[14],c0$(22),c1$(60),c2$(64)
-    dim w0$(25),w1$(48),w2$(32),w3$(22),w4$(40),w[12],description$(40)
+    dim o[14],description$(40)
     dim headings$[5],totals[4],receipt[4],vendor[4],report[4]
-    dim y0$(4),y1$(32),r0$(5),r1$(32),l0$(28),l1$(20),l[1],line[4]
-    dim d0$(28),d1$(32),d[6],difqty[99],diftype$[99],difkey$[99]
-    m1$=i6$
-    m2$=i7$
-    m3$=i8$
+    dim line[4]
+    m1$=ivs01a.amount_mask$
+    m2$=ivs01a.unit_mask$
+    m3$=ivs01a.cost_mask$
     m1=len(m1$)
     m2=len(m2$)
     m3=len(m3$)
@@ -53,14 +51,14 @@ rem --- Initializations
     x2=12
     x3=12
     ms$="000-"
-    if i3$(17,1)="L" lsdesc$="Lot Nbr"
+    if ivs01a.lotser_flag$="L" then lsdesc$="Lot Nbr"
     more=1
 
 rem --- Resize masks
 
     while more
         x=m1+(m2*4)+m3+i[0]+52
-        if x<=width break
+        if x<=width then break
         call pgmdir$+"adc_sizemask.aon",m1$,m1,10,x1
         call pgmdir$+"adc_sizemask.aon",m2$,m2,9,x2
         call pgmdir$+"adc_sizemask.aon",m3$,m3,6,x3
@@ -90,7 +88,8 @@ rem --- Print positions
     o[1]=4
     o[2]=7
     o[3]=10
-    qh$(fncenter(m2*4,10),10)=" Quantity "
+    rem new qh$(fncenter(m2*4,10),10)=" Quantity "
+    qh$=" Quantity "
     x1$="First"
     x2$="Last"
     if begvend$<>"" x1$=fvendor$
@@ -104,17 +103,26 @@ rem --- Print positions
     x1$="From Receiver: "+x1$
     x2$="  To Receiver: "+x2$
     x=max(len(x1$),len(x2$))
-    h1$(fncenter(width,x))=x1$
-    h2$(fncenter(width,x))=x2$
+    rem new h1$(fncenter(width,x))=x1$
+    rem new h2$(fncenter(width,x))=x2$
+    h1$=x1$
+    h2$=x2$
     x1$="First"
     x2$="Last"
     if begdate$<>"" x1$=fndate$(begdate$)
     if enddate$<>"" x2$=fndate$(enddate$)
     x=max(len(x1$),len(x2$))+18
-    h1$(width-x)="From Receipt Date: "+x1$
-    h2$(width-x)="  To Receipt Date: "+x2$
+    rem new h1$(width-x)="From Receipt Date: "+x1$
+    rem new h2$(width-x)="  To Receipt Date: "+x2$
+    h1$="From Receipt Date: "+x1$
+    h2$="  To Receipt Date: "+x2$
     headings$[3]=h1$
     headings$[4]=h2$
+
+rem --- Open Printer
+
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status goto std_exit
 
 rem --- Position file
 
@@ -122,20 +130,19 @@ rem --- Position file
     read (poe03_dev,key=start$,dom=*next)
 
 rem --- Read next header
-
     while more
-
+escape
         poe03a_key$=key(poe03_dev,end=*break)
-        if pos(firm_id$=poe03a_key$)<>1 break
+        if pos(firm_id$=poe03a_key$)<>1 then break
         read record (poe03_dev) poe03a$
 
 rem --- Range tests
 
-        if endvend$<>"" if poe03a.vendor_id$>endvend$ break
-        if begdate$<>"" if poe03a.recpt_date$<begdate$ continue
-        if enddate$<>"" if poe03a.recpt_date$>enddate$ continue
-        if begrec$<>"" if poe03a.receiver_no$<begrec$ continue
-        if endrec$<>"" if poe03a.receiver_no$>endrec$ continue
+        if endvend$<>"" and poe03a.vendor_id$>endvend$ then break
+        if begdate$<>"" and poe03a.recpt_date$<begdate$ then continue
+        if enddate$<>"" and poe03a.recpt_date$>enddate$ then continue
+        if begrec$<>"" and poe03a.receiver_no$<begrec$ then continue
+        if endrec$<>"" and poe03a.receiver_no$>endrec$ then continue
 
 rem --- Header fields
 
@@ -143,28 +150,32 @@ rem --- Header fields
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         packlist$=""
         number=number+1
-        if cvs(poe03a.packing_list$,2)<>"" packlist$="Packing List: "+poe03a.packing_list$
+        if cvs(poe03a.packing_list$,3)<>"" then packlist$="Packing List: "+poe03a.packing_list$
 
 rem --- Level break?
 
-        if t0$<>poe03a.vendor_id$ gosub vend_brk
-
+        if t0$<>poe03a.vendor_id$ then gosub vend_brk
+escape
 rem --- Print header information
 
-        if l+5>l9 gosub report_heading else gosub recpt_subheading
-
+        if l+5>l9 then 
+            gosub report_heading 
+        else 
+            gosub recpt_subheading
+        endif    
+escape
 rem --- Position detail file
 
         p03_key$=poe03a.firm_id$+poe03a.vendor_id$+poe03a.receiver_no$+poe03a.po_no$
         read (poe13_dev,key=p03_key$,dom=*next)
 
 rem --- Read next detail record
-
+escape
         while more
 
             dim line[4]
             poe13a_key$=key(poe13_dev,end=*break)
-            if pos(p03_key$=poe13a_key$)<>1 break
+            if pos(p03_key$=poe13a_key$)<>1 then break
             read record (poe13_dev) poe13a$
 
 rem --- Read line code
@@ -179,7 +190,7 @@ rem --- Calculate extension
 
             qty=poe13a.qa_rec_qty
             extension=0
-            if pom02a.line_type$="O" qty=1
+            if pom02a.line_type$="O" then qty=1
             precision 2
             extension=poe13a.unit_cost*qty
             precision num(ivs01a.precision$)
@@ -195,10 +206,10 @@ rem --- Format remaining fields
             required$=""
             promised$=""
             wo$=""
-            if cvs(poe13a.reqd_date$,2)<>"" required$=fndate$(poe13a.reqd_date$)
-            if cvs(poe13a.promise_date$,2)<>"" promised$=fndate$(poe13a.promise_date$)
-            if cvs(poe13a.not_b4_date$,2)<>"" before$=fndate$(poe13a.not_b4_date$)
-            if cvs(poe13a.wo_no$+poe13a.sequence_no$,2)<>"" wo$=poe13a.wo_no$+"-"+poe13a.sequence_no$
+            if cvs(poe13a.reqd_date$,3)<>"" then required$=fndate$(poe13a.reqd_date$)
+            if cvs(poe13a.promise_date$,3)<>"" then promised$=fndate$(poe13a.promise_date$)
+            if cvs(poe13a.not_b4_date$,3)<>"" then before$=fndate$(poe13a.not_b4_date$)
+            if cvs(poe13a.wo_no$+poe13a.sequence_no$,3)<>"" wo$=poe13a.wo_no$+"-"+poe13a.sequence_no$
 
 rem --- Branch based on line code
 
@@ -218,7 +229,7 @@ rem --- Branch based on line code
                     ivm01a.item_desc$=nf$
                     find record (ivm01a_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=*next) ivm01a$
                     ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
-                    if l+2>l9 gosub report_heading
+                    if l+2>l9 then gosub report_heading
                     print (printer_dev) @(o[0]),poe13a.po_line_no$,
 :                                       @(o[1]),poe13a.po_line_code$,
 :                                       @(o[2]),poe13a.warehouse_id$,
@@ -241,7 +252,7 @@ rem --- Branch based on line code
 
                 case nonstock_line; rem --- Non-stock line
 
-                    if l+2>l9 gosub report_heading
+                    if l+2>l9 then gosub report_heading
                     print (printer_dev) @(o[0]),poe13a.po_line_no$,
 :                                       @(o[1]),poe13a.po_line_code$,
 :                                       @(o[2]),poe13a.warehouse_id$,
@@ -271,7 +282,7 @@ rem --- Branch based on line code
 
                 case msg_line;  rem --- Message line
 
-                    if l+1>l9 gosub report_heading
+                    if l+1>l9 then gosub report_heading
                     print (printer_dev) @(o[0]),poe13a.po_line_no$,
 :                                       @(o[1]),poe13a.po_line_code$,
 :                                       @(o[2]),poe13a.warehouse_id$,
@@ -281,7 +292,7 @@ rem --- Branch based on line code
 
                 case other_type_line; rem --- Other type line
 
-                    if l+2>l9 gosub report_heading
+                    if l+2>l9 then gosub report_heading
                     print (printer_dev) @(o[0]),poe13a.po_line_no$,
 :                                       @(o[1]),poe13a.po_line_code$,
 :                                       @(o[2]),poe13a.warehouse_id$,
@@ -310,7 +321,7 @@ rem --- Read next lot/serial detail record
                 while more
 
                     poe23a_key$=key(poe23_dev,end=*break)
-                    if pos(p13_key$=poe23a_key$)<>1 break
+                    if pos(p13_key$=poe23a_key$)<>1 then break
                     read record (poe23_dev) poe23a$
                     precision 2
                     extension=poe23a.qty_received*poe23a.unit_cost
@@ -318,7 +329,7 @@ rem --- Read next lot/serial detail record
 
 rem --- Print detail line
 
-                    if l+1>l9 gosub report_heading
+                    if l+1>l9 then gosub report_heading
                     print (printer_dev) @(o[3]),lsdesc$," ",poe23a.sequence_no$," ",poe23a.lotser_no$,
 :                                       @(o[10]),poe23a.qty_received:m2$,
 :                                       @(o[11]),poe23a.qty_received:m2$,
@@ -340,7 +351,7 @@ rem --- Read next rejection detail
                 while more
 
                     p63_key$=key(poe63_dev,end=*break)
-                    if pos(p13_key$=p63_key$)<>1 break
+                    if pos(p13_key$=p63_key$)<>1 then break
                     read record (poe63_dev) poe63a$
                     pom03a.firm_id$=firm_id$,pom03a.reject_code$=poe63a.reject_code$
                     pom03a.descripiton$=nf$
@@ -353,9 +364,9 @@ rem --- Read next rejection detail
 rem --- Print rejection detail
 
                     dim ra$(22),inspector$(9)
-                    if cvs(poe63a.operator_id$,2)<>"" inspector$(1)="Insp: "+poe63a.operator_id$
-                    if cvs(poe63a.ra_no$,2)<>"" ra$(1)="RA #: "+poe63a.ra_no$
-                    if l+1>l9 gosub report_heading
+                    if cvs(poe63a.operator_id$,3)<>"" then inspector$(1)="Insp: "+poe63a.operator_id$
+                    if cvs(poe63a.ra_no$,2)<>"" then ra$(1)="RA #: "+poe63a.ra_no$
+                    if l+1>l9 then gosub report_heading
                     print (printer_dev) @(o[3]),poe63a.sequence_no$,
 :                                       " ",pom03a.reject_code$," ",pom03a.description$," ",ra$," ",inspector$,
 :                                       @(o[12]),poe63a.qty_reject$:m2$,
@@ -399,7 +410,7 @@ rem --- All done
 
 report_heading: rem --- Report Heading
 
-    let l=headings+4
+    l=headings+4
     call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
     if status exitto std_exit
     print (printer_dev) @(o[4]),"Not",
@@ -423,19 +434,21 @@ report_heading: rem --- Report Heading
 :                       @(o[12]+m2-9),"Rejected",
 :                       @(o[13]+m3-5),"Cost",
 :                       @(o[14]+m1-10),"Extension"
-
-    if done=0 gosub recpt_subheading
+escape
+    if done=0 then gosub recpt_subheading
     return
 
 recpt_subheading: rem --- Receipt subheading
+escape
+    print (printer_dev)""
+    rem new print (printer_dev)"Vendor: ",vendor$,
+rem new :                       @(48),"Rec #: ",poe03a.receiver_no$,"  PO #:",poe03a.po_no$,
+rem new :                       @(78),packlist$,
+rem new :                       @(100),"Receipt Date: ",fndate$(poe03a.recpt_date$)
+escape
+    print (printer_dev)""
+    l=l+3
 
-    print (printer_dev)""
-    print (printer_dev)"Vendor: ",vendor$,
-:                       @(48),"Rec #: ",poe03a.receiver_no$,"  PO #:",poe03a.po_no$,
-:                       @(78),packlist$,
-:                       @(100),"Receipt Date: ",fndate$(poe03a.recpt_date$)
-    print (printer_dev)""
-    let l=l+3
     return
 
 vend_brk: rem --- Vendor break
@@ -447,10 +460,10 @@ vend_brk: rem --- Vendor break
 
     if !done
         dim vendor[4]
-        let t0$=poe03a.vendor_id$,apm01a.firm_id$=firm_id$+t0$,apm01a.vendor_name$=nf$
+        t0$=poe03a.vendor_id$,apm01a.firm_id$=firm_id$+t0$,apm01a.vendor_name$=nf$
         find record (apm01a_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
-        let vendor$=fnmask$(apm01a.vendor_id$,m0$)+" "+cvs(apm01a.vendor_name$,2)
-        if pagebreak$="Y" l=l9+1
+        vendor$=fnmask$(apm01a.vendor_id$,m0$)+" "+cvs(apm01a.vendor_name$,2)
+        if pagebreak$="Y" then l=l9+1
     endif
 
     return
@@ -459,15 +472,15 @@ rem --- Print totals
 
 print_totals:
 
-    if l+1>l9 gosub report_heading
-    if len(totals$)>o[6] totals$=totals$(1,o[6])
+    if l+1>l9 then gosub report_heading
+    if len(totals$)>o[6] then totals$=totals$(1,o[6])
     print (printer_dev) @(o[9]-len(totals$)),totals$,
 :                       @(o[9]),totals[0]:m2$,
 :                       @(o[10]),totals[1]:m2$,
 :                       @(o[11]),totals[2]:m2$,
 :                       @(o[12]),totals[3]:m2$,
 :                       @(o[14]),totals[4]:m1$
-    let l=l+1
+    l=l+1
     return
 
 
@@ -490,7 +503,12 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
 
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 

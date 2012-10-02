@@ -1,3 +1,8 @@
+[[APM_VENDHIST.PAYMENT_GRP.AVAL]]
+if callpoint!.getUserInput()=""
+	callpoint!.setUserInput("  ")
+	callpoint!.setStatus("REFRESH")
+endif
 [[APM_VENDHIST.ARAR]]
 if user_tpl.multi_types$<>"Y"
 	callpoint!.setColumnData("APM_VENDHIST.AP_TYPE","  ")
@@ -69,6 +74,10 @@ if user_tpl.multi_dist$<>"Y"
 	if cvs(callpoint!.getUserInput(),3)<>"" callpoint!.setStatus("ABORT")
 
 endif
+if callpoint!.getUserInput()=""
+	callpoint!.setUserInput("  ")
+	callpoint!.setStatus("REFRESH")
+endif
 [[APM_VENDHIST.AP_DIST_CODE.BINP]]
 if user_tpl$.multi_dist$<>"Y" 
 
@@ -81,6 +90,10 @@ if user_tpl.multi_types$<>"Y"
 
 	if cvs(callpoint!.getUserInput(),3)<>"" callpoint!.setStatus("ABORT")
 
+endif
+if callpoint!.getUserInput()=""
+	callpoint!.setUserInput("  ")
+	callpoint!.setStatus("REFRESH")
 endif
 [[APM_VENDHIST.AP_TYPE.BINP]]
 if user_tpl$.multi_types$<>"Y" 

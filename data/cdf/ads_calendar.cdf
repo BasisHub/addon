@@ -1,12 +1,15 @@
 [[ADS_CALENDAR.TOTAL_PERS.AVAL]]
+pers=num(callpoint!.getUserInput())
 gosub col_disable
 [[ADS_CALENDAR.ADIS]]
+pers=num(callpoint!.getColumnData("ADS_CALENDAR.TOTAL_PERS"))
 gosub col_disable
 [[ADS_CALENDAR.<CUSTOM>]]
 rem --- Enable/disable column based on number of periods
+rem --- pers being set prior to gosub
 col_disable:
 	dim ctl_stat$[52],ctl_name$[52]
-	pers=num(callpoint!.getColumnData("ADS_CALENDAR.TOTAL_PERS"))
+	
 	for x=1 to 13
 		ctl_name$[x]="ADS_CALENDAR.LOCKED_FLAG_"+str(x:"00")
 		ctl_name$[x+13]="ADS_CALENDAR.ABBR_NAME_"+str(x:"00")

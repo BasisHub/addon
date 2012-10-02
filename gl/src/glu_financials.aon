@@ -82,9 +82,8 @@ rem --- Clear out gle-06
 
 rem --- Position GL Account Master (glm-01)
 
-    k$=""
-    if firm_id$<>"99" k$=firm_id$
-    read (glm01_dev,key="",dom=*next)
+    if firm_id$="99" then k$="" else k$=firm_id$
+    read (glm01_dev,key=k$,dom=*next)
 
 rem --- Read next GL Account Master (glm-01) record
 
@@ -93,9 +92,10 @@ rem --- Read next GL Account Master (glm-01) record
           if firm_id$<>"99" 
 :            if pos(firm_id$=k$)<>1 break
           read record (glm01_dev) glm01a$
+		  if glm01a.gl_acct_type$ = " " then continue
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
 
-          rem --- Read GL Summary Activity (glm-02) records
+          rem --- Read GL Summary Activity (glm-02) records, load x[record_type, amt_units, period]
 
           dim x[mx,my,mp]
           for r=1 to len(records$)
@@ -122,8 +122,8 @@ rem --- Read next GL Account Master (glm-01) record
           rem --- Determine beginning balance for quarter
 
           dim f[mx],i[mx,my,mz],j[mx,my,mz],t[mx,my,mz]
-          f[0]=x[0,0,0]*sign
-          f[1]=x[2,0,0]*sign
+          f[0]=x[0,0,0]*sign; rem Current amt, period 1
+          f[1]=x[2,0,0]*sign; rem Prior amt, period 1
 
           rem --- Accumulate totals
 
@@ -191,20 +191,19 @@ rem --- Read next GL Account Master (glm-01) record
                 if pos(glm01_key$=k$)<>1 break
                 if firm_id$="99" read record (glm21_dev,key=k$) glm21a$
 :                           else read record (glm11_dev,key=k$) glm11a$
-                if firm_id$="99" x$=glm21a.gl_rpt_no$+glm21a.gl_rpt_line$
-:                           else x$=glm11a.gl_rpt_no$+glm11a.gl_rpt_line$
-                glreport$=x$(1,2)
-                line$=x$(3,4)
+                if firm_id$="99" glreport$=glm21a.gl_rpt_no$, line$=glm21a.gl_rpt_line$
+:                           else glreport$=glm11a.gl_rpt_no$, line$=glm11a.gl_rpt_line$
                 if glreport$="00" continue
                 if cvs(glreport$,2)="" continue
                 if line$="0000" continue
                 if cvs(line$,2)="" continue
-
+				report_and_line$ = glreport$+line$
+				
                 rem --- Retrieve Financial Report Detail (glm-22) and
                 rem --- Financial Report Amount (gle-06) records
 
                 gosub accumulate_totals
-                if status continue
+                if status continue; rem glm22 rec not found
 
                 rem --- Transfer amounts to Financial Report Amounts (gle-06)
                 rem --- record and write/update it
@@ -226,10 +225,8 @@ rem --- Read next GL Account Master (glm-01) record
                     gle06a.actual_units=y[1]
                     gle06a.budget_amt=y[2]
                     gle06a.budget_units=y[3]
-                    gle06_key$=gle06a.firm_id$+gle06a.gl_rpt_no$+gle06a.gl_rpt_line$+
-:                              gle06a.gl_pcn_flag$+gle06a.gl_pqy_flag$
                     gle06a$=field(gle06a$)
-                    write record (gle06_dev,key=gle06_key$) gle06a$
+                    write record (gle06_dev) gle06a$
                 next x
 
                 rem --- Accumulate Percent?
@@ -240,7 +237,7 @@ rem --- Read next GL Account Master (glm-01) record
                 rem --- Retrieve Financial Report Totals (gle-07) records for
                 rem --- for percent totals and accumulate them
 
-                dim d[mt]
+                dim d[mt],s[mx,my,mz]
                 gle07a.firm_id$=firm_id$
                 gle07a.tot_type_cde$="P"
                 gle07a.total_no$=glm22a.input_percnt$
@@ -293,10 +290,8 @@ rem --- Read next GL Account Master (glm-01) record
                     gle07a.actual_units=d[1]
                     gle07a.budget_amt=d[2]
                     gle07a.budget_units=d[3]
-                    gle07_key$=gle07a.firm_id$+gle07a.tot_type_cde$+gle07a.total_no$+
-:                              gle07a.gl_pcn_flag$+gle07a.gl_pqy_flag$
                     gle07a$=field(gle07a$)
-                    write record (gle07_dev,key=gle07_key$) gle07a$
+					write record (gle07_dev) gle07a$
                 next x
 
           rem --- End of report update loop
@@ -313,16 +308,19 @@ rem --- Run report headings overlay
 accumulate_totals: rem --- Accumulate totals for this report number and line
 
     status=0
-    if x$=last$ goto sum_matrix
+    if report_and_line$=last$ goto sum_matrix
     status=1
-    last$=x$
-    glm22_key$=firm_id$+x$
+    last$=report_and_line$
+    glm22_key$=firm_id$+report_and_line$
     find record (glm22_dev,key=glm22_key$,dom=*return) glm22a$
-    status=0
+	status=0
+	
+rem --- Update Report Detail
+		
     if glm22a.gl_updt_seq$<>sequence$
        dim s[mx,my,mz]
        glm22a.gl_updt_seq$=sequence$
-       write record (glm22_dev,key=glm22_key$) glm22a$
+       write record (glm22_dev) glm22a$
        goto sum_matrix
     endif
 

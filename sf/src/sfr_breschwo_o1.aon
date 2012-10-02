@@ -6,79 +6,88 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-    setesc std_error
-    seterr std_error
+        setesc std_error
+        seterr std_error
 
 rem --- Document initializations
 
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    rep_date$=date(0:"%Mz/%Dz/%Yd")
-    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-    rep_time$=date(0:"%hz:%mz %p")
-    rep_time_stamp$=date(0:"%Hz%mz%sz")
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
 
 rem --- Retrieve the program path
 
-    pgmdir$=stbl("+DIR_PGM",err=*next)
+        pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-    firm_id$=sysinfo.firm_id$
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        firm_id$=sysinfo.firm_id$
 
-
-rem --- Open/Lock Files
 rem --- Init Data
+        h4$="From "
+        if begwork$<>"" then  h4$=h4$+"Work Order "+begwork$ else  h4$=h4$+"The First Work Order"
+        h4$=h4$+" Through "
+        if endwork$<>"" then  h4$=h4$+"Work Order "+endwork$ else h4$=h4$+"The Last Work Order"
+        h3$="For All "+wostatus$+" Work Orders With A Priority Of 1"
+rem     if r2$>"1" then h3$=h3$+" Through "+r2$
+        if reschedule$>"1" then h3$=h3$+" Through "+reschedule$
+        more=1
 
-    more=1
-    status$="00"
-    headings$[2]=h4$
-    headings$[3]=h3$
-    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-    if status then goto std_exit
+        status$="00"
+        headings$[2]=h4$
+        headings$[3]=h3$
+        dim columns$[6,10]
+        columns = 7
 
-    dim columns$[6,10]
-    columns = 7
-
-    columns$[0,0]="Work Order",     columns$[0,1]="C",columns$[0,2]="7"
-    columns$[1,0]="Pri",            columns$[1,1]="C",columns$[1,2]="6"
-    columns$[2,0]="Mthd",           columns$[2,1]="C",columns$[2,2]="4"
-    columns$[3,0]="Sts",            columns$[3,1]="C",columns$[3,2]="5"
-    columns$[4,0]="Start",          columns$[4,1]="C",columns$[4,2]="10"
-    columns$[5,0]="Cmplt",          columns$[5,1]="C",columns$[5,2]="35"
-    columns$[6,0]="Cat",            columns$[6,1]="C",columns$[6,2]="15"
+        columns$[0,0]="Work Order",     columns$[0,1]="C",columns$[0,2]="11"
+        columns$[1,0]="Pri",            columns$[1,1]="C",columns$[1,2]="6"
+        columns$[2,0]="Mthd",           columns$[2,1]="C",columns$[2,2]="6"
+        columns$[3,0]="Sts",            columns$[3,1]="C",columns$[3,2]="5"
+        columns$[4,0]="Start",          columns$[4,1]="C",columns$[4,2]="10"
+        columns$[5,0]="Cmplt",          columns$[5,1]="C",columns$[5,2]="32"
+        columns$[6,0]="Cat",            columns$[6,1]="C",columns$[6,2]="5"
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
+        call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
+
 rem --- Init Read
 
-    sfe01a_key$=firm_id$+"  "+r0$
-    read record (sfe01_dev,key=sfe01a_key$,dom=*next) sfe01a$
-    flag=0
+rem        sfe01a_key$=firm_id$+"  "+r0$
+        sfe01a_key$=firm_id$+"  "+begwork$
+        read record (sfe01_dev,key=sfe01a_key$,dom=*next) sfe01a$
+        flag=0
 
 rem --- Main Loop Starts
+
     while more
         if flag=1 then
             sfe01a_key$=key(sfe01_dev,end=*break)
             if pos(firm_id$=sfe01a_key$)<>1 then break
-            if r1$<>"" then 
-                if sfe01a.wo_no$>r1$ then break
+
+            if endwork$<>"" then 
+                if sfe01a.wo_no$>endwork$ then break
             endif
+
             read record (sfe01_dev,key=sfe01a_key$) sfe01a$
         endif
+
 label_one: 
+
         flag=1
         if sfe01a.wo_status$="C" then continue
-        if sfe01a.priority$>r2$ then continue
+        if sfe01a.priority$>reschedule$ then continue 
         if pos(sfe01a.wo_status$=wostatus$)=0 then continue
 
 rem --- Reschedule
+
         done_flag=0
         while more
             call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
@@ -124,7 +133,6 @@ unsch_calender: rem --- Unscheduled Date in Calendar
                     OutVect!.addItem("***")
                     OutVect!.addItem("Unscheduled Date Found In Operations Calendar")
                     xwk = fnblank(1)
-
                     l=l+1
                     break
 
@@ -142,7 +150,6 @@ invalid_date: rem --- Invalid 'From' Date
                     OutVect!.addItem("***")
                     OutVect!.addItem("Invalid Estimated "+mess$+" Date")
                     xwk = fnblank(1)
-
                     l=l+1
                     break
 
@@ -150,10 +157,10 @@ file_missing: rem --- File Missing
 
                     OutVect!.addItem("A necessary Shop Floor Control file is missing. Make sure the")
                     OutVect!.addItem("Calendar File and Work Orders exist, then rerun this task.")
-
                     done_flag=1
                     break
             endif
+
 invalid_method: rem --- Invalid Scheduling Method
 
 
@@ -171,7 +178,6 @@ invalid_method: rem --- Invalid Scheduling Method
                     OutVect!.addItem(sfe01a.wo_status$)
                     OutVect!.addItem("Invalid Scheduling Method")
                 endif
-
                 l=l+1
                 break
 
@@ -183,7 +189,6 @@ unsch_date: rem --- Unscheduled Date in Purchase Calendar
                 OutVect!.addItem(sfe01a.sched_flag$)
                 OutVect!.addItem(sfe01a.wo_status$)
                 OutVect!.addItem("Unscheduled Date Found In Purchase Order Calendar")
-
                 l=l+1
                 break
 
@@ -195,11 +200,11 @@ undeter_error: rem --- Undetermined error
                 OutVect!.addItem(sfe01a.sched_flag$)
                 OutVect!.addItem(sfe01a.wo_status$)
                 OutVect!.addItem("An Undetermined Error Has Occurred")
-
                 l=l+1
         wend
 
         if done_flag=1 then break
+
 rem --- Check for Subcontract date change
 
         if status$(1,1)="0" then continue
@@ -207,6 +212,7 @@ rem --- Check for Subcontract date change
         l=l+1
 
 rem --- Main Loop Ends
+
     wend
 
 done: rem --- End
@@ -244,7 +250,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")

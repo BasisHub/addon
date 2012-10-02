@@ -79,7 +79,7 @@ format_grid:
 	num_rpts_rows=num(user_tpl.gridABCRows$)
 	dim attr_col$[def_abc_cols,len(attr_def_col_str$[0,0])/5]
 	attr_col$[1,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="LEVEL"
-	attr_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Level"
+	attr_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="ABC Level"
 	attr_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="5"
 	attr_col$[1,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="I"
 

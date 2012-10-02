@@ -27,6 +27,7 @@ if callpoint!.getRecordMode()<>"C"
 	if cvs(glm01a.gl_account$,3)<>""
 		callpoint!.setColumnData("GLM_BUDGETMAINT.GL_ACCT_TYPE",glm01a.gl_acct_type$)
 		callpoint!.setColumnData("GLM_BUDGETMAINT.DETAIL_FLAG",glm01a.detail_flag$)
+		gl_account$=callpoint!.getUserInput()
 		gosub fill_gridBudgets
 		callpoint!.setStatus("REFRESH")
 	else
@@ -226,12 +227,12 @@ return
 
 fill_gridBudgets:
 
+	rem --- gl_account$ set prior to gosub
 	gridBudgets!=UserObj!.getItem(num(user_tpl.grid_ofst$))
 	cols!=UserObj!.getItem(num(user_tpl.cols_ofst$))
 	tps!=UserObj!.getItem(num(user_tpl.tps_ofst$))
 	num_cols=cols!.size()	
-	gl_account$=callpoint!.getColumnData("GLM_BUDGETMAINT.GL_ACCOUNT")
-
+	
 	for x=0 to num_cols-1
 		glm02_key$=firm_id$+gl_account$+cols!.getItem(x)
 		col_type$=tps!.getItem(x)

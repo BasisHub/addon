@@ -1,9 +1,7 @@
 [[PRR_UNIONHIST.YEAR_MONTH.AVAL]]
 rem -- Get value from the yesr_month field
-
-	month$=callpoint!.getColumnData("PRR_UNIONHIST.YEAR_MONTH")
+	month$=callpoint!.getUserInput()
         juldate=jul(num(month$(3,4)),num(month$(1,2)),1)
-
 rem --- Get Dates For Sundays In The Month
 	
 	more=1
@@ -22,3 +20,4 @@ rem --- Get Dates For Sundays In The Month
 		i=i+1
     	wend
     	callpoint!.setStatus("REFRESH")
+

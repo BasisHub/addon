@@ -1,7 +1,6 @@
 [[OPC_LINECODE.DIST_CODE.AVAL]]
 rem --- Either fill or blank out 3 G/L display fields
-
-	dist_code$=callpoint!.getColumnData("OPC_LINECODE.DIST_CODE")
+	dist_code$=callpoint!.getUserInput()
 	if user_tpl.gl$="Y"
 		if cvs(dist_code$,2)=""
 			callpoint!.setColumnData("<<DISPLAY>>.GL_COGS_ACCT","")
@@ -18,16 +17,14 @@ rem --- Either fill or blank out 3 G/L display fields
 	endif
 [[OPC_LINECODE.MESSAGE_TYPE.BINP]]
 rem --- Set default type
-
 	if message_type$=" "
 		callpoint!.setColumnData("OPC_LINECODE.MESSAGE_TYPE","B")
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPC_LINECODE.PROD_TYPE_PR.AVAL]]
 rem --- Maybe disable Product Type
-
 	dctl$="PRODUCT_TYPE"
-	if callpoint!.getColumnData("OPC_LINECODE.PROD_TYPE_PR")<>"D"
+	if callpoint!.getUserInput()<>"D"
 		dmap$="I"
 	else
 		if pos(line_type$="NOP")=0
@@ -39,30 +36,24 @@ rem --- Maybe disable Product Type
 	gosub disable_ctl
 [[OPC_LINECODE.DROPSHIP.AVAL]]
 rem --- Check Distribution Code
-
-	if line_type$="S" and callpoint!.getColumnData("OPC_LINECODE.DROPSHIP")="N"
+	if line_type$="S" and callpoint!.getUserInput()="N"
 		callpoint!.setColumnData("OPC_LINECODE.DIST_CODE","")
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPC_LINECODE.BSHO]]
 rem --- Open Distribution Code file
-
 	num_files=1
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="ARC_DISTCODE",open_opts$[1]="OTA"
 	gosub open_tables
 	arc_dist_dev=num(open_chans$[1]),arc_dist_tpl$=open_tpls$[1]
-
 rem --- setup for G/L Parameter
-
 	call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
 	dim user_tpl$:"gl:c(1),dist_dev:n(4),dist_tpl:c(500)"
 	user_tpl.gl$=info$[9]
 	user_tpl.dist_dev=arc_dist_dev
 	user_tpl.dist_tpl$=arc_dist_tpl$
-
 rem --- Disable 3 Account Numbers
-
 	dctl$="<<DISPLAY>>.GL_SLS_ACCT"
 	dmap$="I"
 	gosub disable_ctl
@@ -119,9 +110,7 @@ rem --- re-enable all fields
 		dmap$[4]="I"
 	endif
 	gosub disable_ctls
-
 rem --- Either fill or blank out 3 G/L display fields
-
 	if user_tpl.gl$="Y"
 		if cvs(rec_data.dist_code$,2)=""
 			callpoint!.setColumnData("<<DISPLAY>>.GL_COGS_ACCT","")
@@ -148,7 +137,6 @@ rem --- re-enable all fields
 	gosub disable_ctls
 [[OPC_LINECODE.<CUSTOM>]]
 disable_ctls:rem --- disable selected controls
-
 for dctl=1 to 7
 	dctl$=dctl$[dctl]
 	wctl$=str(num(callpoint!.getTableColumnAttribute(dctl$,"CTLI")):"00000")
@@ -159,9 +147,7 @@ for dctl=1 to 7
 	callpoint!.setStatus("ABLEMAP")
 next dctl
 return
-
 disable_ctl:rem --- disable selected controls
-
 	wctl$=str(num(callpoint!.getTableColumnAttribute(dctl$,"CTLI")):"00000")
 	wmap$=callpoint!.getAbleMap()
 	wpos=pos(wctl$=wmap$,8)
@@ -169,3 +155,4 @@ disable_ctl:rem --- disable selected controls
 	callpoint!.setAbleMap(wmap$)
 	callpoint!.setStatus("ABLEMAP")
 return
+

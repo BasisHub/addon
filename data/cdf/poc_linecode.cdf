@@ -1,66 +1,4 @@
-[[POC_LINECODE.BNEX]]
-rem - set defaults for new records
-
-callpoint!.setColumnData("POC_LINECODE.LINE_TYPE","S")
-
-callpoint!.setColumnData("POC_LINECODE.DROPSHIP","N")
-
-callpoint!.setColumnData("POC_LINECODE.ADD_OPTIONS","N")
-
-callpoint!.setColumnData("POC_LINECODE.LAND_CST_FLG","Y")
-
-callpoint!.setColumnData("POC_LINECODE.LEAD_TIM_FLG","Y")
-
-callpoint!.setStatus("REFRESH")
 [[POC_LINECODE.LINE_TYPE.AVAL]]
-rem - some line types don't used landed cost flag
-
-
-if pos(callpoint!.getUserInput()="MV")>0 then
-	callpoint!.setColumnData("POC_LINECODE.LAND_CST_FLG","N")
-	ctl_name$="POC_LINECODE.LAND_CST_FLG"
-	ctl_stat$="D"
-	gosub disable_fields
-else
-	escape; rem print callpoint!.getRecordTemplate()
-
-	ctl_name$="POC_LINECODE.LAND_CST_FLG"
-	ctl_stat$=" "
-	gosub disable_fields
-endif
-
-rem - line types that don't use lead time flag
-
-if pos(callpoint!.getUserInput()="ONMV")>0 then
-	callpoint!.setColumnData("POC_LINECODE.LEAD_TIM_FLG","N")
-	ctl_name$="POC_LINECODE.LEAD_TIM_FLG"
-	ctl_stat$="D"
-	gosub disable_fields
-else
-	ctl_name$="POC_LINECODE.LEAD_TIM_FLG"
-	ctl_stat$=" "
-	gosub disable_fields
-endif
-
-rem - line types that don't use gl accounts 
-
-if pos(callpoint!.getUserInput()="MSV")>0 then
-	callpoint!.setColumnData("POC_LINECODE.GL_EXP_ACCT","")
-	callpoint!.setColumnData("POC_LINECODE.GL_PPV_ACCT","")
-	ctl_name$="POC_LINECODE.GL_EXP_ACCT"
-	ctl_stat$="D"
-	gosub disable_fields
-	ctl_name$="POC_LINECODE.GL_PPV_ACCT"
-	gosub disable_fields
-else
-	escape
-	ctl_name$="POC_LINECODE.GL_EXP_ACCT"
-	ctl_stat$=" "
-	gosub disable_fields
-	ctl_name$="POC_LINECODE.GL_PPV_ACCT"
-	gosub disable_fields
-endif
-
 rem - don't use gl accounts if GL not installed
 
 if gl$<>"Y"  then
@@ -72,6 +10,7 @@ if gl$<>"Y"  then
 	ctl_name$="POC_LINECODE.GL_PPV_ACCT"
 	gosub disable_fields
 endif
+  
 [[POC_LINECODE.<CUSTOM>]]
 #include std_missing_params.src
 

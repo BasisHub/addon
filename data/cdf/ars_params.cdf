@@ -1,32 +1,25 @@
+[[ARS_PARAMS.AREC]]
+callpoint!.setColumnData("ARS_PARAMS.INV_HIST_FLG","Y")
 [[ARS_PARAMS.BSHO]]
 num_files=1
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
 gosub open_tables
-
 gls01_dev=num(open_chans$[1])
-
 rem --- Dimension string templates
-
 	dim gls01a$:open_tpls$[1]
-
 rem --- Retrieve parameter data
-
 	dim info$[20]
-
 	gls01a_key$=firm_id$+"GL00"
 	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$  
-
 	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
 	gl$=info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
 	ap$=info$[20],br$=info$[9]
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]
-
 	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_curr_per:c(2),gl_curr_year:c(4),gl_installed:c(1),"+
 :                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1)"
-
 	user_tpl.app$="AR"
 	user_tpl.gl_pers$=gls01a.total_pers$
 	user_tpl.gl_installed$=gl$
@@ -37,7 +30,6 @@ rem --- Retrieve parameter data
 	user_tpl.gl_curr_year$=gls01a.current_year$
 [[ARS_PARAMS.ARNF]]
 rem --- param rec (firm+AR00) doesn't yet exist; set some defaults
-
 callpoint!.setColumnData("ARS_PARAMS.CURRENT_PER",user_tpl.gl_curr_per$)
 callpoint!.setColumnUndoData("ARS_PARAMS.CURRENT_PER",user_tpl.gl_curr_per$)
 callpoint!.setColumnData("ARS_PARAMS.CURRENT_YEAR",user_tpl.gl_curr_year$)
@@ -50,7 +42,6 @@ if ap$="Y" and gl$="Y" and br$="Y"
 	callpoint!.setColumnData("ARS_PARAMS.BR_INTERFACE","Y")
 	callpoint!.setColumnUndoData("ARS_PARAMS.BR_INTERFACE","Y")
 endif
-
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[ARS_PARAMS.AUTO_NO.AVAL]]
 rem --- check here and be sure seq #'s rec exists, if auto-number got checked
@@ -78,7 +69,7 @@ if user_tpl.ap_installed$<>"Y" or user_tpl.gl_installed$<>"Y" or user_tpl.bank_r
 		dim msg_tokens$[1]
 		msg_opt$=""
 		gosub disp_message
-		callpoint!.setColumnData("ARS_PARAMS.BR_INTERFACE","N")
+		callpoint!.setUserInput("N")
 		callpoint!.setStatus("REFRESH")
 	endif
 endif
@@ -88,7 +79,7 @@ if num(callpoint!.getUserInput())<1 or num(callpoint!.getUserInput())>num(user_t
 	dim msg_tokens$[1];msg_tokens$[1]=user_tpl.gl_pers$
 	msg_opt$=""
 	gosub disp_message
-	callpoint!.setColumnData("ARS_PARAMS.CURRENT_PER",
+	callpoint!.setUserInput(
 :                           callpoint!.getColumnUndoData("ARS_PARAMS.CURRENT_PER"))
 	callpoint!.setStatus("REFRESH-ABORT")
 endif
@@ -100,7 +91,7 @@ if cust_sz > maxsz
 	dim msg_tokens$[1];msg_tokens$[1]=str(maxsz)
 	msg_opt$=""
 	gosub disp_message
-	callpoint!.setColumnData("ARS_PARAMS.CUSTOMER_INPUT",
+	callpoint!.setUserInput(
 :                           callpoint!.getColumnUndoData("ARS_PARAMS.CUSTOMER_INPUT"))
 	callpoint!.setStatus("REFRESH")
 else
@@ -108,7 +99,6 @@ else
 	rem --- i.e., same as 6200 logic in ARP.AB
 	callpoint!.setColumnData("ARS_PARAMS.CUSTOMER_SIZE",str(cust_sz:"00"))
 	callpoint!.setColumnData("ARS_PARAMS.CUSTOMER_OUTPUT",cust_out$)
-
 endif
 [[ARS_PARAMS.DIST_BY_ITEM.AVAL]]
 if user_tpl.iv_installed$<>"Y"
@@ -117,7 +107,7 @@ if user_tpl.iv_installed$<>"Y"
 		dim msg_tokens$[1]
 		msg_opt$=""
 		gosub disp_message
-		callpoint!.setColumnData("ARS_PARAMS.DIST_BY_ITEM","N")
+		callpoint!.setUserInput("N")
 		callpoint!.setStatus("REFRESH")
 	endif
 endif
@@ -129,5 +119,5 @@ format_cust_outmask:
 		if pos("#"=wkdata$(wk,1))=0 then let cust_out$=cust_out$+wkdata$(wk,1)
 	next wk
 return
-
 #include std_missing_params.src
+

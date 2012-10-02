@@ -17,19 +17,17 @@ disable_fields:
 	rem --- used to disable/enable controls
 	rem --- ctl_name$ sent in with name of control to enable/disable (format "ALIAS.CONTROL_NAME")
 	rem --- ctl_stat$ sent in as D or space, meaning disable/enable, respectively
-
 	wctl$=str(num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI")):"00000")
 	wmap$=callpoint!.getAbleMap()
 	wpos=pos(wctl$=wmap$,8)
 	wmap$(wpos+6,1)=ctl_stat$
 	callpoint!.setAbleMap(wmap$)
 	callpoint!.setStatus("ABLEMAP-REFRESH-ACTIVATE")
-
 return
 [[APE_INVDATE.USE_INV_DATE.AVAL]]
 rem --- Enable/Disable Date field
 	ctl_name$="APE_INVDATE.DEF_ACCT_DATE"
-	if callpoint!.getColumnData("APE_INVDATE.USE_INV_DATE")="N"
+	if callpoint!.getUserInput()="N"
 		ctl_stat$=""
 		if callpoint!.getColumnData("APE_INVDATE.DEF_ACCT_DATE")=""
 			acctdate$=date(0:"%Y%Mz%Dz")
@@ -53,3 +51,4 @@ rem --- Disable date for initial sreen show
 	callpoint!.setColumnData("APE_INVDATE.USE_INV_DATE","Y")
 	temp_stbl$=stbl("DEF_ACCT_DATE",acctdate$)
 	gosub disable_fields
+

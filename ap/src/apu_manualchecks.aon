@@ -161,8 +161,7 @@ rem --- Read next Check Header (ape-02) record
                     if multitypes<>1 multi_tp$=""
 
                     gosub remove_reversal
-                    write record (apt05_dev,key=apt05a1.firm_id$+multi_tp$+
-:                       apt05a1.check_no$+apt05a1.vendor_id$+apt05a1.ap_inv_no$) apt05a1$
+                    write record (apt05_dev) apt05a1$
                     v0$="O"
                     if br$="Y" gosub bank_rec
 
@@ -173,6 +172,8 @@ rem --- Read next Check Header (ape-02) record
             break
 
             case 2; rem reversal
+
+                dim apt05a2$:fattr(apt05a$)
 
                 read (apt05_dev,key=ape02a_key$,dom=*next)
                 while more
@@ -203,8 +204,7 @@ rem --- Read next Check Header (ape-02) record
                         if apt01a.mc_inv_flag$="M" 
                             if apt01a.mc_inv_rev$<>"R"
                                 apt01a.mc_inv_rev$="R"
-                                write record (apt01_dev,key=apt01a.firm_id$+apt01a.ap_type$+
-:                                   apt01a.vendor_id$+apt01a.ap_inv_no$+apt01a.sequence_00$) apt01a$
+                                write record (apt01_dev) apt01a$
                             endif
                         endif
                     endif
@@ -217,7 +217,7 @@ rem --- Read next Check Header (ape-02) record
 
                     rem --- check detail
                     
-                    write record (apt05_dev,key=apt05_key$) apt05a2$
+                    write record (apt05_dev) apt05a2$
                     remove (apt05_dev,key=apt05_key$)
 
                     v0$="R"
@@ -226,20 +226,20 @@ rem --- Read next Check Header (ape-02) record
 
                 rem --- Reverse Dist
                 
-                d$=apt05a2.firm_id$+apt05a2.ap_type$+apt05a2.vendor_id$+"C"+apt05a2.check_no$
-                read (apt02_dev,key=d$,dom=*next)
-                while more
-                    k$=key(apt02_dev,end=*break)
-                    if k$(1,len(d$))<>d$ break
-                    read record (apt02_dev) apt02a$
+                if cvs(apt05a2.firm_id$,3) <> "" then
+                    d$=apt05a2.firm_id$+apt05a2.ap_type$+apt05a2.vendor_id$+"C"+apt05a2.check_no$
+                    read (apt02_dev,key=d$,dom=*next)
+                    while more
+                        k$=key(apt02_dev,end=*break)
+                        if k$(1,len(d$))<>d$ break
+                        read record (apt02_dev) apt02a$
 
-                    apt02a.invoice_type$="I"
-                    apt02a.reference$=glt05a2.ap_inv_no$
-                    write record (apt02_dev,key=apt02a.firm_id$+apt02a.ap_type$+
-:                       apt02a.vendor_id$+apt02a.invoice_type$+apt02a.reference$+
-:                       apt02a.gl_account$+apt02a.accting_date$) apt02a$
-                    remove (apt02_dev,key=k$,dom=*next)
-                wend
+                        apt02a.invoice_type$="I"
+                        apt02a.reference$=glt05a2.ap_inv_no$
+                        write record (apt02_dev) apt02a$
+                        remove (apt02_dev,key=k$,dom=*next)
+                    wend
+                endif
 
                 rem --- Write Open Check
 
@@ -247,9 +247,12 @@ rem --- Read next Check Header (ape-02) record
                 apt05a1.ap_type$=ape02a.ap_type$
                 apt05a1.check_no$=ape02a.check_no$
                 apt05a1.vendor_id$=ape02a.vendor_id$
-                apt05a1.ap_inv_no$=ape02a.ap_inv_no$
+                rem apt05a1.ap_inv_no$=ape02a.ap_inv_no$
+				rem ap_inv_no$ is not in ape-02.  This makes sense as one check
+				rem could pay many invoices.  I suspect the ap_inv_no in apt-05
+				rem is not valid.  KJS 31-Oct-2008
                 apt05a1.trans_type$=ape02a.trans_type$
-                apt05a1.ap_dist_code$=apt05a2.ap_dist_code;rem right? (was k2$)
+                apt05a1.ap_dist_code$=apt05a2.ap_dist_code$;rem right? (was k2$)
                 apt05a1.check_date$=ape02a.check_date$
                 apt05a1.vendor_name$=ape02a.vendor_name$
                 apt05a1.invoice_amt=0
@@ -257,9 +260,7 @@ rem --- Read next Check Header (ape-02) record
                 apt05a1.retention=0
                 if multitypes<>1 apt05a1.ap_type$=""
 
-                write record (apt05_dev,key=apt05a1.firm_id$+apt05a1.ap_type$+
-:                   apt05a1.check_no$+apt05a1.vendor_id$+apt05a1.ap_inv_no$+
-:                   apt05a1.trans_type$+apt05a1.ap_dist_code$+apt05a1.check_date$) apt05a1$
+                write record (apt05_dev) apt05a1$
 
             break
 
@@ -279,11 +280,9 @@ rem --- Read next Check Header (ape-02) record
                 apt05a1.retention=0
                 
                 if multitypes=0 apt05a1.ap_type$=""
-                write record (apt05_dev,key=apt05a1.firm_id$+apt05a1.ap_type$+
-:                       apt05a1.check_no$+apt05a1.vendor_id$+apt05a1.ap_inv_no$) apt05a1$
+                write record (apt05_dev) apt05a1$
                 v0$="V"
                 if br$="Y" gosub bank_rec
-
 
             break
 
@@ -390,13 +389,15 @@ update_vendhist: rem --- Vendor
         if o9=0 and ape02a.check_date$<=gl_pri_per_end$ apm02a.pyr_purch=apm02a.pyr_purch+ape22a.invoice_amt-ape22a.retention
         if o9=0 and ape02a.check_date$>gl_pri_per_end$ and ape02a.check_date$<=gl_per_end$ apm02a.ytd_purch=apm02a.ytd_purch+ape22a.invoice_amt-ape22a.retention
         if o9=0 if ape02a.check_date$>gl_per_end$ apm02a.nyr_purch=apm02a.nyr_purch+ape22a.invoice_amt-ape22a.retention
-        apm02a$=field(apm02a$);write record (apm02_dev,key=firm_id$+apm02a.vendor_id$+apm02a.ap_type$) apm02a$
+        apm02a$=field(apm02a$)
+        write record (apm02_dev) apm02a$
         break
     wend
 return
 
 remove_reversal: rem --- Remove Reversal
 
+    dim apt05a2$:fattr(apt05a$)
     wkey$=apt05a1.firm_id$+multi_type$+apt05a1.check_no$
     read (apt05_dev,key=wkey$,dom=*next)
     while more
@@ -409,13 +410,11 @@ return
 
 bank_rec: rem --- Bank Rec
 
-    if gl$="Y"
+    if gl$="Y" then
         dim apm10b$:fattr(apm10b$)
         find record (apm10b_dev,key=apt05a1.firm_id$+"B"+apt05a1.ap_dist_code$,dom=*next) apm10b$
-        x$=apm10b.gl_cash_acct$;rem cash acct
-
         glt05a.firm_id$=apt05a1.firm_id$
-        glt05a.gl_account$=x$
+        glt05a.gl_account$=apm10b.gl_cash_acct$;rem cash acct
         glt05a.check_no$=apt05a1.check_no$
         glt05a.check_type$="A"
         glt05a.bnk_chk_date$=apt051a.check_date$
@@ -427,7 +426,8 @@ bank_rec: rem --- Bank Rec
 :           apt05a1.discount_amt-
 :           apt05a1.retention
         glt05a.paid_code$=v0$
-        write record (glt05_dev,key=glt05a.firm_id$+glt05a.gl_account$+glt05a.check_no$) glt05a$
+        write record (glt05_dev) glt05a$
+    endif
 
 return
 

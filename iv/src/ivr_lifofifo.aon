@@ -8,17 +8,6 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-rem This report has been modified for output to vector/grid (OutVect!), instead of directly to printer
-
-rem --- The following IOLIST's were removed from this program:
-
-rem --- ivm01a: iolist a0$(1),a1$(1),a2$(1),a3$(1),a4$,a5$,a6$,a[all]
-rem --- ivm04a: iolist b0$(1),b1$(1),b2$,b[all]
-rem --- ivm10a: iolist x0$(1)
-rem --- ivm10c: iolist x0$(1)
-rem --- ivs01a: iolist i0$,i1$,i2$,i3$,i4$,m0$,m1$,m2$,m3$,m4$,m5$
-rem --- sys01t: iolist x$,f0$,x$,x$,x$,f4$,f5$
-
 
     seterr std_error
     setesc std_error
@@ -26,6 +15,18 @@ rem --- sys01t: iolist x$,f0$,x$,x$,x$,f4$,f5$
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Retrieve sysinfo data
 
@@ -44,32 +45,29 @@ rem --- Open/Lock files
     if status goto std_exit
     files$[1]="ivs_params",ids$[1]="IVS_PARAMS"
     files$[2]="ivm-01",ids$[2]="IVM_ITEMMAST"
-    files$[3]="ivm-03",ids$[3]="IVX_ITEMPRWH"
-    files$[4]="ivm-04",ids$[4]="IVM_ITEMTIER"
-    files$[5]="ivc_whsecode",ids$[5]="IVC_WHSECODE"
-    files$[6]="ivc_prodcode",ids$[6]="IVC_PRODCODE"
+    files$[3]="ivm-04",ids$[3]="IVM_ITEMTIER"
+    files$[4]="ivc_whsecode",ids$[4]="IVC_WHSECODE"
+    files$[5]="ivc_prodcode",ids$[5]="IVC_PRODCODE"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
     ivs01_dev=channels[1]
     ivm01_dev=channels[2]
-    ivm03c_dev=channels[3]
-    ivm04_dev=channels[4]
-    ivm10c_dev=channels[5]
-    ivm10a_dev=channels[6]
+    ivm04_dev=channels[3]
+    ivm10c_dev=channels[4]
+    ivm10a_dev=channels[5]
 
 rem --- Dimension string templates
 
-    dim ivm01a$:templates$[2],ivm04a$:templates$[4],ivm10c$:templates$[5]
-    dim ivm10a$:templates$[6],ivs01a$:templates$[1],ivm03c$:templates$[3]
+    dim ivs01a$:templates$[1],ivm01a$:templates$[2],ivm04a$:templates$[3],
+:       ivm10c$:templates$[4],ivm10a$:templates$[5]
 
 rem --- Retrieve key template
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMPRWH","PRIMARY",ivm03c_key_tpl$,table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMTIER","PRIMARY",ivm04a_key_tpl$,table_chans$[all],status$
 
-    dim ivm03c_key$:ivm03c_key_tpl$,ivm04a_key$:ivm04a_key_tpl$
+    dim ivm04a_key$:ivm04a_key_tpl$
 
 rem --- Assign form input values to local variables
    
@@ -87,6 +85,11 @@ rem --- Retrieve parameter records
 
     ivs01a_key$=firm_id$+"IV00"
     find record (ivs01_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+    if ivs01a.lifofifo$="N" then 
+rem --- LIFO/FIFO not set in parameter record
+        call pgmdir$+"ivc_warnings.aon","F",status
+        goto std_exit
+    endif
     dim p[5]
     P[0]=num(ivs01a.item_id_len$)
     p[1]=num(ivs01a.precision$)
@@ -95,272 +98,224 @@ rem --- Retrieve parameter records
     p[5]=num(ivs01a.desc_len_03$)
     call pgmdir$+"adc_getmask.aon","","GL","A",imask$,m1$,0,0
     call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,0
-Expand_M2:    if len(m2$)<15 m2$="#"+m2$; goto Expand_M2
+    if len(m2$)<15 then m2$=fill(15-len(m2$),"#")+m2$
     call pgmdir$+"adc_getmask.aon","","IV","C",imask$,m3$,0,0
     call pgmdir$+"adc_sizemask.aon",m1$,m1,12,15
     call pgmdir$+"adc_sizemask.aon",m2$,m2,10,15
     call pgmdir$+"adc_sizemask.aon",m3$,m3,10,15
 
-    DIM HEADINGS$[4],O[10],PRODUCT[1],REPORT[1],ITEM[1],TOTAL[1],WAREHOUSE[1],TYPES$[10]
+    dim headings$[5],product[1],report[1],item[1],total[1],warehouse[1],types$[10]
  
-    LET HEADINGS$[0]=firm_name$,HEADINGS$[1]=task_desc$,CLOCK$="",H9$=""
-    LET WIDTH=132,L9=59,L=L9+1,HEADINGS=8,SOURCE$="BBBOTAOPRCTIWOIAIIIRPH"
-    LET TYPES$[0]="Conv",TYPES$[1]="BOM",TYPES$[2]="Tier",TYPES$[3]="Sale"
-    LET TYPES$[4]="P.O.",TYPES$[5]="Xfer",TYPES$[6]="W.O.",TYPES$[7]="Adj"
-    LET TYPES$[8]="Iss",TYPES$[9]="Rec",TYPES$[10]="Phys"
+    headings$[0]=firm_name$
+    headings$[1]=task_desc$
+    clock$="",h9$=""
+    width=132
+    more=1
+    source$="BBBOTAOPRCTIWOIAIIIRPH"
+    types$[0]="Conv",types$[1]="BOM",types$[2]="Tier",types$[3]="Sale"
+    types$[4]="P.O.",types$[5]="Xfer",types$[6]="W.O.",types$[7]="Adj"
+    types$[8]="Iss",types$[9]="Rec",types$[10]="Phys"
+    
+rem --- Headings
 
-    LET O[1]=P[0]+1,O[10]=WIDTH-M1,O[9]=O[10]-M3,O[8]=O[9]-M2;rem -- print positions
-    LET O[7]=O[8]-3,O[6]=O[7]-11,O[5]=O[6]-6,O[4]=O[5]-9
-    LET O[3]=O[4]-4,O[2]=O[3]-4,O[1]=O[0]+P[0],SPLIT=0
-    IF P[0]+P[3]+P[4]+P[5]>O[2] THEN LET SPLIT=1
+    if begitem$="" headings$[2]="From Item: First" else headings$[2]="From Item: "+begitem$
+    if enditem$="" headings$[2]=headings$[2]+" -- To Item: Last" else headings$[2]=headings$[2]+" -- To Item: "+enditem$
+    if begprod$="" headings$[3]="From Product: First" else headings$[3]="From Product: "+begprod$                
+    if endprod$="" headings$[3]=headings$[3]+" -- To Product: Last" else headings$[3]=headings$[3]+" -- To Product: "+endprod$
+    if type$=""    headings$[4]="All Item Types" else headings$[4]="Item Type: "+type$
+    headings$[5]="[HEADER]"
 
-    gosub l5800; rem --- Initialize HEADINGS$
+rem --- column headings
+    dim columns$[9,10]
+    columns=10
+            columns$[0,0]="Item/Description",   columns$[0,1]="C",columns$[0,2]="25"
+            columns$[1,0]="UM",                 columns$[1,1]="C",columns$[1,2]="5"
+            columns$[2,0]="Tier",               columns$[2,1]="C",columns$[2,2]="5",columns$[3,3]="##0"
+            columns$[3,0]="Date",               columns$[3,1]="C",columns$[3,2]="8"
+            columns$[4,0]="Type",               columns$[4,1]="C",columns$[4,2]="5"
+            columns$[5,0]="Reference",          columns$[5,1]="C",columns$[5,2]="12"
+            columns$[6,0]="Seq",                columns$[6,1]="C",columns$[6,2]="5"
+            columns$[7,0]="Quantity",           columns$[7,1]="N",columns$[7,2]="12",columns$[7,3]=m2$,columns$[7,10]="T"
+            columns$[8,0]="Unit Cost",          columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m3$
+            columns$[9,0]="Extension",          columns$[9,1]="N",columns$[9,2]="12",columns$[9,3]=m1$,columns$[9,10]="T"
 
 rem --- Position files
 
-    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",7+p[0],ivm03c_dev,1,0,ignore_status
-rem    call pgmdir$+"adc_progress.aon","S","","","","Printing",0,0,1,meter_num,status
-    first$=firm_id$+"C"
-    ivm03c.firm_id$=firm_id$,ivm03c.record_id_c$="C"
-    if begwhse$<>"" then ivm03c.warehouse_id$=begwhse$
-    if begwhse$<>"" and begprod$<>"" ivm03c.product_type$=begprod$
-    if begprod$<>"" and begitem$<>"" ivm03c.item_id$=begitem$
+    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",7+p[0],ivm01_dev,1,0,ignore_status
 
-    read (ivm03c_dev,key=ivm03c$,dom=*next)
+rem --- Loop Starting
 
-Main_Read: rem --- Get next sort record
+    sql_prep$="select ivm_itemwhse.firm_id, ivm_itemwhse.item_id,"
+    sql_prep$=sql_prep$+"ivm_itemwhse.warehouse_id, ivm_itemmast.product_type,"
+    sql_prep$=sql_prep$+"ivm_itemmast.item_type "
+    sql_prep$=sql_prep$+"FROM ivm_itemwhse INNER JOIN ivm_itemmast "
+    sql_prep$=sql_prep$+"ON ivm_itemwhse.item_id=ivm_itemmast.item_id AND "
+    sql_prep$=sql_prep$+"ivm_itemwhse.firm_id=ivm_itemmast.firm_id "
+    where_clause$="WHERE ivm_itemwhse.firm_id = '"+firm_id$+"' AND "
+    if begwhse$<>"" where_clause$=where_clause$+"ivm_itemwhse.warehouse_id >= '"+begwhse$+"' AND "
+    if endwhse$<>"" where_clause$=where_clause$+"ivm_itemwhse.warehouse_id <= '"+endwhse$+"' AND "
+    if begprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type >= '"+begprod$+"' AND "
+    if endprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type <= '"+endprod$+"' AND "
+    if begitem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id >= '"+begitem$+"' AND "
+    if enditem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id <= '"+enditem$+"'"
+    if type$<>"" where_clause$=where_clause$+"ivm_itemmast.item_type = '"+type$+"'"
 
-    k$=key(ivm03c_dev,end=done)
-    if pos(first$=k$)<>1 goto done
-    read (ivm03c_dev)
-    whse$=k$(4,2)
-    product$=k$(6,3)
-    item$=k$(9)
+    where_clause$=cvs(where_clause$,2)
+    if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
+    where_clause$=where_clause$+" order by ivm_itemwhse.warehouse_id,ivm_itemmast.product_type "
+    if where_clause$<>"" sql_prep$=sql_prep$+where_clause$
 
-rem --- Valid Warehouse/Product/Item?
+    sql_chan=sqlunt 
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
-    if endwhse$<>"" if cvs(whse$,3)>endwhse$ goto Done
-    if begprod$<>"" if cvs(product$,3)<begprod$ goto Beg_Prod
-    if endprod$<>"" if cvs(product$,3)>endprod$ goto Last_Prod
-    if begitem$<>"" if cvs(item$,3)<begitem$ goto Beg_Item
-    if enditem$<>"" if cvs(item$,3)>enditem$ goto Last_Item
+rem --- Main Read
 
-    call pgmdir$+"adc_progress.aon","S","","","",whse$+" "+product$+" "+item$(1,p[0]),0,0,1,meter_num,status
-    if whse$<>t0$ gosub l6000
-    if product$<>t1$ gosub l6200
+    while more
+        read_tpl$=sqlfetch(sql_chan,err=*break)      
+        whse$=read_tpl.warehouse_id$
+        product$=read_tpl.product_type$
+        item$=read_tpl.item_id$
+
+        call pgmdir$+"adc_progress.aon","S","","","",whse$+" "+product$+" "+item$(1,p[0]),0,0,1,meter_num,status
+        if whse$<>t0$ gosub whse_break
+        if product$<>t1$ gosub product_break
 
 rem --- Retrieve item
 
-    needed=split
-    find record (ivm01_dev,key=firm_id$+item$,dom=Next_Item) ivm01a$
-    if type$<>"" if ivm01a.item_type$<>type$ goto Next_Item
-    description$=cvs(ivm01a.item_desc$,3)
-    um$=ivm01a.unit_of_sale$
-    if split=0 goto l1600
-    if len(description$)>o[2] description$=description$(1,o[2]-1)
+        find record (ivm01_dev,key=firm_id$+item$,dom=*continue) ivm01a$
+        if type$<>"" and ivm01a.item_type$<>type$ continue
+        description$=cvs(ivm01a.item_desc$,3)
+        um$=ivm01a.unit_of_sale$
 
-l1600: rem --- Position file for reading LIFO/FIFO records
+rem --- Position file for reading LIFO/FIFO records
 
-    dim item[1]
-    tier=0
-    read (ivm04_dev,key=firm_id$+whse$+item$+begdate$,dom=*next)
+        dim item[1]
+        tier=0
+        read (ivm04_dev,key=firm_id$+whse$+item$+begdate$,dom=*next)
+        item_id$=cvs(item$,2)
 
-Next_Tier: rem --- Read next LIFO/FIFO record
+rem --- Read next LIFO/FIFO record
 
-    ivm04a_key$=key(ivm04_dev,end=l3000)
-    if pos(firm_id$+whse$+item$=ivm04a_key$)<>1 goto l3000
-    read record (ivm04_dev) ivm04a$
-    if enddate$<>"" if ivm04a.receipt_date$>enddate$ goto l3000
-    if ivm04a.qty_on_hand=0 goto l3000
+        while more
+            ivm04a_key$=key(ivm04_dev,end=*break)
+            if pos(firm_id$+whse$+item$=ivm04a_key$)<>1 break
+            read record (ivm04_dev) ivm04a$
+            if enddate$<>"" and ivm04a.receipt_date$>enddate$ break
+            if ivm04a.qty_on_hand=0 then break
 
 rem --- Format print fields
 
-    l=l+1+needed
-    tier=tier+1
-    d$=""
-    value=ivm04a.qty_on_hand*ivm04a.unit_cost
-    if split=0 if tier=1 d$=description$,x=o[1]
-    if split>0 if tier>1 d$=description$,x=o[0]+3
-    if tier=1 l=l+1
-    x=pos(ivm04a.trans_source$=source$,2)
-    trans$=ivm04a.trans_source$
-    if x>0 trans$=types$[(x-1)/2]
-
+            tier=tier+1
+            value=ivm04a.qty_on_hand*ivm04a.unit_cost
+            x=pos(ivm04a.trans_source$=source$,2)
+            trans$=ivm04a.trans_source$
+            if x>0 trans$=types$[(x-1)/2]
+            
 rem --- Print detail line
 
-    if h9$<>""
-        OutVect!.addItem(h9$)
-        h9$=""
-        for x=1 to 10
-            OutVect!.addItem("")
-        next x
-    endif; rem --- sub-headings for product
-	OutVect!.addItem(item$)
-	OutVect!.addItem(d$)
-	OutVect!.addItem(um$)
-	OutVect!.addItem(str(tier:"##0"))
-	OutVect!.addItem(fndate$(ivm04a.receipt_date$))
-	OutVect!.addItem(trans$)
-	OutVect!.addItem(ivm04a.trans_ref$)
-	OutVect!.addItem(ivm04a.sequence_no$)
-	OutVect!.addItem(str(ivm04a.qty_on_hand:m2$))
-	OutVect!.addItem(str(ivm04a.unit_cost:m3$))
-	OutVect!.addItem(str(value:m1$))
-    item$="",um$="",needed=0
+            if h9$<>"" then 
+                OutVect!.addItem(h9$)
+                h9$=""
+                xwk=fnblank(columns-1)
+                xwk=fnblank(columns)
+            endif
+            OutVect!.addItem(item_id$+"   "+description$)
+            OutVect!.addItem(um$)
+            OutVect!.addItem(str(tier:"##0"))
+            OutVect!.addItem(fndate$(ivm04a.receipt_date$))
+            OutVect!.addItem(trans$)
+            OutVect!.addItem(ivm04a.trans_ref$)
+            OutVect!.addItem(ivm04a.sequence_no$)
+            OutVect!.addItem(str(ivm04a.qty_on_hand))
+            OutVect!.addItem(str(ivm04a.unit_cost))
+            OutVect!.addItem(str(value))
+            item_id$="",um$="",description$=""
 
 rem --- Accumulate totals
 
-    item[0]=item[0]+ivm04a.qty_on_hand
-    item[1]=item[1]+value
-    report[1]=report[1]+value
-    product[0]=product[0]+1
-    product[1]=product[1]+value
-    warehouse[0]=warehouse[0]+1
-    warehouse[1]=warehouse[1]+value
+            item[0]=item[0]+ivm04a.qty_on_hand
+            item[1]=item[1]+value
+            report[1]=report[1]+value
+            product[0]=product[0]+1
+            product[1]=product[1]+value
+            warehouse[0]=warehouse[0]+1
+            warehouse[1]=warehouse[1]+value
 
 rem --- Loop back for next tier record
 
-    goto Next_Tier
+        wend
 
-l3000: rem --- Print item totals
+rem --- Print item totals
 
-    if tier=0 goto Next_Item
-
-    if split>0
+        if tier=0 continue
         if tier<2
-            OutVect!.addItem("")
             OutVect!.addItem(description$)
-            for x=1 to 9;OutVect!.addItem("");next x
+            xwk=fnblank(columns-1)
         endif
-    endif
-    if tier=1 goto Next_Item
-    total$="Total For Item "+ivm01a.item_id$
-    total[0]=item[0]
-    total[1]=item[1]
-    l1=1
-    gosub l6900
+        if tier=1 continue
+        total$="Total For Item "+ivm01a.item_id$
+        total[0]=item[0]
+        total[1]=item[1]
+        gosub print_total
 
-Next_Item: rem --- Loop back for next record
+rem --- Loop back for next record
 
-    goto Main_Read
+    wend
 
-Beg_Prod: read (ivm03c_dev,key=k$(1,5)+begprod$,dom=Next_Item)
-Last_Prod: read (ivm03c_dev,key=k$(1,5)+$FF$,dom=Next_Item)
-Beg_Item: read (ivm03c_dev,key=k$(1,8)+begitem$,dir=0,dom=Next_Item)
-Last_Item: read (ivm03c_dev,key=k$(1,8)+$FF$,dom=Next_Item)
-
-Done: rem --- All done
+rem --- All done
 
     done=1
-    gosub l6000
+    gosub whse_break
     total$="Total For Report"
     total[1]=report[1]
-    l1=2
-    gosub l6900
+    gosub print_total
     goto std_exit
 
-nolifofifo: rem --- LIFO/FIFO not set in parameter record
+whse_break: rem --- Warehouse Break
 
-    call pgmdir$+"ivc_warnings.aon","F",status
-    goto std_exit
-
-l5800: rem --- Initialize HEADINGS$
-
-rem --- date/time 
-	OutVect!=bbjAPI().getSysGui().makeVector()
-	rep_date$=date(0:"%Mz/%Dz/%Yd")
-		rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-	rep_time$=date(0:"%hz:%mz %p")
-		rep_time_stamp$=date(0:"%Hz%mz%sz")
-
-rem ---  miscellaneous report hdgs
-    x1$="First"
-    x2$="First"
-    if begitem$<>"" x1$=begitem$
-    if begprod$<>"" x2$=begprod$
-    h1$="Item: from "+x1$
-    h3$="Product: from "+x2$
-    x1$="Last"
-    x2$="Last"
-    x3$="All Item Types"
-    if enditem$<>"" x1$=enditem$
-    if endprod$<>"" x2$=endprod$
-    if type$<>"" x3$="Item Type "+type$
-    h1$=h1$+" to "+x1$   
-    h3$=h3$+" to "+x2$
-    h5$=x3$
-    headings$[2]=h1$
-    headings$[3]=h3$
-    headings$[4]=h5$
-
-rem --- column headings
-	dim columns$[10,10]
-		columns$[0,0]="Item",columns$[0,1]="C",columns$[0,2]="30"
-		columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="30"
-		columns$[2,0]="UM",columns$[2,1]="C",columns$[2,2]="5"
-		columns$[3,0]="Tier",columns$[3,1]="C",columns$[3,2]="5",columns$[3,3]="##0"
-		columns$[4,0]="Date",columns$[4,1]="C",columns$[4,2]="10"
-		columns$[5,0]="Type",columns$[5,1]="C",columns$[5,2]="5"
-		columns$[6,0]="Reference",columns$[6,1]="C",columns$[6,2]="15"
-		columns$[7,0]="Seq",columns$[7,1]="C",columns$[7,2]="5"
-		columns$[8,0]="Quantity",columns$[8,1]="N",columns$[8,2]="15",columns$[8,3]=m2$
-		columns$[9,0]="Unit Cost",columns$[9,1]="N",columns$[9,2]="15",columns$[9,3]=m3$
-		columns$[10,0]="Extension",columns$[10,1]="N",columns$[10,2]="15",columns$[10,3]=m1$
-
-    return
-
-l6000: rem --- Warehouse Break
-
-    if t0$="" goto l6100
-    gosub l6200
-    total$="Total For Warehouse "+t0$
-    total[1]=warehouse[1]
-    l1=2
-    if warehouse[0]>0 gosub l6900
-l6100:
-    if done goto l6190
+    if t0$<>"" then
+        gosub product_break
+        total$="Total For Warehouse "+t0$
+        total[1]=warehouse[1]
+        if warehouse[0]>0 gosub print_total
+    endif
+    if done then return
     dim warehouse[1]
     t0$=whse$
     ivm10c.short_name$="(Not on File)"
-    l=l9+1
     find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
     let x$="Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2)
-    OutVect!.addItem(x$)
-    for x=1 to 10
-        OutVect!.addItem("")
-    next x
-
-l6190:
+    BrkVect!.addItem(str(OutVect!.size()/(columns)))
+    HdrVect!.addItem(x$)
     return
 
-l6200: rem --- Product break
+product_break: rem --- Product break
 
-    if t1$="" goto l6300
-    let total$="Total For Product "+t1$,total[1]=product[1],l1=2
-    if product[0]>0 gosub l6900
-l6300:
-    if done goto l6390
+    if t1$<>"" then
+        let total$="Total For Product Type "+t1$,total[1]=product[1]
+        if product[0]>0 gosub print_total
+    endif
+    if done then return
     dim product[1]
     let t1$=product$,ivm10a.code_desc$="(Not on File)"
     find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
     let h9$="Product Type "+t1$+" "+ivm10a.code_desc$
-l6390:
     return
 
-l6900: rem --- Print total line
+print_total: rem --- Print total line
 
-    let x1$="",x2$=str(total[1]:m1$),total$=cvs(total$,2)
-    if total[0]<>0 x1$=str(total[0]:m2$)
-
-    OutVect!.addItem(total$)
-    for x=1 to 7
-        OutVect!.addItem("")
-    next x
-    OutVect!.addItem(x1$)
+    total$=cvs(total$,2)
+    TotVect!.addItem(str(OutVect!.size()/(columns)))
+    OutVect!.addItem(fill(10)+total$)
+    xwk=fnblank(columns-4)
+    OutVect!.addItem(str(total[1]))
     OutVect!.addItem("")
-    OutVect!.addItem(x2$)
-    for x=1 to 11;OutVect!.addItem("");next x;rem "blank line after tots
-    let l=l+l1,total[0]=0,total[1]=0
+    OutVect!.addItem(str(total[1]))
+    xwk=fnblank(columns)
+    total[0]=0,total[1]=0
     return
 
 rem #include std_functions.src
@@ -391,16 +346,13 @@ rem --- old format using params: def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1
 
 rem --- Date/time handling functions
 
-   def fndate$(q$) 
-        if cvs(q$,2)="" return ""
-        testdate$=""
-        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if testdate$<>"" 
-            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
-        endif
-        return testdate$
-    fnend    
-rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+   
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
@@ -440,6 +392,15 @@ rem --- fnglobal$: Return string value of passed STBL variable
     def fnglobal$(q$,q1$)
         q1$=stbl(q$,err=*next)
         return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
     fnend
 
 rem #endinclude std_functions.src

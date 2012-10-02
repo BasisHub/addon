@@ -67,6 +67,14 @@ rem --- Retrieve parameter records
     call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_length
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
 
+rem --- Set A/P Type if multiple types not installed
+
+        if aps01a.multi_types$<>"Y"
+            aptype$=fattr(ape04a$,"AP_TYPE")
+            aptype_len=dec(aptype$(10,2))
+            dim ap_type$(aptype_len)
+        endif
+
 initializations: rem --- Initializations
 
     dimlen=80-(h0+24+3*m1)
@@ -91,6 +99,11 @@ rem --- Check From Address
     find record (aps01b_dev,key=aps01b_key$,err=std_missing_params) aps01b$
     ap_address$=aps01b.addr_line_1$+aps01b.addr_line_2$+aps01b.city$+aps01b.state_code$+aps01b.zip_code$
     call pgmdir$+"adc_address.aon",ap_address$,24,3,9,35
+    if cvs(ap_address$(71),2)<>"" then
+        stub_address$=ap_address$(71)
+    else
+        stub_address$=ap_address$(36,35)
+    endif
 
   
 rem --- Open the printer
@@ -125,10 +138,6 @@ rem --- Open the printer
     myBBjPrinter!.setAttributes(requestAttributes!)
 
     doc!=myBBjPrinter!.getForm(0)
-
-  rem --- Display Resource
-
-    if aps01a.multi_types$="Y" and aps01a.ap_check_seq$="Y" ap_type$=fill(23) else ap_type$=""
 
 rem --- Start progress meter and position check File (ape-04)
 
@@ -193,10 +202,6 @@ check_header: rem --- Check Stub Header
     page!.setTopMargin(18)
     page!.setBottomMargin(18)
 
-    stub=0
-    gosub check_stub
-    stub=stub_offset
-    gosub check_stub
 
     return
 
@@ -204,7 +209,7 @@ check_stub:
       
     tmp=fntext(6,1+stub,aps01b.name$,boldfont!)
     tmp=fntext(6,12+stub,ap_address$(1,35),textfont!)
-    tmp=fntext(6,24+stub,ap_address$(36,35),textfont!)   
+    tmp=fntext(6,24+stub,stub_address$,textfont!)   
 
     tmp=fntext(175,1+stub,x1$,boldfont!)
     tmp=fntext2(350,1+stub,50,0+stub,"Check No:",italicfont!,right_justify)
@@ -305,6 +310,8 @@ check_stub_detail:
 
 stub_total: rem --- Stub Total
 
+    stub=0
+
     tmp=fntext2(col[2],204,col[3]-col[2]-6,204,str(t[0]:m1$),boldfont!,right_justify)
     tmp=fntext2(col[3],204,col[4]-col[3]-6,204,str(t[1]:m1$),boldfont!,right_justify)
     tmp=fntext2(col[4],204,col[5]-col[4]-6,204,str(t[0]-t[2]-t[1]:m1$),boldfont!,right_justify)
@@ -315,15 +322,21 @@ stub_total: rem --- Stub Total
     tmp=fnline(0,204,right_margin,204)
     tmp=fnline(0,216,right_margin,216)
 
-    tmp=fntext2(col[2],204+stub_offset,col[3]-col[2]-6,204+stub_offset,str(t[0]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[3],204+stub_offset,col[4]-col[3]-6,204+stub_offset,str(t[1]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[4],204+stub_offset,col[5]-col[4]-6,204+stub_offset,str(t[0]-t[2]-t[1]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[5],216+stub_offset,118,216+stub_offset,"Vendor Copy",boldfont!,right_justify)
-    tmp=fnbox2(col[1],204+stub_offset,col[2]-col[1],12)
-    tmp=fntext3(col[1],204+stub_offset,col[2]-col[1]-6,204+stub_offset,"Totals",boldfont!,right_justify)
+    gosub check_stub
 
-    tmp=fnline(0,204+stub_offset,right_margin,204+stub)
-    tmp=fnline(0,216+stub_offset,right_margin,216+stub)
+    stub=stub_offset
+
+    tmp=fntext2(col[2],204+stub_offset,col[3]-col[2]-6,204+stub,str(t[0]:m1$),boldfont!,right_justify)
+    tmp=fntext2(col[3],204+stub_offset,col[4]-col[3]-6,204+stub,str(t[1]:m1$),boldfont!,right_justify)
+    tmp=fntext2(col[4],204+stub_offset,col[5]-col[4]-6,204+stub,str(t[0]-t[2]-t[1]:m1$),boldfont!,right_justify)
+    tmp=fntext2(col[5],216+stub_offset,118,216+stub,"Vendor Copy",boldfont!,right_justify)
+    tmp=fnbox2(col[1],204+stub,col[2]-col[1],12)
+    tmp=fntext3(col[1],204+stub,col[2]-col[1]-6,204+stub_offset,"Totals",boldfont!,right_justify)
+
+    tmp=fnline(0,204+stub,right_margin,204+stub)
+    tmp=fnline(0,216+stub,right_margin,216+stub)
+
+    gosub check_stub
 
     return
 
@@ -378,6 +391,7 @@ common_check_face:
     tmp=fntext(36,552,aps01b.name$,boldfont!)
     tmp=fntext(36,564,ap_address$(1,35),textfont!)
     tmp=fntext(36,576,ap_address$(36,35),textfont!)
+    tmp=fntext(36,588,ap_address$(71),textfont!)
 
     tmp=fntext(6,672,"Pay",italicfont!)
     tmp=fntext(6,684,"to the",italicfont!)
@@ -526,7 +540,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")

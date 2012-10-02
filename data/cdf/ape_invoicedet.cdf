@@ -1,3 +1,7 @@
+[[APE_INVOICEDET.AUDE]]
+rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
+gosub calc_grid_tots
+gosub disp_totals
 [[APE_INVOICEDET.GL_POST_AMT.BINP]]
 rem if amt is zero, pre-fill w/ distrib. bal amt
 rem print callpoint!.getColumnData("APE_INVOICEDET.GL_POST_AMT")
@@ -45,7 +49,9 @@ calc_grid_tots:
 	if numrecs>0
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
-			if cvs(gridrec$,3)<> "" then tdist=tdist+num(gridrec.gl_post_amt$)
+			if cvs(gridrec$,3)<> "" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y" 
+				tdist=tdist+num(gridrec.gl_post_amt$)
+			endif
 		next reccnt
 		user_tpl.tot_dist$=str(tdist)
 	endif

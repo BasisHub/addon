@@ -6,7 +6,9 @@ recVect!=GridVect!.getItem(0)
         if numrecs>0
             for reccnt=0 to numrecs-1
 	            gridrec$=recVect!.getItem(reccnt)
-	            if cvs(gridrec$,3)<>"" tot_pct=tot_pct+num(gridrec.percentage$)
+	            if cvs(gridrec$,3)<>"" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y"
+			 tot_pct=tot_pct+num(gridrec.percentage$)
+		    endif
             next reccnt
 	endif
 

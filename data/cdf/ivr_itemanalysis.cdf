@@ -15,5 +15,4 @@ curr_per$=ivs_params.current_per$+ivs_params.current_year$
 callpoint!.setColumnData("PERIOD_YEAR_1",curr_per$)
 callpoint!.setColumnData("PERIOD_YEAR_2",curr_per$)
 callpoint!.setColumnData("RPT_LEVEL","U")
-callpoint!.setColumnData("STOCK_LEVEL","W")
 callpoint!.setStatus("REFRESH")

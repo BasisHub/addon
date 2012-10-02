@@ -22,11 +22,9 @@ if valid$="N" callpoint!.setStatus("ABORT")
 [[GLM_FINDETAIL.OUTPUT_OPER_01.AVAL]]
 gosub validate_oper
 if valid$="N" callpoint!.setStatus("ABORT")
-
 [[GLM_FINDETAIL.INPUT_PERCNT.AVAL]]
 if num(callpoint!.getUserInput())=0 
 	callpoint!.setColumnData("GLM_FINDETAIL.ACCUM_PCT","N")
-
 callpoint!.setStatus("REFRESH")
 [[GLM_FINDETAIL.<CUSTOM>]]
 disable_fields:
@@ -38,25 +36,18 @@ disable_fields:
  wpos=pos(wctl$=wmap$,8)
  wmap$(wpos+6,1)=ctl_stat$
  callpoint!.setAbleMap(wmap$)
-
 callpoint!.setStatus("ABLEMAP-REFRESH")
-
 return
-
 validate_oper:
-
 valid$=""
 if pos(callpoint!.getUserInput()="+- ")=0
 valid$="N"
-
 return
 [[GLM_FINDETAIL.LINE_TYPE_LIST.AVAL]]
 if pos(callpoint!.getUserInput()="HDTNBC")=0  then callpoint!.setStatus("ABORT-REFRESH")
 [[GLM_FINDETAIL.EDITING_CODE.AVAL]]
-edits$=cvs(callpoint!.getColumnData("GLM_FINDETAIL.EDITING_CODE"),3)
-
+edits$=cvs(callpoint!.getUserInput(),3)
 edlen=len(edits$), reject$=""
-
 if edlen>0
 	if edlen >5 reject$="Y"
 	 
@@ -64,11 +55,11 @@ if edlen>0
 		if pos(edits$(x,1)="SUDP-CF$")=0
 		reject$="Y"
 	next x
-
 	if reject$<>"" 
 		MSG_ID$="GL_FIN_EDIT"
 		gosub disp_message
-		callpoint!.setColumnData("GLM_FINDETAIL.EDITING_CODE","")
+		callpoint!.setUserInput("")
 		callpoint!.setStatus("ABORT-REFRESH")
 	endif
 endif
+

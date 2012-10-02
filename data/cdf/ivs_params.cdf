@@ -1,7 +1,6 @@
 [[IVS_PARAMS.CURRENT_PER.AVAL]]
 rem --- Validate period is valid
-
-	cur_per=num(callpoint!.getColumnData("IVS_PARAMS.CURRENT_PER"))
+	cur_per=num(callpoint!.getUserInput())
 	dim gls01a$:user_tpl.gls01_tpl$
 	readrecord(user_tpl.gls01_dev,key=firm_id$+"GL00")gls01a$
 	if cur_per>num(gls01a.total_pers$)
@@ -12,7 +11,7 @@ rem --- Validate period is valid
 	endif
 [[IVS_PARAMS.COST_METHOD.AVAL]]
 if user_tpl.old_cost_method$<>""
-	if user_tpl.old_cost_method$<>callpoint!.getColumnData("IVS_PARAMS.COST_METHOD")
+	if user_tpl.old_cost_method$<>callpoint!.getUserInput()
 		msg_id$="REBUILD_COSTS"	
 		dim msg_tokens$[1]
 		gosub disp_message
@@ -28,14 +27,12 @@ rem --- Open/Lock files
 :                              ids$[all],templates$[all],channels[all],batch,status
 	if status goto std_exit
 	gls01_dev=channels[1]
-
 rem --- Setup user template
-
 	dim user_tpl$:"old_cost_method:c(1),gls01_dev:n(4),gls01_tpl:c(2048)"
-
 	user_tpl.gls01_dev=gls01_dev
 	user_tpl.gls01_tpl$=templates$[1]
 [[IVS_PARAMS.ARAR]]
 if user_tpl.old_cost_method$<>""
 	user_tpl.old_cost_method$=callpoint!.getColumnData("IVS_PARAMS.COST_METHOD")
 endif
+

@@ -8,91 +8,82 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-    seterr std_error
-    setesc std_error
+        seterr std_error
+        setesc std_error
 
 rem --- Get program path
 
-               pgmdir$=fnglobal$("+DIR_PGM","")
+       pgmdir$=fnglobal$("+DIR_PGM","")
 
 rem --- Document initializations
-                OutVect!=bbjAPI().getSysGui().makeVector()
-                HdrVect!=bbjAPI().getSysGui().makeVector()
-                rep_date$=date(0:"%Mz/%Dz/%Yd")
-                rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-                rep_time$=date(0:"%hz:%mz %p")
-                rep_time_stamp$=date(0:"%Hz%mz%sz")
+                
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rep_prog$=pgm(-2)
 
 rem --- Initialize HEADINGS$
 
-                dim h3$(width),h4$(width),h6$(width),headings$[headings+1]
-      
-                if p[4]>0 h6$(p[0]+segment1+2)=segment2$
-                if p[5]>0 h6$(p[0]+segment1+segment2+3)=segment3$
-                headings$[0]=cvs(sysinfo.firm_name$,2)
-                headings$[1]=cvs(sysinfo.task_desc$,2)
-                headings$[3]=h3$
-                headings$[4]=h4$
-                headings$[6]=h6$
-
-                if begitem$="" headings$[3]="From Item: First" else headings$[3]="From Item: "+begitem$
-                if enditem$="" headings$[3]=headings$[3]+" -- To Item: Last" else headings$[3]=headings$[3]+" -- To Item: "+enditem$
-                if begprod$="" headings$[4]="From Product: First" else headings$[4]="From Product: "+begprod$                
-                if endprod$="" headings$[4]=headings$[4]+" -- To Product: Last" else headings$[4]=headings$[4]+" -- To Product: "+endprod$
-                if type$=""    headings$[5]="All Item Types" else headings$[5]="Item Type: "+type$
+        dim headings$[headings+1]
+        headings$[0]=cvs(sysinfo.firm_name$,2)
+        headings$[1]=cvs(sysinfo.task_desc$,2)
+        
+        if begitem$="" headings$[3]="From Item: First" else headings$[3]="From Item: "+begitem$
+        if enditem$="" headings$[3]=headings$[3]+" -- To Item: Last" else headings$[3]=headings$[3]+" -- To Item: "+enditem$
+        if begprod$="" headings$[4]="From Product: First" else headings$[4]="From Product: "+begprod$                
+        if endprod$="" headings$[4]=headings$[4]+" -- To Product: Last" else headings$[4]=headings$[4]+" -- To Product: "+endprod$
+        if type$=""    headings$[5]="All Item Types" else headings$[5]="Item Type: "+type$
 
 rem ----Column Heading
 
-                dim columns$[3,10]
-                columns$[0,0]="Item",                  columns$[0,1]="C",columns$[0,2]="15"
-                columns$[1,0]="Description",           columns$[1,1]="C",columns$[1,2]=str(p[3])
-                columns$[2,0]="Description",           columns$[2,1]="C",columns$[2,2]=str(p[4])
-                columns$[3,0]="Description",           columns$[3,1]="C",columns$[2,2]=str(p[5])
-		if p[4]=0 columns$[2,0]=""
-		if p[5]=0 columns$[3,0]=""
+        dim columns$[3,10]
+        columns$[0,0]="Item",              columns$[0,1]="C",columns$[0,2]="15"
+        columns$[1,0]=segment1$,           columns$[1,1]="C",columns$[1,2]=str(p[3])
+        columns$[2,0]=segment2$,           columns$[2,1]="C",columns$[2,2]=str(p[4])
+        columns$[3,0]=segment3$,           columns$[3,1]="C",columns$[2,2]=str(p[5])
+        if p[4]=0 columns$[2,0]=""
+        if p[5]=0 columns$[3,0]=""
 
 rem --- Position files
 
 
-                call pgmdir$+"adc_progress.aon","NC",sysinfo.task_desc$,"","Printing","",p[0],ivm01_dev,1,0,ignore_status
-                read record (ivm01_dev,key=sysinfo.firm_id$+begitem$,dom=next_ivm01)ivm01a$
-                goto range_checks
+        call pgmdir$+"adc_progress.aon","NC",sysinfo.task_desc$,"","Printing","",p[0],ivm01_dev,1,0,ignore_status
+        read (ivm01_dev,key=firm_id$+begitem$,dir=0,dom=*next)ivm01a$
 
-next_ivm01: rem --- Next Item
+        while more
+            ivm01a_key$=key(ivm01_dev,end=*break)
+            if pos(firm_id$=ivm01a_key$)<>1 then break
+            if enditem$<>"" and ivm01a_key.item_id$>enditem$ then break
+            read record (ivm01_dev)ivm01a$
 
-                k$=key(ivm01_dev,end=done)
-                if pos(sysinfo.firm_id$=k$)<>1 goto done
-                if enditem$<>"" if k$(3)>enditem$ goto done
-                read record (ivm01_dev)ivm01a$
+rem --- Update progress meter and perform range checks
 
-range_checks: rem --- Update progress meter and perform range checks
-
-                call pgmdir$+"adc_progress.aon","S","","","",ivm01a.item_id$(1,p[0]),0,0,1,0,ignore_status
-                if begprod$<>"" if ivm01a.product_type$<begprod$ goto ivm01_loop
-                if endprod$<>"" if ivm01a.product_type$>endprod$ goto ivm01_loop
-                if type$<>"" if ivm01a.item_class$<>type$ goto ivm01_loop
+            call pgmdir$+"adc_progress.aon","S","","","",ivm01a.item_id$(1,p[0]),0,0,1,0,ignore_status
+            if begprod$<>"" if ivm01a.product_type$<begprod$ continue
+            if endprod$<>"" if ivm01a.product_type$>endprod$ continue
+            if type$<>"" if ivm01a.item_class$<>type$ continue
 
 rem --- Print detail line
 
+             OutVect!.addItem(ivm01a.item_id$(1,p[0]))
+             OutVect!.addItem(ivm01a.item_desc$(1,p[3]))
+             if p[4] OutVect!.addItem(ivm01a.item_desc$(p[3]+1,p[4])) else OutVect!.addItem("")
+             if p[5] OutVect!.addItem(ivm01a.item_desc$(p[3]+p[4]+1,p[5])) else OutVect!.addItem("")
+             number=number+1
 
-                 OutVect!.addItem(ivm01a.item_id$(1,p[0]))
-                 OutVect!.addItem(ivm01a.item_desc$(1,p[3]))
-                 if p[4] OutVect!.addItem(ivm01a.item_desc$(p[3]+1,p[4])) else OutVect!.addItem("")
-                 if p[5] OutVect!.addItem(ivm01a.item_desc$(p[3]+p[4]+1,p[5])) else OutVect!.addItem("")
-                 number=number+1
+rem --- Loop back for next record
 
-ivm01_loop: rem --- Loop back for next record
-
-                goto next_ivm01
+        wend
 
 done: rem --- All done
 
-
-                        OutVect!.addItem(str(number)+" Items Listed")
-                        OutVect!.addItem("")
-                        goto std_exit
-
-
+        xwk=fnblank(5)
+        OutVect!.addItem(str(number)+" Items Listed")
+        xwk=fnblank(2)
+        goto std_exit
 
 rem --- Functions
 
@@ -104,6 +95,15 @@ rem --- fnglobal$: Return string value of passed STBL variable
         q1$=stbl(q$,err=globalstr_exit)
         globalstr_exit:
         return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
     fnend
 
 rem #include std_error.src

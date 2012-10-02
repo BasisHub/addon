@@ -1,19 +1,19 @@
 [[ARM_EMAILFAX.WEB_PAGE.AVAL]]
-if cvs(callpoint!.getColumnData("ARM_EMAILFAX.WEB_PAGE"),2)<>""
-	if pos("."=callpoint!.getColumnData("ARM_EMAILFAX.WEB_PAGE"))=0
+if cvs(callpoint!.getUserInput(),2)<>""
+	if pos("."=callpoint!.getUserInput())=0
 		callpoint!.setMessage("INVALID_WEBPAGE")
 		callpoint!.setStatus("ABORT")
 	endif
 endif
 [[ARM_EMAILFAX.EMAIL_CC.AVAL]]
-	mail$=callpoint!.getColumnData("ARM_EMAILFAX.EMAIL_CC")
+	mail$=callpoint!.getUserInput()
 	gosub multi_email
 	if not_valid
 		callpoint!.setMessage("INVALID_EMAIL")
 		callpoint!.setStatus("ABORT")
 	endif
 [[ARM_EMAILFAX.EMAIL_TO.AVAL]]
-	mail$=callpoint!.getColumnData("ARM_EMAILFAX.EMAIL_TO")
+	mail$=callpoint!.getUserInput()
 	gosub multi_email
 	if not_valid
 		callpoint!.setMessage("INVALID_EMAIL")
@@ -42,10 +42,10 @@ multi_email: rem --- Validate format of email address(es)
 		mail$=save_mail$
 	endif
 return
-
 valid_email: rem --- Validate format of one email address only
 	not_valid=0
 	if mask(cvs(mail$,1+2))<>1
 		not_valid=1
 	endif
 return
+

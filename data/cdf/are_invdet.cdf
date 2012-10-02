@@ -1,3 +1,7 @@
+[[ARE_INVDET.AUDE]]
+rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
+gosub calc_grid_tots
+gosub disp_totals
 [[ARE_INVDET.ADEL]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots
@@ -31,7 +35,7 @@ calc_grid_tots:
 	if numrecs then
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
-			if len(gridrec$) then
+			if cvs(gridrec$,3)<>"" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y"
 				tqty=tqty+gridrec.units
 				tamt=tamt+gridrec.ext_price
 			endif

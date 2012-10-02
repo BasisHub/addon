@@ -10,13 +10,16 @@ rem --- All Rights Reserved
             setesc std_error
 
 rem --- Document initializations
+
             OutVect!=bbjAPI().getSysGui().makeVector()
             HdrVect!=bbjAPI().getSysGui().makeVector()
             BrkVect!=bbjAPI().getSysGui().makeVector()
+            TotVect!=bbjAPI().getSysGui().makeVector()
             rep_date$=date(0:"%Mz/%Dz/%Yd")
             rep_date_stamp$=date(0:"%Yd%Mz%Dz")
             rep_time$=date(0:"%hz:%mz %p")
             rep_time_stamp$=date(0:"%Hz%mz%sz")
+            rep_prog$=pgm(-2)
 
 rem --- Retrieve the program path
 
@@ -31,7 +34,7 @@ rem --- Retrieve sysinfo data
           firm_id$=sysinfo.firm_id$
 
           call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECHDR","PRIMARY",pot04a_key_pritpl$,rd_table_chans$[all],status$
-          call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","ITEM_VENDOR",pot14a_key_itemtpl$,rd_table_chans$[all],status$
+          call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","ITEM_WHSE_VENDOR",pot14a_key_itemtpl$,rd_table_chans$[all],status$
 
 rem --- Headings and print positions
 
@@ -42,58 +45,38 @@ rem --- Headings and print positions
            l9=59
            l=l9+1
            more=1
- 
-rem --- Print positions
+           gosub initheads
 
-          o[1]=itemlen+1
-          o[2]=o[1]+3
-          o[3]=o[2]+7
-          o[11]=width-m1
-          o[10]=o[11]-m3
-          o[9]=o[10]-m2
-          o[8]=o[9]-m2
-          o[7]=o[8]-3
-          o[6]=o[7]-9
-          o[5]=o[6]-9
-          o[4]=o[5]-8
-          vendnamelen=width-(width-o[4]+o[3])
-          if vendnamelen>30 vendnamelen=30
-          gosub initheads
-
-rem column heading
         dim columns$[9,10]
         columns=9
             columns$[0,0]="Item",                  columns$[0,1]="C",columns$[0,2]="7"
             columns$[1,0]="wh Vendor",             columns$[1,1]="C",columns$[1,2]="40"
-            columns$[2,0]="PO Number",             columns$[2,1]="C",columns$[2,2]="10"
-            columns$[3,0]="Date Required",         columns$[3,1]="C",columns$[3,2]="10"
-            columns$[4,0]="Date Received",         columns$[4,1]="C",columns$[4,2]="10"
+            columns$[2,0]="PO^Number",             columns$[2,1]="C",columns$[2,2]="10"
+            columns$[3,0]="Date^Required",         columns$[3,1]="C",columns$[3,2]="10"
+            columns$[4,0]="Date^Received",         columns$[4,1]="C",columns$[4,2]="10"
             columns$[5,0]="UM",                    columns$[5,1]="C",columns$[5,2]="5"
-            columns$[6,0]="Quantity Ordered",      columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m2$
-            columns$[7,0]="Quantity Received",     columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$
-            columns$[8,0]="Unit Cost",             columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m3$
-            columns$[9,0]="Extension",             columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m1$
+            columns$[6,0]="Quantity^Ordered",      columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m2$,columns$[6,10]="T"
+            columns$[7,0]="Quantity^Received",     columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$,columns$[7,10]="T"
+            columns$[8,0]="Unit^Cost",             columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m3$,columns$[8,10]="T"
+            columns$[9,0]="Extension",             columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m1$,columns$[9,10]="T"
 
 rem --- Position files
 
 
         call pgmdir$+"adc_progress.aon","N","","","","",0,pot14a_dev,1,meter_num,status
         first$=firm_id$+"S"+begitem$+begwhse$
-    
+
         dim pot24a_key$:pot14a_key_itemtpl$
         read (pot14_dev2,knum=1,key=first$,dom=*next)
 
 rem --- Get next sort record
 
     while more
-
-        pot24a_key$=key(pot14_dev2,end=*break)
-        if pos(firm_id$=pot24a_key$)<>1 break
-        if pot24a_key.line_type$>"S" goto done
+        pot24a_key$=key(pot14_dev2,knum=1,end=*break)
         item$=pot24a_key.item_id$
         whse$=pot24a_key.warehouse_id$
         vendor$=pot24a_key.vendor_id$
-        recptdate$=pot24a_key.recpt_date$
+rem     recptdate$=pot24a_key.recpt_date$
         ponum$=pot24a_key.po_no$
         receiver$=pot24a_key.receiver_no$
         linenum$=pot24a_key.po_line_no$
@@ -108,7 +91,7 @@ brnch1: rem --- Valid Item/Wh/Product/Type?
 
             if endwhse$="" or whse$<=endwhse$
 
-                read (pot14_dev2)
+                read (pot14_dev2,key=pot24a_key$)
                 if begprod$<>"" if product$<begprod$ continue
                 if endprod$<>"" if product$>endprod$ continue
                 if type$<>"" if ivm01a.item_type$<>type$ continue
@@ -120,12 +103,12 @@ brnch1: rem --- Valid Item/Wh/Product/Type?
 
 rem --- Skip to beginning whse for this item
 
-            read (pot14_dev2,key=pot24a_key.firm_id$+pot24a_key.line_type$+pot24a_key.item_id$+begwhse$,dom=*continue)
+            read (pot14_dev2,key=pot24a_key.firm_id$+pot24a_key.line_type$+pot24a_key.item_id$+begwhse$,knum=1,dom=*continue)
             continue
 
 rem --- Skip to next item
 
-            read (pot14_dev2,key=pot24a_key.firm_id$+pot24a_key.line_type$+pot24a_key.item_id$+$FF$,dom=*continue)
+            read (pot14_dev2,key=pot24a_key.firm_id$+pot24a_key.line_type$+pot24a_key.item_id$+$FF$,knum=1,dom=*continue)
             continue
 
         endif
@@ -177,12 +160,12 @@ rem --- Accumulate totals
                         reporttot[2]=reporttot[2]+qtyrec
                         reporttot[3]=reporttot[3]+unitcost
                         reporttot[4]=reporttot[4]+extension
-                        if pos(pot14a.vendor_id$+pot14a.po_no$+pot14a.po_line_no$=totaledpo$,16)=0 
-                            totaledpo$=totaledpo$+pot14a.vendor_id$+pot14a.po_no$+pot14a.po_line_no$,
-:                       itemtot[1]=itemtot[1]+qtyord,reporttot[1]=reporttot[1]+qtyord
+                        if pos(pot14a.vendor_id$+pot14a.po_no$+pot14a.po_line_no$=totaledpo$,16)=0 then
+                            totaledpo$=totaledpo$+pot14a.vendor_id$+pot14a.po_no$+pot14a.po_line_no$
+                            itemtot[1]=itemtot[1]+qtyord,reporttot[1]=reporttot[1]+qtyord
+                        endif
 
 rem --- Loop back for next record
-
     wend
 
 done: rem --- All done
@@ -201,9 +184,11 @@ item_subheading: rem --- Item subheading
 
     if l+1>l9 
     OutVect!.addItem(h9$)
-    qwk=fnblank(9)
+    OutVect!.addItem(h8$)
+    qwk=fnblank(8)
     l=l+1
     h9$=""
+    h8$=""
     return
 
 initheads: rem --- Initialize HEADINGS$[]
@@ -232,17 +217,18 @@ itembreak: rem --- Item Break
         gosub printtot
     endif
 
-        dim itemtot[4]
-        lastitem$=item$
-       
-        ivm01a.item_desc$="(Not on File)"
-        totaledpo$=""
-        if pot24a_key.line_type$="S"
-           find record (ivm01a_dev,key=firm_id$+lastitem$,dom=*next) ivm01a$
-           h9$=lastitem$(1,itemlen)+" "+fnitem$(ivm01a.item_desc$,desclen[1],desclen[2],desclen[3])
-        else
-           h9$=lastitem$(1,itemlen); rem +" "+pot14a.order_memo$(1,ilen)
-        endif
+    if done then
+        return
+    endif
+
+    dim itemtot[4]
+    lastitem$=item$
+
+    find record (ivm01a_dev,key=firm_id$+lastitem$,dom=*next) ivm01a$
+rem ***        h9$=lastitem$(1,itemlen)+" "+fnitem$(ivm01a.item_desc$,desclen[1],desclen[2],desclen[3])
+    h9$=lastitem$
+    h8$=ivm01a.item_desc$
+    totaledpo$=""
     return
 
 vendbreak: rem --- Vendor break
@@ -251,19 +237,21 @@ vendbreak: rem --- Vendor break
         let lastvend$=vendor$,apm01a.vendor_name$="(Not on File)"
         find record (apm01a_dev,key=firm_id$+lastvend$,dom=*next) apm01a$
         let vendname$=apm01a.vendor_name$(1,vendnamelen)
-rem  item  what is this?
+
     return
 
 printtot: rem --- Print total line
-   
-        
+
        total$="Total For "+cvs(total$,2)
-       qwk=fnblank(5)  
+       TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+       qwk=fnblank(1)  
        OutVect!.addItem(total$)
+       qwk=fnblank(4)
        OutVect!.addItem(str(total[1]:m2$))
        OutVect!.addItem(str(total[2]:m2$))
        OutVect!.addItem(str(total[3]:m3$))
        OutVect!.addItem(str(total[4]:m1$))
+       qwk=fnblank(10)
        return
 
 rem #include std_functions.src
@@ -285,24 +273,12 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-  def fndate$(q$) 
-
-        if cvs(q$,2)="" return ""
-
-        testdate$=""
-
-        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-
-        if testdate$<>"" 
-
-            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
-
-        endif
-
-        return testdate$
-
-    fnend    
-
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
 
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 

@@ -29,6 +29,16 @@ rem --- Set the hook for dealer custom call
         break
     wend
 
+rem --- Set the Temporary Vendor Number here
+
+    temp_vend$=""
+    temp_vend_ok$=""
+    temp_vend$=stbl("+DP_TEMP_VEND",err=*next)
+    if len(temp_vend$)>6 temp_vend$=""
+    if len(temp_vend$)>1
+        temp_vend$=pad(temp_vend$,6,"L","0")
+    endif
+
 rem --- Set the number of years to add here
 
     add_year=0
@@ -39,6 +49,7 @@ rem --- Open files
 
 ddm01=unt
 open (ddm01)source_folder$+"/"+cvs("ddm-01",version_cvs)
+lock(ddm01)
 
 ddm03=unt
 open (ddm03)source_folder$+"/"+cvs("ddm-03",version_cvs)
@@ -120,6 +131,12 @@ while 1
 wend
 close (field_name_xref)
 
+rd_meter_data$="DataPort Start Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")
+rd_meter_proc_recs=rd_meter_total_recs
+rd_meter_action$="LST"
+gosub disp_meter
+
+
 rd_meter_data$="Processing files . . ."
 rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
 rd_meter_action$="LST"
@@ -152,7 +169,7 @@ next_file:
     if pos("_"=datafile$)=1 then goto next_file
     if pos("z"=cvs(datafile$,8))=1 then  goto next_file
     if pos("dd"=cvs(datafile$,8))=1 then goto next_file
-    if pos("w-"=cvs(datafile$,8))=1 then goto next_file
+    if pos("w-"=cvs(datafile$,8))=3 then goto next_file
     if pos("sh"=cvs(datafile$,8))=1 then goto next_file
 
     print "Data file: ",datafile$
@@ -246,11 +263,14 @@ next_ddm04:
        rd_temp_seg$=cvs(data_name$,3)+rd_col_occurs_sfx$+":"
        datatype$=iff(ddm01.data_type$="N","N","C")
        rd_temp_seg$=rd_temp_seg$+datatype$+"("+str(rd_col_length)
-       if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E" then
-          rd_temp_seg$=rd_temp_seg$+"*"
-       endif
+       if rd_col_occurs$<>"YES"
+         if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E" then
+           rd_temp_seg$=rd_temp_seg$+"*"
+         endif
+       endif    
        if rd_col_occurs$="YES" or rd_occur_adj>0
-         if rd_curr_occur+rd_occur_adj=rd_col_occurs
+         if rd_curr_occur+rd_occur_adj=rd_col_occurs and datatype$="C" or
+:           datatype$<>"C"
            if ddm04.fld_sep$="X" or ddm04.fld_sep$="Y" or ddm04.fld_sep$="E"
              if rd_temp_seg$(len(rd_temp_seg$),1)<>"*"
                rd_temp_seg$=rd_temp_seg$+"*"
@@ -375,6 +395,25 @@ rem --- check for specific values that can't be found any other way
                 value$=value$(1,5)
             endif
         endif    
+
+rem --- Check for Temp Vendor
+
+        if cvs(old_fieldlist.name$[field],2)="VENDOR_NBR"
+            if pos("TEMP  "=value$)=1
+                if temp_vend$=""
+                    temp_vend_ok$="N"
+                    goto next_rec
+                else
+                    value$=temp_vend$
+                endif
+            endif
+        endif
+
+rem --- Set all Retain Invoice History Detail flags to Y
+
+        if old_fieldlist.name$[field]="INV_HIST_FLG"
+            value$="Y"
+        endif
 
 rem --- Call custom program - Note - there is no CALL/ENTER list, so all variables will be 
 rem     available. Common usages for this would be things like data conversion, since value$
@@ -554,9 +593,20 @@ rem --- Now go populate masks and sequences
 rem    gosub make_messages
 rem    gosub make_printplus
 
+    if temp_vend_ok$="N"
+        rd_meter_data$="Temporary vendor records found not ported. See log file."
+        rd_meter_total_recs=iff(rdVectPort!=null(),0,rdVectPort!.size())
+        rd_meter_action$="LST"
+        gosub disp_meter
+        print "   Temporary vendor records found. See log file"
+        print (log_dev)"Temporary vendor records found without a valid stbl("+$22$+"+DP_TEMP_VEND"+$22$+")."
+        print (log_dev)"Those records were excluded from the DataPort."
+        print (log_dev)"Please set this variable up in the config file and rerun the DataPort."
+    endif    
     print (log_dev)$0a$+"DataPort completed"
     print (log_dev)"DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
 
+    rd_meter_data$="DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")
     rd_meter_proc_recs=rd_meter_total_recs
     rd_meter_action$="LST-END"
     gosub disp_meter
@@ -718,6 +768,18 @@ no_cust_default:
                 ads_masks.asc_comp_id$=comp_id$
                 ads_masks.asc_prod_id$=pad(a0$(3,2),3)
                 ads_masks.dd_mask_type$="I"
+                id$=cvs(a5$,3)
+                if len(id$)>0
+                    for id=1 to len(id$)
+                        if a0$(3,2)="GL"
+                            if id$(id,1)="#" id$(id,1)="0"
+                        endif
+                        if pos(a0$(3,2)="ARAPPR",2)
+                            if id$(id,1)="#" id$(id,1)="U"
+                        endif
+                    next id
+                endif
+                a5$=id$
                 ads_masks.dd_attr_mski$=cvs(a5$,3)
                 ads_masks.dd_attr_msko$=cvs(a5$,3)
                 ads_masks$=field(ads_masks$)
@@ -886,7 +948,7 @@ get_new_template:
     new_file=unt
     open (new_file,err=check_for_definition)destin_folder$+"/"+new_datafile$
     lock (new_file)
-    a=msgbox(new_datafile$+" already exists in destination folder. Do you want to overwrite data?",3+32+0,"DataPort")
+    a=msgbox(new_datafile$+" already exists in destination folder. Do you want to overwrite data?",3+32+65536,"DataPort")
     if a=6 then
        return; rem ' Yes-Overwrite
     endif
@@ -1028,10 +1090,10 @@ return; rem ' set_new_fieldname
 
 reformat_address:
     if addr_lines=5 then
-       address$=old_rec.addr_line_1$+old_rec.addr_line_2$+old_rec.addr_line_3$+old_rec.addr_line_4$+old_rec.addr_line_5$
+       address$=pad(old_rec.addr_line_1$,24)+pad(old_rec.addr_line_2$,24)+pad(old_rec.addr_line_3$,24)+pad(old_rec.addr_line_4$,24)+pad(old_rec.addr_line_5$,24)
     endif
     if addr_lines=3 then
-       address$=old_rec.addr_line_1$+old_rec.addr_line_2$+old_rec.addr_line_3$
+       address$=pad(old_rec.addr_line_1$,24)+pad(old_rec.addr_line_2$,24)+pad(old_rec.addr_line_3$,24)
     endif
     dim state$(2),city$(24)
     states$="ALAKAZARCACOCTDEDCFLGAHIIDILINIAKSKYLAMEMDMAMIMNMSMOMTNENVNHNJNMNYNCNDOHOKORPAPRRISCSDTNTXUTVTVAVIWAWVWIWY"

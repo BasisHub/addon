@@ -1,62 +1,53 @@
+[[APE_MANCHECKDET.AUDE]]
+rem --- Recalc totals for header
+	gosub calc_tots
+	gosub disp_tots
 [[APE_MANCHECKDET.BDEL]]
 rem --- need to delete the GL dist recs here (but don't try if nothing in grid row/rec_data$)
-
 if cvs(rec_data$,3)<>"" gosub delete_gldist
-
-
 	
 	
 [[APE_MANCHECKDET.INVOICE_AMT.AVEC]]
 gosub calc_tots
 gosub disp_tots
-
 [[APE_MANCHECKDET.ADEL]]
 rem --- Recalc totals for header
-
 	gosub calc_tots
 	gosub disp_tots
 [[APE_MANCHECKDET.DISCOUNT_AMT.AVEC]]
 gosub calc_tots
 gosub disp_tots
 [[APE_MANCHECKDET.DISCOUNT_AMT.AVAL]]
-net_paid=num(callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))-num(callpoint!.getColumnData("APE_MANCHECKDET.DISCOUNT_AMT"))
+net_paid=num(callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))-num(callpoint!.getUserInput())
 callpoint!.setColumnData("APE_MANCHECKDET.NET_PAID_AMT",str(net_paid))
-
 glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
 glns!.setValue("dist_amt",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
 glns!.setValue("dflt_dist",user_tpl.dflt_dist_cd$)
 glns!.setValue("dflt_gl",user_tpl.dflt_gl_account$)
 glns!.setValue("tot_inv",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
-
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[APE_MANCHECKDET.INVOICE_AMT.AVAL]]
-net_paid=num(callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))-num(callpoint!.getColumnData("APE_MANCHECKDET.DISCOUNT_AMT"))
+net_paid=num(callpoint!.getUserInput())-num(callpoint!.getColumnData("APE_MANCHECKDET.DISCOUNT_AMT"))
 callpoint!.setColumnData("APE_MANCHECKDET.NET_PAID_AMT",str(net_paid))
-
 glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
-glns!.setValue("dist_amt",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
+glns!.setValue("dist_amt",callpoint!.getUserInput())
 glns!.setValue("dflt_dist",user_tpl.dflt_dist_cd$)
 glns!.setValue("dflt_gl",user_tpl.dflt_gl_account$)
-glns!.setValue("tot_inv",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
-
+glns!.setValue("tot_inv",callpoint!.getUserInput())
 apt_invoicehdr_dev=fnget_dev("APT_INVOICEHDR")			
 dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
-
 ap_type$=field(apt01a$,"AP_TYPE")
 vendor_id$=field(apt01a$,"VENDOR_ID")
 ap_type$(1)=UserObj!.getItem(num(user_tpl.ap_type_vpos$)).getText()
 vendor_id$(1)=UserObj!.getItem(num(user_tpl.vendor_id_vpos$)).getText()
-
 apt01ak1$=firm_id$+ap_type$+vendor_id$+callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
 readrecord(apt_invoicehdr_dev,key=apt01ak1$,dom=*next)apt01a$
-if apt01a$(1,len(apt01ak1$))<>apt01ak1$ 
-
+if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 	rem --- save row/column so we'll know where to set focus when we return from GL Dist
 	w!=Form!.getChildWindow(1109)
 	c!=w!.getControl(5900)
 	return_to_row=c!.getSelectedRow()
 	return_to_col=c!.getSelectedColumn()
-
 	rem --- invoke GL Dist form
 	gosub get_gl_tots
 	user_id$=stbl("+USER_ID")
@@ -74,31 +65,24 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$
 :	table_chans$[all],
 :	"",
 :	dflt_data$[all]
-
-
 	rem --- return focus to where we were (should be discount amt on same row)
 	c!.focus()
 	c!.accept(1,err=*next)
 	c!.startEdit(return_to_row,return_to_col+1)
 	
 endif
-
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
 apt_invoicehdr_dev=fnget_dev("APT_INVOICEHDR")
 apt_invoicedet_dev=fnget_dev("APT_INVOICEDET")
-
 dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
 dim apt11a$:fnget_tpl$("APT_INVOICEDET")
-
 inv_amt=0,disc_amt=0,ret_amt=0
-
 ap_type$=field(apt01a$,"AP_TYPE")
 vendor_id$=field(apt01a$,"VENDOR_ID")
 ap_type$(1)=UserObj!.getItem(num(user_tpl.ap_type_vpos$)).getText()
 vendor_id$(1)=UserObj!.getItem(num(user_tpl.vendor_id_vpos$)).getText()
-
-apt01ak1$=firm_id$+ap_type$+vendor_id$+callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+apt01ak1$=firm_id$+ap_type$+vendor_id$+callpoint!.getUserInput()
 apt11ak1$=apt01ak1$(1,len(apt01ak1$)-2)
 ape22_dev1=user_tpl.ape22_dev1
 call stbl("+DIR_SYP")+"bac_key_template.bbj","APE_MANCHECKDET","ALT_KEY_01",ape22_key1$,rd_table_chans$[all],status$
@@ -141,7 +125,6 @@ if apt01a$(1,len(apt01ak1$))=apt01ak1$
 	wend
 	callpoint!.setColumnData("APE_MANCHECKDET.INVOICE_DATE",apt01a.invoice_date$)
 	callpoint!.setColumnData("APE_MANCHECKDET.AP_DIST_CODE",apt01a.ap_dist_code$)
-
 	rem --- disable inv date/dist code, leaving only inv amt/disc amt enabled for open invoice
 	w!=Form!.getChildWindow(1109)
 	c!=w!.getControl(5900)
@@ -165,12 +148,10 @@ callpoint!.setColumnData("APE_MANCHECKDET.INVOICE_AMT",str(inv_amt))
 callpoint!.setColumnData("APE_MANCHECKDET.DISCOUNT_AMT",str(disc_amt))
 callpoint!.setColumnData("APE_MANCHECKDET.RETENTION",str(ret_amt))
 callpoint!.setColumnData("APE_MANCHECKDET.NET_PAID_AMT",str(inv_amt-disc_amt-ret_amt))
-
 callpoint!.setStatus("MODIFIED-REFRESH")
 end_of_inv_aval:
 [[APE_MANCHECKDET.<CUSTOM>]]
 calc_tots:
-
 	recVect!=GridVect!.getItem(0)
 	dim gridrec$:dtlg_param$[1,3]
 	numrecs=recVect!.size()
@@ -178,48 +159,38 @@ calc_tots:
 	if numrecs>0
 		for reccnt=0 to numrecs-1			
 				gridrec$=recVect!.getItem(reccnt)
-				if gridrec$<>""
+				if cvs(gridrec$,3)<> "" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y" 
 					tinv=tinv+num(gridrec.invoice_amt$)
 					tdisc=tdisc+num(gridrec.discount_amt$)
 					tret=tret+num(gridrec.retention$)
 				endif
 		next reccnt
 	endif
-
 return
-
 disp_tots:
-
     rem --- get context and ID of display controls for totals, and redisplay w/ amts from calc_tots
     rem --- also setHeaderColumnData so Barista's values for these display controls will stay in sync
     
     tinv!=UserObj!.getItem(num(user_tpl.tinv_vpos$))
     tinv!.setValue(tinv)
     callpoint!.setHeaderColumnData("<<DISPLAY>>.DISP_TOT_INV",str(tinv))
-
     tdisc!=UserObj!.getItem(num(user_tpl.tdisc_vpos$))
     tdisc!.setValue(tdisc)
     callpoint!.setHeaderColumnData("<<DISPLAY>>.DISP_TOT_DISC",str(tdisc))
-
     tret!=UserObj!.getItem(num(user_tpl.tret_vpos$))
     tret!.setValue(tret)
     callpoint!.setHeaderColumnData("<<DISPLAY>>.DISP_TOT_RETEN",str(tret))
-
     tchk!=UserObj!.getItem(num(user_tpl.tchk_vpos$))
     tchk!.setValue(tinv-tdisc-tret)
     callpoint!.setHeaderColumnData("<<DISPLAY>>.DISP_TOT_CHECK",str(tinv-tdisc-tret))
-
 return
-
 get_gl_tots:
-
 	ape12_dev=fnget_dev("APE_MANCHECKDIST")				
 	dim ape12a$:fnget_tpl$("APE_MANCHECKDIST")
 	amt_dist=0
 	ape12ak1$=firm_id$+callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE")+
 :	callpoint!.getColumnData("APE_MANCHECKDET.CHECK_NO")+callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")+
 :	callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
-
 	read(ape12_dev,key=ape12ak1$,dom=*next)
 	more_dtl=1
 	while more_dtl
@@ -233,24 +204,19 @@ get_gl_tots:
 		pfx$="GLNS",nm$="GL Dist"
 		GLNS!=BBjAPI().getNamespace(pfx$,nm$,1)
 		GLNS!.setValue("dist_amt",str(amt_dist))
-
 return
-
 delete_gldist:
-
 	ape12_dev=fnget_dev("APE_MANCHECKDIST")
 	dim ape12a$:fnget_tpl$("APE_MANCHECKDIST")
-
 	remove_ky$=firm_id$+callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE") +
 :		callpoint!.getColumnData("APE_MANCHECKDET.CHECK_NO") +
 :		callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID") +
 :		callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
-
 	read (ape12_dev,key=remove_ky$,dom=*next)
 	while 1
 		k$=key(ape12_dev,end=*break)
 		if pos(remove_ky$=k$)<>1 then break
 		remove(ape12_dev,key=k$)
 	wend
-
 return
+

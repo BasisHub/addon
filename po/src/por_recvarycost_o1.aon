@@ -21,6 +21,18 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
 rem --- Init Data
 
     precision ivprecision
@@ -28,7 +40,11 @@ rem --- Init Data
     printvtot$="N"
     printptot$="N"
     more=1
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","VENDOR_RECDATE",pot14a_key_alttpl$,rd_table_chans$[all],status$
+
+rem --- Get key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POT_RECDET","PRIMARY",pot14a_key_alttpl$,rd_table_chans$[all],status$
+    dim pot14_key$:pot14a_key_alttpl$
 
 rem --- Headings and print positions
 
@@ -64,69 +80,58 @@ positions:
         o[9]=o[10]-m2
     endif
 
-rem --- Document initializations
+rem --- Columns
 
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    rep_date$=date(0:"%Mz/%Dz/%Yd")
-    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-    rep_time$=date(0:"%hz:%mz %p")
-    rep_time_stamp$=date(0:"%Hz%mz%sz")
-
-    dim columns$[12,4]
+    dim columns$[12,3]
     columns = 13
-    columns$[0,0]="Seq",columns$[0,1]="C",columns$[0,2]="7"
-    columns$[1,0]="Cd",columns$[1,1]="C",columns$[1,2]="15"
-    columns$[2,0]="Wh",columns$[2,1]="C",columns$[2,2]="10"
-    columns$[3,0]="Item",columns$[3,1]="C",columns$[3,2]="25"
-    columns$[4,0]="Date Required",columns$[4,1]="C",columns$[4,2]="5"
-    columns$[5,0]="Date Promised",columns$[5,1]="C",columns$[5,2]="5"
-    columns$[6,0]="UM",columns$[6,1]="C",columns$[6,2]="15"
-    columns$[7,0]="Qty Ordered",columns$[7,1]="N",columns$[7,2]="5"
-    columns$[8,0]="Qty Received",columns$[8,1]="N",columns$[8,2]="5"
-    columns$[9,0]="Order Value",columns$[9,1]="N",columns$[9,2]="5"
-    columns$[10,0]="Receipt Value",columns$[10,1]="N",columns$[10,2]="5"
-    columns$[11,0]="Variance",columns$[11,1]="N",columns$[11,2]="5"
-    columns$[12,0]="Vari Ratio",columns$[12,1]="N",columns$[12,2]="5"
+    columns$[0,0]="Seq",            columns$[0,1]="C",columns$[0,2]="6"
+    columns$[1,0]="Cd",             columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="Wh",             columns$[2,1]="C",columns$[2,2]="8"
+    columns$[3,0]="Item",           columns$[3,1]="C",columns$[3,2]="20"
+    columns$[4,0]="Date Required",  columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Date Promised",  columns$[5,1]="C",columns$[5,2]="10"
+    columns$[6,0]="UM",             columns$[6,1]="C",columns$[6,2]="8"
+    columns$[7,0]="Qty Ordered",    columns$[7,1]="N",columns$[7,2]="10"
+    columns$[8,0]="Qty Received",   columns$[8,1]="N",columns$[8,2]="10"
+    columns$[9,0]="Order Value",    columns$[9,1]="N",columns$[9,2]="10"
+    columns$[10,0]="Receipt Value", columns$[10,1]="N",columns$[10,2]="10"
+    columns$[11,0]="Variance",      columns$[11,1]="N",columns$[11,2]="8"
+    columns$[12,0]="Vari Ratio",    columns$[12,1]="N",columns$[12,2]="8"
 
-rem --- Position files
+rem --- Progress bar
 
-    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-    if status goto std_exit
     call pgmdir$+"adc_progress.aon","N","","","","",0,pot04a_dev,1,meter_num,status
 
 rem --- Init Read
 
     p44_key$=firm_id$+vendfrom$+datefrom$
-    read (pot14_dev2,knum=3,key=p44_key$,dom=*next)
+    read (pot14_dev2,key=p44_key$,dom=*next)
 
 rem --- Read through Sort file
 
-    dim pot44_key$:pot14a_key_alttpl$
     while more
 
-        pot44_key$=key(pot14_dev2,knum=3,end=done)
-        if pot44_key.firm_id$<>firm_id$ break
-        read (pot14_dev2,knum=3,key=pot44_key$); rem "Move ptr
+        pot14_key$=key(pot14_dev2,end=*break)
+        if pot14_key.firm_id$<>firm_id$ break
+        read (pot14_dev2,key=pot14_key$); rem "Move ptr
 
 rem --- Valid Vendor/Receipt Date?
 
-        if vendthru$<>"" and pot44_key.vendor_id$>vendthru$ break
-        if datefrom$="" or pot44_key.recpt_date$>=datefrom$
+        if vendthru$<>"" and pot14_key.vendor_id$>vendthru$ break
+        if datefrom$="" or pot14_key.recpt_date$>=datefrom$
 
-            if datethru$="" or pot44_key.recpt_date$<=datethru$
+            if datethru$="" or pot14_key.recpt_date$<=datethru$
 
-                vendor$=pot44_key.vendor_id$
-                ponum$=pot44_key.po_no$
-                recnum$=pot44_key.receiver_no$
-                linenum$=pot44_key.po_line_no$
+                vendor$=pot14_key.vendor_id$
+                ponum$=pot14_key.po_no$
+                recnum$=pot14_key.receiver_no$
+                linenum$=pot14_key.po_line_no$
 
             else
 
                 rem --- Skip to next vendor
 
-                read (pot14_dev2,knum=3,key=pot44_key.firm_id$+pot44_key.vendor_id$+$FF$,dom=*next)
+                read (pot14_dev2,key=pot14_key.firm_id$+pot14_key.vendor_id$+$FF$,dom=*next)
                 continue
 
             endif
@@ -135,16 +140,16 @@ rem --- Valid Vendor/Receipt Date?
 rem --- Skip to first receipt date for vendor
 
         
-            read (pot14_dev2,knum=3,key=pot44_key.firm_id$+pot44_key.vendor_id$+datefrom$,dom=*next)
+            read (pot14_dev2,key=pot14_key.firm_id$+pot14_key.vendor_id$+datefrom$,dom=*next)
             continue
 
         endif
 
 rem --- Get Header & assign variables
 
-        if pot44_key.firm_id$+pot44_key.vendor_id$+pot44_key.recpt_date$+pot44_key.po_no$+pot44_key.receiver_no$<>prevk$(1,30)
+        if pot14_key.firm_id$+pot14_key.vendor_id$+pot14_key.po_no$+pot14_key.receiver_no$<>prevk$
 
-            prevk$(1)=pot44_key$
+            prevk$(1)=pot14_key$
             p04_key$=firm_id$+vendor$+ponum$+recnum$
             find record (pot04a_dev,key=p04_key$,dom=*continue) pot04a$
             dim rcptdate$(8),orddate$(8)
@@ -230,12 +235,12 @@ rem --- Loop up for next header record via sort files
 
 done: rem --- All Done
 
-rem    if l+1>l9 gosub report_heading
     gosub pototals
     gosub vendtotals
     grandvari=grandrval-grandoval
     if grandoval>0 grandvpcnt=grandvari*100/grandoval
 
+    TotVect!.addItem(str(OutVect!.size()/columns))
     abc=fnblank(7)
     OutVect!.addItem("Total For")
     OutVect!.addItem(" Report ")
@@ -272,31 +277,21 @@ assignheads: rem --- Assign headings variables
 testbreaks: rem --- Test breaks
 
     if vendor$<>prevvend$
-
         if printptot$="Y" gosub pototals
         if printvtot$="Y" gosub vendtotals
         gosub newvendor
         gosub newpo
-        return
-
     else
-
         if ponum$<>prevpo$
-
             if printrtot$="Y" gosub rectotals
             if printptot$="Y" gosub pototals
             gosub newpo
-            return
-
+        else
+            if recnum$<>prevrec$
+                if printrtot$="Y" gosub rectotals
+                gosub newrec
+            endif
         endif
-
-    endif
-
-    if recnum$=prevrec$
-
-        if printrtot$="Y" gosub rectotals
-        gosub newrec
-
     endif
     return
 
@@ -329,8 +324,7 @@ newrec: rem --- New Receiver
     rec_vpcnt=0
     prevrec$=recnum$
     printrtot$="Y"
-    if fromnewpo
-
+    if !fromnewpo
         OutVect!.addItem("PO #: ")
         OutVect!.addItem(ponum$)
         OutVect!.addItem("Receiver #:")
@@ -341,9 +335,7 @@ newrec: rem --- New Receiver
         OutVect!.addItem(rcptdate$)
         abc=fnblank(5)
         l=l+1
-
     endif
-
     return
 
 newpo: rem --- New PO
@@ -367,6 +359,7 @@ newpo: rem --- New PO
 
     l=l+1
     fromnewpo=1
+    gosub newrec
     fromnewpo=0
     return
 
@@ -374,6 +367,7 @@ vendtotals: rem --- Print Vendor total
 
     vendvari=vendrval-vendoval
     if vendoval>0 vendvpcnt=vendvari*100/vendoval
+    TotVect!.addItem(str(OutVect!.size()/columns))
     abc=fnblank(6)
     OutVect!.addItem("Total For")
     OutVect!.addItem(" Vendor ")
@@ -391,6 +385,7 @@ pototals: rem --- Print PO total
     poamt=0,po_vpcnt=0
     po_vari=po_rval-po_oval
     if po_oval>0 po_vpcnt=po_vari*100/po_oval
+    TotVect!.addItem(str(OutVect!.size()/columns))
     abc=fnblank(6)
     OutVect!.addItem("Total For")
     OutVect!.addItem(" PO # ")
@@ -407,6 +402,7 @@ rectotals: rem --- Print Rec total
 
     if rec_oval>0 rec_vpcnt=rec_rval*100/rec_oval
     let rec_vari=rec_rval-rec_oval
+    TotVect!.addItem(str(OutVect!.size()/columns))
     abc=fnblank(6)
     OutVect!.addItem("Total For")
     OutVect!.addItem(" Rcpt # ")
@@ -474,24 +470,12 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-   def fndate$(q$) 
-        
-        if cvs(q$,2)="" return ""
-
-        testdate$=""
-
-        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-
-        if testdate$<>"" 
-
-            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
-
-        endif
-
-        return testdate$
-
-    fnend    
-
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
 
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")

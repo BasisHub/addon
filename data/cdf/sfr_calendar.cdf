@@ -4,7 +4,6 @@
 files=1,begfile=1,endfile=1
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="SFM_OPCALNDR";options$[1]="OTA"
-
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
 :	endfile,
@@ -15,21 +14,15 @@ call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	table_chans$[all],
 :	batch,
 :	status$
-
 if status$<>"" goto std_exit
-
 sfm04_dev=num(chans$[1])
 dim sfm04a$:templates$[1]
-
     more=1
     firm_id$=sysinfo.firm_id$
-    opcode$=callpoint!.getColumnData("SFR_CALENDAR.OP_CODE")
-
+    opcode$=callpoint!.getUserInput()
 first_date$=""
-
     read (sfm04_dev,key=firm_id$+opcode$,dom=*next)
     k$=key(sfm04_dev,end=label1)
-
     if pos(firm_id$+opcode$=k$)=1 then 
         read record (sfm04_dev,key=k$) sfm04a$
         x$="01"
@@ -38,9 +31,7 @@ first_date$=""
         next ii
         first_date$=fndate$(sfm04a.year$+sfm04a.month$+x$)
     endif 
-
 label1:
-
     last_date$=""
     read (sfm04_dev,key=firm_id$+opcode$,dom=*next)
     while more
@@ -53,7 +44,6 @@ label1:
         next ii
         let last_date$=fndate$(sfm04a.year$+sfm04a.month$+x$)
     wend   
-
 callpoint!.setColumnData("SFR_CALENDAR.FIRST_DATE",first_date$)
 callpoint!.setColumnData("SFR_CALENDAR.LAST_DATE",last_date$)
 callpoint!.setColumnData("SFR_CALENDAR.PERIOD",first_date$(1,2))
@@ -61,3 +51,4 @@ callpoint!.setColumnData("SFR_CALENDAR.PERIOD1",last_date$(1,2))
 callpoint!.setColumnData("SFR_CALENDAR.YEAR",first_date$(7,4))
 callpoint!.setColumnData("SFR_CALENDAR.YEAR1",last_date$(7,4))
 callpoint!.setStatus("REFRESH")
+

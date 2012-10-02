@@ -1,6 +1,5 @@
 [[SAR_PRODITMCST.ASVA]]
 rem --- Check selected level against allowable level
-
 	allow=pos(user_tpl.high_level$=user_tpl.sa_levels$)
 	if pos(callpoint!.getColumnData("SAR_PRODITMCST.SA_LEVEL")=user_tpl.sa_levels$)>allow or
 :	   pos(callpoint!.getColumnData("SAR_PRODITMCST.SA_LEVEL")=user_tpl.sa_levels$)=0
@@ -9,7 +8,7 @@ rem --- Check selected level against allowable level
 		callpoint!.setStatus("ABORT")
 	endif
 [[SAR_PRODITMCST.12_PER_REPORT.AVAL]]
-x$=callpoint!.getColumnData("SAR_PRODITMCST.12_PER_REPORT")
+x$=callpoint!.getUserInput()
 if x$="N" then
 	callpoint!.setColumnData("SAR_PRODITMCST.MTD","Y")
 	callpoint!.setColumnData("SAR_PRODITMCST.YTD","Y")
@@ -30,7 +29,6 @@ open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
 gosub open_tables
 ars_params_chn=num(open_chans$[1]),ars_params_tpl$=open_tpls$[1]
 sas_params_chn=num(open_chans$[2]),sas_params_tpl$=open_tpls$[2]
-
 dim ars_params$:ars_params_tpl$
 readrecord(ars_params_chn,key=firm_id$+"AR00")ars_params$
 dim sas_params$:sas_params_tpl$
@@ -45,12 +43,10 @@ if sas_params.by_customer$<>"Y"
 	rdFuncSpace!.setValue("+build_task","OFF")
 	release
 endif
-
 callpoint!.setColumnData("SAR_PRODITMCST.CURRENT_PER",ars_params.current_per$)
 callpoint!.setColumnData("SAR_PRODITMCST.CURRENT_YEAR",ars_params.current_year$)
 callpoint!.setColumnData("SAR_PRODITMCST.SA_LEVEL","C")
 callpoint!.setStatus("REFRESH")
-
 dim user_tpl$:"sa_levels:c(3),high_level:c(1)"
 if sas_params.customer_lev$ = "P"
 	dim user_tpl$:"sa_levels:c(2),high_level:c(1)"
@@ -74,7 +70,6 @@ endif
 	open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
 	gosub open_tables
 	sas01_dev=num(open_chans$[2]),sas01a$=open_tpls$[2]
-
 	dim sas01a$:sas01a$
 	read record (sas01_dev,key=firm_id$+"SA00")sas01a$
 	if sas01a.by_customer$<>"Y"
@@ -87,3 +82,4 @@ endif
 		rdFuncSpace!.setValue("+build_task","OFF")
 		release
 	endif
+

@@ -6,262 +6,181 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-            seterr std_error
-            setesc std_error
+        seterr std_error
+        setesc std_error
 
 rem --- Document initializations
-            OutVect!=bbjAPI().getSysGui().makeVector()
-            HdrVect!=bbjAPI().getSysGui().makeVector()
-            BrkVect!=bbjAPI().getSysGui().makeVector()
-            rep_date$=date(0:"%Mz/%Dz/%Yd")
-            rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-            rep_time$=date(0:"%hz:%mz %p")
-            rep_time_stamp$=date(0:"%Hz%mz%sz")
 
-rem --- Retrieve key template
-
-            if level$="I" call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMPROD","PRIMARY",ivm03_key_tpl$,table_chans$[all],status$
-            if level$<>"I" call stbl("+DIR_SYP")+"bac_key_template.bbj","IVX_ITEMPRWH","PRIMARY",ivm03_key_tpl$,table_chans$[all],status$
-            dim ivm03a_key$:ivm03_key_tpl$
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rep_prog$=pgm(-2)
 
 rem --- Initializations
 
-            more=1
-            gosub InitHeading
+        more=1
+
+        if report$="R" headings$[1]="Inventory Reorder Report" else headings$[1]="Inventory Shortage Report"
+        headings$[1]=headings$[1]+" By Warehouse"
+        headings$[3]="[HEADER]" 
+        if begitem$="" headings$[4]="From Item: First" else headings$[4]="From Item: "+begitem$
+        if enditem$="" headings$[4]=headings$[4]+" -- To Item: Last" else headings$[4]=headings$[4]+" -- To Item: "+enditem$
+        if begprod$="" headings$[5]="From Product: First" else headings$[5]="From Product: "+begprod$                
+        if endprod$="" headings$[5]=headings$[5]+" -- To Product: Last" else headings$[5]=headings$[5]+" -- To Product: "+endprod$
+        if type$="" headings$[6]="All Item Types" else headings$[6]="Item Type: "+type$
+
+rem --- column heading
+
+        dim columns$[13,10]
+        columns=14
+            columns$[0,0]="Item/Description",       columns$[0,1]="C",columns$[0,2]="25"
+            columns$[1,0]="ABC^Code",               columns$[1,1]="C",columns$[1,2]="5"
+            columns$[2,0]="Quantity^On Hand",       columns$[2,1]="N",columns$[2,2]="10",columns$[2,3]=m2$
+            columns$[3,0]="Committed^Quantity",     columns$[3,1]="N",columns$[3,2]="10",columns$[3,3]=m2$
+            columns$[4,0]="Quantity^Available",     columns$[4,1]="N",columns$[4,2]="10",columns$[4,3]=m2$
+            columns$[5,0]="Quantity^On Order",      columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m2$
+            columns$[6,0]="Order^Point",            columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m2$
+            columns$[7,0]="",                       columns$[7,1]="C",columns$[7,2]="3"
+            columns$[8,0]="EOQ",                    columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m2$
+            columns$[9,0]="",                       columns$[9,1]="C",columns$[9,2]="3"
+            columns$[10,0]="Safety^Stock",          columns$[10,1]="N",columns$[10,2]="10",columns$[10,3]=m2$
+            columns$[11,0]="",                      columns$[11,1]="C",columns$[11,2]="3"
+            columns$[12,0]="AVG Usage^Per Period",  columns$[12,1]="N",columns$[12,2]="10",columns$[12,3]=m2$
+            columns$[13,0]="",                      columns$[13,1]="C",columns$[13,2]="3"
 
 rem --- Position files
 
-            call pgmdir$+"adc_progress.aon","N","","","","",0,ivm03_dev,1,meter_num,status
-            first$=firm_id$+"A"
-            ivm03a_key$=first$+begprod$
-            p=0
-            if level$="W" first$=firm_id$+"C",ivm03a_key$=first$+begwhse$,p=2
-            read (ivm03_dev,key=ivm03a_key$,dom=*next)
+        call pgmdir$+"adc_progress.aon","N","","","","",0,ivm02_dev,1,meter_num,status
 
 rem --- Loop Starting
 
-    While more
-            ivm03a_key$=key(ivm03_dev,end=*break)
-            if pos(first$=ivm03a_key$)<>1 break
-            if level$="W" whse$=ivm03a_key.warehouse_id$
-            product$=ivm03a_key.product_type$
-            item$=ivm03a_key.item_id$
-            if level$<>"W" then
+        sql_prep$="select ivm_itemwhse.firm_id, ivm_itemwhse.item_id,"
+        sql_prep$=sql_prep$+"ivm_itemwhse.warehouse_id, ivm_itemmast.product_type,"
+        sql_prep$=sql_prep$+"ivm_itemmast.item_type "
+        sql_prep$=sql_prep$+"FROM ivm_itemwhse INNER JOIN ivm_itemmast "
+        sql_prep$=sql_prep$+"ON ivm_itemwhse.item_id=ivm_itemmast.item_id AND "
+        sql_prep$=sql_prep$+"ivm_itemwhse.firm_id=ivm_itemmast.firm_id "
+        where_clause$="WHERE ivm_itemwhse.firm_id = '"+firm_id$+"' AND "
+        if beg_whse$<>"" where_clause$=where_clause$+"ivm_itemwhse.warehouse_id >= '"+beg_whse$+"' AND "
+        if end_whse$<>"" where_clause$=where_clause$+"ivm_itemwhse.warehouse_id <= '"+end_whse$+"' AND "
+        if beg_prod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type >= '"+beg_prod$+"' AND "
+        if end_prod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type <= '"+end_prod$+"' AND "
+        if beg_item$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id >= '"+beg_item$+"' AND "
+        if end_item$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id <= '"+end_item$+"' AND"
+        if type$<>"" where_clause$=where_clause$+"ivm_itemmast.item_type = '"+type$+"'"
 
-rem --- By Item: Valid Product/Item?
+        where_clause$=cvs(where_clause$,2)
+        if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
+        where_clause$=where_clause$+" order by ivm_itemmast.product_type"
+        if where_clause$<>"" sql_prep$=sql_prep$+where_clause$
 
-            if endprod$<>"" if product$>endprod$ break
-            if begitem$<>"" then
-                if item$<begitem$ then
-                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_a$+
-:                   ivm03a_key.product_type$+begitem$,dir=0,dom=*Continue)
-                    continue
-                endif 
-            endif      
-            if enditem$<>"" then
-                if item$>enditem$ then
-                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_a$+
-:                   ivm03a_key.product_type$+$FF$,dom=*Continue)
-                    continue
-                endif 
-            endif 
-            x$=product$+" "+item$(1,p[0])
-    
-        else
-rem --- By Warehouse: Valid Warehouse/Product/Item?
+        sql_chan=sqlunt
+        sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+        sqlprep(sql_chan)sql_prep$
+        dim read_tpl$:sqltmpl(sql_chan)
+        sqlexec(sql_chan)
 
-            if endwhse$<>"" if whse$>endwhse$ break
-            if begprod$<>"" then
-                if product$<begprod$ then
-                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
-:                   ivm03a_key.WAREHOUSE_ID$+begprod$,dom=*Continue)                    
-                    continue
-                endif
-            endif    
-            if endprod$<>"" then
-                if product$>endprod$ then
-                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
-:                   ivm03a_key.WAREHOUSE_ID$+$FF$,dom=*Continue)
-                    continue
-                endif
-            endif 
-            if begitem$<>"" then
-                if item$<begitem$ then
-                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
-:                   ivm03a_key.WAREHOUSE_ID$+ivm03a_key.product_type$+begitem$,dir=0,dom=*continue)
-                    continue
-                endif
-            endif
-            if enditem$<>"" then
-                if item$>enditem$ then
-                    read (ivm03_dev,key=ivm03a_key.firm_id$+ivm03a_key.record_id_c$+
-:                   ivm03a_key.WAREHOUSE_ID$+ivm03a_key.product_type$+$FF$,dom=*continue)
-                    continue
-                endif
-            endif
+rem --- Main Read
+
+        while more
+
+            read_tpl$=sqlfetch(sql_chan,err=*break)
+            product$=read_tpl.product_type$
+            item$=read_tpl.item_id$
+            whse$=read_tpl.warehouse_id$
             x$=whse$+" "+product$+" "+item$(1,p[0])
-         endif
+
 rem --- Level breaks?
 
-        call pgmdir$+"adc_progress.aon","S","","","",x$,0,0,1,meter_num,status
-        if level$="W" if whse$<>t0$ gosub WhseBreak
-        if product$<>t1$ gosub ProdBreak
-        read (ivm03_dev)
+            call pgmdir$+"adc_progress.aon","S","","","",x$,0,0,1,meter_num,status
 
+            if whse$<>t0$ gosub whse_break
+            if product$<>t1$ gosub product_break
+            
 rem --- Retrieve item
 
-                dim item$[2],whse$[2],w[20]
-                ivm01a_key$=firm_id$+item$
-                if level$="W" ivm02a_key$=firm_id$+whse$+item$
-                find record (ivm01_dev,key=ivm01a_key$,dom=*continue) ivm01a$
-                if level$="W" and ivm01a.stock_level$<>"W" then
-                    continue
-                endif
-                if level$="I" and ivm01a.stock_level$<>"I" then
-                    continue
-                endif
-                if type$<>"" then
-                    if ivm01a.Item_type$<>type$ then
-                        continue
-                    endif
-                endif
-                action$="A"
-                item$[0]=firm_id$
-                item$[2]=item$
-                if level$="W" item$[1]=whse$,action$=""
-                if level$="W" find record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
-
-                call pgmdir$+"ivc_whseinfo.aon",action$,ivchannels[all],item$[all],whse$[all],w[all],value,status,rd_table_chans$[all]
-                if ivm01a.stock_level$="I" w[4]=ivm01a.ORDER_POINT,w[5]=ivm01a.SAFETY_STOCK,w[6]=ivm01a.EOQ
-                if report$="R" and w[0]+w[1]-w[2]>w[4] then
-                    continue
-                endif
-                if report$="S" and w[0]+w[1]-w[2]>=w[5] then
-                    continue
-                endif
-                call pgmdir$+"ivc_usage.aon",level$,ivchannels[all],item$[all],factors[all],day_of_mth,period$+year$,ivs01a.current_per$+ivs01a.current_year$,g[0],p[1],usage,estimated,flag$,status
-                if flag$<>"" usage=estimated
-                avg_usage=usage/g[0]
-                if level$="I" op_code$=ivm01a.ord_pnt_code$,eoq_code$=ivm01a.eoq_code$,safe_code$=ivm01a.saf_stk_code$
-                if level$="W" op_code$=ivm02a.ord_pnt_code$,eoq_code$=ivm02a.eoq_code$,safe_code$=ivm02a.saf_stk_code$
+            dim item$[2],whse$[2],w[20]
+            ivm01a_key$=firm_id$+item$
+            ivm02a_key$=firm_id$+whse$+item$
+            find record (ivm01_dev,key=ivm01a_key$,dom=*continue) ivm01a$
+            if type$<>"" and  ivm01a.item_type$<>type$ then continue
+            
+            item$[0]=firm_id$
+            item$[2]=item$
+            item$[1]=whse$,action$=""
+            find record (ivm02_dev,key=ivm02a_key$,knum=0,dom=*continue) ivm02a$
+            call pgmdir$+"ivc_whseinfo.aon",action$,ivchannels[all],item$[all],whse$[all],w[all],value,status,rd_table_chans$[all]
+            if report$="R" and w[0]+w[1]-w[2]>w[4] then continue
+            if report$="S" and w[0]+w[1]-w[2]>=w[5] then continue
+            call pgmdir$+"ivc_usage.aon","W",ivchannels[all],item$[all],factors[all],day_of_mth,period$+year$,ivs01a.current_per$+ivs01a.current_year$,g[0],p[1],usage,estimated,flag$,status
+            if flag$<>"" usage=estimated
+            avg_usage=usage/g[0]
+            op_code$=ivm02a.ord_pnt_code$,eoq_code$=ivm02a.eoq_code$,safe_code$=ivm02a.saf_stk_code$
 
 rem --- Print detail line
 
-                needed=1
-                if h9$<>"" needed=needed+2
-                if level$="W" last_issue$=fnl$(ivm02a.lstsal_date$,ivm02a.lstiss_date$) else last_issue$=fnl$(ivm01a.lstsal_date$,ivm01a.lstiss_date$)
-                x$=fnitem$(ivm01a.item_desc$,p[3],p[4],p[5])
-                if l+needed>l9 
-                if h9$<>"" gosub ProdHeading
-        if level$="W" 
+            last_issue$=fnl$(ivm02a.lstsal_date$,ivm02a.lstiss_date$) 
+            item_desc$=fnitem$(ivm01a.item_desc$,p[3],p[4],p[5])
+            if h9$<>"" gosub prod_heading
+            column_value$=ivm01a.item_id$+ivm02a.location$
 
-                OutVect!.addItem(ivm01a.item_id$+ivm02a.location$+x$)
-                OutVect!.addItem(ivm02a.abc_code$)
-                OutVect!.addItem(str(w[0]:m2$))
-                OutVect!.addItem(str(w[2]:m2$))
-                OutVect!.addItem(str(w[0]-w[2]:m2$))
-                OutVect!.addItem(str(w[1]:m2$))
-                OutVect!.addItem(str(w[4]:m2$)+op_code$)
-                OutVect!.addItem(str(w[6]:m2$)+eoq_code$)
-                OutVect!.addItem(str(w[5]:m2$)+safe_code$)
-                OutVect!.addItem(str(avg_usage:m2$)+flag$)
-        endif
-        
-        if level$="I" 
-            OutVect!.addItem(ivm01a.item_id$+x$)
+            OutVect!.addItem(column_value$)
             OutVect!.addItem(ivm02a.abc_code$)
-            OutVect!.addItem(str(w[0]:m2$))
-            OutVect!.addItem(str(w[2]:m2$))
-            OutVect!.addItem(str(w[0]-w[2]:m2$))
-            OutVect!.addItem(str(w[1]:m2$))
-            OutVect!.addItem(str(w[4]:m2$)+op_code$)
-            OutVect!.addItem(str(w[6]:m2$)+eoq_code$)
-            OutVect!.addItem(str(w[5]:m2$)+safe_code$)
-            OutVect!.addItem(str(avg_usage:m2$)+flag$)
+            OutVect!.addItem(str(w[0]))
+            OutVect!.addItem(str(w[2]))
+            OutVect!.addItem(str(w[0]-w[2]))
+            OutVect!.addItem(str(w[1]))
+            OutVect!.addItem(str(w[4]))
+            OutVect!.addItem(op_code$)
+            OutVect!.addItem(str(w[6]))
+            OutVect!.addItem(eoq_code$)
+            OutVect!.addItem(str(w[5]))
+            OutVect!.addItem(safe_code$)
+            OutVect!.addItem(str(avg_usage))
+            OutVect!.addItem(flag$)
+            OutVect!.addItem("   "+item_desc$)
+            xwk=fnblank(columns-1)
+            number=number+1
 
-       endif
-        
-        l=l+2
-        number=number+1
-
-    wend; rem --- Loop Ending
+        wend; rem --- Loop Ending
 
 done: rem --- All done
   
-            if number>0 goto std_exit
+        if number>0 goto std_exit
+        xwk=fnblank(columns)
+        OutVect!.addItem("No Items/Warehouses Found")
+        xwk=fnblank(columns-1)
+        goto std_exit
 
+prod_heading: rem --- Product subheading
 
-             xwk=fnblank(10)
-             OutVect!.addItem("No Items/Warehouses Found")
-             xwk=fnblank(9)
-             goto std_exit
-
-
-
-ProdHeading: rem --- Product subheading
-
-            if l+2>l9 
-            xwk=fnblank(10)
-            OutVect!.addItem(h9$)
-            xwk=fnblank(9)
-            xwk=fnblank(10)
-            l=l+2
-            h9$=""
-            return
-
-InitHeading: rem --- Initialize HEADINGS$
-
-            dim h1$(width),h2$(width),h6$(width),h7$(width)
-            if report$="R" headings$[1]="Inventory Reorder Report" else headings$[1]="Inventory Shortage Report"
-            if level$="I" headings$[1]=headings$[1]+" By Item"
-            if level$="W" headings$[1]=headings$[1]+" By Warehouse"
-
-                    headings$[3]="[HEADER]" 
-                    if begitem$="" headings$[4]="From Item: First" else headings$[4]="From Item: "+begitem$
-                    if enditem$="" headings$[4]=headings$[4]+" -- To Item: Last" else headings$[4]=headings$[4]+" -- To Item: "+enditem$
-                    if begprod$="" headings$[5]="From Product: First" else headings$[5]="From Product: "+begprod$                
-                    if endprod$="" headings$[5]=headings$[5]+" -- To Product: Last" else headings$[5]=headings$[5]+" -- To Product: "+endprod$
-                    if type$="" headings$[6]="All Item Types" else headings$[6]="Item Type: "+type$
-
- 
-
-rem --- column heading
-          dim columns$[9,10]
-                columns=9
-                    columns$[0,0]="Item/Description",                  columns$[0,1]="C",columns$[0,2]="30"
-                    columns$[1,0]="ABC Code",                          columns$[1,1]="C",columns$[1,2]="7"
-                    columns$[2,0]="Quantity On Hand",                  columns$[2,1]="N",columns$[2,2]="10",columns$[2,3]=m2$
-                    columns$[3,0]="Committed Quantity",                columns$[3,1]="N",columns$[3,2]="10",columns$[3,3]=m2$
-                    columns$[4,0]="Quantity Available",                columns$[4,1]="N",columns$[4,2]="7",columns$[4,3]=m2$
-                    columns$[5,0]="Quantity On Order",                 columns$[5,1]="N",columns$[5,2]="7",columns$[5,3]=m2$
-                    columns$[6,0]="Order Point",                       columns$[6,1]="N",columns$[6,2]="7",columns$[6,3]=m2$
-                    columns$[7,0]="EOQ",                               columns$[7,1]="N",columns$[7,2]="7",columns$[7,3]=m2$
-                    columns$[8,0]="Safety Stock",                      columns$[8,1]="N",columns$[8,2]="7",columns$[8,3]=m2$
-                    columns$[9,0]="AVG Usage Per Period",              columns$[9,1]="N",columns$[9,2]="7",columns$[9,3]=m2$
-
-
-
-  
+        xwk=fnblank(columns)
+        OutVect!.addItem(h9$)
+        xwk=fnblank(columns-1)
+        xwk=fnblank(columns)
+        h9$=""
         return
 
-WhseBreak: rem --- Warehouse Break
+whse_break: rem --- Warehouse Break
 
-            if t0$<>"" then
-                gosub ProdBreak
-            endif
-            let t0$=whse$,ivm10c.short_name$="(Not on File)",l=l9+1
-            find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
-            let x$="Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2)
-                    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-                    HdrVect!.addItem(x$)
-            return
+        if t0$<>"" then gosub product_break
+        t0$=whse$,ivm10c.short_name$="(Not on File)"
+        find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
+        x$="Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2)
+        BrkVect!.addItem(str(OutVect!.size()/(columns)))
+        HdrVect!.addItem(x$)
+        return
 
-ProdBreak: rem --- Product break
+product_break: rem --- Product break
 
-            let t1$=product$,ivm10a.code_desc$="(Not on File)"
-            find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
-            let h9$="Product Type "+t1$+" "+ivm10a.code_desc$
-            return
+        t1$=product$,ivm10a.code_desc$="(Not on File)"
+        find record (ivm10a_dev,key=firm_id$+"A"+t1$,dom=*next) ivm10a$
+        h9$="Product Type "+t1$+" "+ivm10a.code_desc$
+        return
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -284,7 +203,6 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")

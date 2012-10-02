@@ -10,8 +10,8 @@ gosub calc_grid_tots
 callpoint!.setColumnData("<<DISPLAY>>.TOT_QTY",str(tqty))
 callpoint!.setColumnData("<<DISPLAY>>.TOT_AMT",str(tamt))
 callpoint!.setStatus("REFRESH")
-
 if callpoint!.getColumnData("ARE_INVHDR.SIM_INV_TYPE")="V"
+	tmp_cust_id$=callpoint!.getColumnData("ARE_INVHDR.CUSTOMER_ID")
 	gosub check_outstanding_inv
 	if os_inv$="N"
 		msg_id$="AR_VOID_INV"
@@ -43,7 +43,6 @@ endif
 gosub calc_grid_tots
 callpoint!.setColumnData("<<DISPLAY>>.TOT_QTY",str(tqty))
 callpoint!.setColumnData("<<DISPLAY>>.TOT_AMT",str(tamt))
-
 [[ARE_INVHDR.BSHO]]
 rem --- Open/Lock files
 	dir_pgm$=stbl("+DIR_PGM",err=*next)
@@ -63,48 +62,37 @@ rem --- Open/Lock files
 	files$[11]="GLS_PARAMS"
 	rem --- are-15 used to get open on 2 channels, but looks like it won't be necessary in v8.CAH
 	rem --- files$[11]="ARE_INVDET";rem --- "are-15" -- open on 2 channels
-
 	for wkx=begfile to endfile
 		options$[wkx]="OTA"
 	next wkx
 	rem --- options$[11]="NA";rem --- force are-15 open on 2nd device
-
 	call sys_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                   chans$[all],templates$[all],table_chans$[all],batch,status$
 	if status$<>"" goto std_exit
 	ads01_dev=num(chans$[1])
 	gls01_dev=num(chans$[11])
-
 rem --- set up UserObj! as vector
 	UserObj!=SysGUI!.makeVector()
 	
 	ctlContext=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.TOT_QTY","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.TOT_QTY","CTLI"))
 	tqty!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
-
 	ctlContext=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.TOT_AMT","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.TOT_AMT","CTLI"))
 	tamt!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
-
 	UserObj!.addItem(tqty!)
 	UserObj!.addItem(tamt!)
-
 rem --- Dimension miscellaneous string templates
-
 	dim ars01a$:templates$[1],gls01a$:templates$[11]
 	dim user_tpl$:"firm_id:c(2),glint:C(1),glyr:C(4),glper:C(2),glworkfile:C(16),totqty:C(15),totamt:C(15)";rem --- used to pass 'stuff' to/from cpt
 	user_tpl.firm_id$=firm_id$
-
 rem --- Additional File Opens
-
 	gl$="N"
 	status=0
-
 	call dir_pgm$+"glc_ctlcreate.aon",err=*next,source$,"AR",glw11$,gl$,status;rem --- source$?
 	if status<>0 goto std_exit
 	user_tpl.glint$=gl$
 	user_tpl.glworkfile$=glw11$
-
 	if gl$="Y"
 		files=21,begfile=20,endfile=21
 		dim files$[files],options$[files],chans$[files],templates$[files]
@@ -113,7 +101,6 @@ rem --- Additional File Opens
 		rem --- will need alias name, not disk name, when opening work file
 		rem --- will also need option to lock/clear file; not using in this pgm for now, so bypassing.CAH
 		rem --- old pgm set options$[11]?  doesn't make sense, s/b options$[21]="C"?
-
 	call sys_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                   chans$[all],templates$[all],table_chans$[all],batch,status$
 		if status$<>"" goto std_exit
@@ -125,17 +112,12 @@ rem --- Additional File Opens
 		c!=w!.getControl(5900)
 		c!.setColumnEditable(0,0)
 	endif
-
 rem --- Retrieve parameter data - not keeping any of it here, just make sure params exist
-
 	ars01a_key$=firm_id$+"AR00"
 	find record (ads01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-
 	gls01a_key$=firm_id$+"GL00"
 	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$ 
-
 rem --- Disable display only columns
-
 	dim dctl$[8]
 	dctl$[1]="<<DISPLAY>>.CUST_ADDR1"
 	dctl$[2]="<<DISPLAY>>.CUST_ADDR2"
@@ -147,14 +129,14 @@ rem --- Disable display only columns
 	dctl$[8]="<<DISPLAY>>.TOT_AMT"
 	gosub disable_ctls
 [[ARE_INVHDR.CUSTOMER_ID.AVAL]]
-if cvs(callpoint!.getUserInput(),2)<>"" and callpoint!.getColumnData("ARE_INVHDR.CUSTOMER_ID")<>
+if cvs(callpoint!.getUserInput(),2)<>"" and callpoint!.getUserInput()<>
 :							callpoint!.getColumnUndoData("ARE_INVHDR.CUSTOMER_ID")
-
 		rem --- force current and original cust ID same, so we skip this routine on later validation sweep
-		callpoint!.setColumnUndoData("ARE_INVHDR.CUSTOMER_ID",callpoint!.getColumnData("ARE_INVHDR.CUSTOMER_ID"))
+		callpoint!.setColumnUndoData("ARE_INVHDR.CUSTOMER_ID",callpoint!.getUserInput())
 		cust_key$=callpoint!.getColumnData("ARE_INVHDR.FIRM_ID")+callpoint!.getUserInput()
 		gosub disp_cust_addr
 		callpoint!.setStatus("REFRESH")
+		tmp_cust_id$=callpoint!.getUserInput()
 		gosub check_outstanding_inv
 		if os_inv$="Y"
 			msg_id$="AR_INV_ADJ"
@@ -184,7 +166,6 @@ if gl$="Y"
 endif
 [[ARE_INVHDR.<CUSTOM>]]
 calc_grid_tots:
-
         recVect!=GridVect!.getItem(0)
         dim gridrec$:dtlg_param$[1,3]
         numrecs=recVect!.size()
@@ -194,13 +175,10 @@ calc_grid_tots:
                 tqty=tqty+num(gridrec.units$)
                 tamt=tamt+num(gridrec.ext_price$)
             next reccnt
-
             user_tpl.totqty$=str(tqty),user_tpl.totamt$=str(tamt)
         endif
     return
-
 disp_cust_addr:
-
 	arm_custmast_dev=fnget_dev("ARM_CUSTMAST")
 	dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
 	readrecord(arm_custmast_dev,key=cust_key$,err=std_error)arm01a$
@@ -219,9 +197,7 @@ disp_cust_addr:
 	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR4",addr$(91,30))
 	callpoint!.setColumnData("<<DISPLAY>>.CUST_CTST",addr$(121,30))
 	callpoint!.setColumnData("<<DISPLAY>>.CUST_ZIP",addr$(151,30))
-
 rem --- also retrieve default dist/terms codes for customer
-
 	if cvs(callpoint!.getColumnData("ARE_INVHDR.AR_DIST_CODE"),3)=""
 		arm_custdet_dev=fnget_dev("ARM_CUSTDET")
 		dim arm02a$:fnget_tpl$("ARM_CUSTDET")
@@ -237,18 +213,15 @@ rem --- also retrieve default dist/terms codes for customer
 		callpoint!.setColumnData("ARE_INVHDR.AR_TERMS_CODE",arm02a.ar_terms_code$)
 	endif
 return
-
 check_outstanding_inv:
-
+    rem --- tmp_cust_id$ set prior to gosub
     os_inv$="N"
     art_invhdr_dev=fnget_dev("ART_INVHDR")
     dim art01a$:fnget_tpl$("ART_INVHDR")
-    readrecord(art_invhdr_dev,key=firm_id$+"  "+callpoint!.getColumnData("ARE_INVHDR.CUSTOMER_ID")+
+    readrecord(art_invhdr_dev,key=firm_id$+"  "+tmp_cust_id$+
 :       callpoint!.getColumnData("ARE_INVHDR.AR_INV_NO")+"00",err=*next)art01a$;os_inv$="Y"
     return
-
 disable_ctls:rem --- disable selected control
-
 	for dctl=1 to 8
 		dctl$=dctl$[dctl]
 		if dctl$<>""
@@ -261,5 +234,4 @@ disable_ctls:rem --- disable selected control
 		endif
 	next dctl
 	return
-
 #include std_missing_params.src

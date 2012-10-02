@@ -1,6 +1,12 @@
+[[OPS_PARAMS.AREC]]
+callpoint!.setColumnData("OPS_PARAMS.INV_HIST_FLG","Y")
 [[OPS_PARAMS.END_CMT_LINE.AVAL]]
+beg_cmt$=callpoint!.getColumnData("OPS_PARAMS.BEG_CMT_LINE")
+end_cmt$=callpoint!.getUserInput()
 gosub validate_cmt_lines
 [[OPS_PARAMS.BEG_CMT_LINE.AVAL]]
+beg_cmt$=callpoint!.getUserInput()
+end_cmt$=callpoint!.getColumnData("OPS_PARAMS.END_CMT_LINE")
 gosub validate_cmt_lines
 [[OPS_PARAMS.AREA]]
 rem --- if not posting to GL, set 'print sales GL detail' flag to N as well
@@ -66,8 +72,6 @@ rem --- Retrieve parameter/application data
 validate_cmt_lines:
 rem make sure beg/end cmt lines are blank or >0, <99, and that beg < end
 
-beg_cmt$=callpoint!.getColumnData("OPS_PARAMS.BEG_CMT_LINE")
-end_cmt$=callpoint!.getColumnData("OPS_PARAMS.END_CMT_LINE")
 beg_cmt=0
 end_cmt=0
 beg_cmt=num(beg_cmt$,err=*next)
@@ -122,6 +126,5 @@ disable_fields:
 	callpoint!.setStatus("ABLEMAP-REFRESH-ACTIVATE")
 
 return
-
 
 #include std_missing_params.src

@@ -1,4 +1,4 @@
-rem --- ABC Analysis Report (Report Overlay)
+rem --- ABC Analysis Report (Report Overlay - For Item wise display)
 rem --- Program ivr_itemabcrpt_o2.aon v8.0.0 16Jul2007 (ivr_pc)
 rem --- Created by adx_codeport.bbx v1.1.5 (07/16/2007 03:36:35)
 
@@ -9,60 +9,73 @@ rem --- All Rights Reserved
     seterr std_error
     setesc std_error
 
-    call "adc_printer.aon",printer_dev,1,"","",status
-    if status goto std_exit
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Initializations
 
     precision p[1]
-    dim headings$[6],o[9]
+    dim headings$[4]
     dim count[25],value[25]
-    headings$[0]=sysinfo.firm_name$
     when$=sysinfo.system_date$
     clock$=""
     m7$="####0"
     m9$="-##0.00%"
     m2$="###,###.000-"
     m1$="###,###,###.00-"
-    headings=6
+    m8$="###,###,##0"
     width=132
     page=0
-    l9=59
-    l=l9+1
     done=0
-    m8$="###,###,##0"
     sequence=0
-    m1=len(m1$)
-    m2=len(m2$)
-    m7=len(m7$)
-    m8=len(m8$)
-    m9=len(m9$)
     class=0
     totalpct=0
     xlimit=percents[class]
     letters$="ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    xp=max(9,m2)
-    if value$="U" xp=18
-    xp=xp+6
-
-rem --- Print positions
-
-    gosub Position
     
+rem --- Headings
+
+    if value$="U" then column_head$="Estimated^Annual Usage"
+    if value$="B" then column_head$="Ending^Balance"
+    if value$="Q" then column_head$="Quantity^On Hand"
+    p=pos("^"=column_head$)
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$+" By Item"
+    headings$[2]="Valued By "+column_head$(1,p-1)+" "+column_head$(p+1)+" As Of "
+    
+
+rem --- Column Headings
+
+    dim columns$[8,10]
+    columns=9
+    columns$[0,0]="Seq",                    columns$[0,1]="C",   columns$[0,2]="5"
+    columns$[1,0]="Item",                   columns$[1,1]="C",   columns$[1,2]="10"
+    columns$[2,0]="Description",            columns$[2,1]="C",   columns$[2,2]="25"
+    columns$[3,0]="Product^Type",           columns$[3,1]="C",   columns$[3,2]="8"
+    columns$[4,0]=column_head$,             columns$[4,1]="N",   columns$[4,2]="12"
+    columns$[5,0]="Total^Value",            columns$[5,1]="N",   columns$[5,2]="12",columns$[5,10]="T"
+    columns$[6,0]="Percent",                columns$[6,1]="N",   columns$[6,2]="10" 
+    columns$[7,0]="Old^ABC",                columns$[7,1]="C",   columns$[7,2]="5"
+    columns$[8,0]="New^ABC",                columns$[8,1]="C",   columns$[8,2]="5"
+    
+
 rem --- Background
 
     call pgmdir$+"adc_progress.aon","S","","","","",0,ivw07_dev,1,meter_num,status
 
+
 rem --- Retrieve item totals
 
     dim ivs10i[3]
-    ivs10i0$=firm_id$+"I"
-    ivs10i1$=ivs01a.current_per$+ivs01a.current_year$+when$
-rem    read (ivs10i_dev,key=ivs10i0$,dom=*next)ivs10i0$,ivs10i1$,ivs10i[all]
-rem    ivs10i.period$=ivs10i1$(1,2),ivs10i.year$=ivs10i1$(3,4),ivs10i.run_date$=ivs10i1$(7,8)
-rem    ivs10i.abc_total_value_01=ivs10i[0],ivs10i.abc_total_value_02=ivs10i[1]
-rem    ivs10i.abc_total_value_03=ivs10i[2]
-
     ivs10i_key.firm_id$=firm_id$
     ivs10i_key.record_id_i$="I"
     ivs10i.firm_id$=firm_id$
@@ -71,13 +84,9 @@ rem    ivs10i.abc_total_value_03=ivs10i[2]
     ivs10i.year$=ivs01a.current_year$
     ivs10i.run_date$=when$
     find record (ivs10i_dev,key=ivs10i_key$,dom=*next) ivs10i$
-    headings$[1]=sysinfo.task_desc$+" By Item"
     x$=fndate$(ivs10i.run_date$)
     if pos(value$="UB")>0 x$="Period "+ivs10i.period$+" "+ivs10i.year$
-    headings$[2]="Valued By "+x1$+" "+x2$+" As Of "
     headings$[2]=headings$[2]+x$
-    headings$[4]=h1$
-    headings$[5]=h2$
 
 rem --- Position file
 
@@ -89,15 +98,16 @@ rem --- Position file
         read (ivw07_dev,key=firm_id$,dom=*next)
 
 rem --- Read next ivw-07 record
+
         while more
             ivw07a_key$=key(ivw07_dev,end=*break)
             if pos(firm_id$=ivw07a_key$)<>1 break
-            call pgmdir$+"adc_progress.aon","S","","","",ivw07a.Item_Id$,0,0,1,0,ignore_status
+            call pgmdir$+"adc_progress.aon","S","","","",ivw07a.item_id$,0,0,1,0,ignore_status
             read record (ivw07_dev) ivw07a$
 
 rem --- Process work file record
 
-            gosub Work_File_ivw07
+            gosub work_file_ivw07
 
 rem --- Loop back for next record
         wend
@@ -106,216 +116,57 @@ rem --- Item report completed
 
         totals$="Total For Report"
         totals=total
-        gosub l6900
-        gosub Print_Total
+        gosub print_total
+        gosub print_summary
         if level$="I" then
-            rem goto done
             done=1
             call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
-            close (printer_dev,err=*next)
 rem            run pgmdir$+"ivu_itemabcupd.aon"
             goto std_exit
-
         endif
     endif
 
-rem --- Print positions and headings for warehouse report
+rem --- Done
 
-    o[1]=m7+2
-    o[2]=o[1]+p[0]+1
-    o[3]=o[2]+p[3]+p[4]+p[5]+2
-    o[4]=o[3]+xp-m2
-    o[5]=o[4]+m2
-    o[6]=o[5]+m3
-    o[7]=o[6]+m1
-    o[8]=o[7]+m9+2
-    o[9]=o[8]+4
-    if o[9]+1>=width then 
-        o[9]=width-1
-        o[8]=o[9]-4
-        o[7]=o[8]-m9
-        o[6]=o[7]-m1
-        o[5]=o[6]-m2
-        o[4]=o[5]-m3
-        o[3]=o[4]-4
-        o[1]=m7+2
-        o[2]=o[1]+p[0]+1
-    endif
-    h1$(o[3]+1)="Prod"
-    dw=o[3]-o[2]-1
-    x=o[5]-len(x1$)
-    h1$(x)=x1$
-    h1$(o[5]+m3-4)="Unit"
-    h1$(o[6]+m1-5)="Total"
-    h1$(o[8])="Old"
-    h1$(o[9])="New"
-    h2$(o[0]+m7-2)="Seq"
-    h2$(o[1]+1)="Item"
-    h2$(o[2]+1)="Description"
-    h2$(o[3]+1)="Type"
-    h2$(x)=x2$
-    h2$(o[5]+m3-4)="Cost"
-    h2$(o[6]+m1-5)="Value"
-    h2$(o[7]+2)="Percent"
-    h2$(o[8])="ABC"
-    h2$(o[9])="ABC"
-
-rem --- Initializations for warehouse report
-
-    dim count[25],value[25]
-    t0$=""
-    channel=ive17_dev
-    headings$[1]=sysinfo.task_desc$+" By Warehouse"
-    headings$[2]="Valued By "+x1$+" "+x2$
-    headings$[4]=h1$
-    number=0
-    headings$[5]=h2$
-    sequence=0
-    total=0
-    warehouse=0
-    l1=0
-    l=l9+1
-
-rem --- Position file
-
-    call pgmdir$+"adc_progress.aon","S","","","","",0,ivw17_dev,1,0,ignore_status
-    read (ivw17_dev,key=firm_id$+begwhse$,dom=*next)
-
-rem --- Read next ivw-17 record
-    while more
-        ivw17a_key$=key(ivw17_dev,end=*break)
-        if pos(firm_id$=ivw17a_key$)<>1 break
-        if endwhse$<>"" if ivw17a_key.warehouse_id$>endwhse$ break
-        call pgmdir$+"adc_progress.aon","S","","","",ivw17a_key.warehouse_id$+" "+ivw17a_key.item_Id$,0,0,1,0,ignore_status
-        read record (ivw17_dev) ivw17a$
-
-rem --- Level break?
-
-        if ivw17a.warehouse_id$<>t0$ gosub Whse_Break
-
-rem --- Process work file record
-
-        cost$=str(ivw17a.unit_cost:m3$)
-
-        gosub Work_File_ivw17
-
-rem --- Loop back for next record
-    wend 
-
-done: rem --- All done
-
-    done=1
-    if pos(level$="WB")>0 gosub Whse_Break
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
-    close (printer_dev,err=*next)
-rem            run pgmdir$+"ivu_itemabcupd.aon"
+    width=h0,page=h,update$="ivr_itemabcrpt_o3.aon"
+    overlay$=update$
+    out_action$="PRT-PDF"
+    next_overlay$=overlay$
     goto std_exit
 
-report_heading: rem --- Report Heading
 
-    l=headings+1
-    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
-    if status exitto std_exit
-    return
-
-Print_Total: rem --- Print totals
-
-    headings=2
-    if l+class+7>l9 gosub report_heading
-    print (printer_dev)""
-    print (printer_dev)@(44+m8-8),"Number",@(59),"Percent",@(87),"Percent"
-    print (printer_dev)@(36),"Class",@(44+m8-8),"Of Items",@(59),"Of Total",@(72),"Total Value",@(87),"Of Total"
-    print (printer_dev)""
-    headings=6
-    l=l9+1
-
-rem --- Print line for each class
-
-    for x=0 to 25
-        if count[x]<>0 and value[x]<>0 then
-            percent=0
-            amount=0
-            if number<>0 percent=(count[x]*100)/number
-            if warehouse<>0 amount=(value[x]*100)/warehouse
-            print (printer_dev)@(36),letters$(x+1,1),@(44),count[x]:m8$,@(59),percent:m9$,@(84-m1),value[x]:m1$,@(87),amount:m9$
-        endif
-    next x
-
-rem --- Grand totals
-
-    print (printer_dev)""
-    print (printer_dev)@(36),"Total",@(44),number:m8$,@(84-m1),warehouse:m1$
-    return
-
-Whse_Break: rem --- Warehouse Break
-
-    if t0$<>"" and l1=0 then 
-        let totals$="Total For "+h9$,totals=warehouse
-        gosub l6900
-        let totals$="Total For Report",totals=total
-        if done gosub l6900
-        gosub Print_Total
-    endif
-    if done goto whse_break_done
-    dim count[25],value[25]
-    let class=0,totalpct=0,xlimit=percents[class],sequence=0,number=0
-    let t0$=ivw17a_key.warehouse_id$,ivm10c.short_name$="(Not on File)",l=l9+1,l1=0,warehouse=0
-    find record (ivm10c_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
-    let h9$="Warehouse "+t0$+" "+cvs(ivm10c.short_name$,2),headings$[1]=sysinfo.task_desc$+"For "+h9$
-
-    dim ivs10w[3]
-    ivs10w0$=firm_id$+"W"+t0$
-    ivs10w1$=ivs01a.current_per$+ivs01a.current_year$+when$
-rem    read (ivs10w_dev,key=ivs10w0$,dom=*next)ivs10w0$,ivs10w1$,ivs10w[all]
-rem    ivs10w.period$=ivs10w1$(1,2),ivs10w.year$=ivs10w1$(3,4),ivs10w.run_date$=ivs10w1$(7,8)
-rem    ivs10w.abc_total_value_01=ivs10w[0],ivs10w.abc_total_value_02=ivs10w[1]
-rem    ivs10w.abc_total_value_03=ivs10w[2]
-
-    ivs10w_key.firm_id$=firm_id$
-    ivs10w_key.record_id_w$="W"
-    ivs10w_key.warehouse_id$=t0$
-    ivs10w.firm_id$=firm_id$
-    ivs10w.record_id_w$="W"
-    ivs10w.warehouse_id$=t0$
-    ivs10w.period$=ivs01a.current_per$
-    ivs10w.year$=ivs01a.current_year$
-    ivs10w.run_date$=when$
-
-    find record (ivs10w_dev,key=ivs10w_key$,dom=*next) ivs10w$
-    let x$=fndate$(ivs10w.run_date$)
-    if pos(value$="UB")>0 x$="Period "+ivs10w.period$+" "+ivs10w.year$
-    let headings$[2]="Valued By "+x1$+" "+x2$+" As Of "+x$
-whse_break_done:
-    return
-
-Work_File_ivw07: rem --- Process work file record
+work_file_ivw07: rem --- Process work file record
 
     dim description$(dw)
     ivm01a_key.firm_id$=firm_id$,ivm01a_key.item_id$=ivw07a.item_id$
     ivm01a.item_desc$="(Not On File)"+fill(60),ivm01a.product_type$=""
     find record (ivm01_dev,key=ivm01a_key$,dom=*next) ivm01a$
     description$=cvs(ivm01a.item_desc$,2)
-    if pos("Not"=description$) 
-	
-	ivm01a.item_desc$="(Missing ivw07)"
-    endif
+    if pos("Not"=description$) then ivm01a.item_desc$="(Missing ivw07)"
     oldabc$=ivw07a.abc_code_01$
 
 rem --- Calculate percentage
 
     percent=0,quantity=ivw07a.annual_usage,amount=ivw07a.abc_total_value_01,x=0
-    if value$="O" quantity=ivw07a.qty_on_hand,amount=ivw07a.abc_total_value_02,x=1
-    if value$="B" quantity=ivw07a.end_balance,amount=ivw07a.abc_total_value_03,x=2
-    if x=0 if ivs10i.abc_total_value_01<>0 percent=(amount*100)/ivs10i.abc_total_value_01
-    if x=1 if ivs10i.abc_total_value_02<>0 percent=(amount*100)/ivs10i.abc_total_value_02
-    if x=2 if ivs10i.abc_total_value_03<>0 percent=(amount*100)/ivs10i.abc_total_value_03
+    if value$="Q" then quantity=ivw07a.qty_on_hand,amount=ivw07a.abc_total_value_02,x=1
+    if value$="B" then quantity=ivw07a.end_balance,amount=ivw07a.abc_total_value_03,x=2
+    if x=0 and ivs10i.total_value_01<>0 percent=(amount*100)/ivs10i.total_value_01
+    if x=1 and ivs10i.total_value_02<>0 percent=(amount*100)/ivs10i.total_value_02
+    if x=2 and ivs10i.total_value_03<>0 percent=(amount*100)/ivs10i.total_value_03
 
 rem --- Print detail line
 
-    if l+1>l9 gosub report_heading
-    sequence=sequence+1,l=l+1,newabc$=letters$(class+1,1)
+    sequence=sequence+1,newabc$=letters$(class+1,1)
     total=total+amount,warehouse=warehouse+amount,l1=l1+1
-    print (printer_dev)@(o[0]),sequence:m7$,@(o[1]),ivm01a.item_id$,@(o[2]),description$,@(o[3]),ivm01a.product_type$,@(o[4]),quantity:m2$,@(o[5]),cost$,@(o[6]),amount:m1$,@(o[7]),percent:m9$,@(o[8]),oldabc$,@(o[9]),newabc$
+    OutVect!.addItem(str(sequence:m7$))
+    OutVect!.addItem(ivm01a.item_id$)
+    OutVect!.addItem(description$)
+    OutVect!.addItem(ivm01a.product_type$)
+    OutVect!.addItem(str(quantity:m2$))
+    OutVect!.addItem(str(amount:m1$))
+    OutVect!.addItem(str(percent:m9$))
+    OutVect!.addItem("  "+oldabc$)
+    OutVect!.addItem(newabc$)
 
 rem --- New class?
 
@@ -323,7 +174,7 @@ rem --- New class?
     value[class]=value[class]+amount,count[class]=count[class]+1
     if totalpct>xlimit class=class+1,xlimit=xlimit+percents[class]
 
-rem --- Update IVE-07
+rem --- Update ive-07
 
     ive07a_key.firm_id$=ivw07a_key.firm_id$
     ive07a.firm_id$=ivw07a.firm_id$
@@ -337,129 +188,69 @@ rem --- Update IVE-07
     ive07a.abc_total_value_01=ivw07a.abc_total_value_01
     ive07a.abc_total_value_02=ivw07a.abc_total_value_02
     ive07a.abc_total_value_03=ivw07a.abc_total_value_03
-rem    precision 0 
-rem    ive07a.annual_usage=ive07a.annual_usage*1
-rem    ive07a.qty_on_hand=ive07a.qty_on_hand*1
-rem    ive07a.end_balance=ive07a.end_balance*1
-
-rem    ive07a.abc_total_value_01=ive07a.abc_total_value_01*1
-rem    ive07a.abc_total_value_02=ive07a.abc_total_value_02*1
-rem    ive07a.abc_total_value_03=ive07a.abc_total_value_03*1
-rem    precision 4 
     ive07a$=field(ive07a$)
     write record (ive07_dev,key=ive07a_key$) ive07a$
     return
 
-Work_File_ivw17: rem --- Process work file record
 
-    dim description$(dw)
-    ivm01a_key.firm_id$=firm_id$,ivm01a_key.item_id$=ivw17a.item_id$
-    ivm01a.item_desc$="(Not On File)",ivm01a.product_type$=""
-ivw17_item_read:
-    find record (ivm01_dev,key=ivm01a_key$,dom=*next) ivm01a$
+print_total: rem --- Print totals
 
-    description$=cvs(ivm01a.item_desc$,2)
-    if pos("Not"=description$) 
-	
-	ivm01a.item_desc$="(Missing ivw17)"
-rem	ivm01a_key.item_id$=ivw17a.item_id$(3)+"  "
-rem	goto ivw17_item_read
-    endif
-    oldabc$=ivw17a.abc_code_01$
-
-rem --- Calculate percentage
-
-    percent=0,quantity=ivw17a.annual_usage,amount=ivw17a.abc_total_value_01,x=0
-    if value$="O" quantity=ivw17a.qty_on_hand,amount=ivw17a.abc_total_value_02,x=1
-    if value$="B" quantity=ivw17a.end_balance,amount=ivw17a.abc_total_value_03,x=2
-    if x=0 if ivs10w.abc_total_value_01<>0 percent=(amount*100)/ivs10w.abc_total_value_01
-    if x=1 if ivs10w.abc_total_value_02<>0 percent=(amount*100)/ivs10w.abc_total_value_02
-    if x=2 if ivs10w.abc_total_value_03<>0 percent=(amount*100)/ivs10w.abc_total_value_03
-
-rem --- Print detail line
-
-    if l+1>l9 gosub report_heading
-    sequence=sequence+1,l=l+1,newabc$=letters$(class+1,1)
-    total=total+amount,warehouse=warehouse+amount,l1=l1+1
-    print (printer_dev)@(o[0]),sequence:m7$,@(o[1]),ivm01a.item_id$,@(o[2]),description$,@(o[3]),ivm01a.product_type$,@(o[4]),quantity:m2$,@(o[5]),cost$,@(o[6]),amount:m1$,@(o[7]),percent:m9$,@(o[8]),oldabc$,@(o[9]),newabc$
-
-rem --- New class?
-
-    totalpct=min(totalpct+percent,100),number=number+1
-    value[class]=value[class]+amount,count[class]=count[class]+1
-    if totalpct>xlimit class=class+1,xlimit=xlimit+percents[class]
-
-rem --- Update IVE-17
-
-    ive17a_key.firm_id$=ivw17a_key.firm_id$
-    ive17a.firm_id$=ivw17a.firm_id$
-    ive17a_key.warehouse_id$=ivw17a_key.warehouse_id$
-    ive17a.warehouse_id$=ivw17a.warehouse_id$
-    ive17a_key.item_id$=ivw17a_key.item_id$
-    ive17a.item_id$=ivw17a.item_id$
-    ive17a.abc_code_01$=oldabc$,ive17a.abc_code_02$=newabc$
-    ive17a.annual_usage=ivw17a.annual_usage
-    ive17a.qty_on_hand=ivw17a.qty_on_hand
-    ive17a.end_balance=ivw17a.end_balance
-    ive17a.unit_cost=ivw17a.unit_cost
-    ive17a.abc_total_value_01=ivw17a.abc_total_value_01
-    ive17a.abc_total_value_02=ivw17a.abc_total_value_02
-    ive17a.abc_total_value_03=ivw17a.abc_total_value_03
-    ive17a$=field(ive17a$)
-    write record (ive17_dev,key=ive17a_key$) ive17a$
+    xwk=fnblank(columns)
+    TotVect!.addItem(str(OutVect!.size()/(columns)))
+    xwk=fnblank(2)
+    OutVect!.addItem("     "+totals$)
+    xwk=fnblank(2)
+    OutVect!.addItem(str(totals:m1$))
+    xwk=fnblank(3)
     return
 
-rem --- Print totals
-l6900:
-    if l+1>l9 gosub report_heading
-    print (printer_dev)@(o[6]-len(totals$)),totals$,@(o[6]),totals:m1$
-    let l=l+1
+
+print_summary: rem --- Print summary totals
+
+    xwk=fnblank(columns)
+    xwk=fnblank(columns)
+    xwk=fnblank(2)
+    OutVect!.addItem(fill(20)+"Class")
+    OutVect!.addItem("Number Of Items")
+    OutVect!.addItem("Percent Of Total")
+    OutVect!.addItem("Total Value")
+    OutVect!.addItem("Percent Of Total")
+    xwk=fnblank(2)
+    xwk=fnblank(columns)
+    
+
+rem --- Print line for each class
+
+    xwk=fnblank(columns)
+    for x=0 to 25
+        if count[x]<>0 and value[x]<>0 then
+            percent=0
+            amount=0
+            if number<>0 percent=(count[x]*100)/number
+            if warehouse<>0 amount=(value[x]*100)/warehouse
+            xwk=fnblank(2)
+            OutVect!.addItem(fill(22)+letters$(x+1,1))
+            OutVect!.addItem(str(count[x]:m8$))
+            OutVect!.addItem(str(percent:m9$))
+            OutVect!.addItem(str(value[x]:m1$))
+            OutVect!.addItem(str(amount:m9$))
+            xwk=fnblank(2) 
+        endif
+    next x
+
+rem --- Grand totals
+
+    xwk=fnblank(columns)
+    TotVect!.addItem(str(OutVect!.size()/(columns)))
+    xwk=fnblank(2)
+    OutVect!.addItem(fill(18)+"Total")
+    OutVect!.addItem(str(number:m8$))
+    OutVect!.addItem("")
+    OutVect!.addItem(str(warehouse:m1$))
+    OutVect!.addItem("")
+    xwk=fnblank(2)   
     return
 
-Position: rem --- Print positions
-
-    dim h1$(width),h2$(width)
-    o[1]=m7+2
-    o[2]=o[1]+p[0]+1
-    o[3]=o[2]+p[3]+p[4]+p[5]+2
-    o[4]=o[3]+xp-m2
-    o[6]=o[4]+m2
-    o[7]=o[6]+m1
-    o[8]=o[7]+m9+2
-    o[9]=o[8]+4
-    if o[9]+1>= width then
-        o[9]=width-1
-        o[8]=o[9]-4
-        o[7]=o[8]-m9
-        o[6]=o[7]-m1
-        o[4]=o[6]-m2
-        o[3]=o[4]-4
-        o[1]=m7+2
-        o[2]=o[1]+p[0]+1
-    endif
-    h1$(o[3]+1)="Prod"
-    x1$="Quantity"
-    x2$="On Hand"
-    dw=o[3]-o[2]-1
-    if value$="U" x1$="Estimated Annual",x2$="Usage"
-    if value$="B" x1$="Ending ",x2$="Balance"
-    x=o[6]-len(x1$)
-    o[5]=o[6]
-    h1$(x)=x1$
-    h1$(o[6]+m1-5)="Total"
-    h1$(o[8])="Old"
-    h1$(o[9])="New"
-    h2$(o[0]+m7-2)="Seq"
-    h2$(o[1]+1)="Item"
-    h2$(o[2]+1)="Description"
-    h2$(o[3]+1)="Type"
-    h2$(x)=x2$
-    h2$(o[6]+m1-5)="Value"
-    h2$(o[7]+2)="Percent"
-    h2$(o[8])="ABC"
-    h2$(o[9])="ABC"
-    cost$=""
-    return
 
 
 rem #include std_functions.src
@@ -483,16 +274,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$) 
-        if cvs(q$,2)="" return ""
-        testdate$=""
-        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if testdate$<>"" 
-            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
-        endif
-        return testdate$
-    fnend    
-rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
@@ -533,6 +321,16 @@ rem --- fnglobal$: Return string value of passed STBL variable
         q1$=stbl(q$,err=*next)
         return q1$
     fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
 
 rem #endinclude std_functions.src
 

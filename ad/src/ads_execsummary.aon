@@ -19,6 +19,7 @@ rem --- Directory STBLs
 	file_usr$=stbl("+FILE_USR"),file_usr$=stbl("+DIR_USR",err=*next)+"aon_"+cvs(stbl("+USER_ID",err=*next),138)+".usr"
 	file_set$=stbl("+FILE_SET")
 
+   
 rem --- Misc Setup
 
 	dim date_text$:"default:c(32*=0),sm[12]:c(3*=0),m[12]:c(32*=0),sd[7]:c(3*=0),d[7]:c(32*=0)"
@@ -52,6 +53,10 @@ rem --- Misc Setup
 	temp_file$=TempFile!.replace("\","/")
 	file_base$=temp_file$(1,pos("/"=temp_file$,-1,2))
 
+rem --- call bas_process_beg to put lic_feature info into sysinfo
+    user_id$=stbl("+USER_ID")
+    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,table_chans$[all]
+
 rem --- Retrieve sysinfo data
 
     sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
@@ -59,10 +64,11 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
 	user_id$=sysinfo.user_id$
 	firm_id$=sysinfo.firm_id$
+    lic_feature$=sysinfo.lic_feature$
 
 file_opens:rem --- Open File(s)
 
-	num_files=11
+	num_files=12
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]=stbl("+GUI_DEVICE"),open_opts$[1]="O"
@@ -76,6 +82,8 @@ file_opens:rem --- Open File(s)
 	open_tables$[9]="ADE_EXECSTOT",open_opts$[9]="OTA"
 	open_tables$[10]="ADE_EXECIV",open_opts$[10]="OTA"
 	open_tables$[11]="ADE_EXECGEN",open_opts$[11]="OTA"
+	open_tables$[12]="ADM_MODULES",open_opts$[12]="OTA"
+
 
 	gosub open_tables
 
@@ -90,6 +98,7 @@ file_opens:rem --- Open File(s)
 	ade_execstot=num(open_chans$[9]);dim ade_execstot$:open_tpls$[9]
 	ade_execiv=num(open_chans$[10]);dim ade_execiv$:open_tpls$[10]
 	ade_execgen=num(open_chans$[11]);dim ade_execgen$:open_tpls$[11]
+	adm_modules=num(open_chans$[12]);dim adm_modules$:open_tpls$[12]
 
 rem --- Get SysGUI Object
 
@@ -113,6 +122,13 @@ rem --- Get Attributes
 
 	dim ade_execgen$:fattr(ade_execgen$)
 	readrecord(ade_execgen,key=firm_id$,dom=*next)ade_execgen$
+
+rem --- get application record in order to get form icon
+
+	readrecord(adm_modules,key=pad(lic_feature$,11),dom=*next)adm_modules$
+	prog_path$=adm_modules.dd_attr_icon$
+	gosub resolve_path
+	form_icon$=prog_path$
 
 rem --- Main Process
 
@@ -442,7 +458,9 @@ get_user_settings:rem --- Get User/Windows Settings
 
 save_user_settings:rem --- Save Windows Coordinates
 
-	call dir_syp$+"bac_winsize.bbj",cvs(win_save_id$,4),"W","",Window!,"SAVE",win_coord[all]
+	if Window!<>null() then
+		call dir_syp$+"bac_winsize.bbj",cvs(win_save_id$,4),"W","",Window!,"SAVE",win_coord[all]
+	endif
 
 	return
 
@@ -529,6 +547,7 @@ rem		ChartBar!.setSeriesName(1,"Prior Year")
 
 	WinColor!=Window!.getBackColor()
 	win_title$=Window!.getTitle()
+    Window!.setIcon(form_icon$,err=*next)
 
 	win_disp$="YES"
 
@@ -638,6 +657,23 @@ def_grids:rem --- Define Grid
 
 	return
 
+resolve_path:rem --- Resolve Program Path
+
+	while pos("["=prog_path$)<>0
+		stbl_from=pos("["=prog_path$)+1
+		stbl_thru=pos("]"=prog_path$)
+		proc_mssg$=stbl_err$
+		temp_stbl$=stbl(prog_path$(stbl_from,stbl_thru-stbl_from),err=*next)
+		proc_mssg$=""
+		if stbl_thru=len(prog_path$)
+			prog_path$=prog_path$(1,stbl_from-2)+temp_stbl$
+		else
+			prog_path$=prog_path$(1,stbl_from-2)+temp_stbl$+prog_path$(stbl_thru+1)
+		endif
+	wend
+
+	return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -667,8 +703,7 @@ exit_prog:rem --- Exit Program
 
 	gosub save_user_settings
 
-	if pgm(-1)=pgm(-1) release
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
 
-	Window!.destroy()
-
-	exit
+    end

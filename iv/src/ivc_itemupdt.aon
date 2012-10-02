@@ -8,7 +8,7 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-rem --- enter statement data:
+rem --- Enter statement data:
 rem --- ACTION$    : Transaction Type (input)
 rem --- BB       = Beginning Balance
 rem --- BI/BO    = BOM Production Entry (BI=Issue/BO=Receipt)
@@ -21,16 +21,24 @@ rem --- TI/TO/TA = Transfer In/Out/Tier Adjustment
 rem --- WI/WO    = Work Orders (WI=Issue/WO=Receipt)
 rem --- CO/UC/OO = Commit/Uncommit/Adjust On Order
 rem --- CHANNELS[n]: Channel Numbers (input)
-rem --- changed to tblchans$[all] for file open pgm adc_open_tables.aon.CAH
-rem --- [0] = gls-01      [7] = ivm-07    [42] = ivt-02
-rem --- [1] = ivm-01      [8] = ivm-08    [43] = ivt-03
-rem --- [2] = ivm-02     [12] = ivm-12    [44] = ivt-04
-rem --- [4] = ivm-04     [17] = ivm-17    [40] = ivw-04
-rem --- [5] = ivm-05     [41] = ivt-01    [03] = ivm-03
-rem --- IVS01A$    : IV Parameter record
+rem --- [0] = gls-01 (GLS_PARAM)
+rem --- [1] = ivm-01 (IVM_ITEMMAST)
+rem --- [2] = ivm-02 (IVM_ITEMWHSE)
+rem --- [4] = ivm-04 (IVM_ITEMTIER), (needed for lifo/fifo)
+rem --- [5] = ivm-05 (IVM_ITEMVEND), 
+rem --- [7] = ivm-07 (IVM_LSMASTER), (needed for lot/serial)
+rem --- [12] = ivm-12 (IVM_ITEMACT), 
+rem --- [17] = ivm-17 (IVM_LSACT), (needed for lot/serial)
+rem --- [41] = ivt-01 (IVT_LSTRANS), (needed for lot/serial)
+rem --- [42] = ivt-02 (IVX_LSCUST), (needed for lot/serial)
+rem --- [43] = ivt-03 (IVX_LSVEND), (needed for lot/serial)
+rem --- [44] = ivt-04 (IVT_ITEMTRAN), 
+rem --- IVS01A$    : IV Parameter record, (input)
 rem --- ITEMS$[n]  : Item Information (input)
-rem --- [0] = Firm ID        [2] = Item Number
-rem --- [1] = Warehouse ID   [3] = Lot/Serial Number
+rem --- [0] = Firm ID			(not used) the firm now comes from sysinfo$
+rem --- [1] = Warehouse ID   
+rem --- [2] = Item Number
+rem --- [3] = Lot/Serial Number	(optional)
 rem --- REFS$[n]   : Reference Information (input)
 rem --- [0] = Date             [7] = GL Account Number
 rem --- [1] = Reference 1      [8] = Transaction Comment
@@ -40,18 +48,34 @@ rem --- [4] = Reference 4     [11] = Lot/Serial Comment
 rem --- [5] = Sequence Nbr    [12] = Drop Ship Flag
 rem --- [6] = OP/PO Line Code
 rem --- REFS[n]    : Reference Information (input)
-rem --- [0] = Quantity       [3] = Actual Lead Time
-rem --- [1] = Unit Cost      [4] = Landed Cost
-rem --- [2] = Unit Price     [5] = Physical Count
+rem --- [0] = Quantity       
+rem --- [1] = Unit Cost			(input/output)
+rem --- [2] = Unit Price     
+rem --- [3] = Actual Lead Time
+rem --- [4] = Landed Cost
+rem --- [5] = Physical Count
+rem --- TABLE_CHANS$[ALL] : A Barista array; do not alter
 rem --- STATUS     : Status Code (Returned)
-rem --- tblchans$[n,n]: used by file open routine to determine if file(s) is/are already open
+rem 
+rem --- Use initialization label to open files and set arays
+rem
+rem call "ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+rem 
+rem * channels[all]     - returns the references to all open files
+rem * ivs01a$           - returns the IV parameter record
+rem * items$[all]       - returns empty, set to the correct number of elements
+rem * refs$[all]        - same 
+rem * refs[all]         - same
+rem * table_chans$[all] - a Barista standard array, do not modify
+rem * status            - returns zero for no error
 
     seterr std_error
     setesc std_error
-    enter action$,tblchans[all],ivs01a$,items$[all],refs$[all],refs[all],status
-
+    enter action$,channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+	
 rem --- Retrieve the program path
 
+	pgmdir$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
@@ -64,52 +88,57 @@ rem --- Retrieve sysinfo data
     sys_yyyymmdd$=fndate$(sys_when$)
     user_id$=stbl("+USER_ID")
 
-    gls01_dev=tblchans[0]
-    ivm01_dev=tblchans[1]
-    ivm02_dev=tblchans[2]
-    ivm04_dev=tblchans[4]
-    ivm05_dev=tblchans[5]
-    ivm07_dev=tblchans[7]
-    ivm12_dev=tblchans[12]
-    ivm17_dev=tblchans[17]
-    ivt01_dev=tblchans[41]
-    ivt02_dev=tblchans[42]
-    ivt03_dev=tblchans[43]
-    ivt04_dev=tblchans[44]
+rem --- Sanity check
 
-rem --- Retrieve miscellaneous templates
+    code=pos(action$="BB,BI,BO,IA,IC,II,IR,PH,PO,OE,OP,RC,TI,TO,WI,WO,CO,UC,TA,OO,PI",3)
+    if code=0 then goto bad_action_error
+	if item$[2] = "" then goto no_item_error
 
-    files=11,begfile=1,endfile=files
-    dim ids$[files],templates$[files]
-    ids$[1]="IVM_ITEMMAST"
-    ids$[2]="IVM_ITEMWHSE"
-    ids$[3]="IVM_ITEMTIER"
-    ids$[4]="IVM_ITEMVEND"
-    ids$[5]="IVM_LSMASTER"
-    ids$[6]="IVM_ITEMACT"
-    ids$[7]="IVM_LSACT"
-    ids$[8]="IVT_LSTRANS"
-    ids$[9]="IVX_LSCUST"
-    ids$[10]="IVX_LSVEND"
-    ids$[11]="IVT_ITEMTRAN"
+rem --- Was "init" called yet?
 
-    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
-    if status goto std_exit
+	if channels[0] = 0 then
+		call pgmdir$+"ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+		if status then goto std_exit
+	endif
+
+rem --- Set file handles from channels array
+
+    gls01_dev=channels[0]
+    ivm01_dev=channels[1]
+    ivm02_dev=channels[2]
+    ivm04_dev=channels[4]
+    ivm05_dev=channels[5]
+    ivm07_dev=channels[7]
+    ivm12_dev=channels[12]
+    ivm17_dev=channels[17]
+    ivt01_dev=channels[41]
+    ivt02_dev=channels[42]
+    ivt03_dev=channels[43]
+    ivt04_dev=channels[44]
 
 rem --- Dimension string templates
 
-    dim ivm01a$:templates$[1],ivm02a$:templates$[2],ivm04a$:templates$[3],ivm05a$:templates$[4],
-:       ivm07a$:templates$[5],ivm12a$:templates$[6],ivm17a$:templates$[7],ivt01a$:templates$[8],
-:       ivt02a$:templates$[9],ivt03a$:templates$[10],ivt04a$:templates$[11]
+    dim ivm01a$:table_chans$[ivm01_dev,0]
+	dim ivm02a$:table_chans$[ivm02_dev,0]
+	dim ivm04a$:table_chans$[ivm04_dev,0]
+	dim ivm05a$:table_chans$[ivm05_dev,0]
+	dim ivm07a$:table_chans$[ivm07_dev,0]
+	dim ivm12a$:table_chans$[ivm12_dev,0]
+	dim ivm17a$:table_chans$[ivm17_dev,0]
+	dim ivt01a$:table_chans$[ivt01_dev,0]
+	dim ivt02a$:table_chans$[ivt02_dev,0]
+	dim ivt03a$:table_chans$[ivt03_dev,0]
+	dim ivt04a$:table_chans$[ivt04_dev,0]
+	ivt04a_tpl$ = table_chans$[ivt04_dev,0]
 
 rem --- Parameters
+
     dim p[5]
     p[0]=num(ivs01a.item_id_len$)
     p[1]=num(ivs01a.precision$)
     p[2]=num(ivs01a.ls_no_len$)
     ls=pos(ivs01a.lotser_flag$="LS")
     lf=pos(ivs01a.lifofifo$="LF")
-    cost_method$=ivs01a.cost_method$
     current_per$=ivs01a.current_per$
     current_year$=ivs01a.current_year$
 
@@ -124,18 +153,16 @@ rem --- Initializations
     lotser$=items$[3]
     status=0
     last=0
-    trans$="BBBMBMIT  ITITPH    OPPOTITOWIWO        "
+    trans$="BB,BM,BM,IT,  ,IT,IT,PH,  ,  ,OP,PO,TI,TO,WI,WO,  ,  ,  ,  "
 
 rem --- Validate arguments
 
-    code=pos(action$="BBBIBOIAICIIIRPHPOOEOPRCTITOWIWOCOUCTAOOPI",2)
-    if code=0 goto l4900
     when$=refs$[0]
     clock$=""
-    if len(when$)=8 ymd$=fndate$(when$)
-    if pos(action$="ICPOOECOUCTAOOPI",2)=0
+    if len(when$)=8 then ymd$=fndate$(when$)
+    if pos(action$="IC,PO,OE,CO,UC,TA,OO,PI",3)=0
         call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,ymd$,period$,year$
-        if period$="" period$=current_per$,year$=current_year$
+        if period$="" then period$=current_per$,year$=current_year$
         clock$=fntime$(clock$)
     endif
 
@@ -148,6 +175,7 @@ rem --- Validate arguments
     last$[6]="LSTXIN_DATE"
     last$[7]="LSTXOT_DATE"
     last$[8]="LSTRET_DATE"
+	
     dim action$[8]
     action$[1]="QTY_RECEIVED"
     action$[2]="QTY_BUILT"
@@ -157,149 +185,174 @@ rem --- Validate arguments
     action$[6]="QTY_XFER_IN"
     action$[7]="QTY_XFER_OUT"
     action$[8]="QTY_RETURNED"
-    if pos(action$="IRRC",2) last=1
-    if pos(action$="BOWO",2) last=2
-    if action$="OP" last=3
-    if pos(action$="BIIIWI",2) last=4
-    if pos(action$="IAPH",2) last=5
-    if action$="TI" last=6
-    if action$="TO" last=7
-    if action$="OP" if qty>0 last=8
+	
+    if pos(action$="IRRC",2) then last=1
+    if pos(action$="BOWO",2) then last=2
+    if action$="OP" then if qty>0 then last=8 else last=3
+    if pos(action$="BIIIWI",2) then last=4
+    if pos(action$="IAPH",2) then last=5
+    if action$="TI" then last=6
+    if action$="TO" then last=7
     action=last
 
 rem --- Retrieve ivm-01 Item Master
 
     ivm01k0$=firm_id$+item$
-    find record (ivm01_dev,key=ivm01k0$,dom=l4950) ivm01a$
-    if ls ls=ivm01a.lotser_item$="Y"
+    find record (ivm01_dev,key=ivm01k0$,dom=missing_record_error) ivm01a$
+    if ls then ls = (ivm01a.lotser_item$ = "Y")
 
 rem --- ivm-01 Item Master
 
     if dropship=0 and last<>0
-        ivm01a.lstrec_date$=fnl$(ivm01a.lstrec_date$,ymd$)
+        ivm01a.lstrec_date$ = fnl$(ivm01a.lstrec_date$, ymd$)
         ivm01a$=field(ivm01a$)
         write record (ivm01_dev) ivm01a$
     endif
 
 rem --- ivm-02 Warehouse
 
-    if dropship and action$<>"RC" goto l3700
-    if action$="TA" goto l1400
+    if dropship and action$<>"RC" then goto lot_serial_trans
+    if action$="TA" then goto update_lifo_fifo
     ivm02k0$=firm_id$+whse$+item$
-    find record (ivm02_dev,key=ivm02k0$,dom=l4950) ivm02a$
+    find record (ivm02_dev,key=ivm02k0$,dom=missing_record_error) ivm02a$
     lastphys=16
     physical=8
     unit=11
     avg=12
     commit=2
     curfile=ivm02_dev
-    gosub l6400
-    if action gosub l6500
+    gosub update_comtd_on_order
+    if action then gosub update_whse_lots
 
 rem --- Adjust remaining fields
 
     location$=ivm02a.location$
-    if action$="PI" ivm02a.landed_cost=refs[4]
-    if action$="PH" and cvs(lotser$,2)="" ivm02a.lstphy_date$=ymd$,ivm02a.select_phys$="N",ivm02a.physical_cnt=refs[5]
+    if action$="PI" then ivm02a.landed_cost=refs[4]
+    if action$="PH" and cvs(lotser$,2)="" then 
+		ivm02a.lstphy_date$=ymd$
+		ivm02a.select_phys$="N"
+		ivm02a.physical_cnt=refs[5]
+	endif
     ivm02a$=field(ivm02a$)
     write record (ivm02_dev) ivm02a$
 
-l1400: rem --- ivm-04 LIFO/FIFO
+update_lifo_fifo: rem --- ivm-04 LIFO/FIFO
 
-    if dropship goto l3700
-    if lf=0 goto l1900
-    if pos(action$="BBICPOOECOUCOOPI",2) goto l1900
-    if action$="TA" onhandqty=qty else onhandqty=ivm02a.qty_on_hand
-    dim r$(16)
-    ivm04a.firm_id$=firm_id$,ivm04a.warehouse_id$=whse$,ivm04a.item_id$=item$
+    if dropship then goto lot_serial_trans
+    if lf=0 or pos(action$="BB,IC,PO,OE,CO,UC,OO,PI",3) then goto update_item_vendor
+    if action$="TA" then onhandqty=qty else onhandqty=ivm02a.qty_on_hand
+    ivm04a.firm_id$=firm_id$
+	ivm04a.warehouse_id$=whse$
+	ivm04a.item_id$=item$
     ivm04a.receipt_date$=ymd$
-    r$(1,2)=action$
-    r$(3,7)=refs$[2]
-    r$(10,3)=refs$[5]
-    if pos(action$="OPRC",2) r$(3,7)=refs$[3]
-    if qty<0 goto l1700
+    if qty<0 then goto decrement_tier
     read (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+ivm04a.receipt_date$,dom=*next)
 
-l1500: rem --- For receipts, add to existing tier or create new one
+receive_a_tier: rem --- For receipts, add to existing tier or create new one
 
-    k$=key(ivm04_dev,end=l1550)
-    if pos(ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+ivm04a.receipt_date$=k$)<>1 goto l1550
+    k$=key(ivm04_dev,end=create_a_tier)
+    
+	if pos( ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+ivm04a.receipt_date$=k$ ) <> 1 then 
+		goto create_a_tier
+	endif
+
     read record (ivm04_dev) ivm04a$
-    if ivm04a.unit_cost<>cost goto l1500
-    if r$(1,12)<>ivm04a.trans_source$+ivm04a.trans_ref$+ivm04a.line_no$ goto l1500
-rem    if cvs(r$,2)<>ivm04a.trans_source$+ivm04a.trans_ref$+ivm04a.line_no$ goto l1500
-    goto l1600
 
-l1550: rem --- Create new tier
+    if 	ivm04a.unit_cost <> cost or 
+:		action$ <> ivm04a.trans_source$ or
+:		refs$[5] <> ivm04a.line_no$ or
+:		( pos(action$="OPRC",2)     and ivm04a.trans_ref$ <> refs$[3] ) or
+:		( pos(action$="OPRC",2) = 0 and ivm04a.trans_ref$ <> refs$[2] )
+:	then
+		goto receive_a_tier
+	endif
+	
+    goto update_a_tier
+
+create_a_tier: rem --- Create new tier
 
     ivm04a.sequence_no$=str(num(ivm04a.sequence_no$)+1:"000")
     ivm04a.trans_source$=action$
     ivm04a.trans_ref$=refs$[2]
     ivm04a.line_no$=refs$[5]
-    if pos(action$="OPRC",2) ivm04a.trans_ref$=refs$[3]
+    if pos(action$="OPRC",2) then ivm04a.trans_ref$=refs$[3]
 
-l1600: rem --- Update tier record
+update_a_tier: rem --- Update tier record
 
     ivm04a.qty_on_hand=ivm04a.qty_on_hand+qty+min(onhandqty-qty,0)
     ivm04a.unit_cost=cost
-    if ivm04a.qty_on_hand>0 goto l1650
-    remove (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+
-:       ivm04a.receipt_date$+ivm04a.sequence_no$,dom=l1900)
+	
+    if ivm04a.qty_on_hand <= 0 then 
+		ivm04a_key$ = ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+ivm04a.receipt_date$+ivm04a.sequence_no$
+		remove (ivm04_dev,key=ivm04a_key$,dom=update_item_vendor)
+	else
+		ivm04a$=field(ivm04a$)
+		write record (ivm04_dev) ivm04a$
+	endif
+	
+    goto update_item_vendor
 
-    goto l1900
-l1650:
-    ivm04a$=field(ivm04a$)
-    write record (ivm04_dev) ivm04a$
-    goto l1900
-
-l1700: rem --- For issues, decrement existing tier(s)
+decrement_tier: rem --- For issues, decrement existing tier(s)
 
     amount=abs(qty)
-    x=lf; rem pos(p3$(3,1)="FL")
+    lifo_fifo = pos(ivs01a.lifofifo$="FL")
     avg=0
     number=0
-    if x=1 read (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$,dom=l1740)
-    if x=2 read (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+$FF$,dom=*next)
-l1740:
+	
+    if lifo_fifo=1 then 
+		read (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$,dom=*next)
+	else
+		if lifo_fifo=2 then 
+			read (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+$FF$,dom=*next)
+		endif
+	endif
+	
     while amount>0
-          on x goto l1880,l1760,l1780
-      l1760:
-          k$=key(ivm04_dev,end=l1880)
-          if pos(ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$=k$)<>1 goto l1880
-          goto l1800 
-      l1780:
-          k$=keyp(ivm04_dev,end=l1880)
-          if pos(ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$=k$)<>1 goto l1880
-      l1800:
-          extract record (ivm04_dev,key=k$) ivm04a$
-          if amount<=ivm04a.qty_on_hand goto l1850
-          amount=amount-ivm04a.qty_on_hand
-          total=(avg*number)+(ivm04a.qty_on_hand*ivm04a.unit_cost)
-          number=number+ivm04a.qty_on_hand
-          avg=total/number
-          refs[1]=avg
-          remove (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+
-:           ivm04a.receipt_date$+ivm04a.sequence_no$,dom=l1890)
-          goto l1890
-      l1850:
-          ivm04a.qty_on_hand=ivm04a.qty_on_hand-amount
-          total=(avg*number)+(amount*ivm04a.unit_cost)
-          number=number+amount
-          avg=total/number
-          refs[1]=avg
-          if ivm04a.qty_on_hand=0 goto l1870
-          ivm04a$=field(ivm04a$)
-          write record (ivm04_dev) ivm04a$
-          goto l1880
-      l1870: remove (ivm04_dev,key=ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+
-:           ivm04a.receipt_date$+ivm04a.sequence_no$,dom=*next)
+		  
+		if lifo_fifo = 0 then goto lifo_zero_amount
+		  
+		if lifo_fifo = 1 then 
+			k$=key(ivm04_dev,end=lifo_zero_amount)
+			if pos(ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$=k$)<>1 goto lifo_zero_amount
+		else
+			if lifo_fifo = 2 then 
+				k$=keyp(ivm04_dev,end=lifo_zero_amount)
+				if pos(ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$=k$)<>1 goto lifo_zero_amount
+			endif
+		endif
+		  
+		extract record (ivm04_dev,key=k$) ivm04a$
+		
+		if amount > ivm04a.qty_on_hand then
+			amount=amount-ivm04a.qty_on_hand
+			total=(avg*number)+(ivm04a.qty_on_hand*ivm04a.unit_cost)
+			number=number+ivm04a.qty_on_hand
+			avg=total/number
+			refs[1]=avg
+			ivm04a_key$ = ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+ivm04a.receipt_date$+ivm04a.sequence_no$
+			remove (ivm04_dev,key=ivm04a_key$,dom=*continue)
+			continue
+		endif
+		
+		ivm04a.qty_on_hand=ivm04a.qty_on_hand-amount
+		total=(avg*number)+(amount*ivm04a.unit_cost)
+		number=number+amount
+		avg=total/number
+		refs[1]=avg
+		
+		if ivm04a.qty_on_hand<>0 then
+			ivm04a$=field(ivm04a$)
+			write record (ivm04_dev) ivm04a$
+		else
+			ivm04a_key$ = ivm04a.firm_id$+ivm04a.warehouse_id$+ivm04a.item_id$+ivm04a.receipt_date$+ivm04a.sequence_no$
+			remove (ivm04_dev,key=ivm04a_key$,dom=*next)
+		endif
       
-      l1880:
-          amount=0
-      l1890:
-    wend
+lifo_zero_amount:
+		amount=0
+	wend
 
-l1900: rem --- ivm-05 Vendor Information
+update_item_vendor: rem --- ivm-05 Vendor Information
 
     if action$="RC"
         ivm05a.firm_id$=firm_id$,ivm05a.vendor_id$=refs$[1]
@@ -316,72 +369,108 @@ l1900: rem --- ivm-05 Vendor Information
     
 rem --- ivm-12 Inventory Activity
 
-    if pos(action$="ICPOOECOUCTAOOPI",2) goto l2200
-    ivm12a.firm_id$=firm_id$,ivm12a.warehouse_id$=whse$,ivm12a.item_id$=item$,
-:       ivm12a.year$=year$,ivm12a.period$=period$
-    amount=qty
-    if pos(action$="BIIIWI",2)>0 amount=-qty
-    if pos(action$="OPTO",2)>0 amount=abs(qty)
-    find record (ivm12_dev,key=ivm12a.firm_id$+ivm12a.warehouse_id$+ivm12a.item_id$+
-:       ivm12a.year$+ivm12a.period$,dom=*next) ivm12a$
-    if action=0 if cvs(lotser$,2)="" ivm12a.beg_balance=amount
-    if action=0 if cvs(lotser$,2)<>"" ivm12a.beg_balance=ivm12a.beg_balance+amount
-    if action>0 field ivm12a$,action$[action]=str(nfield(ivm12a$,action$[action])+amount)
-    ivm12a$=field(ivm12a$)
-    write record (ivm12_dev) ivm12a$
+    if pos(action$="IC,PO,OE,CO,UC,TA,OO,PI",3)=0 then
+	    ivm12a.firm_id$=firm_id$
+		ivm12a.warehouse_id$=whse$
+		ivm12a.item_id$=item$
+		ivm12a.year$=year$
+		ivm12a.period$=period$
+	    amount=qty
+		
+	    if pos(action$="BI,II,WI",3) then 
+			amount=-qty
+		else
+			if pos(action$="OPTO",2) then
+				amount=abs(qty)
+			endif
+		endif
+		
+		ivm12a_key$ = ivm12a.firm_id$+ivm12a.warehouse_id$+ivm12a.item_id$+ivm12a.year$+ivm12a.period$
+	    find record (ivm12_dev,key=ivm12a_key$,dom=*next) ivm12a$
+		
+		if action=0 then 
+			if cvs(lotser$,2)="" then
+				ivm12a.beg_balance=amount
+			else 
+				ivm12a.beg_balance=ivm12a.beg_balance+amount
+			endif
+		else
+			field ivm12a$, action$[action] = str( nfield(ivm12a$,action$[action]) + amount )
+		endif
+		
+	    ivm12a$=field(ivm12a$)
+	    write record (ivm12_dev) ivm12a$
+	endif
 
-l2200: rem --- ivt-04 Inventory Transactions
+rem --- ivt-04 Inventory Transactions
 
-    if pos(action$="ICPOOECOUCTAOOPI",2) goto l3000
-    dim x$(96)
-    ivt04a.firm_id$=firm_id$,ivt04a.warehouse_id$=whse$,ivt04a.item_id$=item$,ivt04a.trans_date$=ymd$
-    x$(1,2)=trans$(code,2)
-    x$(3,6)=refs$[1]
-    x$(9,7)=refs$[2]
-    x$(16,7)=refs$[3]
-    x$(23,2)=refs$[4]
-    x$(25,3)=refs$[5]
-    x$(28,1)=refs$[6]
-    x$(29,2)=ivm01a.unit_of_sale$
-    if pos(action$="PORC",2) x$(28,1)="",x$(91,2)=refs$[6]
-    k$=keyp(ivt04_dev,end=l2400)
-    if pos(ivt04a.firm_id$+ivt04a.warehouse_id$+ivt04a.item_id$+ivt04a.trans_date$=k$)<>1 goto l2400
-    read record (ivt04_dev,key=k$,dom=l2400) ivt04a$
-    if pos(x$(1,30)=ivt04a.trans_source$+ivt04a.trans_ref_1$+ivt04a.trans_ref_2$+ivt04a.trans_ref_3$+
-:       ivt04a.trans_ref_4$+ivt04a.trans_seq$+ivt04a.line_code$+ivt04a.unit_measure$)<>1 goto l2400
+    if pos(action$="IC,PO,OE,CO,UC,TA,OO,PI",3) then goto update_lot_serial
+
+    ivt04a.firm_id$=firm_id$
+	ivt04a.warehouse_id$=whse$
+	ivt04a.item_id$=item$
+	ivt04a.trans_date$=ymd$
+	
+	dim k$:ivt04a_tpl$
+    k$=keyp(ivt04_dev,end=write_trans_rec)
+	
+	if	k.firm_id$      <> ivt04a.firm_id$ or 
+:		k.warehouse_id$ <> ivt04a.warehouse_id$ or 
+:		k.item_id$      <> ivt04a.item_id$ or 
+:		k.trans_date$   <> ivt04a.trans_date$ 
+:	then 
+		goto write_trans_rec
+	endif
+	
+    read record (ivt04_dev,key=k$,dom=write_trans_rec) ivt04a$
 
 rem --- Update existing ivt-04 record
 
-    ivt04a.trans_qty=ivt04a.trans_qty+qty
-    if action$="BB" and cvs(lotser$,2)="" ivt04a.trans_qty=qty
-    if cost<>0 ivt04a.unit_cost=cost
-    if refs[2]<>0 ivt04a.unit_price=refs[2]
-    ivt04a$=field(ivt04a$)
-    write record (ivt04_dev) ivt04a$
-    goto l3000
+	if  trans$(code,2) = ivt04a.trans_source$ and
+:		refs$[1] = ivt04a.trans_ref_1$ and
+:		refs$[2] = ivt04a.trans_ref_2$ and	
+:		refs$[3] = ivt04a.trans_ref_3$ and
+:		refs$[4] = ivt04a.trans_ref_4$ and
+:		refs$[5] = ivt04a.trans_seq$ and
+:		ivm01a.unit_of_sale$ = ivt04a.unit_measure$ and
+:		( ( pos(action$="PORC",2)     and ivt04a.line_code$ = refs$[6] ) or
+:		  ( pos(action$="PORC",2) = 0 and ivt04a.po_line_code$ = refs$[6] ) )
+:	then
+	    ivt04a.trans_qty=ivt04a.trans_qty+qty
+	    if action$="BB" and cvs(lotser$,2)="" then ivt04a.trans_qty=qty
+	    if cost<>0 then ivt04a.unit_cost=cost
+	    if refs[2]<>0 then ivt04a.unit_price=refs[2]
+	    ivt04a$=field(ivt04a$)
+	    write record (ivt04_dev) ivt04a$
+	endif
+	
+    goto update_lot_serial
 
-l2400: rem --- Write new ivt-04 record
+write_trans_rec: rem --- Write new ivt-04 record
+	
+	if qty or action$="BB" then
+		channel=ivt04_dev
+		gosub init_trans_hist_rec
+		ivt04a$=field(ivt04a$)
+		write record (ivt04_dev) ivt04a$
+	endif
 
-    channel=ivt04_dev
-    xseq_pos=28; rem "old transaction sequence position"
-    if qty=0 if action$<>"BB" goto l3000
-    gosub l6000
-    ivt04a$=field(ivt04a$)
-    write record (ivt04_dev) ivt04a$
+update_lot_serial: rem --- ivm-07 Lot/Serial Number
 
-l3000: rem --- ivm-07 Lot/Serial Number
+    if ls=0 or cvs(lotser$,2)="" then goto done
+    if ivm01a.inventoried$<>"Y" then goto lot_serial_trans
+    if pos(action$="BBOOPOTAPI",2) then goto update_lot_act
+    ivm07a.firm_id$=firm_id$
+	ivm07a.warehouse_id$=whse$
+	ivm07a.item_id$=item$
+	ivm07a.lotser_no$=lotser$
+	ivm07a_key$ = ivm07a.firm_id$+ivm07a.warehouse_id$+ivm07a.item_id$+ivm07a.lotser_no$
+    find record (ivm07_dev,key=ivm07a_key$,dom=create_lot_master) ivm07a$
+    goto update_lot_master
 
-    if ls=0 or cvs(lotser$,2)="" goto done
-    if ivm01a.inventoried$<>"Y" goto l3700
-    if pos(action$="BBOOPOTAPI",2) goto l3600
-    ivm07a.firm_id$=firm_id$,ivm07a.warehouse_id$=whse$,ivm07a.item_id$=item$,ivm07a.lotser_no$=lotser$
-    find record (ivm07_dev,key=ivm07a.firm_id$+ivm07a.warehouse_id$+ivm07a.item_id$+
-:       ivm07a.lotser_no$,dom=l3100) ivm07a$
-    goto l3500
+create_lot_master: rem --- Create ivm-07 Lot/Serial Master
 
-l3100: rem --- Create ivm-07 Lot/Serial Master
-
-    if pos(action$="BOIAIRPHRCOPTIWO",2)=0 goto l3600
+    if pos(action$="BOIAIRPHRCOPTIWO",2)=0 goto update_lot_act
     ivm07a.ls_location$=refs$[10]
     ivm07a.ls_comments$=refs$[11]
     ivm07a.std_cost=cost
@@ -389,20 +478,21 @@ l3100: rem --- Create ivm-07 Lot/Serial Master
     if cvs(ivm07a.ls_location$,2)="" ivm07a.ls_location$=location$
 
 rem --- Generate lot/serial comment if not already there
+
     if cvs(ivm07a.ls_comments$,2)=""
         x$="Generated By "
-        if action$="BO" x$=x$+"Production Entry"
-        if action$="IA" x$=x$+"Inventory Adjustment"
-        if action$="IR" x$=x$+"Inventory Receipt"
-        if action$="PH" x$=x$+"Physical Inventory"
-        if action$="RC" x$="PO Number "+refs$[2]+" - Line "+refs$[5]
-        if action$="OP" x$="Sales Return"
-        if action$="TI" x$=x$+"Inventory Transfer"
-        if action$="WO" x$="Completed Work Order"
+        if action$="BO" then x$=x$+"Production Entry"
+        if action$="IA" then x$=x$+"Inventory Adjustment"
+        if action$="IR" then x$=x$+"Inventory Receipt"
+        if action$="PH" then x$=x$+"Physical Inventory"
+        if action$="RC" then x$="PO Number "+refs$[2]+" - Line "+refs$[5]
+        if action$="OP" then x$="Sales Return"
+        if action$="TI" then x$=x$+"Inventory Transfer"
+        if action$="WO" then x$="Completed Work Order"
         ivm07a.ls_comments$=x$
     endif
 
-l3500: rem --- Update lot/serial master
+update_lot_master: rem --- Update lot/serial master
 
     lastphys=61
     commit=1
@@ -410,80 +500,130 @@ l3500: rem --- Update lot/serial master
     unit=3
     avg=4
     curfile=ivm07_dev
-    gosub l6400
-    if action gosub l6500
-    if action$="PH" ivm07a.lstphy_date$=ymd$,ivm07.physical_cnt=refs[5]
+    gosub update_comtd_on_order
+    if action then gosub update_whse_lots
+    if action$="PH" then ivm07a.lstphy_date$=ymd$,ivm07.physical_cnt=refs[5]
     vendor$=ivm07a.vendor_id$
-    if ivm07.qty_on_hand=0 ivm07a.closed_flag$="C" else ivm07a.closed_flag$=""
+    if ivm07.qty_on_hand=0 then ivm07a.closed_flag$="C" else ivm07a.closed_flag$=""
     ivm07a$=field(ivm07a$)
     write record (ivm07_dev) ivm07a$
 
-l3600: rem --- ivm-17 Lot/Serial Activity
+update_lot_act: rem --- ivm-17 Lot/Serial Activity
 
-    if pos(action$="ICPOOEOOCOUCTAPI",2) goto l3700
-    ivm17a.firm_id$=firm_id$,ivm17a.warehouse_id$=whse$,ivm17a.item_id$=item$,
-:       ivm17a.lotser_no$=lotser$,ivm17a.year$=year$,ivm17a.period$=period$
-    amount=qty
-    if pos(action$="BIIIWI",2)>0 amount=-qty
-    if pos(action$="OPTO",2)>0 amount=abs(qty)
-    find record (ivm17_dev,key=ivm17a.firm_id$+ivm17a.warehouse_id$+ivm17a.item_id$+
-:       ivm17a.lotser_no$+ivm17a.year$+ivm17a.period$,dom=*next) ivm17a$
-    if action=0 ivm17a.beg_balance=amount
-    if action>0 field ivm17a$,action$[action]=str(nfield(ivm17a$,action$[action])+amount)
-    ivm17a$=field(ivm17a$)
-    write record (ivm17_dev) ivm17a$
+    if pos(action$="IC,PO,OE,OO,CO,UC,TA,PI",3)=0 then 
+	    ivm17a.firm_id$=firm_id$
+		ivm17a.warehouse_id$=whse$
+		ivm17a.item_id$=item$
+		ivm17a.lotser_no$=lotser$
+		ivm17a.year$=year$
+		ivm17a.period$=period$
+	    amount=qty
+		
+	    if pos(action$="BI,II,WI",3) then 
+			amount=-qty
+		else
+			if pos(action$="OPTO",2) then 
+				amount=abs(qty)
+			endif
+		endif
+		
+		ivm17a_key$ = ivm17a.firm_id$+ivm17a.warehouse_id$+ivm17a.item_id$+ivm17a.lotser_no$+ivm17a.year$+ivm17a.period$
+	    find record (ivm17_dev,key=ivm17a_key$,dom=*next) ivm17a$
+		
+	    if action=0 then 
+			ivm17a.beg_balance=amount
+		else
+			field ivm17a$, action$[action] = str( nfield(ivm17a$,action$[action]) + amount )
+		endif
+		
+	    ivm17a$=field(ivm17a$)
+	    write record (ivm17_dev) ivm17a$
+	endif
 
-l3700: rem --- ivt-01 Lot/Serial Transactions
+lot_serial_trans: rem --- ivt-01 Lot/Serial Transactions
 
     if ls=0 goto done
-    if pos(action$="ICPOOECOUCTAOOPI",2) goto l3800
-    if qty=0 and action$<>"BB" goto done
-    ivt01a.firm_id$=firm_id$,ivt01a.warehouse_id$=whse$,ivt01a.item_id$=item$,
-:       ivt01a.lotser_no$=lotser$,ivt01a.trans_date$=ymd$
-    channel=ivt01_dev
-    xseq_pos=48; rem "old transaction sequence position"
-    if dropship location$="Drop Ship"
-    gosub l6000
-    ivt01a$=field(ivt01a$)
-    write record (ivt01_dev) ivt01a$
+	
+    if pos(action$="IC,PO,OE,CO,UC,TA,OO,PI",3)=0 then
+	    if qty=0 and action$<>"BB" goto done
+	    ivt01a.firm_id$=firm_id$
+		ivt01a.warehouse_id$=whse$
+		ivt01a.item_id$=item$
+		ivt01a.lotser_no$=lotser$
+		ivt01a.trans_date$=ymd$
+	    channel=ivt01_dev
+	    if dropship then location$="Drop Ship"
+	    gosub init_trans_hist_rec
+	    ivt01a$=field(ivt01a$)
+	    write record (ivt01_dev) ivt01a$
+	endif
 
-l3800: rem --- ivt-02 Lot/Serial By Customer Xref
+rem --- ivt-02 Lot/Serial By Customer Xref (are we going to use this?)
 
-    if action$<>"OP" goto l3900
-    gosub l6200
-    ivt02a$=field(ivt02a$)
-    write record (ivt02_dev) ivt02a$
+    if action$="OP" then
+		ivt02a.firm_id$=firm_id$
+		ivt02a.customer_id$=refs$[1]
+		ivt02a.product_type$=ivm01a.product_type$
+		ivt02a.lotser_no$=lotser$
+		ivt02a.trans_date$=ymd$
+		ivt02a.warehouse_id$=whse$
+		ivt02a.item_id$=item$
+		ivt02a.iv_hist_seq$=ivt01a.iv_hist_seq$
+	    ivt02a$=field(ivt02a$)
+	    write record (ivt02_dev) ivt02a$
+	endif
 
-l3900: rem --- ivt-03 Lot/Serial By Vendor Xref
+rem --- ivt-03 Lot/Serial By Vendor Xref (are we going to use this?)
 
-    if pos(action$="OPRC",2)=0 goto done
-    if ivm01.inventoried$<>"Y" goto done
-    gosub l6300
-    if action$="OP" ivt03a.vendor_id$=vendor$
-    if pos(" "<>ivt03a.vendor_id$)=0 goto done
-    ivt03a$=field(ivt03a$)
-    write record (ivt03_dev) ivt03a$
+	if pos(action$="OPRC",2) and ivm01.inventoried$="Y" then
+		ivt03a.firm_id$=firm_id$
+		ivt03a.vendor_id$=refs$[1]
+		ivt03a.product_type$=ivm01a.product_type$
+		ivt03a.lotser_no$=lotser$
+		ivt03a.trans_date$=ymd$
+		ivt03a.warehouse_id$=whse$
+		ivt03a.item_id$=item$
+		ivt03a.iv_hist_seq$=ivt01a.iv_hist_seq$
+	    if action$="OP" then ivt03a.vendor_id$=vendor$
+	    if cvs(ivt03a.vendor_id$,2)<>"" then 
+		    ivt03a$=field(ivt03a$)
+		    write record (ivt03_dev) ivt03a$
+		endif
+	endif
 
 done: rem --- All done
 
     goto std_exit
 
-l4900: rem --- Argument errors
+bad_action_error: rem --- Argument errors
 
     status=917
     goto std_exit
 
-l4950: rem --- Missing record
+missing_record_error: rem --- Missing record
 
     status=11
     goto std_exit
 
-l6000: rem --- Initialize IVT-01/IVT-04 Transaction History Record
+no_item_error: rem --- No inventory item passed
 
-    rem if channel=ivt01_dev dim ivtwk$:fattr(ivt01a$);ivtwk$=ivt01a$,ivtwk0$=ivtwk.firm_id$+ivtwk.warehouse_id$+ivtwk.item_id$+ivtwk.trans_date$
-    rem if channel=ivt04_dev dim ivtwk$:fattr(ivt04a$);ivtwk$=ivt04a$,ivtwk0$=ivtwk.firm_id$+ivtwk.warehouse_id$+ivtwk.item_id$+ivtwk.lotser_no$+ivtwk.trans_date$ ; commented this line as lotser_no$ shows error. In record layout of ivt-04, no such field exist.
-    if channel=ivt04_dev dim ivtwk$:fattr(ivt04a$);ivtwk$=ivt04a$,ivtwk0$=ivtwk.firm_id$+ivtwk.warehouse_id$+ivtwk.item_id$+ivtwk.trans_date$
-    if channel=ivt01_dev dim ivtwk$:fattr(ivt01a$);ivtwk$=ivt01a$,ivtwk0$=ivtwk.firm_id$+ivtwk.warehouse_id$+ivtwk.item_id$+ivtwk.lotser_no$+ivtwk.trans_date$
+	status=901
+	goto std_exit
+	
+init_trans_hist_rec: rem --- Initialize IVT-01/IVT-04 Transaction History Record
+
+    if channel=ivt04_dev then 
+		dim ivtwk$:fattr(ivt04a$)
+		ivtwk$=ivt04a$
+		ivtwk0$=ivtwk.firm_id$+ivtwk.warehouse_id$+ivtwk.item_id$+ivtwk.trans_date$
+	else
+		if channel=ivt01_dev then
+			dim ivtwk$:fattr(ivt01a$)
+			ivtwk$=ivt01a$
+			ivtwk0$=ivtwk.firm_id$+ivtwk.warehouse_id$+ivtwk.item_id$+ivtwk.lotser_no$+ivtwk.trans_date$
+		endif
+	endif
+	
     ivtwk.trans_source$=trans$(code,2)
     ivtwk.trans_ref_1$=refs$[1]
     ivtwk.trans_ref_2$=refs$[2]
@@ -496,92 +636,125 @@ l6000: rem --- Initialize IVT-01/IVT-04 Transaction History Record
     ivtwk.finish_item$=refs$[9]
     ivtwk.gl_account$=refs$[7]
     ivtwk.location$=location$
-    if pos(action$="PORC",2) ivtwk.line_code$="",ivtwk.po_line_code$=refs$[6]
-    if channel=ivt01_dev then ivtwk.oper_id$=user_id$ else ivtwk.user_id$=user_id$ ; rem changed this line as ivt-04 does not have a field oper_id$
+    if pos(action$="PORC",2) then ivtwk.line_code$="",ivtwk.po_line_code$=refs$[6]
+    if channel=ivt01_dev then ivtwk.oper_id$=user_id$ else ivtwk.user_id$=user_id$ ; rem ivt-04 does not have a field oper_id$
     ivtwk.system_date$=sys_yyyymmdd$; rem params$[0]
     ivtwk.system_time$=clock$
-rem    ivtwk.terminal_id$=fid(0)
+    ivtwk.terminal_id$=fid(0)
     ivtwk.trans_qty=qty
     ivtwk.unit_cost=cost
     ivtwk.unit_price=refs[2]
-    if cvs(refs$[10],2)<>"" ivtwk.location$=refs$[10]
+    if cvs(refs$[10],2)<>"" then ivtwk.location$=refs$[10]
 
 rem --- Find next available key
 
-    let ivtwk.iv_hist_seq$="00000"
-    if action$="BB" goto l6190
-rem    read (channel,key=ivtwk$(1,len(ivtwk$)-len(ivtwk.iv_hist_seq$))+$FF$,dom=*next) 
-    read (channel,key=ivtwk0$+$FF$,dom=*next)
+    ivtwk.iv_hist_seq$="00000"
+	
+    if action$<>"BB" then
+		read (channel,key=ivtwk0$+$FF$,dom=*next)
+		k$ = ""
+		k$=keyp(channel,end=*next)
+		
+		if k$<>"" and pos(ivtwk0$=k$)=1 then 
+			ivtwk.iv_hist_seq$ = k$( len(ivtwk0$)+1, len(ivtwk.iv_hist_seq$) ) 
+		endif
+		
+		ivtwk.iv_hist_seq$ = str( num(ivtwk.iv_hist_seq$)+1:"00000" )
+	endif
+	
+    if channel=ivt01_dev then
+		ivt01a$=ivtwk$
+	else
+		if channel=ivt04_dev then
+			ivt04a$=ivtwk$
+		endif
+	endif
+	
+return
 
-    let k$=keyp(channel,end=l6160)
-    if pos(ivtwk0$=k$)=1 ivtwk.iv_hist_seq$=k$(len(ivtwk0$)+1,len(ivtwk.iv_hist_seq$)) 
-rem    if pos(ivtwk$(1,len(ivtwk$)-len(ivtwk.iv_hist_seq$))=k$)=1 ivtwk.iv_hist_seq$=k$(len(k$)-len(ivtwk.iv_hist_seq$)+1) 
-l6160:
-    let ivtwk.iv_hist_seq$=str(num(ivtwk.iv_hist_seq$)+1:"00000")
-l6190:
+update_comtd_on_order: rem --- Update IVM-02/IVM-07 committed and on order
 
-    if channel=ivt01_dev ivt01a$=ivtwk$
-    if channel=ivt04_dev ivt04a$=ivtwk$
-    return
+    if curfile=ivm02_dev then
+		dim ivmwk$:fattr(ivm02a$)
+		ivmwk$=ivm02a$
+    else 
+		if curfile=ivm07_dev then 
+			dim ivmwk$:fattr(ivm07a$)
+			ivmwk$=ivm07a$
+		endif
+	endif
+	
+    if !(dropship) then 
+		if pos(action$="CO,IC,II,OE,OP,TO,WI",3) then 
+			ivmwk.qty_commit=ivmwk.qty_commit+qty
+		else 
+			if action$="UC" then 
+				ivmwk.qty_commit=ivmwk.qty_commit-qty
+			endif
+		endif
+	endif
+    
+	if curfile=ivm02_dev then
+		if pos(action$="OOPO",2) then 
+			ivmwk.qty_on_order=ivmwk.qty_on_order+qty
+		else 
+			if action$="RC" then 
+				ivmwk.qty_on_order=ivmwk.qty_on_order-qty
+			endif
+		endif
+	endif
 
-l6200: rem --- Initialize IVT-02 Transaction Xref Record
+    if curfile=ivm02_dev then 
+		ivm02a$=ivmwk$
+	else
+		if curfile=ivm07_dev then 
+			ivm07a$=ivmwk$
+		endif
+	endif
+	
+return
 
-    ivt02a.firm_id$=firm_id$,ivt02a.customer_id$=refs$[1],ivt02a.product_type$=ivm01a.product_type$,
-:       ivt02a.lotser_no$=lotser$,ivt02a.trans_date$=ymd$,ivt02a.warehouse_id$=whse$,ivt02a.item_id$=item$,
-:       ivt02a.iv_hist_seq$=ivt01a.iv_hist_seq$
-    return
+update_whse_lots: rem --- ivm-02 Warehouse/IVM-07 Lot/Serial Number Updates
 
-l6300: rem --- Initialize IVT-03 Transaction Xref Record
+    if curfile=ivm02_dev then
+		dim ivmwk$:fattr(ivm02a$)
+		ivmwk$=ivm02a$
+    else 
+		if curfile=ivm07_dev then 
+			dim ivmwk$:fattr(ivm07a$)
+			ivmwk$=ivm07a$
+		endif
+	endif
 
-    ivt03a.firm_id$=firm_id$,ivt03a.vendor_id$=refs$[1],ivt03a.product_type$=ivm01a.product_type$,
-:       ivt03a.lotser_no$=lotser$,ivt03a.trans_date$=ymd$,ivt03a.warehouse_id$=whse$,ivt03a.item_id$=item$,
-:       ivt03a.iv_hist_seq$=ivt01a.iv_hist_seq$
-    return
+    if dropship then goto update_qoh
 
-l6400: rem --- Update IVM-02/IVM-07 committed and on order
-
-    if curfile=ivm02_dev dim ivmwk$:fattr(ivm02a$);ivmwk$=ivm02a$
-    if curfile=ivm07_dev dim ivmwk$:fattr(ivm07a$);ivmwk$=ivm07a$
-    if dropship goto l6430
-    if pos(action$="COICIIOEOPTOWI",2) ivmwk.qty_commit=ivmwk.qty_commit+qty
-    if pos(action$="UC",2) ivmwk.qty_commit=ivmwk.qty_commit-qty
-l6430:
-    if curfile<>ivm02_dev goto l6490
-    if action$="OO" ivmwk.qty_on_order=ivmwk.qty_on_order+qty
-    if action$="PO" ivmwk.qty_on_order=ivmwk.qty_on_order+qty
-    if action$="RC" ivmwk.qty_on_order=ivmwk.qty_on_order-qty
-l6490:
-
-    if curfile=ivm02_dev ivm02a$=ivmwk$
-    if curfile=ivm07_dev ivm07a$=ivmwk$
-    return
-
-l6500: rem --- ivm-02 Warehouse/IVM-07 Lot/Serial Number Updates
-
-    if curfile=ivm02_dev dim ivmwk$:fattr(ivm02a$);ivmwk$=ivm02a$
-    if curfile=ivm07_dev dim ivmwk$:fattr(ivm07a$);ivmwk$=ivm07a$
-    if dropship goto l6990
-    if last>0 field ivmwk$,last$[last]=fnl$(field(ivmwk$,last$[last]),ymd$)
+    if last then 
+		field ivmwk$, last$[last] = fnl$( field(ivmwk$,last$[last]), ymd$ )
+	endif
 
 rem --- Recalculate average cost
 
-    amount=(ivmwk.qty_on_hand*ivmwk.avg_cost)+(qty*cost),number=ivmwk.qty_on_hand+qty,x=ivmwk.avg_cost
-    if number>0 ivmwk.avg_cost=amount/number
-    if ivmwk.avg_cost=0 ivmwk.avg_cost=x
-    if ivmwk.avg_cost<0 ivmwk.avg_cost=cost
-    if ivmwk.qty_on_hand<=0 ivmwk.avg_cost=cost 
+    amount=(ivmwk.qty_on_hand*ivmwk.avg_cost)+(qty*cost)
+	number=ivmwk.qty_on_hand+qty
+	hold_cost=ivmwk.avg_cost
+    if number>0 then ivmwk.avg_cost=amount/number
+    if ivmwk.avg_cost=0 then ivmwk.avg_cost=hold_cost
+    if ivmwk.avg_cost<0 then ivmwk.avg_cost=cost
+    if ivmwk.qty_on_hand<=0 then ivmwk.avg_cost=cost 
 
 rem --- Set replacement cost
-    if pos(action$="IAPH",2) goto l6800
-    if qty<0 goto l6800
-    if refs[1]<>0 ivmwk.rep_cost=refs[1]
-
+	
+	if pos(action$="IAPH",2)=0 and qty>=0 and refs[1]<>0 then 
+		ivmwk.rep_cost=refs[1]
+	endif
+	
 rem --- Set Last PO Cost
-l6800:
-    if action$="RC" ivmwk.last_po_cost=cost
+
+    if action$="RC" then ivmwk.last_po_cost=cost
 
 rem --- Set unit cost
-    switch pos(cost_method$="ASR"); rem pos(p3$(8,1)="ASR")
+
+    switch pos(ivs01a.cost_method$="ASR")
         case 1
             ivmwk.unit_cost=ivmwk.avg_cost
         break
@@ -592,15 +765,22 @@ rem --- Set unit cost
             ivmwk.unit_cost=ivmwk.rep_cost
         break
         case default
+			rem Error message
         break
     swend
 
-l6990: rem --- Update quantity on hand
-    let ivmwk.qty_on_hand=ivmwk.qty_on_hand+qty
+update_qoh: rem --- Update quantity on hand
+    ivmwk.qty_on_hand = ivmwk.qty_on_hand + qty
 
-    if curfile=ivm02_dev ivm02a$=ivmwk$
-    if curfile=ivm07_dev ivm07a$=ivmwk$
-    return
+    if curfile=ivm02_dev then 
+		ivm02a$=ivmwk$
+	else
+		if curfile=ivm07_dev then 
+			ivm07a$=ivmwk$
+		endif
+	endif
+	
+return
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -623,7 +803,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Yd%Mz%Dz")
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
@@ -666,6 +852,7 @@ rem --- fnglobal$: Return string value of passed STBL variable
     fnend
 
 rem --- fnl$: return greater of two dates, or spaces if both dates null/empty
+
     def fnl$(q1$,q2$)
         if cvs(q1$,2)="" dim q1$(8,"Z")
         if cvs(q2$,2)="" dim q2$(8,"Z")
@@ -729,5 +916,92 @@ std_exit: rem --- Standard called program exit (01Mar2006)
 
     exit
 rem #endinclude std_exit.src
+
+
+init: rem --- Basic initializations for the caller
+
+    seterr std_error
+    setesc std_error
+    enter chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+
+rem --- Inits
+
+	status = 0
+	addr pgm(-2),err=*next
+	dim chan[44],items$[3],refs$[12],refs[5]
+	sypdir$ = stbl("+DIR_SYP")
+	
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+	
+rem --- Open all files
+
+	num_files=13
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="IVS_PARAMS",    open_opts$[1]="OTA"
+	open_tables$[2]="GLS_PARAMS",    open_opts$[2]="OTA"
+	open_tables$[3]="IVM_ITEMMAST",  open_opts$[3]="OTA"
+	open_tables$[4]="IVM_ITEMWHSE",  open_opts$[4]="OTA"
+	open_tables$[5]="IVM_ITEMTIER",  open_opts$[5]="OTA"
+	open_tables$[6]="IVM_ITEMVEND",  open_opts$[6]="OTA"
+	open_tables$[7]="IVM_LSMASTER",  open_opts$[7]="OTA"
+	open_tables$[8]="IVM_ITEMACT",   open_opts$[8]="OTA"
+	open_tables$[9]="IVM_LSACT",     open_opts$[9]="OTA"
+	open_tables$[10]="IVT_LSTRANS",  open_opts$[10]="OTA"
+	open_tables$[11]="IVX_LSCUST",   open_opts$[11]="OTA"
+	open_tables$[12]="IVX_LSVEND",   open_opts$[12]="OTA"
+	open_tables$[13]="IVT_ITEMTRAN", open_opts$[13]="OTA"
+	
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		call sypdir$+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+		status=912
+		goto init_exit
+	endif
+
+rem --- Update chan with references to the open files
+	
+	ivs01_dev = num( open_chans$[1] )
+	chan[0]   = num( open_chans$[2] )
+	chan[1]   = num( open_chans$[3] )
+	chan[2]   = num( open_chans$[4] )
+	chan[4]   = num( open_chans$[5] )
+	chan[5]   = num( open_chans$[6] )
+	chan[7]   = num( open_chans$[7] )
+	chan[12]  = num( open_chans$[8] )
+	chan[17]  = num( open_chans$[9] )
+	chan[41]  = num( open_chans$[10] )
+	chan[42]  = num( open_chans$[11] )
+	chan[43]  = num( open_chans$[12] )
+	chan[44]  = num( open_chans$[13] )
+	
+rem --- Was ivs01a$ passed?  If not, get it	
+	
+	ivs01a_tpl$ = ""
+	ivs01a_tpl$ = fattr(ivs01a$,err=*next)
+	
+	if ivs01a_tpl$ <> open_tpls$[1] then 
+		dim ivs01a$:open_tpls$[1]
+		find record(ivs01_dev,key=firm_id$+"IV00",dom=std_missing_params)ivs01a$	
+	endif
+	
+init_exit: rem --- Init Done
+
+	exit
 
     end

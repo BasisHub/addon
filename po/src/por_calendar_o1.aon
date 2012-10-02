@@ -1,0 +1,268 @@
+rem --- Print Calendar
+rem --- Program poc_cp v8.0.0 20Dec2007 (poc_cp)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/20/2007 10:42:39)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock Files
+
+    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
+    if status then goto std_exit
+
+rem --- Parameters
+
+     when$=sysinfo.system_date$,headings=2,width=80,l9=46
+
+rem --- Initializations
+
+    dim columns$[0,10]
+    columns=0
+    columns$[0,0]=" ",columns$[0,1]="C",columns$[0,2]="210"
+    pbufwidth=210
+    dim l[12],headings$[headings],a0$(6),a1$(31)
+    dim page$[l9],buf$(width),milestone$(14)
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$,clock$="",l=0
+    days$="Sunday   Monday   Tuesday  WednesdayThursday Friday   Saturday "
+    codes$="           Closed    Holiday   Work Day "
+    l[1]=31
+    l[2]=28,l[3]=31,l[4]=30,l[5]=31,l[6]=30
+    l[7]=31
+    l[8]=31,l[9]=30,l[10]=31,l[11]=30,l[12]=31
+    
+rem --- Background
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,pom01_dev,1,meter_num,ignore_status
+
+rem --- Get Last Day Scheduled
+    rem new  call pgmdir$+"poc_ce.aon",pom01_dev,firm_id$,begdate$,enddate$,status
+
+    if begmonth=0 then begmonth=num(begdate$(1,2))
+    if endmonth=0 then endmonth=num(enddate$(1,2))
+    if begyear=0 then  begyear=num(begdate$(7,4))
+    if endyear=0 then endyear=num(enddate$(7,4))
+    month=begmonth
+    year=begyear
+    last$=str(endyear)+str(endmonth:"00")
+    more=1
+rem --- Read next record
+    while more
+
+        pom01a.firm_id$=firm_id$
+        pom01a.year$=str(year)
+        pom01a.month$=str(month:"00")
+        pom01a.month$=cvs(pom01a.month$,3)
+        if pom01a.year$+pom01a.month$>last$ then break
+        find record (pom01_dev,key=pom01a.firm_id$+pom01a.year$+pom01a.month$,dom=*next) pom01a$
+
+rem --- Set calendar title
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        x$=date(jul(year,month,1):"%Ml %Y")
+        milestone$(1)=x$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        buf$(1)=""
+        buf$(fncenter(x$,width))=x$,l=l+1,number=number+1
+        if l>l9 then gosub report_heading
+        page$[l]=buf$
+        dim pbuf$(pbufwidth)
+        pbuf$(1)=buf$
+        OutVect!.addItem(pbuf$)
+
+rem --- Print Days of the Week
+
+        buf$(2)=" "+fill(76,"-")+" "
+        p=2,l=l+1,page$[l]=buf$
+        dim pbuf$(pbufwidth)
+        pbuf$(1)=buf$
+        OutVect!.addItem(pbuf$)
+
+        for x=1 to 7
+            buf$(p)="|"+days$((x-1)*9+1,9)
+            p=p+11
+        next x
+        buf$(p)="|"
+        l=l+1,page$[l]=buf$
+        dim pbuf$(pbufwidth)
+        pbuf$(1)=buf$
+        OutVect!.addItem(pbuf$)
+
+        buf$(2)="|"+fill(76,"-")+"|"
+        l=l+1,page$[l]=buf$
+        dim pbuf$(pbufwidth)
+        pbuf$(1)=buf$
+        OutVect!.addItem(pbuf$)
+
+
+rem --- Determine starting day of the month
+        dim days[42]
+        first$=pom01a.year$+pom01a.month$+"01"
+        x$="",first=0,d=0,date=0
+        call pgmdir$+"adc_dayweek.aon",first$,x$,first
+rem new escape
+        first=first+1
+        l[2]=28
+        if first>7 then first=1
+        if mod(year,4)=0 then l[2]=29
+        for x=first to 42
+            date=date+1
+            if date<=l[month] then d=d+1,days[x]=d
+        next x
+
+rem --- Display dates on calendar
+        date=1
+        for week=0 to 5
+            p=2
+            for dow=1 to 7
+                buf$(p)="|"
+                x=week*7+dow
+                if days[x]>0 then buf$(p+2)=str(days[x]:"#0")
+                p=p+11
+            next dow
+            buf$(p)="|"
+            l=l+1,page$[l]=buf$,p=2
+
+            dim pbuf$(pbufwidth)
+            pbuf$(1)=buf$
+            OutVect!.addItem(pbuf$)
+
+            for dow=1 to 7
+                buf$(p)="|"
+                if days[week*7+dow]<>0 then 
+                    x$=codes$((pos(a1$(date,1)=" CHW")-1)*10+1,10),buf$(p+2)=x$
+                    buf$(p+2)=x$
+                    date=date+1        
+                endif
+                p=p+11
+            next dow
+            buf$(p)="|"
+            l=l+1,page$[l]=buf$
+            buf$(2)="|"+fill(76,"-")+"|"
+            l=l+1,page$[l]=buf$
+            dim pbuf$(pbufwidth)
+            pbuf$(1)=buf$
+            OutVect!.addItem(pbuf$)
+
+        next week
+
+rem --- Loop back for next month
+
+        month=month+1
+        if month>12 then month=1,year=year+1
+        l=l+2
+
+    wend
+
+done: rem --- All done
+
+    if l>0 then gosub report_heading
+    if number>0 then goto std_exit
+    gosub report_heading
+    print (printer_dev)"No Dates Scheduled"
+    goto std_exit
+
+report_heading: rem --- Report Heading
+
+    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
+    if status then exitto std_exit
+    if l<>0
+        for x=1 to min(l,l9)
+            print (printer_dev)page$[x]
+        next x
+        dim page$[l9]
+        l=1
+    endif
+
+    return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Date/time handling functions
+  
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_exit.src
+
+    end

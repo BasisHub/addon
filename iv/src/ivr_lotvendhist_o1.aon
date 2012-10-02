@@ -10,6 +10,7 @@ rem --- All Rights Reserved
     setesc std_error
 
 rem --- Document initializations
+
     OutVect!=bbjAPI().getSysGui().makeVector()
     HdrVect!=bbjAPI().getSysGui().makeVector()
     BrkVect!=bbjAPI().getSysGui().makeVector()
@@ -17,6 +18,7 @@ rem --- Document initializations
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
     rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Initializations
 
@@ -31,8 +33,6 @@ rem --- Initializations
     headings$[1]=sysinfo.task_desc$+" For Item Type "+x0$
     width=132
     page=0
-    l9=59
-    l=l9+1
     dim ivchannels[6],params[6],masks$[3]
     ivchannels[0]=ivm01_dev
     ivchannels[1]=ivm10a_dev
@@ -50,129 +50,7 @@ rem --- Initializations
     masks$[3]=g5$
     more=1
 
-rem --- Headings and print positions
-
-    dim columns$[11,10]
-    columns = 11
-    columns$[0,0]="Vendor",               columns$[0,1]="C",columns$[0,2]="5"
-    columns$[1,0]="Prod Type",            columns$[1,1]="C",columns$[1,2]="5"
-    columns$[2,0]="Serial",               columns$[2,1]="C",columns$[2,2]="6"
-    columns$[3,0]="Transaction Date",     columns$[3,1]="C",columns$[3,2]="5"
-    columns$[4,0]="Type",                 columns$[4,1]="C",columns$[4,2]="4"
-    columns$[5,0]="Whse",                 columns$[5,1]="C",columns$[5,2]="4"
-    columns$[6,0]="Item/Reference",       columns$[6,1]="C",columns$[6,2]="6"
-    columns$[7,0]="Information",          columns$[7,1]="C",columns$[7,2]="25"
-    columns$[8,0]="Quantity",             columns$[8,1]="N",columns$[8,2]="4",columns$[8,3]=m2$
-    columns$[9,0]="Unit Cost",            columns$[9,1]="N",columns$[9,2]="4",columns$[9,3]=m3$
-    columns$[10,0]="Extension",           columns$[10,1]="N",columns$[10,2]="4",columns$[10,3]=m1$
-    columns$[11,0]="Price",               columns$[11,1]="N",columns$[11,2]="4",columns$[11,3]=m4$
-
-
-rem --- Print positions
-
-    gosub Position
-   
-rem --- Position files
-
-
-    call pgmdir$+"adc_progress.aon","N","","","","",0,ivt03_dev,1,meter_num,status
-
-    read (ivt03_dev,key=firm_id$+beg_vendor$,dom=*next)
-
- rem --- Get next record
-
-    while more
-        ivt03a_key$=key(ivt03_dev,end=*break)
-        if pos(firm_id$=ivt03a_key$)<>1 break
-        vendor$=ivt03a_key.vendor_id$
-        product$=ivt03a_key.product_type$
-        tran_date$=ivt03a_key.trans_date$
-        whse$=ivt03a_key.warehouse_id$
-        item$=ivt03a_key.item_id$
-        read (ivt03_dev)
-
-rem --- Valid Vendor/Product/Date/Warehouse/Item?
-
-        if end_vendor$<>"" if vendor$>end_vendor$  break
-        if beg_prod$<>"" if product$<beg_prod$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+beg_prod$,dom=*continue)
-        if end_prod$<>"" if product$>end_prod$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+$FF$,dom=*continue)
-        if beg_date$<>"" if tran_date$<beg_date$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+
-:       ivt03a_key.lotser_no$+beg_date$,dom=*continue)
-        if end_date$<>"" if tran_date$>end_date$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+
-:       ivt03a_key.lotser_no$+$FF$,dom=*continue)
-        if beg_whse$<>"" if whse$<beg_whse$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+
-:       ivt03a_key.lotser_no$+ivt03a_key.trans_date$+beg_whse$,dom=*continue)
-        if end_whse$<>"" if whse$>end_whse$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+
-:       ivt03a_key.lotser_no$+ivt03a_key.trans_date$+$FF$,dom=*continue)
-        if beg_item$<>"" if item$<beg_item$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+
-:       ivt03a_key.lotser_no$+ivt03a_key.trans_date$+ivt03a_key.warehouse_id$+beg_item$,dom=*continue)
-        if end_item$<>"" if item$>end_item$ read (ivt03_dev,key=ivt03a_key.firm_id$+ivt03a_key.vendor_id$+
-:       ivt03a_key.lotser_no$+ivt03a_key.trans_date$+ivt03a_key.warehouse_id$+$FF$,dom=*continue)
-        find record (ivm01a_dev,key=firm_id$+item$,dom=*continue) ivm01a$
-        if item_type$<>"" if  ivm01a.item_type$<>item_type$ then
-            continue
-        endif
-
-rem --- Open or Closed Lots?
-
-        if ocb$<>"B" then
-            ivm07a.qty_on_hand=0
-            find record (ivm07a_dev,key=firm_id$+whse$+item$+ivt03a_key.lotser_no$,dom=*next) ivm07a$
-            if (ocb$="O" and ivm07a.qty_on_hand=0) or (ocb$="C" and ivm07a.qty_on_hand<>0) then
-                continue
-            endif
-        endif
-
-        read record (ivt01_dev,key=firm_id$+whse$+item$+ivt03a_key.lotser_no$+tran_date$+ivt03a_key.iv_hist_seq$,dom=*continue) ivt01a$
-
-        call pgmdir$+"adc_progress.aon","S","","","",vendor$+" "+item$+" "+ivt03a.lotser_no$,0,0,1,meter_num,status
-
-rem --- Level breaks?
-
-        if vendor$<>t1$ gosub Vendor_Break
-        if product$+ivt03a_key.lotser_no$<>t2$ first$="Y" else first$="N",t2$=product$+ivt03a_key.lotser_no$
-
-rem --- Get Reference Block
-
-        dim desc$[2]
-        ivt01a_a1$=ivt01a.TRANS_SOURCE$+ivt01a.TRANS_REF_1$+ivt01a.TRANS_REF_2$+ivt01a.TRANS_REF_3$+ivt01a.TRANS_REF_4$+ivt01a.TRANS_SEQ$+ivt01a.LINE_CODE$+
-:       ivt01a.UNIT_MEASURE$+ivt01a.TRANS_CMT$+ivt01a.FINISH_ITEM$+ivt01a.GL_ACCOUNT$+ivt01a.LOCATION$+
-:       ivt01a.PO_LINE_CODE$+ivt01a.RESERVED_STR$
-        call pgmdir$+"ivc_transdata.aon",ivt01a$,ivchannels[all],params[all],masks$[all],type$,desc$[all]
-
-rem --- Print detail line
-
-        needed=1
-        if first$="Y" needed=needed+1
-        
-        if first$="Y" then 
-            OutVect!.addItem(product$)
-            OutVect!.addItem(ivt03a_key.lotser_no$)
-            OutVect!.addItem(whse$)
-            OutVect!.addItem(item$)
-            OutVect!.addItem(fnitem$(ivm01a.item_desc$))
-            OutVect!.addItem(fnitem$(ivm01a.item_desc$))
-            OutVect!.addItem(fnitem$(ivm01a.item_desc$))
-        else
-            OutVect!.addItem(fndate$(tran_date$))
-            OutVect!.addItem(type$)
-            OutVect!.addItem(desc$[1])
-            OutVect!.addItem(str(ivt01a.trans_qty:m2$))
-            OutVect!.addItem(str(ivt01a.unit_cost:m3$))
-            OutVect!.addItem(str(ivt01a.trans_qty*ivt01a.unit_cost:m1$))
-            OutVect!.addItem(str(ivt01a.unit_price:m4$))
-        endif
-        l=l+1
-        first$="N"
-
-    wend
-
-
-done: rem --- All done
-
-    goto std_exit
-
-Init_Heading: rem --- Initialize HEADINGS$
+rem --- Headings
 
     x1$="First Date"
     x2$="Last Date"
@@ -190,37 +68,139 @@ Init_Heading: rem --- Initialize HEADINGS$
     if beg_prod$="" headings$[6]="From Product: First" else headings$[6]="From Product: " + beg_prod$
     if end_prod$="" headings$[6]=headings$[6] + " -- To Product: Last" else headings$[6]= headings$[6] + " -- To Product:" + end_prod$
 
+rem --- Column Headings
 
-   
-    return
+    dim columns$[10,10]
+    columns=11
+    columns$[0,0]="Vendor",                     columns$[0,1]="C",columns$[0,2]="8"
+    columns$[1,0]="Prod^Type",                  columns$[1,1]="C",columns$[1,2]="5"
+    columns$[2,0]="Serial",                     columns$[2,1]="C",columns$[2,2]="10"
+    columns$[3,0]="Transaction^Date",           columns$[3,1]="C",columns$[3,2]="8"
+    columns$[4,0]="Type",                       columns$[4,1]="C",columns$[4,2]="5"
+    columns$[5,0]="Whse",                       columns$[5,1]="C",columns$[5,2]="5"
+    columns$[6,0]="Item/Reference^Information", columns$[6,1]="C",columns$[6,2]="25"
+    columns$[7,0]="Quantity",                   columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$
+    columns$[8,0]="Unit Cost",                  columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m3$
+    columns$[9,0]="Extension",                  columns$[9,1]="N",columns$[9,2]="8",columns$[9,3]=m1$
+    columns$[10,0]="Price",                     columns$[10,1]="N",columns$[10,2]="8",columns$[10,3]=m4$
 
-Vendor_Break: rem --- Vendor Break
+
+rem --- Position files
+
+    call pgmdir$+"adc_progress.aon","N","","","","",0,ivt03_dev,1,meter_num,status
+    read (ivt03_dev,key=firm_id$+beg_vendor$,dom=*next)
+
+rem --- Get next record
+
+    while more
+        ivt03a_key$=key(ivt03_dev,end=*break)
+        if pos(firm_id$=ivt03a_key$)<>1 break
+        vendor$=ivt03a_key.vendor_id$
+        product$=ivt03a_key.product_type$
+        tran_date$=ivt03a_key.trans_date$
+        whse$=ivt03a_key.warehouse_id$
+        item$=ivt03a_key.item_id$
+        read (ivt03_dev)
+
+rem --- Valid Vendor/Product/Date/Warehouse/Item?
+
+        if end_vendor$<>"" and vendor$>end_vendor$ then break
+        if beg_prod$<>"" and product$<beg_prod$ then 
+            read (ivt03_dev,key=firm_id$+vendor$+beg_prod$,dom=*continue)
+        endif
+        if end_prod$<>"" and product$>end_prod$ then
+            read (ivt03_dev,key=firm_id$+vendor$+$FF$,dom=*continue)
+        endif
+        if beg_date$<>"" and tran_date$<beg_date$ then
+            read (ivt03_dev,key=firm_id$+vendor$+product$+ivt03a_key.lotser_no$+beg_date$,dom=*continue)
+        endif
+        if end_date$<>"" and tran_date$>end_date$ then
+            read (ivt03_dev,key=firm_id$+vendor$+product$+ivt03a_key.lotser_no$+$FF$,dom=*continue)
+        endif
+        if beg_whse$<>"" and whse$<beg_whse$ then
+            read (ivt03_dev,key=firm_id$+vendor$+product$+ivt03a_key.lotser_no$+tran_date$+beg_whse$,dom=*continue)
+        endif
+        if end_whse$<>"" and whse$>end_whse$ then
+            read (ivt03_dev,key=firm_id$+vendor$+product$+ivt03a_key.lotser_no$+tran_date$+$FF$,dom=*continue)
+        endif
+        if beg_item$<>"" and item$<beg_item$ then
+            read (ivt03_dev,key=firm_id$+vendor$+product$+ivt03a_key.lotser_no$+tran_date$+whse$+beg_item$,dom=*continue)
+        endif
+        if end_item$<>"" and item$>end_item$ then
+            read (ivt03_dev,key=firm_id$+vendor$+product$+ivt03a_key.lotser_no$+tran_date$+whse$+$FF$,dom=*continue)
+        endif
+
+        find record (ivm01_dev,key=firm_id$+item$,dom=*continue) ivm01a$
+        if item_type$<>"" and  ivm01a.item_type$<>item_type$ then continue
+        
+
+rem --- Open or Closed Lots?
+
+        if ocb$<>"B" then
+            ivm07a.qty_on_hand=0
+            find record (ivm07_dev,key=firm_id$+whse$+item$+ivt03a_key.lotser_no$,dom=*next) ivm07a$
+            if ocb$="O" and ivm07a.qty_on_hand=0 then continue
+            if ocb$="C" and ivm07a.qty_on_hand<>0 then continue
+        endif
+
+        read record (ivt01_dev,key=firm_id$+whse$+item$+ivt03a_key.lotser_no$+tran_date$+ivt03a_key.iv_hist_seq$,dom=*continue) ivt01a$
+        call pgmdir$+"adc_progress.aon","S","","","",vendor$+" "+item$+" "+ivt03a.lotser_no$,0,0,1,meter_num,status
+
+rem --- Level breaks?
+
+        if vendor$<>t1$ gosub vendor_break
+        if product$+ivt03a_key.lotser_no$<>t2$ first$="Y" else first$="N",t2$=product$+ivt03a_key.lotser_no$
+
+rem --- Get Reference Block
+
+        dim desc$[2]
+        call pgmdir$+"ivc_transdata.aon",ivt01a$,ivchannels[all],params[all],masks$[all],type$,desc$[all]
+
+rem --- Print detail line
+
+        
+        if first$="Y" then 
+            OutVect!.addItem("")
+            OutVect!.addItem(product$)
+            OutVect!.addItem(ivt03a_key.lotser_no$)
+            OutVect!.addItem(fndate$(tran_date$))
+            OutVect!.addItem(type$)
+            OutVect!.addItem(whse$)
+            OutVect!.addItem(item$+" "+fnitem$(ivm01a.item_desc$,P[5],P[6],P[7]))
+        else
+            xwk=fnblank(3)
+            OutVect!.addItem(fndate$(tran_date$))
+            OutVect!.addItem(type$)
+            xwk=fnblank(2)
+        endif
+        OutVect!.addItem(str(ivt01a.trans_qty))
+        OutVect!.addItem(str(ivt01a.unit_cost))
+        OutVect!.addItem(str(ivt01a.trans_qty*ivt01a.unit_cost))
+        OutVect!.addItem(str(ivt01a.unit_price))
+        xwk=fnblank(6)
+        OutVect!.addItem(desc$[1])
+        xwk=fnblank(columns-7)
+        first$="N"
+    wend
+
+done: rem --- All done
+
+    goto std_exit
+
+
+vendor_break: rem --- Vendor Break
 
     let apm01a.vendor_name$="Invalid Vendor"
     find record (apm01_dev,key=firm_id$+vendor$,dom=*next) apm01a$
-    OutVect!.addItem(str(fnmask$(vendor$(1,x7),x7$)) + " ")
+
+    OutVect!.addItem(fnmask$(vendor$,x7$))
     OutVect!.addItem(apm01a.vendor_name$)
-       
-    let l=l+1
-    let t1$=vendor$,first$="Y"
+    xwk=fnblank(columns-2)
+    xwk=fnblank(columns)
+    t1$=vendor$,first$="Y"
     return
 
-Position: rem --- Print positions
 
-    o[0]=0
-    o[1]=o[0]+max(x7+1,7)
-    o[2]=o[1]+5
-    o[3]=o[2]+7
-    o[4]=o[3]+9
-    o[5]=o[4]+5
-    o[6]=o[5]+5
-    o[10]=width-m4
-    o[9]=o[10]-m1
-    o[8]=o[9]-m3
-    o[7]=o[8]-m2
-    gosub Init_Heading
-
-return
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -243,16 +223,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$) 
-        if cvs(q$,2)="" return ""
-        testdate$=""
-        testdate$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if testdate$<>"" 
-            return date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
-        endif
-        return testdate$
-    fnend    
-rem    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))),"%Mz/%Dz/%Yd")
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
@@ -292,6 +269,15 @@ rem --- fnglobal$: Return string value of passed STBL variable
     def fnglobal$(q$,q1$)
         q1$=stbl(q$,err=*next)
         return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
     fnend
 
 rem #endinclude std_functions.src

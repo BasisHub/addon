@@ -1,3 +1,7 @@
+[[GLE_RECJEDET.AUDE]]
+rem --- recal/display tots after deleting a grid row
+gosub calc_grid_tots
+gosub disp_totals
 [[GLE_RECJEDET.ADEL]]
 rem --- recal/display tots after deleting a grid row
 gosub calc_grid_tots
@@ -13,7 +17,7 @@ calc_grid_tots:
 	if numrecs>0
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
-			if gridrec$ <> ""
+			if cvs(gridrec$,3) <> "" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y"
 				tdb=tdb+num(gridrec.debit_amt$)
 				tcr=tcr+num(gridrec.credit_amt$)
 				tunits=tunits+num(gridrec.units$)

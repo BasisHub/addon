@@ -62,21 +62,22 @@ rem --- Dimension string templates
 rem --- Assign form input values to local variables
 
         
-        wh$ = option!.getOptionData("Warehouse_id")
-        p8$ = option!.getOptionData("product_type")
-        wo_open$=Option!.getOptionData("open")
-        wo_quoted$=Option!.getOptionData("quoted")
-        wo_backord$=Option!.getOptionData("backorders")
-        wo_cred$=Option!.getOptionData("credit")
+        wh$ = option!.getOptionData("WAREHOUSE_ID")
+        p8$ = option!.getOptionData("PRODUCT_TYPE")
+        wo_open$=Option!.getOptionData("OPEN")
+        wo_quoted$=Option!.getOptionData("QUOTED")
+        wo_backord$=Option!.getOptionData("BACKORDERS")
+        wo_cred$=Option!.getOptionData("CREDIT")
 
         p7$=""
         if wo_open$="Y" then p7$=p7$+"O"
         if wo_quoted$="Y" then p7$=p7$+"Q"
         if wo_backord$="Y" then p7$=p7$+"B"
         if wo_cred$="Y" then p7$=p7$+"C"
-        p9$ = option!.getOptionData("summ_dtl")   
-        p6$ = option!.getOptionData("aging_date")
-        p8  = num(option!.getOptionData("days_in_mth"))
+        if p7$="" p7$="OQBC"
+        p9$ = option!.getOptionData("SUMM_DTL")   
+        p6$ = option!.getOptionData("AGING_DATE")
+        p8  = num(option!.getOptionData("DAYS_IN_MTH"))
 
 rem --- Retrieve parameter records
 
@@ -117,7 +118,6 @@ rem --- Initialize Data
         m1=len(m1$)
         m2=len(m2$)
         if m2<9 then call pgmdir$+"adc_sizemask.aon",m2$,m2,9,9
-        p8=15
         if p9$="" then p9$="D"
         if p7$="" then p7$=optn$
         dim j$(m1+m2*7,"-"),j0$(10,"0"),j1$(50," ")
@@ -131,8 +131,8 @@ rem --- Initialize Data
             if pos("C"=p7$)>0 then h3$=h3$+"Credit Held "
             h3$=h3$+" Orders Only"
        endif
-
-
+       
+       
 rem --- retrieve template for OPE_ORDHDR record key
         call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDHDR","PRIMARY",ope01a_key_tpl$,table_chans$[all],status$
         dim ope01a_key$:ope01a_key_tpl$
@@ -141,7 +141,6 @@ rem --- retrieve template for OPE_ORDDET record key
         call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDDET","PRIMARY",ope11a_key_tpl$,table_chans$[all],status$
         dim ope11a_key$:ope11a_key_tpl$
 
-        call pgmdir$+"adc_progress.aon","N","","","","",0,ope01_dev,1,meter_num,status
         call pgmdir$+"adc_clearfile.aon",opw02_dev
 
         read (ope01_dev,key=firm_id$+"  ",dom=*next)
@@ -152,7 +151,6 @@ ord_read: rem --- Read Order Header Information
         ope01a_key$=key(ope01_dev,end=ending)
         if ope01a_key.firm_id$<>firm_id$ then goto ending
         read record (ope01_dev,key=ope01a_key$) ope01a$
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
         if ope01a.invoice_type$="V" then goto ord_read
         if ope01a.ordinv_flag$="I" then goto ord_read
@@ -205,7 +203,6 @@ rem --- Write to opw-02
 ending:
 
           gosub heading_date
-          call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 
 rem --- run overlay    
           run pgmdir$+"opr_shippingr_o1.aon"
@@ -223,14 +220,16 @@ heading_date:
             v=p8*x,v0$=""
             call pgmdir$+"adc_daydates.aon",v$,v0$,v
 
-            if v$="N" or v0$="N" then goto l6140
-            h5$=v0$+h5$
-            v=p8*x+1,v0$=""
-            call pgmdir$+"adc_daydates.aon",v$,v0$,v
+            if v$<>"N" and v0$<>"N" then 
+                h5$=v0$+h5$
+                v=p8*x+1,v0$=""
+                call pgmdir$+"adc_daydates.aon",v$,v0$,v
 
-            if v$="N" or v0$="N" then goto l6140
-            h4$=v0$+h4$
-        l6140:
+                if v$<>"N" and v0$<>"N" then 
+                    h4$=v0$+h4$
+                endif
+            endif
+
         next x
         h4$=p6$+h4$
         return
@@ -238,10 +237,13 @@ heading_date:
 
 rem --- FUNCTIONS
 
-        def fndate$(q$,q2$)=str(mod((asc(q$)-32)*pos(" "<>q2$(2,1)),100):"00")
-        def fndate$(q1$)=fndate$(q1$(2),q1$)+"/"+fndate$(q1$(3),q1$)+"/"+fndate$(q1$(1),q1$)
-        def fndate$(q1$)=fndate$(q1$(2),q1$)+fndate$(q1$(3),q1$)+fndate$(q1$(1),q1$)
-        def fndate$(q$)=chr(fnyy_year(q$(5,2))+32)+chr(num(q$(1,2))+32)+chr(num(q$(3,2))+32)
+        def fndate$(q$)
+            q1$=""
+            q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+            if q1$="" q1$=q$
+            return q1$
+        fnend
+
         def fnv(q$)=42+int(len(q$)/2)
 
 rem --- FNYY21_YY$ Un-Convert 21st Century 2-Char Year to 2-Char Year

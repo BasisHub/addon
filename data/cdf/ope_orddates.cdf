@@ -1,3 +1,5 @@
+[[OPE_ORDDATES.BEND]]
+release
 [[OPE_ORDDATES.ARAR]]
 rem --- Setup default dates
 	ars01_dev=fnget_dev("ARS_PARAMS")

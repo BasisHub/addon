@@ -14,10 +14,12 @@ rem --- Document initializations
     OutVect!=bbjAPI().getSysGui().makeVector()
     HdrVect!=bbjAPI().getSysGui().makeVector()
     BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
     rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Retrieve the program path
 
@@ -34,18 +36,21 @@ rem --- Retrieve sysinfo data
 rem --- Init Data
 
     dim dashes$(m9,"-"),h9$(m1*2+m2,"-"),h7$(m1*2+m2),r[7],s[7],t[7],u[7],a[5]
-    h9$(1,1)="+"
-    h9$(len(h9$),1)="+"
-    h8$=h9$
-    h8$(int(len(h8$)/2)-6,12)=" Standards "
-    h9$(int(len(h9$)/2)-4,8)=" Actual "
-    h6$=h7$
-    h7$(3)="Labor"
-    h7$(m2+m1-7)="Direct"
-    h7$(m2+m1*2-9)="Overhead"
-    h6$(3)="Hours"
-    h6$(m2+m1-6)="Total"
-    h6$(m2+m1*2-6)="Total"
+
+    if category$="IRN" then
+        h3$="All Categories"
+    else
+        if category$="I" then
+            h3$="Inventory Categories"
+        endif
+        if category$="R" then
+            h3$="Recurring Categories"
+        endif
+        if category$="N" then
+            h3$="Non-Stocking Categories"
+        endif
+    endif
+
     if datefrom$="" then 
         x9$="From The First Date" 
     else  
@@ -67,9 +72,11 @@ rem --- Init Data
             x8$="All Work Orders Included"
         endif
     endif
-    headings$[2](1)=x8$
-    headings$[2](int(66-len(h3$)/2))=h3$
-    headings$[2](132-len(x9$))=x9$
+
+    headings$[2]=x8$
+    headings$[3]=h3$
+    headings$[4]=x9$
+
     if status<>0 then goto std_exit
     more=1
 
@@ -81,19 +88,19 @@ rem --- Headings and print positions
 
       
     dim columns$[11,10]
-    columns = 12
-    columns$[0,0]="WO #",               columns$[0,1]="C",columns$[0,2]="25"
-    columns$[1,0]="Type",               columns$[1,1]="C",columns$[1,2]="18"
-    columns$[2,0]="Begin Date",         columns$[2,1]="C",columns$[2,2]="4"
-    columns$[3,0]="End Date",           columns$[3,1]="C",columns$[3,2]="4"
-    columns$[4,0]="Labor Hours",        columns$[4,1]="N",columns$[4,2]="5",columns$[4,3]=m2$
-    columns$[5,0]="Direct Total",       columns$[5,1]="N",columns$[5,2]="5",columns$[5,3]=m1$
-    columns$[6,0]="Overhead Total",     columns$[6,1]="N",columns$[6,2]="5",columns$[6,3]=m1$
-    columns$[7,0]="Labor Hours",        columns$[7,1]="N",columns$[7,2]="5",columns$[7,3]=m2$
-    columns$[8,0]="Direct Total",       columns$[8,1]="N",columns$[8,2]="5",columns$[8,3]=m1$
-    columns$[9,0]="Overhead Total",     columns$[9,1]="N",columns$[9,2]="5",columns$[9,3]=m1$
-    columns$[10,0]="Hours Variance",    columns$[10,1]="N",columns$[10,2]="5",columns$[10,3]=m2$
-    columns$[11,0]="Variance Percent",  columns$[11,1]="N",columns$[11,2]="5",columns$[11,3]="#####.00%"
+    columns = 11
+    columns$[0,0]="WO #",                           columns$[0,1]="C",columns$[0,2]="25"
+    columns$[1,0]="Type",                           columns$[1,1]="C",columns$[1,2]="6"
+    columns$[2,0]="Begin^Date",                     columns$[2,1]="C",columns$[2,2]="8"
+    columns$[3,0]="End^Date",                       columns$[3,1]="C",columns$[3,2]="8"
+    columns$[4,0]="Labor^Hours",                    columns$[4,1]="N",columns$[4,2]="10",columns$[4,3]=m2$,columns$[4,10]="T"
+    columns$[5,0]="Direct^Total",                   columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m1$,columns$[5,10]="T"
+    columns$[6,0]="Overhead^Total",                 columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m1$,columns$[6,10]="T"
+    columns$[7,0]="Labor^Hours",                    columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m2$,columns$[7,10]="T"
+    columns$[8,0]="Direct^Total",                   columns$[8,1]="N",columns$[8,2]="8",columns$[8,3]=m1$,columns$[8,10]="T"
+    columns$[9,0]="Overhead^Total",                 columns$[9,1]="N",columns$[9,2]="8",columns$[9,3]=m1$,columns$[9,10]="T"
+    columns$[10,0]="Labor^Hours^Vnce",              columns$[10,1]="N",columns$[10,2]="10",columns$[10,3]=m2$,columns$[10,10]="T"
+    columns$[11,0]="Efficiency^Variance^Percent",   columns$[11,1]="C",columns$[11,2]="12"
     
 rem --- Background
 
@@ -125,10 +132,10 @@ rem --- Breaks
             ivm01a.item_desc$(1)="Not On File"
             find record (ivm01a_dev,key=firm_id$+sfe01a.item_id$,dom=*break) ivm01a$
             ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
-        endif 
+        endif
+
 label1: rem --- PRINT
 
-        if l+2>l9 then gosub sub_head
         if sfe01a.cls_cst_todt<>0 then 
             variance=sfe01a.sch_prod_qty*100/sfe01a.cls_cst_todt 
         else 
@@ -146,7 +153,6 @@ label1: rem --- PRINT
         OutVect!.addItem(str(sfw05a.act_dir_tot))
         OutVect!.addItem(str(sfw05a.act_ovhd_tot))
         OutVect!.addItem(str(sfw05a.std_hrs-sfw05a.actual_hrs))
-
 
         if sfe01a.cls_cst_todt<>0 then 
             if sfe01a.wo_status$="C" then 
@@ -194,11 +200,9 @@ done: rem --- End
     else 
         u[6]=0
     endif
-    blank=fnblank(4)
-    for i=1 to 7
-        OutVect!.addItem(dashes$)
-    next i
-    blank=fnblank(2)
+
+    blank=fnblank(12)
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     OutVect!.addItem("Report Total: ")
     blank=fnblank(3)
     OutVect!.addItem(str(u[0]))
@@ -218,18 +222,15 @@ sub_head: rem --- Sub Heading
 
     l=l+3
     blank=fnblank(12)
-    OutVect!.addItem("Operation: "+t1$)
-    OutVect!.addItem(opdesc$)
-    blank=fnblank(10)
+    OutVect!.addItem("Operation: "+t1$+"  "+opdesc$)
+    blank=fnblank(11)
     blank=fnblank(12)
     return
 
 label2: rem --- Sub/Sub Heading
 
-    if l+1>l9 then gosub sub_head
-    OutVect!.addItem("WO Type: " + t2$)
-    OutVect!.addItem(typedesc$)
-    blank=fnblank(10)
+    OutVect!.addItem("WO Type: " + t2$+"  "+typedesc$)
+    blank=fnblank(11)
     l=l+1
     return
 
@@ -241,11 +242,9 @@ rem --- W/O Op Code Subtotals Here
         if t9$="T" then t9$="",t1$="",t2$=""
         if l+2>l9 then gosub sub_head
         if t[3]<>0 then t[6]=t[0]*100/t[3] else t[6]=0
-        blank=fnblank(4)
-        for i=1 to 7
-            OutVect!.addItem(dashes$)
-        next i
-        blank=fnblank(2)
+
+        blank=fnblank(12)
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
         OutVect!.addItem("Department: "+t0$)
         OutVect!.addItem("Totals: ")
         blank=fnblank(2)
@@ -277,13 +276,11 @@ op_code_subtot: rem --- Op Codes Subtotals Here
         if t9$="S" then t9$="",t2$=""
         if l1>1 then
             if s[3]<>0 then s[6]=s[0]*100/s[3] else s[6]=0
-            blank=fnblank(4)
-            for i=1 to 7
-                OutVect!.addItem(dashes$)
-            next i
-            blank=fnblank(2)
+
+            blank=fnblank(12)
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
             OutVect!.addItem("Op Code: "+t1$+" Totals: ")
-            blank=fnblank(2)
+            blank=fnblank(3)
             OutVect!.addItem(str(s[0]))
             OutVect!.addItem(str(s[1]))
             OutVect!.addItem(str(s[2]))
@@ -291,7 +288,7 @@ op_code_subtot: rem --- Op Codes Subtotals Here
             OutVect!.addItem(str(s[4]))
             OutVect!.addItem(str(s[5]))
             OutVect!.addItem(str(s[0]-s[3]))
-            OutVect!.addItem(str(s[6]))
+            OutVect!.addItem(str(s[6]:"#######.00%"))
             blank=fnblank(12)
             l=l+2
         endif 
@@ -318,15 +315,13 @@ wo_type_code:  rem --- W/O Type Codes Here
 
     if t2$<>"" then
         if l2>1 then
-            if l+3>l9 then gosub sub_head
+
             if r[3]<>0 then r[6]=r[0]*100/r[3] else r[6]=0
-            blank=fnblank(4)
-            for i=1 to 7
-                OutVect!.addItem(dashes$)
-            next i
-            blank=fnblank(2)
+
+            blank=fnblank(12)
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
             OutVect!.addItem("WO Type: "+t2$+" Totals: ")
-            blank=fnblank(2)
+            blank=fnblank(3)
             OutVect!.addItem(str(r[0]))
             OutVect!.addItem(str(r[1]))
             OutVect!.addItem(str(r[2]))
@@ -334,7 +329,7 @@ wo_type_code:  rem --- W/O Type Codes Here
             OutVect!.addItem(str(r[4]))
             OutVect!.addItem(str(r[5]))
             OutVect!.addItem(str(r[0]-r[3]))
-            OutVect!.addItem(str(r[6]))
+            OutVect!.addItem(str(r[6]:"#######.00%"))
             blank=fnblank(12)
             l=l+3
         endif 
@@ -384,7 +379,13 @@ rem --- Format inventory item description
 
 rem --- Date/time handling functions
 
-    def fndate$(q$)=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2))))
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
@@ -477,8 +478,7 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-   call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src

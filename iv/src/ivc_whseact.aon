@@ -15,7 +15,7 @@ rem --- "T" = Return total beginning balance instead of first
 rem --- "L" = Return info for lot/serial number
 rem --- CHANNELS[N]: Channel Numbers (input)
 rem --- [2] = ivm-12 or ivm-17
-rem --- [3] = ivm-03
+rem --- [3] = ivm-02
 rem --- ITEM$[n]   : Inventory Item Information
 rem --- [0] = Firm ID
 rem --- [1] = Warehouse ID (optional)
@@ -45,12 +45,12 @@ rem --- Retrieve sysinfo data
 
 rem --- Retrieve miscellaneous templates
 
-    ivm03_dev=channels[3]
+    ivm02_dev=channels[3]
     ivm12_dev=channels[2]
 
     files=2,begfile=1,endfile=files
     dim ids$[files],templates$[files]
-    ids$[1]="IVX_ITEMWHSE"; rem ivm-03g
+    ids$[1]="IVM_ITEMWHSE"; rem ivm-02
     if pos(action$="L")=0 ids$[2]="IVM_ITEMACT"; rem ivm-12
     if pos(action$="L")<>0 ids$[2]="IVM_LSACT"; rem ivm-17
 
@@ -59,14 +59,14 @@ rem --- Retrieve miscellaneous templates
 
 rem --- Dimension string templates
 
-    dim ivm03a$:templates$[1],ivm12a$:templates$[2]
+    dim ivm02a$:templates$[1],ivm12a$:templates$[2]
 
 rem --- Initializations
 
     keylen=30
     period=25
     if pos("L"=action$)>0 keylen=50,period=45
-
+    more=1
     dim b0$(keylen),b[12]
     firm_id$=item$[0]
     warehouse$=item$[1]
@@ -79,59 +79,64 @@ rem --- Initializations
 
 rem --- Single Warehouse
 
-    if pos("A"=action$)>0 goto l1900
-    gosub l6000
-    goto done
+    if pos("A"=action$)<=0 then
+        gosub position_activity_file
+        goto std_exit
+    endif
 
-l1900: rem --- Position warehouse file
+rem --- Position warehouse file
 
-    read (ivm03_dev,key=firm_id$+"G"+item$,dom=*next)
+    read (ivm02_dev,key=firm_id$+item$,knum=2,dom=*next)
 
-l2000: rem --- All Warehouses
+rem --- All Warehouses
 
-    k$=key(ivm03_dev,end=done)
-    if pos(firm_id$+"G"+item$=k$)<>1 goto done
-    read (ivm03_dev)
-    warehouse$=k$(24,2)
-    gosub l6000
-    goto l2000
+    while more
+        k$=key(ivm02_dev,knum=2,end=*break)
+        if pos(firm_id$+item$=k$)<>1 goto done
+        read (ivm02_dev)
+        warehouse$=k$(23,2)
+        gosub position_activity_file
+    wend
 
 done: rem --- All done
 
     goto std_exit
 
-l6000: rem --- Position activity file to beginning period/year
+position_activity_file: rem --- Position activity file to beginning period/year
 
     b0$(1)=firm_id$+warehouse$
     b0$(5)=item$
     b0$(period)=period$[0]
     first=1
     if pos("L"=action$)>0 b0$(25,20)=lotser$
-    read record (ivm12_dev,key=b0$,dom=l6100) ivm12a$
-    goto l6150
+    flag=0
+    read record (ivm12_dev,key=b0$,dom=read_activity_record) ivm12a$
+    flag=1
 
-l6100: rem --- Read activity record(s) and accumulate totals
+read_activity_record: rem --- Read activity record(s) and accumulate totals
 
-    k$=key(ivm12_dev,end=l6190)
-    if pos(b0$(1,keylen-6)=k$)<>1 goto l6190
-    if k$(keylen-5)>period$[1] goto l6190
-    read record (ivm12_dev) ivm12a$
-l6150:
+    while more
+        if flag=0
+            k$=key(ivm12_dev,end=*break)
+            if pos(b0$(1,keylen-6)=k$)<>1 then break
+            if k$(keylen-5)>period$[1] then break
+            read record (ivm12_dev) ivm12a$
+        endif
 
-    dim names$:"name[100]:c(40*)"
-    names$=fattr(ivm12a$,"")
-    startx=1
-    while names.name$[startx] <> "BEG_BALANCE"
-        startx=startx+1
+        dim names$:"name[100]:c(40*)"
+        names$=fattr(ivm12a$,"")
+        startx=1
+        while names.name$[startx] <> "BEG_BALANCE"
+            startx=startx+1
+        wend
+        for x=0 to 12
+            name$=names.name$[x+startx]
+            activity[x]=activity[x]+nfield(ivm12a$,name$)
+        next x
+        if first activity[0]=activity[0]+ivm12a.beg_balance
+        if pos("T"=action$)=0 first=0
+        flag=0
     wend
-    for x=0 to 12
-        name$=names.name$[x+startx]
-        activity[x]=activity[x]+nfield(ivm12a$,name$)
-    next x
-    if first activity[0]=activity[0]+ivm12a.beg_balance
-    if pos("T"=action$)=0 first=0
-    goto l6100
-l6190:
     return
 
 rem #include std_error.src
