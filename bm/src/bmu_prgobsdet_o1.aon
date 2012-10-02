@@ -21,29 +21,26 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
-
 rem --- Background
-escape
+
     call pgmdir$+"adc_progress.aon","N","","","","",0,bmm01_dev,1,meter_num,ignore_status
 
-rem --- Disallow 'M'enu option in Error Routine
+rem --- Set params
 
-    exit_ctrl=1
     more=1
     flag=0
+	
 rem --- Initial Read
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","PRIMARY",bmm02a_key_tpl$,rd_table_chans$[all],status$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLOPER","PRIMARY",bmm03a_key_tpl$,rd_table_chans$[all],status$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLSUB","PRIMARY",bmm05a_key_tpl$,rd_table_chans$[all],status$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAST","PRIMARY",bmm01a_key_tpl$,rd_table_chans$[all],status$
-escape
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAT","PRIMARY",bmm02_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLOPER","PRIMARY",bmm03_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLSUB","PRIMARY",bmm05_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","BMM_BILLMAST","PRIMARY",bmm01_key_tpl$,rd_table_chans$[all],status$
+
+	dim bmm01_key$:bmm01_key_tpl$
     read (bmm01_dev,key=firm_id$+billfrom$,dom=main)
-    dim bmm01_key$:bmm01a_key_tpl$
     bmm01_key$=firm_id$+billfrom$
     flag=1
-
-   
 
 rem --- Main Read
 main:
@@ -65,14 +62,11 @@ rem --- Material Detail Loop
         dim bmm02_key$:bmm02_key_tpl$
         while more
             bmm02_key$=key(bmm02_dev,end=*break)
-            if pos(bmm01.firm_id$=bmm02_key.firm_id$)<>1 and
-:              pos(bmm01.bill_no$=bmm02_key.bill_no$) then break
+            if pos(firm_id$=bmm02_key.firm_id$)<>1 or
+:              pos(bmm01.bill_no$=bmm02_key.bill_no$)<>1 then break
             read record (bmm02_dev,key=bmm02_key$) bmm02$
-            if bmm02.obsolt_date$ <>"   " and bmm02.obsolt_date$<=r2$ 
+            if cvs(bmm02.obsolt_date$,3) <>"" and bmm02.obsolt_date$<=r2$ 
                 remove (bmm02_dev,key=bmm02_key$)
-            endif
-            if bmm02.obsolt_date$ <>"   " and bmm02.obsolt_date$<=r2$ 
-                remove (bmm04_dev,key=bmm02.firm_id$+bmm02.item_id$+bmm02.bill_no$+bmm02.material_seq$,dom=*next)
             endif
         wend
 
@@ -84,15 +78,11 @@ rem --- Operation Detail Loop
         dim bmm03_key$:bmm03_key_tpl$
         while more
             bmm03_key$=key(bmm03_dev,end=*break)
-            if pos(bmm01.firm_id$=bmm03_key.firm_id$)<>1 and
-:              pos(bmm01.bill_no$=bmm03_key.bill_no$) then break
-
+            if pos(firm_id$=bmm03_key.firm_id$)<>1 or
+:              pos(bmm01.bill_no$=bmm03_key.bill_no$)<>1 then break
             read record (bmm03_dev,key=bmm03_key$) bmm03$
-            if bmm03.obsolt_date$<>"   " and bmm03.obsolt_date$<=r2$ 
+            if cvs(bmm03.obsolt_date$,3)<>"" and bmm03.obsolt_date$<=r2$ 
                 remove (bmm03_dev,key=bmm03_key$)
-            endif
-            if bmm03.obsolt_date$<>"   " and bmm03.obsolt_date$<=r2$ 
-                remove (bmm06_dev,key=bmm03.firm_id$+bmm03.op_code$+bmm03.bill_no$+bmm03.op_seq$,dom=*next)
             endif
         wend
 
@@ -104,10 +94,10 @@ rem --- Subcontract Detail Loop
         dim bmm05_key$:bmm05_key_tpl$
         while more
             bmm05_key$=key(bmm05_dev,end=*break)
-            if pos(bmm01.firm_id$=bmm05_key.firm_id$)<>1 and
-:              pos(bmm01.bill_no$=bmm05_key.bill_no$) then break
+            if pos(firm_id$=bmm05_key.firm_id$)<>1 or
+:              pos(bmm01.bill_no$=bmm05_key.bill_no$)<>1 then break
             read record (bmm05_dev,key=bmm05_key$) bmm05$
-            if bmm05.obsolt_date$<>"   " and bmm05.obsolt_date$<=r2$ 
+            if cvs(bmm05.obsolt_date$,3)<>"" and bmm05.obsolt_date$<=r2$ 
                 remove (bmm05_dev,key=bmm05_key$)
             endif
         wend
@@ -181,6 +171,13 @@ rem --- fnglobal$: Return string value of passed STBL variable
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+	
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -230,6 +227,11 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+	
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

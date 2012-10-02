@@ -56,7 +56,7 @@ rem ---  column heading
             columns$[3,0]="Description",    columns$[3,1]="C",columns$[3,2]="25"
             columns$[4,0]="Effect Date",    columns$[4,1]="C",columns$[4,2]="10"
             columns$[5,0]="Obsolete Date",  columns$[5,1]="C",columns$[5,2]="10"
-            columns$[6,0]="Qty Reqd",       columns$[6,1]="N",columns$[6,2]="8",columns$[6,3]=p1$,columns$[6,10]="T"
+            columns$[6,0]="Qty Reqd",       columns$[6,1]="N",columns$[6,2]="14",columns$[6,3]=m2$,columns$[6,10]="T"
             columns$[7,0]="Seq",            columns$[7,1]="C",columns$[7,2]="5"
 
 rem --- Background
@@ -65,13 +65,13 @@ rem --- Background
 
 rem --- Initial Read
 
-        extractrecord (bmm02_dev,key=firm_id$+itemfrom$,knum="AO_ITEM_BILL",dom=*next)
+        read record (bmm02_dev,key=firm_id$+itemfrom$,knum="AO_ITEM_BILL",dom=*next)
 
 rem --- Main Loop
 
     while more
         dim bmm02a_key$:bmm02a_key_tpl$
-        bmm02a_key$=key(bmm02_dev,knum="AO_ITEM_BILL",end=done)
+        bmm02a_key$=key(bmm02_dev,knum="AO_ITEM_BILL",end=*break)
         readrecord (bmm02_dev)bmm02a$
 
 rem --- Breaks
@@ -80,13 +80,9 @@ rem --- Breaks
         if itemthru$<>"" then
             if bmm02a_key.item_id$(1,len(itemthru$))>itemthru$ then break
         endif
+		if bmm02a.line_type$<>"S" continue
         read record (bmm01_dev,key=(bmm02a_key.firm_id$+bmm02a_key.bill_no$),dom=*continue) bmm01a$
 
-        if (bmm02a.firm_id$+bmm02a.item_id$)<>t0$ then
-            gosub item_break
-        else
-            xwk = fnblank(2)
-        endif
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         d1$="*** Not On File ***"
         find record (ivm01_dev,key=(bmm01a.firm_id$+bmm01a.bill_no$),dom=print_head) ivm01a$
@@ -95,10 +91,25 @@ rem --- Breaks
 
 print_head: rem --- Print
 
-        OutVect!.addItem(bmm01a.bill_no$(1,p[0]))
+        if (bmm02a.firm_id$+bmm02a.item_id$)<>t0$ then
+            gosub item_break
+        else
+            xwk = fnblank(2)
+        endif
+
+        OutVect!.addItem(bmm02a.bill_no$(1,p[0]))
         OutVect!.addItem(ivm01a.item_desc$(1,30))
-        OutVect!.addItem(fndate$(bmm02a.effect_date$))
-        OutVect!.addItem(fndate$(bmm02a.obsolt_date$))
+		if cvs(bmm02a.effect_date$,3)=""
+			OutVect!.addItem("")
+		else
+			OutVect!.addItem(fndate$(bmm02a.effect_date$))
+		endif
+		if cvs(bmm02a.obsolt_date$,3)=""
+			OutVect!.addItem("")
+		else
+			OutVect!.addItem(fndate$(bmm02a.obsolt_date$))
+		endif
+
         OutVect!.addItem(str(fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)))
         OutVect!.addItem(bmm02a.material_seq$)
         t0=t0+1
@@ -106,15 +117,15 @@ print_head: rem --- Print
         qtyreq[0]=qtyreq[0]+bmm02a.qty_required
     wend
 
-done: rem --- Totals
+rem --- Print totals
 
-        t9$="E"
-        gosub item_break
-        xwk = fnblank(9)
-        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-        OutVect!.addItem("Total Records : "+str(t0))
-        xwk = fnblank(6)
-        goto std_exit
+    t9$="E"
+    gosub item_break
+    xwk = fnblank(8)
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+    OutVect!.addItem("Total Records : "+str(t0))
+    xwk = fnblank(7)
+    goto std_exit
 
 print_item: rem --- Print Item
 
@@ -133,13 +144,14 @@ item_break: rem --- Item Break
 
         if t0$<>"" then
             if l1>=2 then
-                xwk = fnblank(7)
+                xwk = fnblank(8)
                 TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-                xwk = fnblank(2)
+                xwk = fnblank(1)
                 OutVect!.addItem("Item Total : ")
                 xwk = fnblank(4)
-                OutVect!.addItem(str(qtyreq[0]:p1$))
-                xwk = fnblank(9)
+                OutVect!.addItem(str(qtyreq[0]))
+				xvk = fnblank(1)
+                xwk = fnblank(8)
             else
                 xwk = fnblank(8)
             endif
@@ -300,6 +312,7 @@ rem #endinclude std_missing_params.src
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

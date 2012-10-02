@@ -1,8 +1,9 @@
-[[BME_TOTALS.BSHO]]
-rem --- set Default Warehouse
+[[BME_TOTALS.ARAR]]
+rem --- Display initial values
 
-	dflt_whse$=callpoint!.getDevObject("dflt_whse")
-	callpoint!.setColumnData("BME_TOTALS.WAREHOUSE_ID",dflt_whse$)
+	prod_date$=callpoint!.getColumnData("BME_TOTALS.PROD_DATE")
+	whse$=callpoint!.getColumnData("BME_TOTALS.WAREHOUSE_ID")
+	gosub show_totals
 [[BME_TOTALS.WAREHOUSE_ID.AVAL]]
 rem --- Display Totals
 

@@ -6,52 +6,53 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-        seterr std_error
-        setesc std_error
-        enter action$,printer_dev,bill_no$,page_no,pdate$,OutVect!,status
+	seterr std_error
+	setesc std_error
+	enter action$,printer_dev,bill_no$,page_no,pdate$,OutVect!,status
 
 rem --- Retrieve the program path
 
-        pgmdir$=stbl("+DIR_PGM",err=*next)
+	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-        dim sysinfo$:sysinfo_template$
-        sysinfo$=stbl("+SYSINFO",err=*next)
-        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-        firm_id$=sysinfo.firm_id$
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
 
 rem --- Open/Lock files
 
-        files=5,begfile=1,endfile=files
-        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-        files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
-        files$[2]="bmm-02",ids$[2]="BMM_BILLMAT"
-        files$[3]="bms_params",ids$[3]="BMS_PARAMS"
-        files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
-        files$[5]="ivs_params",ids$[5]="IVS_PARAMS"
+	num_files=6
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="BMM_BILLMAST",open_opts$[1]="OTA"
+	open_tables$[2]="BMM_BILLMAT",open_opts$[2]="OTA"
+	open_tables$[3]="BMS_PARAMS",open_opts$[3]="OTA"
+	open_tables$[4]="IVM_ITEMMAST",open_opts$[4]="OTA"
+	open_tables$[5]="IVS_PARAMS",open_opts$[5]="OTA"
+	open_tables$[6]="BMM_BILLOPER",open_opts$[6]="OTA"
 
-        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
-        bmm01_dev=channels[1]
-        bmm02_dev=channels[2]
-        bms01a_dev=channels[3]
-        ivm01_dev=channels[4]
-        ivs01a_dev=channels[5]
-   
+	gosub open_tables
+
+	bmm01_dev=num(open_chans$[1])
+	bmm02_dev=num(open_chans$[2])
+	bms01a_dev=num(open_chans$[3])
+	ivm01_dev=num(open_chans$[4])
+	ivs01a_dev=num(open_chans$[5])
+	bmm03_dev=num(open_chans$[6])
+	
 rem --- Dimension string templates
 
-        dim bmm01a$:templates$[1],bmm02a$:templates$[2],bms01a$:templates$[3],
-:           ivm01a$:templates$[4],ivs01a$:templates$[5]
+	dim bmm01a$:open_tpls$[1],bmm02a$:open_tpls$[2],bms01a$:open_tpls$[3]
+	dim ivm01a$:open_tpls$[4],ivs01a$:open_tpls$[5],bmm03a$:open_tpls$[6]
 
 rem --- Retrieve parameter records
 
-        bms01a_key$=firm_id$+"BM00"
-        find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
-        ivs01a_key$=firm_id$+"IV00"
-        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+	bms01a_key$=firm_id$+"BM00"
+	find record (bms01a_dev,key=bms01a_key$,err=std_missing_params) bms01a$
+	ivs01a_key$=firm_id$+"IV00"
+	find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
 
 rem --- Parameters
 
@@ -61,6 +62,7 @@ rem --- Parameters
         desc[3]=num(ivs01a.desc_len_03$) 
         p[0]=ivs01a.item_id_len
         precision num(ivs01a.precision$)
+		call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,0
 
 rem --- Init Data
 
@@ -79,51 +81,53 @@ rem --- Read
         findrecord (bmm01_dev,key=firm_id$+bill_no$,dom=std_exit) bmm01a$
 
 rem --- Heading
-
+        out_action$="FORMAT"
         find record (ivm01_dev,key=firm_id$+bill_no$,dom=*next) ivm01a$
-        OutVect!.addItem("Bill Number: "+bill_no$)
+        OutVect!.addItem("Bill Number: "+cvs(bill_no$,1+2))
         xwk=fnblank(4)
 
         OutVect!.addItem("Description: "+ivm01a.ITEM_DESC$(1,min(desc[1],36)))
-        xwk=fnblank(3)
+        xwk=fnblank(1)
+        OutVect!.addItem("Drawing Revision:"+bmm01a.DRAWING_REV$)
+        xwk=fnblank(1)
         OutVect!.addItem("Phantom Bill?: "+bmm01a.PHANTOM_BILL$)
 
         xwk=fnblank(1)
         OutVect!.addItem(ivm01a.ITEM_DESC$(desc[1]+1,min(desc[2],34)))
-        xwk=fnblank(2)
+        OutVect!.addItem("Revision Code: "+bmm01a.BILL_REV$)
+        xwk=fnblank(1)
         OutVect!.addItem("Unit Of Measure: "+bmm01a.UNIT_MEASURE$)
 
-        xwk=fnblank(1)
+        OutVect!.addItem("Drawing Number: "+bmm01a.DRAWING_NO$)
         OutVect!.addItem(ivm01a.ITEM_DESC$(desc[1]+desc[2]+1,min(desc[3],32)))
-        xwk=fnblank(2)
+        OutVect!.addItem("Created: "+fndate$(bmm01a.CREATE_DATE$))
+        xwk=fnblank(1)
         OutVect!.addItem("Estimated Yield %: "+str(bmm01a.EST_YIELD:"##0.00"))
 
-        OutVect!.addItem("Drawing Number: "+bmm01a.DRAWING_NO$)
-        xwk=fnblank(3)
+      
+        xwk=fnblank(2)
+        OutVect!.addItem("Revised: "+fndate$(bmm01a.LSTRVS_DATE$))
+        xwk=fnblank(1)
         OutVect!.addItem("Standard Lot Size: "+str(bmm01a.STD_LOT_SIZE))
 
-        OutVect!.addItem("Drawing Revision:"+bmm01a.DRAWING_REV$)
-        OutVect!.addItem("Revision Code: "+bmm01a.BILL_REV$)
-        OutVect!.addItem("Created: "+fndate$(bmm01a.CREATE_DATE$))
-        OutVect!.addItem("Revised: "+fndate$(bmm01a.LSTRVS_DATE$))
+        xwk=fnblank(4)
         OutVect!.addItem("As Of: "+fndate$(pdate$))
 
-        OutVect!.addItem(fill(40,"-"))
-        OutVect!.addItem(fill(20,"-"))
-        OutVect!.addItem(fill(20,"-"))
-        OutVect!.addItem(fill(20,"-"))
-        OutVect!.addItem(fill(25,"-"))
-        OutVect!.addItem(fill(20," ")+"Op Seq")
+rem --- top dashed lines are just visually confusing...
+        xwk=fnblank(5)
+        
+  
+        OutVect!.addItem("Op Seq")
         OutVect!.addItem("Component")
         OutVect!.addItem("U/M")
-        OutVect!.addItem("Quantity")
+        OutVect!.addItem("Quantity"+$00$+"R")
         OutVect!.addItem("Picked")
-        OutVect!.addItem(fill(40,"-"))
-        OutVect!.addItem(fill(20,"-"))
-        OutVect!.addItem(fill(20,"-"))
-        OutVect!.addItem(fill(20,"-"))
-        OutVect!.addItem(fill(25,"-"))
-
+        OutVect!.addItem(fill(10,"_"))
+        OutVect!.addItem(fill(45,"_"))
+        OutVect!.addItem(fill(8,"_"))
+        OutVect!.addItem(fill(30,"_")+$00$+"R")
+        OutVect!.addItem(fill(15,"_"))
+		xvk=fnblank(5)
 
 rem --- Detail
 
@@ -135,15 +139,15 @@ rem --- Main Loop Starts
 
         bmm02a_altkey$=key(bmm02_dev,knum="AO_OPSEQ_BILL",end=*break)
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        if first_time$="Y" then let first_time$="N",t0$=bmm02a_altkey.OP_SEQ$
+        if first_time$="Y" then let first_time$="N",t0$=bmm02a_altkey.op_int_seq_ref$
         read record (bmm02_dev,key=bmm02a_altkey$,knum="AO_OPSEQ_BILL") bmm02a$
-        if pos(bmm01a.FIRM_ID$+bmm01a.BILL_NO$=bmm02a.FIRM_ID$+bmm02a.BILL_NO$+bmm02a.MATERIAL_SEQ$)<>1 then break
-        if cvs(bmm02a.EFFECT_DATE$,3)<>"" and bmm02a.EFFECT_DATE$>pdate$ then continue
-        if cvs(bmm02a.OBSOLT_DATE$,3)<>"" and bmm02a.OBSOLT_DATE$<=pdate$ then continue
+        if pos(bmm01a.firm_id$+bmm01a.bill_no$=bmm02a.firm_id$+bmm02a.bill_no$+bmm02a.material_seq$)<>1 then break
+        if cvs(bmm02a.effect_date$,3)<>"" and bmm02a.effect_date$>pdate$ then continue
+        if cvs(bmm02a.obsolt_date$,3)<>"" and bmm02a.obsolt_date$<=pdate$ then continue
 
-        if bmm02a.LINE_TYPE$<>"S" then
+        if bmm02a.line_type$<>"S" then
             xwk=fnblank(1)
-            OutVect!.addItem(bmm02a.EXT_COMMENTS$)
+            OutVect!.addItem(bmm02a.ext_comments$)
             xwk=fnblank(3)
             continue
         endif
@@ -151,35 +155,37 @@ rem --- Main Loop Starts
 rem --- Standard Item
 
         r0$=" "
-        find (bmm01_dev,key=firm_id$+bmm02a.ITEM_ID$,dom=addl_reads)
+        find (bmm01_dev,key=firm_id$+bmm02a.item_id$,dom=addl_reads)
         r0$="*"
 
 addl_reads: rem --- Additional Reads
 
-        find record (ivm01_dev,key=firm_id$+bmm02a.ITEM_ID$,dom=*next) ivm01a$
-        ivm01a.ITEM_DESC$=fnitem$(ivm01a.ITEM_DESC$,desc[1],desc[2],desc[3])
-
+        find record (ivm01_dev,key=firm_id$+bmm02a.item_id$,dom=*next) ivm01a$
+        ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+		dim bmm03a$:fattr(bmm03a$)
+		find record (bmm03_dev,key=firm_id$+bmm02a.bill_no$+bmm02a.op_int_seq_ref$,knum="AO_BILL_OPSEQ",dom=*next)bmm03a$
+		
 rem --- Print Detail
 
-        OutVect!.addItem(fill(20," ")+bmm02a.OP_SEQ$)
-        OutVect!.addItem(bmm02a.ITEM_ID$(1,p[0]))
-        OutVect!.addItem(bmm02a.UNIT_MEASURE$)
-        OutVect!.addItem(str(fnqty(bmm02a.QTY_REQUIRED,bmm02a.ALT_FACTOR,bmm02a.DIVISOR,bmm01a.EST_YIELD,bmm02a.SCRAP_FACTOR):bms01a.HRQTY_MASK$))
-        OutVect!.addItem(fill(10,"_"))
+        OutVect!.addItem(bmm03a.op_seq$)
+        OutVect!.addItem(bmm02a.item_id$(1,p[0]))
+        OutVect!.addItem(bmm02a.unit_measure$)
+        OutVect!.addItem(str(fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor):m2$)+$00$+"R")
+        OutVect!.addItem(fill(13,"_"))
         xwk=fnblank(1)
-        OutVect!.addItem(ivm01a.ITEM_DESC$)
+        OutVect!.addItem("    "+ivm01a.item_desc$)
         xwk=fnblank(3)
 
 rem --- Serial/Lot Numbers
 
-        if ivm01a.LOTSER_ITEM$<>"Y" or ivs01a.LOTSER_FLAG$="N" then continue
-        if ivs01a.LOTSER_FLAG$="S" then
+        if ivm01a.lotser_item$<>"Y" or ivs01a.lotser_flag$="N" then continue
+        if ivs01a.lotser_flag$="S" then
             x$="Serial Number: "
         else
             x$="Lot Number: "
         endif
-        if ivs01a.LOTSER_FLAG$="L" and bmm02a.QTY_REQUIRED>5 then bmm02a.QTY_REQUIRED=5
-        for i=1 to bmm02a.QTY_REQUIRED
+        if ivs01a.lotser_flag$="L" and bmm02a.qty_required>5 then bmm02a.qty_required=5
+        for i=1 to bmm02a.qty_required
             xwk=fnblank(1)
             OutVect!.addItem(x$+fill(30,"_"))
             xwk=fnblank(3)
@@ -206,6 +212,36 @@ rem --- Totals
 rem --- End
     goto std_exit
 
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+       msg_id$="ENTRY_OPEN_ERROR"
+       dim msg_tokens$[1]
+       msg_tokens$[1]=open_status$
+       gosub disp_message
+       rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+       release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+	
 rem --- #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
 rem --- Functions used to retrieve form values
@@ -348,10 +384,18 @@ rem --- #endinclude std_missing_params.src
 rem --- #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
-        for i=1 to files
-            close(channels[i])
-        next i
-        exit
+
+	num_files=5
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="BMM_BILLMAST",open_opts$[1]="C"
+	open_tables$[2]="BMM_BILLMAT",open_opts$[2]="C"
+	open_tables$[3]="BMS_PARAMS",open_opts$[3]="C"
+	open_tables$[4]="IVM_ITEMMAST",open_opts$[4]="C"
+	open_tables$[5]="IVS_PARAMS",open_opts$[5]="C"
+
+	gosub open_tables
+	exit
+	
 rem --- #endinclude std_exit.src
 
-        end
+	end

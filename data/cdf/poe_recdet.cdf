@@ -97,7 +97,6 @@ if callpoint!.getDevObject("line_type")="O"
 	callpoint!.setFocus("POE_RECDET.UNIT_COST")
 endif
 [[POE_RECDET.QTY_RECEIVED.AVAL]]
-
 gosub update_header_tots
 callpoint!.setDevObject("qty_this_row",num(callpoint!.getUserInput()))
 [[POE_RECDET.AWRI]]
@@ -363,11 +362,6 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			focus_column$="POE_RECDET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
-		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.REQD_DATE"),3)="" 
-			ok_to_write$="N"
-			focus_column$="POE_RECDET.REQD_DATE"
-			translate$="AON_DATE_REQUIRED"
-		endif
 	endif
 
 	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="N" 
@@ -474,7 +468,6 @@ gosub enable_serial
 gosub update_header_tots
 callpoint!.setDevObject("cost_this_row",num(callpoint!.getUserInput()))
 [[POE_RECDET.AUDE]]
-
 gosub update_header_tots
 po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
 if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
@@ -488,7 +481,6 @@ if cvs(callpoint!.getColumnUndoData("POE_RECDET.PO_NO"),3)<>""
 
 endif
 [[POE_RECDET.ADEL]]
-
 gosub update_header_tots
 
 rem --- if this line is new (i.e., NOT from a PO) reverse the OO quantity and remove the dropship link, if applicable

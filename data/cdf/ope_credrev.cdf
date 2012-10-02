@@ -29,6 +29,11 @@ rem --- Update Credit changes to master file
 	endif
 	gosub create_cust_vector
 	gosub fill_grid
+	if rows=0
+		callpoint!.setOptionEnabled("CRED",0)
+	else
+		callpoint!.setOptionEnabled("CRED",1)
+	endif
 	callpoint!.setOptionEnabled("NEWC",1)
 [[OPE_CREDREV.AOPT-SELR]]
 rem --- Run appropriate form
@@ -45,12 +50,23 @@ rem --- Change selection
 		user_tpl.cur_sel$="C"
 		gosub create_cust_vector
 		gosub fill_grid
+		if rows=0
+			callpoint!.setOptionEnabled("CRED",0)
+		else
+			callpoint!.setOptionEnabled("CRED",1)
+		endif
 		callpoint!.setOptionEnabled("NEWC",1)
 	endif
+
 	if user_tpl.cur_sel$="C" and callpoint!.getUserInput()="O"
 		user_tpl.cur_sel$="O"
 		gosub create_orders_vector
 		gosub fill_grid
+		if rows=0
+			callpoint!.setOptionEnabled("CRED",0)
+		else
+			callpoint!.setOptionEnabled("CRED",1)
+		endif
 		callpoint!.setOptionEnabled("NEWC",0)
 	endif
 [[OPE_CREDREV.ACUS]]
@@ -170,11 +186,18 @@ launch_cred_maint:
 	rem --- redisplay grid
 	if user_tpl.cur_sel$="C"
 		gosub create_cust_vector
+		callpoint!.setOptionEnabled("CRED",0)
 		gosub fill_grid
 	endif
 	if user_tpl.cur_sel$="O"
 		gosub create_orders_vector
 		gosub fill_grid
+	endif
+
+	if rows=0
+		callpoint!.setOptionEnabled("CRED",0)
+	else
+		callpoint!.setOptionEnabled("CRED",1)
 	endif
 
 return
@@ -241,6 +264,7 @@ fill_grid:
 	SysGUI!.setRepaintEnabled(0)
 	gridCredit!=UserObj!.getItem(num(user_tpl.gridCreditOffset$))
 	minrows=num(user_tpl.gridCreditRows$)
+
 	if vectCredit!.size()
 
 		numrow=vectCredit!.size()/gridCredit!.getNumColumns()
@@ -424,6 +448,11 @@ rem --- set callbacks - processed in ACUS callpoint
 	gridCredit!.setCallback(gridCredit!.ON_GRID_DOUBLE_CLICK,"custom_event")
 	gridCredit!.setCallback(gridCredit!.ON_GRID_ENTER_KEY,"custom_event")
 
-rem --- verify New Tickler is disabled and Cred Maint enabled
+rem --- verify New Tickler is disabled and Cred Maint ensabled properly
 	callpoint!.setOptionEnabled("NEWC",0)
-	callpoint!.setOptionEnabled("CRED",1)
+
+	if rows=0
+		callpoint!.setOptionEnabled("CRED",0)
+	else
+		callpoint!.setOptionEnabled("CRED",1)
+	endif

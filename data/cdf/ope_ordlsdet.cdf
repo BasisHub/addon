@@ -400,8 +400,8 @@ rem --- Inits
 
 	declare HashMap committedNow!
 
-	dim user_tpl$:"invoice_noninventory:u(1), left_to_ord:n(1*), prev_ord:n(1*)"
-	user_tpl.invoice_noninventory = 0
+	dim user_tpl$:"non_inventory:u(1), left_to_ord:n(1*), prev_ord:n(1*)"
+	user_tpl.non_inventory = 0
 	user_tpl.left_to_ord = num(callpoint!.getDevObject("ord_qty"))
 	user_tpl.prev_ord = 0
 
@@ -413,20 +413,18 @@ rem --- Set Lot/Serial button up properly
 		case default; callpoint!.setOptionEnabled("LLOK",0); break
 	swend
 
-rem --- Set a flag for non-inventoried items when in Invoice Entry
+rem --- Set a flag for non-inventoried items
 	
 	item$ = callpoint!.getDevObject("item")
 
-	if callpoint!.getDevObject("from") = "invoice_entry" 
-		file_name$="IVM_ITEMMAST"
-		dim itemmast_rec$:fnget_tpl$(file_name$)
-		find record (fnget_dev(file_name$), key=firm_id$+item$, dom=*endif) itemmast_rec$
-		if itemmast_rec.inventoried$ = "N" then user_tpl.invoice_noninventory = 1
-	endif
+	file_name$="IVM_ITEMMAST"
+	dim itemmast_rec$:fnget_tpl$(file_name$)
+	find record (fnget_dev(file_name$), key=firm_id$+item$, dom=*endif) itemmast_rec$
+	if itemmast_rec.inventoried$ = "N" then user_tpl.non_inventory = 1
 
 rem --- No Serial/lot lookup for non-invent items
 	
-	if user_tpl.invoice_noninventory then callpoint!.setOptionEnabled("LLOK", 0)
+	if user_tpl.non_inventory then callpoint!.setOptionEnabled("LLOK", 0)
 
 rem --- Create a HashMap so that we know what's been committed during this session
 
@@ -436,9 +434,9 @@ rem --- Create a HashMap so that we know what's been committed during this sessi
 [[OPE_ORDLSDET.AOPT-LLOK]]
 print "AOPT.LLOK"; rem debug
 
-rem --- Non-inventoried items from Invoice Entry do not have to exist
+rem --- Non-inventoried items do not have to exist
 
-	if user_tpl.invoice_noninventory then
+	if user_tpl.non_inventory then
 		break; rem --- exit callpoint
 	endif
 
@@ -552,9 +550,9 @@ rem --- Get lot/serial record fields
 	ord_qty = num( callpoint!.getDevObject("ord_qty") )
 
 
-rem --- Non-inventoried items from Invoice Entry do not have to exist (but can't be blank)
+rem --- Non-inventoried items do not have to exist (but can't be blank)
 
-	if user_tpl.invoice_noninventory then
+	if user_tpl.non_inventory then
 		if cvs( callpoint!.getUserInput(), 2 ) = "" then
 			msg_id$ = "IV_SERLOT_BLANK"
 			gosub disp_message
@@ -573,7 +571,7 @@ rem --- Non-inventoried items from Invoice Entry do not have to exist (but can't
 		break
 	endif
 
-	if user_tpl.invoice_noninventory then
+	if user_tpl.non_inventory then
 		goto set_qty_defaults
 	endif
 
@@ -635,7 +633,7 @@ set_qty_defaults: rem --- Set defaults
 		endif
 	endif
 
-	if user_tpl.invoice_noninventory or cvs( callpoint!.getUserInput(), 2 ) = "" then
+	if user_tpl.non_inventory or cvs( callpoint!.getUserInput(), 2 ) = "" then
 		goto refresh_screen
 	endif
 

@@ -67,8 +67,6 @@ rem --- from AP Types file (apc_typecode)
 [[APM_VENDMAST.ARNF]]
 rem --- Set Date Opened
 	callpoint!.setColumnData("APM_VENDMAST.OPENED_DATE",sysinfo.system_date$)
-[[APM_VENDMAST.VENDOR_ID.AINP]]
-
 [[APM_VENDMAST.BDEL]]
 rem --- can delete vendor and assoc recs (apm01/02/05/06/08/09/14/15) unless
 rem --- vendor referenced in inventory, or
@@ -272,4 +270,3 @@ call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :                       table_chans$[all],
 :                       "",
 :                       dflt_data$[all]
-

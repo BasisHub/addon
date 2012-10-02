@@ -1,3 +1,8 @@
+[[APE_INVOICEHDR.ARNF]]
+if user_tpl.multi_dist$<>"Y"
+	callpoint!.setColumnData("APE_INVOICEHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
+	callpoint!.setStatus("REFRESH")
+endif
 [[APE_INVOICEHDR.VENDOR_ID.BINP]]
 rem --- set devObject with AP Type and a temp vend indicator, so if we decide to set up a temporary vendor from here,
 rem --- we'll know which AP type to use, and we can automatically set the temp vendor flag in the vendor master
@@ -132,16 +137,20 @@ look_for_invoice:
 			
 			callpoint!.setStatus("REFRESH")
 		endif
+		ctl_name$="APE_INVOICEHDR.AP_DIST_CODE"
+		if user_tpl.multi_dist$="Y" 
+			ctl_stat$=""
+		else
+			ctl_stat$="D"
+		endif
+		gosub disable_fields
+		ctl_name$="APE_INVOICEHDR.INVOICE_DATE"
+		ctl_stat$=""
+		gosub disable_fields
+		ctl_name$="APE_INVOICEHDR.NET_INV_AMT"
+		ctl_stat$=""
+		gosub disable_fields
 	endif
-	ctl_name$="APE_INVOICEHDR.AP_DIST_CODE"
-	ctl_stat$=""
-	gosub disable_fields
-	ctl_name$="APE_INVOICEHDR.INVOICE_DATE"
-	ctl_stat$=""
-	gosub disable_fields
-	ctl_name$="APE_INVOICEHDR.NET_INV_AMT"
-	ctl_stat$=""
-	gosub disable_fields
 end_of_aval:
 [[APE_INVOICEHDR.ASHO]]
 	rem --- get default date
@@ -167,9 +176,14 @@ callpoint!.setColumnData("<<DISPLAY>>.comments","")
 user_tpl.inv_amt$=""
 user_tpl.tot_dist$=""
 callpoint!.setColumnData("<<DISPLAY>>.DIST_BAL","0")
+
 rem --- Re-enable disabled fields
 ctl_name$="APE_INVOICEHDR.AP_DIST_CODE"
-ctl_stat$=""
+if user_tpl.multi_dist$="Y" 
+	ctl_stat$=""
+else
+	ctl_stat$="D"
+endif
 gosub disable_fields
 ctl_name$="APE_INVOICEHDR.INVOICE_DATE"
 ctl_stat$=""
@@ -181,6 +195,12 @@ gosub disable_fields
 rem --- if not multi-type then set the defalut AP Type
 if user_tpl.multi_types$="N" then
 	callpoint!.setColumnData("APE_INVOICEHDR.AP_TYPE",user_tpl.dflt_ap_type$)
+endif
+
+rem --- if not multi-dist then set the default AP Distribution Code
+if user_tpl.multi_dist$="N" 
+	callpoint!.setColumnData("APE_INVOICEHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
+	callpoint!.setStatus("REFRESH")
 endif
 [[APE_INVOICEHDR.BWRI]]
 rem --- fully distributed?
@@ -244,9 +264,18 @@ if callpoint!.getUserInput()=""
 	callpoint!.setStatus("REFRESH")
 endif
 [[APE_INVOICEHDR.AP_TYPE.AVAL]]
-if callpoint!.getUserInput()=""
-	callpoint!.setUserInput("  ")
+user_tpl.dflt_ap_type$=callpoint!.getUserInput()
+if user_tpl.dflt_ap_type$=""
+	user_tpl.dflt_ap_type$="  "
+	callpoint!.setUserInput(user_tpl.dflt_ap_type$)
 	callpoint!.setStatus("REFRESH")
+endif
+
+apm10_dev=fnget_dev("APC_TYPECODE")
+dim apm10a$:fnget_tpl$("APC_TYPECODE")
+readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
+if cvs(apm10a$,2)<>""
+	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
 endif
 [[APE_INVOICEHDR.VENDOR_ID.AVAL]]
 rem "check vend hist file to be sure this vendor/ap type ok and to set some defaults;  display vend cmts
@@ -272,7 +301,6 @@ if gl$="Y"
 	endif
 endif
 [[APE_INVOICEHDR.ADIS]]
-
 rem --- get disc % assoc w/ terms in this rec, and disp distributed bal
 	apm10c_dev=fnget_dev("APC_TERMSCODE")
 	dim apm10c$:fnget_tpl$("APC_TERMSCODE")
@@ -513,13 +541,17 @@ user_tpl.gl_tot_pers$=gls01a.total_pers$
 rem --- may need to disable some ctls based on params
 if user_tpl.multi_types$="N" 
 	user_tpl.dflt_ap_type$=aps01a.ap_type$
-	apm10_dev=fnget_dev("APC_TYPECODE")
-	dim apm10a$:fnget_tpl$("APC_TYPECODE")
-	readrecord (apm10_dev,key=firm_id$+user_tpl.dflt_ap_type$,dom=*next)apm10a$
-	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
 	ctl_name$="APE_INVOICEHDR.AP_TYPE"
 	ctl_stat$="I"
 	gosub disable_fields
+
+	rem --- get default distribution code	
+	apc_typecode_dev=fnget_dev("APC_TYPECODE")
+	dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
+	find record (apc_typecode_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,err=*next)apc_typecode$
+	if cvs(apc_typecode$,2)<>""
+		user_tpl.dflt_dist_cd$=apc_typecode.ap_dist_code$
+	endif
 endif
 if user_tpl.multi_dist$="N" 
 	ctl_name$="APE_INVOICEHDR.AP_DIST_CODE"

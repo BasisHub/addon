@@ -870,17 +870,19 @@ rem --- Get parameter record
 
 rem --- See if Check Printing has already been started
 
-	while 1
-		read (apw01_dev,key=firm_id$,dom=*next)
-		k$=key(apw01_dev,end=*break)
-		if pos(firm_id$=k$)<>1 break
+	k$=""	
+	read (apw01_dev,key=firm_id$,dom=*next)
+	k$=key(apw01_dev,end=*next)
+	if pos(firm_id$=k$)=1 then
 		msg_id$="CHECKS_IN_PROGRESS"
 		gosub disp_message
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-		release
-	wend
+		if pos("PASSVALID"=msg_opt$)=0 then
+			bbjAPI!=bbjAPI()
+			rdFuncSpace!=bbjAPI!.getGroupNamespace()
+			rdFuncSpace!.setValue("+build_task","OFF")
+			release
+		endif
+	endif
 
 rem --- See if we need to clear out ape-04 (computer checks)
 

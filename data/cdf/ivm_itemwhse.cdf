@@ -120,7 +120,7 @@ if num(callpoint!.getUserInput())<0 or fpt(num(callpoint!.getUserInput())) then 
 [[IVM_ITEMWHSE.EOQ.AVAL]]
 if num(callpoint!.getUserInput())<0 then callpoint!.setStatus("ABORT")
 [[IVM_ITEMWHSE.ABC_CODE.AVAL]]
-if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and callpoint!.getUserInput()<>" " callpoint!.setStatus("ABORT")
+if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and cvs(callpoint!.getUserInput(),2)<>"" callpoint!.setStatus("ABORT")
 [[IVM_ITEMWHSE.<CUSTOM>]]
 #include std_missing_params.src
 [[IVM_ITEMWHSE.BSHO]]

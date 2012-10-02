@@ -44,24 +44,65 @@ rem --- Update new addon.syn file
     upgrade%=0
     oldSynFile$=""
     
-	rem --- Build dataMap HashMap of STBL data paths, keyed by STBL
+	rem --- Build stblMap HashMap of SYSSTBL/STBL data paths, keyed by STBL
+	rem --- Build pfxList ArrayList of SYSPFX/PREFIX data paths
+	search$="",replace$=""
     use java.util.HashMap
-    declare HashMap dataMap!
-	dataMap!=new HashMap()
-	dataMap!.put("ADDATA",newLocation$+"/data/")
-	dataMap!.put("APDATA",newLocation$+"/data/")
-	dataMap!.put("ARDATA",newLocation$+"/data/")
-	dataMap!.put("BMDATA",newLocation$+"/data/")
-	dataMap!.put("GLDATA",newLocation$+"/data/")
-	dataMap!.put("IVDATA",newLocation$+"/data/")
-	dataMap!.put("MPDATA",newLocation$+"/data/")
-	dataMap!.put("OPDATA",newLocation$+"/data/")
-	dataMap!.put("PODATA",newLocation$+"/data/")
-	dataMap!.put("PRDATA",newLocation$+"/data/")
-	dataMap!.put("SADATA",newLocation$+"/data/")
-	dataMap!.put("SFDATA",newLocation$+"/data/")
+    declare HashMap stblMap!
+	stblMap!=new HashMap()
+    use java.util.ArrayList
+    declare ArrayList pfxList!
+	pfxList!=new ArrayList()
+	synDev=unt, more=0
+	open(synDev,isz=-1,err=*next)updateSynFile$; more=1
+	while more
+		read(synDev,end=*break)record$
 
-    call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,dataMap!,rdForm!,0,status
+        rem --- get old aon path from SYSDIR/DIR line
+		key$ = record$(1, pos("="=record$) - 1)
+		switch (BBjAPI().TRUE)
+			case key$ = "DIR"
+			case key$ = "SYSDIR"
+				xpos = pos("="=record$)
+				search$ = cvs(record$(xpos+1),3)
+				replace$ = newLocation$+"/"
+				break
+			case key$ = "STBL"
+			case key$ = "SYSSTBL"
+				xpos=pos(" "=record$)
+				stbl$=record$(xpos+1, pos("="=record$(xpos+1))-1)
+				record$=cvs(record$(pos("="=record$,1,2)+1),3)
+				aList!=new ArrayList()
+				aList!.add(record$)
+				gosub search_replace
+				aList!.add(record$)
+				stblMap!.put(stbl$, aList!)
+				break
+			case key$ = "PREFIX"
+			case key$ = "SYSPFX"
+				record$=cvs(record$(pos("="=record$)+1),3)
+				aList!=new ArrayList()
+				aList!.add(record$)
+				gosub search_replace
+				aList!.add(record$)
+				pfxList!.add(aList!)
+				break
+			case default
+				rem --- other lines ... skip
+				break
+		swend
+
+		rem --- process SYSSTBL/STBL lines
+		if(pos("STBL="=record$) = 1 or pos("SYSSTBL="=record$) = 1) then
+		endif
+
+		rem --- process SYSPFX/PREFIX lines
+		if(pos("PREFIX"=record$) = 1 or pos("SYSPFX"=record$) = 1) then
+		endif
+	wend
+	close(synDev)
+
+    call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
     
 rem --- Update new sync XML files
 
@@ -91,6 +132,15 @@ fix_path: rem --- Flip directory path separators
         pos=pos("\"=filePath$)
     wend
 	return
+    
+search_replace: rem --- Search record$ for search$, and replace with replace$
+	rem --- Assumes only one occurrence of search$ per line so don't have 
+	rem --- to deal with situation where pos(search$=replace$)>0
+	pos = pos(search$=record$)
+	if(pos) then
+		record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
+	endif
+    return
     
 rem #include std_error.src
 

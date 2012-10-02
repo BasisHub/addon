@@ -103,6 +103,7 @@ validate_new_sync_dir: rem --- Validate directory for new data/sync location
 
 	focus$="ADX_UPDATEXML.NEW_SYNC_PATH"
 	check_dir_name=1
+	not_download_loc=1
 	gosub validate_sync_dir
 
 	rem --- can't be the same as old data/sync location
@@ -124,6 +125,7 @@ validate_old_sync_dir: rem --- Validate directory for old data/sync location
 
 	focus$="ADX_UPDATEXML.OLD_SYNC_PATH"
 	check_dir_name=1
+	not_download_loc=0
 	gosub validate_sync_dir
 
 	rem --- can't be the same as new data/sync location
@@ -145,6 +147,7 @@ validate_backup_sync_dir: rem --- Validate directory for backup sync location
 
 	focus$="ADX_UPDATEXML.SYNC_BACKUP_DIR"
 	check_dir_name=0
+	not_download_loc=0
 	gosub validate_sync_dir
 
 	success=1
@@ -177,12 +180,14 @@ validate_sync_dir: rem --- Validate directory for data/sync location
 	endif
 
 	rem --- Don’t allow current download location
-	testLoc$=loc_dir$
-	gosub verify_not_download_loc
-	if !loc_ok
-		callpoint!.setFocus(focus$)
-		callpoint!.setStatus("ABORT")
-		return
+	if not_download_loc
+		testLoc$=loc_dir$
+		gosub verify_not_download_loc
+		if !loc_ok
+			callpoint!.setFocus(focus$)
+			callpoint!.setStatus("ABORT")
+			return
+		endif
 	endif
 
 	return

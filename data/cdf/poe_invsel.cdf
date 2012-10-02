@@ -72,7 +72,7 @@ if other
 	write record (poe_invsel_dev)poe_invsel$
 endif
 
-callpoint!.setStatus("RECORD:["+ky$+"]")
+	callpoint!.setStatus("REFGRID")
 [[POE_INVSEL.AREC]]
 rem --- Make sure new grid row is enabled
 util.enableGridRow(Form!,num(callpoint!.getValidationRow()))
@@ -105,8 +105,12 @@ endif
 gosub receiver_already_selected
 
 rem --- enable/disable Invoice Detail button
-
 	gosub able_invoice_detail_button
+
+rem --- update grid and header totals
+	gosub calc_grid_tots
+	gosub disp_totals
+	callpoint!.setStatus("REFRESH")
 [[POE_INVSEL.AGCL]]
 rem print 'show';rem debug
 
@@ -292,6 +296,7 @@ able_invoice_detail_button: rem --- enable/disable Invoice Detail button
 	else
 		callpoint!.setOptionEnabled("INVB",0)
 	endif
+	callpoint!.setOptionEnabled("GDIS",0)
 return
 
 rem #include fndate.src

@@ -22,3 +22,11 @@ SYS-01 System Control
 In addition, there is one trigger that should be placed in the Barista/Addon database.  The .trigger file should be placed in the same directory as the corresponding Barista/Addon data files, and the related .src files should be placed in a src directory directly underneath the Barista/Addon data directory.
 
 GLM-01 Account Master
+
+Enterprise Manager settings:
+The Enterprise Manager "Triggers" setting includes a Configuration tab. Set the
+"Config File:" and "Working Directory:" to reflect the current environment.
+For example:
+Config File: <install>/barista/sys/config/enu/barista.cfg
+Working Directory: <install>/barista
+

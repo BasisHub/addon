@@ -31,7 +31,6 @@ else
 	if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y"then gosub update_iv_oo
 endif
 [[POE_PODET.AWRI]]
-
 rem --- if new row, updt ivm-05 (old poc.ua, now poc_itemvend) 
 
 if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y"
@@ -326,7 +325,6 @@ rem print "cost this row: ",callpoint!.getDevObject("cost_this_row")
 gosub update_header_tots
 callpoint!.setDevObject("cost_this_row",num(callpoint!.getUserInput()))
 [[POE_PODET.AUDE]]
-
 gosub update_header_tots
 po_line_code$=callpoint!.getColumnData("POE_PODET.PO_LINE_CODE")
 if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
@@ -334,7 +332,6 @@ if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
 curr_qty = num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED")) * num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))
 if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y" then gosub update_iv_oo
 [[POE_PODET.ADEL]]
-
 gosub update_header_tots
 
 [[POE_PODET.ADGE]]
@@ -355,6 +352,9 @@ if ldat$<>""
 else
 	callpoint!.setColumnEnabled(-1,"POE_PODET.SO_INT_SEQ_REF",0)
 endif 
+
+callpoint!.setOptionEnabled("DPRT",0)
+callpoint!.setOptionEnabled("QPRT",0)
 [[POE_PODET.BDGX]]
 rem -- loop thru gridVect; if there are any lines not marked deleted, set the callpoint!.setDevObject("dtl_posted") to Y
 
@@ -374,13 +374,6 @@ rem --- set dates from Header
 callpoint!.setColumnData("POE_PODET.NOT_B4_DATE",callpoint!.getHeaderColumnData("POE_POHDR.NOT_B4_DATE"))
 callpoint!.setColumnData("POE_PODET.REQD_DATE",callpoint!.getHeaderColumnData("POE_POHDR.REQD_DATE"))
 callpoint!.setColumnData("POE_PODET.PROMISE_DATE",callpoint!.getHeaderColumnData("POE_POHDR.PROMISE_DATE"))
-
-rem forced focus removed when bug 3999 fixed.CAH callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_PODET.PO_LINE_CODE")
-
-rem --- Make sure new grid row is enabled
-util.enableGridRow(Form!,num(callpoint!.getValidationRow()))
-
-callpoint!.setStatus("REFGRID")
 [[POE_PODET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 rem --- this code was already here... is it right?
@@ -442,7 +435,7 @@ rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callp
 		callpoint!.setColumnData("POE_PODET.WAREHOUSE_ID",callpoint!.getHeaderColumnData("POE_POHDR.WAREHOUSE_ID"))
 		callpoint!.setColumnData("POE_PODET.WO_NO","")
 		callpoint!.setColumnData("POE_PODET.WO_SEQ_REF","")
-		callpoint!.setStatus("REFGRID")
+		callpoint!.setStatus("REFRESH")
 endif
 [[POE_PODET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
@@ -511,7 +504,6 @@ rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PROMISE_DATE",1)
 			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NOT_B4_DATE",1)
 			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PO_MSG_CODE",1)
-			callpoint!.setStatus("REFGRID")
 			break
 		case 4; rem Memo
 			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",0)
@@ -544,6 +536,7 @@ rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 		case default; rem everything else
 			break
 	swend
+			callpoint!.setStatus("REFRESH")
 	callpoint!.setDevObject("line_type",poc_linecode.line_type$)
 
 return

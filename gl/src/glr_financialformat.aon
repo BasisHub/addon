@@ -1,0 +1,265 @@
+rem glr - Financial Report Format Listing
+rem Program glr_financialformat v11.11 02Aug2011 (glm_de)
+rem Created by Codeport Utility (08/02/2011 10:25:23)
+
+rem --- AddonSoftware Version 11.10
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+
+    seterr std_error
+    setesc std_error
+
+rem --- Inits
+
+    declare BBjVector OutVect!
+    declare BBjVector HdrVect!
+    declare BBjVector BrkVect!
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- Open/Lock files
+
+    files=4,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS";rem "gls-01"
+    files$[2]="glm-12",ids$[2]="GLM_FINMASTER"
+    files$[3]="glm-22",ids$[3]="GLM_FINDETAIL"
+    files$[4]="glm-32",ids$[4]="GLM_FINCOLUMNS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    gls01_dev=channels[1]
+    glm12_dev=channels[2]
+    glm22_dev=channels[3]
+    glm32_dev=channels[4]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1]
+    dim glm12a$:templates$[2]
+	dim glm22a$:templates$[3]
+	dim glm32a$:templates$[4]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+
+rem --- DocOut initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Get header info
+
+    read record (glm12_dev,key=firm_id$+gl_rpt_no$,dom=done) glm12a$
+
+	rem --- Get data from glm_fincolumns (glm-32)
+	dim period$[7](1),act_budg$[7](1),amt_unit$[7](1),ratio_per$[7](1),default_pos$[7](3)
+	read (glm32_dev,key=firm_id$+glm12a.gl_rpt_no$,dom=*next)
+	for cnt=0 to 7
+		k$=key(glm32_dev,end=*break)
+		if pos(firm_id$+glm12a.gl_rpt_no$=k$)<>1 then break
+		read record (glm32_dev,key=k$)glm32a$
+		period$[cnt](1)=glm32a.per_type_cde$
+		act_budg$[cnt](1)=glm32a.actbud$
+		amt_unit$[cnt](1)=glm32a.amt_or_units$
+		ratio_per$[cnt](1)=glm32a.ratiopct$
+		default_pos$[cnt](1)=glm32a.default_pos$
+	next cnt
+
+rem --- Report initializations
+
+    headings=2
+    dim headings$[headings]
+    headings$[0]=cvs(sysinfo.firm_name$,2)
+    headings$[1]=cvs(sysinfo.task_desc$,2)
+    headings$[2]=Translate!.getTranslation("AON_FINANCIAL_REPORT_FORMAT_LISTING_FOR_REPORT_")+glm12a.gl_rpt_no$+": "+glm12a.gl_rpt_desc$
+	
+	rem --- Document columns
+    columns=21
+    dim columns$[columns-1,3]
+    columns$[0,0]=Translate!.getTranslation("AON_LINE"),columns$[0,1]="C",columns$[0,2]="5"
+    columns$[1,0]="T",columns$[1,1]="C",columns$[1,2]="2"
+    columns$[2,0]=Translate!.getTranslation("AON_DESCRIPTION"),columns$[2,1]="C",columns$[2,2]="36"
+    columns$[3,0]=Translate!.getTranslation("AON_COL"),columns$[3,1]="C",columns$[3,2]="4"
+    columns$[4,0]=Translate!.getTranslation("AON_EDIT"),columns$[4,1]="C",columns$[4,2]="6"
+    columns$[5,0]=Translate!.getTranslation("AON_TOT"),columns$[5,1]="C",columns$[5,2]="4"
+    columns$[6,0]=Translate!.getTranslation("AON_PCT"),columns$[6,1]="C",columns$[6,2]="4"
+    columns$[7,0]="A",columns$[7,1]="C",columns$[7,2]="2"
+    columns$[8,0]=Translate!.getTranslation("AON_TOT")+"1",columns$[8,1]="C",columns$[8,2]="5"
+    columns$[9,0]=Translate!.getTranslation("AON_TOT")+"2",columns$[9,1]="C",columns$[9,2]="5"
+    columns$[10,0]=Translate!.getTranslation("AON_TOT")+"3",columns$[10,1]="C",columns$[10,2]="5"
+    columns$[11,0]=Translate!.getTranslation("AON_TOT")+"4",columns$[11,1]="C",columns$[11,2]="5"
+    columns$[12,0]=Translate!.getTranslation("AON_TOT")+"5",columns$[12,1]="C",columns$[12,2]="5"
+    columns$[13,0]=Translate!.getTranslation("AON_COL")+"1",columns$[13,1]="C",columns$[13,2]="4"
+    columns$[14,0]=Translate!.getTranslation("AON_COL")+"2",columns$[14,1]="C",columns$[14,2]="4"
+    columns$[15,0]=Translate!.getTranslation("AON_COL")+"3",columns$[15,1]="C",columns$[15,2]="4"
+    columns$[16,0]=Translate!.getTranslation("AON_COL")+"4",columns$[16,1]="C",columns$[16,2]="4"
+    columns$[17,0]=Translate!.getTranslation("AON_COL")+"5",columns$[17,1]="C",columns$[17,2]="4"
+    columns$[18,0]=Translate!.getTranslation("AON_COL")+"6",columns$[18,1]="C",columns$[18,2]="4"
+    columns$[19,0]=Translate!.getTranslation("AON_COL")+"7",columns$[19,1]="C",columns$[19,2]="4"
+    columns$[20,0]=Translate!.getTranslation("AON_COL")+"8",columns$[20,1]="C",columns$[20,2]="4"
+
+rem --- Build Financial Report Format header info for this Report
+
+	OutVect!.addItem(Translate!.getTranslation("AON_HEADING_NO:_")+glm12a.heading_no$)
+	n=fnblank(columns-1)
+	
+	OutVect!.addItem("")
+	OutVect!.addItem("")
+	OutVect!.addItem(Translate!.getTranslation("AON_DOLLAR_MASK:_")+glm12a.amount_mask$)
+	n=fnblank(columns-11)
+    for x=0 to 7
+        OutVect!.addItem(period$[x]+act_budg$[x]+amt_unit$[x]+ratio_per$[x])
+    next x
+	
+	OutVect!.addItem("")
+	OutVect!.addItem("")
+	OutVect!.addItem(Translate!.getTranslation("AON_RATIO_MASK:_")+glm12a.ratio_mask$)
+	n=fnblank(columns-11)
+    for x=0 to 7
+        OutVect!.addItem(default_pos$[x])
+    next x
+	
+	OutVect!.addItem("")
+	OutVect!.addItem("")
+	OutVect!.addItem(Translate!.getTranslation("AON_UNIT_MASK:_")+glm12a.unit_mask$)
+	n=fnblank(columns-3)
+	
+	OutVect!.addItem("")
+	OutVect!.addItem("")
+	OutVect!.addItem(Translate!.getTranslation("AON_PERCENT_MASK:_")+glm12a.percent_mask$)
+	n=fnblank(columns-3)
+
+	n=fnblank(columns)
+	
+rem --- Read detail file
+
+    read (glm22_dev,key=firm_id$+glm12a.gl_rpt_no$,dom=*next)
+
+    while 1
+		k$=key(glm22_dev,end=*break)
+		if pos(firm_id$+glm12a.gl_rpt_no$=k$)<>1 then break
+		read record (glm22_dev) glm22a$
+
+		OutVect!.addItem(glm22a.gl_rpt_line$)
+		OutVect!.addItem(glm22a.line_type$)
+		OutVect!.addItem(glm22a.gl_line_desc$)
+		OutVect!.addItem(glm22a.default_pos$)
+		OutVect!.addItem(glm22a.editing_code$)
+		OutVect!.addItem(glm22a.input_total$)
+		OutVect!.addItem(glm22a.input_percnt$)
+		OutVect!.addItem(glm22a.accum_pct$)
+		for x=0 to 4
+			OutVect!.addItem(field(glm22a$,"output_total_"+str(x+1:"00"))+field(glm22a$,"output_oper_"+str(x+1:"00")))
+		next x
+		for x=0 to 7
+			OutVect!.addItem(field(glm22a$,"gl_rpt_col_"+str(x+1:"00")))
+		next x
+	wend
+
+done: rem --- All done
+
+    goto std_exit
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
+
+rem --- Functions
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+	
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Non-Standard program end - rd_called$ added
+
+    rd_called$="YES";rem --- see to it that only doc_out window closes
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

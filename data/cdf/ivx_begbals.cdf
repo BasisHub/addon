@@ -15,7 +15,5 @@ dim ivs_params$:open_tpls$[1]
 read record (ivs_params_dev,key=firm_id$+"IV00",err=std_missing_params)ivs_params$
 callpoint!.setColumnData("IVX_BEGBALS.PERIOD_YEAR",ivs_params.current_year$+ivs_params.current_per$)
 callpoint!.setStatus("REFRESH")
-[[IVX_BEGBALS.AWIN]]
-
 [[IVX_BEGBALS.<CUSTOM>]]
 #include std_missing_params.src

@@ -6,7 +6,7 @@ rem --- Recalculate totals
 	gosub calculate_tax
 	gosub disp_totals
 
-	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
+ 	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
 	callpoint!.setDevObject("was_on_tot_tab","Y")
 [[OPE_ORDHDR.DISCOUNT_AMT.AVAL]]
 rem --- Discount Amount cannot exceed Total Sales Amount
@@ -307,8 +307,6 @@ rem --- Force focus on the Totals tab
 		endif
 	endif
 [[OPE_ORDHDR.CUSTOMER_ID.AVAL]]
-print "CUSTOMER_ID:AVAL"; rem debug
-	
 	cust_id$ = callpoint!.getUserInput()
 	gosub display_customer
 
@@ -321,6 +319,14 @@ rem --- Set customer in OrderHelper object
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	ordHelp!.setCust_id(cust_id$)
+
+rem --- The cash customer?
+
+	if user_tpl.cash_sale$="Y" and cust_id$ = user_tpl.cash_cust$
+		callpoint!.setColumnData("OPE_ORDHDR.CASH_SALE", "Y")
+       else
+		callpoint!.setColumnData("OPE_ORDHDR.CASH_SALE", "N")
+	endif
 
 rem --- Show customer data
 
@@ -777,7 +783,7 @@ rem --- Save controls in the global userObj! (vector)
 	userObj!.addItem(mwin!.addStaticText(15102,90,40,75,15,"",$8000$))
 	userObj!.addItem(mwin!.addStaticText(15103,295,25,75,15,"",$8000$))
 	userObj!.addItem(mwin!.addStaticText(15104,295,40,75,15,"",$8000$))
-	userObj!.addItem(mwin!.addStaticText(15105,490,25,75,15,"",$0000$))
+	userObj!.addItem(mwin!.addStaticText(15105,490,25,200,15,"",$0000$))
 	userObj!.addItem(mwin!.addStaticText(15106,490,40,75,15,"",$0000$))
  	userObj!.addItem(mwin!.addStaticText(15107,695,20,75,15,"",$0000$)); rem Dropship text (8)
 	userObj!.addItem(mwin!.addStaticText(15108,695,35,160,15,"",$0000$)); rem Manual Price  (9)
@@ -946,8 +952,6 @@ rem --- Does order exist?
 		found = 1
 	endif
 
-	rem print "     found:", found; rem debug
-
 rem --- A new record must be the next sequence
 
 	if found = 0 and new_seq$ = "N" then
@@ -1077,12 +1081,6 @@ end_of_reprintable:
 		gosub get_comm_percent
 
 		gosub get_op_params
-
-		if cust_id$ = ars01a.customer_id$
-			callpoint!.setColumnData("OPE_ORDHDR.CASH_SALE", "Y")
-        else
-			callpoint!.setColumnData("OPE_ORDHDR.CASH_SALE", "N")
-		endif
 
 		user_tpl.price_code$   = ""
 		user_tpl.pricing_code$ = arm02a.pricing_code$
@@ -1334,7 +1332,6 @@ rem --- If cash customer, get correct customer number
 	if user_tpl.cash_sale$="Y" and cvs(callpoint!.getUserInput(),1+2+4)="C" then
 		callpoint!.setColumnData("OPE_ORDHDR.CUSTOMER_ID", user_tpl.cash_cust$)
 		callpoint!.setColumnData("OPE_ORDHDR.CASH_SALE", "Y")
-		user_tpl.is_cash_sale = 1
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPE_ORDHDR.AWRI]]
@@ -1490,7 +1487,7 @@ rem ==========================================================================
 
 		ordship_dev=fnget_dev("OPE_ORDSHIP")
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
-		read record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*endif) ordship_tpl$
+		read record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*next) ordship_tpl$
 
 		callpoint!.setColumnData("<<DISPLAY>>.SNAME",ordship_tpl.name$)
 		callpoint!.setColumnData("<<DISPLAY>>.SADD1",ordship_tpl.addr_line_1$)
@@ -2107,60 +2104,6 @@ return; rem --- Remove this line if the Commission Percent is desired by the cli
 	return
 
 rem ==========================================================================
-do_totals: rem --- Run the totals form and write back
-rem ==========================================================================
-
-rem --- Call the form
-
-	dim dflt_data$[4,1]
-	dflt_data$[1,0] = "TOTAL_SALES"
-	dflt_data$[1,1] = callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")
-	dflt_data$[2,0] = "DISCOUNT_AMT"
-	dflt_data$[2,1] = callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT")
-	dflt_data$[3,0] = "TAX_AMOUNT"
-	dflt_data$[3,1] = callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT")
-	dflt_data$[4,0] = "FREIGHT_AMT"
-	dflt_data$[4,1] = callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT")
-
-rem --- Set Dev Objects for use in the form
-
-	callpoint!.setDevObject("disc_amt",str(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT")))
-	callpoint!.setDevObject("frt_amt",str(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT")))
-
-	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
-:		"OPE_ORDTOTALS", 
-:		stbl("+USER_ID"), 
-:		"", 
-:		"", 
-:		table_chans$[all],
-:		"", 
-:		dflt_data$[all],
-:		user_tpl$,
-:		UserObj!
-
-rem --- Set fields from the Order Totals form and write back
-
-	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-
-	callpoint!.setColumnData("OPE_ORDHDR.TOTAL_SALES",  str(ordHelp!.getExtPrice()))
-	callpoint!.setColumnData("OPE_ORDHDR.TOTAL_COST",   str(ordHelp!.getExtCost()))
-	callpoint!.setColumnData("OPE_ORDHDR.TAXABLE_AMT",  str(ordHelp!.getTaxable()))
-
-	total_amt=num(ordHelp!.getExtPrice())
-	disc_amt=num(callpoint!.getDevObject("disc_amt"))
-	tax_amt=num(callpoint!.getDevObject("tax_amt"))
-	frt_amt=num(callpoint!.getDevObject("frt_amt"))
-	callpoint!.setColumnData("OPE_ORDHDR.DISCOUNT_AMT", str(disc_amt))
-	callpoint!.setColumnData("<<DISPLAY>>.SUBTOTAL",str(total_amt - disc_amt))
-	callpoint!.setColumnData("OPE_ORDHDR.TAX_AMOUNT",   str(tax_amt))
-	callpoint!.setColumnData("OPE_ORDHDR.FREIGHT_AMT", str(frt_amt))
-	callpoint!.setColumnData("<<DISPLAY>>.NET_SALES",str((total_amt - disc_amt) + tax_amt + frt_amt))
-	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT",str((total_amt - disc_amt) + tax_amt + frt_amt))
-	callpoint!.setStatus("REFRESH-SAVE")
-	
-	return
-
-rem ==========================================================================
 get_disk_rec: rem --- Get disk record, update with current form data
               rem     OUT: record_found - true/false (1/0)
               rem          ordhdr_rec$, updated (if record found)
@@ -2200,8 +2143,10 @@ rem ==========================================================================
 	net_sales = sub_tot + tax_amt + freight_amt
 
 	callpoint!.setColumnData("OPE_ORDHDR.TOTAL_COST",str(ttl_ext_cost))
+	callpoint!.setColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
 	callpoint!.setColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
 	callpoint!.setColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
+	callpoint!.setColumnData("OPE_ORDHDR.FREIGHT_AMT",str(freight_amt))
 	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT",str(net_sales))
 
 	callpoint!.setStatus("REFRESH")
@@ -2316,6 +2261,22 @@ rem --- Open needed files
 	open_tables$[41]="IVM_ITEMSYN",open_opts$[41]="OTA"
 
 	gosub open_tables
+
+rem --- Verify that there are line codes - abort if not.
+
+	opc_linecode_dev=fnget_dev("OPC_LINECODE")
+	readrecord(opc_linecode_dev,key=firm_id$,dom=*next)
+	found_one$="N"
+	while 1
+		opc_linecode_key$=key(opc_linecode_dev,end=*break)
+		if pos(firm_id$=opc_linecode_key$)=1 found_one$="Y"
+		break
+	wend
+	if found_one$="N"
+		msg_id$="MISSING_LINECODE"
+		gosub disp_message
+		release
+	endif
 
 rem --- Set table_chans$[all] into util object for getDev() and getTmpl()
 
@@ -2471,12 +2432,10 @@ rem --- Setup user_tpl$
 :		"prev_ship_to:c(1*), " +
 :		"prev_sales_total:n(15), " +
 :		"prev_unitprice:n(15), " +
-:		"is_cash_sale:u(1), " +
 :		"detail_modified:u(1), " +
 :		"record_deleted:u(1), " +
 :		"item_wh_failed:u(1), " +
 :		"do_end_of_form:u(1), " +
-:		"do_totals_form:u(1), " +
 :		"disc_code:c(1*), " +
 :		"tax_code:c(1*), " +
 :		"new_order:u(1), " +
@@ -2505,12 +2464,10 @@ rem --- Setup user_tpl$
 	user_tpl.lotser_flag$      = ivs01a.lotser_flag$
 	user_tpl.pgmdir$           = stbl("+DIR_PGM",err=*next)
 	user_tpl.cur_row           = -1
-	user_tpl.is_cash_sale      = 0
 	user_tpl.detail_modified   = 0
 	user_tpl.record_deleted    = 0
 	user_tpl.item_wh_failed    = 1
 	user_tpl.do_end_of_form    = 1
-	user_tpl.do_totals_form    = 1
 	user_tpl.new_order         = 0
 	user_tpl.credit_limit_warned = 0
 	user_tpl.shipto_warned     = 0

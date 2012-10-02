@@ -1,5 +1,5 @@
 rem ==========================================================================
-rem --- adc_updatexmlfiles.aon 
+rem --- adc_copymods.aon 
 rem --- Call to copy a custom mods project from one location to another,
 rem --- including data files.
 rem --- 
@@ -137,13 +137,13 @@ rem  */
             sourceDir$ = #parseModsPath(sourceSyn$)
 			modsDir! = new File(sourceDir$)
             #log("")
-			meter_text$ = "source dir: " + sourceDir$
+			meter_text$ = "Source directory: " + sourceDir$
             #incrementProgressMeter(meter_text$)
             #log(meter_text$)
 
             rem --- Parse syn filename from source syn path.
 			targetSyn$ = targetDir$ + "/config/" + #parseFileName(sourceSyn$)
-			meter_text$ = "target syn: " + targetSyn$
+			meter_text$ = "Target directory: " + targetDir$
             #incrementProgressMeter(meter_text$)
             #log(meter_text$)
 
@@ -221,7 +221,7 @@ rem  */
         methodend
 
         rem /**
-        rem  * Parse mods directory path from given path.
+        rem  * Parse mods directory path from given path containing config dir.
         rem  *
         rem  * @param BBjString path$
         rem  * @return BBjString modsPath$
@@ -248,6 +248,29 @@ rem  */
         methodend
 
         rem /**
+        rem  * Parse app directory path from given path containing data dir.
+        rem  *
+        rem  * @param BBjString path$
+        rem  * @return BBjString aonPath$
+        rem  */
+        method private BBjString parseAppPath(BBjString path$)
+        appDir$ = path$
+
+            rem --- Flip directory path separators to "/"
+            pos=pos("\"=path$)
+            while pos
+                path$=path$(1, pos-1)+"/"+path$(pos+1)
+                pos=pos("\"=path$)
+            wend
+
+			rem --- Use directory containing the data directory
+			if pos("/data/"=path$+"/")
+				appDir$=path$(1, pos("/data/"=path$+"/",-1) - 1)
+			endif
+            methodret appDir$
+        methodend
+
+        rem /**
         rem  * Parse file name from given path.
         rem  *
         rem  * @param BBjString path$
@@ -263,7 +286,7 @@ rem  */
                 pos=pos("\"=path$)
             wend
 
-            rem --- Get mods directory location from path
+            rem --- Get file name from path
             if pos("/"=path$)
                 filename$=path$(pos("/"=path$,-1)+1)
             else
@@ -435,29 +458,110 @@ rem  */
         rem /**
         rem  * Update adm_modules XML files.
         rem  *
-        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
-		rem  * to point to current project's directories.
-        rem  *
         rem  * @param BBjString projectDir$
         rem  */
         method private void updateAdmModulesXmlFiles(BBjString projectDir$)
+			rem --- get current version from adm_modules~*.xml in data/sync dir
+			declare HashMap newVers!
+			newVers! = #getModuleVersion(new File(projectDir$ + "/data/sync"))
+			
             rem --- update xml files in data/sync dir
-            #updateXmlFiles(new File(projectDir$ + "/data/sync"), projectDir$)
+            #updateXmlFiles(new File(projectDir$ + "/data/sync"))
 
             rem --- update xml files in data/admin_backup dir
-            #updateXmlFiles(new File(projectDir$ + "/data/admin_backup"), projectDir$)
+            #updateXmlFiles(new File(projectDir$ + "/data/admin_backup"), newVers!)
+        methodend
+
+        rem /**
+        rem  * Gets version number from <VERSION_ID> line in adm_modules~*.xml files.
+        rem  *
+        rem  * Returns a HashMap of the <VERSION_ID> in the adm_modules~*.xml files in 
+		rem  * the given directory. The HashMap is keyed by the <ASC_PROD_ID> in the 
+		rem  * adm_modules~*.xml files.
+        rem  *
+        rem  * @param File dir!
+		rem  * @return HashMap <VERSION_ID> keyed by <ASC_PROD_ID>
+        rem  */
+        method private HashMap getModuleVersion(File dir!)
+			declare HashMap newVers!
+			newVers! = new HashMap()
+        
+            rem --- Validate directory
+            if dir! <> null() and dir!.exists() and dir!.isDirectory() and dir!.list() <> null()
+				declare Vector fileVector!
+				declare File xml!
+				fileVector! = new Vector(java.util.Arrays.asList(dir!.list(new NonConsolidatedAdmModules())))
+				appDir$ = #parseAppPath(dir!.getPath())
+				startProdIdTag$ = "<ASC_PROD_ID>"
+				startProdIdTagLen = len(startProdIdTag$)
+				endProdIdTag$ = "</ASC_PROD_ID>"
+				startVersionTag$ = "<VERSION_ID>"
+				startVersionTagLen = len(startVersionTag$)
+				endVersionTag$ = "</VERSION_ID>"
+
+				rem --- read non-consolidated adm_modules~[^\[].*\.xml files
+				if(fileVector!.size()>0) then
+					for i=0 to fileVector!.size()-1
+						module$=""
+						version$=""
+						name$ = cast(BBjString, fileVector!.get(i))
+						xml! = new File(dir!, name$)
+						sourceChan=unt
+						open(sourceChan,isz=-1)xml!.getPath()
+						while 1
+							read(sourceChan,end=*break)record$
+
+							rem --- get module ID in <ASC_PROD_ID> lines
+							if(pos(startProdIdTag$=record$)) then
+								module$ = record$(pos(startProdIdTag$=record$) + startProdIdTagLen)
+								module$ = cvs(module$(1, pos(endProdIdTag$=module$) - 1),3)
+							endif
+
+							rem --- get version in <VERSION_ID> line
+							rem --- assumes <VERSION_ID> line comes after <ASC_PROD_ID> line
+							if(pos(startVersionTag$=record$)) then
+								version$ = record$(pos(startVersionTag$=record$) + startVersionTagLen)
+								version$ = cvs(version$(1, pos(endVersionTag$=version$) - 1),3)
+							endif
+							
+							rem --- add module's version to the HashMap
+							if module$<>"" and version$<>"" then
+								newVers!.put(module$, version$)
+								break
+							endif
+		
+						wend
+						close(sourceChan)
+					next i
+				endif
+            endif
+            
+            methodret newVers!
         methodend
 
         rem /**
         rem  * Update adm_modules XML files in directory. 
         rem  *
         rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
-		rem  * in given directory to point to given project's directories.
+		rem  * to point to current project's directories.
         rem  *
         rem  * @param File dir!
-        rem  * @param BBjString projectDir$
         rem  */
-        method private void updateXmlFiles(File dir!, BBjString projectDir$)
+        method private void updateXmlFiles(File dir!)
+            #updateXmlFiles(dir!, null())
+        methodend
+
+        rem /**
+        rem  * Update adm_modules XML files in directory. 
+        rem  *
+        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
+		rem  * to point to current project's directories. Update <VERSION_ID> tags
+		rem  * from given HashMap keyed by ASC_PROD_ID.
+        rem  *
+        rem  * @param File dir!
+		rem  * @param HashMap newVers!
+        rem  */
+        method private void updateXmlFiles(File dir!, HashMap newVers!)
         
             rem --- Validate directory
             if dir! = null() or !dir!.exists() or !dir!.isDirectory() or dir!.list() = null()
@@ -467,6 +571,13 @@ rem  */
             declare Vector fileVector!
             declare File xml!
             fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
+            projectDir$ = #parseAppPath(dir!.getPath())
+			startProdIdTag$ = "<ASC_PROD_ID>"
+			startProdIdTagLen = len(startProdIdTag$)
+			endProdIdTag$ = "</ASC_PROD_ID>"
+			startVersionTag$ = "<VERSION_ID>"
+			startVersionTagLen = len(startVersionTag$)
+			endVersionTag$ = "</VERSION_ID>"
             startLocalPath$ = "<LOCALE_PATH>"
             startLocalPathLen = len(startLocalPath$)
             endLocalPath$ = "</LOCALE_PATH>"
@@ -484,17 +595,44 @@ rem  */
                     if cast(BBjString, name$).matches("adm_modules~.*\.xml")
                         #log("    updated: " + xml!.getPath())
                         
-                        rem --- move xml file to backup file
+                        rem --- move xml file to backup file with unique name
                         bakFile$=xml!.getPath() + ".bak"
+                        j=0
+                        testChan=unt
+                        while 1
+                            open(testChan,err=*break)bakFile$
+                            close(testChan)
+                            j=j+1
+                            bakFile$=xml!.getPath() + ".bak" + str(j)
+                        wend
                         rename xml!.getPath() to bakFile$, err=*next
                         
                         rem --- copy backup file back to xml file, making necessary updates
+						module$=""
+						version$=""
                         sourceChan=unt
                         open(sourceChan,isz=-1)bakFile$
                         targetChan=unt
                         open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")xml!.getPath()
                         while 1
                             read(sourceChan,end=*break)record$
+
+							rem --- get module ID in <ASC_PROD_ID> lines
+							if(pos(startProdIdTag$=record$)) then
+								module$ = record$(pos(startProdIdTag$=record$) + startProdIdTagLen)
+								module$ = cvs(module$(1, pos(endProdIdTag$=module$) - 1),3)
+							endif
+
+                            rem --- replace version in <VERSION_ID> lines
+							rem --- assumes <VERSION_ID> line comes after <ASC_PROD_ID> line
+                            if(pos(startVersionTag$=record$)) and newVers!<>null() and newVers!.containsKey(module$) then
+                                #log("  <<< " + record$)
+                                line$ = record$(1,pos(startVersionTag$=record$) + startVersionTagLen - 1)
+                                line$ = line$ + cast(BBjString, newVers!.get(module$))
+                                line$ = line$ + record$(pos(endVersionTag$=record$, -1))
+                                record$ = line$
+                                #log("  >>> " + record$)
+                            endif
 
                             rem --- replace path in <LOCALE_PATH> lines
                             if(pos(startLocalPath$=record$)) then
@@ -608,7 +746,7 @@ rem  */
             FileObject.makeDirs(new File(logDir$))
 
             rem --- create and open log file
-            log$ = logDir$+"/updatexml_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+            log$ = logDir$+"/updateapp_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
             erase log$,err=*next
             string log$
             #log_dev=unt
@@ -617,7 +755,7 @@ rem  */
             rem --- write log header info
             print(#log_dev)"Updatexml log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
             print(#log_dev)"Source syn file: " + sourceSyn$
-            print(#log_dev)"Target syn file: " + targetDir$
+            print(#log_dev)"Target directory: " + targetDir$
 
             rem --- write STBL info
             declare Iterator iter!
@@ -658,6 +796,22 @@ rem  */
             print(#log_dev)
             print(#log_dev)"Updatexml log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
             close(#log_dev)
+        methodend
+        
+    classend
+    
+rem /**
+rem  * FilenameFilter Class to filter adm_modules~[^\[].*\.xml files.
+rem  */
+
+    class public NonConsolidatedAdmModules implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+			if file!.matches("adm_modules~[^\[].*\.xml")
+				methodret Boolean.valueOf("true")
+			else
+				methodret Boolean.valueOf("false")
+			endif
         methodend
         
     classend

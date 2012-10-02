@@ -5,8 +5,6 @@ rem --- setup vector
 rem --- Set Current Firm to true
 	callpoint!.setColumnData("ADX_CLEARFILE.ACTIVE","Y")
 	callpoint!.setStatus("REFRESH")
-[[ADX_CLEARFILE.ASHO]]
-
 [[ADX_CLEARFILE.DD_TABLE_ALIAS.AVAL]]
 rem --- Enable button
 	user_tpl.file_name$=callpoint!.getUserInput()

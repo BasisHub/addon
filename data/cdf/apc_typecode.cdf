@@ -1,3 +1,8 @@
+[[APC_TYPECODE.AREC]]
+if callpoint!.getDevObject("multi_dist")<>"Y"
+	ap_dist_code$=callpoint!.getDevObject("ap_dist_code")
+	callpoint!.setColumnData("APC_TYPECODE.AP_DIST_CODE",ap_dist_code$)
+endif
 [[APC_TYPECODE.<CUSTOM>]]
 #include std_missing_params.src
 [[APC_TYPECODE.BSHO]]
@@ -22,7 +27,7 @@ if status$<>"" then
 	release
 endif
 
-ads01_dev=num(chans$[1])
+aps01_dev=num(chans$[1])
 
 rem --- Retrieve miscellaneous templates
 
@@ -40,6 +45,12 @@ dim aps01a$:templates$[1]
 rem --- init/parameters
 
 aps01a_key$=firm_id$+"AP00"
-find record (ads01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+callpoint!.setDevObject("multi_dist",aps01a.multi_dist$)
+callpoint!.setDevObject("ap_dist_code",aps01a.ap_dist_code$)
 
-dim info$[20]
+if aps01a.multi_dist$="Y"
+	callpoint!.setColumnEnabled("APC_TYPECODE.AP_DIST_CODE",1)
+else
+	callpoint!.setColumnEnabled("APC_TYPECODE.AP_DIST_CODE",-1)
+endif

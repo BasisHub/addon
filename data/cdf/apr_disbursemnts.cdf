@@ -1,5 +1,4 @@
 [[APR_DISBURSEMNTS.ARAR]]
-
 use ::ado_func.src::func
 
 	pgmdir$=stbl("+DIR_PGM")

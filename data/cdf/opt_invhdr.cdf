@@ -182,7 +182,6 @@ rem --- Setup user_tpl$
 :     "prev_ship_to:c(1*), " +
 :		"prev_sales_total:n(15), " +
 :		"prev_unitprice:n(15), " +
-:		"is_cash_sale:u(1), " +
 :		"detail_modified:u(1), " +
 :		"record_deleted:u(1), " +
 :		"item_wh_failed:u(1), " +
@@ -209,7 +208,6 @@ rem --- Setup user_tpl$
 	user_tpl.lotser_flag$      = ivs01a.lotser_flag$
 	user_tpl.pgmdir$           = stbl("+DIR_PGM",err=*next)
 	user_tpl.cur_row           = -1
-	user_tpl.is_cash_sale      = 0
 	user_tpl.detail_modified   = 0
 	user_tpl.record_deleted    = 0
 	user_tpl.item_wh_failed    = 1

@@ -32,12 +32,12 @@ rem --- Disable fields, set globals
 	invoice_type$       = UserObj!.getFieldAsString("INVOICE_TYPE")
 
 	if pos(line_type$ = "SPN") = 0 then 
-		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.STD_LIST_PRC", 0)
-		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.DISC_PERCENT", 0)
+		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.STD_LIST_PRC", -1)
+		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.DISC_PERCENT",  -1)
 	endif
 		
 	if invoice_type$ = "P" then
-		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.COMMIT_FLAG", 0)
+		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.COMMIT_FLAG",  -1)
 	endif
 [[OPE_ADDL_OPTS.STD_LIST_PRC.AVAL]]
 rem --- Send back to caller

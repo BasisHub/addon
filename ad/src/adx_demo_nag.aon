@@ -1,0 +1,132 @@
+rem ==========================================================================
+rem --- adx_demo_nag.aon
+rem --- A non-completing Auto-Launch task that pops a friendly nag when launching 
+rem --- Barista/Addon in the <bbj_home> directory to remind users that they're 
+rem --- running the demo/eval copy.
+rem --- 
+rem --- AddonSoftware Version 11.11
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Open File(s)
+	
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="DDM_SYSTEMS", open_opts$[1]="OTA"
+	open_tables$[2]="ADS_AUTOLAUNCH", open_opts$[2]="OTA"
+
+	gosub open_tables
+
+	systems_dev = num(open_chans$[1]);dim systems_rec$:open_tpls$[1]
+    ads_autolaunch=num(open_chans$[2]);dim ads_autolaunch$:open_tpls$[2]
+
+rem --- Get current working directory
+
+	workingDir$ = dir("")
+
+rem --- Get Addon install location
+    
+	readrecord(systems_dev,key=pad("ADDON",16),err=done)systems_rec$
+	aonHome$ = systems_rec.mount_dir$
+	chdir(aonHome$)
+	aonHome$ = dir(""); rem --- remove possible drive letter from path
+	
+rem --- Get current BASIS product download location
+
+	bbjHome$ = System.getProperty("basis.BBjHome")
+	chdir(bbjHome$)
+	bbjHome$ = dir(""); rem --- remove possible drive letter from path
+
+rem --- Reset current working directory
+
+	chdir(workingDir$)
+
+rem --- Display warning if Addon is installed under current BASIS product download location
+
+	if pos(bbjHome$=aonHome$)=1 then
+		msg_id$ = "AON_DEMO_NAG"
+		gosub disp_message
+	endif
+	
+done:rem --- Update AutoLaunch Status
+
+    extractrecord(ads_autolaunch,key="AONDEMONAG")ads_autolaunch$
+    ads_autolaunch.trans_date$=date(0:"%Yl%Mz%Dz")
+    ads_autolaunch.trans_time$=date(0:"%Hz%mz%sz")
+    ads_autolaunch$ = field(ads_autolaunch$)
+    writerecord(ads_autolaunch)ads_autolaunch$
+
+	goto std_exit
+
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto exit_prog
+    endif
+
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),err_text$,err_act$
+    if pos("EXIT"=err_act$) goto std_error_exit
+    if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+    if pos("RETRY"=err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

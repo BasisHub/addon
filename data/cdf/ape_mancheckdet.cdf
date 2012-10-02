@@ -347,6 +347,11 @@ rem --- Look for Open Invoice
 		c!=w!.getControl(5900)
 		c!.setColumnEditable(1,1)
 		c!.setColumnEditable(2,1)
+		if user_tpl.multi_dist$="Y"
+			c!.setColumnEditable(2,1)
+		else
+			c!.setColumnEditable(2,0)
+		endif
 		c!.startEdit(c!.getSelectedRow(),1)
 		callpoint!.setColumnData("APE_MANCHECKDET.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
 		callpoint!.setColumnData("APE_MANCHECKDET.INVOICE_DATE",callpoint!.getHeaderColumnData("APE_MANCHECKHDR.CHECK_DATE"))

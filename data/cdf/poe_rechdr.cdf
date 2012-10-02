@@ -1,3 +1,13 @@
+[[POE_RECHDR.BDEL]]
+rem --- custom delete message
+	msg_id$="PO_DELETE_REC"
+	gosub disp_message
+	if msg_opt$="N" then
+		callpoint!.setStatus("ABORT")
+	endif
+[[POE_RECHDR.BDEQ]]
+rem --- suppress default Barista message
+	callpoint!.setStatus("QUIET")
 [[POE_RECHDR.RECPT_DATE.AVAL]]
 rem --- check receipt date
 if callpoint!.getDevObject("gl_installed")="Y"
@@ -199,7 +209,6 @@ rem --- check dtl_posted flag to see if dropship fields should be disabled
 
 gosub enable_dropship_fields 
 [[POE_RECHDR.ADEL]]
-
 rem ---  loop thru gridVect! -- for each row that isn't marked deleted:
 rem --- 1. call atamo to reverse OO qty for each dtl row that isn't from the original PO and isn't a dropship
 rem --- 2. get rid of poe_linked (poe-08) records, if applicable (will only exist on a dropship)
@@ -334,6 +343,22 @@ rem --- Open Files
 	poe_podet_dev=num(open_chans$[8]),poe_podet_tpl$=open_tpls$[8]
 	pot_rechdr_dev=num(open_chans$[9]),pot_rechdr_tpl$=open_tpls$[9]
 	ivs01_dev=num(open_chans$[15]),ivs01a_tpl$=open_tpls$[15]
+
+rem --- Verify that there are line codes - abort if not.
+
+	poc_linecode_dev=fnget_dev("POC_LINECODE")
+	readrecord(poc_linecode_dev,key=firm_id$,dom=*next)
+	found_one$="N"
+	while 1
+		poc_linecode_key$=key(poc_linecode_dev,end=*break)
+		if pos(firm_id$=poc_linecode_key$)=1 found_one$="Y"
+		break
+	wend
+	if found_one$="N"
+		msg_id$="MISSING_LINECODE"
+		gosub disp_message
+		release
+	endif
 
 rem --- call adc_application to see if OE is installed; if so, open a couple tables for potential use if linking PO to SO for dropship
 

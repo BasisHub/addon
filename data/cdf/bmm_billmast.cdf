@@ -1,15 +1,80 @@
+[[BMM_BILLMAST.BILL_NO.AINP]]
+rem --- Make sure item exists before allowing user to continue
+[[BMM_BILLMAST.AOPT-PLST]]
+rem --- Go run the Pick List form
+
+	bill_no$=callpoint!.getColumnData("BMM_BILLMAST.BILL_NO")
+
+	dim dflt_data$[2,1]
+	dflt_data$[1,0]="BILL_NO_1"
+	dflt_data$[1,1]=bill_no$
+	dflt_data$[2,0]="BILL_NO_2"
+	dflt_data$[2,1]=bill_no$
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"BMR_PACKINGLIST",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+[[BMM_BILLMAST.AOPT-AINQ]]
+rem --- Go run the Availability Inquiry form
+
+	callpoint!.setDevObject("master_bill",callpoint!.getColumnData("BMM_BILLMAST.BILL_NO"))
+
+	dim dflt_data$[3,1]
+	dflt_data$[1,0]="QTY_REQUIRED"
+	dflt_data$[1,1]="1"
+	dflt_data$[2,0]="PROD_DATE"
+	dflt_data$[2,1]=stbl("+SYSTEM_DATE")
+	dflt_data$[3,0]="WAREHOUSE_ID"
+	dflt_data$[3,1]=callpoint!.getDevObject("dflt_whse")
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"BMM_AVAILABILITY",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+[[BMM_BILLMAST.AOPT-HCPY]]
+rem --- Go run the Hard Copy form
+
+	callpoint!.setDevObject("master_bill",callpoint!.getColumnData("BMM_BILLMAST.BILL_NO"))
+
+	dim dflt_data$[2,1]
+	dflt_data$[1,0]="PROD_DATE"
+	dflt_data$[1,1]=stbl("+SYSTEM_DATE")
+	dflt_data$[2,0]="INCLUDE_COMMENT"
+	dflt_data$[2,1]="Y"
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"BMM_DETAILLIST",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
 [[BMM_BILLMAST.AOPT-TOTL]]
 rem --- Go run the Copy form
 
 	callpoint!.setDevObject("master_bill",callpoint!.getColumnData("BMM_BILLMAST.BILL_NO"))
 	callpoint!.setDevObject("lotsize",num(callpoint!.getColumnData("BMM_BILLMAST.STD_LOT_SIZE")))
 
+	dim dflt_data$[2,1]
+	dflt_data$[1,0]="PROD_DATE"
+	dflt_data$[1,1]=stbl("+SYSTEM_DATE")
+	dflt_data$[2,0]="WAREHOUSE_ID"
+	dflt_data$[2,1]=callpoint!.getDevObject("dflt_whse")
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		"BME_TOTALS",
 :		stbl("+USER_ID"),
 :		"MNT",
 :		"",
-:		table_chans$[all]
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
 [[BMM_BILLMAST.STD_LOT_SIZE.AVAL]]
 rem --- Set devobject
 
@@ -18,6 +83,7 @@ rem --- Set devobject
 rem --- Set DevObject
 
 	item$=callpoint!.getUserInput()
+	if cvs(item$,3)="" break
 	callpoint!.setDevObject("master_bill",item$)
 
 rem --- set defaults for new record
@@ -74,7 +140,7 @@ rem --- Set DevObjects required
 	callpoint!.setDevObject("master_bill","")
 	callpoint!.setDevObject("lotsize",0)
 
-	num_files=6
+	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="BMM_BILLMAT",open_opts$[1]="OTA"
 	open_tables$[2]="BMM_BILLOPER",open_opts$[2]="OTA"
@@ -82,6 +148,7 @@ rem --- Set DevObjects required
 	open_tables$[4]="BMM_BILLSUB",open_opts$[4]="OTA"
 	open_tables$[5]="IVM_ITEMMAST",open_opts$[5]="OTA"
 	open_tables$[6]="IVS_PARAMS",open_opts$[6]="OTA"
+	open_tables$[7]="BMC_OPCODES",open_opts$[7]="OTA"
 	gosub open_tables
 
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]

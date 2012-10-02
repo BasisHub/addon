@@ -1,7 +1,7 @@
 rem ==========================================================================
 rem --- adc_updatexmlfiles.aon 
 rem --- Call to copy and update sync XML files created via Barista's utility
-rem --- Create Sync File Backup
+rem --- Create Sync File Backup. Also copies barista/settings directory.
 rem --- 
 rem --- AddonSoftware Version 10.0
 rem --- Copyright © 2010, BASIS International, Ltd.
@@ -116,46 +116,53 @@ rem  */
         rem  * @param BBjInt upgrade%
         rem  */
         method public void updateXmlFiles(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
-            aonDir$ = #parseAonPath(newSyncLoc$)
-            if upgrade% then #meter_total_recs = 90
+            appDir$ = #parseAppPath(newSyncLoc$)
+            if upgrade% then 
+				rem --- count number of settings files
+				#meter_total_recs = 90 + #copyDirectories(new File(#parseSettingsPath(oldSyncLoc$)), null())
+			endif
             #meter! = #createProgressMeter()
             #openLog(newSyncLoc$, oldSyncLoc$, syncBackupDir$, upgrade%)
 
             if upgrade%
                 rem --- copy non-branded sync xml files from provided location
-                rem --- (aonDir$ path separators already flipped to "/")
-rem                #copyFiles(new File(syncBackupDir$), new File(aonDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
-                #copyFiles(new File(syncBackupDir$), new File(aonDir$(1,pos("/"=aonDir$,-1)) + "barista/admin_backup"), new XmlFilter())
+                rem --- (appDir$ path separators already flipped to "/")
+rem                #copyFiles(new File(syncBackupDir$), new File(appDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
+                #copyFiles(new File(syncBackupDir$), new File(appDir$(1,pos("/"=appDir$,-1)) + "barista/admin_backup"), new XmlFilter())
 
                 rem --- copy branded consolidated (not non-consolidated) sync xml files
                 rem --- (prior to v11.0 branded consolidated sync xml files were in data/sync directory,
                 rem ---  and non-consolidated sync xml files were deleted when consolidated files were created)
-                oldAonDir$ = #parseAonPath(oldSyncLoc$)
+                oldappDir$ = #parseAppPath(oldSyncLoc$)
                 declare File oldBackupDir!
-                oldBackupDir! = new File(oldAonDir$ + "/data/admin_backup")
+                oldBackupDir! = new File(oldappDir$ + "/data/admin_backup")
                 if !oldBackupDir!.exists() or !oldBackupDir!.isDirectory()
                     oldBackupDir! = new File(oldSyncLoc$)
                 endif
-rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
-                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/admin_backup"), new XmlFilter())
+rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
+                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/admin_backup"), new XmlFilter())
 
-				rem --- copy old ads_masks~*.xml files, except ads_masks~99*.xml files
+				rem --- copy old ads_masks~*.xml files, except ads_masks~99*.xml and ads_masks~[*.xml files
 				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
-                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new MasksFilter())
+                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new MasksFilter())
 
-				rem --- copy old ads_sequences~*.xml files, except ads_sequences~99*.xml files
+				rem --- copy old ads_sequences~*.xml files, except ads_sequences~99*.xml and ads_sequences~[*.xml files
 				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
-                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), new SequencesFilter())
+                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new SequencesFilter())
+				
+				rem --- recursively copy old barista/settings directory
+                #log("")
+				#copyDirectories(new File(#parseSettingsPath(oldSyncLoc$)), new File(#parseSettingsPath(newSyncLoc$)))
             endif
 			
 			rem --- get current version from adm_modules~*.xml in data/sync dir
 			declare HashMap newVers!
-			newVers! = #getModuleVersion(new File(aonDir$ + "/data/sync"))
+			newVers! = #getModuleVersion(new File(appDir$ + "/data/sync"))
             
             rem --- update xml files in data/sync dir
-            #updateXmlFiles(new File(aonDir$ + "/data/sync"))
+            #updateXmlFiles(new File(appDir$ + "/data/sync"))
             rem --- update xml files in data/admin_backup dir
-            #updateXmlFiles(new File(aonDir$ + "/data/admin_backup"), newVers!)
+            #updateXmlFiles(new File(appDir$ + "/data/admin_backup"), newVers!)
 
             #closeLog()
             #destroyProgressMeter()
@@ -230,7 +237,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
 				declare Vector fileVector!
 				declare File xml!
 				fileVector! = new Vector(java.util.Arrays.asList(dir!.list(new NonConsolidatedAdmModules())))
-				aonDir$ = #parseAonPath(dir!.getPath())
+				appDir$ = #parseAppPath(dir!.getPath())
 				startProdIdTag$ = "<ASC_PROD_ID>"
 				startProdIdTagLen = len(startProdIdTag$)
 				endProdIdTag$ = "</ASC_PROD_ID>"
@@ -238,7 +245,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
 				startVersionTagLen = len(startVersionTag$)
 				endVersionTag$ = "</VERSION_ID>"
 
-				rem --- read non-consolidated adm_modules~01007514\w*\.xml files (consolidated and non-consolidated)
+				rem --- read non-consolidated adm_modules~[^\[].*\.xml files
 				if(fileVector!.size()>0) then
 					for i=0 to fileVector!.size()-1
 						module$=""
@@ -263,6 +270,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
 							endif
 							
 							rem --- add module's version to the HashMap
+							rem --- assumes <VERSION_ID> line comes after <ASC_PROD_ID> line
 							if module$<>"" and version$<>"" then
 								newVers!.put(module$, version$)
 								break
@@ -278,7 +286,10 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
         methodend
 
         rem /**
-        rem  * Update XML files in directory. 
+        rem  * Update adm_modules XML files in directory. 
+        rem  *
+        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
+		rem  * to point to current project's directories.
         rem  *
         rem  * @param File dir!
         rem  */
@@ -287,7 +298,11 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
         methodend
 
         rem /**
-        rem  * Update XML files in directory. 
+        rem  * Update adm_modules XML files in directory. 
+        rem  *
+        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
+		rem  * to point to current project's directories. Update <VERSION_ID> tags
+		rem  * from given HashMap keyed by ASC_PROD_ID.
         rem  *
         rem  * @param File dir!
 		rem  * @param HashMap newVers!
@@ -302,7 +317,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
             declare Vector fileVector!
             declare File xml!
             fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
-            aonDir$ = #parseAonPath(dir!.getPath())
+            appDir$ = #parseAppPath(dir!.getPath())
 			startProdIdTag$ = "<ASC_PROD_ID>"
 			startProdIdTagLen = len(startProdIdTag$)
 			endProdIdTag$ = "</ASC_PROD_ID>"
@@ -324,8 +339,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                     xml! = new File(dir!, name$)
                     
                     rem --- update adm_modules~*.xml files (consolidated and non-consolidated)
-                    if cast(BBjString, name$).matches("adm_modules~\[01007514\w*\]\.xml") or
-:                      cast(BBjString, name$).matches("adm_modules~01007514\w*\.xml")
+                    if cast(BBjString, name$).matches("adm_modules~.*\.xml")
                         #incrementProgressMeter("updating: " + xml!.getPath())
                         #log("UPDATED: " + xml!.getPath())
                         
@@ -342,6 +356,8 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                         rename xml!.getPath() to bakFile$, err=*next
                         
                         rem --- copy backup file back to xml file, making necessary updates
+						module$=""
+						version$=""
                         sourceChan=unt
                         open(sourceChan,isz=-1)bakFile$
                         targetChan=unt
@@ -370,7 +386,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                             if(pos(startLocalPath$=record$)) then
                                 #log("  <<< " + record$)
                                 line$ = record$(1,pos(startLocalPath$=record$) + startLocalPathLen - 1)
-                                line$ = line$ + aonDir$ + "/prop/"
+                                line$ = line$ + appDir$ + "/prop/"
                                 line$ = line$ + record$(pos(endLocalPath$=record$, -1))
                                 record$ = line$
                                 #log("  >>> " + record$)
@@ -380,7 +396,7 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                             if(pos(startDdMountDir$=record$)) then
                                 #log("  <<< " + record$)
                                 line$ = record$(1,pos(startDdMountDir$=record$) + startDdMountDirLen - 1)
-                                line$ = line$ + aonDir$ + "/"
+                                line$ = line$ + appDir$ + "/"
                                 line$ = line$ + record$(pos(endDdMountDir$=record$, -1))
                                 record$ = line$
                                 #log("  >>> " + record$)
@@ -397,13 +413,72 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
         methodend
 
         rem /**
-        rem  * Parse aon directory path from given path.
+        rem  * Recursively copy a directory.
+        rem  *
+        rem  * Recursively copies a directory from source File to target File. Target can
+		rem  * be null when just need to count the number of files that will be copied.
+        rem  *
+        rem  * @param File source
+        rem  * @param File target
+		rem  * @return int count
+        rem  */
+        method private BBjInt copyDirectories(File source!, File target!)
+			count%=0
+    
+            rem -- recursively process directories and copy files
+            if(source!.isDirectory()) then
+            
+                rem --- create new directory if it doesn't exist
+                FileObject.makeDirs(target!)
+
+                rem --- get list of what is in the source dir, and process it
+				declare File targetFile!
+                declare Vector fileVector!
+                fileVector! = new Vector(java.util.Arrays.asList(source!.list()))
+                if(fileVector!.size()>0) then
+                    for i=0 to fileVector!.size()-1
+						if target!<>null() then
+							targetFile!=new File(target!, cast(BBjString, fileVector!.get(i)))
+						else
+							targetFile!=null()
+						endif
+                        c% = #copyDirectories(new File(source!, cast(BBjString, fileVector!.get(i))), targetFile!)
+						count%=count% + c%
+                    next i
+                endif
+                
+            else
+                
+                rem --- copy file
+				if target!<>null() then
+					#incrementProgressMeter("copying: " + source!.getPath())
+					sourceChan=unt
+					open(sourceChan,isz=-1,err=*endif)source!.getPath()
+					targetChan=unt
+					open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+					while 1
+						readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+						writerecord(targetChan)record$
+					wend
+					close(sourceChan)
+					close(targetChan)
+					#log("COPIED: " + source!.getPath())
+				endif
+				count%=count% + 1
+               
+            endif
+
+            methodret count%
+        methodend
+
+        rem /**
+        rem  * Parse app directory path from given path.
         rem  *
         rem  * @param BBjString path$
         rem  * @return BBjString aonPath$
         rem  */
-        method private BBjString parseAonPath(BBjString path$)
-        aonDir$ = ""
+        method private BBjString parseAppPath(BBjString path$)
+        appDir$ = path$
 
             rem --- Flip directory path separators to "/"
             pos=pos("\"=path$)
@@ -412,16 +487,25 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
                 pos=pos("\"=path$)
             wend
 
-            rem --- Get aon directory location from path
-            if pos("/aon/"=path$+"/")
-                aonDir$=path$(1, pos("/aon/"=path$+"/",-1) + len("/aon") - 1)
-            else
-                rem --- aon directory not found, so use directory containing the data directory
-                if pos("/data/"=path$+"/")
-                    aonDir$=path$(1, pos("/data/"=path$+"/",-1) - 1)
-                endif
-            endif
-            methodret aonDir$
+			rem --- Use directory containing the data directory
+			if pos("/data/"=path$+"/")
+				appDir$=path$(1, pos("/data/"=path$+"/",-1) - 1)
+			endif
+            methodret appDir$
+        methodend
+
+        rem /**
+        rem  * Parse barista/settings directory path from given path.
+        rem  *
+        rem  * @param BBjString path$
+        rem  * @return BBjString settingsPath$
+        rem  */
+        method private BBjString parseSettingsPath(BBjString path$)
+
+            appDir$ = #parseAppPath(path$)
+			settingsDir$ = appDir$(1,pos("/"=appDir$,-1)) + "barista/settings"
+
+            methodret settingsDir$
         methodend
 
         rem /**
@@ -502,9 +586,9 @@ rem                #copyFiles(oldBackupDir!, new File(aonDir$ + "/data/sync"), n
         rem  */
         method private void openLog(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
             rem --- log directory is under aon at same level as data directory
-            aonDir$ = #parseAonPath(newSyncLoc$)
-            logDir$ = aonDir$ + "/logs"
-            appDir$ = aonDir$
+            appDir$ = #parseAppPath(newSyncLoc$)
+            logDir$ = appDir$ + "/logs"
+            appDir$ = appDir$
             
             rem --- create logs directory at new location
             FileObject.makeDirs(new File(logDir$))
@@ -562,13 +646,13 @@ rem  */
     classend
 
 rem /**
-rem  * FilenameFilter Class to filter ads_masks~*.xml files, excluding ads_masks~99*.xml files.
+rem  * FilenameFilter Class to filter ads_masks~*.xml files, excluding ads_masks~99*.xml and ads_masks~[*.xml files.
 rem  */
 
     class public MasksFilter implements java.io.FilenameFilter
 
         method public boolean accept(File dir!, String file!)
-			if file!.startsWith("ads_masks~") and !file!.startsWith("ads_masks~99") and file!.endsWith(".xml")
+			if file!.startsWith("ads_masks~") and !file!.startsWith("ads_masks~99") and !file!.startsWith("ads_masks~[") and file!.endsWith(".xml")
 				methodret Boolean.valueOf("true")
 			else
 				methodret Boolean.valueOf("false")
@@ -578,13 +662,13 @@ rem  */
     classend
 
 rem /**
-rem  * FilenameFilter Class to filter ads_sequences~*.xml files, excluding ads_sequences~99*.xml files.
+rem  * FilenameFilter Class to filter ads_sequences~*.xml files, excluding ads_sequences~99*.xml and ads_sequences~[*.xml files.
 rem  */
 
     class public SequencesFilter implements java.io.FilenameFilter
 
         method public boolean accept(File dir!, String file!)
-			if file!.startsWith("ads_sequences~") and !file!.startsWith("ads_sequences~99") and file!.endsWith(".xml")
+			if file!.startsWith("ads_sequences~") and !file!.startsWith("ads_sequences~99") and !file!.startsWith("ads_sequences~[") and file!.endsWith(".xml")
 				methodret Boolean.valueOf("true")
 			else
 				methodret Boolean.valueOf("false")
@@ -594,13 +678,13 @@ rem  */
     classend
     
 rem /**
-rem  * FilenameFilter Class to filter adm_modules~01007514\w*\.xml files.
+rem  * FilenameFilter Class to filter adm_modules~[^\[].*\.xml files.
 rem  */
 
     class public NonConsolidatedAdmModules implements java.io.FilenameFilter
 
         method public boolean accept(File dir!, String file!)
-			if file!.matches("adm_modules~01007514\w*\.xml")
+			if file!.matches("adm_modules~[^\[].*\.xml")
 				methodret Boolean.valueOf("true")
 			else
 				methodret Boolean.valueOf("false")

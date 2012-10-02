@@ -1,6 +1,6 @@
 [[APE_RECURRINGHDR.BTBL]]
 rem --- Open/Lock files
-files=6,begfile=1,endfile=6
+files=7,begfile=1,endfile=7
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="APT_INVOICEDIST";rem --- "apt-02"
 files$[2]="APM_VENDCMTS";rem --- "apm-09
@@ -8,6 +8,7 @@ files$[3]="APM_VENDMAST";rem --- "apm-01"
 files$[4]="APM_VENDHIST";rem --- "apm-02"
 files$[5]="APS_PARAMS";rem --- "ads-01"
 files$[6]="GLS_PARAMS";rem --- "gls-01"
+files$[7]="APC_TYPECODE";rem --- "apm-10A"
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
 next wkx
@@ -34,7 +35,7 @@ dim aps01a$:templates$[5],gls01a$:templates$[6]
 user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),glworkfile:c(16),"
 user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),units_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"misc_entry:c(1),inv_in_ape03:c(1),inv_in_apt02:c(1),"
-user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_terms_cd:c(2),dflt_pymt_grp:c(2),"
+user_tpl_str$=user_tpl_str$+"dflt_ap_type:c(2),dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_terms_cd:c(2),dflt_pymt_grp:c(2),"
 user_tpl_str$=user_tpl_str$+"disc_pct:c(5),dist_bal_ofst:c(1),inv_amt:c(10),tot_dist:c(10),open_inv_textID:c(5)"
 dim user_tpl$:user_tpl_str$
 rem --- set up UserObj! as vector to store dist bal display control
@@ -76,7 +77,9 @@ aps01a_key$=firm_id$+"AP00"
 find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
 user_tpl.amt_msk$=aps01a.amount_mask$
 user_tpl.multi_types$=aps01a.multi_types$
+user_tpl.dflt_ap_type$=aps01a.ap_type$
 user_tpl.multi_dist$=aps01a.multi_dist$
+user_tpl.dflt_dist_cd$=aps01a.ap_dist_code$
 user_tpl.ret_flag$=aps01a.ret_flag$
 user_tpl.misc_entry$=aps01a.misc_entry$
 gls01a_key$=firm_id$+"GL00"
@@ -86,14 +89,31 @@ user_tpl.glyr$=gls01a.current_year$
 user_tpl.glper$=gls01a.current_per$
 user_tpl.gl_tot_pers$=gls01a.total_pers$
 
-rem --- disable access to AP Type if not using multi types
+rem --- if not using multi AP types, disable access to AP Type and get default distribution code
 
 if user_tpl.multi_types$<>"Y"
 	callpoint!.setTableColumnAttribute("APE_RECURRINGHDR.AP_TYPE","PVAL",$22$+aps01a.ap_type$+$22$)
+
+	rem --- get default distribution code	
+	apm10_dev=fnget_dev("APC_TYPECODE")
+	dim apm10a$:fnget_tpl$("APC_TYPECODE")
+	readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
+	if cvs(apm10a$,2)<>""
+		user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
+	endif
+
+	rem --- if not using multi distribution codes, initialize and disable Distribution Code
+	if user_tpl.multi_dist$<>"Y"
+		callpoint!.setTableColumnAttribute("APE_RECURRINGHDR.AP_DIST_CODE","PVAL",$22$+user_tpl.dflt_dist_cd$+$22$)
+	endif
 endif
 [[APE_RECURRINGHDR.AP_INV_NO.AVAL]]
 ctl_name$="APE_RECURRINGHDR.AP_DIST_CODE"
-ctl_stat$=""
+if user_tpl.multi_dist$="Y" 
+	ctl_stat$=""
+else
+	ctl_stat$="D"
+endif
 gosub disable_fields
 ctl_name$="APE_RECURRINGHDR.INVOICE_DATE"
 ctl_stat$=""
@@ -107,9 +127,14 @@ callpoint!.setColumnData("<<DISPLAY>>.comments","")
 user_tpl.inv_amt$=""
 user_tpl.tot_dist$=""
 callpoint!.setColumnData("<<DISPLAY>>.DIST_BAL","0")
+
 rem --- Re-enable disabled fields
 ctl_name$="APE_RECURRINGHDR.AP_DIST_CODE"
-ctl_stat$=""
+if user_tpl.multi_dist$="Y" 
+	ctl_stat$=""
+else
+	ctl_stat$="D"
+endif
 gosub disable_fields
 ctl_name$="APE_RECURRINGHDR.INVOICE_DATE"
 ctl_stat$=""
@@ -161,9 +186,18 @@ if cvs(callpoint!.getUserInput(),3)=""
 	callpoint!.setStatus("REFRESH")
 endif
 [[APE_RECURRINGHDR.AP_TYPE.AVAL]]
-if cvs(callpoint!.getUserInput(),3)=""
-	callpoint!.setUserInput("  ")
+user_tpl.dflt_ap_type$=callpoint!.getUserInput()
+if user_tpl.dflt_ap_type$=""
+	user_tpl.dflt_ap_type$="  "
+	callpoint!.setUserInput(user_tpl.dflt_ap_type$)
 	callpoint!.setStatus("REFRESH")
+endif
+
+apm10_dev=fnget_dev("APC_TYPECODE")
+dim apm10a$:fnget_tpl$("APC_TYPECODE")
+readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
+if cvs(apm10a$,2)<>""
+	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
 endif
 [[APE_RECURRINGHDR.ARNF]]
 rem record not in ape-03; is it in apt-02?
@@ -382,10 +416,6 @@ userObj!.addItem(dist_bal!)
 
 rem --- may need to disable some ctls based on params
 if user_tpl.multi_types$="N" 
-	apm10_dev=fnget_dev("APC_TYPECODE")
-	dim apm10a$:fnget_tpl$("APC_TYPECODE")
-	readrecord (apm10_dev,key=firm_id$+"  ",dom=*next)apm10a$
-	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
 	ctl_name$="APE_RECURRINGHDR.AP_TYPE"
 	ctl_stat$="I"
 	gosub disable_fields
@@ -412,5 +442,4 @@ if gl$="N"
 		c!.setColumnEditable(x,0)
 	next x
 endif
-if user_tpl.misc_entry$="N" c!.setColumnEditable(2,0)
-if user_tpl.units_flag$="N" c!.setColumnEditable(4,0)
+if user_tpl.units_flag$="N" c!.setColumnEditable(3,0)

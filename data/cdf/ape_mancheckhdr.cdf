@@ -1,3 +1,17 @@
+[[APE_MANCHECKHDR.AP_TYPE.AVAL]]
+user_tpl.dflt_ap_type$=callpoint!.getUserInput()
+if user_tpl.dflt_ap_type$=""
+	user_tpl.dflt_ap_type$="  "
+	callpoint!.setUserInput(user_tpl.dflt_ap_type$)
+	callpoint!.setStatus("REFRESH")
+endif
+
+apm10_dev=fnget_dev("APC_TYPECODE")
+dim apm10a$:fnget_tpl$("APC_TYPECODE")
+readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
+if cvs(apm10a$,2)<>""
+	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
+endif
 [[APE_MANCHECKHDR.BPFX]]
 rem --- don't allow access to the grid if doing a void or reversal
 rem --- there is a disable_grid routine which works, but F7 still tries to jump there and causes Barista error
@@ -407,9 +421,18 @@ user_tpl.amt_msk$=aps01a.amount_mask$
 user_tpl.multi_types$=aps01a.multi_types$
 user_tpl.dflt_ap_type$=aps01a.ap_type$
 user_tpl.multi_dist$=aps01a.multi_dist$
+user_tpl.dflt_dist_cd$=aps01a.ap_dist_code$
 user_tpl.ret_flag$=aps01a.ret_flag$
 user_tpl.misc_entry$=aps01a.misc_entry$
 user_tpl.post_closed$=aps01a.post_closed$
+if user_tpl.multi_types$<>"Y"
+	apm10_dev=fnget_dev("APC_TYPECODE")
+	dim apm10a$:fnget_tpl$("APC_TYPECODE")
+	readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
+	if cvs(apm10a$,2)<>""
+		user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
+	endif
+endif
 gls01a_key$=firm_id$+"GL00"
 find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 user_tpl.units_flag$=gls01a.units_flag$
@@ -514,7 +537,6 @@ print "open_check$ reset"; rem debug
 
 user_tpl.reuse_chk$=""
 user_tpl.open_check$=""
-user_tpl.dflt_dist_cd$=""
 user_tpl.dflt_gl_account$=""
 callpoint!.setColumnData("<<DISPLAY>>.comments","")
 rem --- enable/disable grid cells
@@ -530,7 +552,6 @@ rem --- if not multi-type then set the defalut AP Type
 if user_tpl.multi_types$="N" then
 	callpoint!.setColumnData("APE_MANCHECKHDR.AP_TYPE",user_tpl.dflt_ap_type$)
 endif
-
 [[APE_MANCHECKHDR.AREA]]
 print "Head: AREA (After Record Read)"; rem debug
 print "open_check$ is reset"; rem debug

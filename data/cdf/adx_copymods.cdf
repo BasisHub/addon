@@ -241,7 +241,7 @@ rem --- Validate source syn file
 			 i=i+1
 			version$=synVersion$+"_"+str(i)
 		wend
-		callpoint!.setDevObject("target_dir",targetDir$)
+		callpoint!.setDevObject("target_dir",targetDir$+"/config")
 		synVersion$=version$
 		callpoint!.setDevObject("syn_version",synVersion$)
 
@@ -393,7 +393,8 @@ source_target_value: rem -- Set default new target value based on new config loc
 						endif
 					endif
 				endif
-				target_value$=config_loc$+"/"+verDir$
+				newModsDir$=config_loc$(1,pos("/config/"=config_loc$+"/",-1))
+				target_value$=newModsDir$+verDir$
 			else
 				rem --- Append new version directory to source path
 				if aFile!.isDirectory()
@@ -510,17 +511,24 @@ verify_syn_file_ext: rem --- Verify file extension is .syn
 validate_config_loc: rem --- Validate new config location
 
 	abort=0
+	filePath$=config_loc$
+	gosub fix_path
+	config_loc$=filePath$
 
-	rem --- Remove trailing slashes (/ and \) from new config location
+	rem --- Remove trailing slashes (/ or \) from new config location
 
 	while len(config_loc$) and pos(config_loc$(len(config_loc$),1)="/\")
 		config_loc$ = config_loc$(1, len(config_loc$)-1)
 	wend
 
-	rem --- Remove trailing “/config”
+	rem --- As necessary, add trailing “/config” or remove everything after it
 
-	if len(config_loc$)>=7 and pos(config_loc$(1+len(config_loc$)-7)="/config\config" ,7)
-		config_loc$ = config_loc$(1, len(config_loc$)-7)
+	if pos("/config/"=config_loc$+"/")=0 then
+		config_loc$=config_loc$+"/config"
+	endif
+
+	if pos("/config/"=config_loc$+"/",-1)<>len(config_loc$)-6 then
+		config_loc$=config_loc$(1,pos("/config/"=config_loc$,-1)+6)
 	endif
 
 	rem --- Don’t allow current download location

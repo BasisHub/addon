@@ -1,7 +1,16 @@
+[[APM_VENDHIST.ARNF]]
+rem --- initialize new record
+	if user_tpl.multi_dist$<>"Y"
+		callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE",user_tpl.dflt_dist_code$)
+		callpoint!.setStatus("REFRESH")
+	endif
+[[APM_VENDHIST.AREC]]
+if user_tpl.multi_types$<>"Y" 
+	callpoint!.setColumnData("APM_VENDHIST.AP_TYPE",user_tpl.dflt_ap_type$)
+	callpoint!.setStatus("REFRESH")
+endif
 [[APM_VENDHIST.BSHO]]
-if user_tpl.multi_dist$="Y"
-	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",1)
-else
+if user_tpl.multi_dist$="N"
 	callpoint!.setColumnEnabled("APM_VENDHIST.AP_DIST_CODE",-1)
 endif
 [[APM_VENDHIST.BTBL]]
@@ -13,17 +22,31 @@ rem --- Retrieve parameter data
 	find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$ 
 
 rem -- store info needed for validation, etc., in user_tpl$
-	dim user_tpl$:"multi_types:c(1),multi_dist:c(1),ret_flag:c(1),dflt_ap_type:c(2)"
+	dim user_tpl$:"multi_types:c(1),multi_dist:c(1),ret_flag:c(1),dflt_ap_type:c(2),dflt_dist_code:c(2)"
 	user_tpl.multi_types$=aps01a.multi_types$
 	user_tpl.multi_dist$=aps01a.multi_dist$
 	user_tpl.ret_flag$=aps01a.ret_flag$
  	user_tpl.dflt_ap_type$=aps01a.ap_type$
+	user_tpl.dflt_dist_code$=aps01a.ap_dist_code$
 
-rem --- disable access to AP Type if not using multi types
+rem --- if not using multi AP types, disable access to AP Type and get default distribution code
 
-if user_tpl.multi_types$<>"Y"
-	callpoint!.setTableColumnAttribute("APM_VENDHIST.AP_TYPE","PVAL",$22$+user_tpl.dflt_ap_type$+$22$)
-endif
+	if user_tpl.multi_types$<>"Y"
+		callpoint!.setTableColumnAttribute("APM_VENDHIST.AP_TYPE","PVAL",$22$+user_tpl.dflt_ap_type$+$22$)
+
+		rem --- get default distribution code	
+		apc_typecode_dev=fnget_dev("APC_TYPECODE")
+		dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
+		find record (apc_typecode_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,err=*next)apc_typecode$
+		if cvs(apc_typecode$,2)<>""
+			user_tpl.dflt_dist_code$=apc_typecode.ap_dist_code$
+		endif
+
+		rem --- if not using multi distribution codes, initialize and disable Distribution Code
+		if user_tpl.multi_dist$<>"Y"
+			callpoint!.setTableColumnAttribute("APM_VENDHIST.AP_DIST_CODE","PVAL",$22$+user_tpl.dflt_dist_code$+$22$)
+		endif
+	endif
 [[APM_VENDHIST.PAYMENT_GRP.AVAL]]
 if callpoint!.getUserInput()=""
 	callpoint!.setUserInput("  ")
@@ -83,46 +106,28 @@ if gl$<>"Y"
 	ctl_stat$="I"
 	gosub disable_fields
 endif
-
-rem escape; rem  before disable reten
-rem if user_tpl.ret_flag$="N" 
-rem	ctl_name$="APM_VENDHIST.OPEN_RET"
-rem	ctl_stat$="I"
-rem	gosub disable_fields
-rem endif
 [[APM_VENDHIST.AP_DIST_CODE.AVAL]]
-if user_tpl.multi_dist$<>"Y"
-
-	if cvs(callpoint!.getUserInput(),3)<>"" callpoint!.setStatus("ABORT")
-
-endif
-if callpoint!.getUserInput()=""
+if user_tpl.multi_dist$="Y" and callpoint!.getUserInput()=""
 	callpoint!.setUserInput("  ")
 	callpoint!.setStatus("REFRESH")
-endif
-[[APM_VENDHIST.AP_DIST_CODE.BINP]]
-if user_tpl$.multi_dist$<>"Y" 
-
-	callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE","  ")
-	callpoint!.setStatus("REFRESH")
-
 endif
 [[APM_VENDHIST.AP_TYPE.AVAL]]
-if user_tpl.multi_types$<>"Y"
-
-	if cvs(callpoint!.getUserInput(),3)<>"" callpoint!.setStatus("ABORT")
-
-endif
 if callpoint!.getUserInput()=""
 	callpoint!.setUserInput("  ")
 	callpoint!.setStatus("REFRESH")
 endif
-[[APM_VENDHIST.AP_TYPE.BINP]]
-if user_tpl$.multi_types$<>"Y" 
 
-	callpoint!.setColumnData("APM_VENDHIST.AP_TYPE","  ")
+rem --- get default distribution code	
+	apc_typecode_dev=fnget_dev("APC_TYPECODE")
+	dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
+	find record (apc_typecode_dev,key=firm_id$+"A"+callpoint!.getUserInput(),err=*next)apc_typecode$
+	if cvs(apc_typecode$,2)<>""
+		user_tpl.dflt_dist_code$=apc_typecode.ap_dist_code$
+	endif
+
+if user_tpl.multi_dist$<>"Y"
+	callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE",user_tpl.dflt_dist_code$)
 	callpoint!.setStatus("REFRESH")
-
 endif
 [[APM_VENDHIST.<CUSTOM>]]
 disable_fields:

@@ -11,28 +11,51 @@ rem ==========================================================================
 rem --- UPDATESYNFILE$ : Absolute path to the addon.syn file being updated (Input)
 rem --- OLDSYNFILE$    : Absolute path to the old addon.syn file (Input)
 rem --- UPGRADE%       : 0=Not an upgrade so don't merge with old syn/1=Upgrade so merge with old syn (Input)
-rem --- DATAMAP!       : HashMap of STBL data paths, keyed by STBL (Input)
+rem --- STBLMAP!     : HashMap of ArrayLists keyed by SYSSTBL/STBLs from current syn file (Input)
+rem ---              :     ArrayList (0) = current (source) value of SYSSTBL/STBL
+rem ---              :     ArrayList (1) = new (target) value of SYSSTBL/STBL
+rem --- PFXLIST!     : ArrayList (order is important) of ArrayLists of SYSPFX/PREFIXs from current syn file (Input)
+rem ---              :     ArrayList (0) = current (source) value of SYSPFX/PREFIX
+rem ---              :     ArrayList (1) = new (target) value of SYSPFX/PREFIX
 rem --- RDFORM!        : Parent BBjTopLevelWindow object, the form (Input)
 rem --- WAIT4OK%       : Wait for user's OK when done, 0=don't wait/1=wait (Input)
 rem --- STATUS         : Status code/0=No error (Returned)
 
     use java.io.File
+    use java.util.ArrayList
     use java.util.HashMap
     use ::bbtranslator.bbj::BBTranslator
     use ::ado_file.src::FileObject
 
-    declare HashMap dataMap!
+    declare ArrayList pfxList!
+    declare ArrayList aList!
+    declare HashMap stblMap!
+    declare HashMap pfxSourceMap!
+    declare HashMap pfxTargetMap!
     declare java.util.Set keys!
     declare java.util.Iterator iter!
 
     seterr std_error
     setesc std_error
-    enter updateSynFile$,oldSynFile$,upgrade%,dataMap!,rdForm!,wait4ok%,status
+    enter updateSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,wait4ok%,status
 
 rem --- Initializations
     status=0
     dir_syp$=stbl("+DIR_SYP")
     sysGUI! = BBjAPI().getSysGui()
+
+rem --- Build pfxSourceMap! and pfxTargetMap! HashMaps from pfxList! ArrayList
+	pfxTargetMap! = new HashMap()
+	pfxSourceMap! = new HashMap()
+	iter!=pfxList!.iterator()
+	while iter!.hasNext()
+		aList! = cast(ArrayList, iter!.next())
+		source$=cast(BBjString, aList!.get(0))
+		target$=cast(BBjString, aList!.get(1))
+		pfxTargetMap!.put(target$, source$)
+		sourceFile! = new File(source$)
+		pfxSourceMap!.put(sourceFile!.getAbsolutePath(), target$)
+	wend
     
 rem --- Start progress meter
     declare BBTranslator Translator!
@@ -109,6 +132,11 @@ rem --- Rename addon.syn to addon_vnnnn.syn, and update paths
     gosub disp_meter
     print(log_dev)meter_text$
 
+	rem --- Initialize search$ and replace$ strings used in update_data_path subroutine 
+	rem --- Make sure replacement path has a trailing slash
+    replace$ = aonDir$
+	if pos(replace$(len(replace$))="/\")=0 then replace$=replace$+"/"
+
 	rem --- Get aon path from DIR and SYSDIR lines.
 	rem --- It must be replaced everywhere with current aon path.
     search$ = ""
@@ -134,44 +162,14 @@ rem --- Rename addon.syn to addon_vnnnn.syn, and update paths
     close(sourceChan)
 	if search$="" then search$="../apps/aon/"; rem --- make sure search$ isn't blank
 
-	rem --- Make sure replacement path has a trailing slash
-    replace$ = aonDir$
-	if pos(replace$(len(replace$))="/\")=0
-		if pos("/"=replace$)
-			replace$=replace$+"/"
-		else
-			replace$=replace$+"\"
-		endif
-	endif
-
     rem --- copy addon.syn file to addon_vnnnn.syn (where nnnn=new version)
     open(sourceChan,isz=-1)updateSynFile$
     targetChan=unt
     open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")newSynFile$
     while 1
         read(sourceChan,end=*break)record$
-
-        rem --- replace DIR paths with aonDir$
-        gosub search_replace
-
-        rem --- replace data paths in specific lines
-		key$ = record$(1, pos("="=record$) - 1)
-		switch (BBjAPI().TRUE)
-			case key$ = "STBL"
-			case key$ = "SYSSTBL"
-			case key$ = "CFG"
-			case key$ = "SYSCFG"
-				rem --- replace data paths in STBL, SYSSTBL, CFG and SYSCFG lines
-				xpos = pos("+"=record$)
-				data$ = record$(xpos + 1, pos("="=record$(xpos + 1)) - 1)
-				if(dataMap!.containsKey(data$)) then
-					record$ = record$(1, xpos) + data$ + "=" + cast(BBjString, dataMap!.get(data$))
-				endif
-				break
-			case default
-				rem --- other lines ... skip
-				break
-		swend                    
+		
+		gosub update_data_path
         
         write(targetChan)record$
         print(log_dev)record$
@@ -201,6 +199,36 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
         gosub disp_meter
         print(log_dev)
         print(log_dev)meter_text$
+
+		rem --- Initialize search$ and replace$ strings used in update_data_path subroutine 
+		rem --- Make sure replacement path has a trailing slash
+		replace$ = aonDir$
+		if pos(replace$(len(replace$))="/\")=0 then replace$=replace$+"/"
+
+		rem --- Get aon path from DIR and SYSDIR lines.
+		rem --- It must be replaced everywhere with current aon path.
+		search$ = ""
+		sourceChan=unt
+		open(sourceChan,isz=-1)oldSynFile$
+		while 1
+			read(sourceChan,end=*break)record$
+
+			rem --- get path from SYSDIR/DIR line
+			key$ = record$(1, pos("="=record$) - 1)
+			switch (BBjAPI().TRUE)
+				case key$ = "DIR"
+				case key$ = "SYSDIR"
+					xpos = pos("="=record$)
+					search$= cvs(record$(xpos+1),3)
+					break
+				case default
+					rem --- other lines ... skip
+					break
+			swend
+			if search$<>"" then break
+		wend
+		close(sourceChan)
+		if search$="" then search$="../apps/aon/"; rem --- make sure search$ isn't blank
         
         rem --- put old .syn records into a HashMap of ArrayLists
         use java.util.ArrayList
@@ -213,6 +241,10 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
             read(oldChan,end=*break)record$
             if(pos("="=record$)) then
                 key$ = record$(1, pos("="=record$) - 1)
+				
+				gosub update_data_path
+				
+				rem --- add to HashMap
                 if(oldMap!.containsKey(key$)) then
                     oldList! = cast(ArrayList, oldMap!.get(key$))
                     oldList!.add(record$)
@@ -288,44 +320,15 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
                                 if(oldKey$ = newKey$) then
                                     oldList!.set(j, ""); rem - can't remove while looping over the list
                                     print(log_dev)"drop old SYSAPP/APROD line: "+oldKey$
-                                    if oldList!.size() = 0 then oldMap!.remove(key$)
                                     rem --- oldKey$ may appear more than once, so don't break
                                 endif
                             next j
                             break
                         case key$ = "STBL"
                         case key$ = "SYSSTBL"
+                            rem --- if new STBL or SYSSTBL line exists in old List, drop it from old List
                             xpos = pos(" "=newRec$)
                             newKey$ = newRec$(xpos + 1, pos("="=newRec$(xpos + 1)) - 1)
-                            rem --- drop these STBL and SYSSTBL lines from NEW List
-                            if(pos("+SHOW_PRINTERS"=newKey$) = 1 or
-:                              pos("+AON_IMAGES"=newKey$) = 1 or
-:                              pos("+CUST_IMAGES"=newKey$) = 1 or
-:                              pos("+FORM_LOGO"=newKey$) = 1 or
-:                              pos("+MDI_TITLE"=newKey$) = 1) then
-                                newList!.set(i, ""); rem - can't remove while looping over the list
-                                print(log_dev)"drop new SYSSTBL/STBL line: "+newKey$
-                                break
-                            endif
-
-                            rem --- if new +DOC_DIR_* STBL or SYSSTBL line exists in old List, drop it from NEW List
-							doc_dir_dropped = 0
-                            if pos("+DOC_DIR_"=newKey$) = 1 and oldList!.size() > 0 then
-								for j=0 to oldList!.size()-1
-									oldRec$ = cast(BBjString, oldList!.get(j))
-									xpos = pos(" "=oldRec$)
-									oldKey$ = oldRec$(xpos + 1, pos("="=oldRec$(xpos + 1)) - 1)
-									if(oldKey$ = newKey$) then
-										newList!.set(i, ""); rem - can't remove while looping over the list
-										print(log_dev)"drop new SYSSTBL/STBL line: "+newKey$
-										doc_dir_dropped = 1
-										break
-									endif
-								next j
-							endif
-							if doc_dir_dropped then break
-
-                            rem --- if new STBL or SYSSTBL line exists in old List, drop it from old List
 							if oldList!.size() = 0 then break
                             for j=0 to oldList!.size()-1
                                 oldRec$ = cast(BBjString, oldList!.get(j))
@@ -335,7 +338,6 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
                                 if(oldKey$ = newKey$) then
                                     oldList!.set(j, ""); rem - can't remove while looping over the list
                                     print(log_dev)"drop old SYSSTBL/STBL line: "+oldKey$
-                                    if oldList!.size() = 0 then oldMap!.remove(key$)
                                     rem --- oldKey$ may appear more than once, so don't break
                                 endif
                             next j
@@ -343,16 +345,16 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
                         case key$ = "PREFIX"
                         case key$ = "SYSPFX"
                             rem --- if new PREFIX or SYSPFX line exists in old List, drop it from old List
-                            newKey$ = cvs(newRec$(pos("/aon/"=newRec$)),3)
+                            newKey$ = cvs(newRec$(pos("="=newRec$)+1),3)
 							if oldList!.size() = 0 then break
                             for j=0 to oldList!.size()-1
                                 oldRec$ = cast(BBjString, oldList!.get(j))
 								if oldRec$="" then continue
-                                oldKey$ = cvs(oldRec$(pos("/aon/"=oldRec$)),3)
+                                oldKey$ = cvs(oldRec$(pos("="=oldRec$)+1),3)
                                 if(oldKey$ = newKey$) then
                                     oldList!.set(j, ""); rem - can't remove while looping over the list
-                                    print(log_dev)"drop old SYSPFX/PREFIX line: "+oldKey$
-                                    if oldList!.size() = 0 then oldMap!.remove(key$)
+									source$ = cast(BBjString, pfxTargetMap!.get(oldKey$))
+                                    print(log_dev)"drop old SYSPFX/PREFIX line: "+source$
                                     rem --- oldKey$ may appear more than once, so don't break
                                 endif
                             next j
@@ -371,7 +373,6 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
                                 if(oldKey$ = newKey$) then
                                     oldList!.set(j, ""); rem - can't remove while looping over the list
                                     print(log_dev)"drop old SYSCFG/CFG line: "+oldKey$
-                                    if oldList!.size() = 0 then oldMap!.remove(key$)
                                     rem --- oldKey$ may appear more than once, so don't break
                                 endif
                             next j
@@ -388,7 +389,6 @@ rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
                                 if(oldKey$ = newKey$) then
                                     oldList!.set(j, ""); rem - can't remove while looping over the list
                                     print(log_dev)"drop old SYSLANG/LANG line: "+oldKey$
-                                    if oldList!.size() = 0 then oldMap!.remove(key$)
                                     rem --- oldKey$ may appear more than once, so don't break
                                 endif
                             next j
@@ -541,6 +541,52 @@ get_syn_version: rem --- Get version from VERSION_ID in the ADM_MODULES table
 		synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
 	endif
     return
+
+update_data_path: rem --- update data path using stblMap! and pfxSourceMap!
+	rem --- replace data paths in specific lines
+	key$ = record$(1, pos("="=record$) - 1)
+	switch (BBjAPI().TRUE)
+		case key$ = "STBL"
+		case key$ = "SYSSTBL"
+			rem --- replace SYSSTBL/STBL path with new path
+			xpos = pos(" "=record$)
+			stbl$ = record$(xpos+1, pos("="=record$(xpos+1)) - 1)
+			if(stblMap!.containsKey(stbl$)) then
+				aList! = cast(ArrayList, stblMap!.get(stbl$))
+				target$ = cast(BBjString, aList!.get(1))
+				record$ = record$(1, pos("="=record$,1,2)) + target$
+			endif
+			break
+		case key$ = "PREFIX"
+		case key$ = "SYSPFX"
+			rem --- replace SYSPFX/PREFIX path with new path
+			xpos = pos("="=record$)
+			path$  = record$(xpos+1)
+			currentPath! = new File(path$)
+			if pfxSourceMap!.containsKey(currentPath!.getAbsolutePath()) then
+				target$ = cast(BBjString, pfxSourceMap!.get(currentPath!.getAbsolutePath()))
+				record$ = record$(1, xpos) + target$
+			endif
+			break
+		case key$ = "CFG"
+		case key$ = "SYSCFG"
+			rem --- replace SYSCFG/CFG path with new path for corresponding STBL
+			xpos = pos("="=record$)
+			ypos = pos("="=record$,1,2)
+			stbl$ = record$(xpos+1, ypos - xpos - 1)
+			if(stblMap!.containsKey(stbl$)) then
+				aList! = cast(ArrayList, stblMap!.get(stbl$))
+				target$=cast(BBjString, aList!.get(1))
+				record$ = record$(1, ypos) + target$
+			endif
+			break
+		case default
+			rem --- other lines
+			rem --- replace DIR paths with aonDir$
+			gosub search_replace
+			break
+	swend
+	return
     
 search_replace: rem --- Search record$ for search$, and replace with replace$
 	rem --- Assumes only one occurrence of search$ per line so don't have 
@@ -670,20 +716,30 @@ open_log:rem --- Open log file
     rem --- write log header info
     print(log_dev)"Updatesyn log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
     print(log_dev)"Update addon.syn file: " + updateSynFile$
-    keys! = dataMap!.keySet()
-    iter! = keys!.iterator()
-    while(iter!.hasNext())
-        key$ = cast(BBjString, iter!.next())
-        if len(key$)=6 and pos("DATA"=key$)=3 then
-            print(log_dev)"+" + key$ + " = " + cast(BBjString, dataMap!.get(key$))
-        endif
-    wend
     if upgrade%
         print(log_dev)"Merge old addon.syn file."
+		print(log_dev)"Old addon.syn file: " + oldSynFile$
     else
         print(log_dev)"Do not merge old addon.syn file."
     endif
-    print(log_dev)"Old addon.syn file: " + oldSynFile$
+	rem --- write STBL info
+    keys! = stblMap!.keySet()
+    iter! = keys!.iterator()
+    while(iter!.hasNext())
+        key$ = cast(BBjString, iter!.next())
+		aList! = cast(ArrayList, stblMap!.get(key$))
+		source$=cast(BBjString, aList!.get(0))
+		target$=cast(BBjString, aList!.get(1))
+		print(log_dev)"["+key$+"] source="+source$+"  target="+target$
+    wend
+	rem --- write PREFIX info
+	iter!=pfxList!.iterator()
+	while iter!.hasNext()
+		aList! = cast(ArrayList, iter!.next())
+		source$=cast(BBjString, aList!.get(0))
+		target$=cast(BBjString, aList!.get(1))
+		print(log_dev)"PREFIX source="+source$+"  target="+target$
+	wend
     print(log_dev)
 
     return

@@ -1,10 +1,24 @@
+[[POE_INVHDR.AP_TYPE.AVAL]]
+ap_type$=callpoint!.getUserInput()
+if ap_type$=""
+	ap_type$="  "
+	callpoint!.setUserInput(ap_type$)
+	callpoint!.setStatus("REFRESH")
+endif
+
+apm10_dev=fnget_dev("APC_TYPECODE")
+dim apm10a$:fnget_tpl$("APC_TYPECODE")
+readrecord (apm10_dev,key=firm_id$+"A"+ap_type$,dom=*next)apm10a$
+if cvs(apm10a$,2)<>""
+	callpoint!.setDevObject("dflt_dist_cd",apm10a.ap_dist_code$)
+endif
 [[POE_INVHDR.ADEL]]
 rem -- setting a delete flag so we know in BREX not to bother checking if out of balance
 
 callpoint!.setDevObject("deleted","Y")
 [[POE_INVHDR.BTBL]]
 rem --- Open/Lock files
-files=15,begfile=1,endfile=files
+files=16,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 
 files$[1]="APM_VENDCMTS";rem --- "apm-09
@@ -22,6 +36,7 @@ files$[12]="APT_INVOICEHDR";rem --- "apt-01"
 files$[13]="IVM_ITEMMAST";rem --- "ivm-01"
 files$[14]="POC_LINECODE";rem --- "pom-02"
 files$[15]="APC_TERMSCODE"
+files$[16]="APC_TYPECODE"
 
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
@@ -98,6 +113,7 @@ endif
 
 callpoint!.setDevObject("multi_types",aps01a.multi_types$)
 callpoint!.setDevObject("multi_dist",aps01a.multi_dist$)
+callpoint!.setDevObject("dflt_dist_cd", aps01a.ap_dist_code$)
 callpoint!.setDevObject("retention",aps01a.ret_flag$)
 
 rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user to set it up first
@@ -123,6 +139,19 @@ callpoint!.setDevObject("poe_invsel_key",poe_invsel_key_tpl$)
 
 if aps01a.multi_types$<>"Y"
 	callpoint!.setTableColumnAttribute("POE_INVHDR.AP_TYPE","PVAL",$22$+aps01a.ap_type$+$22$)
+
+	rem --- get default distribution code	
+	apc_typecode_dev=fnget_dev("APC_TYPECODE")
+	dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
+	find record (apc_typecode_dev,key=firm_id$+"A"+aps01a.ap_type$,err=*next)apc_typecode$
+	if cvs(apc_typecode$,2)<>""
+		callpoint!.setDevObject("dflt_dist_cd", apc_typecode.ap_dist_code$)
+	endif
+
+	rem --- if not using multi distribution codes, initialize and disable Distribution Code
+	if aps01a.multi_dist$<>"Y"
+		callpoint!.setTableColumnAttribute("POE_INVHDR.AP_DIST_CODE","PVAL",$22$+apc_typecode.ap_dist_code$+$22$)
+	endif
 endif
 [[POE_INVHDR.AABO]]
 rem --- user has elected not to save record (we are NOT in immediate write, so save takes care of header and detail at once)
@@ -349,10 +378,6 @@ callpoint!.setDevObject("dist_bal_control",dist_bal!)
 
 rem --- may need to disable some ctls based on params
 if callpoint!.getDevObject("multi_types")="N" 
-	apm10_dev=fnget_dev("APC_TYPECODE")
-	dim apm10a$:fnget_tpl$("APC_TYPECODE")
-	readrecord (apm10_dev,key=firm_id$+"  ",dom=*next)apm10a$
-	callpoint!.setDevObject("dflt_dist_cd",apm10a.ap_dist_code$)
 	callpoint!.setColumnEnabled("POE_INVHDR.AP_TYPE",-1)
 endif
 if callpoint!.getDevObject("multi_dist")="N" 
@@ -392,7 +417,6 @@ rem --- set vendor_id$ and ap_type$ before coming in
 		callpoint!.setDevObject("dflt_pymt_grp", apm02a.payment_grp$)
 		vend_hist$="Y"
 	else
-		callpoint!.setDevObject("dflt_dist_cd", "")
 		callpoint!.setDevObject("dflt_gl_account", "")
 		callpoint!.setDevObject("dflt_terms_cd", "")
 		callpoint!.setDevObject("dflt_pymt_grp", "")
@@ -602,7 +626,6 @@ callpoint!.setDevObject("tot_dist","")
 callpoint!.setDevObject("tot_gl","")
 callpoint!.setColumnData("<<DISPLAY>>.DIST_BAL","0")
 rem --- Re-enable disabled fields
-callpoint!.setColumnEnabled("POE_INVHDR.AP_DIST_CODE",1)
 callpoint!.setColumnEnabled("POE_INVHDR.INV_DATE",1)
 callpoint!.setColumnEnabled("POE_INVHDR.NET_INV_AMT",1)
 rem --- disable opt buttons
