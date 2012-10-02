@@ -15,9 +15,7 @@ REM ========================================================================
     use ::BBjAreaChart.bbj::BBjAreaChart
     use ::BBjDialChart.bbj::BBjDialChart
     use ::BBjGaugeChart.bbj::BBjGaugeChart
-    use ::BBjImageManipulator.bbj::BBjImageManipulator
-    use ::UIManager.bbj::UIManager
-    
+        
     use org.jfree.data.category.DefaultCategoryDataset
     use org.jfree.chart.JFreeChart
     use java.util.HashMap
@@ -26,8 +24,6 @@ REM ========================================================================
     use java.util.Set
     use java.util.Iterator
 
-    declare UIManager uiManager!
-    declare BBjImageManipulator imageManip!
     declare BBjSysGui sysgui!
     declare BBjTopLevelWindow win!
     declare JFreeChart@ jFreeChart!
@@ -43,11 +39,9 @@ REM ========================================================================
     declare Iterator iteratorSalesData!
     declare Set setSalespersonData!
     declare Iterator iteratorSalespersonData!
-
+    declare BBjServerEvent e!
     declare BBjChildWindow AreaChartWindow! 
     declare BBjChildWindow DialChartWindow! 
-
-
 
 REM ========================================================================
 REM Common information
@@ -57,14 +51,22 @@ REM ========================================================================
 
     REM add to the prefix to find the graphic controls custom objects
     bbjhome$ = System.getProperty("basis.BBjHome") + "/"
-    imageshome$ = bbjhome$ + "demos/DigitalDashboard/images/"
+    imageshome$ = stbl("+CUST_IMAGES")
+    
+    rem ' the location of the Area, Dial and Guage Chart may change to utils/
+    rem ' until then their use is optional
     location1$ = bbjhome$  + "demos/Common/"
-    if pos(" " = location1$) <> 0 then location1$ = chr(34) + location1$ + chr(34)
-    location2$ = bbjhome$ + "demos/Workbench/"
-    if pos(" " = location2$) <> 0 then location2$ = chr(34) + location2$ + chr(34)
-    prefix$ = pfx
-    prefix$ = prefix$ + " " + location1$ + " " + location2$
-    prefix prefix$
+    rem ' demos installed?
+    testchan = unt
+    demosInstalled = 0
+    open(testchan, err=*next)location1$; demosInstalled = 1
+    if demosInstalled then
+    	close(testchan)	
+	if pos(" " = location1$) <> 0 then location1$ = chr(34) + location1$ + chr(34)
+    	prefix$ = pfx
+    	prefix$ = prefix$ + " " + location1$
+    	prefix prefix$
+    fi
     
     rem ' Open the BBj SysGUI Channel
     sysgui!=BBjAPI().openSysGui("X0") 
@@ -102,6 +104,10 @@ REM ========================================================================
 	endif
     endif
 
+    rem ' open sql channel 
+    chan = sqlunt
+    sqlopen(chan)url$
+
     rem ' get firm and firm name
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
@@ -110,185 +116,208 @@ REM ========================================================================
     firm_name$=sysinfo.firm_name$
     
     rem ' set start and end date
-    year = num(date(0:"%Y"))
-    month = num(date(0:"%M"))
-    startDay = 1
-
-    endDay = 31
-    if month = 4 or month = 6 or month = 9 or month = 11 then
-    	endDay = 30
-    endif
-    if month = 2 then
-          endDay = 28
-    endif
-    if month = 2 and mod(year,4)=0 then
-         endDay = 28
-    endif
-    
-    rem ' open sql channel 
-    chan = sqlunt
-    sqlopen(chan)url$
-
-    declare HashMap months!
-    months! = new HashMap()
-    months!.put(1, 31)
-    months!.put(2, 28)
-    months!.put(3, 31)
-    months!.put(4, 30)
-    months!.put(5, 31)
-    months!.put(6, 30)
-    months!.put(7, 31)
-    months!.put(8, 31)
-    months!.put(9, 30)
-    months!.put(10, 31)
-    months!.put(11, 30)
-    months!.put(12, 31)
-
-
+    sql$ = "SELECT TOTAL_PERS, CURRENT_PER, CURRENT_YEAR, "
+    sql$ = sql$ + "PER_ENDING_01, PER_ENDING_02, PER_ENDING_03, PER_ENDING_04, PER_ENDING_05, PER_ENDING_06, "
+    sql$ = sql$ + "PER_ENDING_07, PER_ENDING_08, PER_ENDING_09, PER_ENDING_10, PER_ENDING_11, PER_ENDING_12, PER_ENDING_13 "
+    sql$ = sql$ + "FROM GLS_PARAMS "
+    sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "'"
+    sqlprep(chan)sql$
+    sqlexec(chan)
+    dim gls_params$:sqltmpl(chan)
+    gls_params$ = sqlfetch(chan)
+    period = num(gls_params.current_per$)
+    gosub set_up_period
+ 
 REM ========================================================================
 REM Create the Window for the program
 REM ========================================================================
     winWidth = 900
     winHeight = 500
+    
+    win!=sysgui!.addWindow(50, 150, winWidth, winHeight, firm_name$ + " Sales Results",$00010093$)
+    font! = sysgui!.makeFont("Tahoma", 8, sysgui!.PLAIN)
 
-    win!=sysgui!.addWindow(50, 150, winWidth, winHeight, firm_name$ + " Sales Results",$12$)
-    font! = sysgui!.makeFont("Ariel", 10, sysgui!.BOLD)
-
-    label! = win!.addStaticText(win!.getAvailableControlID(), 10,10,100,20,"Starting Date:")
+    label! = win!.addStaticText(win!.getAvailableControlID(), 10,13,70,16,"Starting Date:", $8000$)
     label!.setFont(font!)
-    inputDStart! = win!.addInputD(win!.getAvailableControlID(), 105, 10, 80, 20, $$, "%Yl-%Mz-%Dz", "", jul(year,month,startDay), jul(year,month,startDay))
+    inputDStart! = win!.addInputD(win!.getAvailableControlID(), 83, 10, 80, 19, $$, "%Yl-%Mz-%Dz", "", jul(startYear,startMonth,startDay), jul(startYear,startMonth,startDay))
     inputDStart!.setFont(font!)
-    buttonStartLookup! = win!.addButton(win!.getAvailableControlID(), 190, 7, 26, 26, "BITMAP=" + imageshome$ + "binoculars.png")
+    inputDStart!.setCallback(inputDStart!.ON_EDIT_MODIFY, "START_DATE_CHANGED")
+    buttonStartLookup! = win!.addButton(win!.getAvailableControlID(), 163, 10, 19, 19, "BITMAP=" + imageshome$ + "im_tb_cal_f.png")
     buttonStartLookup!.setFont(font!)
     buttonStartLookup!.setCallback(buttonStartLookup!.ON_BUTTON_PUSH, "SELECT_START_DATE")
 
-    label! = win!.addStaticText(win!.getAvailableControlID(), 240,10,100,20,"Ending Date:")
+    label! = win!.addStaticText(win!.getAvailableControlID(), 200,13,65,16,"Ending Date:", $8000$)
     label!.setFont(font!)
-    inputDFinish! = win!.addInputD(win!.getAvailableControlID(), 330, 10, 80, 20, $$, "%Yl-%Mz-%Dz", "", 0, jul(year,month,endDay))
+    inputDFinish! = win!.addInputD(win!.getAvailableControlID(), 268, 10, 80, 19, $$, "%Yl-%Mz-%Dz", "", 0, jul(endYear,endMonth,endDay))
     inputDFinish!.setFont(font!)
-    buttonFinishLookup! = win!.addButton(win!.getAvailableControlID(), 415, 7, 26, 26, "BITMAP=" + imageshome$ + "binoculars.png")
+    inputDFinish!.setCallback(inputDFinish!.ON_EDIT_MODIFY, "END_DATE_CHANGED")
+    buttonFinishLookup! = win!.addButton(win!.getAvailableControlID(), 348, 10, 19, 19, "BITMAP=" + imageshome$ + "im_tb_cal_f.png")
     buttonFinishLookup!.setFont(font!)
     buttonFinishLookup!.setCallback(buttonFinishLookup!.ON_BUTTON_PUSH, "SELECT_FINISH_DATE")
 
-    sliderDateRange! = win!.addHorizontalSlider(win!.getAvailableControlID(), 7, 35, 435, 30)
+    sliderDateRange! = win!.addHorizontalSlider(win!.getAvailableControlID(), 7, 35, 370, 30)
     sliderDateRange!.setCallback(sliderDateRange!.ON_CONTROL_SCROLL, "SELECT_DATES")
     sliderDateRange!.setMajorTickSpacing(4)
     sliderDateRange!.setMinorTickSpacing(1)
     sliderDateRange!.setPaintTicks(1)
     sliderDateRange!.setSnapToTicks(1)
-    sliderDateRange!.setValue(month)
+    sliderDateRange!.setValue(curPeriod)
     sliderDateRange!.setMinimum(1)
-    sliderDateRange!.setMaximum(12)
+    sliderDateRange!.setMaximum(numPeriods)
 
-    REM Set the images on the buttons
-    buttonQueryDatabase! = win!.addButton(win!.getAvailableControlID(), winWidth - 185, 5, 175, 65, "Query DB")
-    imageScaleFactor = .9
-    imageSize = int(imageScaleFactor * buttonQueryDatabase!.getHeight())
-    imageManip! = new BBjImageManipulator(imageshome$ + "querydatabase.png")
-    buttonQueryDatabase!.setImage(imageManip!.getScaledImagePreserveAspectRatio(imageSize,0))
-    buttonQueryDatabase!.setFont(font!)
-    buttonQueryDatabase!.setCallback(buttonQueryDatabase!.ON_BUTTON_PUSH, "QUERY_DATABASE")
- 
-    buttonChartPie! = win!.addButton(win!.getAvailableControlID(), 495, 5, 50, 30, "BITMAP=" + imageshome$ + "piechart0.png")
+    buttonChartPie! = win!.addButton(win!.getAvailableControlID(), 390, 10, 50, 30, "BITMAP=" + imageshome$ + "piechart0.png")
     buttonChartPie!.setName("piechart")
     buttonChartPie!.setCallback(buttonChartPie!.ON_MOUSE_ENTER, "MOUSE_ENTER")
     buttonChartPie!.setCallback(buttonChartPie!.ON_MOUSE_EXIT, "MOUSE_EXIT")
-    buttonChartPie!.setCallback(buttonChartPie!.ON_BUTTON_PUSH, "MOUSE_CLICK")
-    buttonChartLine! = win!.addButton(win!.getAvailableControlID(), 555, 5, 50, 30, "BITMAP=" + imageshome$ + "linechart0.png")
+    buttonChartPie!.setCallback(buttonChartPie!.ON_GAINED_FOCUS, "MOUSE_CLICK")
+    
+    buttonChartLine! = win!.addButton(win!.getAvailableControlID(), 440, 10, 50, 30, "BITMAP=" + imageshome$ + "linechart0.png")
     buttonChartLine!.setName("linechart")
     buttonChartLine!.setCallback(buttonChartLine!.ON_MOUSE_ENTER, "MOUSE_ENTER")
     buttonChartLine!.setCallback(buttonChartLine!.ON_MOUSE_EXIT, "MOUSE_EXIT")
-    buttonChartLine!.setCallback(buttonChartLine!.ON_BUTTON_PUSH, "MOUSE_CLICK")
-    buttonChartBar! = win!.addButton(win!.getAvailableControlID(), 615, 5, 50, 30, "BITMAP=" + imageshome$ + "barchart0.png")
+    buttonChartLine!.setCallback(buttonChartLine!.ON_GAINED_FOCUS, "MOUSE_CLICK")
+    
+    buttonChartBar! = win!.addButton(win!.getAvailableControlID(), 490, 10, 50, 30, "BITMAP=" + imageshome$ + "barchart0.png")
     buttonChartBar!.setName("barchart")
     buttonChartBar!.setCallback(buttonChartBar!.ON_MOUSE_ENTER, "MOUSE_ENTER")
     buttonChartBar!.setCallback(buttonChartBar!.ON_MOUSE_EXIT, "MOUSE_EXIT")
-    buttonChartBar!.setCallback(buttonChartBar!.ON_BUTTON_PUSH, "MOUSE_CLICK")
-    buttonChartDial! = win!.addButton(win!.getAvailableControlID(), 495, 40, 50, 30, "BITMAP=" + imageshome$ + "dialchart0.png")
-    buttonChartDial!.setName("dialchart")
-    buttonChartDial!.setCallback(buttonChartDial!.ON_MOUSE_ENTER, "MOUSE_ENTER")
-    buttonChartDial!.setCallback(buttonChartDial!.ON_MOUSE_EXIT, "MOUSE_EXIT")
-    buttonChartDial!.setCallback(buttonChartDial!.ON_BUTTON_PUSH, "MOUSE_CLICK")
-    buttonChartGauge! = win!.addButton(win!.getAvailableControlID(), 555, 40, 50, 30, "BITMAP=" + imageshome$ + "gaugechart0.png")
-    buttonChartGauge!.setName("gaugechart")
-    buttonChartGauge!.setCallback(buttonChartGauge!.ON_MOUSE_ENTER, "MOUSE_ENTER")
-    buttonChartGauge!.setCallback(buttonChartGauge!.ON_MOUSE_EXIT, "MOUSE_EXIT")
-    buttonChartGauge!.setCallback(buttonChartGauge!.ON_BUTTON_PUSH, "MOUSE_CLICK")
-    buttonChartArea! = win!.addButton(win!.getAvailableControlID(), 615, 40, 50, 30, "BITMAP=" + imageshome$ + "areachart0.png")
-    buttonChartArea!.setName("areachart")
-    buttonChartArea!.setCallback(buttonChartArea!.ON_MOUSE_ENTER, "MOUSE_ENTER")
-    buttonChartArea!.setCallback(buttonChartArea!.ON_MOUSE_EXIT, "MOUSE_EXIT")
-    buttonChartArea!.setCallback(buttonChartArea!.ON_BUTTON_PUSH, "MOUSE_CLICK")
+    buttonChartBar!.setCallback(buttonChartBar!.ON_GAINED_FOCUS, "MOUSE_CLICK")
+    
+    rem ' these charts are only available if the BBj demos are installed
+    if demosInstalled then
+	buttonChartDial! = win!.addButton(win!.getAvailableControlID(), 540, 10, 50, 30, "BITMAP=" + imageshome$ + "dialchart0.png")
+	buttonChartDial!.setName("dialchart")
+	buttonChartDial!.setCallback(buttonChartDial!.ON_MOUSE_ENTER, "MOUSE_ENTER")
+	buttonChartDial!.setCallback(buttonChartDial!.ON_MOUSE_EXIT, "MOUSE_EXIT")
+	buttonChartDial!.setCallback(buttonChartDial!.ON_GAINED_FOCUS, "MOUSE_CLICK")
+
+	buttonChartGauge! = win!.addButton(win!.getAvailableControlID(), 590, 10, 50, 30, "BITMAP=" + imageshome$ + "gaugechart0.png")
+	buttonChartGauge!.setName("gaugechart")
+	buttonChartGauge!.setCallback(buttonChartGauge!.ON_MOUSE_ENTER, "MOUSE_ENTER")
+	buttonChartGauge!.setCallback(buttonChartGauge!.ON_MOUSE_EXIT, "MOUSE_EXIT")
+	buttonChartGauge!.setCallback(buttonChartGauge!.ON_GAINED_FOCUS, "MOUSE_CLICK")
+
+	buttonChartArea! = win!.addButton(win!.getAvailableControlID(), 640, 10, 50, 30, "BITMAP=" + imageshome$ + "areachart0.png")
+	buttonChartArea!.setName("areachart")
+	buttonChartArea!.setCallback(buttonChartArea!.ON_MOUSE_ENTER, "MOUSE_ENTER")
+	buttonChartArea!.setCallback(buttonChartArea!.ON_MOUSE_EXIT, "MOUSE_EXIT")
+	buttonChartArea!.setCallback(buttonChartArea!.ON_GAINED_FOCUS, "MOUSE_CLICK")
+    fi
+
     win!.setCallback(win!.ON_CLOSE,"EXIT")
+    win!.setCallback(win!.ON_RESIZE, "WINDOW_RESIZE")
 
-
-    REM Register with the UIManager
-    uiManager! = UIManager.getInstance()
-    uiManager!.registerWindow(win!)
     win!.setVisible(1)
+    buttonChartPie!.focus()
 
-
-    REM Current chart type
+    rem ' Current chart type
     currentChartType$ = "piechart"
     gosub SET_CHART_TYPE
-
+    
+    gosub QUERY_DATABASE
+    gosub WINDOW_RESIZE
     process_events 
-
-
 
 EXIT: 
     release
 
+WINDOW_RESIZE:
+    winHeight = win!.getHeight()
+    winWidth = win!.getWidth()
+    
+    rem ' resize the pie chart window
+    PieChartWindow!.setSize(winWidth - 20, winHeight - 90)
+    myBBjPieChart!.setSize(winWidth - 20, winHeight - 90)
+    
+    rem ' resize the chart line window
+    LineChartWindow!.setSize(winWidth - 20, winHeight - 90)
+    myBBjLineChart!.setSize(winWidth - 20, winHeight - 90)
 
+    rem ' resize bar chart window
+    BarChartWindow!.setSize(winWidth - 20, winHeight - 90)
+    myBBjBarChart!.setSize(winWidth - 20, winHeight - 90)
+   
+    rem ' resize area chart
+    if demosInstalled then
+	AreaChartWindow!.setSize(winWidth - 20, winHeight - 90)
+	BBjGenericAreaChart!.setSize(winWidth - 20, winHeight - 90)
+    fi
+    
+    return
+    
 SELECT_DATES:
-    month = sliderDateRange!.getValue()
-    endDay = months!.get(month)
-    inputDStart!.setValue(jul(year,month, startDay))
-    inputDFinish!.setValue(jul(year, month, endDay))
+    rem ' the slider fired this event
+    period = sliderDateRange!.getValue()
+    gosub SET_UP_PERIOD
+    rem ' change only if the dates have changed
+    checkDate$ = inputDStart!.getText()
+    newStart$ = date(jul(startYear, startMonth, startDay):"%Y-%Mz-%Dz")
+    if checkDate$ <> newStart$ then
+    	inputDStart!.setValue(jul(startYear, startMonth, startDay))
+    	inputDFinish!.setValue(jul(endYear, endMonth, endDay))
+        gosub RELOAD_ON_DATE_CHANGE
+    fi
     return
 
+START_DATE_CHANGED:
+    if inputDStart!.isValid() then 
+    	gosub RELOAD_ON_DATE_CHANGE
+    fi
+    return
 
+END_DATE_CHANGED:
+    if inputDFinish!.isValid() then 
+    	gosub RELOAD_ON_DATE_CHANGE
+    fi
+    return
+
+RELOAD_ON_DATE_CHANGE:
+    rem ' start date must be less than end date
+    sdate$ = inputDStart!.getText()
+    edate$ = inputDFinish!.getText()
+    if sdate$ < edate$ then gosub QUERY_DATABASE
+    return
+    
 MOUSE_ENTER:
-    declare BBjServerEvent e!
     e! = sysgui!.getLastEvent()
     control! = e!.getControl()
-    control!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ +  control!.getName() + "1.png"))
+    control!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + control!.getName() + "1.png"))
     return
 
 
 MOUSE_EXIT:
-    declare BBjServerEvent e!
     e! = sysgui!.getLastEvent()
     control! = e!.getControl()
     if currentChartType$ <> control!.getName() then
-        control!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + control!.getName() + "0.png"))
-    endif
+	control!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + control!.getName() + "0.png"))
+    fi
     return
 
 
 MOUSE_CLICK:
-    declare BBjServerEvent e!
     e! = sysgui!.getLastEvent()
     control! = e!.getControl()
     currentChartType$ = control!.getName()
     gosub SET_CHART_TYPE
     return
 
-
 SET_CHART_TYPE:
     buttonChartLine!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartLine!.getName() + "0.png"))
     buttonChartBar!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartBar!.getName() + "0.png"))
     buttonChartPie!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartPie!.getName() + "0.png"))
-    buttonChartDial!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartDial!.getName() + "0.png"))
-    buttonChartArea!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartArea!.getName() + "0.png"))
-    buttonChartGauge!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartGauge!.getName() + "0.png"))
-    DialChartWindow!.setVisible(0,err=*NEXT)
-    AreaChartWindow!.setVisible(0,err=*NEXT)
     BarChartWindow!.setVisible(0,err=*NEXT)
     LineChartWindow!.setVisible(0,err=*NEXT)
     PieChartWindow!.setVisible(0,err=*NEXT)
-    GaugeChartWindow!.setVisible(0,err=*NEXT)
 
+    if demosInstalled then    
+	buttonChartDial!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartDial!.getName() + "0.png"))
+	buttonChartArea!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartArea!.getName() + "0.png"))
+	buttonChartGauge!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartGauge!.getName() + "0.png"))
+	DialChartWindow!.setVisible(0,err=*NEXT)
+	AreaChartWindow!.setVisible(0,err=*NEXT)
+	GaugeChartWindow!.setVisible(0,err=*NEXT)
+    fi
+    
     if currentChartType$ = "linechart" then
         buttonChartLine!.setImage(sysgui!.getImageManager().loadImageFromFile(imageshome$ + buttonChartLine!.getName() + "1.png"))
         LineChartWindow!.setVisible(1,err=*NEXT)
@@ -330,6 +359,10 @@ SELECT_START_DATE:
 SELECT_FINISH_DATE:
     inputDFinish!.calendar()
     return
+
+FORCE_FOCUS:
+    inputDStart!.focus()
+    retun
 
 
 QUERY_DATABASE:
@@ -427,16 +460,14 @@ REM ========================================================================
 
     gosub GENERATE_DATASETS
     
-    gosub CREATE_AREACHART
-    gosub CREATE_DIALCHART
+    if demosInstalled then
+	gosub CREATE_AREACHART
+	gosub CREATE_DIALCHART
+	gosub CREATE_GAUGECHART
+    fi
     gosub CREATE_BARCHART
     gosub CREATE_LINECHART
     gosub CREATE_PIECHART
-    gosub CREATE_GAUGECHART
-
-    if salesperson!.size() = 0 then
-    	currentChartType$ = "piechart"
-     endif
 
     gosub SET_CHART_TYPE
     win!.setCursor(0)
@@ -504,18 +535,21 @@ REM ========================================================================
          maxTotalSales = 0
     endif
 
+return
+
 CREATE_AREACHART:
 REM ========================================================================
 REM Create the AreaChart and customize it
 REM ========================================================================
     REM Create an customize the BBjAreaChart
     BBjGenericAreaChart!.destroy(err=*NEXT)
+    AreaChartWindow!.destroy(err=*NEXT)
     myBBjAreaChart! = new BBjAreaChart("Sales Information for " + inputDStart!.getText() + " to " + inputDFinish!.getText(), "Day", "Sales", defaultDataset!, 1)
-    myBBjAreaChart!.setBackgroundImage("/Program Files/basis/demos/DigitalDashboard/images/worldmap.png")
+    rem ' myBBjAreaChart!.setBackgroundImage(imageshome$ + "aon_logo.jpg")
     myBBjAreaChart!.setForegroundTransparency(.7)
 
     REM Create the Generic Chart for the Area Chart
-    AreaChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $0810$, sysgui!.getAvailableContext())
+    AreaChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $00010810$, sysgui!.getAvailableContext())
     BBjGenericAreaChart!=AreaChartWindow!.addGenericChart(AreaChartWindow!.getAvailableControlID(), 0, 0, AreaChartWindow!.getWidth(), AreaChartWindow!.getHeight()) 
 
     REM Display the Area Chart inside the Generic Chart control on the window
@@ -531,12 +565,17 @@ REM ========================================================================
 
     REM Define colors and fonts
     bgColor! = BBjAPI().makeColor(170,170,170)
-    font! = BBjAPI().getSysGui().makeFont("Arial", 10, BBjAPI().getSysGui().BOLD)
-    font2! = BBjAPI().getSysGui().makeFont("Arial", 12, BBjAPI().getSysGui().BOLD)
-    font3! = BBjAPI().getSysGui().makeFont("Arial", 14, BBjAPI().getSysGui().BOLD)
-    font4! = BBjAPI().getSysGui().makeFont("Arial", 16, BBjAPI().getSysGui().BOLD)
+    rem ' font! = BBjAPI().getSysGui().makeFont("Arial", 10, BBjAPI().getSysGui().BOLD)
+    rem ' font2! = BBjAPI().getSysGui().makeFont("Arial", 12, BBjAPI().getSysGui().BOLD)
+    rem ' font3! = BBjAPI().getSysGui().makeFont("Arial", 14, BBjAPI().getSysGui().BOLD)
+    rem ' font4! = BBjAPI().getSysGui().makeFont("Arial", 16, BBjAPI().getSysGui().BOLD)
+    font! = BBjAPI().getSysGui().makeFont("Tahoma", 10, sysgui!.BOLD)
+    font2! = BBjAPI().getSysGui().makeFont("Tahoma", 12, sysgui!.BOLD)
+    font3! = BBjAPI().getSysGui().makeFont("Tahoma", 14, sysgui!.BOLD)
+    font4! = BBjAPI().getSysGui().makeFont("Tahoma", 16, sysgui!.BOLD)
 
-    DialChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $0810$, sysgui!.getAvailableContext())
+    DialChartWindow!.destroy(err=*NEXT)
+    DialChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $00010810$, sysgui!.getAvailableContext())
 
     counter = 0
     set! = salespersonTotalSales!.keySet()
@@ -559,8 +598,8 @@ REM ========================================================================
 
         REM Add the scale, background, and salesperson name
         myBBjDialChart!.setScale(0, 0, maxTotalSales/1000, int(maxTotalSales/5000), -90, -270, .74, .05, font3!, .22, BBjAPI().makeColor(50,50,50), 10)
-        myBBjDialChart!.setBackgroundImageResized("/Program Files/basis/demos/DigitalDashboard/images/dialframe.png", dialWidth, dialHeight)
-        myBBjDialChart!.setAnnotation(salesperson$ + " (" + salespersonCode!.get(salesperson$+"_code") + ")", font4!, BBjAPI().makeColor(76,93,110), .30, -20)
+        myBBjDialChart!.setBackgroundImageResized(imageshome$ + "dialframe.png", dialWidth, dialHeight)
+        myBBjDialChart!.setAnnotation(salesperson$ + " (" + salespersonCode!.get(salesperson$+"_code") + ")", font4!, BBjAPI().makeColor(76,93,110), .05, -20)
 
         REM Set the value indicator color based on the sales figures
         valueFGColor! = BBjAPI().makeColor(93,115,135)
@@ -599,7 +638,8 @@ CREATE_GAUGECHART:
 REM ========================================================================
 REM Create the GaugeChart and customize it
 REM ========================================================================
-    GaugeChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $0810$, sysgui!.getAvailableContext())
+    GaugeChartWindow!.destroy(err=*NEXT)
+    GaugeChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $00010810$, sysgui!.getAvailableContext())
 
     counter = 0
     set! = salespersonTotalSales!.keySet()
@@ -641,10 +681,7 @@ REM ========================================================================
         myBBjGaugeChart!.setValueIndicator(0, font4!, BBjAPI().makeColor(50,50,150), BBjAPI().makeColor(225,225,225), BBjAPI().makeColor(50,50,100), .66, 90)
         myBBjGaugeChart!.setAnnotation(annotation$ , font3!, BBjAPI().makeColor(150,50,50), .77, 90)
         myBBjGaugeChart!.setGradient(BBjAPI().makeColor(250,250,250), BBjAPI().makeColor(192,192,192), 1)
-        if (myBBjGaugeChart!.setBackgroundImage("/Program Files/basis/demos/DigitalDashboard/images/gaugeframe.png") = 0) then
-        	myBBjGaugeChart!.setBackgroundImage(dsk("") + dir("") + "images/gaugeframe.png")
-    	  endif
-
+        myBBjGaugeChart!.setBackgroundImage(imageshome$ + "gaugeframe.png")
 
         REM Add in the average
         myBBjGaugeChart!.addDataset(0, value, 0, .85)
@@ -682,7 +719,8 @@ REM ========================================================================
 REM Create the BarChart and customize it
 REM ========================================================================
     REM Create the barchart
-    BarChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $0810$, sysgui!.getAvailableContext())
+    BarChartWindow!.destroy(err=*NEXT)
+    BarChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $00010810$, sysgui!.getAvailableContext())
     myBBjBarChart! = BarChartWindow!.addBarChart(BarChartWindow!.getAvailableControlID(), 0, 0, BarChartWindow!.getWidth(), BarChartWindow!.getHeight(), "Days", "Sales", salesperson!.size(), salesData!.size(), 1, 1, 0)
 
     REM Iterate over the salesperson hash and set the series name for each salesperson
@@ -746,7 +784,8 @@ REM ========================================================================
 REM Create the LineChart and customize it
 REM ========================================================================
     REM Create the linechart
-    LineChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $0810$, sysgui!.getAvailableContext())
+    LineChartWindow!.destroy(err=*NEXT)
+    LineChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $00010810$, sysgui!.getAvailableContext())
     myBBjLineChart! = LineChartWindow!.addLineChart(LineChartWindow!.getAvailableControlID(), 0, 0, LineChartWindow!.getWidth(), LineChartWindow!.getHeight(), "Days", "Sales", salesperson!.size(), 1)
 
     REM Iterate over the salesperson hash and set the series name for each salesperson
@@ -797,7 +836,8 @@ REM ========================================================================
 REM Create the PieChart and customize it
 REM ========================================================================
     REM Create the PieChart
-    PieChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $0810$, sysgui!.getAvailableContext())
+    PieChartWindow!.destroy(err=*NEXT)
+    PieChartWindow! = win!.addChildWindow(win!.getAvailableControlID(), 10, 80, winWidth - 20, winHeight - 90, "", $00010810$, sysgui!.getAvailableContext())
     myBBjPieChart! = PieChartWindow!.addPieChart(PieChartWindow!.getAvailableControlID(), 0, 0, PieChartWindow!.getWidth(), PieChartWindow!.getHeight(), 1, 1)
 
 
@@ -815,6 +855,69 @@ REM ========================================================================
     wend
 
     return
+
+SET_UP_PERIOD:
+    numPeriods = num(gls_params.total_pers$)
+    curYear = num(gls_params.current_year$)
+    curPeriod = num(gls_params.current_per$)
+    
+    firstPerEnding$ = gls_params.per_ending_01$
+    
+    switch period
+    	case 1 
+    		ending$ = gls_params.per_ending_01$ 
+    		if numPeriods = 12 then
+    		    starting$ = gls_params.per_ending_12$
+    		else
+    		    starting$ = gls_params.per_ending_13$
+    		fi
+    		break
+    	case 2; ending$ = gls_params.per_ending_02$; starting$ = gls_params.per_ending_01$; break
+    	case 3; ending$ = gls_params.per_ending_03$; starting$ = gls_params.per_ending_02$; break
+    	case 4; ending$ = gls_params.per_ending_04$; starting$ = gls_params.per_ending_03$; break
+    	case 5; ending$ = gls_params.per_ending_05$; starting$ = gls_params.per_ending_04$; break
+    	case 6; ending$ = gls_params.per_ending_06$; starting$ = gls_params.per_ending_05$; break
+    	case 7; ending$ = gls_params.per_ending_07$; starting$ = gls_params.per_ending_06$; break
+    	case 8; ending$ = gls_params.per_ending_08$; starting$ = gls_params.per_ending_07$; break
+    	case 9; ending$ = gls_params.per_ending_09$; starting$ = gls_params.per_ending_08$; break
+    	case 10; ending$ = gls_params.per_ending_10$; starting$ = gls_params.per_ending_09$; break
+    	case 11; ending$ = gls_params.per_ending_11$; starting$ = gls_params.per_ending_10$; break
+    	case 12; ending$ = gls_params.per_ending_12$; starting$ = gls_params.per_ending_11$; break
+    	case 13; ending$ = gls_params.per_ending_13$; starting$ = gls_params.per_ending_12$; break
+    swend
+  
+    startMonth = num(starting$(1,2))    
+    startDay = num(starting$(3,2))
+
+    endMonth = num(ending$(1,2))
+    endDay = num(ending$(3,2))
+
+    firstPerMonth = num(firstPerEnding$(1,2))
+    
+    rem ' do we have a fiscal year that does not align with the calendar year
+    if endMonth < firstPerMonth then 
+        year = curYear + 1
+    else
+    	year = curYear
+    fi
+
+    endYear = year
+
+    rem ' adjust the start by one day
+    if startMonth = 12 then
+	startDate = jul(curYear - 1, startMonth, startDay)
+    else
+    	startDate = jul(year, startMonth, startDay)
+    fi
+    startDate = startDate + 1
+    startDay = num(date(startDate:"%D"))
+    startMonth = num(date(startDate:"%M"))
+    startYear = num(date(startDate:"%Y"))
+    
+    rem ' adjust for leap year
+    if startMonth = 2 and startDay = 29 then startMonth = startMonth + 1, startDay = 1
+    
+return
 
 REM ========================================================================
 REM user defined functions
