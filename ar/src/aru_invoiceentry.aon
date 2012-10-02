@@ -9,12 +9,8 @@ rem --- All Rights Reserved
     seterr std_error
     setesc std_error
 
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
-
-rem --- Open/Lock files
-
-    close (printer_dev,err=*next)
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Initializations
 
@@ -32,18 +28,18 @@ rem --- Get user approval to update
     x$=stbl("+SYSINFO")                                                            
     msg_tokens$[1]=x.task_desc$
     gosub disp_message
-    if msg_opt$<>"Y" then goto std_exit_1
+    if msg_opt$<>"Y" then goto std_exit_no_update
 
 rem --- Start progress meter and position header file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,are05_dev,1,meter_num,status
-    read (are05_dev,key=firm_id$,dom=*next)
+    read (are05_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Read next Invoice Header (are-05) record
 
     while moreheaders
           read record (are05_dev,end=*break) are05a$
-          if pos(firm_id$=are05a.firm_id$)<>1 break
+          if are05a.firm_id$<>firm_id$ or are05a.batch_no$<>batch_no$ then break
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
           are05a_key$=are05a.firm_id$+are05a.ar_inv_no$
 
@@ -257,6 +253,7 @@ rem --- All done
     if gl$="Y"
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
        call pgmdir$+"glc_ctlupdate.aon",status
+       call pgmdir$+"glc_ctldelete.aon",status
     endif
     call pgmdir$+"adc_batchdelete.aon",status
 
@@ -328,11 +325,18 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-	msg_id$="UPDATE_COMPLETE"
-	dim msg_tokens$[1]
-	msg_opt$=""
-	gosub disp_message
-std_exit_1:
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

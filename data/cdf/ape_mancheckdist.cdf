@@ -73,6 +73,9 @@ else
 	c!.setColumnEditable(0,1)
 endif
 	
+rem --- set preset value for batch_no field
+callpoint!.setTableColumnAttribute("APE_MANCHECKDIST.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
 [[APE_MANCHECKDIST.GL_POST_AMT.AVEC]]
 gosub calc_grid_tots
 	

@@ -85,7 +85,9 @@ rem --- Display Contract Price"
 		while 1
 			readrecord(ivm06_dev,key=firm_id$+cust_id$+item$,dom=*break)ivm06a$
 			description$=cvs(ivm06a.code_desc$,2)
-			description$=description$+" (From "+fndate$(ivm06a.from_date$)+" Through "+fndate$(ivm06a.thru_date$)+")"
+			if cvs(ivm06a.from_date$,2)="" from_date$="First Date" else from_date$=fndate$(ivm06a.from_date$)
+			if cvs(ivm06a.thru_date$,2)="" thru_date$="Last Date" else thru_date$=fndate$(ivm06a.thru_date$)
+			description$=description$+" (From "+from_date$+" Through "+thru_date$+")"
 			callpoint!.setColumnData("<<DISPLAY>>.CONTRACT_DESC",description$)
 			for x=1 to 10
 				callpoint!.setColumnData("OPE_PRICEQUOTE.CONTRACT_QTY_"+str(x:"00"),str(nfield(ivm06a$,"BREAK_QTY_"+str(x:"00"))))

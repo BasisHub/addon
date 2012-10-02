@@ -120,7 +120,7 @@ rem --- Create Lot Information window
 	callpoint!.setDevObject("issued_id",  str(15109))
 
 	lotWin!.addStaticText(15101,95,25,175,15,"",$0000$)
-	lotWin!.addStaticText(15102,95,45,175,15,"",$0000$)
+	lotWin!.addStaticText(15102,95,45,275,15,"",$0000$)
 	lotWin!.addStaticText(15103,95,65,75,15,"",$0000$)
 	lotWin!.addStaticText(15109,260,65,75,15,"",$0000$)
 
@@ -145,14 +145,14 @@ rem --- Create Lot Information window
 	endif
 	
 [[IVC_LOTLOOKUP.LOTS_TO_DISP.AVAL]]
-rem -- user changed lot type -- re-read/display selected lot type
+rem -- User changed lot type -- re-read/display selected lot type
 
-	lots_to_disp$=callpoint!.getUserInput()
+	lots_to_disp$ = callpoint!.getUserInput()
 	gosub read_and_display_lot_grid
 [[IVC_LOTLOOKUP.AREC]]
-rem --- item_id, warehouse_id, and type of lot (open,closed, etc.) coming from calling program
+rem --- Item_id, warehouse_id, and type of lot (open,closed, etc.) coming from calling program
 
-	lots_to_disp$=callpoint!.getColumnData("IVC_LOTLOOKUP.LOTS_TO_DISP")
+	lots_to_disp$ = callpoint!.getColumnData("IVC_LOTLOOKUP.LOTS_TO_DISP")
 	gosub read_and_display_lot_grid
 [[IVC_LOTLOOKUP.ACUS]]
 rem --- Process custom event -- used in this pgm to select lot and display info.
@@ -302,6 +302,7 @@ rem ==========================================================================
 
 		callpoint!.setDevObject("selected_lot_loc",ivm_lsmaster.ls_location$)
 		callpoint!.setDevObject("selected_lot_cmt",ivm_lsmaster.ls_comments$)
+		callpoint!.setDevObject("selected_lot_cost",ivm_lsmaster.unit_cost$)
 		callpoint!.setDevObject("selected_lot_avail",str(ivm_lsmaster.qty_on_hand-ivm_lsmaster.qty_commit))
 
 		rem --- Retrieve vendor name
@@ -312,10 +313,12 @@ rem ==========================================================================
 		if callpoint!.getDevObject("ap_installed") = "Y"
 			vendor$=ivm_lsmaster.vendor_id$
 			disp_vendor$="(unknown)"
-				if cvs(vendor$,2)<>""
-					find record (apm_vendmast_dev,key=firm_id$+vendor$,dom=*next) apm_vendmast$
-					disp_vendor$=apm_vendmast.vendor_id$+" "+cvs(apm_vendmast.vendor_name$,2)
-				endif
+
+			if cvs(vendor$,2)<>""
+				find record (apm_vendmast_dev,key=firm_id$+vendor$,dom=*next) apm_vendmast$
+				disp_vendor$=apm_vendmast.vendor_id$+" "+cvs(apm_vendmast.vendor_name$,2)
+			endif
+
 			w!=lotWin!.getControl(vendor_id)
 			w!.setText(disp_vendor$)
 		endif

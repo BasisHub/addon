@@ -145,7 +145,6 @@ rem ==========================================================================
 
         methodend
 
-
     rem ==========================================================================
     rem --- get number of GL periods from GL param file; nothing sent in, #periods out
     rem ==========================================================================
@@ -251,8 +250,121 @@ rem ==========================================================================
             endif
 
         methodend
+        
+    rem ==========================================================================
+    rem --- Return a percentage, checking for division by zero
+    rem     def fnd(q1,q2)=sgn(q2)*q1*100/(q2+abs(sgn(q2))-1)
+    rem ==========================================================================
+    
+        method public static BBjNumber percentage(BBjNumber p1, BBjNumber p2)
+        
+            if p1 = 0 or p2 = 0 then
+                methodret 0
+            else
+                methodret p1*100/p2
+            endif
 
-
+        methodend
+        
+    rem ==========================================================================
+    rem --- Return Gross Profit Percentage
+    rem     sgn( fnd(s[0]-s[1], s[0]) ) * min( 999.99, abs(fnd(s[0]-s[1], s[0])) )
+    rem ==========================================================================
+    
+        method public static BBjString grossProfit(BBjNumber p_sales, BBjNumber p_cost)
+            gp = round(#percentage(p_sales-p_cost, p_sales), 2)
+            gp = sgn(gp) * min(999.99, abs(gp))
+            methodret str(gp:"##0.00-") 
+        methodend
+        
+    rem ==========================================================================
+    rem --- Format Address (emulates program adc_address.aon)
+    rem     Send in a string tempate object of the record with the address, the
+    rem     width of the address to be formatted and the number of lines.
+    rem     The method returns the full block with the address formatted 
+    rem     inside it.
+    rem ==========================================================================
+    
+        method public static BBjString formatAddress(BBjTemplatedString p_rec!, BBjNumber p_width, BBjNumber p_lines)
+        
+            size = p_width * p_lines
+            dim address_block$(size)
+            offset = 1
+            fields$ = p_rec!.fattr()
+            p = mask(fields$, ",[A-Z_]*NAME:")
+            
+            if p then
+                field_name$ = fields$(p+1, tcb(16)-2)
+                name$ = p_rec!.getFieldAsString(field_name$)
+                
+                if cvs(name$, 2) <> "" and offset+p_width-1 <= size then
+                    address_block$(offset, p_width) = name$
+                    offset = offset + p_width
+                endif
+            endif
+            
+            addr_line_1$ = p_rec!.getFieldAsString("ADDR_LINE_1")
+            
+            if cvs(addr_line_1$, 2) <> "" and offset+p_width-1 <= size then 
+                address_block$(offset, p_width) = addr_line_1$
+                offset = offset + p_width
+            endif
+            
+            addr_line_2$ = p_rec!.getFieldAsString("ADDR_LINE_2")
+            
+            if cvs(addr_line_2$, 2) <> "" and offset+p_width-1 <= size then
+                address_block$(offset, p_width) = addr_line_2$
+                offset = offset + p_width
+            endif
+            
+            if pos(",ADDR_LINE_3:" = fields$) then
+                addr_line_3$ = p_rec!.getFieldAsString("ADDR_LINE_3")
+                
+                if cvs(addr_line_3$, 2) <> "" and offset+p_width-1 <= size then
+                    address_block$(offset, p_width) = addr_line_3$
+                    offset = offset + p_width
+                endif
+            endif
+                
+            if pos(",ADDR_LINE_4:" = fields$) then
+                addr_line_4$ = p_rec!.getFieldAsString("ADDR_LINE_4")
+                
+                if cvs(addr_line_4$, 2) <> "" and offset+p_width-1 <= size then
+                    address_block$(offset, p_width) = addr_line_4$
+                    offset = offset + p_width
+                endif
+            endif
+            
+            city$       = cvs(p_rec!.getFieldAsString("CITY"), 2)
+            state_code$ = cvs(p_rec!.getFieldAsString("STATE_CODE"), 2)
+            zip_code$   = cvs(p_rec!.getFieldAsString("ZIP_CODE"), 2)
+            all_zeros   = pos(zip_code$ <> "0" )
+            
+            if city$ <> "" or state_code$ <> "" or (zip_code$ <> "" and !all_zeros) then
+                addr_line$ = city$ + ", " + state_code$
+                
+                if len(zip_code$) > 5 then zip_code$ = zip_code$(1,5) + "-" +zip_code$(6)
+                
+                if len(addr_line$) + len(zip_code$) + 2 > p_width then
+                    if offset+p_width-1 <= size then
+                        address_block$(offset, p_width) = addr_line$
+                        offset = offset + p_width
+                        
+                        if offset+p_width-1 <= size then
+                            address_block$(offset, p_width) = zip_code$
+                        endif
+                    endif
+                else
+                    if offset+p_width-1 <= size then
+                        address_block$(offset, p_width) = addr_line$ + "  " + zip_code$
+                    endif
+                endif
+            endif
+            
+            methodret address_block$
+            
+        methodend
+        
     classend
 
 rem ==========================================================================
@@ -280,8 +392,8 @@ rem --- fnitem$()
     p[5] = 20
     dim desc$(60)
     desc$(1) = "Foo: Segment 1"
-    desc$(21) = "Segement 2"
-    desc$(41) = "Segement 3"
+    desc$(21) = "Segment 2"
+    desc$(41) = "Segment 3"
     print func.displayDesc(desc$, p[3], p[4], p[5])
 
     print "Zero lengths passed..."
@@ -290,7 +402,19 @@ rem --- fnitem$()
     print "Null description passed..."
     print func.displayDesc("", p[3], p[4], p[5])
     
-    input "Press <enter> to continue: ", *
+    print "Set description lengths..."
+    func.setLen1(10)
+    func.setLen2(15)
+    func.setLen3(20)
+    print "Expect 10:", func.getLen1()
+    print "Expect 15:", func.getLen2()
+    print "Expect 20:", func.getLen3()
+    desc$(1, 10) = "Segment 1"
+    desc$(11, 15) = "Segment 2"
+    desc$(26, 20) = "Segment 3"
+    print func.displayDesc(desc$)
+    
+    rem input "Press <enter> to continue: ", *
 
 rem --- fnmask$()
 
@@ -300,7 +424,7 @@ rem --- fnmask$()
     print func.alphaMask("111223333", "(###) ##-####")
     print func.alphaMask("1234.56", "-###,###,###.00")
     
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
 rem  -- fndate$()
 
@@ -313,7 +437,7 @@ rem  -- fndate$()
     print func.formatDate("short")
     print func.formatDate("")
     
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
 rem --- fnlatest$()
 
@@ -326,7 +450,7 @@ rem --- fnlatest$()
     print func.latestDate("20090230", "20090201")
     print func.latestDate("20090202", "junk")
     
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
 rem --- hasRecords()
 
@@ -351,7 +475,7 @@ rem --- hasRecords()
         print "does not have records"
     endif
     
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
 rem --- isNumber()
 
@@ -372,7 +496,7 @@ rem --- isNumber()
         print x$," is not a number"
     endif
     
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
 rem --- isHex
 
@@ -402,7 +526,7 @@ rem --- isHex
         print " is not hex"
     endif
     
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
 rem --- minimumNotZero
 
@@ -413,7 +537,81 @@ rem --- minimumNotZero
     print "Expect 1: ", func.minimumNotZero(1, 2)
     print "Expect 1: ", func.minimumNotZero(2, 1)
 
-    input "Press <enter> to continue: ", *
+    rem input "Press <enter> to continue: ", *
 
+rem --- Percentage
+
+    print fill(79, "="), 'lf', "percentage()..."
+    print "Expect 0: ", func.percentage(0, 0)
+    print "Expect 0: ", func.percentage(0, 1)
+    print "Expect 0: ", func.percentage(1, 0)
+    print "Expect 100: ", func.percentage(256, 256)
+    print "Expect 25: ", func.percentage(2, 8)
+    print "Expect 17.65: ", func.percentage(3, 17)
+    print "Expect -200: ", func.percentage(64, -32)
+    print "Expect -200: ", func.percentage(-64, 32)
+    print "Expect 200: ", func.percentage(-64, -32)
+    
+    rem input "Press <enter> to continue: ", *
+    
+rem --- Gross Profit
+
+    print fill(79, "="), 'lf', "grossProfit()..."
+    sale = 19.95, cost = 5.00
+    print "Sale", sale, ", Cost", cost, ", GP% ", func.grossProfit(sale, cost)
+    sale = 19.95, cost = 19.95
+    print "Sale", sale, ", Cost", cost, ", GP% ", func.grossProfit(sale, cost)
+    sale = 19.95, cost = 0
+    print "Sale", sale, ", Cost", cost, ", GP% ", func.grossProfit(sale, cost)
+    sale = 19.95, cost = 40.00
+    print "Sale", sale, ", Cost", cost, ", GP% ", func.grossProfit(sale, cost)
+    sale = 0, cost = 5
+    print "Sale", sale, ", Cost", cost, ", GP% ", func.grossProfit(sale, cost)
+    
+    rem input "Press <enter> to continue: ", *
+
+rem --- Forrmat Address
+
+    print fill(79, "="), 'lf', "formatAddress()..."
+
+    path_to_table$ = "/devel/main/apps/aon/data/arm-01"
+    table_tpl$ = "FIRM_ID:C(2):LABEL=Firm_ID MASK=00:,CUSTOMER_ID:C(6*=10):LABEL=Customer_ID:,CUSTOMER_NAME:C(30):LABEL=Customer_Name:,ADDR_LINE_1:C(24):LABEL=Address:,ADDR_LINE_2:C(24):LABEL=Address:,ADDR_LINE_3:C(24):LABEL=Address:,ZIP_CODE:C(9):LABEL=Zip_Code MASK=UUUUUUUUU:,PHONE_NO:C(20):LABEL=Telephone_Number MASK=00000000000000000000:,PHONE_EXTEN:C(4):LABEL=Ext:,RESALE_NO:C(20):LABEL=Resale_Number:,ALT_SEQUENCE:C(10):LABEL=Alternate_Sequence:,RESERVED_STR:C(3):LABEL=Reserved_For_Addon_Use:,AR_SHIP_VIA:C(10):LABEL=Customer_Ship_Via:,FAX_NO:C(20):LABEL=Fax_Number MASK=00000000000000000000:,ADDR_LINE_4:C(24):LABEL=Address:,CITY:C(22):LABEL=City:,STATE_CODE:C(2):LABEL=St:,RETAIN_CUST:C(1):LABEL=Retain?:,CONTACT_NAME:C(20):LABEL=Contact_Name:,DB_NO:C(9):LABEL=DB_Number:,SIC_CODE:C(8):LABEL=SIC_Code:,COUNTRY:C(24):LABEL=Country:,FOB:C(15):LABEL=Free_On_Board_[FOB]:,RESERVED_STR_02:C(22):LABEL=Reserved_For_Addon_Use:,OPENED_DATE:C(8*=10):LABEL=Date_Opened:"
+    
+    rem path_to_table$ = "/devel/main/apps/aon/data/apm-01"
+    rem table_tpl$ = "FIRM_ID:C(2):LABEL=Firm_ID MASK=00:,VENDOR_ID:C(6*=10):LABEL=Vendor_ID MASK=UUUUUU:,VENDOR_NAME:C(30):LABEL=Vendor_Name:,ADDR_LINE_1:C(24):LABEL=Address:,ADDR_LINE_2:C(24):LABEL=Address_Line_2:,CITY:C(22):LABEL=City:,STATE_CODE:C(2):LABEL=State:,ZIP_CODE:C(9):LABEL=Zip MASK=UUUUUUUUU:,PHONE_NO:C(20):LABEL=Telephone MASK=00000000000000000000:,PHONE_EXTEN:C(4):LABEL=Ext:,CONTACT_NAME:C(20):LABEL=Contact:,ALT_SEQUENCE:C(10):LABEL=Alternate_Sequence:,RESERVED_STR:C(3):LABEL=Reserved_For_Addon_Use:,HOLD_FLAG:C(1):LABEL=Hold_Invoices:,FEDERAL_ID:C(15):LABEL=Federal_ID_Number:,VENDOR_1099:C(1):LABEL=1099?:,VENDOR_ACCT:C(10):LABEL=Acct_ID:,FAX_NO:C(20):LABEL=Fax_Number MASK=00000000000000000000:,FOB:C(15):LABEL=Free_On_Board_[FOB]:,AP_SHIP_VIA:C(15):LABEL=Ship_Via:,RESERVED_STR_02:C(20):LABEL=Reserved_For_Addon_Use:,OPENED_DATE:C(8*=10):LABEL=Date_Opened:,TEMP_VEND:C(1):LABEL=Temporary_Vendor:"
+    
+    found = 0
+    open_chan = unt
+    
+    if 1 then
+        open (open_chan, err=*endif) path_to_table$
+        found = 1
+    endif
+    
+    if !found then
+        print errmes(-1)
+        print "Skipping test..."
+        goto format_address_end
+    endif
+    
+    declare BBjTemplatedString rec!
+    rec! = BBjAPI().makeTemplatedString(table_tpl$)
+
+    dim rec$:table_tpl$
+    
+    while 1
+        read record (open_chan, end=*break) rec$
+        rec!.setString(rec$)
+        block$ = func.formatAddress(rec!, 30, 6)
+        
+        for i=1 to 180 step 30
+            print block$(i, 30)
+        next i
+        
+        input "Press <enter> to continue: ", *
+    wend
+
+format_address_end:
+    
     end
-
+    

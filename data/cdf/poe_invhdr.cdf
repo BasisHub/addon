@@ -1,3 +1,157 @@
+[[POE_INVHDR.BTBL]]
+rem --- Open/Lock files
+files=15,begfile=1,endfile=files
+dim files$[files],options$[files],chans$[files],templates$[files]
+
+files$[1]="APM_VENDCMTS";rem --- "apm-09
+files$[2]="APM_VENDMAST";rem --- "apm-01"
+files$[3]="APM_VENDHIST";rem --- "apm-02"
+files$[4]="APS_PARAMS";rem --- "aps-01"
+files$[5]="GLS_PARAMS";rem --- "gls-01"
+files$[6]="POS_PARAMS";rem --- "pos-01"
+files$[7]="IVS_PARAMS";rem --- "ivs-01"
+files$[8]="POE_POHDR";rem --- "poe-02"
+files$[9]="POE_PODET";rem --- "poe-12"
+files$[10]="POT_RECHDR";rem --- "pot-04"
+files$[11]="POT_RECDET";rem --- "pot-14"
+files$[12]="APT_INVOICEHDR";rem --- "apt-01"
+files$[13]="IVM_ITEMMAST";rem --- "ivm-01"
+files$[14]="POC_LINECODE";rem --- "pom-02"
+files$[15]="APC_TERMSCODE"
+
+for wkx=begfile to endfile
+	options$[wkx]="OTA"
+next wkx
+call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:	begfile,
+:	endfile,
+:	files$[all],
+:	options$[all],
+:	chans$[all],
+:	templates$[all],
+:	table_chans$[all],
+:	batch,
+:	status$
+
+if status$<>"" then
+	remove_process_bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
+	release
+endif
+
+aps01_dev=num(chans$[4])
+gls01_dev=num(chans$[5])
+pos01_dev=num(chans$[6])
+ivs01_dev=num(chans$[7])
+
+dim aps01a$:templates$[4],gls01a$:templates$[5],pos01a$:templates$[6],ivs01a$:templates$[7]
+
+
+rem --- Additional File Opens
+gl$="N"
+status=0
+source$=pgm(-2)
+call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"PO",glw11$,gl$,status
+if status<>0 goto std_exit
+callpoint!.setDevObject("gl_int",gl$)
+callpoint!.setDevObject("glworkfile",glw11$)
+if gl$="Y"
+   files=2,begfile=1,endfile=2
+   dim files$[files],options$[files],chans$[files],templates$[files]
+   files$[1]="GLM_ACCT",options$[1]="OTA";rem --- "glm-01"
+   files$[2]=glw11$,options$[2]="OTAS";rem --- s means no err if tmplt not found
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:	begfile,
+:	endfile,
+:	files$[all],
+:	options$[all],
+:	chans$[all],
+:	templates$[all],
+:	table_chans$[all],
+:	batch,
+:	status$
+	if status$<>"" then
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
+endif
+rem --- Retrieve parameter data
+               
+aps01a_key$=firm_id$+"AP00"
+find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+
+callpoint!.setDevObject("multi_types",aps01a.multi_types$)
+callpoint!.setDevObject("multi_dist",aps01a.multi_dist$)
+callpoint!.setDevObject("retention",aps01a.ret_flag$)
+
+gls01a_key$=firm_id$+"GL00"
+find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+callpoint!.setDevObject("units_flag",gls01a.units_flag$)
+callpoint!.setDevObject("gl_year",gls01a.current_year$)
+callpoint!.setDevObject("gl_per",gls01a.current_per$)
+callpoint!.setDevObject("gl_tot_pers",gls01a.total_pers$)
+
+
+call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_INVSEL","PRIMARY",poe_invsel_key_tpl$,table_chans$[all],status$
+callpoint!.setDevObject("poe_invsel_key",poe_invsel_key_tpl$)
+
+if aps01a.multi_types$<>"Y"
+	callpoint!.setTableColumnAttribute("POE_INVHDR.AP_TYPE","PVAL",$22$+aps01a.ap_type$+$22$)
+endif
+[[POE_INVHDR.AABO]]
+rem --- user has elected not to save record (we are NOT in immediate write, so save takes care of header and detail at once)
+rem --- if rec_data$ is empty (i.e., new record never written), make sure no GL Dists are left orphaned (i.e., remove them)
+
+if callpoint!.getRecordMode()="A"
+	poe_invgl=fnget_dev("POE_INVGL")
+	k$=""
+	invgl_key$=callpoint!.getColumnData("POE_INVHDR.FIRM_ID")+
+:		callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+
+:		callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+
+:		callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
+
+	read (poe_invgl,key=invgl_key$,dom=*next)
+	while 1
+		k$=key(poe_invgl,end=*break)
+		if pos(invgl_key$=k$)<>1 then break
+		remove (poe_invgl,key=k$)	
+	wend	
+endif
+[[POE_INVHDR.BREX]]
+rem --- also need final check of balance -- invoice amt - invsel amt - gl dist amt (invsel should already equal invdet)
+
+if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
+	msg_id$="PO_INV_NOT_DIST"
+	gosub disp_message
+
+endif
+[[POE_INVHDR.APFE]]
+rem --- when re-entering primary form, enable GL button
+rem --- only enable invoice detail button if we've already written some poe_invdet records
+
+callpoint!.setOptionEnabled("GDIS",1)
+
+poe_invdet=fnget_dev("POE_INVDET")
+
+k$=""
+invdet_key$=callpoint!.getColumnData("POE_INVHDR.FIRM_ID")+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+
+:	callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
+
+
+read (poe_invdet,key=invdet_key$,dom=*next)
+k$=key(poe_invdet,end=*next)
+if pos(invdet_key$=k$)=1
+	callpoint!.setOptionEnabled("INVD",1)
+else
+	callpoint!.setOptionEnabled("INVD",0)
+endif
+[[POE_INVHDR.BPFX]]
+callpoint!.setOptionEnabled("INVD",0)
+callpoint!.setOptionEnabled("GDIS",0)
 [[POE_INVHDR.AOPT-GDIS]]
 pfx$=firm_id$+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
 dim dflt_data$[3,1]
@@ -36,6 +190,17 @@ if gridVect!.size()
 			endif
 		next x
 	endif
+endif
+
+callpoint!.setOptionEnabled("INVD",1)
+callpoint!.setOptionEnabled("GDIS",1)
+
+rem --- also need final check of balance -- invoice amt - invsel amt - gl dist amt (invsel should already equal invdet)
+
+if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
+	msg_id$="PO_INV_NOT_DIST"
+	gosub disp_message
+
 endif
 [[POE_INVHDR.AOPT-INVD]]
 pfx$=firm_id$+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
@@ -141,106 +306,6 @@ while 1
 	break
 wend
 [[POE_INVHDR.BSHO]]
-rem --- Open/Lock files
-files=15,begfile=1,endfile=files
-dim files$[files],options$[files],chans$[files],templates$[files]
-
-files$[1]="APM_VENDCMTS";rem --- "apm-09
-files$[2]="APM_VENDMAST";rem --- "apm-01"
-files$[3]="APM_VENDHIST";rem --- "apm-02"
-files$[4]="APS_PARAMS";rem --- "aps-01"
-files$[5]="GLS_PARAMS";rem --- "gls-01"
-files$[6]="POS_PARAMS";rem --- "pos-01"
-files$[7]="IVS_PARAMS";rem --- "ivs-01"
-files$[8]="POE_POHDR";rem --- "poe-02"
-files$[9]="POE_PODET";rem --- "poe-12"
-files$[10]="POT_RECHDR";rem --- "pot-04"
-files$[11]="POT_RECDET";rem --- "pot-14"
-files$[12]="APT_INVOICEHDR";rem --- "apt-01"
-files$[13]="IVM_ITEMMAST";rem --- "ivm-01"
-files$[14]="POC_LINECODE";rem --- "pom-02"
-files$[15]="APC_TERMSCODE"
-
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
-call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-
-if status$<>"" then
-	remove_process_bar:
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
-
-aps01_dev=num(chans$[4])
-gls01_dev=num(chans$[5])
-pos01_dev=num(chans$[6])
-ivs01_dev=num(chans$[7])
-
-dim aps01a$:templates$[4],gls01a$:templates$[5],pos01a$:templates$[6],ivs01a$:templates$[7]
-
-
-rem --- Additional File Opens
-gl$="N"
-status=0
-source$=pgm(-2)
-call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"PO",glw11$,gl$,status
-if status<>0 goto std_exit
-callpoint!.setDevObject("gl_int",gl$)
-callpoint!.setDevObject("glworkfile",glw11$)
-if gl$="Y"
-   files=2,begfile=1,endfile=2
-   dim files$[files],options$[files],chans$[files],templates$[files]
-   files$[1]="GLM_ACCT",options$[1]="OTA";rem --- "glm-01"
-   files$[2]=glw11$,options$[2]="OTAS";rem --- s means no err if tmplt not found
-	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-	if status$<>"" then
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-		release
-	endif
-endif
-rem --- Retrieve parameter data
-               
-aps01a_key$=firm_id$+"AP00"
-find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-
-callpoint!.setDevObject("multi_types",aps01a.multi_types$)
-callpoint!.setDevObject("multi_dist",aps01a.multi_dist$)
-callpoint!.setDevObject("retention",aps01a.ret_flag$)
-
-gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-callpoint!.setDevObject("units_flag",gls01a.units_flag$)
-callpoint!.setDevObject("gl_year",gls01a.current_year$)
-callpoint!.setDevObject("gl_per",gls01a.current_per$)
-callpoint!.setDevObject("gl_tot_pers",gls01a.total_pers$)
-
-
-call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_INVSEL","PRIMARY",poe_invsel_key_tpl$,table_chans$[all],status$
-callpoint!.setDevObject("poe_invsel_key",poe_invsel_key_tpl$)
-
 rem --- add static label for displaying date/amount if pulling up open invoice
 inv_no!=fnget_control!("POE_INVHDR.AP_INV_NO")
 inv_no_x=inv_no!.getX()
@@ -270,6 +335,8 @@ endif
 if callpoint!.getDevObject("retention")="N" 
 	callpoint!.setColumnEnabled("POE_INVHDR.RETENTION",-1)
 endif
+callpoint!.setOptionEnabled("INVD",0)
+callpoint!.setOptionEnabled("GDIS",0)
 [[POE_INVHDR.<CUSTOM>]]
 vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")
@@ -297,6 +364,12 @@ rem --- set vendor_id$ and ap_type$ before coming in
 		callpoint!.setDevObject("dflt_terms_cd", apm02a.ap_terms_code$)
 		callpoint!.setDevObject("dflt_pymt_grp", apm02a.payment_grp$)
 		vend_hist$="Y"
+	else
+		callpoint!.setDevObject("dflt_dist_cd", "")
+		callpoint!.setDevObject("dflt_gl_account", "")
+		callpoint!.setDevObject("dflt_terms_cd", "")
+		callpoint!.setDevObject("dflt_pymt_grp", "")
+		vend_hist$=""
 	endif
 return
 
@@ -304,6 +377,7 @@ disp_vendor_comments:
 	
 	rem --- You must pass in vendor_id$ because we don't know whether it's verified or not
 	cmt_text$=""
+
 	apm09_dev=fnget_dev("APM_VENDCMTS")
 	dim apm09a$:fnget_tpl$("APM_VENDCMTS")
 	apm09_key$=firm_id$+vendor_id$
@@ -314,6 +388,8 @@ disp_vendor_comments:
 		 
 		if apm09a.firm_id$ = firm_id$ and apm09a.vendor_id$ = vendor_id$ then
 			cmt_text$ = cmt_text$ + cvs(apm09a.std_comments$,3)+$0A$
+		else
+			break
 		endif				
 	wend
 	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
@@ -450,9 +526,11 @@ ap_type$=callpoint!.getColumnData("POE_INVHDR.AP_TYPE")
 gosub vendor_info
 gosub disp_vendor_comments
 gosub get_vendor_history
+
 if vend_hist$="" and callpoint!.getDevObject("multi_types")="Y"
 	msg_id$="AP_NOHIST"
 	gosub disp_message
+	callpoint!.setStatus("CLEAR-NEWREC")
 endif
 [[POE_INVHDR.NET_INV_AMT.AVAL]]
 rem re-calc discount amount based on net x disc %
@@ -475,8 +553,7 @@ rem --- check vend hist file to be sure this vendor/ap type ok together; also ma
 
 dont_write$=""
 
-if cvs(callpoint!.getColumnData("POE_INVHDR.AP_TYPE"),3)="" or
-:	cvs(callpoint!.getColumnData("POE_INVHDR.VENDOR_ID"),3)="" or
+if cvs(callpoint!.getColumnData("POE_INVHDR.VENDOR_ID"),3)="" or
 :	cvs(callpoint!.getColumnData("POE_INVHDR.AP_INV_NO"),3)="" then dont_write$="Y"
 
 vendor_id$ = callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")
@@ -490,13 +567,7 @@ if dont_write$="Y"
 	callpoint!.setStatus("ABORT")
 endif
 
-rem --- also need final check of balance -- invoice amt - invsel amt - gl dist amt (invsel should already equal invdet)
 
-if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
-	msg_id$="AP_NOT_DIST"
-	gosub disp_message
-	if msg_opt$="N" then callpoint!.setStatus("ABORT")
-endif
 [[POE_INVHDR.AREC]]
 callpoint!.setColumnData("<<DISPLAY>>.comments","")
 callpoint!.setDevObject("inv_amt","")
@@ -507,6 +578,9 @@ rem --- Re-enable disabled fields
 callpoint!.setColumnEnabled("POE_INVHDR.AP_DIST_CODE",1)
 callpoint!.setColumnEnabled("POE_INVHDR.INV_DATE",1)
 callpoint!.setColumnEnabled("POE_INVHDR.NET_INV_AMT",1)
+rem --- disable opt buttons
+callpoint!.setOptionEnabled("INVD",0)
+callpoint!.setOptionEnabled("GDIS",0)
 [[POE_INVHDR.INV_DATE.AVAL]]
 invdate$=callpoint!.getUserInput()
 terms_cd$=callpoint!.getColumnData("POE_INVHDR.AP_TERMS_CODE")

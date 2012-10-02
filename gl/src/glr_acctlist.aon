@@ -22,6 +22,9 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
 
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
+
 rem --- Open/Lock files
 
     files=3,begfile=1,endfile=files
@@ -44,8 +47,7 @@ rem --- Parameters
     gls01a_key$=firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     rem m0$=gls01a.acct_output$ -- getting mask from Barista masks file instead
-    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,0
-    acctlen=num(gls01a.acct_length$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     break$=""
     desc$=""
     call pgmdir$+"glc_regroup.aon",glm10_dev,firm_id$,break$,desc$
@@ -80,14 +82,15 @@ rem --- Initializations
     l=l9+1
     number=0
     more=1
+    total_recs=0
 
 rem --- Account range heading
 
     x$="From "
     y$=""
-    if begacct$="" y$="First",x$=x$+y$+" Account"       else y$=fnmask$(begacct$(1,acctlen),m0$),x$=x$+"Account "+y$
+    if begacct$="" y$="First",x$=x$+y$+" Account"       else y$=fnmask$(begacct$(1,m0),m0$),x$=x$+"Account "+y$
     x$=x$+" Through ",y$=""
-    if endacct$="" y$="Last",x$=x$+y$+" Account"      else y$=fnmask$(endacct$(1,acctlen),m0$),x$=x$+"Account "+y$
+    if endacct$="" y$="Last",x$=x$+y$+" Account"      else y$=fnmask$(endacct$(1,m0),m0$),x$=x$+"Account "+y$
     headings$[2]=x$
 
 rem --- Document columns
@@ -95,12 +98,12 @@ rem --- Document columns
     columns=2
     dim columns$[2,3]
     columns$[0,0]="Type",columns$[0,1]="C",columns$[0,2]="30"
-    columns$[1,0]="Account",columns$[1,1]="C",columns$[1,2]=str(acctlen)
+    columns$[1,0]="Account",columns$[1,1]="C",columns$[1,2]=str(m0)
     columns$[2,0]="Description",columns$[2,1]="C",columns$[2,2]="30"
 
 rem --- Open printer, start progress meter and position files
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","GLM_ACCT","","","",0,glm01_dev,1,meter_num,status
     k$=firm_id$+begacct$
     if begacct$<>"" then k$=k$(1,len(k$)-1)
     read (glm01_dev,key=k$,dom=*next)
@@ -114,7 +117,8 @@ rem --- Top Of Loop
           if endacct$<>"" if glm01a.gl_account$>endacct$ break
           gosub wildcard
           if status continue
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           number=number+1
 
           breaks: rem --- Breaks
@@ -151,6 +155,12 @@ rem --- Loop back for next record
 
 rem --- All done
 
+    if number=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
     xwk=fnblank(3)
     OutVect!.addItem("")
     OutVect!.addItem(str(number))
@@ -159,8 +169,8 @@ rem --- All done
 
 subheading: rem --- Subheading
 
-	xwk=fnblank(3)
-	OutVect!.addItem(h3$)    
+    xwk=fnblank(3)
+    OutVect!.addItem(h3$)    
     h3$=""
     return
 
@@ -169,7 +179,7 @@ wildcard: rem --- Test account number against specified wildcard mask
     status=0
     if wildcard$="" return
     if wildcard<>len(wildcard$) wildcard=len(wildcard$)
-    x$=fnmask$(glm01a.gl_account$(1,acctlen),m0$)
+    x$=fnmask$(glm01a.gl_account$(1,m0),m0$)
     for x=1 to wildcard
         if wildcard$(x,1)="?" continue
         if x$(x,1)<>wildcard$(x,1) status=1
@@ -201,6 +211,13 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         if len(q1$)>len(q2$)-q0 let q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
     fnend
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem #include std_error.src
 
@@ -259,5 +276,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

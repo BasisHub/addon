@@ -6,12 +6,25 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-	rem --- err= on enter because pgm is usually run from po print form, but can be called
-	rem --- on demand from w/in po entry
-	enter single_vendor_id$,single_po_no$,err=*next
+    rem --- err= on enter because pgm is usually run from po print form, but can be called
+    rem --- on demand from w/in po entry
+    enter single_vendor_id$,single_po_no$,err=*next
 
     seterr std_error
     setesc std_error
+    
+rem --- Use statements
+
+    use ::ado_func.src::func
+    use ::ado_pdf.src::PDFHelper
+    use ::sys/prog/bao_option.bbj::Option
+
+    use java.awt.Font
+    use java.lang.Float
+    use javax.print.attribute.HashPrintRequestAttributeSet
+    use javax.print.attribute.standard.MediaPrintableArea
+    use javax.print.attribute.standard.MediaSizeName
+    use javax.print.attribute.standard.OrientationRequested    
 
 rem --- Retrieve the program path
 
@@ -42,7 +55,7 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=23,begfile=1,endfile=files
+    files=24,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[2]="apm-01",ids$[2]="APM_VENDMAST"
     files$[3]="apm-05",ids$[3]="APM_VENDADDR"
@@ -66,6 +79,7 @@ rem --- Open/Lock files
     files$[21]="pos_params",ids$[21]="POS_PARAMS"
     files$[22]="apc_termscode",ids$[22]="APC_TERMSCODE"
     files$[23]="ivc_whsecode",ids$[23]="IVC_WHSECODE"
+    files$[24]="aps_report",ids$[24]="APS_REPORT"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -91,10 +105,16 @@ rem --- Open/Lock files
     pos01a_dev=channels[21]
     apm10c_dev=channels[22]
     ivm10c_dev=channels[23]; rem IVC_WHSECODE
+    aps_report_dev=channels[24]
 
 rem --- Dimension string templates
 
-    dim apm01a$:templates$[2],apm05a$:templates$[3],apm10a$:templates$[4],arm01a$:templates$[5],arm03a$:templates$[6],ivm01a$:templates$[7],ivm02a$:templates$[8],ivm05a$:templates$[9],ivm10a$:templates$[10],ope31a$:templates$[11],poe02a$:templates$[12],poe12a$:templates$[13],poe22a$:templates$[14],pom02a$:templates$[15],pom04a$:templates$[16],pom14a$:templates$[17],aps01a$:templates$[18],ars01a$:templates$[19],ivs01a$:templates$[20],pos01a$:templates$[21],apm10c$:templates$[22],ivm10c$:templates$[23]
+    dim apm01a$:templates$[2],apm05a$:templates$[3],apm10a$:templates$[4],arm01a$:templates$[5]
+    dim arm03a$:templates$[6],ivm01a$:templates$[7],ivm02a$:templates$[8],ivm05a$:templates$[9]
+    dim ivm10a$:templates$[10],ope31a$:templates$[11],poe02a$:templates$[12],poe12a$:templates$[13]
+    dim poe22a$:templates$[14],pom02a$:templates$[15],pom04a$:templates$[16],pom14a$:templates$[17]
+    dim aps01a$:templates$[18],ars01a$:templates$[19],ivs01a$:templates$[20],pos01a$:templates$[21]
+    dim apm10c$:templates$[22],ivm10c$:templates$[23],aps_report$:templates$[24]
 
 rem --- Retrieve parameter records
 
@@ -106,6 +126,10 @@ rem --- Retrieve parameter records
     find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
     pos01a_key$=firm_id$+"PO00"
     find record (pos01a_dev,key=pos01a_key$,err=std_missing_params) pos01a$
+    
+    find record (aps_report_dev,key=firm_id$+"AP02",err=std_missing_params) aps_report$
+    co_addr$=aps_report.addr_line_1$+aps_report.addr_line_2$+aps_report.city$+aps_report.state_code$+aps_report.zip_code$    
+    call "adc_address.aon",co_addr$,24,3,9,35
 
 rem --- Parameters
 
@@ -115,9 +139,6 @@ rem --- Parameters
     ar$="N"
     sf$="N"
     when$=sysinfo.system_date$
-    find record (pos01a_dev,key=firm_id$+n2$+"00",dom=std_missing_params) pos01a$
-    find record (aps01a_dev,key=firm_id$+"AP00",dom=std_missing_params) aps01a$
-    find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
     i[0]=ivs01a.item_id_len
     i[1]=num(ivs01a.precision$)
     i[2]=ivs01a.ls_no_len
@@ -147,16 +168,20 @@ rem --- Initializations
 
 rem --- Assign form input values to local variables
 
+    declare Option option!
+
     table$=fnget_table$("")
     if cvs(table$,3)=""
-		vendor$=single_vendor_id$
-		req_no$=single_po_no$
+        vendor$=single_vendor_id$
+        req_no$=single_po_no$
+        alias_id$="POR_POPRINT"
     else
-		sequence$=option!.getOptionData("REPORT_TYPE")
-		msg$=option!.getOptionData("MESSAGE_TEXT")
-		restart$=option!.getOptionData("RESTART")
-		vendor$=option!.getOptionData("VENDOR_ID")
-	endif
+        sequence$=option!.getOptionData("REPORT_TYPE")
+        msg$=option!.getOptionData("MESSAGE_TEXT")
+        restart$=option!.getOptionData("RESTART")
+        vendor$=option!.getOptionData("VENDOR_ID")
+        alias_id$=option!.getAlias()
+    endif
 
 rem --- Initializations
 
@@ -169,39 +194,68 @@ rem --- Initializations
     nf$="(Not On File)"
     shipflen=35
     more=1
+    
+rem --- Init PDF printing 
 
-rem --- Open the printer
+    declare Font textfont!
+    declare Font boldfont!
+    declare Font italicfont!
+    declare Font largefont!
+    declare Font smallfont!
+    declare BBjAPI myAPI!
+    declare BBjColor white!
+    declare BBjColor black!
+    declare BBjColor light_gray!
 
-    let textfont!= new java.awt.Font("Times New Roman",java.awt.Font.PLAIN,10)
-    let italicfont!= new java.awt.Font("Times New Roman",java.awt.Font.ITALIC,10)
-    let boldfont!=new java.awt.Font("Times New Roman",java.awt.Font.BOLD,10)
-    let largefont!=new java.awt.Font("Arial",java.awt.Font.BOLD,16)
-    let smallfont!= new java.awt.Font("Times New Roman",java.awt.Font.BOLD,8)
+    textfont!   = new Font("Times New Roman", Font.PLAIN, 10)
+    italicfont! = new Font("Times New Roman", Font.ITALIC, 10)
+    boldfont!   = new Font("Arial", Font.BOLD, 10)
+    largefont!  = new Font("Arial", Font.BOLD, 16)
+    smallfont!  = new Font("Times New Roman",Font.BOLD,8)
 
-    left_justify=0
-    right_justify=1
-    center_justify=2
+    myAPI! = BBjAPI()
+    white! = myAPI!.makeColor("WHITE")
+    black! = myAPI!.makeColor("BLACK")
+    light_gray! = myAPI!.makeColor(224, 224, 224)
 
-    rem --- create file
-    myAPI!=BBjAPI()
-    myBBjPrinter!=myAPI!.getBBjPrinter(1)
+rem --- Setup PDF printer and print area   
 
-    REM Create a set of request attributes
-    LET requestAttributes!=new javax.print.attribute.HashPrintRequestAttributeSet()
-    requestAttributes!.add(javax.print.attribute.standard.MediaSizeName.NA_LETTER)
-    requestAttributes!.add(javax.print.attribute.standard.OrientationRequested.PORTRAIT)
+    declare HashPrintRequestAttributeSet requestAttributes!
+    declare MediaPrintableArea a!
+    declare Float x!
+    declare Float y!
+    declare Float w!
+    declare Float h!
 
-    x!=new java.lang.Float(0.25).floatValue()
-    y!=new java.lang.Float(0.25).floatValue()
-    w!=new java.lang.Float(8.0).floatValue()
-    h!=new java.lang.Float(10.5).floatValue()
-    units=javax.print.attribute.standard.MediaPrintableArea.INCH
-    a!=new javax.print.attribute.standard.MediaPrintableArea(x!,y!,w!,h!,units)
+    requestAttributes! = new HashPrintRequestAttributeSet()
+    requestAttributes!.add(MediaSizeName.NA_LETTER)
+    requestAttributes!.add(OrientationRequested.PORTRAIT)
+
+    units = MediaPrintableArea.INCH
+    x! = new Float(0.25).floatValue()
+    y! = new Float(0.25).floatValue()
+    w! = new Float(8.0).floatValue()
+    h! = new Float(10.5).floatValue()
+    a! = new MediaPrintableArea(x!,y!,w!,h!,units)
 
     requestAttributes!.add(a!)
-    myBBjPrinter!.setAttributes(requestAttributes!)
 
-    doc!=myBBjPrinter!.getForm(0)
+rem --- Create PDF printer, set attributes, and create PDF helper object
+
+    declare BBjPrinter myBBjPrinter!
+    declare BBjForm docPrint!
+    declare PDFHelper pdf!
+    
+    myBBjPrinter!=myAPI!.getBBjPrinter(1,err=*next)
+    if myBBjPrinter!=null()
+        msg_id$="AD_NOPRINTER"
+        gosub disp_message
+        goto std_exit
+    endif
+    myBBjPrinter!.setAttributes(requestAttributes!)
+    docPrint! = myBBjPrinter!.getForm(0)
+    pdf! = new PDFHelper(textfont!)
+
 
 rem --- ESCAPE IF PLAIN$="Y" THEN LET SHIPFLEN$="Y
 
@@ -244,57 +298,57 @@ rem    shipfrom$="99 "+fill(30,"X")
 
 rem --- Loop Starting
 
-	if single_vendor_id$<>""
-	
-		sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, poe_podet.internal_seq_no, "
-		sql_prep$=sql_prep$+"poe_podet.warehouse_id, apm_vendmast.alt_sequence "
-		sql_prep$=sql_prep$+"FROM poe_poprint, poe_podet, apm_vendmast "
+    if single_vendor_id$<>""
+    
+        sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, poe_podet.internal_seq_no, "
+        sql_prep$=sql_prep$+"poe_podet.warehouse_id, apm_vendmast.alt_sequence "
+        sql_prep$=sql_prep$+"FROM poe_poprint, poe_podet, apm_vendmast "
 
-		where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND poe_poprint.vendor_id = '" +single_vendor_id$+ "' AND "
-		where_clause$=where_clause$+"poe_poprint.po_no = '"+single_po_no$+"' AND "
-		where_clause$=where_clause$+"poe_poprint.firm_id=poe_podet.firm_id AND poe_poprint.po_no=poe_podet.po_no AND "
-		where_clause$=where_clause$+"poe_poprint.firm_id=apm_vendmast.firm_id AND poe_poprint.vendor_id=apm_vendmast.vendor_id "
+        where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND poe_poprint.vendor_id = '" +single_vendor_id$+ "' AND "
+        where_clause$=where_clause$+"poe_poprint.po_no = '"+single_po_no$+"' AND "
+        where_clause$=where_clause$+"poe_poprint.firm_id=poe_podet.firm_id AND poe_poprint.po_no=poe_podet.po_no AND "
+        where_clause$=where_clause$+"poe_poprint.firm_id=apm_vendmast.firm_id AND poe_poprint.vendor_id=apm_vendmast.vendor_id "
 
-		order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
-		
-	else
+        order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
+        
+    else
 
-		sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, poe_podet.internal_seq_no, "
-		sql_prep$=sql_prep$+"poe_podet.warehouse_id, apm_vendmast.alt_sequence "
-		sql_prep$=sql_prep$+"FROM poe_poprint, poe_podet, apm_vendmast "
+        sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, poe_podet.internal_seq_no, "
+        sql_prep$=sql_prep$+"poe_podet.warehouse_id, apm_vendmast.alt_sequence "
+        sql_prep$=sql_prep$+"FROM poe_poprint, poe_podet, apm_vendmast "
 
 
-		where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND "
-		where_clause$=where_clause$+"poe_poprint.firm_id=poe_podet.firm_id AND poe_poprint.po_no=poe_podet.po_no AND "
-		where_clause$=where_clause$+"poe_poprint.firm_id=apm_vendmast.firm_id AND poe_poprint.vendor_id=apm_vendmast.vendor_id "
+        where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND "
+        where_clause$=where_clause$+"poe_poprint.firm_id=poe_podet.firm_id AND poe_poprint.po_no=poe_podet.po_no AND "
+        where_clause$=where_clause$+"poe_poprint.firm_id=apm_vendmast.firm_id AND poe_poprint.vendor_id=apm_vendmast.vendor_id "
 
-		action=pos(sequence$="NRPAW")
-			vend_seq=1
-			req_seq=2
-			po_seq=3
-			alt_seq=4
-			whse_seq=5
+        action=pos(sequence$="NRPAW")
+            vend_seq=1
+            req_seq=2
+            po_seq=3
+            alt_seq=4
+            whse_seq=5
 
-		switch action
-			case vend_seq
-				order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
-				break
-			 case req_seq
-			 case po_seq
-				order_by$="order by poe_poprint.po_no,poe_poprint.vendor_id,poe_podet.po_line_no"
-				break
-			 case alt_seq
-				order_by$="order by apm_vendmast.alt_sequence,poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
-				break
-			 case whse_seq
-				order_by$="order by poe_podet.warehouse_id,poe_poprint.vendor_id,poe_poprint.po_no"
-				break
-			 case default
-				more=0
-				continue
-		swend
-		
-	endif
+        switch action
+            case vend_seq
+                order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
+                break
+             case req_seq
+             case po_seq
+                order_by$="order by poe_poprint.po_no,poe_poprint.vendor_id,poe_podet.po_line_no"
+                break
+             case alt_seq
+                order_by$="order by apm_vendmast.alt_sequence,poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
+                break
+             case whse_seq
+                order_by$="order by poe_podet.warehouse_id,poe_poprint.vendor_id,poe_poprint.po_no"
+                break
+             case default
+                more=0
+                continue
+        swend
+        
+    endif
 
     sql_prep$=sql_prep$ + where_clause$ + order_by$
     sql_chan=sqlunt
@@ -311,11 +365,29 @@ rem --- Loop Starting
         whse_id$=read_tpl.warehouse_id$
         internal_seq_no$=read_tpl.internal_seq_no$
 
-        if po_no$<>poe02a.po_no$ then 
+        if po_no$<>poe02a.po_no$ then
+        
             gosub print_total
-            read record (poe02_dev,key=firm_id$+po_no$,dom=*continue) poe02a$
+            if cvs(poe02a.po_no$,3)<>"" and lock_key$<>""
+                lock_unlock$="U"
+                gosub lock_unlock_record
+            endif
             page=0
-            l=l9+1
+            l=l9+1            
+            read record (poe02_dev,key=firm_id$+po_no$,dom=*continue) poe02a$ 
+            if single_vendor_id$=""
+                lock_unlock$="L"
+                lock_key$=firm_id$+po_no$
+                gosub lock_unlock_record
+                if rd_lock_status$<>"" then lock_key$=""; continue
+            endif            
+            rem --- call bac_documents.bbj to get back document ID
+            new_doc_id$=""
+            pdf_doc$=""
+            call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,"","","I","PDF",docdir$,
+:              "pdf",alias_id$,"V",vendor_id$,rd_table_chans$[all],"DOC_ID"                            
+        else
+            if single_vendor_id$="" and lock_key$="" then continue
         endif
         if vendor_id$<>t0$ then
             gosub print_total
@@ -330,11 +402,12 @@ rem --- Loop Starting
             l=l9+1
         endif
         if poe02a.ap_terms_code$<>t2$ then gosub terms_break
-
+        gosub shipto_break;rem --- loads dropship or warehouse address into a$
+        
         find record (poe12_dev,key=firm_id$ + po_no$ + internal_seq_no$,dom=*continue) poe12a$
 
-        rem *** if poe12a.warehouse_id$ <> t3$ gosub shipto_break
         if poe12a.po_line_code$ <> t4$ gosub line_code_break
+        
 
 rem --- Print detail
 
@@ -370,41 +443,44 @@ print_done: rem --- Done printing line message
 
         d$=""
 
-        wend;   rem loop back for next result from sql fetch
+    wend;   rem loop back for next result from sql fetch
 
 done: rem --- All requisitions printed
 
 rem --- All done
 
     if recs=0
-        doc!.cancel()
         msg_id$="DOC_OUTPUT_NODATA"
         gosub disp_message
         goto std_exit
     endif
-    
-    gosub print_total
 
-    doc!.preview()
+    gosub print_total
+    if lock_key$<>""
+        lock_unlock$="U"
+        gosub lock_unlock_record
+    endif
+
+    docPrint!.preview()
 
 update: rem --- Update print file?
 
-	if single_vendor_id$=""
+    if single_vendor_id$=""
 
-		msg_id$="PO_UPDTPRT"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=label$
-		gosub disp_message
-		if msg_opt$="Y"
-			read (poe22_dev,key=firm_id$,dom=*next)
-			while more
-				k$=key(poe22_dev,end=*break)
-				if pos(firm_id$=k$)<>1 break
-				remove (poe22_dev,key=k$,dom=*break)
-			wend
-		endif
-		
-	endif
+        msg_id$="PO_UPDTPRT"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=label$
+        gosub disp_message
+        if msg_opt$="Y"
+            read (poe22_dev,key=firm_id$,dom=*next)
+            while more
+                k$=key(poe22_dev,end=*break)
+                if pos(firm_id$=k$)<>1 break
+                remove (poe22_dev,key=k$,dom=*break)
+            wend
+        endif
+        
+    endif
 
 all_done: rem --- All done
 
@@ -412,102 +488,132 @@ all_done: rem --- All done
 
 report_heading: rem --- Report Heading
 
+rem --- Create PDF physical file, if needed
+
+    declare BBjForm docPDF!
+
+    while pdf_doc$ = ""
+        prtr_dev = unt
+        pdf_doc$ = docdir$ + new_doc_id$ + ".pdf"
+        start_block = 1
+        
+        if start_block
+            open (prtr_dev,err=*endif)pdf_doc$
+            close (prtr_dev)
+            erase pdf_doc$
+        endif
+
+        docPDF! = myAPI!.getBBjPDFForm(pdf_doc$, requestAttributes!)
+    wend
+
+
     page=page+1
+    
+rem --- Create pages from both physical and display objects   
 
-    page!=doc!.createPage()
-    page!.setRightMargin(18)
-    page!.setLeftMargin(18)
-    page!.setTopMargin(18)
-    page!.setBottomMargin(18)
+    declare BBjFormPage pagePDF!
+    declare BBjFormPage pagePrint!
+    
+    pagePDF!   = docPDF!.createPage()
+    pagePrint! = docPrint!.createPage()
+    
+    pdf!.setPage(pagePrint!)
+    
+    while 1
+    
+        rem --- Header
+        pdf!.setText(0,10,568,10,"PURCHASE ORDER",largefont!,pdf!.CENTER_JUSTIFY())
+        pdf!.setLogo(0,0,185,68,logofile$)
+        
+        rem --- Company Address (from AP report param rec)
+        pdf!.setText(50,72,co_addr$(1,35))
+        pdf!.setText(50,84,co_addr$(36,35))
+        pdf!.setText(50,96,co_addr$(71,35))
+        pdf!.setText(50,108,co_addr$(106))
+              
+        rem --- Info Box         
+        pdf!.drawBox(424,30,146,96)
+        pdf!.drawHLine(424, 54,146)
+        pdf!.drawHLine(424, 78,146)
+        pdf!.drawHLine(424,102,146)
+        pdf!.setText(432, 36,54, 36,"Page",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(432, 60,54, 36,"Date",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(432, 84,54, 36,"Vendor",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(432,108,54, 36,"PO No",boldfont!,pdf!.RIGHT_JUSTIFY())
 
-    rem --- Header
-    tmp=fntext2(0,10,568,10,"PURCHASE ORDER",largefont!,center_justify,page!)
-    tmp=fnlogo(page!)
+        pdf!.drawVLine(490, 30,96)
+        pdf!.setText(496, 36,str(page))
+        pdf!.setText(496, 60,fndate$(poe02a.ord_date$))
+        pdf!.setText(496, 84,poe02a.vendor_id$)
+        pdf!.setText(496,108,poe02a.po_no$)
 
-    rem --- Ship-To Address
-    tmp=fntext(50,60,a$(1,35),textfont!,page!)
-    tmp=fntext(50,72,a$(36,35),textfont!,page!)
-    tmp=fntext(50,84,a$(71,35),textfont!,page!)
-    tmp=fntext(50,96,a$(106),textfont!,page!)
+        rem --- Vendor Address
+        pdf!.drawBox(20,126,550,96)
+        pdf!.drawVLine(65,126,96)
+        pdf!.setText(20,132,40,132,"Vendor",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(70,132,apm01a.vendor_name$)
+        pdf!.setText(70,144,n$(1,35))
+        pdf!.setText(70,156,n$(36,35))
+        pdf!.setText(70,168,n$(71,35))    
+        pdf!.setText(70,180,n$(106,35))
 
-    rem --- Info Box 
-    tmp=fnbox(424, 30,146,96,page!)
-    tmp=fnline(424, 30,424,126,page!)
-    tmp=fnline(424, 54,570,054,page!)
-    tmp=fnline(424, 78,570, 78,page!)
-    tmp=fnline(424,102,570,102,page!)
-    tmp=fntext2(432, 36,54, 36,"Page",boldfont!,right_justify,page!)
-    tmp=fntext2(432, 60,54, 36,"Date",boldfont!,right_justify,page!)
-    tmp=fntext2(432, 84,54, 36,"Vendor",boldfont!,right_justify,page!)
-    tmp=fntext2(432,108,54, 36,"PO No",boldfont!,right_justify,page!)
+        rem --- Ship To Address
+        pdf!.drawVLine(285,126,96)
+        pdf!.drawVLine(335,126,96)
+        pdf!.setText(280,132,48,132,"Ship To",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(340,132,ship_to$)
+        pdf!.setText(340,144,a$(1,35))
+        pdf!.setText(340,156,a$(36,35))
+        pdf!.setText(340,168,a$(71,35))    
+        pdf!.setText(340,180,a$(106,35))
+        pdf!.setText(340,204,drop_ship$)
 
-    tmp=fnline(490, 30,490,126,page!)
-    tmp=fntext(496, 36,str(page),textfont!,page!)
-    tmp=fntext(496, 60,fndate$(poe02a.ord_date$),textfont!,page!)
-    tmp=fntext(496, 84,poe02a.vendor_id$,textfont!,page!)
-    tmp=fntext(496,108,poe02a.po_no$,textfont!,page!)
+        rem --- Terms
+        pdf!.drawBox(20,222,550,24)
+        pdf!.drawVLine(65,222,24)
+        pdf!.setText(20,228,40,228,"Terms",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(70,228,apm10c.code_desc$)
 
-    rem --- Vendor Address
-    tmp=fnbox(20,126,550,96,page!)
-    tmp=fnline(65,126,65,222,page!)
-    tmp=fntext2(20,132,40,132,"Vendor",boldfont!,right_justify,page!)
-    tmp=fntext(70,132,apm01a.vendor_name$,textfont!,page!)
-    tmp=fntext(70,144,n$(1,35),textfont!,page!)
-    tmp=fntext(70,156,n$(35,35),textfont!,page!)
-    tmp=fntext(70,168,n$(71),textfont!,page!)    
-    tmp=fntext(70,180,n$(106,35),textfont!,page!)
+        pdf!.drawVLine(195,222,24)
+        pdf!.drawVLine(260,222,24)
+        pdf!.setText(195,228,60,228,"Ship Via",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(265,228,poe02a.ap_ship_via$)
 
-    rem --- Ship From Address
-    tmp=fnbox(285,126,50,96,page!)
-    tmp=fntext2(285,132,48,132,"Ship-From",boldfont!,right_justify,page!)
-    tmp=fntext(340,132,shipfrom$,textfont!,page!)
-    tmp=fntext(340,144,s$(1,35),textfont!,page!)
-    tmp=fntext(340,156,s$(35,shipflen),textfont!,page!)
-    tmp=fntext(340,168,s$(71,shipflen),textfont!,page!)    
-    tmp=fntext(340,180,s$(106,shipflen),textfont!,page!)
+        pdf!.drawVLine(384,222,24)
+        pdf!.drawVLine(416,222,24)
+        pdf!.setText(384,228,25,228,"FOB",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(421,228,poe02a.fob$)
 
+        rem --- Acknowledgement
+        pdf!.drawBox(20,246,550,24)
+        pdf!.drawVLine(260,246,24)
+        pdf!.setText(155,252,100,252,"Acknowledged By",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(265,252,poe02a.acknowledge$)
 
-    rem --- Terms
-    tmp=fnbox(20,222,550,24,page!)
-    tmp=fnline(65,222,65,246,page!)
-    tmp=fntext2(20,228,40,228,"Terms",boldfont!,right_justify,page!)
-    tmp=fntext(70,228,apm10c.code_desc$,textfont!,page!)
+        rem --- Ribbon
+        pdf!.drawBox(20,270,550,24)
+        pdf!.drawBox(20,270,550,394)
+        pdf!.drawVLine(75,270,394)
+        pdf!.drawVLine(390,270,394)
+        pdf!.drawVLine(470,270,394)
+        pdf!.drawVLine(490,270,394)
+        pdf!.setText(15,276,55,276,"Quantity",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(80,276,"Item/Description",boldfont!,page!)
+        pdf!.setText(335,276,"Date Req'd",boldfont!,page!)
+        pdf!.setText(390,276,75,276,"Cost",boldfont!,pdf!.RIGHT_JUSTIFY())
+        pdf!.setText(470,276,20,276,"UM",boldfont!,pdf!.CENTER_JUSTIFY())
+        pdf!.setText(490,276,75,276,"Extension",boldfont!,pdf!.RIGHT_JUSTIFY())
 
-    tmp=fnline(195,222,195,246,page!)
-    tmp=fnline(260,222,260,246,page!)
-    tmp=fntext2(195,228,60,228,"Ship Via",boldfont!,right_justify,page!)
-    tmp=fntext(265,228,poe02a.ap_ship_via$,textfont!,page!)
+        lines=0
 
-    tmp=fnline(384,222,384,246,page!)
-    tmp=fnline(416,222,416,246,page!)
-    tmp=fntext2(384,228,25,228,"FOB",boldfont!,right_justify,page!)
-    tmp=fntext(421,228,poe02a.fob$,textfont!,page!)
-
-    rem --- Acknowledgement
-    tmp=fnbox(20,246,550,24,page!)
-    tmp=fnline(195,246,195,270,page!)
-    tmp=fntext2(20,252,170,228,"Acknowledged By:",boldfont!,right_justify,page!)
-    tmp=fntext(200,252,poe02a.acknowledge$,textfont!,page!)
-
-    rem --- Ribbon
-    tmp=fnbox(20,270,550,24,page!)
-    tmp=fnbox(20,270,550,394,page!)
-    tmp=fnline(80,270,80,664,page!)
-    tmp=fnline(140,270,140,664,page!)
-    tmp=fnline(390,270,390,664,page!)
-    tmp=fnline(470,270,470,664,page!)
-    tmp=fnline(490,270,490,664,page!)
-    tmp=fntext2(15,276,60,276,"Seq",boldfont!,right_justify,page!)
-    tmp=fntext2(80,276,55,276,"Quantity",boldfont!,right_justify,page!)
-    tmp=fntext(145,276,"Item/Description",boldfont!,page!)
-    tmp=fntext(340,276,"Date Req'd",boldfont!,page!)
-    tmp=fntext2(390,276,75,276,"Cost",boldfont!,right_justify,page!)
-    tmp=fntext2(470,276,20,276,"UM",boldfont!,center_justify,page!)
-    tmp=fntext2(490,276,75,276,"Extension",boldfont!,right_justify,page!)
-
-    lines=0
-
-    l=1
+        l=1
+    
+        rem --- Duplicate what was done on pagePrint!; if both pages have updated, we're done
+    
+        if pdf!.getPage() = pagePDF! then break
+        pdf!.setPage(pagePDF!)    
+    
+    wend
 
     return
 
@@ -541,16 +647,23 @@ print_detail_line: rem --- Print Detail Line
             rem *** if p3$(58,1)="Y" find record (ivm05a_dev,key=ivm05a_key$,dom=*next) ivm05a$
             if cvs(ivm05a.vendor_item$,2)<>"" needed=needed+1
             if l+needed>l9-2 gosub print_continued
+            
+            pdf!.setPage(pagePrint!)
+                
+            while 1
 
-            tmp=fntext2(15,row,60,row,str(num(poe12a.internal_seq_no$):seq_msk$),textfont!,right_justify,page!)
-            tmp=fntext2(80,row,55,row,str(qty:m2$),textfont!,right_justify,page!)
-            tmp=fntext(145,row,poe12a.item_id$,textfont!,page!)
-            tmp=fntext(345,row,fndate$(poe12a.reqd_date$),textfont!,page!)
-            tmp=fntext2(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,right_justify,page!)
-            tmp=fntext2(470,row,20,row,poe12a.unit_measure$,textfont!,center_justify,page!)
-            tmp=fntext2(490,row,75,row,str(extension:m1$),textfont!,right_justify,page!)
+                pdf!.setText(15,row,55,row,str(qty:m2$),pdf!.RIGHT_JUSTIFY())
+                pdf!.setText(80,row,poe12a.item_id$)
+                pdf!.setText(345,row,fndate$(poe12a.reqd_date$))
+                pdf!.setText(390,row,75,row,str(poe12a.unit_cost:m3$),pdf!.RIGHT_JUSTIFY())
+                pdf!.setText(470,row,20,row,poe12a.unit_measure$,pdf!.CENTER_JUSTIFY())
+                pdf!.setText(490,row,75,row,str(extension:m1$),pdf!.RIGHT_JUSTIFY())                
+                
+                if pdf!.getPage() = pagePDF! then break
+                pdf!.setPage(pagePDF!)
+            wend
             l=l+1
-
+            
             gen_text$=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
             gosub text_only
             if cvs(ivm05a.vendor_item$,2)<>""
@@ -560,14 +673,21 @@ print_detail_line: rem --- Print Detail Line
             break
 
         case nonstock_line; rem --- Print Non-Stock Line
+        
+            pdf!.setPage(pagePrint!)
+                
+            while 1        
 
-            tmp=fntext2(15,row,60,row,str(num(poe12a.internal_seq_no$):seq_msk$),textfont!,right_justify,page!)
-            tmp=fntext2(80,row,55,row,str(qty:m2$),textfont!,right_justify,page!)
-            tmp=fntext(145,row,poe12a.ns_item_id$,textfont!,page!)
-            tmp=fntext(345,row,fndate$(poe12a.reqd_date$),textfont!,page!)
-            tmp=fntext2(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,right_justify,page!)
-            tmp=fntext2(470,row,20,row,poe12a.unit_measure$,textfont!,center_justify,page!)
-            tmp=fntext2(490,row,75,row,str(extension:m1$),textfont!,right_justify,page!)
+                pdf!.setText(15,row,55,row,str(qty:m2$),textfont!,pdf!.RIGHT_JUSTIFY())
+                pdf!.setText(80,row,poe12a.ns_item_id$)
+                pdf!.setText(345,row,fndate$(poe12a.reqd_date$))
+                pdf!.setText(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,pdf!.RIGHT_JUSTIFY())
+                pdf!.setText(470,row,20,row,poe12a.unit_measure$,textfont!,pdf!.CENTER_JUSTIFY())
+                pdf!.setText(490,row,75,row,str(extension:m1$),textfont!,pdf!.RIGHT_JUSTIFY())
+                
+                if pdf!.getPage() = pagePDF! then break
+                pdf!.setPage(pagePDF!)
+            wend                
             l=l+1
 
             gen_text$=poe12a.order_memo$
@@ -575,26 +695,50 @@ print_detail_line: rem --- Print Detail Line
             break
 
         case vend_part_num; rem --- Print Vendor Part Number, Message or Other Line
+        
+            pdf!.setPage(pagePrint!)
+                
+            while 1                
 
-            tmp=fntext2(15,row,60,row,str(num(poe12a.internal_seq_no$):seq_msk$),textfont!,right_justify,page!)
-            tmp=fntext(145,row,"Your Item Number "+poe12a.order_memo$,textfont!,page!)
+                pdf!.setText(80,row,"Your Item Number "+poe12a.order_memo$)
+                
+                if pdf!.getPage() = pagePDF! then break
+                pdf!.setPage(pagePDF!)
+            wend                
             l=l+1
+                
             break
         case message_line; rem --- Print Message Line
+        
+            pdf!.setPage(pagePrint!)
+                
+            while 1                        
 
-            tmp=fntext2(15,row,60,row,str(num(poe12a.internal_seq_no$):seq_msk$),textfont!,right_justify,page!)
-            tmp=fntext(145,row,poe12a.order_memo$,textfont!,page!)
+                pdf!.setText(80,row,poe12a.order_memo$)
+                
+                if pdf!.getPage() = pagePDF! then break
+                pdf!.setPage(pagePDF!)
+            wend                
             l=l+1
+                                
             break
 
         case other_line
+        
+            pdf!.setPage(pagePrint!)
+                
+            while 1                                
 
-            tmp=fntext2(15,row,60,row,str(num(poe12a.internal_seq_no$):seq_msk$),textfont!,right_justify,page!)
-            tmp=fntext(145,row,poe12a.order_memo$,textfont!,page!)
-            tmp=fntext(345,row,fndate$(poe12a.reqd_date$),textfont!,page!)            
-            tmp=fntext2(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,right_justify,page!)
-            tmp=fntext2(490,row,75,row,str(extension:m1$),textfont!,right_justify,page!)
+                pdf!.setText(80,row,poe12a.order_memo$)
+                pdf!.setText(345,row,fndate$(poe12a.reqd_date$))            
+                pdf!.setText(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,pdf!.RIGHT_JUSTIFY())
+                pdf!.setText(490,row,75,row,str(extension:m1$),textfont!,pdf!.RIGHT_JUSTIFY())
+                
+                if pdf!.getPage() = pagePDF! then break
+                pdf!.setPage(pagePDF!)
+            wend                
             l=l+1
+                
             break
 
         case default
@@ -620,8 +764,18 @@ text_only: rem --- Print text only
 
     if l+1>l9-2 gosub print_continued
     gosub get_row
-    tmp=fntext(145,row,gen_text$,textfont!,page!)
+    
+    pdf!.setPage(pagePrint!)
+                
+    while 1
+
+        pdf!.setText(80,row,gen_text$)
+        
+        if pdf!.getPage() = pagePDF! then break
+        pdf!.setPage(pagePDF!)
+    wend
     l=l+1
+        
 
     return
 
@@ -631,39 +785,71 @@ print_total: rem --- Total
 
         gosub print_tot
 
-        if l+footcnt > l9 then gosub print_continued
+        if l+footcnt+shipfrom > l9 then gosub print_continued
         
         if nomsg_flg = 0        
 
-			for dlx = 0 to footcnt
-				gen_text$=footer$[dlx]
-				gosub text_only
-			next dlx
-			
-		endif
+            for dlx = 0 to footcnt
+                gen_text$=footer$[dlx]
+                gosub text_only
+            next dlx
+            
+        endif
+        
+        rem --- tack ship-from at end of PO, if used
+        if cvs(s$,3)<>""
+            gen_text$="";rem blank before
+            gosub text_only
+            gen_text$="Ship from: "+shipfrom$
+            gosub text_only
+            for sx=1 to len(s$) step 35
+                gen_text$=s$(sx,35)
+                gosub text_only
+            next sx
+        endif
+        
+        pdf!.setPage(pagePrint!)
+            
+        while 1
 
-        tmp=fnbox(440,664,130,24,page!)
-        tmp=fnline(505,664,505,688,page!)
-        tmp=fntext2(440,672,60,672,"Total",boldfont!,right_justify,page!)
-        tmp=fntext2(505,672,60,672,str(total:m1$),textfont!,right_justify,page!)
+            pdf!.drawBox(440,664,130,24)
+            pdf!.drawVLine(505,664,24)
+            pdf!.setText(440,672,60,672,"Total",boldfont!,pdf!.RIGHT_JUSTIFY())
+            pdf!.setText(505,672,60,672,str(total:m1$),textfont!,pdf!.RIGHT_JUSTIFY())
 
-        tmp=fntext(145,672,pomessage$,textfont!,page!)
+            pdf!.setText(145,672,pomessage$)
 
-        tmp=fnline(350,740,550,740,page!)
-        tmp=fntext2(350,745,200,745,"Purchasing Agent",smallfont!,center_justify,page!)
+            pdf!.drawHLine(350,740,200)
+            pdf!.setText(350,745,200,745,"Purchasing Agent",smallfont!,pdf!.CENTER_JUSTIFY())
+    
+            if pdf!.getPage() = pagePDF! then break
+            pdf!.setPage(pagePDF!)
+        wend
+        
+       docPDF!.print()
+       call stbl("+DIR_PGM")+"adc_rptcontrol.aon",alias_id$,vendor_id$,"V",new_doc_id$,"pdf"           
 
     endif
 
     first=0
     total=0
-
+    
     return
 
 print_continued: rem --- Continued
 
-    if page then tmp=fntext2(505,672,60,672,"(Continued)",textfont!,right_justify,page!)
+    if page
+    
+        pdf!.setPage(pagePrint!)
+        
+        while 1
+            pdf!.setText(505,672,60,672,"(Continued)",textfont!,pdf!.RIGHT_JUSTIFY())
+            if pdf!.getPage() = pagePDF! then break
+            pdf!.setPage(pagePDF!)
+        wend
 
-        gosub shipto_break; gosub report_heading
+    endif
+    gosub report_heading
     first=0
     return
 
@@ -687,15 +873,14 @@ shipfrom_break: rem --- Ship-From Break
     dim apm05a_key$(10),apm05a$:fattr(apm05a$),s$(140)
     apm05a_key$=poe02a.firm_id$ + poe02a.vendor_id$ + poe02a.purch_addr$
     t1$=poe02a.vendor_id$+poe02a.purch_addr$
-    shipfrom$="SAME"
-    if cvs(poe02a.purch_addr$,2)="" return
-    apm05a.name$=nf$
+    shipfrom$=""
+    shipfrom=0
+    if cvs(poe02a.purch_addr$,2)="" then return
     find record (apm05_dev,key=apm05a_key$,dom=*next) apm05a$
 
-rem --- 
-
     s$= apm05a.addr_line_1$ + apm05a.addr_line_2$ + apm05a.city$ + apm05a.state_code$ + apm05a.zip_code$
-    shipfrom$=poe02a.purch_addr$+" "+apm05a.name$
+    shipfrom$=apm05a.name$
+    shipfrom=4
     call pgmdir$+"adc_address.aon",s$,24,3,9,35
 
     return
@@ -710,19 +895,28 @@ terms_break: rem --- Terms Break
 
 shipto_break: rem --- Ship-To Break
 
-    dim ivm10c$:fattr(ivm10c$)
-    ivm10c.firm_id$=firm_id$,ivm10c.record_id_c$="C",ivm10c.warehouse_id$=poe12a.warehouse_id$,ivm10c.short_name$=nf$
-    t3$=poe12a.warehouse_id$
-    if cvs(poe12a.warehouse_id$,2)="" 
-        ivm10c.warehouse_id$=poe02a.warehouse_id$
-        t3$=poe02a.warehouse_id$; rem ESCAPE
+    if poe02a.dropship$="Y"
+        drop_ship$="*** DROPSHIP ***"
+        ship_to$=poe02a.ds_name$
+        a$=poe02a.ds_addr_line_1$+poe02a.ds_addr_line_2$+poe02a.ds_addr_line_3$+poe02a.ds_city$+poe02a.ds_state_cd$+poe02a.ds_zip_code$
+    else
+        drop_ship$=""
+        dim ivm10c$:fattr(ivm10c$)
+        ivm10c.firm_id$=firm_id$,ivm10c.record_id_c$="C",ivm10c.warehouse_id$=poe12a.warehouse_id$,ivm10c.short_name$=nf$
+        t3$=poe12a.warehouse_id$
+        if cvs(poe12a.warehouse_id$,2)="" 
+            ivm10c.warehouse_id$=poe02a.warehouse_id$
+            t3$=poe02a.warehouse_id$; rem ESCAPE
+        endif
+        ivm10c_key$=firm_id$+"C"+ivm10c.warehouse_id$
+        find record (ivm10c_dev,key=ivm10c_key$,dom=*next) ivm10c$
+
+        ship_to$=ivm10c.short_name$
+        a$= ivm10c.addr_line_1$ + ivm10c.addr_line_2$ + ivm10c.addr_line_3$ + ivm10c.city$ + ivm10c.state_code$ + ivm10c.zip_code$
     endif
-    ivm10c_key$=firm_id$+"C"+ivm10c.warehouse_id$
-    find record (ivm10c_dev,key=ivm10c_key$,dom=*next) ivm10c$
-
-    a$= ivm10c.addr_line_1$ +        ivm10c.addr_line_2$ +        ivm10c.addr_line_3$ +        ivm10c.city$ +        ivm10c.state_code$ +        ivm10c.zip_code$
-
+    
     call "adc_address.aon",a$,24,4,9,35
+
     return
 
 line_code_break: rem --- Line Code Break
@@ -746,7 +940,7 @@ calc_ext: rem " --- Calculate Extension"
 print_tot: rem --- Print total
 
        msg$=defaultmsg$
-       if cvs(poe02a.po_msg_code$,2) <> "" msg$ = poe02a.po_msg_code$
+       if cvs(poe02a.po_msg_code$,2) <> "" then msg$ = poe02a.po_msg_code$
        nomsg_flg=1
 
        if cvs(msg$,2)<>""
@@ -794,16 +988,24 @@ nomsg: rem --- No message
            footcnt=0
        endif
 
-                return
+    return
 
 get_row: rem " --- Return Current Row"
-    row=286+l*12
+    row=int(286+l*12)
     return
+    
+lock_unlock_record:
+
+    rd_lock_status$=""
+    call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_POHDR",lock_key$,lock_unlock$,"",rd_table_chans$[all],rd_lock_status$
+
+    return
+    
     
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
-	return
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 
 rem #include std_functions.src
@@ -847,82 +1049,6 @@ rem --- fnglobal$: Return string value of passed STBL variable
     def fnglobal$(q$,q1$)
         q1$=stbl(q$,err=*next)
         return q1$
-    fnend
-
-
-rem --- fntext: Form Text command
-
-     def fntext(tmp_x,tmp_y,tmp_text$,tmp_font!,page!)
-        tmp_text$=cvs(tmp_text$,3)
-        tmp!.destroy(err=*next)
-        tmp!=page!.newParagraph()
-        tmp!.setHorizontalFill(1)
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setText(tmp_text$)
-        tmp!.setFont(tmp_font!)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fntext2: Form Text command
-
-     def fntext2(tmp_x,tmp_y,tmp_x2,tmp_y2,tmp_text$,tmp_font!,tmp_just,page!)
-        tmp_text$=cvs(tmp_text$,3)
-        tmp!.destroy(err=*next)
-        tmp!=page!.newParagraph()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
-        if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
-        if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
-        tmp!.setText(tmp_text$)
-        tmp!.setFont(tmp_font!)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnbox: Form Box command
-
-    def fnbox(tmp_x,tmp_y,tmp_w,tmp_h,page!)
-        tmp!=page!.newFrame()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setWidth(tmp_w)
-        tmp!.setHeight(tmp_h)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnline: Form Line command
-
-    def fnline(tmp_x,tmp_y,tmp_w,tmp_h,page!)
-        tmp!=page!.newLine()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setWidth(tmp_w)
-        tmp!.setHeight(tmp_h)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnframe: Form Frame command
-
-    def fnframe(tmp_x,tmp_y,tmp_x2,tmp_y2,page!)
-        tmp!=page!.newFrame()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmpdim!=new java.awt.Dimension(tmp_x2,tmp_y2)
-        tmp!.setSize(tmpdim!)
-        page!.add(tmp!)
-        return(1)
-     fnend
-
-rem --- fnlogo: Put logo on page
-
-    def fnlogo(page!)
-        logo!=page!.newImage()
-        logo!.setURL(logofile$,err=*next)
-        logo!.setPosition(new java.awt.Point(0,0))
-        logo!.setWidth(185)
-        logo!.setHeight(68)
-        page!.add(logo!)
-        return(1)
     fnend
 
 rem #include std_error.src

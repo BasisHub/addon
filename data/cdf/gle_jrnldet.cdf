@@ -71,6 +71,7 @@ calc_grid_tots:
 return
 
 
+
 disp_totals:
 
 	rem --- get context and ID of display controls, and redisplay w/ amts from calc_grid_tots

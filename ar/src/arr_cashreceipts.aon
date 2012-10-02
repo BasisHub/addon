@@ -22,10 +22,16 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+rem --- see if batching (batching.CAH)
+
+    rem --- this was called in the OE form... call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
 
 rem --- Open/Lock files
 
-    files=17,begfile=1,endfile=files
+    files=18,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="ars_params",ids$[1]="ARS_PARAMS"
     files$[2]="are-01",ids$[2]="ARE_CASHHDR"
@@ -44,12 +50,16 @@ rem --- Open/Lock files
     files$[15]="art-26",ids$[15]="ART_CASHGL"
     files$[16]="gls_params",ids$[16]="GLS_PARAMS"
     files$[17]="arc_distcode",ids$[17]="ARC_DISTCODE"
-    for x=2 to 5
-        options$[x]="L"
-    next x
+    files$[18]="ars_mtdcash",ids$[18]="ARS_MTDCASH"
+    rem --- only lock entry files if not batching.CAH
+    if num(batch_no$)=0
+        for x=2 to 5
+            options$[x]="L"
+        next x
+    endif
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     ars01_dev=channels[1]
     are01_dev=channels[2]
     are11_dev=channels[3]
@@ -67,7 +77,8 @@ rem --- Open/Lock files
     art26_dev=channels[15]
     gls01_dev=channels[16]
     arc_distcode_dev=channels[17]
-
+	ars_mtdcash_dev=channels[18]
+	
 rem --- Dimension string templates
 
     dim ars01a$:templates$[1],are01a$:templates$[2],are11a$:templates$[3]
@@ -75,7 +86,7 @@ rem --- Dimension string templates
     dim arm02a$:templates$[7],arm06a$:templates$[8],arm10c$:templates$[9]
     dim ars10c$:templates$[10],art01a$:templates$[11],art06a$:templates$[12]
     dim art11a$:templates$[13],art16a$:templates$[14],art26a$:templates$[15]
-    dim gls01a$:templates$[16],arm10d$:templates$[17]
+    dim gls01a$:templates$[16],arm10d$:templates$[17],ars_mtdcash$:templates$[18]
 
 rem --- Assign form input values to local variables
 
@@ -100,42 +111,55 @@ rem --- Retrieve parameter records
     acct_length=num(gls01a.acct_length$)
     g0$=gls01a.acct_output$
     g0=len(g0$)
-    source$=pgm(-2)
     application$="AR"
+    findrecord(ars_mtdcash_dev,key=firm_id$+"C") ars_mtdcash$
+    dim tot_cash[5]
+    tot_cash[0]=ars_mtdcash.mtd_cash
+    tot_cash[1]=ars_mtdcash.mtd_csh_disc
+    tot_cash[2]=ars_mtdcash.mtd_csh_gl
+    tot_cash[3]=ars_mtdcash.nxt_mtd_cash
+    tot_cash[4]=ars_mtdcash.nmtd_cash_ds
+    tot_cash[5]=ars_mtdcash.nmtd_cashgl
+    
+rem --- Is General Ledger installed and being used?
+rem --- as of v9, glw11$ no longer used.  Always use actual glw-11 file (batching.CAH)
+    
     gl$="N"
     status=0
+    rem --- use this form when running back-end pgm directly; source$=fnbasename$(pgm(-2),"")
+    source$=rd_alias_id$;rem use this form when running from Option Entry form
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     if gl$<>"Y" br$="N"
     gl=gl$="Y"
     br=br$="Y"
 
 rem --- OutVect! for DocOut, date/time 
 
-	OutVect!=bbjAPI().getSysGui().makeVector()
-	BrkVect!=bbjAPI().getSysGui().makeVector()
-	HdrVect!=bbjAPI().getSysGui().makeVector()
-	TotVect!=bbjAPI().getSysGui().makeVector()
-	rep_date$=date(0:"%Mz/%Dz/%Yd")
-		rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-	rep_time$=date(0:"%hz:%mz %p")
-		rep_time_stamp$=date(0:"%Hz%mz%sz")
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
         rep_prog$=pgm(-2)
 
 rem --- column headings
-	columns=10
-	dim columns$[columns,10]
-		columns$[0,0]="Customer",columns$[0,1]="C",columns$[0,2]="25"
-		columns$[1,0]="Rec Cd",columns$[1,1]="C",columns$[1,2]="7"
-		columns$[2,0]="Check No",columns$[2,1]="C",columns$[2,2]="8"
-		columns$[3,0]="Inv No",columns$[3,1]="C",columns$[3,2]="8"
-		columns$[4,0]="Cash Amt",columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
-		columns$[5,0]="Disc Amt",columns$[5,1]="N",columns$[5,2]=str(len(m1$)),columns$[5,3]=m1$,columns$[5,10]="T"
-		columns$[6,0]="Tot Credit",columns$[6,1]="N",columns$[6,2]=str(len(m1$)),columns$[6,3]=m1$,columns$[6,10]="T"
-		columns$[7,0]="Misc Acct",columns$[7,1]="C",columns$[7,2]="10"
-		columns$[8,0]="Misc Amt",columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
-		columns$[9,0]="ABA Number",columns$[9,1]="C",columns$[9,2]="10"
-		columns$[10,0]="Deposit",columns$[10,1]="N",columns$[10,2]=str(len(m1$)),columns$[10,3]=m1$,columns$[10,10]="T"
+    columns=10
+    dim columns$[columns,10]
+        columns$[0,0]="Customer",columns$[0,1]="C",columns$[0,2]="25"
+        columns$[1,0]="Rec Cd",columns$[1,1]="C",columns$[1,2]="7"
+        columns$[2,0]="Check No",columns$[2,1]="C",columns$[2,2]="8"
+        columns$[3,0]="Inv No",columns$[3,1]="C",columns$[3,2]="8"
+        columns$[4,0]="Cash Amt",columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
+        columns$[5,0]="Disc Amt",columns$[5,1]="N",columns$[5,2]=str(len(m1$)),columns$[5,3]=m1$,columns$[5,10]="T"
+        columns$[6,0]="Tot Credit",columns$[6,1]="N",columns$[6,2]=str(len(m1$)),columns$[6,3]=m1$,columns$[6,10]="T"
+        columns$[7,0]="Misc Acct",columns$[7,1]="C",columns$[7,2]="10"
+        columns$[8,0]="Misc Amt",columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
+        columns$[9,0]="ABA Number",columns$[9,1]="C",columns$[9,2]="10"
+        columns$[10,0]="Deposit",columns$[10,1]="N",columns$[10,2]=str(len(m1$)),columns$[10,3]=m1$,columns$[10,10]="T"
 
     headings=2
     dim headings$[headings+1],o[10],h[10]
@@ -159,21 +183,20 @@ rem --- column headings
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
     if sequence$="D"
-rem        channel=are01_dev
        headings$[1]=headings$[1]+" By Receipt Date"
     endif
     if sequence$="C"
-rem        channel=arw05_dev
        headings$[1]=headings$[1]+" By Receipt Code"
     endif
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"        
     headings$[2]="[HEADER]"
     recs=0
 
 rem --- Resize extension mask based of the length of the fixed length fields
 rem --- and the account mask
 
-	maxwidth=int(width-(62+max(g0,8))/5)
-	call pgmdir$+"adc_sizemask.aon",m1$,m1,8,maxwidth
+    maxwidth=int(width-(62+max(g0,8))/5)
+    call pgmdir$+"adc_sizemask.aon",m1$,m1,8,maxwidth
 
 rem --- Define print positions
 
@@ -220,11 +243,11 @@ rem --- Additional file opens
     files$[1]="glm-01",ids$[1]="GLM_ACCT"
     files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
     if br files$[3]="glt-15",ids$[3]="GLT_BANKOTHER"
-    files$[4]=glw11$
-    options$[4]="CL"
+    files$[4]="glw-11",ids$[4]="GLW_DAILYDETAIL"
+    rem --- options$[4]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
     if gl call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                         ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_report
     glm01_dev=channels[1]
     glt04_dev=channels[2]
     glt15_dev=channels[3]
@@ -234,33 +257,38 @@ rem --- Dimension string templates
 
     if gl dim glm01a$:templates$[1],glt04a$:templates$[2]
     if br dim glt15a$:templates$[3]
+    
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+        if gl$="Y"
+            rec_pfx$=firm_id$+process_id$+batch_no$
+            call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+        endif
 
 rem --- Open printer and start progress meter
 
-rem ---    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-rem ---    if status goto std_exit
     call pgmdir$+"adc_progress.aon","N","","","","",0,are01_dev,1,meter_num,status
 
 rem --- Sort the cash receipts if the register is by receipt code
 
-    if sequence$="C" key_no=1 else key_no=0
+    if sequence$="C" key_no=3 else key_no=2
 
 rem --- Position the driver file
 
-    read (are01_dev,key=firm_id$,knum=key_no,dom=*next)
+    read (are01_dev,key=firm_id$+batch_no$,knum=key_no,dom=*next)
 
 rem --- Read the next Cash Receipt Header (are-01) record
 
     while moreheaders
 
           k$=key(are01_dev,end=*break)
-          if pos(firm_id$=k$)<>1 break
+          if pos(firm_id$+batch_no$=k$)<>1 break
           recs=recs+1
           rem --- Read transaction header record
 
           read record (are01_dev,key=k$,dom=*continue) are01a$
-		  record_count=record_count+1
-		  if mod(record_count,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          record_count=record_count+1
+          if mod(record_count,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
           rem --- Check for level breaks on receipt code and date
 
@@ -298,23 +326,23 @@ rem --- Read the next Cash Receipt Header (are-01) record
              dt[5]=dt[5]+payment
           endif
 
-		  ct[6]=ct[6]+payment
-		  dt[6]=dt[6]+payment
-		  rt[4]=rt[4]+payment
-		  if are01a.receipt_date$ < endperiod$
-			mt[4]=mt[4]+payment
-		  else
-			nt[4]=nt[4]+payment
-		  endif
+          ct[6]=ct[6]+payment
+          dt[6]=dt[6]+payment
+          rt[4]=rt[4]+payment
+          if are01a.receipt_date$ < endperiod$
+            mt[4]=mt[4]+payment
+          else
+            nt[4]=nt[4]+payment
+          endif
 
-		  if first_tran>0 
-rem			xwk=fnblank(11);rem don't think it needs this.CAH
-		  else
-		    first_tran=1
-	      endif
+          if first_tran>0 
+rem         xwk=fnblank(11);rem don't think it needs this.CAH
+          else
+            first_tran=1
+          endif
 
-		  OutVect!.addItem(customer$+" "+name$)
-		  OutVect!.addItem(are01a.cash_rec_cd$)
+          OutVect!.addItem(customer$+" "+name$)
+          OutVect!.addItem(are01a.cash_rec_cd$)
 
           rem --- If GL is being used verify the receipt date
 
@@ -330,9 +358,9 @@ rem			xwk=fnblank(11);rem don't think it needs this.CAH
           while moredetail
                 k$=key(are11_dev,end=*break)
                 if pos(receipt$=k$)<>1
-					if name$<>"" xwk=fnblank(9)
-					break
-				endif
+                    if name$<>"" xwk=fnblank(9)
+                    break
+                endif
                 read record (are11_dev) are11a$
 
                 rem --- Print the detail record
@@ -341,15 +369,15 @@ rem			xwk=fnblank(11);rem don't think it needs this.CAH
                 discount=are11a.discount_amt
                 credits=applied+discount
 
-				if cvs(name$,3)="" xwk=fnblank(2)
-				OutVect!.addItem(check$)
-				OutVect!.addItem(are11a.ar_inv_no$)
-				OutVect!.addItem(str(applied))
-				OutVect!.addItem(str(discount))
-				OutVect!.addItem(str(credits))
-				xwk=fnblank(2)
-				OutVect!.addItem(aba$)
-				OutVect!.addItem(payment$)
+                if cvs(name$,3)="" xwk=fnblank(2)
+                OutVect!.addItem(check$)
+                OutVect!.addItem(are11a.ar_inv_no$)
+                OutVect!.addItem(str(applied))
+                OutVect!.addItem(str(discount))
+                OutVect!.addItem(str(credits))
+                xwk=fnblank(2)
+                OutVect!.addItem(aba$)
+                OutVect!.addItem(payment$)
 
                 name$=""
                 check$=""
@@ -363,29 +391,29 @@ rem			xwk=fnblank(11);rem don't think it needs this.CAH
                     xwk=fnblank(10)
                 endif
 
-				rem --- added by CH.3/26/07
-				ct[0]=ct[0]+applied
-				ct[1]=ct[1]+discount
-				ct[2]=ct[2]+credits
+                rem --- added by CH.3/26/07
+                ct[0]=ct[0]+applied
+                ct[1]=ct[1]+discount
+                ct[2]=ct[2]+credits
 
-				dt[0]=dt[0]+applied
-				dt[1]=dt[1]+discount
-				dt[2]=dt[2]+credits
+                dt[0]=dt[0]+applied
+                dt[1]=dt[1]+discount
+                dt[2]=dt[2]+credits
 
-				rt[0]=rt[0]+applied
-				rt[1]=rt[1]+discount
-				rt[2]=rt[2]+credits
+                rt[0]=rt[0]+applied
+                rt[1]=rt[1]+discount
+                rt[2]=rt[2]+credits
 
-				if are01a.receipt_date$ < endperiod$
-					mt[0]=mt[0]+applied
-					mt[1]=mt[1]+discount
-					mt[2]=mt[2]+credits
-				else
-					nt[0]=nt[0]+applied
-					nt[1]=nt[1]+discount
-					nt[2]=nt[2]+credits
-				endif
-				rem --- end of CH add
+                if are01a.receipt_date$ < endperiod$
+                    mt[0]=mt[0]+applied
+                    mt[1]=mt[1]+discount
+                    mt[2]=mt[2]+credits
+                else
+                    nt[0]=nt[0]+applied
+                    nt[1]=nt[1]+discount
+                    nt[2]=nt[2]+credits
+                endif
+                rem --- end of CH add
 
                 rem --- Generate GL postings for this invoice
 
@@ -445,10 +473,10 @@ rem			xwk=fnblank(11);rem don't think it needs this.CAH
 
                 amount=are21a.gl_post_amt
                 account$=are21a.gl_account$
-				xwk=fnblank(7)
-				OutVect!.addItem(fnmask$(account$(1,acct_length),g0$))
-				OutVect!.addItem(str(amount))
-				xwk=fnblank(2)
+                xwk=fnblank(7)
+                OutVect!.addItem(fnmask$(account$(1,acct_length),g0$))
+                OutVect!.addItem(str(amount))
+                xwk=fnblank(2)
 
 
                 if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,are01a.receipt_date$,
@@ -458,17 +486,17 @@ rem			xwk=fnblank(11);rem don't think it needs this.CAH
                     xwk=fnblank(10)
                 endif
 
-				rem --- added by CH.3/26/07
-				ct[3]=ct[3]+amount
-				dt[3]=dt[3]+amount
-				rt[3]=rt[3]+amount
+                rem --- added by CH.3/26/07
+                ct[3]=ct[3]+amount
+                dt[3]=dt[3]+amount
+                rt[3]=rt[3]+amount
 
-				if are01a.receipt_date$ < endperiod$
-					mt[3]=mt[3]+amount
-				else
-					nt[3]=nt[3]+amount
-				endif
-				rem --- end of CH add
+                if are01a.receipt_date$ < endperiod$
+                    mt[3]=mt[3]+amount
+                else
+                    nt[3]=nt[3]+amount
+                endif
+                rem --- end of CH add
 
                 rem --- Post this record to GL
 
@@ -482,13 +510,13 @@ rem			xwk=fnblank(11);rem don't think it needs this.CAH
                 rem --- Entered account
 
                 account$=are21a.gl_account$
-                amount=are21a.gl_post_amt
+                amount=-are21a.gl_post_amt
                 gosub glrecap
 
                 rem --- Cash account
 
                 account$=arm10c.gl_cash_acct$
-                amount=applied
+                amount=are21a.gl_post_amt
                 gosub glrecap
 
                 rem --- Loop back for the next Cash Receipt Distribution (are-21) record
@@ -508,14 +536,10 @@ rem --- All done
     endif
 
     done=1
-rem ---     if page=0 gosub report_heading
     if sequence$="C" gosub code_break
     if sequence$="D" gosub date_break
 
 rem --- Print register, MTD and next MTD totals
-
-rem ---     if lines+5>maxlines gosub report_heading
-rem ---     print (printer_dev) ""
 
     xwk=fnblank(11);rem --- blank line before totals
     total$="Register Totals"
@@ -523,18 +547,33 @@ rem ---     print (printer_dev) ""
         pt[x]=rt[x]
     next x
     gosub register_totals
-rem ---     print (printer_dev) ""
 
     xwk=fnblank(11);rem --- blank line before totals
     total$="MTD Totals"
     for x=0 to 4
         pt[x]=mt[x]
     next x
+
+rem --- Now add MTD Totals from ars_mtdcash    
+    pt[0]=pt[0]+tot_cash[0]
+    pt[1]=pt[1]+tot_cash[1]
+    pt[2]=pt[2]+tot_cash[0]+tot_cash[1]
+    pt[3]=pt[3]+tot_cash[2]
+    pt[4]=pt[4]+tot_cash[0]-tot_cash[2]
+    
     gosub register_totals
     total$="Next Month Totals"
     for x=0 to 4
         pt[x]=nt[x];rem --- this did say mt; changed to nt 3/26/07.CH
     next x
+
+rem --- Now add NMTD Totals from ars_mtdcash    
+    pt[0]=pt[0]+tot_cash[3]
+    pt[1]=pt[1]+tot_cash[4]
+    pt[2]=pt[2]+tot_cash[3]+tot_cash[4]
+    pt[3]=pt[3]+tot_cash[5]
+    pt[4]=pt[4]+tot_cash[3]-tot_cash[5]
+
     gosub register_totals
 
 rem --- Destroy the progress meter and run the next overlay
@@ -543,81 +582,60 @@ rem     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 
     update$=pgmdir$+"aru_cashreceipts.aon"
     if errors
-    	gosub Display_Message
-    	if special_flag$<>"Y" then update$=""
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
     endif
 
     overlay$=update$
     if gl overlay$=pgmdir$+"glr_recap.aon"
- 	
-	next_overlay$=overlay$
-	out_action$="PRT"
-rem --- run overlay$,err=std_exit; CAH.09/29/07 don't run directly... let DocOut do it
-
-	goto std_exit
-
-report_heading: rem --- Report heading --- not used in DocOut versin
-
-    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,
-:                                  clock$,status
-    if status exitto std_exit
-    lines=headings+1
-    if cvs(subheading$,2)<>""
-       print (printer_dev) @(fncenter(subheading$,width)),subheading$
-       lines=lines+1
+    
+    next_overlay$=overlay$
+    out_action$="PRT"
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
     endif
-    print (printer_dev)""
-    print (printer_dev) @(h[1]),"Rec",@(h[2]),"Check",@(h[3]),"Invoice",@(h[4]),"  Cash",
-:                       @(h[5]),"Discount",@(h[6])," Total",@(h[7]),miscellaneous$,
-:                       @(h[9]),deposit$
-    print (printer_dev) @(h[0]),"Customer",@(h[1]),"Code",@(h[2]),"Number",@(h[3]),"Number",
-:                       @(h[4]),"Amount",@(h[5]),"  Amount",@(h[6]),"Credit",@(h[7]),"Account",
-:                       @(h[8]),"Amount",@(h[9]),"ABA Number",@(h[10]),"Amount"
-    lines=lines+3
-    return
+
 
 print_totals: rem --- Print date or receipt code totals
 
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+    OutVect!.addItem(total$)
+    xwk=fnblank(3)
+    OutVect!.addItem(str(pt[0]))
+    OutVect!.addItem(str(pt[1]))
+    OutVect!.addItem(str(pt[2]))
+    OutVect!.addItem("")
+    OutVect!.addItem(str(pt[3]))
+    OutVect!.addItem("Deposit")
+    OutVect!.addItem(str(pt[6]))
 
 
-        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
-	OutVect!.addItem(total$)
-	xwk=fnblank(3)
-	OutVect!.addItem(str(pt[0]))
-	OutVect!.addItem(str(pt[1]))
-	OutVect!.addItem(str(pt[2]))
-	OutVect!.addItem("")
-	OutVect!.addItem(str(pt[3]))
-	OutVect!.addItem("Deposit")
-	OutVect!.addItem(str(pt[6]))
+    xwk=fnblank(9)
+    OutVect!.addItem("Checks")
+    OutVect!.addItem(str(pt[4]))
 
 
-	xwk=fnblank(9)
-	OutVect!.addItem("Checks")
-	OutVect!.addItem(str(pt[4]))
-
-
-	xwk=fnblank(9)
-	OutVect!.addItem("Cash")
-	OutVect!.addItem(str(pt[5]))
-
-
+    xwk=fnblank(9)
+    OutVect!.addItem("Cash")
+    OutVect!.addItem(str(pt[5]))
 
     return
 
 register_totals: rem --- Print register, MTD and next MTD totals
 
-        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
 
-	OutVect!.addItem(total$)
-	xwk=fnblank(3)
-	OutVect!.addItem(str(pt[0]))
-	OutVect!.addItem(str(pt[1]))
-	OutVect!.addItem(str(pt[2]))
-	OutVect!.addItem("")
-	OutVect!.addItem(str(pt[3]))
-	OutVect!.addItem("")
-	OutVect!.addItem(str(pt[4]))
+    OutVect!.addItem(total$)
+    xwk=fnblank(3)
+    OutVect!.addItem(str(pt[0]))
+    OutVect!.addItem(str(pt[1]))
+    OutVect!.addItem(str(pt[2]))
+    OutVect!.addItem("")
+    OutVect!.addItem(str(pt[3]))
+    OutVect!.addItem("")
+    OutVect!.addItem(str(pt[4]))
 
 
     return
@@ -625,10 +643,10 @@ register_totals: rem --- Print register, MTD and next MTD totals
 code_break: rem --- Cash Receipt Code break
 
     if sequence$<>"C" return
-    while lastcode$<>""	
-		  code_brk$="Y"
+    while lastcode$<>"" 
+          code_brk$="Y"
           gosub date_break
-		  code_brk$=""
+          code_brk$=""
           for x=0 to 6
               pt[x]=ct[x]
           next x
@@ -641,14 +659,14 @@ code_break: rem --- Cash Receipt Code break
     gosub receipt_code
     receiptcode$=arm10c.cash_rec_cd$+" "+cvs(arm10c.code_desc$,2)
     subheading$="For Cash Receipt Code "+receiptcode$
-	BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-	HdrVect!.addItem(subheading$)
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(subheading$)
 
-	if lastcode$<>""
-		OutVect!.addItem("Receipt Date "+fndate$(are01a.receipt_date$))
-		xwk=fnblank(10)
-		xwk=fnblank(11)
-	endif
+    if lastcode$<>""
+        OutVect!.addItem("Receipt Date "+fndate$(are01a.receipt_date$))
+        xwk=fnblank(10)
+        xwk=fnblank(11)
+    endif
 
     lastcode$=are01a.cash_rec_cd$
     lines=maxlines+1
@@ -669,17 +687,17 @@ date_break: rem --- Receipt date break
     lastdate$=are01a.receipt_date$
     if sequence$="D"
        subheading$="Cash Receipts For "+fndate$(lastdate$)
-		BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-		HdrVect!.addItem(subheading$)
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        HdrVect!.addItem(subheading$)
        lines=maxlines+1
     endif
-	if sequence$="C"
-		if code_brk$<>"Y"
-			OutVect!.addItem("Receipt Date "+fndate$(lastdate$))
-			xwk=fnblank(10)
-			rem --- xwk=fnblank(11);rem --- blank line after sub-head
-		endif
-	endif
+    if sequence$="C"
+        if code_brk$<>"Y"
+            OutVect!.addItem("Receipt Date "+fndate$(lastdate$))
+            xwk=fnblank(10)
+            rem --- xwk=fnblank(11);rem --- blank line after sub-head
+        endif
+    endif
 
     return
 
@@ -800,10 +818,10 @@ rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
-	
+    return
+    
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -851,13 +869,22 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
-std_exit: rem --- Standard program end (01Mar2006)
-
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-
 std_exit_no_report:
 
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 
 rem #endinclude std_end.src

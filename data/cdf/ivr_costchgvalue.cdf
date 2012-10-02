@@ -6,6 +6,12 @@ rem --- Close file so it can be locked in the register
 	open_tables$[1]="IVE_COSTCHG",open_opts$[1]="C"
 	gosub open_tables
 [[IVR_COSTCHGVALUE.BSHO]]
+rem --- Get Batch information
+rem --- this will let oper set up or select a batch (if batching turned on)
+rem --- stbl("+BATCH_NO) will either be zero (not batching) or contain the batch#
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+
 rem --- Open file
 
 	num_files=1

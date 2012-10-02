@@ -10,10 +10,12 @@ rem --- All Rights Reserved
     seterr std_error
 
 rem --- Document initializations
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
+
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -31,7 +33,7 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
-    rem --- Init Data
+rem --- Init Data
 
     precision ivprecision
     dim a0$(15),a1$(160),a[8],vendor$(6)
@@ -53,11 +55,14 @@ rem --- Headings and print positions
     page=0
     l9=59
     l=l9+1
+    recs=0
+    total_recs=0
+
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
     gosub assignheads
 
-     action=pos(printseq$="PAV")
+    action=pos(printseq$="PAV")
     printbypo=1
     printbyalt=2
     printbyvend=3
@@ -99,9 +104,11 @@ rem --- Headings and print positions
 
 rem --- Position files
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,poe02_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","POE_POHDR","","","",0,poe02_dev,1,meter_num,status
+    if status = 999 then goto std_exit
 
-   rem --- Sorts
+
+rem --- Sorts
     while more
 
         action=pos(printseq$="PAV")
@@ -111,19 +118,19 @@ rem --- Position files
 
         switch action
             case purchase_order_seq;    rem --- Sort by Purchase Order (primary key)
+                dim poe02a_key$:poe02a_key_pritpl$
+                
+                if initializing$<>"N"
+                    initializing$="N"
+                    read (poe02_dev,knum=0,key=firm_id$+pofrom$,dir=0,dom=*next)
+                endif
+                
+                poe02a_key$=key(poe02_dev,end=done)
+                if cvs(pothru$,3)<>"" then if poe02a_key.po_no$>pothru$ then goto done
 
-                    dim poe02a_key$:poe02a_key_pritpl$
-                    if initializing$<>"N"
-                        initializing$="N"
-                        read (poe02_dev,knum=0,key=firm_id$+pofrom$,dir=0,dom=*next)
-                    endif
-                    poe02a_key$=key(poe02_dev,end=done)
-                    if cvs(pothru$,3)<>"" then if poe02a_key.po_no$>pothru$ then goto done
-
-                    break
+                break
 
             case vendor_alt_seq;     rem --- Sort by alternate sequence
-
                 dim apm01a_key$:apm01a_key_tpl$
                 dim poe02_vendkey$:poe02a_key_alttpl$ 
 
@@ -132,8 +139,9 @@ rem --- Position files
                     read (apm01_dev2,knum=2,key=firm_id$+altfrom$,dom=*next)
                     dim poe02a_key$:poe02a_key_pritpl$
                 endif
-                
-                new_alt_seq_read:
+
+            new_alt_seq_read: 
+
                 if cvs(poe02a_key$,3)=""
                     apm01a_key$=key(apm01_dev2,end=done)
                     if apm01a_key.firm_id$<>firm_id$ goto done else read (apm01_dev2,key=apm01a_key$)
@@ -143,34 +151,34 @@ rem --- Position files
                 endif
 
                 poe02_vendkey$=key(poe02_dev2,end=*next);read (poe02_dev2)
+                
                 if poe02_vendkey.firm_id$+poe02_vendkey.vendor_id$<>apm01b_key$
                     dim poe02a_key$:poe02a_key_pritpl$
                     goto new_alt_seq_read
                 else   
                     poe02a_key$=poe02_vendkey.firm_id$+poe02_vendkey.po_no$
                 endif
-                                                      
+
                 break
 
             case vendor_seq;    rem --- Sort by vendor (alt key 01)
+                dim poe02_vendkey$:poe02a_key_alttpl$
+                dim poe02a_key$:poe02a_key_pritpl$
+                if initializing$<>"N"
+                    initializing$="N"
+                    read (poe02_dev2,key=firm_id$+vendfrom$,knum=1,dom=*next)
+                endif
 
-                    dim poe02_vendkey$:poe02a_key_alttpl$
-                    dim poe02a_key$:poe02a_key_pritpl$
-                    if initializing$<>"N"
-                        initializing$="N"
-                         read (poe02_dev2,key=firm_id$+vendfrom$,knum=1,dom=*next)
-                    endif
+                poe02_vendkey$=key(poe02_dev2,end=done);read(poe02_dev2)
+                if vendthru$<>"" then if poe02_vendkey.vendor_id$>vendthru$ then goto done
 
-                    poe02_vendkey$=key(poe02_dev2,end=done);read(poe02_dev2)
-                    if vendthru$<>"" then if poe02_vendkey.vendor_id$>vendthru$ then goto done
+                poe02a_key$=poe02_vendkey.firm_id$+poe02_vendkey.po_no$
 
-                    poe02a_key$=poe02_vendkey.firm_id$+poe02_vendkey.po_no$
-
-                    break
+                break
 
             case default
-                    goto done
-                    break
+                goto done
+                break
 
         swend
 
@@ -178,8 +186,12 @@ rem --- Position files
 
         read record (poe02_dev,key=poe02a_key$) poe02a$
         dropship$=poe02a.dropship$
+        
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        if status = 999 then goto std_exit
 
-rem --- Test Ranges
+    rem --- Test Ranges
 
         headrecprinted$="N"
 
@@ -189,18 +201,21 @@ rem --- Test Ranges
         if cvs(datefrom$,3)<>"" and testdateh$<datefrom$ then continue
         if cvs(datethru$,3)<>"" and testdateh$>datethru$ then continue
 
- rem --- Header passed tests
+    rem --- Header passed tests
+    
         gosub testbreaks
         headrecprinted$="Y"
-              
-rem --- Test if any detail are w/in date range, if so, print line
+
+    rem --- Test if any detail are w/in date range, if so, print line
+    
         dim poe12a_key$:poe12a_key_tpl$
 
         p12_key$=poe02a.firm_id$+poe02a.po_no$
         read (poe12_dev,key=p12_key$,knum="DISPLAY_KEY",dom=*next)
 
-rem --- Test PO Detail date range
-         while more
+    rem --- Test PO Detail date range
+    
+        while more
 
             poe12a_key$=key(poe12_dev,end=*break)
             if poe12a_key.firm_id$+poe12a_key.po_no$<>poe02a.firm_id$+poe02a.po_no$ then break
@@ -212,21 +227,23 @@ rem --- Test PO Detail date range
 
                     if datethru$="" or testdated$<=datethru$
 
-rem --- Detail passed, so print header if nec & print detail
+                    rem --- Detail passed, so print header if nec & print detail
 
                         if headrecprinted$<>"Y"
                             gosub testbreaks
                             headrecprinted$="Y"
-                       endif
+                        endif
+                        
                         gosub printdetail
-
+                        recs=recs+1
+                        
                     endif
 
                 endif
 
             endif
 
-rem --- Accumulate totals; then get next detail
+        rem --- Accumulate totals; then get next detail
 
             potot=potot+extension
             vendtot=vendtot+extension
@@ -236,13 +253,20 @@ rem --- Accumulate totals; then get next detail
 
         wend 
 
-rem --- Done w/detail for this PO
+    rem --- Done w/detail for this PO
 
         if headrecprinted$="Y" gosub pototals
 
     wend; rem tripread
 
 done: rem --- All Done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
     if printseq$<>"P" gosub vendtotals
     TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     xwk = fnblank(11)
@@ -250,7 +274,8 @@ done: rem --- All Done
     OutVect!.addItem("")
     OutVect!.addItem(str(grandtot)+$00$+"B")
 
-                       goto std_exit
+    out_action$="FORMAT"
+    goto std_exit
 
 rem --- Print Detail Subroutine
 
@@ -309,13 +334,13 @@ rem --- Print Line Types 'M', 'O' & 'V'
 
     if pos(linetype$="MOV")<>0
 
-        OutVect!.addItem(poe12a.po_line_no$)
+    rem --- dropping isn/line# per VARS; OutVect!.addItem(poe12a.po_line_no$)
+    
+        OutVect!.addItem("")
         OutVect!.addItem(poe12a.po_line_code$)
         OutVect!.addItem(whse_detail$)
-
-            OutVect!.addItem(memo$) 
-
-                xwk=fnblank(8)
+        OutVect!.addItem(memo$) 
+        xwk=fnblank(8)
 
         if linetype$="O" then
             OutVect!.addItem(unitcost$)
@@ -325,67 +350,59 @@ rem --- Print Line Types 'M', 'O' & 'V'
         endif
 
         l=l+1
-
     else
 
-rem --- Print Line Types 'S' & 'N'
+    rem --- Print Line Types 'S' & 'N'
 
         if pos(linetype$="SN")=0 return
 
-            OutVect!.addItem(poe12a.po_line_no$)
-            OutVect!.addItem(poe12a.po_line_code$)
-            OutVect!.addItem(whse_detail$)
+    rem --- dropping isn/line# per VARs; OutVect!.addItem(poe12a.po_line_no$)
+    
+        OutVect!.addItem("")
+        OutVect!.addItem(poe12a.po_line_code$)
+        OutVect!.addItem(whse_detail$)
+        OutVect!.addItem(itemnum$)
+        OutVect!.addItem(datereq$)
+        OutVect!.addItem(dateprom$)
+        OutVect!.addItem(notb4date$)
+        OutVect!.addItem(unitmeas$)
+        if linetype$="S" OutVect!.addItem(convfact$) else OutVect!.addItem("")
+        OutVect!.addItem(qtyord$)
+        OutVect!.addItem(qtyrec$)
+        OutVect!.addItem(baldue$)
+        OutVect!.addItem(unitcost$)
+        OutVect!.addItem(extension$)
+        xwk=fnblank(3)
+        OutVect!.addItem(itemdesc$)
 
-
-            OutVect!.addItem(itemnum$)
-            OutVect!.addItem(datereq$)
-            OutVect!.addItem(dateprom$)
-            OutVect!.addItem(notb4date$)
-            OutVect!.addItem(unitmeas$)
-            if linetype$="S" OutVect!.addItem(convfact$) else OutVect!.addItem("")
-
-            OutVect!.addItem(qtyord$)
-            OutVect!.addItem(qtyrec$)
-            OutVect!.addItem(baldue$)
-            OutVect!.addItem(unitcost$)
-            OutVect!.addItem(extension$)
-
-            xwk=fnblank(3)
-            OutVect!.addItem(itemdesc$)
-
-            if wonum$<>fill(7) then
-                xwk = fnblank(2)
-                OutVect!.addItem("WO: " + wonum$ + "-" + woseq$)
-            endif
-            gosub line_feed
-
-            l=l+2
-            if vpartnum$<>fill(20)
-
-                OutVect!.addItem("Vendor's Part Number " + vpartnum$)
-
-                l=l+1
-
-            endif
-
+        if wonum$<>fill(7) then
+            xwk = fnblank(2)
+            OutVect!.addItem("WO: " + wonum$ + "-" + woseq$)
         endif
-
+        
+        gosub line_feed
+        l=l+2
+        
+        if vpartnum$<>fill(20)
+            OutVect!.addItem("Vendor's Part Number " + vpartnum$)
+            l=l+1
+        endif
     endif
 
     return
 
-   assignheads: rem --- Assign headings variables
+assignheads: rem --- Assign headings variables
 
     if printseq$="A" if vendfrom$="" vendf$="First" else vendf$=vendfrom$
     if printseq$="A" if vendthru$="" vendt$="Last" else vendt$=vendthru$
+    
     if printseq$<>"A"
         if vendfrom$="" vendf$="First" else vendf$=fnmask$(vendfrom$(1,vendlen),vendomask$)
         if vendthru$="" vendt$="Last" else vendt$=fnmask$(vendthru$(1,vendlen),vendomask$)
     endif
 
-       whead$="For All Warehouses"
+    whead$="For All Warehouses"
     if whse$<>"ALL" whead$="For Warehouse: "+whse$+" "+cvs(whsename$,2)
-
     if vendfrom$="" headings$[2]="From Vendor: First" else headings$[2]="From Vendor: "+ vendfrom$
     if vendthru$="" headings$[2]=headings$[2] + " -- To Vendor: Last" else headings$[2]=headings$[2] + " -- To Vendor: " + vendthru$
     if pofrom$=""   headings$[3]="From Purchase Order First" else headings$[3]="From Purchase Order "+ pofrom$
@@ -393,9 +410,9 @@ rem --- Print Line Types 'S' & 'N'
     if datefrom$="" headings$[4]="From Order Date: First" else headings$[4]="From Order Date: " + str(fndate$(datefrom$))
     if datethru$="" headings$[4]=headings$[4] + " -- To Order Date: Last" else headings$[4]= headings$[4] + " -- To Order Date:" + fndate$(datethru$)
 
-       headings$[5] = whead$
+    headings$[5] = whead$
 
-     return
+    return
 
 gettestdate_header: rem --- Determine date to use when testing range
 
@@ -407,22 +424,18 @@ gettestdate_header: rem --- Determine date to use when testing range
 
     switch action
         case date_ordered
-
             testdateh$=poe02a.ord_date$
             break
 
         case date_promised
-
             testdateh$=poe02a.promise_date$
             break
 
         case date_required
-
             testdateh$=poe02a.reqd_date$
             break
 
         case date_dont_del_before
-
             testdateh$=poe02a.not_b4_date$
             break
 
@@ -442,24 +455,19 @@ gettestdate_detail: rem --- Determine date to use when testing range in detail
     date_dont_del_before=4
 
     switch action
-
         case date_ordered
-
             testdated$=poe02a.ord_date$
             break
 
         case date_promised
-
             testdated$=poe12a.promise_date$
             break
 
         case date_required
-
             testdated$=poe12a.reqd_date$
             break
 
         case date_dont_del_before
-
             testdated$=poe12a.not_b4_date$
             break
 
@@ -474,12 +482,10 @@ gettestdate_detail: rem --- Determine date to use when testing range in detail
 testbreaks: rem --- Test for Breaks
 
     if poe02a.vendor_id$<>vendor$
-
-           if printvtot$="Y" and printseq$<>"P" gosub vendtotals
-
+        if printvtot$="Y" and printseq$<>"P" gosub vendtotals
         gosub newvendor
 
-         if printseq$="P"
+        if printseq$="P"
             gosub newpo
         else
             if poe02a.po_no$<>ponum$ gosub newpo
@@ -500,7 +506,7 @@ newvendor: rem --- New Vendor
     find record (apm01a_dev,key=a01_key$,dom=brnch5) apm01a$
     vendname$=apm01a.vendor_name$
 
-brnch5:
+brnch5: 
 
     OutVect!.addItem("Vendor "+$00$+"B")
     OutVect!.addItem("")
@@ -508,8 +514,8 @@ brnch5:
     OutVect!.addItem(str(vendor$(1,vendlen))+$00$+"B")
     OutVect!.addItem(vendname$+$00$+"B")
     xwk = fnblank(9)
-
-         l=l+1
+    l=l+1
+    
     return
 
 newpo: rem --- New PO
@@ -523,18 +529,18 @@ newpo: rem --- New PO
     find record (apm10c_dev,key=a10_key$,dom=brnch6) apm10c$
     termsdesc$=apm10c.code_desc$
 
-brnch6:
+brnch6: 
 
     find record (apm05a_dev,key=firm_id$+vendor$+poe02a.purch_addr$,dom=brnch7) apm05a$
-    paddrdesc$=apm05a.name(1,24)
+    paddrdesc$=apm05a.name$(1,24)
 
-brnch7:
+brnch7: 
 
     i10_key$=firm_id$+"C"+poe02a.warehouse_id$
     find record (ivm10c_dev,key=i10_key$,dom=brnch8) ivm10c$
     shpwhsdesc$=ivm10c.short_name$
 
-brnch8:
+brnch8: 
 
     dim dateord$(8)
     if poe02a.ord_date$<>fill(8) dateord$=fndate$(poe02a.ord_date$) 
@@ -553,10 +559,16 @@ brnch8:
     OutVect!.addItem(poe02a.fob$)
     OutVect!.addItem("")
     OutVect!.addItem(shpwhsdesc$)
+    
+    if cvs(paddrdesc$,3)<>""
+        xwk=fnblank(4)
+        OutVect!.addItem("Purch From: "+paddrdesc$)
+        xwk=fnblank(9)
+    else
+        xwk=fnblank(14)
+    endif
 
-    xwk=fnblank(14)
-
-    OutVect!.addItem("Seq")
+    OutVect!.addItem("");rem was "Seq" - dropping per VARs
     OutVect!.addItem("CD")
     OutVect!.addItem("WH")
     OutVect!.addItem("Item")
@@ -571,51 +583,57 @@ brnch8:
     OutVect!.addItem("Unit Cost")
     OutVect!.addItem("Extension")
 
+    l=l+3
+
+rem --- Print dropship info if applicable
+
+    if dropship$="Y" and ar$<>"N"
+        dim dropaddr$(120)
+        dropname$=poe02a.ds_name$
+        dropaddr$=poe02a.ds_addr_line_1$+poe02a.ds_addr_line_2$+poe02a.ds_addr_line_3$+poe02a.ds_city$+poe02a.ds_state_cd$+poe02a.ds_zip_code$
+        call pgmdir$+"adc_address.aon",dropaddr$,24,4,9,30
+
+        xwk=fnblank(14)
+
+        xwk=fnblank(3)
+        OutVect!.addItem("Dropship to Customer: "+fnmask$(poe02a.customer_id$(1,custlen),customask$)+", Order: "+poe02a.order_no$)
+        xwk=fnblank(10)
+
+        xwk=fnblank(3)
+        OutVect!.addItem(dropname$)
+        xwk=fnblank(10)
+
+        xwk=fnblank(3)
+        OutVect!.addItem(dropaddr$(1,30)) 
+        xwk=fnblank(10)
+
         l=l+3
 
-rem --- Print drop ship info if applicable
-
-        if dropship$="Y" and ar$<>"N"
-
-            dim dropaddr$(120)
-            
-            dropname$=poe02a.ds_name$
-            dropaddr$=poe02a.ds_addr_line_1$+poe02a.ds_addr_line_2$+poe02a.ds_addr_line_3$+poe02a.ds_city$+poe02a.ds_state_cd$+poe02a.ds_zip_code$
-            call pgmdir$+"adc_address.aon",dropaddr$,24,4,9,30
-
-            OutVect!.addItem("Dropship to Customer: "+fnmask$(poe02a.customer_id$(1,custlen),customask$))
-            OutVect!.addItem("Order: "+poe02a.order_no$)
-            xwk=fnblank(12)
-
-            OutVect!.addItem(dropname$)
-            xwk=fnblank(13)
-
-            OutVect!.addItem(dropaddr$(1,30)) 
-            xwk=fnblank(13)
-
-            l=l+3
-
-            if cvs(dropaddr$(31,30),3)<>""
-                OutVect!.addItem(dropaddr$(31,30))
-                xwk=fnblank(13)
-                let l=l+1
-            endif
-
-            if cvs(dropaddr$(61,30),3)<>"" 
-                OutVect!.addItem(dropaddr$(61,30))
-                xwk=fnblank(13)
-                let l=l+1
-            endif
-
-            if cvs(dropaddr$(91,30),3)<>""
-                OutVect!.addItem(custaddr$(91,30))
-                xwk=fnblank(13)
-                let l=l+1
-            endif
-
-            xwk=fnblank(14)
-
+        if cvs(dropaddr$(31,30),3)<>""
+            xwk=fnblank(3)
+            OutVect!.addItem(dropaddr$(31,30))
+            xwk=fnblank(10)
+            let l=l+1
         endif
+
+        if cvs(dropaddr$(61,30),3)<>""
+            xwk=fnblank(3)
+            OutVect!.addItem(dropaddr$(61,30))
+            xwk=fnblank(10)
+            let l=l+1
+        endif
+
+        if cvs(dropaddr$(91,30),3)<>""
+            xwk=fnblank(3)
+            OutVect!.addItem(custaddr$(91,30))
+            xwk=fnblank(10)
+            let l=l+1
+        endif
+
+        xwk=fnblank(14)
+
+    endif
+    
     return
 
 vendtotals: rem --- Print Vendor total
@@ -626,7 +644,7 @@ vendtotals: rem --- Print Vendor total
     OutVect!.addItem(str(vendor$(1,vendlen))+$00$+"B")
     OutVect!.addItem(str(vendtot)+$00$+"B")
 
-      l=l+1
+    l=l+1
     return
 
 pototals: rem --- Print Purchase Order total
@@ -637,19 +655,25 @@ pototals: rem --- Print Purchase Order total
     OutVect!.addItem(ponum$+$00$+"B")
     OutVect!.addItem(str(potot)+$00$+"B")
 
-       let l=l+1
+    l=l+1
     return
 
-calc_extension:
+calc_extension: 
 
     if pos(linetype$="SNO")=0 return
 
-         let qty=poe12a.qty_ordered-poe12a.qty_received
+    qty=poe12a.qty_ordered-poe12a.qty_received
     if linetype$="O" qty=1
-    precision 2
-    let extension=poe12a.unit_cost*qty,extension$=str(extension,m3$)
-    precision ivprecision
+    extension=round(poe12a.unit_cost*qty, 2)
+    extension$=str(extension,m3$)
 
+    return
+    
+line_feed: rem --- Line Feed: Determin Number of cells to add to OutVect!
+
+    tmp=mod(OutVect!.size(),columns+1)
+    if tmp then xwk = fnblank (columns+1-tmp)
+    
     return
 
 rem #include std_functions.src
@@ -685,8 +709,8 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         q=1
         q0=0
         while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
@@ -694,21 +718,21 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
 rem --- fnBlank : Create blank cells in OutVect!. No return value
 
-       def fnblank(q0)
+    def fnblank(q0)
         for q1=1 to q0
             OutVect!.addItem("")
         next q1
         return q1
     fnend
 
-rem --- Line Feed: Determin Number of cells to add to OutVect!
-
-    line_feed:
-        tmp=mod(OutVect!.size(),columns+1)
-        if tmp then xwk = fnblank (columns+1-tmp)
-    return
-
 rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem #include std_error.src
 
@@ -721,13 +745,13 @@ std_error: rem --- Standard error handler (01Apr2006)
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -742,13 +766,13 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -764,4 +788,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 rem #endinclude std_end.src
 
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
+
     end
+    

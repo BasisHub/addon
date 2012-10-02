@@ -12,12 +12,11 @@ rem --- post codeport work done, but needs careful testing!.CH
     seterr std_error
     setesc std_error
 
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Close printer and destroy current progress meter (if one exists)
 
-    close (printer_dev,err=*next)
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 
 rem --- Skip update if errors were encountered
@@ -51,19 +50,19 @@ rem --- Get user approval to update
 rem --- Start progress meter and position header file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,ape02_dev,1,meter_num,status
-    read (ape02_dev,key=firm_id$,dom=*next)
+    read (ape02_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Read next Check Header (ape-02) record
 
     while moreheaders
           k$=key(ape02_dev,end=*break)
-          if pos(firm_id$=k$)<>1 break
+          if pos(firm_id$+batch_no$=k$)<>1 break
           read record (ape02_dev,key=k$) ape02a$
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
           rem --- Initializations for this invoice
 
-          ape02a_key$=k$
+          ape02a_key$=ape02a.firm_id$+ape02a.ap_type$+ape02a.check_no$+ape02a.vendor_id$
           check$=ape02a.firm_id$+ape02a.ap_type$+ape02a.check_no$+ape02a.vendor_id$
           inval_tran=0
 
@@ -75,7 +74,7 @@ rem --- Read next Check Header (ape-02) record
               apm01a.vendor_id$=ape02a.vendor_id$
               apm01a.vendor_name$=nf$
               k$=apm01a.firm_id$+apm01a.vendor_id$ 
-              find record (apm01_dev,key=k$,dom=*next) apm01a$
+              find record (apm01_dev,key=firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
 
               when$=ape02a.check_date$
               ref3$=ape02a.check_no$+" "+ape02a.ap_type$
@@ -97,16 +96,32 @@ rem --- Read next Check Header (ape-02) record
                     read record (ape22_dev) ape22a$
                     ref2$=ape22a.ap_inv_no$
 
-                    apt01a.firm_id$="ZZ";rem should only stay ZZ if domo is taken
+                    dim apm02a$:fattr(apm02a$)
+                    read record (apm02_dev,key=firm_id$+ape22a.vendor_id$+ape22a.ap_type$,dom=*next)apm02a$
+                    apt01a.firm_id$=ape22a.firm_id$
+                    apt01a.ap_type$=ape22a.ap_type$
+                    apt01a.vendor_id$=ape22a.vendor_id$
+                    apt01a.ap_inv_no$=ape22a.ap_inv_no$
+                    apt01a.sequence_00$="00"
+                    apt01a.ap_dist_code$=ape22a.ap_dist_code$
+                    apt01a.payment_grp$=apm02a.payment_grp$
+                    apt01a.ap_terms_code$=apm02a.ap_terms_code$
+                    apt01a.invoice_date$=ape22a.invoice_date$
+                    apt01a.accting_date$=ape22a.invoice_date$
+                    apt01a.inv_due_date$=ape22a.invoice_date$
+                    apt01a.disc_date$=ape22a.invoice_date$
+                    apt01a.invoice_amt=ape22a.invoice_amt
+                    apt01a.discount_amt=ape22a.discount_amt
+                    apt01a.retention=ape22a.retention
+
+                    found_hist=0
                     extract record (apt01_dev,key=ape22a.firm_id$+ape22a.ap_type$+
-:                       ape22a.vendor_id$+ape22a.ap_inv_no$,dom=*next)apt01a$
+:                       ape22a.vendor_id$+ape22a.ap_inv_no$,dom=*next)apt01a$;found_hist=1
                     v0$="M"
-                    if apt01a.firm_id$="ZZ" or
-:                       apt01a.mc_inv_flag$="M" and 
-:                       apt01a.mc_inv_adj$<>"A" and
-:                       apt01a.mc_inv_rev$<>"R"
-:                           f0$="OI";rem Outside Invoice Flag
-         
+                    if found_hist=0 f0$="OI";rem Outside Invoice Flag
+
+                    apt01a$=field(apt01a$)
+                    writerecord(apt01_dev)apt01a$
                     gosub open_inv
 
                     if f0$<>"OI"
@@ -248,9 +263,9 @@ rem --- Read next Check Header (ape-02) record
                 apt05a1.check_no$=ape02a.check_no$
                 apt05a1.vendor_id$=ape02a.vendor_id$
                 rem apt05a1.ap_inv_no$=ape02a.ap_inv_no$
-				rem ap_inv_no$ is not in ape-02.  This makes sense as one check
-				rem could pay many invoices.  I suspect the ap_inv_no in apt-05
-				rem is not valid.  KJS 31-Oct-2008
+                rem ap_inv_no$ is not in ape-02.  This makes sense as one check
+                rem could pay many invoices.  I suspect the ap_inv_no in apt-05
+                rem is not valid.  KJS 31-Oct-2008
                 apt05a1.trans_type$=ape02a.trans_type$
                 apt05a1.ap_dist_code$=apt05a2.ap_dist_code$;rem right? (was k2$)
                 apt05a1.check_date$=ape02a.check_date$
@@ -304,6 +319,7 @@ rem --- All done
     if gl$="Y"
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
        call pgmdir$+"glc_ctlupdate.aon",status
+       call pgmdir$+"glc_ctldelete.aon",status
     endif
     call pgmdir$+"adc_batchdelete.aon",err=*next,status
     goto std_exit
@@ -344,7 +360,8 @@ open_inv_dtl:
     else
         rem --- just setting c1=c1+1 here should take care of case where it was zero, or just increment it normally
         apt11a.sequence_num$=str(c1+1:"00")
-        apt11a$=field(apt11a$);write record (apt11_dev,key=apt11_key$+apt11a.sequence_num$) apt11a$
+        apt11a$=field(apt11a$)
+        write record (apt11_dev,key=apt11_key$+apt11a.sequence_num$) apt11a$
     endif
 
     t[0]=t[0]+apt11a.trans_amt
@@ -486,13 +503,19 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-	msg_id$="UPDATE_COMPLETE"
-	dim msg_tokens$[1]
-	msg_opt$=""
-	gosub disp_message
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
 
 std_exit_no_update:
 
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 

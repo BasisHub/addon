@@ -36,4 +36,4 @@ rem --- Retrieve parameter data
 	callpoint!.setTableColumnAttribute("APR_CHECKREPORT.PERIOD","MINV","01")
 	callpoint!.setTableColumnAttribute("APR_CHECKREPORT.PERIOD","MAXV",tot_per$)
 
-	callpoint!.setStatus("MODIFIED-REFRESH")
+	callpoint!.setStatus("REFRESH")

@@ -1,3 +1,21 @@
+[[ARE_INVHDR.BEND]]
+rem --- remove software lock on batch, if batching
+
+	batch$=stbl("+BATCH_NO",err=*next)
+	if num(batch$)<>0
+		lock_table$="ADM_PROCBATCHES"
+		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
+		lock_type$="U"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+	endif
+[[ARE_INVHDR.BTBL]]
+rem --- Get Batch information
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("ARE_INVHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
 [[ARE_INVHDR.ARAR]]
 if callpoint!.getColumnData("ARE_INVHDR.PRINT_STATUS") = "Y" then
 	msg_id$="OP_REPRINT_INVOICE"
@@ -99,32 +117,18 @@ rem --- set up UserObj! as vector
 	UserObj!.addItem(tamt!)
 rem --- Dimension miscellaneous string templates
 	dim ars01a$:templates$[1],gls01a$:templates$[11]
-	dim user_tpl$:"firm_id:c(2),glint:C(1),glyr:C(4),glper:C(2),glworkfile:C(16),totqty:C(15),totamt:C(15)";rem --- used to pass 'stuff' to/from cpt
+	dim user_tpl$:"firm_id:c(2),glint:C(1),glyr:C(4),glper:C(2),totqty:C(15),totamt:C(15)";rem --- used to pass 'stuff' to/from cpt
 	user_tpl.firm_id$=firm_id$
-rem --- Additional File Opens
+
+rem --- Additional init
 	gl$="N"
 	status=0
-	call dir_pgm$+"glc_ctlcreate.aon",err=*next,source$,"AR",glw11$,gl$,status;rem --- source$?
+	source$=pgm(-2)
+	call dir_pgm$+"glc_ctlcreate.aon",err=*next,source$,"AR",glw11$,gl$,status
 	if status<>0 goto std_exit
 	user_tpl.glint$=gl$
-	user_tpl.glworkfile$=glw11$
-	if gl$="Y"
-		files=21,begfile=20,endfile=21
-		dim files$[files],options$[files],chans$[files],templates$[files]
-		files$[20]="GLM_ACCT",options$[20]="OTA";rem --- "glm-01"
-		files$[21]=glw11$,options$[21]="COTAS";rem --- s means no err if tmplt not found
-		rem --- will need alias name, not disk name, when opening work file
-		rem --- will also need option to lock/clear file; not using in this pgm for now, so bypassing.CAH
-		rem --- old pgm set options$[11]?  doesn't make sense, s/b options$[21]="C"?
-	call sys_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
-:                   chans$[all],templates$[all],table_chans$[all],batch,status$
-	if status$<>"" then
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-		release
-	endif
-	else
+
+	if gl$<>"Y"
 		rem --- this logic creates/sets window object w! to child window, then creates/sets control object
 		rem --- to control w/ ID 5900, (c!.getName()should be the grd_ARE_INVDET)
 		rem --- finally, sets first (0) column as not editable (0) (the GL acct#)

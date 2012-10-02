@@ -18,8 +18,10 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -48,6 +50,7 @@ rem --- Assign form input values to local variables
 
     period$=Option!.getOptionData("PERIOD")
     year$=Option!.getOptionData("YEAR")
+    vend_type$=Option!.getOptionData("VENDOR_TYPE")
     year=num(year$)
     period=num(period$)
     call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
@@ -63,12 +66,12 @@ rem --- Retrieve parameter records
     call pgmdir$+"adc_sizemask.aon",m1$,m1,10,15
     m0=len(m0$)
     m1=len(m1$)
-    headings=2
-    if multitypes headings=3
+    headings=3
+    if multitypes headings=4
 
 rem --- Initializations
 
-    dim headings$[2],types$[4],m5$(7,"0"),underline$(m1,"-")
+    dim headings$[headings],types$[4],m5$(7,"0"),underline$(m1,"-")
     dim h[8],o[8],detail[3],totals[3],at[3],rt[3]
     vm=max(m0,8)
     done=0
@@ -79,13 +82,29 @@ rem --- Initializations
     maxlines=59
     lines=maxlines+1
     more=1
+    recs=0
     when$=sysinfo.system_date$
     clock$=""
     nf$="(Not on File)"
+    total_recs=0
+    
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$+" For Period "+str(period)+" From "+fndate$(begdate$)+
 :                " Through "+fndate$(enddate$)
-    headings$[2]="[HEADER]"
+
+    if vend_type$="A" then
+        headings$[2]="All Vendors"
+    endif
+    
+    if vend_type$="P" then
+        headings$[2]="Permanent Vendors Only"
+    endif
+
+    if vend_type$="T" then
+        headings$[2]="Temporary Vendors Only"
+    endif
+
+    if multitypes then headings$[3]="[HEADER]"
     types$[0]="Unknown"
     types$[1]="Void"
     types$[2]="Reversal"
@@ -134,18 +153,18 @@ rem --- OutVect! for DocOut, date/time
         rep_prog$=pgm(-2)
 
 rem --- column headings
-	dim columns$[7,10]
+    dim columns$[7,10]
         columns=7
-        if retension dim columns$[8,10]; columns=8
-	columns$[0,0]="Chk No",       columns$[0,1]="C",columns$[0,2]="10"
-	columns$[1,0]="Chk Date",     columns$[1,1]="C",columns$[1,2]="10"
-	columns$[2,0]="Type",         columns$[2,1]="C",columns$[2,2]="10"
-	columns$[3,0]="Vendor",       columns$[3,1]="C",columns$[3,2]="10"
-	columns$[4,0]="Name",         columns$[4,1]="C",columns$[4,2]="30"
-	columns$[5,0]="Payment Amt",  columns$[5,1]="N",columns$[5,2]="12",columns$[5,3]=m1$,columns$[5,10]="T"
-	columns$[6,0]="Invoice Amt",  columns$[6,1]="N",columns$[6,2]="12",columns$[6,3]=m1$,columns$[6,10]="T"
+        if retention dim columns$[8,10]; columns=8
+    columns$[0,0]="Chk No",       columns$[0,1]="C",columns$[0,2]="10"
+    columns$[1,0]="Chk Date",     columns$[1,1]="C",columns$[1,2]="10"
+    columns$[2,0]="Type",         columns$[2,1]="C",columns$[2,2]="10"
+    columns$[3,0]="Vendor",       columns$[3,1]="C",columns$[3,2]="10"
+    columns$[4,0]="Name",         columns$[4,1]="C",columns$[4,2]="30"
+    columns$[5,0]="Payment Amt",  columns$[5,1]="N",columns$[5,2]="12",columns$[5,3]=m1$,columns$[5,10]="T"
+    columns$[6,0]="Invoice Amt",  columns$[6,1]="N",columns$[6,2]="12",columns$[6,3]=m1$,columns$[6,10]="T"
         columns$[7,0]="Discount Amt", columns$[7,1]="N",columns$[7,2]="12",columns$[7,3]=m1$,columns$[7,10]="T"
-        if retension
+        if retention
             columns$[8,0]="Retention Amt",columns$[8,1]="N",columns$[8,2]="12",columns$[8,3]=m1$,columns$[8,10]="T"
         endif
 
@@ -153,7 +172,7 @@ rem --- Open printer, start progress meter and position the file
 
     call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
     if status goto std_exit
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apt05_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","APT_CHECKHISTORY","","","",0,apt05_dev,1,meter_num,status
     read (apt05_dev,key=firm_id$,dom=*next)
 
 rem --- Read the next Check History (apt-05) record
@@ -162,9 +181,17 @@ rem --- Read the next Check History (apt-05) record
           k$=key(apt05_dev,end=*break)
           if pos(firm_id$=k$)<>1 break
           read record (apt05_dev) apt05a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           if apt05a.check_date$<begdate$ continue
           if apt05a.check_date$>enddate$ continue
+          
+          rem --- extra apm01 read here to facilitate including/skipping vendors based on temp vend flag
+          if vend_type$<>"A"
+              read record (apm01_dev,key=firm_id$+apt05a.vendor_id$,dom=*continue)apm01a$
+              if (vend_type$="P" and apm01a.temp_vend$="Y") or (vend_type$="T" and apm01a.temp_vend$<>"Y") then continue
+          endif
+          
 
           rem --- Level breaks
 
@@ -250,9 +277,10 @@ rem --- Read the next Check History (apt-05) record
           OutVect!.addItem(payment$)
           OutVect!.addItem(invoice$)
           OutVect!.addItem(discount$)
-          if retension
+          if retention
             OutVect!.addItem(retention$)
           endif  
+          recs=recs+1
 
           rem --- Accumulate totals
 
@@ -266,6 +294,12 @@ rem --- Read the next Check History (apt-05) record
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     done=1
     gosub type_break
@@ -374,6 +408,13 @@ rem --- Create blank line in OutVect! (no return value wanted or needed)
         return q1
     fnend
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -430,5 +471,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

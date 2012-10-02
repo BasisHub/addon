@@ -275,7 +275,6 @@ rem --- Set Defaults
 
 	callpoint!.setColumnData("POE_RECHDR.ORD_DATE",sysinfo.system_date$)
 	callpoint!.setColumnData("POE_RECHDR.AP_TERMS_CODE",apm02a.ap_terms_code$)
-	callpoint!.setColumnData("POE_RECHDR.REQD_DATE",sysinfo.system_date$)
 	callpoint!.setColumnData("POE_RECHDR.PO_FRT_TERMS",pos_params.po_frt_terms$)
 	callpoint!.setColumnData("POE_RECHDR.AP_SHIP_VIA",pos_params.ap_ship_via$)
 	callpoint!.setColumnData("POE_RECHDR.FOB",pos_params.fob$)
@@ -285,7 +284,7 @@ rem --- Set Defaults
 gosub whse_addr_info
 [[POE_RECHDR.REQD_DATE.AVAL]]
 tmp$=callpoint!.getUserInput()
-if tmp$<callpoint!.getColumnData("POE_RECHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
+if tmp$<>"" and tmp$<callpoint!.getColumnData("POE_RECHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
 [[POE_RECHDR.NOT_B4_DATE.AVAL]]
 not_b4_date$=cvs(callpoint!.getUserInput(),2)
 if not_b4_date$<>"" then
@@ -304,7 +303,7 @@ rem --- inits
 	use ::ado_util.src::util
 
 rem --- Open Files
-	num_files=14
+	num_files=16
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
@@ -320,6 +319,8 @@ rem --- Open Files
 	open_tables$[12]="IVM_ITEMSYN",open_opts$[12]="OTA"
 	open_tables$[13]="APM_VENDCMTS",open_opts$[13]="OTA"
 	open_tables$[14]="POE_RECLSDET",open_opts$[14]="OTA"
+	open_tables$[15]="IVS_PARAMS",open_opts$[15]="OTA"
+	open_tables$[16]="IVM_LSMASTER",open_opts$[16]="OTA"
 
 	gosub open_tables
 
@@ -332,6 +333,7 @@ rem --- Open Files
 	poe_pohdr_dev=num(open_chans$[7]),poe_pohdr_tpl$=open_tpls$[7]
 	poe_podet_dev=num(open_chans$[8]),poe_podet_tpl$=open_tpls$[8]
 	pot_rechdr_dev=num(open_chans$[9]),pot_rechdr_tpl$=open_tpls$[9]
+	ivs01_dev=num(open_chans$[15]),ivs01a_tpl$=open_tpls$[15]
 
 rem --- call adc_application to see if OE is installed; if so, open a couple tables for potential use if linking PO to SO for dropship
 
@@ -419,6 +421,18 @@ call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"PO",glw11$,gl$,stat
 if status<>0 then release
 
 callpoint!.setDevObject("gl_installed",gl$)
+
+rem --- Set up Lot/Serial button properly
+
+	dim ivs01a$:ivs01a_tpl$
+	readrecord(ivs01_dev,key=firm_id$+"IV00")ivs01a$
+	switch pos(ivs01a.lotser_flag$="LS")
+		case 1; callpoint!.setOptionText("LENT","Lot Entry"); break
+		case 2; callpoint!.setOptionText("LENT","Serial Entry"); break
+		case default; break
+	swend
+
+	callpoint!.setOptionEnabled("LENT",0)
 [[POE_RECHDR.PURCH_ADDR.AVAL]]
 vendor_id$=callpoint!.getColumnData("POE_RECHDR.VENDOR_ID")
 purch_addr$=callpoint!.getUserInput()
@@ -450,7 +464,11 @@ vendor_info: rem --- get and display Vendor Information
 	read record(apm01_dev,key=firm_id$+vendor_id$,dom=*next)apm01a$
 	callpoint!.setColumnData("<<DISPLAY>>.V_ADDR1",apm01a.addr_line_1$)
 	callpoint!.setColumnData("<<DISPLAY>>.V_ADDR2",apm01a.addr_line_2$)
-	callpoint!.setColumnData("<<DISPLAY>>.V_CITY",cvs(apm01a.city$,3)+", "+apm01a.state_code$+"  "+apm01a.zip_code$)
+	if cvs(apm01a.city$+apm01a.state_code$+apm01a.zip_code$,3)<>""
+		callpoint!.setColumnData("<<DISPLAY>>.V_CITY",cvs(apm01a.city$,3)+", "+apm01a.state_code$+"  "+apm01a.zip_code$)
+	else
+		callpoint!.setColumnData("<<DISPLAY>>.V_CITY","")
+	endif
 	callpoint!.setColumnData("<<DISPLAY>>.V_CONTACT",apm01a.contact_name$)
 	callpoint!.setColumnData("<<DISPLAY>>.V_PHONE",apm01a.phone_no$)
 	callpoint!.setColumnData("<<DISPLAY>>.V_FAX",apm01a.fax_no$)
@@ -505,7 +523,7 @@ whse_addr_info: rem --- get and display Warehouse Address Info
 	callpoint!.setStatus("REFRESH")
 return
 
-dropship_shipto: rem --- get and display shipto from Sales Order if drop ship indicated, and OE installed
+dropship_shipto: rem --- get and display shipto from Sales Order if dropship indicated, and OE installed
 
 	ope_ordhdr_dev=fnget_dev("OPE_ORDHDR")
 	arm_custship_dev=fnget_dev("ARM_CUSTSHIP")
@@ -566,23 +584,30 @@ get_dropship_order_lines:
 rem --- read thru selected sales order and build list of lines for which line code is marked as drop-ship
 	ope_ordhdr_dev=fnget_dev("OPE_ORDHDR")
 	ope_orddet_dev=fnget_dev("OPE_ORDDET")
+	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 
 	dim ope_ordhdr$:fnget_tpl$("OPE_ORDHDR")
 	dim ope_orddet$:fnget_tpl$("OPE_ORDDET")
+	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
 
 	order_lines!=SysGUI!.makeVector()
+	order_items!=SysGUI!.makeVector()
+	order_list!=SysGUI!.makeVector()
 	callpoint!.setDevObject("ds_orders","N")
 
 	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*return)ope_ordhdr$
 
-	read (ope_orddet_dev,key=firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$,dom=*next)
+	read (ope_orddet_dev,key=firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$,knum=3,dom=*next)
 
 	while 1
 		read record (ope_orddet_dev,end=*break)ope_orddet$
 		if ope_orddet.firm_id$+ope_orddet.ar_type$+ope_orddet.customer_id$+ope_orddet.order_no$<>
 :			ope_ordhdr.firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$ then break
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
+			read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
 			order_lines!.addItem(ope_orddet.internal_seq_no$)
+			order_items!.addItem(ope_orddet.item_id$)
+			order_list!.addItem("Item: "+cvs(ope_orddet.item_id$,3)+" "+cvs(ivm_itemmast.display_desc$,3))
 		endif
 	wend
 
@@ -593,14 +618,15 @@ rem --- read thru selected sales order and build list of lines for which line co
 	else 
 		ldat$=""
 		for x=0 to order_lines!.size()-1
-			ldat$=ldat$+order_lines!.getItem(x)+"~"+order_lines!.getItem(x)+";"
+			ldat$=ldat$+order_items!.getItem(x)+"~"+order_lines!.getItem(x)+";"
 		next x
 
 		callpoint!.setDevObject("ds_orders","Y")		
 		callpoint!.setDevObject("so_ldat",ldat$)
-		callpoint!.setDevObject("so_lines_list",order_lines!)
+		callpoint!.setDevObject("so_lines_list",order_list!)
 	endif	
 return
+
 
 form_inits:
 

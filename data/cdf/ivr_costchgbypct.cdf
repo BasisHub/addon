@@ -5,6 +5,7 @@ rem --- Percent change can't be zero
 		callpoint!.setMessage("IV_PCT_CHG_INVALID")
 		callpoint!.setStatus("ABORT")
 	endif
+
 [[IVR_COSTCHGBYPCT.PERCENT_CHANGE.AVAL]]
 rem --- Percent can't be zero
 
@@ -51,5 +52,11 @@ rem --- is AP installed?  If not, disable vendor fields
 		callpoint!.setColumnEnabled("IVR_COSTCHGBYPCT.VENDOR_ID_1", -1)
 		callpoint!.setColumnEnabled("IVR_COSTCHGBYPCT.VENDOR_ID_2", -1)
 	endif
+
+rem --- Get Batch information
+rem --- this will let oper set up or select a batch (if batching turned on)
+rem --- stbl("+BATCH_NO) will either be zero (not batching) or contain the batch#
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 
 bsho_end:

@@ -1,4 +1,4 @@
-rem --- Credit Management Status Display
+rem --- Credit Management Status Display (Credit Status)
 rem --- Program opc_creditmgmnt.aon v8.0.0 05Dec2007 (opc_ca)
 rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 03:12:42)
 
@@ -9,23 +9,30 @@ rem --- All Rights Reserved
 rem --- Below is the old enter list
 rem enter ope01_dev,arm02_dev,firm_id$,customer$,credit$,s$,m1$,type
 
+rem --- stbl("!batch") is used when calling this from Commit and Release Future Orders
+
     setesc std_error
     seterr std_error
+
+    enter customer$, order$, table_chans$[all], callpoint!, status
     
-	declare Callpoint callpoint!
-	
-	enter customer$, table_chans$[all], callpoint!
+rem --- Use statements and declares
+
+    use ::sys/prog/bao_callpoint.bbj::Callpoint
+    use ::ado_order.src::OrderHelper
+    use ::adc_array.aon::ArrayObject
+    use ::ado_util.src::util
+
+    declare Callpoint callpoint!
+    declare OrderHelper ordHelp!
+    declare ArrayObject tableChans!
 
 rem --- Retrieve the program path
 
-	pgmdir$=""
+    pgmdir$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
     sypdir$=""
     sypdir$=stbl("+DIR_SYP",err=*next)
-
-rem --- For type checking
-
-	use ::sys/prog/bao_callpoint.bbj::Callpoint
 
 rem --- Retrieve sysinfo data
 
@@ -45,146 +52,91 @@ rem --- Open all files
     open_tables$[2]="ARS_PARAMS",  open_opts$[2]="OTA"
     open_tables$[3]="IVS_PARAMS",  open_opts$[3]="OTA"
     open_tables$[4]="OPE_ORDHDR",  open_opts$[4]="OTA"
-	open_tables$[5]="ARS_CREDIT",  open_opts$[5]="OTA"
+    open_tables$[5]="ARS_CREDIT",  open_opts$[5]="OTA"
 
     gosub open_tables
 
-    arm02_dev  = num(open_chans$[1])
-    ars01a_dev = num(open_chans$[2])
-    ivs01a_dev = num(open_chans$[3])
-    ope01_dev  = num(open_chans$[4])
-	ars01c_dev = num(open_chans$[5])
+rem --- Set opened files into util class for future use
+    
+	call stbl("+DIR_PGM")+"adc_array.aon::str_array2object", table_chans$[all], tableChans!, status
+	if status = 999 then goto std_exit
+	util.setTableChans(tableChans!)    
 
-    dim arm02a$:open_tpls$[1]
-    dim ars01a$:open_tpls$[2]
-    dim ivs01a$:open_tpls$[3]
-    dim ope01a$:open_tpls$[4]
-	dim ars01c$:open_tpls$[5]
-	
-rem --- Retrieve parameter records
+rem --- Determine if over credit limit 
 
-    ars01a_key$=firm_id$+"AR00"
-    find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-    ars01c_key$=firm_id$+"AR01"
-    find record (ars01c_dev,key=ars01c_key$,err=std_missing_params) ars01c$
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-
-rem --- Initializations
-
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDHDR","PRIMARY",ope01a_key_tpl$,rd_table_chans$[all],status$
-    dim ope01a_key$:ope01a_key_tpl$
-    more=1
-    aging_bucket=num(ars01c.aging_bucket$)
-    if aging_bucket=0 then let aging_bucket=5
-    t0=0
-    t1=0
-    t2=0
-
-rem --- Get Customer Detail Record
-
-    read record (arm02_dev,key=firm_id$+customer$+"  ",dom=*next) arm02a$
-
-position: rem --- Position file
-
-    read (ope01_dev,key=firm_id$+"  "+customer$,dom=*next)
-
-rem --- Total Open Orders
-
-    while more
-        ope01a_key$=key(ope01_dev,end=*break)
-        if pos(firm_id$+"  "+customer$=ope01a_key.firm_id$+ope01a_key.ar_type$+ope01a_key.customer_id$)<>1 then break
-        read record (ope01_dev) ope01a$
-		
-        if pos(ope01a.invoice_type$="PV") = 0 then 
-			if ope01a.invoice_type$="B" then 
-				t1=t1+ope01a.total_sales 
-			else 
-				if ope01a.credit_flag$="C" then 
-					t2=t2+ope01a.total_sales 
-				else 
-					t0=t0+ope01a.total_sales
-				endif
-			endif
-		endif
-    wend
-
-open_invoices: rem --- Total Open Invoices
-
-    t9=arm02a.aging_future+arm02a.aging_cur+arm02a.aging_30+arm02a.aging_60+arm02a.aging_90+arm02a.aging_120
-
-rem --- Total Past Due Invoices
-
-    if aging_bucket=0 t8=arm02a.aging_future+arm02a.aging_cur+arm02a.aging_30+arm02a.aging_60+arm02a.aging_90+arm02a.aging_120
-    if aging_bucket=1 t8=arm02a.aging_cur+arm02a.aging_30+arm02a.aging_60+arm02a.aging_90+arm02a.aging_120
-    if aging_bucket=2 t8=arm02a.aging_30+arm02a.aging_60+arm02a.aging_90+arm02a.aging_120
-    if aging_bucket=3 t8=arm02a.aging_60+arm02a.aging_90+arm02a.aging_120
-    if aging_bucket=4 t8=arm02a.aging_90+arm02a.aging_120
-    if aging_bucket=5 t8=arm02a.aging_120
-
-rem --- Set Check Credit Limit Flag
-
-	credit_check_ok = 0
-	
-    while more
-        if arm02a.cred_hold$="Y" break
-        if arm02a.cred_hold$="E" 
-            credit_check_ok = 1
-            break
-        endif    
-        if ars01c.auto_hold$="Y" and arm02a.credit_limit>0 and arm02a.credit_limit<t9+t0+t1+t2 break
-        if num(ars01c.hold_amount$)>0 
-            if ope01a.total_sales>num(ars01c.hold_amount$) break
-        endif     
-        if t8>num(ars01c.past_due_lim$) break
-        credit_check_ok = 1
-        break
-    wend
-	
-	callpoint!.setDevObject("credit_check_ok", credit_check_ok)
-
+    if callpoint! <> null() then
+        ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+        
+    rem --- If credit limit isn't set, call OrderHelper method
+        
+        if ordHelp!.getOverCreditLimit() = -1 then
+            over_credit_limit = ordHelp!.calcOverCreditLimit()
+        else
+            over_credit_limit = ordHelp!.getOverCreditLimit()
+        endif
+        
+    else
+    
+    rem --- Set credit limit w/o the callpoint object
+    
+        ordHelp! = new OrderHelper(firm_id$, null())
+        over_credit_limit = ordHelp!.calcOverCreditLimit(customer$, order$)
+    endif
+    
+    batch$ = ""
+    batch$ = stbl("!batch", err=*next)
+    
 rem --- Display	
 
-	dim dflt_data$[8,1]
-	
-	dflt_data$[1,0] = "CREDIT_LIMIT"
-	dflt_data$[2,0] = "OPEN_AR_INVS"
-	dflt_data$[3,0] = "OPEN_ORDERS"
-	dflt_data$[4,0] = "OPEN_BOS"
-	dflt_data$[5,0] = "ORDERS_HELD"
-	dflt_data$[6,0] = "CREDIT_LEFT"
-	dflt_data$[7,0] = "OVER_MAX_DAYS"
-	dflt_data$[8,0] = "CRED_HOLD"
-	
-	dflt_data$[1,1] = str(arm02a.credit_limit)
-	dflt_data$[2,1] = str(t9)
-	dflt_data$[3,1] = str(t0)
-	dflt_data$[4,1] = str(t1)
-	dflt_data$[5,1] = str(t2)
-	if arm02a.credit_limit > 0 then
-		dflt_data$[6,1] = str(arm02a.credit_limit-t9-t0-t1-t2)
-	endif
-	dflt_data$[7,1] = str(t8)
-	dflt_data$[8,1] = arm02a.cred_hold$
-	
-	call sypdir$+"bam_run_prog.bbj", "OPE_CREDITSTATUS", stbl("+USER_ID"), "", "", table_chans$[all], "", dflt_data$[all]	
-	
+    if batch$ = "" then
+        dim dflt_data$[8,1]
+
+        dflt_data$[1,0] = "CREDIT_LIMIT"
+        dflt_data$[2,0] = "OPEN_AR_INVS"
+        dflt_data$[3,0] = "OPEN_ORDERS"
+        dflt_data$[4,0] = "OPEN_BOS"
+        dflt_data$[5,0] = "ORDERS_HELD"
+        dflt_data$[6,0] = "CREDIT_LEFT"
+        dflt_data$[7,0] = "OVER_MAX_DAYS"
+        dflt_data$[8,0] = "CRED_HOLD"
+
+        dflt_data$[1,1] = str(ordHelp!.getCreditLimit())
+        dflt_data$[2,1] = str(ordHelp!.getTotalAging())
+        dflt_data$[3,1] = str(ordHelp!.getOpenOrderAmount())
+        dflt_data$[4,1] = str(ordHelp!.getOpenBoAmount())
+        dflt_data$[5,1] = str(ordHelp!.getHeldOrderAmount())
+
+        if over_credit_limit then
+            dflt_data$[6,1] = str(ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount())
+        endif
+
+        dflt_data$[7,1] = str(ordHelp!.getMaxPastDue())
+        dflt_data$[8,1] = ordHelp!.getCreditHold()
+
+        call sypdir$+"bam_run_prog.bbj", "OPE_CREDITSTATUS", stbl("+USER_ID"), "", "", table_chans$[all], "", dflt_data$[all]	
+
+    endif
+
 rem --- All done
-	
+     
+    if callpoint! <> null() then 
+        callpoint!.setDevObject("credit_status_done", "Y")
+    endif
+    
     goto std_exit
-	
+
 open_tables: rem --- Open tables
 
     call sypdir$+"bac_open_tables.bbj",
-:		open_beg,
-:		open_end,
-:		open_tables$[all],
-:		open_opts$[all],
-:		open_chans$[all],
-:		open_tpls$[all],
-:		table_chans$[all],
-:		open_batch,
-:		open_status$
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
 
     if open_status$<>"" then
         msg_id$="ENTRY_OPEN_ERROR"
@@ -197,13 +149,13 @@ open_tables: rem --- Open tables
 
     return
 
-disp_message:rem --- Display Message Dialog
+disp_message: rem --- Display Message Dialog
 
     call sypdir$+"bac_message.bbj",
-:		msg_id$,
-:		msg_tokens$[all],
-:		msg_opt$,
-:		table_chans$[all]
+:       msg_id$,
+:       msg_tokens$[all],
+:       msg_opt$,
+:       table_chans$[all]
 
     return
 
@@ -214,17 +166,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+:       str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -238,14 +190,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -255,12 +207,12 @@ rem #endinclude std_missing_params.src
 rem #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
- 
+
     rd_called$="YES"
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
-	   
+
 rem #endinclude std_exit.src
 
     end
-	
+

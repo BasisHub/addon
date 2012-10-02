@@ -1,75 +1,361 @@
+[[OPE_INVHDR.TAX_CODE.AVAL]]
+rem --- Set code in the Order Helper object
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setTaxCode(callpoint!.getColumnData("OPE_ORDHDR.TAX_CODE"))
+[[OPE_INVHDR.ARAR]]
+print "Hdr:ARAR"; rem debug
+
+rem --- Set flags
+
+	user_tpl.user_entry$ = "N"; rem user entered an order (not navigated)
+
+	callpoint!.setDevObject("credit_status_done", "N")
+	callpoint!.setDevObject("credit_action_done", "N")
+
+	callpoint!.setOptionEnabled("DINV",0)
+	callpoint!.setOptionEnabled("CINV",0)
+	callpoint!.setOptionEnabled("RPRT",0)
+	callpoint!.setOptionEnabled("PRNT",0)
+	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("CRAT",0)
+	callpoint!.setOptionEnabled("TTLS",0)
+
+rem --- Clear order helper object
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.newOrder()
+
+rem --- Reset all previous values
+
+	user_tpl.prev_line_code$   = ""
+	user_tpl.prev_item$        = ""
+	user_tpl.prev_qty_ord      = 0
+	user_tpl.prev_boqty        = 0
+	user_tpl.prev_shipqty      = 0
+	user_tpl.prev_ext_price    = 0
+	user_tpl.prev_taxable      = 0
+	user_tpl.prev_ext_cost     = 0
+	user_tpl.prev_disc_code$   = ""
+	user_tpl.prev_ship_to$     = ""
+	user_tpl.prev_sales_total  = 0
+
+	user_tpl.new_order = 1
+	user_tpl.credit_limit_warned = 0
+	user_tpl.shipto_warned = 0
+[[OPE_INVHDR.AOPT-CRAT]]
+print "Hdr:AOPT:CRAT"; rem debug
+
+rem --- Do Credit Action
+
+	gosub do_credit_action
+
+	if action$ <> "U" then
+		user_tpl.do_end_of_form = 0			
+		callpoint!.setStatus("NEWREC")
+	end
+[[OPE_INVHDR.DISC_CODE.AVAL]]
+rem --- Set discount code for use in Order Totals
+
+	user_tpl.disc_code$ = callpoint!.getUserInput()
+[[OPE_INVHDR.AOPT-TTLS]]
+rem --- Launch the totals form
+
+	gosub do_totals
+	user_tpl.do_totals_form = 0
+	rem callpoint!.setStatus("NEWREC")
+[[OPE_INVHDR.AOPT-CASH]]
+rem --- Customer wants to pay cash; Launch invoice totals first
+
+	gosub do_totals
+
+rem --- Now launch Cash Transaction
+
+	gosub get_cash
+
+rem --- Do we need to print an invoice first?
+
+	if callpoint!.getDevObject( "print_invoice" ) = "Y" then
+		gosub do_invoice
+	endif
+
+rem --- Now start a new record
+
+	user_tpl.do_end_of_form = 0
+	callpoint!.setStatus("NEWREC")
+[[OPE_INVHDR.AOPT-RPRT]]
+rem --- Check for printing in next batch and set
+
+	if user_tpl.credit_installed$="Y" and user_tpl.pick_hold$<>"Y" and
+:		callpoint!.getColumnData("OPE_INVHDR.CREDIT_FLAG")="C"
+:	then
+		msg_id$ = "OP_CR_HOLD_NOPRINT"
+	else
+		order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+		gosub add_to_batch_print
+		callpoint!.setColumnData("OPE_INVHDR.REPRINT_FLAG","Y")
+		callpoint!.setStatus("SAVE")
+		msg_id$ = "OP_BATCH_PRINT"
+	endif
+
+	dim msg_tokens$[1]
+	msg_tokens$[1] = "invoice"
+	gosub disp_message
+[[OPE_INVHDR.AREC]]
+rem --- clear availability
+
+	gosub clear_avail
+[[OPE_INVHDR.INVOICE_TYPE.AVAL]]
+print "Hdr:INVOICE_TYPE.AVAL"; rem debug
+
+rem --- Enable/disable expire date based on value
+
+	inv_type$ = callpoint!.getUserInput()
+	print "---Invoice Type: ", inv_type$; rem debug
+
+	if inv_type$ = "S" then
+		callpoint!.setColumnEnabled("OPE_INVHDR.EXPIRE_DATE", -1)
+	else
+		callpoint!.setColumnEnabled("OPE_INVHDR.EXPIRE_DATE", 1)
+	endif
+
+rem --- Void this order
+
+	if inv_type$ = "V" then
+		print "---Set flags and status"; rem debug
+		callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "")
+		callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "Y")
+		callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "I")
+
+	rem --- Add to batch print
+
+		print "---Add to Print List"; rem debug
+		ope_prntlist_dev = fnget_dev("OPE_PRNTLIST")
+		dim ope_prntlist$:fnget_tpl$("OPE_PRNTLIST")
+
+		ope_prntlist.firm_id$     = firm_id$
+		ope_prntlist.ordinv_flag$ = "I"
+		ope_prntlist.ar_type$     = "  "
+		ope_prntlist.customer_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+		ope_prntlist.order_no$    = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+		write record (ope_prntlist_dev) ope_prntlist$
+
+	rem --- Save and exit
+
+		print "---Set type to ""V"" and exit"; rem debug
+		callpoint!.setColumnData("OPE_INVHDR.INVOICE_TYPE", "V")
+		gosub get_disk_rec
+		ordhdr_rec$ = field(ordhdr_rec$)
+		write record (invhdr_dev) invhdr_rec$
+
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("NEWREC")
+		break; rem --- exit callpoint
+	endif
+
+rem --- Set type in OrderHelper object
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setInv_type(callpoint!.getUserInput())
+[[OPE_INVHDR.AOPT-PRNT]]
+print "Hdr:AOPT.PRNT"; rem debug
+
+rem --- Print a counter Invoice
+
+	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") <> "I" then
+		gosub make_invoice
+	endif
+
+	if user_tpl.credit_installed$ <> "Y" then
+
+	rem --- No need to check credit first
+
+		gosub do_invoice
+		print "---Printed, starting new record..."; rem debug
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("NEWREC")
+	else
+
+	rem --- Can't print until released from credit
+
+		gosub force_print_status
+		gosub do_credit_action
+		print "---Print Status: """, callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS"), """"; rem debug
+
+		if pos(action$ = "XU") or (action$ = "R" and callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "N") then 
+
+		rem --- Couldn't do credit action, or did credit action w/ no problem, or released from credit but didn't print
+
+			gosub do_invoice
+			print "---Printed in header, starting new record..."; rem debug
+			user_tpl.do_end_of_form = 0
+			callpoint!.setStatus("NEWREC")
+		else
+			if action$ = "R" and callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "Y" then 
+
+			rem --- Released from credit and did print
+
+				print "---Release and printed, starting new record..."; rem debug
+				user_tpl.do_end_of_form = 0
+				callpoint!.setStatus("NEWREC")
+			else
+				print "---Not printing because there was no credit action"; rem debug
+			endif
+		endif
+	endif
+[[OPE_INVHDR.BREX]]
+print "Hdr:BREX"; rem debug
+
+rem --- Is record deleted?
+
+	if user_tpl.record_deleted then
+		break; rem --- exit callpoint
+	endif
+
+rem --- Is flag down?
+
+	if !user_tpl.do_end_of_form then
+		user_tpl.do_end_of_form = 1
+		break; rem --- exit callpoint
+	endif	
+
+rem --- Are both Customer and Order entered?
+
+	if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"), 2) = "" or 
+:		cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"), 2) = ""
+:	then
+		break; rem --- exit callpoint
+	endif
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+
+	if ordHelp!.getCust_id() = "" or ordHelp!.getOrder_no() = "" then
+		break; rem --- exit callpoint
+	endif
+
+rem --- Calculate taxes and write it back
+
+	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	gosub get_disk_rec
+	ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt)
+	ordhdr_rec$ = field(ordhdr_rec$)
+	write record (ordhdr_dev) ordhdr_rec$
+	callpoint!.setStatus("SETORIG")
+
+rem --- Credit action
+
+	if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
+		gosub do_credit_action
+	endif
+
+rem --- Does the total of lot/serial# match the qty ordered for each detail line?
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setLotSerialFlag( user_tpl.lotser_flag$ )
+
+	if user_tpl.lotser_flag$ <> "N" then
+
+		declare BBjVector recs!
+		recs! = BBjAPI().makeVector()
+
+		recs! = cast( BBjVector, gridVect!.getItem(0) )
+		dim gridrec$:dtlg_param$[1,3]
+
+	rem --- Detail loop
+
+		for row=0 to recs!.size()-1
+			gridrec$ = recs!.getItem(row)
+
+			if ordHelp!.isLottedSerial(gridrec.item_id$) then
+				lot_ser_total = ordHelp!.totalLotSerialAmount( gridrec.internal_seq_no$ )
+
+				if lot_ser_total <> gridrec.qty_ordered then
+					if user_tpl.lotser_flag$ = "L" then
+						lot_ser$ = "lots"
+					else
+						lot_ser$ = "serial numbers"
+					endif
+				
+					msg_id$ = "OP_ITEM_LS_TOTAL"
+					dim msg_tokens$[3]
+					msg_tokens$[0] = str(gridrec.qty_ordered)
+					msg_tokens$[1] = cvs(gridrec.item_id$, 2)
+					msg_tokens$[2] = lot_ser$
+					msg_tokens$[3] = str(lot_ser_total)
+					gosub disp_message
+				endif
+			endif
+		next row
+	endif
+
+rem --- Cash Transaction
+
+	rem if user_tpl.cash_sale$ = "Y" then
+	if callpoint!.getColumnData("OPE_INVHDR.CASH_SALE") = "Y" then
+		gosub get_cash
+	endif
 [[OPE_INVHDR.BWRI]]
 print "Hdr:BWRI"; rem debug
 
-rem --- Unlock order (This doesn't work as desired)
+rem --- Has customer and order number been entered?
 
-	callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N")
-	print "---Clear lock"; rem debug
-[[OPE_INVHDR.ASVA]]
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 
-[[OPE_INVHDR.AOPT-MINV]]
-rem --- Change an Order into an Invoice
+	if cvs(cust_id$, 2) = "" or cvs(order_no$, 2) = "" then
+		callpoint!.setStatus("ABORT")
+	endif
 
-	gosub check_print_flag
+rem --- Check Ship-to's
 
-	if !locked and 
-:		callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID") <> "" and 
-:		callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")    <> "" and 
-:		callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "O" 
-:	then
+	rem if !user_tpl.shipto_warned then
+		shipto_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
+		shipto_var$  = "OPE_INVHDR.SHIPTO_NO"
 
-	rem --- Set Invoice number
-
-		call stbl("+DIR_SYP")+"bas_sequences.bbj","INVOICE_NO",inv_no$,table_chans$[all]
-		
-		if inv_no$ = "" then
-			callpoint!.setStatus("ABORT")
+		if shipto_type$ = "S" and cvs(callpoint!.getColumnData(shipto_var$), 2) = "" then
+			msg_id$ = "OP_SHIPTO_NO_MISSING"
+			gosub disp_message
+			callpoint!.setFocus(shipto_var$)
+			user_tpl.shipto_warned = 1
+			break; rem --- exit callpoint
 		else
-			callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", inv_no$)
-			callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "I")
-			callpoint!.setColumnData("OPE_INVHDR.INVOICE_DATE", sysinfo.system_date$)
-			callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "N")
-			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "Y")
-			print "---Set lock"; rem debug
-			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N"); rem debug, forcing the lock off for now, this isn't working correctly
-			user_tpl.old_disc_code$ = ""
-			user_tpl.price_code$ = "Y"
-			order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
-			gosub add_to_batch_print
-			callpoint!.setStatus("SAVE;REFRESH")
+			ship_addr1_var$ = "<<DISPLAY>>.SADD1"
+
+			if shipto_type$ = "M" and cvs(callpoint!.getColumnData(ship_addr1_var$), 2) = "" then
+				msg_id$ = "OP_MAN_SHIPTO_NEEDED"
+				gosub disp_message
+				callpoint!.setFocus(ship_addr1_var$)
+				user_tpl.shipto_warned = 1
+				break; rem --- exit callpoint
+			endif
 		endif
-		
+	rem endif
+[[OPE_INVHDR.AOPT-MINV]]
+print "Hdr:APOT:MINV"; rem debug
+
+rem --- Make order into an invoice
+
+	gosub make_invoice
+
+	if locked then
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("ABORT;NEWREC")
+		break; rem --- exit callpoint
 	endif
 [[OPE_INVHDR.SLSPSN_CODE.AVAL]]
 rem --- Set Commission Percent
 
-	file$ = "ARC_SALECODE"
-	salecode_dev = fnget_dev(file$)
-	dim salecode_rec$:fnget_tpl$(file$)
 	slsp$ = callpoint!.getUserInput()
-	start_block = 1
-
-	if start_block then
-		find record (salecode_dev, key=firm_id$+"E"+slsp$, dom=*endif) salecode_rec$
-		callpoint!.setColumnData("OPE_INVHDR.COMM_PERCENT", salescode_rec.comm_percent$)
-		callpoint!.setStatus("REFRESH")
-	endif
+	gosub get_comm_percent
 [[OPE_INVHDR.SHIPTO_TYPE.AVAL]]
 rem -- Deal with which Ship To type
-
-	callpoint!.setColumnData("<<DISPLAY>>.SNAME","")
-	callpoint!.setColumnData("<<DISPLAY>>.SADD1","")
-	callpoint!.setColumnData("<<DISPLAY>>.SADD2","")
-	callpoint!.setColumnData("<<DISPLAY>>.SADD3","")
-	callpoint!.setColumnData("<<DISPLAY>>.SADD4","")
-	callpoint!.setColumnData("<<DISPLAY>>.SCITY","")
-	callpoint!.setColumnData("<<DISPLAY>>.SSTATE","")
-	callpoint!.setColumnData("<<DISPLAY>>.SZIP","")
 
 	ship_to_type$ = callpoint!.getUserInput()
 	ship_to_no$   = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
 	cust_id$      = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	ord_no$       = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	order_no$     = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 
 	gosub ship_to_info
 
@@ -99,10 +385,10 @@ rem --- Remove manual ship-record, if necessary
 
 	ship_to_no$ = callpoint!.getUserInput()
 	cust_id$    = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	ord_no$     = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	order_no$   = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 
-	if user_tpl.old_ship_to$ = "000099" and ship_to_no$ <> "000099" then
-		remove (fnget_dev("OPE_ORDSHIP"), key=firm_id$+cust_id$+ord_no$, dom=*next)
+	if user_tpl.prev_ship_to$ = "000099" and ship_to_no$ <> "000099" then
+		remove (fnget_dev("OPE_ORDSHIP"), key=firm_id$+cust_id$+order_no$, dom=*next)
 	endif
 
 rem --- Display Ship to information
@@ -128,14 +414,19 @@ rem --- Remove from ope-04
 	remove (ope_prntlist_dev,key=firm_id$+"O"+"  "+
 :		callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")+
 :		callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),dom=*next)
-[[OPE_INVHDR.ARER]]
+
 rem --- Set flag
 
-	user_tpl.user_entry$ = "N"; rem user entered an order (not navagated)
+	user_tpl.record_deleted = 1
+	user_tpl.first_read     = 1
+
+rem --- clear availability
+
+	gosub clear_avail
 [[OPE_INVHDR.SHIPTO_NO.BINP]]
 rem --- Save old value
 
-	user_tpl.old_ship_to$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
+	user_tpl.prev_ship_to$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
 [[OPE_INVHDR.AOPT-CINV]]
 rem --- Credit Historical Invoice
 
@@ -167,34 +458,160 @@ rem --- Duplicate Historical Invoice
 		gosub copy_order
 	endif
 [[OPE_INVHDR.AOPT-CRCH]]
-rem --- Credit check?
+print "Hdr:CRCH"; rem debug
+
+rem --- Do credit status (management)
 
 	cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"); rem can be null
 
 	if user_tpl.credit_installed$ = "Y" and user_tpl.display_bal$ <> "N" and cvs(cust_id$, 2) <> "" then
-		call user_tpl.pgmdir$+"opc_creditmgmnt.aon", cust_id$, table_chans$[all], callpoint!
+		call user_tpl.pgmdir$+"opc_creditmgmnt.aon", cust_id$, order_no$, table_chans$[all], callpoint!, status
+		callpoint!.setDevObject("credit_status_done", "Y")
+		callpoint!.setStatus("ACTIVATE")
 	endif
 [[OPE_INVHDR.APFE]]
+print "Hdr:APFE"; rem debug
+
 rem --- Enable / Disable buttons
 
 	callpoint!.setOptionEnabled("CRCH",1)
+	gosub enable_credit_action
 
-	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2)=""
+	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" then
 		callpoint!.setOptionEnabled("DINV",1)
 		callpoint!.setOptionEnabled("CINV",1)
+		callpoint!.setOptionEnabled("PRNT",0)
 		callpoint!.setOptionEnabled("MINV",0)
 	else
-		callpoint!.setOptionEnabled("MINV",1)
+		if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2) = "" then
+			callpoint!.setOptionEnabled("PRNT",0)
+			callpoint!.setOptionEnabled("CASH",0)
+		else
+			callpoint!.setOptionEnabled("PRNT",1)
+			callpoint!.setOptionEnabled("TTLS",1)
+			if user_tpl.cash_sale$="Y" then callpoint!.setOptionEnabled("CASH",1)
+
+			if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")<> "I" then
+				callpoint!.setOptionEnabled("MINV",1)	
+			endif
+		endif
 	endif
 [[OPE_INVHDR.BPFX]]
+print "Hdr:BPFX"; rem debug
+
 rem --- Disable buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("CRAT",0)
 	callpoint!.setOptionEnabled("DINV",0)
 	callpoint!.setOptionEnabled("CINV",0)
 	callpoint!.setOptionEnabled("MINV",0)
-
+	callpoint!.setOptionEnabled("PRNT",0)
+	callpoint!.setOptionEnabled("CASH",0)
+	callpoint!.setOptionEnabled("TTLS",0)
 [[OPE_INVHDR.BDEL]]
+print "Hdr:BDEL"; rem debug
+
+rem --- Retain Order?
+
+	msg_id$ = "OP_RETAIN_ORDER"
+	gosub disp_message
+
+	if msg_opt$ = "Y" then
+
+	rem --- Reprint order"
+
+		msg_id$ = "OP_REPRINT_ALSO"
+		gosub disp_message
+		reprint$ = msg_opt$
+
+	rem --- Invoice History Header, set to void
+
+		file_name$      = "OPT_INVHDR"
+		opt_invhdr_dev  = fnget_dev(file_name$)
+		opt_invhdr_tpl$ = fnget_tpl$(file_name$)
+		dim opt_invhdr_rec$:opt_invhdr_tpl$
+
+		cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+		order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+		read record (opt_invhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*next) opt_invhdr_rec$
+		ope_invhdr_rec$ = util.copyFields(opt_invhdr_tpl$, callpoint!)
+		opt_invhdr_rec.invoice_type$ = "V"
+
+		opt_invhdr_rec$ = field(opt_invhdr_rec$)
+		write record (opt_invhdr_dev) opt_invhdr_rec$
+		print "---Wrote Invoice History header..."; rem debug
+
+	rem --- Reset Invoice record to Order
+
+		file_name$      = "OPE_INVHDR"
+		ope_invhdr_dev  = fnget_dev(file_name$)
+		ope_invhdr_tpl$ = fnget_tpl$(file_name$)
+		dim ope_invhdr_rec$:ope_invhdr_tpl$
+
+		read record (ope_invhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ope_invhdr_rec$
+		ope_invhdr_rec$ = util.copyFields(ope_invhdr_tpl$, callpoint!)
+
+		ope_invhdr_rec.ar_inv_no$ = ""
+		ope_invhdr_rec.ordinv_flag$ = "O"
+		ope_invhdr_rec.print_status$ = "Y"
+		ope_invhdr_rec.lock_status$ = "N"
+		ope_invhdr_rec.tax_amount = 0
+		ope_invhdr_rec.freight_amt = 0
+		ope_invhdr_rec.discount_amt = 0
+
+		callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", "")
+		callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "O")
+		callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "Y")
+		callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N")
+		callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT", "0")
+		callpoint!.setColumnData("OPE_INVHDR.FREIGHT_AMT", "0")
+		callpoint!.setColumnData("OPE_INVHDR.DISCOUNT_AMT", "0")
+		
+		if reprint$ = "Y" then
+			ope_invhdr_rec.reprint_flag$ = "Y"
+			callpoint!.setColumnData("OPE_INVHDR.REPRINT_FLAG", "Y")
+		else
+			ope_invhdr_rec.reprint_flag$ = ""
+			callpoint!.setColumnData("OPE_INVHDR.REPRINT_FLAG", "")
+		endif
+
+		ope_invhdr_rec$ = field(ope_invhdr_rec$)
+		write record (ope_invhdr_dev) ope_invhdr_rec$
+		callpoint!.setStatus("SETORIG")
+		print "---Wrote Invoice->Order header..."; rem debug
+
+	rem --- Reset the print file
+
+		file_name$ = "OPE_PRNTLIST"
+		prntlist_dev = fnget_dev(file_name$)
+		dim prntlist_rec$:fnget_tpl$(file_name$)
+
+		remove (prntlist_dev, key=firm_id$+"I  "+cust_id$+order_no$, dom=*next)
+
+		if reprint$ = "Y" then
+			prntlist_rec.firm_id$     = firm_id$
+			prntlist_rec.ordinv_flag$ = "O"
+			prntlist_rec.customer_id$ = cust_id$
+			prntlist_rec.order_no$    = order_no$
+
+			write record (prntlist_dev) prntlist_rec$
+		endif
+
+		print "---Reset Print file..."; rem debug
+
+	rem --- All Done
+
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("NEWREC")
+		break; rem --- exit callpoint
+
+rem --- End Retain Order
+
+	endif
+
 rem --- Remove committments for detail records by calling ATAMO
 
 	ope11_dev = fnget_dev("OPE_INVDET")
@@ -209,7 +626,7 @@ rem --- Remove committments for detail records by calling ATAMO
 
 	ope33_dev = fnget_dev("OPE_ORDSHIP")
 	cashrct_dev = fnget_dev("OPE_INVCASH")
-	ars_cred_dev = fnget_dev("OPE_CREDCUST")
+	creddate_dev = fnget_dev("OPE_CREDDATE")
 
 	ar_type$  = callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
 	cust$     = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
@@ -241,7 +658,7 @@ rem --- Remove committments for detail records by calling ATAMO
 		endif
 
 		if pos(user_tpl.lotser_flag$="LS") then 
-			ord_seq$ = ope11a.line_no$
+			ord_seq$ = ope11a.internal_seq_no$
 			gosub remove_lot_ser_det
 		endif
 
@@ -251,7 +668,7 @@ rem --- Remove committments for detail records by calling ATAMO
 	remove (cashrct_dev, key=firm_id$+ar_type$+cust$+ord$, err=*next)
 
 	if user_tpl.credit_installed$="Y" then
-		remove (ars_cred_dev, key=firm_id$+cust$+ord_date$+ord$, err=*next)	
+		remove (creddate_dev, key=firm_id$+ord_date$+cust$+ord$, err=*next)	
 	endif
 [[OPE_INVHDR.BPRK]]
 rem --- Is previous record not a quote and not void?
@@ -267,7 +684,8 @@ rem --- Is previous record not a quote and not void?
 			read record (ope01_dev, key=p_key$) ope01a$
 
 			if ope01a.firm_id$ = firm_id$ then 
-				if ope01a.ordinv_flag$ <> "P" and ope01a.invoice_type$ <> "V" then
+				if ope01a.invoice_type$ <> "P" and ope01a.invoice_type$ <> "V" then
+					user_tpl.first_read = 0
 					break
 				else
 					read (ope01_dev, dir=-1, end=*endif)
@@ -276,8 +694,16 @@ rem --- Is previous record not a quote and not void?
 			endif
 		endif
 
-		rem --- If EOF or past firm, rewind to last record in this firm
-		read (ope01_dev, key=firm_id$+$ff$, dom=*next, end=*break)
+	rem --- If EOF or past firm, rewind to last record in this firm, unless it's the first read
+
+		if user_tpl.first_read then
+			msg_id$ = "OP_ALL_WRONG_TYPE"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			read (ope01_dev, key=firm_id$+$ff$, dom=*next, end=*break)
+		endif
 	wend
 [[OPE_INVHDR.BNEK]]
 rem --- Is next record not a quote and not void?
@@ -285,53 +711,34 @@ rem --- Is next record not a quote and not void?
 	file_name$ = "OPE_INVHDR"
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
-	dim first_rec$:fnget_tpl$(file_name$)
 	start_block = 1
-	first_time  = 1
 
 	while 1
 		if start_block then
 			read record (ope01_dev, dir=0, end=*endif) ope01a$
 
-		rem --- Get first record
-			if first_time then
-				first_rec$ = ope01a$
-				first_time = 0
-			else
-
-			rem --- Is this the first record again?
-				if firm_id$            = first_rec.firm_id$     and 
-:					ope01a.customer_id$ = first_rec.customer_id$ and 
-:					ope01a.order_no$    = first_rec.order_no$
-:				then
-					exitto bnek_none_found
-				endif
-			endif
-
-		rem --- The wrong firm will "fall thru"
 			if ope01a.firm_id$ = firm_id$ then
 				if ope01a.invoice_type$ <> "P" and ope01a.invoice_type$ <> "V" then
-					break; rem --- found a good record
+					user_tpl.first_read = 0
+					break
 				else
 					read (ope01_dev, end=*endif)
-					continue; rem --- look again
+					continue
 				endif
 			endif
 		endif
 
-	rem --- If EOF or wrong firm, rewind to first record of the firm
-		read (ope01_dev, key=firm_id$, dom=*next)
+	rem --- If EOF or wrong firm, rewind to first record of the firm, unless it's the first read
+		
+		if user_tpl.first_read then
+			msg_id$ = "OP_ALL_WRONG_TYPE"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			read (ope01_dev, key=firm_id$, dom=*next)
+		endif
 	wend
-
-	goto bnek_done
-
-bnek_none_found:
-
-	msg_id$ = "OP_ALL_WRONG_TYPE"
-	gosub disp_message
-	callpoint!.setStatus("ABORT")
-
-bnek_done:
 [[OPE_INVHDR.SHIPTO_TYPE.BINP]]
 rem --- Do we need to create a new order number?
 
@@ -385,19 +792,19 @@ rem --- Restrict lookup to orders
 [[OPE_INVHDR.AWRI]]
 rem --- Write/Remove manual ship to file
 
-	cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	ord_no$  = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	cust_id$    = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$   = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	ordship_dev = fnget_dev("OPE_ORDSHIP")
 	
 	if callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE") <> "M" then 
-		remove (ordship_dev,key=firm_id$+cust_id$+ord_no$,dom=*next)
+		remove (ordship_dev,key=firm_id$+cust_id$+order_no$,dom=*next)
 	else
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
-		read record (ordship_dev, key=firm_id$+cust_id$+ord_no$ ,dom=*next) ordship_tpl$
+		read record (ordship_dev, key=firm_id$+cust_id$+order_no$ ,dom=*next) ordship_tpl$
 
 		ordship_tpl.firm_id$     = firm_id$
 		ordship_tpl.customer_id$ = cust_id$
-		ordship_tpl.order_no$    = ord_no$
+		ordship_tpl.order_no$    = order_no$
 		ordship_tpl.name$        = callpoint!.getColumnData("<<DISPLAY>>.SNAME")
 		ordship_tpl.addr_line_1$ = callpoint!.getColumnData("<<DISPLAY>>.SADD1")
 		ordship_tpl.addr_line_2$ = callpoint!.getColumnData("<<DISPLAY>>.SADD2")
@@ -411,24 +818,42 @@ rem --- Write/Remove manual ship to file
 		write record (ordship_dev) ordship_tpl$
 	endif
 
+rem --- Set flag
+
+	user_tpl.first_read = 0
 [[OPE_INVHDR.ADIS]]
+print "Hdr:ADIS"; rem debug
+
+rem --- Check locked status
+
+	gosub check_lock_flag
+
+	if locked then
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
+
+rem --- Check Print flag
+rem --- rem'ing entire routine per VAR discussion; only check print flag when making an invoice (make invoice button)
+
+rem	gosub check_print_flag
+
+rem	if locked then
+rem		user_tpl.do_end_of_form = 0
+rem		callpoint!.setStatus("ABORT")
+rem		break; rem --- exit callpoint
+rem	endif
+
 rem --- Show customer data
 	
 	cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	gosub display_customer
 
 	if callpoint!.getColumnData("OPE_INVHDR.CASH_SALE") <> "Y" then 
 		gosub display_aging
       gosub check_credit
-
-		
-	rem --- Only display if user did not enter the customer, that is, used the nav arrows
-
-		if user_tpl.user_entry$ = "N" then
-			if user_tpl.credit_installed$ = "Y" and user_tpl.display_bal$ = "A" then
-				call user_tpl.pgmdir$+"opc_creditmgmnt.aon", cust_id$, table_chans$[all], callpoint!
-			endif
-		endif
 	endif
 
 	gosub disp_cust_comments
@@ -437,12 +862,13 @@ rem --- Display Ship to information
 
 	ship_to_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
 	ship_to_no$   = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
-	ord_no$       = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	order_no$     = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	gosub ship_to_info
 
 rem --- Display order total
 
 	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT", callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
+	print "---Update Order Total (column data): ", callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")
 
 rem --- Backorder and Credit Hold
 
@@ -454,32 +880,45 @@ rem --- Backorder and Credit Hold
 		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", "Credit Hold")
 	endif
 
-	user_tpl.old_ship_to$   = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
-	user_tpl.old_disc_code$ = callpoint!.getColumnData("OPE_INVHDR.DISC_CODE")
+rem --- Enable buttons
 
- rem --- Check locked status
+	callpoint!.setOptionEnabled("PRNT", 1)
+	callpoint!.setOptionEnabled("TTLS",1)
+	if user_tpl.cash_sale$="Y" then callpoint!.setOptionEnabled("CASH", 1)
 
-	gosub check_lock_flag
-
-	if locked then
-		callpoint!.setStatus("ABORT")
-		break; rem --- exit callpoint
+	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "I" then
+		callpoint!.setOptionEnabled("MINV", 0)
+	else
+		callpoint!.setOptionEnabled("MINV", 1)
 	endif
 
-rem --- Check Print flag
+rem --- Set all previous values
 
-	gosub check_print_flag
+	user_tpl.prev_taxable      = num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT"))
+	user_tpl.prev_ext_cost     = num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_COST"))
+	user_tpl.prev_disc_code$   = callpoint!.getColumnData("OPE_INVHDR.DISC_CODE")
+	user_tpl.prev_ship_to$     = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
+	user_tpl.prev_sales_total  = num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
 
-	if locked then
-		callpoint!.setStatus("ABORT")
-		break; rem --- exit callpoint
-	endif
-
-rem --- Set Codes
+rem --- Set other codes
         
 	user_tpl.price_code$   = callpoint!.getColumnData("OPE_INVHDR.PRICE_CODE")
 	user_tpl.pricing_code$ = callpoint!.getColumnData("OPE_INVHDR.PRICING_CODE")
 	user_tpl.order_date$   = callpoint!.getColumnData("OPE_INVHDR.ORDER_DATE")
+	user_tpl.disc_code$    = callpoint!.getColumnData("OPE_INVHDR.DISC_CODE")
+	user_tpl.new_order     = 0
+
+rem --- Set OrderHelper object fields
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setCust_id(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"))
+	ordHelp!.setOrder_no(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"))
+	ordHelp!.setInv_type(callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE"))
+	ordHelp!.setTaxCode(callpoint!.getColumnData("OPE_INVHDR.TAX_CODE"))
+
+rem --- Clear availability
+
+	gosub clear_avail
 [[OPE_INVHDR.ORDER_NO.AVAL]]
 print "Hdr:ORDER_NO.AVAL"; rem debug
 
@@ -487,26 +926,22 @@ rem --- Do we need to create a new order number?
 
 	new_seq$ = "N"
 	user_tpl.user_entry$ = "N"
-	ord_no$ = callpoint!.getUserInput()
+	order_no$ = callpoint!.getUserInput()
 
-	if cvs(ord_no$, 2) = "" then 
-		print "---ord_no$ is null"; rem debug
+	if cvs(order_no$, 2) = "" then 
 
 		rem --- Option on order no field to assign a new sequence on null must be cleared
-		call stbl("+DIR_SYP")+"bas_sequences.bbj","ORDER_NO",ord_no$,table_chans$[all]
+		call stbl("+DIR_SYP")+"bas_sequences.bbj","ORDER_NO",order_no$,table_chans$[all]
 		
-		if ord_no$ = "" then
+		if order_no$ = "" then
 			callpoint!.setStatus("ABORT")
-			print "---abort"; rem debug
 			break; rem --- exit callpoint
 		else
-			callpoint!.setUserInput(ord_no$)
+			callpoint!.setUserInput(order_no$)
 			new_seq$ = "Y"
-			print "---new_seq$ set"; rem debug
 		endif
 	else
 		user_tpl.user_entry$ = "Y"
-		print "---ord_no$ is not null"; rem debug
 	endif
 
 rem --- Does order exist?
@@ -521,15 +956,14 @@ rem --- Does order exist?
 	start_block = 1
 
 	if start_block then
-		find record (ope01_dev, key=firm_id$+ar_type$+cust_id$+ord_no$, dom=*endif) ope01a$
+		find record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$
 		found = 1
 	endif
 
-	rem ---debug
+	rem debug
 	if found then 
-		print "---order number found"
-	else
-		print "---order number not found"
+		print "---Invoice found"
+		print "---Invoice Type: ", ope01a.invoice_type$
 	endif
 
 rem --- A new record must be the next sequence
@@ -538,10 +972,9 @@ rem --- A new record must be the next sequence
 		msg_id$ = "OP_NEW_ORD_USE_SEQ"
 		gosub disp_message	
 		callpoint!.setFocus("OPE_INVHDR.ORDER_NO")
-		exit; rem --- exit from callpoint
+		break; rem --- exit from callpoint
 	endif
 
-	rem callpoint!.setDevObject("order", ord_no$); rem Needed?
 	user_tpl.hist_ord$ = "N"
 
 rem --- Existing record
@@ -551,8 +984,10 @@ rem --- Existing record
 	rem --- Check for void
 
 		if ope01a.invoice_type$ = "V" then
+			msg_id$="OP_ORDINV_VOID"
+			gosub disp_message
 			callpoint!.setStatus("ABORT")
-			exit; rem --- exit from callpoint			
+			break; rem --- exit from callpoint			
 		endif
 
 	rem --- Check for quote
@@ -561,70 +996,30 @@ rem --- Existing record
 			msg_id$ = "OP_IS_QUOTE"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
-			exit; rem --- exit from callpoint			
+			break; rem --- exit from callpoint			
 		endif		
 
-	rem --- Backorder and Credit Hold
-
-		if ope01a.backord_flag$ = "B" then
-			callpoint!.setColumnData("<<DISPLAY>>.BACKORDERED", "Backorder")
-		endif
-
-		if ope01a.credit_flag$ = "C" then
-			callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", "Credit Hold")
-		endif
-
-		user_tpl.old_ship_to$   = ope01a.shipto_no$
-		user_tpl.old_disc_code$ = ope01a.disc_code$
-
-	rem --- Display Ship to information
-
-		ship_to_type$ = ope01a.shipto_type$
-		ship_to_no$   = ope01a.shipto_no$
-		ord_no$       = ope01a.order_no$
-		gosub ship_to_info
-
-	rem --- Display order total
-
-		callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT", str(ope01a.total_sales:user_tpl.amount_mask$))
-
-	rem --- Check locked status
-
-		gosub check_lock_flag
-
-		if locked then
-			callpoint!.setStatus("ABORT")
-			break; rem --- exit callpoint
-		endif
-
-	rem --- Check Print flag
-
-		gosub check_print_flag
-
-		if locked then
-			callpoint!.setStatus("ABORT")
-			break; rem --- exit callpoint
-		endif
-		
 	rem --- Set Codes
-        
-		user_tpl.price_code$ = "Y"
-		if reprint then callpoint!.setColumnData("OPE_INVHDR.REPRINT_FLAG", "Y")
-
+	        
 		user_tpl.price_code$   = ope01a.price_code$
 		user_tpl.pricing_code$ = ope01a.pricing_code$
 		user_tpl.order_date$   = ope01a.order_date$
-  
-	else
 
-rem --- New record, set default
+rem --- New record, set default  
+
+	else
 
 		call stbl("+DIR_SYP")+"bas_sequences.bbj", "INVOICE_NO", invoice_no$, table_chans$[all]
 		callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", invoice_no$)
 
-      cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-		ord_no$  = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+      cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+		order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 		callpoint!.setColumnData("OPE_INVHDR.INVOICE_TYPE","S")
+
+		rem --- Set default invoice type in OrderHelper object
+
+		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+		ordHelp!.setInv_type("S")
         
 		arm02_dev = fnget_dev("ARM_CUSTDET")
 		dim arm02a$:fnget_tpl$("ARM_CUSTDET")
@@ -644,12 +1039,18 @@ rem --- New record, set default
 		callpoint!.setColumnData("OPE_INVHDR.DISC_CODE",arm02a.disc_code$)
 		callpoint!.setColumnData("OPE_INVHDR.AR_DIST_CODE",arm02a.ar_dist_code$)
 		callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS","N")
+		print "---Print Status: N"; rem debug
 		callpoint!.setColumnData("OPE_INVHDR.MESSAGE_CODE",arm02a.message_code$)
 		callpoint!.setColumnData("OPE_INVHDR.TERRITORY",arm02a.territory$)
 		callpoint!.setColumnData("OPE_INVHDR.ORDER_DATE",sysinfo.system_date$)
 		callpoint!.setColumnData("OPE_INVHDR.TAX_CODE",arm02a.tax_code$)
 		callpoint!.setColumnData("OPE_INVHDR.PRICING_CODE",arm02a.pricing_code$)
       callpoint!.setColumnData("OPE_INVHDR.ORD_TAKEN_BY",sysinfo.user_id$)
+
+		ordHelp!.setTaxCode(arm02a.tax_code$)
+
+		slsp$ = arm02a.slspsn_code$
+		gosub get_comm_percent
 
 		gosub get_op_params
 
@@ -663,47 +1064,68 @@ rem --- New record, set default
 		user_tpl.pricing_code$ = arm02a.pricing_code$
 		user_tpl.order_date$   = sysinfo.system_date$
 
+		callpoint!.setOptionEnabled("MINV",1)
+
 	endif
 
 rem --- New or existing order
 
 	order_no$ = callpoint!.getUserInput()
 	gosub add_to_batch_print
-	callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "Y")
-	print "---Set lock"; rem debug
+	rem callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "Y")
 	callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N"); rem debug, forcing the lock off for now, not working correctly
 
-rem --- Enable/Disable buttons
+rem --- Disable buttons
 
-	callpoint!.setOptionEnabled("DINV",0)
-	callpoint!.setOptionEnabled("CINV",0)
-	callpoint!.setOptionEnabled("MINV",1)
+	callpoint!.setOptionEnabled("DINV", 0)
+	callpoint!.setOptionEnabled("CINV", 0)
 
 	callpoint!.setStatus("MODIFIED;REFRESH")
+
+rem --- Set order in OrderHelper object
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setOrder_no(order_no$)
 [[OPE_INVHDR.CUSTOMER_ID.AVAL]]
-rem --- Show customer data
-	
+print "Hdr:CUSTOMER_ID.AVAL"; rem debug
+
+rem --- Display customer
+
 	cust_id$ = callpoint!.getUserInput()
 	gosub display_customer
+
+rem --- Set customer in OrderHelper object
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+	ordHelp!.setCust_id(cust_id$)
+
+rem --- Show customer data
 
 	if callpoint!.getColumnData("OPE_INVHDR.CASH_SALE") <> "Y" then 
 		gosub display_aging
       gosub check_credit
 
 		if user_tpl.credit_installed$ = "Y" and user_tpl.display_bal$ = "A" then
-			call user_tpl.pgmdir$+"opc_creditmgmnt.aon", cust_id$, table_chans$[all], callpoint!
+			call user_tpl.pgmdir$+"opc_creditmgmnt.aon", cust_id$, "", table_chans$[all], callpoint!, status
+			callpoint!.setDevObject("credit_status_done", "Y")
+			callpoint!.setStatus("ACTIVATE")
 		endif
 	endif
 
 	gosub disp_cust_comments
 
-rem --- Enable Duplicate buttons
+rem --- Enable Duplicate buttons, printer
 
 	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" then
 		callpoint!.setOptionEnabled("DINV", 1)
 		callpoint!.setOptionEnabled("CINV", 1)
 	endif
+
+	callpoint!.setOptionEnabled("CRCH",1)
+	gosub enable_credit_action
 [[OPE_INVHDR.CUSTOMER_ID.AINP]]
+print "Hdr:CUSTOMER_ID.AINP"; rem debug
+
 rem --- If cash customer, get correct customer number
 
 	if user_tpl.cash_sale$="Y" and cvs(callpoint!.getUserInput(),1+2+4)="C" then
@@ -730,7 +1152,7 @@ rem ==========================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.BSTATE", custmast_tpl.state_code$)
 	callpoint!.setColumnData("<<DISPLAY>>.BZIP",   custmast_tpl.zip_code$)
 
-return
+	return
 
 rem ==========================================================================
 display_aging: rem --- Display customer aging
@@ -759,32 +1181,33 @@ rem ==========================================================================
 
 	user_tpl.credit_limit = custdet_tpl.credit_limit
 
-return
+	return
 
 rem ==========================================================================
 check_credit: rem --- Check credit limit of customer
-              rem      IN: custdet_tpl$ (cust detail record)
+              rem     (ope_cb, 5400-5499)
 rem ==========================================================================
 
-	if custdet_tpl.credit_limit and user_tpl.balance>=user_tpl.credit_limit then
+	if user_tpl.credit_limit<>0 and !user_tpl.credit_limit_warned and user_tpl.balance>=user_tpl.credit_limit then
    	if user_tpl.credit_installed$ <> "Y" then
       	msg_id$ = "OP_OVER_CREDIT_LIMIT"
-			dim msg_token$[1]
-			msg_token$[1] = str(custdet_tpl.credit_limit:user_tpl.amount_mask$)
+			dim msg_tokens$[1]
+			msg_tokens$[1] = str(custdet_tpl.credit_limit:user_tpl.amount_mask$)
          gosub disp_message
       endif  
    
 		callpoint!.setColumnData("<<DISPLAY>>.CREDIT_HOLD", "*** Credit Limit Exceeded ***") 
+		user_tpl.credit_limit_warned = 1
    endif
 
-return
+	return
 
 rem ==========================================================================
 ship_to_info: rem --- Get and display Bill To Information
               rem      IN: cust_id$
               rem          ship_to_type$
               rem          ship_to_no$
-              rem          ord_no$
+              rem          order_no$
 rem ==========================================================================
 
 	if ship_to_type$<>"M" then
@@ -817,7 +1240,7 @@ rem ==========================================================================
 
 		ordship_dev = fnget_dev("OPE_ORDSHIP")
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
-		read record (ordship_dev, key=firm_id$+cust_id$+ord_no$, dom=*next) ordship_tpl$
+		read record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*endif) ordship_tpl$
 
 		callpoint!.setColumnData("<<DISPLAY>>.SNAME",ordship_tpl.name$)
 		callpoint!.setColumnData("<<DISPLAY>>.SADD1",ordship_tpl.addr_line_1$)
@@ -827,12 +1250,11 @@ rem ==========================================================================
 		callpoint!.setColumnData("<<DISPLAY>>.SCITY",ordship_tpl.city$)
 		callpoint!.setColumnData("<<DISPLAY>>.SSTATE",ordship_tpl.state_code$)
 		callpoint!.setColumnData("<<DISPLAY>>.SZIP",ordship_tpl.zip_code$)
-
 	endif
 
 	callpoint!.setStatus("REFRESH")
 
-return
+	return
 
 rem ==========================================================================
 get_op_params:
@@ -843,64 +1265,7 @@ rem ==========================================================================
 
 	read record (ars01_dev, key=firm_id$+"AR00") ars01a$
 
-return
-
-rem ==========================================================================
-disp_ord_tot: rem --- Display order total
-rem ==========================================================================
-
-	user_tpl.ord_tot=0
-
-	ope11_dev=fnget_dev("OPE_ORDDET")
-	dim ope11a$:fnget_tpl$("OPE_ORDDET")
-
-	opc_linecode_dev=fnget_dev("OPC_LINECODE")
-	dim opc_linecode$:fnget_tpl$("OPC_LINECODE")
-
-	ivm01_dev=fnget_dev("IVM_ITEMMAST")
-	dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
-
-	ar_type$ = callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
-	cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	ord_no$  = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
-
-	read (ope11_dev, key=firm_id$+ar_type$+cust_id$+ord_no$, dom=*next)
-
-	while 1
-		read record (ope11_dev, end=*break) ope11a$
-
-		if ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$ <> 
-:			firm_id$+ar_type$+cust_id$+ord_no$ 
-:		then
-			break
-		endif
-
-		dim opc_linecode$:fattr(opc_linecode$)
-		read record (opc_linecode_dev, key=firm_id$+ope11a.line_code$, dom=*next) opc_linecode$
-
-		if pos(opc_linecode.line_type$="SNP") then 
-			user_tpl.ord_tot = user_tpl.ord_tot + (ope11a.unit_price * ope11a.qty_ordered)
-		else
-			if opc_linecode.line_type$ = "O" then 
-				user_tpl.ord_tot = user_tpl.ord_tot + ope11a.ext_price
-			endif
-		endif
-
-		rem --- this does nothing...
-		dim ivm01a$:fattr(ivm01a$)
-		read record (ivm01_dev, key=firm_id$+ope11a.item_id$, dom=*next) ivm01a$
-
-		if ivm01a.taxable_flag$="Y" and opc_linecode.taxable_flag$="Y" then 
-			ope11a.taxable_amt = ope11a.ext_price
-		endif
-		rem ---
-
-	wend
-
-	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT", str(user_tpl.ord_tot))
-	callpoint!.setStatus("REFRESH")
-
-return
+	return
 
 rem ==========================================================================
 disp_cust_comments: rem --- Display customer comments
@@ -923,12 +1288,14 @@ rem ==========================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.comments", cmt_text$)
 	callpoint!.setStatus("REFRESH")
 
-return
+	return
 
 rem ==========================================================================
 check_lock_flag: rem --- Check manual record lock
                  rem     OUT: locked = 1 or 0
 rem ==========================================================================
+
+	print "in check_lock_flag..."; rem debug
 
 	locked=0
 	on pos( callpoint!.getColumnData("OPE_INVHDR.LOCK_STATUS") = "NYS12" ) goto 
@@ -949,6 +1316,7 @@ locked:
 			print "---Clear lock"; rem debug
 		else
 			locked=1
+
 		endif
 
 	endif
@@ -963,6 +1331,7 @@ on_invoice:
 	if msg_opt$="CANCEL" then
 		locked=1
 		callpoint!.setStatus("ABORT")
+
 	endif
 
 	goto end_lock
@@ -973,9 +1342,12 @@ update_stat:
 	gosub disp_message
 	locked=1
 
+
 end_lock:
 
-return
+	print "out"; rem debug
+
+	return
 
 rem ==========================================================================
 add_to_batch_print: rem --- Add to batch print file
@@ -984,37 +1356,45 @@ rem ==========================================================================
 
 	ope_prntlist_dev = fnget_dev("OPE_PRNTLIST")
 	dim ope_prntlist$:fnget_tpl$("OPE_PRNTLIST")
+	cust_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+
+	remove (ope_prntlist_dev, key=firm_id$+"O  "+cust_id$+order_no$, dom=*next)
 
 	ope_prntlist.firm_id$     = firm_id$
 	ope_prntlist.ordinv_flag$ = "I"
 	ope_prntlist.ar_type$     = "  "
-	ope_prntlist.customer_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	ope_prntlist.customer_id$ = cust_id$
 	ope_prntlist.order_no$    = order_no$
 
 	write record (ope_prntlist_dev) ope_prntlist$
 	print "---Added to print batch"; rem debug
 	print "---order:", ope_prntlist.order_no$
 
-return
+	return
 
 rem ==========================================================================
 check_print_flag: rem --- Check print flag
                   rem     OUT: locked = 1/0
-                  rem          printed$ = Y/N
 rem ==========================================================================
 
-	printed$ = "N"
+	print "in check_print_flag..."; rem debug
+
 	locked = 0
 	ar_type$      = callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
 	cust_id$      = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
 	order_no$     = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	print_status$ = callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS")
 	ordinv_flag$  = callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")
+
+	print "---Print status: """, print_status$, """"; rem debug
+	print "---picklist_warned flag:", user_tpl.picklist_warned; rem debug
 		 
 	if ordinv_flag$ = "O" then 
-		if print_status$ <> "Y" then 
+		if print_status$ <> "Y" and !user_tpl.picklist_warned then 
+			user_tpl.picklist_warned = 1
 			msg_id$ = "OP_PICKLIST_NOT_DONE"
 			gosub disp_message
+
 			if msg_opt$ = "N" then
 				gosub unlock_order
 				locked=1
@@ -1025,13 +1405,14 @@ rem ==========================================================================
 			if print_status$ <> "N" then 
 				msg_id$ = "OP_REPRINT_INVOICE"
 				gosub disp_message
+
 				if msg_opt$ = "N" then 
 					gosub unlock_order
 					locked=1
 				else
 					callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "N")
+					print "---Print Status: N"; rem debug
 					callpoint!.setStatus("SAVE")
-					printed$ = "Y"
 					gosub add_to_batch_print
 				endif
 			else
@@ -1040,7 +1421,9 @@ rem ==========================================================================
 		endif
 	endif
 
-return 
+	print "out"; rem debug
+
+	return 
 
 rem ==========================================================================
 update_totals: rem --- Update Order/Invoice Totals & Commit Inventory
@@ -1060,20 +1443,20 @@ rem ==========================================================================
 
 	while 1
 		if pos(opc_linecode.line_type$="SP")=0 then break
-		if opc_linecode.dropship$="Y" or inv_type$="P" then break; REM "Drop ship or quote
+		if opc_linecode.dropship$="Y" or inv_type$="P" then break; REM "Dropship or quote
 		if line_sign>0 then iv_action$="OE" else iv_action$="UC"
 		call stbl("+DIR_PGM")+"ivc_itemupdt.aon",iv_action$,iv_files[all],ivs01a$,iv_info$[all],iv_refs$[all],iv_refs[all],table_chans$[all],iv_status
 		break
 	wend
 
-return
+	return
 
 rem ==========================================================================
 remove_lot_ser_det: rem --- Remove Lot/Serial Detail
                     rem      IN: ar_type$
                     rem          cust$
                     rem          ord$     = order number
-                    rem          ord_seq$ = detail line number
+                    rem          ord_seq$ = internal seq number
 rem ==========================================================================
 
 	inv_type$ = callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE")
@@ -1089,7 +1472,7 @@ rem ==========================================================================
 		if ar_type$<>ope21a.ar_type$ then break
 		if cust$<>ope21a.customer_id$ then break
 		if ord$<>ope21a.order_no$ then break
-		if ord_seq$<>ope21a.line_no$ then break
+		if ord_seq$<>ope21a.orddet_seq_ref$ then break
 
 		if opc_linecode.dropship$<>"Y" and inv_type$<>"P" then 
 			wh_id$    = ope11a.warehouse_id$
@@ -1107,7 +1490,7 @@ rem ==========================================================================
 		remove (ope21_dev, key=firm_id$+ar_type$+cust$+ord$+ord_seq$+ope21a.sequence_no$)
 	wend
 
-return
+	return
 
 rem ==========================================================================
 copy_order: rem --- Duplicate or Credit Historical Invoice
@@ -1122,7 +1505,7 @@ rem ==========================================================================
 		call stbl("+DIR_SYP")+"bam_inquiry.bbj",
 :			gui_dev,
 :			Form!,
-:			"OPT_ORDHDR",
+:			"OPT_INVHDR",
 :			"LOOKUP",
 :			table_chans$[all],
 :			key_pfx$,
@@ -1134,7 +1517,7 @@ rem ==========================================================================
 			call stbl("+DIR_SYP")+"bam_inquiry.bbj",
 :				gui_dev,
 :				Form!,
-:				"OPT_ORDDET",
+:				"OPT_INVDET",
 :				"LOOKUP",
 :				table_chans$[all],
 :				key_pfx_det$,
@@ -1142,8 +1525,8 @@ rem ==========================================================================
 :				rd_key_det$
 
 			if cvs(rd_key_det$,2)<>"" then 
-				opt01_dev = fnget_dev("OPT_ORDHDR")
-				dim opt01a$:fnget_tpl$("OPT_ORDHDR")
+				opt01_dev = fnget_dev("OPT_INVHDR")
+				dim opt01a$:fnget_tpl$("OPT_INVHDR")
 				read record (opt01_dev, key=rd_key$) opt01a$
 				break
 			endif
@@ -1181,6 +1564,7 @@ rem ==========================================================================
 			ope01a.freight_amt     = ope01a.freight_amt*line_sign
 			ope01a.invoice_date$   = user_tpl.def_ship$
 			ope01a.invoice_type$   = "S"
+			ope01a.lock_status$ = "N"
 			ope01a.order_date$     = sysinfo.system_date$
 			ope01a.order_no$       = seq_id$
 			ope01a.ordinv_flag$    = "O"
@@ -1194,12 +1578,13 @@ rem ==========================================================================
 			ope01a.total_sales     = ope01a.total_sales*line_sign
 
 			write record (ope01_dev) ope01a$
+			callpoint!.setStatus("SETORIG")
 
 			user_tpl.price_code$   = ope01a.price_code$
 			user_tpl.pricing_code$ = ope01a.pricing_code$
 			user_tpl.order_date$   = ope01a.order_date$
 
-rem --- Copy Manual Ship To if any
+		rem --- Copy Manual Ship To if any
 
 			if opt01a.shipto_type$="M" then 
 				dim ope31a$:fnget_tpl$("OPE_ORDSHIP")
@@ -1216,10 +1601,10 @@ rem --- Copy Manual Ship To if any
 				write record (ope31_dev) ope31a$
 			endif
 
-rem --- Copy detail lines
+		rem --- Copy detail lines
 
-			dim opt11a$:fnget_tpl$("OPT_ORDDET")
-			opt11_dev=fnget_dev("OPT_ORDDET")
+			dim opt11a$:fnget_tpl$("OPT_INVDET")
+			opt11_dev=fnget_dev("OPT_INVDET")
 
 			dim ope11a$:fnget_tpl$("OPE_INVDET")
 			ope11_dev=fnget_dev("OPE_INVDET")
@@ -1231,6 +1616,8 @@ rem --- Copy detail lines
 
 			opc_linecode_dev = fnget_dev("OPC_LINECODE")
 			dim opc_linecode$:fnget_tpl$("OPC_LINECODE")
+
+			disp_line_no=0
 
 			while 1
 				read record (opt11_dev, end=*break) opt11a$
@@ -1296,6 +1683,12 @@ rem --- Copy detail lines
 					ope11a.warehouse_id$ = user_tpl.def_whse$
 				endif
 
+				call stbl("+DIR_SYP")+"bas_sequences.bbj","INTERNAL_SEQ_NO",int_seq_no$,table_chans$[all]
+				ope11a.internal_seq_no$=int_seq_no$
+				disp_line_no=disp_line_no+1
+				line_no_mask$=callpoint!.getDevObject("line_no_mask")
+				ope11a.line_no$=str(disp_line_no:line_no_mask$)
+
 				ope11a$ = field(ope11a$)
 				write record (ope11_dev) ope11a$
 			wend
@@ -1307,7 +1700,7 @@ rem --- Copy detail lines
 
 	endif
 
-return
+	return
 
 rem ==========================================================================
 pricing: rem --- Call Pricing routine
@@ -1342,7 +1735,7 @@ rem ==========================================================================
 	pc_files[5] = fnget_dev("ARS_PARAMS")
 	pc_files[6] = ivs01_dev
 
-	call stbl("+DIR_PGM")+"opc_pc.aon",pc_files[all],firm_id$,wh$,item$,user_tpl.price_code$,cust$,
+	call stbl("+DIR_PGM")+"opc_pricing.aon",pc_files[all],firm_id$,wh$,item$,user_tpl.price_code$,cust$,
 :		user_tpl.order_date$,user_tpl.pricing_code$,ordqty,typeflag$,price,disc,status
 	if status=999 then exitto std_exit
 
@@ -1361,7 +1754,7 @@ rem ==========================================================================
 		ope11a.std_list_prc = (price*100)/(100-disc)
 	endif
 
-return
+	return
 
 rem ==========================================================================
 unlock_order: REM --- Unlock Order
@@ -1371,6 +1764,340 @@ rem ==========================================================================
    callpoint!.setStatus("SAVE")
 
 	return 
+
+rem ==========================================================================
+force_print_status: rem --- Force print status to N and write
+rem ==========================================================================
+
+	print "in force_print_status..."; rem debug
+
+	if callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "Y" then
+		callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "N")
+
+	rem --- Write flag to file so opc_creditaction can see it
+
+		gosub get_disk_rec
+		ordhdr_rec$ = field(ordhdr_rec$)
+		write record (ordhdr_dev) ordhdr_rec$
+
+		callpoint!.setStatus("SETORIG")
+		print "---Print status written, """, ordhdr_rec.print_status$, """"; rem debug
+	endif
+
+	print "out"; rem debug
+
+	return
+
+rem ==========================================================================
+enable_credit_action:
+rem ==========================================================================
+
+	inv_type$ = callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE")
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+	if user_tpl.credit_installed$ = "Y" and inv_type$ <> "P" and cvs(cust_id$, 2) <> "" and cvs(order_no$, 2) <> "" then
+		callpoint!.setOptionEnabled("CRAT",1)
+	else
+		callpoint!.setOptionEnabled("CRAT",0)
+	endif
+
+	return
+
+rem ==========================================================================
+do_credit_action: rem --- Launch the credit action program / form
+rem ==========================================================================
+
+	print "in do_credit_action..."; rem debug
+
+	inv_type$ = callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE")
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+rem --- Should we call Credit Action?
+
+	if user_tpl.credit_installed$ = "Y" and inv_type$ <> "P" and cvs(cust_id$, 2) <> "" and cvs(order_no$, 2) <> "" then
+		callpoint!.setDevObject("run_by", "invoice")
+		call user_tpl.pgmdir$+"opc_creditaction.aon", cust_id$, order_no$, table_chans$[all], callpoint!, action$, status
+		if status = 999 then goto std_exit
+
+	rem --- Delete the order
+
+		if action$ = "D" then 
+			callpoint!.setStatus("DELETE")
+			return
+		endif
+
+		if pos(action$="HC")<>0 then
+
+		rem --- Order on hold
+
+			callpoint!.setColumnData("OPE_INVHDR.CREDIT_FLAG","C")
+		else
+			if action$="R" then
+
+			rem --- Order released
+
+				callpoint!.setColumnData("OPE_INVHDR.CREDIT_FLAG","R")
+				terms$ = str(callpoint!.getDevObject("new_terms_code"))
+
+				if terms$ <> "" then
+					callpoint!.setColumnData("OPE_INVHDR.TERMS_CODE", terms$)
+				endif
+			else
+				callpoint!.setColumnData("OPE_INVHDR.CREDIT_FLAG","")			
+			endif
+		endif
+
+	rem --- Order was printed within the credit action program
+
+		if str(callpoint!.getDevObject("document_printed")) = "Y" then 
+			callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "Y")
+			print "---Print Status: Y"; rem debug
+		endif
+
+	endif
+
+	print "---action$: """, action$, """"; rem debug
+	print "out"; rem debug
+
+	return
+
+rem ==========================================================================
+do_invoice: rem --- Print an Invoice
+rem ==========================================================================
+
+	print "in do_invoice..."; rem debug
+
+rem --- Make sure everything's written back to disk
+
+	gosub get_disk_rec
+	ordhdr_rec$ = field(ordhdr_rec$)
+	write record (ordhdr_dev) ordhdr_rec$
+
+rem --- Call printing program
+
+	call user_tpl.pgmdir$+"opc_invoice.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
+	if status = 999 then goto std_exit
+
+	callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "Y")
+
+	msg_id$ = "OP_INVOICE_DONE"
+	gosub disp_message
+
+	print "---Print Status: Y"; rem debug
+	print "out"; rem debug
+
+	return
+
+rem ==========================================================================
+clear_avail: rem --- Clear Availability Information
+rem ==========================================================================
+
+	userObj!.getItem(user_tpl.avail_oh).setText("")
+	userObj!.getItem(user_tpl.avail_comm).setText("")
+	userObj!.getItem(user_tpl.avail_avail).setText("")
+	userObj!.getItem(user_tpl.avail_oo).setText("")
+	userObj!.getItem(user_tpl.avail_wh).setText("")
+	userObj!.getItem(user_tpl.avail_type).setText("")
+	userObj!.getItem(user_tpl.dropship_flag).setText("")
+	userObj!.getItem(user_tpl.manual_price).setText("")
+	userObj!.getItem(user_tpl.alt_super).setText("")
+
+	return
+
+rem ==========================================================================
+get_comm_percent: rem --- Get commission percent from salesperson file
+                  rem      IN: slsp$ - salesperson code
+rem ==========================================================================
+
+	file$ = "ARC_SALECODE"
+	salecode_dev = fnget_dev(file$)
+	dim salecode_rec$:fnget_tpl$(file$)
+
+	start_block = 1
+
+	if start_block then
+		find record (salecode_dev, key=firm_id$+"F"+slsp$, dom=*endif) salecode_rec$
+		callpoint!.setColumnData("OPE_INVHDR.COMM_PERCENT", salecode_rec.comm_rate$)
+		callpoint!.setStatus("REFRESH")
+	endif
+
+	return
+
+rem ==========================================================================
+make_invoice: rem --- Change an Order into an Invoice
+rem ==========================================================================
+
+	print "in make_invoice..."; rem debug
+
+	gosub check_print_flag
+
+	if !locked and 
+:		callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID") <> "" and 
+:		callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")    <> "" and 
+:		callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "O" 
+:	then
+
+	rem --- Set Invoice number
+
+		call stbl("+DIR_SYP")+"bas_sequences.bbj","INVOICE_NO",inv_no$,table_chans$[all]
+		
+		if inv_no$ = "" then
+			callpoint!.setStatus("ABORT")
+		else
+			callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", inv_no$)
+			callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "I")
+			callpoint!.setColumnData("OPE_INVHDR.INVOICE_DATE", sysinfo.system_date$)
+			callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "N")
+			print "---Print Status: N"; rem debug
+			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "Y")
+			print "---Set lock"; rem debug
+			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N"); rem debug, forcing the lock off for now, this isn't working correctly
+			user_tpl.prev_disc_code$ = ""
+			user_tpl.price_code$ = "Y"
+			order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+			gosub add_to_batch_print
+			callpoint!.setOptionEnabled("MINV",0)
+			callpoint!.setStatus("SAVE;REFRESH")
+		endif
+		
+	endif
+
+	print "out"; rem debug
+
+	return
+
+rem ==========================================================================
+get_cash: rem --- Launch the Cash Transaction form
+rem ==========================================================================
+
+	print "Hdr: in get_cash..."; rem debug
+
+	custmast_dev = fnget_dev("ARM_CUSTMAST")
+	dim custmast_tpl$:fnget_tpl$("ARM_CUSTMAST")
+	find record (custmast_dev, key=firm_id$+cust_id$) custmast_tpl$
+
+	callpoint!.setDevObject("tax_amount",   callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT"))
+	callpoint!.setDevObject("freight_amt",  callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	callpoint!.setDevObject("discount_amt", callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+
+	dim dflt_data$[3,1]
+	dflt_data$[1,0]="INVOICE_DATE"
+	dflt_data$[1,1]=callpoint!.getColumnData("OPE_INVHDR.INVOICE_DATE")
+	dflt_data$[2,0]="AR_INV_NO"
+	dflt_data$[2,1]=callpoint!.getColumnData("OPE_INVHDR.AR_INV_NO")
+	dflt_data$[3,0]="CUSTOMER_NAME"
+	dflt_data$[3,1]=custmast_tpl.customer_name$
+
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	key_pfx$  = firm_id$+"  "+cust_id$+order_no$
+
+	print "---Calling cash form..."; rem debug
+
+	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:		"OPE_INVCASH", 
+:		stbl("+USER_ID"), 
+:		"", 
+:		key_pfx$, 
+:		table_chans$[all], 
+:		"",
+:		dflt_data$[all]
+
+	print "---Setting cash sale flag"; rem debug
+	callpoint!.setColumnData("OPE_INVHDR.CASH_SALE", "Y")
+
+rem --- Write flag to disk
+
+	gosub get_disk_rec
+	if ordhdr_rec.cash_sale$ <> "Y" then escape; rem debug
+	ordhdr_rec$ = field(ordhdr_rec$)
+	write record (ordhdr_dev) ordhdr_rec$
+	print "out"; rem debug
+
+	return
+
+rem ==========================================================================
+do_totals: rem --- Run the totals form and write back
+rem ==========================================================================
+
+rem --- Call the form
+
+	dim dflt_data$[4,1]
+	dflt_data$[1,0] = "TOTAL_SALES"
+	dflt_data$[1,1] = callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")
+	dflt_data$[2,0] = "DISCOUNT_AMT"
+	dflt_data$[2,1] = callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT")
+	dflt_data$[3,0] = "TAX_AMOUNT"
+	dflt_data$[3,1] = callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT")
+	dflt_data$[4,0] = "FREIGHT_AMT"
+	dflt_data$[4,1] = callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT")
+
+	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:		"OPE_ORDTOTALS", 
+:		stbl("+USER_ID"), 
+:		"", 
+:		"", 
+:		table_chans$[all],
+:		"", 
+:		dflt_data$[all],
+:		user_tpl$,
+:		UserObj!
+
+rem --- Get disk record with updated form data
+
+	gosub get_disk_rec
+
+rem --- Set fields from the Order Totals form and write back
+
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+
+	ordhdr_rec.total_sales  = ordHelp!.getExtPrice()
+	ordhdr_rec.total_cost   = ordHelp!.getExtCost()
+	ordhdr_rec.taxable_amt  = ordHelp!.getTaxable()
+	ordhdr_rec.freight_amt  = ordHelp!.getFreight()
+	ordhdr_rec.discount_amt = ordHelp!.getDiscount()
+	ordhdr_rec.tax_amount   = ordHelp!.getTaxAmount()
+
+	ordhdr_rec$ = field(ordhdr_rec$)
+	write record (ordhdr_dev) ordhdr_rec$
+	callpoint!.setStatus("SETORIG")
+
+	callpoint!.setColumnData("OPE_INVHDR.TOTAL_SALES",  ordhdr_rec.total_sales$)
+	callpoint!.setColumnData("OPE_INVHDR.TOTAL_COST",   ordhdr_rec.total_cost$)
+	callpoint!.setColumnData("OPE_INVHDR.TAXABLE_AMT",  ordhdr_rec.taxable_amt$)
+	callpoint!.setColumnData("OPE_INVHDR.FREIGHT_AMT",  ordhdr_rec.freight_amt$)
+	callpoint!.setColumnData("OPE_INVHDR.DISCOUNT_AMT", ordhdr_rec.discount_amt$)
+	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",   ordhdr_rec.tax_amount$)
+	callpoint!.setStatus("REFRESH")
+
+	return
+
+rem ==========================================================================
+get_disk_rec: rem --- Get disk record, update with current form data
+              rem     OUT: ordhdr_rec$, updated
+              rem          ordhdr_tpl$
+              rem          ordhdr_dev
+              rem          cust_id$
+              rem          order_no$
+rem ==========================================================================
+
+	file_name$  = "OPE_ORDHDR"
+	ordhdr_dev  = fnget_dev(file_name$)
+	ordhdr_tpl$ = fnget_tpl$(file_name$)
+	dim ordhdr_rec$:ordhdr_tpl$
+
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+	read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ordhdr_rec$
+
+rem --- Copy in any form data that's changed
+
+	ordhdr_rec$ = util.copyFields(ordhdr_tpl$, callpoint!)
+
+	return
 [[OPE_INVHDR.ASHO]]
 print "Hdr:ASHO"; rem debug
 
@@ -1438,9 +2165,13 @@ rem --- Create Empty Availability window
 [[OPE_INVHDR.BSHO]]
 print "Hdr:BSHO"; rem debug
 
+rem --- Documentation
+rem     Old s$(7,1) = 0 -> user_tpl.hist_ord$ = "Y" - order came from history
+rem                 = 1 -> user_tpl.hist_ord$ = "N"
+
 rem --- Open needed files
 
-	num_files=36
+	num_files=40
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
@@ -1464,11 +2195,11 @@ rem --- Open needed files
 	open_tables$[20]="IVM_ITEMACT",  open_opts$[20]="OTA"
 	open_tables$[21]="IVM_ITEMVEND", open_opts$[21]="OTA"
 	open_tables$[22]="IVT_LSTRANS",  open_opts$[22]="OTA"
-	open_tables$[23]="OPT_ORDHDR",   open_opts$[23]="OTA"
-	open_tables$[24]="OPT_ORDDET",   open_opts$[24]="OTA"
+	open_tables$[23]="OPT_INVHDR",   open_opts$[23]="OTA"
+	open_tables$[24]="OPT_INVDET",   open_opts$[24]="OTA"
 	open_tables$[25]="OPE_ORDDET",   open_opts$[25]="OTA"
 	open_tables$[26]="OPT_INVSHIP",  open_opts$[26]="OTA"
-	open_tables$[27]="OPE_CREDCUST", open_opts$[27]="OTA"
+	open_tables$[27]="OPE_CREDDATE", open_opts$[27]="OTA"
 	open_tables$[28]="IVC_WHSECODE", open_opts$[28]="OTA"
 	open_tables$[29]="IVS_PARAMS",   open_opts$[29]="OTA"
 	open_tables$[30]="OPE_ORDLSDET", open_opts$[30]="OTA"
@@ -1478,8 +2209,20 @@ rem --- Open needed files
 	open_tables$[34]="OPE_PRNTLIST", open_opts$[34]="OTA"
 	open_tables$[35]="OPM_POINTOFSALE", open_opts$[35]="OTA"
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
+	open_tables$[37]="OPC_DISCCODE", open_opts$[37]="OTA"
+	open_tables$[38]="OPC_TAXCODE",  open_opts$[38]="OTA"
+	open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
+	open_tables$[40]="ARC_TERMCODE", open_opts$[40]="OTA"
 	
 gosub open_tables
+
+rem --- Set table_chans$[all] into util object for getDev() and getTmpl()
+
+	declare ArrayObject tableChans!
+
+	call stbl("+DIR_PGM")+"adc_array.aon::str_array2object", table_chans$[all], tableChans!, status
+	if status = 999 then goto std_exit
+	util.setTableChans(tableChans!)
 
 rem --- get AR Params
 
@@ -1545,9 +2288,11 @@ rem --- Disable display fields
 	column!.addItem("<<DISPLAY>>.TOT_AGING")
 	callpoint!.setColumnEnabled(column!, -1)
 
-rem --- Save totals object
+rem --- Save display control objects
 
 	UserObj!.addItem( util.getControl(callpoint!, "<<DISPLAY>>.ORDER_TOT") )
+	callpoint!.setDevObject("credit_hold_control", util.getControl(callpoint!, "<<DISPLAY>>.CREDIT_HOLD")); rem used in opc_creditcheck
+	callpoint!.setDevObject("backordered_control", util.getControl(callpoint!, "<<DISPLAY>>.BACKORDERED")); rem used in opc_creditcheck
 
 rem --- Setup user_tpl$
     
@@ -1564,19 +2309,20 @@ rem --- Setup user_tpl$
 :		"line_type:c(1), " +
 :		"dropship_whse:c(1), " +
 :		"def_whse:c(10), " +
-:		"avail_oh:c(5), " +
-:		"avail_comm:c(5), " +
-:		"avail_avail:c(5), " +
-:		"avail_oo:c(5), " +
-:		"avail_wh:c(5), " +
-:		"avail_type:c(5*), " +
-:		"dropship_flag:c(5*), " +
-:		"ord_tot_1:c(5*), " +
+:     "avail_oh:u(1), " +
+:     "avail_comm:u(1), " +
+:     "avail_avail:u(1), " +
+:     "avail_oo:u(1), " +
+:     "avail_wh:u(1), " +
+:     "avail_type:u(1), " +
+:     "dropship_flag:u(1), " +
+:		"manual_price:u(1), " +
+:		"alt_super:u(1), " +
+:     "ord_tot_obj:u(1), " +
 :		"price_code:c(2), " +
 :		"pricing_code:c(4), " +
 :		"order_date:c(8), " +
 :		"pick_hold:c(1), " +
-:		"never_checked:u(1), " +
 :		"pgmdir:c(1*), " +
 :		"skip_whse:c(1), " +
 :		"warehouse_id:c(2), " +
@@ -1584,11 +2330,12 @@ rem --- Setup user_tpl$
 :		"cur_row:n(5), " +
 :		"skip_ln_code:c(1), " +
 :		"hist_ord:c(1), " +
-:		"old_ship_to:c(1*), " +
-:		"old_disc_code:c(1*), "+
 :		"cash_sale:c(1), " +
 :		"cash_cust:c(6), " +
 :		"bo_col:u(1), " +
+:		"shipped_col:u(1), " +
+:		"prod_type_col:u(1), " +
+:		"unit_price_col:u(1), " +
 :		"allow_bo:c(1), " +
 :		"amount_mask:c(1*)," +
 :		"line_taxable:c(1), " +
@@ -1605,7 +2352,26 @@ rem --- Setup user_tpl$
 :		"prev_qty_ord:n(15), " +
 :		"prev_boqty:n(15), " +
 :		"prev_shipqty:n(15), " +
-:		"is_cash_sale:u(1)"
+:		"prev_ext_price:n(15), " +
+:		"prev_taxable:n(15), " +
+:		"prev_ext_cost:n(15), " +
+:     "prev_disc_code:c(1*), "+
+:     "prev_ship_to:c(1*), " +
+:		"prev_sales_total:n(15), " +
+:		"prev_unitprice:n(15), " +
+:		"is_cash_sale:u(1), " +
+:		"detail_modified:u(1), " +
+:		"record_deleted:u(1), " +
+:		"item_wh_failed:u(1), " +
+:		"do_end_of_form:u(1), " +
+:		"picklist_warned:u(1), " +
+:		"do_totals_form:u(1), " +
+:		"disc_code:c(1*), " +
+:		"tax_code:c(1*), " +
+:		"new_order:u(1), " +
+:		"credit_limit_warned:u(1), " +
+:		"shipto_warned:u(1), " +
+:		"first_read:u(1)"
 
 	dim user_tpl$:tpl$
 
@@ -1627,9 +2393,37 @@ rem --- Setup user_tpl$
 	user_tpl.lotser_flag$      = ivs01a.lotser_flag$
 	user_tpl.pgmdir$           = stbl("+DIR_PGM",err=*next)
 	user_tpl.cur_row           = -1
-	user_tpl.bo_col            = 8
-	user_tpl.never_checked     = 1
 	user_tpl.is_cash_sale      = 0
+	user_tpl.detail_modified   = 0
+	user_tpl.record_deleted    = 0
+	user_tpl.item_wh_failed    = 1
+	user_tpl.do_end_of_form    = 1
+	user_tpl.picklist_warned   = 0
+	user_tpl.do_totals_form    = 1
+	user_tpl.new_order         = 0
+	user_tpl.credit_limit_warned = 0
+	user_tpl.shipto_warned     = 0
+	user_tpl.first_read        = 1
+
+rem --- Columns for the util disableCell() method
+
+	user_tpl.bo_col            = 9
+	user_tpl.shipped_col       = 10
+	user_tpl.prod_type_col     = 5
+	user_tpl.unit_price_col    = 8
+
+	user_tpl.prev_line_code$   = ""
+	user_tpl.prev_item$        = ""
+	user_tpl.prev_qty_ord      = 0
+	user_tpl.prev_boqty        = 0
+	user_tpl.prev_shipqty      = 0
+	user_tpl.prev_ext_price    = 0; rem used in detail section to hold the line extension 
+	user_tpl.prev_taxable      = 0
+	user_tpl.prev_ext_cost     = 0
+	user_tpl.prev_disc_code$   = ""
+	user_tpl.prev_ship_to$     = ""
+	user_tpl.prev_sales_total  = 0; rem used in totals section to hold the order sale total
+	user_tpl.prev_unitprice    = 0
 
 rem --- Ship and Commit dates
 
@@ -1654,29 +2448,22 @@ rem --- Ship and Commit dates
 
 rem --- Save the indices of the controls for the Avail Window, setup in AFMC
 
-	user_tpl.avail_oh$      ="2"
-	user_tpl.avail_comm$    ="3"
-	user_tpl.avail_avail$   ="4"
-	user_tpl.avail_oo$      ="5"
-	user_tpl.avail_wh$      ="6"
-	user_tpl.avail_type$    ="7"
-	user_tpl.dropship_flag$ ="8"
-	user_tpl.ord_tot_1$     ="9"
+	user_tpl.avail_oh      = 2
+	user_tpl.avail_comm    = 3
+	user_tpl.avail_avail   = 4
+	user_tpl.avail_oo      = 5
+	user_tpl.avail_wh      = 6
+	user_tpl.avail_type    = 7
+	user_tpl.dropship_flag = 8
+	user_tpl.manual_price  = 9
+	user_tpl.alt_super = 10
+	user_tpl.ord_tot_obj   = 11; rem set here in BSHO
 
-rem --- Clear variables
+rem --- Set variables for called forms (OPE_ORDLSDET)
 
-	rem callpoint!.setDevObject("cust","")
-	rem callpoint!.setDevObject("ar_type","")
-	rem callpoint!.setDevObject("order","")
-	rem callpoint!.setDevObject("int_seq","")
-	rem callpoint!.setDevObject("wh","")
-	rem callpoint!.setDevObject("item","")
-	rem callpoint!.setDevObject("lsmast_dev",open_chans$[11])
-	rem callpoint!.setDevObject("lsmast_tpl",open_tpls$[11])
-	rem callpoint!.setDevObject("lotser_flag",ivs01a.lotser_flag$)
-	rem callpoint!.setDevObject("default_linecode",ars01a.line_code$)
+	callpoint!.setDevObject("lotser_flag",ivs01a.lotser_flag$)
 
-rem --- Set Lot/Serial button up properly
+rem --- Set up Lot/Serial button (and others) properly
 
 	switch pos(ivs01a.lotser_flag$="LS")
 		case 1; callpoint!.setOptionText("LENT","Lot Entry"); break
@@ -1684,18 +2471,45 @@ rem --- Set Lot/Serial button up properly
 		case default; break
 	swend
 
+rem --- Enable buttons
+
 	callpoint!.setOptionEnabled("LENT",0)
 	callpoint!.setOptionEnabled("RCPR",0)
 	callpoint!.setOptionEnabled("DINV",0)
 	callpoint!.setOptionEnabled("CINV",0)
-	callpoint!.setOptionEnabled("CRCH",1)
 	callpoint!.setOptionEnabled("MINV",0)
+	callpoint!.setOptionEnabled("PRNT",0)
+	callpoint!.setOptionEnabled("CASH",0)
+	callpoint!.setOptionEnabled("TTLS",0)
+	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("CRAT",0)
+
+rem --- Parse table_chans$[all] into an object
+
+	declare ArrayObject tableChans!
+
+	call pgmdir$+"adc_array.aon::str_array2object", table_chans$[all], tableChans!, status
+	util.setTableChans(tableChans!)
+
+rem --- Order Helper object
+
+	declare OrderHelper ordHelp!
+
+	ordHelp! = new OrderHelper(firm_id$, int(num(ivs01a.precision$)), callpoint!, dtlg_param$[1,3])
+	callpoint!.setDevObject("order_helper_object", ordHelp!)
+
+rem --- get mask for display sequence number used in detail lines (needed when creating duplicate/credit)
+
+	call stbl("+DIR_PGM")+"adc_getmask.aon","LINE_NO","","","",line_no_mask$,0,0
+	callpoint!.setDevObject("line_no_mask",line_no_mask$)
 [[OPE_INVHDR.AFMC]]
 rem print 'show', "Hdr:AFMC"; rem debug
 
 rem --- Inits
 
 	use ::ado_util.src::util
+	use ::ado_order.src::OrderHelper
+	use ::adc_array.aon::ArrayObject
 
 rem --- Create Inventory Availability window
 
@@ -1725,4 +2539,6 @@ rem --- Save controls in the global userObj! (vector)
 	userObj!.addItem(mwin!.addStaticText(15104,295,40,75,15,"",$8000$))
 	userObj!.addItem(mwin!.addStaticText(15105,490,25,75,15,"",$0000$))
 	userObj!.addItem(mwin!.addStaticText(15106,490,40,75,15,"",$0000$))
-	userObj!.addItem(mwin!.addStaticText(15107,695,25,75,15,"",$0000$)); rem Drop Ship text
+	userObj!.addItem(mwin!.addStaticText(15107,695,20,75,15,"",$0000$)); rem Dropship text (8)
+	userObj!.addItem(mwin!.addStaticText(15108,695,35,160,15,"",$0000$)); rem Manual Price  (9)
+	userObj!.addItem(mwin!.addStaticText(15109,695,50,160,15,"",$0000$)); rem Alt/Super  (10)

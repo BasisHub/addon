@@ -12,7 +12,7 @@ check_op_ord:
 	num_files=2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="OPE_INVHDR",open_opts$[1]="OTA"
-	open_tables$[2]="OPT_ORDHDR",open_opts$[2]="OTA"
+	open_tables$[2]="OPT_INVHDR",open_opts$[2]="OTA"
 	gosub open_tables
 	ope01_dev=num(open_chans$[1])
 	opt01_dev=num(open_chans$[2])

@@ -1,0 +1,999 @@
+rem --- Order/Picking List
+rem --- Program opc_picklist.aon v8.0.0 18Jul2007 (opr_pa)
+rem --- Created by adx_codeport.bbx v1.1.5 (07/18/2007 03:48:04)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+    enter cust_id$, order_no$, callpoint!, table_chans$[all], status
+    
+rem --- Use statements
+
+    use ::ado_func.src::func
+    use ::sys/prog/bao_callpoint.bbj::Callpoint
+    
+    declare Callpoint callpoint!
+
+rem --- Retrieve the program path
+
+    pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+    
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+    
+rem --- Open all files
+
+    num_files = 17
+    open_beg  = 1
+    open_end  = num_files
+
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+    open_tables$[1]="IVC_WHSECODE",  open_opts$[1]="OTA"; rem ivm10c
+    open_tables$[2]="IVS_PARAMS",    open_opts$[2]="OTA"
+    open_tables$[3]="OPE_ORDHDR",    open_opts$[3]="OTA"; rem ope01
+    open_tables$[4]="ARS_CREDIT",    open_opts$[4]="OTA"; rem ars01c
+    open_tables$[5]="ARM_CUSTMAST",  open_opts$[5]="OTA"; rem arm01
+    open_tables$[6]="ARM_CUSTSHIP",  open_opts$[6]="OTA"; rem arm03
+    open_tables$[7]="OPE_ORDSHIP",   open_opts$[7]="OTA"; rem ope31
+    open_tables$[8]="ARC_SALECODE",  open_opts$[8]="OTA"; rem arm10f
+    open_tables$[9]="ARC_TERMCODE",  open_opts$[9]="OTA"; rem arm10a
+    open_tables$[10]="OPE_ORDDET",   open_opts$[10]="OTA"; rem ope11
+    open_tables$[11]="OPC_LINECODE", open_opts$[11]="OTA"; rem opm02
+    open_tables$[12]="IVM_ITEMMAST", open_opts$[12]="OTA"; rem ivm01
+    open_tables$[13]="IVM_ITEMWHSE", open_opts$[13]="OTA"; rem ivm02
+    open_tables$[14]="OPE_ORDLSDET", open_opts$[14]="OTA"; rem ope21
+    open_tables$[15]="OPE_PRNTLIST", open_opts$[15]="OTA"; rem ope04
+    open_tables$[16]="OPC_MSG_HDR",  open_opts$[16]="OTA"; rem opm04
+    open_tables$[17]="OPC_MSG_DET",  open_opts$[17]="OTA"; rem opm14
+    
+    gosub open_tables
+
+    whsecode_dev = num(open_chans$[1])
+    params_dev   = num(open_chans$[2])
+    ordhdr_dev   = num(open_chans$[3])
+    credit_dev   = num(open_chans$[4])
+    custmast_dev = num(open_chans$[5])
+    custship_dev = num(open_chans$[6])
+    ordship_dev  = num(open_chans$[7])
+    salecode_dev = num(open_chans$[8])
+    termcode_dev = num(open_chans$[9])
+    orddet_dev   = num(open_chans$[10])
+    linecode_dev = num(open_chans$[11])
+    itemmast_dev = num(open_chans$[12])
+    itemwhse_dev = num(open_chans$[13])
+    ordlsdet_dev = num(open_chans$[14])
+    prntlist_dev = num(open_chans$[15])
+    msghdr_dev   = num(open_chans$[16])
+    msgdet_dev   = num(open_chans$[17])
+    
+    dim whsecode_rec$:open_tpls$[1]
+    dim params_rec$:open_tpls$[2]
+    dim ope01a$:open_tpls$[3]
+    dim credit_rec$:open_tpls$[4]
+    dim arm01a$:open_tpls$[5]
+    dim arm03a$:open_tpls$[6]
+    dim ope31a$:open_tpls$[7]
+    dim salecode_rec$:open_tpls$[8]
+    dim termcode_rec$:open_tpls$[9]
+    dim ope11a$:open_tpls$[10]
+    dim opm02a$:open_tpls$[11]
+    dim ivm01a$:open_tpls$[12]
+    dim ivm02a$:open_tpls$[13]
+    dim ope21a$:open_tpls$[14]
+    rem 15
+    dim opm04a$:open_tpls$[16]
+    dim opm14a$:open_tpls$[17]
+
+rem --- Get Parameters
+    
+    find record (params_dev, key=firm_id$+"IV00", dom=std_missing_params) params_rec$
+    find record (credit_dev, key=firm_id$+"AR01") credit_rec$
+
+rem --- Document initializations
+
+    declare BBjVector OutVect!
+    declare BBjVector BrkVect!
+    declare BBjVector HdrVect!
+    declare BBjVector TotVect!
+
+    OutVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Inits
+
+    precision num(params_rec.precision$)
+    h0 = 0
+    more = 1
+    total = 0
+    start_block = 1
+    call pgmdir$+"adc_getmask.aon","","AR","I","",m0$,0,m0
+    call pgmdir$+"adc_getmask.aon","","IV","A","",m1$,0,m1
+    call pgmdir$+"adc_getmask.aon","","IV","U","",m2$,0,m2
+    call pgmdir$+"adc_getmask.aon","","IV","C","",m3$,0,m3
+    call pgmdir$+"adc_getmask.aon","","IV","P","",m4$,0,m4
+    m1=len(m1$)
+    m2=len(m2$)
+    m3=len(m3$)
+    m4=len(m4$)
+    l9=37
+    headings=0
+    when$=sysinfo.system_date$
+    dim headings$[headings],mh0$(36),md0$(6),md1$(40),x4$(400)
+    
+    func.setLen1( int(num(params_rec.desc_len_01$)) )
+    func.setLen2( int(num(params_rec.desc_len_02$)) )
+    func.setLen3( int(num(params_rec.desc_len_03$)) )
+
+rem --- Is this company multi-warehouse?
+    
+    mult_wh=0
+    read (whsecode_dev, key=firm_id$+"C", dom=*next)
+
+    if start_block then
+        read record (whsecode_dev, end=*endif) whsecode_rec$
+        if whsecode_rec.firm_id$ = firm_id$ and whsecode_rec.record_id_c$ = "C" then mult_wh=1
+    endif
+
+rem --- Column headings
+
+    dim columns$[0,10]
+    columns$[0,0]="",columns$[0,1]="C",columns$[0,2]="80"
+
+rem --- Read header 
+
+    read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$
+
+    while start_block
+
+        p8$="Y"
+
+        if ope01a.invoice_type$="S" then
+            msg_id$="OP_PRINTPRICES"
+            gosub disp_message
+            p8$=msg_opt$
+        endif
+        
+        if ope01a.print_status$="Y" then 
+            gosub is_still_printed
+        endif
+
+        if ope01a.reprint_flag$="Y" then  
+            reprint$ = ope01a.print_status$
+            ope01a.print_status$ = "N"
+        endif
+
+        if ope01a.print_status$="Y" then break
+        if ope01a.invoice_type$="V" then break
+        if credit_rec.sys_install$="Y" and ope01a.credit_flag$="C" and credit_rec.pick_hold$="N" then break
+
+        after$="NO"
+        gosub valid_lines
+        if print$="NO" then break
+
+    rem --- Heading
+
+        b$=""
+        othwhse$=""
+        dim b1$(325)
+        arm01a.customer_name$="Not On File"
+
+        if start_block then
+            read record (custmast_dev,key=firm_id$+cust_id$,dom=*endif) arm01a$
+            b$=arm01a.addr_line_1$+arm01a.addr_line_2$+arm01a.addr_line_3$+arm01a.addr_line_4$+arm01a.city$+arm01a.state_code$+arm01a.zip_code$+arm01a.country$
+            call pgmdir$+"adc_address.aon",b$,24,5,9,30
+        endif
+
+        b$=arm01a.customer_name$+b$
+
+    rem --- Ship-To
+
+        dim c1$(255),c$(159)
+        if ope01a.shipto_type$="B" then 
+            arm03a.name$(1,4)="SAME",c$(1,81)=""
+        else
+            if ope01a.shipto_type$="M" then 
+                if start_block then
+                    find record (ordship_dev,key=firm_id$+ope01a.customer_id$+ope01a.order_no$,dom=*endif) ope31a$
+                    c$=ope31a.addr_line_1$+ope31a.addr_line_2$+ope31a.addr_line_3$+ope31a.addr_line_4$+ope31a.city$+ope31a.state_code$+ope31a.zip_code$
+                    arm03a.name$=ope31a.name$
+                endif
+            else
+                if ope01a.shipto_type$="S" then 
+                    find record (custship_dev,key=firm_id$+ope01a.customer_id$+ope01a.shipto_no$,dom=*endif) arm03a$
+                    c$=arm03a.addr_line_1$+arm03a.addr_line_2$+arm03a.addr_line_3$+arm03a.addr_line_4$+arm03a.city$+arm03a.country$
+                endif
+            endif
+
+            call pgmdir$+"adc_address.aon",c$,24,5,9,30
+        endif
+
+        c$=arm03a.name$+c$
+
+    rem --- Print Heading
+
+        c$=pad(c$,len(b$))
+
+    rem --- Salesperson
+
+        x1$="HOUSE"
+
+        if start_block then
+            find record (salecode_dev, key=firm_id$+"F"+ope01a.slspsn_code$, dom=*endif) salecode_rec$
+            x1$=salecode_rec.code_desc$
+        endif
+
+    rem --- Terms
+
+        x3$=""
+
+        if start_block then
+            find record (termcode_dev, key=firm_id$+"A"+ope01a.terms_code$, dom=*endif) termcode_rec$
+            x3$ = pad(termcode_rec.code_desc$, 15)
+        endif
+
+    rem --- Print Heading
+
+        gosub report_heading
+        t0=0
+
+    rem --- Position Detail File
+
+        read (orddet_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+
+        while more
+            read record (orddet_dev, end=*break) ope11a$
+            if ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$ <> ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ then break
+
+        rem --- Type
+
+            if start_block then
+                find record (linecode_dev,key=firm_id$+ope11a.line_code$,dom=*endif) opm02a$
+                
+                if pos(ope01a.invoice_type$="P")<>0 and ope11a.commit_flag$<>"N" and pos(ope11a.warehouse_id$=othwhse$)=0 then 
+                    othwhse$=othwhse$+ope11a.warehouse_id$
+                endif
+                
+                if whse$<>"" and ope11a.warehouse_id$<>whse$ then break
+            endif
+
+            if pos(opm02a.line_type$="MNO")=0 then 
+
+                dim x2$(60),x7$(62)
+                ivm01a.item_desc$="**Not On File**"
+
+                if pos(opm02a.line_type$=" SRDP")<>0 then
+                    if start_block then
+                        find record (itemmast_dev,key=firm_id$+ope11a.item_id$,dom=*endif) ivm01a$
+                        gosub Compress_Description
+                    endif
+
+                    dim x5$(10)
+                    find record (itemwhse_dev,key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$,dom=*next) ivm02a$
+                endif
+            endif
+
+            if opm02a.line_type$<>"M" or pos(opm02a.message_type$=" BO")<>0 then 
+                gosub details_items
+            endif
+
+            t0=t0+ope11a.ext_price
+
+        rem --- Any Serial/Lot #'s?
+
+            if pos(params_rec.lotser_flag$="LS")=0 then break
+            if pos(opm02a.line_type$=" SRDP")=0 then break
+            if ivm01a.lotser_item$<>"Y" then break
+
+        rem --- There are serial/lots
+
+            total_ls=0
+            ls_start$ = firm_id$+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
+            read (ordlsdet_dev, key=ls_start$, dom=*next)
+
+            while more
+                read record (ordlsdet_dev, end=*break) ope21a$
+                if pos(ls_start$=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$)<>1 break
+
+                if ope21a.qty_ordered then
+                    lotser_no$ = ope21a.lotser_no$
+                    gosub print_ls
+                    total_ls = total_ls + ope21a.qty_shipped
+                endif
+            wend
+
+            if total_ls<ope11a.qty_ordered then
+                dim lotser_no$(20, "_")
+
+                if params_rec.lotser_flag$="L" then 
+                    y9=3
+                else
+                    y9=ope11a.qty_ordered-total_ls
+                endif
+
+                for y=1 to y9
+                    gosub print_ls
+                next y
+            endif
+
+            if l+1<=l9 then
+                OutVect!.addItem("")
+                l=l+1
+            endif
+        wend
+
+        gosub Total1
+
+        break
+
+    wend
+
+        if ope01a.reprint_flag$="Y"
+            ope01a.print_status$=reprint$
+            ope01a.reprint_flag$=""
+        else
+            if print$="YES" and allprint$="YES"
+                ope01a.print_status$="Y"
+            endif
+        endif
+
+        if ope01a.print_status$<>"Y"
+            ope01a.print_status$="N"
+        endif  
+
+        ope01a.lock_status$="N"
+        ope01a$=field(ope01a$)
+        write record (ordhdr_dev) ope01a$
+        callpoint!.setStatus("SETORIG")
+
+        if ope01a.print_status$="Y"
+            remove (prntlist_dev,key=firm_id$+ope01a.ordinv_flag$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+        endif                
+
+ready: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+    
+    if OutVect! = null() or OutVect!.size() = 0 then goto std_exit
+
+    declare BBjTopLevelWindow rdForm!
+
+    call pgmdir$+"adx_typesafe.aon::docout",
+:       rdForm!,
+:       rd_alias_id$,
+:       rep_date$,
+:       rep_date_stamp$,
+:       rep_time$,
+:       rep_time_stamp$,
+:       rep_prog_stamp$,
+:       headings$[all],
+:       columns$[all],
+:       OutVect!,
+:       BrkVect!,
+:       HdrVect!,
+:       TotVect!,
+:       out_types$,
+:       out_action$,
+:       out_status$,
+:       table_chans$[all]
+
+    OutVect!=null()
+
+    msg_id$="AON_UPDT_PICK_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+
+    if msg_opt$<>"Y" then goto std_exit
+    call pgmdir$+"adc_progress.aon","N","","","","",0,prntlist_dev,1,meter_num,status
+    if status = 999 then goto std_exit
+
+rem --- Clear Print Flag
+
+    while 1
+        extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*break) ope01a$
+        if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") then break
+
+        if ope01a.reprint_flag$="Y" then
+            ope01a.reprint_flag$=""
+            ope01a.lock_status$="N" 
+        else
+            if pos(ope01a.print_status$="B")=0 then break
+            if pos(ope01a.lock_status$="YS12")<>0 then break
+            after$="YES"
+            gosub valid_lines
+            ope01a.lock_status$="N"
+            if print$="YES" and allprint$="YES" then ope01a.print_status$="Y"
+        endif
+
+        if ope01a.print_status$<>"Y" then ope01a.print_status$="N"
+        ope01a$=field(ope01a$)
+        write record (ordhdr_dev) ope01a$
+        callpoint!.setStatus("SETORIG")
+        
+        break
+    wend
+
+    if ope01a.print_status$="Y" then
+        remove (prntlist_dev, key=firm_id$+ope01a.ordinv_flag$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=*next)
+    endif
+
+all_done: rem --- Done with update
+
+    goto std_exit
+
+report_heading: rem --- Report Heading
+
+    if ope01a.invoice_type$="P"
+        OutVect!.addItem("")
+        dim out$(80)
+        out$(h0+25)="Q U O T A T I O N   O N L Y"
+        OutVect!.addItem(out$)
+    else 
+        dim out$(80)
+        out$(h0+21)="O R D E R / P I C K I N G   L I S T"
+        OutVect!.addItem(out$)
+    endif
+
+    if ope01a.reprint_flag$="Y"
+        z0$="*** R E P R I N T ***" 
+    else 
+        z0$=""
+    endif
+
+    dim out$(80)
+    out$(h0+29)=z0$
+    OutVect!.addItem(out$)
+    out$(h0+1)=sysinfo.firm_name$
+    out$(h0+56)="Order Number: "+ope01a.order_no$+" "+ope01a.backord_flag$
+    OutVect!.addItem(out$)
+    
+    dim out$(80)
+    out$(h0+64)="Date: "+func.formatDate(ope01a.order_date$)
+    OutVect!.addItem(out$)
+    
+    dim out$(80)
+    out$(h0+3)="Customer: "+func.alphaMask(ope01a.customer_id$,m0$)
+    out$(h0+50)="Ship To:"
+    OutVect!.addItem(out$)
+
+    for i=1 to 6
+        dim out$(80)
+        out$(h0+13)=b$(i*30-29,30)
+        out$(h0+50)=c$(i*30-29,30)
+        OutVect!.addItem(out$)
+    next i
+
+    OutVect!.addItem(fill(80,"-"))
+    
+    dim out$(80)
+    out$(h0+1)="Cust P.O.#    Terms           Salesperson          Ship Via   Ship Date    PC"
+    OutVect!.addItem(out$)
+    OutVect!.addItem(fill(80,"-"))
+    
+    dim out$(80)
+    out$(h0+1)=ope01a.customer_po_no$
+    out$(h0+15)=x3$
+    out$(h0+31)=x1$
+    out$(h0+52)=ope01a.ar_ship_via$
+    out$(h0+63)=func.formatDate(ope01a.shipmnt_date$)
+    out$(h0+75)=ope01a.price_code$
+    OutVect!.addItem(out$)
+    OutVect!.addItem(fill(80,"-"))
+    
+    dim out$(80)
+    out$(h0+29)="Item Number &"
+    OutVect!.addItem(out$)
+    
+    dim out$(80)
+    out$(h0+1)="    Order     Ship   B/O        Description"
+    if ope01a.invoice_type$="P" or p8$="Y" then out$(h0+74-m4+4,5)="Price"
+    if mult_wh>0 then out$(h0+48,4)="Whse"
+    out$(h0+53,8)="Location"
+    out$(h0+75,6)="Carton"
+    OutVect!.addItem(out$)
+    OutVect!.addItem(fill(80,"-"))
+    l=0
+
+    return
+
+details_items: 
+
+rem --- Item detail
+
+    if l+1>l9
+        gosub continue_page
+    endif
+
+    dim out$(80)
+rem    out$(1)=ope11a_key.internal_seq_no$
+
+    if pos(opm02a.line_type$="MO")=0 then
+        out$(h0+1)=pad(str(ope11a.qty_ordered),9,"R")
+        if ope11a.commit_flag$="N"
+            out$(h0+14)="Ship:"+func.formatDate(ope11a.est_shp_date$)
+        else 
+            out$(h0+14)="______ ______"
+        endif
+        out$(h0+75)="______"
+    endif
+
+    if pos(opm02a.line_type$="MO")<>0
+        out$(h0+29)=ope11a.order_memo$		
+    endif  
+
+    if opm02a.line_type$="N"
+        out$(h0+29)="Non-Stock"
+    endif
+
+    if pos(opm02a.line_type$=" SRDP")<>0
+        out$(h0+29)=ope11a.item_id$
+    endif
+
+    if ope01a.invoice_type$<>"P"
+        if pos(opm02a.line_type$=" SRDPN")<>0 and mult_wh>0
+            out$(h0+49)=ope11a.warehouse_id$
+        endif
+
+        if opm02a.dropship$="Y"
+            out$(h0+54)="*Dropship"
+        else   
+            if pos(opm02a.line_type$=" SRDP")<>0
+                out$(h0+54)=ivm02a.location$
+            endif
+        endif  
+
+        if p8$<>"Y" then goto gt_lf
+    endif
+
+    if pos(opm02a.line_type$=" SRDPN")<>0
+        out$(h0+73-m4)=str(ope11a.unit_price:m4$)
+        total=total+ope11a.ext_price
+    endif 
+
+    if pos(opm02a.line_type$="O")<>0
+        out$(h0+73-m1)=str(ope11a.ext_price:m1$)
+        total=total+ope11a.ext_price
+    endif    
+
+gt_lf: 
+
+    OutVect!.addItem(out$)
+    l=l+1
+
+    if pos(opm02a.line_type$=" SRDPN")<>0
+        if l+1>l9
+            gosub continue_page
+        endif
+    endif
+
+    dim out$(80)
+
+    if pos(opm02a.line_type$=" SRDP")<>0
+        out$(h0+33)=ivm01a.item_desc$
+        OutVect!.addItem(out$)
+        l=l+1
+    endif
+
+    if opm02a.line_type$="N"
+        out$(h0+33)=ope11a.order_memo$
+        OutVect!.addItem(out$)
+        l=l+1
+    endif 
+
+    return
+
+print_ls: rem --- Print serial#/lots
+
+    if l>l9-1 then
+        gosub continue_page
+        if pos(opm02a.line_type$=" SRDP")<>0 then
+            dim out$(80)
+            out$(h0+29) = ope11a.item_id$+" (Continued)"
+            l=l+1
+        endif
+    endif
+
+    dim out$(80)
+
+    if params_rec.lotser_flag$<>"L" then
+        out$(h0+25) = "S/N: "+lotser_no$
+    else
+        out$(h0+25) = "Lot: "+lotser_no$+"   Shipped: "
+
+        if ope21a.qty_shipped<>0 then
+            out$(pos(" "<>out$,-1)+2) = str(ope21a.qty_shipped:m2$)
+        else
+            out$(pos(" "<>out$,-1)+2) = lotser_no$
+        endif
+    endif
+
+    OutVect!.addItem(out$)
+    l=l+1
+
+    return
+
+Total1: rem --- Total
+
+    gosub Print_Totals
+    if l+2>l9 then gosub continue_page
+    OutVect!.addItem("")
+    OutVect!.addItem(fill(80,"="))
+    l=l+2
+    gosub Certification
+
+    if ope01a.invoice_type$<>"P" then
+        gosub Print_Box
+    endif
+
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem("")
+
+    return
+
+continue_page: rem --- Continued
+
+    if l9-l-1>0 
+        for cntr=1 to l9-l-1
+            OutVect!.addItem("")
+        next cntr
+    endif  
+
+    dim out$(80)
+    out$(h0+65)="Continued"
+    OutVect!.addItem(out$)
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(code$)
+    gosub report_heading
+
+    return
+
+Compress_Description: rem --- Compress Description
+
+    ivm01a.item_desc$ = pad( func.displayDesc(ivm01a.item_desc$), 79-h0-32)
+    return
+
+valid_lines: rem --- Look for valid lines here
+
+    print$="NO"
+    allprint$="YES" 
+    read (orddet_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+
+    while more
+        read record (orddet_dev, end=*break) ope11a$
+        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ = ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 break
+        find record (linecode_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
+
+        if ope01a.invoice_type$<>"P"
+            if ope11a.commit_flag$="N" continue
+            if whse$<>"" and ope11a.warehouse_id$<>whse$
+                if ope11a.pick_flag$<>"Y"
+                    allprint$="NO"
+                    continue 
+                else 
+                    continue
+                endif
+            endif
+        endif
+        
+        if ope01a.reprint_flag$<>"Y" and ope11a.pick_flag$="Y" continue; rem "Not a reprint and already printed for selected warehouse(s)
+        if ope01a.reprint_flag$="Y" and ope11a.pick_flag$<>"Y" continue; rem "A reprint and not printed yet for selected warehouse(s)
+
+        if after$="YES" then 
+            ope11a.pick_flag$ = "Y"
+            ope11a$ = field(ope11a$)
+            write record (orddet_dev) ope11a$
+        endif
+
+        print$="YES"
+    wend
+
+    read (ordhdr_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$)
+
+    return
+
+Print_Box: rem --- Print Box
+
+    if l+9+mult_wh>l9 gosub continue_page
+    OutVect!.addItem("")
+    
+    dim out$(80)
+    out$(h0+13)="Carton       1       2       3      4       5     Total"
+    OutVect!.addItem(out$)
+    
+    dim out$(80)
+    out$(h0+23)=fill(47,"-")
+    out$(h0+22,1)="+"
+    out$(h0+30,1)="+"
+    out$(h0+38,1)="+"
+    out$(h0+46,1)="+"
+    out$(h0+54,1)="+"
+    out$(h0+62,1)="+"
+    out$(h0+70,1)="+"
+    OutVect!.addItem(out$)
+    
+    dim out$(80)
+    out$(h0+13)="         |       |       |       |       |       |       |"
+    OutVect!.addItem(out$)
+    out$(13,6)="Weight"
+    OutVect!.addItem(out$)
+    out$(13,6)=""
+    OutVect!.addItem(out$)
+    
+    dim out$(80)
+    out$(h0+23)=fill(47,"-")
+    out$(h0+22,1)="+"
+    out$(h0+30,1)="+"
+    out$(h0+38,1)="+"
+    out$(h0+46,1)="+"
+    out$(h0+54,1)="+"
+    out$(h0+62,1)="+"
+    out$(h0+70,1)="+"
+    OutVect!.addItem(out$)
+    l=l+9
+
+    if mult_wh=0 return
+
+    if whse$<>"" and len(othwhse$)<2
+        message$="All of this order to be filled from these warehouses."
+        goto message_creation
+    endif
+
+    if pos(whse$=othwhse$)>0
+        othwhse$=othwhse$(1,pos(whse$=othwhse$)-1)+othwhse$(pos(whse$=othwhse$)+2)
+    endif
+
+    if whse$="" or (whse$<>"" and othwhse$="")
+        message$="All of this order to be filled from this warehouse.";goto message_creation
+    endif
+
+    message$="Portions of this order are to be filled from warehouse "
+
+Message1: 
+
+    message$=message$+othwhse$(1,2)+", "
+    othwhse$=othwhse$(3)
+    if len(othwhse$)>0 then goto Message1
+    message$=message$(1,len(message$)-2)+"."
+
+    if pos(","=message$)>0 
+        message$=message$(1,pos(","=message$,-1)-1)+" and"+message$(pos(","=message$,-1)+1)
+    endif
+
+message_creation: 
+
+    while more
+        if l+1>l9 gosub continue_page
+        if len(message$)<60
+            dim out$(80)
+            out$(h0+13)=message$
+            OutVect!.addItem(out$)
+            l=l+1
+            break
+        endif
+        dim out$(80)
+        out$(h0+13)=message$(1,pos(" "=message$(1,60),-1))
+        OutVect!.addItem(out$)
+        l=l+1
+        message$=message$(pos(" "=message$(1,60),-1)+1)
+    wend
+
+    return
+
+Certification: rem --- Certification
+
+    ms$=""
+    gosub build_msg
+
+    if !status then 
+        for y=1 to 10
+            if x4$(y*40-39,40)=fill(40) then continue
+
+            if y=1
+                if l+1>l9
+                    gosub continue_page 
+                else 
+                    OutVect!.addItem("")
+                    l=l+1
+                endif
+            endif
+
+            if l+1>l9 then
+                gosub continue_page
+            endif
+
+            dim out$(80)
+            out$(h0+28)=x4$(y*40-39,40)
+            OutVect!.addItem(out$)
+            l=l+1
+        next y
+    endif
+
+    return
+
+Print_Totals: rem --- Print Totals
+
+    if p8$="Y" then 
+        if l+4>l9
+            gosub continue_page
+        endif
+
+        OutVect!.addItem("")
+        dim out$(80)
+        out$(h0+80-10)="Extension"
+        OutVect!.addItem(out$)
+        dim out$(80)
+
+        out$(h0+80-m1)=fill(m1-1,"=")
+        OutVect!.addItem(out$)
+        dim out$(80)
+        out$(h0+71-m1)="Total:"
+        out$(h0+80-m1)=str(total:m1$)
+        OutVect!.addItem(out$)
+        l=l+4
+    endif
+
+    return
+
+is_still_printed: rem --- Verify if Pick Ticket is still printed
+
+    read (orddet_dev, key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=*next)
+
+    while more
+        flag=0
+        read record (orddet_dev, end=*break) ope11a$
+        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ = ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 then break
+
+        if ope11a.pick_flag$="Y" then 
+            flag=1
+            break
+        endif
+    wend
+
+    if flag=0 then 
+        ope01a.print_status$="N"
+        ope01a.reprint_flag$=""
+    endif
+
+    return
+
+build_msg: rem --- Build picking list message
+
+    status=11
+    ml=0
+
+    if start_block then
+        find record (msghdr_dev, key=firm_id$+ope01a.message_code$, dom=*endif) opm04a$
+        status=0
+        read (msgdet_dev,key=firm_id$+ope01a.message_code$,dom=*next)
+
+        while more
+            read record (msgdet_dev, end=*break) opm14a$
+            if pos(opm04a.firm_id$+opm04a.message_code$=opm14a.firm_id$+opm14a.message_code$)<>1 then break
+            if pos(opm14a.firm_id$+opm14a.message_code$+opm14a.message_seq$=ms$,6) then continue
+            ms$ = ms$+opm14a.firm_id$+opm14a.message_code$+opm14a.message_seq$
+            x4$(ml*40+1) = opm14a.message_text$
+            ml = ml+1
+            if ml<10 then continue
+        wend
+    endif
+
+    return
+
+open_tables: rem --- Open tables
+
+    call sypdir$+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        status=912
+        goto std_exit
+    endif
+
+    return
+
+disp_message: rem --- Display a message
+
+    call sypdir$+"bac_message.bbj",
+:       msg_id$,
+:       msg_tokens$[all],
+:       msg_opt$,
+:       table_chans$[all]
+
+    return
+
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    exit
+
+rem #endinclude std_end.src
+
+    end

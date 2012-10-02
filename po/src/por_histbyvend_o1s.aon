@@ -13,20 +13,13 @@ rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
-rem --- Retrieve sysinfo data
-
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-    firm_id$=sysinfo.firm_id$
-
 rem --- Document initializations
 
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -56,11 +49,13 @@ rem --- Headings and print positions
     page=0
     l9=59
     l=l9+1
+    recs=0
+    total_rec=0
+
     gosub assignheads
 
 rem --- Headings and print positions
 
- 
     dim columns$[13,3]
     columns = 14
     columns$[0,0]="Vendor",             columns$[0,1]="C",columns$[0,2]="25"
@@ -77,10 +72,11 @@ rem --- Headings and print positions
     columns$[11,0]="Order^Value",       columns$[11,1]="N",columns$[11,2]="10",columns$[11,3]=m1$
     columns$[12,0]="Receipt^Value",     columns$[12,1]="N",columns$[12,2]="10",columns$[12,3]=m1$
     columns$[13,0]="Fill^Ratio",        columns$[13,1]="C",columns$[13,2]="8"
-    
+
 rem --- Position files
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,pot14_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","POT_RECDET","","","",0,pot14_dev,1,meter_num,status
+    if status = 999 then goto std_exit
 
 rem --- Build sql statement
 
@@ -100,6 +96,7 @@ rem --- Build sql statement
     if datethru$<>"" where_clause$=where_clause$+ " AND pot_rechdr.recpt_date <= '" + datethru$+ "'"
 
     order_by$=" order by pot_rechdr.vendor_id,pot_rechdr.recpt_date,pot_rechdr.po_no,pot_rechdr.receiver_no"
+
     if printseq$="A"
         order_by$=" order by apm_vendmast.alt_sequence,pot_rechdr.vendor_id,pot_rechdr.recpt_date,pot_rechdr.po_no,pot_rechdr.receiver_no"
     endif
@@ -112,14 +109,18 @@ rem --- Build sql statement
     sqlexec(sql_chan)
 
 rem --- Sorts
-    
+
     while more
         read_tpl$=sqlfetch(sql_chan,err=*break)
-    
+
         read record (pot04a_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*break) pot04a$
         read (pot14_dev,key=firm_id$+read_tpl.po_no$+read_tpl.receiver_no$,dom=*next) ; rem trip read for later details
 
-rem --- Assign variables
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        if status = 999 then goto std_exit
+
+    rem --- Assign variables
 
         dim rcptdate$(8),orddate$(8)
         if pot04a.recpt_date$<>fill(8) rcptdate$=fndate$(pot04a.recpt_date$)
@@ -134,64 +135,68 @@ rem --- Assign variables
         shipvia$=pot04a.ap_ship_via$
         acknow$=pot04a.acknowledge$
 
-rem --- Test breaks
+    rem --- Test breaks
 
         if pot04a.vendor_id$<>vendor$
             if printvtot$="Y" gosub vendtotals
             gosub newvendor
         endif
 
-        call pgmdir$+"adc_progress.aon","S","","","","",0,pot14_dev,1,meter_num,status
-
-rem --- Calculate Order Value, Receipt Value and Fill Ratio
+    rem --- Calculate Order Value, Receipt Value and Fill Ratio
 
         po_oval=0
         po_rval=0
         ratio=0
 
-rem --- Get detail numerics and accumulate column buckets
+    rem --- Get detail numerics and accumulate column buckets
         dim pot14a_key$:pot14a_key_tpl$
-          
+
         while more
-          
+
             pot14a_key$=key(pot14_dev,end=*break)
+
             if pot14a_key.firm_id$+pot14a_key.receiver_no$<>pot04a.firm_id$+
-:               pot04a.receiver_no$ break
+:               pot04a.receiver_no$ then break
 
-                read record (pot14_dev,key=pot14a_key$) pot14a$
-                gosub getlinetype
-                if pos(linetype$="SNO")=0 continue
-                precision 2
-                ordval=(pot14a.unit_cost*pot14a.qty_ordered)
-                rcptval=(pot14a.unit_cost*pot14a.qty_received)
-                precision ivprecision
+            read record (pot14_dev,key=pot14a_key$) pot14a$
+            gosub getlinetype
+            if pos(linetype$="SNO")=0 continue
+            precision 2
+            ordval=(pot14a.unit_cost*pot14a.qty_ordered)
+            rcptval=(pot14a.unit_cost*pot14a.qty_received)
+            precision ivprecision
 
-rem --- Accumulate totals; then get next detail
+        rem --- Accumulate totals; then get next detail
 
-                po_oval=po_oval+ordval
-                if ponum_prnt$<>""
-                    vendoval=vendoval+ordval
-                    grandoval=grandoval+ordval
-                endif
+            po_oval=po_oval+ordval
 
-rem "Don't accum OrdVal tots if samePO#
-
-                po_rval=po_rval+rcptval
-                vendrval=vendrval+rcptval
-                grandrval=grandrval+rcptval
-                    
+            if ponum_prnt$<>""
+                vendoval=vendoval+ordval
+                grandoval=grandoval+ordval
             endif
-                
+
+        rem "Don't accum OrdVal tots if samePO#
+
+            po_rval=po_rval+rcptval
+            vendrval=vendrval+rcptval
+            grandrval=grandrval+rcptval
+
         wend
 
-rem --- Done w/detail for this PO
+    rem --- Done w/detail for this PO
 
         if po_oval>0 ratio=po_rval*100/po_oval
         gosub printline
-
+        recs=recs+1
     wend
 
 done: rem --- All Done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     if l+2>l9 gosub set_linecount
     gosub vendtotals
@@ -208,6 +213,7 @@ set_linecount: rem --- Set the line count
 
     l=headings+1
     l=l+3
+
     return
 
 assignheads: rem --- Assign headings variables
@@ -226,6 +232,7 @@ assignheads: rem --- Assign headings variables
     headings$[3]= headings$[3]+" To "+vendt$
     headings$[4]="Receipt Date: From "+datef$
     headings$[4]=headings$[4]+"  To "+datet$
+
     return
 
 newvendor: rem --- New Vendor
@@ -241,22 +248,20 @@ newvendor: rem --- New Vendor
     find record (apm01a_dev,key=firm_id$+vendor$,dom=brnch1) apm01a$
     vendname$=apm01a.vendor_name$
 
-brnch1:
+brnch1: 
 
     if l+2>l9 gosub set_linecount
-    
     OutVect!.addItem(str(fnmask$(vendor$(1,vendlen),vendomask$)) + " " + vendname$)
-
     xwk = fnblank(13)
-
     l=l+1
+
     return
 
 vendtotals: rem --- Print Vendor total
 
     if vendoval>0 vendratio=vendrval*100/vendoval
     if l+1>l9 gosub set_linecount
- 
+
     l=l+1
 
     TotVect!.addItem(str(OutVect!.size()/columns))
@@ -274,7 +279,8 @@ getlinetype: rem --- Get Line Type
     find record (pom02a_dev,key=pot14a.firm_id$+pot14a.po_line_code$,dom=brnch2) pom02a$
     linetype$=pom02a.line_type$
 
-brnch2:
+brnch2: 
+
     return
 
 printline: rem --- Print data line
@@ -282,7 +288,6 @@ printline: rem --- Print data line
     if l+2>l9 gosub set_linecount
     let po_oval$=str(po_oval),po_rval$=str(po_rval)
     if ponum_prnt$="" po_oval$=""
-
 
     xwk = fnblank(1)
 
@@ -301,12 +306,11 @@ printline: rem --- Print data line
     OutVect!.addItem(str(ratio:mratio$))
 
     xwk = fnblank(10)
-
     OutVect!.addItem(cvs(acknow$(16),1))
-
     xwk = fnblank(3)
 
-    let l=l+2
+    l=l+2
+
     return
 
 rem #include std_functions.src
@@ -315,7 +319,7 @@ rem --- Functions used to retrieve form values
 
     def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
     def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+:       cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
     def fnget_table$(q0$)=rd_alias_id$
 
 rem --- Miscellaneous functions
@@ -339,15 +343,15 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         q=1
         q0=0
         while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
     fnend
 
 rem --- fnBlank : Create blank cells in OutVect!. No return value
-   
+
     def fnblank(q0)
         for q1=1 to q0
             OutVect!.addItem("")
@@ -357,6 +361,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -365,17 +376,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_SYP")
     call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+:       str(err:"000"),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -390,14 +401,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -412,5 +423,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

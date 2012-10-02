@@ -67,7 +67,7 @@ rem --- Retrieve parameter records
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
     call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_length
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
-
+    
 rem --- Set A/P Type if multiple types not installed
 
     if aps01a.multi_types$<>"Y"
@@ -120,7 +120,12 @@ rem --- Open the printer
 
 rem create file
     myAPI!=BBjAPI()
-    myBBjPrinter!=myAPI!.getBBjPrinter(1)
+    myBBjPrinter!=myAPI!.getBBjPrinter(1,err=*next)
+    if myBBjPrinter!=null()
+        msg_id$="AD_NOPRINTER"
+        gosub disp_message
+        goto std_exit
+    endif
 
 rem Create a set of request attributes
     requestAttributes!=new javax.print.attribute.HashPrintRequestAttributeSet()
@@ -182,7 +187,7 @@ rem --- Totals
     endif
 
     doc!.preview()
-	rem doc!.print()
+    rem doc!.print()
 
     goto std_exit
 
@@ -378,7 +383,6 @@ check_face: rem --- Print Check
     apw01a.check_date$=check_date$
     apw01a.vendor_id$=t1$(3,6)
     apw01a.ap_inv_no$=t2.ap_inv_no$
-    if aps01a.multi_types$<>"Y" apw01a.ap_type$=""
     if aps01a.multi_types$="Y" remove (apw01_dev,key=firm_id$+"  "+apw01a.check_no$,dom=*next)
     write record (apw01_dev,key=firm_id$+apw01a.ap_type$+apw01a.check_no$) apw01a$
 
@@ -447,31 +451,31 @@ rem --- Write Void
 new_vendor: rem --- New Vendor
 
     if t1$ <> "" then 
-		gosub stub_total
+        gosub stub_total
 
-		if t[0]-t[2]-t[1] <= 0 then 
-			gosub void_check 
-		else 
-			gosub check_face
-		endif
+        if t[0]-t[2]-t[1] <= 0 then 
+            gosub void_check 
+        else 
+            gosub check_face
+        endif
 
 rem --- Now go back and re-write ape-04 using ape04_dev2 and ape04b$
 rem --- using the current check number and firm_id$ + t1$ (ap type and vendor number)
 
-		dim ape04b$:fattr(ape04b$)
+        dim ape04b$:fattr(ape04b$)
 
-		read(ape04_dev2,key=firm_id$+t1$,dom=*next)
+        read(ape04_dev2,key=firm_id$+t1$,dom=*next)
 
-		while more
-			read record (ape04_dev2,end=*break) ape04b$
-			if pos(firm_id$+t1$=ape04b$)<>1 then break
-			ape04b.check_no$ = check_no$
-			ape04b$ = field(ape04b$)
-			write record (ape04_dev2) ape04b$
-		wend
+        while more
+            read record (ape04_dev2,end=*break) ape04b$
+            if pos(firm_id$+t1$=ape04b$)<>1 then break
+            ape04b.check_no$ = check_no$
+            ape04b$ = field(ape04b$)
+            write record (ape04_dev2) ape04b$
+        wend
 
-		gosub increment_check
-	endif
+        gosub increment_check
+    endif
 
 vendor_header:
 
@@ -499,7 +503,7 @@ vendor_header:
 
         gosub check_header
     endif
-	
+    
     return
 
 increment_check: rem --- Increment Check #
@@ -513,7 +517,7 @@ increment_check: rem --- Increment Check #
 
 cont_and_void: rem --- Continue and Void Check
 
-	rem debug --- the following lines have not been converted
+    rem debug --- the following lines have not been converted
     rem print (printer_dev)h9$(1,l9-l+1)
     rem print (printer_dev)@(h0+22+2*m1),"*Continued*"
     gosub void_check
@@ -535,13 +539,14 @@ ap_type_break: rem --- AP Type Break
 
 rem --- New Checks
 
-        if aps01a.ap_check_seq$ <> "N" then
-			dim msg_tokens$[1]
-			find record (apm10_dev,key=firm_id$+"A"+t0$,dom=*next) apm10a$
-			msg_id$="AP_CHECKS"
-			msg_tokens$[1]=cvs(apm10a.code_desc$,3)
-			gosub disp_message
-		endif
+        if aps01a.ap_check_seq$ = "Y" then
+            dim msg_tokens$[1]
+            find record (apm10_dev,key=firm_id$+"A"+t0$,dom=*next) apm10a$
+            msg_id$="AP_CHECKS"
+            msg_tokens$[1]=cvs(apm10a.code_desc$,3)
+            gosub disp_message
+        endif
+    break
     wend
 
     return
@@ -621,99 +626,99 @@ rem --- fnglobal$: Return string value of passed STBL variable
     return q1$
     fnend
 
-rem #endinclude std_functions.src	
-	
+rem #endinclude std_functions.src   
+    
 rem --- fntext: Form Text command
 
     def fntext(tmp_x,tmp_y,tmp_text$,tmp_font!)
-		tmp_text$=cvs(tmp_text$,3)
-		tmp!.destroy(err=*next)
-		tmp!=page!.newParagraph()
-		tmp!.setHorizontalFill(1)
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		tmp!.setText(tmp_text$)
-		tmp!.setFont(tmp_font!)
-		page!.add(tmp!)
-		return(1)
+        tmp_text$=cvs(tmp_text$,3)
+        tmp!.destroy(err=*next)
+        tmp!=page!.newParagraph()
+        tmp!.setHorizontalFill(1)
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setText(tmp_text$)
+        tmp!.setFont(tmp_font!)
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem --- fntext2: Form Text command
 
     def fntext2(tmp_x,tmp_y,tmp_x2,tmp_y2,tmp_text$,tmp_font!,tmp_just)
-		tmp_text$=cvs(tmp_text$,3)
-		tmp!.destroy(err=*next)
-		tmp!=page!.newParagraph()
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
-		if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
-		if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
-		tmp!.setText(tmp_text$)
-		tmp!.setFont(tmp_font!)
-		page!.add(tmp!)
-		return(1)
+        tmp_text$=cvs(tmp_text$,3)
+        tmp!.destroy(err=*next)
+        tmp!=page!.newParagraph()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
+        if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
+        if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
+        tmp!.setText(tmp_text$)
+        tmp!.setFont(tmp_font!)
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem --- fntext3: Form Text command
 
     def fntext3(tmp_x,tmp_y,tmp_x2,tmp_y2,tmp_text$,tmp_font!,tmp_just)
-		tmp_text$=cvs(tmp_text$,3)
-		tmp!.destroy(err=*next)
-		tmp!=page!.newParagraph()
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
-		if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
-		if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
-		tmp!.setBackgroundColor(myAPI!.makeColor("Black"))
-		tmp!.setTextColor(myAPI!.makeColor("White"))
-		tmp!.setText(tmp_text$)
-		tmp!.setFont(tmp_font!)
-		page!.add(tmp!)
-		return(1)
+        tmp_text$=cvs(tmp_text$,3)
+        tmp!.destroy(err=*next)
+        tmp!=page!.newParagraph()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
+        if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
+        if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
+        tmp!.setBackgroundColor(myAPI!.makeColor("Black"))
+        tmp!.setTextColor(myAPI!.makeColor("White"))
+        tmp!.setText(tmp_text$)
+        tmp!.setFont(tmp_font!)
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem --- fnbox: Form Box command
 
     def fnbox(tmp_x,tmp_y,tmp_w,tmp_h)
-		tmp!=page!.newFrame()
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		tmp!.setWidth(tmp_w)
-		tmp!.setHeight(tmp_h)
-		page!.add(tmp!)
-		return(1)
+        tmp!=page!.newFrame()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setWidth(tmp_w)
+        tmp!.setHeight(tmp_h)
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem --- fnbox2: Form Box command
 
     def fnbox2(tmp_x,tmp_y,tmp_w,tmp_h)
-		tmp!=page!.newFrame()
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		tmp!.setWidth(tmp_w)
-		tmp!.setHeight(tmp_h)
-		tmp!.setFillColor(myAPI!.makeColor("Black"))
-		page!.add(tmp!)
-		return(1)
+        tmp!=page!.newFrame()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setWidth(tmp_w)
+        tmp!.setHeight(tmp_h)
+        tmp!.setFillColor(myAPI!.makeColor("Black"))
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem --- fnline: Form Line command
 
     def fnline(tmp_x,tmp_y,tmp_w,tmp_h)
-		tmp!=page!.newLine()
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		tmp!.setWidth(tmp_w)
-		tmp!.setHeight(tmp_h)
-		page!.add(tmp!)
-		return(1)
+        tmp!=page!.newLine()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmp!.setWidth(tmp_w)
+        tmp!.setHeight(tmp_h)
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem --- fnframe: Form Frame command
 
     def fnframe(tmp_x,tmp_y,tmp_x2,tmp_y2)
-		tmp!=page!.newFrame()
-		tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-		tmpdim!=new java.awt.Dimension(tmp_x2,tmp_y2)
-		tmp!.setSize(tmpdim!)
-		page!.add(tmp!)
-		return(1)
+        tmp!=page!.newFrame()
+        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
+        tmpdim!=new java.awt.Dimension(tmp_x2,tmp_y2)
+        tmp!.setSize(tmpdim!)
+        page!.add(tmp!)
+        return(1)
     fnend
 
 rem #include std_error.src

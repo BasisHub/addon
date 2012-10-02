@@ -81,7 +81,7 @@ format_grid:
 	attr_col$[1,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="LEVEL"
 	attr_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="ABC Level"
 	attr_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="5"
-	attr_col$[1,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="I"
+	attr_col$[1,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="C"
 
 	attr_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PERCENT"
 	attr_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Percent"
@@ -111,7 +111,7 @@ format_grid:
 
 fill_grid:
 
-	SysGUI!.setRepaintEnabled(0)
+rem	SysGUI!.setRepaintEnabled(0)
 	gridABC!=UserObj!.getItem(num(user_tpl.gridABCOfst$))
 	minrows=num(user_tpl.gridABCRows$)
 	if vectABC!.size()
@@ -120,6 +120,7 @@ fill_grid:
 		gridABC!.clearMainGrid()
 rem		gridABC!.setColumnStyle(0,SysGUI!.GRID_STYLE_UNCHECKED)
 		gridABC!.setNumRows(numrow)
+
 		gridABC!.setCellText(0,0,vectABC!)
 rem		if vectABCSel!.size()
 rem			for wk=0 to vectABCSel!.size()-1
@@ -132,7 +133,7 @@ rem		gridABC!.resort()
 		rem gridABC!.setSelectedRow(0)
 		rem gridABC!.setSelectedColumn(1)
 	endif
-	SysGUI!.setRepaintEnabled(1)
+rem	SysGUI!.setRepaintEnabled(1)
 return
 
 create_reports_vector:

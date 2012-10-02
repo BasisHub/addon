@@ -45,6 +45,8 @@ rem --- Init Data
     call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMVEND","PRIMARY",ivm05_key_tpl$,rd_table_chans$[all],status$
     dim ivm05a_key$:ivm05_key_tpl$
     more=1
+    recs=0
+    total_recs=0
 
 rem ---  column heading
 
@@ -68,7 +70,7 @@ rem ---  column heading
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,ivm05_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","IVM_ITEMVEND","","","",0,ivm05_dev,1,meter_num,status
 
 rem --- Initial Read
 
@@ -80,6 +82,9 @@ rem ----  Loop Starting
 
         ivm05a_key$=key(ivm05_dev,end=*break)
         if pos(firm_id$=ivm05a_key$)<>1 break
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+
         if end_vend$<>"" and ivm05a_key.vendor_id$>end_vend$ then break
         if beg_item$<>"" and ivm05a_key.item_id$<beg_item$ then ivm05a_key$=ivm05a_key.firm_id$+ivm05a_key.vendor_id$+beg_item$
         if end_item$<>"" and ivm05a_key.item_id$>end_item$ then ivm05a_key$=ivm05a_key.firm_id$+ivm05a_key.vendor_id$+$FF$
@@ -100,7 +105,6 @@ rem --- Additional Reads
 rem --- Breaks
 
         if ivm05a.vendor_id$<>t0$ gosub vendor_break
-        call pgmdir$+"adc_progress.aon","S","","","",fnmask$(ivm05a.vendor_id$(1,vendlen),m9$)+" "+ivm05a.item_id$,0,0,1,meter_num,status
 
 rem --- Get Actual Annual Usage & EOQ
 
@@ -164,11 +168,18 @@ rem --- Get Actual Annual Usage & EOQ
         else          
             xwk=fnblank(columns)
         endif  
-        t0=t0+1      
+        t0=t0+1
+        recs=recs+1
    
     wend ; rem ----  Loop ending
 
 done: rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     t9$="E"
     gosub vendor_break
@@ -271,6 +282,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
 
 rem #endinclude std_functions.src
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -325,5 +343,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

@@ -32,8 +32,8 @@ rem --- Open/Lock files
     files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
     files$[6]="gls_params",ids$[6]="GLS_PARAMS"
     files$[7]="opm-02",ids$[7]="OPC_LINECODE"
-    files$[8]="opt-01",ids$[8]="OPT_ORDHDR"
-    files$[9]="opt-11",ids$[9]="OPT_ORDDET"
+    files$[8]="opt-01",ids$[8]="OPT_INVHDR"
+    files$[9]="opt-11",ids$[9]="OPT_INVDET"
     files$[10]="sam-01",ids$[10]="SAM_CUSTOMER"
     files$[11]="sam-02",ids$[11]="SAM_TERRITRY"
     files$[12]="sam-03",ids$[12]="SAM_SALESPSN"
@@ -106,6 +106,20 @@ rem --- Initializations
 
     precision ivprecision
 
+rem --- Clear out records from selected files for this firm
+
+    if opt_cust$="Y" call pgm_dir$+"adc_clearpartial.aon","",sam01_dev,firm_id$,status
+    if opt_terr$="Y" call pgmdir$+"adc_clearpartial.aon","",sam02_dev,firm_id$,status
+    if opt_slspsn$="Y" call pgmdir$+"adc_clearpartial.aon","",sam03_dev,firm_id$,status
+    if opt_custtype$="Y" call pgmdir$+"adc_clearpartial.aon","",sam04_dev,firm_id$,status
+    if opt_shipto$="Y" call pgmdir$+"adc_clearpartial.aon","",sam05_dev,firm_id$,status
+    if opt_sic$="Y" call pgmdir$+"adc_clearpartial.aon","",sam06_dev,firm_id$,status
+    if opt_prod$="Y" call pgmdir$+"adc_clearpartial.aon","",sam07_dev,firm_id$,status
+    if opt_whse$="Y" call pgmdir$+"adc_clearpartial.aon","",sam08_dev,firm_id$,status
+    if opt_vend$="Y" call pgmdir$+"adc_clearpartial.aon","",sam09_dev,firm_id$,status
+    if opt_distcode$="Y" call pgmdir$+"adc_clearpartial.aon","",sam10_dev,firm_id$,status
+    if opt_nonstock$="Y" call pgmdir$+"adc_clearpartial.aon","",sam11_dev,firm_id$,status
+
 rem --- Background
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,opt01_dev,1,meter_num,status
@@ -117,21 +131,20 @@ rem --- Position File
 rem --- Main read
     
     while 1
-        k0$=key(opt01_dev,end=*break)
-        read record (opt01_dev) opt01a$
-        if pos(firm_id$=k0$)<>1 break
+        read record (opt01_dev,end=*break) opt01a$
+        if pos(opt01a.firm_id$=firm_id$)<>1 break
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
 rem --- Position Invoice History Detail File
 
-        read (opt11_dev,key=k0$(1,17),dom=*next)
+        read (opt11_dev,key=firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$,dom=*next)
 
 rem --- Read next line item
 
         while 1
-            k$=key(opt11_dev,end=*break)
-            if k$(1,17)<>k0$(1,17) break
-            read record (opt11_dev) opt11a$
+            read record (opt11_dev,end=*break) opt11a$
+            if pos(firm_id$+opt11a.ar_type$+opt11a.customer_id$+opt11a.ar_inv_no$=
+:                  firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$)<>1 break
 
 rem --- Additional Reads
 
@@ -141,16 +154,13 @@ rem --- Additional Reads
 
 rem --- Get Line Type
 
-            if opt11a.line_code$<>k2$
-                k2$=opt11a.line_code$
-                dim opm02a$:fattr(opm02a$)
-                find record (opm02_dev,key=firm_id$+opt11a.line_code$,dom=*next) opm02a$
-            endif
+            dim opm02a$:fattr(opm02a$)
+            find record (opm02_dev,key=firm_id$+opt11a.line_code$,dom=*next) opm02a$
 
 rem --- Update Sales Analysis
 
-            if pos(opm02a.line_type$="SNPO")=0 break
-            if pos(opm02a.line_type$="NPO") and opm02a.prod_type_pr$="N" break
+            if pos(opm02a.line_type$="SNPO")=0 continue
+            if pos(opm02a.line_type$="NPO") and opm02a.prod_type_pr$="N" continue
             dim ivm02a$:fattr(ivm01a$),ivm02a$:fattr(ivm02a$)
             if opm02a.line_type$="N" ivm01a.sa_level$="P"
             find record (ivm01_dev,key=firm_id$+opt11a.item_id$,dom=*next) ivm01a$
@@ -161,6 +171,7 @@ rem --- Update Sales Analysis
 
 rem --- Customer
 
+            if opm02a.line_type$="N" goto nonstock
             if opt_cust$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0 goto territory
             dim sam$:fattr(sam01a$)
             sam01a.firm_id$=firm_id$
@@ -174,12 +185,13 @@ rem --- Customer
             endif
             sam_dev=sam01_dev
             sam_key$=firm_id$+year$+sam01a.customer_id$+sam01a.product_type$+sam01a.item_id$
+            sam$=sam01a$
             gosub write_rec
 
 territory: rem --- Territory
 
             if opt_terr$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto slspsn
-            dim sam02a$:fattr(sam02a$)
+            dim sam$:fattr(sam02a$)
             sam02a.firm_id$=firm_id$
             sam02a.year$=year$
             sam02a.territory$=opt01a.territory$
@@ -191,12 +203,13 @@ territory: rem --- Territory
             endif
             sam_dev=sam02_dev
             sam_key$=firm_id$+year$+sam02a.territory$+sam02a.product_type$+sam02a.item_id$
+            sam$=sam02a$
             gosub write_rec
 
 slspsn: rem --- Salesperson
 
             if opt_slspsn$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto custtype
-            dim sam03a$:fattr(sam03a$)
+            dim sam$:fattr(sam03a$)
             sam03a.firm_id$=firm_id$
             sam03a.year$=year$
             sam03a.slspsn_code$=opt01a.slspsn_code$
@@ -208,12 +221,13 @@ slspsn: rem --- Salesperson
             endif
             sam_dev=sam03_dev
             sam_key$=firm_id$+year$+sam03a.slspsn_code$+sam03a.product_type$+sam03a.item_id$
+            sam$=sam03a$
             gosub write_rec
 
 custtype: rem --- Customer Type
 
             if opt_custtype$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0 then goto shipto
-            dim sam04a$:fattr(sam04a$)
+            dim sam$:fattr(sam04a$)
             sam04a.firm_id$=firm_id$
             sam04a.year$=year$
             sam04a.customer_type$=arm02a.customer_type$
@@ -225,12 +239,13 @@ custtype: rem --- Customer Type
             endif
             sam_dev=sam04_dev
             sam_key$=firm_id$+year$+sam04a.customer_type$+sam04a.product_type$+sam04a.item_id$
+            sam$=sam04a$
             gosub write_rec
 
 shipto: rem --- Ship-To
 
-            if opt_shipto$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0then goto sic
-            dim sam05a$:fattr(sam05a$)
+            if opt_shipto$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0 goto sic
+            dim sam$:fattr(sam05a$)
             sam05a.firm_id$=firm_id$
             sam05a.year$=year$
             sam05a.customer_id$=opt01a.customer_id$
@@ -242,12 +257,13 @@ shipto: rem --- Ship-To
             endif
             sam_dev=sam05_dev
             sam_key$=firm_id$+year$+sam05a.customer_id$+sam05a.shipto_no$+sam05a.item_id$
+            sam$=sam05a$
             gosub write_rec
 
 sic: rem --- Standard Industry Code
 
             if opt_sic$<>"Y" or pos(ivm01a.sa_level$="PI")=0 or cvs(arm01a.sic_code$,2)="" goto prodtype
-            dim sam06a$:fattr(sam06a$)
+            dim sam$:fattr(sam06a$)
             sam06a.firm_id$=firm_id$
             sam06a.year$=year$
             sam06a.sic_code$=arm01a.sic_code$
@@ -259,12 +275,13 @@ sic: rem --- Standard Industry Code
             endif
             sam_dev=sam06_dev
             sam_key$=firm_id$+year$+sam06a.sic_code$+sam06a.product_type$+sam06a.item_id$
+            sam$=sam06a$
             gosub write_rec
 
 prodtype: rem --- Product Type
 
             if opt_prod$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto warehouse
-            dim sam07a$:fattr(sam07a$)
+            dim sam$:fattr(sam07a$)
             sam07a.firm_id$=firm_id$
             sam07a.year$=year$
             sam07a.product_type$=opt11a.product_type$
@@ -273,12 +290,13 @@ prodtype: rem --- Product Type
             endif
             sam_dev=sam07_dev
             sam_key$=firm_id$+year$+sam07a.product_type$+sam07a.item_id$
+            sam$=sam07a$
             gosub write_rec
 
 warehouse: rem --- Warehouse
 
             if opt_whse$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto stockvend
-            dim sam08a$:fattr(sam08a$)
+            dim sam$:fattr(sam08a$)
             sam08a.firm_id$=firm_id$
             sam08a.year$=year$
             sam08a.warehouse_id$=opt11a.warehouse_id$
@@ -290,12 +308,13 @@ warehouse: rem --- Warehouse
             endif            
             sam_dev=sam08_dev
             sam_key$=firm_id$+year$+sam08a.warehouse_id$+sam08a.product_type$+sam08a.item_id$
+            sam$=sam08a$
             gosub write_rec
 
 stockvend: rem --- Stocking Vendor
 
             if opt_vend$<>"Y" or pos(ivm01a.sa_level$="PI")=0 or cvs(vendor$,2)="" goto distcode
-            dim sam09a$:fattr(sam09a$)
+            dim sam$:fattr(sam09a$)
             sam09a.firm_id$=firm_id$
             sam09a.year$=year$
             sam09a.vendor_id$=vendor$
@@ -307,12 +326,13 @@ stockvend: rem --- Stocking Vendor
             endif
             sam_dev=sam09_dev
             sam_key$=firm_id$+year$+sam09a.vendor_id$+sam09a.product_type$+sam09a.item_id$
+            sam$=sam09a$
             gosub write_rec
 
 distcode: rem --- Distribution Code
 
             if opt_distcode$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto nonstock
-            dim sam10a$:fattr(sam10a$)
+            dim sam$:fattr(sam10a$)
             sam10a.firm_id$=firm_id$
             sam10a.year$=year$
             sam10a.ar_dist_code$=opt01a.ar_dist_code$
@@ -324,12 +344,13 @@ distcode: rem --- Distribution Code
             endif
             sam_dev=sam10_dev
             sam_key$=firm_id$+year$+sam10a.ar_dist_code$+sam10a.product_type$+sam10a.item_id$
+            sam$=sam10a$
             gosub write_rec
 
 nonstock: rem --- Non-Stock
 
-            if opt_nonstock$<>"Y" or opm02a.line_type$<>"N" break
-            dim sam11a$:fattr(sam11a$)
+            if opt_nonstock$<>"Y" or opm02a.line_type$<>"N" continue
+            dim sam$:fattr(sam11a$)
             sam11a.firm_id$=firm_id$
             sam11a.year$=year$
             sam11a.product_type$=opt11a.product_type$
@@ -338,6 +359,7 @@ nonstock: rem --- Non-Stock
             endif
             sam_dev=sam11_dev
             sam_key$=firm_id$+year$+sam11a.product_type$+sam11a.nonstock_no$
+            sam$=sam11a$
             gosub write_rec
 
 rem --- Loop back for next line item

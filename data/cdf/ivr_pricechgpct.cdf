@@ -5,6 +5,8 @@ rem --- Percent change can't be zero
 		callpoint!.setMessage("IV_PCT_CHG_INVALID")
 		callpoint!.setStatus("ABORT")
 	endif
+
+
 [[IVR_PRICECHGPCT.PERCENT_CHANGE.AVAL]]
 rem --- Percent can't be zero
 
@@ -12,6 +14,12 @@ rem --- Percent can't be zero
 		callpoint!.setStatus("ABORT")
 	endif
 [[IVR_PRICECHGPCT.BSHO]]
+rem --- Get Batch information
+rem --- this will let oper set up or select a batch (if batching turned on)
+rem --- stbl("+BATCH_NO) will either be zero (not batching) or contain the batch#
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+
 rem --- Inits
 
 	pgmdir$=""

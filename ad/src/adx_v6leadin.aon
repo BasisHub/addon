@@ -1,0 +1,267 @@
+rem adx_v6leadin.aon - addon lead-in program for hybrid Barista/v6 systems
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 15Dec2009 |
+rem  |  Copyright (c) 1981-2009 AddonSoftware  |
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+    begin
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+    user_id$=sysinfo.user_id$
+    sys_date$=sysinfo.system_date$
+    program$=argv(argc - 1)
+
+rem --- Open/Lock files
+
+    sys01_dev = unt
+    open (sys01_dev)"SYS-01"
+    sym02_dev = unt
+    open (sym02_dev)"SYM-02"
+
+rem --- IOLists
+
+sym02a: iolist sym02_0$(1),sym02_1$(1),sym02[all]
+sys01t: iolist terminal$,sys01_0$(1),sys01_1$,sys01_2$,sys01_3$,sys01_4$,sys01_5$,sys01_6$,sys01_7$
+sys01s: iolist s0$,s1$,s2$,s3$,s4$,s5$,s6$
+
+rem --- Initialize variables
+
+    dim screen$(32),color$(160),sym02_0$(3),sym02_1$(128),sym02[4],sys01_0$(25)
+
+rem --- Save BBx Standard !EDIT Parameters
+
+    good=0
+
+    while 1
+        x$=stbl("!SEDIT",err=*break)
+        x$=stbl("!STERMS",err=*break)
+        good=1
+        break
+    wend	
+
+    while good=0
+        x$=stbl("!EDIT",err=*next)
+        x$=STBL("!SEDIT",X$,err=*next)
+        x$=STBL("!TERMS",err=*next)
+        x$=STBL("!STERMS",X$,err=*next)
+        x$=STBL("!CLEAR","!GUI",err=*next)
+        break
+    wend
+
+rem --- Get Terminal ID
+
+    dim task$:"type:u(1),*:u(1),alias:c(1*=0),*:c(1*=0),*:c(1*=0),modes:c(1*=0)"
+
+    user$=""
+    tsk_no=0
+    temp$="USERID="+cvs(user_id$,7)+","
+	if pos(","=temp$) temp$=temp$(1,pos(","=temp$)-1)
+	if pos(" "=temp$) temp$=temp$(1,pos(" "=temp$)-1)
+    
+    while 1
+        task$=tsk(tsk_no,err=*break)
+
+        if pos(cvs(temp$,7) = cvs(task.modes$,7)) = 0 then 
+            tsk_no=tsk_no+1
+            continue
+        endif
+
+        setterm task.alias$
+        legacy=pos("LEGACYID="=cvs(task.modes$,7))
+
+        if legacy>0 then
+            user$=task.modes$(legacy+9)
+            if pos(","=user$) user$=user$(1,pos(","=user$)-1)
+            if pos(" "=user$) user$=user$(1,pos(" "=user$)-1)
+        endif
+
+        break
+    wend
+
+rem --- Set terminal record
+
+    terminal$="T"+FID(0)
+    userkey$=user$+fill(3),userkey$=userkey$(1,3)
+    find (sys01_dev,key=terminal$,dom=*next)iol=sys01t
+    find (sym02_dev,key=userkey$,dom=*next)iol=sym02a
+    sys01_0$(4,3)=user$
+    sys01_0$(10,3)=""
+    sys01_0$(16,2)=firm_id$
+    sys01_2$=program$
+    sys01_3$=""
+
+    if sys01_0$(13,2)="  " then
+        sys01_0$(13,2)="PF"
+        sys01_0$(25,1)=" "
+    endif	
+
+    x$=sys_date$(5,4)+sys_date$(3,2)
+    sys01_0$(7,3)=fnd$(x$),sys01_0$(18,6)=fnyy_yy21$(fnm$(x$))
+
+rem --- Update terminal record
+
+    sys01_0$(4,3)=sym02_0$
+    sys01_2$="SYS"
+    sys01_0$(15,1)=sym02_1$(25,1)
+
+    write (sys01_dev,key=terminal$)iol=sys01t
+
+rem --- Create !SCREEN
+
+    find (sys01_dev,key="S",dom=*next)iol=sys01s
+    screen$(1,8)=S1$
+    screen$(9,1)="N"
+    screen$(10)=sym02_1$(26)
+    screen$(25,1)="N",x$=stbl("!SCREEN",screen$)
+
+rem --- Create !COLOR
+
+    color$(1)=sym02_1$(41,60),color$(81)=sym02_1$(41,60)
+    
+    for x=1 to 51 step 10
+        c$=color$(x,10)
+        m$=""
+        if c$="BLACK     " then m$='BLACK'
+        if c$="BLUE      " then m$='BLUE'
+        if c$="CYAN      " then m$='CYAN'
+        if c$="GREEN     " then m$='GREEN'
+        if c$="MAGENTA   " then m$='MAGENTA'
+        if c$="RED       " then m$='RED'
+        if c$="WHITE     " then m$='WHITE'
+        if c$="YELLOW    " then m$='YELLOW'
+        color$(x,10)=m$
+    next x
+
+    color$=stbl("!COLOR",color$)
+    
+rem --- Set function keys
+
+    call "SYC.FK",status
+
+rem --- print header boxes
+
+        bg$=cvs(color$(1,10), 2)
+        fg$=cvs(color$(11,10), 2)
+        PRINT (0,ERR=*next)'BACKGR',bg$,fg$,'DEFAULT','CS',
+
+	call "SYC.WC",0,0,47,3,0,0,0
+	call "SYC.WC",0,0,33,3,47,0,0
+	print 'sb',@(3,1),program$," ",desc$,@(49),day,@(58),fne$(q$),
+	print @(49,0)," ADD+ON Software v6",@(68,1),fid(0),'sf',
+
+rem --- get firm name and update the header
+
+	if cvs(firm_name$,3)<>"" then
+		print 'sb',@(2,0)," ",cvs(firm_name$,3)," ",
+	endif
+	
+rem --- Run next program
+
+    x$=stbl("!CLEAR","!PROCESS",err=*next)
+    x$=stbl("+LEGACY","Y")
+
+    run program$,err=*next
+    release
+   
+rem --- functions
+
+	def fne$(q$)=date(0:"%hz:%mz %p")
+
+    def fnm$(q$)=q$(5,2)+q$(1,4)
+
+    def fnd$(q$)=chr(fnyy_year(q$(5,2))+32)+chr(num(q$(1,2))+32)+chr(num(q$(3,2))+32)
+
+    def fnyy_year(q1$)
+        q=num(fnyy21_yy$(q1$)); if q<50 then q=q+100
+        return q
+    fnend
+
+    def fnyy21_yy$(q1$)
+        q3$=" 01234567890123456789",q1$(1,1)=q3$(pos(q1$(1,1)=" 0123456789ABCDEFGHIJ"))
+        return q1$
+    fnend
+
+    def fnyy_yy21$(q1$)
+        q3$=" ABCDE56789ABCDEFGHIJ",q1$(1,1)=q3$(pos(q1$(1,1)=" 0123456789ABCDEFGHIJ"))
+        return q1$
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:       str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:       str(err:"000"),rd_err_text$,rd_err_act$
+
+std_missing_params_exit: 
+
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_missing_params_release: 
+
+    status=999
+    if pgm(-1)<>pgm(-2) exit 
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+std_exit_no_report: 
+
+    OutVect!=null()
+    goto std_exit
+
+rem #endinclude std_end.src
+
+    end

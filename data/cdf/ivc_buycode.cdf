@@ -9,7 +9,7 @@ dim ivs_defaults$:fnget_tpl$("IVS_DEFAULTS")
 can_delete$=""
 ivm02_key$=""
 
-read (ivm02_dev,key=firm_id$+callpoint!.getColumnData("IVC_BUYCODE.BUYER_CODE"),knum=4,dom=*next)
+read (ivm02_dev,key=firm_id$+callpoint!.getColumnData("IVC_BUYCODE.BUYER_CODE"),knum=3,dom=*next)
 ivm02_key$=key(ivm02_dev,end=*next)
 if pos(firm_id$+callpoint!.getColumnData("IVC_BUYCODE.BUYER_CODE")=ivm02_key$)=1
 	can_delete$="N"

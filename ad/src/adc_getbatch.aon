@@ -12,11 +12,19 @@ rem --- PROG_NAME$: Program Name if from back end program (in)
 
     seterr std_error
     setesc std_error
-    enter alias$,prog_name$
+    enter alias$,prog_name$,table_chans$[all]
+    
+rem --- Retrieve the program path
 
-rem --- set default stbl
+    pgmdir$=stbl("+DIR_PGM",err=*next)
 
-    x$=stbl("+BATCH_NO","")
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
 
 rem --- Open/Lock files
 
@@ -46,10 +54,10 @@ rem --- Get Process ID"
 
     if cvs(prog_name$,2)<>""
         alt_key=2
-        key_val$=pad(prog_name$,len(adm19a.program_name$))
+        key_val$=firm_id$+pad(prog_name$,len(adm19a.program_name$))
     else
         alt_key=1
-        key_val$=pad(alias$,len(adm19a.dd_table_alias$))
+        key_val$=firm_id$+pad(alias$,len(adm19a.dd_table_alias$))
     endif
     read record (adm19_dev,key=key_val$,knum=alt_key,dom=*next)
     while 1
@@ -60,25 +68,26 @@ rem --- Get Process ID"
         break
     wend
     if proc_id$="" goto done
+    
+rem --- Set some stbls based on detail
 
-rem --- See if program is in batch file
-
-    read record (adm09_dev,key=proc_id$,dom=done)adm09a$
-    if adm09a.batch_entry$<>"Y" goto done
-
-rem --- Now see if this program allows batch entry or not
-
-    x$=stbl("+BATCH_DESC",adm09a.description$)
     x$=stbl("+ALLOW_NEW_BATCH",adm19a.new_batch$)
-    x$=stbl("+PROCESS_ID",cvs(adm19a.process_id$,3))
+    x$=stbl("+PROCESS_ID",adm19a.process_id$)
 
-rem --- Here's where we call the proper form (allow new or not)
+rem --- See if batching is turned on for this process
+
+    read record (adm09_dev,key=firm_id$+proc_id$,dom=done)adm09a$
+    if adm09a.batch_entry$<>"Y" goto done
+    
+    x$=stbl("+BATCH_DESC",adm09a.description$)
+
+
+rem --- Here's where we call the batch setup/select form (allow new or not)
+rem --- The +BATCH_NO stbl will be set in this form's callpoint 
 
     call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADM_PROCBATCHES",stbl("+USER_ID"),"MNT","",table_chans$[all]
     x$=stbl("!CLEAR","+ALLOW_NEW_BATCH")
     x$=stbl("!CLEAR","+BATCH_DESC")
-    x$=stbl("!CLEAR","+PROCESS_ID")
-    batch_id$=allow_entry$
 
 done: rem --- All done
 
@@ -90,8 +99,7 @@ std_error: rem --- Standard error handler (01Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
-    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
 :                                str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0

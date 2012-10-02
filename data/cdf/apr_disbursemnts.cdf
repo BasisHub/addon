@@ -37,4 +37,4 @@ rem --- Retrieve parameter data
 	callpoint!.setTableColumnAttribute("APR_DISBURSEMNTS.PERIOD","MAXV",tot_per$)
 
 
-	callpoint!.setStatus("MODIFIED-REFRESH")
+	callpoint!.setStatus("REFRESH")

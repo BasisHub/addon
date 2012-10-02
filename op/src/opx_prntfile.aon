@@ -1,0 +1,209 @@
+rem --- Rebuild Order/Invoice Print File
+rem --- Program opx_fa v8.0.0 05Dec2007 (opx_fa)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (12/05/2007 10:30:26)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright (c) 1981-2007 AddonSoftware
+rem --- All Rights Reserved
+
+
+            seterr std_error
+            setesc std_error
+
+rem --- Retrieve the program path
+
+            pgmdir$=stbl("+DIR_PGM",err=*next)
+       
+rem --- Retrieve sysinfo data
+
+            sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+            dim sysinfo$:sysinfo_template$
+            sysinfo$=stbl("+SYSINFO",err=*next)
+            milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+            firm_id$=sysinfo.firm_id$
+            
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- Get user approval to proceed
+
+        msg_id$="AON_RUN_QUERY"
+        dim x$:stbl("+SYSINFO_TPL")
+        dim msg_tokens$[1]
+        x$=stbl("+SYSINFO")                                                            
+        msg_tokens$[1]=x.task_desc$
+        gosub disp_message
+        if msg_opt$<>"Y" then goto std_exit_no_update
+            
+
+rem --- Open/Lock files
+
+            files=5,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="ars_params",ids$[1]="ARS_PARAMS"
+            files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
+            files$[3]="ope-01",ids$[3]="OPE_ORDHDR"
+            files$[4]="ope-04",ids$[4]="OPE_PRNTLIST",options$[4]="CL"
+            files$[5]="ope-11",ids$[5]="OPE_ORDDET"
+            call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit
+            ars01a_dev=channels[1]
+            ivs01a_dev=channels[2]
+            ope01_dev=channels[3]
+            ope04_dev=channels[4]
+            ope11_dev=channels[5]
+
+rem --- Dimension string templates
+
+             dim ars01a$:templates$[1],ivs01a$:templates$[2],ope01a$:templates$[3],
+:            ope04a$:templates$[4],ope11a$:templates$[5]
+
+rem --- Retrieve parameter records
+
+            ars01a_key$=firm_id$+"AR00"
+            find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+            ivs01a_key$=firm_id$+"IV00"
+            find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+
+rem --- Initialize
+
+            call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDDET","PRIMARY",ope11a_key_tpl$,rd_table_chans$[all],status$
+            dim ope11a_key$:ope11a_key_tpl$
+            more=1
+
+            call pgmdir$+"adc_progress.aon","N","","","","",0,ope01_dev,1,meter_num,status
+            
+            read (ope01_dev,key=firm_id$,dom=*next)
+
+ rem --- Read Open Order/Invoice Records
+
+    while more
+
+            ope01a_key$=key(ope01_dev,end=*break)
+            read record (ope01_dev) ope01a$
+            if ope01a.firm_id$<>firm_id$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+            rem --- Voids Need Invoice Record To Be Removed In Sales Register Update
+
+            if ope01a.invoice_type$="V" then let ope01a.ordinv_flag$="I"
+
+            rem --- All Invoices Need ope-04 Records
+            rem --- if an invoice, drop thru to write_record
+            rem --- if not an invoice and not an order, skip
+            rem --- if an order that isn't printed, process detail
+            rem --- if an order that's been printed, and set for reprint, goto write_record
+            rem --- if an order that's been printed and not set for reprint, skip
+
+            if ope01a.ordinv_flag$<>"I"  
+
+                    rem --- Skip Already Printed Orders, Except Reprints
+
+                    if ope01a.ordinv_flag$<>"O" then continue
+                    if ope01a.print_status$="Y" then 
+                        if ope01a.reprint_flag$<>"Y" then continue
+                        goto Write_Record; rem "Got one
+                    endif   
+
+                    rem --- Orders With Non-Printed Committed Detail Lines Need ope-04 Records
+
+                    read (ope11_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+                    while more
+                        ope11a_key$=key(ope11_dev,end=*break)
+                        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$=ope11a_key$)<>1 then break
+                        read record (ope11_dev) ope11a$
+                        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+                        if ope11a.commit_flag$+ope11a.pick_flag$="YN" then exitto Write_Record
+                    wend
+                    continue
+            endif  
+            
+Write_Record: rem --- Write ope-04 Record
+
+            ope04a.firm_id$=ope01a.firm_id$
+            ope04a.ordinv_flag$=ope01a.ordinv_flag$
+            ope04a.ar_type$=ope01a.ar_type$
+            ope04a.customer_id$=ope01a.customer_id$
+            ope04a.order_no$=ope01a.order_no$
+            write record (ope04_dev,dom=*next) ope04a$
+            
+    wend
+
+done: rem --- Done
+
+           goto std_exit
+           
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return               
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

@@ -12,8 +12,8 @@ rem --- added remaining code 10/07.CH
     seterr std_error
     setesc std_error
 
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Close printer and destroy current progress meter (if one exists)
 
@@ -35,13 +35,13 @@ rem --- Get user approval to update
 rem --- Start progress meter and position header file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,ape01_dev,1,meter_num,status
-    read (ape01_dev,key=firm_id$,dom=*next)
+    read (ape01_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Read next Invoice Header (ape-01) record
 
     while moreheaders
         k$=key(ape01_dev,end=*break)
-        if pos(firm_id$=k$)<>1 break
+        if pos(firm_id$+batch_no$=k$)<>1 break
         read record (ape01_dev,key=k$) ape01a$
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
@@ -84,7 +84,7 @@ rem --- Read next Invoice Header (ape-01) record
 
         open_invoice: rem --- Open Invoice
 
-        u0=0,apt01a.firm_id$="XX"
+        u0=0,c1=0,apt01a.firm_id$="XX"
         extract record (apt01_dev,key=ape01a.firm_id$+ape01a.ap_type$+ape01a.vendor_id$+
 :           ape01a.ap_inv_no$,dom=*next) apt01a$
         if apt01a.firm_id$="XX"
@@ -138,12 +138,12 @@ rem --- Read next Invoice Header (ape-01) record
                 k$=key(apt11_dev,end=*break)
                 if k$(1,len(apt11_key$))<>apt11_key$ break
                 read record (apt11_dev) apt11a$
-                c1=apt11a.sequence_num
+                c1=num(apt11a.sequence_num$)
                 u0=u0+apt11a.trans_amt
 
                 rem --- Find Open Record
 
-                if c1$(1,1)=" " exitto update_apt11
+                if apt11a.trans_type$=" " then exitto update_apt11
             wend
 
             rem --- New Record
@@ -204,25 +204,26 @@ rem --- Read next Invoice Header (ape-01) record
             rem --- ****** end missing code.CH
             remove (ape11_dev,key=k$)
           wend
-
-          rem --- Delete Invoice Header (ape-01) record and loop back for the next one
-
-          remove (ape01_dev,key=ape01a_key$)
+          
+          rem --- remove header and loop back
+          
+          remove (ape01_dev,key=invoice$)
     wend
-
+        
 rem --- All done
 
     if gl$="Y"
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
        call pgmdir$+"glc_ctlupdate.aon",status
+       call pgmdir$+"glc_ctldelete.aon",status
     endif
     call pgmdir$+"adc_batchdelete.aon",err=*next,status
     goto std_exit
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
-	return
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 glpost: rem --- Standard GL Recap Routine
 
@@ -345,13 +346,18 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-	msg_id$="UPDATE_COMPLETE"
-	dim msg_tokens$[1]
-	msg_opt$=""
-	gosub disp_message
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
 
 std_exit_no_update:
 
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release

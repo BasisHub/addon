@@ -6,28 +6,21 @@ rem --- AddonSoftware Version 8.0.0 - 12Jun2009
 rem --- Copyright (c) 1981-2009 AddonSoftware
 rem --- All Rights Reserved
 
-rem --- o9$ = return program
-rem --- o9  = 1 - batch print from opr_ga.bbx p3$(65,10)
-rem --- o9  = 2 - on demand print from ope_ce.bbx p3$(94,10) or opm_mm p3$(104,10)
-rem --- o9  = 3 - historical invoice print from opm_ml.bbx
-rem ---           ope01_dev = opt01_dev
-rem ---           ope11_dev = opt11_dev
-rem ---           ope21_dev = opt21_dev
-rem ---           ope31_dev = opt31_dev
-
     setesc std_error
     seterr std_error
 
 rem --- Retrieve the program path
 
-	pgmdir$=""
+    pgmdir$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
     sypdir$=""
     sypdir$=stbl("+DIR_SYP",err=*next)
 
 rem --- For type checking
 
-	use ::sys/prog/bao_option.bbj::Option
+    use ::sys/prog/bao_option.bbj::Option
+    
+    declare Option option!
 
 rem --- Retrieve sysinfo data
 
@@ -35,90 +28,122 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO")
     firm_id$=sysinfo.firm_id$
 
-rem --- Open/Lock files
+rem --- Open File(s)
 
-    files=2,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="ars_params",ids$[1]="ARS_PARAMS"
-    files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+	open_tables$[1] = "OPE_PRNTLIST", open_opts$[1] = "OTA"
+    open_tables$[2] = "OPE_ORDHDR",   open_opts$[2] = "OTA"
     
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:       ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    gosub open_tables
     
-    ars01a_dev=channels[1]
-    ivs01a_dev=channels[2]
-
-rem --- Dimension string templates
-
-    dim ars01a$:templates$[1]
-    dim ivs01a$:templates$[2]
+    ope04_dev = num(open_chans$[1])
+    ope01_dev = num(open_chans$[2])
+    
+    dim ope04a$:open_tpls$[1]
+    dim ope01a$:open_tpls$[2]
 
 rem --- Assign form input values to local variables
 
-    declare Option option!
-
-    message$ = option!.getOptionData("pick_text"); rem p7$
-    restart$ = option!.getOptionData("pick_check"); rem p6$
+    rem *** what does this do? restart$ = option!.getOptionData("pick_check"); rem p6$
     cust_id$ = option!.getOptionData("customer_id"); rem p5$
-
-rem --- Retrieve parameter records
-
-    find record (ars01a_dev, key=firm_id$+"AR00", err=std_missing_params) ars01a$
-    find record (ivs01a_dev, key=firm_id$+"IV00", err=std_missing_params) ivs01a$
 
 rem --- Initialize Data
 
-    n1$=sysinfo.firm_name$
-    n2$="AR"
-    n4$=sysinfo.task_desc$
-
-    dim p[5]
-    dim i[3]
-
-    i[0] = ivs01a.item_id_len
-    i[1] = ivs01a.vendor_prd_len
-    i[2] = num(ivs01a.precision$)
-    i[3] = ivs01a.ls_no_len
-
-    p[0] = num(ars01a.customer_size$)
-    p[1] = num(ars01a.max_customer_len$)
-    p[2] = num(ars01a.zip_length$)
-    p[3] = num(ivs01a.desc_len_01$)
-    p[4] = num(ivs01a.desc_len_02$)
-    p[5] = num(ivs01a.desc_len_03$)
+    declare BBjVector custIds!
+    declare BBjVector orderNos!
     
-    desclen = p[3] + p[4] + p[5]
-
-    call pgmdir$+"adc_getmask.aon","","AR","I","",m0$,0,m0
-    call pgmdir$+"adc_getmask.aon","","AR","A","",m1$,0,m1
-    call pgmdir$+"adc_getmask.aon","","AR","U","",m2$,0,m2
-    call pgmdir$+"adc_getmask.aon","","AR","R","",m3$,0,m3
-
-rem --- Run Overlay
-
-    o9$ = ""
-    o9 = 1
-
-rem prog$ = p3$(65,10)
-    prog$ = "opr_invoice_o1.aon"
-    run pgmdir$+prog$, err=*next
+    custIds!  = BBjAPI().makeVector()
+    orderNos! = BBjAPI().makeVector()
     
-    msg_id$="PROG_NOT_FOUND"
-    dim msg_tokens$[1]
-    msg_tokens$[1] = prog$
-    gosub disp_message
+    start_block = 1
+
+rem --- Initial Read
+
+    read (ope04_dev, key=firm_id$+"I"+"  "+cust_id$, dom=*next)
+
+rem --- Main Read, create customer and order vectors
+
+    while 1
+
+        read record (ope04_dev, end=*break) ope04a$
+        if ope04a$.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"I" then break
+
+        if start_block then
+            bad_record = 1
+            extract record (ope01_dev, key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
+            bad_record = 0
+        endif
+
+        if bad_record then
+            remove (ope04_dev, key=firm_id$+"I"+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
+            continue
+        endif
+        
+        if ope01a.invoice_type$ = "V" then continue
+        
+        if ope01a.ordinv_flag$ = "I" then
+            if ope01a.print_status$ = "Y" then continue
+            if ope01a.print_status$<>"B" and ope01a.lock_status$="Y" then continue
+            ope01a.lock_status$ = "Y"
+            ope01a$ = field(ope01a$)
+            write record (ope01_dev) ope01a$
+        else
+            remove (ope04_dev, key=firm_id$+"I  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
+            continue
+        endif
+        
+        custIds!.addItem( ope01a.customer_id$ )
+        orderNos!.addItem( ope01a.order_no$ )
+        
+    wend
+    
+rem --- Did we find any invoices to print?    
+    
+    if custIds!.size() = 0 or orderNos!.size() = 0 then
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit
+    endif
+    
+rem --- Call the invoice printing program with the vectors
+    
+    call pgmdir$+"opc_invoice.aon::batch_inv", custIds!, orderNos!, option!, table_chans$[all], status
     goto std_exit
+    
+open_tables: rem --- Open Tables
+
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
 
 disp_message: rem --- Display Message Dialog
 
-    call sypdir$+"bac_message.bbj",
+	call sypdir$+"bac_message.bbj",
 :		msg_id$,
 :		msg_tokens$[all],
 :		msg_opt$,
 :		table_chans$[all]
 
-    return
+	return
 
 rem #include std_error.src
 

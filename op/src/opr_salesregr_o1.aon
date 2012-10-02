@@ -6,14 +6,6 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-rem -------------- Errors, Warnings and Conversion Information ---------------------
-
-rem --- The following error(s) were encountered during the conversion:
-
-rem --- The following IOLIST's were removed from this program:
-
-rem --- glm01a: iolist *,x1$(1)
-
     seterr std_error
     setesc std_error
 
@@ -23,24 +15,16 @@ rem --- Retrieve the program path
 
 rem --- Document initializations
 
-    OutVect!=bbjAPI().getSysGui().makeVector()
-    HdrVect!=bbjAPI().getSysGui().makeVector()
-    BrkVect!=bbjAPI().getSysGui().makeVector()
-    TotVect!=bbjAPI().getSysGui().makeVector()
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+    
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
     rep_time_stamp$=date(0:"%Hz%mz%sz")
     rep_prog$=pgm(-2)
-
-rem --- Retrieve sysinfo data
-
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-    firm_id$=sysinfo.firm_id$
-
 
 rem --- Retrieve parameter records
 
@@ -75,6 +59,8 @@ rem --- Initializations
     l9=55
     l=l9+1
     headings=5
+    recs=0
+    total_recs=0
     dim headings$[headings],j1$(width),j2$(width,"-"),j3$(width,"=")
     headings$[0]=n1$
     headings$[1]=n3$
@@ -83,24 +69,25 @@ rem --- Initializations
     headings$[4]="From Invoice Date: "+h7$+", Through Invoice Date: "+h8$
     headings$[5]=h9$
 
-
 rem -- Column heading
 
-    dim columns$[7,10]
-    columns = 7,cur_col=0
+    dim columns$[6,10]
+    columns = 6,cur_col=0
 
     columns$[0,0]="Customer No & Name", columns$[0,1]="C",columns$[0,2]="30"
     columns$[1,0]="Inv.No",             columns$[1,1]="C",columns$[1,2]="8"
     columns$[2,0]="Inv.Date",           columns$[2,1]="C",columns$[2,2]="10"
-    columns$[3,0]="Line.No",            columns$[3,1]="C",columns$[3,2]="8"
-    columns$[4,0]="G.L.No.",            columns$[4,1]="C",columns$[4,2]="8"
-    columns$[5,0]="Description",        columns$[5,1]="C",columns$[5,2]="25"
-    columns$[6,0]="Debit",              columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m1$,columns$[6,10]="T"
-    columns$[7,0]="Credit",             columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m1$,columns$[7,10]="T"
+rem columns$[3,0]="Line.No",            columns$[3,1]="C",columns$[3,2]="8"
+    columns$[3,0]="G.L.No.",            columns$[3,1]="C",columns$[3,2]="8"
+    columns$[4,0]="Description",        columns$[4,1]="C",columns$[4,2]="25"
+    columns$[5,0]="Debit",              columns$[5,1]="N",columns$[5,2]="10",columns$[5,3]=m1$,columns$[5,10]="T"
+    columns$[6,0]="Credit",             columns$[6,1]="N",columns$[6,2]="10",columns$[6,3]=m1$,columns$[6,10]="T"
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,opt01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","N","OPT_INVHDR","","","",0,opt01_dev,1,meter_num,status
+    if status = 999 then goto std_exit
+   
     if r0$="N" arm_key_num=0 else arm_key_num=2
 
 rem --- Create Work File
@@ -125,7 +112,11 @@ l1100: rem --- Initial Read
     read record(opt01_dev,end=l1050)opt01a$
     if opt01a.firm_id$<>firm_id$ goto l2900
     if opt01a.customer_id$<>arm01a.customer_id$ goto l1050
-    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+    
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
+        
     if r3$<>"" and opt01a.invoice_date$<r3$ goto l1100
     if r4$<>"" and opt01a.invoice_date$>r4$ goto l1100
     d0$=opt01a.ar_dist_code$
@@ -153,6 +144,7 @@ rem --- Line Type
 l2200: rem --- Standard Item
 
     d0$=opt01a.ar_dist_code$
+    
     while 1
         if ars01a.dist_by_item$<>"Y" break
         read record (ivm02_dev,key=firm_id$+opt11a.warehouse_id$+opt11a.item_id$,dom=*break) ivm02a$
@@ -169,7 +161,7 @@ revenue_account: rem --- Find Revenue Account
 
 l2360:
     d0=-opt11a.ext_price
-    if r5$="D" z9$=opt11a.line_no$ else z9$="   "
+    if r5$="D" z9$=opt11a.orddet_seq_ref$ else z9$=fill(len(opt11a.orddet_seq_ref$))
     gosub l6800
     goto l2020
 
@@ -179,7 +171,7 @@ do_accounts: rem --- A/R Account, Cash Account
     find record (arm10d_dev,key=firm_id$+"D"+opt01a.ar_dist_code$,dom=l2700) arm10d$
     if opt01a.cash_sale$="Y" d1$=arm10d.gl_cash_acct$ else d1$=arm10d.gl_ar_acct$
     d0=opt01a.total_sales+opt01a.tax_amount+opt01a.freight_amt-opt01a.discount_amt
-    z9$="   "
+    z9$=fill(len(opt11a.orddet_seq_ref$))
     gosub l6800
 
 rem --- Discount Amount
@@ -187,7 +179,7 @@ rem --- Discount Amount
     if opt01a.discount_amt=0 goto freight_amt
     d1$=arm10d.gl_disc_acct$
     d0=opt01a.discount_amt
-    z9$="   "
+    z9$=fill(len(opt11a.orddet_seq_ref$))
     gosub l6800
 
 freight_amt: rem --- Freight Amount
@@ -195,7 +187,7 @@ freight_amt: rem --- Freight Amount
     if opt01a.freight_amt=0 goto tax_account
     d1$=arm10d.gl_frgt_acct$
     d0=-opt01a.freight_amt
-    z9$="   "
+    z9$=fill(len(opt11a.orddet_seq_ref$))
     gosub l6800
 
 tax_account: rem --- Tax Account
@@ -211,6 +203,7 @@ tax_account: rem --- Tax Account
     d1$=opm06a.gl_account$
     d0=-x
     if d0<>0 gosub l6800
+    
     for x9=1 to 10
         precision 4
         x1$=field(opm06a$,"ar_tot_code_"+str(x9:"00"))
@@ -227,12 +220,14 @@ tax_account: rem --- Tax Account
         if d0<>0 gosub l6800
     l2680:
     next x9
+    
     precision 2
     if opt01a.tax_amount=y goto l2700
     x=opt01a.tax_amount-y
     d1$=opm06a.gl_account$
     d0=-x
     if d0<>0 gosub l6800
+    
 l2700:
     return
 
@@ -274,14 +269,20 @@ rem --- Find Invoice Date
 
 rem --- Print Invoice Number & Date
 
-    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+    total_recs=total_recs+1
+    if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+    if status = 999 then goto std_exit
+        
     if r5$<>"D" goto l3650
+    
     if cur_col=0
         OutVect!.addItem("")
     endif
+    
     OutVect!.addItem(opt01a.ar_inv_no$)
     OutVect!.addItem(fndate$(opt01a.invoice_date$))
     cur_col=2
+    recs=recs+1
 
 l3650:
     t1$=opt01a.ar_inv_no$
@@ -297,12 +298,15 @@ get_gl_name: rem --- Find G/L Name
 l3780: rem --- Print
 
     if r5$<>"D" goto l3870
+    
     if cur_col<2
         xwk=fnblank(3-cur_col)
     endif
-    OutVect!.addItem(opw04a.line_no$)
+    
+rem    OutVect!.addItem(opw04a.orddet_seq_ref$)
     OutVect!.addItem(fnmask$(opw04a.gl_account$(1,g5),g5$))
     OutVect!.addItem(glm01a.gl_acct_desc$)
+    
     if opw04a.gl_post_amt>0 then
         OutVect!.addItem(str(opw04a.gl_post_amt))
         OutVect!.addItem("")
@@ -310,8 +314,11 @@ l3780: rem --- Print
         OutVect!.addItem("")
         OutVect!.addItem(str(abs(opw04a.gl_post_amt)))
     endif
+    
     cur_col=0
     l=l+1
+    recs=recs+1
+    
 l3870:
     if opw04a.gl_post_amt>0
         d1=d1+opw04a.gl_post_amt
@@ -330,19 +337,29 @@ l3900: rem --- End of file?
 
 done: rem --- End
 
+    if r5$<>"S"
+        if recs=0
+            msg_id$="DOC_OUTPUT_NODATA"
+            gosub disp_message
+            goto std_exit_no_report
+        endif
+    endif    
+
     t9$="E"
     gosub cust_break
     if r5$<>"D" goto l4100
 
-    xwk=fnblank(16)
+    xwk=fnblank(14)
     TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
     OutVect!.addItem("Grand Total : ")
+    
     if d2-abs(c2)<>0 then
-        xwk=fnblank(4)
+        xwk=fnblank(3)
         OutVect!.addItem("***")
     else
-        xwk=fnblank(5)
+        xwk=fnblank(4)
     endif
+    
     OutVect!.addItem(str(d2))
     OutVect!.addItem(str(abs(c2)))
 
@@ -360,15 +377,16 @@ cust_break: rem --- Customer Break
     if t0$="" goto l6100
     if d3-abs(c3)<>0 gosub l6200
     if r5$<>"D" goto l6100
-    xwk=fnblank(8)
+    xwk=fnblank(7)
     TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
     OutVect!.addItem("Customer "+fnmask$(t0$(1,m0),m0$)+" Total: ")
-    xwk=fnblank(5)
+    xwk=fnblank(4)
     OutVect!.addItem(str(d1))
     OutVect!.addItem(str(abs(c1)))
-    xwk=fnblank(8)
+    xwk=fnblank(7)
     cur_col=0
     l=l+3
+    recs=recs+1
 l6100:
     if t9$="E" goto l6190
     dim arm01a$:fattr(arm01a$)
@@ -379,12 +397,14 @@ l6100:
 l6150:
     OutVect!.addItem(x0$)
     cur_col=1
+    recs=recs+1
 l6170:
     t0$=opw04a.customer_id$
     d1=0
     c1=0
     d3=0
     c3=0
+    
 l6190:
     return
 
@@ -393,14 +413,16 @@ l6200: rem --- Previous Invoice Out Of Balance
     gosub l6400
     if d3-abs(c3)=0 goto l6290
     if r5$<>"D" goto l6290
-    if cur_col<5
-        xwk=fnblank(5-cur_col)
+    if cur_col<4
+        xwk=fnblank(4-cur_col)
     endif
     OutVect!.addItem("**")
     OutVect!.addItem(str(d3))
     OutVect!.addItem(str(abs(c3)))
     cur_col=0
     l=l+2
+    recs=recs+1
+    
 l6290:
     return
 
@@ -419,12 +441,15 @@ rem --- Summarize Non-Retained Postings
     d0=oob
     gosub l6900
     if r5$<>"D" goto l6495
+    
     if cur_col<3
         xwk=fnblank(3-cur_col)
     endif
-    OutVect!.addItem("???")
+    
+    rem OutVect!.addItem("???")
     OutVect!.addItem(d1$)
     OutVect!.addItem("***Detail Not Retained***")
+    
     if oob>0
         OutVect!.addItem(str(oob))
         OutVect!.addItem("")
@@ -432,8 +457,11 @@ rem --- Summarize Non-Retained Postings
         OutVect!.addItem("")
         OutVect!.addItem(str(abs(oob)))
     endif
+    
     cur_col=0
+    recs=recs+1
     if oob>0 d1=d1+oob,d2=d2+oob,d3=d3+oob else c1=c1+oob,c2=c2+oob,c3=c3+oob
+    
 l6495:
     return
 
@@ -445,13 +473,14 @@ l6800: rem --- Write To Work File
     opw04a2.customer_id$=opt01a.customer_id$
     opw04a2.ar_inv_no$=opt01a.ar_inv_no$
     opw04a2.gl_account$=d1$
-    opw04a2.line_no$=z9$
+    opw04a2.orddet_seq_ref$=z9$
     opw04a2.alt_sequence$=arm01a.alt_sequence$
     find record (opw04_dev,key=firm_id$+opw04a2.ar_type$+opw04a2.customer_id$+
-:                opw04a2.ar_inv_no$+opw04a2.gl_account$+opw04a2.line_no$,dom=*next) opw04a2$
+:                opw04a2.ar_inv_no$+opw04a2.gl_account$+opw04a2.orddet_seq_ref$,dom=*next) opw04a2$
     opw04a2.gl_post_amt=opw04a2.gl_post_amt+d0
     opw04a2$=field(opw04a2$)
     write record (opw04_dev) opw04a2$
+    
 rem --- Update G/L Summary
 l6900:
     if d0<>0
@@ -463,6 +492,7 @@ l6900:
         glw04a$=field(glw04a$)
         write record (glw04_dev) glw04a$
     endif
+    
     return
 
 rem #include std_functions.src
@@ -527,7 +557,8 @@ rem --- fnbasename$: Strip path and optionally the suffix from a file name
         q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
         if q then q$=q$(q+1)
         if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
+        return q$
+    fnend
 
 rem --- fnglobal: Return numeric value of passed stbl variable
 
@@ -544,6 +575,14 @@ rem --- fnglobal$: Return string value of passed STBL variable
     fnend
 
 rem #endinclude std_functions.src
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -598,5 +637,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

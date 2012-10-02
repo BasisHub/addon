@@ -30,8 +30,11 @@ rem --- Retrieve sysinfo data
             sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
             dim sysinfo$:sysinfo_template$
             sysinfo$=stbl("+SYSINFO",err=*next)
-            milestone=num(stbl("+MILESTONE",err=*next),err=*next)
             firm_id$=sysinfo.firm_id$
+            
+            milestone=50
+            milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+
 
 rem --- Open/Lock files
 
@@ -134,6 +137,7 @@ rem --- Initializations
             morecustomers=1
             moreheaders=1
             moredetail=1
+            recs=0
             when$=sysinfo.system_date$
             clock$=""
             artype$=fill(2)
@@ -142,6 +146,8 @@ rem --- Initializations
             keynum=0
             begvalue$=begcust$
             endvalue$=endcust$
+            total_recs=0
+            
             headings$[0]=sysinfo.firm_name$
             headings$[1]=sysinfo.task_desc$+" By Customer ID"
             if sequence$="A"
@@ -230,7 +236,7 @@ rem --- Dimension string templates
 
 rem --- Start progress meter and position Customer Master (arm-01) file
 
-            call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
+            call pgmdir$+"adc_progress.aon","NC","ARM_CUSTMAST","","","",0,arm01_dev,1,meter_num,status
             k$=firm_id$
             read (arm01_dev,knum=keynum,key=k$+begvalue$,dir=0,dom=*next)
 
@@ -240,7 +246,8 @@ rem --- Read next Customer Master (arm-01) record
           k$=key(arm01_dev,end=*break)
           if pos(firm_id$=k$)<>1 break
           read record (arm01_dev,knum=keynum,key=k$) arm01a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           if sequence$="C" if endvalue$<>"" if arm01a.customer_id$>endvalue$ break
           if sequence$="A" if endvalue$<>"" if arm01a.alt_sequence$>endvalue$ break
           printed=0
@@ -253,6 +260,7 @@ rem --- Position Cash Receipts History Header (art-06) file
 rem --- Read next Cash Receipt History Header (art-06) record
 
           while moreheaders
+
                 k$=key(art06_dev,end=*break)
                 if pos(keyprefix$=k$)<>1 break
                 read record (art06_dev) art06a$
@@ -273,7 +281,7 @@ rem --- Print the Cash Receipt Header
 
 rem --- Position Cash Receipts History Detail (art-16) file
 
-                receipt$=art06a.firm_id$+art06a.ar_type$+art06a.reserved_str$+
+                receipt$=art06a.firm_id$+art06a.ar_type$+art06a.reserved_key_01$+
 :                        art06a.customer_id$+art06a.receipt_date$+art06a.cash_rec_cd$+
 :                        art06a.ar_check_no$
                 read (art16_dev,key=receipt$,dom=*next)
@@ -336,6 +344,9 @@ rem --- Print invoice information
                       customer[2]=customer[2]+art16a.discount_amt
                       totals[1]=totals[1]+art16a.apply_amt
                       totals[2]=totals[2]+art16a.discount_amt
+                      cust_balance=cust_balance+balance
+                      rept_balance=rept_balance+balance
+                      recs=recs+1
 
 rem --- Retrieve cash receipts code record using the code from
 rem --- the receipt header to get the GL cash and discount accounts
@@ -389,6 +400,7 @@ rem --- Print GL distribution information
                       OutVect!.addItem(fnmask$(art26a.gl_account$(1,account_length),g0$))
                       OutVect!.addItem(str(art26a.gl_post_amt))
                       detail=1
+                      recs=recs+1
                       customer[4]=customer[4]+art26a.gl_post_amt
                       totals[4]=totals[4]+art26a.gl_post_amt
 
@@ -423,6 +435,12 @@ rem --- Loop back for next Customer Master record
 
 rem --- Print report totals
 
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
             if export_format$<>"Y"
                 done=1
                 if printed gosub customer_break
@@ -433,7 +451,8 @@ rem --- Print report totals
                 OutVect!.addItem(x$)
                 xwk=fnblank(3)
                 OutVect!.addItem(str(totals[0]))
-                xwk=fnblank(2)
+                xwk=fnblank(1)
+                outVect!.addItem(str(rept_balance))
                 OutVect!.addItem(str(totals[1]))
                 OutVect!.addItem(str(totals[2]))
                 OutVect!.addItem(str(totals[3]))
@@ -489,21 +508,25 @@ customer_break: rem --- Customer break
                   OutVect!.addItem(x$)
                   xwk=fnblank(3)
                   OutVect!.addItem(str(customer[0]))
-                  xwk=fnblank(2)
+                  xwk=fnblank(1)
+                  outVect!.addItem(str(cust_balance))
                   OutVect!.addItem(str(customer[1]))
                   OutVect!.addItem(str(customer[2]))
                   OutVect!.addItem(str(customer[3]))
                   OutVect!.addItem("")
                   OutVect!.addItem(str(customer[4]))
+                  recs=recs+1
                   break
             wend
             if done return
             dim customer[4]
+            cust_balance=0
             customer$=art06a.customer_id$
             if export_format$<>"Y"
                 xwk=fnblank(columns+1)
                 OutVect!.addItem(fnmask$(arm01a.customer_id$(1,customer_size),m0$)+" "+arm01a.customer_name$+" "+arm01a.alt_sequence$)
                 xwk=fnblank(columns)
+                recs=recs+1
             endif
             return
 
@@ -614,6 +637,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         return q1
     fnend
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -672,5 +702,11 @@ std_exit_no_update:
 
     release
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

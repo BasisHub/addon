@@ -23,11 +23,14 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)        
 
 rem --- Derive/set path and filename for logo to go on form
 
     logofile$=""
-	
+    
     while 1
         curr_path$=dsk("")+dir("")
         chdir stbl("+CUST_IMAGES",err=*break),err=*break
@@ -46,10 +49,10 @@ rem --- Open/Lock files
     files$[4]="art-01",ids$[4]="ART_INVHDR"
     files$[5]="art-11",ids$[5]="ART_INVDET"
     files$[6]="ars_report",ids$[6]="ARS_REPORT"
-	
+    
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
-	
+    
     ars01_dev=channels[1]
     arm01_dev=channels[2]
     arm02_dev=channels[3]
@@ -76,12 +79,25 @@ rem --- Assign form input values to local variables
     customer_id$  = option!.getOptionData("CUSTOMER_ID"); rem not used
     alt_sequence$ = option!.getOptionData("ALT_SEQUENCE"); rem not used
     doublespace$  = option!.getOptionData("PICK_CHECK")
-	
+
     minimum=num(minimum$)
     period=num(period$,err=*next)
     spacing=2
     if doublespace$="N" then spacing=1
-
+    if pos(option$="SR")
+        if sequence$="C"
+            begcust$=customer_id$
+            endcust$=customer_id$
+        else
+            begalt$=alt_sequence$
+            endalt$=alt_sequence$
+        endif
+    endif
+    if option$="R"
+        endcust$=""
+        endalt$=""
+    endif
+    
 rem --- Retrieve parameter records
 
     ars01a_key$=firm_id$+"AR00"
@@ -89,11 +105,11 @@ rem --- Retrieve parameter records
 
     ars01b_key$=firm_id$+"AR02"
     find record (ars_report_dev,key=ars01b_key$,err=std_missing_params) ars01b$
-	
+    
     remit$=ars01b.remit_addr_1$+ars01b.remit_addr_2$+ars01b.remit_city$+ars01b.remit_state$+ars01b.remit_zip$
     call pgmdir$+"adc_address.aon",remit$,24,3,9,30
     remit$=ars01b.remit_name$+remit$
-	
+    
     ar_address$=ars01b.addr_line_1$+ars01b.addr_line_2$+ars01b.city$+ars01b.state_code$+ars01b.zip_code$
     call pgmdir$+"adc_address.aon",ar_address$,24,3,9,30
     ar_address$=ars01b.name$+ar_address$
@@ -129,7 +145,13 @@ rem --- Open the printer
     center_justify=2
 
     myAPI!=BBjAPI()
-    myBBjPrinter!=myAPI!.getBBjPrinter(1)
+    myBBjPrinter!=myAPI!.getBBjPrinter(1,err=*next)
+    if myBBjPrinter!=null()
+        msg_id$="AD_NOPRINTER"
+        gosub disp_message
+        goto std_exit
+    endif
+    
     myBBjPDFPrinter!=BBjAPI()
 
     myBBjPrinter!.setAttributes(requestAttributes!)
@@ -148,15 +170,16 @@ rem --- Initializations
     keynum=0
     begvalue$=begcust$; rem not set
     endvalue$=endcust$; rem not set
-	
+    
     if sequence$="A" then 
         keynum=2
         begvalue$=begalt$; rem not set
         endvalue$=endalt$; rem not set
     endif
-	
+    
     first_page=1
     recs=0
+    total_recs=0
 
 rem --- Determine 30 day aging period dates
 
@@ -168,26 +191,31 @@ rem --- Determine 30 day aging period dates
 
 rem --- Start progress meter and position Customer Master (arm-01) file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
-	
-    k$=firm_id$
-    if len(begvalue$)>1 then k$=begvalue$(1,len(begvalue$)-1)+$FF$
-    read (arm01_dev,knum=keynum,key=k$,dom=*next)
-	
-    if pos(option$="RS")
-        read (arm01_dev,knum=keynum,key=begvalue$,dom=*proceed)
-        k$=keyp(arm01_dev,err=*proceed)
-        read (arm01_dev,knum=keynum,key=k$,dom=*proceed)
-    endif
+    call pgmdir$+"adc_progress.aon","NC","ARM_CUSTMAST","","","",0,arm01_dev,1,meter_num,status
+
+        read (arm01_dev,knum=keynum,key=firm_id$,dom=*proceed)
 
 rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
 
     while morecustomers
-        k$=key(arm01_dev,knum=keynum,end=*break)
-        if pos(firm_id$=k$)<>1 break
 
-        read record (arm01_dev,knum=keynum,key=k$) arm01a$
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        if option$="S" morecustomers=0
+        
+        if pos(option$="RS")
+            if first_pass=0
+                read record (arm01_dev,knum=keynum,key=firm_id$+begvalue$,dom=read_next_cust) arm01a$
+                goto bypass_read
+            endif   
+        endif
+        
+read_next_cust:
+        read record (arm01_dev,end=*break)arm01a$
+
+bypass_read:
+        first_pass=1
+        if firm_id$<>arm01a.firm_id$ break
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
         if sequence$="C" if endvalue$<>"" if arm01a.customer_id$>endvalue$ break
         if sequence$="A" if endvalue$<>"" if arm01a.alt_sequence$>endvalue$ break
         dim arm02a$:fattr(arm02a$)
@@ -197,6 +225,7 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
 rem --- Does this customer meet the selection criteria?
 
         if arm02a.statements$<>"Y" continue
+
         if territory$<>"" if arm02a.territory$<>territory$ continue
         if cycle$<>"" if arm02a.ar_cyclecode$<>cycle$ continue
 
@@ -258,11 +287,11 @@ rem --- Above the minimum balance for printing?
 
         printed=0
         balance=0
-		
+        
         for x=period to 5
             balance=balance+aging[x]
         next x
-		
+        
         if minimum <> 0 then if balance<minimum continue
 
 rem --- Position the Invoice Header (art-01) file for printing
@@ -335,13 +364,13 @@ rem --- create pdf file
     while pdf_doc$ = ""
         prtr_dev = unt
         pdf_doc$ = docdir$ + new_doc_id$ + ".pdf"
-		start_block = 1
-		
-		if start_block
-			open (prtr_dev,err=*endif)pdf_doc$
-			close (prtr_dev)
-			erase pdf_doc$
-		endif
+        start_block = 1
+        
+        if start_block
+            open (prtr_dev,err=*endif)pdf_doc$
+            close (prtr_dev)
+            erase pdf_doc$
+        endif
 
         docPDF! = myBBjPDFPrinter!.getBBjPDFForm(pdf_doc$, requestAttributes!)
     wend
@@ -353,7 +382,7 @@ rem --- create pdf file
     pagePDF!=docPDF!.createPage()
     pagePrint!=docPrint!.createPage()
     page!=pagePrint!
-	
+    
     while 1
 
         tmp=fntext2(0,10,568,10,"STATEMENT",largefont!,center_justify,page!)
@@ -423,7 +452,7 @@ detail: rem --- Print a statement detail line
     if lines>=maxlines-1 gosub continued
 
     page!=pagePrint!
-	
+    
     while 1
 
         tmp_line=264+((lines+1)*12)
@@ -495,7 +524,7 @@ rem --- Remit
 continued: rem --- This statement continues on the next page
 
     page!=pagePrint!
-	
+    
     while 1
 
         tmp=fntext2(432,656,120,656,"(Continued)",textfont!,right_justify,page!)
@@ -518,14 +547,14 @@ rem --- Position Invoice Detail (art-11) file
 rem --- Read Invoice Detail (art-11) records
 
     applied=0
-	
+    
     while moredetail
         k$=key(art11_dev,end=*break)
         if pos(art01_key$=k$)<>1 break
         read record (art11_dev) art11a$
         if art11a.trans_date$ <= asof$ then applied = applied+art11a.trans_amt+art11a.adjdisc_amt
     wend
-	
+    
     return
 
 address: rem --- Format the address block
@@ -723,4 +752,4 @@ std_exit_no_report:
 rem #endinclude std_end.src
 
     end
-	
+    

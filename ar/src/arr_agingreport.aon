@@ -44,8 +44,10 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -86,12 +88,12 @@ rem --- Assign form input values to local variables
     future$=option!.getOptionData("FUTURE_AGING")
     option$=option!.getOptionData("REPORT_OPTION")
     sequence$=option!.getOptionData("REPORT_SEQUENCE")
-    begcust$=option!.getOptionData("CUSTOMER_ID_01")
-    endcust$=option!.getOptionData("CUSTOMER_ID_02")
-    begalt$=option!.getOptionData("ALT_SEQUENCE_01")
-    endalt$=option!.getOptionData("ALT_SEQUENCE_02")
-    begsales$=option!.getOptionData("SALESPERSON_01")
-    endsales$=option!.getOptionData("SALESPERSON_02")
+    begcust$=option!.getOptionData("CUSTOMER_ID_1")
+    endcust$=option!.getOptionData("CUSTOMER_ID_2")
+    begalt$=option!.getOptionData("ALT_SEQUENCE_1")
+    endalt$=option!.getOptionData("ALT_SEQUENCE_2")
+    begsales$=option!.getOptionData("SALESPERSON_1")
+    endsales$=option!.getOptionData("SALESPERSON_2")
     update$=option!.getOptionData("UPDATE_AGING")
     type$=option!.getOptionData("REPORT_SUMM_DET")
     comments$=option!.getOptionData("CUST_COMMENTS")
@@ -161,6 +163,7 @@ rem --- Initializations
     morecustomers=1
     moreheaders=1
     moredetail=1
+    recs=0
     when$=sysinfo.system_date$
     clock$=""
     artype$=fill(2)
@@ -168,7 +171,8 @@ rem --- Initializations
     lastcode$=""
     dim u_line$(m1,"-")
     future=future$="Y"
-	customer_printed=0
+    customer_printed=0
+    total_recs=0
 
 rem --- Underline for subtotals and totals
 
@@ -180,10 +184,12 @@ rem --- Set table and index values based on the option and sequence specified by
 
     keynum=0
     channel=arm01_dev
+    channel_name$="ARM_CUSTMAST"
     if sequence$="A" keynum=2
     if option$="S"
        keynum=1
        channel=arm02_dev
+       channel_name$="ARM_CUSTDET"
     endif
 
 rem --- Initialize report headings
@@ -244,7 +250,7 @@ rem --- Additional file opens
     files=2,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     if jn$="Y" files$[1]="opm-09",ids$[1]="OPM_CUSTJOBS"
-    if op$="Y" files$[2]="opt-01",ids$[2]="OPT_ORDHDR"
+    if op$="Y" files$[2]="opt-01",ids$[2]="OPT_INVHDR"
     if op$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                              ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -310,7 +316,7 @@ rem --- column headings
 
 rem --- Start progress meter and position customer file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC",channel_name$,"","","",0,channel,1,meter_num,status
     read (channel,knum=keynum,key=firm_id$,dom=*next)
 
 rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
@@ -345,7 +351,8 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
           if cvs(endalt$,3)<>"" if arm01a.alt_sequence$(1,len(cvs(endalt$,3)))>endalt$ continue
           if cvs(begsales$,3)<>"" if arm02a.slspsn_code$<begsales$ continue
           if cvs(endsales$,3)<>"" if arm02a.slspsn_code$>endsales$ continue
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           if option$="C" if sequence$="N" if endcust$<>"" if arm01a.customer_id$>endcust$ break
           if option$="S" if endsales$<>"" if arm02a.slspsn_code$>endsales$ break
 
@@ -395,7 +402,7 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
 
                 rem --- Include credit?
 
-                if nocredits if amount<0 continue
+                if credits$<>"Y" if amount<0 continue
 
                 rem --- Assign the proper date for aging purposes
 
@@ -494,7 +501,6 @@ rem --- line.
                 endif
 
                 rem --- Print detail line
-
                 rem if lines+1>maxlines gosub customer_heading
 
                 if col_format$="Y"
@@ -552,6 +558,7 @@ rem --- line.
                 endif
 
                 lines=lines+1
+                recs=recs+1
 
                 rem --- If job numbers are being used retrieve the job (if one exists) and print it
   
@@ -619,7 +626,8 @@ rem --- line.
 
                 lines=lines+2                
                 printed=0
-				customer_printed=1
+                customer_printed=1
+                recs=recs+1
 
           wend  
 
@@ -641,6 +649,12 @@ rem --- line.
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     done=1
 
@@ -722,24 +736,24 @@ customer_heading: rem --- Print customer subheading
 salesperson: rem --- Salesperson break
     
     if col_format$="Y" return
-	prev_salesperson=(lastcode$<>"" and customer_printed)
-	
+    prev_salesperson=(lastcode$<>"" and customer_printed)
+    
     while prev_salesperson
         x$="Total for "+salesperson$
 
         for x=0 to maxperiods
-			s[maxperiods+1]=s[maxperiods+1]+s[x]
+            s[maxperiods+1]=s[maxperiods+1]+s[x]
         next x
 
         rem if type$="D" if lines+2>maxlines gosub customer_heading 
         if type$="S" if lines+2>maxlines gosub increment_lines 
 
         if type$="D" 
-        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            TotVect!.addItem(str(OutVect!.size()/(columns+1)))
 
-        abc=fnblank(1)
-        OutVect!.addItem(x$)
-        abc=fnblank(4)
+            abc=fnblank(1)
+            OutVect!.addItem(x$)
+            abc=fnblank(4)
         endif 
 
         if type$="S" 
@@ -761,11 +775,10 @@ salesperson: rem --- Salesperson break
         OutVect!.addItem(str(s[6]))
 
         lines=lines+2
-        prev_salesperson=0
-		customer_printed=0
-
+        break
     wend
-
+    
+    
     if done return
 
     dim arm10f$:fattr(arm10f$),s[maxperiods+1]
@@ -777,10 +790,21 @@ salesperson: rem --- Salesperson break
     find record (arm10_dev,key=k$,dom=*next) arm10f$
     lastcode$=arm10f.slspsn_code$
     salesperson$="Salesperson "+arm10f.slspsn_code$+" "+arm10f.code_desc$
-    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-    HdrVect!.addItem(salesperson$)
-    lines=maxlines+1
 
+    if last_code$="" or prev_salesperson
+        if customer_printed=0
+            if BrkVect!.size()>0
+                BrkVect!.removeItem(BrkVect!.size()-1)
+                HdrVect!.removeItem(HdrVect!.size()-1)
+            endif
+        endif
+
+        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+        HdrVect!.addItem(salesperson$)
+    endif    
+    lines=maxlines+1
+    prev_salesperson=0
+    customer_printed=0
     return
 
 rem --- Functions
@@ -833,6 +857,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         next q1
         return q1
     fnend
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem #include std_error.src
 
@@ -890,5 +921,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

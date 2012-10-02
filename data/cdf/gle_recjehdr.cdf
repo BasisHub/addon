@@ -58,7 +58,7 @@ if user_tpl.glint$="Y"
 			if user_tpl.je$="Y"
 				glcontrol.permit_je$="Y"
 			endif
-			glcontrol$=stbl("!GLCONTROL",glcontrol$)
+			glcontrol$=stbl("+GLCONTROL",glcontrol$)
 		else
 			msg_id$="GL_JID"
 			gosub disp_message

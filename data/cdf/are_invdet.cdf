@@ -1,3 +1,6 @@
+[[ARE_INVDET.AGCL]]
+rem --- set preset val for batch_no
+callpoint!.setTableColumnAttribute("ARE_INVDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[ARE_INVDET.AUDE]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots

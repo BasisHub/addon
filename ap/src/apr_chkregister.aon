@@ -103,7 +103,8 @@ rem --- Is General Ledger installed and being used?
     status=0
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
     if status goto std_exit_no_report
-
+    process_id$=stbl("+PROCESS_ID")
+    batch_no$=stbl("+BATCH_NO")
 
 rem --- Initializations
 
@@ -136,7 +137,7 @@ rem --- Initializations
        retention_hdr1$="Retention"
        retention_hdr2$="   Amount" 
     endif
-    headings$[2]="[HEADER]"
+    if multitypes then headings$[2]="[HEADER]"
     recs=0
 
 rem --- set rd_alias_id$, if needed, for DocOut Settings
@@ -195,8 +196,8 @@ rem --- Additional file opens
     files$[1]="glm-01",ids$[1]="GLM_ACCT"
     files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
     files$[3]="glt-05",ids$[3]="GLT_BANKCHECKS"
-    files$[4]=glw11$
-    options$[4]="CL"
+    files$[4]="glw-11",ids$[2]="GLW_DAILYDETAIL"
+    
     if gl$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                             ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_report
@@ -204,6 +205,13 @@ rem --- Additional file opens
     glt04_dev=channels[2]
     glt05_dev=channels[3]
     glw11_dev=channels[4]
+    
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+        if gl$="Y"
+            rec_pfx$=firm_id$+process_id$+batch_no$
+            call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+        endif    
 
 rem --- Get user approval to proceed
 
@@ -479,8 +487,8 @@ rem --- Destroy the progress meter and run the next overlay
 
     update$=pgmdir$+"apu_chkregister.aon"
     if errors
-    	gosub Display_Message
-    	if special_flag$<>"Y" then update$=""
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
     endif
 
     overlay$=update$
@@ -488,9 +496,9 @@ rem --- Destroy the progress meter and run the next overlay
 
 rem --- run overlay$,err=std_exit
 
-	out_action$="PRT-PDF"
-	next_overlay$=overlay$
-	goto std_exit
+    out_action$="PRT-PDF"
+    next_overlay$=overlay$
+    goto std_exit
 
 set_linecount: rem --- Report Heading
 
@@ -629,7 +637,7 @@ disp_message:rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 return
-	
+    
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -686,7 +694,9 @@ std_exit: rem --- Standard program end (01Mar2006)
 
 std_exit_no_report:
 
-    release
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
 rem #endinclude std_end.src
 

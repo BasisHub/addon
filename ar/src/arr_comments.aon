@@ -32,6 +32,9 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)        
 
 rem --- Open/Lock files
 
@@ -103,6 +106,8 @@ rem --- Initializations
     nf$="(Not on File)"
     keynum=1
     begvalue$=begsales$
+    total_recs=0
+    
     x$=" By Salesperson"
     if sequence$="T"
        keynum=2
@@ -128,7 +133,7 @@ rem --- Initialize print positions
 
 rem --- Start progress meter and position Customer Master file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,arm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","ARM_CUSTMAST","","","",0,arm01_dev,1,meter_num,status
     read (arm02_dev,knum=keynum,key=firm_id$+begvalue$,dom=*next)
 
 rem --- Read next Customer Detail (arm-02) record
@@ -137,7 +142,9 @@ rem --- Read next Customer Detail (arm-02) record
           arm02_key$=key(arm02_dev,knum=keynum,end=*break)
           if pos(firm_id$=arm02_key$)<>1 break
           read record (arm02_dev,knum=keynum,key=arm02_key$) arm02a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+
           if sequence$="S" 
 :            if endsales$<>""
 :               if arm02a.slspsn_code$>endsales$ break
@@ -145,12 +152,6 @@ rem --- Read next Customer Detail (arm-02) record
 :            if endterr$<>""
 :               if arm02a.territory$>endterr$ break
 
-          rem --- Level break?
-
-          if sequence$="S" 
-:            if arm02a.slspsn_code$<>lastcode$ gosub salesperson
-          if sequence$="T" 
-:            if arm02a.territory$<>lastcode$ gosub territory
           
           rem --- Retrieve the Customer Master (arm-01) record
 
@@ -174,6 +175,12 @@ rem --- Read next Customer Detail (arm-02) record
           while moredetail
                 k$=key(arm05_dev,end=*break)
                 if pos(arm01_key$=k$)<>1 break
+                
+                rem --- Level break?
+
+                if sequence$="S" then if arm02a.slspsn_code$<>lastcode$ gosub salesperson
+                if sequence$="T" then if arm02a.territory$<>lastcode$ gosub territory
+                
                 read record (arm05_dev,key=k$) arm05a$
 
                 rem --- If this is the first comment print the customer info
@@ -251,7 +258,7 @@ territory: rem --- Retrieve territory code and description
     arm10h.firm_id$=firm_id$
     arm10h.territory$=arm02a.territory$
     arm10h.code_desc$=nf$
-    arm10_key$=arm10h.firm_id$+"F"+arm10h.territory$
+    arm10_key$=arm10h.firm_id$+"H"+arm10h.territory$
     find record (arc_terrcode_dev,key=arm10_key$,dom=*next) arm10h$
     lastcode$=arm10h.territory$
     code$="Territory "+arm10h.territory$+" "+arm10h.code_desc$

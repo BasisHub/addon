@@ -22,6 +22,9 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
 
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
+
 rem --- Open/Lock files
 
     files=4,begfile=1,endfile=files
@@ -46,10 +49,10 @@ rem --- Retrieve parameter records
 
     gls01a_key$=sysinfo.firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,0
+    m1=len(m1$)
     glyear=num(gls01a.current_year$)
-    acctlen=num(gls01a.acct_length$)
     headings=3
     break$=""
     desc$=""
@@ -85,6 +88,8 @@ rem --- Initializations
     last=0
     more=1
     x=(m1*2)+1
+    total_recs=0
+    
     h3$=pad(" Beginning Balance ",x,"C","-")
     h4$=pad(" Period To Date ",x,"C","-")
     h5$=pad(" Ending Balance ",x,"C","-")
@@ -111,36 +116,33 @@ rem --- Print positions
 
 rem --- Which glm-02 record?
     
-    closed=pos(gls01a.gl_yr_closed$="NY")
-    switch closed
-           case 1
-                if year=glyear record$="4"
-                if year=glyear-1 record$="0"
-                if year=glyear-2 record$="2"
-           break
-           case 2
-               if year=glyear record$="0"
-               if year=glyear-1 record$="2"
-               if year=glyear+1 record$="4"
-           break
-    swend
+    if gls01a.gl_yr_closed$ <> "Y" then 
+        if year=glyear record$="4"
+        if year=glyear-1 record$="0"
+        if year=glyear-2 record$="2"
+    else
+        if year=glyear record$="0"
+        if year=glyear-1 record$="2"
+        if year=glyear+1 record$="4"
+    endif
 
 rem --- Document columns
 
     columns=7
     dim columns$[7,10]
-    columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]="10"
-    columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="30"
-    columns$[2,0]="Beg Bal(Dr)",columns$[2,1]="N",columns$[2,2]=str(len(m1$)),columns$[2,3]=m1$,columns$[2,10]="T"
-    columns$[3,0]="Beg Bal(Cr)",columns$[3,1]="N",columns$[3,2]=str(len(m1$)),columns$[3,3]=m1$,columns$[3,10]="T"
-    columns$[4,0]="Per To Date(Dr)",columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
-    columns$[5,0]="Per To Date(Cr)",columns$[5,1]="N",columns$[5,2]=str(len(m1$)),columns$[5,3]=m1$,columns$[5,10]="T"
-    columns$[6,0]="End Bal(Dr)",columns$[6,1]="N",columns$[6,2]=str(len(m1$)),columns$[6,3]=m1$,columns$[6,10]="T"
-    columns$[7,0]="End Bal(Cr)",columns$[7,1]="N",columns$[7,2]=str(len(m1$)),columns$[7,3]=m1$,columns$[7,10]="T"
+    
+    columns$[0,0]="Account",         columns$[0,1]="C", columns$[0,2]="10"
+    columns$[1,0]="Description",     columns$[1,1]="C", columns$[1,2]="30",                    columns$[1,9] = str(w)
+    columns$[2,0]="Beg^Bal(Dr)",     columns$[2,1]="N", columns$[2,2]="11", columns$[2,3]=m1$, columns$[2,9] = str(m1), columns$[2,10]="T"
+    columns$[3,0]="Beg^Bal(Cr)",     columns$[3,1]="N", columns$[3,2]="11", columns$[3,3]=m1$, columns$[3,9] = str(m1), columns$[3,10]="T"
+    columns$[4,0]="Per To^Date(Dr)", columns$[4,1]="N", columns$[4,2]="11", columns$[4,3]=m1$, columns$[4,9] = str(m1), columns$[4,10]="T"
+    columns$[5,0]="Per To^Date(Cr)", columns$[5,1]="N", columns$[5,2]="11", columns$[5,3]=m1$, columns$[5,9] = str(m1), columns$[5,10]="T"
+    columns$[6,0]="End^Bal(Dr)",     columns$[6,1]="N", columns$[6,2]="11", columns$[6,3]=m1$, columns$[6,9] = str(m1), columns$[6,10]="T"
+    columns$[7,0]="End^Bal(Cr)",     columns$[7,1]="N", columns$[7,2]="11", columns$[7,3]=m1$, columns$[7,9] = str(m1), columns$[7,10]="T"
 
 rem --- Start progress meter
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","GLM_ACCT","","","",0,glm01_dev,1,meter_num,status
     read (glm01_dev,key=firm_id$,dom=*next)
 
 rem --- Read next glm-01 record
@@ -150,7 +152,8 @@ rem --- Read next glm-01 record
           k$=key(glm01_dev,end=*break)
           if pos(firm_id$=k$)<>1 break
           read record (glm01_dev)glm01a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           type=pos(glm01a.gl_acct_type$="ALCIE")
 
           rem --- Read glm-02 record
@@ -202,7 +205,7 @@ rem --- Read next glm-01 record
 
           rem --- Print detail line
 
-          OutVect!.addItem(fnmask$(glm01a.gl_account$(1,acctlen),m0$))
+          OutVect!.addItem(fnmask$(glm01a.gl_account$(1,m0),m0$))
           OutVect!.addItem(glm01a.gl_acct_desc$(1,w))
           for x=0 to 5
                if d[x] 

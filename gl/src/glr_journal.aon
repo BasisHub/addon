@@ -8,8 +8,24 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
+rem --- glr_journal.aon and glr_recurring.aon used to do setup (one opened gle-01/11,
+rem --- the other opened gle-02/12, etc.), then they both ran glr_register.aon.
+rem --- Since recurring JE was never set up as a batched process but regular jounal entry was,
+rem --- pulled code from glr_register.aon into each front-end, since regular JE drives off of
+rem --- alt key containing batch#. (batching.CAH)
+
     setesc std_error
     seterr std_error
+    
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)    
 
 rem --- Retrieve the program path
 
@@ -20,6 +36,13 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- see if batching (batching.CAH)
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
 
 rem --- Run the register?
 
@@ -29,20 +52,410 @@ rem --- Run the register?
     x$=stbl("+SYSINFO")                                                            
     msg_tokens$[1]=x.task_desc$
     gosub disp_message
-    if msg_opt$<>"Y" goto std_exit
+    if msg_opt$<>"Y" goto std_exit_no_report
+    
+rem --- Initializations
+
+    update$="glu_journal.aon"
+    source$=pgm(-2)
+
+rem --- Open/Lock files
+
+    files=6,begfile=1,endfile=files-1
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="gle-01",ids$[2]="GLE_JRNLHDR"
+    files$[3]="gle-11",ids$[3]="GLE_JRNLDET"
+    files$[4]="glm-01",ids$[4]="GLM_ACCT"
+    files$[5]="glm-03",ids$[5]="GLC_JOURNALCODE"
+    if num(batch_no$)=0 then options$[2]="L";rem lock if not batching.CAH
+    if num(batch_no$)=0 then options$[3]="L";rem lock if not batching.CAH
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_report
+    gls01_dev=channels[1]
+    gle01_dev=channels[2]
+    gle11_dev=channels[3]
+    glm01_dev=channels[4]
+    glm03_dev=channels[5]
+
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],gle01a$:templates$[2],gle11a$:templates$[3],glm01a$:templates$[4],glm03a$:templates$[5]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    total_periods=num(gls01a.total_pers$)
+    period=num(gls01a.current_per$)
+    year=num(gls01a.current_year$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,acct_length
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",m2$,0,m2
+
+rem --- Report initializations
+
+    headings=2
+    width=131
+    page=0
+    l9=59
+    l=l9+1
+    verify$="N"
 
 rem --- Initializations
 
-    gle01$="gle-01",gle01_alias$="GLE_JRNLHDR"
-    gle11$="gle-11",gle11_alias$="GLE_JRNLDET"
-    update$="glu_journal.aon"
-    cycles$="N"
-    je$="Y"
-    source$=pgm(-2)
+    dim amountdash$(20,"-"),unitdash$(15,"-")
+    dim headings$[headings+1],o[6],entry[2],total[2]
+    h1$=cvs(sysinfo.firm_name$,2)
+    h2$=cvs(sysinfo.task_desc$,2)
+    task$=h2$
+    when$=sysinfo.system_date$
+    clock$=""
+    done$="N"
+    errors=0
+    dw=30
+    update=0
+    number=0
+    more=1
+    moredetail=1
+    headings$[0]=h1$
+    headings$[1]=h2$
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"    
+    if gls01a.units_flag$<>"Y" unitdash$=""
+    recs=0
 
-rem --- Run register overlay
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
 
-    run pgmdir$+"glr_register.aon"
+rem --- Additional file opens (for journal entry register)
+
+    gl$="N"
+    status=0
+    call pgmdir$+"glc_ctlcreate.aon",err=std_exit_no_report,source$,"GL",glw11$,gl$,status
+    if status goto std_exit_no_report
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glw-11",ids$[1]="GLW_DAILYDETAIL"
+    rem --- options$[endfile]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_report
+
+    glw11_dev=channels[1]
+
+    rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+    if gl$="Y"
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif
+        
+rem --- Document columns
+
+    columns=9
+    dim columns$[9,10]
+    columns$[0,0]="Jrn ID",columns$[0,1]="C",columns$[0,2]="5"
+    columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="Transaction",columns$[2,1]="C",columns$[2,2]="30"
+    columns$[3,0]="Date",columns$[3,1]="C",columns$[3,2]="10"
+    columns$[4,0]="Reversal",columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Memo",columns$[5,1]="C",columns$[5,2]="10"
+    columns$[6,0]="Cycle",columns$[6,1]="C",columns$[6,2]="15"
+    columns$[7,0]="Debits",columns$[7,1]="N",columns$[7,2]=str(len(m1$)),columns$[7,3]=m1$,columns$[7,10]="T"
+    columns$[8,0]="Credits",columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
+    columns$[9,0]="Units",columns$[9,1]="N",columns$[9,2]=str(len(m2$)),columns$[9,3]=m2$,columns$[9,10]="T"
+
+init_prog_meter: rem --- Initialize the progress meter and position the file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,gle01_dev,1,meter_num,status
+    read (gle01_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
+
+rem --- Loop through Journal Entry Header records
+
+    while more
+
+          gle01_key$=key(gle01_dev,end=*break)
+          if pos(firm_id$+batch_no$=gle01_key$)<>1 break
+          recs=recs+1
+          read record (gle01_dev)gle01a$
+          
+          gle11_key$=gle01a.firm_id$+gle01a.journal_id$+gle01a.je_trans_id$
+          
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+
+level_breaks: rem --- Level breaks
+
+          gosub transaction_break
+
+          rem --- Position to first line item"
+
+          gosub subheading
+          number=number+1
+          read (gle11_dev,key=gle11_key$,dom=*next)
+
+          rem --- Cycle through all line items for this entry
+
+          while moredetail
+
+                k$=key(gle11_dev,end=*break)
+                if pos(gle11_key$=k$)<>1 break
+                read record (gle11_dev)gle11a$
+
+                rem --- Retrieve glm-01 Account Master
+
+                glm01_key$=firm_id$+gle11a.gl_account$
+                glm01a.gl_account$=gle11a.gl_account$
+                glm01a.gl_acct_desc$=pad("(Not On File)",35)
+                find record (glm01_dev,key=glm01_key$,dom=*next)glm01a$
+
+                rem --- Format output fields
+
+                debit$=""
+                credit$="" 
+                units$=""
+                amount=gle11a.debit_amt
+                if gle11a.credit_amt<>0 amount=-gle11a.credit_amt
+                if amount<0 credit$=str(abs(amount))
+                if amount>0 debit$=str(amount)
+                if gls01a.units_flag$="Y" if gle11a.units<>0 units$=str(gle11a.units)
+
+                rem --- Print detail line
+
+                OutVect!.addItem(gle11a.line_no$)
+                OutVect!.addItem(fnmask$(gle11a.gl_account$(1,acct_length),m0$))
+                OutVect!.addItem(glm01a.gl_acct_desc$)
+                OutVect!.addItem("")
+                OutVect!.addItem("")
+                OutVect!.addItem(gle11a.gl_post_memo$)
+                OutVect!.addItem("")
+                OutVect!.addItem(debit$)
+                OutVect!.addItem(credit$)
+                OutVect!.addItem(units$)
+
+                rem --- Accumulate totals
+
+                x=0
+                entry[2]=entry[2]+gle11a.units
+                if amount<0 x=1
+                entry[x]=entry[x]+amount
+
+                rem --- Generate summary record
+
+                account$=gle11a.gl_account$
+                gldate$=gle01a.trans_date$
+                units=gle11a.units
+                ref1$=gle01a.je_trans_id$
+                ref2$=gle11a.line_no$
+                ref3$=""
+                memo$=gle11a.gl_post_memo$
+                if cvs(gle01a.cycle_code$,2)<>"" ref3$="Cycle "+gle01a.cycle_code$
+                gosub glrecap
+                if cvs(gle01a.reverse_date$,2)="" continue
+                account$=gle11a.gl_account$
+                gldate$=gle01a.reverse_date$
+                ref3$="Reversal"
+                amount=-gle11a.debit_amt
+                if gle11a.credit_amt<>0 amount=gle11a.credit_amt
+                units=-gle11a.units
+                gosub glrecap
+          wend
+    wend
+
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    done$="Y"
+    gosub transaction_break
+    balance=total[0]+total[1]
+    warning$="",units$=""
+    if balance<>0 warning$="Register Is Out Of Balance ---->"
+    debit$=str(total[0])
+    credit$=str(abs(total[1]))
+    if gls01a.units_flag$="Y" units$=str(total[2])
+ 
+
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+    abc=fnblank(2)
+    OutVect!.addItem(warning$)
+    abc=fnblank(3)
+    OutVect!.addItem("Total For Register")
+    OutVect!.addItem(debit$)
+    OutVect!.addItem(credit$)
+    OutVect!.addItem(units$)
+
+rem --- Run update overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
+    if errors
+        gosub disp_message
+        if special_flag$<>"Y" then update$=""
+    endif
+
+    next_overlay$="glr_recap.aon"
+    out_action$="PRT-PDF"   
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
+
+subheading: rem --- Subheading
+
+    OutVect!.addItem("Seq")
+    OutVect!.addItem("Account")
+    OutVect!.addItem("Description")
+    abc=fnblank(7)
+    return
+
+
+transaction_break: rem --- Transaction Break
+
+    if t0$="" goto journal_id
+    balance=entry[0]+entry[1]
+    reversal$=""
+    units$=""
+    warning$=""
+    if balance<>0 warning$="Entry Is Out Of Balance ---->"
+    debit$=str(entry[0])
+    credit$=str(abs(entry[1]))
+    if gls01a.units_flag$="Y" units$=str(entry[2])
+    for x=0 to 2
+        total[x]=total[x]+entry[x]
+    next x  
+
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+    abc=fnblank(2)
+    OutVect!.addItem(warning$)
+    abc=fnblank(3)
+    OutVect!.addItem("Total For Entry")
+    OutVect!.addItem(debit$)
+    OutVect!.addItem(credit$)
+    OutVect!.addItem(units$)
+
+journal_id: rem --- Retrieve journal id record
+
+    dim entry[2]
+    if done$="Y" goto transaction_break_exit
+    glm03_key$=firm_id$+gle01a.journal_id$
+    glm03a.code_desc$="(Not On File)"
+    missing=0
+    find record (glm03_dev,key=glm03_key$,dom=missing_journal_id)glm03a$
+    goto transaction_heading
+
+missing_journal_id: rem --- Missing or invalid journal id code
+
+    errors=errors+1
+    missing=missing+1
+
+transaction_heading: rem --- Print transaction heading
+
+    if cvs(gle01a.reverse_date$,2)<>"" reversal$=fndate$(gle01a.reverse_date$)
+   
+    abc=fnblank(10)
+    OutVect!.addItem(glm03a.journal_id$)
+    OutVect!.addItem(glm03a.code_desc$)
+    OutVect!.addItem(gle01a.je_trans_id$)
+    OutVect!.addItem(fndate$(gle01a.trans_date$))
+    OutVect!.addItem(reversal$)
+    OutVect!.addItem(gle01a.description$)
+    OutVect!.addItem(gle01a.cycle_code$)
+    abc=fnblank(3)
+    abc=fnblank(10)
+
+    t0$=gle01a.je_trans_id$
+
+
+rem --- Update global variable
+
+    if gl$<>"Y" goto transaction_break_exit
+    if missing>0 goto transaction_break_exit
+    glcontrol_template$=stbl("+GLCONTROL_TPL",err=transaction_break_exit)
+    dim glcontrol$:glcontrol_template$
+    glcontrol$=stbl("+GLCONTROL",err=transaction_break_exit)
+    glcontrol.journal_id$=glm03a.journal_id$
+    glcontrol.post_yr_end$=glm03a.post_yr_end$
+    glcontrol.post_locked$=glm03a.post_locked$
+    glcontrol.permit_je$=je$
+    x$=stbl("+GLCONTROL",glcontrol$)
+
+rem --- Check dates
+
+    gldate$=gle01a.trans_date$
+    call pgmdir$+"glc_datecheck.aon",gldate$,verify$,period$,year$,glstatus
+    if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,l,errors,status
+    if stbl("+DTWARN_MSG",err=*endif)<>""
+        xwk=fnblank(2)
+        OutVect!.addItem(stbl("+DTWARN_MSG"))
+        xwk=fnblank(7)
+    endif
+    if cvs(gle01a.reverse_date$,2)="" goto transaction_break_exit
+    gldate$=gle01a.reverse_date$
+    call pgmdir$+"glc_datecheck.aon",gldate$,verify$,period$,year$,glstatus
+    if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,l,errors,status
+    if stbl("+DTWARN_MSG",err=*endif)<>""
+        xwk=fnblank(2)
+        OutVect!.addItem(stbl("+DTWARN_MSG"))
+        xwk=fnblank(7)
+    endif
+
+transaction_break_exit:
+
+    return
+
+glrecap: rem --- Standard GL Recap Routine
+
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
+:                                            ref1$,ref2$,ref3$,memo$,amount,units,status
+    return
+    
+rem --- Functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend    
 
 disp_message:rem --- Display Message Dialog
 
@@ -73,11 +486,46 @@ std_error_release:
 
 rem #endinclude std_error.src
 
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
 rem #include std_end.src
+
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 
 rem #endinclude std_end.src

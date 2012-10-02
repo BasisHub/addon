@@ -1,36 +1,74 @@
+[[APM_VENDMAST.VENDOR_ID.AVAL]]
+if num(callpoint!.getUserInput(),err=*endif)=0
+	callpoint!.setMessage("INPUT_ERR_MAIN")
+	callpoint!.setStatus("ABORT")
+endif
+[[APM_VENDMAST.BWRI]]
+if num(callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID"),err=*endif)=0 
+	callpoint!.setMessage("INPUT_ERR_MAIN")
+	callpoint!.setStatus("ABORT")
+endif
 [[APM_VENDMAST.AWRI]]
 rem --- Code input if new customer
 	cp_vendor_id$=callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID")
 	apm02_dev=fnget_dev("APM_VENDHIST")
 	apm02_key$=""
-	while apm02_key$=""
-		read(apm02_dev,key=firm_id$+cp_vendor_id$,dom=*next)
-		apm02_key$=key(apm02_dev,end=*next)
-		if apm02_key$<>""
-			if pos(firm_id$+cp_vendor_id$=apm02_key$)<>1
-				apm02_key$=""
-			else
-				break
-			endif
+
+rem --- if accessing vendor maint via Invoice/Manual Check Entry, get default apm_vendhist (apm-02) values
+rem --- from AP Types file (apc_typecode)
+
+	if callpoint!.getDevObject("passed_in_AP_type")<>null()
+	
+		apc_typecode_dev=fnget_dev("APC_TYPECODE")
+		dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
+
+		read record (apc_typecode_dev,key=firm_id$+"A"+callpoint!.getDevObject("passed_in_AP_type"),err=*next)apc_typecode$
+
+		dflt_ap_type$=callpoint!.getDevObject("passed_in_AP_type")
+		dflt_ap_dist_code$=apc_typecode.ap_dist_code$
+		dflt_payment_grp$=apc_typecode.payment_grp$
+		dflt_ap_terms_code$=apc_typecode.ap_terms_code$
+
+	endif
+
+	read(apm02_dev,key=firm_id$+cp_vendor_id$,dom=*next)
+	apm02_key$=key(apm02_dev,end=*next)
+	if pos(firm_id$+cp_vendor_id$=apm02_key$)=0
+		if callpoint!.getColumnData("APM_VENDMAST.TEMP_VEND")<>"Y" or (dflt_ap_type$="" or dflt_ap_dist_code$="" 
+:			or dflt_payment_grp$="" or dflt_ap_terms_code$="") then
+
+			user_id$=stbl("+USER_ID")
+			dim dflt_data$[2,1]
+			dflt_data$[1,0]="VENDOR_ID"
+			dflt_data$[1,1]=cp_vendor_id$
+			call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:				"APM_VENDHIST",
+:				user_id$,
+:				"",
+:				"",
+:				table_chans$[all],
+:				"",
+:				dflt_data$[all]
+		else
+
+			dim apm02a$:fnget_tpl$("APM_VENDHIST")
+			apm02a.firm_id$=firm_id$
+			apm02a.vendor_id$=cp_vendor_id$
+			apm02a.ap_type$=dflt_ap_type$
+			apm02a.ap_dist_code$=dflt_ap_dist_code$
+			apm02a.payment_grp$=dflt_payment_grp$
+			apm02a.ap_terms_code$=dflt_ap_terms_code$
+
+			write record (apm02_dev)apm02a$
 		endif
-		user_id$=stbl("+USER_ID")
-		dim dflt_data$[2,1]
-		dflt_data$[1,0]="VENDOR_ID"
-		dflt_data$[1,1]=cp_vendor_id$
-		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
-:			"APM_VENDHIST",
-:			user_id$,
-:			"",
-:			"",
-:			table_chans$[all],
-:			"",
-:			dflt_data$[all]
-	wend
+
+	endif
+	
 [[APM_VENDMAST.ARNF]]
 rem --- Set Date Opened
 	callpoint!.setColumnData("APM_VENDMAST.OPENED_DATE",sysinfo.system_date$)
 [[APM_VENDMAST.VENDOR_ID.AINP]]
-if num(callpoint!.getUserInput(),err=*next)=0 callpoint!.setStatus("ABORT")
+
 [[APM_VENDMAST.BDEL]]
 rem --- can delete vendor and assoc recs (apm01/02/05/06/08/09/14/15) unless
 rem --- vendor referenced in inventory, or
@@ -107,7 +145,7 @@ endif
 [[APM_VENDMAST.BSHO]]
 rem --- Open/Lock files
  
-	files=6,begfile=1,endfile=files
+	files=7,begfile=1,endfile=files
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="APE_INVOICEHDR";rem --- ape-01
 	files$[2]="APT_INVOICEHDR";rem --- apt-01
@@ -115,23 +153,29 @@ rem --- Open/Lock files
 	files$[4]="APS_PARAMS";rem --- aps-01
 	files$[5]="GLS_PARAMS";rem --- gls-01
 	files$[6]="IVS_PARAMS";rem --- ivs-01
+	files$[7]="APC_TYPECODE"
+
 	for wkx=begfile to endfile
 		options$[wkx]="OTA"
 	next wkx
 	call stbl("+DIR_SYP")+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                   chans$[all],templates$[all],table_chans$[all],batch,status$
-if status$<>"" then
-	remove_process_bar:
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
+
+	if status$<>"" then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
+
 	aps01_dev=num(chans$[4])	
 	gls01_dev=num(chans$[5])
 	ivs01_dev=num(chans$[6])
+
 rem --- Dimension miscellaneous string templates
 	dim aps01a$:templates$[4],gls01a$:templates$[5],ivs01c$:templates$[6]
+
 rem --- Retrieve parameter data
 	dim info$[20]
 	aps01a_key$=firm_id$+"AP00"
@@ -148,16 +192,19 @@ rem --- Retrieve parameter data
 	call stbl("+DIR_PGM")+"adc_application.aon","PO",info$[all]
 	po$=info$[20];rem --- po installed?
 	if po$="N" aps01a.use_replen$="N"
+
 	dim user_tpl$:"app:c(2),gl_interface:c(1),po_installed:c(1),iv_installed:c(1),"+
 :		"multi_types:c(1),multi_dist:c(1),ret_flag:c(1),use_replen:c(1),"+
 :		"gl_total_pers:c(2),gl_current_per:c(2),gl_current_year:c(4),gl_acct_len:c(2),gl_max_len:c(2)"
+
 	user_tpl.app$="AP",user_tpl.gl_interface$=gl$,user_tpl.po_installed$=po$,user_tpl.iv_installed$=iv$,
 :		user_tpl.multi_types$=aps01a.multi_types$,user_tpl.multi_dist$=aps01a.multi_dist$,
 :		user_tpl.ret_flag$=aps01a.ret_flag$,user_tpl.use_replen$=aps01a.use_replen$,
 :		user_tpl.gl_total_pers$=gls01a.total_pers$,user_tpl.gl_current_per$=gls01a.current_per$,
 :		user_tpl.gl_current_year$=gls01a.current_year$,user_tpl.gl_max_len$=gls01a.max_acct_len$
-	rem --- used to also open ivm-03 if iv$="Y", but using alt keys on ivm-01 instead
-	rem --- knum=3 is firm/vendor/item, knum=9 is firm/buyer/vendor/item
+	
+rem --- used to also open ivm-03 if iv$="Y", but using alt keys on ivm-01 instead
+rem --- knum=3 is firm/vendor/item, knum=9 is firm/buyer/vendor/item
 	if po$="Y"
 		files=5,begfile=1,endfile=files
 		dim files$[files],options$[files],chans$[files],templates$[files]
@@ -178,13 +225,18 @@ rem --- Retrieve parameter data
 			release
 		endif
 	endif
-rem --- set enable_str$ to list of aliases in popup to enable -- enabled by default, so only include specific enable request
-rem --- set disable_str$ to list of all aliases in popup to disable (format alias_name;alias_name;alias_name)
-if user_tpl.use_replen$<>"Y"
-	enable_str$=""
-	disable_str$="APM_VENDREPL"
-	call stbl("+DIR_SYP")+"bam_enable_pop.bbj",Form!,enable_str$,disable_str$
-endif
+
+rem --- disable access to vendor replenishment form if param is set for no replen. processing
+
+	if user_tpl.use_replen$<>"Y"
+		callpoint!.setOptionEnabled("APM_VENDREPL",0)
+	endif
+
+rem --- if vendor maint has been launched from Invoice/Manual Check Entry, default the temp vendor flag to "Y"
+
+	if str(callpoint!.getDevObject("passed_in_temp_vend"))="Y"
+		callpoint!.setTableColumnAttribute("APM_VENDMAST.TEMP_VEND","DFLT","Y")
+	endif
 [[APM_VENDMAST.AOPT-RHST]]
 rem Receipt History Inquiry
 if user_tpl.po_installed$="Y"

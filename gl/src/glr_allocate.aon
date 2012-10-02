@@ -8,60 +8,74 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-            setesc std_error
-            seterr std_error
+    setesc std_error
+    seterr std_error
 
 rem --- Document initializations
 
-            OutVect!=bbjAPI().getSysGui().makeVector()
-            HdrVect!=bbjAPI().getSysGui().makeVector()
-            BrkVect!=bbjAPI().getSysGui().makeVector()
-            TotVect!=bbjAPI().getSysGui().makeVector()
-            rep_date$=date(0:"%Mz/%Dz/%Yd")
-            rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-            rep_time$=date(0:"%hz:%mz %p")
-            rep_time_stamp$=date(0:"%Hz%mz%sz")
-            rep_prog$=pgm(-2)
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
 
 rem --- Retrieve the program path
 
-           pgmdir$=stbl("+DIR_PGM",err=*next)
+    pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-            sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-            dim sysinfo$:sysinfo_template$
-            sysinfo$=stbl("+SYSINFO",err=*next)
-            firm_id$=sysinfo.firm_id$
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+            
+rem --- see if batching (batching.CAH)
 
-rem --- Initialize +GLCONTROL and get work file name
+    rem --- called from Option Entry form...call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")
+            
+rem --- Initialize +GLCONTROL 
 
-            source$=fnbasename$(pgm(-2),"")
-            call pgmdir$+"glc_ctlcreate.aon",err=std_exit,source$,"GL",glw11$,gl$,status
-            if status goto std_exit
+    rem --- use this form when running back-end pgm directly; source$=fnbasename$(pgm(-2),"")
+    source$=rd_alias_id$;rem use this form when running from Option Entry form
+    call pgmdir$+"glc_ctlcreate.aon",err=std_exit_no_report,source$,"GL",glw11$,gl$,status
+    if status goto std_exit_no_report
 
 rem --- Open/Lock files
 
-            files=7,begfile=1,endfile=files
-            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-            files$[1]="gls_params",ids$[1]="GLS_PARAMS"
-            files$[2]="glm-01",ids$[2]="GLM_ACCT"
-            files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
-            files$[4]="glm-03",ids$[4]="GLC_JOURNALCODE"
-            files$[5]="gle-03",ids$[5]="GLE_ALLOCHDR"
-            files$[6]="gle-13",ids$[6]="GLE_ALLOCDET"
-            files$[7]=glw11$,ids$[7]="GLW_DAILYDETAIL"
-            options$[7]="CL"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+    files=7,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="glm-01",ids$[2]="GLM_ACCT"
+    files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
+    files$[4]="glm-03",ids$[4]="GLC_JOURNALCODE"
+    files$[5]="gle-03",ids$[5]="GLE_ALLOCHDR"
+    files$[6]="gle-13",ids$[6]="GLE_ALLOCDET"
+    files$[7]="glw-11",ids$[7]="GLW_DAILYDETAIL"
+    rem --- options$[7]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
+call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-            if status goto std_exit
-            gls01_dev=channels[1]
-            glm01_dev=channels[2]
-            glm02_dev=channels[3]
-            glm03_dev=channels[4]
-            gle03_dev=channels[5]
-            gle13_dev=channels[6]
-            glw11_dev=channels[7]
+    if status goto std_exit_no_report
+    gls01_dev=channels[1]
+    glm01_dev=channels[2]
+    glm02_dev=channels[3]
+    glm03_dev=channels[4]
+    gle03_dev=channels[5]
+    gle13_dev=channels[6]
+    glw11_dev=channels[7]
+    
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+    if gl$="Y"
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif    
 
 rem --- Dimension string templates
 
@@ -83,7 +97,6 @@ rem --- Retrieve parameter records
         m0$=gls01a.acct_output$
         m1$=gls01a.amount_mask$
         m2$=gls01a.unit_mask$
-        acctlen=num(gls01a.acct_length$)
         m4$="##0.00%"
         m4=len(m4$)
         call pgmdir$+"adc_sizemask.aon",m2$,m2,7,10
@@ -91,6 +104,7 @@ rem --- Retrieve parameter records
         if cvs(period$,2)="" period$=gls01a.current_per$
         if cvs(year$,2)="" year$=gls01a.current_year$
 
+        call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
 
 rem --- Initializations
 
@@ -99,6 +113,7 @@ rem --- Initializations
         dim headings$[2]
         headings$[0]=cvs(sysinfo.firm_name$,2)
         headings$[1]=cvs(sysinfo.task_desc$,2)
+        if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"        
         h0=80
         width=h0
         more=1
@@ -139,16 +154,17 @@ rem --- Get posting date, retrieve journal record and position file
         glm03_key$=firm_id$+glcontrol.journal_id$
         glm03a.code_desc$="Unknown Journal ID"
         find record (glm03_dev,key=glm03_key$,dom=*next)glm03a$
-        read (gle03_dev,key=firm_id$,dom=*next)
+        read (gle03_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
  
 rem --- Get next gle-03 record
 
     while more
     
-          gle03_key$=key(gle03_dev,end=*break)
-          if pos(firm_id$=gle03_key$)<>1 break
+          k$=key(gle03_dev,end=*break)
+          if pos(firm_id$+batch_no$=k$)<>1 break
           recs=recs+1
           read record (gle03_dev)gle03a$
+          gle03_key$=gle03a.firm_id$+gle03a.gl_account$
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
 rem --- Additional File Reads
@@ -186,7 +202,7 @@ rem --- Print header
           if gls01a.units_flag$="Y" units$=str(gle03a.units:m2$)
          
             abc=fnblank(6)
-            OutVect!.addItem(fnmask$(glm01a.gl_account$(1,acctlen),m0$))
+            OutVect!.addItem(fnmask$(glm01a.gl_account$(1,m0),m0$))
             OutVect!.addItem("")
             OutVect!.addItem(glm01a.gl_acct_desc$)
             OutVect!.addItem("")
@@ -240,7 +256,7 @@ print_detail: rem --- Print a record
 :                                         units=gle13a.units
 
                 OutVect!.addItem("")
-                OutVect!.addItem(fnmask$(glm01a.gl_account$(1,acctlen),m0$))
+                OutVect!.addItem(fnmask$(glm01a.gl_account$(1,m0),m0$))
                 OutVect!.addItem(glm01a.gl_acct_desc$)
                 OutVect!.addItem (str(gle13a.percentage))
                 OutVect!.addItem (str(gle13a.gl_post_amt))
@@ -264,7 +280,7 @@ print_detail: rem --- Print a record
                 memo$=glm03a.code_desc$
                 amount=gle13a.gl_post_amt
                 ref1$="Target"
-                ref2$=fnmask$(gle03a.gl_account$(1,acctlen),m0$)
+                ref2$=fnmask$(gle03a.gl_account$(1,m0),m0$)
                 ref3$="Line "+gle13a.line_no$
                 gosub glrecap
 
@@ -314,11 +330,15 @@ rem --- All Done
     endif
 
     next_overlay$=pgmdir$+"glr_recap.aon"
-    goto std_exit
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
 
 glrecap: rem --- Standard GL Recap Routine
 
-    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,glt14_dev,account$,gldate$,ref1$,
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,ref1$,
 :                                            ref2$,ref3$,memo$,amount,units,status
     return
 
@@ -383,9 +403,9 @@ rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
+    return
 
 rem #include std_error.src
 
@@ -439,14 +459,23 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
-std_exit: rem --- Standard program end (01Mar2006)
-
-   run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
-
 std_exit_no_report:
 
-   call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-   release
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
 
 rem #endinclude std_end.src
 

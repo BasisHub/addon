@@ -19,6 +19,20 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO")
     firm_id$=sysinfo.firm_id$
+    
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif    
+    
+rem --- see if batching (batching.CAH)
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
 
 rem --- Run Report?
 
@@ -26,7 +40,7 @@ rem --- Run Report?
     dim msg_tokens$[1]
     msg_tokens$[1]=sysinfo.task_desc$
     gosub disp_message
-    if msg_opt$<>"Y" then goto std_exit
+    if msg_opt$<>"Y" then goto std_exit_no_report
 
 rem --- Open/Lock files
 
@@ -39,10 +53,12 @@ rem --- Open/Lock files
     files$[12]="ars_params",   ids$[12]="ARS_PARAMS"
     files$[13]="gls_params",   ids$[13]="GLS_PARAMS"
     files$[14]="ivs_params",   ids$[14]="IVS_PARAMS"
+    
+    if num(batch_no$)=0 then options$[6]="L";rem lock if not batching.CAH    
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status then goto std_exit
+    if status then goto std_exit_no_report
 
     ive02_dev  = channels[6]
     ivm01_dev  = channels[7]
@@ -96,7 +112,7 @@ rem --- Parameters
     gl$="N"
     status=0
     if dist_gl_by_item$="Y" then call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
-    if status then goto std_exit
+    if status then goto std_exit_no_report
 
     if gl$="Y" then 
         find record (gls01a_dev,key=firm_id$+"GL00",err=std_missing_params) gls01a$
@@ -133,7 +149,7 @@ rem --- Other initializations
     m2=len(m2$)
     m3=len(m3$)
 
-    if ls$ = "Y" then p8$=" and Lot/Serial Number" else p8$ = ""
+    if ls$ = "Y" then p8$=" and Lot/Serial" else p8$ = ""
 
     width=132
     units=0
@@ -147,6 +163,7 @@ rem --- Other initializations
     errors=0
     glstatus=0
     more=1
+    recs=0
 
 rem --- Column headings
 
@@ -154,13 +171,13 @@ rem --- Column headings
     dim columns$[columns,10]
     col_2$ = "Item " + p8$ + "^Description"
 
-    columns$[0,0]="To",         columns$[0,1]="C", columns$[0,2]="2"
+    columns$[0,0]="To",         columns$[0,1]="C", columns$[0,2]="5"
     columns$[1,0]="Warehouse",  columns$[1,1]="C", columns$[1,2]="24"
     columns$[2,0]=col_2$,       columns$[2,1]="C", columns$[2,2]=str( p[0]+p[1]+1 )
-    columns$[3,0]="UM",         columns$[3,1]="C", columns$[3,2]="2"
+    columns$[3,0]="UM",         columns$[3,1]="C", columns$[3,2]="5"
     columns$[4,0]="Cost",       columns$[4,1]="N", columns$[4,2]=str(m3), columns$[4,3]=m3$
     columns$[5,0]="Quantity",   columns$[5,1]="N", columns$[5,2]=str(m2), columns$[4,3]=m2$
-    columns$[6,0]="Total Cost", columns$[6,1]="N", columns$[6,2]=str(m1), columns$[6,3]=m1$, columns$[5,10]="T"	
+    columns$[6,0]="Total Cost", columns$[6,1]="N", columns$[6,2]=str(m1), columns$[6,3]=m1$, columns$[5,10]="T" 
     columns$[7,0]="Reference",  columns$[7,1]="C", columns$[7,2]="9"
 
 rem --- Report headings
@@ -168,7 +185,8 @@ rem --- Report headings
     headings=3
     dim headings$[headings]
     headings$[0]=sysinfo.firm_name$
-    headings$[1]=sysinfo.task_desc$	
+    headings$[1]=sysinfo.task_desc$ 
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"    
     headings$[headings]="[HEADER]"
 
 rem --- Additional File Opens
@@ -180,7 +198,8 @@ rem --- Additional File Opens
 
     if gl$="Y" then
         files$[22]="glm-01", ids$[22]="GLM_ACCT"
-        files$[23]=glw11$,   ids$[23]="GLW_DAILYDETAIL", options$[23]="CL"
+        files$[23]="glw-11",   ids$[23]="GLW_DAILYDETAIL"
+        rem --- options$[23]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
     endif
 
     if gl$="Y" and dist_gl_by_item$="Y" then 
@@ -189,8 +208,8 @@ rem --- Additional File Opens
 
     begfile=20, endfile=24
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status	
-    if status then goto std_exit
+:                                   ids$[all],templates$[all],channels[all],batch,status    
+    if status then goto std_exit_no_report
 
     ivm04_dev  = channels[20]
     ivw04_dev  = channels[21]
@@ -200,6 +219,13 @@ rem --- Additional File Opens
 
     if gl$="Y" and dist_gl_by_item$="Y" then 
         dim arm10d$:templates$[24]
+    endif
+
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+    if gl$="Y"
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
     endif
 
 rem --- Lifo/fifo setup
@@ -226,22 +252,22 @@ rem --- Initial Read
     prev_trans_date$=""
     last_time$="N"
 
-    read (ive02_dev,key=firm_id$,dom=*next)
+    read (ive02_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Heading Read
 
     while more
         read record (ive02_dev,end=*break) ive02a$
-        if firm_id$ <> ive02a.firm_id$ then break
+        if firm_id$ <> ive02a.firm_id$ or batch_no$ <> ive02a.batch_no$ then break
         cost=ive02a.unit_cost
 
 rem --- Breaks
 
         if ive02a.warehouse_id$ <> prev_whse$ then 
-			gosub trans_date_totals
+            gosub trans_date_totals
             gosub whse_totals
-			gosub whse_new
-			gosub trans_date_new
+            gosub whse_new
+            gosub trans_date_new
         else
             if ive02a.trans_date$<>prev_trans_date$ then 
                 gosub trans_date_totals
@@ -252,8 +278,8 @@ rem --- Breaks
         call pgmdir$+"adc_progress.aon","S","","","",ive02a.warehouse_id$+" "+ive02a.item_id$,0,0,1,meter_num,ignore_status
 
         gosub get_item_data
-		
-		prev_whse$=ive02a.warehouse_id$
+        
+        prev_whse$=ive02a.warehouse_id$
         prev_trans_date$=ive02a.trans_date$
 
 rem --- LIFO/FIFO?
@@ -287,7 +313,7 @@ rem --- Cost change?
 rem --- Detail line
 
         tot_cost=round(ive02a.ext_cost, 2)
-        OutVect!.addItem(ive02a.warehouse_id$)
+        OutVect!.addItem(ive02a.warehouse_id_to$)
         OutVect!.addItem(ivm10c.short_name$)
         OutVect!.addItem(ive02a.item_id$+" "+ive02a.lotser_no$)
         OutVect!.addItem(um$)
@@ -302,7 +328,8 @@ rem --- Detail line
 
         whse_total=whse_total+tot_cost
         date_total=date_total+tot_cost
-		
+        recs=recs+1
+        
 rem --- Warn if date is outside the GL period
 
         if gl$="Y" then
@@ -329,7 +356,7 @@ rem --- From Warehouse
         ref1$="Xfr "+ive02a.inv_xfer_no$
         memo$=ive02a.item_id$+" "+item_desc$
         ref2$="Fr Whse "+ive02a.warehouse_id$
-        ref3$="To Whse "+ive02a.warehouse_id$
+        ref3$="To Whse "+ive02a.warehouse_id_to$
 
         find record (ivm02_dev,key=firm_id$+ive02a.warehouse_id$+ive02a.item_id$,dom=to_whse) ivm02a$
         find record (arm10d_dev,key=firm_id$+"D"+ivm02a.ar_dist_code$,dom=to_whse) arm10d$
@@ -361,9 +388,15 @@ gl_recap_done:
 
 rem --- End of register
 
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
 rem --- Last break
     last_time$="Y"
-	gosub trans_date_totals
+    gosub trans_date_totals
     gosub whse_totals
 
 rem --- Destroy progress meter
@@ -387,7 +420,11 @@ rem --- Determine overlay
 rem --- Print register via DocOut
     out_action$="PRT-PDF"
     next_overlay$=overlay$
-    goto std_exit
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
 
 whse_totals: rem --- Previous Warehouse Totals
 
@@ -405,10 +442,10 @@ whse_totals: rem --- Previous Warehouse Totals
         whse_total=0
 
     endif
-	
-	return
+    
+    return
 
-whse_new: rem --- Start a new warehouse	
+whse_new: rem --- Start a new warehouse 
 
     if last_time$="N" then 
 
@@ -450,7 +487,7 @@ trans_date_totals: rem --- Trans Date, previous totals
 
     return
 
-trans_date_new: rem --- Trans Date: start new date	
+trans_date_new: rem --- Trans Date: start new date  
 
     if last_time$="N" then
 
@@ -458,7 +495,7 @@ trans_date_new: rem --- Trans Date: start new date
 
 rem --- Print break on header
         new_date$ = "Transfer Date " + fndate$(ive02a.trans_date$)
-		rem debug --- I don't think you can have two page-level breaks in the same report
+        rem debug --- I don't think you can have two page-level breaks in the same report
         rem BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
         rem HdrVect!.addItem(new_date$)
 
@@ -648,12 +685,24 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
 std_exit: rem --- Standard program end (01Mar2006)
 
-rem run pgmdir$+"ads_process_end.aon",err=*next
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

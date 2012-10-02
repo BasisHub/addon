@@ -11,8 +11,8 @@ rem  +-----------------------------------------+
     setesc std_error
     seterr std_error
 
-	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
-	if OutVect!<>null() OutVect!=null()
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
 
 rem --- Retrieve the program path
 
@@ -34,7 +34,7 @@ rem --- Open/Lock files
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_update
 
     glt04_dev=channels[1]
  
@@ -71,13 +71,13 @@ rem --- Start up progress meter
 
 rem --- Position gle-01
 
-    read (gle01_dev,key=firm_id$,dom=*next)
+    read (gle01_dev,key=firm_id$+batch_no$,knum=1,dom=*next)
 
 rem --- Read through the work file and post the records to the daily detail file
 
     while more
           k$=key(gle01_dev,end=*break)
-          if pos(firm_id$=k$)<>1 break
+          if pos(firm_id$+batch_no$=k$)<>1 break
           read record(gle01_dev) gle01a$
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
 
@@ -103,7 +103,7 @@ rem --- Read through the work file and post the records to the daily detail file
           while more
                         
               k1$=key(gle11_dev,end=*break)
-              if pos(k$=k1$)<>1 break
+              if pos(gle01a.firm_id$+gle01a.journal_id$+gle01a.je_trans_id$=k1$)<>1 break
               read record(gle11_dev) gle11a$    
               if cvs(gle01a.cycle_code$,3)<>"" 
                 ref3$="Cycle "+gle01a.cycle_code$
@@ -131,12 +131,24 @@ rem --- Read through the work file and post the records to the daily detail file
               endif
               remove(gle11_dev,key=k1$)
           wend
-          remove(gle01_dev,key=k$)
+          remove(gle01_dev,key=gle01a.firm_id$+gle01a.journal_id$+gle01a.je_trans_id$)
     wend
 
 rem --- All done
 
+    rem --- For reasons I don't quite understand, JE register creates glw-11 (which is fine),
+    rem --- but here in the update we aren't calling glc_update to forward glw-11 to glt-04.
+    rem --- We're calling glc_glpost to write directly to glt-04,
+    rem --- so need to clearpartial on glw-11 (to make up for the fact that glc_update would've removed the glw-11 recs).
+
+    rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+    if gl$="Y"
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif
+
     call pgmdir$+"glc_ctlupdate.aon",status
+    call pgmdir$+"glc_ctldelete.aon",status
     call pgmdir$+"adc_batchdelete.aon",status
     goto std_exit
 
@@ -173,12 +185,19 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-	msg_id$="UPDATE_COMPLETE"
-	dim msg_tokens$[1]
-	msg_opt$=""
-	gosub disp_message
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
 
 std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

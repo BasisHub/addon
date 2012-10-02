@@ -8,16 +8,38 @@ rem  |  Copyright (c) 1981-2006 AddonSoftware  |
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
+rem --- glr_journal.aon and glr_recurring.aon used to do setup (one opened gle-01/11,
+rem --- the other opened gle-02/12, etc.), then they both ran glr_register.aon.
+rem --- Since recurring JE was never set up as a batched process but regular jounal entry was,
+rem --- the same back-end register would no longer work for both, so pulled code from glr_register.aon into each front-end.
+rem --- Note: these mods were a result of batching implementation, even tho' this pgm still isn't batched (batching.CAH)
+
     setesc std_error
     seterr std_error
+    
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)    
 
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$    
 
 rem --- Assign input values to local variables
 
-    cycles$="Y" 
     cycle$=cvs(Option!.getOptionData("CYCLE_CODE"),3);rem "will be null if all cycles selected
     rem --- postper$ and cycle_reversal$ used in update, but putting on the register Option Entry
     rem --- form so we don't need to build another one
@@ -26,14 +48,353 @@ rem --- Assign input values to local variables
 
 rem --- Initializations
 
-    gle01$="gle-02",gle01_alias$="GLE_RECJEHDR"
-    gle11$="gle-12",gle11_alias$="GLE_RECJEDET"
     update$="glu_recurring.aon"
-    je$="N"
+    gl$="N"
+    
+rem --- Open/Lock files
 
-rem --- Run register overlay
+    files=6,begfile=1,endfile=files-1
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="gle-02",ids$[2]="GLE_RECJEHDR"
+    files$[3]="gle-12",ids$[3]="GLE_RECJEDET"
+    files$[4]="glm-01",ids$[4]="GLM_ACCT"
+    files$[5]="glm-03",ids$[5]="GLC_JOURNALCODE"
+    options$[2]="L"
+    options$[3]="L"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit_no_report
+    gls01_dev=channels[1]
+    gle02_dev=channels[2]
+    gle12_dev=channels[3]
+    glm01_dev=channels[4]
+    glm03_dev=channels[5]
 
-    run pgmdir$+"glr_register.aon"
+rem --- Dimension string templates
+
+    dim gls01a$:templates$[1],gle02a$:templates$[2],gle12a$:templates$[3],glm01a$:templates$[4],glm03a$:templates$[5]
+
+rem --- Retrieve parameter records
+
+    gls01a_key$=sysinfo.firm_id$+"GL00"
+    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    total_periods=num(gls01a.total_pers$)
+    period=num(gls01a.current_per$)
+    year=num(gls01a.current_year$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,acct_length
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",m2$,0,m2
+
+rem --- Report initializations
+
+    headings=2
+    width=131
+    page=0
+    l9=59
+    l=l9+1
+    verify$="N"
+
+rem --- Initializations
+
+    dim amountdash$(20,"-"),unitdash$(15,"-")
+    dim headings$[headings+1],o[6],entry[2],total[2]
+    h1$=cvs(sysinfo.firm_name$,2)
+    h2$=cvs(sysinfo.task_desc$,2)
+    task$=h2$
+    when$=sysinfo.system_date$
+    clock$=""
+    done$="N"
+    errors=0
+    dw=30
+    update=0
+    number=0
+    more=1
+    moredetail=1
+    headings$[0]=h1$
+    headings$[1]=h2$
+    headings=headings+1,headings$[2]=h3$
+    if gls01a.units_flag$<>"Y" unitdash$=""
+    recs=0
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- Document columns
+
+    columns=9
+    dim columns$[9,10]
+    columns$[0,0]="Jrn ID",columns$[0,1]="C",columns$[0,2]="5"
+    columns$[1,0]="Description",columns$[1,1]="C",columns$[1,2]="15"
+    columns$[2,0]="Transaction",columns$[2,1]="C",columns$[2,2]="30"
+    columns$[3,0]="Date",columns$[3,1]="C",columns$[3,2]="10"
+    columns$[4,0]="Reversal",columns$[4,1]="C",columns$[4,2]="10"
+    columns$[5,0]="Memo",columns$[5,1]="C",columns$[5,2]="10"
+    columns$[6,0]="Cycle",columns$[6,1]="C",columns$[6,2]="15"
+    columns$[7,0]="Debits",columns$[7,1]="N",columns$[7,2]=str(len(m1$)),columns$[7,3]=m1$,columns$[7,10]="T"
+    columns$[8,0]="Credits",columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
+    columns$[9,0]="Units",columns$[9,1]="N",columns$[9,2]=str(len(m2$)),columns$[9,3]=m2$,columns$[9,10]="T"
+
+init_prog_meter: rem --- Initialize the progress meter and position the file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,gle02_dev,1,meter_num,status
+    read (gle02_dev,key=firm_id$,dom=*next)
+
+rem --- Loop through Journal Entry Header records
+
+    while more
+
+          gle02_key$=key(gle02_dev,end=*break)
+          if pos(firm_id$=gle02_key$)<>1 break
+          recs=recs+1
+          read record (gle02_dev,key=gle02_key$)gle02a$
+          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+
+          rem --- Check cycle code if necessary for recurring journal entries
+
+          if cycle$="" goto level_breaks
+          if gle02a.cycle_code$=cycle$ goto level_breaks
+          continue
+
+level_breaks: rem --- Level breaks
+
+          gosub transaction_break
+
+          rem --- Position to first line item"
+
+          gosub subheading
+          number=number+1
+          read (gle12_dev,key=gle02_key$,dom=*next)
+
+          rem --- Cycle through all line items for this entry
+
+          while moredetail
+
+                k$=key(gle12_dev,end=*break)
+                if pos(gle02_key$=k$)<>1 break
+                read record (gle12_dev)gle12a$
+
+                rem --- Retrieve glm-01 Account Master
+
+                glm01_key$=firm_id$+gle12a.gl_account$
+                glm01a.gl_account$=gle12a.gl_account$
+                glm01a.gl_acct_desc$=pad("(Not On File)",35)
+                find record (glm01_dev,key=glm01_key$,dom=*next)glm01a$
+
+                rem --- Format output fields
+
+                debit$=""
+                credit$="" 
+                units$=""
+                amount=gle12a.debit_amt
+                if gle12a.credit_amt<>0 amount=-gle12a.credit_amt
+                if amount<0 credit$=str(abs(amount))
+                if amount>0 debit$=str(amount)
+                if gls01a.units_flag$="Y" if gle12a.units<>0 units$=str(gle12a.units)
+
+                rem --- Print detail line
+
+                OutVect!.addItem(gle12a.line_no$)
+                OutVect!.addItem(fnmask$(gle12a.gl_account$(1,acct_length),m0$))
+                OutVect!.addItem(glm01a.gl_acct_desc$)
+                OutVect!.addItem("")
+                OutVect!.addItem("")
+                OutVect!.addItem(gle12a.gl_post_memo$)
+                OutVect!.addItem("")
+                OutVect!.addItem(debit$)
+                OutVect!.addItem(credit$)
+                OutVect!.addItem(units$)
+
+                rem --- Accumulate totals
+
+                x=0
+                entry[2]=entry[2]+gle12a.units
+                if amount<0 x=1
+                entry[x]=entry[x]+amount
+
+                rem --- Generate summary record
+
+                account$=gle12a.gl_account$
+                gldate$=gle02a.trans_date$
+                units=gle12a.units
+                ref1$=gle02a.je_trans_id$
+                ref2$=gle12a.line_no$
+                ref3$=""
+                memo$=gle12a.gl_post_memo$
+                if cvs(gle02a.cycle_code$,2)<>"" ref3$="Cycle "+gle02a.cycle_code$
+                gosub glrecap
+                if cvs(gle02a.reverse_date$,2)="" continue
+                account$=gle12a.gl_account$
+                gldate$=gle02a.reverse_date$
+                ref3$="Reversal"
+                amount=-gle12a.debit_amt
+                if gle12a.credit_amt<>0 amount=gle12a.credit_amt
+                units=-gle12a.units
+                gosub glrecap
+          wend
+    wend
+
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    done$="Y"
+    gosub transaction_break
+    balance=total[0]+total[1]
+    warning$="",units$=""
+    if balance<>0 warning$="Register Is Out Of Balance ---->"
+    debit$=str(total[0])
+    credit$=str(abs(total[1]))
+    if gls01a.units_flag$="Y" units$=str(total[2])
+ 
+
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+    abc=fnblank(2)
+    OutVect!.addItem(warning$)
+    abc=fnblank(3)
+    OutVect!.addItem("Total For Register")
+    OutVect!.addItem(debit$)
+    OutVect!.addItem(credit$)
+    OutVect!.addItem(units$)
+
+rem --- Run update overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
+    if errors
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
+    endif
+
+    next_overlay$="glr_recap.aon"
+    out_action$="PRT-PDF"   
+    goto std_exit
+
+
+subheading: rem --- Subheading
+
+    OutVect!.addItem("Seq")
+    OutVect!.addItem("Account")
+    OutVect!.addItem("Description")
+    abc=fnblank(7)
+    return
+
+
+transaction_break: rem --- Transaction Break
+
+    if t0$="" goto journal_id
+    balance=entry[0]+entry[1]
+    reversal$=""
+    units$=""
+    warning$=""
+    if balance<>0 warning$="Entry Is Out Of Balance ---->"
+    debit$=str(entry[0])
+    credit$=str(abs(entry[1]))
+    if gls01a.units_flag$="Y" units$=str(entry[2])
+    for x=0 to 2
+        total[x]=total[x]+entry[x]
+    next x  
+
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+    abc=fnblank(2)
+    OutVect!.addItem(warning$)
+    abc=fnblank(3)
+    OutVect!.addItem("Total For Entry")
+    OutVect!.addItem(debit$)
+    OutVect!.addItem(credit$)
+    OutVect!.addItem(units$)
+
+journal_id: rem --- Retrieve journal id record
+
+    dim entry[2]
+    if done$="Y" goto transaction_break_exit
+    glm03_key$=firm_id$+gle02a.journal_id$
+    glm03a.code_desc$="(Not On File)"
+    missing=0
+    find record (glm03_dev,key=glm03_key$,dom=missing_journal_id)glm03a$
+    goto transaction_heading
+
+missing_journal_id: rem --- Missing or invalid journal id code
+
+    errors=errors+1
+    missing=missing+1
+
+transaction_heading: rem --- Print transaction heading
+
+    if cvs(gle02a.reverse_date$,2)<>"" reversal$=fndate$(gle02a.reverse_date$)
+   
+    abc=fnblank(10)
+    OutVect!.addItem(glm03a.journal_id$)
+    OutVect!.addItem(glm03a.code_desc$)
+    OutVect!.addItem(gle02a.je_trans_id$)
+    OutVect!.addItem(fndate$(gle02a.trans_date$))
+    OutVect!.addItem(reversal$)
+    OutVect!.addItem(gle02a.description$)
+    OutVect!.addItem(gle02a.cycle_code$)
+    abc=fnblank(3)
+    abc=fnblank(10)
+
+    t0$=gle02a.je_trans_id$
+
+transaction_break_exit:
+
+    return
+
+glrecap: rem --- Standard GL Recap Routine
+
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
+:                                            ref1$,ref2$,ref3$,memo$,amount,units,status
+    return
+    
+rem --- Functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        if pos("E"=cvs(q1$,4)) goto alpha_mask
+:          else return str(-num(q1$,err=alpha_mask):q2$,err=alpha_mask)
+        alpha_mask:
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend    
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
 
 rem #include std_error.src
 
@@ -59,10 +420,37 @@ std_error_release:
 
 rem #endinclude std_error.src
 
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
 rem #include std_end.src
+
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 

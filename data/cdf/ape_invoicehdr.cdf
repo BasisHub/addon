@@ -1,8 +1,28 @@
+[[APE_INVOICEHDR.VENDOR_ID.BINP]]
+rem --- set devObject with AP Type and a temp vend indicator, so if we decide to set up a temporary vendor from here,
+rem --- we'll know which AP type to use, and we can automatically set the temp vendor flag in the vendor master
+
+callpoint!.setDevObject("passed_in_temp_vend","Y")
+callpoint!.setDevObject("passed_in_AP_type",callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE"))
+[[APE_INVOICEHDR.BEND]]
+rem --- remove software lock on batch, if batching
+
+	batch$=stbl("+BATCH_NO",err=*next)
+	if num(batch$)<>0
+		lock_table$="ADM_PROCBATCHES"
+		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
+		lock_type$="U"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+	endif
 [[APE_INVOICEHDR.REFERENCE.AVAL]]
 callpoint!.setStatus("REFRESH");REM TEST
 [[APE_INVOICEHDR.BTBL]]
 rem --- Get Batch information
-call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),""
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("APE_INVOICEHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[APE_INVOICEHDR.AP_INV_NO.AVAL]]
 rem record not in ape-01; is it in apt-01?
 rem if so, make sure only pmt grp, terms, hold, 
@@ -37,7 +57,7 @@ look_for_invoice:
 	k$=""
 	Form!.getControl(num(user_tpl.open_inv_textID$)).setText("")
 	apt01_key$=firm_id$+ap_type$+vendor_id$+cvs(inv_no$,3)
-	read(apt01_dev,key=apt01_key$,dom=*next)
+	read(apt01_dev,key=apt01_key$,dir=0,dom=*next)
 	k$=key(apt01_dev,end=*next); read record(apt01_dev)apt01a$
 	if k$(1,len(apt01_key$))=apt01_key$ and cvs(inv_no$,3)<>""
 		rem --- not in ape-01, but IS in apt-01
@@ -118,6 +138,8 @@ end_of_aval:
 	rem --- get default date
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj","APE_INVDATE",stbl("+USER_ID"),"MNT","",table_chans$[all]
 	user_tpl.dflt_acct_date$=stbl("DEF_ACCT_DATE")
+
+	
 [[APE_INVOICEHDR.INVOICE_DATE.AVAL]]
 invdate$=callpoint!.getUserInput()
 terms_cd$=callpoint!.getColumnData("APE_INVOICEHDR.AP_TERMS_CODE")
@@ -146,6 +168,11 @@ gosub disable_fields
 ctl_name$="APE_INVOICEHDR.NET_INV_AMT"
 ctl_stat$=""
 gosub disable_fields
+
+rem --- if not multi-type then set the defalut AP Type
+if user_tpl.multi_types$="N" then
+	callpoint!.setColumnData("APE_INVOICEHDR.AP_TYPE",user_tpl.dflt_ap_type$)
+endif
 [[APE_INVOICEHDR.BWRI]]
 rem --- fully distributed?
 gl$=user_tpl.glint$
@@ -177,8 +204,7 @@ endif
 rem "check vend hist file to be sure this vendor/ap type ok together; also make sure all key fields are entered
 
 dont_write$=""
-if cvs(callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE"),3)="" or
-:	cvs(callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID"),3)="" or
+if cvs(callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID"),3)="" or
 :	cvs(callpoint!.getColumnData("APE_INVOICEHDR.AP_INV_NO"),3)="" then dont_write$="Y"
 
 vendor_id$ = callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID")
@@ -221,6 +247,7 @@ gosub get_vendor_history
 if vend_hist$="" and user_tpl.multi_types$="Y"
 	msg_id$="AP_NOHIST"
 	gosub disp_message
+	callpoint!.setStatus("CLEAR;NEWREC")
 endif
 [[APE_INVOICEHDR.ACCTING_DATE.AVAL]]
 rem make sure accting date is in an appropriate GL period
@@ -408,10 +435,10 @@ endif
 aps01_dev=num(chans$[6])
 gls01_dev=num(chans$[7])
 dim aps01a$:templates$[6],gls01a$:templates$[7]
-user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),glworkfile:c(16),"
+user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),"
 user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),units_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"misc_entry:c(1),inv_in_ape01:c(1),inv_in_apt01:c(1),"
-user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_terms_cd:c(2),dflt_pymt_grp:c(2),"
+user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_ap_type:c(2),dflt_terms_cd:c(2),dflt_pymt_grp:c(2),"
 user_tpl_str$=user_tpl_str$+"disc_pct:c(5),dist_bal_ofst:c(1),inv_amt:c(10),tot_dist:c(10),open_inv_textID:c(5),"
 user_tpl_str$=user_tpl_str$+"dflt_acct_date:c(8)"
 dim user_tpl$:user_tpl_str$
@@ -432,36 +459,15 @@ rem --- add the display control holding the distribution balance to userObj!
 dist_bal!=fnget_control!("<<DISPLAY>>.DIST_BAL")
 user_tpl.dist_bal_ofst$="0"
 userObj!.addItem(dist_bal!)
-rem --- Additional File Opens
+
+rem --- Additional Init
 gl$="N"
 status=0
 source$=pgm(-2)
 call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AP",glw11$,gl$,status
 if status<>0 goto std_exit
 user_tpl.glint$=gl$
-user_tpl.glworkfile$=glw11$
-if gl$="Y"
-   files=2,begfile=1,endfile=2
-   dim files$[files],options$[files],chans$[files],templates$[files]
-   files$[1]="GLM_ACCT",options$[1]="OTA";rem --- "glm-01"
-   files$[2]=glw11$,options$[2]="OTAS";rem --- s means no err if tmplt not found
-	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-if status$<>"" then
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
-endif
+
 rem --- Retrieve parameter data
                
 aps01a_key$=firm_id$+"AP00"
@@ -479,9 +485,10 @@ user_tpl.glper$=gls01a.current_per$
 user_tpl.gl_tot_pers$=gls01a.total_pers$
 rem --- may need to disable some ctls based on params
 if user_tpl.multi_types$="N" 
+	user_tpl.dflt_ap_type$=aps01a.ap_type$
 	apm10_dev=fnget_dev("APC_TYPECODE")
 	dim apm10a$:fnget_tpl$("APC_TYPECODE")
-	readrecord (apm10_dev,key=firm_id$+"  ",dom=*next)apm10a$
+	readrecord (apm10_dev,key=firm_id$+user_tpl.dflt_ap_type$,dom=*next)apm10a$
 	user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
 	ctl_name$="APE_INVOICEHDR.AP_TYPE"
 	ctl_stat$="I"
@@ -508,4 +515,6 @@ if gl$="N"
 endif
 if user_tpl.misc_entry$="N" c!.setColumnEditable(2,0)
 if user_tpl.units_flag$="N" c!.setColumnEditable(4,0)
+
+
 		

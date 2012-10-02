@@ -28,11 +28,22 @@ rem --- set rd_alias_id$, if needed, for DocOut Settings
         rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
         rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
     endif
+    
+rem --- see if batching (batching.CAH)
 
-rem --- see if batching
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
+    
+rem --- Get user approval to proceed
 
-rem ---     call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2)
-rem --- if a batch number is returned, process only the ape-01/11 recs for that batch (use knum)
+        msg_id$="AON_RUN_QUERY"
+        dim x$:stbl("+SYSINFO_TPL")
+        dim msg_tokens$[1]
+        x$=stbl("+SYSINFO")                                                            
+        msg_tokens$[1]=x.task_desc$
+        gosub disp_message
+        if msg_opt$<>"Y" then goto std_exit_no_report
 
 rem --- Open/Lock files
 
@@ -49,11 +60,12 @@ rem --- Open/Lock files
         files$[11]="apt-11",ids$[11]="APT_INVOICEDET";rem "apt-11
         files$[12]="gls_params",ids$[12]="GLS_PARAMS";rem "gls-01
         files$[13]="apc_distribution",ids$[13]="APC_DISTRIBUTION";rem "apm-10B
-        options$[2]="L"
-        options$[3]="L"
+        
+        if num(batch_no$)=0 then options$[2]="L";rem lock if not batching.CAH
+        if num(batch_no$)=0 then options$[3]="L";rem lock if not batching.CAH
         call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto std_exit_no_report
         aps01_dev=channels[1]
         ape01_dev=channels[2]
         ape11_dev=channels[3]
@@ -94,9 +106,8 @@ rem --- Retrieve parameter records
         g0=len(g0$)
         g1=len(g1$)
 
-
 rem --- Is General Ledger installed and being used?
-
+rem --- as of v9, glw11$ no longer used.  Always use actual glw-11 file (batching.CAH)
         application$="AP"
         gl$="N"
         status=0
@@ -104,7 +115,7 @@ rem --- Is General Ledger installed and being used?
         call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
  
         if status 
-            goto std_exit
+            goto std_exit_no_report
         endif
 
 
@@ -113,7 +124,7 @@ rem --- Initializations
         headings=3
         dim headings$[headings],underline$(m1*2,"-"),o[11],h[11],gd[2],gh[2]
         dim pt[2],rt[2],at[2],vt[2],msg$[1]
-	msg$[0]="This Report Is Out Of Balance Or Missing Information"
+        msg$[0]="This Report Is Out Of Balance Or Missing Information"
         units=0
         errors=0
         glstatus=0
@@ -126,6 +137,7 @@ rem --- Initializations
         moreheaders=1
         moredetail=1
         recs=0
+        gl_recs=0
         when$=sysinfo.system_date$
         clock$=""
         nf$="(Not on File)"
@@ -137,7 +149,8 @@ rem --- Initializations
         lastvendor$=""
         headings$[0]=sysinfo.firm_name$
         headings$[1]=sysinfo.task_desc$
-        headings$[2]="[HEADER]" 
+        if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"
+        if multitypes then headings$[2]="[HEADER]" 
         h2$=""
         h3$="Discount"
         if retention 
@@ -182,11 +195,11 @@ rem --- Additional file opens
         dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
         files$[1]="glm-01",ids$[1]="GLM_ACCT"
         files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
-        files$[3]=glw11$
-        options$[3]="CL"
+        files$[3]="glw-11",ids$[3]="GLW_DAILYDETAIL"
+        rem --- options$[3]="CL";do clear partial instead of full clear since everyone sharing glw-11. (batching.CAH)
         if gl$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                             ids$[all],templates$[all],channels[all],batch,status
-        if status goto std_exit
+        if status goto std_exit_no_report
         glm01_dev=channels[1]
         glt04_dev=channels[2]
         glw11_dev=channels[3]
@@ -194,17 +207,14 @@ rem --- Additional file opens
 rem --- Dimension string templates
 
         if gl$="Y" dim glm01a$:templates$[1]
+        
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
 
-rem --- Get user approval to proceed
-
-        msg_id$="AON_RUN_QUERY"
-        dim x$:stbl("+SYSINFO_TPL")
-        dim msg_tokens$[1]
-        x$=stbl("+SYSINFO")                                                            
-        msg_tokens$[1]=x.task_desc$
-        gosub disp_message
-        if msg_opt$<>"Y" then goto std_exit
-
+        if gl$="Y"
+            rec_pfx$=firm_id$+process_id$+batch_no$
+            call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+        endif
+        
 rem --- Document initializations
 
         OutVect!=bbjAPI().getSysGui().makeVector()
@@ -237,16 +247,15 @@ rem --column heading
         columns$[13,0]="Discount Amt",columns$[13,1]="N",columns$[13,2]="8",columns$[13,3]=m1$,columns$[13,10]="T"
 
 rem --- Start progress meter and position header file
-
-        
+       
         call pgmdir$+"adc_progress.aon","NC","","","","",0,ape01_dev,1,meter_num,status
-        read (ape01_dev,key=firm_id$,dom=*next)
+        read (ape01_dev,key=firm_id$+batch_no$,knum=1,dom=*next);rem batching.CAH
 
 rem --- Read next Invoice Header (ape-01) record
 
     while moreheaders
           read record (ape01_dev,end=*break) ape01a$
-          if ape01a.firm_id$<>firm_id$ break
+          if ape01a.firm_id$<>firm_id$ or num(ape01a.batch_no$)<>num(batch_no$) then break
           call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
           recs=recs+1
 
@@ -276,8 +285,7 @@ rem --- Initializations for this invoice
           a[0]=ape01a.invoice_amt
           a[1]=ape01a.discount_amt
           a[2]=ape01a.retention
-          invoice$=ape01a.firm_id$+ape01a.ap_type$+ape01a.vendor_id$+
-:                  ape01a.ap_inv_no$
+          invoice$=ape01a.firm_id$+ape01a.ap_type$+ape01a.vendor_id$+ape01a.ap_inv_no$
 
 rem --- Retrieve distribution code and update GL recap
 
@@ -432,7 +440,7 @@ rem --- Retrieve GL account master
           OutVect!.addItem("")
           OutVect!.addItem("WARNING: This transaction is out of balance by "+str(difference:m1$))
           xwk=fnblank(12)
-	  errors=errors+1
+      errors=errors+1
           lines=lines+2
 
           rem --- Loop back for next Invoice Header
@@ -472,26 +480,22 @@ rem --- Any errors encountered?
 rem --- Destroy the progress meter and run the next overlay
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-
     update$=pgmdir$+"apu_invoiceentry.aon"
     if errors
-    	gosub Display_Message
-    	if special_flag$<>"Y" then update$=""
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
     endif
 
     overlay$=update$
-    if gl$="Y" overlay$=pgmdir$+"glr_recap.aon"
+    if gl$="Y" and gl_recs>0 overlay$=pgmdir$+"glr_recap.aon"
     out_action$="PRT-PDF"
     next_overlay$=overlay$
-    goto std_exit
-  
-    if cvs(aptype$,2)<>""
-    lines=lines+1
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
     endif
-
-
-
-
+  
 account_heading: rem --- Account subheading
 
     if lines+3>maxlines 
@@ -565,6 +569,7 @@ glrecap: rem --- Standard GL Recap Routine
 
     if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
 :                                            ref1$,ref2$,ref3$,memo$,amount,units,status
+    if amount<>0 or units<>0 gl_recs=gl_recs+1
     return
 
 Display_Message: rem --- Display Message Routine
@@ -626,10 +631,10 @@ rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
-	
+    return
+    
 rem #endinclude disp_message.src
 
 
@@ -682,13 +687,22 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
-std_exit: rem --- Standard program end (01Mar2006)
-
-    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
-
 std_exit_no_report:
 
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
     release
 
 rem #endinclude std_end.src

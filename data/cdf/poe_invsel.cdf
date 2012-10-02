@@ -31,7 +31,6 @@ rem print 'show';rem debug
 use ::ado_util.src::util
 [[POE_INVSEL.RECEIVER_NO.AVAL]]
 gosub accum_receiver_tot; rem accumulate total for po/receiver# entered
-
 [[POE_INVSEL.<CUSTOM>]]
 receiver_already_selected:
 rem --- given a po/receiver (or po w/ no receiver) see if it's already in gridvect
@@ -70,7 +69,7 @@ endif
 return
 
 accum_receiver_tot:
-rem --- given a po/receiver (or po w/ no receiver), retrieve/display pot-14 info
+rem --- given a po/receiver (or po w/ no receiver), retrieve/display pot-14 info -- display part doesn't currently work due to limitation in grids
 rem --- this routine invoked from rec# AVAL and from AWRI
 
 pot_rechdr_dev=fnget_dev("POT_RECHDR")
@@ -123,8 +122,8 @@ if pos(".AVAL"=event$)<>0
 		find record (apc_termscode_dev,key=firm_id$+"C"+pot_rechdr.ap_terms_code$,dom=*next)apc_termscode$
 		disp_info$="Ordered: "+fndate$(pot_rechdr.ord_date$)+", Received: "+fndate$(pot_rechdr.recpt_date$)+", Terms: "+pot_rechdr.ap_terms_code$+"("+cvs(apc_termscode.code_desc$,3)+")"
 		callpoint!.setColumnData("POE_INVSEL.TOTAL_AMOUNT",str(line_tot))
-		rem callpoint!.setColumnData("<<DISPLAY>>.DISP_REC_INFO",disp_info$)
-		callpoint!.setStatus("REFRESH")
+rem		callpoint!.setColumnData("<<DISPLAY>>.DISP_REC_INFO",disp_info$)
+		callpoint!.setStatus("REFRESH"); rem --- tabbing to new grid row wasn't working until this was rem'd ?
 	else
 		msg_id$="PO_REC_INVOICED"
 		gosub disp_message

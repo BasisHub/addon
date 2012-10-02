@@ -90,12 +90,11 @@ rem --- Retrieve parameter records
         find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
         gls01a_key$=firm_id$+"GL00"
         find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-        vendor_size=num(aps01a.vendor_size$)
+        call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",m1$,0,0        
         multitypes=aps01a.multi_types$="Y"
         retention=aps01a.ret_flag$="Y"
         cashbasis=aps01a.cash_basis$="Y"
-        m0$=aps01a.vendor_output$
-        m1$=aps01a.amount_mask$
         call pgmdir$+"adc_sizemask.aon",m1$,m1,9,13
         m0=len(m0$)
         m1=len(m1$)
@@ -113,6 +112,8 @@ rem --- Is General Ledger installed and being used?
         status=0
         call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,application$,glw11$,gl$,status
         if status goto std_exit
+        process_id$=stbl("+PROCESS_ID")
+        batch_no$=stbl("+BATCH_NO")
 
 rem --- Initializations
 
@@ -141,7 +142,7 @@ rem --- Initializations
         lastvendor$=""
         headings$[0]=sysinfo.firm_name$
         headings$[1]=sysinfo.task_desc$
-        headings$[2]="[HEADER]"
+        if multitypes then headings$[2]="[HEADER]"
         h2$=""
         h3$="Discount"
         if retention 
@@ -210,13 +211,20 @@ rem --- Additional file opens
         files=2,begfile=1,endfile=files
         dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
         files$[1]="glm-01",ids$[1]="GLM_ACCT"
-        files$[2]=glw11$
-        options$[2]="CL"
+        files$[2]="glw-11",ids$[2]="GLW_DAILYDETAIL"
+        rem --- no longer clearing entire file; options$[2]="CL"
         if gl$="Y" call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                             ids$[all],templates$[all],channels[all],batch,status
         if status goto std_exit
         glm01_dev=channels[1]
         glw11_dev=channels[2]
+
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+
+        if gl$="Y"
+            rec_pfx$=firm_id$+process_id$+batch_no$
+            call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+        endif    
 
 rem --- Dimension string templates
 
@@ -519,9 +527,9 @@ rem --- Destroy the progress meter and run the next overlay
 
         update$=pgmdir$+"apu_recurring.aon"
         if errors
-	    gosub Display_Message
-	    if special_flag$<>"Y" then update$=""
-	endif
+        gosub Display_Message
+        if special_flag$<>"Y" then update$=""
+    endif
 
         overlay$=update$
         if gl$="Y" overlay$=pgmdir$+"glr_recap.aon"
@@ -664,10 +672,10 @@ rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
-	
+    return
+    
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)

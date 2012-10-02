@@ -33,18 +33,18 @@ rem --- clear next_var and outvect! so bas_process_end doesn't loop...i.e., don'
     
 rem --- Document initializations
 
-	declare BBjVector OutVect!
-	declare BBjVector HdrVect!
-	declare BBjVector BrkVect!
-	declare BBjVector TotVect!
+    declare BBjVector OutVect!
+    declare BBjVector HdrVect!
+    declare BBjVector BrkVect!
+    declare BBjVector TotVect!
 
-	if OutVect!<>null() then OutVect!=null()
+    if OutVect!<>null() then OutVect!=null()
   
     OutVect!=bbjAPI().makeVector()
     HdrVect!=bbjAPI().makeVector()
     BrkVect!=bbjAPI().makeVector()
     TotVect!=bbjAPI().makeVector()
-	
+    
     rep_date$=date(0:"%Mz/%Dz/%Yd")
     rep_date_stamp$=date(0:"%Yd%Mz%Dz")
     rep_time$=date(0:"%hz:%mz %p")
@@ -84,6 +84,8 @@ rem --- Initializations
     maxlines=59
     lines=maxlines+1
     nf$="(Not on File)"
+    total_recs=0
+    if milestone=0 then milestone=50
 
 rem --- Define print positions
 
@@ -109,56 +111,57 @@ rem --- Adjust report headings
 
 rem --- Start progress meter and position file
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,glw04_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","GLW_DAILYDETAIL","GL Summary","","",0,glw04_dev,1,meter_num,status
     read (glw04_dev,key=firm_id$,dom=*next)
 
 rem --- Get next GL Summary (glw-04) record
 
     while more
-		k$=key(glw04_dev,end=*break)
-		if pos(firm_id$=k$)<>1 break
-		read record (glw04_dev,key=k$) glw04a$
-		call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-		amount=glw04a.gl_post_amt
+        k$=key(glw04_dev,end=*break)
+        if pos(firm_id$=k$)<>1 break
+        read record (glw04_dev,key=k$) glw04a$
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        amount=glw04a.gl_post_amt
 
-		rem --- Retrieve account description
+        rem --- Retrieve account description
 
-		dim glm01a$:fattr(glm01a$)
-		glm01a.firm_id$=firm_id$
-		glm01a.gl_account$=glw04a.gl_account$
-		glm01a.gl_acct_desc$=nf$
-		
-		find record (glm01_dev, key=firm_id$+glw04a.gl_account$, dom=*next) glm01a$
-		description$=glm01a.gl_acct_desc$
+        dim glm01a$:fattr(glm01a$)
+        glm01a.firm_id$=firm_id$
+        glm01a.gl_account$=glw04a.gl_account$
+        glm01a.gl_acct_desc$=nf$
+        
+        find record (glm01_dev, key=firm_id$+glw04a.gl_account$, dom=*next) glm01a$
+        description$=glm01a.gl_acct_desc$
 
-		rem --- Format detail line fields
+        rem --- Format detail line fields
 
-		debit$=""
-		credit$=""
-		account$=fnmask$(glw04a.gl_account$(1,m0),m0$)
+        debit$=""
+        credit$=""
+        account$=fnmask$(glw04a.gl_account$(1,m0),m0$)
 
-		if amount>0 then 
-			debits=debits+amount
-			debit$=str(amount)
-		endif
+        if amount>0 then 
+            debits=debits+amount
+            debit$=str(amount)
+        endif
 
-		if amount<0 then 
-			credits=credits+amount
-			credit$=str(abs(amount))
-		endif
+        if amount<0 then 
+            credits=credits+amount
+            credit$=str(abs(amount))
+        endif
 
-		rem --- Print detail line
+        rem --- Print detail line
 
-		if lines+1>maxlines gosub set_lines
+        if lines+1>maxlines gosub set_lines
 
-		OutVect!.addItem(account$)
-		OutVect!.addItem(description$)
-		OutVect!.addItem(debit$)
-		OutVect!.addItem(credit$)
+        OutVect!.addItem(account$)
+        OutVect!.addItem(description$)
+        OutVect!.addItem(debit$)
+        OutVect!.addItem(credit$)
 
-		lines=lines+1
+        lines=lines+1
 
-		rem --- Loop back for next summary record
+        rem --- Loop back for next summary record
 
     wend
 
@@ -169,16 +172,16 @@ rem --- All done
     debit$=str(debits)
     credit$=str(abs(credits))
     gosub print_total
-	
+    
     if balance then
-	    debit$=""
-	    credit$=""
-	    total$="Balance"
-	    if balance>0 then debit$=str(balance)
-	    if balance<0 then credit$=str(abs(balance))
-	    gosub print_total
-	endif
-	
+        debit$=""
+        credit$=""
+        total$="Balance"
+        if balance>0 then debit$=str(balance)
+        if balance<0 then credit$=str(abs(balance))
+        gosub print_total
+    endif
+    
     goto std_exit
 
 set_lines: rem --- Set the line count

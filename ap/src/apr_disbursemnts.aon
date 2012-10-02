@@ -30,8 +30,10 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -68,6 +70,8 @@ rem --- Assign form input values to local variables
     sequence$=Option!.getOptionData("REPORT_SEQUENCE")
     year$=Option!.getOptionData("YEAR")
     export_format$=Option!.getOptionData("EXPORT_FORMAT")
+    vend_type$=Option!.getOptionData("VENDOR_TYPE")
+    
     if export_format$="Y"
         rd_alias_id$=Option!.getAlias()    
         if len(rd_alias_id$)>15 rd_alias_id$=rd_alias_id$(1,15)
@@ -93,8 +97,8 @@ rem --- Retrieve parameter records
     m1=len(m1$)
     call pgmdir$+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
     g0=len(g0$)
-    headings=3
-    if multitypes headings=4
+    headings=4
+    if multitypes headings=5
 
 rem --- Is General Ledger installed?
 
@@ -126,25 +130,44 @@ rem --- Initializations
     page=0
     width=132
     more=1
+    recs=0
     when$=sysinfo.system_date$
     clock$=""
     nf$="(Not on File)"
+    total_recs=0
+    
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
     headings$[2]="For Period "+str(period)+" From "+fndate$(begdate$)+" Through "+fndate$(enddate$)
     if sequence$="C"
        channel=apt05_dev 
+       channel_name$="APT_CHECKHISTORY"
        headings$[1]=headings$[1]+" By Check Number"
     endif
     if sequence$="V" 
        channel=apw05_dev
+       channel_name$="APW_DISBURSEMNTS"       
        headings$[1]=headings$[1]+" By Vendor"
     endif
     if sequence$="A"
+       channel_name$="APW_DISBURSEMNTS"
        channel=apw05_dev
        headings$[1]=headings$[1]+" By Alternate Sequence"
     endif
-    headings$[3]="[HEADER]"
+    
+    if vend_type$="A" then
+        headings$[3]="All Vendors"
+    endif
+    
+    if vend_type$="P" then
+        headings$[3]="Permanent Vendors Only"
+    endif
+
+    if vend_type$="T" then
+        headings$[3]="Temporary Vendors Only"
+    endif
+    
+    if multitypes headings$[4]="[HEADER]"
     altseq$=""
     lasttype$=""
     lastvendor$=""
@@ -252,7 +275,7 @@ rem --- Dimension string templates
 rem --- Sort Check History (apt-05) by vendor ID or alternate sequence
 
     while sorting
-          call pgmdir$+"adc_progress.aon","NC","","","","",0,apt05_dev,1,meter_num,status
+          call pgmdir$+"adc_progress.aon","NC","APT_CHECKHISTORY","sorting","","",0,apt05_dev,1,meter_num,status
           read (apt05_dev,key=firm_id$,dom=*next)
 
           rem --- Read next history record
@@ -261,9 +284,11 @@ rem --- Sort Check History (apt-05) by vendor ID or alternate sequence
                 k$=key(apt05_dev,end=*break)
                 if pos(firm_id$=k$)<>1 break
                 read record (apt05_dev) apt05a$
-                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+                total_recs=total_recs+1
+                if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
                 if apt05a.check_date$<begdate$ continue
                 if apt05a.check_date$>enddate$ continue
+                
 
                 rem --- Initialize and write sort record
 
@@ -290,6 +315,7 @@ rem --- Sort Check History (apt-05) by vendor ID or alternate sequence
           rem --- Sorting completed
 
           call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+          wait 1;rem --- gives first progress meter a chance to clear; less confusing to the eye
           sorting=0
           break
     wend  
@@ -297,7 +323,8 @@ rem --- Sort Check History (apt-05) by vendor ID or alternate sequence
 rem --- Start progress meter and position the driver file
 
     sequence=pos(sequence$="ADV")
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC",channel_name$,"","","",0,channel,1,meter_num,status
+    total_recs=0
     read (apw05_dev,key=firm_id$,dom=*next)
     read (apt02_dev,key=firm_id$,dom=*next)
 
@@ -319,12 +346,19 @@ rem --- Start progress meter and position the driver file
 :               apt05a.vendor_id$+apt05a.ap_inv_no$
              readrecord(apt05_dev,key=k$)apt05a$
           endif
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Is the record in the requested period?
 
           if apt05a.check_date$<begdate$ continue
           if apt05a.check_date$>enddate$ continue
+          
+          rem --- extra apm01 read here to facilitate including/skipping vendors based on temp vend flag
+          if vend_type$<>"A"
+              read record (apm01_dev,key=firm_id$+apt05a.vendor_id$,dom=*continue)apm01a$
+              if (vend_type$="P" and apm01a.temp_vend$="Y") or (vend_type$="T" and apm01a.temp_vend$<>"Y") then continue
+          endif          
 
           rem --- Level breaks
 
@@ -399,6 +433,7 @@ rem --- Start progress meter and position the driver file
                 OutVect!.addItem(paid$)
 
                 xwk = fnblank(8)
+                recs=recs+1
 
                 break
           wend
@@ -421,6 +456,7 @@ rem --- Start progress meter and position the driver file
           OutVect!.addItem(account$)
           OutVect!.addItem(str(detail[0]))
           xwk = fnblank(2)
+          recs=recs+1
 
           printed=printed+1
           gosub accumulate_totals
@@ -448,6 +484,12 @@ rem --- Start progress meter and position the driver file
     wend
 
 rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
     done=1
     gosub type_break
@@ -734,6 +776,13 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         return q1
     fnend
 
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -789,5 +838,11 @@ std_exit: rem --- Standard program end (01Mar2006)
     release
 
 rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
 
     end

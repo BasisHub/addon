@@ -30,8 +30,10 @@ rem --- Retrieve sysinfo data
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -125,6 +127,8 @@ rem --- Initializations
     lastvendor$=""
     clock$=""
     when$=sysinfo.system_date$
+    total_recs=0
+    
     header2$="All Activity Based On "
     if option$="I" header2$=header2$+"Invoice Date"
     if option$="D" header2$=header2$+"Due Date"
@@ -139,13 +143,15 @@ rem --- Initializations
     endif
     if sequence$="V"
        channel=apt01_dev
+       channel_name$="APT_INVOICEHDR"
        headings$[1]=header1$+" By Vendor Number"
     endif
     if sequence$="A" 
        channel=apw02_dev
+       channel_name$="APW_INVOICENAME"
        headings$[1]=header1$+" By Alternate Sequence"
     endif
-    headings$[3]="[HEADER]"
+    if multitypes then headings$[3]="[HEADER]"
 
 rem --- Determine period beginning and ending dates based on the aging method selected
 
@@ -247,12 +253,16 @@ rem --- Headings and print positions
     endif
 
     if export_format$="Y"
-        columns=14
+        if summary
+            columns=9
+        else    
+            columns=14
+        endif    
         dim columns$[columns,10]
         columns$[0,0]="Vendor ID",          columns$[0,1]="C",columns$[0,2]="10"
         columns$[1,0]="Name",               columns$[1,1]="C",columns$[1,2]="20"
-        columns$[2,0]="Phone",              columns$[2,1]="C",columns$[2,2]="10"        
-        columns$[3,0]="Alt Seq",            columns$[3,1]="C",columns$[3,2]="10"        
+        columns$[2,0]="Phone",              columns$[2,1]="C",columns$[2,2]="10"
+        columns$[3,0]="Alt Seq",            columns$[3,1]="C",columns$[3,2]="10"
     else
         columns=12
         dim columns$[columns,10]
@@ -261,11 +271,20 @@ rem --- Headings and print positions
 
     endif    
 
-    columns$[columns-10,0]=head2$,               columns$[columns-10,1]="C",columns$[columns-10,2]="8"
-    columns$[columns-9,0]=head3$,               columns$[columns-9,1]="C",columns$[columns-9,2]="8"
-    columns$[columns-8,0]=head4$,               columns$[columns-8,1]="C",columns$[columns-8,2]="8"
-    columns$[columns-7,0]=head5$,               columns$[columns-7,1]="C",columns$[columns-7,2]="3"
-    columns$[columns-6,0]=head6$,               columns$[columns-6,1]="C",columns$[columns-6,2]="3"
+    if summary=0
+        columns$[columns-10,0]=head2$,               columns$[columns-10,1]="C",columns$[columns-10,2]="8"
+        columns$[columns-9,0]=head3$,               columns$[columns-9,1]="C",columns$[columns-9,2]="8"
+        columns$[columns-8,0]=head4$,               columns$[columns-8,1]="C",columns$[columns-8,2]="8"
+        columns$[columns-7,0]=head5$,               columns$[columns-7,1]="C",columns$[columns-7,2]="3"
+        columns$[columns-6,0]=head6$,               columns$[columns-6,1]="C",columns$[columns-6,2]="3"
+	else
+		rem --- even tho' these columns won't be used in summary format, need to be set up or DocOut will get confused
+        columns$[columns-10,0]="",               columns$[columns-10,1]="C",columns$[columns-10,2]="1"
+        columns$[columns-9,0]="",               columns$[columns-9,1]="C",columns$[columns-9,2]="1"
+        columns$[columns-8,0]="",               columns$[columns-8,1]="C",columns$[columns-8,2]="1"
+        columns$[columns-7,0]="",               columns$[columns-7,1]="C",columns$[columns-7,2]="1"
+        columns$[columns-6,0]="",               columns$[columns-6,1]="C",columns$[columns-6,2]="1"		
+    endif    
     columns$[columns-5,0]="Past Due",           columns$[columns-5,1]="N",columns$[columns-5,2]=str(len(m1$)-2),columns$[columns-5,3]=m1$,columns$[columns-5,10]="T"
     columns$[columns-4,0]=date1$,               columns$[columns-4,1]="N",columns$[columns-4,2]=str(len(m1$)-2),columns$[columns-4,3]=m1$,columns$[columns-4,10]="T"
     columns$[columns-3,0]=date2$,              columns$[columns-3,1]="N",columns$[columns-3,2]=str(len(m1$)-2),columns$[columns-3,3]=m1$,columns$[columns-3,10]="T"
@@ -308,12 +327,13 @@ rem --- Initialize remaining report headings
     retention$="Retention"
   
     if summary headings=headings+1
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apt01_dev,1,meter_num,status
+    
 rem --- Sort Invoice Headers (apt-01) by vendor alternate sequence
 
     while sorting
 
           read (apt01_dev,key=firm_id$,dom=*next)
+          call pgmdir$+"adc_progress.aon","NC","APT_INVOICEHDR","sorting","","",0,apt01_dev,1,meter_num,status
 
           rem --- Read next invoice record
 
@@ -321,8 +341,9 @@ rem --- Sort Invoice Headers (apt-01) by vendor alternate sequence
                 k$=key(apt01_dev,end=*break)
                 if pos(firm_id$=k$)<>1 break
                 read record (apt01_dev) apt01a$
-                call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-
+                total_recs=total_recs+1
+                if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+                
                 rem --- Retrieve vendor master record if necessary
 
                 if pos("TEMP"=apt01a.vendor_id$)=1
@@ -358,6 +379,7 @@ rem --- Sort Invoice Headers (apt-01) by vendor alternate sequence
           rem --- Sorting completed
 
           call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+          wait 1;rem --- gives first progress meter a chance to clear; less confusing to the eye
           sorting=0
           break
     wend  
@@ -365,7 +387,8 @@ rem --- Sort Invoice Headers (apt-01) by vendor alternate sequence
 rem --- Start progress meter and position driver file
 
     lastvendor$=""
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,channel,1,meter_num,status
+    total_recs=0
+    call pgmdir$+"adc_progress.aon","NC",channel_name$,"","","",0,channel,1,meter_num,status
     read (channel,key=firm_id$,dom=*next)
 
 rem --- Read next Invoice Header (apt-01) record
@@ -384,7 +407,8 @@ rem --- Read next Invoice Header (apt-01) record
 :            apt01a.ap_inv_no$
           endif
           read record (apt01_dev,key=k$,dom=*continue) apt01a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Level breaks
 
@@ -419,7 +443,7 @@ rem --- Read next Invoice Header (apt-01) record
                 endif
           wend
 
-          rem --- No reason to continue if it's a sero balance invoice
+          rem --- No reason to continue if it's a zero balance invoice
 
           if it[0]=0 continue
 
@@ -608,6 +632,25 @@ vendor_break: rem --- Vendor break
                 Outvect!.addItem(str(totamt))
                 lines=lines+2
              endif
+            else
+              if printed
+                totamt=0
+                for x=0 to 4
+                    totamt=totamt+vt[x]
+                next x
+    
+                OutVect!.addItem(apm01a.vendor_id$)
+                OutVect!.addItem(apm01a.vendor_name$)
+                OutVect!.addItem(phone$)
+                OutVect!.addItem(apm01a.alt_sequence$)
+                Outvect!.addItem(str(vt[0]))
+                Outvect!.addItem(str(vt[1]))
+                Outvect!.addItem(str(vt[2]))
+                Outvect!.addItem(str(vt[3]))
+                Outvect!.addItem(str(vt[4]))
+                Outvect!.addItem(str(totamt))
+                lines=lines+1
+              endif  
             endif
           endif
           break

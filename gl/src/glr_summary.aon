@@ -40,6 +40,9 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
 rem --- Open/Lock files
 
@@ -69,10 +72,9 @@ rem --- Retrieve parameter records
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     units_flag$=gls01a.units_flag$
     total_pers=num(gls01a.total_pers$)
-    acctlen=num(gls01a.acct_length$)
     rem m0$=gls01a.acct_output$ -- using mask from Barista system masks file
-    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,0
-	m1$="#,###,##0-";rem using mask that drops cents to fit better on page
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
+    m1$="#,###,##0-";rem using mask that drops cents to fit better on page
     m2$=gls01a.unit_mask$
     m0=len(m0$)
     m1=len(m1$)
@@ -111,6 +113,7 @@ rem --- Initializations
     records=len(cvs(id$,2))
     if total_pers>12 h1$="Acct",lines=records*2+2
     recs=0
+    total_recs=0
 
 rem --- Document columns
 
@@ -118,13 +121,15 @@ rem --- Document columns
     
     dim columns$[columns,4]
     columns$[0,0]="Account",columns$[0,1]="C",columns$[0,2]="15"
-    columns$[1,0]="Beginning",columns$[1,1]="C",columns$[1,2]=str(m1),columns$[1,3]=m1$
-	rem ,columns$[1,2]="10",columns$[1,3]=m1$
-	rem was [1,2]=str(len(m1$)), but that overflows onto another page
+    columns$[1,0]="Begin",columns$[1,1]="N",columns$[1,2]=str(m1),columns$[1,3]=m1$
+    rem ,columns$[1,2]="10",columns$[1,3]=m1$
+    rem was [1,2]=str(len(m1$)), but that overflows onto another page
 
     for x=2 to columns-1
-        columns$[x,0]="Period "+str(x-1:"00")+"^"+field(gls01a$,"abbr_name_"+str(x-1:"00")),columns$[x,1]="N",columns$[x,2]="8",columns$[x,3]=m1$
-    next x
+        columns$[x,0]="Per "+str(x-1:"00")+"^"+field(gls01a$,"abbr_name_"+str(x-1:"00")),columns$[x,1]="N",columns$[x,2]="8",columns$[x,3]=m1$
+    	rem --- above used to set columns$[x,2] to str(m1), but that causes overflow onto another page
+		rem --- hard-code '8' makes it work 'out of the box' w/o needing to adjust columns manually
+	next x
     columns$[columns,0]="Ending",columns$[columns,1]="N",columns$[columns,2]="10",columns$[columns,3]=m1$
 
 
@@ -160,7 +165,7 @@ rem --- Retrieve and store titles
 
 rem --- Start progress meter
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm01_dev,1,meter_num,status
+    call pgmdir$+"adc_progress.aon","NC","GLM_ACCT","","","",0,glm01_dev,1,meter_num,status
     k$=firm_id$+begacct$
     found=0
     read record (glm01_dev,key=k$,dom=*next)glm01a$;found=1
@@ -174,11 +179,12 @@ rem --- Get next GL Account Master (glm-01) record
             read record (glm01_dev,end=*break)glm01a$            
           endif
           if firm_id$<>glm01a.firm_id$ break
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           if endacct$<>"" if glm01a.gl_account$>endacct$ break
           gosub wildcard
           if status continue
-          acct$=fnmask$(glm01a.gl_account$(1,acctlen),m0$)
+          acct$=fnmask$(glm01a.gl_account$(1,m0),m0$)
 
           number=number+1
           recs=recs+1
@@ -264,7 +270,7 @@ wildcard: rem --- Test account number against specified wildcard mask
     status=0
     if wildcard$="" return
     if wildcard<>len(wildcard$) wildcard=len(wildcard$)
-    x$=fnmask$(glm01a.gl_account$(1,acctlen),m0$)
+    x$=fnmask$(glm01a.gl_account$(1,m0),m0$)
     for x=1 to wildcard
         if wildcard$(x,1)="?" continue
         if x$(x,1)<>wildcard$(x,1) status=1
@@ -303,9 +309,9 @@ rem #include disp_message.src
 
 disp_message:rem --- Display Message Dialog
 
-	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
-	return
+    return
 
 rem #include std_error.src
 

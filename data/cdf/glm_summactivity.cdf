@@ -101,6 +101,7 @@ gridActivity!.clearMainGrid()
 
 num_codes=codes!.size()
 num_cols=cols!.size()
+any_budget_cols=0
 
 for x=0 to num_cols-1
 	x1=0
@@ -111,6 +112,8 @@ for x=0 to num_cols-1
 			if pos(wcd$(1,1)="024",1)<>0
 				gridActivity!.setRowEditable(x,0)
 				gridActivity!.setCellEditable(x,0,1)
+			else
+				any_budget_cols=any_budget_cols+1
 			endif
 			break
 		else
@@ -134,6 +137,9 @@ if cvs(glm01a.gl_account$,3)<>""
 else
 		callpoint!.setStatus("ABORT")
 endif
+
+rem --- enable 'replicate' button only if we have one or more budget recs
+if any_budget_cols=0 then callpoint!.setOptionEnabled("REPL",0)
 [[GLM_SUMMACTIVITY.AOPT-REPL]]
 gosub replicate_amt
 
@@ -143,13 +149,14 @@ else
 	callpoint!.setMessage("GL_REPLICATE")
 	callpoint!.setStatus("ABORT")
 endif
+
 [[GLM_SUMMACTIVITY.ASIZ]]
-if UserObj!<>null()
+ if UserObj!<>null()
 	gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
 	gridActivity!.setSize(Form!.getWidth()-(gridActivity!.getX()*2),Form!.getHeight()-(gridActivity!.getY()+40))
-	gridActivity!.setFitToGrid(1)
+	rem --- not using... don't want grid to make tiny columns, but use scrollbar instead...  gridActivity!.setFitToGrid(1)
 
-endif
+ endif
 [[GLM_SUMMACTIVITY.ACUS]]
 rem process custom event
 rem see basis docs notice() function, noticetpl() function, notify event, grid control notify events for more info
@@ -198,7 +205,7 @@ switch notice.code
 			gridActivity!.setCellText(curr_row,1,vectGLSummary!)
 			gosub update_glm_acctsummary		
 		endif
-rem ---	gosub build_vectActivity
+		gosub check_for_budgets
 	break
 
 	case 8;rem edit start
@@ -257,14 +264,16 @@ format_gridActivity:
 	dim attr_grid_col$[def_grid_cols,len(attr_def_col_str$[0,0])/5]
 	m1$=user_tpl.amt_mask$
 
+
 	attr_grid_col$[1,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="RECORD TP"
 	attr_grid_col$[1,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Record Type"
-	attr_grid_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
+	attr_grid_col$[1,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="C"
+	attr_grid_col$[1,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="100"
 
 	attr_grid_col$[2,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="BEGIN BAL"
 	attr_grid_col$[2,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Beginning"
 	attr_grid_col$[2,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
-	attr_grid_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="12"
+	attr_grid_col$[2,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="80"
 	attr_grid_col$[2,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
 
 	nxt_col=3
@@ -274,14 +283,14 @@ format_gridActivity:
 		attr_grid_col$[nxt_col+x,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="PER "+str(x+1)
 		attr_grid_col$[nxt_col+x,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=per_name!.getItem(x)
 		attr_grid_col$[nxt_col+x,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
-		attr_grid_col$[nxt_col+x,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="12"
+		attr_grid_col$[nxt_col+x,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="80"
 		attr_grid_col$[nxt_col+x,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
 	next x
 
 	attr_grid_col$[nxt_col+x,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="END BAL"
 	attr_grid_col$[nxt_col+x,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]="Ending"
 	attr_grid_col$[nxt_col+x,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
-	attr_grid_col$[nxt_col+x,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="12"
+	attr_grid_col$[nxt_col+x,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="80"
 	attr_grid_col$[nxt_col+x,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=m1$
 	attr_grid_col$[nxt_col+x,fnstr_pos("OPTS",attr_def_col_str$[0,0],5)]="C"
 
@@ -294,7 +303,7 @@ format_gridActivity:
 
 	attr_disp_col$=attr_grid_col$[0,1]
 
-	call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridActivity!,"DESC-COLH-ROWH-EDIT-LINES-LIGHT-HIGHO-CELL-SIZEC",num_rows,
+	call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridActivity!,"DESC-COLH-ROWH-EDIT-LINES-LIGHT-HIGHO-CELL",num_rows,
 :		attr_def_col_str$[all],attr_disp_col$,attr_grid_col$[all]
 
 return
@@ -406,6 +415,27 @@ replicate_amt:
 			next x
 			gosub calculate_end_bal
 			gridActivity!.setCellText(curr_row,1,vectGLSummary!)
+	endif
+return
+
+check_for_budgets:
+	rem --- do this after accessing/changing the dropdown in column 0; if no budgets selected, disable replicate button
+	numrows=gridActivity!.getNumRows()
+	budgets=0
+	if numrows
+		for x=0 to numrows-1
+			cell_text$=gridActivity!.getCellText(x,0)
+			wk=pos("("=cell_text$,-1,1)
+			if wk<>0
+				code$=cell_text$(wk+1,1)
+				if pos(code$="024")=0 then budgets=budgets+1
+			endif
+		next x 
+	endif
+	if budgets
+		callpoint!.setOptionEnabled("REPL",1)
+	else
+		callpoint!.setOptionEnabled("REPL",0)
 	endif
 return
 

@@ -1,13 +1,288 @@
+[[OPE_INVDET.WAREHOUSE_ID.BINP]]
+rem --- Enable repricing, options, lots
+
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
+[[OPE_INVDET.AOPT-ADDL]]
+rem --- Additional Options
+
+	if user_tpl.line_type$ = "M" then break; rem --- exit callpoint
+
+rem --- Save current row/column so we'll know where to set focus when we return
+
+	declare BBjStandardGrid grid!
+	grid! = util.getGrid(Form!)
+	return_to_row = grid!.getSelectedRow()
+	return_to_col = grid!.getSelectedColumn()
+
+rem --- Setup a templated string to pass information back and forth from form
+
+	declare BBjTemplatedString a!
+
+	tmpl$ =  "LINE_TYPE:C(1)," +
+:				"INVOICE_TYPE:C(1)," +
+:				"COMMIT_FLAG:C(1)," +
+:				"MAN_PRICE:C(1)," +
+:				"PRINT_FLAG:C(1)," +
+:				"EST_SHP_DATE:C(8)," +
+:				"STD_LIST_PRC:N(7*)," +
+:				"DISC_PERCENT:N(7*)," +
+:				"UNIT_PRICE:N(7*)"
+	a! = BBjAPI().makeTemplatedString(tmpl$)
+
+	dim dflt_data$[7,1]
+	dflt_data$[1,0] = "STD_LIST_PRC"
+	dflt_data$[1,1] = callpoint!.getColumnData("OPE_INVDET.STD_LIST_PRC")
+	dflt_data$[2,0] = "DISC_PERCENT"
+	dflt_data$[2,1] = callpoint!.getColumnData("OPE_INVDET.DISC_PERCENT")
+	dflt_data$[3,0] = "NET_PRICE"
+	dflt_data$[3,1] = callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE")
+	dflt_data$[4,0] = "EST_SHP_DATE"
+	dflt_data$[4,1] = callpoint!.getColumnData("OPE_INVDET.EST_SHP_DATE")
+	dflt_data$[5,0] = "COMMIT_FLAG"
+	dflt_data$[5,1] = callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")
+	dflt_data$[6,0] = "MAN_PRICE"
+	dflt_data$[6,1] = callpoint!.getColumnData("OPE_INVDET.MAN_PRICE")
+	dflt_data$[7,0] = "PRINTED"
+	dflt_data$[7,1] = callpoint!.getColumnData("OPE_INVDET.PICK_FLAG")
+	
+	a!.setFieldValue("LINE_TYPE",    user_tpl.line_type$)
+	a!.setFieldValue("INVOICE_TYPE", callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE"))
+	a!.setFieldValue("STD_LIST_PRC", callpoint!.getColumnData("OPE_INVDET.STD_LIST_PRC"))
+	a!.setFieldValue("DISC_PERCENT", callpoint!.getColumnData("OPE_INVDET.DISC_PERCENT"))
+	a!.setFieldValue("UNIT_PRICE",   callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+	a!.setFieldValue("EST_SHP_DATE", callpoint!.getColumnData("OPE_INVDET.EST_SHP_DATE"))
+	a!.setFieldValue("COMMIT_FLAG",  callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG"))
+	a!.setFieldValue("MAN_PRICE",    callpoint!.getColumnData("OPE_INVDET.MAN_PRICE"))
+	a!.setFieldValue("PRINT_FLAG",   callpoint!.getColumnData("OPE_INVDET.PICK_FLAG"))
+
+	callpoint!.setDevObject("additional_options", a!)
+
+	orig_commit$ = callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")
+
+rem --- Call form
+
+	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:		"OPE_ADDL_OPTS", 
+:		stbl("+USER_ID"), 
+:		"MNT", 
+:		"", 
+:		table_chans$[all], 
+:		"",
+:		dflt_data$[all]
+
+rem --- Write back here
+
+	a! = cast(BBjTemplatedString, callpoint!.getDevObject("additional_options"))
+	callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", a!.getFieldAsString("STD_LIST_PRC"))
+	callpoint!.setColumnData("OPE_INVDET.DISC_PERCENT", a!.getFieldAsString("DISC_PERCENT"))
+	callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE",   a!.getFieldAsString("UNIT_PRICE"))
+	callpoint!.setColumnData("OPE_INVDET.EST_SHP_DATE", a!.getFieldAsString("EST_SHP_DATE"))
+	callpoint!.setColumnData("OPE_INVDET.COMMIT_FLAG",  a!.getFieldAsString("COMMIT_FLAG"))
+	callpoint!.setColumnData("OPE_INVDET.MAN_PRICE",    a!.getFieldAsString("MAN_PRICE"))
+	callpoint!.setColumnData("OPE_INVDET.PICK_FLAG",    a!.getFieldAsString("PRINT_FLAG"))
+
+rem --- Need to commit?
+
+	if callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE") <> "P" then
+		if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "N" then
+			if user_tpl.line_type$ <> "O" then
+				callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
+				callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", "0")
+				callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", "0")
+				callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", "0")
+			else
+				if num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE")) then
+					callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE")))
+					callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", "0")
+					callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", "0")
+				endif
+			endif
+		endif
+
+		if orig_commit$ = "N" and callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "Y" then
+			callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED")))
+
+			if user_tpl.line_type$ = "O" and 
+:				num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE")) = 0 and 
+:				num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE")) 
+:			then
+				callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", str(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE")))
+				callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", "0")
+				callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", "0")
+			endif
+		endif
+	endif
+
+	qty_shipped = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
+	unit_price  = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+	gosub disp_ext_amt
+
+	callpoint!.setStatus("REFRESH")
+
+rem --- Return focus to where we were (Detail line grid)
+
+	util.forceEdit(Form!, return_to_row, return_to_col)
+[[OPE_INVDET.AGDR]]
+rem --- Disable by line type
+
+	line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
+	gosub disable_by_linetype
+[[OPE_INVDET.UNIT_PRICE.BINP]]
+rem --- Enable repricing, options, lots
+
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
+
+rem --- Has a valid whse/item been entered?
+
+	if user_tpl.item_wh_failed then
+		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+		wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
+		warn  = 1
+		gosub check_item_whse
+	endif
+[[OPE_INVDET.EXT_PRICE.AVEC]]
+rem --- Display totals
+	
+	gosub disp_grid_totals
+[[OPE_INVDET.QTY_BACKORD.AVEC]]
+rem --- Display totals
+	
+	gosub disp_grid_totals
+[[OPE_INVDET.QTY_SHIPPED.AVEC]]
+rem --- Display totals
+	
+	gosub disp_grid_totals
+[[OPE_INVDET.UNIT_PRICE.AVEC]]
+rem --- Display totals
+	
+	gosub disp_grid_totals
+[[OPE_INVDET.LINE_CODE.AVEC]]
+rem --- Display totals
+	
+	gosub disp_grid_totals
+[[OPE_INVDET.QTY_ORDERED.AVEC]]
+print "Det:QTY_ORDERED.AVEC"; rem debug
+
+rem --- Enable buttons
+
+	gosub able_lot_button
+	gosub enable_repricing
+	gosub enable_addl_opts
+
+rem --- Display totals
+	
+	gosub disp_grid_totals
+[[OPE_INVDET.QTY_ORDERED.AVAL]]
+rem --- Set shipped and back ordered
+
+	qty_ord    = num(callpoint!.getUserInput())
+	unit_price = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+
+	if qty_ord = 0 then
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
+
+	if qty_ord < 0 then
+		callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(qty_ord))
+		callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
+		rem callpoint!.setColumnEnabled("OPE_INVDET.QTY_SHIPPED", 0)
+		rem callpoint!.setColumnEnabled("OPE_INVDET.QTY_BACKORD", 0)
+		util.disableGridColumn(Form!, user_tpl.bo_col)
+		util.disableGridColumn(Form!, user_tpl.shipped_col)
+	endif
+
+
+
+	if qty_ord<>user_tpl.prev_qty_ord then
+		callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
+
+		if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "Y" or
+:			callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE") = "P"
+:		then
+			callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(qty_ord))
+		else
+			callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", "0")
+		endif
+	endif
+
+rem --- Recalc quantities and extended price
+
+	if user_tpl.line_type$ <> "N" and
+:		callpoint!.getColumnData("OPE_INVDET.MAN_PRICE") <> "Y" and
+:		( (qty_ord and qty_ord <> user_tpl.prev_qty_ord) or unit_price = 0 )
+:	then
+		gosub pricing
+	endif
+
+	qty_shipped = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
+	gosub disp_ext_amt
 [[OPE_INVDET.LINE_CODE.BINP]]
-user_tpl.prev_line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
+rem --- Set previous value / enable repricing, options, lots
+
+	user_tpl.prev_line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
 [[OPE_INVDET.ITEM_ID.BINP]]
-user_tpl.prev_item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+rem --- Set previous item / enable repricing, options, lot
+
+	user_tpl.prev_item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
 [[OPE_INVDET.QTY_ORDERED.BINP]]
-user_tpl.prev_qty_ord = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+rem --- Get prev qty / enable repricing, options, lots
+
+	user_tpl.prev_qty_ord = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
+
+rem --- Has a valid whse/item been entered?
+
+	if user_tpl.item_wh_failed then
+		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+		wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
+		warn  = 1
+		gosub check_item_whse
+	endif
 [[OPE_INVDET.QTY_SHIPPED.BINP]]
-user_tpl.prev_shipqty = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
+rem --- Set previous amount / enable repricing, options, lots
+
+	user_tpl.prev_shipqty = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
+
+rem --- Has a valid whse/item been entered?
+
+	if user_tpl.item_wh_failed then
+		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+		wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
+		warn  = 1
+		gosub check_item_whse
+	endif
 [[OPE_INVDET.QTY_BACKORD.BINP]]
-user_tpl.prev_boqty = num(callpoint!.getColumnData("OPE_INVDET.QTY_BACKORD"))
+rem --- Set previous qty / enable repricing, options, lots
+
+	user_tpl.prev_boqty = num(callpoint!.getColumnData("OPE_INVDET.QTY_BACKORD"))
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
+
+rem --- Has a valid whse/item been entered?
+
+	if user_tpl.item_wh_failed then
+		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+		wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
+		warn  = 1
+		gosub check_item_whse
+	endif
 [[OPE_INVDET.BWRI]]
 print "Det:BWRI"; rem debug
 
@@ -66,20 +341,37 @@ rem --- Set item tax flag
 
 	gosub set_item_taxable
 [[OPE_INVDET.AOPT-RCPR]]
-rem --- Reprice
+rem --- Are things set for a reprice?
 
 	if pos(user_tpl.line_type$="SP") then
 		qty_ord = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
-		if qty_ord then gosub pricing
+
+		if qty_ord then 
+
+		rem --- Save current column so we'll know where to set focus when we return
+
+			return_to_col = util.getGrid(Form!).getSelectedColumn()
+
+		rem --- Do repricing
+
+			gosub pricing
+			callpoint!.setColumnData("OPE_INVDET.MAN_PRICE", "N")
+			gosub manual_price_flag
+
+		rem --- Return focus to where we were (Detail line grid)
+		rem --- unless the Enter Price message was displayed
+
+			if !enter_price_message then
+				util.forceEdit(Form!, return_to_col)
+			endif
+		endif
 	endif
-[[OPE_INVDET.STD_LIST_PRC.AVAL]]
-rem --- Disable Recalc Price button
-
-	callpoint!.setOptionEnabled("RCPR",0)
 [[OPE_INVDET.STD_LIST_PRC.BINP]]
-rem --- Enable the Recalc Price button
+rem --- Enable the Recalc Price button, Additional Options, Lots
 
-	callpoint!.setOptionEnabled("RCPR",1)
+	gosub enable_repricing
+	gosub enable_addl_opts
+	gosub able_lot_button
 [[OPE_INVDET.AWRI]]
 print "Det:AWRI"; rem debug
 
@@ -176,21 +468,6 @@ rem --- Update header
 	gosub disp_grid_totals
 
 rem input "Det:Done with AWRI: ", *; rem debug
-[[OPE_INVDET.AGDS]]
-print "Det:AGDS"; rem debug
-
-rem --- Disable Back orders if necessary
-
-	cust_id$   = callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID")
-	cash_sale$ = callpoint!.getHeaderColumnData("OPE_INVHDR.CASH_SALE")
-
-	if user_tpl.allow_bo$ = "N"        or
-:		pos(user_tpl.line_type$ = "MO") or
-:		cash_sale$ = "Y"
-:	then
-		util.disableGridColumn(Form!, user_tpl.bo_col)
-		print "---BO Disabled"; rem debug
-	else
 [[OPE_INVDET.BDGX]]
 print "Det:BDGX"; rem debug
 
@@ -198,23 +475,42 @@ rem --- Disable detail-only buttons
 
 	callpoint!.setOptionEnabled("LENT",0)
 	callpoint!.setOptionEnabled("RCPR",0)
+	callpoint!.setOptionEnabled("ADDL",0)
+
+rem --- Set header total amounts
+
+	use ::ado_order.src::OrderHelper
+
+	cust_id$  = cvs(callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID"), 2)
+	order_no$ = cvs(callpoint!.getColumnData("OPE_INVDET.ORDER_NO"), 2)
+	inv_type$ = callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE")
+
+	if cust_id$<>"" and order_no$<>"" then
+
+		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+		ordHelp!.totalSalesDisk(cust_id$, order_no$, inv_type$)
+		
+		callpoint!.setHeaderColumnData( "OPE_INVHDR.TOTAL_SALES", str(ordHelp!.getExtPrice()) )
+		callpoint!.setHeaderColumnData( "OPE_INVHDR.TAXABLE_AMT", str(ordHelp!.getTaxable()) )
+		callpoint!.setHeaderColumnData( "OPE_INVHDR.TOTAL_COST",  str(ordHelp!.getExtCost()) )
+
+		callpoint!.setStatus("MODIFIED;REFRESH;SETORIG")
+
+	endif
 [[OPE_INVDET.AGCL]]
 print "Det:AGCL"; rem debug
 
 rem --- Set detail defaults and disabled columns
 
-	callpoint!.setTableColumnAttribute("OPE_INVDET.LINE_CODE","DFLT", user_tpl$.line_code$)
+	callpoint!.setTableColumnAttribute("OPE_INVDET.LINE_CODE","DFLT", user_tpl.line_code$)
 	callpoint!.setTableColumnAttribute("OPE_INVDET.WAREHOUSE_ID","DFLT", user_tpl.warehouse_id$)
 
-	if user_tpl.skip_ln_code$ = "Y" then
-		callpoint!.setColumnEnabled(-1, "OPE_INVDET.LINE_CODE", 0)
-		rem debug: which row are we on?
-		rem line_code$ = user_tpl$.line_code$
-		rem gosub disable_by_linetype
-	endif
+rem	if user_tpl.skip_ln_code$ = "Y" then
+rem		callpoint!.setColumnEnabled(-1, "OPE_INVDET.LINE_CODE", 0)
+rem	endif
 
 	if user_tpl.skip_whse$ = "Y" then
-		callpoint!.setColumnEnabled(-1, "OPE_INVDET.WAREHOUSE_ID", 0)
+		rem callpoint!.setColumnEnabled(-1, "OPE_INVDET.WAREHOUSE_ID", 0)
 		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
 		wh$   = user_tpl.warehouse_id$
 		gosub set_avail	
@@ -242,35 +538,42 @@ rem --- Save current row/column so we'll know where to set focus when we return 
 
 rem --- Go get Lot Numbers
 
-	ivm_itemmast_dev = fnget_dev("IVM_ITEMMAST")
-	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
-
-	item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
-	read record (ivm_itemmast_dev, key=firm_id$+item$, dom=*next) ivm_itemmast$
+	item_id$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+	gosub lot_ser_check
 
 rem --- Is this item lot/serial?
 
-	if ivm_itemmast.lotser_item$ = "Y" and ivm_itemmast.inventoried$ = "Y"
-		callpoint!.setOptionEnabled("LENT",0)
-		callpoint!.setDevObject("int_seq", callpoint!.getColumnData("OPE_INVDET.INTERNAL_SEQ_NO"))
-		callpoint!.setDevObject("wh",      callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID"))
-		callpoint!.setDevObject("item",    callpoint!.getColumnData("OPE_INVDET.ITEM_ID"))
-		callpoint!.setDevObject("ord_qty", callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
-
-		ar_type$ = "  "
+	if lotted$ = "Y" then
+		ar_type$ = callpoint!.getColumnData("OPE_INVDET.AR_TYPE")
 		cust$    = callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID")
 		order$   = callpoint!.getColumnData("OPE_INVDET.ORDER_NO")
 		int_seq$ = callpoint!.getColumnData("OPE_INVDET.INTERNAL_SEQ_NO")
 
 		if cvs(cust$,2) <> ""
+
+		rem --- Run the Lot/Serial# detail entry form
+		rem      IN: call/enter list
+		rem          the DevObjects set below
+		rem          DevObject("lotser_flag"): set in OPE_INVHDR
+
+			callpoint!.setDevObject("from",          "invoice_entry")
+			callpoint!.setDevObject("wh",            callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID"))
+			callpoint!.setDevObject("item",          callpoint!.getColumnData("OPE_INVDET.ITEM_ID"))
+			callpoint!.setDevObject("ord_qty",       callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+			callpoint!.setDevObject("dropship_line", user_tpl.line_dropship$)
+			callpoint!.setDevObject("invoice_type",  callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE"))
+
 			grid!.focus()
-			dim dflt_data$[3,1]
+
+			dim dflt_data$[4,1]
 			dflt_data$[1,0] = "AR_TYPE"
 			dflt_data$[1,1] = ar_type$
 			dflt_data$[2,0] = "CUSTOMER_ID"
 			dflt_data$[2,1] = cust$
 			dflt_data$[3,0] = "ORDER_NO"
 			dflt_data$[3,1] = order$
+			dflt_data$[4,0]="ORDDET_SEQ_REF"
+			dflt_data$[4,1]=int_seq$
 			lot_pfx$ = firm_id$+ar_type$+cust$+order$+int_seq$
 
 			call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
@@ -281,7 +584,23 @@ rem --- Is this item lot/serial?
 :				table_chans$[all], 
 :				dflt_data$[all]
 
-rem --- return focus to where we were (Detail line grid)
+		rem --- Updated qty shipped, backordered, extension
+
+			qty_shipped = num(callpoint!.getDevObject("total_shipped"))
+			qty_ordered = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+			unit_price  = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+			callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(qty_shipped))
+
+			if qty_ordered > 0 then
+				callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", str(max(qty_ordered - qty_shipped, 0)) )
+			else
+				callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", str(min(qty_ordered - qty_shipped, 0)) )
+			endif
+
+			gosub disp_ext_amt
+			callpoint!.setStatus("REFRESH")
+
+		rem --- Return focus to where we were (Detail line grid)
 
 			util.forceEdit(Form!, return_to_row, return_to_col)
 		endif
@@ -305,10 +624,11 @@ rem --- Disable skipped columns (debug: disabled, line code won't be set yet)
 
 rem --- Backorder is zero and disabled on a new record
 
-	user_tpl.new_detail = 1
+	rem user_tpl.new_detail = 1
+	rem The above is not reliable; use callpoint!.getRecordMode()
+
 	callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
 	callpoint!.setColumnEnabled("OPE_INVDET.QTY_BACKORD", 0)
-	print "---BO cleared and disabled"
 
 rem --- Set defaults for new record
 
@@ -320,8 +640,7 @@ rem --- Set defaults for new record
 	
 	if inv_type$ = "P" or ship_date$ > user_tpl.def_commit$ then
  		callpoint!.setColumnData("OPE_INVDET.COMMIT_FLAG", "N")
-		callpoint!.setColumnEnabled("OPE_INVDET.QTY_SHIPPED", "0")
-		print "--- Shipped disabled, commit flag is N"; rem debug
+		callpoint!.setColumnEnabled("OPE_INVDET.QTY_SHIPPED", 0)
 	else
 		callpoint!.setColumnData("OPE_INVDET.COMMIT_FLAG", "Y")
  	endif
@@ -331,6 +650,12 @@ rem --- Enable/disable backorder
 	gosub able_backorder
 
 	callpoint!.setStatus("REFRESH")
+
+rem --- Buttons start disabled
+
+	callpoint!.setOptionEnabled("LENT",0)
+	callpoint!.setOptionEnabled("RCPR",0)
+	callpoint!.setOptionEnabled("ADDL",0)
 [[OPE_INVDET.BDEL]]
 print "Det:BDEL"; rem debug
 
@@ -340,20 +665,12 @@ rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 		action$="UC"
 		gosub uncommit_iv
 	endif
-[[OPE_INVDET.UNIT_PRICE.AVEC]]
-rem --- Update header
-
-	gosub disp_grid_totals
-
-rem --- Recalc and display extended price
-
-	gosub disp_ext_amt
 [[OPE_INVDET.AGRN]]
 print "Det:AGRN"; rem debug
 
-rem (fires regardles of new or existing row)
+rem (Fires regardles of new or existing row.  Use callpoint!.getRecordMode() to distinguish the two)
 
-rem --- Set line type
+rem --- Disable by line type
 
 	line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
 	gosub disable_by_linetype
@@ -372,7 +689,6 @@ rem --- Disable Shipped?
 
 	if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "N" then
 		callpoint!.setColumnEnabled("OPE_INVDET.QTY_SHIPPED", 0)
-		print "---Shipped disabled, commit flag is N"; rem debug
 	endif
 
 rem --- Set item tax flag
@@ -395,20 +711,68 @@ rem --- Set item price if item and whse exist
 		endif
 	endif
 
+rem --- Set previous values
+
+	user_tpl.prev_ext_price  = num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE"))
+	user_tpl.prev_ext_cost   = num(callpoint!.getColumnData("OPE_INVDET.UNIT_COST")) * num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+	user_tpl.prev_line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
+	user_tpl.prev_item$      = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+	user_tpl.prev_qty_ord    = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+	user_tpl.prev_boqty      = num(callpoint!.getColumnData("OPE_INVDET.QTY_BACKORD"))
+	user_tpl.prev_shipqty    = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
+	user_tpl.prev_unitprice  = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+
 rem --- Set buttons
 
-	gosub enable_repricing
+	rem if !user_tpl.new_detail then...
+
 	gosub able_lot_button
+
+	if callpoint!.getRecordMode() = "C" then
+		gosub enable_repricing
+		gosub enable_addl_opts
+	endif
+
+rem --- Set availability info
+
+	gosub set_avail
 [[OPE_INVDET.AGRE]]
 print "Det:AGRE"; rem debug
+
+rem --- Clear/set flags
+
+	rem user_tpl.new_detail = 0
+
+	this_row = callpoint!.getValidationRow()
+
+	if callpoint!.getGridRowNewStatus(this_row) <> "Y" and callpoint!.getGridRowModifyStatus(this_row) <> "Y" then
+		break; rem --- exit callpoint
+	endif
+
+	user_tpl.detail_modified = 1
+
+rem --- Returns
+
+	if num( callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED") ) < 0 then
+		callpoint!.setColumnData( "OPE_INVDET.QTY_SHIPPED", callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED") )
+		callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
+	endif
+
+rem --- What is extended price?
+
+	unit_price = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+
+	if pos(user_tpl.line_type$="SNP") then
+		ext_price = round( num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED")) * unit_price, 2)
+	else
+		ext_price = round( num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE")), 2)
+	endif
 
 rem --- Has customer credit been exceeded?
 
 	gosub calc_grid_totals
-	ext_price      = num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE"))
-	prev_ext_price = num(callpoint!.getColumnUndoData("OPE_INVDET.EXT_PRICE"))
 	
-	if user_tpl.balance + ext_price - prev_ext_price + tamt > user_tpl.credit_limit then 
+	if user_tpl.balance - user_tpl.prev_ext_price + ttl_ext_price > user_tpl.credit_limit then 
 		gosub credit_exceeded
 	endif
 
@@ -424,7 +788,7 @@ rem --- Check for minimum line extension
 :	then
 		msg_id$ = "OP_LINE_UNDER_MIN"
 		dim msg_tokens$[1]
-		msg_tokens$ = str(user_tpl.min_line_amt:user_tpl.amount_mask$)
+		msg_tokens$[1] = str(user_tpl.min_line_amt:user_tpl.amount_mask$)
 		gosub disp_message
 	endif
 	
@@ -434,19 +798,14 @@ rem --- Warehouse and Item must be correct
 	item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
 	warn  = 1
 
-	print "---Checking item/wh..."; rem debug
 	gosub check_item_whse	
 
-	if failed then 
-		callpoint!.setStatus("ABORT")
+	if user_tpl.item_wh_failed then 
+		rem callpoint!.setStatus("ABORT")
+		rem --- using this instead to force focus if item/whse invalid -- i.e., don't let user leave corrupt row
+		callpoint!.setFocus(this_row,"OPE_INVDET.ITEM_ID")
+		break; rem --- exit callpoint
 	else
-
-	rem --- Set objects (why?)
-
-		rem callpoint!.setDevObject("int_seq", callpoint!.getColumnData("OPE_INVDET.INTERNAL_SEQ_NO"))
-		rem callpoint!.setDevObject("wh",      callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID"))
-		rem callpoint!.setDevObject("item",    callpoint!.getColumnData("OPE_INVDET.ITEM_ID"))
-		rem callpoint!.setDevObject("ord_qty", callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
 
 	rem --- Clear line type
 
@@ -466,70 +825,59 @@ rem --- Set price and discount
 
 	std_price  = num(callpoint!.getColumnData("OPE_INVDET.STD_LIST_PRC"))
 	disc_per   = num(callpoint!.getColumnData("OPE_INVDET.DISC_PERCENT"))
-	unit_price = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
 	
 	if std_price then
-		callpoint!.setColumnData("OPE_INVDET.DISC_PERCENT", str(100 - unit_price * 100 / std_price))
+		callpoint!.setColumnData("OPE_INVDET.DISC_PERCENT", str(round(100 - unit_price * 100 / std_price, 2)) )
 	else
 		if disc_per <> 100 then
-			callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str(unit_price * 100 / (100 - disc_per)) )
+			callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str(round(unit_price * 100 / (100 - disc_per), 2)) )
 		endif
 	endif
 	
 rem --- Set amounts for non-commited "other" type detail lines
-
-	ext_price = num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE"))
 
 	if callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE") <> "P" and
 :		callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "N"         and
 :		user_tpl.line_type$ = "O"                                        and
 :		ext_price <> 0
 :	then
-		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(ext_price))
+		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(ext_price, 2)) )
 		callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", "0")
 		callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", "0")
 	endif
-[[OPE_INVDET.UNIT_COST.AVAL]]
-rem --- Disable Cost field if there is a value in it
-rem g!=form!.getChildWindow(1109).getControl(5900)
-rem enable_color!=g!.getCellBackColor(0,0)
-rem disable_color!=g!.getLineColor()
 
-rem r=g!.getSelectedRow()
-rem if num(callpoint!.getUserInput())=0
-rem 	g!.setCellEditable(r,5,1)
-rem	g!.setCellBackColor(r,5,enable_color!)
-rem else
-rem 	g!.setCellEditable(r,5,0)
-rem 	g!.setCellBackColor(r,5,disable_color!)
-rem endif
-[[OPE_INVDET.EXT_PRICE.AVEC]]
-rem --- Update header
+rem --- Set header order totals
 
-	gosub disp_grid_totals
+	total_sales = num(callpoint!.getHeaderColumnData("OPE_INVHDR.TOTAL_SALES"))
+	total_cost  = num(callpoint!.getHeaderColumnData("OPE_INVHDR.TOTAL_COST"))
+	ext_cost    = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED")) * num(callpoint!.getColumnData("OPE_INVDET.UNIT_COST"))
+
+	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_SALES", str(total_sales + ext_price - user_tpl.prev_ext_price))
+	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_COST",  str(total_cost  + ext_cost  - user_tpl.prev_ext_cost))
+	callpoint!.setStatus("MODIFIED;REFRESH")
+
+	print "---Total sales set:", num(callpoint!.getHeaderColumnData("OPE_INVHDR.TOTAL_SALES")); rem debug
+	print "---Total cost set :", num(callpoint!.getHeaderColumnData("OPE_INVHDR.TOTAL_COST")); rem debug
 [[OPE_INVDET.UNIT_PRICE.AVAL]]
-rem --- See if this should be repriced
-rem 	if num(callpoint!.getUserInput())<0
-rem 		dim op_chans[6]
-rem 		op_chans[1]=fnget_dev("IVM_ITEMMAST")
-rem 		op_chans[2]=fnget_dev("IVM_ITEMWHSE")
-rem 		op_chans[4]=fnget_dev("IVM_ITEMPRIC")
-rem 		op_chans[5]=fnget_dev("ARS_PARAMS")
-rem 		op_chans[6]=fnget_dev("IVS_PARAMS")
-rem 		whs$=callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
-rem 		item$=callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
-rem 		listcd$=""
-rem 		cust$=callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID")
-rem 		date$=user_tpl.order_date$
-rem 		priccd$=user_tpl.price_code$
-rem 		ordqty=num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
-rem 		type_price$=""
-rem 		call stbl("+DIR_PGM")+"opc_pc.aon",op_chans[all],firm_id$,whs$,item$,listcd$,cust$,date$,priccd$,ordqty,type_price$,price,disc,status
-rem 		callpoint!.setUserInput(str(price))
-rem 	endif
+print "Det:UNIT_PRICE:AVAL"; rem debug
 
+rem --- Set Manual Price flag and round price
+	
+	unit_price = round(num(callpoint!.getUserInput()), 2)
+	callpoint!.setUserInput(str(unit_price))
+
+	if pos(user_tpl.line_type$="SP") and 
+:		user_tpl.prev_unitprice 		and 
+:		unit_price <> user_tpl.prev_unitprice 
+:	then 
+		callpoint!.setColumnData("OPE_INVDET.MAN_PRICE", "Y")
+		gosub manual_price_flag
+	endif
+
+rem --- Display Extended Price
+
+	qty_shipped = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
 	gosub disp_ext_amt
-	gosub disp_grid_totals
 [[OPE_INVDET.AUDE]]
 print "Det:AUDE"; rem debug
 
@@ -549,20 +897,17 @@ rem --- Check item/warehouse combination, Set Available
 
 	item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
 	wh$   = callpoint!.getUserInput()
-	warn  = 1
+	warn  = 0
 
-rem Item probably isn't set yet, but we don't know
+rem --- Item probably isn't set yet, but we don't know that for sure
 
-	if cvs(item$, 2)<>"" then
-		gosub check_item_whse
-		if !failed then gosub set_avail
-	endif
+	gosub check_item_whse
+	if !user_tpl.item_wh_failed then gosub set_avail
 [[OPE_INVDET.ITEM_ID.AVAL]]
 print "Det:ITEM_ID.AVAL"; rem debug
 
 rem --- Check item/warehouse combination and setup values
 
-	start_block = 1
 	item$ = callpoint!.getUserInput()
 	wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
 
@@ -570,70 +915,16 @@ rem --- Check item/warehouse combination and setup values
 		gosub clear_all_numerics
 	endif
 
-	if cvs(item$, 2)<>"" then
-		warn = 1
-		gosub check_item_whse
+	warn = 0
+	gosub check_item_whse
 
-		if !failed then 
-			gosub set_avail
-			callpoint!.setColumnData("OPE_INVDET.UNIT_COST", ivm02a.unit_cost$)
-			callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", ivm02a.cur_price$)
-			callpoint!.setColumnData("OPE_INVDET.PRODUCT_TYPE", ivm01a.product_type$)
-			user_tpl.item_price = ivm02a.cur_price
-			callpoint!.setStatus("REFRESH")
-		endif
-	endif
-[[OPE_INVDET.QTY_ORDERED.AVEC]]
-print "Det:QTY_ORDERED.AVEC"; rem debug
-
-rem --- Set shipped and back ordered
-
-	qty_ord    = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
-	unit_price = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
-
-	if qty_ord<>user_tpl.prev_qty_ord or unit_price = 0 then
-
-		if qty_ord<>user_tpl.prev_qty_ord then
-			callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
-			print "---Backord cleared"; rem debug
-
-			if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "Y" or
-:				callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE") = "P"
-:			then
-				callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(qty_ord))
-				print "---Shipped set to", qty_ord; rem debug
-			else
-				callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", "0")
-				print "---Shipped cleared"; rem debug
-			endif
-		endif
-
-rem --- Recalc quantities and extended price
-
-		if qty_ord and unit_price = 0 and user_tpl.line_type$ <> "N" then
-			gosub pricing
-		endif
-
-		gosub disp_ext_amt
-
-	endif
-
-rem --- Update header
-
-	gosub disp_grid_totals
-
-rem --- Set Lot/Serial button up properly
-
-	gosub able_lot_button
-
-rem --- Set Recalc Price button
-
-	gosub enable_repricing
-
-rem --- Remove lot records if qty goes to 0 (lotted$ set in able_lot_button)
-
-	if lotted$="Y" then
-		rem *** do lotted logic
+	if !user_tpl.item_wh_failed then 
+		gosub set_avail
+		callpoint!.setColumnData("OPE_INVDET.UNIT_COST", ivm02a.unit_cost$)
+		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", ivm02a.cur_price$)
+		callpoint!.setColumnData("OPE_INVDET.PRODUCT_TYPE", ivm01a.product_type$)
+		user_tpl.item_price = ivm02a.cur_price
+		callpoint!.setStatus("REFRESH")
 	endif
 [[OPE_INVDET.ADIS]]
 rem ---display extended price
@@ -665,17 +956,21 @@ print "---Ordered:", ordqty
 
 	if user_tpl.allow_bo$ = "N" or cash_sale$ = "Y" then
 		callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
+		callpoint!.setStatus("REFRESH")
 		print "---BO set to zero"; rem debug
 	else
 		if user_tpl.prev_shipqty <> shipqty then
 			callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", str(max(0, ordqty - shipqty)) )
+			callpoint!.setStatus("REFRESH")
 			print "---BO set to", max(0, ordqty - shipqty); rem debug
 		endif
 	endif
 
-rem --- update header
+rem --- Update header
 
-	gosub disp_grid_totals
+	qty_shipped = shipqty
+	unit_price  = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+	gosub disp_ext_amt
 [[OPE_INVDET.QTY_BACKORD.AVAL]]
 print "Det:QTY_BACKORD.AVAL"; rem debug
 
@@ -683,34 +978,27 @@ rem --- Recalc quantities and extended price
 
 	boqty  = num(callpoint!.getUserInput())
 	ordqty = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+	qtyshipped = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
 
-print "--- BO qty:", boqty; rem debug
-print "---Prev BO:", user_tpl.prev_boqty
-print "---Ord Qty:", ordqty
-
-	if boqty > ordqty then
-		callpoint!.setUserInput(str(user_tpl.prev_boqty))
-		msg_id$ = "BO_EXCEEDS_ORD"
-		gosub disp_message
-		callpoint!.setStatus("ABORT-REFRESH")
-		break; rem --- exit callpoint
-	endif
-
-	if boqty = 0 and !user_tpl.new_detail then
-		callpoint!.setUserInput(str(ordqty))
-		print "---Bo qty set to ordered:", ordqty; rem debug
-		boqty = ordqty
+	if boqty = 0 then
+		user_tpl.prev_boqty = 0
 	endif
 
 	if boqty <> user_tpl.prev_boqty then
-		callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(ordqty - boqty))
-		print "---Shipped set to:", ordqty - boqty; rem debug
+		qty_shipped = ordqty - boqty
+
+		if qty_shipped < 0 then
+			callpoint!.setUserInput(str(user_tpl.prev_boqty))
+			msg_id$ = "BO_EXCEEDS_ORD"
+			gosub disp_message
+			callpoint!.setStatus("ABORT-REFRESH")
+			break; rem --- exit callpoint
+		endif
+
+		callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", str(qty_shipped))
+		unit_price = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
 		gosub disp_ext_amt
 	endif
-
-rem --- Update header
-
-	gosub disp_grid_totals
 [[OPE_INVDET.<CUSTOM>]]
 rem ==========================================================================
 disp_grid_totals: rem --- Get order totals and display, save header totals
@@ -718,64 +1006,41 @@ rem ==========================================================================
 
 	gosub calc_grid_totals
 
-	tamt! = UserObj!.getItem(num(user_tpl.ord_tot_1$))
-	tamt!.setValue(user_tpl.ord_tot)
-	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_SALES", user_tpl.ord_tot$)
+	tamt! = UserObj!.getItem(user_tpl.ord_tot_obj)
+	tamt!.setValue(ttl_ext_price)
+	callpoint!.setHeaderColumnData("OPE_INVHDR.TOTAL_SALES", str(ttl_ext_price))
 	callpoint!.setStatus("REFRESH")
 
-return
+	return
 
 rem ==========================================================================
 calc_grid_totals: rem --- Roll thru all detail line, totaling ext_price
-                  rem     OUT: user_tpl.ord_tot
+                  rem     OUT: ttl_ext_price
 rem ==========================================================================
 
-	print "Det: in calc_grid_totals"; rem debug
+	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 
-	recVect! = GridVect!.getItem(0)
-	dim gridrec$:dtlg_param$[1,3]
-	numrecs = recVect!.size()
-	tamt = 0
-
-	if numrecs>0 then 
-
-		for reccnt=0 to numrecs-1
-			gridrec$ = recVect!.getItem(reccnt)
-
-			if cvs(gridrec$,3)<>"" then 
-				if callpoint!.getGridRowDeleteStatus(reccnt)<>"Y" then 
-					opc_linecode_dev = fnget_dev("OPC_LINECODE")
-					dim opc_linecode$:fnget_tpl$("OPC_LINECODE")
-					read record (opc_linecode_dev, key=firm_id$+gridrec.line_code$, dom=*next) opc_linecode$
-
-					if pos(opc_linecode.line_code$="SPN") then
-						tamt = tamt + (gridrec.unit_price * gridrec.qty_ordered)
-					else
-						tamt = tamt + gridrec.ext_price
-					endif
-				endif
-			endif
-		next reccnt
-
-		user_tpl.ord_tot = tamt
-		print "---Order Total:", tamt; rem debug
+	if ordHelp!.getInv_type() = "" then
+		ttl_ext_price = 0
+	else
+		ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)) )
 	endif
 
-return
+	return
 
 rem ==========================================================================
 pricing: rem --- Call Pricing routine
          rem      IN: qty_ord
          rem     OUT: price (UNIT_PRICE), disc (DISC_PERCENT), STD_LINE_PRC
+         rem          enter_price_message (0/1)
 rem ==========================================================================
 
-print "Det:in pricing"; rem debug
+	enter_price_message = 0
 
-	wh$      = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
-	item$    = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
-	ar_type$ = callpoint!.getColumnData("OPE_INVDET.AR_TYPE")
-	cust$    = callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID")
-	ord$     = callpoint!.getColumnData("OPE_INVDET.ORDER_NO")
+	wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
+	item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+	cust$ = callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID")
+	ord$  = callpoint!.getColumnData("OPE_INVDET.ORDER_NO")
 
 	if cvs(item$, 2)="" or cvs(wh$, 2)="" then 
 		callpoint!.setStatus("ABORT")
@@ -785,7 +1050,7 @@ print "Det:in pricing"; rem debug
 	warn = 0
 	gosub check_item_whse
 
-	if failed then 
+	if user_tpl.item_wh_failed then 
 		callpoint!.setStatus("ABORT")
 		return
 	endif
@@ -798,33 +1063,51 @@ print "Det:in pricing"; rem debug
 	pc_files[5] = fnget_dev("ARS_PARAMS")
 	pc_files[6] = fnget_dev("IVS_PARAMS")
 
-	call stbl("+DIR_PGM")+"opc_pricing.aon",pc_files[all],firm_id$,wh$,item$,user_tpl.price_code$,cust$,
-:		user_tpl.order_date$,user_tpl.pricing_code$,qty_ord,typeflag$,price,disc,status
+	call stbl("+DIR_PGM")+"opc_pricing.aon",
+:		pc_files[all],
+:		firm_id$,
+:		wh$,
+:		item$,
+:		user_tpl.price_code$,
+:		cust$,
+:		user_tpl.order_date$,
+:		user_tpl.pricing_code$,
+:		qty_ord,
+:		typeflag$,
+:		price,
+:		disc,
+:		status
+
 	if status=999 then exitto std_exit
 
 	if price=0 then
 		msg_id$="ENTER_PRICE"
 		gosub disp_message
+		util.forceEdit(Form!, user_tpl.unit_price_col)
+		enter_price_message = 1
 	else
-		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(price))
+		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(price, 2)) )
 		callpoint!.setColumnData("OPE_INVDET.DISC_PERCENT", str(disc))
-		print "---Unit Price set to", price; rem debug
-		print "---Discount set to", disc; rem debug
 	endif
 
 	if disc=100 then
 		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str(user_tpl.item_price))
-		print "---List Price set to", user_tpl.item_price; rem debug
 	else
-		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str((price*100)/(100-disc)) )
-		print "---List Price set to", (price*100)/(100-disc); rem debug
+		callpoint!.setColumnData("OPE_INVDET.STD_LIST_PRC", str( round((price*100) / (100-disc), 2) ))
 	endif
+
+	rem callpoint!.setStatus("REFRESH")
+	callpoint!.setStatus("REFRESH:UNIT_PRICE")
 
 rem --- Recalc and display extended price
 
+	qty_shipped = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
+	unit_price = price
 	gosub disp_ext_amt
 
-return
+	user_tpl.prev_unitprice = unit_price
+
+	return
 
 rem ==========================================================================
 set_avail: rem --- Set data in Availability window
@@ -860,38 +1143,66 @@ rem ==========================================================================
 		avail$[4] = str(ivm02a.qty_on_order)
 		avail$[5] = ivm10c.short_name$
 		avail$[6] = ivm01a.item_type$
-
-		userObj!.getItem(num(user_tpl.avail_oh$)).setText(avail$[1])
-		userObj!.getItem(num(user_tpl.avail_comm$)).setText(avail$[2])
-		userObj!.getItem(num(user_tpl.avail_avail$)).setText(avail$[3])
-		userObj!.getItem(num(user_tpl.avail_oo$)).setText(avail$[4])
-		userObj!.getItem(num(user_tpl.avail_wh$)).setText(avail$[5])
-		userObj!.getItem(num(user_tpl.avail_type$)).setText(avail$[6])
-
-		rem --- Set Drop Ship flag
-
-		dropship_idx = num(user_tpl.dropship_flag$)
-		userObj!.getItem(dropship_idx).setText("")
-
-		if user_tpl.line_dropship$="Y"
-			userObj!.getItem(dropship_idx).setText("**Drop Ship**")
-		endif
-
 	endif
 
-return
+	userObj!.getItem(user_tpl.avail_oh).setText(avail$[1])
+	userObj!.getItem(user_tpl.avail_comm).setText(avail$[2])
+	userObj!.getItem(user_tpl.avail_avail).setText(avail$[3])
+	userObj!.getItem(user_tpl.avail_oo).setText(avail$[4])
+	userObj!.getItem(user_tpl.avail_wh).setText(avail$[5])
+	userObj!.getItem(user_tpl.avail_type).setText(avail$[6])
+
+	if user_tpl.line_dropship$ = "Y" then
+		userObj!.getItem(user_tpl.dropship_flag).setText("**Dropship**")
+	else
+		userObj!.getItem(user_tpl.dropship_flag).setText("")
+	endif
+
+ 	if good_item$="Y"
+ 		switch pos(ivm01a.alt_sup_flag$="AS")
+ 			case 1
+ 				userObj!.getItem(user_tpl.alt_super).setText("Alternate: "+cvs(ivm01a.alt_sup_item$,3))
+ 			break
+ 			case 2
+ 				userObj!.getItem(user_tpl.alt_super).setText("Superseded: "+cvs(ivm01a.alt_sup_item$,3))
+ 			break
+ 			case default
+ 				userObj!.getItem(user_tpl.alt_super).setText("")
+ 			break
+ 		swend
+	else
+		userObj!.getItem(user_tpl.alt_super).setText("")
+ 	endif
+
+	gosub manual_price_flag
+
+	return
+
+rem ==========================================================================
+manual_price_flag: rem --- Set manual price flag
+rem ==========================================================================
+
+	if callpoint!.getColumnData("OPE_INVDET.MAN_PRICE") = "Y" then 
+		userObj!.getItem(user_tpl.manual_price).setText("**Manual Price**")
+	else
+		userObj!.getItem(user_tpl.manual_price).setText("")
+	endif
+
+	return
 
 rem ==========================================================================
 clear_avail: rem --- Clear Availability Window
 rem ==========================================================================
 
-	userObj!.getItem(num(user_tpl.avail_oh$)).setText("")
-	userObj!.getItem(num(user_tpl.avail_comm$)).setText("")
-	userObj!.getItem(num(user_tpl.avail_avail$)).setText("")
-	userObj!.getItem(num(user_tpl.avail_oo$)).setText("")
-	userObj!.getItem(num(user_tpl.avail_wh$)).setText("")
-	userObj!.getItem(num(user_tpl.avail_type$)).setText("")
-	userObj!.getItem(num(user_tpl.dropship_flag$)).setText("")
+	userObj!.getItem(user_tpl.avail_oh).setText("")
+	userObj!.getItem(user_tpl.avail_comm).setText("")
+	userObj!.getItem(user_tpl.avail_avail).setText("")
+	userObj!.getItem(user_tpl.avail_oo).setText("")
+	userObj!.getItem(user_tpl.avail_wh).setText("")
+	userObj!.getItem(user_tpl.avail_type).setText("")
+	userObj!.getItem(user_tpl.dropship_flag).setText("")
+	userObj!.getItem(user_tpl.manual_price).setText("")
+	userObj!.getItem(user_tpl.alt_super).setText("")
 
 return
 
@@ -907,58 +1218,7 @@ rem ==========================================================================
 		gosub set_avail
 	endif
 
-return
-
-rem ==========================================================================
-lot_ser_check: rem --- Check for lotted item
-               rem      IN: item$
-               rem     OUT: lotted$ - Y/N
-               rem          setDevObject - int_seq, wh, item (DISABLED, why needed?)
-rem ==========================================================================
-
-	lotted$="N"
-
-	if cvs(item_id$, 2)<>"" and pos(user_tpl.lotser_flag$ = "LS") then 
-		ivm01_dev=fnget_dev("IVM_ITEMMAST")
-		dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
-		start_block = 1
-
-		if start_block then
-			read record (ivm01_dev, key=firm_id$+item$, dom=*endif) ivm01a$
-
-			if ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then
-				lotted$="Y"
-				rem callpoint!.setDevObject("int_seq", callpoint!.getColumnData("OPE_INVDET.INTERNAL_SEQ_NO"))
-				rem callpoint!.setDevObject("wh",      callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
-				rem callpoint!.setDevObject("item",    item$)
-			endif
-		endif
-	endif
-
-return
-
-rem ==========================================================================
-retrieve_row_data: rem *** DEPRECATED (not used)
-rem ==========================================================================
-
-	currow=callpoint!.getValidationRow()
-
-	mod_stat$=callpoint!.getGridRowModifyStatus(currow)
-	new_stat$=callpoint!.getGridRowNewStatus(currow)
-
-	curVect!=gridVect!.getItem(0)
-	dim cur_rec$:dtlg_param$[1,3]
-	cur_rec$=curVect!.getItem(currow)
-
-	undoVect!=gridVect!.getItem(1)
-	dim undo_rec$:dtlg_param$[1,3]
-	undo_rec$=curVect!.getItem(currow)
-
-	diskVect!=gridVect!.getItem(2)
-	dim disk_rec$:dtlg_param$[1,3]
-	disk_rec$=curVect!.getItem(currow)
-
-return
+	return
 
 rem ==========================================================================
 uncommit_iv: rem --- Uncommit Inventory
@@ -1011,23 +1271,7 @@ print "Det: in uncommit_iv"; rem deebug
 		endif
 	endif
 
-return
-
-rem ==========================================================================
-disable_linecode_whse: rem --- Disable line code and warehouse columns
-                       rem --- These come from parameters and POS records
-rem *** DEPRECATED *** Currently not used
-rem ==========================================================================
-
-	if user_tpl.skip_ln_code$ = "Y" then
-		callpoint!.setColumnEnabled("OPE_INVDET.LINE_CODE", 0)
-	endif
-
-	if user_tpl.skip_whse$ = "Y" then
-		callpoint!.setColumnEnabled("OPE_INVDET.WAREHOUSE_ID", 0)
-	endif
-
-return
+	return
 
 rem ==========================================================================
 disable_by_linetype: rem --- Set enable/disable based on line type
@@ -1035,8 +1279,9 @@ disable_by_linetype: rem --- Set enable/disable based on line type
                      rem      IN: line_code$
 rem ==========================================================================
 
-print "Det: in disable_by_linetype..."; rem debug
-
+	user_tpl.line_type$ = ""
+	user_tpl.line_taxable$ = ""
+	user_tpl.line_dropship$ = ""
 	start_block = 1
 
 	if cvs(line_code$,2) <> "" then
@@ -1046,15 +1291,6 @@ print "Det: in disable_by_linetype..."; rem debug
 		if start_block then
 			find record (fnget_dev(file$), key=firm_id$+line_code$, dom=*endif) opc_linecode$
 			callpoint!.setStatus("ENABLE:"+opc_linecode.line_type$)
-
-			rem debug
-			print "---line code set: """, opc_linecode.line_type$, """"
-			if opc_linecode.line_type$ = user_tpl.line_type$ then
-				print "---line code was already set"
-			else
-				print "---line code was: """, user_tpl.line_type$, """"
-			endif
-			rem debug end
 
 			user_tpl.line_type$     = opc_linecode.line_type$
 			user_tpl.line_taxable$  = opc_linecode.taxable_flag$
@@ -1067,7 +1303,7 @@ rem --- Disable / enable unit cost
 	if pos(user_tpl.line_type$="NSP") = 0 then
 		callpoint!.setColumnEnabled("OPE_INVDET.UNIT_COST", 0)
 	else
-		if user_tpl.line_dropship$ = "Y" and user_tpl.dropship_cost = "N" then
+		if user_tpl.line_dropship$ = "Y" and user_tpl.dropship_cost$ = "N" then
 			callpoint!.setColumnEnabled("OPE_INVDET.UNIT_COST", 0)
 		else
 			if pos(user_tpl.line_type$="SP") and num(callpoint!.getColumnData("OPE_INVDET.UNIT_COST")) = 0
@@ -1076,36 +1312,70 @@ rem --- Disable / enable unit cost
 		endif
 	endif
 
-return
+rem --- Product Type Processing
+
+	if cvs(line_code$,2) <> "" then
+		if opc_linecode.prod_type_pr$ <> "E" then
+			callpoint!.setColumnEnabled("OPE_INVDET.PRODUCT_TYPE", 0)
+			util.disableGridCell(Form!, user_tpl.prod_type_col, callpoint!.getValidRow())
+
+			if opc_linecode.prod_type_pr$ = "D" then
+				callpoint!.setTableColumnAttribute("OPE_INVDET.PRODUCT_TYPE","DFLT", opc_linecode.product_type$)
+			endif	
+		endif
+	else
+		callpoint!.setColumnEnabled("OPE_INVDET.PRODUCT_TYPE", user_tpl.prod_type_col)
+		util.enableGridCell(Form!, user_tpl.prod_type_col, callpoint!.getValidRow())
+	endif
+
+rem --- Disable Back orders if necessary
+
+	if user_tpl.allow_bo$ = "N"        or
+:		pos(user_tpl.line_type$ = "MO") or
+:		callpoint!.getHeaderColumnData("OPE_INVHDR.CASH_SALE") = "Y"
+:	then
+		callpoint!.setColumnEnabled("OPE_INVDET.QTY_BACKORD", 0)
+		util.disableGridCell(Form!, user_tpl.bo_col, callpoint!.getValidRow())
+	else
+		callpoint!.setColumnEnabled("OPE_INVDET.QTY_BACKORD", 1)
+		util.enableGridCell(Form!, user_tpl.bo_col, callpoint!.getValidRow())
+	endif
+
+	return
 
 rem ===========================================================================
 check_item_whse: rem --- Check that a warehouse record exists for this item
                  rem      IN: wh$
                  rem          item$
                  rem          warn    (1=warn if failed, 0=no warning)
-                 rem     OUT: failed  (true/false)
+                 rem     OUT: user_tpl.item_wh_failed
                  rem          ivm02_dev
                  rem          ivm02a$ 
 rem ===========================================================================
 
-print "Det: in check_item_whse"; rem debug
+	user_tpl.item_wh_failed = 0
+	this_row = callpoint!.getValidationRow()
 
-	if pos(user_tpl.line_type$="SP") then
-		file$ = "IVM_ITEMWHSE"
-		ivm02_dev = fnget_dev(file$)
-		dim ivm02a$:fnget_tpl$(file$)
-		start_block = 1
-		
-		if start_block then
-			failed = 1
-			find record (ivm02_dev, key=firm_id$+wh$+item$, dom=*endif) ivm02a$
-			failed = 0
+	if callpoint!.getGridRowDeleteStatus(this_row) <> "Y" then
+		if pos(user_tpl.line_type$="SP") then
+			file$ = "IVM_ITEMWHSE"
+			ivm02_dev = fnget_dev(file$)
+			dim ivm02a$:fnget_tpl$(file$)
+			user_tpl.item_wh_failed = 1
+			
+			if cvs(item$, 2) <> "" and cvs(wh$, 2) <> "" then
+				find record (ivm02_dev, key=firm_id$+wh$+item$, dom=*endif) ivm02a$
+				user_tpl.item_wh_failed = 0
+			endif
+
+			if user_tpl.item_wh_failed and warn then 
+				callpoint!.setMessage("IV_NO_WHSE_ITEM")
+				callpoint!.setStatus("ABORT")
+			endif
 		endif
-
-		if failed and warn then callpoint!.setMessage("IV_NO_WHSE_ITEM")
 	endif
 
-return
+	return
 
 rem ==========================================================================
 clear_all_numerics: rem --- Clear all order detail numeric fields
@@ -1127,10 +1397,25 @@ rem ==========================================================================
 return
 
 rem ==========================================================================
-enable_repricing: rem --- Enable the Recalc Pricing button
+enable_addl_opts: rem --- Enable the Additional Options button
 rem ==========================================================================
 
-print "Det: in enable_repricing..."; rem debug
+	if user_tpl.line_type$ <> "M" then 
+		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+		wh$   = callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID")
+		warn  = 0
+		gosub check_item_whse
+
+		if !user_tpl.item_wh_failed and num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED")) then
+			callpoint!.setOptionEnabled("ADDL",1)
+		endif
+	endif
+
+	return
+
+rem ==========================================================================
+enable_repricing: rem --- Enable the Recalc Pricing button
+rem ==========================================================================
 
 	if pos(user_tpl.line_type$="SP") then 
 		item$ = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
@@ -1138,44 +1423,69 @@ print "Det: in enable_repricing..."; rem debug
 		warn  = 0
 		gosub check_item_whse
 
-		if !failed and num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED")) then
+		if !user_tpl.item_wh_failed and num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED")) then
 			callpoint!.setOptionEnabled("RCPR",1)
 		endif
 	endif
 
-return
+	return
 
 rem ==========================================================================
 able_lot_button: rem --- Enable/disable Lot/Serial button
-                 rem      IN: item$ (for lot_ser_check)
+                 rem      IN: item_id$ (for lot_ser_check)
+                 rem     OUT: lotted$
 rem ==========================================================================
 
-	item$   = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
+	item_id$   = callpoint!.getColumnData("OPE_INVDET.ITEM_ID")
 	qty_ord = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
 	gosub lot_ser_check
 
-	if pos(user_tpl.lotser_flag$ = "LS") and 
-:		qty_ord <> 0                      and
-:		lotted$ = "Y"
-:	then
+	if lotted$ = "Y" and qty_ord <> 0 then
 		callpoint!.setOptionEnabled("LENT",1)
 	else
 		callpoint!.setOptionEnabled("LENT",0)
 	endif
 
-return
+	return
+
+rem ==========================================================================
+lot_ser_check: rem --- Check for lotted item
+               rem      IN: item_id$
+               rem     OUT: lotted$ - Y/N
+rem ==========================================================================
+
+	lotted$="N"
+
+	if cvs(item_id$, 2)<>"" and pos(user_tpl.lotser_flag$ = "LS") then 
+		ivm01_dev=fnget_dev("IVM_ITEMMAST")
+		dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
+		start_block = 1
+
+		if start_block then
+			read record (ivm01_dev, key=firm_id$+item_id$, dom=*endif) ivm01a$
+			callpoint!.setDevObject("inventoried",ivm01a.inventoried$)
+
+		rem --- In Invoice Entry, non-inventoried lotted/serial can enter lots
+
+			if ivm01a.lotser_item$="Y" then lotted$="Y"
+		endif
+	endif
+
+	return
 
 rem ==========================================================================
 disp_ext_amt: rem --- Calculate and display the extended amount
+              rem      IN: qty_shipped
+              rem          unit_price
+              rem     OUT: ext_price set
 rem ==========================================================================
 
-	ord_qty    = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
-	unit_price = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
-	callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", str(ord_qty * unit_price))
-	print "---Ext price set to", ord_qty * unit_price; rem debug
-	callpoint!.setStatus("MODIFIED;REFRESH")
+	callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", str(round(qty_shipped * unit_price, 2)) )
+	gosub check_if_tax
+	callpoint!.setStatus("MODIFIED")
+	rem --- gosub disp_grid_totals --- can't go here because the status of MODIFIED hasn't taken effect
 
-return
+	return
 
 rem ==========================================================================
 set_item_taxable: rem --- Set the item taxable flag
@@ -1193,28 +1503,26 @@ rem ==========================================================================
 		endif
 	endif
 
-return
+	return
 
 rem ==========================================================================
-credit_exceeded: rem --- Credit Limit Exceeded
+credit_exceeded: rem --- Credit Limit Exceeded (ope_cd, 5500-5599)
 rem ==========================================================================
 
-	if user_tpl.credit_limit and user_tpl.never_checked then
+	if user_tpl.credit_limit <> 0 and !user_tpl.credit_limit_warned then
 		msg_id$ = "OP_OVER_CREDIT_LIMIT"
 		dim msg_tokens$[1]
 		msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
 		gosub disp_message
 		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", "*** Over Credit Limit ***")
-		user_tpl.never_checked = 0
+		user_tpl.credit_limit_warned = 1
 	endif
 
-return
+	return
 
 rem ==========================================================================
 able_backorder: rem --- All the factors for enabling or disabling back orders
 rem ==========================================================================
-
-	print "Det:in able_backorder"; rem debug	
 
 	if user_tpl.allow_bo$ = "N" or 
 :		pos(user_tpl.line_type$="MO") or
@@ -1222,18 +1530,36 @@ rem ==========================================================================
 :		user_tpl.is_cash_sale
 :	then
 		callpoint!.setColumnEnabled("OPE_INVDET.QTY_BACKORD", 0)
-		print "---BO disabled"; rem debug
 	else
 		callpoint!.setColumnEnabled("OPE_INVDET.QTY_BACKORD", 1)
-		print "---BO enable"; rem debug
 
-		if user_tpl.new_detail then
+		rem if user_tpl.new_detail then...
+
+		if callpoint!.getRecordMode() = "A" then
 			callpoint!.setColumnData("OPE_INVDET.QTY_BACKORD", "0")
-			print "---BO cleared"; rem debug
 		endif
 	endif
 
-return
+	return
+
+rem ==========================================================================
+check_if_tax: rem --- Check If Taxable
+rem ==========================================================================
+
+	callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", "0")
+	gosub calc_grid_totals
+
+   if user_tpl.balance + ttl_ext_price > user_tpl.credit_limit then 
+		gosub credit_exceeded
+	endif
+
+	if user_tpl.line_taxable$ = "Y" or 
+:		( pos(user_tpl.line_type$="OMN") and user_tpl.item_taxable$ = "Y" )
+:	then 
+		callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", callpoint!.getColumnData("OPE_INVDET.EXT_PRICE"))
+	endif
+
+	return
 
 rem ==========================================================================
 #include std_missing_params.src
@@ -1266,9 +1592,15 @@ rem --- Has line code changed?
 		callpoint!.setColumnData("OPE_INVDET.VENDOR_ID", "")
 		callpoint!.setColumnData("OPE_INVDET.DROPSHIP", "")
 
+		if opc_linecode.line_type$="O" then
+			if cvs(callpoint!.getColumnData("OPE_INVDET.ORDER_MEMO"),3) = "" then
+				callpoint!.setColumnData("OPE_INVDET.ORDER_MEMO",opc_linecode.code_desc$)
+			endif
+		endif
+
 		gosub clear_all_numerics
-		gosub disp_grid_totals
 		gosub clear_avail
+		user_tpl.item_wh_failed = 1
 
 	endif
 

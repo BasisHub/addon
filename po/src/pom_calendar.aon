@@ -110,9 +110,9 @@ rem --- Get SysGUI Object
     HdrText!=SysGUI!.makeColor(160,160,160)
     ClosedColor!=SysGUI!.makeColor(153,153,153)
     HolidayColor!=SysGUI!.makeColor(182,214,245)
-
+    
     DayVect!=SysGUI!.makeVector()
-
+    
     dim gui_event$:tmpl(gui_dev)
     dim notify_base$:noticetpl(0,0)
 
@@ -122,6 +122,16 @@ rem --- Get Attributes
         attr_def_col$=attr_def_col$[0,0]
         attr_def_tbl$=attr_def_tbl$[0,0]
 
+rem --- If current month doesn't exist, create an empty current month
+
+    while 1
+        try_mo=curr_mo
+        try_yr=curr_yr  
+        read record(pom_calendar_dev,key=firm_id$+str(try_yr:"0000")+str(try_mo:"00"),dom=*next)pom_calendar$;break
+        gosub create_new_month
+        break
+    wend
+        
 rem --- get application record in order to get form icon
 
     readrecord(adm_modules,key=pad(lic_feature$,11),dom=*next)adm_modules$
@@ -131,12 +141,15 @@ rem --- get application record in order to get form icon
 
 rem --- Main Process
 
+rem    gosub find_gaps1;rem "jpb
     gosub find_gaps
     gosub get_calendar_boundaries
     gosub disp_win
     gosub get_user_settings
     gosub def_grids
     gosub display_date
+    gosub display_calendar
+    gosub display_data
     gosub resize_win
 
     Window!.setVisible(1)
@@ -155,10 +168,46 @@ event_ctl:rem --- Event Control
     popmenu_stat2!.setCallback(popmenu_stat2!.ON_POPUP_ITEM_SELECT,"adjust_status")
     popmenu_stat3!.setCallback(popmenu_stat3!.ON_POPUP_ITEM_SELECT,"adjust_status")
     LstGaps!.setCallback(LstGaps!.ON_LIST_SELECT,"find_gap")
+    gridCal!.setCallback(gridCal!.ON_GRID_KEYPRESS,"keypress")
+    gridCal!.setCallback(gridCal!.ON_GRID_RIGHT_MOUSE_DOWN,"getcell")    
+    GridCal!.setPopupMenu(popmenuStat!)
 
-SysGUI!.flushEvents()
+
+    SysGUI!.flushEvents()
 
     process_events,err=*same
+
+getcell:
+
+    Event!=SysGUI!.getLastEvent()
+    gridCal!.setSelectedCell(Event!.getRow(),Event!.getColumn())
+    return
+    
+keypress:rem --- Check for C, W, H
+
+    Event!=SysGUI!.getLastEvent()
+    char_pressed=Event!.getKeyCode()
+    switch char_pressed
+        case 67; rem Closed
+        case 99
+            pop_opt$="Closed"
+            gosub set_status
+        break
+        case 87; rem Work Day
+        case 119
+            pop_opt$="Workday"
+            gosub set_status        
+        break
+        case 72; rem "Holiday
+        case 104
+            pop_opt$="Holiday"
+            gosub set_status
+        break
+        default
+        break
+    swend
+    
+return
 
 adjust_date:rem --- Adjust Date
 
@@ -295,7 +344,7 @@ adjust_status:
     gui_event$=SysGUI!.getLastEventString()
     popCtl!=popmenuStat!.getMenuItem(gui_event.y)
     pop_opt$=popCtl!.getText()
-
+set_status:
     if pop_opt$="Closed"
         useColor!=ClosedColor!
         change_stat$="C"
@@ -337,6 +386,7 @@ adjust_status:
 update_pom_calendar:
 
     dim pom_calendar$:fattr(pom_calendar$)
+
     extractrecord(pom_calendar_dev,key=firm_id$+str(curr_yr:"0000")+str(curr_mo:"00"))pom_calendar$
     field pom_calendar$,"DAY_STATUS_"+str(num(change_day$):"00")=change_stat$
     pom_calendar$=field(pom_calendar$)
@@ -357,7 +407,9 @@ find_gap:
 get_calendar_boundaries:
    
     dim pom_calendar$:fattr(pom_calendar$)
+
     read(pom_calendar_dev,key=firm_id$,dom=*next)
+
     k$=key(pom_calendar_dev,err=*next);readrecord(pom_calendar_dev,key=k$)pom_calendar$
     if pom_calendar.firm_id$<>firm_id$ 
         first_date$="None"
@@ -365,12 +417,109 @@ get_calendar_boundaries:
         first_date$=pom_calendar.month$+"/"+pom_calendar.year$
     endif
     dim pom_calendar$:fattr(pom_calendar$)
+
     read(pom_calendar_dev,key=firm_id$+$ff$,dom=*next)
     k$=keyp(pom_calendar_dev,err=*next);readrecord(pom_calendar_dev,key=k$)pom_calendar$
     if pom_calendar.firm_id$<>firm_id$
         last_date$="None"
     else
         last_date$=pom_calendar.month$+"/"+pom_calendar.year$
+    endif
+
+    return
+
+find_gaps1: rem " --- Display Unscheduled Gaps in Calendar
+    gap$=""
+    GapVect!=SysGUI!.makeVector()  
+    dim pom_calendar$:fattr(pom_calendar$)
+    read(pom_calendar_dev,key=firm_id$,dom=*next)
+
+    while 1
+        readrecord(pom_calendar_dev,end=*break)pom_calendar$
+        if pom_calendar.firm_id$<>firm_id$ then break
+        day_status$=""
+        for x=1 to pom_calendar.days_in_mth
+            if field(pom_calendar$,"day_status_"+str(x:"00"))="" field pom_calendar$,"day_status_"+str(x:"00")=" "
+            day_status$=day_status$+field(pom_calendar$,"day_status_"+str(x:"00"))
+        next x
+        last_month$=pom_calendar.year$+pom_calendar.month$+str(pom_calendar.days_in_mth:"00")
+        if pom_calendar.month$="02"
+            nxt_date$=""
+            call stbl("+DIR_PGM")+"adc_daydates.aon",last_month$(1,4)+"0301",nxt_date$,-1
+            last_month$=nxt_date$
+            pom_calendar.days_in_mth=num(last_month$(7,2))
+        endif
+        x0=pos(" "<>day_status$)
+l6150:
+        x1=pos(" "=day_status$(x0,pom_calendar.days_in_mth+1-x0))
+        if x1=0 goto rem_months
+        gap$=gap$+pom_calendar.year$+pom_calendar.month$+str(x0+x1-1:"00")
+        x2=pos(" "<>day_status$(x0+x1-1,pom_calendar.days_in_mth+1-(x0+x1)))
+        if x2=0 goto rem_months
+        gap$=gap$+pom_calendar.year$+pom_calendar.month$+str(x0+x1+x2-3:"00")
+        x0=x0+x1+x2-2
+        goto l6150
+
+rem_months: rem " --- Process remaining months
+        k$=key(pom_calendar_dev,end=*break)
+        if pos(firm_id$=k$)<>1 break
+        if pom_calendar.month$="02"
+            nxt_date$=""
+            call stbl("+DIR_PGM")+"adc_daydates.aon",last_month$(1,4)+"0301",nxt_date$,-1
+            last_month$=nxt_date$
+            pom_calendar.days_in_mth=num(last_month$(7,2))
+        endif
+        nxt_date$=""
+        call stbl("+DIR_PGM")+"adc_daydates.aon",last_month$,nxt_date$,1
+        if len(nxt_date$)<>8 break
+        if nxt_date$(1,6)<>k$(3,6)
+            if mod(len(gap$),16)=0 gap$=gap$+nxt_date$
+        endif
+        readrecord (pom_calendar_dev,key=k$)pom_calendar$
+        day_status$=""
+        for x=1 to pom_calendar.days_in_mth
+            if field(pom_calendar$,"day_status_"+str(x:"00"))="" field pom_calendar$,"day_status_"+str(x:"00")=" "
+            day_status$=day_status$+field(pom_calendar$,"day_status_"+str(x:"00"))
+        next x
+        last_month$=pom_calendar.year$+pom_calendar.month$+str(pom_calendar.days_in_mth:"00")
+        if mod(len(gap$),16)>0 goto l6290
+        if pom_calendar.day_status_01$<>" " goto l6340
+        gap$=gap$+pom_calendar.year$+pom_calendar.month$+"01"+pom_calendar.year$+pom_calendar_month$+str(pos(" "<>day_status$)-1:"00")
+        x0=pos(" "<>day_status$)
+        goto l6350
+l6290:
+        if pom_calendar.day_status_01$=" " goto l6330
+        nxt_mnth$=""
+        call stbl("+DIR_PGM")+"adc_daydates.aon",pom_calendar.year$+pom_calendar.month$+"01",nxt_mnth$,-1
+        if len(nxt_mnth$)<>8 break
+        gap$=gap$+nxt_mnth$
+        x0=1
+        goto l6350
+l6330:
+        gap$=gap$+pom_calendar.year$+pom_calendar.month$+str(pos(" "<>day_status$)-1:"00")
+        x0=pos(" "<>day_status$)
+        goto l6350
+l6340:
+        x0=1
+l6350:
+        if x0=0 x0=1
+        x1=pos(" "=day_status$(x0,pom_calendar.days_in_mth+1-x0))
+        if x1=0 goto rem_months
+        gap$=gap$+pom_calendar.year$+pom_calendar.month$+str(x0+x1-1:"00")
+        x2=pos(" "<>day_status$(x0+x1-1,pom_calendar.days_in_mth+1-(x0+x1)))
+        if x2=0 goto rem_months
+        gap$=gap$+pom_calendar.year$+pom_calendar.month$+str(x0+x1+x2-3:"00")
+        x0=x0+x1+x2-2
+        goto l6350
+    wend
+
+    if mod(len(gap$),16)<>0 gap$=gap$(1,len(gap$)-8)
+    if len(gap$)<>0
+        for x=1 to len(gap$) step 16
+            gap_start$=gap$(x+4,2)+"/"+gap$(x+6,2)+"/"+gap$(x,4)
+            gap_stop$=gap$(x+12,2)+"/"+gap$(x+14,2)+"/"+gap$(x+8,4)
+            gosub load_GapVect
+        next x
     endif
 
     return
@@ -406,6 +555,8 @@ rem --- the start of gap date, and need set stop dates until we hit a non-space 
             if cvs(day_stat$,3)=""
                 if start_of_gap=1
                     if num(pom_calendar.year$+pom_calendar.month$)-num(last_key$)>1
+                        rem - if at start of new gap, but this yr/mo not contig w/ previous, adjust begin dt for the gap
+                        rem - then put prev start/stop into gapVect!, and begin tracking gap
                         wk_date$=last_key$+day_str$(num(last_key$(5,2))*2-1,2)
                         call stbl("+DIR_PGM")+"adc_daydates.aon",wk_date$,nxt_date$,1
                         gosub load_GapVect
@@ -414,12 +565,16 @@ rem --- the start of gap date, and need set stop dates until we hit a non-space 
                         last_key$=pom_calendar.year$+pom_calendar.month$
                         start_of_gap=0
                     else
+                        rem - if at start of new gap and this rec is contiguous w/ previous,
+                        rem - put prev start/stop into gapVect! and begin tracking gap
                         gosub load_GapVect
                         gap_start$=pom_calendar.year$+pom_calendar.month$+str(curr_day:"00")
                         gap_stop$=gap_start$
                         start_of_gap=0
                     endif
                 else
+                    rem - start_of_gap<>1, meaning we're in the middle of tracking a gap
+                    rem - just update the gap_stop$
                     gap_stop$=pom_calendar.year$+pom_calendar.month$+str(curr_day:"00")
                 endif
             else
@@ -429,10 +584,11 @@ rem --- the start of gap date, and need set stop dates until we hit a non-space 
                     start_of_gap=1
                     first_rec=0
                 else
-                    rem --- if first day of new month, and gap isn't closed, get end date
+                    rem --- if first day of new month is non-space, and gap isn't closed, get end date for gap
                     if curr_day=1 and start_of_gap=0
                         wk_date$=pom_calendar.year$+pom_calendar.month$+str(curr_day:"00")
                         call stbl("+DIR_PGM")+"adc_daydates.aon",wk_date$,prev_date$,-1
+                        last_key$=prev_date$(1,6)
                         gap_stop$=prev_date$
                         start_of_gap=1
                     endif
@@ -455,6 +611,7 @@ load_GapVect:
     endif
     gap_start$=""
     gap_stop$=""
+
     return
 
 validate_date:
@@ -464,18 +621,18 @@ rem --- see if curr_mo/curr_yr is in calendar; option to create if not
 
     read record(pom_calendar_dev,key=firm_id$+str(try_yr:"0000")+str(try_mo:"00"),dom=*next)pom_calendar$
     if cvs(pom_calendar.year$,3)=""
-        msg_id$="PO_NO_CAL"
-        msg_opt$=""
-        gosub disp_message
-        if msg_opt$="Y"
+rem        msg_id$="PO_NO_CAL"
+rem        msg_opt$=""
+rem        gosub disp_message
+rem        if msg_opt$="Y"
             curr_yr=try_yr
             curr_mo=try_mo
             gosub create_new_month
         endif
-    else
+rem    else
         curr_yr=try_yr
         curr_mo=try_mo
-    endif
+rem    endif
 
     return
 
@@ -542,7 +699,6 @@ disp_win:rem --- Display Window
     BtnNextMo!=Window!.getControl(103)
     BtnNextYr!=Window!.getControl(104)
     BtnCurrMo!=Window!.getControl(105)
-
     CurrDate!=Window!.getControl(106)
 
     FirstDate!=Window!.getControl(109)
@@ -612,7 +768,6 @@ def_grids:rem --- Define Grid
     popmenu_stat2!.setBackColor(HolidayColor!)
     popmenu_stat3! = popmenuStat!.addMenuItem(-203,"Workday")
     popmenu_stat3!.setBackColor(DayColor!)
-    GridCal!.setPopupMenu(popmenuStat!)
 
     return
 

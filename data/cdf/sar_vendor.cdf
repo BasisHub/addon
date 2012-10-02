@@ -1,3 +1,21 @@
+[[SAR_VENDOR.BFMC]]
+rem --- open files
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="SAM_VENDOR",open_opts$[1]="OTA"
+	open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
+	gosub open_tables
+	sas01_dev=num(open_chans$[2]),sas01a$=open_tpls$[2]
+	dim sas01a$:sas01a$
+	read record (sas01_dev,key=firm_id$+"SA00")sas01a$
+
+rem --- create list for available levels
+
+	ldat_list$=pad("Vendor",20)+"~"+"V;"
+	if pos(sas01a.vendor_lev$="PI") ldat_list$=ldat_list$+pad("Product",20)+"~"+"P;"
+	if pos(sas01a.vendor_lev$="I") ldat_list$=ldat_list$+pad("Item",20)+"~"+"I;"
+
+	callpoint!.setTableColumnAttribute("SAR_VENDOR.SA_LEVEL","LDAT",ldat_list$)
 [[SAR_VENDOR.ASVA]]
 rem --- Check selected level against allowable level
 	allow=pos(user_tpl.high_level$=user_tpl.sa_levels$)
@@ -51,12 +69,8 @@ dim user_tpl$:"sa_levels:c(3),high_level:c(1)"
 user_tpl.sa_levels$="VPI"
 user_tpl.high_level$=sas_params.vendor_lev$
 [[SAR_VENDOR.BSHO]]
-	num_files=2
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="SAM_VENDOR",open_opts$[1]="OTA"
-	open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
-	gosub open_tables
-	sas01_dev=num(open_chans$[2]),sas01a$=open_tpls$[2]
+	sas01_dev=fnget_dev("SAS_PARAMS")
+	sas01a$=fnget_tpl$("SAS_PARAMS")
 	dim sas01a$:sas01a$
 	read record (sas01_dev,key=firm_id$+"SA00")sas01a$
 	if sas01a.by_vendor$<>"Y"
@@ -69,4 +83,3 @@ user_tpl.high_level$=sas_params.vendor_lev$
 		rdFuncSpace!.setValue("+build_task","OFF")
 		release
 	endif
-

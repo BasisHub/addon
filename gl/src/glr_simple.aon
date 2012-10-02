@@ -26,6 +26,9 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)        
 
 rem --- Open/Lock files
 
@@ -56,9 +59,8 @@ rem --- Retrieve parameter records
     gls01a_key$=firm_id$+"GL00"   
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     rem m0$=gls01a.acct_output$ -- using mask from Barista system masks file
-    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,0
-    m1$=gls01a.amount_mask$
-    acctlen=num(gls01a.acct_length$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
     glyear=num(gls01a.current_year$)
     headings=3
     break$=""
@@ -96,6 +98,8 @@ rem --- Initializations
     l=l9+1
     o[1]=h0-m1
     o[0]=o[1]-m1-1
+    total_recs=0
+    
     mtdhdr$=""
     ytdhdr$=""
     period=num(begper$)
@@ -114,19 +118,15 @@ rem --- Initializations
 
 rem --- Which glm-02 record?
     
-    closed=pos(gls01a.gl_yr_closed$="NY")
-    switch closed
-           case 1
-                if year=glyear record$="4"
-                if year=glyear-1 record$="0"
-                if year=glyear-2 record$="2"
-           break
-           case 2
-               if year=glyear record$="0"
-               if year=glyear-1 record$="2"
-               if year=glyear+1 record$="4"
-           break
-    swend
+    if gls01a.gl_yr_closed$ <> "Y" then 
+        if year=glyear record$="4"
+        if year=glyear-1 record$="0"
+        if year=glyear-2 record$="2"
+    else
+        if year=glyear record$="0"
+        if year=glyear-1 record$="2"
+        if year=glyear+1 record$="4"
+    endif
 
 rem --- Document columns
 
@@ -147,7 +147,7 @@ rem --- Document columns
 
 rem --- Start progress meter
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,glm01_dev,1,0,status
+    call pgmdir$+"adc_progress.aon","NC","GLM_ACCT","sorting","","",0,glm01_dev,1,0,status
     read (glm01_dev,key=firm_id$,dom=*next)
 
 rem --- Read through account masters and build sort based on account type
@@ -177,12 +177,17 @@ rem --- and chart of accounts breaks.
           glw02_key$=glw02a.firm_id$+glw02a.gl_acct_type$+glw02a.acct_no_brk$+glw02a.gl_account$
           glw02a$=field(glw02a$)
           write record (glw02_dev,key=glw02_key$) glw02a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
     wend
-
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    wait 1; rem give first progress meter a chance to clear; less confusing to the eye
+    
 rem --- Position sort file
 
     break$=chartbreaks$
+    total_recs=0
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,glw02_dev,1,0,status;rem file is locked, so don't send in filename$ or sql in adc_progress pauses waiting for err 0  
     read (glw02_dev,key=firm_id$,dom=*next)
 
 rem --- Read next sort record
@@ -191,6 +196,9 @@ rem --- Read next sort record
           k$=key(glw02_dev,end=*break)
           if pos(firm_id$=k$)<>1 break
           read record (glw02_dev) glw02a$
+
+          total_recs=total_recs+1
+          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Retrieve account master and account summary records
 
@@ -270,7 +278,7 @@ print_subheading: rem --- Print subheading
           ytd$=str(balance)
           buffer$(3)=glm01a.gl_acct_desc$
           if bs$="N" mtd$=str(amount)
-          if include$="Y" buffer$(3)=fnmask$(glm01a.gl_account$(1,acctlen),m0$)+" "+glm01a.gl_acct_desc$
+          if include$="Y" buffer$(3)=fnmask$(glm01a.gl_account$(1,m0),m0$)+" "+glm01a.gl_acct_desc$
 
           if bs$="N"
             OutVect!.addItem(buffer$)
@@ -468,6 +476,7 @@ rem #include std_end.src
 std_exit: rem --- Standard program end (01Mar2006)
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    close (glw02_dev,err=*next)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 
