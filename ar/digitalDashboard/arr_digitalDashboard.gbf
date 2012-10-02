@@ -1,0 +1,373 @@
+[Program]
+Creation Date=2007-05-30
+Creation Time=6:44:18
+Event Set=LEGACY
+Generator Program=gb_func
+Last Build Date=2011-02-24
+Last Build Time=12:0:48
+Precision=99
+Program Name=arr_digitalDashboard
+Remarks=Yes
+Resource File=arr_digitalDashboard.arc
+Show Forms=All
+
+[Init]
+use ::UIManager.bbj::UIManager
+
+declare BBjTopLevelWindow window!
+declare UIManager uiManager!
+declare BBjListButton year!
+
+REM - modify the standard environment
+    REM add to the prefix to find the support custom objects
+    bbjhome$ = System.getProperty("basis.BBjHome") + "/"
+    location$ = bbjhome$ + "demos/Workbench/"
+    if pos(" " = location$) <> 0 then location$ = chr(34) + location$ + chr(34)
+    prefix$ = pfx
+    prefix$ = prefix$ + " " + location$
+    prefix prefix$
+
+REM - Get the window
+    window! = cast(BBjTopLevelWindow,BBjAPI().getSysGui().getWindow(0))
+
+REM - Register with the UIManager
+    uiManager! = UIManager.getInstance()
+    uiManager!.registerWindow(window!)
+
+REM - Create the charts
+    lineChart1! = window!.addLineChart(505, 15, 530, 135, 90, "", "", 1, 1); lineChart1!.setTitle("Year to Date Sales")
+    lineChart1Big! = window!.addLineChart(605, 180, 110, 775, 515, "", "", 1, 1); lineChart1Big!.setTitle("Year to Date Sales")
+
+    barChart2! = window!.addBarChart(504, 15, 425, 135, 90, "", "", 97, 90, 1, 1, 0); barChart2!.setTitle("Monthly Sales per Customer Type")
+    barChart2Big! = window!.addBarChart(604, 180, 110, 775, 515, "", "", 97, 90, 1, 1, 0); barChart2Big!.setTitle("Monthly Sales per Customer Type")
+
+    pieChart2! = window!.addPieChart(503, 15, 320, 135, 90, 1, 1); pieChart2!.setTitle("Monthly Sales per Customer Type")
+    pieChart2Big! = window!.addPieChart(603, 180, 110, 775, 515, 1, 1); pieChart2Big!.setTitle("Monthly Sales per Customer Type")
+
+    barChart1! = window!.addBarChart(502, 15, 215, 135, 90, "", "", 7, 50, 1, 1, 0); barChart1!.setTitle("Monthly Sales per Salesperson")
+    barChart1Big! = window!.addBarChart(602, 180, 110, 775, 515, "", "", 7, 50, 1, 1, 0); barChart1Big!.setTitle("Monthly Sales per Salesperson")
+
+    pieChart1! = window!.addPieChart(501, 15, 110, 135, 90, 1, 1); pieChart1!.setTitle("Monthly Sales per Salesperson")
+    pieChart1Big! = window!.addPieChart(601, 180, 110, 775, 515, 1, 1); pieChart1Big!.setTitle("Monthly Sales per Salesperson")
+
+REM - Get the Month indicator
+    slider! = window!.getControl(102)
+    thisMonth = num(date(0:"%M"))
+    slider!.setValue(thisMonth)
+
+REM - Get the Group box
+    groupBox! = window!.getControl(101)
+
+REM - set the year selections
+    yearValue = num(date(0:"%Y"))
+    yearList$ = str(yearValue) + $0A$
+    for x = 1 to 10
+        yearValue = yearValue - 1
+        yearList$ = str(yearValue) + $0A$ + yearList$
+    next x
+    year! = cast(BBjListButton, window!.getControl("year"))
+    year!.insertItems(0, yearList$)
+    year!.selectIndex(10)
+
+REM - Open a JDBC connection
+    chan = sqlunt
+    rem ' ******************************************************
+    rem ' build the database URL
+    rem ' ******************************************************
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    dbtimeout$="&socket_timeout=5000"
+  
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
+
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
+	
+    dbname$ = stbl("+DBNAME")
+    dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+	if pos("jdbc:"=cvs(dbname$,8))=1 then			
+            url$=dbname$+url_user$
+	else
+            url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+	endif
+    endif
+    sqlopen(chan)url$
+
+REM - create a hashmap for the month names
+
+    declare java.util.HashMap months!
+    months! = new java.util.HashMap()
+    months!.put("1", "January")
+    months!.put("2", "February")
+    months!.put("3", "March")
+    months!.put("4", "April")
+    months!.put("5", "May")
+    months!.put("6", "June")
+    months!.put("7", "July")
+    months!.put("8", "August")
+    months!.put("9", "September")
+    months!.put("10", "October")
+    months!.put("11", "November")
+    months!.put("12", "December")
+
+REM - get firm id and firm name
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+    title$ = window!.getTitle()
+    title$ = title$ + " - " + firm_name$
+    window!.setTitle(title$)
+
+window!.setVisible(1)
+
+gosub UPDATE_GRAPHS
+
+REM - Function to return which control was clicked on given the (x,y) coordinates of the mouse click
+DEF FNHITTEST(ptx,pty)
+    for i = 501 to 505
+        control! = window!.getControl(i)
+        x=control!.getX(),y=control!.getY(),w=control!.getWidth(),h=control!.getHeight()
+        if ptx>=x and pty>=y and ptx<x+w and pty<y+h then
+            return i
+        endif
+    next i
+    return 0
+FNEND
+
+
+[Event Win=101 ID=0 Code=X <WIN_CLOSE> (W101_C0_WIN_CLOSE)]
+rem ' Window Closed
+rem ' gb__event! = cast(BBjCloseEvent,bbjapi().getSysGui().getLastEvent())
+rem ' gb__window! = gb__event!.getControl()
+
+release
+
+[Event Win=101 ID=0 Code=d <MOUSE_DOWN> (W101_C0_MOUSE_DOWN)]
+rem ' Mouse button down
+
+rem declare BBjControl gb__control!
+gb__event! = cast(BBjMouseDownEvent,bbjapi().getSysGui().getLastEvent())
+gb__control! = gb__event!.getControl()
+
+rem ' Mouse button: gb__event!.getButton()
+rem ' Mouse location: gb__event!.getX(), gb__event!.getY()
+rem ' Shift pressed: gb__event!.isShiftDown()
+rem ' Ctrl pressed: gb__event!.isControlDown()
+rem ' Alt pressed: gb__event!.isAltDown()
+
+    event!=bbjapi().getSysGui().getLastEvent()
+    ptx=event!.getX(),pty=event!.getY()
+
+    controlID = FNHITTEST(ptx,pty)
+
+if controlID > 500 and controlID < 600 then
+    control! = window!.getControl(controlID+100)
+    control!.setVisible(1)
+    for i = 601 to 605
+        if i <> controlID + 100 then
+            control! = window!.getControl(i)
+            control!.setVisible(0)
+        endif
+    next i 
+endif
+
+[Event Win=101 ID=102 Code=p <SCROLL_MOVE> (W101_C102_SCROLL_MOVE)]
+rem ' Scroll bar moved
+
+gb__event! = cast(BBjControlScrollEvent,bbjapi().getSysGui().getLastEvent())
+rem ' gb__control! = gb__event!.getControl()
+rem ' Scroll location: gb__event!.getPosition()
+
+if (gb__event!.isAdjusting() = 0) then 
+    if slider!.getValue() <> num(month$) then 
+        gosub UPDATE_GRAPHS
+    endif
+endif
+
+[Event Win=101 ID=116 Code=N2:19 <LIST_SELECT> (W101_C116_LIST_SELECT)]
+rem ' Notify Event - List Control - List Selection (2)
+rem ' gb__event! = cast(BBjListSelectEvent,bbjapi().getSysGui().getLastEvent())
+rem ' gb__control! = gb__event!.getControl()
+
+index = year!.getSelectedIndex()
+sYear$ = year!.getItemAt(index)
+if sYear$ <> Year$ then
+        gosub UPDATE_GRAPHS
+endif
+
+
+[Function (UPDATE_GRAPHS)]
+rem ' -----------------------------------------------------------------
+rem ' UPDATE_GRAPHS
+rem ' -----------------------------------------------------------------
+
+UPDATE_GRAPHS:
+
+REM - set wait cursor
+    window!.setCursor(3)
+
+REM - Get the desired month to query upon
+    month$ = str(slider!.getValue())
+    monthZeroBased$ = str(slider!.getValue() - 1)
+    monthName$ = months!.get(month$)
+
+    index = year!.getSelectedIndex()
+    year$ = year!.getItemAt(index)
+    yearStartDate$ = year$ + "01" + "01"
+    monthBeginDate$ = year$ + str(num(month$):"00") + "01"
+    
+    theday = jul(num(year$),num(month$),1)
+    while str(num(month$):"00") = str(num(date(theday:"%M")):"00")
+        monthEndDay$ = str(date(theday:"%D"):"00")
+        theDay = theDay + 1
+    wend
+    monthEndDate$ = year$ + str(num(month$):"00") + monthEndDay$
+
+REM - clear graphs
+    barChart1!.clearData()
+    barChart1Big!.clearData()
+    pieChart1!.clearData()
+    pieChart1Big!.clearData()
+    barChart2!.clearData()
+    barChart2Big!.clearData()
+    pieChart2!.clearData()
+    pieChart2Big!.clearData()
+    lineChart1!.clearData()
+    lineChart1Big!.clearData()
+
+REM - Monthly sales per SalesRep
+    declare java.util.HashMap SalesReps!
+    declare java.util.ArrayList SalesRepsA!
+
+    SalesReps! = new java.util.HashMap()
+    SalesRepsA! = new java.util.ArrayList()
+
+    rem ' load the salepserson list for the given period
+    sql$ = "SELECT T2.SLSPSN_CODE, T3.CODE_DESC AS SLSPSN_NAME, ROUND(SUM(T1.TOTAL_SALES),0) AS TOTAL "
+    sql$ = sql$ + "FROM OPT_INVHDR T1 "
+    sql$ = sql$ + "INNER JOIN ARM_CUSTDET T2 ON T1.FIRM_ID = T2.FIRM_ID AND T1.CUSTOMER_ID = T2.CUSTOMER_ID "
+    sql$ = sql$ + "INNER JOIN ARC_SALECODE T3 ON T2.FIRM_ID = T3.FIRM_ID AND T2.SLSPSN_CODE = T3.SLSPSN_CODE "
+    sql$ = sql$ + "WHERE T1.FIRM_ID = '" + firm_id$ + "' AND (T1.INVOICE_DATE BETWEEN '" + monthBeginDate$ + "' AND '" + monthEndDate$ + "') "
+    sql$ = sql$ + "GROUP BY T2.SLSPSN_CODE, T3.CODE_DESC"
+
+    sqlprep(chan)sql$
+    sqlexec(chan)
+    dim t$:sqltmpl(chan)
+    counter = 0
+
+    
+    while 1
+         t$ = sqlfetch(chan,err=*BREAK)
+
+         if t.total = 0 then continue
+
+         SalesReps!.put(str(counter), t.slspsn_name$)
+         SalesRepsA!.add(counter, t.slspsn_name$)
+         barChart1!.setSeriesName(counter, t.slspsn_name$)
+         barChart1Big!.setSeriesName(counter, cvs(t.slspsn_name$,3) + " - " + str(t.total:"$###,##0.00-"))
+
+         counter = counter + 1
+
+         pieChart1!.setSliceValue(t.slspsn_name$,t.total)
+         pieChart1Big!.setSliceValue(cvs(t.slspsn_name$,3) + " - " + str(t.total:"$###,##0.00-"),t.total)
+    
+         barChart1!.setCategoryName(counter, "")
+         barChart1!.setBarValue(SalesRepsA!.indexOf(t.slspsn_name$),counter,t.total)
+
+         rem barChart1Big!.setCategoryName(counter, SalesReps!.get(str(counter)))
+         barChart1Big!.setCategoryName(counter, "")
+         barChart1Big!.setBarValue(SalesRepsA!.indexOf(t.slspsn_name$),counter,t.total)
+
+    wend
+
+REM - Monthly sales per Customer type
+    declare java.util.HashMap Customers!
+    declare java.util.ArrayList CustomersA!
+
+    Customers! = new java.util.HashMap()
+    CustomersA! = new java.util.ArrayList()
+
+    rem ' sql$ = "select trim(first_name) + ' ' + trim(last_name) as name from customer order by cust_num"
+
+    rem ' load the customer type list for the given period
+    sql$ = "SELECT t2.CUSTOMER_TYPE, t3.CODE_DESC AS CUST_TYPE_DESC, round(sum(t1.TOTAL_SALES),0) as TOTAL "
+    sql$ = sql$ + "FROM OPT_INVHDR t1 "
+    sql$ = sql$ + "INNER JOIN ARM_CUSTDET t2 ON t1.FIRM_ID = t2.FIRM_ID and t1.CUSTOMER_ID = t2.CUSTOMER_ID "
+    sql$ = sql$ + "INNER JOIN ARC_CUSTTYPE t3 on t2.FIRM_ID = t3.FIRM_ID and t2.CUSTOMER_TYPE = t3.CUSTOMER_TYPE "
+    sql$ = sql$ + "WHERE t1.FIRM_ID = '" + firm_id$ + "' and (t1.INVOICE_DATE BETWEEN '" + monthBeginDate$ + "' AND '" + monthEndDate$ + "') "
+    sql$ = sql$ + "GROUP BY t2.CUSTOMER_TYPE, t3.CODE_DESC ORDER BY TOTAL"
+    
+    sqlprep(chan)sql$
+    sqlexec(chan)
+    dim t$:sqltmpl(chan)
+    counter = 0
+    
+    while 1
+         t$ = sqlfetch(chan,err=*BREAK)
+         
+         Customers!.put(str(counter), t.cust_type_desc$)
+         CustomersA!.add(counter, t.cust_type_desc$)
+         barChart2!.setSeriesName(counter, t.cust_type_desc$)
+         barChart2Big!.setSeriesName(counter, t.cust_type_desc$)
+
+         counter = counter + 1
+
+         pieChart2!.setSliceValue(t.cust_type_desc$,t.total)
+         pieChart2Big!.setSliceValue(t.cust_type_desc$,t.total)
+ 
+         barChart2!.setCategoryName(counter, "")
+         barChart2!.setBarValue(CustomersA!.indexOf(t.cust_type_desc$),counter,t.total)
+ 
+         barChart2Big!.setCategoryName(counter, "")
+         barChart2Big!.setBarValue(CustomersA!.indexOf(t.cust_type_desc$),counter,t.total)
+
+    wend
+
+REM - Sales Year To Date
+    dim m[12]
+
+    sql$ = "SELECT SUBSTRING(INVOICE_DATE, 5, 2) as MONTH, SUM(TOTAL_SALES) AS TOTAL FROM OPT_INVHDR "
+    sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "' and (INVOICE_DATE BETWEEN '" + yearStartDate$ + "' AND '" + monthEndDate$ + "') "
+    sql$ = sql$ + "GROUP BY SUBSTRING(INVOICE_DATE, 5, 2) ORDER BY MONTH"
+    
+    sqlprep(chan)sql$
+    sqlexec(chan)
+    dim t$:sqltmpl(chan)
+
+    while 1
+        t$ = sqlfetch(chan,err=*BREAK)
+        m[num(t.month$)] = m[num(t.month$)] + t.total
+    wend
+
+    REM - turn array into a cummulative array instead of a month by month
+    for x = 2 to 12
+        m[x] = m[x] + m[x-1]
+    next x
+
+    lineChart1Big!.setSeriesName(0,"Yearly Sales " + str(m[12]:"$###,###,##0.00-"))
+    for i = 0 to num(month$) 
+        lineChart1!.setXYValue(0,i,m[i])
+        lineChart1Big!.setXYValue(0,i,m[i])
+    next
+
+REM - set normal cursor
+        window!.setCursor(0)
+
+return
+

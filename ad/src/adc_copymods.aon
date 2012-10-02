@@ -1,0 +1,627 @@
+rem ==========================================================================
+rem --- adc_updatexmlfiles.aon 
+rem --- Call to copy a custom mods project from one location to another,
+rem --- including data files.
+rem --- 
+rem --- AddonSoftware Version 11.0
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+
+rem --- SOURCESYN$   : Absolute path to the application's current syn file (Input)
+rem --- TARGETSYN$   : Absolute path to the application's syn file being created (Input)
+rem --- STBLMAP!     : HashMap of ArrayLists keyed by STBLs from current syn file (Input)
+rem ---              :     ArrayList (0) = current (source) value of STBL
+rem ---              :     ArrayList (1) = new (target) value of STBL
+rem --- PFXLIST!     : ArrayList (order is important) of ArrayLists of PREFIXs from current syn file (Input)
+rem ---              :     ArrayList (0) = current (source) value of PREFIX
+rem ---              :     ArrayList (1) = new (target) value of PREFIX
+rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS       : Status code/0=No error (Returned)
+
+    use java.util.ArrayList
+    use java.util.HashMap
+    
+    declare HashMap stblMap!
+    declare ArrayList pfxList!
+    declare BBjTopLevelWindow rdForm!
+
+    seterr std_error
+    setesc std_error
+    enter sourceSyn$,targetSyn$,stblMap!,pfxList!,rdForm!,wait4ok%,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Copy a custom mods project from one location to another
+
+    declare CopyCustomMods utility!
+    utility! = new CopyCustomMods(rdForm!, wait4ok%)
+    utility!.copyMods(sourceSyn$, targetSyn$, stblMap!, pfxList!)
+    
+done: rem --- All done
+    
+    goto std_exit
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+rem /**
+rem  * Utility Class for copying a custom mods project from one location to another, 
+rem  * including data files.
+rem  */
+    use java.io.File
+    use java.util.ArrayList
+    use java.util.HashMap
+    use java.util.Iterator
+    use java.util.Vector
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    class public CopyCustomMods
+        field private BBjInt wait4ok% = 0
+        field private BBjNumber BLOCKSIZE = 2^20
+        field private BBjNumber log_dev = 0
+        field private BBjNumber meter_proc_recs = 0
+        field private BBjNumber meter_total_recs = 5
+        field private BBjString dir_syp$=stbl("+DIR_SYP")
+        field private BBjSysGui sysGUI!
+        field private BBjTopLevelWindow form!
+        field private BBjTopLevelWindow meter!
+
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjTopLevelWindow rdForm!
+        rem  * @param BBjInt wait4ok
+        rem  */
+        method public CopyCustomMods(BBjTopLevelWindow rdForm!, BBjInt wait4ok%)
+            #sysGUI! = BBjAPI().getSysGui()
+            #form! = rdForm!
+            #wait4ok% = wait4ok%
+        methodend
+
+        rem /**
+        rem  * Copy custom mods project.
+        rem  *
+        rem  * Copies custom mods project from old location to new location, then updates 
+        rem  * syn and XML files in new location. 
+        rem  *
+        rem  * @param BBjString sourceSyn$
+        rem  * @param BBjString targetSyn$
+        rem  * @param HashMap stblMap!
+        rem  * @param ArrayList pfxList!
+        rem  */
+        method public void copyMods(BBjString sourceSyn$, BBjString targetSyn$, HashMap stblMap!, ArrayList pfxList!)
+			
+			rem --- Start progress meter and log
+			#meter_total_recs = #meter_total_recs + stblMap!.size() + pfxList!.size()
+			#meter! = #createProgressMeter()
+            #openLog(sourceSyn$, targetSyn$, stblMap!, pfxList!)
+
+            rem --- Parse <mods_dir> from source syn path.
+			declare File modsDir!
+            sourceDir$ = #parseModsPath(sourceSyn$)
+			modsDir! = new File(sourceDir$)
+            #log("")
+			meter_text$ = "source dir: " + sourceDir$
+            #incrementProgressMeter(meter_text$)
+            #log(meter_text$)
+
+            rem --- Parse <mods_dir> from target syn path.
+            targetDir$ = #parseModsPath(targetSyn$)
+			meter_text$ = "target dir: " + targetDir$
+            #incrementProgressMeter(meter_text$)
+            #log(meter_text$)
+
+			rem --- Recursively copy source <mods_dir> to target
+            #log("")
+			meter_text$ = "copy source: " + sourceDir$
+            #incrementProgressMeter(meter_text$)
+            #log(meter_text$)
+			#copyDir(new File(sourceDir$), new File(targetDir$))
+
+			rem --- Copy dirs/files pointed to by STBLs
+            declare Iterator iter!
+            declare ArrayList aList!
+			declare File nextSource!
+            iter!=stblMap!.keySet().iterator()
+            while iter!.hasNext()
+                key$ = cast(BBjString, iter!.next())
+                aList! = cast(ArrayList, stblMap!.get(key$))
+                source$=cast(BBjString, aList!.get(0))
+                target$=cast(BBjString, aList!.get(1))
+				nextSource! = new File(source$)
+				#log("")
+				meter_text$ = "copy STBL: " + key$
+				#incrementProgressMeter(meter_text$)
+				#log(meter_text$)
+				rem --- skip if already copied
+				if (nextSource!.getAbsolutePath()+File.separator).startsWith(modsDir!.getAbsolutePath()+File.separator)
+					#log("    SKIPPED " + nextSource!.getPath())
+				else
+					#copyDir(nextSource!, new File(target$))
+				endif
+            wend
+
+			rem --- Copy dirs/files pointed to by PREFIXs
+            iter!=pfxList!.iterator()
+            while iter!.hasNext()
+                aList! = cast(ArrayList, iter!.next())
+                source$=cast(BBjString, aList!.get(0))
+                target$=cast(BBjString, aList!.get(1))
+				nextSource! = new File(source$)
+				#log("")
+				meter_text$ = "copy PREFIX: " + source$
+				#incrementProgressMeter(meter_text$)
+				#log(meter_text$)
+				rem --- skip if already copied
+				if (nextSource!.getAbsolutePath()+File.separator).startsWith(modsDir!.getAbsolutePath()+File.separator)
+					#log("    SKIPPED " + nextSource!.getPath())
+				else
+					#copyDir(nextSource!, new File(target$))
+				endif
+            wend
+
+			rem --- Update target syn file.
+			#log("")
+			meter_text$ = "update target syn file: " + targetSyn$
+			#incrementProgressMeter(meter_text$)
+			#log(meter_text$)
+			#updateSynFile(targetSyn$, targetDir$, stblMap!, pfxList!)
+
+			rem --- Update target adm_modules XML files.
+			#log("")
+			meter_text$ = "update target adm_modules XML files: "
+			#incrementProgressMeter(meter_text$)
+			#log(meter_text$)
+			#updateAdmModulesXmlFiles(targetDir$)
+            
+			rem --- Stop progress meter and log
+            #closeLog()
+            #destroyProgressMeter()
+        methodend
+
+        rem /**
+        rem  * Parse mods directory path from given path.
+        rem  *
+        rem  * @param BBjString path$
+        rem  * @return BBjString modsPath$
+        rem  */
+        method private BBjString parseModsPath(BBjString path$)
+            modsDir$ = ""
+
+            rem --- Flip directory path separators to "/"
+            pos=pos("\"=path$)
+            while pos
+                path$=path$(1, pos-1)+"/"+path$(pos+1)
+                pos=pos("\"=path$)
+            wend
+
+            rem --- Get mods directory location from path
+            if pos("/config/"=path$)
+                rem --- mods directory contains config directory
+                modsDir$=path$(1, pos("/config/"=path$))
+            else
+                rem --- config directory not found, so use directory holding syn file
+                    modsDir$=path$(1, pos("/"=path$,-1))
+            endif
+            methodret modsDir$
+        methodend
+
+        rem /**
+        rem  * Recursively copy a directory.
+        rem  *
+        rem  * Recursively copies a directory from source File to target File.
+		rem  * Do not copy target if it exists in source tree.
+        rem  *
+        rem  * @param File source
+        rem  * @param File target
+        rem  */
+        method private void copyDir(File source!, File target!)
+    
+            rem -- recursively process directories and copy files
+            if(source!.isDirectory()) then
+            
+                rem --- create new directory if it doesn't exist
+                FileObject.makeDirs(target!)
+
+                rem --- get list of what is in the source dir, and process it
+                declare Vector fileVector!
+                fileVector! = new Vector(java.util.Arrays.asList(source!.list()))
+                if(fileVector!.size()>0) then
+					declare File nextFile!
+                    for i=0 to fileVector!.size()-1
+						rem --- skip target directory
+						nextFile! = new File(source!, cast(BBjString, fileVector!.get(i)))
+						if(nextFile!.getAbsolutePath() <> target!.getAbsolutePath()) then
+							#copyDir(nextFile!, new File(target!, cast(BBjString, fileVector!.get(i))))
+						endif
+                    next i
+                endif
+                
+            else
+                
+                rem --- copy file
+                sourceChan=unt
+                open(sourceChan,isz=-1,err=*endif)source!.getPath()
+				rem --- target directory must exist in order to create file
+				declare File targetParent!
+				targetParent! = target!.getParentFile()
+				if(! targetParent!.exists()) then
+					FileObject.makeDirs(targetParent!)
+				endif
+                targetChan=unt
+                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+                while 1
+                    readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                    writerecord(targetChan)record$
+                wend
+                close(sourceChan)
+                close(targetChan)
+                #log("    " + source!.getPath())
+               
+            endif
+        methodend
+
+        rem /**
+        rem  * Update syn file.
+        rem  *
+        rem  * Update DIR, APROD, STBL, PREFIX and CFG lines in syn file 
+		rem  * to point to new directories.
+        rem  *
+        rem  * @param BBjString synFile$
+        rem  * @param BBjString newDir$
+        rem  * @param HashMap stblMap!
+        rem  * @param ArrayList pfxList!
+        rem  */
+        method private void updateSynFile(BBjString synFile$, BBjString newDir$, HashMap stblMap!, ArrayList pfxList!)
+            declare ArrayList aList!
+			declare File currentPath!
+			declare File nextPath!
+            declare Iterator iter!
+
+			rem --- Copy syn file to temporary file, updating lines as they are copied
+			sourceChan=unt
+			open(sourceChan,isz=-1)synFile$
+			targetChan=unt
+			open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")synFile$ + ".tmp"
+			while 1
+				read(sourceChan,end=*break)record$
+                key$ = record$(1, pos("="=record$) - 1)
+				switch (BBjAPI().TRUE)
+					case key$ = "DIR"
+						rem --- replace DIR path with new directory
+						record$ = record$(1, pos("="=record$)) + newDir$
+						break
+					case key$ = "APROD"
+						rem --- update APROD path with new direcotry
+						xpos = pos("/prop/"=record$)
+						tail$ = record$(xpos+1)
+						head$ = record$(1, pos(";"=record$(1, xpos), -1))
+						record$ = head$ + newDir$ + tail$
+						break
+					case key$ = "STBL"
+						rem --- replace STBL path with new path
+						xpos = pos(" "=record$)
+						stbl$ = record$(xpos+1, pos("="=record$(xpos+1)) - 1)
+						if(stblMap!.containsKey(stbl$)) then
+							aList! = cast(ArrayList, stblMap!.get(stbl$))
+							target$=cast(BBjString, aList!.get(1))
+							record$ = record$(1, pos("="=record$,1,2)) + target$
+						endif
+						break
+					case key$ = "PREFIX"
+						rem --- replace PREFIX path with new path
+						xpos = pos("="=record$)
+						path$  = record$(xpos+1)
+						currentPath! = new File(path$)
+						rem --- locate current path in array of PREFIXs, and replace with new path
+						iter!=pfxList!.iterator()
+						while iter!.hasNext()
+							aList! = cast(ArrayList, iter!.next())
+							source$=cast(BBjString, aList!.get(0))
+							target$=cast(BBjString, aList!.get(1))
+							nextPath! = new File(source$)
+							rem --- is this the correct path to replace with?
+							if (nextPath!.getAbsolutePath() = currentPath!.getAbsolutePath())
+								record$ = record$(1, xpos) + target$
+								break
+							endif
+						wend
+						break
+					case key$ = "CFG"
+						rem --- replace CFG path with new path for corresponding STBL
+						xpos = pos("="=record$)
+						ypos = pos("="=record$,1,2)
+						stbl$ = record$(xpos+1, ypos - xpos - 1)
+						if(stblMap!.containsKey(stbl$)) then
+							aList! = cast(ArrayList, stblMap!.get(stbl$))
+							target$=cast(BBjString, aList!.get(1))
+							record$ = record$(1, ypos) + target$
+						endif
+						break
+					case default
+						rem --- other lines, no change
+						break
+				swend                    
+        
+				write(targetChan)record$
+				#log(record$)
+			wend
+			close(sourceChan)
+			close(targetChan)
+	
+			rem --- rename original syn as a backup
+			rename synFile$ to synFile$ + ".bak", err=*next
+			rem --- rename temporary syn as original syn
+			rename synFile$ + ".tmp" to synFile$, err=*next
+        methodend
+
+        rem /**
+        rem  * Update adm_modules XML files.
+        rem  *
+        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
+		rem  * to point to current project's directories.
+        rem  *
+        rem  * @param BBjString projectDir$
+        rem  */
+        method private void updateAdmModulesXmlFiles(BBjString projectDir$)
+            rem --- update xml files in data/sync dir
+            #updateXmlFiles(new File(projectDir$ + "/data/sync"), projectDir$)
+
+            rem --- update xml files in data/admin_backup dir
+            #updateXmlFiles(new File(projectDir$ + "/data/admin_backup"), projectDir$)
+        methodend
+
+        rem /**
+        rem  * Update adm_modules XML files in directory. 
+        rem  *
+        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
+		rem  * in given directory to point to given project's directories.
+        rem  *
+        rem  * @param File dir!
+        rem  * @param BBjString projectDir$
+        rem  */
+        method private void updateXmlFiles(File dir!, BBjString projectDir$)
+        
+            rem --- Validate directory
+            if dir! = null() or !dir!.exists() or !dir!.isDirectory() or dir!.list() = null()
+                methodret
+            endif
+            
+            declare Vector fileVector!
+            declare File xml!
+            fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
+            startLocalPath$ = "<LOCALE_PATH>"
+            startLocalPathLen = len(startLocalPath$)
+            endLocalPath$ = "</LOCALE_PATH>"
+            startDdMountDir$ = "<DD_MOUNT_DIR>"
+            startDdMountDirLen = len(startDdMountDir$)
+            endDdMountDir$ = "</DD_MOUNT_DIR>"
+
+            rem --- process files in directory
+            if(fileVector!.size()>0) then
+                for i=0 to fileVector!.size()-1
+                    name$ = cast(BBjString, fileVector!.get(i))
+                    xml! = new File(dir!, name$)
+                    
+                    rem --- update adm_modules~*.xml files (consolidated and non-consolidated)
+                    if cast(BBjString, name$).matches("adm_modules~.*\.xml")
+                        #log("    updated: " + xml!.getPath())
+                        
+                        rem --- move xml file to backup file
+                        bakFile$=xml!.getPath() + ".bak"
+                        rename xml!.getPath() to bakFile$, err=*next
+                        
+                        rem --- copy backup file back to xml file, making necessary updates
+                        sourceChan=unt
+                        open(sourceChan,isz=-1)bakFile$
+                        targetChan=unt
+                        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")xml!.getPath()
+                        while 1
+                            read(sourceChan,end=*break)record$
+
+                            rem --- replace path in <LOCALE_PATH> lines
+                            if(pos(startLocalPath$=record$)) then
+                                #log("      <<< " + record$)
+                                line$ = record$(1,pos(startLocalPath$=record$) + startLocalPathLen - 1)
+                                line$ = line$ + projectDir$ + "prop/"
+                                line$ = line$ + record$(pos(endLocalPath$=record$, -1))
+                                record$ = line$
+                                #log("      >>> " + record$)
+                            endif
+
+                            rem --- replace path in <DD_MOUNT_DIR> lines
+                            if(pos(startDdMountDir$=record$)) then
+                                #log("      <<< " + record$)
+                                line$ = record$(1,pos(startDdMountDir$=record$) + startDdMountDirLen - 1)
+                                line$ = line$ + projectDir$
+                                line$ = line$ + record$(pos(endDdMountDir$=record$, -1))
+                                record$ = line$
+                                #log("      >>> " + record$)
+                            endif
+        
+                            write(targetChan)record$
+                            print(log_dev)record$
+                        wend
+                        close(sourceChan)
+                        close(targetChan)
+                    endif
+                next i
+            endif
+        methodend
+		
+        rem /**
+        rem  * Create progress meter.
+        rem  *
+        rem  * @return BBjTopLevelWindow meterWin!
+        rem  */
+        method private BBjTopLevelWindow createProgressMeter()
+
+            rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+            rem declare BBjTopLevelWindow meterWin!
+            
+            declare BBTranslator Translator!
+            Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+            meter_title$=Translator!.getTranslation("AON_UPDATING")+"..."
+            #meter_proc_recs=0
+            meter_text$=""
+            meter_action$="WIN-LST"
+            if #wait4ok% then meter_action$=meter_action$+"-OK"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               meterWin!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+            methodret meterWin!
+        methodend
+
+        rem /**
+        rem  * Increment progress meter.
+        rem  *
+        rem  * @param File sourceDirectory
+        rem  */
+        method private void incrementProgressMeter(BBjString meter_text$)
+            #meter_proc_recs=#meter_proc_recs+1
+            meter_action$="MTR-LST"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Destroy progress meter.
+        rem  */
+        method private void destroyProgressMeter()
+            #meter_proc_recs=#meter_total_recs
+            meter_action$="LST-END"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Open log file.
+        rem  *
+        rem  * @param BBjString sourceSyn$
+        rem  * @param BBjString targetSyn$
+        rem  * @param HashMap stblMap!
+        rem  * @param ArrayList pfxList!
+        rem  */
+        method private void openLog(BBjString sourceSyn$, BBjString targetSyn$, HashMap stblMap!, ArrayList pfxList!)
+            rem --- log directory is under aon at same level as data directory
+            modsDir$ = #parseModsPath(targetSyn$)
+            logDir$ = modsDir$ + "/logs"
+            
+            rem --- create logs directory at new location
+            FileObject.makeDirs(new File(logDir$))
+
+            rem --- create and open log file
+            log$ = logDir$+"/updatexml_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+            erase log$,err=*next
+            string log$
+            #log_dev=unt
+            open(#log_dev)log$
+            
+            rem --- write log header info
+            print(#log_dev)"Updatexml log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            print(#log_dev)"Source syn file: " + sourceSyn$
+            print(#log_dev)"Target syn file: " + targetSyn$
+
+            rem --- write STBL info
+            declare Iterator iter!
+            declare ArrayList aList!
+            iter!=stblMap!.keySet().iterator()
+            while iter!.hasNext()
+                key$ = cast(BBjString, iter!.next())
+                aList! = cast(ArrayList, stblMap!.get(key$))
+                source$=cast(BBjString, aList!.get(0))
+                target$=cast(BBjString, aList!.get(1))
+                print(#log_dev)"["+key$+"] source="+source$+"  target="+target$
+            wend
+
+            rem --- write PREFIX info
+            iter!=pfxList!.iterator()
+            while iter!.hasNext()
+                aList! = cast(ArrayList, iter!.next())
+                source$=cast(BBjString, aList!.get(0))
+                target$=cast(BBjString, aList!.get(1))
+                print(#log_dev)"PREFIX source="+source$+"  target="+target$
+            wend
+
+        methodend
+
+        rem /**
+        rem  * Write to log file.
+        rem  *
+        rem  * @param BBjString text$
+        rem  */
+        method private void log(BBjString text$)
+            print(#log_dev)text$
+        methodend
+
+        rem /**
+        rem  * Close log file.
+        rem  */
+        method private void closeLog()
+            print(#log_dev)
+            print(#log_dev)"Updatexml log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(#log_dev)
+        methodend
+        
+    classend
+    
+    end

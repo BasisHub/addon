@@ -9,6 +9,19 @@ rem --- All Rights Reserved
     seterr std_error
     setesc std_error
 
+rem --- Document initializations
+
+    OutVect!=bbjAPI().makeVector()
+    HdrVect!=bbjAPI().makeVector()
+    BrkVect!=bbjAPI().makeVector()
+    TotVect!=bbjAPI().makeVector()
+
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+	
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -21,35 +34,53 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
+rem --- set rd_alias_id$
+    
+    rd_alias_id$=pgm(-2)
+    rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+    rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+
+rem --- Report Initializations
+
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",m1$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","U","",m2$,0,0
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",m3$,0,0
+
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","I","",m0$,0,vendlen
+    call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",customask$,0,custlen
+
+    dim receipt[1],whse[1],report[1],totals[1]
+    let m1=len(m1$),m2=len(m2$),m3=len(m3$),done=0
+    let number=0,maxm1=15,maxm2=12,maxm3=12,l=l9+1,subhead$="",t0$="",t1$=""
+ 
+    columns = 12
+    if col_format$="Y" columns=16
+    dim columns$[columns,10]
+    columns$[0,0]=Translate!.getTranslation("AON_ITEM"), columns$[0,1]="C",columns$[0,2]="12"
+    columns$[1,0]=Translate!.getTranslation("AON_DIST_CODE"), columns$[1,1]="C",columns$[1,2]="8"
+    columns$[2,0]="UM", columns$[2,1]="C",columns$[2,2]="3"
+    columns$[3,0]=Translate!.getTranslation("AON_QUANTITY^RECEIVED"), columns$[3,1]="C", columns$[3,2]=str(len(m2$)), columns$[3,5]="R"
+    columns$[4,0]=Translate!.getTranslation("AON_AVG")+"^"+Translate!.getTranslation("AON_COST"), columns$[4,1]="C", columns$[4,2]=str(len(m3$)), columns$[4,5]="R"
+    columns$[5,0]=Translate!.getTranslation("AON_AVG")+"^"+Translate!.getTranslation("AON_EXTENSION"), columns$[5,1]="C", columns$[5,2]=str(len(m1$)), columns$[5,5]="R", columns$[5,10]="T"
+    columns$[6,0]=Translate!.getTranslation("AON_PO_COST"), columns$[6,1]="C", columns$[6,2]=str(len(m3$)), columns$[6,5]="R"
+    columns$[7,0]=Translate!.getTranslation("AON_PO_COST^EXTENSION"), columns$[7,1]="C", columns$[7,2]=str(len(m1$)), columns$[7,5]="R", columns$[7,10]="T"
+    columns$[8,0]=Translate!.getTranslation("AON_LOCATION"), columns$[8,1]="C", columns$[8,2]="10"
+    columns$[9,0]=Translate!.getTranslation("AON_VENDOR"), columns$[9,1]="C", columns$[9,2]="8"
+    columns$[10,0]=Translate!.getTranslation("AON_RCVR#_"), columns$[10,1]="C", columns$[10,2]="8"
+    columns$[11,0]=Translate!.getTranslation("AON_PO_NUMBER"), columns$[11,1]="C",columns$[11,2]="8"
+    columns$[12,0]=Translate!.getTranslation("AON_COMP?"), columns$[12,1]="C", columns$[12,2]="10"
+
 rem --- Initializations
 
     precision i[1]
     dim x0$(32)
-    headings=3
     HdrVect!.addItem(Translate!.getTranslation("AON_STOCK_INVENTORY_RECEIPTS"))
     BrkVect!.addItem(str(OutVect!.size()))
-rem headings$[2]=Translate!.getTranslation("AON_STOCK_INVENTORY_RECEIPTS")
+
     avail=width-70
     x=2
     m=max(m0,6)
     nonstock=0
-
-rem --- Report initializations and print positions
-
-    gosub l6700
-    o[0]=0
-    o[12]=width-5
-    o[11]=o[12]-15
-    o[10]=o[11]-8
-    o[9]=o[10]-m-1
-    o[8]=o[9]-11
-    o[7]=o[8]-m1
-    o[6]=o[7]-m3
-    o[5]=o[6]-m1
-    o[4]=o[5]-m3
-    o[3]=o[4]-m2
-    o[2]=o[3]-3
-    o[1]=o[2]-5
 
 rem --- Background
 
@@ -59,78 +90,72 @@ rem --- Position files
 
     read (pow04_dev,key=firm_id$,dom=*next)
 
-l1000: rem --- Get next sort record
-
-    read record (pow04_dev,end=l2000)pow04a$
-    if pos(firm_id$=pow04a$)<>1 goto l2000
+rem --- Get next sort record
+    while 1
+        read record (pow04_dev,end=*break)pow04a$
+        if pos(firm_id$=pow04a$)<>1 break
 
 rem --- Level breaks?
 
-    if t0$<>pow04a.warehouse_id$ then warehouse_id$=pow04a.warehouse_id$,recpt_date$=pow04a.recpt_date$; gosub l6000
-    if t1$<>pow04a.recpt_date$ then recpt_date$=pow04a.recpt_date$; gosub l6200
-    if subhead$<>"" gosub l5400
+        if t0$<>pow04a.warehouse_id$ then warehouse_id$=pow04a.warehouse_id$,recpt_date$=pow04a.recpt_date$; gosub l6000
+        if t1$<>pow04a.recpt_date$ then recpt_date$=pow04a.recpt_date$; gosub l6200
+        if subhead$<>"" gosub l5400
 
 rem --- Read receipt header and detail
 
-    dim poe04a$:fattr(poe04a$)
-    dim poe14a$:fattr(poe14a$)
+        dim poe04a$:fattr(poe04a$)
+        dim poe14a$:fattr(poe14a$)
 
-    poe04a.firm_id$=firm_id$
-    poe04a.receiver_no$=pow04a.receiver_no$
+        poe04a.firm_id$=firm_id$
+        poe04a.receiver_no$=pow04a.receiver_no$
 
-    poe14a.firm_id$=firm_id$
-    poe14a.receiver_no$=pow04a.receiver_no$
-    poe14a.internal_seq_no$=pow04a.po_int_seq_ref$
+        poe14a.firm_id$=firm_id$
+        poe14a.receiver_no$=pow04a.receiver_no$
+        poe14a.internal_seq_no$=pow04a.po_int_seq_ref$
 
-    gosub l6400
-    if status goto l1900
+        gosub l6400
+        if status continue
 
 rem --- Calculate extension
 
-    precision 2
-    po_extension=poe14a.unit_cost*poe14a.qty_received
-    iv_extension=ivm02a.unit_cost*poe14a.qty_received*poe14a.conv_factor
-    precision i[1]
+        precision 2
+        po_extension=poe14a.unit_cost*poe14a.qty_received
+        iv_extension=ivm02a.unit_cost*poe14a.qty_received*poe14a.conv_factor
+        precision i[1]
 
 rem --- Print detail line
 
-    if l+2>l9 gosub report_heading
-    dim pbuf$(width)
-    pbuf$(o[0]+1)=poe14a.item_id$
-    pbuf$(o[1]+1)=code$
-    pbuf$(o[2]+1)=poe14a.unit_measure$
-    pbuf$(o[3]+1)=str(poe14a.qty_received:m2$)
-    pbuf$(o[4]+1)=str(ivm02a.unit_cost*poe14a.conv_factor:m3$)
-    pbuf$(o[5]+1)=str(iv_extension:m1$)
-    pbuf$(o[6]+1)=str(poe14a.unit_cost:m3$)
-    pbuf$(o[7]+1)=str(po_extension:m1$)
-    pbuf$(o[8]+1)=poe14a.location$
-    pbuf$(o[9]+1)=fnmask$(poe04a.vendor_id$(1,vendlen),m0$)
-    pbuf$(o[10]+1)=poe04a.receiver_no$
-    pbuf$(o[11]+1)=poe04a.po_no$;rem +"-"+fnisn$(poe14a.internal_seq_no$)
-    pbuf$(o[12]+1)=complete$
-    OutVect!.addItem(pbuf$)
+        OutVect!.addItem(poe14a.item_id$)
+        OutVect!.addItem(code$)
+        OutVect!.addItem(poe14a.unit_measure$)
+        OutVect!.addItem(str(poe14a.qty_received:m2$)+$00$+"R")
+        OutVect!.addItem(str(ivm02a.unit_cost*poe14a.conv_factor:m3$)+$00$+"R")
+        OutVect!.addItem(str(iv_extension:m1$)+$00$+"R")
+        OutVect!.addItem(str(poe14a.unit_cost:m3$)+$00$+"R")
+        OutVect!.addItem(str(po_extension:m1$)+$00$+"R")
+        OutVect!.addItem(poe14a.location$)
+        OutVect!.addItem(fnmask$(poe04a.vendor_id$(1,vendlen),m0$))
+        OutVect!.addItem(poe04a.receiver_no$)
+        OutVect!.addItem(poe04a.po_no$)
+        OutVect!.addItem(complete$)
 
-    dim pbuf$(width)
-    pbuf$(o[0]+1+3)=description$
-    OutVect!.addItem(pbuf$)
-    l=l+2
+        OutVect!.addItem("   "+description$)
+        xvf=fnblank(12)
+        l=l+2
 
 rem --- Accumulate totals
 
-    receipt[0]=receipt[0]+iv_extension
-    receipt[1]=receipt[1]+po_extension
-    whse[0]=whse[0]+iv_extension
-    whse[1]=whse[1]+po_extension
-    report[0]=report[0]+iv_extension
-    report[1]=report[1]+po_extension
-    number=number+1
+        receipt[0]=receipt[0]+iv_extension
+        receipt[1]=receipt[1]+po_extension
+        whse[0]=whse[0]+iv_extension
+        whse[1]=whse[1]+po_extension
+        report[0]=report[0]+iv_extension
+        report[1]=report[1]+po_extension
+        number=number+1
 
-l1900: rem --- Loop back for next sort record
+    wend
 
-    goto l1000
-
-l2000: rem --- Done with stock receipts
+rem --- Done with stock receipts
 
     done=1
     if number=0 goto l2500
@@ -147,220 +172,142 @@ l2500: rem --- Non-stock receipt initializations
     nonstock=1
     HdrVect!.addItem(Translate!.getTranslation("AON_NON-STOCK_INVENTORY_AND_OTHER_RECEIPTS"))
     BrkVect!.addItem(str(OutVect!.size()))
-rem headings$[2]=Translate!.getTranslation("AON_NON-STOCK_INVENTORY_AND_OTHER_RECEIPTS")
-
-rem --- Print positions
-
-    o[10]=width-11
-    o[9]=o[10]-6
-    o[8]=o[9]-15
-    o[7]=o[8]-9
-    o[6]=o[7]-m-1
-    o[5]=o[6]-11
-    o[4]=o[5]-m1
-    o[3]=o[4]-m3
-    o[2]=o[3]-m2
-    o[1]=o[2]-3
 
 rem --- Position files
 
     read (pow05_dev,key=firm_id$,dom=*next)
 
-l3000: rem --- Get next sort record
-
-    read record(pow05_dev,end=done)pow05a$
-    if pos(firm_id$=pow05a$)<>1 goto done
+rem --- Get next sort record
+    while 1
+        read record(pow05_dev,end=*break)pow05a$
+        if pos(firm_id$=pow05a$)<>1 break
 
 rem --- Level breaks?
 
-    if t0$<>pow05a.warehouse_id$ then warehouse_id$=pow05a.warehouse_id$,recpt_date$=pow05a.recpt_date$; gosub l6000
-    if t1$<>pow05a.recpt_date$ then recpt_date$=pow05a.recpt_date$; gosub l6200
-    if subhead$<>"" gosub l5400
+        if t0$<>pow05a.warehouse_id$ then warehouse_id$=pow05a.warehouse_id$,recpt_date$=pow05a.recpt_date$; gosub l6000
+        if t1$<>pow05a.recpt_date$ then recpt_date$=pow05a.recpt_date$; gosub l6200
+        if subhead$<>"" gosub l5400
 
 rem --- Read receipt header, detail and line code
 
-    dim poe04a$:fattr(poe04a$)
-    dim poe14a$:fattr(poe14a$)
+        dim poe04a$:fattr(poe04a$)
+        dim poe14a$:fattr(poe14a$)
 
-    poe04a.firm_id$=firm_id$
-    poe04a.receiver_no$=pow05a.receiver_no$
+        poe04a.firm_id$=firm_id$
+        poe04a.receiver_no$=pow05a.receiver_no$
 
-    poe14a.firm_id$=firm_id$
-    poe14a.receiver_no$=pow05a.receiver_no$
-    poe14a.internal_seq_no$=pow05a.po_int_seq_ref$
+        poe14a.firm_id$=firm_id$
+        poe14a.receiver_no$=pow05a.receiver_no$
+        poe14a.internal_seq_no$=pow05a.po_int_seq_ref$
 
-    gosub l6400
-    if status goto l3900
+        gosub l6400
+        if status continue
 
 rem --- Set remaining fields
 
-    wo$=""
-    if cvs(poe14a.wo_no$,3)="" goto l3400
-    wo$=poe14a.wo_no$
-    if cvs(poe14a.wo_seq_ref$,3)<>"" wo$=wo$+"-"+poe14a.wo_seq_ref$
+        wo$=""
+        if cvs(poe14a.wo_no$,3)="" goto l3400
+        wo$=poe14a.wo_no$
+        if cvs(poe14a.wo_seq_ref$,3)<>"" wo$=wo$+"-"+poe14a.wo_seq_ref$
 
 l3400: rem --- Calculate extensions
 
-    qty=poe14a.qty_received
-    if pom02a.line_type$="O" qty=1
-    precision 2
-    po_extension=poe14a.unit_cost*qty
-    precision i[1]
+        qty=poe14a.qty_received
+        if pom02a.line_type$="O" qty=1
+        precision 2
+        po_extension=poe14a.unit_cost*qty
+        precision i[1]
 
 rem --- Print non-stock detail line
 
-    if l+2>l9 gosub report_heading
-    if pom02a.line_type$<>"N" goto l3600
-    dim pbuf$(width)
-    pbuf$(o[0]+1)=poe14a.item_id$
-    pbuf$(o[1]+1)=poe14a.unit_measure$
-    pbuf$(o[2]+1)=str(poe14a.qty_received:m2$)
-    pbuf$(o[3]+1)=str(poe14a.unit_cost:m3$)
-    pbuf$(o[4]+1)=str(po_extension:m1$)
-    pbuf$(o[5]+1)=poe14a.location$
-    pbuf$(o[6]+1)=fnmask$(poe04a.vendor_id$(1,vendlen),m0$)
-    pbuf$(o[7]+1)=poe04a.receiver_no$
-    pbuf$(o[8]+1)=poe14a.po_no$;rem +"-"+fnisn$(poe14a.internal_seq_no$)
-    pbuf$(o[9]+1)=complete$
-    pbuf$(o[10]+1)=wo$
-    OutVect!.addItem(pbuf$)
-    goto l3700
+        if pom02a.line_type$="N"
+            OutVect!.addItem(poe14a.item_id$)
+            OutVect!.addItem("")
+            OutVect!.addItem(poe14a.unit_measure$)
+            OutVect!.addItem(str(poe14a.qty_received:m2$)+$00$+"R")
+            xvk=fnblank(2)
+            OutVect!.addItem(str(poe14a.unit_cost:m3$)+$00$+"R")
+            OutVect!.addItem(str(po_extension:m1$)+$00$+"R")
+            OutVect!.addItem(poe14a.location$)
+            OutVect!.addItem(fnmask$(poe04a.vendor_id$(1,vendlen),m0$))
+            OutVect!.addItem(poe04a.receiver_no$)
+            OutVect!.addItem(poe14a.po_no$)
+            OutVect!.addItem(complete$+" "+wo$)
+            goto l3700
+        endif
 
-l3600: rem --- Print other charge detail line
+rem --- Print other charge detail line
 
-    dim pbuf$(width)
-    pbuf$(o[3]+1)=str(poe14a.unit_cost:m3$)
-    pbuf$(o[4]+1)=str(po_extension:m1$)
-    pbuf$(o[5]+1)=poe14a.location$
-    pbuf$(o[6]+1)=fnmask$(poe04a.vendor_id$(1,vendlen),m0$)
-    pbuf$(o[7]+1)=poe04a.receiver_no$
-    pbuf$(o[8]+1)=poe14a.po_no$;rem +"-"+fnisn$(poe14a.internal_seq_no$)
-    pbuf$(o[9]+1)=complete$
-    OutVect!.addItem(pbuf$)
+        xvk=fnblank(6)
+        OutVect!.addItem(str(poe14a.unit_cost:m3$)+$00$+"R")
+        OutVect!.addItem(str(po_extension:m1$)+$00$+"R")
+        OutVect!.addItem(poe14a.location$)
+        OutVect!.addItem(fnmask$(poe04a.vendor_id$(1,vendlen),m0$))
+        OutVect!.addItem(poe04a.receiver_no$)
+        OutVect!.addItem(poe14a.po_no$
+        OutVect!.addItem(complete$)
 
 l3700: rem --- Print non-stock/other charge description
 
-    dim pbuf$(width)
-    pbuf$(o[0]+1+3)=poe14a.order_memo$
-    OutVect!.addItem(pbuf$)
-    l=l+2
+        OutVect!.addItem(poe14a.order_memo$)
+        xvk=fnblank(12)
+        l=l+2
 
 rem --- Accumulate totals
 
-    receipt[1]=receipt[1]+po_extension
-    number=number+1
-    whse[1]=whse[1]+po_extension
-    report[1]=report[1]+po_extension
+        receipt[1]=receipt[1]+po_extension
+        number=number+1
+        whse[1]=whse[1]+po_extension
+        report[1]=report[1]+po_extension
 
-l3900: rem --- Loop back for next sort record
+    wend
 
-    goto l3000
-
-done: rem --- All done
+rem --- All done
 
     done=1
-    if number=0 goto l4900
-    gosub l6000
-    totals$=Translate!.getTranslation("AON_TOTAL_FOR_REGISTER")
-    totals[all]=report[all]
-    gosub l6900
+    if number>0
+        gosub l6000
+        totals$=Translate!.getTranslation("AON_TOTAL_FOR_REGISTER")
+        totals[all]=report[all]
+        gosub l6900
+    endif
 
-l4900: rem --- Run next overlay
+rem --- Run next overlay
 
-    run pgmdir$+"por_recptreg_o2.aon"
-
-report_heading: rem --- Report Heading
-
-    l=headings+3
-rem    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
-rem    if status exitto std_exit
-    if nonstock goto l5200
-
-rem --- Heading for stock receipts
-
-    dim pbuf$(width)
-    pbuf$(o[1]+1)=Translate!.getTranslation("AON_DIST")
-    pbuf$(o[3]+1+m2-9)=Translate!.getTranslation("AON_QUANTITY")
-    pbuf$(o[4]+1+m3-5)=cost$
-    pbuf$(o[5]+1+m1-10)=cost$
-    pbuf$(o[6]+1+m3-5)="PO"
-    pbuf$(o[7]+1+m1-10)="PO"
-    pbuf$(o[8]+1)=Translate!.getTranslation("AON_RECEIVING")
-    pbuf$(o[12]+1)=Translate!.getTranslation("AON_REC'D")
-    OutVect!.addItem(pbuf$)
-    
-    dim pbuf$(width)
-    pbuf$(o[0]+1)=Translate!.getTranslation("AON_ITEM")
-    pbuf$(o[1]+1)=Translate!.getTranslation("AON_CODE")
-    pbuf$(o[2]+1)="UM"
-    pbuf$(o[3]+1+m2-9)=Translate!.getTranslation("AON_RECEIVED")
-    pbuf$(o[4]+1+m3-5)=Translate!.getTranslation("AON_COST")
-    pbuf$(o[5]+1+m1-10)=Translate!.getTranslation("AON_EXTENSION")
-    pbuf$(o[6]+1+m3-5)=Translate!.getTranslation("AON_COST")
-    pbuf$(o[7]+1+m1-10)=Translate!.getTranslation("AON_EXTENSION")
-    pbuf$(o[8]+1)=Translate!.getTranslation("AON_LOCATION")
-    pbuf$(o[9]+1)=Translate!.getTranslation("AON_VENDOR")
-    pbuf$(o[10]+1)=Translate!.getTranslation("AON_REC_#")
-    pbuf$(o[11]+1)=Translate!.getTranslation("AON_PO_NUMBER")
-    pbuf$(o[12]+1)=Translate!.getTranslation("AON_COMP?")
-    OutVect!.addItem(pbuf$)
-    return
-
-l5200: rem --- Heading for non-stock receipts
-
-    dim pbuf$(width)
-    pbuf$(o[2]+1+m2-9)=Translate!.getTranslation("AON_QUANTITY")
-    pbuf$(o[3]+1+m3-5)="PO"
-    pbuf$(o[4]+1+m1-10)="PO"
-    pbuf$(o[5]+1)=Translate!.getTranslation("AON_RECEIVING")
-    pbuf$(o[9]+1)=Translate!.getTranslation("AON_REC'D")
-    OutVect!.addItem(pbuf$)
-    
-    dim pbuf$(width)    
-    pbuf$(o[0]+1)=Translate!.getTranslation("AON_ITEM")
-    pbuf$(o[1]+1)="UM"
-    pbuf$(o[2]+1+m2-9)=Translate!.getTranslation("AON_RECEIVED")
-    pbuf$(o[3]+1+m3-5)=Translate!.getTranslation("AON_COST")
-    pbuf$(o[4]+1+m1-10)=Translate!.getTranslation("AON_EXTENSION")
-    pbuf$(o[5]+1)=Translate!.getTranslation("AON_LOCATION")
-    pbuf$(o[6]+1)=Translate!.getTranslation("AON_VENDOR")
-    pbuf$(o[7]+1)=Translate!.getTranslation("AON_REC_#")
-    pbuf$(o[8]+1)=Translate!.getTranslation("AON_PO_NUMBER")
-    pbuf$(o[9]+1)=Translate!.getTranslation("AON_COMP?")
-    pbuf$(o[10]+1)=Translate!.getTranslation("AON_WORK_ORDER")
-    OutVect!.addItem(pbuf$)
-    return
+    next_overlay$="por_recptreg_o2.aon"
+    goto std_exit
 
 l5400: rem --- Subheading
 
-    if l+4>l9 gosub report_heading
-    dim pbuf$(width)    
-    OutVect!.addItem(pbuf$)
-    dim pbuf$(width)       
-    pbuf$(1)=subhead$
-    OutVect!.addItem(pbuf$)
-    dim pbuf$(width)    
-    OutVect!.addItem(pbuf$)
+    xvf=fnblank(13)
+
+    OutVect!.addItem(subhead$)
+    xvf=fnblank(12)
+    
+    xvf=fnblank(13)
+
     l=l+3
     subhead$=""
     return
 
 l6000: rem --- Warehouse break
 
-    if t0$="" goto l6100
-    gosub l6200
-    totals$=Translate!.getTranslation("AON_TOTAL_FOR_WAREHOUSE_")+cvs(whse$,2)
-    totals[all]=whse[all]
-    gosub l6900
-l6100:
-    if done goto l6190
-    dim whse[1]
-    t0$=warehouse_id$
-    find record (ivm10_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
-    whse$=ivm10c.warehouse_id$+" "+ivm10c.short_name$
-    if t1$="" gosub l6200
-    subhead$=Translate!.getTranslation("AON_WAREHOUSE_")+cvs(whse$,2)+Translate!.getTranslation("AON__-_RECEIPT_DATE_")+fndate$(t1$)
-l6190:
+    if t0$<>""
+        gosub l6200
+        totals$=Translate!.getTranslation("AON_TOTAL_FOR_WAREHOUSE_")+cvs(whse$,2)
+        totals[all]=whse[all]
+        gosub l6900
+    endif
+
+    if done=0
+        dim whse[1]
+        t0$=warehouse_id$
+        find record (ivm10_dev,key=firm_id$+"C"+t0$,dom=*next) ivm10c$
+        whse$=ivm10c.warehouse_id$+" "+ivm10c.short_name$
+        if t1$="" gosub l6200
+        subhead$=Translate!.getTranslation("AON_WAREHOUSE_")+cvs(whse$,2)+Translate!.getTranslation("AON__-_RECEIPT_DATE_")+fndate$(t1$)
+    endif
+
     return
 
 l6200: rem --- Receipt date break
@@ -370,11 +317,12 @@ l6200: rem --- Receipt date break
     totals[all]=receipt[all]
     gosub l6900
 l6300:
-    if done goto l6390
-    dim receipt[1]
-    t1$=recpt_date$
-    subhead$=Translate!.getTranslation("AON_WAREHOUSE_")+cvs(whse$,2)+Translate!.getTranslation("AON__-_RECEIPT_DATE_")+fndate$(t1$)
-l6390:
+    if done=0
+        dim receipt[1]
+        t1$=recpt_date$
+        subhead$=Translate!.getTranslation("AON_WAREHOUSE_")+cvs(whse$,2)+Translate!.getTranslation("AON__-_RECEIPT_DATE_")+fndate$(t1$)
+    endif
+
     return
 
 l6400: rem --- Read receipt header and detail
@@ -382,13 +330,14 @@ l6400: rem --- Read receipt header and detail
     status=11
     find record (poe04_dev,key=poe04a.firm_id$+poe04a.receiver_no$,knum="PRIMARY",dom=l6690) poe04a$
     find record (poe14_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,knum="PRIMARY",dom=l6690) poe14a$
-    if pom02a.firm_id$+pom02a.po_line_code$=firm_id$+poe14a.po_line_code$ goto l6500
-    dim pom02a$:fattr(pom02a$)
-    pom02a.firm_id$=firm_id$
-    pom02a.po_line_code$=poe14a.po_line_code$
-    find record (pom02_dev,key=pom02a.firm_id$+pom02a.po_line_code$,dom=l6690) pom02a$
+    if pom02a.firm_id$+pom02a.po_line_code$<>firm_id$+poe14a.po_line_code$
+        dim pom02a$:fattr(pom02a$)
+        pom02a.firm_id$=firm_id$
+        pom02a.po_line_code$=poe14a.po_line_code$
+        find record (pom02_dev,key=pom02a.firm_id$+pom02a.po_line_code$,dom=l6690) pom02a$
+    endif
 
-l6500: rem --- Retrieve inventory item and warehouse
+rem --- Retrieve inventory item and warehouse
 
     dim ivm01a$:fattr(ivm01a$)
     dim ivm02a$:fattr(ivm02a$)
@@ -400,13 +349,14 @@ l6500: rem --- Retrieve inventory item and warehouse
     ivm02a.warehouse_id$=poe14a.warehouse_id$
     ivm02a.item_id$=poe14a.item_id$
     code$=""
-    if pom02a.line_type$<>"S" goto l6600
-    find record (ivm01_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=l6690) ivm01a$
-    find record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,dom=l6690) ivm02a$
-    description$(1)=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
-    code$=ivm02a.ar_dist_code$
+    if pom02a.line_type$="S"
+        find record (ivm01_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=l6690) ivm01a$
+        find record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,dom=l6690) ivm02a$
+        description$(1)=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
+        code$=ivm02a.ar_dist_code$
+    endif
 
-l6600: rem --- Format detail line fields
+rem --- Format detail line fields
 
     x=poe14a.qty_ordered-poe14a.qty_prev_rec-poe14a.qty_received
     complete$=Translate!.getTranslation("AON_NO")
@@ -440,20 +390,24 @@ l6890:
     return
 rem --- Print totals
 l6900:
-    if l+1>l9 gosub report_heading
+
     if nonstock goto l6950
-    dim pbuf$(width)
-    pbuf$(o[5]+1-len(totals$))=totals$
-    pbuf$(o[5]+1)=str(totals[0]:m1$)
-    pbuf$(o[7]+1)=str(totals[1]:m1$)
-    OutVect!.addItem(pbuf$)
+    OutVect!.addItem(totals$)
+    xvf=fnblank(4)
+    OutVect!.addItem(str(totals[0]:m1$)+$00$+"R")
+    xvf=fnblank(1)
+    OutVect!.addItem(str(totals[0]:m1$)+$00$+"R")
+    xvf=fnblank(5)
     goto l6980
 l6950:
-    dim pbuf$(width)
-    pbuf$(o[4]+1-len(totals$))=totals$
-    pbuf$(o[4]+1)=str(totals[1]:m1$)
-    OutVect!.addItem(pbuf$)
+    OutVect!.addItem(totals$)
+    xvf=fnblank(6)
+    OutVect!.addItem(str(totals[0]:m1$)+$00$+"R")
+    xvf=fnblank(5)
+
 l6980:
+
+    TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     let l=l+1
     return
 
@@ -550,6 +504,15 @@ rem --- fnglobal$: Return string value of passed STBL variable
 
 rem #endinclude std_functions.src
 
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -600,6 +563,7 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    out_action$="FORMAT"
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src

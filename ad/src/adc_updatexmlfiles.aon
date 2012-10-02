@@ -114,15 +114,33 @@ rem  */
         rem  * @param BBjInt upgrade%
         rem  */
         method public void updateXmlFiles(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
+            aonDir$ = #parseAonPath(newSyncLoc$)
             if upgrade% then #meter_total_recs = 90
             #meter! = #createProgressMeter()
             #openLog(newSyncLoc$, oldSyncLoc$, syncBackupDir$, upgrade%)
 
             if upgrade%
-                #copyXmlFiles(new File(syncBackupDir$), new File(newSyncLoc$))
-                #mergeXmlFiles(new File(oldSyncLoc$), new File(newSyncLoc$))
+                rem --- copy non-branded sync xml files from provided location
+                rem --- (aonDir$ path separators already flipped to "/")
+                #copyXmlFiles(new File(syncBackupDir$), new File(aonDir$(1,pos("/"=aonDir$,-1))+"/data/sync")); rem ... pre-v11
+rem ... for v11                #copyXmlFiles(new File(syncBackupDir$), new File(aonDir$(1,pos("/"=aonDir$,-1))+"barista/admin_backup"))
+                rem --- copy branded consolidated (not non-consolidated) sync xml files
+                rem --- (prior to v11.0 branded consolidated sync xml files were in data/sync directory,
+                rem ---  and non-consolidated sync xml files were deleted when consolidated files were created)
+                oldAonDir$ = #parseAonPath(oldSyncLoc$)
+                declare File oldBackupDir!
+                oldBackupDir! = new File(oldAonDir$ + "/data/admin_backup")
+                if !oldBackupDir!.exists() or !oldBackupDir!.isDirectory()
+                    oldBackupDir! = new File(oldSyncLoc$)
+                endif
+                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "/data/sync")); rem ... pre-v11
+rem ... for v11                #copyXmlFiles(oldBackupDir!, new File(aonDir$ + "/data/admin_backup"))
             endif
+            
+            rem --- update xml files in data/sync dir
             #updateXmlFiles(new File(newSyncLoc$))
+            rem --- update xml files in data/admin_backup dir
+            #updateXmlFiles(new File(aonDir$ + "/data/admin_backup"))
 
             #closeLog()
             #destroyProgressMeter()
@@ -139,7 +157,10 @@ rem  */
         method private void copyXmlFiles(File sourceDir!, File targetDir!)
             declare File sourceXml!
             declare File targetXml!
-
+            
+            rem --- create target directory if it doesn't exist
+            FileObject.makeDirs(targetDir!)
+            
             rem --- get list of what is in the source dir, and process it
             declare Vector fileVector!
             fileVector! = new Vector(java.util.Arrays.asList(sourceDir!.list()))
@@ -175,27 +196,17 @@ rem  */
         methodend
 
         rem /**
-        rem  * Merge XML files.
-        rem  *
-        rem  * Merges XML files from source directory into XML files in target directory, 
-        rem  *
-        rem  * @param File sourceDir!
-        rem  * @param File targetDir!
-        rem  */
-        method private void mergeXmlFiles(File sourceDir!, File targetDir!)
-
-            rem --- Strategy for merging XML files hasn't been developed yet.
-            rem --- For now just overwrite files in target directory.
-            #copyXmlFiles(sourceDir!, targetDir!)
-    
-        methodend
-
-        rem /**
         rem  * Update XML files in directory. 
         rem  *
         rem  * @param File dir!
         rem  */
         method private void updateXmlFiles(File dir!)
+        
+            rem --- Validate directory
+            if dir! = null() or !dir!.exists() or !dir!.isDirectory() or dir!.list() = null()
+                methodret
+            endif
+            
             declare Vector fileVector!
             declare File xml!
             fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
@@ -213,9 +224,10 @@ rem  */
                 for i=0 to fileVector!.size()-1
                     name$ = cast(BBjString, fileVector!.get(i))
                     xml! = new File(dir!, name$)
-        
-                    rem --- update adm_modules~[01007514..].xml files
-                    if cast(BBjString, name$).matches("adm_modules~\[01007514..\]\.xml")
+                    
+                    rem --- update adm_modules~*.xml files (consolidated and non-consolidated)
+                    if cast(BBjString, name$).matches("adm_modules~\[01007514..\]\.xml") or
+:                      cast(BBjString, name$).matches("adm_modules~01007514..\.xml")
                         #incrementProgressMeter("updating: " + xml!.getPath())
                         #log("UPDATED: " + xml!.getPath())
                         
@@ -289,9 +301,9 @@ rem  */
             if pos("/aon/"=path$+"/")
                 aonDir$=path$(1, pos("/aon/"=path$+"/") + len("/aon") - 1)
             else
-                rem --- aon directory not found, so use directory containing the data/sync directory
-                if pos("/data/sync/"=path$+"/")
-                    aonDir$=path$(1, pos("/data/sync/"=path$+"/") - 1)
+                rem --- aon directory not found, so use directory containing the data directory
+                if pos("/data/"=path$+"/")
+                    aonDir$=path$(1, pos("/data/"=path$+"/") - 1)
                 endif
             endif
             methodret aonDir$

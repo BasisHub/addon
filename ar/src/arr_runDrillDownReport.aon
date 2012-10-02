@@ -1,0 +1,519 @@
+REM ========================================================================
+REM arr_runDrillDownReport.aon
+REM Lead in to the sales drill down reports
+REM ========================================================================
+
+    setesc std_error
+    seterr std_error
+
+REM ========================================================================
+REM USE and Declares
+REM ========================================================================
+
+	use ::bbjasper.bbj::BBJasperReport
+	use ::bbjasper.bbj::BBJasperViewerWindow
+
+	declare BBJasperReport BBjReport!
+	declare BBJasperViewerWindow BBjReportWindow!
+
+	declare BBjSysGui sysgui!
+	declare BBjTopLevelWindow win!
+
+REM ========================================================================
+REM Common information
+REM ========================================================================
+
+	REM add to the prefix to find the support custom objects needed
+	bbjhome$ = System.getProperty("basis.BBjHome") + "/"
+	addPrefix$=bbjhome$ + "utils/reporting/bbjasper/"
+	if pos(" " = addPrefix$) <> 0 then addPrefix$ = chr(34) + addPrefix$ + chr(34)
+	oldPrefix$=pfx
+	newPrefix$=oldPrefix$+" "+addPrefix$
+	prefix newPrefix$
+
+	REM Open the BBj SysGUI Channel
+	sysgui!=BBjAPI().openSysGui("X0") 
+
+	rem ' build the database URL
+	dbserver$="localhost"
+	dbsqlport$=":2001"
+	dbtimeout$="&socket_timeout=5000"
+
+	dbserver$=stbl("+DBSERVER",err=*next)
+	dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+	dbssl=num(stbl("+DBSSL",err=*next))
+	dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+
+	if dbssl
+		dbssl$="&ssl=true"
+	else
+		dbssl$="&ssl=false"
+	endif
+
+	url_user$="&user=guest"
+	if stbl("!DSUDDB",err=*endif)<>"" then
+		url_user$=""
+	endif
+
+	dbname$ = stbl("+DBNAME")
+	dbname_api$ = stbl("+DBNAME_API")
+	if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+		url$ = dbname$
+	else
+		if pos("jdbc:"=cvs(dbname$,8))=1 then			
+			url$=dbname$+url_user$
+		else
+			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+		endif
+	endif
+
+	REM ' get firm and firm name
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	firm_id$=sysinfo.firm_id$
+	firm_name$=sysinfo.firm_name$
+
+	REM set current month and year
+	year$ = date(0:"%Y")
+	year = num(year$)
+        month$ = date(0:"%M")
+        month = num(month$)-1
+    
+	
+REM ========================================================================
+REM create the window
+REM ========================================================================
+
+	winWidth = 380
+	winHeight = 220
+
+	win!=sysgui!.addWindow(50, 150, winWidth, winHeight, firm_name$ + " Sales by Cust Type",$12$)
+	font! = sysgui!.makeFont("Ariel", 10, sysgui!.BOLD)
+
+	labelM! = win!.addStaticText(win!.getAvailableControlID(), 10,10,50,20,"Month:", $8000$)
+	labelM!.setFont(font!)
+
+	listbuttonM! = win!.addListButton(win!.getAvailableControlID(), 70, 10,120,80, "")
+	listbuttonM!.addItem("January")
+	listbuttonM!.addItem("February")
+	listbuttonM!.addItem("March")
+	listbuttonM!.addItem("April")
+	listbuttonM!.addItem("May")
+	listbuttonM!.addItem("June")
+	listbuttonM!.addItem("July")
+	listbuttonM!.addItem("August")
+	listbuttonM!.addItem("September")
+	listbuttonM!.addItem("October")
+	listbuttonM!.addItem("November")
+	listbuttonM!.addItem("December")
+	listbuttonM!.selectIndex(month)
+	
+	labelY! = win!.addStaticText(win!.getAvailableControlID(), 10,50,50,20,"Year:", $8000$)
+	labelY!.setFont(font!)
+
+	listbuttonY! = win!.addListButton(win!.getAvailableControlID(), 70, 50,120,80, "")
+	index = 0
+	for y = 1999 to year	
+		yearStr$ = yearStr$ + str(y) + $0A$
+		index = index + 1
+	next y
+	listbuttonY!.insertItems(0, yearStr$)
+	listbuttonY!.selectIndex(index - 1)
+	
+	reportButton! = win!.addButton(win!.getAvailableControlID(), 250,10,95,30,"Run Report")
+	doneButton! = win!.addButton(win!.getAvailableControlID(), 250,50,95,30,"Done")
+	
+	instructionLabel! = win!.addStaticText(win!.getAvailableControlID(),10,90,360,20,"Use these inputs to enter the drill down stack at a lower level.")
+	font1! = sysgui!.makeFont("Ariel", 10, sysgui!.PLAIN)
+	instructionLabel!.setFont(font1!)
+	
+	listButtonT! = win!.addListButton(win!.getAvailableControlID(), 120, 120, 100,80, "")
+	gosub load_cust_type_list
+
+	labelT! = win!.addStaticText(win!.getAvailableControlID(), 10,120,100,20,"Customer Type:", $8000$)
+	labelT!.setFont(font!)
+	
+	listButtonC! = win!.addListButton(win!.getAvailableControlID(), 120, 150, 250,80, "", $0001$)
+	labelC! = win!.addStaticText(win!.getAvailableControlID(), 10,150,100,20,"Customer:", $8000$)
+	labelC!.setFont(font!)
+
+	listButtonI! = win!.addListButton(win!.getAvailableControlID(), 120, 180, 150,80, "", $0001$)
+	labelI! = win!.addStaticText(win!.getAvailableControlID(), 10,180,100,20,"Invoice:", $8000$)
+	labelI!.setFont(font!)
+
+	win!.setCallback(win!.ON_CLOSE,"DONE")
+	doneButton!.setCallback(doneButton!.ON_BUTTON_PUSH, "DONE")
+	reportButton!.setCallback(reportButton!.ON_BUTTON_PUSH, "DEPLOY_REPORT")
+	listButtonT!.setCallback(listButtonT!.ON_LIST_SELECT,"HOUSEKEEP_CUSTOMER")
+	listButtonC!.setCallback(listButtonC!.ON_LIST_SELECT,"HOUSEKEEP_INVOICES")
+	listButtonM!.setCallback(listButtonM!.ON_LIST_SELECT,"HOUSEKEEP_INVOICES")
+	listButtonY!.setCallback(listbuttonY!.ON_LIST_SELECT,"HOUSEKEEP_INVOICES")
+	
+	win!.setVisible(1)
+
+	process_events
+
+DONE:
+	release
+	
+
+REM ========================================================================
+REM deploy the report
+REM ========================================================================
+
+DEPLOY_REPORT:
+	
+	rem ' what report are we running
+
+	cust_type = listbuttonT!.getSelectedIndex()
+	
+	if cust_type = 0 then
+		gosub startSalesByCustType
+	else
+		customer = listbuttonC!.getSelectedIndex()
+		
+		if customer = 0 then
+			gosub startSalesCustTypeCust
+		else
+			invoice = listbuttonI!.getSelectedIndex()
+			
+			if invoice = 0 then
+				gosub startSaleByCustomer
+			else
+				gosub startSalesInvoiceDetails
+			fi
+		fi
+	fi
+	
+	return
+
+
+REM ========================================================================
+REM startSalesByCustType
+REM ========================================================================
+
+startSalesByCustType:
+
+	reportName$ = stbl("+DIR_REPORTS") + "SalesByCustType.jasper"
+
+	BBjReport! = new BBJasperReport(reportName$, url$)
+
+	BBjReport!.putParam("FIRM_ID","01")
+
+	month = listbuttonM!.getSelectedIndex()
+	month$ = str(month + 1:"00")
+	year = listbuttonY!.getSelectedIndex()
+	year$ = listbuttonY!.getItemAt(year)
+	
+	BBjReport!.putParam("FIRM_ID",firm_id$)
+	BBjReport!.putParam("FIRM_NAME",firm_name$)
+	BBjReport!.putParam("MONTH",month$)
+	BBjReport!.putParam("YEAR",year$)
+
+	BBjReport!.fill()
+
+	BBjReportWindow! = new BBJasperViewerWindow(BBjReport!, 0, 0, 920, 600,"BASIS International, Ltd.", $93$)
+	BBjReportWindow!.center()
+	BBjReportWindow!.show(1)
+
+	return
+
+REM ========================================================================
+REM startSalesByCustTypeCust
+REM ========================================================================
+
+startSalesCustTypeCust:
+
+	reportName$ = stbl("+DIR_REPORTS") + "SalesCustTypeCust.jasper"
+
+	BBjReport! = new BBJasperReport(reportName$, url$)
+
+	month = listbuttonM!.getSelectedIndex()
+	month$ = str(month + 1:"00")
+	year = listbuttonY!.getSelectedIndex()
+	year$ = listbuttonY!.getItemAt(year)
+
+	cust_type$ = cvs(listButtonT!.getItemAt(listbuttonT!.getSelectedIndex()),3)
+	ppos = pos(" " = cust_type$)
+	if ppos <> 0 then cust_type$ = cust_type$(1,ppos-1)
+		
+	BBjReport!.putParam("FIRM_ID",firm_id$)
+	BBjReport!.putParam("FIRM_NAME",firm_name$)
+	BBjReport!.putParam("CUST_TYPE",cust_type$)
+	BBjReport!.putParam("MONTH",month$)
+	BBjReport!.putParam("YEAR",year$)
+
+	BBjReport!.fill()
+
+	BBjReportWindow! = new BBJasperViewerWindow(BBjReport!, 0, 0, 920, 600,"BASIS International, Ltd.", $93$)
+	BBjReportWindow!.center()
+	BBjReportWindow!.show(1)
+
+	return
+
+REM ========================================================================
+REM startSalesByCustTypeCust
+REM ========================================================================
+
+startSaleByCustomer:
+
+	reportName$ = stbl("+DIR_REPORTS") + "SalesByCustomer.jasper"
+	
+	BBjReport! = new BBJasperReport(reportName$, url$)
+
+	month = listbuttonM!.getSelectedIndex()
+	month$ = str(month + 1:"00")
+	year = listbuttonY!.getSelectedIndex()
+	year$ = listbuttonY!.getItemAt(year)
+
+	cust_type$ = cvs(listButtonT!.getItemAt(listbuttonT!.getSelectedIndex()),3)
+	ppos = pos(" " = cust_type$)
+	if ppos <> 0 then cust_type$ = cust_type$(1,ppos-1)
+
+	customer$ = cvs(listbuttonC!.getItemAt(listbuttonC!.getSelectedIndex()),3)
+	customer_nbr$ = customer$(1,6)
+	cust_name$ = customer$(8)
+		
+	BBjReport!.putParam("FIRM_ID",firm_id$)
+	BBjReport!.putParam("FIRM_NAME",firm_name$)
+	BBjReport!.putParam("CUST_TYPE",cust_type$)
+	BBjReport!.putParam("CUSTOMER_NBR",customer_nbr$)
+	BBjReport!.putParam("CUST_NAME",cust_name$)
+	BBjReport!.putParam("MONTH",month$)
+	BBjReport!.putParam("YEAR",year$)
+
+	BBjReport!.fill()
+
+	BBjReportWindow! = new BBJasperViewerWindow(BBjReport!, 0, 0, 920, 600,"BASIS International, Ltd.", $93$)
+	BBjReportWindow!.center()
+	BBjReportWindow!.show(1)
+
+	return
+
+REM ========================================================================
+REM startSalesInvoiceDetails
+REM ========================================================================
+
+startSalesInvoiceDetails:
+
+	reportName$ = stbl("+DIR_REPORTS") + "SalesInvoiceDetails.jasper"
+
+	BBjReport! = new BBJasperReport(reportName$, url$)
+
+	month = listbuttonM!.getSelectedIndex()
+	month$ = str(month + 1:"00")
+	year = listbuttonY!.getSelectedIndex()
+	year$ = listbuttonY!.getItemAt(year)
+
+	cust_type$ = cvs(listButtonT!.getItemAt(listbuttonT!.getSelectedIndex()),3)
+	ppos = pos(" " = cust_type$)
+	if ppos <> 0 then cust_type$ = cust_type$(1,ppos-1)
+
+	customer$ = cvs(listbuttonC!.getItemAt(listbuttonC!.getSelectedIndex()),3)
+	customer_nbr$ = customer$(1,6)
+	cust_name$ = customer$(8)
+
+	invoice$ = listbuttonI!.getItemAt(listbuttonI!.getSelectedIndex())
+	inv_nbr$ = invoice$(1,7)
+	inv_date$ = invoice$(9)
+	
+	BBjReport!.putParam("FIRM_ID",firm_id$)
+	BBjReport!.putParam("FIRM_NAME",firm_name$)
+	BBjReport!.putParam("CUST_TYPE",cust_type$)
+	BBjReport!.putParam("CUSTOMER_NBR",customer_nbr$)
+	BBjReport!.putParam("CUST_NAME",cust_name$)
+	BBjReport!.putParam("MONTH",month$)
+	BBjReport!.putParam("YEAR",year$)
+	BBjReport!.putParam("AR_INV_NBR",inv_nbr$)
+	BBjReport!.putParam("INVOICE_DATE",inv_date$)
+	BBjReport!.putParam("WindowWidth","1250")
+
+	BBjReport!.fill()
+
+	BBjReportWindow! = new BBJasperViewerWindow(BBjReport!, 0, 0, 920, 600,"BASIS International, Ltd.", $93$)
+	BBjReportWindow!.center()
+	BBjReportWindow!.show(1)
+
+	return
+
+
+REM ========================================================================
+REM load customer type list button listbuttonT!
+REM ========================================================================
+
+load_cust_type_list:
+
+	listbuttonT!.removeAllItems()
+
+	sql$ = "SELECT * FROM ARC_CUSTTYPE t1 "
+	sql$ = sql$ + "WHERE t1.firm_id = '" + firm_id$ + "' "
+	sql$ = sql$ + "ORDER BY t1.customer_type"
+	
+	rs! = BBJAPI().createSQLRecordSet(url$,"",sql$)
+	
+	count = 0
+	listbuttonT!.insertItemAt(count, "None")
+	count = count + 1
+	
+	while 1
+		rec! = rs!.getCurrentRecordData()
+	
+		if cvs(rec!.getFieldValue("CUSTOMER_TYPE"),3)<>"" then
+			
+			item$ = cvs(rec!.getFieldValue("CUSTOMER_TYPE"),3) + FILL(4," ")
+			item$ = item$(1,4) + rec!.getFieldValue("CODE_DESC")
+			listbuttonT!.insertItemAt(count,item$)
+			count = count + 1
+		fi
+
+		rs!.next(err=*break)	
+	
+	wend
+
+	listbuttonT!.selectIndex(0)
+
+	return
+	
+REM ========================================================================
+REM housekeep the customer listbutton based on the selection in the customer
+REM type listbutton
+REM ========================================================================
+
+housekeep_customer:
+
+	cust_type = listbuttonT!.getSelectedIndex()
+
+	rem ' at the point the invoice listbutton should always be disable and emptey
+	listbuttonI!.removeAllItems()
+	listbuttonI!.setEnabled(0)
+
+	if cust_type = 0 then
+		listbuttonC!.removeAllItems()
+		listbuttonC!.setEnabled(0)
+	else
+		cust_type$ = listbuttonT!.getItemAt(cust_type)
+		ppos = pos(" "=cust_type$)
+		if ppos <> 0 then cust_type$ = cust_type$(1,ppos-1)
+		
+		listbuttonC!.setEnabled(1)
+		listbuttonC!.removeAllItems()
+			
+		sql$ = "SELECT t1.customer_id, t1.customer_name FROM ARM_CUSTMAST t1 "
+		sql$ = sql$ + "INNER JOIN ARM_CUSTDET t2 ON t1.firm_id = t2.firm_id AND t1.customer_id = t2.customer_id "
+		sql$ = sql$ + "WHERE t1.firm_id = '" + firm_id$ + "' AND t2.customer_type = '" + cust_type$ + "' "
+		sql$ = sql$ + "ORDER BY t1.customer_id"
+		
+		rs! = BBJAPI().createSQLRecordSet(url$,"",sql$)
+	
+		count = 0
+		listbuttonC!.insertItemAt(count, "None")
+		count = count + 1
+		
+		if !(rs!.isEmpty()) then
+			while 1
+				rec! = rs!.getCurrentRecordData()
+
+				cust_nbr$ = rec!.getFieldValue("CUSTOMER_ID")
+				cust_name$ = rec!.getFieldValue("CUSTOMER_NAME")
+
+				listbuttonC!.insertItemAt(count, cust_nbr$ + " " + cust_name$)
+				count = count + 1
+
+				rs!.next(err=*break)	
+
+			wend
+		fi
+
+		listbuttonC!.selectIndex(0)
+	
+	fi
+	
+	return
+	
+REM ========================================================================
+REM housekeep the invoices listbutton based on the selection in the customer
+REM listbutton
+REM ========================================================================
+	
+housekeep_invoices:
+
+	customer = listbuttonC!.getSelectedIndex()
+
+	rem ' if listbuttonC! is empty customer will be -1
+	if customer > -1 then
+		
+		if customer = 0 then
+			listbuttonI!.removeAllItems()
+			listbuttonI!.setEnabled(0)
+		else
+			customer$ = listbuttonC!.getItemAt(customer)
+			customer$ = customer$(1,6)
+
+			listbuttonI!.setEnabled(1)
+			listbuttonI!.removeAllItems()
+
+			month = listbuttonM!.getSelectedIndex()
+			month$ = str(month + 1:"00")
+			year = listbuttonY!.getSelectedIndex()
+			year$ = listbuttonY!.getItemAt(year)
+
+			sql$ = "SELECT t1.ar_inv_no as ar_inv_nbr, "
+			sql$ = sql$ + "CONCAT(CONCAT(CONCAT(CONCAT(SUBSTRING(t1.invoice_date, 5, 2), '/'), SUBSTRING(t1.invoice_date, 7, 2)), '/'), SUBSTRING(t1.invoice_date, 1, 4)) AS inv_date FROM OPT_INVHDR t1 "
+			sql$ = sql$ + "WHERE t1.firm_id = '" + firm_id$ + "' AND t1.customer_id = '" + customer$ + "' AND SUBSTRING(t1.INVOICE_DATE, 5, 2) = '" + month$ + "' AND SUBSTRING(t1.INVOICE_DATE, 1, 4) = '" + year$ + "' "
+			sql$ = sql$ + "ORDER BY t1.ar_inv_no"
+
+			rs! = BBJAPI().createSQLRecordSet(url$,"",sql$)
+
+			count = 0
+			listbuttonI!.insertItemAt(count, "None")
+			count = count + 1
+
+			if !(rs!.isEmpty())
+				while 1
+					rec! = rs!.getCurrentRecordData()
+
+					inv_nbr$ = rec!.getFieldValue("AR_INV_NBR")
+					invoice_date$ = rec!.getFieldValue("INV_DATE")
+
+					listbuttonI!.insertItemAt(count, inv_nbr$ + " " + invoice_date$)
+					count = count + 1
+
+					rs!.next(err=*break)	
+
+				wend
+			fi
+
+			listbuttonI!.selectIndex(0)
+
+		fi
+	fi
+
+return
+
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_error_exit)
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+	

@@ -21,6 +21,22 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
+rem --- Document initializations
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    
+rem --- set rd_alias_id$
+    
+    rd_alias_id$=pgm(-2)
+    rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+    rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+
 rem --- Initializations
 
     call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",m1$,0,0
@@ -34,6 +50,9 @@ rem --- Initializations
     precision i[1]
     dim description$(i[3]+i[4]+i[5]),s0$(200),s[13]
     dim files[3],item$[2],whse$[2],z0$(32)
+    dim headings$[2]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
     number=0
     l=l9+1
     subhead$=""
@@ -46,27 +65,26 @@ rem --- Initializations
     p8=max(p8,8)
     x1$=Translate!.getTranslation("AON__THIS_WAREHOUSE_")
     x2$=Translate!.getTranslation("AON__OTHER_WAREHOUSES_")
-    HdrVect!.addItem(Translate!.getTranslation("AON_SUGGESTED_BACKORDER_FILL_REPORT"))
-    BrkVect!.addItem(str(OutVect!.size()))        
-rem headings$[2]=Translate!.getTranslation("AON_SUGGESTED_BACKORDER_FILL_REPORT")
 
-rem --- Print positions
+rem --- Headings and print positions
+
+    columns = 12
+    dim columns$[columns,10]
+    columns$[0,0]=Translate!.getTranslation("AON_CUSTOMER"), columns$[0,1]="C", columns$[0,2]="8"
+    columns$[1,0]=Translate!.getTranslation("AON_SALES_ORDER"), columns$[1,1]="C", columns$[1,2]="8"
+    columns$[2,0]=Translate!.getTranslation("AON_CUSTOMER")+"^"+Translate!.getTranslation("AON_PO_NUMBER"), columns$[2,1]="C",columns$[2,2]="8"
+    columns$[3,0]=Translate!.getTranslation("AON_ORDER")+"^"+Translate!.getTranslation("AON_DATE"), columns$[3,1]="C",columns$[3,2]="8"
+    columns$[4,0]=Translate!.getTranslation("AON_SCHEDULED")+"^"+Translate!.getTranslation("AON_SHIP_DATE"), columns$[4,1]="C",columns$[4,2]="8"
+    columns$[5,0]=Translate!.getTranslation("AON_BACK-")+"^"+Translate!.getTranslation("AON_ORDERED"), columns$[5,1]="C",columns$[5,2]="10", columns$[5,5]="R"
+    columns$[6,0]=Translate!.getTranslation("AON_CURRENT")+"^"+Translate!.getTranslation("AON_RECEIPT"), columns$[6,1]="C", columns$[6,2]=str(len(m2$)), columns$[6,5]="R"
+    columns$[7,0]=h1$+"^"+Translate!.getTranslation("AON_ON_HAND"), columns$[7,1]="C", columns$[7,2]=str(len(m2$)), columns$[7,5]="R"
+    columns$[8,0]=Translate!.getTranslation("AON_COMMITTED"), columns$[8,1]="C", columns$[8,2]=str(len(m3$)), columns$[8,5]="R"
+    columns$[9,0]=Translate!.getTranslation("AON_AVAILABLE"), columns$[9,1]="C", columns$[9,2]=str(len(m1$)), columns$[9,5]="R"
+    columns$[10,0]=h2$+"^"+Translate!.getTranslation("AON_ON_HAND"), columns$[10,1]="C", columns$[10,2]=str(len(m3$)), columns$[10,5]="R"
+    columns$[11,0]=Translate!.getTranslation("AON_COMMITTED"), columns$[11,1]="C", columns$[11,2]=str(len(m1$)), columns$[11,5]="R"
+    columns$[12,0]=Translate!.getTranslation("AON_AVAILABLE"), columns$[12,1]="C", columns$[12,2]=str(len(m1$)), columns$[12,5]="R"
 
     call pgmdir$+"adc_sizemask.aon",m2$,m2,10,10
-    o[0]=0
-    o[1]=p8+1
-    o[13]=width-m2
-    o[12]=o[13]-m2
-    o[11]=o[12]-m2
-    o[10]=o[11]-m2
-    o[9]=o[10]-m2
-    o[8]=o[9]-m2
-    o[7]=o[8]-m2
-    o[6]=o[7]-m2
-    o[5]=o[6]-9
-    o[4]=o[5]-9
-    o[3]=o[4]-12
-    o[2]=o[3]-11
     x=3*m2
     dim h1$(x,"-"),h2$(x,"-")
     p=int((x-len(x1$))/2)
@@ -76,6 +94,17 @@ rem --- Print positions
 
 rem --- Order Processing in use?
 
+    ar$="N"
+    call pgmdir$+"adc_application.aon","AR",info$[all]
+    ar$=info$[20]
+
+    op$="N"
+    distcode$="N"
+    if ar$="Y" 
+        call pgmdir$+"adc_application.aon","OP",info$[all]
+        op$=info$[20]
+        distcode$=ars01a.dist_by_item$
+    endif
     if op$<>"Y" goto l4500
 
 rem --- Position files
@@ -95,64 +124,61 @@ rem --- Position ope-11, alt_key_01, (old ope-61) Orders by Item
 
 l2000: rem --- Read next 
 
-    read record(ope11_dev,end=l3000)ope11a$
-    if pow03a.firm_id$<>ope11a.firm_id$ or pow03a.warehouse_id$<>ope11a.warehouse_id$ or 
-:       pow03a.item_id$<>ope11a.item_id$ goto l3000
-    dim ope01a$:fattr(ope01a$)
-    ope01a.firm_id$=firm_id$
-    ope01a.customer_id$=ope11a.customer_id$
-    ope01a.order_no$=ope11a.order_no$
-    find record (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=l2900) ope01a$
-    if ope01a.backord_flag$<>"B" goto l2900
-    if ope11a.commit_flag$="N" backorder=ope11a.qty_backord else backorder=ope11a.qty_ordered; rem "Item committed?
-    if backorder=0 goto l2900
+    while 1
+        read record(ope11_dev,end=*break)ope11a$
+        if pow03a.firm_id$<>ope11a.firm_id$ or pow03a.warehouse_id$<>ope11a.warehouse_id$ or 
+:          pow03a.item_id$<>ope11a.item_id$ continue
+        dim ope01a$:fattr(ope01a$)
+        ope01a.firm_id$=firm_id$
+        ope01a.customer_id$=ope11a.customer_id$
+        ope01a.order_no$=ope11a.order_no$
+        find record (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*continue) ope01a$
+        if ope01a.backord_flag$<>"B" continue
+        if ope11a.commit_flag$="N" backorder=ope11a.qty_backord else backorder=ope11a.qty_ordered; rem "Item committed?
+        if backorder=0 continue
 
 rem --- Dropshipment?
 
-    if firm_id$+ope11a.line_code$=opm02a.firm_id$+opm02a.line_code$ goto l2150
-    dim opm02a$:fattr(opm02a$)
-    opm02a.firm_id$=firm_id$,opm02a.line_code$=ope11a.line_code$
-    find record (opm02_dev,key=opm02a.firm_id$+opm02a.line_code$,dom=l2900) opm02a$
+        if firm_id$+ope11a.line_code$=opm02a.firm_id$+opm02a.line_code$ goto l2150
+        dim opm02a$:fattr(opm02a$)
+        opm02a.firm_id$=firm_id$,opm02a.line_code$=ope11a.line_code$
+        find record (opm02_dev,key=opm02a.firm_id$+opm02a.line_code$,dom=*continue) opm02a$
 l2150:
-    if opm02a.dropship$="Y" goto l2900
+        if opm02a.dropship$="Y" continue
 
 rem --- Level breaks?
 
-    if ope11a.warehouse_id$<>t0$ gosub l6000
-    if ope11a.item_id$<>t1$ gosub l6200
-    if subhead$<>"" gosub l5400
+        if ope11a.warehouse_id$<>t0$ gosub l6000
+        if ope11a.item_id$<>t1$ gosub l6200
+        if subhead$<>"" gosub l5400
 
 rem --- Read customer
 
-    dim arm01a$:fattr(arm01a$)
-    arm01a.firm_id$=firm_id$
-    arm01a.customer_id$=ope01a.customer_id$
-    find record (arm01_dev,key=arm01a.firm_id$+arm01a.customer_id$,dom=*next) arm01a$
-    shipdate$=ope11a.est_shp_date$
-    if cvs(shipdate$,2)="" shipdate$=ope01a.shipmnt_date$
-    if cvs(shipdate$,2)<>"" shipdate$=fndate$(shipdate$)
+        dim arm01a$:fattr(arm01a$)
+        arm01a.firm_id$=firm_id$
+        arm01a.customer_id$=ope01a.customer_id$
+        find record (arm01_dev,key=arm01a.firm_id$+arm01a.customer_id$,dom=*next) arm01a$
+        shipdate$=ope11a.est_shp_date$
+        if cvs(shipdate$,2)="" shipdate$=ope01a.shipmnt_date$
+        if cvs(shipdate$,2)<>"" shipdate$=fndate$(shipdate$)
 
 rem --- Print detail line
 
-    if l+2>l9 gosub report_heading
-    dim pbuf$(width)
-    pbuf$(o[0]+1)=fnmask$(arm01a.customer_id$(1,custlen),customask$)+" "+arm01a.customer_name$
-    OutVect!.addItem(pbuf$)
-    dim pbuf$(width)
-    pbuf$(o[2]+1)=ope11a.order_no$+"-"+ope11a.line_no$
-    pbuf$(o[3]+1)=ope01a.customer_po_no$
-    pbuf$(o[4]+1)=fndate$(ope01a.order_date$)
-    pbuf$(o[5]+1)=shipdate$
-    pbuf$(o[6]+1)=str(backorder:m2$)
-    OutVect!.addItem(pbuf$)
-    l=l+2
-    number=number+1
-    totals[1]=totals[1]+backorder
+        OutVect!.addItem(fnmask$(arm01a.customer_id$(1,custlen),customask$)+" "+arm01a.customer_name$)
+        xvf=fnblank(12)
+        
+        xvf=fnblank(1)
+        OutVect!.addItem(ope11a.order_no$+"-"+ope11a.line_no$)
+        OutVect!.addItem(ope01a.customer_po_no$)
+        OutVect!.addItem(fndate$(ope01a.order_date$))
+        OutVect!.addItem(shipdate$)
+        OutVect!.addItem(str(backorder:m2$)+$00$+"R")
+        xvf=fnblank(7)
+        l=l+2
+        number=number+1
+        totals[1]=totals[1]+backorder
 
-l2900: rem --- Loop back for next item/order record
-
-    goto l2000
-l3000:
+    wend
 
 l3900: rem --- Loop back for next receipt record
 
@@ -180,58 +206,19 @@ rem --- Run next overlay
 
     update$="pou_recptreg.aon"    
     overlay$=update$
-    if gl$="Y" and gl_posting overlay$=pgmdir$+"glr_recap.aon"; rem " --- Include the GL Posting Status Flag to determine the report overlay."
+    if gl$="Y" and gl_posting overlay$=pgmdir$+"glr_recap.aon"
     
-    out_action$="PRT-PDF"
     next_overlay$=overlay$
     goto std_exit
 
-
-report_heading: rem --- Report Heading
-
-    l=headings+3
-rem    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,page,width,when$,clock$,status
-rem    if status exitto std_exit
-
-    dim pbuf$(width)
-    pbuf$(o[3]+1)=Translate!.getTranslation("AON_CUSTOMER")
-    pbuf$(o[4]+1+2)=Translate!.getTranslation("AON_ORDER")
-    pbuf$(o[5]+1)=Translate!.getTranslation("AON_SCHEDULED")
-    pbuf$(o[6]+1+m2-7)=Translate!.getTranslation("AON_BACK-")
-    pbuf$(o[7]+1+m2-8)=Translate!.getTranslation("AON_CURRENT")
-    pbuf$(o[8]+1)=h1$
-    pbuf$(o[11]+1)=h2$
-    OutVect!.addItem(pbuf$)
-    
-    dim pbuf$(width)
-    pbuf$(o[0]+1)=Translate!.getTranslation("AON_CUSTOMER")
-    pbuf$(o[1]+1)=Translate!.getTranslation("AON_SALES_ORDER")
-    pbuf$(o[3]+1)=Translate!.getTranslation("AON_PO_NUMBER")
-    pbuf$(o[4]+1+2)=Translate!.getTranslation("AON_DATE")
-    pbuf$(o[5]+1)=Translate!.getTranslation("AON_SHIP_DATE")
-    pbuf$(o[6]+1+m2-8)=Translate!.getTranslation("AON_ORDERED")
-    pbuf$(o[7]+1+m2-8)=Translate!.getTranslation("AON_RECEIPT")
-    pbuf$(o[8]+1+m2-8)=Translate!.getTranslation("AON_ON_HAND")
-    pbuf$(o[9]+1+m2-10)=Translate!.getTranslation("AON_COMMITTED")
-    pbuf$(o[10]+1+m2-10)=Translate!.getTranslation("AON_AVAILABLE")
-    pbuf$(o[11]+1+m2-8)=Translate!.getTranslation("AON_ON_HAND")
-    pbuf$(o[12]+1+m2-10)=Translate!.getTranslation("AON_COMMITTED")
-    pbuf$(o[13]+1+m2-10)=Translate!.getTranslation("AON_AVAILABLE")
-    OutVect!.addItem(pbuf$)
-    return
-
 l5400: rem --- Subheading
 
-    if l+4>l9 gosub report_heading
-    dim pbuf$(width)
-    OutVect!.addItem(pbuf$)
+    xvf=fnblank(13)
     
-    dim pbuf$(width)
-    pbuf$(1)=subhead$
-    OutVect!.addItem(pbuf$)
-    
-    dim pbuf$(width)
-    OutVect!.addItem(pbuf$)
+    OutVect!.addItem(subhead$)
+    xvf=fnblank(12)
+
+    xvf=fnblank(13)
     l=l+3
     subhead$=""
     return
@@ -250,21 +237,20 @@ l6000: rem --- Warehouse break
 l6200: rem --- Item break
 
     if t1$="" goto l6300
-    if l+2>l9 gosub report_heading
-    dim pbuf$(width)
-    OutVect!.addItem(pbuf$)
-    
-    dim pbuf$(width)
-    pbuf$(o[6]+1-(16+i[0]))=Translate!.getTranslation("AON_TOTALS_FOR_ITEM_")+t1$
-    pbuf$(o[6]+1)=str(totals[1]:m2$)
-    pbuf$(o[7]+1)=str(pow03a.qty_received:m2$)
-    pbuf$(o[8]+1)=str(totals[2]:m2$)
-    pbuf$(o[9]+1)=str(totals[3]:m2$)
-    pbuf$(o[10]+1)=str(totals[4]:m2$)
-    pbuf$(o[11]+1)=str(totals[5]:m2$)
-    pbuf$(o[12]+1)=str(totals[6]:m2$)
-    pbuf$(o[13]+1)=str(totals[7]:m2$)
-    OutVect!.addItem(pbuf$)
+    xvf=fnblank(13)
+
+    xvf=fnblank(1)
+    OutVect!.addItem(Translate!.getTranslation("AON_TOTALS_FOR_ITEM_")+t1$)
+    xvf=fnblank(3)
+    OutVect!.addItem(str(totals[1]:m2$)+$00$+"R")
+    OutVect!.addItem(str(pow03a.qty_received:m2$)+$00$+"R")
+    OutVect!.addItem(str(totals[2]:m2$)+$00$+"R")
+    OutVect!.addItem(str(totals[3]:m2$)+$00$+"R")
+    OutVect!.addItem(str(totals[4]:m2$)+$00$+"R")
+    OutVect!.addItem(str(totals[5]:m2$)+$00$+"R")
+    OutVect!.addItem(str(totals[6]:m2$)+$00$+"R")
+    OutVect!.addItem(str(totals[7]:m2$)+$00$+"R")
+
     l=l+2
 l6300:
     if done goto l6390
@@ -375,6 +361,15 @@ rem --- fnglobal$: Return string value of passed STBL variable
 
 rem #endinclude std_functions.src
 
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)
@@ -427,6 +422,7 @@ std_exit: rem --- Standard program end (01Mar2006)
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
 
+    out_action$="FORMAT"
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src

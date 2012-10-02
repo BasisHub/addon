@@ -1,0 +1,459 @@
+rem ==========================================================================
+rem --- adx_demoyear.aon 
+rem --- Utility to change the year for Addon demo data.
+rem --- Do NOT run this utility on production data!
+rem --- 
+rem --- AddonSoftware Version 10.0
+rem --- Copyright © 2011, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    use java.io.File
+    use java.util.Collections
+    use java.util.HashMap
+    use java.util.Iterator
+    use java.util.TreeSet
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    sysGUI! = BBjAPI().getSysGui()
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=stbl("+DIR_SYP",err=*next)
+    datdir$=stbl("+DIR_DAT",err=*next)
+    
+    aonCompId$="01007514"
+    aonProdIds$="AD;AP;AR;BM;GL;IV;MP;OP;PO;PR;SA;SF;SY"
+
+rem --- Get user inputs
+
+    currentYear$=Option!.getOptionData("CURRENT_YEAR")
+    incYr=num(Option!.getOptionData("INCREMENT_YEAR"))
+
+    rem -- Close GLS_CALENDAR so it can be updated. It was opened in the form.
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="GLS_CALENDAR",open_opts$[1]="CX"
+    gosub open_tables
+
+rem --- Open log file
+
+    aonLib$=stbl("+ADDON_LIB",err=*next)
+ 	aonDir$=aonLib$(1, pos("/lib/"=aonLib$)-1)
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Query ddm_elements table to get elements of the desired types
+
+    declare HashMap element_map!
+    element_map! = new HashMap()
+
+    declare BBjVector styp_vec!
+    styp_vec! = BBjAPI().makeVector()
+    styp_vec!.add("1"); rem - YYYYMMDD
+    styp_vec!.add("2"); rem - YYYYMM
+    styp_vec!.add("3"); rem - YYYY
+    
+    for i=0 to styp_vec!.size()-1
+        styp$ = cast(BBjString, styp_vec!.get(i))
+        sql_prep$="SELECT dd_data_name, dd_attr_styp FROM ddm_elements WHERE dd_attr_styp='" + styp$ + "'"
+        sql_chan=sqlunt
+        sqlopen(sql_chan)stbl("+DBNAME")
+        sqlprep(sql_chan)sql_prep$
+        dim select_tpl$:sqltmpl(sql_chan)
+        sqlexec(sql_chan)
+
+        while 1
+            select_tpl$=sqlfetch(sql_chan,err=*break) 
+            element_map!.put(select_tpl.dd_data_name$, select_tpl.dd_attr_styp$)
+        wend
+        sqlclose(sql_chan)
+    next i
+    
+rem --- Start progress meter
+                
+    declare BBTranslator Translator!
+    Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+    meter_title$=Translator!.getTranslation("AON_UPDATING")+"..."
+    meter_total_recs=element_map!.size()
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter
+
+rem --- Query ddm_table_cols table to get aliases of tables where the selected elements are used
+    
+    declare TreeSet keys!
+    keys! = new TreeSet(element_map!.keySet())
+    declare Iterator iter!
+    iter! = keys!.iterator()
+    while(iter!.hasNext())
+        dataName$ = cast(BBjString, iter!.next())
+        attrStyp$ = cast(BBjString, element_map!.get(dataName$))
+
+        rem --- Skip if not a supported data subtype
+        unsupported$=""
+        styp$=cvs(attrStyp$,3)
+        switch (BBjAPI().TRUE)
+            case styp$="1"
+                rem --- YYYYMMDD
+                break
+            case styp$="2"
+                rem --- YYYYMM
+                break
+            case styp$="3"
+                rem --- YYYY
+                break
+            case styp$="4"
+                rem --- YYMMDD
+                unsupported$="YYMMDD dates are not supported"
+                break
+            case styp$="5"
+                rem --- MMDD
+                unsupported$="MMDD dates are not supported"
+                break
+            case styp$="6"
+                rem --- Julian
+                unsupported$="Julian dates are not supported"
+                break
+            case default
+                rem --- unsupported
+                unsupported$="data subtype "+stype$+" is not supported"
+                break
+        swend
+        if unsupported$<>""
+            rem --- Log progress
+            meter_text$=cvs(dataName$,3)+": "
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$+" skipped, "+unsupported$
+            
+            meter_proc_recs=meter_proc_recs+1
+            continue
+        endif
+        
+        sql_chan=sqlunt
+        sqlopen(sql_chan)stbl("+DBNAME")
+        sql_prep$="SELECT dd_table_alias, dd_dvar_name, dd_col_occurs FROM ddm_table_cols WHERE dd_data_name='" + dataName$ + "' order by dd_table_alias"
+        sqlprep(sql_chan)sql_prep$
+        dim select_tpl$:sqltmpl(sql_chan)
+        sqlexec(sql_chan)
+
+        rem --- Initialize once outside of loop
+        sql_chan2=sqlunt
+        sqlopen(sql_chan2)stbl("+DBNAME")
+        files=1,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        
+        while 1
+            select_tpl$=sqlfetch(sql_chan,err=*break) 
+            tableAlias$=select_tpl.dd_table_alias$
+            dvarName$=select_tpl.dd_dvar_name$
+            colOccurs=select_tpl.dd_col_occurs
+            meter_text$=cvs(dataName$,3)+": "+cvs(tableAlias$,3)
+            
+            rem --- Get attributes for this table
+            sql_prep2$="SELECT dd_file_name, dd_alias_type, asc_comp_id, asc_prod_id FROM ddm_tables WHERE dd_table_alias='" + tableAlias$ + "'"
+            sqlprep(sql_chan2)sql_prep2$
+            dim select_tpl2$:sqltmpl(sql_chan2)
+            sqlexec(sql_chan2)
+            select_tpl2$=sqlfetch(sql_chan2,err=*next)
+            fileName$=select_tpl2.dd_file_name$
+            aliasType$=select_tpl2.dd_alias_type$
+            compId$=select_tpl2.asc_comp_id$
+            prodId$=select_tpl2.asc_prod_id$
+            
+            rem --- Skip if not VKeyed
+            if cvs(aliasType$,3)<>"V"
+                rem --- Log progress
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$+" skipped, not VKeyed"
+                
+                continue
+            endif
+            
+            rem --- Skip if not an Addon table
+            if cvs(compId$,3)<>aonCompId$ or pos(cvs(prodId$,3)=aonProdIds$)=0
+                rem --- Log progress
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$+" skipped, not Addon"
+                
+                continue
+            endif
+
+            rem --- Skip if file not found
+            found=0
+            filename$=cvs(fileName$,3)
+            if filename$="" then filename$=cvs(tableAlias$,11)
+            test_dev=unt
+            open(test_dev,err=*next)datdir$+filename$; found=1
+            if !found
+                rem --- Log progress
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$+" skipped, file not found"
+                
+                continue
+            endif
+            close(test_dev)
+            
+            rem --- Skip if date must remain constant
+            if filename$="ADM_VATRATES_DTL"
+                rem --- Log progress
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$+" skipped, dates must remain constant"
+                
+                continue
+            endif
+            
+            rem --- Rename file to tmp_file
+            error=1
+            rename datdir$+filename$ to "tmp_"+filename$,err=*next; error=0
+            if error
+                rem --- Log progress
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$+" error, file rename failed"
+                
+                continue
+            endif
+
+            rem --- Open tmp_file for reading
+            error=1
+            tmp_dev=unt
+            open(tmp_dev,err=*next)datdir$+"tmp_"+filename$; error=0
+            if error
+                rem --- Log progress
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$+" error, cannot open tmp_file"
+                
+                continue
+            endif
+            
+            rem --- Create/open new empty file for the updated table, and get it's template
+            num_files=1
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1] = cvs(tableAlias$,3), open_opts$[1] = "OTA"
+            gosub open_tables
+            table_dev = num(open_chans$[1])
+            dim table_tpl$:open_tpls$[1]
+            
+            rem --- Log progress
+            meter_text$=cvs(dataName$,3)+": "+cvs(tableAlias$,3)+"."+cvs(dvarName$,3)
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+            
+            rem --- Read through tmp_file updating current date field and writing record to file
+            read (tmp_dev,key="",dom=*next)
+            while 1
+                read record (tmp_dev,end=*break) table_tpl$
+                if colOccurs<1 then colOccurs=1
+                for i=1 to colOccurs
+                    field$=cvs(dvarName$,3)
+                    if colOccurs>1 then field$=field$+"_"+str(i:"00")
+
+                    rem --- Increment date
+                    oldDate$=cvs(field(table_tpl$, field$),3)
+                    newDate$=oldDate$
+                    switch (BBjAPI().TRUE)
+                        case styp$="1"
+                            rem --- YYYYMMDD
+                            if len(oldDate$)>=8
+                                yyyy=num(oldDate$(1,4))
+                                mmdd$=oldDate$(5)
+                                if mmdd$="0229" then mmdd$="0228"; rem - eliminate leap year issues
+                                newDate$=str(yyyy+incYr)+mmdd$
+                            endif
+                            break
+                        case styp$="2"
+                            rem --- YYYYMM
+                            if len(oldDate$)>=6
+                                yyyy=num(oldDate$(1,4))
+                                newDate$=str(yyyy+incYr)+oldDate$(5)
+                            endif
+                            break
+                        case styp$="3"
+                            rem --- YYYY
+                            if len(oldDate$)>=4
+                                yyyy=num(oldDate$)
+                                newDate$=str(yyyy+incYr)
+                            endif
+                            break
+                        case default
+                            rem --- unsupported
+                            break
+                    swend
+                    
+                    rem --- Update file record with new date
+                    field table_tpl$, field$=newDate$
+                    table_tpl$=field(table_tpl$)
+                    writerecord(table_dev)table_tpl$
+                    if cvs(newDate$,3)<>""
+                        label$=""
+                        if colOccurs>1 then label$=field$+": "
+                        print(log_dev)"    "+label$+oldDate$+" ==> "+field(table_tpl$, field$)
+                    endif
+                next i
+            wend
+
+            rem --- Close channels we're finished with for now
+            open_tables$[1] = cvs(tableAlias$,3), open_opts$[1] = "CX"
+            gosub open_tables
+            close(tmp_dev,err=*next)
+            
+            rem --- Erase tmp_file
+            erase datdir$+"tmp_"+filename$,err=*next
+        wend
+        
+        sqlclose(sql_chan2,err=*next)
+        sqlclose(sql_chan,err=*next)
+        meter_proc_recs=meter_proc_recs+1
+    wend
+    
+done: rem --- All done
+    
+    rem --- Stop progress meter
+                    
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    
+    print(log_dev)"Demoyear log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call sypdir$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+    filePath$ = location$ + "/logs"
+    gosub fix_path
+    logDir$ = filePath$
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/demoyear_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"Demoyear log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)"Starting demo fiscal year: " + currentYear$
+    print(log_dev)"Increment fiscal year by: " + str(incYr)
+    print(log_dev)
+
+    return
+
+fix_path: rem --- Flip directory path separators
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+    return
+
+open_tables: rem --- Open tables
+
+    call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        status=912
+        goto std_exit
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
+
+	return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

@@ -1,3 +1,7 @@
+[[ADX_UPDATESYN.BSHO]]
+rem --- Initialize update source syn file value so can tell later if it's been changed
+
+	callpoint!.setDevObject("prev_update_syn_file","")
 [[ADX_UPDATESYN.OLD_SYN_FILE.AVAL]]
 rem --- Validate old syn file
 
@@ -10,7 +14,10 @@ rem --- Validate update syn file
 	gosub validate_update_syn
 
 rem --- Set defaults for data STBLs
-	if success
+	if success and cvs(update_syn$,3)<>cvs(callpoint!.getDevObject("prev_update_syn_file"),3)
+		rem --- Capture update source syn file value so can tell later if it's been changed
+		callpoint!.setDevObject("prev_update_syn_file",update_syn$)
+
 		pos=pos("\"=update_syn$)
 		while pos
 			update_syn$=update_syn$(1, pos-1)+"/"+update_syn$(pos+1)
@@ -21,30 +28,18 @@ rem --- Set defaults for data STBLs
 		if pos("/config/"=update_syn$)
 			path$=update_syn$(1, pos("/config/"=update_syn$)-1)
 
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.ADDATA"),3)="" 
-			callpoint!.setColumnData("ADX_UPDATESYN.ADDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.APDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.APDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.ARDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.ARDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.BMDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.BMDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.GLDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.GLDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.IVDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.IVDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.MPDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.MPDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.OPDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.OPDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.PODATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.PODATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.PRDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.PRDATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.SADATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.SADATA",path$+"/data/")
-		if cvs(callpoint!.getColumnData("ADX_UPDATESYN.SFDATA"),3)=""
-			callpoint!.setColumnData("ADX_UPDATESYN.SFDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.ADDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.APDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.ARDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.BMDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.GLDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.IVDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.MPDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.OPDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.PODATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.PRDATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.SADATA",path$+"/data/")
+		callpoint!.setColumnData("ADX_UPDATESYN.SFDATA",path$+"/data/")
 
 		callpoint!.setStatus("REFRESH")
 	endif
@@ -58,6 +53,7 @@ rem --- Get new version from SYS line of download addon.syn file
 	synChan=unt
 	open(synChan,isz=-1, err=file_not_found)download_loc$ + "/config/addon.syn"
 
+    synVersion$ = "0000"
 	while 1
 		read(synChan,end=*break)record$
 		rem --- locate SYS line
@@ -68,12 +64,21 @@ rem --- Get new version from SYS line of download addon.syn file
 			startPos = pos(start$=record$)
 			end$ = " - "
 			endPos = pos(end$=record$(startPos + startLen))
-			synVersion$ = cvs(record$(startPos + startLen, endPos - 1),3)
-			rem -- remove decimal point
-			dotPos = pos("."=synVersion$)
-			if(dotPos) then
-				synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
-			endif
+            if startPos>0 and endPos>0
+                parsed=1
+                synVersion$ = cvs(record$(startPos + startLen, endPos - 1),3)
+                rem -- remove decimal point
+                dotPos = pos("."=synVersion$)
+                if(dotPos) then
+                    synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
+                endif
+				rem --- Replace blanks with underscores
+				pos=pos(" "=synVersion$)
+				while pos
+					synVersion$=synVersion$(1, pos-1)+"_"+synVersion$(pos+1)
+					pos=pos(" "=synVersion$)
+				wend
+            endif
 			break
 		endif
 	wend
@@ -107,7 +112,7 @@ validate_update_syn: rem --- Validate update syn file
 
 	testFile$=update_syn$
 	gosub verify_syn_file_ext
-	if msg_opt$="C"
+	if !syn_ok
 		callpoint!.setFocus("ADX_UPDATESYN.UPDATE_SYN_FILE")
 		callpoint!.setStatus("ABORT")
 		return
@@ -129,6 +134,8 @@ validate_update_syn: rem --- Validate update syn file
 
 validate_old_syn: rem --- Validate old syn file
 
+	success=0
+
 	rem --- File must exist
 
 	testFile$=old_syn$
@@ -139,11 +146,11 @@ validate_old_syn: rem --- Validate old syn file
 		return
 	endif
 
-	rem --- File should end with .syn extension
+	rem --- File must end with .syn extension
 
 	testFile$=old_syn$
 	gosub verify_syn_file_ext
-	if msg_opt$="C"
+	if !syn_ok
 		callpoint!.setFocus("ADX_UPDATESYN.OLD_SYN_FILE")
 		callpoint!.setStatus("ABORT")
 		return
@@ -158,6 +165,8 @@ validate_old_syn: rem --- Validate old syn file
 		callpoint!.setStatus("ABORT")
 		return
 	endif
+
+	success=1
 
 	return
 
@@ -182,12 +191,13 @@ file_missing:
 
 verify_syn_file_ext: rem --- Verify file extension is .syn
 
-	msg_opt$=""
+	syn_ok=1
 	if len(testFile$)<4 or testFile$(len(testFile$)-3)<>".syn"
 		msg_id$="AD_WRONG_FILE_EXT"
 		dim msg_tokens$[1]
 		msg_tokens$[1]=".syn"
 		gosub disp_message
+		syn_ok=0
 	endif
 
 	return
@@ -216,10 +226,12 @@ rem --- Validate update syn file
 
 	update_syn$ = callpoint!.getColumnData("ADX_UPDATESYN.UPDATE_SYN_FILE")
 	gosub validate_update_syn
+	if !success then callpoint!.setStatus("ABORT")
 
 rem --- Validate old syn file
 
 	if num(callpoint!.getColumnData("ADX_UPDATESYN.UPGRADE"))
 		old_syn$ = callpoint!.getColumnData("ADX_UPDATESYN.OLD_SYN_FILE")
 		gosub validate_old_syn
+		if !success then callpoint!.setStatus("ABORT")
 	endif

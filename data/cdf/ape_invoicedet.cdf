@@ -1,14 +1,5 @@
-[[APE_INVOICEDET.AGCL]]
-rem --- set preset val for batch_no
-callpoint!.setTableColumnAttribute("APE_INVOICEDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-[[APE_INVOICEDET.AUDE]]
-rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
-gosub calc_grid_tots
-gosub disp_totals
-[[APE_INVOICEDET.GL_POST_AMT.BINP]]
-rem if amt is zero, pre-fill w/ distrib. bal amt
-rem print callpoint!.getColumnData("APE_INVOICEDET.GL_POST_AMT")
-rem print rec_data$
+[[APE_INVOICEDET.AGRN]]
+rem --- entering grid row; default the amount to balance on invoice; if row 0, default GL acct# 
 
 if user_tpl.glint$="Y"
 
@@ -18,21 +9,23 @@ if user_tpl.glint$="Y"
 		callpoint!.setStatus("REFRESH:APE_INVOICEDET.GL_POST_AMT")
 	endif
 
-endif
-[[APE_INVOICEDET.GL_ACCOUNT.BINP]]
-rem pre-fill w/ default gl code and balance remaining to be distributed
-
-if user_tpl.glint$="Y"
-
-	c!=form!.getControl(1109).getControl(5900) 
-	r=c!.getSelectedRow()
-
-	if r=0 and cvs(callpoint!.getColumnData("APE_INVOICEDET.GL_ACCOUNT"),3)=""
+	if num(callpoint!.getValidationRow())=0 and cvs(callpoint!.getColumnData("APE_INVOICEDET.GL_ACCOUNT"),3)=""
 		callpoint!.setColumnData("APE_INVOICEDET.GL_ACCOUNT",user_tpl.dflt_gl_account$)
 		callpoint!.setStatus("MODIFIED-REFRESH:APE_INVOICEDET.GL_ACCOUNT")
 	endif
 
 endif
+
+
+
+
+[[APE_INVOICEDET.AGCL]]
+rem --- set preset val for batch_no
+callpoint!.setTableColumnAttribute("APE_INVOICEDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+[[APE_INVOICEDET.AUDE]]
+rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
+gosub calc_grid_tots
+gosub disp_totals
 [[APE_INVOICEDET.ADEL]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots

@@ -144,8 +144,7 @@ if cvs(callpoint!.getColumnData("APM_VENDMAST.ALT_SEQUENCE"),3)=""
 endif
 [[APM_VENDMAST.BSHO]]
 rem --- Open/Lock files
-rem --- test rem
- 
+
 	files=7,begfile=1,endfile=files
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="APE_INVOICEHDR";rem --- ape-01

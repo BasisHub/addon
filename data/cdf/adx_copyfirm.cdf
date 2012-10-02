@@ -324,18 +324,17 @@ rem ==========================================================================
 
 		feature$=cvs(adm_modules_tpl.asc_comp_id$,2)+cvs(adm_modules_tpl.asc_prod_id$,2)
 		version$=cvs(adm_modules_tpl.version_id$,3)
-		checkout=-1
-		checkout=lcheckout(feature$,version$,err=*next)
-		if err=99 checkout=lcheckout(feature$,version$,err=*next)
-		if checkout=1 or err=0 or err=100
-			if pos(adm_modules_tpl.asc_comp_id$+adm_modules_tpl.asc_prod_id$="01007514DDB01007514SQB",11)=0
+
+		call stbl("+DIR_SYP")+"bax_lcheckout.bbj",feature$,version$,rd_check_handle,rd_license_type$,rd_license_status$,table_chans$[all]
+
+		if checkout<>-1 or err=0 or err=100
+			lcheckin(checkout,err=*next)
+			if rd_license_status$<>"INVALID" and
+:			   pos(adm_modules_tpl.asc_comp_id$+adm_modules_tpl.asc_prod_id$="01007514DDB01007514SQB",11)=0
 				modules$=modules$+pad(adm_modules_tpl.asc_prod_id$,3)
 			endif
 		endif
-		if  checkout<>-1 lcheckin(checkout,err=*next)
 	wend
-
-	if pos("ADB"=modules$,3)=0 modules$=modules$+"ADB"
 
 	callpoint!.setDevObject("modules",modules$)
 

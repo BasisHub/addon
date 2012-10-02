@@ -8,6 +8,7 @@ rem --- Get new version from SYS line of download addon.syn file
 	synChan=unt
 	open(synChan,isz=-1, err=file_not_found)download_loc$ + "/config/addon.syn"
 
+    synVersion$ = "0000"
 	while 1
 		read(synChan,end=*break)record$
 		rem --- locate SYS line
@@ -18,12 +19,21 @@ rem --- Get new version from SYS line of download addon.syn file
 			startPos = pos(start$=record$)
 			end$ = " - "
 			endPos = pos(end$=record$(startPos + startLen))
-			synVersion$ = cvs(record$(startPos + startLen, endPos - 1),3)
-			rem -- remove decimal point
-			dotPos = pos("."=synVersion$)
-			if(dotPos) then
-				synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
-			endif
+            if startPos>0 and endPos>0
+                parsed=1
+                synVersion$ = cvs(record$(startPos + startLen, endPos - 1),3)
+                rem -- remove decimal point
+                dotPos = pos("."=synVersion$)
+                if(dotPos) then
+                    synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
+                endif
+				rem --- Replace blanks with underscores
+				pos=pos(" "=synVersion$)
+				while pos
+					synVersion$=synVersion$(1, pos-1)+"_"+synVersion$(pos+1)
+					pos=pos(" "=synVersion$)
+				wend
+            endif
 			break
 		endif
 	wend
@@ -41,6 +51,8 @@ file_not_found:
 	rem --- Can't initialize aon new install location
 [[ADX_COPYAON.<CUSTOM>]]
 validate_aon_dir: rem --- Validate directory for aon new install location
+
+	abort=0
 
 	rem --- Remove trailing slashes (/ and \) from aon new install location
 
@@ -62,17 +74,13 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 		callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
 		callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
 		callpoint!.setStatus("ABORT")
+		abort=1
 		return
 	endif
 
-	rem --- Cannot be currently used by Barista/Addon
+	rem --- Cannot be currently used by Addon
 
 	testChan=unt
-	open(testChan, err=test_file_2)new_loc$ + "/barista/sys"
-	close(testChan)
-	goto location_used
-
-test_file_2:
 	open(testChan, err=*return)new_loc$ + "/aon/data"
 	close(testChan)
 
@@ -83,6 +91,7 @@ location_used:
 	callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
 	callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
 	callpoint!.setStatus("ABORT")
+	abort=1
 
 	return
 
@@ -111,6 +120,7 @@ rem --- Validate directory for aon new install location
 	new_loc$ = callpoint!.getColumnData("ADX_COPYAON.NEW_INSTALL_LOC")
 	gosub validate_aon_dir
 	callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
+	if abort then callpoint!.setStatus("ABORT")
 [[ADX_COPYAON.NEW_INSTALL_LOC.AVAL]]
 rem --- Validate directory for aon new install location
 

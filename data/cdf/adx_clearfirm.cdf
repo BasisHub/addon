@@ -216,40 +216,46 @@ rem --- fill with File information
 	rem --- Items 1 thru n+1 in FilesMaster must equal items 0 thru n in Files
 
 		if pos(ddm_tables.dd_alias_type$="MXVSD")>0 and pos(ddm_tables.asc_prod_id$=modules$,3) > 0 then
-			num_files=1
-			dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-			open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="OTASN"
-			gosub open_tables
-			table_chn=num(open_chans$[1]),table_tpl$=open_tpls$[1]
-
-			if table_chn >0
-				table_fin$=xfin(table_chn)
+			if ddm_tables.asc_prod_id$ <> "ADB" or
+:				((ddm_tables.asc_prod_id$="ADB") and
+:				 (cvs(ddm_tables.dd_table_alias$,2)="ADQ_FAXEMAIL") or
+:				 (cvs(ddm_tables.dd_table_alias$,2)="ADS_MASKS") or
+:				 (cvs(ddm_tables.dd_table_alias$,2)="ADS_SEQUENCES"))
+				num_files=1
 				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-				open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="CX"
+				open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="OTASN"
 				gosub open_tables
+				table_chn=num(open_chans$[1]),table_tpl$=open_tpls$[1]
 
-				tot_recs=0
-				if pos(ddm_tables.dd_alias_type$="VMX")>0
-					tot_recs=dec(table_fin$(77,4))
+				if table_chn >0
+					table_fin$=xfin(table_chn)
+					dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+					open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="CX"
+					gosub open_tables
+
+					tot_recs=0
+					if pos(ddm_tables.dd_alias_type$="VMX")>0
+						tot_recs=dec(table_fin$(77,4))
+					endif
+
+					vectFiles!.addItem("N"); rem 0
+					vectFiles!.addItem(ddm_tables.asc_comp_id$);rem 1
+					vectFiles!.addItem(ddm_tables.asc_prod_id$);rem 2
+					vectFiles!.addItem(ddm_tables.dd_table_alias$); rem 3
+					vectFiles!.addItem(ddm_tables.dd_alias_desc$); rem 4
+					vectFiles!.addItem(str(tot_recs)); rem 5
+					vectFiles!.addItem(str(tot_recs)); rem 6
+
+					vectFilesMaster!.addItem("Y"); rem 0 - Filtered Y or N
+					vectFilesMaster!.addItem("N"); rem 1 - Selected Y or N
+					vectFilesMaster!.addItem(ddm_tables.asc_comp_id$);rem 2
+					vectFilesMaster!.addItem(ddm_tables.asc_prod_id$); rem 3
+					vectFilesMaster!.addItem(ddm_tables.dd_table_alias$); rem 4
+					vectFilesMaster!.addItem(ddm_tables.dd_alias_desc$); rem 5
+					vectFilesMaster!.addItem(str(tot_recs)); rem 6
+					vectFilesMaster!.addItem(str(tot_recs)); rem 7
+					rows=rows+1
 				endif
-
-				vectFiles!.addItem("N"); rem 0
-				vectFiles!.addItem(ddm_tables.asc_comp_id$);rem 1
-				vectFiles!.addItem(ddm_tables.asc_prod_id$);rem 2
-				vectFiles!.addItem(ddm_tables.dd_table_alias$); rem 3
-				vectFiles!.addItem(ddm_tables.dd_alias_desc$); rem 4
-				vectFiles!.addItem(str(tot_recs)); rem 5
-				vectFiles!.addItem(str(tot_recs)); rem 6
-
-				vectFilesMaster!.addItem("Y"); rem 0 - Filtered Y or N
-				vectFilesMaster!.addItem("N"); rem 1 - Selected Y or N
-				vectFilesMaster!.addItem(ddm_tables.asc_comp_id$);rem 2
-				vectFilesMaster!.addItem(ddm_tables.asc_prod_id$); rem 3
-				vectFilesMaster!.addItem(ddm_tables.dd_table_alias$); rem 4
-				vectFilesMaster!.addItem(ddm_tables.dd_alias_desc$); rem 5
-				vectFilesMaster!.addItem(str(tot_recs)); rem 6
-				vectFilesMaster!.addItem(str(tot_recs)); rem 7
-				rows=rows+1
 			endif
 		endif
 	wend
@@ -277,15 +283,16 @@ rem ==========================================================================
 		read record(adm_modules_dev,end=*break) adm_modules_tpl$
 		feature$=cvs(adm_modules_tpl.asc_comp_id$,2)+cvs(adm_modules_tpl.asc_prod_id$,2)
 		version$=cvs(adm_modules_tpl.version_id$,3)
-		checkout=-1
-		checkout=lcheckout(feature$,version$,err=*next)
-		if err=99 checkout=lcheckout(feature$,version$,err=*next)
-		if checkout=1 or err=0 or err=100
-			if pos(adm_modules_tpl.asc_comp_id$+adm_modules_tpl.asc_prod_id$="01007514ADB01007514DDB01007514SQB",11)=0
+
+		call stbl("+DIR_SYP")+"bax_lcheckout.bbj",feature$,version$,rd_check_handle,rd_license_type$,rd_license_status$,table_chans$[all]
+
+		if checkout<>-1 or err=0 or err=100
+			lcheckin(checkout,err=*next)
+			if rd_license_status$<>"INVALID" and
+:			   pos(adm_modules_tpl.asc_comp_id$+adm_modules_tpl.asc_prod_id$="01007514DDB01007514SQB",11)=0
 				modules$=modules$+pad(adm_modules_tpl.asc_prod_id$,3)
 			endif
 		endif
-		if  checkout<>-1 lcheckin(checkout,err=*next)
 	wend
 
 	callpoint!.setDevObject("modules",modules$)

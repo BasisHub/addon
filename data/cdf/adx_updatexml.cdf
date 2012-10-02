@@ -1,3 +1,8 @@
+[[ADX_UPDATEXML.UPGRADE.AINP]]
+rem --- Enable/disable input field for backup sync location
+
+	old_sync_path$=callpoint!.getColumnData("ADX_UPDATEXML.OLD_SYNC_PATH")
+	gosub able_backup_sync_dir
 [[ADX_UPDATEXML.SYNC_BACKUP_DIR.AVAL]]
 rem --- Validate directory for backup sync location
 
@@ -10,17 +15,24 @@ rem --- Validate directory for old data/sync location
 	loc_dir$ = callpoint!.getUserInput()
 	gosub validate_old_sync_dir
 	callpoint!.setUserInput(loc_dir$)
+
+rem --- Enable/disable input field for backup sync location
+
+	old_sync_path$=loc_dir$
+	gosub able_backup_sync_dir
 [[ADX_UPDATEXML.ASVA]]
 rem --- Validate directory for new data/sync location
 
 	loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.NEW_SYNC_PATH")
 	gosub validate_new_sync_dir
+	if !success then callpoint!.setStatus("ABORT")
 
 rem --- Validate directory for old data/sync location
 
 	if num(callpoint!.getColumnData("ADX_UPDATEXML.UPGRADE"))
 		loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.OLD_SYNC_PATH")
 		gosub validate_old_sync_dir
+		if !success then callpoint!.setStatus("ABORT")
 	endif
 
 rem --- Validate directory for backup sync location
@@ -28,9 +40,62 @@ rem --- Validate directory for backup sync location
 	if num(callpoint!.getColumnData("ADX_UPDATEXML.UPGRADE"))
 		loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.SYNC_BACKUP_DIR")
 		gosub validate_backup_sync_dir
+		if !success then callpoint!.setStatus("ABORT")
 	endif
 [[ADX_UPDATEXML.<CUSTOM>]]
+able_backup_sync_dir: rem --- Enable/disable input field for backup sync location
+
+	upgrade=num(callpoint!.getColumnData("ADX_UPDATEXML.UPGRADE"))
+	if upgrade
+		rem --- Sync backup dir isn't needed if old barista/admin_backup dir exists
+		path$=old_sync_path$
+                gosub parse_aon_path
+		sync_backup_dir$=aon_dir$(1,pos("/"=aon_dir$,-1))+"barista/admin_backup"
+
+		dir_found=0
+		tmp_dev=unt
+		open(tmp_dev,err=*next)sync_backup_dir$; dir_found=1
+		close(tmp_dev,err=*next)
+
+		if dir_found
+			callpoint!.setColumnEnabled("ADX_UPDATEXML.SYNC_BACKUP_DIR",0)
+			callpoint!.setColumnData("ADX_UPDATEXML.SYNC_BACKUP_DIR",sync_backup_dir$)
+		else
+			callpoint!.setColumnEnabled("ADX_UPDATEXML.SYNC_BACKUP_DIR",1)
+		endif
+	else
+		callpoint!.setColumnEnabled("ADX_UPDATEXML.SYNC_BACKUP_DIR",0)
+		callpoint!.setColumnData("ADX_UPDATEXML.SYNC_BACKUP_DIR","")
+	endif
+	callpoint!.setStatus("REFRESH")
+
+	return
+
+parse_aon_path: rem --- Enable/disable input field for backup sync location
+	aon_dir$ = ""
+
+	rem --- Flip directory path separators to "/"
+	pos=pos("\"=path$)
+	while pos
+	path$=path$(1, pos-1)+"/"+path$(pos+1)
+		pos=pos("\"=path$)
+	wend
+
+	rem --- Get aon directory location from path
+	if pos("/aon/"=path$+"/")
+		aon_dir$=path$(1, pos("/aon/"=path$+"/") + len("/aon") - 1)
+	else
+		rem --- aon directory not found, so use directory containing the data directory
+		if pos("/data/"=path$+"/")
+			aon_dir$=path$(1, pos("/data/"=path$+"/") - 1)
+		endif
+	endif
+
+	return
+
 validate_new_sync_dir: rem --- Validate directory for new data/sync location
+
+	success=0
 
 	focus$="ADX_UPDATEXML.NEW_SYNC_PATH"
 	check_dir_name=1
@@ -45,9 +110,13 @@ validate_new_sync_dir: rem --- Validate directory for new data/sync location
 		return
 	endif
 
+	success=1
+
 	return
 
 validate_old_sync_dir: rem --- Validate directory for old data/sync location
+
+	success=0
 
 	focus$="ADX_UPDATEXML.OLD_SYNC_PATH"
 	check_dir_name=1
@@ -62,13 +131,19 @@ validate_old_sync_dir: rem --- Validate directory for old data/sync location
 		return
 	endif
 
+	success=1
+
 	return
 
 validate_backup_sync_dir: rem --- Validate directory for backup sync location
 
+	success=0
+
 	focus$="ADX_UPDATEXML.SYNC_BACKUP_DIR"
 	check_dir_name=0
 	gosub validate_sync_dir
+
+	success=1
 
 	return
 

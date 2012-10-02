@@ -115,11 +115,25 @@ rem --- Read next Check Header (ape-02) record
                     apt01a.retention=ape22a.retention
 
                     found_hist=0
-                    extract record (apt01_dev,key=ape22a.firm_id$+ape22a.ap_type$+
-:                       ape22a.vendor_id$+ape22a.ap_inv_no$,dom=*next)apt01a$;found_hist=1
-                    v0$="M"
-                    if found_hist=0 f0$="OI";rem Outside Invoice Flag
-
+                    found_mc_inv_flag$=""
+                    found_mc_inv_adj$=""
+                    
+                    while 1
+                    extract record (apt01_dev,key=ape22a.firm_id$+ape22a.ap_type$+ape22a.vendor_id$+ape22a.ap_inv_no$,dom=*break)apt01a$
+                        found_hist=1
+                        found_mc_inv_flag$=apt01a.mc_inv_flag$
+                        found_mc_inv_adj$=apt01a.mc_inv_adj$
+                        break
+                    wend
+                    
+                    v0$="M"                    
+                    if found_hist=0
+                        f0$="OI";rem Outside Invoice Flag
+                        apt01a.mc_inv_flag$="M"
+                    endif
+                    
+                    if apt01a.mc_inv_flag$="M" and apt01a.mc_inv_adj$<>"A" and apt01a.mc_inv_rev$<>"R" then f0$="OI";rem --- per v7 apu_ca 1/2011 CAH
+                    
                     apt01a$=field(apt01a$)
                     writerecord(apt01_dev)apt01a$
                     gosub open_inv
@@ -140,12 +154,20 @@ rem --- Read next Check Header (ape-02) record
                               ape12a_key$=key(ape12_dev,end=*break)
                               if pos(detail$=ape12a_key$)<>1 break
                               read record (ape12_dev) ape12a$
-                              d0$=ape22a.firm_id$+ape22a.ap_type$+ape22a.vendor_id$+"C"
-                              do$=d0$+ape22a.check_no$+"   "+ape12a.gl_account$+ape02a.check_date$
-                              extract record (apt02_dev,key=d0$,dom=*next) apt02a$
+                              
+                              dim apt02a$:fattr(apt02a$)                             
+                              apt02a.firm_id$=ape22a.firm_id$
+                              apt02a.ap_type$=ape22a.ap_type$
+                              apt02a.vendor_id$=ape22a.vendor_id$
+                              apt02a.invoice_type$="C"
+                              apt02a.reference$=ape22a.check_no$
+                              apt02a.gl_account$=ape12a.gl_account$
+                              apt02a.accting_date$=ape02a.check_date$                             
+                              extract record (apt02_dev,key=apt02a.firm_id$+apt02a.ap_type$+apt02a.vendor_id$+apt02a.invoice_type$+
+:                                apt02a.reference$+apt02a.gl_account$+apt02a.accting_date$,dom=*next) apt02a$
                               apt02a.gl_post_amt=apt02a.gl_post_amt+ape12a.gl_post_amt
                               apt02a.units=apt02a.units+ape12a.units
-                              write record (apt02_dev,key=d0$) apt02a$
+                              write record (apt02_dev) apt02a$
 
                               rem --- Delete GL Distribution Detail (ape-12) record 
                               rem --- and loop back for the next one
@@ -188,15 +210,16 @@ rem --- Read next Check Header (ape-02) record
 
             case 2; rem reversal
 
+                dim apt05a1$:fattr(apt05a$)
                 dim apt05a2$:fattr(apt05a$)
 
                 read (apt05_dev,key=ape02a_key$,dom=*next)
                 while more
                     apt05_key$=key(apt05_dev,end=*break)
-                    if apt05_key$(1,len(apt02a_key$))<>ape02a_key$ break
+                    if apt05_key$(1,len(ape02a_key$))<>ape02a_key$ break
                     read record (apt05_dev) apt05a1$
-                    if apt05_key.firm_id$+apt05_key.ap_type$+apt05.check_no$+apt05.vendor_id$ <>
-:                      apt02a.firm_ie$+apt02a.ap_type$+ape02a.check_no$+ape02a.vendor_id$ continue
+                    if apt05a1.firm_id$+apt05a1.ap_type$+apt05a1.check_no$+apt05a1.vendor_id$ <>
+:                      ape02a.firm_id$+ape02a.ap_type$+ape02a.check_no$+ape02a.vendor_id$ continue
     
                     apt05a2$=apt05a1$
                     apt05a2.invoice_amt=-apt05a2.invoice_amt
@@ -205,15 +228,19 @@ rem --- Read next Check Header (ape-02) record
 
                     rem --- Open Invoice
                     
-                    apt01a.firm_id$=ape22a.firm_id$
-                    apt01a.ap_type$=ape22a.ap_type$
-                    apt01a.vendor_id$=ape22a.vendor_id$
-                    apt01a.ap_inv_no$=ape22a.ap_inv_no$
+                    apt01a.firm_id$=apt05a1.firm_id$
+                    apt01a.ap_type$=apt05a1.ap_type$
+                    apt01a.vendor_id$=apt05a1.vendor_id$
+                    apt01a.ap_inv_no$=apt05a1.ap_inv_no$
                     apt01a.sequence_00$="00"
 
                     o9=0
-                    find record (apt01_dev,key=apt01a.firm_id$+apt01a.ap_type$+
-:                       apt01a.vendor_id$+apt01a.ap_inv_no$+apt01a.sequence_00$,dom=*next) apt01a$; o9=1
+                    
+                    while 1
+                    find record (apt01_dev,key=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$,dom=*break) apt01a$
+                        o9=1
+                        break
+                    wend
                     
                     if o9=1
                         if apt01a.mc_inv_flag$="M" 
@@ -226,12 +253,30 @@ rem --- Read next Check Header (ape-02) record
 
                     v0$="R"
                     extract record (apt01_dev,key=apt01a.firm_id$+apt01a.ap_type$+
-:                       apt01a.vendor_id$+apt01a.ap_inv_no$+apt01a.sequence_00$) apt01a$
+:                       apt01a.vendor_id$+apt01a.ap_inv_no$) apt01a$
+
+                    rem --- before gosub open_inv, which assumes we have an ape22a$, we need to dim/fill ape22$ w/ values from apt-05,
+                    rem --- because we don't have an ape22$ on a reversal.
+                    rem --- old pgms did this by setting the ape22 iolist var Y0$... to B0$... which was coming from apt-05 (or ape-05 in v6). 1/2011 CAH
+                    
+                    dim ape22a$:fattr(ape22a$)
+                    ape22a.firm_id$=apt05a1.firm_id$
+                    ape22a.ap_type$=apt05a1.ap_type$
+                    ape22a.check_no$=apt05a1.check_no$
+                    ape22a.vendor_id$=apt05a1.vendor_id$
+                    ape22a.ap_inv_no$=apt05a1.ap_inv_no$
+                    ape22a.sequence_00$="00"
+                    ape22a.invoice_date$=apt05a1.check_date$
+                    ape22a.ap_dist_code$=apt05a1.ap_dist_code$
+                    ape22a.invoice_amt=-apt05a1.invoice_amt
+                    ape22a.discount_amt=-apt05a1.discount_amt
+                    ape22a.retention=-apt05a1.retention
+                                        
                     gosub open_inv
                     gosub update_vendhist
 
                     rem --- check detail
-                    
+                    rem --- why is it doing this? the keys are the same, so writing, then turning around and removing, only to write again below... old versions had same code. 1/2011 CAH
                     write record (apt05_dev) apt05a2$
                     remove (apt05_dev,key=apt05_key$)
 
@@ -250,7 +295,7 @@ rem --- Read next Check Header (ape-02) record
                         read record (apt02_dev) apt02a$
 
                         apt02a.invoice_type$="I"
-                        apt02a.reference$=glt05a2.ap_inv_no$
+                        apt02a.reference$=ape22a.ap_inv_no$
                         write record (apt02_dev) apt02a$
                         remove (apt02_dev,key=k$,dom=*next)
                     wend
@@ -263,12 +308,9 @@ rem --- Read next Check Header (ape-02) record
                 apt05a1.ap_type$=ape02a.ap_type$
                 apt05a1.check_no$=ape02a.check_no$
                 apt05a1.vendor_id$=ape02a.vendor_id$
-                rem apt05a1.ap_inv_no$=ape02a.ap_inv_no$
-                rem ap_inv_no$ is not in ape-02.  This makes sense as one check
-                rem could pay many invoices.  I suspect the ap_inv_no in apt-05
-                rem is not valid.  KJS 31-Oct-2008
+                apt05a1.ap_inv_no$=ape22a.ap_inv_no$
                 apt05a1.trans_type$=ape02a.trans_type$
-                apt05a1.ap_dist_code$=apt05a2.ap_dist_code$;rem right? (was k2$)
+                apt05a1.ap_dist_code$=ape22a.ap_dist_code$
                 apt05a1.check_date$=ape02a.check_date$
                 apt05a1.vendor_name$=ape02a.vendor_name$
                 apt05a1.invoice_amt=0
@@ -356,13 +398,13 @@ open_inv_dtl:
     apt11a.trans_ref$=ape02a.check_no$
     apt11a.trans_amt=(-ape22a.invoice_amt)+ape22a.retention
     apt11a.trans_disc=-ape22a.discount_amt
-    if apt01a.mc_inv_flag$="M" and apt01a.mc_inv_adj$<>"A" 
+    if found_mc_inv_flag$="M" and found_mc_inv_adj$<>"A" 
         gosub same_inv_vend_diff_check
     else
         rem --- just setting c1=c1+1 here should take care of case where it was zero, or just increment it normally
         apt11a.sequence_num$=str(c1+1:"00")
         apt11a$=field(apt11a$)
-        write record (apt11_dev,key=apt11_key$+apt11a.sequence_num$) apt11a$
+        write record (apt11_dev) apt11a$
     endif
 
     t[0]=t[0]+apt11a.trans_amt
@@ -383,13 +425,13 @@ rem --- Create a Record for Each Transaction
     apt11a.trans_ref$=Translate!.getTranslation("AON_INVOICE")
 
     rem --- the write record had a DOM= to itself ... removed for now.CH
-    write record (apt11_dev,key=apt11_key$+apt11.sequence_num$) apt11a$
-    let apt11a.sequence_num=apt11a.sequence_num+1
+    write record (apt11_dev) apt11a$
+    let apt11a.sequence_num$=str(num(apt11a.sequence_num$)+1:"00")
     apt11a.trans_type$=v0$
     apt11a.trans_date$=ape02a.check_date$
     apt11a.trans_ref$=ape02a.check_no$
     let apt11a.trans_amt=-apt11a.trans_amt,apt11a.trans_disc=-apt11a.trans_disc
-    write record (apt11_dev,key=apt11_key$+apt11a.sequence_num$) apt11a$
+    write record (apt11_dev) apt11a$
     let apt11a.trans_amt=-apt11a.trans_amt,apt11a.trans_disc=-apt11a.trans_disc; rem "Change sign back cuz 6450 expects the positive value "
 return
 

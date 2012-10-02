@@ -1,3 +1,10 @@
+[[APE_MANCHECKHDR.BPFX]]
+rem --- don't allow access to the grid if doing a void or reversal
+rem --- there is a disable_grid routine which works, but F7 still tries to jump there and causes Barista error
+
+if pos(callpoint!.getColumnData("APE_MANCHECKHDR.TRANS_TYPE")="RV")<>0
+	callpoint!.setStatus("ABORT")
+endif
 [[APE_MANCHECKHDR.VENDOR_ID.BINP]]
 rem --- set devObject with AP Type and a temp vend indicator, so if we decide to set up a temporary vendor from here,
 rem --- we'll know which AP type to use, and we can automatically set the temp vendor flag in the vendor master
@@ -447,6 +454,12 @@ rem --- Look in check history for this check number
 				if msg_opt$="Y"
 					callpoint!.setColumnData("APE_MANCHECKHDR.TRANS_TYPE","R")
 					callpoint!.setColumnUndoData("APE_MANCHECKHDR.TRANS_TYPE","R")
+					ctl_name$="APE_MANCHECKHDR.AP_TYPE"
+					ctl_stat$="D"
+					gosub disable_fields
+					ctl_name$="APE_MANCHECKHDR.CHECK_NO"
+					ctl_stat$="D"
+					gosub disable_fields
 					ctl_name$="APE_MANCHECKHDR.TRANS_TYPE"
 					ctl_stat$="D"
 					gosub disable_fields

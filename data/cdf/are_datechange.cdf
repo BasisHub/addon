@@ -92,5 +92,4 @@ user_tpl.art_invhdr_tpl$=open_tpls$[1]
 invalid_inv:
 	if msg_id$<>"" then
 		gosub disp_message
-		escape
 	endif

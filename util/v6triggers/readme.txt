@@ -12,12 +12,13 @@ APM-11 Bank Reconciliation
 GLM-03 Journal ID Codes
 GLT-04 Daily Transaction Detail
 GLT-05 Transaction Detail Sort
+IVM-02 Inventory Warehouse/Item Master
 SYM-04 System Master
 SYM-06 Firm Master
 SYS-01 System Control
 
 +Barista/Addon triggers currently defined for Payroll:
 
-In addition, there is one trigger that should be placed on the Barista/Addon database.  The .trigger file should be placed in the same directory as the corresponding Barista/Addon data files, and the related .src files should be placed in a src directory directly underneath the Barista/Addon data directory.
+In addition, there is one trigger that should be placed in the Barista/Addon database.  The .trigger file should be placed in the same directory as the corresponding Barista/Addon data files, and the related .src files should be placed in a src directory directly underneath the Barista/Addon data directory.
 
 GLM-01 Account Master

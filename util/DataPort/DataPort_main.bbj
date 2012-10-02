@@ -257,7 +257,7 @@ wend
 close (new_field_defaults)
 
 
-rem --- read po file names into hash map
+rem --- read po_files into hash map
 
 po_files! = new java.util.HashMap()
 dim po_files$:"det_filename:c(16*=124),hdr_filename:c(16*=)"
@@ -273,6 +273,24 @@ while 1
 wend
 close (po_files)
 
+rem --- read sequence_no into hash map
+
+sequence_no! = new java.util.HashMap()
+sequence_no_tpl$="seq_no_id:c(16*=124),v6_file:c(16*=124),v6_field:c(16*=124),v6_element_no:c(16*=124),v7_file:c(16*=124),v7_field:c(16*=124),v7_element_no:c(16*=)"
+dim sequence_no$:sequence_no_tpl$
+sequence_no = unt
+open (sequence_no)filedir$+"sequence_no"
+while 1
+   read (sequence_no,end=*break)sequence_no$
+   if len(sequence_no$) then
+      keyval$ = cvs(sequence_no.seq_no_id$,3)
+      dataval$ = cvs(sequence_no$,3)
+      sequence_no!.put(keyval$,dataval$)
+   endif
+wend
+close (sequence_no)
+
+rem --- misc init; set up meter
 rd_meter_data$="DataPort Start Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")
 rd_meter_proc_recs=rd_meter_total_recs
 rd_meter_action$="LST"
@@ -839,6 +857,7 @@ rem --- Now go populate masks and sequences
     if source_version=6 gosub version6_files
     if source_version=7 gosub version7_files
     gosub make_masks
+    gosub set_sequence_numbers
         
     if temp_vend_ok$="N"
         rd_meter_data$="Temporary vendor records found not ported. See error file."
@@ -1430,6 +1449,55 @@ no_cust_default:
     wend
 
     no_masks:
+    return
+
+set_sequence_numbers:
+rem --- Update ads_sequences with sequence numbers from ars(ops)-10N, aps-10N, pos-10N.
+rem --- This routine assumes an ads_sequences record for each sequence number id (CUSTOMER_ID, VENDOR_ID, AR_INV_NO, etc.) exists,
+rem --- i.e., it doesn't have enough info to create an ads_sequences record from scratch,
+rem --- although flat file sequence_no could probably be modified to contain all we need if this becomes an issue.
+
+    dim sequence_no$:sequence_no_tpl$
+    dim sequence_no[4]
+    sequence_iterator!=sequence_no!.keySet().iterator()
+    while sequence_iterator!.hasNext()
+        sequence_id$ = str(sequence_iterator!.next())
+        sequence_no$=sequence_no!.get(sequence_id$)
+    
+        old_file=unt
+        if source_version=6
+            old_file$=cvs(sequence_no.v6_file$,version_cvs)
+            old_element_no=num(sequence_no.v6_element_no$)
+        else
+            old_file$=cvs(sequence_no.v7_file$,version_cvs)
+            old_element_no=num(sequence_no.v7_element_no$)
+        endif
+        open (old_file,err=*continue)source_folder$+"/"+old_file$
+
+        if len(firms$)>0
+            for firms=1 to len(firms$) step 2
+                if pos("CUSTOMER_ID"=sequence_id$)=1
+                    param_file=unt                    
+                    open (param_file,err=*continue)source_folder$+"/"+cvs("sys-01",version_cvs)
+                    read (param_file,key=firms$(firms,2)+"AR00",dom=*continue)*,*,*,sys01_3$
+                    if sys01_3$(13,1)<>"Y" then continue
+                endif            
+                read (old_file,key=firms$(firms,2)+"N",dom=*continue)*,sequence_no[all]              
+                dim ads_sequences$:ads_sequences_tpl$
+                ads_sequences.firm_id$=firms$(firms,2)
+                ads_sequences.seq_id$=pad(sequence_id$,16)                             
+                readrecord(ads_sequences_dev,key=ads_sequences.firm_id$+ads_sequences.seq_id$,dom=*continue)ads_sequences$
+                ads_sequences.seq_last_used=sequence_no[old_element_no]
+                if cvs(ads_sequences.description$,3)<>""
+                    ads_sequences$=field(ads_sequences$)         
+                    writerecord(ads_sequences_dev)ads_sequences$
+                endif
+            next firms    
+        endif 
+        close (old_file,err=*next)
+        
+    wend
+
     return
     
 convert_po_files:
