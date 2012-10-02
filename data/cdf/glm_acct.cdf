@@ -5,8 +5,15 @@ rem --- Check for activity
 	reason$=""
 
 rem --- Check glm-02 for activity
-	glm02_dev=fnget_dev("GLM_ACCTSUMMARY")
-	dim glm02a$:fnget_tpl$("GLM_ACCTSUMMARY")
+	files=1,begfile=1,endfile=files
+	dim files$[files],options$[files],chans$[files],templates$[files]
+	files$[1]="GLM_ACCTSUMMARY",options$[1]="OTA"
+
+	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:		chans$[all],templates$[all],table_chans$[all],batch,status$
+
+	glm02_dev=num(chans$[1])
+	dim glm02a$:templates$[1]
 	this_acct$=callpoint!.getColumnData("GLM_ACCT.GL_ACCOUNT")
 	read(glm02_dev,key=firm_id$+this_acct$,dom=*next)
 	while 1
@@ -24,9 +31,23 @@ rem --- Check glm-02 for activity
 		endif
 	wend
 
+	files=1,begfile=1,endfile=files
+	dim files$[files],options$[files],chans$[files],templates$[files]
+	files$[1]="GLM_ACCTSUMMARY",options$[1]="CX"
+
+	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:		chans$[all],templates$[all],table_chans$[all],batch,status$
+
 rem --- Check glt-06 for history
 	if okay$="Y"
-		glt06_dev=fnget_dev("GLT_TRANSDETAIL")
+	files=1,begfile=1,endfile=files
+	dim files$[files],options$[files],chans$[files],templates$[files]
+	files$[1]="GLT_TRANSDETAIL",options$[1]="OTA"
+
+	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:		chans$[all],templates$[all],table_chans$[all],batch,status$
+
+		glt06_dev=num(chans$[1])
 		read (glt06_dev,key=firm_id$+this_acct$,dom=*next)
 		while 1
 			glt06_key$=key(glt06_dev,end=*break)
@@ -36,11 +57,25 @@ rem --- Check glt-06 for history
 			endif
 			break
 		wend
+
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLT_TRANSDETAIL",options$[1]="CX"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:			chans$[all],templates$[all],table_chans$[all],batch,status$
+
 	endif
 
 rem ---Check Journal Entries for activity
 	if okay$="Y"
-		gle11_dev=fnget_dev("GLE_JRNLDET")
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_JRNLDET",options$[1]="OTA"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+		gle11_dev=num(chans$[1])
 		read (gle11_dev,key=firm_id$+this_acct$,knum="BY ACCOUNT",dom=*next)
 		while 1
 			gle11_key$=key(gle11_dev,end=*break)
@@ -50,11 +85,24 @@ rem ---Check Journal Entries for activity
 			endif
 			break
 		wend
+
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_JRNLDET",options$[1]="CX"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
 	endif
 
 rem ---Check Recurring Journal Entries for activity
 	if okay$="Y"
-		gle12_dev=fnget_dev("GLE_RECJEDET")
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_RECJEDET",options$[1]="OTA"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+		gle12_dev=num(chans$[1])
 		read (gle12_dev,key=firm_id$+this_acct$,knum="BY ACCOUNT",dom=*next)
 		while 1
 			gle12_key$=key(gle12_dev,end=*break)
@@ -64,11 +112,25 @@ rem ---Check Recurring Journal Entries for activity
 			endif
 			break
 		wend
+
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_RECJEDET",options$[1]="CX"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
 	endif
 
 rem ---Check Allocation Detail for activity
 	if okay$="Y"
-		gle13_dev=fnget_dev("GLE_ALLOCDET")
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_ALLOCDET",options$[1]="OTA"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+
+		gle13_dev=num(chans$[1])
 		read (gle13_dev,key=firm_id$+this_acct$,dom=*next)
 		while 1
 			gle13_key$=key(gle13_dev,end=*break)
@@ -89,11 +151,26 @@ rem ---Check Allocation Detail for activity
 				break
 			wend
 		endif
+
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_ALLOCDET",options$[1]="CX"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+
 	endif
 
 rem ---Check Daily Detail for activity
 	if okay$="Y"
-		glt04_dev=fnget_dev("GLE_DAILYDETAIL")
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_DAILYDETAIL",options$[1]="OTA"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+
+		glt04_dev=num(chans$[1])
 		read (glt04_dev,key=firm_id$+this_acct$,knum="AO_TRDAT_PROCESS",dom=*next)
 		while 1
 			glt04_key$=key(glt04_dev,end=*break)
@@ -103,17 +180,39 @@ rem ---Check Daily Detail for activity
 			endif
 			break
 		wend
+
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLE_DAILYDETAIL",options$[1]="CX"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:			chans$[all],templates$[all],table_chans$[all],batch,status$
 	endif
 
 rem --- Check Retained Earnings Account
 	if okay$="Y"
-		gls_earnings_dev=fnget_dev("GLS_EARNINGS")
-		dim gls01b$:fnget_tpl$("GLS_EARNINGS")
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLS_EARNINGS",options$[1]="OTA"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+
+		gls_earnings_dev=num(chans$[1])
+		dim gls01b$:templates$[1]
 		read record(gls_earnings_dev,key=firm_id$+"GL01")gls01b$
 		if gls01b.gl_account$=this_acct$
 			okay$="N"
 			reason$=Translate!.getTranslation("AON_RETAINED_EARNINGS_ACCOUNT")
 		endif
+
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLS_EARNINGS",options$[1]="CX"
+
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:               		                  chans$[all],templates$[all],table_chans$[all],batch,status$
+
 	endif
 
 rem --- Disallow delete if flag is set
@@ -192,21 +291,9 @@ call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 [[GLM_ACCT.BSHO]]
 rem --- Open/Lock files
 
-files=8,begfile=1,endfile=files
+files=1,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
-files$[1]="GLS_PARAMS"
-files$[2]="GLM_ACCTSUMMARY"
-files$[3]="GLT_TRANSDETAIL"
-files$[4]="GLE_JRNLDET"
-files$[5]="GLE_RECJEDET"
-files$[6]="GLE_ALLOCDET"
-files$[7]="GLS_EARNINGS"
-files$[8]="GLE_DAILYDETAIL"
-
-
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
+files$[1]="GLS_PARAMS",options$[1]="OTA"
 
 call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                 chans$[all],templates$[all],table_chans$[all],batch,status$

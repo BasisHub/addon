@@ -1,11 +1,13 @@
 [[ADX_CLEARFIRM.AOPT-CLRF]]
 rem --- Open/Lock files
-	vectFiles! = UserObj!.getItem(num(user_tpl.vectFilesOffset$))
+
+	vectFiles! = callpoint!.getDevObject("vectFiles")
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 	numcols = num(user_tpl.gridFilesCols$)
 	firm$=callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY")
 
 	if vectFiles!.size() > 0
-		for curr_row=0 to vectFiles!.size()/(num(user_tpl.gridFilesCols$))-1
+		for curr_row=0 to vectFiles!.size()/(numcols)-1
 			if vectFiles!.getItem(curr_row*numcols)="Y"
 				num_files=1
 				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -33,7 +35,9 @@ rem --- Open/Lock files
 		callpoint!.setStatus("REFRESH")
 
 		vectFiles!.clear()
-		vectFilesMaster! = BBjAPI().makeVector()
+		vectFilesMaster!.clear()
+		callpoint!.setDevObject("vectFiles",vectFiles!)
+		callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 
 		gosub create_reports_vector
 		gosub fill_grid
@@ -42,7 +46,7 @@ rem --- Open/Lock files
 			prompt$="All firms cleared for selected table(s)."
 			x=msgbox(prompt$,64,task_description$)
 		else
-			prompt$="Selected table(s) cleared for firm "+firm_id$+"."
+			prompt$="Selected table(s) cleared for firm "+firm$+"."
 			x=msgbox(prompt$,64,task_description$)
 		endif
 	endif
@@ -82,10 +86,10 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 		notice$=notify_base$
 	endif
 
-	gridFiles! = UserObj!.getItem(num(user_tpl.gridFilesOffset$))
+	gridFiles! = callpoint!.getDevObject("gridFiles")
 	numcols = gridFiles!.getNumColumns()
-	vectFiles! = UserObj!.getItem(num(user_tpl.vectFilesOffset$))
-	vectFilesMaster! = UserObj!.getItem(num(user_tpl.vectFilesMasterOffset$))
+	vectFiles! = callpoint!.getDevObject("vectFiles")
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 	curr_row = dec(notice.row$)
 	curr_col = dec(notice.col$)
 
@@ -163,7 +167,8 @@ fill_grid: rem --- Fill the grid with data in vectFiles!
 rem ==========================================================================
 
 	SysGUI!.setRepaintEnabled(0)
-	gridFiles! = UserObj!.getItem(num(user_tpl.gridFilesOffset$))
+	gridFiles! = callpoint!.getDevObject("gridFiles")
+	vectFiles! = callpoint!.getDevObject("vectFiles")
 	minrows = num(user_tpl.gridFilesRows$)
 
 	if vectFiles!.size() then
@@ -202,28 +207,7 @@ rem --- fill with File information
 	read (ddm_tables_dev,key="",dom=*next)
 	rows=0
 
-	rem --- Checkout the licenses for each module to make sure we can open the tables.
-
-	adm_modules_dev=fnget_dev("ADM_MODULES")
-	dim adm_modules_tpl$:fnget_tpl$("ADM_MODULES")
-	read (adm_modules_dev,key="",dom=*next)
-
-	modules$=""
-
-	while 1
-		read record(adm_modules_dev,end=*break) adm_modules_tpl$
-		feature$=cvs(adm_modules_tpl.asc_comp_id$,2)+cvs(adm_modules_tpl.asc_prod_id$,2)
-		version$=cvs(adm_modules_tpl.version_id$,3)
-		checkout=-1
-		checkout=lcheckout(feature$,version$,err=*next)
-		if err=99 checkout=lcheckout(feature$,version$,err=*next)
-		if checkout=1 or err=0 or err=100
-			if pos(adm_modules_tpl.asc_comp_id$+adm_modules_tpl.asc_prod_id$="01007514ADB01007514DDB01007514SQB",11)=0
-				modules$=modules$+pad(adm_modules_tpl.asc_prod_id$,3)
-			endif
-		endif
-		if  checkout<>-1 lcheckin(checkout,err=*next)
-	wend
+	modules$=callpoint!.getDevObject("modules")
 
 	while 1
 		read record (ddm_tables_dev, end=*break) ddm_tables$
@@ -243,7 +227,7 @@ rem --- fill with File information
 				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 				open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="CX"
 				gosub open_tables
-if ddm_tables.dd_table_alias$="APC_PAYMENTGROUP" escape
+
 				tot_recs=0
 				if pos(ddm_tables.dd_alias_type$="VMX")>0
 					tot_recs=dec(table_fin$(77,4))
@@ -270,8 +254,42 @@ if ddm_tables.dd_table_alias$="APC_PAYMENTGROUP" escape
 		endif
 	wend
 
+	callpoint!.setDevObject("vectFiles",vectFiles!)
+	callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 	callpoint!.setStatus("REFRESH")
 	
+	return
+
+rem ==========================================================================
+checkout_licenses: rem --- checkout licenses each module
+rem ==========================================================================
+
+
+	rem --- Checkout the licenses for each module to make sure we can open the tables.
+
+	adm_modules_dev=fnget_dev("ADM_MODULES")
+	dim adm_modules_tpl$:fnget_tpl$("ADM_MODULES")
+	read (adm_modules_dev,key="",dom=*next)
+
+	modules$=""
+
+	while 1
+		read record(adm_modules_dev,end=*break) adm_modules_tpl$
+		feature$=cvs(adm_modules_tpl.asc_comp_id$,2)+cvs(adm_modules_tpl.asc_prod_id$,2)
+		version$=cvs(adm_modules_tpl.version_id$,3)
+		checkout=-1
+		checkout=lcheckout(feature$,version$,err=*next)
+		if err=99 checkout=lcheckout(feature$,version$,err=*next)
+		if checkout=1 or err=0 or err=100
+			if pos(adm_modules_tpl.asc_comp_id$+adm_modules_tpl.asc_prod_id$="01007514ADB01007514DDB01007514SQB",11)=0
+				modules$=modules$+pad(adm_modules_tpl.asc_prod_id$,3)
+			endif
+		endif
+		if  checkout<>-1 lcheckin(checkout,err=*next)
+	wend
+
+	callpoint!.setDevObject("modules",modules$)
+
 	return
 
 rem ==========================================================================
@@ -280,12 +298,13 @@ rem ==========================================================================
 
 	SysGUI!.setRepaintEnabled(0)
 
-	gridFiles!       = UserObj!.getItem(num(user_tpl.gridFilesOffset$))
-	vectFiles!       = UserObj!.getItem(num(user_tpl.vectFilesOffset$))
-	vectFilesMaster! = UserObj!.getItem(num(user_tpl.vectFilesMasterOffset$))
+	gridFiles! = callpoint!.getDevObject("gridFiles")
+	vectFiles! = callpoint!.getDevObject("vectFiles")
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 
 	TempRows! = gridFiles!.getSelectedRows()
 	numcols   = gridFiles!.getNumColumns()
+	any_checked$="N"
 
 	if TempRows!.size() > 0 then
 		for curr_row=1 to TempRows!.size()
@@ -301,9 +320,12 @@ rem ==========================================================================
 
 			else
 				gridFiles!.setCellState(row_no,0,0)
+				vectFiles!.setItem(row_no * numcols, "N")
 			endif
 		next curr_row
 	endif
+
+	gosub enable_button
 
 	SysGUI!.setRepaintEnabled(1)
 
@@ -312,8 +334,8 @@ rem ==========================================================================
 rem ==========================================================================
 filter_recs: rem --- Set grid vector based on filters
 rem ==========================================================================
-	vectFilesMaster! = UserObj!.getItem(num(user_tpl.vectFilesMasterOffset$))
-	vectFiles! = UserObj!.getItem(num(user_tpl.vectFilesOffset$))
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
+	vectFiles! = callpoint!.getDevObject("vectFiles")
 	vect_size = num(vectFilesMaster!.size())
 
 	if vect_size then 
@@ -366,9 +388,31 @@ rem ==========================================================================
 			endif
 		next x
 
-		UserObj!.setItem(num(user_tpl.vectFilesMasterOffset$),vectFilesMaster!)
-		UserObj!.setItem(num(user_tpl.vectFilesOffset$),vectFiles!)
+		gosub enable_button
+
+		callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
+		callpoint!.setDevObject("vectFiles",vectFiles!)
 		gosub fill_grid
+	endif
+
+	return
+
+rem ==========================================================================
+enable_button:
+rem ==========================================================================
+	numcols = num(user_tpl.gridFilesCols$)
+	if vectFiles!.size() > 0 then
+		for curr_row=1 to vectFiles!.size()/(numcols)-1
+			if vectFiles!.getItem(curr_row*numcols)="Y"
+				any_checked$="Y"
+			endif
+		next curr_row
+	endif
+
+	if any_checked$="Y"
+		callpoint!.setOptionEnabled("CLRF",1)
+	else
+		callpoint!.setOptionEnabled("CLRF",0)
 	endif
 
 	return
@@ -381,9 +425,9 @@ rem ==========================================================================
 
 	SysGUI!.setRepaintEnabled(0)
 
-	gridFiles!       = UserObj!.getItem(num(user_tpl.gridFilesOffset$))
-	vectFiles!       = UserObj!.getItem(num(user_tpl.vectFilesOffset$))
-	vectFilesMaster! = UserObj!.getItem(num(user_tpl.vectFilesMasterOffset$))
+	gridFiles! = callpoint!.getDevObject("gridFiles")
+	vectFiles! = callpoint!.getDevObject("vectFiles")
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 
 	TempRows! = gridFiles!.getSelectedRows()
 	numcols   = gridFiles!.getNumColumns()
@@ -412,9 +456,12 @@ rem ==========================================================================
 
 			else
 				gridFiles!.setCellState(row_no,0,0)
+				vectFiles!.setItem(row_no * numcols, "N")
 			endif
 		next curr_row
 	endif
+
+	gosub enable_button
 
 	SysGUI!.setRepaintEnabled(1)
 
@@ -425,8 +472,8 @@ set_firm_recs:
 rem ==========================================================================
 
 	SysGUI!.setRepaintEnabled(0)
-	vectFiles!       = UserObj!.getItem(num(user_tpl.vectFilesOffset$))
-	vectFilesMaster! = UserObj!.getItem(num(user_tpl.vectFilesMasterOffset$))
+	vectFiles! = callpoint!.getDevObject("vectFiles")
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 
 	TempRows! = vectFiles!
 	numcols   = num(user_tpl.gridFilesCols$)
@@ -503,12 +550,9 @@ rem --- Open/Lock files
 
 	gosub open_tables
 
-	user_tpl_str$ = "gridFilesOffset:c(5), " +
-:		"gridFilesCols:c(5), " +
+	user_tpl_str$ = "gridFilesCols:c(5), " +
 :		"gridFilesRows:c(5), " +
 :		"gridFilesCtlID:c(5)," +
-:		"vectFilesOffset:c(5), " +
-:		"vectFilesMasterOffset:c(5), " +
 :		"MasterCols:n(5)"
 	dim user_tpl$:user_tpl_str$
 
@@ -528,14 +572,9 @@ rem --- Open/Lock files
 	gosub format_grid
 	util.resizeWindow(Form!, SysGui!)
 
-	UserObj!.addItem(gridFiles!)
-	user_tpl.gridFilesOffset$="0"
-
-	UserObj!.addItem(vectFiles!); rem --- vector of filtered recs from Files
-	user_tpl.vectFilesOffset$="1"
-
-	UserObj!.addItem(vectFilesMaster!); rem --- vector of all Files
-	user_tpl.vectFilesMasterOffset$="2"
+	callpoint!.setDevObject("gridFiles",gridFiles!)
+	callpoint!.setDevObject("vectFiles",vectFiles!)
+	callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 
 rem --- Misc other init
 
@@ -543,6 +582,7 @@ rem --- Misc other init
 	gridFiles!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
 	gridFiles!.setTabAction(gridFiles!.GRID_NAVIGATE_GRID)
 
+	gosub checkout_licenses
 	gosub create_reports_vector
 	gosub fill_grid
 
@@ -552,4 +592,4 @@ rem --- Set callbacks - processed in ACUS callpoint
 	gridFiles!.setCallback(gridFiles!.ON_GRID_MOUSE_UP,"custom_event")
 	gridFiles!.setCallback(gridFiles!.ON_GRID_EDIT_STOP,"custom_event")
 
-	callpoint!.setOptionEnabled("CLRF",1)
+	callpoint!.setOptionEnabled("CLRF",0)
