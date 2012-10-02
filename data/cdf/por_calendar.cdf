@@ -4,6 +4,12 @@ rem --- make sure beg mo/yr and end mo/yr are in calendar, and that ending > beg
 begdt$=callpoint!.getDevObject("begdt")
 enddt$=callpoint!.getDevObject("enddt")
 
+if begdt$="" and enddt$=""
+	msg_id$="PO_NO_CAL_PRINT"
+	gosub disp_message
+	release
+endif
+
 if begdt$<>""
 	if callpoint!.getColumnData("POR_CALENDAR.BEGINNING_YEAR")+
 :	callpoint!.getColumnData("POR_CALENDAR.BEGINNING_MONTH") < begdt$
@@ -41,12 +47,14 @@ rem --- Retrieve first/last date scheduled
     call stbl("+DIR_PGM")+"poc_firstlast.aon",pom_calendar_dev,fattr(pom_calendar$),firm_id$,begdate$,enddate$,status
 
     if begdate$="" 
+	callpoint!.setDevObject("begdt","")
 	begdate$=Translate!.getTranslation("AON_NONE")
     else	
 	callpoint!.setDevObject("begdt",begdate$(1,6))
 	begdate$=fndate$(begdate$)
     endif
     if enddate$="" 
+	callpoint!.setDevObject("enddt","")
 	enddate$=Translate!.getTranslation("AON_NONE")
     else
 	callpoint!.setDevObject("enddt",enddate$(1,6))

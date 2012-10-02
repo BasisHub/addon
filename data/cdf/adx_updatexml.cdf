@@ -18,13 +18,17 @@ rem --- Validate directory for new data/sync location
 
 rem --- Validate directory for old data/sync location
 
-	loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.OLD_SYNC_PATH")
-	gosub validate_old_sync_dir
+	if num(callpoint!.getColumnData("ADX_UPDATEXML.UPGRADE"))
+		loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.OLD_SYNC_PATH")
+		gosub validate_old_sync_dir
+	endif
 
 rem --- Validate directory for backup sync location
 
-	loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.SYNC_BACKUP_DIR")
-	gosub validate_backup_sync_dir
+	if num(callpoint!.getColumnData("ADX_UPDATEXML.UPGRADE"))
+		loc_dir$ = callpoint!.getColumnData("ADX_UPDATEXML.SYNC_BACKUP_DIR")
+		gosub validate_backup_sync_dir
+	endif
 [[ADX_UPDATEXML.<CUSTOM>]]
 validate_new_sync_dir: rem --- Validate directory for new data/sync location
 

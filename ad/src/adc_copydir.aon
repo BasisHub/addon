@@ -1,0 +1,238 @@
+rem ==========================================================================
+rem --- adc_copybarsettings.aon 
+rem --- with or without data files.
+rem --- Call to recursively copy a directory from one location to another.
+rem --- 
+rem --- AddonSoftware Version 10.0
+rem --- Copyright © 2010, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+
+rem --- SOURCEDIR$   : Location of source directory being copied from (Input)
+rem --- TARGETDIR$   : Location of target directory being copied to (Input)
+rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS       : Status code/0=No error (Returned)
+
+    declare BBjTopLevelWindow rdForm!
+
+    seterr std_error
+    setesc std_error
+    enter sourceDir$,targetDir$,rdForm!,wait4ok%,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Recursively copy sourceDir to targetDir
+
+    declare CopyDir utility!
+    utility! = new CopyDir(rdForm!, wait4ok%)
+    utility!.copyDirectory(sourceDir$, targetDir$)
+    
+done: rem --- All done
+    
+    goto std_exit
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+rem /**
+rem  * Utility Class for recursively copying a directory from one location to another.
+rem  */
+    use java.io.File
+    use java.util.Vector
+    use ::bbtranslator.bbj::BBTranslator
+
+    class public CopyDir
+        field private Vector skipDirs! = new Vector()
+        field private BBjInt wait4ok% = 0
+        field private BBjNumber BLOCKSIZE = 2^20
+        field private BBjNumber log_dev = 0
+        field private BBjNumber meter_proc_recs = 0
+        field private BBjNumber meter_total_recs = 0
+        field private BBjString dir_syp$=stbl("+DIR_SYP")
+        field private BBjSysGui sysGUI!
+        field private BBjTopLevelWindow form!
+        field private BBjTopLevelWindow meter!
+
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjTopLevelWindow rdForm!
+        rem  * @param BBjInt wait4ok
+        rem  */
+        method public CopyDir(BBjTopLevelWindow rdForm!, BBjInt wait4ok%)
+            #sysGUI! = BBjAPI().getSysGui()
+            #form! = rdForm!
+            #wait4ok% = wait4ok%
+        methodend
+
+        rem /**
+        rem  * Recursively copy a directory.
+        rem  *
+        rem  * Recursively copies a directory for old location to new location. 
+        rem  *
+        rem  * @param BBjString sourceDir$
+        rem  * @param BBjString targetDir$
+        rem  */
+        method public void copyDirectory(BBjString sourceDir$, BBjString targetDir$)
+            #meter! = #createProgressMeter()
+
+            #copyAonDirectory(new File(sourceDir$), new File(targetDir$))
+
+            #destroyProgressMeter()
+        methodend
+
+        rem /**
+        rem  * Recursively copy a directory.
+        rem  *
+        rem  * Recursively copies a directory from source File to target File. 
+        rem  *
+        rem  * @param File source
+        rem  * @param File target
+        rem  */
+        method private void copyAonDirectory(File source!, File target!)
+    
+            rem -- recursively process directories and copy files
+            if(source!.isDirectory()) then
+            
+                rem --- create new directory if it doesn't exist
+                if(! target!.exists()) then
+                    target!.mkdirs()
+                    target!.setExecutable(1,0)
+                    target!.setWritable(1,0)
+                    target!.setReadable(1,0)
+                endif
+
+                rem --- get list of what is in the source dir, and process it
+                declare Vector fileVector!
+                fileVector! = new Vector(java.util.Arrays.asList(source!.list()))
+                if(fileVector!.size()>0) then
+                    for i=0 to fileVector!.size()-1
+                        #copyAonDirectory(new File(source!, cast(BBjString, fileVector!.get(i))), 
+:                                         new File(target!, cast(BBjString, fileVector!.get(i))))
+                    next i
+                endif
+                
+            else
+                
+                rem --- copy file
+                #incrementProgressMeter(source!.getPath())
+                sourceChan=unt
+                open(sourceChan,isz=-1)source!.getPath()
+                targetChan=unt
+                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+                while 1
+                    readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                    writerecord(targetChan)record$
+                wend
+                close(sourceChan)
+                close(targetChan)
+               
+            endif
+        methodend
+
+        rem /**
+        rem  * Create progress meter.
+        rem  *
+        rem  * @return BBjTopLevelWindow meterWin!
+        rem  */
+        method private BBjTopLevelWindow createProgressMeter()
+
+            rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+            rem declare BBjTopLevelWindow meterWin!
+            
+            declare BBTranslator Translator!
+            Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+            meter_title$=Translator!.getTranslation("AON_COPYING")+"..."
+            #meter_proc_recs=0
+            meter_text$=""
+            meter_action$="WIN-LST"
+            if #wait4ok% then meter_action$=meter_action$+"-OK"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               meterWin!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+            methodret meterWin!
+        methodend
+
+        rem /**
+        rem  * Increment progress meter.
+        rem  *
+        rem  * @param File sourceDirectory
+        rem  */
+        method private void incrementProgressMeter(BBjString meter_text$)
+            #meter_proc_recs=#meter_proc_recs+1
+            meter_action$="MTR-LST"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Destroy progress meter.
+        rem  */
+        method private void destroyProgressMeter()
+
+            #meter_proc_recs=#meter_total_recs
+            meter_action$="LST-END"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+        
+    classend
+    
+    end

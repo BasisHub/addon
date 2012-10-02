@@ -39,8 +39,6 @@ rem --- Get Batch information
 
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("ARE_CASHHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-
-
 [[ARE_CASHHDR.PAYMENT_AMT.BINP]]
 rem --- store value in control prior to input so we'll know at AVAL if it changed
 user_tpl.binp_pay_amt=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))
@@ -124,90 +122,29 @@ if data_present$="Y"
 		break
 	swend
 endif
+
+gosub update_cashhdr_cashdet_cashbal
 [[ARE_CASHHDR.ADEL]]
 gosub delete_cashdet_cashbal
 [[ARE_CASHHDR.ADIS]]
-rem --- ADIS; existing are-01/11 tran
-tmp_cust_id$=callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")
-gosub get_customer_balance
-wk_cash_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
-gosub get_cash_rec_cd
-Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0);rem --- force auto-select off for existing tran
-rem -- Form!.getControl(num(user_tpl.zbal_chkbox_id$)).setSelected(0);rem --- force zero-bal disp off for existing tran
-are_cashdet_dev=fnget_dev("ARE_CASHDET")
-are_cashgl_dev=fnget_dev("ARE_CASHGL")
-dim are11a$:fnget_tpl$("ARE_CASHDET")
-dim are21a$:fnget_tpl$("ARE_CASHGL")
-existing_dtl$=""
-pymt_dist$=""
-user_tpl.gl_applied$="0"
-user_tpl.existing_chk$="Y"
-rem --- read thru/store existing are-11 info
-more_dtl=1
-
-are01_key$=callpoint!.getColumnData("ARE_CASHHDR.FIRM_ID")+
-:	callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")+
-:	callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")+
-:	callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")+
-:	callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")+
-:	callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")+
-:	callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")+
-:	callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_02")
-
-read (are_cashdet_dev,key=are01_key$,dom=*next)
-while more_dtl
-	read record(are_cashdet_dev,end=*break)are11a$
-	if pos(are01_key$=are11a$)<>1 then break
-	dim wk$(40)
-	wk$(1)=callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")
-	wk$(11)=are11a.ar_inv_no$
-	wk$(21)=are11a.apply_amt$
-	wk$(31)=are11a.discount_amt$
-	pymt_dist$=pymt_dist$+wk$
-	existing_dtl$=existing_dtl$+wk$
-wend
-
-rem --- read thru existing are-21's and store total GL amt posted this check
-more_dtl=1
-read(are_cashgl_dev,key=are01_key$,dom=*next)
-while more_dtl
-	read record(are_cashgl_dev,end=*break)are21a$
-	if pos(are01_key$=are21a$)<>1 then break
-	gl_applied=gl_applied+num(are21a.gl_post_amt$)
-wend
-
-if gl_applied
-	Form!.getControl(num(user_tpl.GLind_id$)).setText(Translate!.getTranslation("AON_*_INCLUDES_GL_DISTRIBUTIONS"))
-	Form!.getControl(num(user_tpl.GLstar_id$)).setText("*")
-else
-	Form!.getControl(num(user_tpl.GLind_id$)).setText("")
-	Form!.getControl(num(user_tpl.GLstar_id$)).setText("")
-endif
-
-user_tpl.gl_applied$=str(-gl_applied)
-UserObj!.setItem(num(user_tpl.pymt_dist$),pymt_dist$)
-UserObj!.setItem(num(user_tpl.existing_dtl$),existing_dtl$)
-currdtl$=pymt_dist$
-gosub get_open_invoices
-if len(currdtl$)
-	gosub include_new_OA_trans
-endif
-disp_applied=chk_applied+gl_applied
-disp_bal=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))-disp_applied
-callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(disp_applied))
-callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(disp_bal))
-gosub fill_bottom_grid
-callpoint!.setStatus("REFRESH")
+gosub calc_header
 [[ARE_CASHHDR.AOPT-OACT]]
+gosub update_cashhdr_cashdet_cashbal
+callpoint!.setStatus("SAVE")
 gosub apply_on_acct
+gosub calc_header
 [[ARE_CASHHDR.AOPT-GLED]]
 rem --- call up GL Dist grid if GL installed
+
 if user_tpl.glint$="Y"
 	gosub gl_distribution
 else
 	msg_id$="AR_NO_GL"
 	gosub disp_message							
 endif
+
+gosub update_cashhdr_cashdet_cashbal
+gosub calc_header
 [[ARE_CASHHDR.AREC]]
 rem --- clear custom controls (grids) and UserObj! items
 gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))                             
@@ -363,7 +300,9 @@ gridInvoice!.setColumnEditable(8,1)
 gridInvoice!.setColumnEditable(9,1)
 gridInvoice!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
 [[ARE_CASHHDR.AWRI]]
+newrec$="Y"
 gosub update_cashhdr_cashdet_cashbal
+newrec$=""
 [[ARE_CASHHDR.CASH_CHECK.AVAL]]
 if callpoint!.getUserInput()="$"
 	ctl_name$="ABA_NO"
@@ -474,6 +413,7 @@ check_required_fields:
 	endif
 return
 update_cashhdr_cashdet_cashbal:
+
 	are_cashhdr_dev=fnget_dev("ARE_CASHHDR")
 	are_cashdet_dev=fnget_dev("ARE_CASHDET")
 	are_cashbal_dev=fnget_dev("ARE_CASHBAL")
@@ -545,8 +485,10 @@ rem --- cashbal, are-31
 		endif
 	next updt_loop
 	endif
-	callpoint!.setStatus("NEWREC"); rem sets up for new record
-	
+	if newrec$="Y"
+		callpoint!.setStatus("NEWREC"); rem sets up for new record
+	endif
+
 return
 validate_before_writing:
 	validate_passed$="Y"
@@ -577,12 +519,14 @@ check_for_neg_invoices:
 	endif
 return
 apply_on_acct:
+
 	oa_date$=callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")
 	oa_date$=oa_date$(4)
 	dim wk$(40)
 	wk$(1)=callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")
 	wk$(11)="OA"+oa_date$
 	wk$(21)=str(num((callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))))
+
 	if num(wk$(21,10))<>0
 		pymt_dist$=UserObj!.getItem(num(user_tpl.pymt_dist$))
 		wk=pos(wk$(1,20)=pymt_dist$)
@@ -683,7 +627,7 @@ gl_distribution:
 			more_dtl=0
 		endif
 	wend
-	glapp=num(user_tpl.gl_applied$)+gl_applied
+	glapp=gl_applied
 	user_tpl.gl_applied$=str(-gl_applied);rem added 5/16/07.ch
 	callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))-glapp))
 	callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_APPLIED"))+glapp))
@@ -1337,4 +1281,82 @@ disable_ctls:rem --- disable selected controls
 		endif
 	next dctl
 	return
+rem =====================================================================
+calc_header:
+rem =====================================================================
+	rem --- ADIS; existing are-01/11 tran
+	tmp_cust_id$=callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")
+	gosub get_customer_balance
+	wk_cash_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
+	gosub get_cash_rec_cd
+	Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0);rem --- force auto-select off for existing tran
+rem -- Form!.getControl(num(user_tpl.zbal_chkbox_id$)).setSelected(0);rem --- force zero-bal disp off for existing tran
+	are_cashdet_dev=fnget_dev("ARE_CASHDET")
+	are_cashgl_dev=fnget_dev("ARE_CASHGL")
+	dim are11a$:fnget_tpl$("ARE_CASHDET")
+	dim are21a$:fnget_tpl$("ARE_CASHGL")
+	existing_dtl$=""
+	pymt_dist$=""
+	user_tpl.gl_applied$="0"
+	user_tpl.existing_chk$="Y"
+rem --- read thru/store existing are-11 info
+	more_dtl=1
+
+	are01_key$=callpoint!.getColumnData("ARE_CASHHDR.FIRM_ID")+
+:		callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")+
+:		callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")+
+:		callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")+
+:		callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_02")
+
+	read (are_cashdet_dev,key=are01_key$,dom=*next)
+	while more_dtl
+		read record(are_cashdet_dev,end=*break)are11a$
+		if pos(are01_key$=are11a$)<>1 then break
+		dim wk$(40)
+		wk$(1)=callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")
+		wk$(11)=are11a.ar_inv_no$
+		wk$(21)=are11a.apply_amt$
+		wk$(31)=are11a.discount_amt$
+		pymt_dist$=pymt_dist$+wk$
+		existing_dtl$=existing_dtl$+wk$
+	wend
+
+rem --- read thru existing are-21's and store total GL amt posted this check
+	more_dtl=1
+	gl_applied=0
+	read(are_cashgl_dev,key=are01_key$,dom=*next)
+	while more_dtl
+		read record(are_cashgl_dev,end=*break)are21a$
+		if pos(are01_key$=are21a$)<>1 then break
+		gl_applied=gl_applied+num(are21a.gl_post_amt$)
+	wend
+
+	if gl_applied
+		Form!.getControl(num(user_tpl.GLind_id$)).setText(Translate!.getTranslation("AON_*_INCLUDES_GL_DISTRIBUTIONS"))
+		Form!.getControl(num(user_tpl.GLstar_id$)).setText("*")
+	else
+		Form!.getControl(num(user_tpl.GLind_id$)).setText("")
+		Form!.getControl(num(user_tpl.GLstar_id$)).setText("")
+	endif
+
+	user_tpl.gl_applied$=str(-gl_applied)
+	UserObj!.setItem(num(user_tpl.pymt_dist$),pymt_dist$)
+	UserObj!.setItem(num(user_tpl.existing_dtl$),existing_dtl$)
+	currdtl$=pymt_dist$
+	gosub get_open_invoices
+	if len(currdtl$)
+		gosub include_new_OA_trans
+	endif
+	disp_applied=chk_applied+gl_applied
+
+	disp_bal=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))-disp_applied
+	callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(disp_applied))
+	callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(disp_bal))
+	gosub fill_bottom_grid
+	callpoint!.setStatus("REFRESH")
+return
+
 #include std_missing_params.src
