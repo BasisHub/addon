@@ -14,30 +14,30 @@ BEGIN
     BEGIN
     END
 
-    TOOLBUTTON 101, "BITMAP=sys/images/im_nb_fst_i.png", 19, 19, 20, 19
+    TOOLBUTTON 101, "BITMAP=sys/images/im_tb_fst_m.png", 19, 19, 20, 19
     BEGIN
-        IMAGEFILE "sys/images/im_nb_fst_i.png"
+        IMAGEFILE "sys/images/im_tb_fst_m.png"
         NAME "btn_prev_yr"
         SHORTCUE "Previous year"
     END
 
-    TOOLBUTTON 102, "BITMAP=sys/images/im_nb_prv_i.png", 38, 19, 20, 19
+    TOOLBUTTON 102, "BITMAP=sys/images/im_tb_prv_m.png", 38, 19, 20, 19
     BEGIN
-        IMAGEFILE "sys/images/im_nb_prv_i.png"
+        IMAGEFILE "sys/images/im_tb_prv_m.png"
         NAME "btn_prev_mo"
         SHORTCUE "Previous month"
     END
 
-    TOOLBUTTON 103, "BITMAP=sys/images/im_nb_nxt_i.png", 151, 19, 20, 19
+    TOOLBUTTON 103, "BITMAP=sys/images/im_tb_nxt_m.png", 151, 19, 20, 19
     BEGIN
-        IMAGEFILE "sys/images/im_nb_nxt_i.png"
+        IMAGEFILE "sys/images/im_tb_nxt_m.png"
         NAME "btn_next_mo"
         SHORTCUE "Next month"
     END
 
-    TOOLBUTTON 104, "BITMAP=sys/images/im_nb_lst_i.png", 170, 19, 20, 19
+    TOOLBUTTON 104, "BITMAP=sys/images/im_tb_lst_m.png", 170, 19, 20, 19
     BEGIN
-        IMAGEFILE "sys/images/im_nb_lst_i.png"
+        IMAGEFILE "sys/images/im_tb_lst_m.png"
         NAME "btn_next_yr"
         SHORTCUE "Next year"
     END
@@ -105,7 +105,7 @@ BEGIN
 
 END
 
-CHILD-WINDOW 1110 0 0 442 362
+CHILD-WINDOW 1110 0 0 440 360
 BEGIN
     BORDERLESS
     EVENTMASK 3287287492
@@ -117,7 +117,7 @@ BEGIN
         COLUMNS 7
         GRIDROWDEFAULTHEIGHT 40
         HORIZLINES
-        MAXCOLS 65535
+        MAXCOLS 2147483647
         NAME "grd_calendar"
         ROWHEAD 20, 5000
         ROWS 6
