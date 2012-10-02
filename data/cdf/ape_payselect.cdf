@@ -193,7 +193,7 @@ rem ==========================================================================
 			apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt + apt11a.trans_disc
 		wend
 
-	rem --- override discount and payment amounts if already in ape04
+	rem --- override discount and payment amounts if already in ape04 (computer checks)
 
 		disc_amt=0
 		pymnt_amt=0
@@ -801,7 +801,7 @@ rem --- See if Check Printing has already been started
 		release
 	wend
 
-rem --- See if we need to clear out ape-04
+rem --- See if we need to clear out ape-04 (computer checks)
 
 	while 1
 		read(ape04_dev,key=firm_id$,dom=*next)
@@ -847,8 +847,7 @@ rem --- Add grid to store invoices, with checkboxes for user to select one or mo
 	UserObj! = BBjAPI().makeVector()
 	vectInvoices! = BBjAPI().makeVector()
 	vectInvoicesMaster! = BBjAPI().makeVector()
-	nxt_ctlID = num(stbl("+CUSTOM_CTL",err=std_error))
-	ignore$ = stbl("+CUSTOM_CTL", str(nxt_ctlID+1))
+	nxt_ctlID = util.getNextControlID()
 
 	gridInvoices! = Form!.addGrid(nxt_ctlID,5,140,800,300); rem --- ID, x, y, width, height
 
@@ -888,14 +887,15 @@ rem --- Set callbacks - processed in ACUS callpoint
 	gridInvoices!.setCallback(gridInvoices!.ON_GRID_MOUSE_UP,"custom_event")
 	gridInvoices!.setCallback(gridInvoices!.ON_GRID_EDIT_STOP,"custom_event")
 [[APE_PAYSELECT.ASIZ]]
-if UserObj!<>null()
-	gridInvoices!=UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
-	gridInvoices!.setColumnWidth(0,25)
-	gridInvoices!.setColumnWidth(1,50)
-	gridInvoices!.setSize(Form!.getWidth()-(gridInvoices!.getX()*2),Form!.getHeight()-(gridInvoices!.getY()+10))
-	gridInvoices!.setFitToGrid(1)
+rem --- Resize the grid
 
-endif
+	if UserObj!<>null() then
+		gridInvoices!=UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
+		gridInvoices!.setColumnWidth(0,25)
+		gridInvoices!.setColumnWidth(1,50)
+		gridInvoices!.setSize(Form!.getWidth()-(gridInvoices!.getX()*2),Form!.getHeight()-(gridInvoices!.getY()+10))
+		gridInvoices!.setFitToGrid(1)
+	endif
 [[APE_PAYSELECT.ACUS]]
 rem --- Process custom event
 rem --- Select/de-select checkboxes in grid and edit payment and discount amounts

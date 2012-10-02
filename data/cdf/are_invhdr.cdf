@@ -15,7 +15,6 @@ rem --- Get Batch information
 
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("ARE_INVHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-
 [[ARE_INVHDR.ARAR]]
 if callpoint!.getColumnData("ARE_INVHDR.PRINT_STATUS") = "Y" then
 	msg_id$="OP_REPRINT_INVOICE"
@@ -71,7 +70,12 @@ gosub calc_grid_tots
 callpoint!.setColumnData("<<DISPLAY>>.TOT_QTY",str(tqty))
 callpoint!.setColumnData("<<DISPLAY>>.TOT_AMT",str(tamt))
 [[ARE_INVHDR.BSHO]]
+rem --- Use statements
+
+	use ::ado_func.src::func
+
 rem --- Open/Lock files
+
 	dir_pgm$=stbl("+DIR_PGM",err=*next)
 	sys_pgm$=stbl("+DIR_SYP",err=*next)
 	files=21,begfile=1,endfile=11
@@ -202,25 +206,25 @@ calc_grid_tots:
             user_tpl.totqty$=str(tqty),user_tpl.totamt$=str(tamt)
         endif
     return
+
 disp_cust_addr:
-	arm_custmast_dev=fnget_dev("ARM_CUSTMAST")
+
+	declare BBjTemplatedString addr!
+
+	arm_custmast_dev = fnget_dev("ARM_CUSTMAST")
 	dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
-	readrecord(arm_custmast_dev,key=cust_key$,err=std_error)arm01a$
-	addr_len=len(arm01a.addr_line_1$)
-	dim addr$(addr_len*5)
-	addr$(1)=arm01a.addr_line_1$
-	addr$(1+addr_len)=arm01a.addr_line_2$
-	addr$(1+(addr_len*2))=arm01a.addr_line_3$
-	addr$(1+(addr_len*3))=arm01a.addr_line_4$
-	addr$(1+(addr_len*4))=arm01a.city$+arm01a.state_code$
-	addr$=addr$+arm01a.zip_code$
-	call stbl("+DIR_PGM")+"adc_address.aon",addr$,addr_len,5,9,30
-	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR1",addr$(1,30))
-	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR2",addr$(31,30))
-	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR3",addr$(61,30))
-	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR4",addr$(91,30))
-	callpoint!.setColumnData("<<DISPLAY>>.CUST_CTST",addr$(121,30))
-	callpoint!.setColumnData("<<DISPLAY>>.CUST_ZIP",addr$(151,30))
+	read record (arm_custmast_dev, key=cust_key$, err=std_error) arm01a$
+	addr! = BBjAPI().makeTemplatedString( fnget_tpl$("ARM_CUSTMAST") )
+	addr!.setString(arm01a$)
+	addr$ = func.formatAddress(addr!, 30, 7)
+
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR1",addr$(31,30))
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR2",addr$(61,30))
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR3",addr$(91,30))
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR4",addr$(121,30))
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_CTST",addr$(151,30))
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_ZIP",addr$(181,30))
+
 rem --- also retrieve default dist/terms codes for customer
 	if cvs(callpoint!.getColumnData("ARE_INVHDR.AR_DIST_CODE"),3)=""
 		arm_custdet_dev=fnget_dev("ARM_CUSTDET")
@@ -237,6 +241,7 @@ rem --- also retrieve default dist/terms codes for customer
 		callpoint!.setColumnData("ARE_INVHDR.AR_TERMS_CODE",arm02a.ar_terms_code$)
 	endif
 return
+
 check_outstanding_inv:
     rem --- tmp_cust_id$ set prior to gosub
     os_inv$="N"

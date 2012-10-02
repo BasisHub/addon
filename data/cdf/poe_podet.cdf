@@ -176,7 +176,6 @@ rem --- Item synonym processing
 
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
 [[POE_PODET.AGRE]]
-
 rem --- check data to see if o.k. to leave row (only if the row isn't marked as deleted)
 
 if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
@@ -214,7 +213,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="MNOV")<>0 
+	if pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="NOV")<>0 
 		if cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ORDER_MEMO"

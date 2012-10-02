@@ -645,5 +645,3 @@ set_qty_defaults: rem --- Set defaults
 	
 refresh_screen:
 	callpoint!.setStatus("MODIFIED;REFRESH")
-[[OPE_ORDLSDET.LOTSER_NO.AINQ]]
-escape; rem ainq

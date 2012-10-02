@@ -8,6 +8,21 @@ rem --- All Rights Reserved
 
     setesc std_error
     seterr std_error
+    
+rem --- Inits
+
+    use ::ado_func.src::func
+    use ::sys/prog/bao_option.bbj::Option
+    use ::bbtranslator.bbj::BBTranslator
+    
+    declare BBjTemplatedString rec!
+    declare Option option!
+    declare BBTranslator Translate!
+    
+    declare BBjVector OutVect!
+    declare BBjVector BrkVect!
+    declare BBjVector HdrVect!
+    declare BBjVector TotVect!
 
 rem --- Retrieve the program path
 
@@ -19,7 +34,7 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
-    
+
     milestone=50
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
@@ -31,7 +46,7 @@ rem --- Open/Lock files
     files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
     files$[3]="arm-02",ids$[3]="ARM_CUSTDET"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
+:       ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
     ars01_dev=channels[1]
     arm01_dev=channels[2]
@@ -68,7 +83,7 @@ rem --- Retrieve parameter records
 
 rem --- See if we're going to be running any labels
 
-    count_prep$="select count(*) as total_recs "
+    count_prep$="SELECT count(*) as total_recs "
     count_prep$=count_prep$+"FROM arm_custmast, arm_custdet "
     count_prep$=count_prep$+"WHERE arm_custmast.firm_id = '"+firm_id$+"' AND "
     count_prep$=count_prep$+"arm_custdet.firm_id = arm_custmast.firm_id "
@@ -94,19 +109,20 @@ rem --- See if we're going to be running any labels
     endif
 
 rem --- Document initializations
+
     if col_format$="Y"
-        OutVect!=bbjAPI().getSysGui().makeVector()
-        BrkVect!=bbjAPI().getSysGui().makeVector()
-        HdrVect!=bbjAPI().getSysGui().makeVector()
-        TotVect!=bbjAPI().getSysGui().makeVector()
+        OutVect!=bbjAPI().makeVector()
+        BrkVect!=bbjAPI().makeVector()
+        HdrVect!=bbjAPI().makeVector()
+        TotVect!=bbjAPI().makeVector()
         rep_date$=date(0:"%Mz/%Dz/%Yd")
         rep_date_stamp$=date(0:"%Yd%Mz%Dz")
         rep_time$=date(0:"%hz:%mz %p")
         rep_time_stamp$=date(0:"%Hz%mz%sz")
         rep_prog$=pgm(-2)
 
-    columns=5
-    dim columns$[columns,10]
+        columns=5
+        dim columns$[columns,10]
 
         columns$[0,0]=Translate!.getTranslation("AON_NAME"),columns$[0,1]="C",columns$[0,2]="30"
         columns$[1,0]=Translate!.getTranslation("AON_ADDRESS_1"),columns$[1,1]="C",columns$[1,2]="30"
@@ -121,11 +137,12 @@ rem --- Document initializations
         headings$[1]=sysinfo.task_desc$
         headings$[2]=range$
         if sequence$="N" headings$[3]=Translate!.getTranslation("AON_BY_CUSTOMER_ID")
-:       else if sequence$="A" headings$[3]=Translate!.getTranslation("AON_BY_ALTERNATE_SEQUENCE")
-:       else if sequence$="Z" headings$[3]=Translate!.getTranslation("AON_BY_ZIP_CODE")
+:           else if sequence$="A" headings$[3]=Translate!.getTranslation("AON_BY_ALTERNATE_SEQUENCE")
+:           else if sequence$="Z" headings$[3]=Translate!.getTranslation("AON_BY_ZIP_CODE")
     endif    
 
 rem --- Initializations
+
     dim label$(across*width*6),linefeeds$(length,$0A$)
     answer$="Y"
     msg_id$="PRINT_TEST_PATTERN"
@@ -140,16 +157,16 @@ rem --- Initializations
     total_recs=0
     keyfield$="CUSTOMER_ID"
     if sequence$="A"
-       keynum$="AO_ALTSEQ_CUST"
-       begvalue$=begalt$
-       endvalue$=endalt$
-       keyfield$="ALT_SEQUENCE"
+        keynum$="AO_ALTSEQ_CUST"
+        begvalue$=begalt$
+        endvalue$=endalt$
+        keyfield$="ALT_SEQUENCE"
     endif
     if sequence$="Z"
-       keynum$="AO_ZIP_CUST"
-       begvalue$=begzip$
-       endvalue$=endzip$
-       keyfield$="ZIP_CODE"
+        keynum$="AO_ZIP_CUST"
+        begvalue$=begzip$
+        endvalue$=endzip$
+        keyfield$="ZIP_CODE"
     endif
     begvalue$=cvs(begvalue$,2)
     endvalue=len(endvalue$)
@@ -163,7 +180,7 @@ rem --- Open the printer unless doing export format (which goes thru docout)
 
     if col_format$<>"Y"
 
-rem --- Print test patterns until the user is satisfied
+    rem --- Print test patterns until the user is satisfied
 
         while answer$="Y"
             dim msg_tokens$[1]
@@ -181,13 +198,14 @@ rem --- Print test patterns until the user is satisfied
             close(printer_dev)
             msg_id$="ANOTHER_PATTERN"
         wend
+        
         if msg_opt$="C" goto std_exit
 
         close(printer_dev,err=*next)
         call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
         if status goto std_exit       
     endif
-    
+
 rem --- Start the progress meter and position the file
 
     call pgmdir$+"adc_progress.aon","NC","ARM_CUSTMAST","","","",0,arm01_dev,1,meter_num,status
@@ -196,46 +214,50 @@ rem --- Start the progress meter and position the file
 rem --- Read next Customer Master (arm-01) record
 
     while more
-          read record (arm01_dev,end=*break)arm01a$
-          if arm01a.firm_id$<>firm_id$ break
-          if endvalue$<>"" if cvs(field(arm01a$,keyfield$),3)>endvalue$ break
-          total_recs=total_recs+1
-          if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
-          dim arm02a$:fattr(arm02a$)
-          read record (arm02_dev,key=arm01a.firm_id$+arm01a.customer_id$+"  ") arm02a$
-          if cvs(labelcode$,3)<>""
+        read record (arm01_dev,end=*break)arm01a$
+        if arm01a.firm_id$<>firm_id$ break
+        if endvalue$<>"" if cvs(field(arm01a$,keyfield$),3)>endvalue$ break
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        dim arm02a$:fattr(arm02a$)
+        read record (arm02_dev,key=arm01a.firm_id$+arm01a.customer_id$+"  ") arm02a$
+        if cvs(labelcode$,3)<>""
             if cvs(arm02a.label_code$,3)<>cvs(labelcode$,3) continue
-          endif
+        endif
 
-          rem --- Print the label(s) for this customer
+    rem --- Print the label(s) for this customer
 
-          printed=1
-          while printed<=labels
-                printed=printed+1
-                if printed_across>=across gosub label
-                printed_across=printed_across+1
-                address$=arm01a.addr_line_1$+arm01a.addr_line_2$+arm01a.addr_line_3$+
-:                        arm01a.addr_line_4$+arm01a.city$+arm01a.state_code$+arm01a.zip_code$
-                call pgmdir$+"adc_address.aon",address$,24,5,9,30
-                if col_format$<>"Y"
-                    label$(width*(printed_across-1)+1,width)=arm01a.customer_name$
-                    label$(width*(across+printed_across-1)+1,width)=address$(1,30)
-                    label$(width*(2*across+printed_across-1)+1,width)=address$(31,30)
-                    label$(width*(3*across+printed_across-1)+1,width)=address$(61,30)
-                    label$(width*(4*across+printed_across-1)+1,width)=address$(91,30)
-                    label$(width*(5*across+printed_across-1)+1,width)=address$(121,30)
-                endif    
-                if col_format$="Y"
-                    OutVect!.addItem(arm01a.customer_name$)
-                    OutVect!.addItem(address$(1,30))
-                    OutVect!.addItem(address$(31,30))
-                    OutVect!.addItem(address$(61,30))
-                    OutVect!.addItem(address$(91,30))
-                    OutVect!.addItem(address$(121,30))
-                endif
-          wend
+        printed=1
+        
+        while printed<=labels
+            printed=printed+1
+            if printed_across>=across gosub label
+            printed_across=printed_across+1
 
-          rem --- Loop back for next customer master
+            rec! = BBjAPI().makeTemplatedString( templates$[2] )
+            rec!.setString( arm01a$ )
+            address$ = func.formatAddress(rec!, 30, 6)
+
+            if col_format$<>"Y"
+                label$(width*(printed_across-1)+1,width)=address$(1,30)
+                label$(width*(across+printed_across-1)+1,width)=address$(31,30)
+                label$(width*(2*across+printed_across-1)+1,width)=address$(61,30)
+                label$(width*(3*across+printed_across-1)+1,width)=address$(91,30)
+                label$(width*(4*across+printed_across-1)+1,width)=address$(121,30)
+                label$(width*(5*across+printed_across-1)+1,width)=address$(151,30)
+            endif 
+
+            if col_format$="Y"
+                OutVect!.addItem(address$(1,30))
+                OutVect!.addItem(address$(31,30))
+                OutVect!.addItem(address$(61,30))
+                OutVect!.addItem(address$(91,30))
+                OutVect!.addItem(address$(121,30))
+                OutVect!.addItem(address$(151,30))
+            endif
+        wend
+
+    rem --- Loop back for next customer master
 
     wend
 
@@ -248,10 +270,10 @@ label: rem --- Print the label(s)
 
     if printed_across=0 or col_format$="Y" return
     if first 
-       for x=1 to length
-           print (printer_dev) ""
-       next x
-       first=0
+        for x=1 to length
+            print (printer_dev) ""
+        next x
+        first=0
     endif
     for x=0 to lines-1
         print (printer_dev) @(offset),label$(x*across*width+1,across*width)
@@ -261,20 +283,10 @@ label: rem --- Print the label(s)
     label$(1)=""
     return
 
-disp_message:rem --- Display Message Dialog
+disp_message: rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
     return
-
-rem --- Functions
-
-rem --- Functions used to retrieve form values
-
-    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
 
 rem #include std_error.src
 
@@ -283,17 +295,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
+:       str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -308,14 +320,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -332,7 +344,7 @@ std_exit: rem --- Standard program end (01Mar2006)
 
 rem #endinclude std_end.src
 
-std_exit_no_report:
+std_exit_no_report: 
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
     OutVect!=null()

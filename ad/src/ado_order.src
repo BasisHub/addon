@@ -15,25 +15,18 @@ rem ==========================================================================
         field private BBjString className$ = "OrderHelper"
         field private BBjString firm_id$
         field private BBjInt precision% 
-        field private BBjInt agingBucket% 
-        field private BBjNumber pastDueLimit
-        field private BBjNumber holdAmount
-        field private BBjString autoHold$
         field public BBjString LotSerialFlag$
 
     rem --- Read-only fields for calcOverCreditLimit()
-    rem --- Order Credit Limit? 1=yes, 0=no, -1=has not been set
-
-        field private BBjNumber CreditLimit
-        field private BBjInt OverCreditLimit% = -1
-        field private BBjNumber TotalAging
-        field private BBjNumber OpenOrderAmount
-        field private BBjNumber OpenBoAmount
-        field private BBjNumber HeldOrderAmount
-        field private BBjNumber MaxPastDue
-        field private BBjString CreditHold$
-        field private BBjString TermsCreditHold$
-        field private BBjString CreditHoldReason$
+    
+        rem --- Order Credit Limit? 1=yes, 0=no, -1=has not been set
+        field protected BBjInt OverCreditLimit% = -1
+        field protected BBjString CreditHoldReason$
+        field protected BBjNumber TotalAging
+        field protected BBjNumber MaxPastDue
+        field protected BBjNumber OpenOrderAmount
+        field protected BBjNumber OpenBoAmount
+        field protected BBjNumber HeldOrderAmount
 
         field private Callpoint callpoint!
         field private BBjString dtl_tmpl$
@@ -58,11 +51,13 @@ rem ==========================================================================
         field private BBjString lotSerialTmpl$
         field private BBjInt ivsParamsDev% 
         field private BBjString ivsParamsTmpl$ 
+        field protected BBjInt arsCreditDev%
+        field protected BBjString arsCreditTmpl$
         
     rem --- Set from order
 
         field public BBjVector DtlVect!
-        field private BBjString Cust_id$
+        field protected BBjString Cust_id$
         field public BBjString Order_no$
         field public BBjString Inv_type$
         field public BBjString TaxCode$
@@ -629,182 +624,7 @@ rem --- Return Taxable Amount from detail line vector
         methodend
 
     rem --- Is there a Credit Hold or over credit limit condition?
-
-        method public BBjInt calcOverCreditLimit(BBjString p_cust_id$, BBjString p_order_no$)
-
-        rem --- Inits
-
-            more = 1
-            #OpenOrderAmount = 0
-            #OpenBoAmount = 0
-            #HeldOrderAmount = 0
-            this_total_sale = 0
-
-        rem --- Files
-
-        if #custDetailDev% = 0 then
-                data_name$ = "ARM_CUSTDET"
-                #custDetailDev%  = int(util.getDev(data_name$))
-                #custDetailTmpl$ = util.getTmpl(data_name$)
-            endif
-
-            if #ordHeaderDev% = 0 then
-                data_name$ = "OPE_ORDHDR"
-                #ordHeaderDev%  = int(util.getDev(data_name$))
-                #ordHeaderTmpl$ = util.getTmpl(data_name$)
-            endif
-
-            if #termsCodeDev% = 0 then
-                data_name$ = "ARC_TERMCODE"
-                #termsCodeDev%  = int(util.getDev(data_name$))
-                #termsCodeTmpl$ = util.getTmpl(data_name$)
-            endif
-
-        rem --- Parameters
-
-            if #agingBucket% = 0 then 
-                data_name$ = "ARS_CREDIT"
-                dim credit_rec$:util.getTmpl(data_name$)
-                find record (util.getDev(data_name$), key=#firm_id$+"AR01") credit_rec$
-                #agingBucket% = int(num(credit_rec.aging_bucket$))
-                #pastDueLimit = num(credit_rec.past_due_lim$)
-                #holdAmount = num(credit_rec.hold_amount$)
-                #autoHold$ = credit_rec.auto_hold$
-            endif
-
-        rem --- Get customer's current credit info
-
-            #CreditLimit = #getCreditLimit()
-            #CreditHold$ = #getCreditHold()
-
-        rem --- Get this order header (if order isn't null)
-
-            dim ord_head_rec$:#ordHeaderTmpl$
-
-            if p_order_no$ <> "" then
-                read record (#ordHeaderDev%, key=#firm_id$+"  "+p_cust_id$+p_order_no$, dom=*endif) ord_head_rec$
-
-            rem --- Get order terms record
-
-                dim terms_code_rec$:#termsCodeTmpl$
-
-                if #START_BLOCK then
-                    read record (#termsCodeDev%, key=#firm_id$+"A"+ord_head_rec.terms_code$, dom=*endif) terms_code_rec$
-                    #TermsCreditHold$ = terms_code_rec.cred_hold$
-                endif
-
-            endif
-
-        rem --- Position file
-
-            read (#ordHeaderDev%, key=#firm_id$+"  "+p_cust_id$, dom=*next)
-
-        rem --- Total Open Orders
-
-            while more
-                read record (#ordHeaderDev%, end=*break) ord_head_rec$
-
-                if ord_head_rec.firm_id$ <> #firm_id$ or ord_head_rec.customer_id$ <> p_cust_id$ then
-                    break
-                endif
-
-                if p_order_no$ <> "" and ord_head_rec.order_no$ = p_order_no$ then
-                    this_total_sale = ord_head_rec.total_sales 
-                endif
-
-                if pos(ord_head_rec.invoice_type$ = "PV") = 0 then 
-                    if ord_head_rec.invoice_type$ = "B" then 
-                        #OpenBoAmount = #OpenBoAmount + ord_head_rec.total_sales 
-                    else 
-                        if ord_head_rec.credit_flag$ = "C" then 
-                            #HeldOrderAmount = #HeldOrderAmount + ord_head_rec.total_sales 
-                        else 
-                            #OpenOrderAmount = #OpenOrderAmount + ord_head_rec.total_sales
-                        endif
-                    endif
-                endif
-            wend
-
-        rem --- Total Open Invoices
-			
-            dim cust_det_rec$:#custDetailTmpl$
-            read record (#custDetailDev%, key=#firm_id$+p_cust_id$+"  ") cust_det_rec$
-            #TotalAging = cust_det_rec.aging_future+cust_det_rec.aging_cur+cust_det_rec.aging_30+cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
-
-        rem --- Total Past Due Invoices
-
-        rem if agingBucket% = 0 then #MaxPastDue = cust_det_rec.aging_future+cust_det_rec.aging_cur+cust_det_rec.aging_30+cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
-        rem if agingBucket% = 1 then #MaxPastDue = cust_det_rec.aging_cur+cust_det_rec.aging_30+cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
-            if agingBucket% = 2 then #MaxPastDue = cust_det_rec.aging_30+cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
-            if agingBucket% = 3 then #MaxPastDue = cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
-            if agingBucket% = 4 then #MaxPastDue = cust_det_rec.aging_90+cust_det_rec.aging_120
-            if agingBucket% = 5 then #MaxPastDue = cust_det_rec.aging_120
-
-        rem --- Set Check Credit Limit Flag
-
-            batch$=""
-            batch$=stbl("!batch",err=*next)
-            #CreditHoldReason$ = "No Credit Problems"
-            aging_and_open = #TotalAging+#OpenOrderAmount+#OpenBoAmount+#HeldOrderAmount
-
-            if  #CreditHold$ = "Y" or
-:               #TermsCreditHold$ = "Y" or            
-:               #MaxPastDue > #pastDueLimit or
-:               ( this_total_sale and #holdAmount and this_total_sale > #holdAmount ) or
-:               ( #autoHold$="Y" and #CreditLimit and aging_and_open > #CreditLimit )
-:           then
-                #OverCreditLimit% = 1
-                if batch$<>"" then batch$="B"
-
-                if #CreditHold$ = "Y" then
-                    #CreditHoldReason$ = "Customer is on Credit Hold"
-                else
-                    if #TermsCreditHold$ = "Y" then
-                        #CreditHoldReason$ = "Credit hold from Terms Code"
-                    else
-                        if #MaxPastDue > #pastDueLimit then
-                            #CreditHoldReason$ = "Past Due Amount (" + str(#MaxPastDue) + ") exceeds maximum (" + str(#pastDueLimit) + ")"
-                        else
-                            if this_total_sale and #holdAmount and this_total_sale > #holdAmount then
-                                #CreditHoldReason$ = "This order's amount (" + str(this_total_sale) + ") exceeds the Hold Amount (" + str(#holdAmount) + ")"
-                            else
-                                if #autoHold$="Y" and #CreditLimit and aging_and_open > #CreditLimit then
-                                    #CreditHoldReason$ = "Aging plus Open amount (" + str(aging_and_open) + ") exceeds Credit Limit (" + str(#CreditLimit) + ")"
-                                endif
-                            endif
-                        endif
-                    endif
-                endif
-            else
-                #OverCreditLimit% = 0
-            endif
-
-            if batch$<>"" then ignore$=stbl("!batch",batch$)
-
-        rem --- Position Order Header back at the original order 
-
-            if p_order_no$ <> "" then
-                read (#ordHeaderDev%, key=#firm_id$+"  "+p_cust_id$+p_order_no$, dom=*endif)
-            endif
-
-            methodret #OverCreditLimit%
-
-        methodend
-
-    rem --- Set credit limit: set customer (order can be null)
-
-        method public BBjInt calcOverCreditLimit(BBjString p_cust_id$)
-            if p_cust_id$ = "" then
-                throw #className$ + ": calcOverCreditLimit(): You pass the customer ID when calling this method", 11
-            endif
-
-            #setCust_id(p_cust_id$)
-
-            methodret #calcOverCreditLimit(p_cust_id$, #Order_no$)
-        methodend
-
     rem --- Set Credit Limit: use fields if set (order can be null)
-
         method public BBjInt calcOverCreditLimit()
             if #Cust_id$ = "" then
                 throw #className$ + ": calcOverCreditLimit(): You must setCust_id() before calling this method", 11
@@ -813,12 +633,155 @@ rem --- Return Taxable Amount from detail line vector
             methodret #calcOverCreditLimit(#Cust_id$, #Order_no$)
         methodend
 
-    rem --- Accessor methods for calcOverCreditLimit()
+        method public BBjInt calcOverCreditLimit(BBjString p_cust_id$, BBjString p_order_no$)
+
+            rem --- get Total Sales Amount for this order
+            this_total_sale = #getOrderTotalSales()
+            
+            rem --- get Terms Code Credit Hold flag for this order
+            termsCreditHold$ = #getTermsCreditHold()
+
+            rem --- get Credit Limit for this customer
+            creditLimit = #getCreditLimit()
+
+            rem --- get Credit Hold flag for this customer
+            creditHold$ = #getCreditHold()
+
+            rem --- get Credit Management Parameters
+            declare HashMap map! 
+            map! = #getCreditManagementParams()
+            wgh$ = cast(BBjString, map!.get("AGING_BUCKET"))
+            agingBucket% = int(num(cast(BBjString, map!.get("AGING_BUCKET"))))
+            pastDueLimit = num(cast(BBjString, map!.get("PAST_DUE_LIM")))
+            holdAmount = num(cast(BBjString, map!.get("HOLD_AMOUNT")))
+            autoHold$ = cast(BBjString, map!.get("AUTO_HOLD"))
+
+            rem --- total open invoices for this customer
+            #totalOpenInvoices(agingBucket%)
+
+            rem --- total open orders for this customer
+            #totalOpenOrders()
+
+            rem --- check credit limit
+            batch$=""
+            batch$=stbl("!batch",err=*next)
+            #OverCreditLimit% = 0
+            #CreditHoldReason$ = "No Credit Problems"
+            aging_and_open = #TotalAging+#OpenOrderAmount+#OpenBoAmount+#HeldOrderAmount
+            
+            if  creditHold$ = "Y" or
+:               termsCreditHold$ = "Y" or            
+:               #MaxPastDue > pastDueLimit or
+:               ( this_total_sale and holdAmount and this_total_sale > holdAmount ) or
+:               ( autoHold$="Y" and creditLimit and aging_and_open > creditLimit )
+:           then
+                #OverCreditLimit% = 1
+                
+                rem --- stbl("!batch")="B" is used in opu_commrel.aon
+                if batch$<>"" then batch$="B"
+
+                if creditHold$ = "Y" then
+                    #CreditHoldReason$ = "Customer is on Credit Hold"
+                else
+                    if termsCreditHold$ = "Y" then
+                        #CreditHoldReason$ = "Credit hold from Terms Code"
+                    else
+                        if #MaxPastDue > pastDueLimit then
+                            #CreditHoldReason$ = "Past Due Amount (" + str(#MaxPastDue) + ") exceeds maximum (" + str(pastDueLimit) + ")"
+                        else
+                            if this_total_sale and holdAmount and this_total_sale > holdAmount then
+                                #CreditHoldReason$ = "This order's amount (" + str(this_total_sale) + ") exceeds the Hold Amount (" + str(holdAmount) + ")"
+                            else
+                                if autoHold$="Y" and creditLimit and aging_and_open > creditLimit then
+                                    #CreditHoldReason$ = "Aging plus Open amount (" + str(aging_and_open) + ") exceeds Credit Limit (" + str(creditLimit) + ")"
+                                endif
+                            endif
+                        endif
+                    endif
+                endif
+            endif
+
+            if batch$<>"" then ignore$=stbl("!batch",batch$)
+
+            methodret #OverCreditLimit%
+        methodend
+
+    rem --- Helper methods for calcOverCreditLimit()
+
+        rem /**
+        rem  * Get Total Sales Amount for this order.
+        rem  *
+        rem  * For this order, returns OPE_ORDHDR.TOTAL_SALES. Set Order_no$
+        rem  * before calling this method.
+        rem  *
+        rem  * @return BBjNumber Total Sales Amount
+        rem  */
+        method public BBjNumber getOrderTotalSales()
+            orderTotalSales = 0
+            
+            rem --- make sure this order has been set
+            if #Order_no$ <> "" then
+                rem --- make sure OPE_ORDHDR is available
+                if #ordHeaderDev% = 0 then
+                    data_name$ = "OPE_ORDHDR"
+                    #ordHeaderDev%  = int(util.getDev(data_name$))
+                    #ordHeaderTmpl$ = util.getTmpl(data_name$)
+                endif
+
+                rem --- get current total sales amount
+                dim ord_head_rec$:#ordHeaderTmpl$
+                find read (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$+#Order_no$, dom=*endif) ord_head_rec$
+                orderTotalSales = ord_head_rec.total_sales 
+            endif
+
+            methodret orderTotalSales
+        methodend
+
+        rem /**
+        rem  * Get Terms Code Credit Hold flag for this order.
+        rem  *
+        rem  * For this order, returns ARC_TERMCODE.CRED_HOLD$. Set Order_no$
+        rem  * before calling this method.
+        rem  *
+        rem  * @return BBjString Terms Code Credit Hold flag
+        rem  */
+        method public BBjString getTermsCreditHold()
+            TermsCreditHold$ = ""
+            
+            rem --- make sure this order has been set
+            if #Order_no$ <> "" then
+                rem --- make sure OPE_ORDHDR is available
+                if #ordHeaderDev% = 0 then
+                    data_name$ = "OPE_ORDHDR"
+                    #ordHeaderDev%  = int(util.getDev(data_name$))
+                    #ordHeaderTmpl$ = util.getTmpl(data_name$)
+                endif
+
+                rem --- make sure ARC_TERMCODE is available
+                if #termsCodeDev% = 0 then
+                    data_name$ = "ARC_TERMCODE"
+                    #termsCodeDev%  = int(util.getDev(data_name$))
+                    #termsCodeTmpl$ = util.getTmpl(data_name$)
+                endif
+
+                rem --- get order's terms code
+                dim ord_head_rec$:#ordHeaderTmpl$
+                find read (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$+#Order_no$, dom=*endif) ord_head_rec$
+
+                rem --- get Credit Hold flag from terms code's record
+                dim terms_code_rec$:#termsCodeTmpl$
+                find record (#termsCodeDev%, key=#firm_id$+"A"+ord_head_rec.terms_code$, dom=*endif) terms_code_rec$
+                TermsCreditHold$ = terms_code_rec.cred_hold$
+            endif
+
+            methodret TermsCreditHold$
+        methodend
 
         rem /**
         rem  * Get Credit Limit for this customer.
         rem  *
-        rem  * For this customer, returns current up to the minute ARM_CUSTDET.CREDIT_LIMIT.
+        rem  * For this customer, returns ARM_CUSTDET.CREDIT_LIMIT. Cust_id$ must
+        rem  * be set before calling this method.
         rem  *
         rem  * @return BBjNumber Credit Limit
         rem  */
@@ -832,38 +795,15 @@ rem --- Return Taxable Amount from detail line vector
 			
             rem --- get current up to the minute credit info
             dim cust_det_rec$:#custDetailTmpl$
-            read record (#custDetailDev%, key=#firm_id$+#Cust_id$+"  ") cust_det_rec$
+            find record (#custDetailDev%, key=#firm_id$+#Cust_id$+"  ") cust_det_rec$
             methodret cust_det_rec.credit_limit
-        methodend
-
-        method public BBjInt getOverCreditLimit()
-            methodret #OverCreditLimit%
-        methodend
-
-        method public BBjNumber getTotalAging()
-            methodret #TotalAging
-        methodend
-
-        method public BBjNumber getOpenOrderAmount()
-            methodret #OpenOrderAmount
-        methodend
-
-        method public BBjNumber getOpenBoAmount()
-            methodret #OpenBoAmount
-        methodend
-
-        method public BBjNumber getHeldOrderAmount()
-            methodret #HeldOrderAmount
-        methodend
-
-        method public BBjNumber getMaxPastDue()
-            methodret #MaxPastDue
         methodend
 
         rem /**
         rem  * Get Credit Hold flag for this customer.
         rem  *
-        rem  * For this customer, returns current up to the minute ARM_CUSTDET.CRED_HOLD.
+        rem  * For this customer, returns ARM_CUSTDET.CRED_HOLD. Cust_id$ must
+        rem  * be set before calling this method.
         rem  *
         rem  * @return BBjString Credit Hold flag
         rem  */
@@ -875,18 +815,198 @@ rem --- Return Taxable Amount from detail line vector
                 #custDetailTmpl$ = util.getTmpl(data_name$)
             endif
 			
-            rem --- get current up to the minute credit info
+            rem --- get current credit info
             dim cust_det_rec$:#custDetailTmpl$
-            read record (#custDetailDev%, key=#firm_id$+#Cust_id$+"  ") cust_det_rec$
+            find record (#custDetailDev%, key=#firm_id$+#Cust_id$+"  ") cust_det_rec$
             methodret cust_det_rec.cred_hold$
         methodend
 
-        method public BBjString getTermsCreditHold()
-            methodret #TermsCreditHold$
+        rem /**
+        rem  * Get Credit Management Parameters for this firm.
+        rem  *
+        rem  * For this firm, returns ARS_CREDIT.AGING_BUCKET, 
+        rem  * ARS_CREDIT.PAST_DUE_LIM, ARS_CREDIT.HOLD_AMOUNT, and 
+        rem  * ARS_CREDIT.AUTO_HOLD in a HashMap. 
+        rem  *
+        rem  * @return HashMap [AGING_BUCKET]
+        rem  *                 [PAST_DUE_LIM]
+        rem  *                 [HOLD_AMOUNT]
+        rem  *                 [AUTO_HOLD]
+        rem  */
+        method public HashMap getCreditManagementParams()
+            declare HashMap map!
+            map! = new HashMap()
+        
+            rem --- make sure ARS_CREDIT is available
+            if #arsCreditDev% = 0 then
+                data_name$ = "ARS_CREDIT"
+                #arsCreditDev%  = int(util.getDev(data_name$))
+                #arsCreditTmpl$ = util.getTmpl(data_name$)
+            endif
+			
+            rem --- get current credit management parameters
+            dim credit_rec$:#arsCreditTmpl$
+            find record (#arsCreditDev%, key=#firm_id$+"AR01") credit_rec$
+            map!.put("AGING_BUCKET", credit_rec.aging_bucket$)
+            map!.put("PAST_DUE_LIM", credit_rec.past_due_lim$)
+            map!.put("HOLD_AMOUNT", credit_rec.hold_amount$)
+            map!.put("AUTO_HOLD", credit_rec.auto_hold$)
+            methodret map!
         methodend
 
+        rem /**
+        rem  * Total open invoices for this customer.
+        rem  *
+        rem  * For this customer, sums open invoices and sums past due 
+        rem  * invoices from ARM_CUSTDET. Use getTotalAging() and 
+        rem  * getMaxPastDue() methods to retrieve summed amounts. Cust_id$
+        rem  * must be set before calling this method.
+        rem  *
+        rem  * @param BBjInt Aging Bucket to Hold
+        rem  */
+        method public void totalOpenInvoices(BBjInt agingBucket%)
+            rem --- make sure ARM_CUSTDET is available
+            if #custDetailDev% = 0 then
+                data_name$ = "ARM_CUSTDET"
+                #custDetailDev%  = int(util.getDev(data_name$))
+                #custDetailTmpl$ = util.getTmpl(data_name$)
+            endif
+
+            rem --- total open invoices
+            dim cust_det_rec$:#custDetailTmpl$
+            read record (#custDetailDev%, key=#firm_id$+#Cust_id$+"  ") cust_det_rec$
+            #TotalAging = cust_det_rec.aging_future+cust_det_rec.aging_cur+cust_det_rec.aging_30+cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
+
+            rem --- total past due invoices
+            if agingBucket% = 2 then #MaxPastDue = cust_det_rec.aging_30+cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
+            if agingBucket% = 3 then #MaxPastDue = cust_det_rec.aging_60+cust_det_rec.aging_90+cust_det_rec.aging_120
+            if agingBucket% = 4 then #MaxPastDue = cust_det_rec.aging_90+cust_det_rec.aging_120
+            if agingBucket% = 5 then #MaxPastDue = cust_det_rec.aging_120
+        methodend
+
+        rem /**
+        rem  * Total open orders for this customer.
+        rem  *
+        rem  * For this customer, sums open orders, sums backorders, and sums 
+        rem  * held orders from OPE_ORDHDR.TOTAL_SALES if it hasn't already been
+        rem  * done. Use getOpenOrderAmount(), getOpenBoAmount() and 
+        rem  * getHeldOrderAmount() methods to retrieve summed amounts. Cust_id$
+        rem  * must be set before calling this method.
+        rem  */
+        method public void totalOpenOrders()
+            rem --- for performance reasons, skip if open orders previously summed
+            if #OverCreditLimit% = -1 then
+                #OpenOrderAmount = 0
+                #OpenBoAmount = 0
+                #HeldOrderAmount = 0
+            
+                rem --- make sure OPE_ORDHDR is available
+                if #ordHeaderDev% = 0 then
+                    data_name$ = "OPE_ORDHDR"
+                    #ordHeaderDev%  = int(util.getDev(data_name$))
+                    #ordHeaderTmpl$ = util.getTmpl(data_name$)
+                endif
+
+                rem --- total current open orders
+                dim ord_head_rec$:#ordHeaderTmpl$
+                read (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$, dom=*next)
+                while 1
+                    read record (#ordHeaderDev%, end=*break) ord_head_rec$
+                    if ord_head_rec.firm_id$ <> #firm_id$ or ord_head_rec.customer_id$ <> #Cust_id$ then
+                        break
+                    endif
+
+                    if pos(ord_head_rec.invoice_type$ = "PV") = 0 then 
+                        if ord_head_rec.invoice_type$ = "B" then 
+                            #OpenBoAmount = #OpenBoAmount + ord_head_rec.total_sales 
+                        else 
+                            if ord_head_rec.credit_flag$ = "C" then 
+                                #HeldOrderAmount = #HeldOrderAmount + ord_head_rec.total_sales 
+                            else 
+                                #OpenOrderAmount = #OpenOrderAmount + ord_head_rec.total_sales
+                            endif
+                        endif
+                    endif
+                wend
+            endif
+
+            rem --- reposition OPE_ORDHDR to this order 
+            if #Order_no$ <> "" then
+                read (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$+#Order_no$, dom=*endif)
+            endif
+        methodend
+
+    rem --- Accessor methods for parameter set by calcOverCreditLimit()
+
+        rem  * Get credit hold reason for this customer.
+        rem  *
+        rem  * For this customer, returns reason for credit hold. Must execute 
+        rem  * calcOverCreditLimit() before calling this method.
+        rem  *
+        rem  * @return BBjString credit hold reason
+        rem  */
         method public BBjString getCreditHoldReason()
             methodret #CreditHoldReason$
+        methodend
+
+        rem  * Get sum of open invoices for this customer.
+        rem  *
+        rem  * For this customer, returns the sums of open invoices from 
+        rem  * ARM_CUSTDET. Must execute calcOverCreditLimit() or 
+        rem  * totalOpenInvoices() before calling this method.
+        rem  *
+        rem  * @return BBjNumber sum of open invoices
+        rem  */
+        method public BBjNumber getTotalAging()
+            methodret #TotalAging
+        methodend
+
+        rem  * Get sum of past due invoices for this customer.
+        rem  *
+        rem  * For this customer, returns the sums of past due invoices from 
+        rem  * ARM_CUSTDET. Must execute calcOverCreditLimit() or 
+        rem  * totalOpenInvoices() before calling this method.
+        rem  *
+        rem  * @return BBjNumber sum of past due invoices
+        rem  */
+        method public BBjNumber getMaxPastDue()
+            methodret #MaxPastDue
+        methodend
+
+        rem  * Get sum of open orders for this customer.
+        rem  *
+        rem  * For this customer, returns the sums of open orders from 
+        rem  * OPE_ORDHDR.TOTAL_SALES. Must execute calcOverCreditLimit() or 
+        rem  * totalOpenOrders() before calling this method.
+        rem  *
+        rem  * @return BBjNumber sum of open orders
+        rem  */
+        method public BBjNumber getOpenOrderAmount()
+            methodret #OpenOrderAmount
+        methodend
+
+        rem  * Get sum of open backorders for this customer.
+        rem  *
+        rem  * For this customer, returns the sums of open backorders from 
+        rem  * OPE_ORDHDR.TOTAL_SALES. Must execute calcOverCreditLimit() or 
+        rem  * totalOpenOrders() before calling this method.
+        rem  *
+        rem  * @return BBjNumber sum of open backorders
+        rem  */
+        method public BBjNumber getOpenBoAmount()
+            methodret #OpenBoAmount
+        methodend
+
+        rem  * Get sum of held orders for this customer.
+        rem  *
+        rem  * For this customer, returns the sums of held orders from 
+        rem  * OPE_ORDHDR.TOTAL_SALES. Must execute calcOverCreditLimit() or 
+        rem  * totalOpenOrders() before calling this method.
+        rem  *
+        rem  * @return BBjNumber sum of held orders
+        rem  */
+        method public BBjNumber getHeldOrderAmount()
+            methodret #HeldOrderAmount
         methodend
         
     rem --- Is this item lotted or serialized?

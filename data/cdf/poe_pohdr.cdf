@@ -439,11 +439,14 @@ tmp$=callpoint!.getUserInput()
 if tmp$<>"" and tmp$<callpoint!.getColumnData("POE_POHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
 [[POE_POHDR.NOT_B4_DATE.AVAL]]
 not_b4_date$=cvs(callpoint!.getUserInput(),2)
+ord_date$=callpoint!.getColumnData("POE_POHDR.ORD_DATE")
+req_date$=callpoint!.getColumnData("POE_POHDR.REQD_DATE")
+promise_date$=cvs(callpoint!.getColumnData("POE_POHDR.PROMISE_DATE"),2)
+
 if not_b4_date$<>"" then
-	if not_b4_date$<callpoint!.getColumnData("POE_POHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
-	if not_b4_date$>callpoint!.getColumnData("POE_POHDR.REQD_DATE") then callpoint!.setStatus("ABORT")
-	promise_date$=cvs(callpoint!.getColumnData("POE_POHDR.PROMISE_DATE"),2)
-	if promise_date$<>"" and not_b4_date$>promise_date$ then callpoint!.setStatus("ABORT")
+	if not_b4_date$<ord_date$ then callpoint!.setStatus("ABORT")
+	if cvs(req_date$,2)<>"" and not_b4_date$>req_date$ then callpoint!.setStatus("ABORT")
+	if cvs(promise_date$,2)<>"" and not_b4_date$>promise_date$ then callpoint!.setStatus("ABORT")
 endif
 [[POE_POHDR.PROMISE_DATE.AVAL]]
 tmp$=cvs(callpoint!.getUserInput(),2)

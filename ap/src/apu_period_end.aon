@@ -6,16 +6,12 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright (c) 1981-2007 AddonSoftware
 rem --- All Rights Reserved
 
-rem -------------- Errors, Warnings and Conversion Information ---------------------
-
-rem --- The following error(s) were encountered during the conversion:
-
-rem --- Undefined function fnyy_year (Line 0178)
-rem --- Undefined function fnyy_year (Line 0181)
-rem --- Undefined function fnyear_yy21$ (Line 0332)
-
     setesc std_error
     seterr std_error
+    
+rem --- Use statements
+
+    use ::ado_func.src::func
 
 rem --- Retrieve the program path
 
@@ -41,7 +37,7 @@ rem --- Open/Lock files
     files$[6]="gls_params",ids$[6]="GLS_PARAMS"
     options$[2]="L",options$[3]="L",options$[5]="L"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
+:       ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_update
     aps01_dev=channels[1]
     apm02_dev=channels[2]
@@ -64,7 +60,7 @@ rem --- Retrieve parameter records
     current_period=num(aps01a.current_per$)
     current_year=num(aps01a.current_year$)
     call pgmdir$+"adc_perioddates.aon",gls01_dev,current_period,current_year,begdate$,
-:                                      enddate$,status
+:       enddate$,status
     p9$=enddate$
 
 initializations: rem --- Initializations
@@ -78,8 +74,8 @@ rem --- Get user approval to proceed
     msg_id$="CLOSE_PERIOD"
     dim msg_tokens$[2]
     msg_tokens$[0]=str(current_period)
-    msg_tokens$[1]=fndate$(begdate$)
-    msg_tokens$[2]=fndate$(enddate$)
+    msg_tokens$[1]=func.formatDate(begdate$)
+    msg_tokens$[2]=func.formatDate(enddate$)
     gosub disp_message
     if msg_opt$="N" goto std_exit_no_update
 
@@ -98,25 +94,26 @@ rem --- Invoice Read
         if apt01a.invoice_date$>p9$ or apt01a.accting_date$>p9$ continue
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
-rem --- Init Totals
+    rem --- Init Totals
 
         dim t[2]
-        o9=0
+    rem o9=0; rem remove zero balance invoices
+        o9=1; rem keep zero balance invoices
 
-rem --- Find Totals
+    rem --- Find Totals
 
         t[0]=t[0]+apt01a.invoice_amt
         t[1]=t[1]+apt01a.discount_amt
         t[2]=t[2]+apt01a.retension
 
-rem --- Invoice Detail
+    rem --- Invoice Detail
 
         read (apt11_dev,key=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$,dom=*next)
         can_delete$="Y"
         while more
             read record (apt11_dev,end=*break) apt11a$
             if apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$<>
-:              apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ break
+:               apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ break
             if apt11a.trans_type$=" " continue
             if apt11a.trans_date$>p9$ can_delete$="N"; break
             if pos(apt11a.trans_type$="CMR") can_delete$="N"; break; rem "Can't remove yet because there are outstanding checks
@@ -126,15 +123,14 @@ rem --- Invoice Detail
         wend
         if can_delete$="N" continue
 
-l1600: rem --- Keep or Remove
+    rem --- Keep or Remove
 
         if t[0]<>0 or t[2]<>0 continue
         if o9=0 gosub remove_invoice
 
-rem --- Next Invoice
+    rem --- Next Invoice
 
     wend
-
 
 roll_totals: rem --- Roll Over Totals at Fiscal Year-End
 
@@ -182,7 +178,7 @@ remove_invoice: rem --- Remove Invoice
     while more
         read record(apt11_dev,end=*break)apt11a$
         if apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$<>
-:          apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ break
+:           apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$ break
         remove (apt11_dev,key=apt11a.firm_id$+apt11a.ap_type$+apt11a.vendor_id$+apt11a.ap_inv_no$)
     wend
 
@@ -191,7 +187,7 @@ remove_invoice: rem --- Remove Invoice
     while more
         read record(apt02_dev,end=*break)apt02a$
         if apt02a.firm_id$+apt02a.ap_type$+apt02a.vendor_id$+apt02a.invoice_type$+apt02a.ap_inv_no$<>
-:          apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+"I"+apt01a.ap_inv_no$ break
+:           apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+"I"+apt01a.ap_inv_no$ break
         remove (apt02_dev,key=apt02a.firm_id$+apt02a.ap_type$+apt02a.vendor_id$+apt02a.invoice_type$+apt02a.ap_inv_no$)
     wend
 
@@ -200,26 +196,11 @@ remove_invoice: rem --- Remove Invoice
 disp_message: rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
-return
+    return
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
 rem --- Functions used to retrieve form values
-
-    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
-    def fnget_table$(q0$)=rd_alias_id$
-
-rem --- Miscellaneous functions
-
-    def fncenter(q$,q)=int((q-len(q$))/2)
-
-rem --- Format inventory item description
-
-    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
 
 rem --- Date/time handling functions
 
@@ -234,43 +215,6 @@ rem --- Date/time handling functions
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
 
-rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
-
-    def fnmask$(q1$,q2$)
-        if q2$="" q2$=fill(len(q1$),"0")
-        return str(-num(q1$,err=*next):q2$,err=*next)
-        q=1
-        q0=0
-        while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
-        wend
-        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
-        return str(q1$:q2$)
-    fnend
-
-rem --- fnbasename$: Strip path and optionally the suffix from a file name
-
-    def fnbasename$(q$,q0$)
-        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
-        if q then q$=q$(q+1)
-        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
-
-rem --- fnglobal: Return numeric value of passed stbl variable
-
-    def fnglobal(q$,q1)
-        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
-        return q1
-    fnend
-
-rem --- fnglobal$: Return string value of passed STBL variable
-
-    def fnglobal$(q$,q1$)
-        q1$=stbl(q$,err=*next)
-        return q1$
-    fnend
-
 rem #endinclude std_functions.src
 
 rem #include std_error.src
@@ -281,17 +225,17 @@ std_error: rem --- Standard error handler (01Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
     call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
+:       str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
+std_error_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
+std_error_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -306,14 +250,14 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
-:                                   str(err),rd_err_text$,rd_err_act$
-std_missing_params_exit:
+:       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
+std_missing_params_release: 
     status=999
     if pgm(-1)<>pgm(-2) exit
     release
@@ -329,7 +273,7 @@ std_exit: rem --- Standard program end (01Mar2006)
     msg_opt$=""
     gosub disp_message
 
-std_exit_no_update:
+std_exit_no_update: 
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
