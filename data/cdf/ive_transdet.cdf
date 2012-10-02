@@ -58,21 +58,17 @@ ls_not_found:
 	if failed then callpoint!.setStatus("ABORT")
 [[IVE_TRANSDET.LOTSER_NO.BINP]]
 print "in LOTSER_NO.BINP"; rem debug
-goto skip_loc; rem --- per bugzilla bug 3418, always invoking lot lookup so user can pick existing lot for Receipt/negative adjust, if desired.
-rem --- Should user enter a lot or look it up?
-
-	rem --- Receipts and positive Adjustments require new lot entry (i.e., incoming)
-	rem --- isn't it possible something could come back (a positive adjustment) into an existing lot?
-
-	trans_qty = num( callpoint!.getColumnData("IVE_TRANSDET.TRANS_QTY") )
-	if user_tpl.trans_type$ = "R" or (user_tpl.trans_type$ = "A" and trans_qty > 0 ) then 
-		print "Trans Type: ", user_tpl.trans_type$
-		print "Receipt or negative Adjustment, exitting..."
-		break; rem --- exit callpoint
+rem --- per bugzilla bug 3418, always invoking lot lookup so user can pick existing lot for Receipt/negative adjust, if desired.
+rem --- per bugzilla bug 4326, a) deal with receipt type and determine lot/serial lookup flag based on transaction type
+			
+	rem --- Should user enter a lot or look it up?
+			
+ 	if user_tpl.trans_type$ <> "R" then 
+		goto ls_lookup
 	endif
+	break; rem --- exit callpoint
 
-skip_loc:
-rem --- Call the lot lookup window and set default lot, lot location, lot comment and qty
+ls_lookup: rem --- Call the lot lookup window and set default lot, lot location, lot comment and qty
 
 	rem --- Save current row/column so we'll know where to set focus when we return from lot lookup
 
@@ -92,13 +88,22 @@ rem --- Call the lot lookup window and set default lot, lot location, lot commen
 		break; rem --- exit callpoint
 	endif
 
+	rem --- Determine the Lot/Serial type flag
+	ls_type$="O"			
+ 	if pos(user_tpl.trans_type$ = "IC") then 
+		ls_type$="Z"
+	endif
+ 	if pos(user_tpl.trans_type$ = "A") then 
+		ls_type$="A"
+	endif
+
 	dim dflt_data$[3,1]
 	dflt_data$[1,0] = "ITEM_ID"
 	dflt_data$[1,1] = item$
 	dflt_data$[2,0] = "WAREHOUSE_ID"
 	dflt_data$[2,1] = whse$
 	dflt_data$[3,0] = "LOTS_TO_DISP"
-	dflt_data$[3,1] = "O"; rem --- Open lots only
+	dflt_data$[3,1] = ls_type$; rem "O"; rem --- Open lots only
 
 	rem --- Call the lookup form
 

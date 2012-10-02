@@ -14,7 +14,7 @@ rem --- remove software lock on batch, if batching
 		lock_type$="U"
 		lock_status$=""
 		lock_disp$=""
-		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,table_chans$[all],lock_status$
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 	endif
 [[APE_INVOICEHDR.REFERENCE.AVAL]]
 callpoint!.setStatus("REFRESH");REM TEST
@@ -247,7 +247,7 @@ gosub get_vendor_history
 if vend_hist$="" and user_tpl.multi_types$="Y"
 	msg_id$="AP_NOHIST"
 	gosub disp_message
-	callpoint!.setStatus("CLEAR;NEWREC")
+	callpoint!.setStatus("CLEAR;NEWREC;ABORT")
 endif
 [[APE_INVOICEHDR.ACCTING_DATE.AVAL]]
 rem make sure accting date is in an appropriate GL period

@@ -1,3 +1,7 @@
+[[POE_INVHDR.ADEL]]
+rem -- setting a delete flag so we know in BREX not to bother checking if out of balance
+
+callpoint!.setDevObject("deleted","Y")
 [[POE_INVHDR.BTBL]]
 rem --- Open/Lock files
 files=15,begfile=1,endfile=files
@@ -124,16 +128,20 @@ endif
 [[POE_INVHDR.BREX]]
 rem --- also need final check of balance -- invoice amt - invsel amt - gl dist amt (invsel should already equal invdet)
 
-if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
-	msg_id$="PO_INV_NOT_DIST"
-	gosub disp_message
+if callpoint!.getDevObject("deleted")<>"Y"
+	if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
+		msg_id$="PO_INV_NOT_DIST"
+		gosub disp_message
 
+	endif
 endif
 [[POE_INVHDR.APFE]]
 rem --- when re-entering primary form, enable GL button
 rem --- only enable invoice detail button if we've already written some poe_invdet records
+rem --- also re-initialize the "deleted" flag
 
 callpoint!.setOptionEnabled("GDIS",1)
+callpoint!.setDevObject("deleted","")
 
 poe_invdet=fnget_dev("POE_INVDET")
 

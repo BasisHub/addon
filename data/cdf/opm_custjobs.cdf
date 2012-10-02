@@ -31,7 +31,7 @@ rem --- Parameters
 	if ars01a.job_nos$<>"Y" then
 		msg_id$="OP_NOJOBS"
 		gosub disp_message
-		callpoint!.setStatus("ABORT")
+		callpoint!.setStatus("EXIT")
 	endif
 [[OPM_CUSTJOBS.<CUSTOM>]]
 #include std_missing_params.src

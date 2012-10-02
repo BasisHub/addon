@@ -344,7 +344,7 @@ rem --- Open files
 
 	num_files=1
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="IVC_PHYSCODE", open_opts$[1]="OTAL"
+	open_tables$[1]="IVC_PHYSCODE", open_opts$[1]="OTA"; rem "open_opts$[1]="OTAL" - bug 4276 - IV File Locking"
 
 	gosub open_tables
 

@@ -14,7 +14,7 @@ ivs01a_tpl$=open_tpls$[1]
 dim ivs_params$:ivs01a_tpl$
 readrecord(ivs01a_chn,key=firm_id$+"IV00")ivs_params$
 
-curr_per$=ivs_params.current_per$+ivs_params.current_year$
+curr_per$=ivs_params.current_year$+ivs_params.current_per$
 
 callpoint!.setColumnData("PERIOD_YEAR_1",curr_per$)
 callpoint!.setColumnData("PERIOD_YEAR_2",curr_per$)
