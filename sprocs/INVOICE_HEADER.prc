@@ -4,14 +4,11 @@ rem Description: Stored Procedure to get the header and footer informations to p
 rem
 rem Author(s): S. Birster
 rem Revised: 02.23.2011
-rem
+rem 
 rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
-
-rem Set of utility methods
-use ::ado_func.src::func
-
+ 
 rem Declare some variables ahead of time
 declare BBjStoredProcedureData sp!
 declare BBjRecordSet rs!
@@ -23,21 +20,19 @@ sp! = BBjAPI().getFileSystem().getStoredProcedureData()
 rem Get the IN parameters used by the procedure
 firm_id$ = sp!.getParameter("FIRM_ID")
 customer_id$ = sp!.getParameter("CUSTOMER_ID")
-order_no$ = sp!.getParameter("ORDER_NO")
+invoice_no$ = sp!.getParameter("INVOICE_NO")
 store_master_id$ = sp!.getParameter("STORE_MASTER_ID")
-vat_01 = num(sp!.getParameter("VAT_01"))
-vat_02 = num(sp!.getParameter("VAT_02"))
+html_path$ = sp!.getParameter("HTML_PATH")
 
 rem Create a memory record set to hold results.
 rem Columns for the record set are defined using a string template
-rs! = BBJAPI().createMemoryRecordSet("LOGO:C(128), COMP_LINE_01:C(30), COMP_LINE_02:C(30), COMP_LINE_03:C(30), COMP_LINE_04:C(30), COMP_LINE_05:C(30), COMP_LINE_06:C(30),
-:                                     COMP_LINE_07:C(30), COMP_LINE_08:C(30), COMP_LINE_09:C(30), COMP_LINE_10:C(30), COMP_LINE_11:C(30), COMP_LINE_12:C(30),
-:                                     COMP_LINE_13:C(30), COMP_LINE_14:C(30), COMP_LINE_15:C(30), COMP_LINE_16:C(30), COMP_LINE_17:C(30), COMP_LINE_18:C(30),
+rs! = BBjAPI().createMemoryRecordSet("LOGO:C(128), COMP_LINE_01:C(30), COMP_LINE_02:C(30), COMP_LINE_03:C(30), COMP_LINE_04:C(30), COMP_LINE_05:C(30),
+:                                     COMP_LINE_06:C(30), COMP_LINE_07:C(30), COMP_LINE_08:C(30), COMP_LINE_09:C(30), COMP_LINE_10:C(30),
 :                                     BILL_ADDR_LINE_1:C(30), BILL_ADDR_LINE_2:C(30), BILL_ADDR_LINE_3:C(30), BILL_ADDR_LINE_4:C(30), BILL_ADDR_LINE_5:C(30),
 :                                     SHIP_ADDR_LINE_1:C(30), SHIP_ADDR_LINE_2:C(30), SHIP_ADDR_LINE_3:C(30), SHIP_ADDR_LINE_4:C(30), SHIP_ADDR_LINE_5:C(30),
-:                                     INVOICE_NO:C(7), SUB_TOTAL:N(7), VAT_01:N(7), VAT_02:N(7), DISCOUNT:N(7), FREIGHT:N(7), TOTAL:N(7), MESSAGE:C(40*)")
+:                                     INVOICE_NO:C(7), INVOICE_DATE:C(10), ORDER_NO:C(7), SUB_TOTAL:N(7), FREIGHT_TYPE:C(39), FREIGHT_AMT:N(7), PAYM_FEE:N(7),
+:                                     TOTAL:N(7), SUB_TOTAL2:N(7), MESSAGE:C(40*), SHOW_VAT_TABLE:N(1)")
 
-line_width = 30
 
 dbserver$=stbl("+DBSERVER",err=*next)
 dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
@@ -60,121 +55,80 @@ dbname_api$ = stbl("+DBNAME_API",err=*next)
 
 if pos("jdbc:apache"=cvs(dbname$,8))=1 then
 	url$ = dbname$
+    url_storeadmin$ = "storeadmin"
 else
 	if pos("jdbc:"=cvs(dbname$,8))=1 then			
-		url$=dbname$+url_user$
+		url$ = dbname$+url_user$
+        url_storeadmin$ = "storeadmin"+url_user$
 	else
 		url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+        url_storeadmin$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database=storeadmin"+url_user$+dbssl$+dbtimeout$
 	endif
 endif
 mode$="mode=PROCEDURE"
 
-line_width = 30
 
-url$="jdbc:basis:localhost?DATABASE=ADDON_STORE&SSL=false&USER=admin&PASSWORD=admin123"
 
 data! = rs!.getEmptyRecordData()
+data!.setFieldValue("LOGO",html_path$ + "own/gfx/header.png")
+data!.setFieldValue("INVOICE_NO", invoice_no$)
+data!.setFieldValue("SHOW_VAT_TABLE","0")
 
-data!.setFieldValue("LOGO","C:\home\sbirster\store\trunk\html\own\images\emaillogo.jpg")
 
-sql$ = "SELECT SUM(EXT_PRICE) FROM OPE_ORDDET WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO='" + order_no$ + "'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
-sqlRd! = sqlRs!.getCurrentRecordData()
+rem ### Calculate total sum's ###
+sub_total=0
+sum_net=0
+sum_vat=0
 
-sub_total = num(sqlRd!.getFieldValue("COL001"))
+sql$ = "SELECT ROUND(SUM(OOD.UNIT_PRICE*SOD.QTY_CHARGED),2) AS SUM_NET, ROUND(SUM(ROUND((OOD.UNIT_PRICE+SOD.VAT_AMOUNT)*SOD.QTY_CHARGED,2)),2) AS SUM_BRUT, ROUND(SOD.VAT_PERCENT,2) AS VAT_PERCENT, ROUND(SUM(ROUND(SOD.VAT_AMOUNT*SOD.QTY_CHARGED,2)),2) AS SUM_VAT FROM OPT_INVDET OOD INNER JOIN STO_INVDET SOD ON OOD.FIRM_ID = SOD.FIRM_ID AND OOD.ORDDET_SEQ_REF = SOD.LINE_NO AND OOD.AR_INV_NO = SOD.AR_INV_NO WHERE OOD.FIRM_ID='"+firm_id$+"' AND OOD.AR_INV_NO='"+invoice_no$+"' GROUP BY SOD.VAT_PERCENT"
+sqlRs! = BBjAPI().createSQLRecordSet(url$,mode$,sql$)
 
-data!.setFieldValue("SUB_TOTAL", str(sub_total))
-
-sql$ = "SELECT ITEM_ID FROM OPE_ORDDET WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO='" + order_no$ + "'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
-
-itemList$=""
-
-if !(sqlRs!.isEmpty()) then
-    while 1
-        sqlRd! = sqlRs!.getCurrentRecordData()
-        itemList$ = itemList$ + "'" + sqlRd!.getFieldValue("ITEM_ID") + "',"
-        sqlRs!.next(err=*break)
-    wend
-    itemList$=itemList$(1, len(itemList$)-1)
+rem if no positions, then nothing to print
+if sqlRs!.isEmpty() then
+    goto sp_end
 endif
 
-sql$ = "SELECT ITEM_ID FROM STO_ITEMDETAIL WHERE ITEM_ID IN (" + itemList$ + ") AND VAT_ID='01'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
-
-itemListVat01$=""
-
-if !(sqlRs!.isEmpty()) then
-    while 1
-        sqlRd! = sqlRs!.getCurrentRecordData()
-        itemListVat01$ = itemListVat01$ + "'" + sqlRd!.getFieldValue("ITEM_ID") + "',"
-        sqlRs!.next(err=*break)
-    wend
-    itemListVat01$=itemListVat01$(1, len(itemListVat01$)-1)
-endif
-
-sql$ = "SELECT ITEM_ID FROM STO_ITEMDETAIL WHERE ITEM_ID IN (" + itemList$ + ") AND VAT_ID='02'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
-
-itemListVat02$=""
-
-if !(sqlRs!.isEmpty()) then
-    while 1
-        sqlRd! = sqlRs!.getCurrentRecordData()
-        itemListVat02$ = itemListVat02$ + "'" + sqlRd!.getFieldValue("ITEM_ID") + "',"
-        sqlRs!.next(err=*break)
-    wend
-    itemListVat02$=itemListVat02$(1, len(itemListVat02$)-1)
-endif
-
-if itemListVat01$<>"" then
-    sql$ = "SELECT SUM(EXT_PRICE) FROM OPE_ORDDET WHERE ITEM_ID IN ("+ itemListVat01$ +") AND FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO='" + order_no$ + "'"
-    sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
+i=0
+while 1
+    i=i+1
     sqlRd! = sqlRs!.getCurrentRecordData()
-    if !(sqlRs!.isEmpty()) then
-        sqlRd! = sqlRs!.getCurrentRecordData()
-        total_vat_01 = (vat_01*num(sqlRd!.getFieldValue("COL001")))/100
-        data!.setFieldValue("VAT_01", str(total_vat_01))
-    endif
-else
-    data!.setFieldValue("VAT_01", "0")
+    sub_total=sub_total+ROUND(num(sqlRd!.getFieldValue("SUM_BRUT")),2)
+    sum_vat=sum_vat+num(sqlRd!.getFieldValue("SUM_VAT"))
+    sqlRs!.next(err=*break)
+wend
+
+if i > 1 then
+    data!.setFieldValue("SHOW_VAT_TABLE","1")
 endif
 
-if itemListVat02$<>"" then
-    sql$ = "SELECT SUM(EXT_PRICE) FROM OPE_ORDDET WHERE ITEM_ID IN ("+ itemListVat02$ +") AND FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO='" + order_no$ + "'"
-    sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
+data!.setFieldValue("SUB_TOTAL",str(sub_total))
+
+
+paym_fee=0
+sql$ = "SELECT OH.PAYM_TERMS_TXT, OH.PAYM_AMOUNT FROM STO_INVHDR OH WHERE OH.FIRM_ID='" + firm_id$ + "' AND OH.AR_INV_NO='" + invoice_no$ + "'"
+sqlRs! = BBjAPI().createSQLRecordSet(url$,mode$,sql$)
+if !sqlRs!.isEmpty() then
     sqlRd! = sqlRs!.getCurrentRecordData()
-    if !(sqlRs!.isEmpty()) then
-        sqlRd! = sqlRs!.getCurrentRecordData()
-        total_vat_02 = (vat_02*num(sqlRd!.getFieldValue("COL001")))/100
-        data!.setFieldValue("VAT_02", str(total_vat_02))
-    endif
-else
-    data!.setFieldValue("VAT_02", "0")
+    paym_fee=num(sqlRd!.getFieldValue("PAYM_AMOUNT"))
+    data!.setFieldValue("PAYM_FEE",str(paym_fee))
+    data!.setFieldValue("FREIGHT_TYPE",cvs(sqlRd!.getFieldValue("PAYM_TERMS_TXT"),3))
 endif
 
-sql$="SELECT INVOICE_DATE, AR_INV_NO, ORDER_DATE, SLSPSN_CODE, CUSTOMER_PO_NO, AR_SHIP_VIA, SHIPMNT_DATE, TERMS_CODE, DISCOUNT_AMT, TAX_AMOUNT, FREIGHT_AMT, SHIPTO_TYPE, SHIPTO_NO, MESSAGE_CODE FROM OPE_ORDHDR WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO='" + order_no$ + "'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
-sqlRd! = sqlRs!.getCurrentRecordData()
+sql$="SELECT INVOICE_DATE, FREIGHT_AMT, SHIPTO_TYPE, SHIPTO_NO FROM OPT_INVHDR WHERE FIRM_ID='" + firm_id$ + "' AND AR_INV_NO='" + invoice_no$ + "'"
+sqlRs! = BBjAPI().createSQLRecordSet(url$,mode$,sql$)
+if !sqlRs!.isEmpty() then
+    sqlRd! = sqlRs!.getCurrentRecordData()
+    shipto_type$=sqlRd!.getFieldValue("SHIPTO_TYPE")
+    shipto_no$=sqlRd!.getFieldValue("SHIPTO_NO")
+    data!.setFieldValue("FREIGHT_AMT",sqlRd!.getFieldValue("FREIGHT_AMT"))
+    data!.setFieldValue("INVOICE_DATE", date(jul(sqlRd!.getFieldValue("INVOICE_DATE"),"%Yl%Mz%Dz"):"%Dz.%Mz.%Yl"))
+endif
 
-data!.setFieldValue("INVOICE_NO", sqlRd!.getFieldValue("AR_INV_NO"))
-data!.setFieldValue("DISCOUNT", "-"+sqlRd!.getFieldValue("DISCOUNT_AMT"))
-data!.setFieldValue("FREIGHT", sqlRd!.getFieldValue("FREIGHT_AMT"))
-shipto_type$=sqlRd!.getFieldValue("SHIPTO_TYPE")
-shipto_no$=sqlRd!.getFieldValue("SHIPTO_NO")
-message_code$=sqlRd!.getFieldValue("MESSAGE_CODE")
-slspsn_code$=sqlRd!.getFieldValue("SLSPSN_CODE")
-terms_code$=sqlRd!.getFieldValue("TERMS_CODE")
 
-rem Calculates Total Due
-total = sub_total + num(data!.getFieldValue("VAT_01")) + num(data!.getFieldValue("VAT_02")) - num(sqlRd!.getFieldValue("DISCOUNT_AMT")) + num(sqlRd!.getFieldValue("TAX_AMOUNT")) + num(sqlRd!.getFieldValue("FREIGHT_AMT"))
+url_storeadmin$="jdbc:basis:localhost?DATABASE=storeadmin&SSL=false&USER=admin&PASSWORD=admin123"
+sql$="SELECT NAME, ADDR_LINE_1, ADDR_LINE_2, ZIP_CODE, CITY, PHONE, FAX, EMAIL, WEBSITE, CNTRY_ID FROM STA_STOREMASTER WHERE MASTER_ID='"+store_master_id$+"'"
+sqlRs! = BBjAPI().createSQLRecordSet(url_storeadmin$,mode$,sql$)
 
-data!.setFieldValue("TOTAL", str(total))
-
-url$="jdbc:basis:localhost?DATABASE=storeadmin&SSL=false&USER=admin&PASSWORD=admin123"
-
-sql$="SELECT NAME, ADDR_LINE_1, ADDR_LINE_2, ZIP_CODE, CITY, PHONE, FAX, EMAIL, WEBSITE FROM STA_STOREMASTER WHERE MASTER_ID='"+store_master_id$+"'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
 if !(sqlRs!.isEmpty()) then
     sqlRd! = sqlRs!.getCurrentRecordData()
 
@@ -208,122 +162,157 @@ if !(sqlRs!.isEmpty()) then
         data!.setFieldValue("COMP_LINE_"+str(i:"00"), "email: "+cvs(sqlRd!.getFieldValue("EMAIL"),3))
         i=i+1
     endif
+    storeCountryId$=cvs(sqlRd!.getFieldValue("CNTRY_ID"),3)
 endif
 
-url$="jdbc:basis:localhost?DATABASE=ADDON_STORE&SSL=false&USER=admin&PASSWORD=admin123"
-sql$="SELECT CUSTOMER_ID, CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, CITY, ZIP_CODE FROM ARM_CUSTMAST WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
+sql$="SELECT CUSTOMER_ID, CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, ADDR_LINE_4, CITY, ZIP_CODE, COUNTRY FROM ARM_CUSTMAST WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "'"
+sqlRs! = BBjAPI().createSQLRecordSet(url$,mode$,sql$)
 sqlRd! = sqlRs!.getCurrentRecordData()
 
-i=1
-if cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)<>"" then
-    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("CUSTOMER_NAME"))
-    i=i+1
+salutation$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_4"),3)
+addr_line1$ = cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)
+if salutation$ = "HERR" OR salutation$ = "FRAU" then
+    addr_line1$ = addr_line1$ + " " + cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)
+else
+    addr_line2$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)
 endif
-if cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)<>"" then
-    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_1"))
-    i=i+1
-endif
-if cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)<>"" then
-    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_2"))
-    i=i+1
-endif
-if cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)<>"" then
-    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_3"))
-    i=i+1
-endif
-data!.setFieldValue("BILL_ADDR_LINE_"+str(i), cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3))
+addr_line3$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)
+addr_line4$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)
+addr_line5$ = cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3)
 
 i=1
-if cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)<>"" then
-    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("CUSTOMER_NAME"))
+if addr_line1$ > "" then
+    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), addr_line1$)
     i=i+1
 endif
-if cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)<>"" then
-    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_1"))
+if addr_line2$ > "" then
+    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), addr_line2$)
     i=i+1
 endif
-if cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)<>"" then
-    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_2"))
+if addr_line3$ > "" then
+    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), addr_line3$)
     i=i+1
 endif
-if cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)<>"" then
-    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_3"))
+if addr_line4$ > "" then
+    data!.setFieldValue("BILL_ADDR_LINE_"+str(i), addr_line4$)
     i=i+1
 endif
-data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3))
+data!.setFieldValue("BILL_ADDR_LINE_"+str(i), addr_line5$)
 
+i=1
+if addr_line1$ > "" then
+    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line1$)
+    i=i+1
+endif
+if addr_line2$ > "" then
+    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line2$)
+    i=i+1
+endif
+if addr_line3$ > "" then
+    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line3$)
+    i=i+1
+endif
+if addr_line4$ > "" then
+    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line4$)
+    i=i+1
+endif
+data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line5$)
+
+countryId$ = cvs(sqlRd!.getFieldValue("COUNTRY"),3)
 
 rem Get Ship To address from Manual Ship To table
 if shipto_type$="M" then
-    sql$="SELECT CUSTOMER_ID, CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, CITY, ZIP_CODE FROM OPE_ORDSHIP WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO'"+ order_no$ +"'"
-    sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
+rem     if bill_exists then
+        sql$="SELECT CUSTOMER_ID, NAME AS CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, ADDR_LINE_4, CITY, ZIP_CODE --, CNTRY_ID FROM OPT_INVSHIP WHERE FIRM_ID='" + firm_id$ + "' AND AR_INV_NO='"+ invoice_no$ +"'"
+rem     else
+rem         sql$="SELECT CUSTOMER_ID, NAME AS CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, ADDR_LINE_4, CITY, ZIP_CODE, CNTRY_ID FROM OPE_ORDSHIP WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND ORDER_NO='"+ order_no$ +"'"
+rem     endif
+    sqlRs! = BBjAPI().createSQLRecordSet(url$,mode$,sql$)
     sqlRd! = sqlRs!.getCurrentRecordData()
 
+    salutation$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_4"),3)
+    addr_line1$ = cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)
+    if salutation$ = "HERR" OR salutation$ = "FRAU" then
+        addr_line1$ = addr_line1$ + " " + cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)
+    else
+        addr_line2$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)
+    endif
+    addr_line3$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)
+    addr_line4$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)
+    addr_line5$ = cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3)
+
     i=1
-    if cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("CUSTOMER_NAME"))
+    if addr_line1$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line1$)
         i=i+1
     endif
-    if cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_1"))
+    if addr_line2$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line2$)
         i=i+1
     endif
-    if cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_2"))
+    if addr_line3$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line3$)
         i=i+1
     endif
-    if cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_3"))
+    if addr_line4$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line4$)
         i=i+1
     endif
-    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3))
+    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line5$)
+
+    countryId$ = cvs(sqlRd!.getFieldValue("CNTRY_ID"),3)
 endif
 
 rem Get Ship To address from Customer Ship To table
 if shipto_type$="S" then
-    sql$="SELECT CUSTOMER_ID, CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, CITY, STATE_CODE, ZIP_CODE FROM ARM_CUSTSHIP WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND SHIPTO_NO='"+ shipto_no$ +"'"
-    sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
+    sql$="SELECT CUSTOMER_ID, NAME AS CUSTOMER_NAME, ADDR_LINE_1, ADDR_LINE_2, ADDR_LINE_3, ADDR_LINE_4, CITY, STATE_CODE, ZIP_CODE, CNTRY_ID FROM ARM_CUSTSHIP WHERE FIRM_ID='" + firm_id$ + "' AND CUSTOMER_ID='" + customer_id$ + "' AND SHIPTO_NO='"+ shipto_no$ +"'"
+    sqlRs! = BBjAPI().createSQLRecordSet(url$,mode$,sql$)
     sqlRd! = sqlRs!.getCurrentRecordData()
+
+    salutation$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_4"),3)
+    addr_line1$ = cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)
+    if salutation$ = "HERR" OR salutation$ = "FRAU" then
+        addr_line1$ = addr_line1$ + " " + cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)
+    else
+        addr_line2$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)
+    endif
+    addr_line3$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)
+    addr_line4$ = cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)
+    addr_line5$ = cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3)
 
     i=1
-    if cvs(sqlRd!.getFieldValue("CUSTOMER_NAME"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("CUSTOMER_NAME"))
+    if addr_line1$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line1$)
         i=i+1
     endif
-    if cvs(sqlRd!.getFieldValue("ADDR_LINE_1"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_1"))
+    if addr_line2$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line2$)
         i=i+1
     endif
-    if cvs(sqlRd!.getFieldValue("ADDR_LINE_2"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_2"))
+    if addr_line3$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line3$)
         i=i+1
     endif
-    if cvs(sqlRd!.getFieldValue("ADDR_LINE_3"),3)<>"" then
-        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), sqlRd!.getFieldValue("ADDR_LINE_3"))
+    if addr_line4$ > "" then
+        data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line4$)
         i=i+1
     endif
-    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), cvs(sqlRd!.getFieldValue("ZIP_CODE"),3)+" "+cvs(sqlRd!.getFieldValue("CITY"),3))
+    data!.setFieldValue("SHIP_ADDR_LINE_"+str(i), addr_line5$)
+
+    countryId$ = cvs(sqlRd!.getFieldValue("CNTRY_ID"),3)
 endif
 
-sql$="SELECT MESSAGE_TEXT FROM OPC_MSG_DET WHERE FIRM_ID='" + firm_id$ + "' AND MESSAGE_CODE='" + message_code$ + "'"
-sqlRs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
 
-message$ = ""
-if !(sqlRs!.isEmpty()) then
-    num_line = sqlRs!.getRecordCount()
-    for i=1 to num_line-1
-        sqlRd! = sqlRs!.getCurrentRecordData()
-        message$ = message$ + sqlRd!.getFieldValue("MESSAGE_TEXT") + $0D$
-        sqlRs!.next()
-    next i
-    sqlRd! = sqlRs!.getCurrentRecordData()
-    message$ = message$ + sqlRd!.getFieldValue("MESSAGE_TEXT") + $0D$
-endif
-data!.setFieldValue("MESSAGE", message$)
+
+rem Calculates Total Due
+total = sub_total + num(data!.getFieldValue("FREIGHT_AMT")) + paym_fee
+
+data!.setFieldValue("TOTAL", str(total))
+
 
 rs!.insert(data!)
 
+
+sp_end:
 rem Tell the stored procedure to return the result set.
 sp!.setRecordSet(rs!)
-

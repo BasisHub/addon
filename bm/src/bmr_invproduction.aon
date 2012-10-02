@@ -35,8 +35,9 @@ rem --- Retrieve sysinfo data
 
 rem --- see if batching
 
+	call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
     batch_no$=stbl("+BATCH_NO")
-    process_id$=stbl("+PROCESS_ID") 
+    process_id$=stbl("+PROCESS_ID")
 
 rem --- Prepare for call to bmc_explodephantoms.aon
 
@@ -57,9 +58,11 @@ rem --- Open/Lock files
 	open_tables$[9]="IVC_WHSECODE",open_opts$[9]="OTA"
 	open_tables$[10]="IVS_PARAMS",open_opts$[10]="OTA"
 	open_tables$[11]="GLS_PARAMS",open_opts$[11]="OTA"
+
+	if num(batch_no$)=0 open_opts$[1]=open_opts$[1]+"L";rem lock if not batching
 	
 	gosub open_tables
-	
+
 	bme01_dev=num(open_chans$[1])
 	bmm01_dev=num(open_chans$[2])
 	bmm02_dev=num(open_chans$[3])
@@ -88,6 +91,40 @@ rem --- Dimension string templates
 	template$[7]=open_tpls$[6]; rem bms01a
 	template$[15]=open_tpls$[3]; rem bmm02a
 	template$[16]=open_tpls$[11]; rem gls01a
+
+rem --- Is General Ledger installed and being used?
+ 
+	application$="BM"
+	gl$="N"
+	status=0
+	source$=pgm(-2)
+	call pgmdir$+"glc_ctlcreate.aon",err=*next,
+:				source$,application$,glw11$,gl$,status
+	if status 
+		goto std_exit_no_update
+	endif
+
+rem --- Additional file opens
+
+	num_files=3
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLM_ACCT",open_opts$[1]="OTA"
+	open_tables$[2]="GLE_DAILYDETAIL",open_opts$[2]="OTA"
+	open_tables$[3]="GLW_DAILYDETAIL",open_opts$[3]="OTA"
+
+	if gl$="Y" gosub open_tables
+	if status goto std_exit_no_update
+
+	glm01_dev=num(open_chans$[1])
+	glt04_dev=num(open_chans$[2])
+	glw11_dev=num(open_chans$[3])
+ 
+rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+ 
+if gl$="Y"
+    rec_pfx$=firm_id$+process_id$+batch_no$
+    call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+endif
 
 rem --- Retrieve parameter records
 
@@ -154,6 +191,10 @@ rem --- Init Data
 	dim a[1],s[10],k[11],lx[11],sub[9],b1$(60),c1$(64)
 	headings$[0]=h1$
 	headings$[1]=h2$,errors=0
+	headings$[2]="[HEADER]"
+	
+	if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"
+
 	call pgmdir$+"adc_getmask.aon","","IV","A",imask$,m1$,0,m1
 	call pgmdir$+"adc_getmask.aon","","IV","U",imask$,m2$,0,m2
 	call pgmdir$+"adc_getmask.aon","","IV","C",imask$,m3$,0,m3
@@ -266,7 +307,7 @@ rem ---  column heading
 
 rem --- Initial Read
 
-        read (bme01_dev,key=firm_id$,dom=*next)
+        read (bme01_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
         bme01a_key$=key(bme01_dev,end=no_data)
         if pos(firm_id$=bme01a_key$)<>1 then goto no_data
 
@@ -279,6 +320,7 @@ rem --- Heading Read
 rem --- Breaks
 
         if bme01a.firm_id$<>firm_id$ then break; rem " --- Company"
+		if bme01a.batch_no$<>batch_no$ then break; rem "--- Batch Number"
         if bme01a.warehouse_id$<>t0$ then gosub warehouse; rem " --- Warehouse"
         if bme01a.prod_date$<>t1$ then gosub date_sub; rem " --- Production Date"
         if bme01a.bm_reference$<>t2$ then gosub reference; rem " --- Reference Number"
@@ -406,6 +448,7 @@ done: rem --- Totals
         gosub warehouse
         if o1<>0 or o2$<>"" or div0<>0 then 
             BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+			HdrVect!.addItem(Translate!.getTranslation("AON_FOR_WAREHOUSE_")+h3$)
             if o1<>0 then
                 xwk=fnblank(21)
                 OutVect!.addItem(Translate!.getTranslation("AON_***_MISSING_WAREHOUSE_RECORDS,_CAN_NOT_PROCEED_WITH_UPDATE_AT_THIS_TIME"))
@@ -428,6 +471,7 @@ done: rem --- Totals
 
         if short<>0 then
             BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+			HdrVect!.addItem(Translate!.getTranslation("AON_FOR_WAREHOUSE_")+h3$)
             xwk=fnblank(11)
             OutVect!.addItem(Translate!.getTranslation("AON_***_WARNING_-_AMOUNTS_IN_THE_SHORTAGE_COLUMN_WILL_CREATE_NEGATIVE_ON_HAND_BALANCES_IN_INVENTORY."))
             xwk=fnblank(8)
@@ -449,16 +493,14 @@ done: rem --- Totals
 
 no_data: rem --- No Data
 
-        t9$="E"
-        xwk=fnblank(10)
-        OutVect!.addItem("")
-        OutVect!.addItem(Translate!.getTranslation("AON_***_NOTHING_TO_REPORT_***"))
-        OutVect!.addItem(8)
-        goto std_exit
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
 
 date_heading: rem --- Date Heading
 
         BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+		HdrVect!.addItem(Translate!.getTranslation("AON_FOR_WAREHOUSE_")+h3$)
         OutVect!.addItem(Translate!.getTranslation("AON_PRODUCTION_DATE:_")+fndate$(t1$))
         xwk=fnblank(19)
         if glstatus then call pgmdir$+"glc_datewarn.aon",printer_dev,t1$,glstatus,l,errors,status   
@@ -583,7 +625,9 @@ warehouse: rem --- Warehouse
         h3$=Translate!.getTranslation("AON_NOT_ON_FILE"),t2$=bme01a.bm_reference$
         find record (ivm10c_dev,key=firm_id$+"C"+bme01a.warehouse_id$,dom=call_pgm) ivm10c$
         h3$=cvs((ivm10c.warehouse_id$)+" "+ivm10c.short_name$(1,20),2)
-        headings$[2]=Translate!.getTranslation("AON_FOR_WAREHOUSE_")+h3$
+		BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+		HdrVect!.addItem(Translate!.getTranslation("AON_FOR_WAREHOUSE_")+h3$)
+
 call_pgm:
         if gl$="Y" then call pgmdir$+"glc_datecheck.aon",t1$,"N",period$,year$,glstatus
         return
@@ -893,7 +937,7 @@ std_exit_no_update:
     if num(batch_no$)<>0
         unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
         lock_status$=""
-        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chan,rd_table_chans$[all],lock_status$
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
     endif
 	
 std_exit: rem --- Standard program end (01Mar2006)

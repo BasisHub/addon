@@ -42,8 +42,8 @@ rem --- Retrieve key templates
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",sft01a_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_CLSOPRTR","PRIMARY",sft03a_key_tpl$,rd_table_chans$[all],status$
 
-        dim sft01a_key$:sft01a_key_tpl$
-        dim sft03a_key$:sft03a_key_tpl$
+        dim opentran_key$:sft01a_key_tpl$
+        dim closedtran_key$:sft03a_key_tpl$
 
 rem --- Assign Title, Record, and keys
         if sequence$="W" 
@@ -55,7 +55,7 @@ rem --- Assign Title, Record, and keys
             keynum$="PRIMARY"
         endif
         if sequence$="B"
-            h3$="Bill Number Sequence"
+            h3$="Bill Number Sequence for Warehouse "+whse$
             beging$=billfrom$
             ending$=billthru$
             dim key_tpl$:sfe03c_key_tpl$
@@ -86,7 +86,7 @@ rem --- Assign Title, Record, and keys
         if pos("P"=option$)>0 then let h4$=h4$+"Planned/"
         if pos("Q"=option$)>0 then let h4$=h4$+"Quoted/"
         h4$=h4$(1,len(h4$)-1)
-        if beging$<> "" h4$=h4$+" Beginning With "+cvs(beging$,2) else h4$=h4$+" Beginning With First "
+        if beging$<> "" h4$=h4$+" Beginning With "+cvs(beging$,2) else h4$=h4$+" Beginning With First"
         if ending$<> "" h4$=h4$+" and Ending With "+ending$ else h4$=h4$+" and Ending with Last "
 
         if closedate$<>"" then let h6$="Work In Process As Of "+fndate$(closedate$) else let h6$=""
@@ -107,13 +107,13 @@ rem --- Column Headings
 
         columns$[0,0]="WO^Number",        columns$[0,1]="C",columns$[0,2]="20"
         columns$[1,0]="Date^Opened",      columns$[1,1]="C",columns$[1,2]="8"
-        columns$[2,0]="WO Type",          columns$[2,1]="C",columns$[2,2]="8"
+        columns$[2,0]="WO^Type",          columns$[2,1]="C",columns$[2,2]="8"
         columns$[3,0]="Ct",               columns$[3,1]="C",columns$[3,2]="3"
         columns$[4,0]="St",               columns$[4,1]="C",columns$[4,2]="3"
         columns$[5,0]="Start^Date",       columns$[5,1]="C",columns$[5,2]="8"
-        columns$[6,0]="Comp Date",        columns$[6,1]="C",columns$[6,2]="8"
-        columns$[7,0]="Close Quan",       columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$,columns$[7,10]="T"
-        columns$[8,0]="Close Value",      columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m1$,columns$[8,10]="T"
+        columns$[6,0]="Comp^Date",        columns$[6,1]="C",columns$[6,2]="8"
+        columns$[7,0]="Close^Quan",       columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$,columns$[7,10]="T"
+        columns$[8,0]="Close^Value",      columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m1$,columns$[8,10]="T"
         columns$[9,0]="Description",      columns$[9,1]="C",columns$[9,2]="25"
         columns$[10,0]="Bill No",         columns$[10,1]="C",columns$[10,2]="8"
         columns$[11,0]="Customer^Number", columns$[11,1]="C",columns$[11,2]="8"
@@ -138,7 +138,19 @@ rem --- Main Read
             if sequence$="B" and whse$<>"" then if key_tpl.warehouse_id$>whse$ break
         endif
 
-        if sequence$<>"W" then 
+		rem --- If by Cust make sure WO is linked to a customer
+			if sequence$="C" and (cvs(key_tpl.customer_id$,2))="" then
+				read (sfe01a_dev)
+				continue
+			endif
+
+		rem --- If by Bill make sure WO is for a bill
+			if sequence$="B" and (cvs(key_tpl.item_id$,2))="" then
+				read (sfe01a_dev)
+				continue
+			endif
+        
+		if sequence$<>"W" then 
             if sequence$="T" data1$=key_tpl.wo_type$
             if sequence$="C" data1$=key_tpl.customer_id$
             if sequence$="B" data1$=key_tpl.item_id$
@@ -147,7 +159,9 @@ rem --- Main Read
         endif
 
         check_status:
+			accum_cost=0
             read record (sfe01a_dev,key=key_tpl$,knum=keynum$,dom=*continue) sfe01a$
+			
             if closedate$<>"" and sfe01a.opened_date$>closedate$ then continue
             if pos("P"=option$)<=0 or sfe01a.wo_status$<>"P"
                 if pos("Q"=option$)<=0 or sfe01a.wo_status$<>"Q"
@@ -174,13 +188,17 @@ rem --- Main Read
 
             rem --- Calculate Actuals
 
-                if sfe01a.wo_status$="C" and sfe01a.closed_date$<=g9$ then gosub closed else gosub not_closed
+                if sfe01a.wo_status$="C" and sfe01a.closed_date$<=g9$ then 
+					gosub closed 
+				else 
+					gosub not_closed
+				endif
                
             rem --- Print Closed Values
-                if pos("C"=option$)<=0 or sfe01a.wo_status$<>"C" 
+                if pos("C"=option$)<=0 and sfe01a.wo_status$<>"C" 
                     rem --- Reduce By Closed Amount
-                    if closedate$="" then let sfe01a.reserved_num=sfe01a.reserved_num-sfe01a.cls_cst_todt
-                    if sfe01a.closed_date$<=closedate$ then let sfe01a.reserved_num=sfe01a.reserved_num-sfe01a.cls_cst_todt
+                    if closedate$="" then let accum_cost=accum_cost-sfe01a.cls_cst_todt
+                    if sfe01a.closed_date$<=closedate$ then let accum_cost=accum_cost-sfe01a.cls_cst_todt
                 endif
 
     rem --- Print
@@ -191,15 +209,15 @@ rem --- Main Read
             if sfe01a.wo_status$="C" then let stat$="*Closed*" 
             if sfe01a.wo_status$="P" then let stat$="*Plannd*" 
             if sfe01a.wo_status$="Q" then let stat$="*Quoted*"  
-            if sfe01a.wo_status$="C" then OutVect!.addItem(stat$) else OutVect!.addItem("")
+            if sfe01a.wo_status$="C" then OutVect!.addItem(stat$) else OutVect!.addItem(fndate$(sfe01a.opened_date$))
         endif
             OutVect!.addItem(sfe01a.wo_type$)
             OutVect!.addItem(sfe01a.wo_category$)
             OutVect!.addItem(sfe01a.wo_status$)
             OutVect!.addItem(fndate$(sfe01a.eststt_date$))
-        if pos(sfe01a.wo_status$="CPQ")=0 then OutVect!.addItem(fndate$(sfe01a.estcmp_date$)) else OutVect!.addItem(fndate$(sfe01a.closed_date$))
+        if pos(sfe01a.wo_status$="C")=0 then OutVect!.addItem(fndate$(sfe01a.estcmp_date$)) else OutVect!.addItem(fndate$(sfe01a.closed_date$))
             OutVect!.addItem(str(sfe01a.sch_prod_qty))
-            OutVect!.addItem(str(sfe01a.reserved_num))
+            OutVect!.addItem(str(accum_cost))
         if sfe01a.wo_category$="I" then 
             OutVect!.addItem(d1$(1,desclen))
             OutVect!.addItem(sfe01a.item_id$)
@@ -220,7 +238,7 @@ rem --- Main Read
         endif
         
         t[0]=t[0]+sfe01a.sch_prod_qty
-        t[1]=t[1]+sfe01a.reserved_num,u[0]=u[0]+sfe01a.sch_prod_qty,u[1]=u[1]+sfe01a.reserved_num,l=l+1,l0=l0+1
+        t[1]=t[1]+accum_cost,u[0]=u[0]+sfe01a.sch_prod_qty,u[1]=u[1]+accum_cost,l=l+1,l0=l0+1
 
     wend
 
@@ -230,9 +248,9 @@ done: rem --- End
         if sequence$<>"W" then gosub sub_total
         xwk=fnblank(13)
         TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
-        xwk=fnblank(5)
+        xwk=fnblank(6)
         OutVect!.addItem("Grand Total: ")
-        xwk=fnblank(2)
+        xwk=fnblank(1)
         OutVect!.addItem(str(u[1]))
         xwk=fnblank(4)
         goto std_exit
@@ -263,12 +281,12 @@ sub_total: rem --- First Sub Total
             TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
             OutVect!.addItem(h9$)
             OutVect!.addItem(t0$)
+			xwk=fnblank(4)
             OutVect!.addItem("Total: ")
             if sequence$="B" then 
-                xwk=fnblank(4)
                 OutVect!.addItem(str(t[0]))
             else
-                xwk=fnblank(5)
+                xwk=fnblank(1)
             endif
             OutVect!.addItem(str(t[1]))
             xwk=fnblank(17)
@@ -299,20 +317,30 @@ sub_total: rem --- First Sub Total
 
 closed: rem --- Process Closed Work Order Transactions
 
-    wotran_dev=sft03a_dev
+    wotran_dev=sft03a_dev 
+	dim closedtran$:sft03_tpls$
+	
     while more
         k1$=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$
         read (wotran_dev,key=k1$,dom=*next)
         while more
-            sft03a_key$=key(wotran_dev,end=*break)
-            k5$=sft03a_key.firm_id$+sft03a_key.wo_location$+sft03a_key.wo_no$
+            closedtran_key$=key(wotran_dev,end=*break)
+            k5$=closedtran_key.firm_id$+closedtran_key.wo_location$+closedtran_key.wo_no$
             if k5$<>k1$ then break
-            if closedate$<>"" then if sft03a_key.trans_date$>closedate$ then break
-            read record (wotran_dev,key=sft03a_key$) sft03a$
-            sfe01a.reserved_num=sfe01a.reserved_num+sft03a.ext_cost
+            if closedate$<>"" then if closedtran_key.trans_date$>closedate$ then break
+            read record (wotran_dev,key=closedtran_key$) closedtran$
+            accum_cost=accum_cost+closedtran.ext_cost
         wend
-        if wotran_dev=sft03a_dev then let wotran_dev=sft23a_dev;continue
-        if wotran_dev=sft23a_dev then let wotran_dev=sft33a_dev;continue
+        if wotran_dev=sft03a_dev then 
+			let wotran_dev=sft23a_dev
+			dim closedtran$:sft23_tpls$
+			continue
+		endif
+        if wotran_dev=sft23a_dev then 
+			let wotran_dev=sft33a_dev
+			dim closedtran$:sft33_tpls$
+			continue
+		endif
         break
     wend
   return
@@ -320,19 +348,29 @@ closed: rem --- Process Closed Work Order Transactions
 not_closed: rem --- Process Work Order Transactions
 
     wotran_dev=sft01a_dev
+	dim opentran$:sft01_tpls$
+	
     while more
         k1$=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$
         read (wotran_dev,key=k1$,dom=*next)
         while more
-            sft01a_key$=key(wotran_dev,end=*break)
-            k5$=sft01a_key.firm_id$+sft01a_key.wo_location$+sft01a_key.wo_no$
+            opentran_key$=key(wotran_dev,end=*break)
+            k5$=opentran_key.firm_id$+opentran_key.wo_location$+opentran_key.wo_no$
             if k5$<>k1$ then break
-            if closedate$<>"" then if sft01a_key.trans_date$>closedate$ then break
-            read record (wotran_dev,key=sft01a_key$) sft01a$
-            sfe01a.reserved_num=sfe01a.reserved_num+sft01a.ext_cost
+            if closedate$<>"" then if opentran_key.trans_date$>closedate$ then break
+            read record (wotran_dev,key=opentran_key$) opentran$
+            accum_cost=accum_cost+opentran.ext_cost
         wend
-        if wotran_dev=sft01a_dev then let wotran_dev=sft21a_dev; continue
-        if wotran_dev=sft21a_dev then let wotran_dev=sft31a_dev; continue
+        if wotran_dev=sft01a_dev then 
+			let wotran_dev=sft21a_dev
+			dim opentran$:sft21_tpls$
+			continue
+		endif
+        if wotran_dev=sft21a_dev then 
+			let wotran_dev=sft31a_dev
+			dim opentran$:sft31_tpls$
+			continue
+		endif
         break
     wend
  return
@@ -424,20 +462,24 @@ std_error: rem --- Standard error handler (01Apr2006)
 
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
-:                                str(err:"000"),rd_err_text$,rd_err_act$
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
     if pos("EXIT"=rd_err_act$) goto std_error_exit
     if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
     if pos("RETRY"=rd_err_act$) retry
+
 std_error_exit:
+    
     master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_error_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
 std_error_release:
+
     status=999
-    if pgm(-1)<>pgm(-2) exit
+    if pgm(-1)<>pgm(-2) exit 
     release
 
 rem #endinclude std_error.src
@@ -450,15 +492,19 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
     call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
 :                                   str(err:"000"),rd_err_text$,rd_err_act$
+
 std_missing_params_exit:
+    
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
     if cvs(sysinfo.user_id$,2)=master_user$ escape
+    
 std_missing_params_release:
+
     status=999
-    if pgm(-1)<>pgm(-2) exit
+    if pgm(-1)<>pgm(-2) exit 
     release
 
 rem #endinclude std_missing_params.src
@@ -467,6 +513,7 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src

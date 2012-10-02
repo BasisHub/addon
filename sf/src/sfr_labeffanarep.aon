@@ -97,7 +97,7 @@ rem --- Parameters
 rem --- Init Data
 
     h0=132
-    h=0,headings=3,when$=sysinfo.system_date$,clock$=""
+    h=0,headings=4,when$=sysinfo.system_date$,clock$=""
     dim headings$[headings](h0)
     headings$[0]=n1$
     headings$[1]=n3$,l9=59,l=l9+1
@@ -125,6 +125,7 @@ rem --- Find last (prior) Period End Date
     curper=num(sfs01a.current_per$)
     priorper=curper-1
     curyear=num(sfs01a.current_year$)
+	prioryear=curyear
     if priorper=0 then 
         priorper=num(gls01a.total_pers$)
         prioryear=curyear-1
@@ -133,10 +134,7 @@ rem --- Find last (prior) Period End Date
 
 rem --- Sort It Here
 
-    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-    if status then goto std_exit
     call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
-    dim a[11]
     read (sfe01_dev,key=firm_id$,dom=*next)
 
 rem --- W/O Header Here
@@ -155,18 +153,22 @@ rem --- W/O Header Here
                 if sfe01a.closed_date$<datethru$ then continue
             endif
         endif
-        if catagory$<>"" then 
-            if pos(sfe01a.wo_category$=catagory$)=0 then continue
+        if category$<>"" then 
+            if pos(sfe01a.wo_category$=category$)=0 then continue
         endif
 
 rem --- Include It This Time
+
         if sfe01a.wo_status$="C" and sfe01a.closed_date$<=priorperenddt$ then 
             trans_dev=sft03a_dev 
             dim trans_key$:sft03_key_tpl$
+			dim wot0103a$:fattr(sft03a$)
         else 
             trans_dev=sft01_dev
             dim trans_key$:sft01_key_tpl$
+			dim wot0103a$:fattr(sft01a$)
         endif
+		dim sfw05a$:fattr(sfw05a$)
         sfw05a.firm_id$=firm_id$
         sfw05a.wo_no$=cvs(sfe01a.wo_no$,3)
         if wotype$="Y" then 
@@ -175,10 +177,10 @@ rem --- Include It This Time
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         
 rem --- Standards Here
-        read (sfe02_dev,key=sfe01a.firm_id$+"  "+sfe01a.wo_no$+"A",dom=*next)
+        read (sfe02_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
         while more
             k2$=key(sfe02_dev,end=*break)
-            if pos(sfe01a.firm_id$+"  "+sfe01a.wo_no$=k2$)<>1 then break
+            if pos(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$=k2$)<>1 then break
             read record (sfe02_dev,key=k2$) sfe02a$
             if sfe02a.line_type$<>"S" then continue
             sfw05a.op_code$=cvs(sfe02a.op_code$,3)
@@ -193,17 +195,17 @@ rem --- Standards Here
 
 rem --- Actuals Here
 
-        read (trans_dev,key=sfe01a.firm_id$+"  "+sfe01a.wo_no$+datefrom$,dom=*next)
-       
+        read (trans_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$+datefrom$,dom=*next)
+
         while more
             trans_key$=key(trans_dev,end=*break)
-            if pos(sfe01a.firm_id$+"  "+sfe01a.wo_no$=trans_key$)<>1 then break
+            if pos(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$=trans_key$)<>1 then break
             if datethru$<>"" then 
                 if trans_key.trans_date$>datethru$ then break
             endif
             call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
             read record (trans_dev,key=trans_key$) wot0103a$
-            sfw05a.op_code$=sfe02a.require_date$
+            sfw05a.op_code$=wot0103a.op_code$
             find record (sfw05a_dev,key=sfw05a.firm_id$+sfw05a.op_code$+sfw05a.wo_type$+sfw05a.wo_no$,dom=*next) sfw05a$
             if pos(" "<>sfw05a.trans_date_01$)=0 then 
                 sfw05a.trans_date_01$=trans_key.trans_date$
@@ -211,9 +213,9 @@ rem --- Actuals Here
             if trans_key.trans_date$>sfw05a.trans_date_02$ then 
                 sfw05a.trans_date_02$=trans_key.trans_date$
             endif
-            sfw05a.actual_hrs=sfw05a.actual_hrs+sfe02a.runtime_hrs
-            sfw05a.act_dir_tot=sfw05a.act_dir_tot+sfe02a.runtime_hrs*sfe02a.tot_std_cost
-            sfw05a.act_ovhd_tot=sfw05a.act_ovhd_tot+sfe02a.total_time-sfe02a.runtime_hrs*sfe02a.tot_std_cost
+            sfw05a.actual_hrs=sfw05a.actual_hrs+wot0103a.units
+            sfw05a.act_dir_tot=sfw05a.act_dir_tot+wot0103a.units*wot0103a.direct_rate
+            sfw05a.act_ovhd_tot=sfw05a.act_ovhd_tot+wot0103a.ext_cost-wot0103a.units*wot0103a.direct_rate
             write record (sfw05a_dev,key=sfw05a.firm_id$+sfw05a.op_code$+sfw05a.wo_type$+sfw05a.wo_no$) sfw05a$
         wend
 
@@ -224,8 +226,6 @@ rem --- Done..
 rem --- All Done
 
     run pgmdir$+"sfr_labeffanarep_o1.aon"
-    
-
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)

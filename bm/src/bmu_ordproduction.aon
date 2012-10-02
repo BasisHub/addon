@@ -25,24 +25,32 @@ rem --- Options
 	x$=stbl("+SYSINFO")                                                            
 	msg_tokens$[1]=x.task_desc$
 	gosub disp_message
-	if msg_opt$<>"Y" then goto std_exit
+	if msg_opt$<>"Y" then goto std_exit_no_update
+	
+rem --- Get Batch information for bme-01
+
+	proc_id$=stbl("+PROCESS_ID")
+	ord_batch$=stbl("+BATCH_NO")
+	x$=stbl("+BATCH_NO",fill(len(ord_batch$),"0"))
+	call stbl("+DIR_PGM")+"adc_getbatch.aon","BME_PRODUCT","",table_chans$[all]
+	inv_batch$=stbl("+BATCH_NO")
+	x$=stbl("+BATCH_NO",ord_batch$)
+	x$=stbl("+PROCESS_ID",proc_id$)
+
 	call pgmdir$+"adc_progress.aon","N","","","","",0,bme02_dev,1,meter_num,status
 	call stbl("+DIR_SYP")+"bac_key_template.bbj","BME_ORDER","PRIMARY",bme02a_key_tpl$,rd_table_chans$[all],status$
 	call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDDET","PRIMARY",ope11a_key_tpl$,rd_table_chans$[all],status$
 	dim bme02a_key$:bme02a_key_tpl$
 	dim ope11a_key$:ope11a_key_tpl$
 
-rem --- Init Read
-
-	read (bme02_dev,key=firm_id$,dom=*next)
-
  rem --- Main Read
 
 	while more
-
+		read (bme02_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
         bme02a_key$=key(bme02_dev,end=done)
         if pos(firm_id$=bme02a_key$)<>1 then break
         read record (bme02_dev) bme02a$
+		if bme02a.batch_no$<>batch_no$ then break
         call pgmdir$+"adc_progress.aon","S","","","",fndate$(bme02a.prod_date$)+" "+bme02a.customer_id$,0,0,1,meter_num,status
 
 rem --- Get Heading
@@ -78,6 +86,7 @@ rem --- Update
                 extract record (bme01_dev,key=bme01a_key$,dom=*next) bme01a$
                 bme01a.qty_ordered=bme01a.qty_ordered+x0
                 bme01a.total_cost=bme01a.total_cost+x1
+				bme01a.batch_no$=inv_batch$
                 bme01a$=field(bme01a$)
                 write record (bme01_dev,key=bme01a_key$) bme01a$
             wend
@@ -85,10 +94,17 @@ rem --- Update
 
 remove_datail: rem --- Remove Detail
 
-        remove (bme02_dev,key=bme02a_key$,dom=*continue)
+        remove (bme02_dev,key=firm_id$+bme02a.prod_date$+bme02a.customer_id$+bme02a.order_no$,dom=*continue)
     wend
 
 done: rem --- End
+
+	if gl$="Y"
+		call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+		call pgmdir$+"glc_ctlupdate.aon",status
+		call pgmdir$+"glc_ctldelete.aon",status
+	endif
+	call pgmdir$+"adc_batchdelete.aon",err=*next,status
 
 	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
 	call pgmdir$+"adc_batchdelete.aon",ignore_status
@@ -222,6 +238,22 @@ rem #endinclude std_missing_params.src
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+	
+std_exit_no_update:
+
+	if num(batch_no$)<>0
+		unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+		lock_status$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",
+:			"ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chan,
+:			rd_table_chans$[all],lock_status$
+	endif
+	
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

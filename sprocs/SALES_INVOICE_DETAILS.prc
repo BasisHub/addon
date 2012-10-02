@@ -18,7 +18,10 @@ rem ' Get the IN and IN/OUT parameters used by the procedure
 firm_id$=sp!.getParameter("FIRM_ID")
 customer_nbr$=sp!.getParameter("CUSTOMER_NBR")
 inv_nbr$ = sp!.getParameter("AR_INV_NBR")
+barista_wd$=sp!.getParameter("BARISTA_WD")
 
+sv_wd$=dir("")
+chdir barista_wd$
 
 rem ' set up the sql query
 sql$ = "SELECT SUBSTRING(t1.ORDDET_SEQ_REF, 10, 3) as line_number, t1.line_code, t1.item_id as item_number, t1.order_memo, t1.qty_shipped, t1.unit_price, t1.ext_price "

@@ -1,3 +1,10 @@
+[[OPS_PARAMS.ARAR]]
+rem --- Update post_to_gl if GL is uninstalled
+	if user_tpl.gl_installed$<>"Y" and callpoint!.getColumnData("OPS_PARAMS.POST_TO_GL")="Y" then
+		callpoint!.setColumnData("OPS_PARAMS.POST_TO_GL","N",1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
 [[OPS_PARAMS.ADIS]]
 
 rem --- Default Line Code is required when Line Code Entry is skipped
@@ -16,7 +23,9 @@ else
 	callpoint!.setTableColumnAttribute("OPS_PARAMS.LINE_CODE","MINL","0")
 endif
 [[OPS_PARAMS.AREC]]
-callpoint!.setColumnData("OPS_PARAMS.INV_HIST_FLG","Y")
+rem --- Init new record
+	callpoint!.setColumnData("OPS_PARAMS.INV_HIST_FLG","Y")
+	if user_tpl.gl_installed$="Y" then callpoint!.setColumnData("OPS_PARAMS.POST_TO_GL","Y")
 [[OPS_PARAMS.END_CMT_LINE.AVAL]]
 beg_cmt$=callpoint!.getColumnData("OPS_PARAMS.BEG_CMT_LINE")
 end_cmt$=callpoint!.getUserInput()
@@ -105,6 +114,8 @@ rem --- Retrieve parameter/application data
 	user_tpl.iv_installed$=iv$
 	user_tpl.bank_rec$=br$
 	user_tpl.gl_post$=gl_post$
+
+	if user_tpl.gl_installed$<>"Y" then callpoint!.setColumnEnabled("OPS_PARAMS.POST_TO_GL",-1)
 
 rem --- Resize window
 

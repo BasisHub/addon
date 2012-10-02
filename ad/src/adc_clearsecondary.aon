@@ -1,0 +1,102 @@
+rem adc - Clear Records In A File For A Partial Secondary Key
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 12.0.0 - 23Jan2012|
+rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- ACTION$  :  Action Code (Input)
+rem ---          :  N=No error on inability to lock file
+rem --- CHANNEL  :  Channel number of file to remove records from (Input)
+rem --- PARTIAL$ :  Partial key to remove (Input)
+rem --- KEY_NAME$:  Secondary Key Name
+rem --- STATUS   :  Status code (Returned)
+
+    seterr std_error
+    setesc std_error
+    enter action$,channel,partial$,key_name$,status
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Open/Lock Files
+
+    error=-1
+    fid$=fid(channel,err=std_exit)
+    lock (channel,err=nolock)
+    goto initializations
+
+nolock: rem --- Unable to lock target file
+
+    if pos("N"=action$)=0 
+    	error=err
+        status=999
+        msg_id$="AD_NOLOCK"
+        gosub disp_message
+        goto std_exit
+    endif
+
+initializations: rem --- Initializations
+
+    more=1
+
+rem --- Remove all records with the specified partial key
+
+	while more
+		read (channel,key=partial$,knum=key_name$,dom=*next)
+		k$=key(channel,end=*break)
+		if pos(partial$=k$)<>1 break
+		k$=key(channel,knum=0)
+		remove (channel,key=k$)
+	wend
+
+rem --- All done
+
+	goto std_exit
+    
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+
+	return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    unlock (channel,err=*next)
+rem    if pos("N"=action$)=0 and error>=0 then exit error
+rem --- rem'd the above because it causes control to go directly
+rem ---		to the seterr routine in the calling program, rather than returning to
+rem ---		the call line, where we can check the status flag and do accordingly
+    exit
+
+rem #endinclude std_exit.src
+
+    end

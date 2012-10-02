@@ -146,7 +146,7 @@ l630:
     files$[17]="sfe-23",ids$[17]="SFE_WOMATDTL"
     files$[18]="sfe-25",ids$[18]="SFE_WOMATISD"
     files$[19]="sfe-32",ids$[19]="SFE_WOSUBCNT"
-    files$[20]="sfm-07",ids$[20]="SFX_WOTRANXR"
+    rem files$[20] used to be sfm-07; no longer used
     files$[21]="sft-21",ids$[21]="SFT_OPNMATTR"
     files$[22]="sft-31",ids$[22]="SFT_OPNSUBTR"
     
@@ -161,13 +161,12 @@ l630:
     sfe23_dev=channels[17]
     sfe25_dev=channels[18]
     sfe32_dev=channels[19]
-    sfm07_dev=channels[20]
     sft21_dev=channels[21]
     sft31_dev=channels[22]
     
     dim sfe13a$:templates$[14],sfe15a$:templates$[15],
 :       sfe22a$:templates$[16],sfe23a$:templates$[17],sfe25a$:templates$[18],
-:       sfe32a$:templates$[19],sfm07a$:templates$[20],
+:       sfe32a$:templates$[19],
 :       sft21a$:templates$[21],sft31a$:templates$[22]
 
     if ls$="Y"     
@@ -188,12 +187,13 @@ rem --- Position file
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,poe04_dev,1,meter_num,status
     exit_ctl=1
-    read (poe04_dev,key=firm_id$,dom=*next)
 
 l1000: rem --- Read next receipt header
-
+    
+	read (poe04_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
     read record (poe04_dev,end=done) poe04a$
     if pos(firm_id$=poe04a$)<>1 goto done
+	if poe04a.batch_no$<>batch_no$ goto done
     call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
     if poe04a.firm_id$+poe04a.vendor_id$=apm01a.firm_id$+apm01a.vendor_id$ then goto l1100
     dim apm01a$:fattr(apm01a$)
@@ -452,7 +452,7 @@ l3500: rem --- Done with detail lines - Remove receipt header
     dim pot04a$:fattr(pot04a$)
     call stbl("+DIR_PGM")+"adc_copyfile.aon",poe04a$,pot04a$,status      
     write record (pot04_dev,key=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$) pot04a$
-remove (poe04_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
+	remove (poe04_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
 
 rem --- Done with details - Update PO Header
 
@@ -478,6 +478,13 @@ l3900: rem --- Loop back for next header
 done: rem --- All done
 
 rem --- escape gosub 11000; rem "ACS60 CLEAR PO080
+
+	if gl$="Y"
+		call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+		call pgmdir$+"glc_ctlupdate.aon",status
+		call pgmdir$+"glc_ctldelete.aon",status
+	endif
+	call pgmdir$+"adc_batchdelete.aon",err=*next,status
 
     goto std_exit
 
@@ -528,9 +535,12 @@ l6390:
     
 rem --- Standard G/L Posting Routine
 glpost:
-    if gl$<>"Y" goto l6990
-    call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,glt14_dev,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
-l6990:
+
+    if gl$="Y"
+		call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,glt14_dev,account$,when$,
+:			ref1$,ref2$,ref3$,memo$,amount,units,status
+	endif
+
     return
         
 disp_message:rem --- Display Message Dialog
@@ -685,6 +695,14 @@ std_exit: rem --- Standard program end (01Mar2006)
     gosub disp_message
 
 std_exit_no_update:
+
+	if num(batch_no$)<>0
+		unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+		lock_status$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",
+:		   "ADM_PROCBATCHES",unlock_key$,"X","",
+:		   rd_table_chan,rd_table_chans$[all],lock_status$
+	endif
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next

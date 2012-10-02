@@ -1,6 +1,7 @@
 rem Shop FLoor Calendar Maintenance
 rem Proprietary Software. AddonSoftware
 rem Program ID: sfm_calendar.aon  <Oct 4, 2011>
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 use java.util.Calendar
 use java.util.GregorianCalendar
@@ -171,9 +172,18 @@ rem --- get application record in order to get form icon
     prog_path$=adm_modules.dd_attr_icon$
     gosub resolve_path
     form_icon$=prog_path$
+    
+rem --- get mask for hrs_per_day
+
+    call pgmdir$+"adc_getmask.aon","","SF","H","",hr_mask$,0,hr_mask    
 
 rem --- Main Process
 
+	dim ctl_misc$[20]
+	form_id$=file_base$+"arc/sfm_calendar.arc"
+	call dir_syp$+"bam_controls.bbj",gui_dev,SysGUI!,form_id$,win_coord[all],Window!,"DISPLAY",open_chan$[all],ctl_misc$[all]
+	
+rem	gosub find_gaps1
     gosub find_gaps
     gosub get_calendar_boundaries
     gosub disp_win
@@ -209,17 +219,54 @@ event_ctl:rem --- Event Control
     LstGaps!.setCallback(LstGaps!.ON_LIST_SELECT,"find_gap")
 	OpCodes!.setCallback(OpCodes!.ON_LIST_SELECT,"change_op_code")
 	gridCal!.setCallback(gridCal!.ON_GRID_EDIT_STOP,"adjust_status")
+    gridCal!.setCallback(gridCal!.ON_GRID_DRAG_DROP,"adjust_status")
+	gridcal!.setCallback(gridCal!.ON_GRID_KEYPRESS,"start_stop_edit")
     SysGUI!.flushEvents()
 
     process_events,err=*same
 
+
+start_stop_edit:
+
+	dim gui_event$:tmpl(gui_dev)
+	dim notify_base$:noticetpl(0,0)
+	gui_event!=SysGUI!.getLastEvent()
+	c=gui_event!.getKeyCode()
+	row=gui_event!.getRow()
+	col=gui_event!.getColumn()
+
+	switch c    
+		case 10; rem --- Pressed <Enter>
+        case 332; rem --- Pressed <F2>
+			gridCal!.startEdit(row, col)            
+			break
+		case 27; rem --- Pressed <ESC>       
+			gridCal!.endEdit() 
+			break
+		case default       
+            break
+	swend
+	
+	return
+	
 change_op_code: rem Change Op Code and retrieve record
 rem maybe okay
 	op_code$=OpCodes!.getItemAt(num(OpCodes!.getSelectedIndex()))
 	op_code$=op_code$(1,pos(" - "=op_code$)-1)
 	try_yr=curr_yr
 	try_mo=curr_mo
-	gosub find_gaps
+rem	gosub find_gaps1
+    gosub find_gaps
+
+    LstGaps!=Window!.getControl(111)
+	LstGaps!.removeAllItems()
+    if GapVect!.size()
+        LstGaps!.insertItems(0,GapVect!)
+    else
+        LstGaps!.addItem(Translate!.getTranslation("AON_NONE"))
+    endif
+    LstGaps!.selectIndex(0)    
+    
 	gosub validate_date
 	gosub display_date
 	gosub display_calendar
@@ -272,7 +319,6 @@ adjust_date:rem --- Adjust Date
 
     gosub validate_date 
     gosub display_date
-	gosub find_gaps
     gosub display_calendar
     gosub display_data
 
@@ -288,7 +334,9 @@ display_date:rem --- Display Current Date
     if start_day<=0 start_day=start_day+7
 
     no_days=num(day_str$(curr_mo*2-1,2))
-    if mod(curr_yr,4)=0 and curr_mo=2 then no_days=29
+    if mod(curr_yr,4)=0 and curr_mo=2 then 
+        no_days=iff(Calendar!.isLeapYear(curr_yr),29,28)
+    endif
 
     FirstDate!.setText(first_date$)
     LastDate!.setText(last_date$)
@@ -319,18 +367,21 @@ display_calendar:rem --- Calculate And Display Calendar
     next curr_day
 
     GridCal!.setCellText(0,0,DayVect!)
+
     for x=0 to 11
         for y=0 to 6
 			if mod(x,2)=0
 				GridCal!.setCellBackColor(x,y,HdrColor!)
 				if GridCal!.getCellText(x,y)<>""
-					GridCal!.setCellStyle(x+1,y,GRID_STYLE_INPUTN)
-					GridCal!.setCellMask(x+1,y,"#,##0")
+					GridCal!.setCellStyle(x+1,y,GRID_STYLE_INPUTE)
+					rem GridCal!.setCellMask(x+1,y,hr_mask$)
 					GridCal!.setCellBackColor(x+1,y,DayColor!)
 				else
 					GridCal!.setCellBackColor(x+1,y,HdrColor!)
+                    GridCal!.setCellEditable(x,y,0)
+                    GridCal!.setCellEditable(x+1,y,0)
 				endif
-			endif
+            endif
         next y
     next x
     return
@@ -347,7 +398,7 @@ display_data:rem --- Display Data For Selected Op Code
 		if day_hrs=-1
 			useText$=""
 		else
-			useText$=str(day_hrs)
+			useText$=str(day_hrs:hr_mask$)+" hrs"
 		endif
         gosub set_Color_and_Text
     next curr_day
@@ -366,38 +417,42 @@ set_Color_and_Text:
 
 adjust_status:
 
-    Event!=SysGUI!.getLastEvent()
-	
+    Event!=SysGUI!.getLastEvent()	
     gui_event$=SysGUI!.getLastEventString()
-
 	row=Event!.getRow()
 	col=Event!.getColumn()
-	curr_day=num(gridCal!.getCellText(row-1,col))
-
-    sel_rows!=GridCal!.getSelectedRows()
-    sel_cols!=GridCal!.getSelectedColumns()
-
-    if sel_rows!.size()
-        for x=0 to sel_rows!.size()-1
-            for y=0 to sel_cols!.size()-1
-                useText$=gridCal!.getCellText(sel_rows!.get(x),sel_cols!.get(y))
-                if useText$<>""
-                    GridCal!.setCellText(sel_rows!.get(x),sel_cols!.get(y),useText$)
-                    gosub update_sfm_calendar
+    curr_day=num(gridCal!.getCellText(row-1,col))
+    gotNum=0
+    if curr_day<>0 
+        useText$=gridCal!.getCellText(row,col)
+        tlen=len(useText$)      
+        while 1
+            useText=num(useText$(1,tlen),err=*next);gotNum=1
+            if gotNum
+                useText$=str(useText:hr_mask$,err=err43)+" hrs"
+                break
+            else
+err43:            
+                tlen=tlen-1
+                if tlen<=1
+                    useText=0
+                    useText$="0.0 hrs"
+                    break
                 endif
-            next y
-        next x
-
+            endif
+        wend
+        gosub update_sfm_calendar
+        gridCal!.setCellText(row,col,useText$)
     endif
-
-    return
+  
+    return  
 
 update_sfm_calendar:
 
     dim sfm_calendar$:fattr(sfm_calendar$)
 
     extractrecord(sfm_calendar_dev,key=firm_id$+op_code$+str(curr_yr:"0000")+str(curr_mo:"00"))sfm_calendar$
-    field sfm_calendar$,"HRS_PER_DAY_"+str(curr_day:"00")=num(useText$)
+    field sfm_calendar$,"HRS_PER_DAY_"+str(curr_day:"00")=useText
     sfm_calendar$=field(sfm_calendar$)
     write record(sfm_calendar_dev)sfm_calendar$
     return
@@ -528,6 +583,151 @@ load_GapVect:
     gap_stop$=""
 
     return
+    
+load_GapVect2:rem --- this doesn't give me multiple gaps, so using same load_gapVect routine (above) as PO Calendar
+              rem --- could be it was trying to solve some other problem that I'm not aware of (1/31/12 CAH)
+	gap_size=GapVect!.size()
+	if gap_size>0
+		prev_date$=GapVect!.getItem(gap_size-1)
+	endif
+	if gap_size=0 or (gap_size>1 and prev_date$(20,4)+prev_date$(14,2)+prev_date$(17,2) <= gap_start$)
+		if cvs(gap_start$,3)<>"" and cvs(gap_stop$,3)<>""
+			GapVect!.addItem(fndate$(gap_start$)+" - "+fndate$(gap_stop$))
+		endif
+	endif
+    gap_start$=""
+    gap_stop$=""
+
+    return    
+
+find_gaps1: rem --- Display Unscheduled Gaps in Calendar
+	read record(sfm_calendar_dev,key=firm_id$+op_code$,dom=*next)
+	gap$=""
+	GapVect!=SysGUI!.makeVector()
+	call dir_syp$+"bac_key_template.bbj","SFM_OPCALNDR","PRIMARY",sfm_key$,table_chans$[all],status$
+
+	dim sfm_key$:sfm_key$
+rem --- Process First Month
+	sfm_key$=key(sfm_calendar_dev,end=line_5500)
+	if pos(firm_id$+op_code$=sfm_key$)<>1 goto line_5500
+	read record (sfm_calendar_dev,key=sfm_key$)sfm_calendar$
+	last_month$=sfm_calendar.year$+sfm_calendar.month$+str(sfm_calendar.days_in_mth:"00")
+	for x0=1 to sfm_calendar.days_in_mth
+		day_hrs=nfield(sfm_calendar$,"HRS_PER_DAY_"+str(curr_day:"00"))
+		if day_hrs>=0 exitto line_5150
+	next x0
+	
+line_5150:
+	for x1=x0 to sfm_calendar.days_in_mth
+			if nfield(sfm_calendar$,"HRS_PER_DAY_"+str(x1:"00"))<0 exitto line_5170
+	next x1
+	goto line_5200
+	
+line_5170:
+	gap$=gap$+k$(6,6)+str(x1:"00")
+	for x2=x1 to sfm_calendar.days_in_mth
+		if nfield(sfm_calendar$,"HRS_PER_DAY_"+str(x2:"00"))>=0 exitto line_5195
+	next x2
+	goto line_5200
+	
+line_5195:
+	gap$=gap$+sfm_calendar.year$_sfm_calendar.month$+str(x2-1:"00")
+	x0=x2
+	goto line_5150
+	
+line_5200: rem --- Process remaining months
+
+	dim sfm_key$:fattr(sfm_key$)
+	sfm_key$=key(sfm_calendar_dev,end=line_5400)
+	if pos(firm_id$+op_code$=sfm_key$)<>1 goto line_5400
+	x$=""
+	call "adc_daydates.aon",last_month$,x$,1
+	if x$(1,6)=sfm_key.year$+sfm_key.month$ goto line_5250
+	if mod(len(gap$),16)=0 gap$=gap$+x$
+	
+line_5250:
+	read record (sfm_calendar_dev,key=sfm_key$)sfm_calendar$
+	last_month$=sfm_calendar.year$+sfm_calendar.month$+str(sfm_calendar.days_in_mth:"00")
+	if mod(len(gap$),16)=0 and sfm_calendar.hrs_per_day_01=-1
+		gap$=gap$+sfm_calendar.year$+sfm_calendar.month$+"01"
+	else
+		goto line_5275
+	endif
+	for x=1 to sfm_calendar.days_in_mth
+		if nfield(sfm_calendar$,"HRS_PER_DAY_"+str(x:"00"))>=0 exitto line_5270
+	next x
+
+line_5270:
+	gap$=gap$+sfm_calendar.year$+sfm_calendar.month$+str(x-1:"00")
+	x0=x
+	goto line_5310
+ 
+line_5275:
+	if mod(len(gap$),16)<>0 and sfm_calendar.hrs_per_day_01>=0 
+		x$=""
+		call "adc_daydates.aon",sfm_calendar.year$+sfm_calendar.month$+"01",x$,-1
+		gap$=gap$+x$
+		x0=1
+		goto line_5310
+	endif
+	if mod(len(gap$),16)<>0 and sfm_calendar.hrs_per_day_01=-1 
+		gap$=gap$+sfm_calendar.year$+sfm_calendar.month$
+	else
+		goto line_5300
+	endif
+	for x=1 to sfm_calendar.days_in_mth
+		if nfield(sfm_calendar$,"HRS_PER_DAY_"+str(x:"00"))>=0 exitto line_5295
+	next x
+line_5295:
+	gap$=gap$+str(x-1:"00")
+	x0=x
+	goto line_5310
+
+line_5300:
+	x0=1
+	
+line_5310:
+	for x1=x0 to sfm_calendar.days_in_mth
+		if nfield(sfm_calendar$,"HRS_PER_DAY_"+str(x1:"00"))=-1 exitto line_5330
+	next x1
+	goto line_5200
+	
+line_5330:
+	gap$=gap$+sfm_calendar.year$+sfm_calendar.month$+str(x1:"00")
+	for x2=x1 to sfm_calendar.days_in_mth
+		if nfield(sfm_calendar$,"HRS_PER_DAY_"+str(x2:"00"))>=0 exitto line_5355
+	next x2
+	goto line_5200
+	
+line_5355:
+	gap$=gap$+sfm_calendar.year$+sfm_calendar.month$+str(x2-1:"00")
+	x0=x2
+	goto line_5310
+
+line_5400: rem --- Now Prepare To Display Gaps"
+	if mod(len(gap$),16)<>0 
+		gap$=gap$(1,len(gap$)-8)
+	endif
+	if len(gap$)=0 goto line_5690
+
+line_5500: rem --- Display Gaps
+	if len(gap$)=0 goto line_5690
+	GapVect!.addItem(fndate$(gap$(1,8))+" - "+fndate$(gap$(9,8)))
+	gap$=gap$(17)
+	goto line_5500
+
+line_5690:
+
+    LstGaps!=Window!.getControl(111)
+	LstGaps!.removeAllItems()
+    if GapVect!.size()
+        LstGaps!.insertItems(0,GapVect!)
+    else
+        LstGaps!.addItem(Translate!.getTranslation("AON_NONE"))
+    endif
+	LstGaps!.deselect()
+    LstGaps!.selectIndex(0)
+	return
 
 validate_date:
 rem --- see if curr_mo/curr_yr is in calendar; option to create if not
@@ -585,7 +785,7 @@ save_user_settings:rem --- Save Windows Coordinates
 
 open_tables:rem -----<Open Tables
 
-    call dir_syp$+"bac_open_tables.bbj",        open_beg,       open_end,       open_tables$[all],      open_opts$[all],        open_chans$[all],       open_tpls$[all],        table_chans$[all],      open_batch,     open_status$
+    call dir_syp$+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],table_chans$[all],open_batch,open_status$
 
     if open_status$<>""
         msg_id$="ENTRY_OPEN_ERROR"
@@ -599,17 +799,11 @@ open_tables:rem -----<Open Tables
 
 disp_message:rem --- Display Message Dialog
 
-    call dir_syp$+"bac_message.bbj",        msg_id$,        msg_tokens$[all],       msg_opt$,       table_chans$[all]
+    call dir_syp$+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
     return
 
 disp_win:rem --- Display Window
-
-    dim ctl_misc$[20]
-
-    form_id$=file_base$+"arc/sfm_calendar.arc"
-
-    call dir_syp$+"bam_controls.bbj",       gui_dev,        SysGUI!,        form_id$,       win_coord[all],     Window!,        "DISPLAY",      open_chan$[all],        ctl_misc$[all]
 
     childGrid!=Window!.getControl(100)
 
@@ -624,6 +818,7 @@ disp_win:rem --- Display Window
     LastDate!=Window!.getControl(110)
 
     LstGaps!=Window!.getControl(111)
+	LstGaps!.removeAllItems()
     if GapVect!.size()
         LstGaps!.insertItems(0,GapVect!)
     else
@@ -658,10 +853,13 @@ resize_win:rem --- Resize Window Contents
 		for rows=0 to 11
 			if mod(rows,2)=0
 				GridCal!.setRowHeight(rows,(GridCal!.getHeight()-GridCal!.getColumnHeaderHeight())/num_rows-18)
-				GridCal!.setRowEditable(rows, 0)
+				rem GridCal!.setRowEditable(rows, 0)
 			else
 				GridCal!.setRowHeight(rows,(GridCal!.getHeight()-GridCal!.getColumnHeaderHeight())/num_rows+16)
-				GridCal!.setRowEditable(rows, 1)
+				rem GridCal!.setRowEditable(rows, 1)
+				for col=0 to 6
+					GridCal!.setCellAlignment(rows, col, SysGUI!.GRID_ALIGN_RIGHT)
+				next col
 			endif
 		next rows
     return
@@ -673,17 +871,17 @@ def_grids:rem --- Define Grid
 
     col_size=int(childGrid!.getWidth()/7)
 
-    for curr_column=1 to no_columns
+    for curr_column=1 to def_output_cols
 
         attr_col$[curr_column,fnstr_pos("DVAR",attr_def_col$[0,0],5)]="COL_"+str(curr_column+1:"0")
         attr_col$[curr_column,fnstr_pos("LABS",attr_def_col$[0,0],5)]=columns$[curr_column]
         attr_col$[curr_column,fnstr_pos("DTYP",attr_def_col$[0,0],5)]="C"
         attr_col$[curr_column,fnstr_pos("CTLW",attr_def_col$[0,0],5)]=str(col_size)
-        attr_col$[0,1]=attr_col$[0,1]+pad("SUMMARY."+attr_col$[curr_column,fnstr_pos("DVAR",attr_def_col$[0,0],5)],40)
+        attr_col$[0,1]=attr_col$[0,1]+pad("SUMMARY."+attr_col$[curr_column,fnstr_pos("DVAR",attr_def_col$[0,0],5)],40)        
 
     next curr_column
 
-    call dir_syp$+"bam_grid_init.bbj",gui_dev,GridCal!,"NOSCROLL-COLH-LINES-VTOP-EDIT",num_rows,attr_def_col$[all],attr_col$[0,1],attr_col$[all]
+    call dir_syp$+"bam_grid_init.bbj",gui_dev,GridCal!,"NOSCROLL-COLH-LINES-VTOP-CELL-EDIT",num_rows,attr_def_col$[all],attr_col$[0,1],attr_col$[all]
     GridCal!.setFitToGrid(GridCal!.AUTO_RESIZE_LAST_COLUMN)
     GridCal!.setRowHeight(int((childGrid!.getHeight()-GridCal!.getColumnHeaderHeight())/num_rows))
 
@@ -691,6 +889,7 @@ def_grids:rem --- Define Grid
     GridCal!.setEditable(1)
     GridCal!.setMultipleSelection(GridCal!.FALSE)
     GridCal!.setHighlightMethod(GridCal!.GRID_HIGHLIGHT_OUTLINE)
+    GridCal!.setDragAccept(1)
 
     return
 
@@ -781,7 +980,7 @@ std_error: rem --- Standard error handler (01Apr2006)
     err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
-    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),                                str(err:"000"),err_text$,err_act$
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),str(err:"000"),err_text$,err_act$
     if pos("EXIT"=err_act$) goto std_error_exit
     if pos("ESCAPE"=err_act$) seterr 0;setesc 0
     if pos("RETRY"=err_act$) retry

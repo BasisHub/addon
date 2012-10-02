@@ -26,41 +26,66 @@ rem ---             [20] Installed for this firm (Y/N)
     setesc std_error
     enter module$,info$[all]
 
-rem --- Retrieve the program path
-
-    pgmdir$=stbl("+DIR_PGM",err=*next)
-
 rem --- Retrieve sysinfo data
 
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
+    key_mod$=module$
 
 rem --- Open/Lock files
 
-    files=7,begfile=1,endfile=files
+    files=3,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="gls_params",options$[1]="R",ids$[1]="GLS_PARAMS"; rem "R"=Required
-    files$[2]="ars_params",options$[2]="R",ids$[2]="ARS_PARAMS"
-    files$[3]="aps_params",options$[3]="R",ids$[3]="APS_PARAMS"
-    files$[4]="ivs_params",options$[4]="R",ids$[4]="IVS_PARAMS"
-    files$[5]="sas_params",options$[5]="R",ids$[5]="SAS_PARAMS"
-    files$[6]="adm_modules.dat",options$[6]="S",ids$[6]="ADM_MODULES";rem "S"=System file
-	files$[7]="bms_params",options$[7]="R",ids$[7]="BMS_PARAMS"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+    files$[1]="adm_modules.dat",options$[1]="S",ids$[1]="ADM_MODULES";rem "S"=System file
+    files$[2]="gls_params",options$[2]="R",ids$[2]="GLS_PARAMS"; rem "R"=Required
+    switch (BBjAPI().TRUE)
+        case module$ = "AP"
+            files$[3]="aps_params",options$[3]="F",ids$[3]="APS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "AR"
+            files$[3]="ars_params",options$[3]="F",ids$[3]="ARS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "BM"
+            files$[3]="bms_params",options$[3]="F",ids$[3]="BMS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "GL"
+            files$[3]="gls_params",options$[3]="F",ids$[3]="GLS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "IV"
+            files$[3]="ivs_params",options$[3]="F",ids$[3]="IVS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "OP"
+            rem --- ops_params is a child of ars_params
+            key_mod$="AR"
+            files$[3]="ars_params",options$[3]="F",ids$[3]="OPS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "PO"
+            files$[3]="pos_params",options$[3]="F",ids$[3]="POS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "SA"
+            files$[3]="sas_params",options$[3]="F",ids$[3]="SAS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case module$ = "SF"
+            files$[3]="sfs_params",options$[3]="F",ids$[3]="SFS_PARAMS"; rem "F"=Unnecessary file
+            break
+        case default
+            rem --- module not setup
+            files$[3]="",options$[3]="F",ids$[3]=""; rem "F"=Unnecessary file
+            break
+    swend
+    
+    rem --- NOTE: Must use adc_fileopen here instead of bac_open_tables in order to avoid
+    rem --- license nags when checking on modules that aren't installed.
+    call stbl("+DIR_PGM",err=*next)+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
-    gls01_dev=channels[1]
-    ars01_dev=channels[2]
-    aps01_dev=channels[3]
-    ivs01_dev=channels[4]
-    sas01_dev=channels[5]
-    adm04_Dev=channels[6]
-	bms01_dev=channels[7]
 
-    dim gls01a$:templates$[1]
-    dim adm04a$:templates$[6]
+    adm04_dev=channels[1]; dim adm04a$:templates$[1]
+    gls01_dev=channels[2]; dim gls01a$:templates$[2]
+    params_dev=channels[3]
+    if params_dev<>0 then dim params_tpl$:templates$[3]
 
 rem --- Initializations
 
@@ -84,41 +109,31 @@ rem --- Get application record
     if cvs(info$[5],2)="" info$[5]=fnglobal$("+DIR_DAT","./data/")
     info$[6]="./"+cvs(module$,8)+"/"
     info$[7]=fnglobal$("+DIR_PGM","./programs/")
-    info$[9]=adm04a.post_gl$
 
-rem --- Post to GL?
+rem --- Skip modules that don't post to GL
 
+    if pos(module$="DD GE SY AD MP SA",3) goto installed
+
+    if params_dev=0 goto installed; rem --- need to open and define proper parameter file
+
+rem --- Get parameter record for this module to see if it's posting to GL
+
+    find record (params_dev,key=firm_id$+key_mod$+"00",dom=installed)params_tpl$
+    if module$="GL" info$[19]="Y"
+    info$[9]=params_tpl.post_to_gl$
     if pos(info$[9]="YN")=0 info$[9]="Y"
-    if info$[9]="N" goto parameters
+
+rem --- Make sure GL is installed and allowing postings if module is posting to GL
+
+    if info$[9]="N" goto installed
     adm04a.sys_install$="N"
     find record (adm04_dev,key=stbl("+AON_APPCOMPANY",err=*next)+"GL ",dom=*next)adm04a$
     info$[9]=adm04a.sys_install$
-    if info$[9]="N" goto parameters
-    find record (gls01_dev,key=firm_id$+"GL00",dom=parameters)gls01a$
+    if pos(info$[9]="YN")=0 info$[9]="Y"
+    if info$[9]="N" goto installed
+    find record (gls01_dev,key=firm_id$+"GL00",dom=installed)gls01a$
     info$[19]="Y"
     if gls01a.gl_post_code$="N" info$[9]="N"
-
-parameters: rem --- Translate module to retrieve parameter record (if necessary)
-
-    parameters$=module$
-    if module$="AR" find_dev=ars01_dev
-    if module$="AP" find_dev=aps01_dev
-    if module$="GL" find_dev=gls01_dev
-    if module$="IV" find_dev=ivs01_dev
-    if module$="SA" find_dev=sas01_dev
-	if module$="BM" find_dev=bms01_dev
-    if module$="OP" parameters$="AR", find_dev=ars01_dev
-    if module$="PO" parameters$="IV", find_dev=ivs01_dev
-    if module$="MP" parameters$="IV", find_dev=ivs01_dev
-
-rem --- Get parameter record for this application
-
-    if pos(module$="DD GE SY AD ",3) goto installed
-
-    if find_dev=0 goto done;rem "need to open and define proper parameter file
-
-    find (find_dev,key=firm_id$+parameters$+"00",dom=done)
-    if parameters$="GL" info$[19]="Y"
 
 installed: rem --- Installed for this firm?
 
@@ -198,11 +213,9 @@ rem #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
 
-    close (gls01_dev,err=*next)
-    close (ars01_dev,err=*next)
-    close (aps01_dev,err=*next)
-    close (ivs01_dev,err=*next)
     close (adm04_dev,err=*next)
+    close (gls01_dev,err=*next)
+    close (params_dev,err=*next)
     exit
 
 rem #endinclude std_exit.src

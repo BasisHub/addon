@@ -26,7 +26,9 @@ rem --- Add grid to form for updating STBL's with paths
 	util.resizeWindow(Form!, SysGui!)
 
 	rem --- set callbacks - processed in ACUS callpoint
-	gridStbls!.setCallback(gridStbls!.ON_GRID_CELL_VALIDATION,"custom_event")
+	rem --- Currently ON_GRID_CELL_VALIDATION results in the loss of user input when they Run Process (F5)
+	rem --- before leaving the cell where text was entered. So don't use ON_GRID_CELL_VALIDATION for now.
+	rem	gridStbls!.setCallback(gridStbls!.ON_GRID_CELL_VALIDATION,"custom_event")
 [[ADX_UPDATESYN.ASIZ]]
 	gridStbls!=callpoint!.getDevObject("gridStbls")
 	gridStbls!.setSize(Form!.getWidth()-(gridStbls!.getX()*2),Form!.getHeight()-(gridStbls!.getY()+10))

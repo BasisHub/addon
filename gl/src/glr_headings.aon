@@ -62,11 +62,8 @@ rem --- Retrieve and update Financial Report Parameter record
 rem --- Initializations
 
     headmax=5
-    headings=0
     colmax=8
-    more=1
-    morecolumns=1
-    moreheadings=1
+    headings=0
     l9=59
     l=l9+1
     page=0
@@ -90,173 +87,157 @@ next_report: rem --- Read next Report Selections (gle-04/gle-05) record
 rem --- Other parameter settings
 
     width=132
-    dim h1$(width)
     
-    while more
-          k$=key(gle04_dev,end=std_exit)
-          if pos(firm_id$=k$)<>1 exitto std_exit
-          read record (gle04_dev) gle04a$
+    while 1
+        k$=key(gle04_dev,end=std_exit)
+        if pos(firm_id$=k$)<>1 exitto std_exit
+        read record (gle04_dev) gle04a$
 
-          rem --- create progress meter for next report  
-          call pgmdir$+"adc_progress.aon","N","","","","",0,gle04_dev,1,0,ignore_status
+        rem --- create progress meter for next report  
+        call pgmdir$+"adc_progress.aon","N","","","","",0,gle04_dev,1,0,ignore_status
 
-          rem --- Retrieve Financial Report Master (glm-12) record
+        rem --- Retrieve Financial Report Master (glm-12) record
 
-          glm12a.firm_id$=gle04a.firm_id$
-          glm12a.gl_rpt_no$=gle04a.gl_rpt_no$
-          glm12a.gl_rpt_line$="0000"
-          glm12_key$=glm12a.firm_id$+glm12a.gl_rpt_no$;rem not incl in key...+glm12a.gl_rpt_line$
-          find record (glm12_dev,key=glm12_key$,dom=*continue) glm12a$
-          m1$=glm12a.amount_mask$
-          m2$=glm12a.unit_mask$
-          m3$=glm12a.ratio_mask$
-          m4$=glm12a.percent_mask$
+        glm12a.firm_id$=gle04a.firm_id$
+        glm12a.gl_rpt_no$=gle04a.gl_rpt_no$
+        glm12a.gl_rpt_line$="0000"
+        glm12_key$=glm12a.firm_id$+glm12a.gl_rpt_no$;rem not incl in key...+glm12a.gl_rpt_line$
+        find record (glm12_dev,key=glm12_key$,dom=*continue) glm12a$
+        m1$=glm12a.amount_mask$
+        m2$=glm12a.unit_mask$
+        m3$=glm12a.ratio_mask$
+        m4$=glm12a.percent_mask$
 
-          rem --- Retrieve Financial Report Headings (glm-13) record for this report
-          rem --- and build RPT_HEAD$ which is a string of all report headings
+        dim heading$[headmax-1]
+        dim headings$[headmax-1]
+        dim col_hdg$[colmax]
+        dim col_hdg_align$[colmax]
+        dim col_hdg_span$[colmax]
 
-          dim h1$(width),rpt_head$(width*headmax)
-          glm13a.firm_id$=glm12a.firm_id$
-          glm13a.heading_no$=glm12a.heading_no$
-          k$=glm13a.firm_id$+glm13a.heading_no$
-          read (glm13_dev,key=k$,dom=*next)
-          while moreheadings
-                glm13_key$=key(glm13_dev,end=*break)
-                if pos(k$=glm13_key$)<>1 break
-                read record (glm13_dev)glm13a$
-                n=num(glm13a.sequence_no$,err=*continue)
-                if n>=headmax break
-                rpt_head$(n*width+1,width)=glm13a.rpt_heading$
-          wend
+        rem --- Generate standard heading elements
+        curyear$=str(year)
+        priyear$=str(year-1)
+        pribeg$=fndate$(begdate$)
+        pribeg$(7,4)=priyear$
+        priend$=fndate$(enddate$)
+        priend$(7,4)=priyear$
+        period$=cvs(field(gls01a$,"period_name_"+str(period:"00")),2)
+        quarter$=Translate!.getTranslation("AON_FOURTH")
+        if period<10 quarter$=Translate!.getTranslation("AON_THIRD")
+        if period<7 quarter$=Translate!.getTranslation("AON_SECOND")
+        if period<4 quarter$=Translate!.getTranslation("AON_FIRST")
 
-          rem --- Generate standard heading elements
-          curyear$=str(year)
-          priyear$=str(year-1)
-          pribeg$=fndate$(begdate$)
-          pribeg$(7,2)=priyear$(3)
-          priend$=fndate$(enddate$)
-          priend$(7,2)=priyear$(3)
-          period$=cvs(field(gls01a$,"period_name_"+str(period:"00")),2)
-          quarter$=Translate!.getTranslation("AON_FOURTH")
-          if period<10 quarter$=Translate!.getTranslation("AON_THIRD")
-          if period<7 quarter$=Translate!.getTranslation("AON_SECOND")
-          if period<4 quarter$=Translate!.getTranslation("AON_FIRST")
+        rem --- Build default report headings using glm_finheading (glm-32) TYPE_CDE$, ACTBUD$, AMT_OR_UNITS$ and RATIOPCT$
+        col=0
+        glm32_key$=gle04a.firm_id$+gle04a.gl_rpt_no$
+        read (glm32_dev,key=glm32_key$,dom=*next)
+        while 1
+            glm32_key$=key(glm32_dev,end=*break)
+            if pos(gle04a.firm_id$+gle04a.gl_rpt_no$=glm32_key$)<>1 break
+            read record (glm32_dev,key=glm32_key$) glm32a$
+            if col>=colmax break
 
-          rem --- Replace tokens in heading with standard elements
-
-          token$="[C-YEAR]"
-          element$=curyear$
-          type=0
-          gosub heading_tokens
-
-          token$="[P-YEAR]"
-          element$=priyear$
-          type=0
-          gosub heading_tokens
-
-          token$="[MONTH]"
-          element$=period$
-          type=1
-          gosub heading_tokens
-
-          token$="[QUARTER]"
-          element$=quarter$
-          type=1
-          gosub heading_tokens
-
-          token$="[C-PERIOD]"
-          element$=Translate!.getTranslation("AON_PERIOD_")+str(period)+Translate!.getTranslation("AON__FROM_")+fndate$(begdate$)+Translate!.getTranslation("AON__TO_")+fndate$(enddate$)
-          type=1
-          gosub heading_tokens
-
-          token$="[P-PERIOD]"
-          element$=Translate!.getTranslation("AON_PERIOD_")+str(period)+Translate!.getTranslation("AON__FROM_")+pribeg$+Translate!.getTranslation("AON__TO_")+priend$
-          type=1
-          gosub heading_tokens
-
-          token$="[C-END]"
-          element$=Translate!.getTranslation("AON_PERIOD_ENDING_")+fndate$(enddate$)
-          type=1
-          gosub heading_tokens
-
-          token$="[P-END]"
-          element$=Translate!.getTranslation("AON_PERIOD_ENDING_")+priend$
-          type=1
-          gosub heading_tokens
-
-          token$="[FIRM]"
-          element$=cvs(sysinfo.firm_name$,2)
-          type=1
-          gosub heading_tokens
-
-          token$="[R-DATE]"
-          element$=Translate!.getTranslation("AON_RUN_DATE_")+fndate$(sysinfo.system_date$)
-          type=0
-          gosub heading_tokens
-
-          token$="[Y-END]"
-          element$=period$+" "+enddate$(7,2)+", "+enddate$(1,4)
-          type=1
-          gosub heading_tokens
-
-          rem --- Store heading information
-          
-          dim headings$[1]; rem dummy for DocOut - these reports print headings in main part of form
-          dim heading$[headmax-1]
-		  dim headings$[headmax-1]
-          w = 0
- 
-          for x=0 to headmax-1
-              heading$[x] = cvs( rpt_head$(x*width+1,width), 2)
-              w = min( max( w, len( heading$[x] ) ), 132)
-			  w = max( w, 80 )
-              if cvs(heading$[x],2)<>"" then headings=x
-          next x
-          
-          width = w
-
-          rem --- Extract column positions from the Financial Report Columns (glm-32) file
-
-          rem --- A[column,type]: Column=report column
-          rem ---               : Type=0 for period
-          rem ---               :      1 for actual/budget/variance
-          rem ---               :      2 for amounts or units
-          rem ---               :      3 for default position
-
-          dim a[colmax-1,3]
-          x=0
-          glm32a.firm_id$=gle04a.firm_id$
-          glm32a.gl_rpt_no$=gle04a.gl_rpt_no$
-          k$=glm32a.firm_id$+glm32a.gl_rpt_no$
-          read (glm32_dev,key=k$,dom=*next)
-          while morecolumns
-                glm32_key$=key(glm32_dev,end=*break)
-                if pos(k$=glm32_key$)<>1 break
-                if x>=colmax break
-                read record (glm32_dev) glm32a$
-                value=pos(glm32a.per_type_cde$="PQYABC")
-                if value=0 
-                   a[x,0]=9
-                   x=x+1
-                   continue
+            col=col+1
+            if cvs(glm32a.heading$,2)="" then
+                rem --- Use default headings
+                switch pos(glm32a.per_type_cde$="PQYABC")
+                    case 1; colhdgwk$="Current Period "; break
+                    case 2; colhdgwk$="Current Quarter "; break
+                    case 3; colhdgwk$="YTD "; break
+                    case 4; colhdgwk$="Prior Year Period "; break
+                    case 5; colhdgwk$="Prior Year Quarter "; break
+                    case 6; colhdgwk$="Prior YTD "; break
+                    case default; colhdgwk$=""; break
+                swend
+                switch pos(glm32a.actbud$="ABV")
+                    case 1; colhdgwk$=colhdgwk$+"Actual "; break
+                    case 2; colhdgwk$=colhdgwk$+"Budget "; break
+                    case 3; colhdgwk$=colhdgwk$+"Variance "; break
+                    case default; break
+                swend
+                if glm32a.amt_or_units$="U" then colhdgwk$=colhdgwk$+"Units " 
+                switch pos(glm32a.ratiopct$="RP")
+                    case 1; colhdgwk$=colhdgwk$+"Ratio "; break
+                    case 2; colhdgwk$=colhdgwk$+"Percent "; break
+                    case default; break
+                swend
+                col_hdg$[col]=colhdgwk$
+                col_hdg_align$[col]="R"
+            else
+                rem --- Use custom headings
+                col_hdg_align$[col]=iff(cvs(glm32a.head_alignment$,2)="","R",cvs(glm32a.head_alignment$,2))
+                if cvs(glm32a.head_span_cols$,2)<>"" then
+                    col_hdg_span$[col]=cvs(glm32a.head_span_cols$,2)
                 endif
-                a[x,0]=value-1
-                value=pos(glm32a.actbud$="ABV")
-                if value=0 value=1
-                a[x,1]=value-1
-                value=pos(glm32a.amt_or_units$="AU")
-                if value=0 value=1
-                a[x,2]=value-1
-                a[x,3]=num(glm32a.sequence_no$)
-                x=x+1
-          wend
 
-          rem --- Found a report and the headings are completed
+                rem --- Replace tokens in heading with standard elements
+                rpt_head$=cvs(glm32a.heading$,2)
+                
+                token$="[C-YEAR]"
+                element$=curyear$
+                type=0
+                gosub heading_tokens
 
-          break
+                token$="[P-YEAR]"
+                element$=priyear$
+                type=0
+                gosub heading_tokens
 
-          rem --- Missing the Financial Report Master for the selected report.
-          rem --- Loop back and try the next entry.
+                token$="[MONTH]"
+                element$=period$
+                type=1
+                gosub heading_tokens
+
+                token$="[QUARTER]"
+                element$=quarter$
+                type=1
+                gosub heading_tokens
+
+                token$="[C-PERIOD]"
+                element$=Translate!.getTranslation("AON_PERIOD_")+str(period)+Translate!.getTranslation("AON__FROM_")+fndate$(begdate$)+Translate!.getTranslation("AON__TO_")+fndate$(enddate$)
+                type=1
+                gosub heading_tokens
+
+                token$="[P-PERIOD]"
+                element$=Translate!.getTranslation("AON_PERIOD_")+str(period)+Translate!.getTranslation("AON__FROM_")+pribeg$+Translate!.getTranslation("AON__TO_")+priend$
+                type=1
+                gosub heading_tokens
+
+                token$="[C-END]"
+                element$=Translate!.getTranslation("AON_PERIOD_ENDING_")+fndate$(enddate$)
+                type=1
+                gosub heading_tokens
+
+                token$="[P-END]"
+                element$=Translate!.getTranslation("AON_PERIOD_ENDING_")+priend$
+                type=1
+                gosub heading_tokens
+
+                token$="[FIRM]"
+                element$=cvs(sysinfo.firm_name$,2)
+                type=1
+                gosub heading_tokens
+
+                token$="[R-DATE]"
+                element$=Translate!.getTranslation("AON_RUN_DATE_")+fndate$(sysinfo.system_date$)
+                type=0
+                gosub heading_tokens
+
+                token$="[Y-END]"
+                element$=period$+" "+enddate$(7,2)+", "+enddate$(1,4)
+                type=1
+                gosub heading_tokens
+
+                col_hdg$[col]=rpt_head$
+            endif
+        wend
+
+        rem --- Found a report and the headings are completed
+
+        break
+
+        rem --- Missing the Financial Report Master for the selected report.
+        rem --- Loop back and try the next entry.
 
     wend
 
@@ -268,27 +249,43 @@ rem --- Run report overlay
 
 heading_tokens: rem --- Replace heading token with standard element
 
+    lt=len(token$)
+    le=len(element$)
     while pos(token$=rpt_head$)
-          p=pos(token$=rpt_head$)
-          lt=len(token$)
-          le=len(element$)
-          if p=0 break
-          if type=0 
-             rpt_head$(p,lt)=""
-             rpt_head$(p,le)=element$
-             continue
-          endif
-          if p+int((lt-le)/2)<0
-             rpt_head$(p,lt)=""
-             rpt_head$(p,le)=element$
-             continue
-          endif
-          rpt_head$(p,lt)=""
-          l=le-lt
-          if l>0 p=max(p-int(l/2),1)
-          if l<0 p=p+int(abs(l)/2)
-          rpt_head$(p,le)=element$
+        p=pos(token$=rpt_head$)
+        if p=0 then break
+        if type=0 then
+            rpt_head$(p,lt)=""
+            rem --- stick element at end if too big to insert
+            if le>len(rpt_head$(p)) then
+                rpt_head$=rpt_head$(1,p-1)+element$
+            else
+                rpt_head$(p,le)=element$
+            endif
+            continue
+        endif
+        if p+int((lt-le)/2)<0 then
+            rpt_head$(p,lt)=""
+            rem --- stick element at end if too big to insert
+            if le>len(rpt_head$(p)) then
+                rpt_head$=rpt_head$(1,p-1)+element$
+            else
+                rpt_head$(p,le)=element$
+            endif
+            continue
+        endif
+        rpt_head$(p,lt)=""
+        l=le-lt
+        if l>0 p=max(p-int(l/2),1)
+        if l<0 p=p+int(abs(l)/2)
+        rem --- stick element at end if too big to insert
+        if le>len(rpt_head$(p)) then
+         rpt_head$=rpt_head$(1,p-1)+element$
+        else
+         rpt_head$(p,le)=element$
+        endif
     wend
+
     return
 
 rem --- Functions

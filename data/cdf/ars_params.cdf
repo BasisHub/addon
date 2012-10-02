@@ -1,5 +1,13 @@
+[[ARS_PARAMS.ARAR]]
+rem --- Update post_to_gl if GL is uninstalled
+	if user_tpl.gl_installed$<>"Y" and callpoint!.getColumnData("ARS_PARAMS.POST_TO_GL")="Y" then
+		callpoint!.setColumnData("ARS_PARAMS.POST_TO_GL","N",1)
+		callpoint!.setStatus("MODIFIED")
+	endif
 [[ARS_PARAMS.AREC]]
-callpoint!.setColumnData("ARS_PARAMS.INV_HIST_FLG","Y")
+rem --- Init new record
+	callpoint!.setColumnData("ARS_PARAMS.INV_HIST_FLG","Y")
+	if user_tpl.gl_installed$="Y" then callpoint!.setColumnData("ARS_PARAMS.POST_TO_GL","Y")
 [[ARS_PARAMS.BSHO]]
 num_files=1
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -42,6 +50,8 @@ rem --- Retrieve parameter data
 	user_tpl.bank_rec$=br$
 	user_tpl.gl_curr_per$=gls01a.current_per$
 	user_tpl.gl_curr_year$=gls01a.current_year$
+
+	if user_tpl.gl_installed$<>"Y" then callpoint!.setColumnEnabled("ARS_PARAMS.POST_TO_GL",-1)
 [[ARS_PARAMS.ARNF]]
 rem --- param rec (firm+AR00) doesn't yet exist; set some defaults
 callpoint!.setColumnData("ARS_PARAMS.CURRENT_PER",user_tpl.gl_curr_per$)

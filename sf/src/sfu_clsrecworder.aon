@@ -43,7 +43,7 @@ rem --- Init Data
         dim params[0],params$[4],items$[3],refs$[11],refs[5],ivfiles[44]
         more=1
 
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_OPENTRANS","PRIMARY",sfe04_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_CLOSEDWO","PRIMARY",sfe04_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNOPRTR","PRIMARY",sft01_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNMATTR","PRIMARY",sft21_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFT_OPNSUBTR","PRIMARY",sft31_key_tpl$,rd_table_chans$[all],status$
@@ -97,10 +97,10 @@ rem --- Initial Read
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
 rem --- Calculate Actuals
-
+rem --- I think all of the field1, field2, field3, etc. stuff in the routines below are a misinterpretation during post CodePort work
+rem --- I think they need to go, and the switch/case routines need to use rate, units, etc. from the sftran$ or sfreqa$ records. 3/2012 CAH
         wotran_dev=sft01_dev
         dim sftran$:tmpl(wohist_dev)
-        record_id1$=sft01.record_id_o$
         dim wotran_key$:sft01_key_tpl$
         field3=sftran.direct_rate
         dim d[4],t[5]
@@ -112,27 +112,31 @@ rem --- Calculate Actuals
                 if wotran_key.firm_id$<>sfe01a.firm_id$ or wotran_key.wo_location$<>sfe01a.wo_location$ or
 :               wotran_key.wo_no$<>sfe01a.wo_no$ then break  
                 read record (wotran_dev,key=wotran_key$) sftran$
-                x=pos(record_id1$="MS")+2
-                if x>2 
-                    d[x]=d[x]+sftran.ext_cost
-                else
-                    d[1]=d[1]+sftran.units*field3
-                    d[2]=d[2]+sftran.ext_cost-sftran.units*field3; rem "Split Direct & OH
-                endif 
+                
+                switch wotran_dev
+                    case sft01_dev
+                        d[1]=d[1]+sftran.units*field3
+                        d[2]=d[2]+sftran.ext_cost-sftran.units*field3; rem "Split Direct & OH 
+                    break
+                    case sft21_dev
+                        d[3]=d[3]+sftran.ext_cost
+                    break
+                    case sft31_dev
+                        d[4]=d[4]+sftran.ext_cost
+                    break              
+                swend 
                 d[0]=d[0]+sftran.ext_cost
             wend
             if wotran_dev=sft01_dev then 
                 let wotran_dev=sft21_dev 
                 dim sftran$:tmpl(wohist_dev)
                 dim wotran_key$:sft21_key_tpl$
-                record_id1$=sft21.record_id_m$
                 field3=sftran.reserved_num
             else
                 if wotran_dev=sft21_dev then 
                    let wotran_dev=sft31_dev
                    dim sftran$:tmpl(wohist_dev)
                    dim wotran_key$:sft31_key_tpl$
-                    record_id1$=sft31.record_id_s$
                    field3=sftran.reserved_num
                endif
             endif
@@ -156,7 +160,6 @@ rem --- Calc Standards
         if flag1=0 then
             sfreq_dev=sfe02_dev
             dim sfreqa$:tmpl(sfreq_dev)
-            record_id$=sfreqa.record_id_a$
             field6=sfreqa.direct_rate
             field3=sfreqa.tot_std_cost
             field2=sfreqa.total_time
@@ -170,20 +173,24 @@ rem --- Calc Standards
                     if sfreqa_key.firm_id$<>sfreqa_key.wo_location$ or sfreqa_key.wo_no$<>sfe01a.wo_location$ or 
 :                   sfreqa_key.wo_no$<>sfe01a.wo_no$ then flag=1; break
                     read record (sfreq_dev,key=sfreqa_key$) sfreqa$
-                    x=pos(record_id$="BC")+2 
-                    if x>2 then 
-                        e[x]=e[x]+field3
-                    else
-                        e[1]=e[1]+field2*field6
-                        e[2]=e[2]+field3-field2*field6; rem "Split Direct & OH
-                    endif
+                    switch sfreq_dev
+                        case sfe02_dev
+                            e[1]=e[1]+field2*field6
+                            e[2]=e[2]+field3-field2*field6; rem "Split Direct & OH
+                        break
+                        case sfe22_dev
+                            e[3]=e[3]+field3
+                        break
+                        case sfe32_dev
+                            e[4]=e[4]+field3
+                        break                    
+                    swend
                     e[0]=e[0]+field3
                  wend 
                  if flag=1 then break
                  if sfreq_dev=sfe02_dev then 
                      let sfreq_dev=sfe22_dev
-                     dim sfreqa$:tmpl(sfreq_dev)
-                     record_id$=sfreqa.record_id_a$
+                     dim sfreqa$:tmpl(sfreq_dev)                    
                      field6=sfreqa.alt_factor
                      field3=sfreqa.total_cost
                      field2=sfreqa.total_units
@@ -192,7 +199,6 @@ rem --- Calc Standards
                     if sfreq_dev=sfe22_dev then 
                         let sfreq_dev=sfe32_dev
                         dim sfreqa$:tmpl(sfreq_dev)
-                        record_id$=sfreqa.record_id_a$
                         field6=sfreqa.reserved_num
                         field3=sfreqa.total_cost
                         field2=sfreqa.total_units
@@ -306,7 +312,7 @@ rem --- Post ope-01 (Completed)
             sfe01a.cls_inp_qty=0
             sfe01a.closed_cost=0
 rem --- Check on WOE-15/25 and WOE-13/23 (Materials)
-            remove(sfe13_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$+"000",dom=*next)
+            remove(sfe13_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
             read (sfe23_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
             dim sfe23_key$:sfe23_key_tpl$    
             while more

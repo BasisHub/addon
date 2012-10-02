@@ -1,0 +1,256 @@
+rem ==========================================================================
+rem --- glx_fixglm32.aon 
+rem --- Utility to fix zero sequence numbers in glm-32 (glm_fincolumns) key.
+rem --- 
+rem --- AddonSoftware Version 12.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    use java.io.File
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    sysGUI! = BBjAPI().getSysGui()
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=stbl("+DIR_SYP",err=*next)
+    datdir$=stbl("+DIR_DAT",err=*next)
+
+rem --- Get user inputs
+
+    yn$=Option!.getOptionData("YN_PROMPT")
+
+rem --- Open Tables
+
+    num_files=3
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="GLM_FINMASTER",open_opts$[1]="OTA"
+    open_tables$[2]="GLM_FINCOLUMNS",open_opts$[2]="OTA"
+    open_tables$[3]="GLM_FINCOLUMNS",open_opts$[3]="@NTA"
+
+    gosub open_tables
+
+    glm_finmaster_dev=num(open_chans$[1])
+    glm_fincolumns_dev=num(open_chans$[2])
+    glm32_dev=num(open_chans$[3])
+
+    dim glm_finmaster$:open_tpls$[1]
+    dim glm_fincolumns$:open_tpls$[2]
+    dim glm32$:open_tpls$[3]
+
+rem --- Open log file
+
+    aonLib$=stbl("+ADDON_LIB",err=*next)
+ 	aonDir$=aonLib$(1, pos("/lib/"=aonLib$)-1)
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Verify user wants to fix glm_fincolumns keys
+    if yn$<>"Y" then goto close_log_exit
+    
+rem --- Start progress meter
+                
+    declare BBTranslator Translator!
+    Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+    meter_title$=Translator!.getTranslation("AON_UPDATING")+"..."
+    xfin$=xfin(glm_finmaster_dev)
+    meter_total_recs=dec(xfin$(77,4))
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter
+    
+rem --- Process each Financial Report for all firms
+    read(glm_finmaster_dev,key="",dom=*next)
+    while 1
+        readrecord(glm_finmaster_dev,end=*break)glm_finmaster$
+        
+        rem --- Increment progress meter
+        meter_text$=glm_finmaster.firm_id$+" "+glm_finmaster.gl_rpt_no$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+        
+        rem --- Skip '000' sequence_no for this report in glm_fincolumns
+        readrecord(glm_fincolumns_dev,key=glm_finmaster.firm_id$+glm_finmaster.gl_rpt_no$+"000",dom=*continue)glm_fincolumns$
+        
+        rem --- Process in reverse order each sequence_no for this report in glm_fincolumns
+        read(glm_fincolumns_dev,key=glm_finmaster.firm_id$+str(num(glm_finmaster.gl_rpt_no$)+1:"00"),dom=*next)
+        readrecord(glm_fincolumns_dev,dir=-1,key=keyp(glm_fincolumns_dev),end=*break)glm_fincolumns$
+        while 1
+            if glm_fincolumns.gl_rpt_no$<>glm_finmaster.gl_rpt_no$ then break
+            if glm_fincolumns.firm_id$<>glm_finmaster.firm_id$ then break
+            meter_text$="      "+glm_fincolumns.sequence_no$
+
+            rem --- Increment sequence_no unless already '999'
+            if glm_fincolumns.sequence_no$="999" then
+                rem --- Skip '999' sequence_no
+                meter_text$=meter_text$+" skipped"
+            else
+                rem --- Increment equence_no
+                glm32$=glm_fincolumns$
+                glm32$.sequence_no$=str(num(glm_fincolumns.sequence_no$)+1:"000")
+                meter_text$=meter_text$+" => "+glm32$.sequence_no$
+                writerecord(glm32_dev,key=glm32.firm_id$+glm32.gl_rpt_no$+glm32$.sequence_no$)glm32$
+            endif
+        
+            rem --- Update progress meter
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+
+            rem --- Remove '000' sequence_no (must do this AFTER setting file pointer to previous record)
+            if glm_fincolumns.sequence_no$="000" then
+                meter_text$="      "+glm_fincolumns.sequence_no$+" removed"
+                glm32$=glm_fincolumns$
+                remove(glm32_dev,key=glm32.firm_id$+glm32.gl_rpt_no$+glm32$.sequence_no$)
+        
+                rem --- Update progress meter
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+                
+                rem --- Done with this report so break. Removed record screws up getting previous record.
+                break
+            endif
+        
+            rem --- Get previous record
+            readrecord(glm_fincolumns_dev,dir=-1,end=*break)glm_fincolumns$
+        wend
+    wend
+    
+done: rem --- All done
+    
+    rem --- Stop progress meter
+                    
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    print(log_dev)
+    
+close_log_exit: rem --- Close log and exit
+
+    print(log_dev)"Fixglm32 log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call sypdir$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+	logDir$=FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/fixglm32_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"Fixglm32 log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)"Fix glm_fincolumn key: " + yn$
+    print(log_dev)
+
+    return
+
+open_tables: rem --- Open tables
+
+    call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        status=912
+        goto std_exit
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
+
+	return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

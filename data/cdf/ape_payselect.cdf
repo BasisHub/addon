@@ -703,6 +703,23 @@ rem				endif
 	return
 
 rem ==========================================================================
+get_master_offset:
+rem ==========================================================================
+
+	inv_x=0
+	for mast_x=0 to vectInvoicesMaster!.size() step num(user_tpl.MasterCols)
+		if vectInvoicesMaster!.getItem(mast_x+4)=vend_id$ and
+:			vectInvoicesMaster!.getItem(mast_x+3)=ap_type$ and
+:			vectInvoicesMaster!.getItem(mast_x+6)=inv_no$
+			mast_offset=mast_x
+			exitto offset_return
+		endif
+		inv_x=inv_x+11;rem vectInvoices size
+	next mast_x
+offset_return:
+	return
+
+rem ==========================================================================
 rem --- Functions
 rem ==========================================================================
 
@@ -1025,12 +1042,16 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 
 		rem --- Discount Amount
 
-		if curr_col = 9 then 
+		if curr_col = 9 then
+				ap_type$ = gridInvoices!.getCellText(curr_row,2)
+				vend_id$ = gridInvoices!.getCellText(curr_row,3)
+				inv_no$ = gridInvoices!.getCellText(curr_row,5)
 				inv_amt  = num(gridInvoices!.getCellText(curr_row,8))
 				disc_amt = num(gridInvoices!.getCellText(curr_row,9))
 				pmt_amt  = num(gridInvoices!.getCellText(curr_row,10))
 				retent_amt = num(gridInvoices!.getCellText(curr_row,11))
-				orig_inv_amt = num(vectInvoicesMaster!.getItem((curr_row*user_tpl.MasterCols)+16))
+				gosub get_master_offset
+				orig_inv_amt = num(vectInvoicesMaster!.getItem((mast_offset)+16))
 
 				if sgn(disc_amt) <> sgn(orig_inv_amt) then 
 					disc_amt = abs(disc_amt) * sgn(orig_inv_amt)
@@ -1109,11 +1130,15 @@ rem						endif
 		rem --- Payment Amount
 
 			if curr_col=10
+				ap_type$ = gridInvoices!.getCellText(curr_row,2)
+				vend_id$ = gridInvoices!.getCellText(curr_row,3)
+				inv_no$ = gridInvoices!.getCellText(curr_row,5)
 				inv_amt  = num(gridInvoices!.getCellText(curr_row,8))
 				disc_amt = num(gridInvoices!.getCellText(curr_row,9))
 				pmt_amt  = num(gridInvoices!.getCellText(curr_row,10))
 				retent_amt = num(gridInvoices!.getCellText(curr_row,11))
-				orig_inv_amt = num(vectInvoicesMaster!.getItem((curr_row*user_tpl.MasterCols)+16))
+				gosub get_master_offset
+				orig_inv_amt = num(vectInvoicesMaster!.getItem((mast_offset)+16))
 					
 				if sgn(pmt_amt) <> sgn(orig_inv_amt) then 
 					pmt_amt = abs(pmt_amt) * sgn(orig_inv_amt)

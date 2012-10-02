@@ -1,3 +1,14 @@
+[[POS_PARAMS.ARAR]]
+rem --- Update post_to_gl if GL is uninstalled
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	if gl_installed$<>"Y" and callpoint!.getColumnData("POS_PARAMS.POST_TO_GL")="Y" then
+		callpoint!.setColumnData("POS_PARAMS.POST_TO_GL","N",1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[POS_PARAMS.AREC]]
+rem --- Init new record
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	if gl_installed$="Y" then callpoint!.setColumnData("POS_PARAMS.POST_TO_GL","Y")
 [[POS_PARAMS.BSHO]]
 rem --- Disable update planned Work Orders if Shop Floor not installed
 pgm_dir$=stbl("+DIR_PGM")
@@ -7,6 +18,12 @@ if info$[20]<>"Y"
 	ctl_stat$="D"
 	gosub disable_fields
 endif
+
+rem --- Disable post_to_gl if GL not installed
+call pgm_dir$+"adc_application.aon","GL",info$[all]
+gl_installed$=info$[20]
+callpoint!.setDevObject("gl_installed",gl_installed$)
+if gl_installed$<>"Y" then callpoint!.setColumnEnabled("POS_PARAMS.POST_TO_GL",-1)
 [[POS_PARAMS.PO_INV_CODE.AVAL]]
 tmp_po_line_code$=callpoint!.getUserInput()
 gosub validate_po_line_type

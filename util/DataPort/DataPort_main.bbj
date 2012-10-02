@@ -609,6 +609,23 @@ rem --- check for specific values that can't be found any other way
 		if new_fieldlist.name$[field]="OP_INT_SEQ_REF"
 			if cvs(value$,3)<>"" then value$=str(num(value$):"000000000000")
 		endif
+
+rem --- GLM-32 sequence numbers need to start at '001', not '000' in Barista/Addon
+        if cvs(datafile$,8)="glm-32" then
+            rem --- if sequence numbers start with '000' for a firm+report,
+            rem --- then increment all sequence numbers (except '999') for that firm+report
+             if old_rec$(1,4)<>glm32_rpt$
+                glm32_rpt$=old_rec$(1,4)
+                if old_rec$(5,3)="000"
+                    glm32_inc=1
+                else
+                    glm32_inc=0
+                endif
+            endif
+            if new_fieldlist.name$[field]="SEQUENCE_NO"
+                if cvs(value$,3)<>"999" then value$=str(num(value$)+glm32_inc:"000")
+            endif
+        endif
 		
 rem --- Check for Temp Vendor
 
@@ -982,6 +999,12 @@ rem --- Populate sequence record(s)
             writerecord(ads_sequences_dev)ads_sequences$
         next firms    
     endif
+    
+rem --- Initialize *s_params.post_to_gl with SYM-04's post_gl flag
+
+    gosub init_params_post_gl
+    
+rem --- Done    
 
     print (log_dev)$0a$+"DataPort completed"
     print (log_dev)"DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
@@ -1573,6 +1596,52 @@ rem --- although flat file sequence_no could probably be modified to contain all
         close (old_file,err=*next)
         
     wend
+
+    return
+
+init_params_post_gl: rem --- Initialize *s_params.post_to_gl with SYM-04's post_gl flag
+
+    rem --- Open source sym-04
+    sym04_dev=unt
+    open (sym04_dev)source_folder$+"/"+cvs("sym-04",version_cvs)
+    
+    rem --- Loop thru modules that can post to gl
+    modules$="APARBMGLIVOPPOPRSF"
+    for i=1 to len(modules$) step 2
+        mod$=modules$(i,2)
+
+        rem --- Read this module's sym-04 record, skip if not found
+        v6mod$=mod$
+        if v6mod$="SF" then v6mod$="WO"
+        dim r0$(2),r1$(64)
+        find(sym04_dev,key=v6mod$)r0$(1),r1$(1)
+        if r0$<>v6mod$ then continue
+        
+        rem --- Open this module's destination *s_params, skip if not found
+        skip_module=1
+        param_file$=cvs(mod$,8)+"s_params"
+        param_dev=unt
+        open (param_dev,err=*next)destin_folder$+"/"+param_file$; skip_module=0
+        if skip_module then continue
+
+        rem --- Get *s_params template for this module
+        findrecord(ddm_table_tpls,key=pad(cvs(param_file$,4),16))ddm_table_tpls$
+        dim param$:ddm_table_tpls.template$
+
+        rem --- Loop thru all firms in this module's *s_params updating *s_params.post_to_gl
+        read(param_dev,key="",dom=*next)
+        while 1
+            key$=key(param_dev,end=*break)
+            readrecord(param_dev)param$
+            param.post_to_gl$=r1$(46,1)
+            param$=field(param$)
+            writerecord(param_dev,key=key$)param$
+            endif
+        wend
+        close(param_dev)
+        
+    next i
+    close(sym04_dev)
 
     return
     

@@ -19,6 +19,10 @@ firm_id$=sp!.getParameter("FIRM_ID")
 customer_nbr$=sp!.getParameter("CUSTOMER_NBR")
 month$ = sp!.getParameter("MONTH")
 year$ = sp!.getParameter("YEAR")
+barista_wd$=sp!.getParameter("BARISTA_WD")
+
+sv_wd$=dir("")
+chdir barista_wd$
 
 rem ' set up the sql query
 sql$ = "SELECT t1.ar_inv_no as ar_inv_nbr, "

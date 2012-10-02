@@ -12,10 +12,7 @@ rem --- Validate new config location
 	config_loc$=callpoint!.getUserInput()
 	gosub validate_config_loc
 	callpoint!.setUserInput(config_loc$)
-	if abort
-		callpoint!.setStatus("ABORT")
-		break
-	endif
+	if abort then break
 
 	if cvs(config_loc$,3)<>cvs(callpoint!.getDevObject("prev_config_loc"),3)
 		rem --- Capture current config location value so can tell later if it's been changed
@@ -85,10 +82,8 @@ rem --- Validate new config location
 
 	config_loc$=callpoint!.getColumnData("ADX_COPYMODS.NEW_CONFIG_LOC")
 	gosub validate_config_loc
-	if abort
-		callpoint!.setStatus("ABORT")
-		break
-	endif
+	callpoint!.setColumnData("ADX_COPYMODS.NEW_CONFIG_LOC", config_loc$)
+	if abort then break
 
 rem --- Make sure we get all entries in the grid by setting focus on some control besides the grid
 
@@ -132,6 +127,7 @@ rem --- Declare Java classes used
 	use java.io.File
 	use java.util.ArrayList
 	use java.util.HashMap
+	use ::ado_file.src::FileObject
 
 rem --- Initialize current values so can tell later if they've been changed
 	callpoint!.setDevObject("prev_src_syn_file","")
@@ -556,6 +552,21 @@ validate_config_loc: rem --- Validate new config location
 		return
 	endif
 
+	rem --- Read-Write-Execute directory permissions are required
+
+	if !FileObject.isDirWritable(config_loc$)
+		msg_id$="AD_DIR_NOT_WRITABLE"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=config_loc$
+		gosub disp_message
+
+		callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", config_loc$)
+		callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
+		callpoint!.setStatus("ABORT")
+		abort=1
+		return
+	endif
+
 	return
 
 verify_not_download_loc: rem --- Verify not using current download location
@@ -607,4 +618,6 @@ rem --- Add grid to form for updating STBL's with paths
 	util.resizeWindow(Form!, SysGui!)
 
 	rem --- set callbacks - processed in ACUS callpoint
-	gridStbls!.setCallback(gridStbls!.ON_GRID_CELL_VALIDATION,"custom_event")
+	rem --- Currently ON_GRID_CELL_VALIDATION results in the loss of user input when they Run Process (F5)
+	rem --- before leaving the cell where text was entered. So don't use ON_GRID_CELL_VALIDATION for now.
+	rem gridStbls!.setCallback(gridStbls!.ON_GRID_CELL_VALIDATION,"custom_event")

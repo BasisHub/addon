@@ -92,20 +92,38 @@ rem --- Retrieve parameter records
 
 rem --- Initializations
 
-    dim reqnum$(7),detailkey$(18)
+	tmp_field$=fattr(poe_reqdet$,"wo_no")
+    wonum_len=dec(tmp_field$(10,2))
+
+	tmp_field$=fattr(poe_reqdet$,"wk_ord_seq_ref")
+    woseq_len=dec(tmp_field$(10,2))
+
+	tmp_field$=fattr(poe_reqhdr$,"order_no")
+    sonum_len=dec(tmp_field$(10,2))
+
+	tmp_field$=fattr(poe_reqdet$,"so_int_seq_ref")
+    soseq_len=dec(tmp_field$(10,2))
+	
+    dim reqnum$(7)
     dim purchaddrcode$(2),dateprom$(8),notb4date$(8),ack$(20),whseloc$(10)
     dim firm$(2),linetype$(1),vendor$(6),whse$(2),dateord$(8)
     dim datereq$(8),termscode$(2),unitmeas$(2)
-    dim source$(1),forcasttype$(3),wonum$(7)
-    dim wonum_seq$(10),custnum$(6),sonum_seq$(10)
+    dim source$(1),forcasttype$(3)
+	dim custnum$(6)
+    dim wonum_seq$(wonum_len+woseq_len)
+	dim sonum_seq$(sonum_len+soseq_len)
     dim shiptonum$(6),itemnum$(20)
 
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQHDR","AO_VEND_REQ",poe_reqbyvend_key_tpl$,rd_table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQDET","AO_REQ_LINE",poe_reqdet_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_REQDET","PRIMARY",poe_reqdet_key_prime_tpl$,rd_table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_POHDR","AO_REQ_VEND_PO",poe_pobyreq_key_tpl$,rd_table_chans$[all],status$
     dim poe_reqbyvend_key$:poe_reqbyvend_key_tpl$
     dim poe_reqdet_key$:poe_reqdet_key_tpl$
+	dim poe_reqdet_key_prime$:poe_reqdet_key_prime_tpl$
     dim poe_pobyreq_key$:poe_pobyreq_key_tpl$
+
+	dim detailkey$(len(poe_reqdet_key_prime$))
 
 rem --- Assign input params
     firm$(1)=info$[0]
@@ -122,13 +140,12 @@ rem --- Assign input params
 
 rem --- Defaults
 
-    dim po_defaults$(68),vend_defaults$(245)
     find record (apm_vendmast_dev,key=firm$+vendor$,dom=done_unsuccess) apm_vendmast$
     vshipvia$=pos_params.ap_ship_via$
     freightterms$=pos_params.po_frt_terms$
     fob$=pos_params.fob$
     hold$=pos_params.hold_flag$
-    reqmsg$=pos_params.po_req_msg_code$
+    reqmsg$=pos_params.po_req_msg_code$	
     if cvs(apm_vendmast.fob$,2)<>"" then let fob$=apm_vendmast.fob$
     if cvs(apm_vendmast.ap_ship_via$,2)<>"" then let vshipvia$=apm_vendmast.ap_ship_via$
     gosub linecodes
@@ -169,8 +186,8 @@ rem --- Build and write detail record
     poe_reqdet.source_code$=source$
     poe_reqdet.forecast$=forcasttype$
 
-    poe_reqdet.wo_no$=wonum_seq$(1,7)
-    poe_reqdet.wo_seq_ref$=wonum_seq$(8,3)
+    poe_reqdet.wo_no$=wonum_seq$(1,wonum_len)
+    poe_reqdet.wk_ord_seq_ref$=wonum_seq$(8,woseq_len)
     poe_reqdet.warehouse_id$=whse$
 
     if linetype$="S" then poe_reqdet.item_id$=itemnum$ else gosub get_memodesc
@@ -197,11 +214,11 @@ done: rem --- Done - Successful
 
 rem --- Update print file
 
-    poe_reqprint.firm_id$=poe_reqdet_key.firm_id$
+    poe_reqprint.firm_id$=poe_reqdet.firm_id$
     poe_reqprint.vendor_id$=poe_reqhdr.vendor_id$
-    poe_reqprint.req_no$=poe_reqdet_key.req_no$
-
-    write record (poe_reqprint_dev) poe_reqprint$
+    poe_reqprint.req_no$=poe_reqdet.req_no$
+    
+	write record (poe_reqprint_dev) poe_reqprint$
     goto std_exit
 
 done_unsuccess: rem --- Done - Unsuccessful
@@ -419,7 +436,10 @@ rem #endinclude std_missing_params.src
 rem #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
-
+	
+	detailkey$=poe_reqhdr.firm_id$
+	detailkey$=detailkey$+poe_reqdet.req_no$
+	detailkey$=detailkey$+poe_reqdet.internal_seq_no$
     exit
 
 rem #endinclude std_exit.src

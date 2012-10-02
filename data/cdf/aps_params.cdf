@@ -1,8 +1,16 @@
+[[APS_PARAMS.BSHO]]
+rem --- Disable fields based on params
+
+	dim info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
+	gl_installed$=info$[20]
+	callpoint!.setDevObject("gl_installed",gl_installed$)
+	if gl_installed$<>"Y" then callpoint!.setColumnEnabled("APS_PARAMS.POST_TO_GL",-1)
 [[APS_PARAMS.<CUSTOM>]]
 #include std_missing_params.src
 [[APS_PARAMS.ARAR]]
-	pgmdir$=stbl("+DIR_PGM")
 rem --- Open/Lock files
+	pgmdir$=stbl("+DIR_PGM")
 	files=2,begfile=1,endfile=files
 	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
 	files$[1]="aps_params",ids$[1]="APS_PARAMS"
@@ -50,6 +58,7 @@ rem --- Retrieve parameter data
 	user_tpl.ap_installed$=ap$
 	user_tpl.iv_installed$=iv$
 	user_tpl.bank_rec$=br$
+	gl_installed$=callpoint!.getDevObject("gl_installed")
 	rem --- set some defaults (that I can't do via arde) if param doesn't yet exist
 	aps01a_key$=firm_id$+"AP00"
 	find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
@@ -66,5 +75,12 @@ rem --- Retrieve parameter data
 			callpoint!.setColumnData("APS_PARAMS.BR_INTERFACE","Y")
 			callpoint!.setColumnUndoData("APS_PARAMS.BR_INTERFACE","Y")
 		endif
-   callpoint!.setStatus("MODIFIED-REFRESH")
+		if gl_installed$="Y" then callpoint!.setColumnData("APS_PARAMS.POST_TO_GL","Y")
+   		callpoint!.setStatus("MODIFIED-REFRESH")
+	else
+		rem --- Update post_to_gl if GL is uninstalled
+		if gl_installed$<>"Y" and callpoint!.getColumnData("APS_PARAMS.POST_TO_GL")="Y" then 
+			callpoint!.setColumnData("APS_PARAMS.POST_TO_GL","N",1)
+   			callpoint!.setStatus("MODIFIED")
+		endif
 	endif

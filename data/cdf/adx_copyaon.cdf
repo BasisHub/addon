@@ -18,6 +18,7 @@ rem --- Don't allow running the utility if Addon doesn't exist at Basis download
 rem --- Declare Java classes used
 
 	use java.io.File
+	use ::ado_file.src::FileObject
 [[ADX_COPYAON.AREC]]
 rem --- Initialize aon new install location
 rem --- Default to /aon_prod/vnnnn (where nnnn=new version)
@@ -93,19 +94,33 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 		return
 	endif
 
+	rem --- Read-Write-Execute directory permissions are required
+
+	if !FileObject.isDirWritable(new_loc$)
+		msg_id$="AD_DIR_NOT_WRITABLE"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=new_loc$
+		gosub disp_message
+
+		callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
+		callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
+		callpoint!.setStatus("ABORT")
+		abort=1
+		return
+	endif
+
 	rem --- Cannot be currently used by Addon
 
 	testChan=unt
-	open(testChan, err=*return)new_loc$ + "/aon/data"
+	open(testChan, err=*return)new_loc$ + "/aon/data"; rem --- successful return here
 	close(testChan)
 
-location_used:
+	rem --- Location is used by Addon
 	msg_id$="AD_INSTALL_LOC_USED"
 	gosub disp_message
-
-	callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
-	callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
-	callpoint!.setStatus("ABORT")
+		callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
+		callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
+		callpoint!.setStatus("ABORT")
 	abort=1
 
 	return
@@ -129,10 +144,11 @@ rem --- Validate directory for aon new install location
 	new_loc$ = callpoint!.getColumnData("ADX_COPYAON.NEW_INSTALL_LOC")
 	gosub validate_aon_dir
 	callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
-	if abort then callpoint!.setStatus("ABORT")
+	if abort then break
 [[ADX_COPYAON.NEW_INSTALL_LOC.AVAL]]
 rem --- Validate directory for aon new install location
 
 	new_loc$ = callpoint!.getUserInput()
 	gosub validate_aon_dir
 	callpoint!.setUserInput(new_loc$)
+	if abort then break

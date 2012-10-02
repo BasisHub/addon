@@ -45,7 +45,7 @@ rem --- Open/Lock files
         files$[6]="ivs_params",ids$[6]="IVS_PARAMS"
         files$[7]="sfe-01",ids$[7]="SFE_WOMASTR"
         files$[8]="sfe-02",ids$[8]="SFE_WOOPRTN"
-        files$[9]="sfe_clsdtrans",ids$[9]="SFE_CLSDTRANS"
+        files$[9]="sfe_closedwo",ids$[9]="SFE_CLOSEDWO"
         files$[10]="sfe-22",ids$[10]="SFE_WOMATL"
         files$[11]="sfe-32",ids$[11]="SFE_WOSUBCNT"
         files$[12]="sfm-10",ids$[12]="SFC_WOTYPECD"
@@ -165,7 +165,7 @@ rem --- Initialize Data
 
 rem --- Retrieve key templates
 
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_CLSDTRANS","PRIMARY",sfe04b_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_CLOSEDWO","PRIMARY",sfe04b_key_tpl$,rd_table_chans$[all],status$
 
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","PRIMARY",sfe02a_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",sfe22a_key_tpl$,rd_table_chans$[all],status$
@@ -298,20 +298,24 @@ label3:
         sfreq_dev=sfe02a_dev
         dim sfreq_key$:sfe02a_key_tpl$
         dim sfreq$:templates$[8]
-        record_id$="record_id_a"
         while more
             read (sfreq_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
             while more
                 sfreq_key$=key(sfreq_dev,end=*break)
                 if sfreq_key.firm_id$+sfreq_key.wo_location$+sfreq_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then break
                 read record (sfreq_dev,key=sfreq_key$) sfreq$
-                x=pos(field(sfreq$,record_id$)="BC")+1
-                if x<=1
-                    b[1]=b[1]+sfreq.total_time*sfreq.direct_rate
-                    b[4]=b[4]+sfreq.tot_std_cost-sfreq.total_time*sfreq.direct_rate; rem "Split Direct & OH
-                else
-                    let b[x]=b[x]+sfreq.tot_std_cost
-                endif
+                switch sfreq_dev
+                    case sfe02a_dev
+                        b[1]=b[1]+sfreq.total_time*sfreq.direct_rate
+                        b[4]=b[4]+sfreq.tot_std_cost-sfreq.total_time*sfreq.direct_rate; rem "Split Direct & OH
+                    break
+                    case sfe22a_dev
+                        let b[2]=b[2]+sfreq.tot_std_cost
+                    break
+                    case sfe32a_dev
+                        let b[3]=b[3]+sfreq.tot_std_cost
+                    break
+                swend
                 b[0]=b[0]+sfreq.tot_std_cost
             wend
 
@@ -319,14 +323,12 @@ label3:
                 sfreq_dev=sfe22a_dev
                 dim sfreq_key$:sfe22a_key_tpl$
                 dim sfreq$:templates$[10]
-                record_id$="record_id_b"
                 continue
             endif
             if sfreq_dev=sfe22a_dev
                 sfreq_dev=sfe32a_dev
                 dim sfreq_key$:sfe32a_key_tpl$
                 dim sfreq$:templates$[11]
-                record_id$="record_id_c"
                 continue
             endif
             break
@@ -337,28 +339,32 @@ rem --- Calculate Actuals
         sftran_dev=sft01a_dev
         dim sftran_key$:sft01a_key_tpl$
         dim sftran$:templates$[14]
-        record_id$="record_id_o"
         while more
             read (sftran_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
             while more
                 sftran_key$=key(sftran_dev,end=*break)
                 if sftran_key.firm_id$+sftran_key.wo_location$+sftran_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then break
                 read record (sftran_dev,key=sftran_key$) sftran$
-                x=pos(field(sftran$,record_id$)="MS")+1
-                if x<=1
-                    c[1]=c[1]+sftran.units*sftran.direct_rate
-                    c[4]=c[4]+sftran.ext_cost-sftran.units*sftran.direct_rate; rem "Split Direct & OH
-                else
-                     let c[x]=c[x]+sftran.ext_cost
-                endif
+                switch sftran_dev
+                    case sft01a_dev
+                        c[1]=c[1]+sftran.units*sftran.direct_rate
+                        c[4]=c[4]+sftran.ext_cost-sftran.units*sftran.direct_rate; rem "Split Direct & OH
+                    break
+                    case sft21a_dev
+                        let c[2]=c[2]+sftran.ext_cost
+                    break
+                    case sft31a_dev
+                        let c[3]=c[3]+sftran.ext_cost
+                    break
+                swend
                 c[0]=c[0]+sftran.ext_cost
+                
             wend
 
             if sftran_dev=sft01a_dev
                 sftran_dev=sft21a_dev
                 dim sftran_key$:sft21a_key_tpl$
                 dim sftran$:templates$[15]
-                record_id$="record_id_m"
                 continue
             endif
 
@@ -366,7 +372,6 @@ rem --- Calculate Actuals
                 sftran_dev=sft31a_dev
                 dim sftran_key$:sft31a_key_tpl$
                 dim sftran$:templates$[16]
-                record_id$="record_id_s"
                 continue
             endif  
             break

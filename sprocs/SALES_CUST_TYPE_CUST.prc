@@ -7,9 +7,6 @@ rem ----------------------------------------------------------------------------
 rem ' Return sales totals by customer by customer type for a given month period
 rem ' SETERR ERROR_ROUTINE
 
-rem ' USE statements
-use ::ado_func.src::func
-
 rem ' Declare some variables ahead of time
 declare BBjStoredProcedureData sp!
 declare BBjRecordSet rs!
@@ -25,6 +22,13 @@ month$ = sp!.getParameter("MONTH")
 year$ = sp!.getParameter("YEAR")
 custIdMask$=sp!.getParameter("CUST_ID_MASK")
 custIdLen=num(sp!.getParameter("CUST_ID_LEN"))
+barista_wd$=sp!.getParameter("BARISTA_WD")
+
+sv_wd$=dir("")
+chdir barista_wd$
+
+rem ' USE statements
+use ::ado_func.src::func
 
 rem ' set up the sql query
 sql$ = "SELECT SUM(t1.total_sales) AS total_sales, t1.customer_id, t3.customer_name, t3.contact_name FROM OPT_INVHDR t1 "

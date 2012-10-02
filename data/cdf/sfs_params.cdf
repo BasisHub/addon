@@ -1,3 +1,7 @@
+[[SFS_PARAMS.AREC]]
+rem --- Init new record
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	if gl_installed$="Y" then callpoint!.setColumnData("SFS_PARAMS.POST_TO_GL","Y")
 [[SFS_PARAMS.ADIS]]
 rem --- Save changes made based on Applications installed
 
@@ -6,6 +10,13 @@ rem --- Save changes made based on Applications installed
 rem --- Set defaults
 
 	gosub set_defaults
+
+rem --- Update post_to_gl if GL is uninstalled
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	if gl_installed$<>"Y" and callpoint!.getColumnData("SFS_PARAMS.POST_TO_GL")="Y" then
+		callpoint!.setColumnData("SFS_PARAMS.POST_TO_GL","N",1)
+		callpoint!.setStatus("MODIFIED")
+	endif
 [[SFS_PARAMS.ARER]]
 rem --- Set defaults
 
@@ -19,7 +30,7 @@ rem ==========================================================
 		callpoint!.setColumnData("SFS_PARAMS.BM_INTERFACE","N",1)
 		callpoint!.setColumnEnabled("SFS_PARAMS.BM_INTERFACE",0)
 	endif
-	if callpoint!.getDevObject("ap")<>"Y"
+	if callpoint!.getDevObject("ar")<>"Y"
 		callpoint!.setColumnData("SFS_PARAMS.AR_INTERFACE","N",1)
 		callpoint!.setColumnEnabled("SFS_PARAMS.AR_INTERFACE",0)
 	endif
@@ -123,10 +134,17 @@ rem --- Retrieve parameter data
 	dim info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
 	callpoint!.setDevObject("bm",info$[20])
+	call stbl("+DIR_PGM")+"adc_application.aon","AR",info$[all]
+	callpoint!.setDevObject("ar",info$[20])
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
-	callpoint!.setDevObject("ap",info$[20])
 	callpoint!.setDevObject("br",info$[9])
 	call stbl("+DIR_PGM")+"adc_application.aon","PO",info$[all]
 	callpoint!.setDevObject("po",info$[20])
 	call stbl("+DIR_PGM")+"adc_application.aon","PR",info$[all]
 	callpoint!.setDevObject("pr",info$[20])
+
+	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
+	gl_installed$=info$[20]
+	callpoint!.setDevObject("gl_installed",gl_installed$)
+
+	if gl_installed$<>"Y" then callpoint!.setColumnEnabled("SFS_PARAMS.POST_TO_GL",-1)

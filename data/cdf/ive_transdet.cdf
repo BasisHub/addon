@@ -94,12 +94,11 @@ rem --- per bugzilla bug 4326, a) deal with receipt type and determine lot/seria
 
 ls_lookup: rem --- Call the lot lookup window and set default lot, lot location, lot comment and qty
 
-	rem --- Save current row/column so we'll know where to set focus when we return from lot lookup
+	rem --- Save current context so we'll know where to return from lot lookup
 
 	declare BBjStandardGrid grid!
 	grid! = util.getGrid(Form!)
-	return_to_row = grid!.getSelectedRow()
-	return_to_col = grid!.getSelectedColumn()
+	grid_ctx=grid!.getContextID()
 
 	rem --- Set data for the lookup form
 
@@ -155,7 +154,7 @@ ls_lookup: rem --- Call the lot lookup window and set default lot, lot location,
 	endif
 
 	rem --- return focus to where we were (lot number)
-	util.forceEdit(Form!, return_to_row, return_to_col)
+	sysgui!.setContext(grid_ctx)
 	
 [[IVE_TRANSDET.BUDE]]
 print "before record undelete (BUDE)"; rem debug

@@ -1,0 +1,466 @@
+rem --- Work Order Transaction History Report - Parameter Entry
+rem --- Program sfr_wotranshist.aon v8.0.0 04Jan2008 (sfr_ja/sfr_wordtrans.aon)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:35:34)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+        setesc std_error
+        seterr std_error
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+	num_files=15
+	dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+
+	open_tables$[1]	="GLS_PARAMS",   open_opts$[1] = "OTA"
+	open_tables$[2]	="IVS_PARAMS",   open_opts$[2] = "OTA"
+	open_tables$[3]	="SFS_PARAMS",   open_opts$[3] = "OTA"
+	open_tables$[4]	="SFE_WOMASTR",  open_opts$[4] = "OTA"; rem sfe-01
+rem 	open_tables$[5]	used to be sfm-07; no longer used
+	open_tables$[6]	="SFC_WOTYPECD", open_opts$[6] = "OTA"; rem sfm-10
+	open_tables$[7]	="SFT_OPNOPRTR", open_opts$[7] = "OTA"; rem sft-01
+	open_tables$[8]	="SFT_CLSOPRTR", open_opts$[8] = "OTA"; rem sft-03
+	open_tables$[9]	="SFT_OPNMATTR", open_opts$[9] = "OTA"; rem sft-21
+	open_tables$[10]="SFT_CLSMATTR", open_opts$[10] = "OTA"; rem sft-23
+	open_tables$[11]="SFT_OPNSUBTR", open_opts$[11] = "OTA"; rem sft-31
+	open_tables$[12]="SFT_CLSSUBTR", open_opts$[12] = "OTA"; rem sft-33
+	open_tables$[13]="IVM_ITEMMAST", open_opts$[13] = "OTA"
+	open_tables$[14]="IVC_WHSECODE", open_opts$[14] = "OTA"
+	
+	gosub open_tables
+	
+    gls01a_dev = num(open_chans$[1])
+    ivs01a_dev = num(open_chans$[2])
+    sfs01a_dev = num(open_chans$[3])
+    sfe01a_dev = num(open_chans$[4])
+	sfm10a_dev = num(open_chans$[6])
+	sft01a_dev = num(open_chans$[7])
+	sft03a_dev = num(open_chans$[8])
+	sft21a_dev = num(open_chans$[9])
+	sft23a_dev = num(open_chans$[10])
+	sft31a_dev = num(open_chans$[11])
+	sft33a_dev = num(open_chans$[12])
+	ivm01a_dev = num(open_chans$[13])
+	ivm10a_dev = num(open_chans$[14])
+
+rem --- Dimension string templates
+
+    dim gls01a$:open_tpls$[1]
+    dim ivs01a$:open_tpls$[2]
+    dim sfs01a$:open_tpls$[3]
+    dim sfe01a$:open_tpls$[4]
+    dim sfm10a$:open_tpls$[6]
+    sft01_tpls$=open_tpls$[7]; dim sft01a$:sft01_tpls$; rem Save template for next o'lay
+	sft03_tpls$=open_tpls$[8]; dim sft03a$:sft03_tpls$; rem Save template for next o'lay
+    sft21_tpls$=open_tpls$[9]; dim sft21a$:sft21_tpls$; rem Save template for next o'lay
+    sft23_tpls$=open_tpls$[10]; dim sft23a$:sft23_tpls$; rem Save template for next o'lay
+    sft31_tpls$=open_tpls$[11]; dim sft31a$:sft31_tpls$; rem Save template for next o'lay
+    sft33_tpls$=open_tpls$[12]; dim sft33a$:sft33_tpls$; rem Save template for next o'lay
+    dim ivm01a$:open_tpls$[13]
+    dim ivm10a$:open_tpls$[14]
+	
+	
+rem --- Assign form input values to local variables
+        sequence$=Option!.getOptionData("report_seq")
+        whse$=Option!.getOptionData("warehouse_id")
+        wofrom$=Option!.getOptionData("wo_no_1")
+        wothru$=Option!.getOptionData("wo_no_2") 
+        billfrom$=Option!.getOptionData("rpt_bill_no_1")
+        billthru$=Option!.getOptionData("rpt_bill_no_2")
+        custfrom$=Option!.getOptionData("customer_id_1")
+        custthru$=Option!.getOptionData("customer_id_2")
+        wotfrom$=Option!.getOptionData("wo_type_1")
+        wotthru$=Option!.getOptionData("wo_type_2")
+        wo_status$=Option!.getOptionData("wo_status")
+        datefrom$=Option!.getOptionData("trans_date_1")
+        datethru$=Option!.getOptionData("trans_date_2")
+        mat$=Option!.getOptionData("sf_transtype_m")
+        opr$=Option!.getOptionData("sf_transtype_O")
+        sub$=Option!.getOptionData("sf_transtype_s")
+
+        transtype$=""
+        if mat$="Y" transtype$=transtype$+"M"
+        if sub$="Y" transtype$=transtype$+"S"
+        if opr$="Y" transtype$=transtype$+"O"
+    
+rem --- Retrieve parameter records
+
+        gls01a_key$=firm_id$+"GL00"
+        find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+        
+		ivs01a_key$=firm_id$+"IV00"
+        find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
+        i9=ivs01a.item_id_len
+        ivs01_precision=num(ivs01a.precision$)
+        i2=ivs01a.ls_no_len
+		
+		sfs01a_key$=firm_id$+"SF00"
+        find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","A","",m1$,0,m1
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,m2
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","I","",m0$,0,m0
+		m3$=m2$;m3=len(m3$)
+        rem m3=len(sfs01a.rate_mask$); rate mask is blank in the data file sfs-01
+
+rem --- Parameters
+
+        bm$=sfs01a.bm_interface$
+        op$=sfs01a.ar_interface$
+        po$=sfs01a.po_interface$
+        pr$=sfs01a.pr_interface$
+
+rem --- Additional File Opens
+		num_files=9
+		dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+
+        if op$="Y" then
+            open_tables$[1]="ARM_CUSTMAST", open_opts$[1]="OTA"; rem arm-01
+            open_tables$[2]="ARS_PARAMS",   open_opts$[2]="OTA"; rem ars_params
+        endif
+        if po$="Y" then 
+            open_tables$[3]="APM_VENDMAST", open_opts$[3]="OTA"; rem apm-01
+            open_tables$[4]="APS_PARAMS",   open_opts$[4]="OTA"; rem aps_params
+        endif
+        if bm$="Y" open_tables$[5]="BMC_OPCODES",  open_opts$[5]="OTA"; rem bmm-08
+        if bm$="N" open_tables$[5]="SFC_OPRTNCOD", open_opts$[5]="OTA"; rem sfm-02
+        if pr$="Y" then
+            open_tables$[6]="PRS_PARAMS",   open_opts$[6]="OTA"; rem prs_params
+            open_tables$[7]="PRM_EMPLMAST", open_opts$[7]="OTA"; rem prm-01
+        endif
+        if pr$="N" open_tables$[7]="SFM_EMPLMAST", open_opts$[7]="OTA"; rem sfm-01
+        if pos(ivs01a.lotser_flag$="LS") then
+            open_tables$[8]="SFT_OPNLSTRN", open_opts$[8]="OTA"; rem sft-11
+            open_tables$[9]="SFT_CLSLSTRN", open_opts$[9]="OTA"; rem sft-12
+        endif
+  	
+		gosub open_tables
+		
+        arm01a_dev = num(open_chans$[1])
+        ars01a_dev = num(open_chans$[2])
+        apm01a_dev = num(open_chans$[3])
+        aps01a_dev = num(open_chans$[4])
+        opcode_dev = num(open_chans$[5])
+        prs01a_dev = num(open_chans$[6])
+        empcode_dev = num(open_chans$[7])
+        sft11a_dev = num(open_chans$[8])
+        sft12a_dev = num(open_chans$[9])
+    
+
+rem --- Dimension string templates & retrieve params (Add'l files)
+
+		if op$="Y" then
+			dim arm01a$:open_tpls$[1]
+			dim ars01a$:open_tpls$[2]
+			
+			find record (ars01a_dev,key=firm_id$+"AR00",dom=std_missing_params) ars01a$
+            call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","I","",c1$,0,c1
+        endif
+
+		if po$="Y" then
+			dim apm01a$:open_tpls$[3]
+			dim aps01a$:open_tpls$[4]
+			
+			find record (aps01a_dev,key=firm_id$+"AP00") aps01a$
+			call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","I","",c3$,0,c3
+        endif
+		
+		dim opcode$:open_tpls$[5]
+		
+		if pr$="Y" then	
+			dim prs01a$:open_tpls$[6]
+
+            find record (prs01a_dev,key=firm_id$+"PR00") prs01a$
+            call stbl("+DIR_PGM")+"adc_getmask.aon","","PR","I","",c5$,0,c4
+		else
+            call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","I","",c5$,0,c4
+		endif
+		
+		dim empcode$:open_tpls$[7]
+        
+		sft11_tpls$=open_tpls$[8]; dim sft11a$:sft11_tpls$; rem Save tmpl for next o'lay
+		sft12_tpls$=open_tpls$[9]; dim sft12a$:sft12_tpls$; rem Save tmpl for next o'lay
+
+rem --- Init Data
+
+        h0=132
+        headings=5,h=0,when$=sysinfo.system_date$,clock$=""
+        dim headings$[headings]
+        headings$[0]=sysinfo.firm_name$
+        headings$[1]=sysinfo.task_desc$
+        l9=59
+        l=l9+1
+        dim desc[3]
+
+		Rem --- Find end date of SF's PREVIOUS period
+        sf_prevper=num(sfs01a.current_per$)-1
+        sf_prevper_yr=num(sfs01a.current_year$)
+        if sf_prevper=0 then
+			sf_prevper=num(gls01a.total_pers$)
+			sf_prevper_yr=sf_prevper_yr-1
+		endif
+		
+        call pgmdir$+"adc_perioddates.aon",gls01a_dev,sf_prevper,sf_prevper_yr,begdate$,sf_prevper_enddate$,status
+        if status then goto std_exit
+        sfs01a.current_per$=""
+        sfs01a.current_year$=""
+ 
+		desc[1]=num(ivs01a.desc_len_01$)
+        desc[2]=num(ivs01a.desc_len_02$)
+        desc[3]=num(ivs01a.desc_len_03$)
+        if transtype$="" then transtype$="MSO"
+
+rem --- Retrieve key templates
+
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","PRIMARY",sfe01a_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","AO_TYP_LOC_WO",sfe03a_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","AO_CST_ORD_LINE",sfe03b_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","AO_WH_ITM_LOC_WO",sfe03c_key_tpl$,rd_table_chans$[all],status$
+
+rem --- Options
+
+    rem --- Assign Title, Record, and keys
+    if sequence$="W" 
+        h3$="Work Order Sequence"
+		h3_short$="WO "
+        beging$=wofrom$
+        ending$=wothru$
+        dim sfe01_key$:sfe01a_key_tpl$
+        begin_key$=firm_id$+sfe01a.wo_location$+beging$
+        keynum$="PRIMARY"
+    endif
+    if sequence$="B"
+        h3$="Bill Number Sequence"
+        h3_short$="Bill "
+		beging$=billfrom$
+        ending$=billthru$
+        dim sfe01_key$:sfe03c_key_tpl$
+        begin_key$=firm_id$+whse$+beging$
+        keynum$="AO_WH_ITM_LOC_WO"
+    endif
+    if sequence$="C"
+        h3$="Customer Sequence"
+        h3_short$="Customer "
+		beging$=custfrom$
+        ending$=custthru$
+        dim sfe01_key$:sfe03b_key_tpl$
+        begin_key$=firm_id$+beging$
+        keynum$="AO_CST_ORD_LINE"
+    endif
+    if sequence$="T"
+        h3$="Work Order Type Sequence"
+        h3_short$="WO Type "
+		beging$=wotfrom$
+        ending$=wotthru$
+        dim sfe01_key$:sfe03a_key_tpl$
+        begin_key$=firm_id$+beging$
+        keynum$="AO_TYP_LOC_WO"
+    endif
+        h9$=h3$(1,pos("Seq"=h3$)-2)
+        if wo_status$="O" then h4$="Open Work Orders"
+        if wo_status$="C" then h4$="Closed Work Orders"
+        if wo_status$="B" then h4$="All Work Orders"
+        if sequence$="B" h4$=h4$+" for Whse "+whse$
+		h4$=h4$+" beginning with "
+        if beging$<>"" h4$=h4$+h3_short$+beging$ else h4$=h4$+"the First"+" "+h3_short$
+        h4$=h4$(1,pos("   "=h4$+"   ")-1)
+        h4$=h4$+" and ending with "
+        if ending$<>"" h4$=h4$+ending$ else h4$=h4$+"the Last"
+        h4$=h4$(1,pos("   "=h4$+"   ")-1)
+        h7$="with a Transaction Type of "+transtype$
+		
+		if datefrom$="" and datethru$="" then 
+			hdaterange$="for All Transaction Dates"
+		else
+			datefrom_hdr$="for Transaction Dates between"
+			if datefrom$="" then 
+				datefrom_hdr$=datefrom_hdr$+" "+"the First "
+			else 
+				datefrom_hdr$=datefrom_hdr$+" "+fndate$(datefrom$)
+			endif
+			
+			datethru_hdr$="and"
+			if datethru$="" then 
+				datethru_hdr$=datethru_hdr$+" "+"the Last "
+			else 
+				datethru_hdr$=datethru_hdr$+" "+fndate$(datethru$)
+			endif
+			
+			hdaterange$=datefrom_hdr$+" "+datethru_hdr$
+		endif
+		
+done: rem --- Overlay
+
+        run pgmdir$+"sfr_wotranshist_o1.aon"
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+    def fnh$(q1$)=q1$(5,2)+"/"+q1$(1,4)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		rd_table_chans$[all]
+
+	return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

@@ -63,6 +63,51 @@ rem --- Get total on WO Finished Goods (On Order)
 
 		callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_WO",str(womast_qty))
 	endif
+
+rem --- Get WO commits
+
+	if callpoint!.getDevObject("wo_installed") = "Y"
+		womatdtl_dev=fnget_dev("SFE_WOMATDTL")
+		dim womatdtl_tpl$:fnget_tpl$("SFE_WOMATDTL")
+		womatisd_dev=fnget_dev("SFE_WOMATISD")
+		dim womatisd_tpl$:fnget_tpl$("SFE_WOMATISD")
+
+		womatdtl_qty=0
+
+		rem --- Get WO commits for open WOs
+		read(womatdtl_dev,key=firm_id$+whse$+item$,knum="AO_WH_ITM_LOC_WO",dom=*next)
+		while 1
+			read record (womatdtl_dev,end=*break)womatdtl_tpl$
+			if firm_id$<>womatdtl_tpl.firm_id$ break
+			if whse$<>womatdtl_tpl.warehouse_id$ break
+			if item$<>womatdtl_tpl.item_id$ break
+			womatdtl_qty = womatdtl_qty + (womatdtl_tpl.qty_ordered - womatdtl_tpl.tot_qty_iss)
+		wend
+
+		rem --- Include additional committments made after WO was released
+		read(womatisd_dev,key=firm_id$+whse$+item$,knum="AO_WH_ITM_LOC_WO",dom=*next)
+		while 1
+			read record (womatisd_dev,end=*break)womatisd_tpl$
+			if firm_id$<>womatisd_tpl.firm_id$ break
+			if whse$<>womatisd_tpl.warehouse_id$ break
+			if item$<>womatisd_tpl.item_id$ break
+			rem --- Skip commits already counted for open WOs
+			if cvs(womatisd_tpl.womatdtl_seq_ref$,2)="" then
+				rem --- Not part of released WO
+				womatdtl_qty = womatdtl_qty + (womatisd_tpl.qty_ordered - womatisd_tpl.tot_qty_iss)
+			else
+				rem --- Only count portion of issue's qty_issued that is greater than released WO's qty_ordered
+				womatdtl_key$=firm_id$+womatisd_tpl.wo_location$+womatisd_tpl.wo_no$+womatisd_tpl.womatdtl_seq_ref$
+				findrecord(womatdtl_dev,key=womatdtl_key$,knum="PRIMARY",err=*endif)womatdtl_tpl$
+				if womatisd_tpl.qty_ordered - womatisd_tpl.tot_qty_iss > womatdtl_tpl.qty_ordered - womatdtl_tpl.tot_qty_iss then
+					womatdtl_qty = womatdtl_qty - (womatdtl_tpl.qty_ordered - womatdtl_tpl.tot_qty_iss)
+					womatdtl_qty = womatdtl_qty + (womatisd_tpl.qty_ordered - womatisd_tpl.tot_qty_iss)
+				endif
+			endif
+		wend
+
+		callpoint!.setColumnData("<<DISPLAY>>.COMMIT_WO",str(womatdtl_qty))
+	endif
 [[IVM_ITEMWHSE.BDEL]]
 rem --- Allow this warehouse to be deleted?
 
@@ -126,12 +171,14 @@ if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and cvs(call
 [[IVM_ITEMWHSE.BSHO]]
 rem --- Open extra tables
 
-num_files=3
+num_files=5
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="POE_PODET",open_opts$[1]="OTA"
 open_tables$[2]="OPE_ORDDET",open_opts$[2]="OTA"
 if callpoint!.getDevObject("wo_installed") = "Y"
 	open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
+	open_tables$[4]="SFE_WOMATDTL",open_opts$[4]="OTA"
+	open_tables$[5]="SFE_WOMATISD",open_opts$[5]="OTA"
 endif
 gosub open_tables
 

@@ -1,0 +1,536 @@
+rem --- Work Order Detail Report
+rem --- Program sfr_wodetrpt.aon v8.0.0 04Jan2008 (sfr_ia)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:35:14)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+rem --- This lead-in is one of the four that use the Jasper SFHardCopy.prc
+rem --- The four reports are Traveler, Closed WO Detail Rpt,
+rem --- WO Detail Rpt (menu item), WO Hard Copy (an option within WO Entry)
+rem --- The four are similar in that they have to pass the same params to 
+rem --- the SPROC, but the options on each report differ
+
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::java.util.HashMap::HashMap
+	
+	params! = new java.util.HashMap()
+		
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 50
+ 
+    setesc std_error
+    seterr std_error
+  
+rem --- Use statements and Declares
+
+    use ::ado_func.src::func
+    use ::ado_pdf.src::PDFHelper
+    use ::sys/prog/bao_option.bbj::Option
+
+    declare Option option!
+
+rem --- Retrieve the program path
+
+    pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Set document Directory
+
+    docdir$=""
+    docdir$=stbl("+DOC_DIR_PDF",err=*next)
+	
+rem --- Retrieve sysinfo data
+
+    sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_tpl$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    user_id$=sysinfo.user_id$
+    proc_date$=date(jul(num(sysinfo.system_date$(1,4)),num(sysinfo.system_date$(5,2)),num(sysinfo.system_date$(7,2))):stbl("+DATE_MASK"))
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+
+rem --- Open/Lock files
+
+    num_files=13
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="SFS_PARAMS",   open_opts$[1]="OTA"
+    open_tables$[2]="APS_PARAMS",   open_opts$[2]="OTA"
+    open_tables$[3]="ARS_PARAMS",   open_opts$[3]="OTA"
+    open_tables$[4]="GLS_PARAMS",   open_opts$[4]="OTA"
+    open_tables$[5]="IVS_PARAMS",   open_opts$[5]="OTA"
+    open_tables$[6]="PRS_PARAMS",   open_opts$[6]="OTA"
+	open_tables$[7]="BMS_PARAMS",   open_opts$[7]="OTA"
+	
+    open_tables$[8]="ARM_CUSTMAST", open_opts$[8]="OTA"
+    open_tables$[9]="IVM_ITEMMAST", open_opts$[9]="OTA"; rem ivm-01
+    open_tables$[10]="IVC_WHSECODE",open_opts$[10]="OTA"
+    open_tables$[11]="SFE_WOMASTR", open_opts$[11]="OTA"; rem sfe-01
+    open_tables$[12]="SFE_WOOPRTN", open_opts$[12]="OTA"; rem sfe-02
+    open_tables$[13]="SFC_WOTYPECD",open_opts$[13]="OTA"; rem sfm-10
+
+    gosub open_tables
+
+rem --- Assignments so parameters can be tested in lead-in program
+
+    sfs_params_dev=num(open_chans$[1])
+    aps_params_dev=num(open_chans$[2])
+    ars_params_dev=num(open_chans$[3])
+    gls_params_dev=num(open_chans$[4])	
+    ivs_params_dev=num(open_chans$[5])
+    prs_params_dev=num(open_chans$[6])
+    bms_params_dev=num(open_chans$[7])
+	
+    dim sfs_params$:open_tpls$[1]
+    dim aps_params$:open_tpls$[2]
+    dim ars_params$:open_tpls$[3]
+    dim gls_params$:open_tpls$[4]
+    dim ivs_params$:open_tpls$[5]
+    dim prs_params$:open_tpls$[6]
+    dim bms_params$:open_tpls$[7]
+	
+	dim sfe01a$:open_tpls$[11]
+	
+rem --- Close files after ensuring they exist
+
+    num_files=6
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ARM_CUSTMAST", open_opts$[1]="CX"
+    open_tables$[2]="IVM_ITEMMAST", open_opts$[2]="CX"; rem ivm-01
+    open_tables$[3]="IVC_WHSECODE", open_opts$[3]="CX"
+    open_tables$[4]="SFE_WOMASTR",  open_opts$[4]="CX"; rem sfe-01
+    open_tables$[5]="SFE_WOOPRTN",  open_opts$[5]="CX"; rem sfe-02
+    open_tables$[6]="SFC_WOTYPECD", open_opts$[6]="CX"; rem sfm-10
+
+    gosub open_tables
+
+rem --- Assign form input values to local variables
+
+	report_type$="M"; rem M = WO Detail Rpt from *M*enu
+					  rem T = *T*raveler
+					  rem E = Detail Rpt from WO *E*ntry
+					  rem C = *C*losed WO Detail Rpt
+	
+	wo_location$=sfe01a.wo_location$; rem Setting the len per how it's templated, so not hardcoded
+
+    report_seq$=Option!.getOptionData("report_seq")
+    wo_no_1$=Option!.getOptionData("wo_no_1")
+    wo_no_2$=Option!.getOptionData("wo_no_2")
+    wo_type_1$=Option!.getOptionData("wo_type_1")
+    wo_type_2$=Option!.getOptionData("wo_type_2")
+    warehouse_id$=Option!.getOptionData("warehouse_id")
+    bill_no_1$=Option!.getOptionData("bill_no_1")
+    bill_no_2$=Option!.getOptionData("bill_no_2")
+    customer_ID_1$=Option!.getOptionData("customer_ID_1")
+    customer_ID_2$=Option!.getOptionData("customer_ID_2")
+
+    wo_open$=Option!.getOptionData("open")
+    wo_closed$=Option!.getOptionData("closed")
+    wo_planned$=Option!.getOptionData("planned")
+    wo_quoted$=Option!.getOptionData("quoted")
+	
+    wostatus$=""
+    if wo_open$="Y" then wostatus$=wostatus$+"O"
+    if wo_closed$="Y" then wostatus$=wostatus$+"C"
+    if wo_planned$="Y" then wostatus$=wostatus$+"P"
+    if wo_quoted$="Y" then wostatus$=wostatus$+"Q"
+
+rem --- Add to params!		
+
+	params!.put("REPORT_TYPE",report_type$); REM "Specifies leadin pgm
+
+	params!.put("REPORT_SEQ",report_seq$)
+	params!.put("WO_NO_1",wo_no_1$)
+	params!.put("WO_NO_2",wo_no_2$)
+	params!.put("WO_TYPE_1",wo_type_1$)
+	params!.put("WO_TYPE_2",wo_type_2$)
+	params!.put("CUSTOMER_ID_1",customer_id_1$)
+	params!.put("CUSTOMER_ID_2",customer_id_2$)	
+	params!.put("WAREHOUSE_ID",warehouse_id$)
+	params!.put("BILL_NO_1",bill_no_1$)
+	params!.put("BILL_NO_2",bill_no_2$)	
+	params!.put("WOSTATUS",wostatus$)
+	params!.put("WO_LOCATION",wo_location$)
+
+rem 	if params!.get("wo_no_2")="" then params!.put("wo_no_2","~~~~~~")
+
+rem --- Parameters
+
+    bm$=""
+    op$=""
+    po$=""
+    pr$=""
+    find record (sfs_params_dev,key=firm_id$+"SF00",dom=std_missing_params) sfs_params$
+    bm$=sfs_params$.bm_interface$
+    op$=sfs_params$.ar_interface$
+    po$=sfs_params$.po_interface$
+    pr$=sfs_params$.pr_interface$
+
+    p6=num(sfs_params$.empl_no_len$)
+	
+    find record (gls_params_dev,key=firm_id$+"GL00",dom=std_missing_params) gls_params$
+	
+    if bm$="Y" then 
+        find record (bms_params_dev,key=firm_id$+"BM00",dom=std_missing_params) bms_params$
+    endif
+    if op$="Y" then
+        find record (ars_params_dev,key=firm_id$+"AR00",dom=std_missing_params) ars_params$
+        c0=num(ars_params$.customer_size$)
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","I","",p8$,0,p8
+    endif
+    if po$="Y" then
+        find record (aps_params_dev,key=firm_id$+"AP00",dom=std_missing_params) aps_params$
+        p7=num(aps_params$.vendor_size$)
+    endif
+    if pr$="Y" then
+        find record (prs_params_dev,key=firm_id$+"PR00",dom=std_missing_params) prs_params$
+        p6=num(prs_params$.empl_no_len$)
+    endif
+    if pr$<>"Y" and sfs_params$.overhd_type$="P" then 
+        m5=num(sfs_params$.def_ovd_rate$)
+    endif
+    find record (ivs_params_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs_params$
+    dim p[1],desc[3]
+    p[0]=ivs_params$.item_id_len
+    ivs01_precision=num(ivs_params.precision$)
+    p[1]=num(ivs_params.precision$)
+	
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","A","",m1$,0,m1
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,m2
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","R","",m3$,0,m3
+    desc[1]=num(ivs_params$.desc_len_01$)
+    desc[2]=num(ivs_params$.desc_len_02$)
+    desc[3]=num(ivs_params$.desc_len_03$)
+	
+rem --- Init Data
+   
+rem Find LAST PERIOD end date
+	p0=num(sfs_params$.current_per$)
+    p1=num(sfs_params$.current_year$)
+    p0=p0-1
+    if p0=0 then 
+		p0=num(gls_params$.total_pers$)
+		p1=p1-1
+    endif
+	call pgmdir$+"adc_perioddates.aon",gls_params_dev,p0,p1,v0$,g9$,status
+
+rem --- Retrieve key templates
+
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","PRIMARY",sfe01a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","AO_TYP_LOC_WO",sfe01a_key1_alttpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","AO_TYP_LOC_WO",sfe01a_key2_alttpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","AO_WH_ITM_LOC_WO",sfe01a_key3_alttpl$,rd_table_chans$[all],status$
+
+rem --- Options
+    action=pos(sequence$="WBCT")-1
+    switch action
+        case 0
+            h3$="Work Order Sequence"
+            beging$=wofrom$
+            ending$=wothru$
+            dim key_tpl$:sfe01a_key_tpl$
+            begin_key$=firm_id$+sfe01a.wo_location$+beginning$
+            keynum$="PRIMARY"
+            break
+        case 1
+            h3$="Bill Number Sequence"
+            beging$=billfrom$
+            ending$=billthru$
+            dim key_tpl$:sfe01a_key3_alttpl$
+            begin_key$=firm_id$+whse$+beging$
+            keynum$="AO_WH_ITM_LOC_WO"
+            break
+        case 2
+            h3$="Customer Sequence"
+            beging$=custfrom$
+            ending$=custthru$
+            dim key_tpl$:sfe01a_key2_alttpl$
+            begin_key$=firm_id$+beging$
+            keynum$="AO_CST_ORD_LINE"
+            break
+        case 3
+            h3$="Work Order Type Sequence"
+            beging$=wotfrom$
+            ending$=wotthru$
+            dim key_tpl$:sfe01a_key1_alttpl$
+            begin_key$=firm_id$+beging$
+            keynum$="AO_TYP_LOC_WO"
+            break
+        case default
+            break
+    swend
+
+rem --- Set additional params
+
+	params!.put("REPORT_NAME",sysinfo.task_desc$) 
+    params!.put("FIRM_ID",firm_id$)
+	params!.put("FIRM_NAME",firm_name$)
+    params!.put("BARISTA_WD",dir(""))  
+	
+rem --- Make Document Archive Record and Get ID
+
+    rep_date$=date(0:stbl("+DATE_MASK"))
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+    rd_source_alias$=rd_alias_id$
+    rd_source_type$="O"
+    rd_doc_source$="E"
+    rd_doc_ext$="JAS"
+    rd_archive_action$=rd_out_status$
+
+call rd_dir_syp$+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       "DOC_ID-NOREPRINT"
+
+rem --- Document Output Report Parameters
+
+    params!.put("DOC_NO",rd_doc_id$)
+    params!.put("DATE_REP",rep_date$+"  "+rep_time$)
+    
+rem --- Set Report Name & Subreport directory
+
+    reportDir$ = stbl("+DIR_REPORTS",err=*next)
+    reportTitle$=sysinfo.task_desc$+"_"+rd_doc_id$   
+    temp = unt
+    open (temp)reportDir$
+    reportDir$ = fid(temp)(9)+"/"
+    close (temp)
+    reportBaseName$ = "SFHardCopy"
+    filename$ = reportDir$ + reportBaseName$ + ".jasper"
+
+    declare BBJasperReport report!
+    
+rem --- Check for user authentication
+
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    dbtimeout$="&socket_timeout=5000"
+  
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
+
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
+	
+	dbname$ = stbl("+DBNAME")
+	dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+		if pos("jdbc:"=cvs(dbname$,8))=1 then			
+			url$=dbname$+url_user$
+		else
+			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+		endif
+    endif
+
+    report! = new BBJasperReport(filename$,url$)
+    report!.putParams(params!)
+
+    locale$ = stbl("!LOCALE")
+    locale$ = stbl("+USER_LOCALE",err=*next)
+    report!.setLocale(locale$)
+
+rem --- Fill Report and Show
+
+    declare BBJasperViewerWindow viewerWindow!
+
+    report!.fill(1)
+    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,reportTitle$,$00080093$)
+    viewerWindow!.getViewerControl().setGoogleDefaultDocument(reportTitle$)
+    viewerWindow!.setReleaseOnClose(1)
+    viewerWindow!.show(0)
+        
+rem --- Event Control
+
+    process_events,err=*same
+
+    release
+
+connect_err:rem --- Connection Error
+
+    declare java.lang.Exception Exception!
+    Exception! = bbjapi().getLastException()
+    if Exception! = null() then 
+       x = msgbox(errmes(-1),16,"Connection Failed")
+    else
+       x = msgbox(Exception!.getLocalizedMessage(),16,"Connection Failed")
+    endif
+
+    release
+    
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+	
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

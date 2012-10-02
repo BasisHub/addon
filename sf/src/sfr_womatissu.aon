@@ -1,0 +1,794 @@
+rem --- Work Order Material Issues Register
+rem --- Program sfr_womatissu v8.0.0 22Mar2012 (wor_da)
+rem --- Created by Codeport Utility (03/22/2012 03:27:20)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- See if batching
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
+                
+rem --- Get user approval to proceed
+
+	msg_id$="AON_RUN_QUERY"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=sysinfo.task_desc$
+	gosub disp_message
+	if msg_opt$<>"Y" then goto std_exit_no_report
+
+rem --- Open/Lock Files
+
+	num_files=16
+	dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+
+	open_tables$[1] ="SFS_PARAMS",    open_opts$[1] = "OTA"
+	open_tables$[2] ="SFE_WOMASTR",   open_opts$[2] = "OTA"
+	open_tables$[3] ="SFE_WOTRANS",   open_opts$[3] = "OTAL"
+	open_tables$[4] ="SFE_WOMATHDR",  open_opts$[4] = "OTA"
+	open_tables$[5] ="SFE_WOMATDTL",  open_opts$[5] = "OTA"
+	open_tables$[6] ="SFE_WOMATISH",  open_opts$[6] = "OTA"
+	open_tables$[7] ="SFE_WOMATISD",  open_opts$[7] = "OTA"
+	open_tables$[9] ="SFC_WOTYPECD",  open_opts$[9] = "OTA"
+	open_tables$[10]="SFT_OPNMATTR",  open_opts$[10] = "OTA"
+	open_tables$[11]="SFW_ISSUXTYP",  open_opts$[11] = "OTAL"
+	open_tables$[12]="IVS_PARAMS",    open_opts$[12] = "OTA"
+	open_tables$[13]="IVM_ITEMMAST",  open_opts$[13] = "OTA"
+	open_tables$[14]="IVM_ITEMWHSE",  open_opts$[14] = "OTA"
+	open_tables$[15]="IVM_ITEMACT",   open_opts$[15] = "OTA"
+	open_tables$[16]="IVT_ITEMTRAN",  open_opts$[16] = "OTA"
+
+    rem --- Lock if not bathing
+    if num(batch_no$)=0 then 
+        open_opts$[6]=open_opts$[6]+"L"
+        open_opts$[7]=open_opts$[7]+"L"
+    endif
+    
+	gosub open_tables
+	
+    sfs01_dev = num(open_chans$[1])
+    sfe01_dev = num(open_chans$[2])
+    wotrans_dev = num(open_chans$[3])
+    sfe13_dev = num(open_chans$[4])
+    sfe23_dev = num(open_chans$[5])
+    sfe15_dev = num(open_chans$[6])
+    sfe25_dev = num(open_chans$[7])
+    sfm10_dev = num(open_chans$[9])
+    sft21_dev = num(open_chans$[10])
+    sfw01_dev = num(open_chans$[11])
+    ivs01_dev = num(open_chans$[12])
+    ivm01_dev = num(open_chans$[13])
+    ivm02_dev = num(open_chans$[14])
+    ivm12_dev = num(open_chans$[15])
+    ivt04_dev = num(open_chans$[16])
+
+rem --- Dimension string templates
+
+    dim sfs01a$:open_tpls$[1],sfe01a$:open_tpls$[2],wotrans$:open_tpls$[3],
+:       sfe13a$:open_tpls$[4],sfe23a$:open_tpls$[5],sfe15a$:open_tpls$[6],
+:       sfe25a$:open_tpls$[7],sfm10a$:open_tpls$[9],
+:       sft21a$:open_tpls$[10],sfw01a$:open_tpls$[11],ivs01a$:open_tpls$[12],
+:       ivm01a$:open_tpls$[13],ivm02a$:open_tpls$[14],ivm12a$:open_tpls$[15],
+:       ivt04a$:open_tpls$[16]
+
+rem --- Parameters
+
+    find record (ivs01_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    dim p[2]
+    p[0]=ivs01a.item_id_len
+    p[1]=ivs01a.vendor_prd_len
+    p[2]=ivs01a.ls_no_len
+    ivs01_precision=num(ivs01a.precision$)
+    lf$=iff(pos(ivs01a.lifofifo$="LF"),"Y","N")
+    p9$=ivs01a.lotser_flag$
+    dim desc[3]
+    desc[1]=num(ivs01a.desc_len_01$)
+    desc[2]=num(ivs01a.desc_len_02$)
+    desc[3]=num(ivs01a.desc_len_03$)
+
+    dim info$[20]
+    call pgmdir$+"adc_application.aon","AR",info$[all]
+    ar$=info$[20]
+    
+    find record (sfs01_dev,key=firm_id$+"SF00",dom=std_missing_params) sfs01a$
+    if ar$="Y" then ar$=sfs01a.ar_interface$
+    
+    gl$="N"
+    status=0
+    source$=pgm(-2)
+    call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,"SF",glw11$,gl$,status
+    if status goto std_exit_no_report
+
+rem --- Additional File Opens
+
+	num_files=14
+	dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+
+    if ar$="Y" then
+        open_tables$[1] ="ARS_PARAMS",      open_opts$[1] = "OTA"
+        open_tables$[2] ="ARM_CUSTMAST",    open_opts$[2] = "OTA"
+        open_tables$[3] ="ARC_DISTCODE",    open_opts$[3] = "OTA"
+    endif
+
+    if pos(p9$="LS") then 
+        open_tables$[4] ="SFE_WOLSISSU",    open_opts$[4] = "OTA"
+        open_tables$[5] ="SFT_OPNLSTRN",    open_opts$[5] = "OTA"
+        open_tables$[6] ="IVM_LSMASTER",    open_opts$[6] = "OTA"
+    endif
+
+    if lf$="Y" then
+        open_tables$[7] ="IVM_ITEMTIER",    open_opts$[7] = "OA"
+        open_tables$[8] ="IVW_LFCOST",      open_opts$[8] = "OTAL"
+        open_tables$[9] ="IVW_LFDET",       open_opts$[9] = "OAL"
+    endif
+    
+    if gl$="Y" then
+        open_tables$[10] ="GLS_PARAMS",     open_opts$[10] = "OTA"
+        open_tables$[11] ="GLM_ACCT",       open_opts$[11] = "OA"
+        open_tables$[12] ="GLW_DAILYDETAIL",open_opts$[12] = "OA"
+        open_tables$[13] ="GLE_DAILYDETAIL",open_opts$[13] = "OA"
+        open_tables$[14] ="GLT_BANKCHECKS", open_opts$[14] = "OA"
+    endif
+    
+	gosub open_tables
+    
+    if ar$="Y" then
+        ars01_dev=num(open_chans$[1])
+        arm01_dev=num(open_chans$[2])
+        arm10_dev=num(open_chans$[3])
+        dim ars01a$:open_tpls$[1],arm01a$:open_tpls$[2],arm10a$:open_tpls$[3]
+    endif
+    
+    if pos(p9$="LS") then 
+        sfe14_dev=num(open_chans$[4])
+        sft11_dev=num(open_chans$[5])
+        ivm07_dev=num(open_chans$[6])
+        dim sfe14a$:open_tpls$[4],sft11a$:open_tpls$[5],ivm07a$:open_tpls$[6]
+    endif
+    
+    if lf$="Y" then
+        dim lf_channels[4],lf_tmpls$[4]
+        ivm04_dev=num(open_chans$[7])
+        ivw05_dev=num(open_chans$[8])
+        ivw04_dev=num(open_chans$[9])
+        dim ivw05a$:open_tpls$[8]
+
+        rem --- Clear IVW_LFCOST (ivw-05) and IVW_LFDET (ivw-04)
+        call pgmdir$+"adc_clearfile.aon",ivw05_dev
+        call pgmdir$+"adc_clearfile.aon",ivw04_dev
+    endif
+
+    if gl$="Y" then
+        gls01_dev=num(open_chans$[10])
+        glm01_dev=num(open_chans$[11])
+        glw11_dev=num(open_chans$[12])
+        glt04_dev=num(open_chans$[13])
+        glt05_dev=num(open_chans$[14])
+        dim gls01a$:open_tpls$[10]
+    
+        rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif
+
+rem --- Initializations
+
+    rem --- Clear SFW_ISSUXTYP (sfw-01)
+    call pgmdir$+"adc_clearfile.aon",sfw01_dev
+
+    precision ivs01_precision
+
+    c0=0,c$="",dist_by_item$="N"
+    if ar$="Y" then
+        find record (ars01_dev,key=firm_id$+"AR00",dom=std_missing_params) ars01a$
+        c0=num(ars01a.customer_size$)
+        dist_by_item$=ars01a.dist_by_item$
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","I","",c$,0,0
+    endif
+    
+    dim g[4]
+    if gl$="Y" then
+        find record (gls01_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
+        g[0]=num(gls01a.total_pers$)
+        g[1]=num(gls01a.current_per$)
+        g[2]=num(gls01a.current_year$)
+        g[3]=num(gls01a.acct_length$)
+        g[4]=num(gls01a.max_acct_len$)
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","I","",g5$,0,0
+   endif
+
+    width=132
+    headings=iff(ar$="Y",5,4)
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    headings$[2]=""
+    headings$[3]="[HEADER]"
+    headings$[4]="[HEADER]"
+    if ar$="Y" then headings$[5]="[HEADER]"
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ Translate!.getTranslation("AON__(BATCH:_")+batch_no$+")"        
+    when$=sysinfo.system_date$
+    clock$=""
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","A","",m1$,0,0
+    m1=len(m1$)
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,0
+    m2=len(m2$)
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","R","",m3$,0,0
+    m3=len(m3$)
+    if p9$="L" p8$="    Lot Number: " else p8$="    Serial Number: "
+    dim s[1],t[1]
+    missing_lotser=0
+    
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+    rem --- Column headings
+    columns=9
+    dim columns$[columns,10]
+    columns$[0,0]=Translate!.getTranslation("AON_ITEM"),         columns$[0,1]="C",columns$[0,2]=str(p[0])
+    columns$[1,0]=Translate!.getTranslation("AON_DESCRIPTION"),  columns$[1,1]="C",columns$[1,2]=str(min(desc[1],30)+1)
+    columns$[2,0]=Translate!.getTranslation("AON_UM"),           columns$[2,1]="C",columns$[2,2]="3"
+    columns$[3,0]=Translate!.getTranslation("AON_REQUIRED"),     columns$[3,1]="C",columns$[3,2]="8"
+    columns$[4,0]=Translate!.getTranslation("AON_ORDERED"),      columns$[4,1]="N",columns$[4,2]=str(m2),columns$[4,3]=m2$
+    columns$[5,0]=Translate!.getTranslation("AON_PRIOR^ISSUE"),  columns$[5,1]="N",columns$[5,2]=str(m2),columns$[5,3]=m2$
+    columns$[6,0]=Translate!.getTranslation("AON_BALANCE"),      columns$[6,1]="N",columns$[6,2]=str(m2),columns$[6,3]=m2$
+    columns$[7,0]=Translate!.getTranslation("AON_THIS^ISSUE"),   columns$[7,1]="N",columns$[7,2]=str(m2),columns$[7,3]=m2$,columns$[7,10]="T"
+    columns$[8,0]=Translate!.getTranslation("AON_UNIT^COST"),    columns$[8,1]="N",columns$[8,2]=str(m3),columns$[8,3]=m3$,columns$[8,10]="T"
+    columns$[9,0]=Translate!.getTranslation("AON_TOTAL"),        columns$[9,1]="N",columns$[9,2]=str(m1),columns$[9,3]=m1$,columns$[9,10]="T"
+
+
+rem --- Start progress meter and position header file
+
+    recs=0
+	call pgmdir$+"adc_progress.aon","NC","","","","",0,wotrans_dev,1,meter_num,status
+    read (wotrans_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Issue Inventory Transaction (SFE_WOTRANS) record
+
+    while 1
+        read record (wotrans_dev,end=*break)wotrans$
+        if wotrans.firm_id$<>firm_id$ then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+        rem --- Get Material Issues Header (SFE_WOMATISH, sfe-15) record for this transaction (and batch)
+        sfe15_key$=firm_id$+batch_no$+wotrans.wo_location$+wotrans.wo_no$
+        read record (sfe15_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*continue) sfe15a$; rem --- skip if wrong batch
+        
+        rem --- Get Work Order Entry (SFE_WOMASTR, sfe-01) record
+        find record (sfe01_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$,dom=*continue) sfe01a$
+        wo_desc$=sfe01a.description_01$
+        dim ivm01a$:fattr(ivm01a$)
+        if sfe01a.wo_category$="I" then
+            rem --- Use inventory item description
+            find record (ivm01_dev,key=firm_id$+sfe01a.item_id$,dom=*endif) ivm01a$
+            wo_desc$=ivm01a.item_desc$(1,min(desc[1],30))
+        endif
+        
+        rem --- Get customer's name
+        dim custname$(30)
+        if cvs(sfe01a.customer_id$,2)<>"" then
+            custname$(1)=Translate!.getTranslation("AON_NOT_ON_FILE")
+            if ar$="Y" then
+                find record (arm01_dev,key=firm_id$+sfe01a.customer_id$,dom=*endif) arm01a$
+                custname$=arm01a.customer_name$
+            endif
+        endif
+        
+        rem --- Get WO WIP account
+        if gl$="Y" then
+            dim wo_wip_acct$(g[4],"0")
+            find record (sfm10_dev,key=firm_id$+"A"+sfe01a.wo_type$,dom=*endif) sfm10a$
+            wo_wip_acct$=sfm10a.gl_wip_acct$(1,g[4])
+        endif
+
+        gosub wo_header
+
+        rem --- Process Material Issues Detail (SFE_WOMATISD, sfe-25) records
+        wo_total=0
+        new_sfe23_lines=0
+        read (sfe25_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*next)
+        while 1
+            sfe25_key$=key(sfe25_dev,end=*break)
+            if pos(sfe15_key$=sfe25_key$)<>1 then break
+            read record (sfe25_dev) sfe25a$
+            if sfe25a.qty_issued=0 then continue
+
+            rem --- Get corresponding Material Commit/Issues Detail (SFE_WOMATDTL, sfe-23) record
+            dim sfe23a$:fattr(sfe23a$)
+            sfe23_key$=firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.womatdtl_seq_ref$
+            find record (sfe23_dev,key=sfe23_key$,knum="PRIMARY",dom=*next) sfe23a$
+            if cvs(sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$+sfe23a.internal_seq_no$,2)="" then
+                rem --- Build, but don't write, new SFE_WOMATDTL (sfe-23) record
+                sfe23a.firm_id$=sfe25a.firm_id$
+                sfe23a.wo_location$=sfe25a.wo_location$
+                sfe23a.wo_no$=sfe25a.wo_no$
+                if cvs(sfe25a.womatdtl_seq_ref$,2)<>"" then
+                    sfe23a.internal_seq_no$=sfe25a.womatdtl_seq_ref$
+                else
+                    sfe23a.internal_seq_no$=sfe25a.internal_seq_no$
+                endif
+                sfe23a.unit_measure$=sfe25a.unit_measure$
+                sfe23a.warehouse_id$=sfe25a.warehouse_id$
+                sfe23a.item_id$=sfe25a.item_id$
+                sfe23a.require_date$=sfe25a.require_date$
+                rem --- Get next materials sequence number
+                new_sfe23_lines=new_sfe23_lines+1
+                next_seq_no=new_sfe23_lines
+                material_seq_mask$=fill(len(sfe23a.material_seq$),"0")
+                sfe23_trip$=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$
+                read (sfe23_dev,key=sfe23_trip$+$ff$,knum="AO_DISP_SEQ",dom=*next)
+                previous_key$=""
+                previous_key$=keyp(sfe23_dev,end=*next)
+                if pos(sfe23_trip$=previous_key$)=1 then
+                    next_seq_no=num(previous_key$(1+len(sfe23_trip$)),err=*next)+new_sfe23_lines
+                endif
+                sfe23a.material_seq$=str(next_seq_no:material_seq_mask$)
+                sfe23a.qty_ordered=sfe25a.qty_ordered
+                sfe23a.tot_qty_iss=sfe25a.tot_qty_iss
+                sfe23a.unit_cost=sfe25a.unit_cost
+                sfe23a.qty_issued=sfe25a.qty_issued
+                sfe23a.issue_cost=sfe25a.issue_cost
+            endif
+
+            if lf$="Y" and (pos(p9$="LS")=0 or ivm01a.lotser_item$<>"Y" or ivm01a.inventoried$<>"Y") then
+                rem --- Get LIFO-FIFO cost
+                gosub lifo_fifo
+                sfe25a.issue_cost=icost
+            endif
+
+            rem --- Get GL inventory account
+            dim ivm01a$:fattr(ivm01a$)
+            ivm01a.item_desc$(1)=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+            find record (ivm01_dev,key=firm_id$+sfe25a.item_id$,dom=*next) ivm01a$
+            ivm01a.item_desc$(1)=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+            if dist_by_item$="N" then
+                z0$=ivm01a.gl_inv_acct$
+            else
+                rem --- Use item distribution code
+                dim ivm02a$:fattr(ivm02a$)
+                dim arm10a$:fattr(arm10a$)
+                find record (ivm02_dev,key=firm_id$+sfe25a.warehouse_id$+sfe25a.item_id$,dom=*next) ivm02a$
+                if cvs(ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,2)<>"" then
+                    find record (arm10_dev,key=firm_id$+"D"+ivm02a.ar_dist_code$,dom=*next) arm10a$
+                endif
+                let z0$=arm10a.gl_inv_acct$
+            endif
+
+            gosub issue_detail
+
+            rem --- Process Lotted/Serialized Issues (SFE_WOLSISSU, sfe-14) records
+            if pos(p9$="LS") and ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then
+                t1=0,t2=0
+                sfe14_trip$=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.internal_seq_no$
+                read (sfe14_dev,key=sfe14_trip$,dom=*next)
+                while 1
+                    sfe14_key$=key(sfe14_dev,end=*break)
+                    if pos(sfe14_trip$=sfe14_key$)<>1 then break
+                    read record (sfe14_dev) sfe14a$
+                    
+                    error$=""
+                    gosub serial_detail
+                wend
+
+                if t1<sfe25a.qty_issued then
+                    missing_lotser=missing_lotser+1
+                    error$="* Missing"
+                    sfe14a.lotser_no$(1)=fill(p[2],"_")
+                    sfe14a.qty_issued=0
+                    sfe14a.issue_cost=0
+                    i=iff(p9$="L",1,sfe25a.qty_issued-t1)
+                    for x=1 to i
+                        gosub serial_detail
+                    next x
+                endif
+
+                rem --- Lotted/Serialized Totals
+                sfe25a.qty_issued=t1
+                sfe25a.issue_cost=0
+                if t1<>0 then sfe25a.issue_cost=t2/t1
+                TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+                OutVect!.addItem("")
+                OutVect!.addItem("")
+                OutVect!.addItem(Translate!.getTranslation("AON_ITEM")+" "+Translate!.getTranslation("AON_TOTAL:_"))
+                OutVect!.addItem("")
+                OutVect!.addItem(str(sfe25a.qty_ordered))
+                OutVect!.addItem(str(sfe25a.tot_qty_iss))
+                OutVect!.addItem(str(sfe25a.qty_ordered-sfe25a.tot_qty_iss))
+                OutVect!.addItem(str(sfe25a.qty_issued))
+                OutVect!.addItem(str(sfe25a.issue_cost))
+                OutVect!.addItem(str(sfe25a.qty_issued*sfe25a.issue_cost))
+            endif
+
+            rem --- G/L Distribution
+            precision 2
+            account$=z0$
+            gldate$=sfe15a.issued_date$
+            amount=-(sfe25a.qty_issued)*sfe25a.issue_cost
+            units=0
+            memo$=ivm01a.item_desc$
+            ref1$=Translate!.getTranslation("AON_WO")+" "+sfe01a.wo_no$
+            ref2$=Translate!.getTranslation("AON_STEP")+" "+sfe23a.material_seq$
+            ref3$=Translate!.getTranslation("AON_WHSE_")+sfe01a.warehouse_id$
+            gosub glrecap
+            account$=wo_wip_acct$
+            amount=-amount
+            memo$=wo_desc$
+            gosub glrecap
+
+            t0=t0+(sfe25a.qty_issued*sfe25a.issue_cost)
+            precision ivs01_precision
+        wend
+
+        rem --- Work Order Total
+        x=fnblank(columns+1); rem --- blank line
+        x=fnblank(columns-2)
+        OutVect!.addItem(Translate!.getTranslation("AON_WORK_ORDER")+" "+Translate!.getTranslation("AON_TOTAL:_"))
+        OutVect!.addItem("")
+        OutVect!.addItem(str(t0))
+        s[0]=s[0]+t0
+        dim sfw01a$:fattr(sfw01a$)
+        sfw01a.firm_id$=sfe15a.firm_id$
+        sfw01a.wo_type$=sfe15a.wo_type$
+        find record (sfw01_dev,key=sfw01a.firm_id$+sfw01a.wo_type$,dom=*next) sfw01a$
+        sfw01a.act_mat_tot=sfw01a.act_mat_tot+t0
+        write record (sfw01_dev) sfw01a$
+    wend
+    
+rem --- Report Total
+
+    x=fnblank(columns+1); rem --- blank line
+    x=fnblank(columns-2)
+    OutVect!.addItem(Translate!.getTranslation("AON_REPORT_TOTAL:_"))
+    OutVect!.addItem("")
+    OutVect!.addItem(str(s[0]))
+
+rem --- Total by WO Type
+
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+    HdrVect!.addItem(Translate!.getTranslation("AON_TOTALS_BY_")+Translate!.getTranslation("AON_WORK_ORDER")+" "+Translate!.getTranslation("AON_TYPE"))
+    HdrVect!.addItem("")
+    if ar$="Y" then HdrVect!.addItem("")
+
+    OutVect!.addItem("")
+    OutVect!.addItem("")
+    OutVect!.addItem(Translate!.getTranslation("AON_TOTALS_BY_")+Translate!.getTranslation("AON_WORK_ORDER")+" "+Translate!.getTranslation("AON_TYPE"))
+    x=fnblank(columns-2)
+
+    report_total=0
+    dim sfw01a$:fattr(sfw01a$)
+    read (sfw01_dev,key=firm_id$,dom=*next)
+    while 1
+        sfw01_key$=key(sfw01_dev,end=*break)
+        if pos(firm_id$=sfw01_key$)<>1 then break
+        read record (sfw01_dev) sfw01a$
+        report_total=report_total+sfw01a.act_mat_tot
+        
+        dim sfm10a$:fattr(sfm10a$)
+        sfm10a.code_desc$(1)=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+        if gl$="Y" then sfm10a.gl_wip_acct$(1)=fill(g[4],"0")
+        find record (sfm10_dev,key=firm_id$+"A"+sfe01a.wo_type$,dom=*next) sfm10a$
+
+        OutVect!.addItem("")
+        OutVect!.addItem("")
+        OutVect!.addItem(sfe01a.wo_type$)
+        OutVect!.addItem(sfm10a.code_desc$)
+        OutVect!.addItem("")
+        OutVect!.addItem("")
+        OutVect!.addItem("")
+        if gl$="Y" then
+            OutVect!.addItem(fnmask$(sfm10a.gl_wip_acct$,g5$))
+        else
+            OutVect!.addItem("")
+        endif
+        OutVect!.addItem("")
+        OutVect!.addItem(str(sfw01a.act_mat_tot))
+    wend
+    x=fnblank(columns+1); rem --- blank line
+    x=fnblank(columns-2)
+    OutVect!.addItem(Translate!.getTranslation("AON_REPORT_TOTAL:_"))
+    OutVect!.addItem("")
+    OutVect!.addItem(str(report_total))
+    
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+rem --- Warn about missing lot/serial numbers
+    if missing_lotser then
+        msg_id$="OP_MISSING_LOTSER_NO"
+        gosub disp_message
+        goto std_exit_no_update
+    endif
+
+rem --- Destroy the progress meter and run the next overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    update$=pgmdir$+"sfu_womatissu.aon"
+
+    overlay$=update$
+    if gl$="Y" then overlay$=pgmdir$+"glr_recap.aon"
+    next_overlay$=overlay$
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
+
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- Create blank line in OutVect! (no return value wanted or needed)
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+wo_header: rem --- WO Header
+
+    BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+
+    dim pbuf$(width)
+    pbuf$(1)=Translate!.getTranslation("AON_WO")+" "+Translate!.getTranslation("AON_NUMBER")+": "+sfe15a.wo_no$
+    pbuf$(25)=Translate!.getTranslation("AON_TYPE")+": "+sfe15a.wo_type$
+    pbuf$(39)=Translate!.getTranslation("AON_CATEGORY")+": "+sfe15a.wo_category$
+    pbuf$(56)=Translate!.getTranslation("AON_WAREHOUSE")+": "+sfe15a.warehouse_id$
+    pbuf$(75)=Translate!.getTranslation("AON_ISSUED")+" "+Translate!.getTranslation("AON_DATE")+": "+fndate$(sfe15a.issued_date$)
+    pbuf$(100)=Translate!.getTranslation("AON_ORDERED")+": "+fndate$(sfe01a.opened_date$)
+    HdrVect!.addItem(pbuf$)
+
+    dim pbuf$(width)
+    if sfe01a.wo_category$="I" then
+        pbuf$(1)=Translate!.getTranslation("AON_BILL_NO.")+": "+cvs(sfe15a.item_id$,2)+
+:           "       "+Translate!.getTranslation("AON_DESCRIPTION")+": "+wo_desc$
+    else
+        pbuf$(1)=Translate!.getTranslation("AON_DESCRIPTION")+": "+wo_desc$
+    endif
+    HdrVect!.addItem(pbuf$)
+
+    if ar$="Y" then
+        dim pbuf$(width)
+        if cvs(sfe01a.customer_id$,2)<>"" then
+            pbuf$(1)=Translate!.getTranslation("AON_CUSTOMER")+": ",cvs(fnmask$(sfe01a.customer_id$(1,c0),c$),2)+"  "+custname$
+            pbuf$(60),Translate!.getTranslation("AON_SALES_ORDER")+": ",sfe01a.order_no$
+        endif
+        HdrVect!.addItem(pbuf$)
+    endif
+    return
+
+lifo_fifo: rem --- LIFO/FIFO
+
+    icost=0
+    q7=sfe25a.issue_cost
+    lf_date$=sfe15a.issued_date$
+    lf_action$=ivs01a.lifofifo$+"I"
+    dim lf_item$[2]
+    lf_item$[0]=firm_id$
+    lf_item$[1]=sfe25a.warehouse_id$
+    lf_item$[2]=sfe25a.item_id$
+
+    rem --- Inquiry On Tier Cost For Returned Items
+    if sfe25a.qty_issued<0 then
+        lf_action$(2,1)="R"
+        call pgmdir$+"ivc_lifofifo.aon",lf_action$,"I",lf_date$,lf_channels[all],lf_tmpls$[all],lf_item$[all],ivs01_precision,abs(sfe25a.qty_issued),q7,ret_cost,status
+        q7=ret_cost
+    endif
+
+    rem --- Report On Tier Cost For Sold Items
+    call pgmdir$+"ivc_lifofifo.aon",lf_action$,"R",lf_date$,lf_channels[all],lf_tmpls$[all],lf_item$[all],ivs01_precision,abs(sfe25a.qty_issued),q7,ret_cost,status
+    if ret_cost<>0 icost=ret_cost
+    dim ivw05a$:fattr(ivw05a$)
+    ivw05a.item_id$=sfe25a.item_id$
+    ivw05a.line_no$=sfe25a.material_seq$
+    ivw05a.unit_cost=icost
+    write record (ivw05_dev) ivw05a$
+    return                                                  
+
+issue_detail: rem --- Issue Detail
+
+    recs=recs+1
+    desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
+    OutVect!.addItem(sfe25a.item_id$)
+    OutVect!.addItem(desc$(1,min(len(desc$),31)))
+    OutVect!.addItem(sfe25a.unit_measure$)
+    OutVect!.addItem(fndate$(sfe25a.require_date$))
+    if pos(p9$="LS") and ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then
+        x=fnblank(columns-3)
+    else
+        OutVect!.addItem(str(sfe25a.qty_ordered))
+        OutVect!.addItem(str(sfe25a.tot_qty_iss))
+        OutVect!.addItem(str(sfe25a.qty_ordered-sfe25a.tot_qty_iss))
+        OutVect!.addItem(str(sfe25a.qty_issued))
+        OutVect!.addItem(str(sfe25a.issue_cost))
+        OutVect!.addItem(str(sfe25a.qty_issued*sfe25a.issue_cost))
+    endif
+    return
+
+serial_detail: rem --- Lotted/Serialized Detail
+
+    OutVect!.addItem(error$)
+    OutVect!.addItem(p8$+sfe14a.lotser_no$)
+    x=fnblank(columns-4)
+    OutVect!.addItem(str(sfe14a.qty_issued))
+    OutVect!.addItem(str(sfe14a.issue_cost))
+    OutVect!.addItem(str(sfe14a.qty_issued*sfe14a.issue_cost))
+    t1=t1+sfe14a.qty_issued
+    t2=t2+(sfe14a.qty_issued*sfe14a.issue_cost)
+    return
+
+glrecap: rem --- Standard GL Recap Routine
+
+    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
+:       ref1$,ref2$,ref3$,memo$,amount,units,status
+    if amount<>0 or units<>0 gl_recs=gl_recs+1
+    return
+    
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #endinclude disp_message.src
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

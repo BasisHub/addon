@@ -21,17 +21,27 @@ rem -- Validate new firm ID with demo data
 	copy_data=num(callpoint!.getUserInput())
 	focus$="ADX_INSTALLWIZ.COPY_DATA"
 	gosub validate_firm_id
+	if abort then break
 [[ADX_INSTALLWIZ.NEW_FIRM_ID.AVAL]]
 rem -- Validate new firm ID with demo data
 
 	firm_id$=callpoint!.getUserInput()
+
+	rem --- Update status of checkboxes (work around for Barista bug 5616)
+	copy! = callpoint!.getControl("ADX_INSTALLWIZ.COPY_DATA")
+	callpoint!.setColumnData("ADX_INSTALLWIZ.COPY_DATA",str(copy!.isSelected()))
+	help! = callpoint!.getControl("ADX_INSTALLWIZ.APP_HELP")
+	callpoint!.setColumnData("ADX_INSTALLWIZ.APP_HELP",str(help!.isSelected()))
+
 	copy_data=num(callpoint!.getColumnData("ADX_INSTALLWIZ.COPY_DATA"))
 	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
 	gosub validate_firm_id
+	if abort then break
 [[ADX_INSTALLWIZ.BSHO]]
 rem --- Declare Java classes used
 
 	use java.io.File
+	use ::ado_file.src::FileObject
 [[ADX_INSTALLWIZ.<CUSTOM>]]
 validate_aon_dir: rem --- Validate directory for aon new install location
 
@@ -61,13 +71,28 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 		return
 	endif
 
+	rem --- Read-Write-Execute directory permissions are required
+
+	if !FileObject.isDirWritable(new_loc$)
+		msg_id$="AD_DIR_NOT_WRITABLE"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=new_loc$
+		gosub disp_message
+
+		callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
+		callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
+		callpoint!.setStatus("ABORT")
+		abort=1
+		return
+	endif
+
 	rem --- Cannot be currently used by Addon
 
 	testChan=unt
-	open(testChan, err=*return)new_loc$ + "/aon/data"
+	open(testChan, err=*return)new_loc$ + "/aon/data"; rem --- successful return here
 	close(testChan)
 
-location_used:
+	rem --- Location is used by Addon
 	msg_id$="AD_INSTALL_LOC_USED"
 	gosub disp_message
 
@@ -139,24 +164,25 @@ rem --- Validate directory for aon new install location
 	new_loc$ = callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC")
 	gosub validate_aon_dir
 	callpoint!.setColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC", new_loc$)
-	if abort then 
-		callpoint!.setStatus("ABORT")
-		break
-	endif
+	if abort then break
 
 rem -- Validate new firm ID with demo data
+
+	rem --- Update status of checkboxes (work around for Barista bug 5616)
+	copy! = callpoint!.getControl("ADX_INSTALLWIZ.COPY_DATA")
+	callpoint!.setColumnData("ADX_INSTALLWIZ.COPY_DATA",str(copy!.isSelected()))
+	help! = callpoint!.getControl("ADX_INSTALLWIZ.APP_HELP")
+	callpoint!.setColumnData("ADX_INSTALLWIZ.APP_HELP",str(help!.isSelected()))
 
 	firm_id$=callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_FIRM_ID")
 	copy_data=num(callpoint!.getColumnData("ADX_INSTALLWIZ.COPY_DATA"))
 	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
 	gosub validate_firm_id
-	if abort then 
-		callpoint!.setStatus("ABORT")
-		break
-	endif
+	if abort then break
 [[ADX_INSTALLWIZ.NEW_INSTALL_LOC.AVAL]]
 rem --- Validate directory for aon new install location
 
 	new_loc$ = callpoint!.getUserInput()
 	gosub validate_aon_dir
 	callpoint!.setUserInput(new_loc$)
+	if abort then break

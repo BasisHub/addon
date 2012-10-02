@@ -238,6 +238,19 @@ rem --- Clear Work File/Open Printer/Create Report Sort File
                 sfadj_key$=key(sfadj_dev,end=*break)
                 if pos(sfadj_key.firm_id$=firm_id$)=0 then break
                 read (sfadj_dev,key=sfadj_key$)
+
+				sfw08a.firm_id$     = sfadj_key.firm_id$
+				sfw08a.wo_location$ = sfadj_key.wo_location$
+				sfw08a.wo_no$       = sfadj_key.wo_no$
+				sfw08a.trans_date$  = sfadj_key.trans_date$
+				sfw08a.trans_seq$   = sfadj_key.trans_seq$
+				
+				if sfadj_dev=sfe12a_dev then
+					sfadj_key.record_id$="O"; rem operations
+				else
+					sfadj_key.record_id$="S"; rem subcontracts
+				endif
+				
                 write record (sfw08a_dev,key=sfadj_key$) sfw08a$
                 call pgmdir$+"adc_progress.aon","S","","","",sfw08a.firm_id$+sfw08a.wo_location$+sfw08a.wo_no$+sfw08a.record_id$,0,0,1,0,ignore_status
             wend
@@ -256,17 +269,33 @@ rem --- Main Read
 
         dim sfw08a_key$:sfw08a_key_tpl$
 
-        while more
+    while more
             sfw08a_key$=key(sfw08a_dev,end=done)
             if pos(firm_id$=sfw08a_key$)<>1 then break
             read (sfw08a_dev,key=sfw08a_key$)
-            if sfw08a_key.record_id$="O" then read record (sfe12a_dev,key=sfw08a_key$) sfe12a$
-            if sfw08a_key.record_id$="S" then read record (sfe42a_dev,key=sfw08a_key$) sfe42a$
+			
+			sf_k$=""
+			sf_k$=sf_k$+sfw08a_key.firm_id$
+			sf_k$=sf_k$+sfw08a.wo_location$
+			sf_k$=sf_k$+sfw08a.wo_no$
+			sf_k$=sf_k$+sfw08a.trans_date$
+			sf_k$=sf_k$+sfw08a.trans_seq$
+			
+			rec_id$=sfw08a_key.record_id$	
+			
+			if pos(rec_id$="OS")=0 break; rem If it's not O or S, data error; may want a warn message that data's bad?
+			
+            if rec_id$="O" then 
+				read record (sfe12a_dev,key=sfe_key$) sfe12a$; rem operations
+			else
+				read record (sfe42a_dev,key=sfe_key$) sfe42a$; rem subcontracts
+			endif
+			
             call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,ignore_status
 
 rem --- W/O Header
 
-            find record (sfe01a_dev,key=sfw08a.firm_id$+sfw08a.wo_location$+sfw08a.wo_no$+sfw08a.record_id$,dom=label1) sfe01a$
+            find record (sfe01a_dev,key=sfw08a.firm_id$+sfw08a.wo_location$+sfw08a.wo_no$,dom=label1) sfe01a$
             if sfe01a.wo_category$="I"
 
             label1:
@@ -275,38 +304,31 @@ rem --- W/O Header
 
             endif
 
-label2:
+			label2:
             sfe01b$=sfe01a$
 
 rem --- Get Additional Data
 
-            rec_id$="O"
-            if sfe12a.record_id_o$="O"
-                read record (sft01a_dev,key=sfe12a.firm_id$+sfe12a.wo_location$+sfe12a.wo_no$+sfe12a.trans_date$+sfe12a.record_id_o$+sfe12a.trans_seq$,dom=*continue) sft01a$
+            if rec_id$="O"
+                read record (sft01a_dev,key=sf_k$,dom=*continue) sft01a$
                 sfex2$=sfe12a$
                 sftx1a$=sft01a$
-                rec_id_x$=sfe12a.record_id_o$
-            endif
-            if sfe42a.record_id_s$="S" 
-                read record (sft31a_dev,key=sfe42a.firm_id$+sfe42a.wo_location$+sfe42a.wo_no$+sfe42a.trans_date$+sfe42a.record_id_s$+sfe42a.trans_seq$,dom=*continue) sft31a$
+            else
+                read record (sft31a_dev,key=sf_k$,dom=*continue) sft31a$
                 sfex2a$=sfe42a$
                 sftx1a$=sft31a$
-                rec_id$="S"
-                rec_id_x$=sfe42a.record_id_s$
             endif
 
             find record (sfe01b_dev,key=firm_id$+"  "+sfex2a.new_wo_no$,dom=label3) sfe01b$
             if pos(" "<>sfex2a.new_trn_date$)=0 then sfex2a.new_trn_date$=sfex2a.trans_date$
 
 label3:
-
             if num(sfex2a.new_wo_no$)=0 then sfex2a.new_wo_no$=sfex2a.wo_no$
 
             dim e0$(30),r0$(20)
-            if rec_id$="O"
-
-rem --- Get Employee/Op Code
-
+            
+			if rec_id$="O"
+				rem --- Get Employee/Op Code
                 apm01a.vendor_name$="*** Missing Employee ***"
                 r0$(1)="Missing Op Code"
                 find record (empcode_dev,key=firm_id$+sftx1a.employee_no$,dom=*next) empcode$
@@ -320,16 +342,10 @@ label5:
                 apm01a.vendor_name$=apm01a.vendor_name$(1,pos("   "=apm01a.vendor_name$+"   ")-1)
                 if len(apm01a.vendor_name$)+37>124-m1-m2-m3*3-6 then apm01a.vendor_name$=apm01a.vendor_name$(1,124-m1-m2-m3*3-6-37)
                 if len(r0$)+37>124-m1-m2-m3*3-6 then r0$=r0$(1,124-m1-m2-m3*3-6-37)
-
-            else 
-               if rec_id$="S" then
-
-rem --- Get Vendor Name
-
+            else                
+				rem --- Get Vendor Name
                 apm01a.vendor_name$="*** Missing Vendor ***"
                 find record (apm01a_dev,key=firm_id$+sftx1a.vendor_id$,dom=*next) aapm01a$
-              endif
-
            endif
 
 rem --- Print It Here
@@ -339,15 +355,14 @@ rem --- Print It Here
             OutVect!.addItem(sfe01a.wo_category$)
             OutVect!.addItem(str(fndate$(sfex2.trans_date$)))
             OutVect!.addItem(rec_id_x$)
-            OutVect!.addItem(sfex2.trans_seq$)
+            OutVect!.addItem(sfex2.trans_seq_ref$)
      
         if rec_id$="O" then 
             OutVect!.addItem(str(sftx1a.complete_qty))
             OutVect!.addItem(str(sftx1a.direct_rate))
             OutVect!.addItem(str(sftx1a.unit_cost-sftx1a.direct_rate))
             OutVect!.addItem(str(sftx1a.setup_time))
-        endif
-        if rec_id$="S" then 
+        else
             OutVect!.addItem(sftx1a.unit_cost)
         endif
         OutVect!.addItem(sftx1a.units)
@@ -363,8 +378,7 @@ rem --- Adj Here
             OutVect!.addItem(str(sfex2a.new_dir_rate))
             OutVect!.addItem(str(sfex2a.new_ovr_rate))
             OutVect!.addItem(str(sfex2a.new_set_hrs))
-        endif
-        if rec_id$="S" then 
+        else
             OutVect!.addItem(str(sfex2a.new_dir_rate))
         endif
         OutVect!.addItem("Adj:"+str(sfex2a.new_units))
@@ -382,8 +396,7 @@ rem --- Net
             OutVect!.addItem(str(sfex2a.new_dir_rate-sftx1a.direct_rate))
             OutVect!.addItem(str(sfex2a.new_ovr_rate-(sftx1a.unit_cost-sftx1a.direct_rate)))
             OutVect!.addItem(str(sfex2a.new_set_hrs-sftx1a.setup_time))
-        endif
-        if rec_id$="S" then 
+        else
             OutVect!.addItem(str(fnmask$(sftx1a.vendor_id$,c3$)))
             OutVect!.addItem(sftx1a.po_no$+sftx1a.po_line_no$)
             OutVect!.addItem(str(sfex2a.new_dir_rate-sftx1a.unit_cost))
@@ -416,22 +429,24 @@ rem --- Post Original Dates
         if rec_id$="O" then 
             sfw06a.act_dir_amt=sfw06a.act_dir_amt-sftx1a.direct_rate*(sftx1a.units+sftx1a.setup_time)
             sfw06a.act_ovhd_amt=sfw06a.act_ovhd_amt-(sftx1a.ext_cost-sftx1a.direct_rate*(sftx1a.units+sftx1a.setup_time))
-        endif
-        if rec_id$ ="S" then sfw06a.unit_cost=sfw06a.unit_cost-sftx1a.ext_cost
+        else
+			sfw06a.unit_cost=sfw06a.unit_cost-sftx1a.ext_cost
+		endif
         sfw06a.net_adjust=sfw06a.net_adjust-sftx1a.ext_cost
-        if !(sfe01a.wo_type$=sfe01b.wo_type$ and sfex2.trans_date$=sfex2a.new_trn_date$)
+        
+		if !(sfe01a.wo_type$=sfe01b.wo_type$ and sfex2.trans_date$=sfex2a.new_trn_date$)
             write record (sfw06a_dev,key=w0$) sfw06a$
-
-        rem --- Adjusted Dates
-
+			rem --- Adjusted Dates
             w0$=firm_id$+sfex2a.new_trn_date$+sfe01b.wo_type$
             find record (sfw06a_dev,key=w0$,dom=*next) sfw06a$
         endif
 
         if rec_id$="O" then 
-                sfw06a.act_dir_amt=sfw06a.act_dir_amt+sfex2a.new_dir_rate*(sfex2a.new_units+sfex2a.new_set_hrs)
-                sfw06a.act_ovhd_amt=sfw06a.act_ovhd_amt+sfex2a.new_ovr_rate*(sfex2a.new_units+sfex2a.new_set_hrs)
-        if rec_id$="S" then sfw06a.unit_cost=sfw06a.unit_cost+sfex2a.new_dir_rate*sfex2a.new_units
+            sfw06a.act_dir_amt=sfw06a.act_dir_amt+sfex2a.new_dir_rate*(sfex2a.new_units+sfex2a.new_set_hrs)
+            sfw06a.act_ovhd_amt=sfw06a.act_ovhd_amt+sfex2a.new_ovr_rate*(sfex2a.new_units+sfex2a.new_set_hrs)
+        else
+			sfw06a.unit_cost=sfw06a.unit_cost+sfex2a.new_dir_rate*sfex2a.new_units
+		endif
         sfw06a.net_adjust=sfw06a.net_adjust+(sfex2a.new_dir_rate+sfex2a.new_ovr_rate)*(sfex2a.new_units+sfex2a.new_set_hrs)
         write record (sfw06a_dev,key=w0$) sfw06a$
 
@@ -448,28 +463,24 @@ rem --- Back Out The Distribution
         account$=sfm10a.gl_wip_acct$
         gldate$=sfex2.trans_date$,amount=-sftx1a.ext_cost,units=0
         ref1$="WO "+sfex2.wo_no$
-        ref2$="Seq "+sfex2.trans_seq$,ref3$=fndate$(sfex2a.new_trn_date$)
+        ref2$="Seq "+sfex2.trans_seq_ref$,ref3$=fndate$(sfex2a.new_trn_date$)
         memo$=cm$
         gosub glrecap
 
         if rec_id$="S"
-
-rem --- Subcontracts
+			rem --- Subcontracts
             account$=sfm10a.gl_pur_acct$
             amount=sftx1a.ext_cost,memo$=sm$
             gosub glrecap
 
         else
-            if rec_id$="O"
-rem --- Labor
-                account$=sfm10a.gl_dir_lab$
-                amount=(sftx1a.units+sftx1a.setup_time)*sftx1a.direct_rate,memo$=lm$
-                gosub glrecap
-                account$=sfm10a.gl_ovh_lab$
-                amount=(sftx1a.units+sftx1a.setup_time)*sftx1a.ovhd_rate
-                gosub glrecap
-            endif
-
+			rem --- Labor
+            account$=sfm10a.gl_dir_lab$
+            amount=(sftx1a.units+sftx1a.setup_time)*sftx1a.direct_rate,memo$=lm$
+            gosub glrecap
+            account$=sfm10a.gl_ovh_lab$
+            amount=(sftx1a.units+sftx1a.setup_time)*sftx1a.ovhd_rate
+            gosub glrecap
         endif
 
 rem --- Add It Back In With New Information
@@ -478,27 +489,23 @@ rem --- Add It Back In With New Information
         gldate$=sfex2a.new_trn_date$
         amount=round((sfex2a.new_units+sfex2a.new_set_hrs)*sfex2a.new_dir_rate,2)+round((sfex2a.new_units+sfex2a.new_set_hrs)*sfex2a.new_ovr_rate,2)
         ref1$="WO "+sfe01a.wo_no$
-        ref2$="Seq "+sfex2.trans_seq$,ref3$=fndate$(sfex2.trans_date$)
+        ref2$="Seq "+sfex2.trans_seq_ref$,ref3$=fndate$(sfex2.trans_date$)
         memo$=cm$
         gosub glrecap
 
         if rec_id$="S"
-rem --- Subcontracts
+			rem --- Subcontracts
             account$=sfm10a.gl_pur_acct$
             amount=((-sfex2a.new_units)-sfex2a.new_set_hrs)*(sfex2a.new_dir_rate+sfex2a.new_ovr_rate),memo$=sm$
             gosub glrecap
-
         else
-            if rec_id$="O"
-rem --- Labor
-                account$=sfm10a.gl_dir_lab$
-                amount=((-sfex2a.new_units)-sfex2a.new_set_hrs)*sfex2a.new_dir_rate,memo$=lm$
-                gosub glrecap
-                account$=sfm10a.gl_ovh_lab$
-                amount=((-sfex2a.new_units)-sfex2a.new_set_hrs)*sfex2a.new_ovr_rate
-                gosub glrecap
-            endif
-
+			rem --- Labor
+            account$=sfm10a.gl_dir_lab$
+            amount=((-sfex2a.new_units)-sfex2a.new_set_hrs)*sfex2a.new_dir_rate,memo$=lm$
+            gosub glrecap
+            account$=sfm10a.gl_ovh_lab$
+            amount=((-sfex2a.new_units)-sfex2a.new_set_hrs)*sfex2a.new_ovr_rate
+            gosub glrecap
         endif
 
 rem --- Loop back for next record

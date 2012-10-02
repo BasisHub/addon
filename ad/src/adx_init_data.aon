@@ -1,0 +1,332 @@
+rem ==========================================================================
+rem --- adx_init_data.aon
+rem --- A completing Auto-Launch task that initializes and converts data 
+rem --- following an upgrade. 
+rem --- 
+rem --- AddonSoftware Version 12.00
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    use java.util.HashMap
+
+    declare HashMap installMap!
+    declare HashMap devMap!
+    declare HashMap tplMap!
+    
+    setesc std_error
+    seterr std_error
+
+rem --- Get program arguments
+
+    if argc>1
+        for curr_argv=1 to argc-1
+            temp_argv$=argv(curr_argv)
+            if pos("-u"=temp_argv$)=1 user_id$=temp_argv$(3);rem User ID
+        next curr_argv
+    endif
+
+rem --- Initializations
+
+    process_complete=0
+    modules$="ADAPARBMGLIVMPOPPOPRSASF"
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    installMap!=new HashMap()
+    devMap!=new HashMap()
+    tplMap!=new HashMap()
+    
+    rem --- Set needed STBLs if missing
+    need_stbls=1
+    x$=stbl("+SYSINFO_TPL",err=*next); need_stbls=0
+    if need_stbls then call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+    
+rem --- Open File(s)
+    
+    num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADS_AUTOLAUNCH", open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    autolaunch_dev=num(open_chans$[1]);dim autolaunch_tpl$:open_tpls$[1]
+    
+rem --- Determine which modules are installed
+
+    dim info$[20]
+    for i=1 to len(modules$) step 2
+        mod$=modules$(i,2)
+        call pgmdir$+"adc_application.aon",mod$,info$[all]
+        installMap!.put(mod$,info$[20])
+        if info$[20]="Y" then process_complete=1
+    next i
+
+rem --- If nothing installed, then don't complete this auto-launch process
+    if !process_complete then goto done
+
+rem --- Following an upgrade, user may launch Addon before "copying" the data.
+rem --- If required files aren't present, then don't complete this auto-launch process
+    adm_rptctl=0,adm09=0,glm03=0,glm06=0
+    test_dev=unt
+    open(test_dev,err=*next)stbl("+ADDATA")+"adm_rptctl"; adm_rptctl=1
+    close(test_dev,err=*next)
+    open(test_dev,err=*next)stbl("+ADDATA")+"adm-09"; adm09=1
+    close(test_dev,err=*next)
+    open(test_dev,err=*next)stbl("+GLDATA")+"glm-03"; glm03=1
+    close(test_dev,err=*next)
+    open(test_dev,err=*next)stbl("+GLDATA")+"glm-06"; glm06=1
+    close(test_dev,err=*next)
+    if !adm_rptctl or !adm09 or !glm03 or !glm06 then
+        process_complete=0
+        goto done
+    endif
+
+rem --- For v12.00, adm_modules.post_gl was moved to *s_params.post_to_gl. Following an upgrade,
+rem --- *s_params.post_to_gl must be intialized with old adm_modules.post_gl when GL is installed.
+	if installMap!.get("GL")="Y" then gosub init_post_to_gl
+
+rem --- for v12, if OP is installed, process Cash Sale entry and history files (ope-41, opt-41)
+rem --- if credit-card transaction type, encrypt credit card# and move it to new credit card field
+
+    if installMap!.get("OP")="Y" then gosub convert_credit_cards
+	
+done:rem --- Update AutoLaunch Status
+
+    if autolaunch_dev<>0 then
+        extractrecord(autolaunch_dev,key="INIT_DATA")autolaunch_tpl$
+        if process_complete then autolaunch_tpl.process_status$="C"
+        autolaunch_tpl.trans_date$=date(0:"%Yl%Mz%Dz")
+        autolaunch_tpl.trans_time$=date(0:"%Hz%mz%sz")
+        autolaunch_tpl$ = field(autolaunch_tpl$)
+        writerecord(autolaunch_dev)autolaunch_tpl$
+    endif
+
+	goto std_exit
+
+rem --- For v12.00, adm_modules.post_gl was moved to *s_params.post_to_gl. Following an upgrade,
+rem --- *s_params.post_to_gl must be intialized with old adm_modules.post_gl when GL is installed.
+init_post_to_gl:
+
+    rem --- Open File(s)
+    j=1
+	num_files=j+len(modules$)/2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    for i=1 to len(modules$) step 2
+        j=j+1
+        mod$=modules$(i,2)
+        rem --- Skip modules where *S_PARAMS table doesn't exist
+        if pos(mod$="ADMP",2) then continue
+        
+        open_tables$[j]=mod$+"S_PARAMS", open_opts$[j]="OTA"
+    next i
+
+	gosub open_tables
+
+    modules_dev=num(open_chans$[1]);dim modules_tpl$:open_tpls$[1]
+    j=1
+    for i=1 to len(modules$) step 2
+        j=j+1
+        mod$=modules$(i,2)
+
+        devMap!.put(mod$,num(open_chans$[j]))
+        tplMap!.put(mod$,open_tpls$[j])
+    next i
+
+    rem --- Verify modules_tpl still includes post_gl in case it was dropped
+    use_post_gl=0
+    if pos("post_gl"=cvs(open_tpls$[1],8)) then use_post_gl=1
+
+    rem --- As necessary, initialize *s_params.post_to_gl for all firms
+    for i=1 to len(modules$) step 2
+        mod$=modules$(i,2)
+        rem --- Skip module if *s_params not found
+        dev=devMap!.get(mod$)
+        if dev=0 then continue
+        rem --- Skip modules that don't post to GL
+        if pos(mod$="ADMPSA",2) then continue
+        rem --- Skip modules that don't have post_to_gl in *s_params template
+        if pos("post_to_gl"=cvs(tplMap!.get(mod$),8))=0 then continue
+
+        dim tpl$:tplMap!.get(mod$)
+        read(dev,key="",dom=*next)
+        while 1
+            key$=key(dev,end=*break)
+            readrecord(dev)tpl$
+
+            if cvs(tpl.post_to_gl$,2)="" then
+                tpl.post_to_gl$="Y"
+
+                rem --- Override with pre-v12 adm_modules.post_gl if still available
+                if use_post_gl then
+                    modules_tpl.post_gl$=""
+                    find record (modules_dev,key=stbl("+AON_APPCOMPANY",err=*next)+pad(mod$,3),dom=*endif)modules_tpl$
+                    if pos(modules_tpl.post_gl$="YN") then
+                        tpl.post_to_gl$=modules_tpl.post_gl$
+                        rem --- clear adm_modules.post_gl
+                        modules_tpl.post_gl$(1)=""
+                        write record (modules_dev,3),dom=*next)modules_tpl$
+                    endif
+                endif
+
+                tpl$=field(tpl$)
+                writerecord(dev,key=key$)tpl$
+            endif
+        wend
+    next i
+
+    return
+
+rem --- for v12, if OP is installed, process Cash Sale entry and history files (ope-41, opt-41)
+rem --- if credit-card transaction type, encrypt credit card# and move it to new credit card field
+convert_credit_cards:
+
+    rem --- Open File(s)
+	num_files=3
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="OPE_INVCASH", open_opts$[1]="OTA"
+	open_tables$[2]="OPT_INVCASH", open_opts$[2]="OTA"
+    open_tables$[3]="ARC_CASHCODE", open_opts$[3]="OTA"
+
+	gosub open_tables
+
+    ope_invcash_dev=num(open_chans$[1]);dim ope_invcash$:open_tpls$[1]
+    opt_invcash_dev=num(open_chans$[2]);dim opt_invcash$:open_tpls$[2]
+    arc_cashcode_dev=num(open_chans$[3]);dim arc_cashcode$:open_tpls$[3]
+    
+    use ::sys/prog/bao_valid_card.bbj::CreditCard
+    declare CreditCard credCard!
+    credCard!=new CreditCard()
+    cc_config$="BAR_CREDIT_CARD"
+            
+rem --- Process credit card type records
+
+    proc_dev=ope_invcash_dev
+    dim proc_rec$:fattr(ope_invcash$)
+    gosub process_file
+    proc_dev=opt_invcash_dev
+    dim proc_rec$:fattr(opt_invcash$)
+    gosub process_file
+    
+    return
+
+process_file:
+rem --- process ope/opt-41    
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,proc_dev,1,meter_num,status
+ 
+    while 1   
+        readrecord (proc_dev,end=*break)proc_rec$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        readrecord(arc_cashcode_dev,key=firm_id$+"C"+proc_rec.cash_rec_cd$,dom=*next)arc_cashcode$
+        if arc_cashcode.trans_type$="P" and cvs(proc_rec.payment_id$,3)<>""
+            cc_status$=""
+            cc_card$=""
+            cc_card_raw$=cvs(proc_rec.payment_id$,3)
+            for x=1 to len(cc_card_raw$)
+                if cc_card_raw$(x,1)>="0" and cc_card_raw$(x,1)<="9"
+                    cc_card$=cc_card$+cc_card_raw$(x,1)
+                endif
+            next x           
+            if len(cc_card$)>4
+                gosub mod10_check              
+                if cc_status$=""
+                    proc_rec.credit_card_no$=credCard!.encryptCard(cc_card$,cc_config$)
+                    proc_rec.payment_id$="" 
+                    proc_rec$=field(proc_rec$)               
+                    writerecord(proc_dev)proc_rec$
+                endif
+            endif
+        endif
+    wend
+    
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status    
+
+    return
+
+mod10_check:
+
+    cc_digits$ = ""
+    cc_curr_digit = 0
+
+    for cc_temp = len(cc_card$) to 1 step -1
+        cc_curr_digit = cc_curr_digit + 1
+        cc_no = num(cc_card$(cc_temp,1)) * iff(mod(cc_curr_digit,2)=0, 2, 1)
+        cc_digits$ = str(cc_no) + cc_digits$
+    next cc_temp
+
+    cc_total = 0
+    for cc_temp = 1 to len(cc_digits$)
+        cc_total = cc_total + num(cc_digits$(cc_temp, 1))
+    next cc_temp
+
+    if mod(cc_total, 10) <> 0 then cc_status$ = "INVALID"
+
+    return
+    
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto exit_prog
+    endif
+
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),err_text$,err_act$
+    if pos("EXIT"=err_act$) goto std_error_exit
+    if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+    if pos("RETRY"=err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

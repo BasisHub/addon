@@ -448,7 +448,7 @@ rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callp
 		callpoint!.setColumnData("POE_PODET.UNIT_MEASURE","")
 		callpoint!.setColumnData("POE_PODET.WAREHOUSE_ID",callpoint!.getHeaderColumnData("POE_POHDR.WAREHOUSE_ID"))
 		callpoint!.setColumnData("POE_PODET.WO_NO","")
-		callpoint!.setColumnData("POE_PODET.WO_SEQ_REF","")
+		callpoint!.setColumnData("POE_PODET.WK_ORD_SEQ_REF","")
 		callpoint!.setStatus("REFRESH")
 endif
 [[POE_PODET.ITEM_ID.AVAL]]

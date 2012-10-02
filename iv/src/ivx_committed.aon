@@ -44,8 +44,8 @@ rem --- Open/Lock files
 
     files=14,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[2]="ivm-02",ids$[2]="IVM_ITEMWHSE"
-    files$[3]="ivm-07",ids$[3]="IVM_LSMASTER"
+    files$[2]="ivm-02",ids$[2]="IVM_ITEMWHSE",options$[2]="L"; rem Lock
+    files$[3]="ivm-07",ids$[3]="IVM_LSMASTER",options$[3]="L"; rem Lock
     files$[4]="ope-01",ids$[4]="OPE_ORDHDR"
     files$[5]="ope-11",ids$[5]="OPE_ORDDET"
     files$[6]="ope-21",ids$[6]="OPE_ORDLSDET"
@@ -53,6 +53,7 @@ rem --- Open/Lock files
     files$[8]="opm-02",ids$[8]="OPC_LINECODE"
     files$[9]="sfe-01",ids$[9]="SFE_WOMASTR"
     files$[10]="sfe-23",ids$[10]="SFE_WOMATDTL"
+    files$[11]="sfe-25",ids$[11]="SFE_WOMATISD"
     files$[12]="ivs_params",ids$[12]="IVS_PARAMS"
     files$[13]="ars_params",ids$[13]="ARS_PARAMS"
     files$[14]="sfs_params",ids$[14]="SFS_PARAMS"
@@ -69,6 +70,7 @@ rem --- Open/Lock files
     opm02_dev=channels[8]
     sfe01_dev=channels[9]
     sfe23_dev=channels[10]
+    sfe25_dev=channels[11]
     ivs01_dev=channels[12]
     ars01_dev=channels[13]
     sfs01_dev=channels[14]
@@ -78,7 +80,7 @@ rem --- Dimension string templates
 
     dim ivm02a$:templates$[2],ivm07a$:templates$[3],ope01a$:templates$[4],
 :       ope11a$:templates$[5],ope21a$:templates$[6],ope61a$:templates$[7],
-:       opm02a$:templates$[8],sfe01a$:templates$[9],sfe23a$:templates$[10],
+:       opm02a$:templates$[8],sfe01a$:templates$[9],sfe23a$:templates$[10],sfe25a$:templates$[11],
 :       ivs01a$:templates$[12],ars01a$:templates$[13],sfs01a$:templates$[14]
 
 rem --- Retrieve parameter records
@@ -220,24 +222,62 @@ rem --- Rebuild From ope-21 Committed
         wend
     endif
     
-rem --- Rebuild From sfe-23 Committed
+rem --- Rebuild From Shop Floor Committed
 
     if wo$="Y" then
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        read (sfe23_dev,key=firm_id$,dom=*next)
 
-        rem --- sfe-23 Main Read
+        rem ---  Skip sfe-14 (sfe_wolsissu) since rebuild doesn't run if there are any l/s material issues (re gosub entryfiles)
+
+        rem --- sfe-25 (sfe_womatisd) Main Read
+        read (sfe25_dev,key=firm_id$,dom=*next)
+        while 1
+            read record (sfe25_dev,end=*break)sfe25a$
+            if sfe25a$.firm_id$<>firm_id$ then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+            found=0
+            read record (sfe01_dev,key=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$,dom=*next) sfe01a$;found=1
+            if !found then
+                remove (sfe25_dev,key=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.internal_seq_no$,dom=*next)
+                continue
+            endif
+            if sfe01a.wo_status$="C" then continue
+            rem --- Only delete additional committments made after WO was released
+            if cvs(sfe25a.womatdtl_seq_ref$,2)="" then
+                rem --- Not part of released WO, so uncommit all
+                read record (ivm02_dev,key=sfe25a.firm_id$+sfe25a.warehouse_id$+sfe25a.item_id$,dom=*continue) ivm02a$
+                ivm02a.qty_commit=ivm02a.qty_commit+max(0,sfe25a.qty_ordered-sfe25a.tot_qty_iss)
+                ivm02a$=field(ivm02a$)
+                write record (ivm02_dev) ivm02a$                    
+            else
+                rem --- Only uncommit portion of issue's qty_issued that is greater than released WO's qty_ordered
+                found=0
+                sfe23_key$=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.womatdtl_seq_ref$
+                readrecord(sfe23_dev,key=sfe23_key$,dom=*next)sfe23a$; found=1
+                if found then
+                    if max(0,sfe25a.qty_ordered-sfe25a.tot_qty_iss)>max(0,sfe23a.qty_ordered-sfe23a.tot_qty_iss) then
+                        read record (ivm02_dev,key=sfe23a.firm_id$+sfe23a.warehouse_id$+sfe23a.item_id$,dom=*continue) ivm02a$
+                        ivm02a.qty_commit=ivm02a.qty_commit+max(0,sfe25a.qty_ordered-sfe25a.tot_qty_iss)-max(0,sfe23a.qty_ordered-sfe23a.tot_qty_iss)
+                        ivm02a$=field(ivm02a$)
+                        write record (ivm02_dev) ivm02a$                    
+                    endif
+                endif
+            endif
+        wend
+
+        rem --- sfe-23 (sfe_womatdtl) Main Read
+        read (sfe23_dev,key=firm_id$,dom=*next)
         while more
             read record (sfe23_dev,end=*break)sfe23a$
             if sfe23a$.firm_id$<>firm_id$ then break
             call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
             found=0
-            read record (sfe01_dev,key=sfe23a.firm_id$+sfe23a.work_location$+sfe23a.work_no$,dom=*next) sfe01a$;found=1
+            read record (sfe01_dev,key=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$,dom=*next) sfe01a$;found=1
             if !found
-                remove (sfe23_dev,key=sfe23a.firm_id$+sfe23a.work_location$+sfe23a.work_no$+sfe23a.material_seq$,dom=*continue)
+                remove (sfe23_dev,key=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$+sfe23a.internal_seq_no$,dom=*continue)
             else
-                if sfe01a.work_status$<>"C" then
-                    read record (ivm02_dev,key=firm_id$+sfe23a.warehouse_id$,dom=*continue) ivm02a$
+                if sfe01a.wo_status$<>"C" then
+                    read record (ivm02_dev,key=sfe23a.firm_id$+sfe23a.warehouse_id$+sfe23a.item_id$,dom=*continue) ivm02a$
                     ivm02a.qty_commit=ivm02a.qty_commit+max(0,sfe23a.qty_ordered-sfe23a.tot_qty_iss)
                     ivm02a$=field(ivm02a$)
                     write record (ivm02_dev) ivm02a$                    
@@ -290,7 +330,7 @@ Entry_File: rem --- Entry file contains records
         break
         case 3; rem materials
             find (sfs01_dev,key=firm_id$+"SF00",dom=*break); rem "Verify WO installedfor this Firm
-            find record (ivs01a_dev,key=firm_id$+"IV00",dom=*break) ivs01a$; rem "Verify IVinstalled for this Firm
+            find record (ivs01_dev,key=firm_id$+"IV00",dom=*break) ivs01a$; rem "Verify IVinstalled for this Firm
             if pos(ivs01a.lotser_flag$="LS")<>0 then
                 msg_tokens$[1]=msg_tokens$[1]+Translate!.getTranslation("AON_MATERIALS_ISSUES_REGISTER_AND_UPDATE_MUST_BE_RUN.")+$0A$
                 index=index+1

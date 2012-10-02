@@ -47,7 +47,7 @@ rem --- Open/Lock files
         files$[17]="ope-11",ids$[17]="OPE_ORDDET"
         files$[18]="sfe-01",ids$[18]="SFE_WOMASTR"
         files$[19]="sfe-02",ids$[19]="SFE_WOOPRTN"
-        files$[20]="sfe_clsdtrans",ids$[20]="SFE_CLSDTRANS"
+        files$[20]="sfe_closedwo",ids$[20]="SFE_CLOSEDWO"
         files$[21]="sfe-06",ids$[21]="SFE_WOLOTSER"
         files$[22]="sfe-13",ids$[22]="SFE_WOMATHDR"
         files$[23]="sfe-15",ids$[23]="SFE_WOMATISH"
@@ -202,7 +202,7 @@ rem --- Init Data
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",  sfe22_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOSUBCNT","PRIMARY",sfe32_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATDTL","PRIMARY",sfe23_key_tpl$,rd_table_chans$[all],status$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_CLSDTRANS","PRIMARY",sfe04_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_CLOSEDWO","PRIMARY",sfe04_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATISD","PRIMARY",sfe25_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFX_WOSCHDXR","PRIMARY",sfm06_key_tpl$,rd_table_chans$[all],status$
 
@@ -247,8 +247,7 @@ rem --- Calc Actuals From Transactions
             dim d[4],t[5]
             wotran_dev=sft01_dev
             dim sftran$:tmpl(wotran_dev)
-            dim  wotran_key$:sft01_key_tpl$
-            record_id1$=sft01.record_id_o$ 
+            dim  wotran_key$:sft01_key_tpl$ 
             field3=sftran.direct_date
              
 
@@ -259,28 +258,31 @@ rem --- Calc Actuals From Transactions
                         wotran_key$=key(wotran_dev,end=*break)
                         if wotran_key.firm_id$+wotran_key.wo_location$+wotran_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then break
                         read record (wotran_dev,key=wotran_key$) sftran$
-                        x=pos(record_id1$="MS")+2
-                        if x>2 then 
-                            let d[x]=d[x]+sft01a.ext_cost
-                        else
-                            d[1]=d[1]+sftran.units*sftran.direct_date
-                            d[2]=d[2]+sftran.ext_cost-sftran.units*sftran.direct_date
-                        endif
+                        switch wotran_dev
+                            case sft01_dev
+                                d[1]=d[1]+sftran.units*sftran.direct_date
+                                d[2]=d[2]+sftran.ext_cost-sftran.units*sftran.direct_date                            
+                            break
+                            case sft21_dev 
+                                let d[3]=d[3]+sftran.ext_cost
+                            break
+                            case sft31_dev 
+                                let d[4]=d[4]+sftran.ext_cost
+                            break                       
+                        swend
                         d[0]=d[0]+sftran.ext_cost
                  wend 
 
                     if wotran_dev=sft01_dev then 
                        wotran_dev=sft21_dev
                        dim sftran$:tmpl(wotran_dev) 
-                       dim  wotran_key$:sft21_key_tpl$
-                       record_id1$=sft21.record_id_m$ 
+                       dim  wotran_key$:sft21_key_tpl$ 
                        field3=sftran.reserved_num
                     else
                         if wotran_dev=sft21_dev then 
                            let wotran_dev=sft31_dev
                            dim sftran$:tmpl(wotran_dev)
                            dim  wotran_key$:sft31_key_tpl$
-                           record_id1$=sft31.record_id_s$  
                            field3=sftran.reserved_num
                         endif 
                     endif
@@ -382,20 +384,26 @@ rem --- Calc Standards
                     sfreq_dev=sfe02_dev  
                     dim sfreqa$:tmpl(sfreq_dev) 
                     dim  sfreq_key$:sfe02_key_tpl$
-                    record_id$=sfe02.record_id_a$
+
                     while more
                         read (sfreq_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
                         while more
                             sfreq_key$=key(sfreq_dev,end=*break)
                             if sfreq_key.firm_id$+sfreq_key.wo_location$+sfreq_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then break
                             read record (sfreq_dev,key=sfreq_key$) sfreqa$
-                            x=pos(record_id$="BC")+2
-                            if x>2 then 
-                                let e[x]=e[x]+sfe02a.tot_std_cost
-                            else
-                                e[1]=e[1]+sfe02a.total_time*sfe02a.direct_rate
-                                e[2]=e[2]+sfe02a.tot_std_cost-sfe02a.total_time*sfe02a.direct_rate
-                            endif 
+                            
+                            switch sfreq_dev
+                                case sfe02_dev
+                                    e[1]=e[1]+sfe02a.total_time*sfe02a.direct_rate
+                                    e[2]=e[2]+sfe02a.tot_std_cost-sfe02a.total_time*sfe02a.direct_rate
+                                break
+                                case sfe22_dev
+                                    let e[3]=e[3]+sfe02a.tot_std_cost
+                                break
+                                case sfe32_dev
+                                    let e[4]=e[4]+sfe02a.tot_std_cost
+                                break                                                           
+                            swend 
                             e[0]=e[0]+sfe02a.tot_std_cost
                         wend
 
@@ -403,14 +411,11 @@ rem --- Calc Standards
                             let sfreq_dev=sfe22_dev
                             dim sfreqa$:tmpl(sfreq_dev)
                             dim  sfreq_key$:sfe22_key_tpl$
-                            record_id$=sfe22.record_id_a$
                         else
                             if sfreq_dev=sfe22_dev then 
                                 let sfreq_dev=sfe32_dev
                                 dim sfreqa$:tmpl(sfreq_dev) 
-                                dim  sfreq_key$:sfe32_key_tpl$
-                                record_id$=sfe32.record_id_a$
-                                continue
+                                dim  sfreq_key$:sfe32_key_tpl$                                
                             endif
                         endif
                     wend
@@ -525,7 +530,7 @@ custom_order_complete:
 
 rem --- Reset ivm-02 Committed If All Is Not Issued
 
-                 remove (sfe13_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$+"000",dom=*next)
+                 remove (sfe13_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
                  read (sfe23_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
                  while more
                     sfe23_key$=key(sfe23_dev,end=*break)

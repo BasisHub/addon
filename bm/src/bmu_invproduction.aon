@@ -159,15 +159,15 @@ rem --- Initial Read
     call pgmdir$+"ivc_itemupdt.aon::init",files[all],ivs01a$,item$[all],refs$[all],refs[all],rd_table_chans$[all],ignore_status
 	call pgmdir$+"adc_progress.aon","N","","","","",0,bme01_dev,1,meter_num,status
 	
-	read (bme01_dev,key=firm_id$,dom=*next)
-
-rem --- Main Loop
+	rem --- Main Loop
 
     while more 
+		read (bme01_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
         value=0
         k0$=key(bme01_dev,end=*break)
         if pos(firm_id$=k0$)<>1 then break
         read record (bme01_dev) bme01a$
+		if bme01a.batch_no$<>batch_no$ then break
         parent$=bme01a.item_id$
         update$=bme01a.update_flag$,whse$=bme01a.warehouse_id$
 		call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
@@ -322,11 +322,16 @@ rem --- Update Inventory for Finished Goods
 
 remove_record: rem --- Remove Record
 
-		remove (bme01_dev,key=k0$,dom=*continue)
+		remove (bme01_dev,key=firm_id$+bme01a.warehouse_id$+bme01a.prod_date$+bme01a.bm_reference$+bme01a.item_id$,dom=*continue)
     wend
    
 done: rem --- End
 
+	if gl$="Y"
+		call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+		call pgmdir$+"glc_ctlupdate.aon",status
+		call pgmdir$+"glc_ctldelete.aon",status
+	endif
 	call pgmdir$+"adc_batchdelete.aon",status
 	goto std_exit
 
@@ -586,6 +591,14 @@ std_exit: rem --- Standard program end (01Mar2006)
     gosub disp_message
 
 std_exit_no_update:
+
+	if num(batch_no$)<>0
+		unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+		lock_status$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",
+:			"ADM_PROCBATCHES",unlock_key$,"U","",rd_table_chan,
+:			rd_table_chans$[all],lock_status$
+	endif
 
 	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next

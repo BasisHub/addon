@@ -96,7 +96,7 @@ disable_ctls:rem --- Disable fields that don't apply
 
 	rem --- Dropship
 	dropship$=callpoint!.getColumnData("OPC_LINECODE.DROPSHIP")
-	if rec_data.dropship$="Y"
+	if dropship$="Y"
 		dmap$[5]=""
 	endif
 

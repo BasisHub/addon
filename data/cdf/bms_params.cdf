@@ -1,55 +1,20 @@
-[[BMS_PARAMS.ADIS]]
-rem - don't use gl accounts if GL not installed
-
-			
-			if callpoint!.getDevObject("gl_installed")<>"Y"  then
-				callpoint!.setColumnData("BMS_PARAMS.GL_WIP_ACCT","")
-				callpoint!.setColumnData("BMS_PARAMS.GL_PUR_ACCT","")
-				callpoint!.setColumnData("BMS_PARAMS.GL_PRD_VAR","")
-				
-				ctl_stat$="D"
-
-				ctl_name$="BMS_PARAMS.GL_WIP_ACCT"
-				gosub disable_fields
-
-				ctl_name$="BMS_PARAMS.GL_PUR_ACCT"
-				gosub disable_fields
-
-				ctl_name$="GL_PRD_VAR"
-				gosub disable_fields
-			else
-
-				ctl_stat$=""
-
-				ctl_name$="BMS_PARAMS.GL_WIP_ACCT"
-				gosub disable_fields
-
-				ctl_name$="BMS_PARAMS.GL_PUR_ACCT"
-				gosub disable_fields
-
-				ctl_name$="GL_PRD_VAR"
-				gosub disable_fields
-
-			endif
+[[BMS_PARAMS.ARAR]]
+rem --- Update post_to_gl if GL is uninstalled
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	if gl_installed$<>"Y" and callpoint!.getColumnData("BMS_PARAMS.POST_TO_GL")="Y" then
+		callpoint!.setColumnData("BMS_PARAMS.POST_TO_GL","N",1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[BMS_PARAMS.AREC]]
+rem --- Init new record
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	if gl_installed$="Y"then callpoint!.setColumnData("BMS_PARAMS.POST_TO_GL","Y")
 [[BMS_PARAMS.BSHO]]
 rem --- init/parameters
 
-			dim info$[20]
-			
-			call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
-			gl$=info$[20]
-			callpoint!.setDevObject("gl_installed",gl$)
-[[BMS_PARAMS.<CUSTOM>]]
-disable_fields:
+	dim info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
+	gl_installed$=info$[20]
+	callpoint!.setDevObject("gl_installed",gl_installed$)
 
-rem --- used to disable/enable controls depending on parameter settings
-rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space to disable/enable
-	
-	wctl$=str(num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI")):"00000")
-	wmap$=callpoint!.getAbleMap()
-	wpos=pos(wctl$=wmap$,8)
-	wmap$(wpos+6,1)=ctl_stat$
-	callpoint!.setAbleMap(wmap$)
-	callpoint!.setStatus("ABLEMAP-REFRESH")
-
-return
+	if gl_installed$<>"Y" then callpoint!.setColumnEnabled("BMS_PARAMS.POST_TO_GL",-1)

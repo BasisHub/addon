@@ -14,6 +14,12 @@ rem --- Retrieve the program path
 
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 
+rem --- see if batching
+
+	call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")
+
 rem --- Retrieve sysinfo data
 
 	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
@@ -56,6 +62,40 @@ rem --- Dimension string templates
 	dim ivm02a$:open_tpls$[7],ivs01a$:open_tpls$[8],ope01a$:open_tpls$[9]
 	dim ope11a$:open_tpls$[10]
 
+rem --- Is General Ledger installed and being used?
+ 
+	application$="BM"
+	gl$="N"
+	status=0
+	source$=pgm(-2)
+	call pgmdir$+"glc_ctlcreate.aon",err=*next,
+:				source$,application$,glw11$,gl$,status
+	if status 
+		goto std_exit
+	endif
+
+rem --- Additional file opens
+
+	num_files=3
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLM_ACCT",open_opts$[1]="OTA"
+	open_tables$[2]="GLE_DAILYDETAIL",open_opts$[2]="OTA"
+	open_tables$[3]="GLW_DAILYDETAIL",open_opts$[3]="OTA"
+
+	if gl$="Y" gosub open_tables
+	if status goto std_exit
+
+	glm01_dev=num(open_chans$[1])
+	glt04_dev=num(open_chans$[2])
+	glw11_dev=num(open_chans$[3])
+
+	rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+ 
+	if gl$="Y"
+		rec_pfx$=firm_id$+process_id$+batch_no$
+		call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+	endif
+
 rem --- Retrieve parameter records
 
 	bms01a_key$=firm_id$+"BM00"
@@ -87,7 +127,9 @@ rem --- Init Data
         when$=sysinfo.system_date$
         headings$[0]=sysinfo.firm_name$
 		headings$[1]=sysinfo.task_desc$
- 
+
+		if num(batch_no$)<>0 then headings$[1]=headings$[1]+ " (Batch: "+batch_no$+")"		
+
 rem --- Run Report?
 
         msg_id$="AON_RUN_QUERY"
@@ -124,7 +166,7 @@ rem ---  column heading
 
 rem --- Initial Read
 
-		read (bme02_dev,key=firm_id$,dom=*next)
+		read (bme02_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
         
 rem --- Heading Read
         while more
@@ -132,6 +174,7 @@ rem --- Heading Read
             read record (bme02_dev,end=*break) bme02a$
 rem --- Breaks
             if pos(firm_id$=bme02a_key$)<>1 then break
+			if bme02a.batch_no$<>batch_no$ then break
             if bme02a.prod_date$<>t0$ then gosub date_break else OutVect!.addItem("")
             call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
@@ -364,16 +407,23 @@ rem --- #endinclude std_missing_params.src
 
 rem --- #include std_end.src
 
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
 std_exit: rem --- Standard program end (01Mar2006)
 	
 	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
 	run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
 	release
 rem --- #endinclude std_end.src
-
-std_exit_no_report:
-
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-    release
-
+	
 	end

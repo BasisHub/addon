@@ -289,10 +289,10 @@ load_and_display_grid:
 	read (search_dev,key=firm_id$+cvs(search_text$,3),knum=search_knum$,dom=*next)
 
 	while 1 
-		read record (search_dev,end=*break) searchrec$		
+		skey$=key(search_dev,end=*break); read record (search_dev) searchrec$		
 		if searchrec.firm_id$<>firm_id$ then break
 		if len(cvs(search_text$,2)) > 0
-			if pos(firm_id$+cvs(search_text$,2)=searchrec$)<>1 break
+			if pos(firm_id$+cvs(search_text$,2)=skey$)<>1 break
 		endif
 		read record (ivm_itemmast_dev,key=firm_id$+searchrec.item_id$,dom=*next)ivm_itemmast$
 	

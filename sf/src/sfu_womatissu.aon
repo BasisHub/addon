@@ -1,0 +1,327 @@
+rem --- Work Order Material Issues Update
+rem --- Program sfu_womatissu v8.0.0 22Mar2012 (wou_aa)
+rem --- Created by Codeport Utility (03/22/2012 03:27:26)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+
+	next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+	OutVect!=null()
+
+rem --- Retrieve the program path
+
+	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get user approval to update
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Initialize inventory item update
+	call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",ivfiles[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+
+rem --- Start progress meter and position header file
+
+	call pgmdir$+"adc_progress.aon","NC","","","","",0,wotrans_dev,1,meter_num,status
+    read (wotrans_dev,key=firm_id$,dom=*next)
+
+rem --- Read next Issue Inventory Transaction (SFE_WOTRANS) record
+
+    while 1
+        read record (wotrans_dev,end=*break)wotrans$
+        if wotrans.firm_id$<>firm_id$ then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+        rem --- Get Material Issues Header (SFE_WOMATISH, sfe-15) record for this transaction (and batch)
+        sfe15_key$=firm_id$+batch_no$+wotrans.wo_location$+wotrans.wo_no$
+        read record (sfe15_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*continue) sfe15a$; rem --- skip if wrong batch
+
+        rem --- Get Work Order Entry (SFE_WOMASTR, sfe-01) record
+        dim sfe01a$:fattr(sfe01a$)
+        find record (sfe01_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$,dom=*next) sfe01a$
+        if cvs(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,2)="" then
+            rem --- SFE_WOMASTR (sfe-01) record not found
+            remove (wotrans_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$,dom=*next)
+            continue
+        endif
+
+        rem --- Process Material Issues Detail (SFE_WOMATISD, sfe-25) records
+        read (sfe25_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*next)
+        while 1
+            sfe25_key$=key(sfe25_dev,end=*break)
+            if pos(sfe15_key$=sfe25_key$)<>1 then break
+            read record (sfe25_dev) sfe25a$
+            if sfe25a.qty_issued=0 then continue
+
+            rem --- Get inventory item
+            dim ivm01a$:fattr(ivm01a$)
+            find record (ivm01_dev,key=firm_id$+sfe25a.item_id$,dom=*next) ivm01a$
+            
+            rem --- Update ivm-02 Warehouse Record
+            updated_unit_cost=sfe25a.issue_cost
+            if pos(p9$="LS")=0 or ivm01a.lotser_item$<>"Y" or ivm01a.inventoried$<>"Y" then
+                gosub update_warehouse_record
+            endif
+
+            rem --- Update Open WO Material Transactions (SFT_OPNMATTR, sft-21)
+            dim sft21a$:fattr(sft21a$)
+            next_seq_no=1
+            trans_seq_mask$=fill(len(sft21a.trans_seq$),"0")
+            sft21a.firm_id$=sfe25a.firm_id$
+            sft21a.wo_location$=sfe25a.wo_location$
+            sft21a.wo_no$=sfe25a.wo_no$
+            sft21a.trans_date$=sfe15a.issued_date$
+            sft21a.material_seq_ref$=sfe25a.internal_seq_no$
+            sft21a.unit_measure$=sfe25a.unit_measure$
+            sft21a.warehouse_id$=sfe25a.warehouse_id$
+            sft21a.item_id$=sfe25a.item_id$
+            sft21a.units=sfe25a.qty_issued
+            sft21a.unit_cost=updated_unit_cost
+            precision 2
+            sft21a.ext_cost=sft21a.units*sft21a.unit_cost
+            precision ivs01_precision
+            sft21_trip$=sft21a.firm_id$+sft21a.wo_location$+sft21a.wo_no$+sft21a.trans_date$
+            read (sft21_dev,key=sft21_trip$+$ff$,dom=*next)
+            previous_key$=""
+            previous_key$=keyp(sft21_dev,end=*next)
+            if pos(sft21_trip$=previous_key$)=1 then
+                next_seq_no=num(previous_key$(1+len(sft21_trip$)),err=*next)+1
+            endif
+            sft21a.trans_seq$=str(next_seq_no:trans_seq_mask$)
+            write record (sft21_dev) sft21a$
+
+            rem --- Update WO Transaction Cross Reference
+            rem --- SFX_WOTRANXR (sfm-07) has been replaced by a database view vw_sfx_wotranxr
+
+            rem --- Update Lotted/Serialized Issues (SFE_WOLSISSU, sfe-14)
+            if pos(p9$="LS") and ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then
+                t1=0,t2=0
+                sfe14_trip$=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.internal_seq_no$
+                read (sfe14_dev,key=sfe14_trip$,dom=*next)
+                while 1
+                    sfe14_key$=key(sfe14_dev,end=*break)
+                    if pos(sfe14_trip$=sfe14_key$)<>1 then break
+                    read record (sfe14_dev) sfe14a$
+                    if sfe14a.qty_issued<>0 then
+                        gosub update_lotser_record
+
+                        rem --- Update Open WO Lot/Serial Transactions (SFT_OPNLSTRN, sft-11)
+                        dim sft11a$:fattr(sft11a$)
+                        next_seq_no=1
+                        sequence_no_mask$=fill(len(sft11a.sequence_no$),"0")
+                        sft11a.firm_id$=sft21a.firm_id$
+                        sft11a.wo_location$=sft21a.wo_location$
+                        sft11a.wo_no$=sft21a.wo_no$
+                        sft11a.trans_date$=sft21a.trans_date$
+                        sft11a.trans_seq_ref$=sft21a.trans_seq$
+                        sft11a.lotser_no$=sfe14a.lotser_no$
+                        sft11a.cls_inp_qty=sfe14a.qty_issued
+                        sft11a.closed_cost=sfe14a.issue_cost
+                        precision 2
+                        sft11a.ext_cost=sft11a.cls_inp_qty*sft11a.closed_cost
+                        precision ivs01_precision
+                        sft11_trip$=sft11a.firm_id$+sft11a.wo_location$+sft11a.wo_no$+sft11a.trans_date$+sft11a.trans_seq_ref$
+                        read (sft11_dev,key=sft11_trip$+$ff$,dom=*next)
+                        previous_key$=""
+                        previous_key$=keyp(sft11_dev,end=*next)
+                        if pos(sft11_trip$=previous_key$)=1 then
+                            next_seq_no=num(previous_key$(1+len(sft11_trip$)),err=*next)+1
+                        endif
+                        sft11a.sequence_no$=str(next_seq_no:sequence_no_mask$)
+                        write record (sft11_dev) sft11a$
+                    endif
+
+                    rem --- Done with this lot/serial number
+                    remove (sfe14_dev,key=sfe14_key$)
+                wend; rem --- end sfe-14 read
+            endif
+            
+            rem --- More to issue?
+            sfe25a.tot_qty_iss=sfe25a.tot_qty_iss+sfe25a.qty_issued
+            sfe25a.qty_issued=0
+            if cvs(sfe25a.womatdtl_seq_ref$,2)<>"" then
+                sfe23_key$=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.womatdtl_seq_ref$
+            else
+                sfe23_key$=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.internal_seq_no$
+            endif
+            if sfe25a.tot_qty_iss>=sfe25a.qty_ordered then
+                rem --- All issued, so remove SFE_WOMATISD and SFE_WOMATDTL (sfe-25 and sfe-23)
+                remove (sfe25_dev,key=sfe25a.firm_id$+sfe25a.wo_location$+sfe25a.wo_no$+sfe25a.internal_seq_no$,dom=*next)
+                remove (sfe23_dev,key=sfe23_key$,dom=*next)
+            else
+                rem --- More left to issue, update SFE_WOMATDTL (sfe-23)
+                dim sfe23a$:fattr(sfe23a$)
+                read record (sfe23_dev,key=sfe23_key$,knum="PRIMARY",dom=*next) sfe23a$
+                if cvs(sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$+sfe23a.internal_seq_no$,2)="" then
+                    rem --- Create new SFE_WOMATDTL (sfe-23) record
+                    sfe23a.firm_id$=sfe25a.firm_id$
+                    sfe23a.wo_location$=sfe25a.wo_location$
+                    sfe23a.wo_no$=sfe25a.wo_no$
+                    if cvs(sfe25a.womatdtl_seq_ref$,2)<>"" then
+                        sfe23a.internal_seq_no$=sfe25a.womatdtl_seq_ref$
+                    else
+                        sfe23a.internal_seq_no$=sfe25a.internal_seq_no$
+                        sfe25a.womatdtl_seq_ref$=sfe23a.internal_seq_no$
+                    endif
+                    sfe23a.unit_measure$=sfe25a.unit_measure$
+                    sfe23a.warehouse_id$=sfe25a.warehouse_id$
+                    sfe23a.item_id$=sfe25a.item_id$
+                    sfe23a.require_date$=sfe25a.require_date$
+                    rem --- Get next materials sequence number
+                    next_seq_no=1
+                    material_seq_mask$=fill(len(sfe23a.material_seq$),"0")
+                    sfe23_trip$=sfe23a.firm_id$+sfe23a.wo_location$+sfe23a.wo_no$
+                    read (sfe23_dev,key=sfe23_trip$+$ff$,knum="AO_DISP_SEQ",dom=*next)
+                    previous_key$=""
+                    previous_key$=keyp(sfe23_dev,end=*next)
+                    if pos(sfe23_trip$=previous_key$)=1 then
+                        next_seq_no=num(previous_key$(1+len(sfe23_trip$)),err=*next)+1
+                    endif
+                    sfe23a.material_seq$=str(next_seq_no:material_seq_mask$)
+                endif
+                sfe23a.qty_ordered=sfe25a.qty_ordered
+                sfe23a.tot_qty_iss=sfe25a.tot_qty_iss
+                sfe23a.unit_cost=sfe25a.unit_cost
+                sfe23a.qty_issued=sfe25a.qty_issued
+                sfe23a.issue_cost=sfe25a.issue_cost
+                write record (sfe23_dev) sfe23a$
+
+                rem --- Update SFE_WOMATISD (sfe-25)
+                write record (sfe25_dev) sfe25a$
+            endif
+        wend; rem -- end sfe-25 read
+        
+        rem --- Update Work Order Entry (SFE_WOMASTR, sfe-01) record
+        extract record (sfe01_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$) sfe01a$
+        if cvs(sfe01a.act_st_date$,2)="" then sfe01a.act_st_date$=sfe15a.issued_date$
+        if sfe01a.lstact_date$<sfe15a.issued_date$ then sfe01a.lstact_date$=sfe15a.issued_date$
+        write record (sfe01_dev) sfe01a$
+        
+        rem --- Any SFE_WOMATISD (sfe-25) records left?
+        read (sfe25_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*next)
+        sfe25_key$=""
+        sfe25_key$=key(sfe25_dev,end=*next)
+        if pos(sfe15_key$=sfe25_key$)<>1 then
+            remove (sfe15_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$,dom=*next)
+            remove (sfe13_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$,dom=*next)
+            delete_batch=1
+        else
+            sfe15a.issued_date$(1)=""
+            write record (sfe15_dev) sfe15a$
+            write record (sfe13_dev) sfe13a$
+            delete_batch=0
+        endif
+
+        rem --- Remove Issue Inventory Transaction (SFE_WOTRANS) record
+        remove (wotrans_dev,key=firm_id$+wotrans.wo_location$+wotrans.wo_no$,dom=*next)
+    wend; rem --- end SFE_WOTRANS read
+
+rem --- All done
+
+    if gl$="Y"
+        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+        call pgmdir$+"glc_ctlupdate.aon",status
+        call pgmdir$+"glc_ctldelete.aon",status
+    endif
+    if delete_batch then call pgmdir$+"adc_batchdelete.aon",err=*next,status
+    goto std_exit
+
+update_warehouse_record: rem --- Update Item/Warehouse Information 
+
+    gosub get_item_info
+    refs[0]=-(sfe25a.qty_issued)
+    refs[1]=sfe25a.issue_cost
+    gosub inventory_update
+    return                                                  
+
+update_lotser_record: rem --- Update Lot/Serial Information 
+
+    gosub get_item_info
+    items$[3]=sfe14a.lotser_no$
+    refs[0]=-(sfe14a.qty_issued)
+    refs[1]=sfe14a.issue_cost
+    gosub inventory_update
+    return                                                  
+
+get_item_info: rem --- Inventory/Action Item Information
+    dim items$[3],refs$[11],refs[5]
+    items$[0]=sfe25a.firm_id$,items$[1]=sfe25a.warehouse_id$,items$[2]=sfe25a.item_id$
+    refs$[0]=sfe15a.issued_date$,refs$[1]=sfe01a.customer_id$,refs$[2]=sfe01a.order_no$
+    refs$[3]=sfe01a.wo_no$,refs$[4]=sfe01a.wo_type$,refs$[5]=sfe25a.material_seq$
+    refs$[9]=sfe01a.item_id$
+    action$="WI"
+    return                                                  
+
+inventory_update: rem --- Perform Inventory Update 
+    call pgmdir$+"ivc_itemupdt.aon",action$,ivfiles[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+    updated_unit_cost=refs[1]
+    return                                                  
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

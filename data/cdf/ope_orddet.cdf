@@ -51,12 +51,11 @@ rem --- Additional Options
 
 	if user_tpl.line_type$ = "M" then break; rem --- exit callpoint
 
-rem --- Save current row/column so we'll know where to set focus when we return
+rem --- Save current context so we'll know where to return
 
 	declare BBjStandardGrid grid!
 	grid! = util.getGrid(Form!)
-	return_to_row = grid!.getSelectedRow()
-	return_to_col = grid!.getSelectedColumn()
+	grid_ctx=grid!.getContextID()
 
 rem --- Setup a templated string to pass information back and forth from form
 
@@ -188,9 +187,7 @@ rem --- Need to commit?
 
 rem --- Return focus to where we were (Detail line grid)
 
-rem --- per bug 5587 disable forceEdit until Barista bug 5586 is fixed
-rem --- then replace forceEdit with setFocus in AGRN
-rem	util.forceEdit(Form!, return_to_row, return_to_col)
+	sysgui!.setContext(grid_ctx)
 [[OPE_ORDDET.AGDR]]
 rem --- Disable by line type
 
@@ -652,12 +649,11 @@ rem --- Did we change rows?
 		gosub set_avail
 	endif
 [[OPE_ORDDET.AOPT-LENT]]
-rem --- Save current row/column so we'll know where to set focus when we return from lot lookup
+rem --- Save current context so we'll know where to return from lot lookup
 
 	declare BBjStandardGrid grid!
 	grid! = util.getGrid(Form!)
-	return_to_row = grid!.getSelectedRow()
-	return_to_col = grid!.getSelectedColumn()
+	grid_ctx=grid!.getContextID()
 
 rem --- Go get Lot Numbers
 
@@ -744,9 +740,8 @@ rem --- Is this item lot/serial?
 
 		rem --- Return focus to where we were (Detail line grid)
 
-rem --- per bug 5587 disable forceEdit until Barista bug 5586 is fixed
-rem --- then replace forceEdit with setFocus in AGRN
-rem			util.forceEdit(Form!, return_to_row, return_to_col)
+			sysgui!.setContext(grid_ctx)
+
 		endif
 	endif
 [[OPE_ORDDET.BUDE]]

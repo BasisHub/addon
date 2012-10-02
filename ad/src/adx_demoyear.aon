@@ -10,6 +10,7 @@ rem ==========================================================================
 
     use java.io.File
     use java.util.Collections
+    use java.util.GregorianCalendar
     use java.util.HashMap
     use java.util.Iterator
     use java.util.TreeSet
@@ -21,6 +22,7 @@ rem ==========================================================================
 
 rem --- Initializations
 
+    gCalendar!=new GregorianCalendar()
     sysGUI! = BBjAPI().getSysGui()
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -60,11 +62,11 @@ rem --- Query ddm_elements table to get elements of the desired types
     styp_vec!.add("2"); rem - YYYYMM
     styp_vec!.add("3"); rem - YYYY
     
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
     for i=0 to styp_vec!.size()-1
         styp$ = cast(BBjString, styp_vec!.get(i))
         sql_prep$="SELECT dd_data_name, dd_attr_styp FROM ddm_elements WHERE dd_attr_styp='" + styp$ + "'"
-        sql_chan=sqlunt
-        sqlopen(sql_chan)stbl("+DBNAME")
         sqlprep(sql_chan)sql_prep$
         dim select_tpl$:sqltmpl(sql_chan)
         sqlexec(sql_chan)
@@ -73,8 +75,27 @@ rem --- Query ddm_elements table to get elements of the desired types
             select_tpl$=sqlfetch(sql_chan,err=*break) 
             element_map!.put(select_tpl.dd_data_name$, select_tpl.dd_attr_styp$)
         wend
-        sqlclose(sql_chan)
     next i
+    sqlclose(sql_chan)
+    
+rem --- The DAYS_IN_MTH element type requires special handling for leap and non-leap years.
+rem --- NOTE: The DAYS_IN_MTH processing is skipped unless the table includes both year and month. 
+
+    declare HashMap daysInMth_map!
+    daysInMth_map! = new HashMap()
+
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sql_prep$="SELECT dd_table_alias, dd_dvar_name FROM ddm_table_cols WHERE dd_data_name='DAYS_IN_MTH'"
+    sqlprep(sql_chan)sql_prep$
+    dim select_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
+        while 1
+            select_tpl$=sqlfetch(sql_chan,err=*break) 
+            daysInMth_map!.put(select_tpl.dd_table_alias$, select_tpl.dd_dvar_name$)
+        wend
+    sqlclose(sql_chan)
     
 rem --- Start progress meter
                 
@@ -266,6 +287,12 @@ rem			endif
             gosub open_tables
             table_dev = num(open_chans$[1])
             dim table_tpl$:open_tpls$[1]
+
+            rem --- Does template include MONTH?
+            hasMonth=iff(pos("month"=cvs(open_tpls$[1],8)),1,0)
+
+            rem --- Does template include DAYS_IN_MTH element type?
+            hasDaysInMth=iff(daysInMth_map!.containsKey(filename$),1,0)
             
             rem --- Log progress
             meter_text$=cvs(dataName$,3)+": "+cvs(tableAlias$,3)+"."+cvs(dvarName$,3)
@@ -300,6 +327,16 @@ rem			endif
                             if len(oldDate$)>=6
                                 yyyy=num(oldDate$(1,4))
                                 newDate$=str(yyyy+incYr)+oldDate$(5)
+                                
+                                rem --- If present, adjust DAYS_IN_MTH for February
+                                rem --- Assumes only one YYYYMM and one DAYS_IN_MTH element in record.
+                                if hasDaysInMth and oldDate$(5,2)="02" then
+                                    rem --- Get number of days in February this year
+                                    daysInFeb=iff(gCalendar!.isLeapYear(yyyy+incYr),29,28)
+                                    
+                                    rem --- Update DAYS_IN_MTH
+                                    field table_tpl$, "DAYS_IN_MTH"=daysInFeb
+                                endif
                             endif
                             break
                         case styp$="3"
@@ -307,6 +344,16 @@ rem			endif
                             if len(oldDate$)>=4
                                 yyyy=num(oldDate$)
                                 newDate$=str(yyyy+incYr)
+                                
+                                rem --- If present, adjust DAYS_IN_MTH for February
+                                rem --- Assumes only one MONTH and one DAYS_IN_MTH element in record.
+                                if hasDaysInMth and hasMonth and table_tpl.month$="02" then
+                                    rem --- Get number of days in February this year
+                                    daysInFeb=iff(gCalendar!.isLeapYear(yyyy+incYr),29,28)
+                                    
+                                    rem --- Update DAYS_IN_MTH
+                                    field table_tpl$, "DAYS_IN_MTH"=daysInFeb
+                                endif
                             endif
                             break
                         case default

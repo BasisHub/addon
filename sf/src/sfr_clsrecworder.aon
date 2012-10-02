@@ -52,7 +52,7 @@ rem --- Open/Lock files
         files$[13]="sft-21",ids$[13]="SFT_OPNMATTR"
         files$[14]="sft-31",ids$[14]="SFT_OPNSUBTR"
         files$[15]="sfw-07",ids$[15]="SFW_CLSWOXTY"
-        files$[16]="sfe_opentrans",ids$[16]="SFE_OPENTRANS"
+        files$[16]="sfe_closedwo",ids$[16]="SFE_CLOSEDWO"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -178,7 +178,7 @@ rem ---Column Heading
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_OPNMATTR","PRIMARY",sft21_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_OPNSUBTR","PRIMARY",sft31_key_tpl$,rd_table_chans$[all],status$
         call stbl("+DIR_SYP")+"bac_key_template.bbj","SFW_CLSWOXTY","PRIMARY",sfw07_key_tpl$,rd_table_chans$[all],status$
-        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_OPENTRANS","PRIMARY",sfe04_key_tpl$,rd_table_chans$[all],status$
+        call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_CLOSEDWO","PRIMARY",sfe04_key_tpl$,rd_table_chans$[all],status$
         dim sfe04a_key$:sfe04_key_tpl$
 
 rem --- Additional File Opens
@@ -231,10 +231,13 @@ rem --- Breaks
         dim b[4],c[4],t[7]
 
 rem --- Additional Reads
-
+rem --- note to whomever comes in here to get this working...
+rem --- In the code where it's setting up the channel/template for the desired requirements file,
+rem --- I think the lines setting total_units, total_cost and rate are a mis-interpretation of the old code made during post CodePort work.
+rem --- I think these should go away, and where it's accumulating the b[ ] array, it should be using units, rate, cost, etc., from the sfreqa$ record
+rem --- 3/2012 CAH 
         sfreq_dev=sfe02_dev
-        record_id$=sfe02.record_id_a$
-        total_units=sfe02.total_time
+        total_units=sfe02.total_time;rem --- I think these three lines should go
         total_cost=sfe02.tot_std_cost
         rate=sfe02.direct_rate
 
@@ -259,13 +262,18 @@ calculate_standards: rem --- Calculate Standards
 :                  sfreqa_key.wo_location$=sfe01a.wo_location$ and   
 :                  sfreqa_key.wo_no$=sfe01a.wo_no$ 
                     read record (sfreq_dev,key=sfreqa_key$) sfreqa$
-                    x=pos(record_id$="BC")+1
-                    if x>1 then 
-                        b[x]=b[x]+total_cost
-                    else    
-                        b[1]=b[1]+total_units*rate
-                        b[4]=b[4]+total_cost-total_units*rate; rem "Split Direct & OH
-                    endif    
+                    switch sfreq_dev                                                
+                        case sfe02_dev
+                            b[1]=b[1]+total_units*rate;rem --- I think this should be using sfreq.total_time*sfreq.direct_rate... analogous mods to the rest of these lines. CAH
+                            b[4]=b[4]+total_cost-total_units*rate; rem "Split Direct & OH
+                        break
+                        case sfe22_dev
+                            b[2]=b[2]+total_cost
+                        break
+                        case sfe32_dev
+                            b[3]=b[3]+total_cost
+                        break
+                    swend
                     b[0]=b[0]+total_cost
                 else
                     break
@@ -275,7 +283,6 @@ calculate_standards: rem --- Calculate Standards
                 sfreq_dev=sfe22_dev 
                 dim sfreqa$:templates$[9]
                 dim sfreqa_key$:sfe22_key_tpl$
-                record_id$=sfe22.record_id_b$
                 total_units=sfe22.total_units
                 total_cost=sfe22.total_cost
                 rate=sfe22.alt_factor
@@ -285,7 +292,6 @@ calculate_standards: rem --- Calculate Standards
                 sfreq_dev=sfe32_dev
                 dim sfreqa$:templates$[10]
                 dim sfreqa_key$:sfe32_key_tpl$
-                record_id$=sfe32.record_id_c$
                 total_units=sfe32.total_units
                 total_cost=sfe32.total_cost
                 rate=sfe32.reserved_num_01
@@ -295,12 +301,13 @@ calculate_standards: rem --- Calculate Standards
          wend
    
 rem --- Calculate Actuals
+rem --- see comments in the routine above. I think setting rate here is misinterpretation during post CodePort work
         wotran_dev=sft01_dev
         dim sftran$:templates$[13]
         dim sftran_key$:sft01_key_tpl$
 
         rate=sft01.direct_rate
-        record_id$=sft01.record_id_o$
+
         while more
             read (wotran_dev,key=(sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$),dom=*next)
             while more
@@ -310,20 +317,24 @@ rem --- Calculate Actuals
 :                  sftran_key.wo_no$<>sfe01a.wo_no$ then break
                 
                 read record (wotran_dev,key=sftran_key$) sftran$
-                x=pos(record_id$="MS")+1
-                if x>1 then 
-                    c[x]=c[x]+sftran.ext_cost
-                else
-                    c[1]=c[1]+sftran.units*rate
-                    c[4]=c[4]+sftran.ext_cost-sftran.units*rate; rem "Split Direct & OH
-                endif    
+                switch wotran_dev
+                    case sft01_dev
+                        c[1]=c[1]+sftran.units*rate
+                        c[4]=c[4]+sftran.ext_cost-sftran.units*rate; rem "Split Direct & OH
+                    break
+                    case sft21_dev              
+                        c[2]=c[2]+sftran.ext_cost
+                    break
+                    case sft31_dev              
+                        c[3]=c[3]+sftran.ext_cost
+                    break
+                swend    
                 c[0]=c[0]+sftran.ext_cost
             wend
             if wotran_dev=sft01_dev then 
                 wotran_dev=sft21_dev 
                 dim sftran$:templates$[14]
                 dim sftran_key$:sft21_key_tpl$
-                record_id$=sft21.record_id_m$
                 rate=sft21.reserved_num_01
                 continue
             endif    
@@ -331,7 +342,6 @@ rem --- Calculate Actuals
                 wotran_dev=sft31_dev
                 dim sftran$:templates$[15]
                 dim sftran_key$:sft31_key_tpl$
-                record_id$=sft31.record_id_s$
                 rate=sft31.reserved_num_01
                 continue
             endif

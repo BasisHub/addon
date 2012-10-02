@@ -19,6 +19,10 @@ rem ' Get the IN and IN/OUT parameters used by the procedure
 firm_id$=sp!.getParameter("FIRM_ID")
 month$ = sp!.getParameter("MONTH")
 year$ = sp!.getParameter("YEAR")
+barista_wd$=sp!.getParameter("BARISTA_WD")
+
+sv_wd$=dir("")
+chdir barista_wd$
 
 rem ' set up the sql query
 sql$ = "SELECT SUM(t1.TOTAL_SALES) as total_sales, t2.CUSTOMER_TYPE as CUST_TYPE, t3.CODE_DESC "

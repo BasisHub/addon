@@ -203,11 +203,10 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 		msg_id$="AP_MANCHKWRITE"
 		gosub disp_message
 	else	
-		rem --- save row/column so we'll know where to set focus when we return from GL Dist, and run GL Dist form	
-		w!=Form!.getChildWindow(1109)
-		c!=w!.getControl(5900)
-		return_to_row=c!.getSelectedRow()
-		return_to_col=c!.getSelectedColumn()
+		rem --- Save current context so we'll know where to return from GL Dist
+		declare BBjStandardGrid grid!
+		grid! = util.getGrid(Form!)
+		grid_ctx=grid!.getContextID()
 		rem --- invoke GL Dist form
 		gosub get_gl_tots
 		user_id$=stbl("+USER_ID")
@@ -225,10 +224,8 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 :		table_chans$[all],
 :		"",
 :		dflt_data$[all]
-		rem --- return focus to where we were (should be discount amt on same row)
-		c!.focus()
-		c!.accept(1,err=*next)
-		c!.startEdit(return_to_row,return_to_col+1)
+		rem --- Reset focus on detail row where GL Dist was executed
+		sysgui!.setContext(grid_ctx)
 	endif	
 endif
 callpoint!.setStatus("MODIFIED-REFRESH")

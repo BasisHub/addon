@@ -1,16 +1,16 @@
 rem --- Schedule: Days Forecast Ahead/Behind (Public/Called)
-rem --- Program sfc_aa v8.0.0 01Feb2008 (sfc_aa)
-rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (02/01/2008 12:45:16)
+rem --- Program converted from woc_aa, 05Mar2012
+rem --- Created by Codeport Utility (03/05/2012 10:07:11)
 
-rem --- AddonSoftware Version 8.0.0 - 01Jan2007
-rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- AddonSoftware
+rem --- Copyright (c) 1981-2011 AddonSoftware
 rem --- All Rights Reserved
 
 rem --- WO_NUM$   : Work Order Number                           (Entered)
 rem --- V0$       : From Date 'YYMMDD' or Packed 'YMD'          (Entered)
 rem --- V1$       : Calculated Date                             (Returned)
 rem --- METHOD$   : Scheduling Method, F=Foreward, B=Backward   (Entered)
-rem --- OPCODE_DEV: Channel wom-02 or bmm-08 is open on         (Entered)
+rem --- OPCODE_DEV: Channel WOM-02 or BMM-08 is open on         (Entered)
 rem --- STATUS$   : ?0 = Successful Calculation                 (Returned)
 rem --- : ?1 = Operations Calendar Found Unscheduled Date
 rem --- : ?2 = Invalid From Date
@@ -20,7 +20,6 @@ rem --- : ?5 = Purchase Calendar Found Unsceduled Date
 rem --- : ?6 = Undetermined error
 rem --- : 1? = Date Required changed for a Subcontract with
 rem --- :      a non-received associated Purch. Ord/Req.
-rem --- : OPCODE$ : Template of sfm-02 or bmm-08
 
     seterr std_error
     setesc std_error
@@ -28,7 +27,7 @@ rem --- : OPCODE$ : Template of sfm-02 or bmm-08
 
 rem --- Retrieve the program path
 
-    pgmdir$=stbl("+DIR_PGM",err=*next)
+    pgmdir$=stbl("+dir_pgm",err=*next)
     status$="03"
 
 rem --- Retrieve sysinfo data
@@ -41,625 +40,484 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=10,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="ivs_params",ids$[1]="IVS_PARAMS"
-    files$[3]="pom-01",ids$[3]="POM_CALENDAR"
-    files$[4]="sfe-02",ids$[4]="SFE_WOOPRTN"
-    files$[5]="sfe-01",ids$[5]="SFE_WOMASTR"
-    files$[6]="sfe-32",ids$[6]="SFE_WOSUBCNT"
-    files$[7]="sfm-04",ids$[7]="SFM_OPCALNDR"
-    files$[8]="sfm-05",ids$[8]="SFE_WOSCHDL"
-    files$[9]="sfm-06",ids$[9]="SFX_WOSCHDXR"
-    files$[10]="sfs_params",ids$[10]="SFS_PARAMS"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
+    num_files=9
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="IVS_PARAMS",open_opts$[1]="OTA"
+    open_tables$[3]="POM_CALENDAR",open_opts$[3]="OTA"
+    open_tables$[4]="SFE_WOOPRTN",open_opts$[4]="OTA"
+    open_tables$[5]="SFE_WOMASTR",open_opts$[5]="OTA"
+    open_tables$[6]="SFE_WOSUBCNT",open_opts$[6]="OTA"
+    open_tables$[7]="SFM_OPCALNDR",open_opts$[7]="OTA"
+    open_tables$[8]="SFE_WOSCHDL",open_opts$[8]="OTA"
+    open_tables$[9]="SFS_PARAMS",open_opts$[9]="OTA"
+    
+	gosub open_tables
+	
     if status goto std_exit
-    ivs01a_dev=channels[1]
-    pom01_dev=channels[3]
-    sfe02_dev=channels[4]
-    sfe03_dev=channels[5]
-    sfe32_dev=channels[6]
-    sfm04_dev=channels[7]
-    sfm05_dev=channels[8]
-    sfm06_dev=channels[9]
-    sfs01a_dev=channels[10]
-
+    ivs01a_dev=num(open_chans$[1])
+    pom01_dev=num(open_chans$[3])
+    sfe02_dev=num(open_chans$[4])
+    sfe03_dev=num(open_chans$[5])
+    sfe32_dev=num(open_chans$[6])
+    sfm04_dev=num(open_chans$[7])
+    sfm05_dev=num(open_chans$[8])
+    sfs01a_dev=num(open_chans$[9])
+	
 rem --- Dimension string templates
 
-    dim ivs01a$:templates$[1],pom01a$:templates$[3],
-:       sfe02a$:templates$[4],sfe03d$:templates$[5],sfe32a$:templates$[6],
-:       sfm04a$:templates$[7],sfm05a$:templates$[8],sfm06a$:templates$[9],
-:       sfs01a$:templates$[10]
+    dim ivs01a$:open_tpls$[1],pom01a$:open_tpls$[3]
+	dim sfe02a$:open_tpls$[4],sfe03d$:open_tpls$[5],sfe32a$:open_tpls$[6]
+	dim	sfm04a$:open_tpls$[7],sfm05a$:open_tpls$[8]
+	dim	sfs01a$:open_tpls$[9]
+
+	dim opcode$:opcode$
 
 rem --- Retrieve parameter records
 
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
     sfs01a_key$=firm_id$+"SF00"
     find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
+    find record (sfs01a_dev,key=sfs01a_key$,err=std_missing_params) sfs01a$
 
-rem --- Init Data
+rem --- Initializations
+
     v1$=v0$
     from_date$=v0$
     status$(2,1)="0"
     direction$=method$
     v$=v0$
     pass=1
-    if len(v0$)=3 then 
-        orig_date$=fndate$(fndate$(v0$))
-        v0_len=3 
-    else 
-        orig_date$=v0$
-        v0_len=6
-    endif
-    if method$="B" then end_date$=orig_date$
-    more=1
+    orig_date$=v0$
+    if method$="B" end_date$=orig_date$
+	v1$=v$
+	
+	tmp_field$=fattr(sfe32a$,"OPER_SEQ_REF")
+	oper_seq_ref_len=dec(tmp_field$(10,2))
+	tmp_field$=fattr(sfe32a$,"SUBCONT_SEQ")
+	subcont_seq_len=dec(tmp_field$(10,2))
 
-rem --- Retrieve key templates
+l800: rem --- Check Validity of Data
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFX_WOSCHDXR","PRIMARY",sfm06a_key_tpl$,rd_table_chans$[all],status1$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOSUBCNT","PRIMARY",sfe32a_key_tpl$,rd_table_chans$[all],status1$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","PRIMARY",sfe02a_key_tpl$,rd_table_chans$[all],status1$
-rem --- Fix Data
-
-    dim sfm06a_key$:sfm06a_key_tpl$
-    dim sfe32a_key$:sfe32a_key_tpl$
-    dim sfe02a_key$:sfe02a_key_tpl$
-    dim daystat$[31]
-
-    while more
-        if len(v$)=3 then 
-            v$=fndate$(fndate$(v$))
-            v1$=v$
-        endif
-
-rem --- Check Validity of Data
-
-        x$=""
-        x0=0
-        call pgmdir$+"adc_daydates.aon",v$,x$,x0
-        if v$="N" then 
-            status$(2,1)="2"
-            break
-        endif
-        if pos(direction$="BF")=0 then 
-            status$(2,1)="4"
-            break
-        endif
+    x$=""
+    x0=0
+    call pgmdir$+"adc_daydates.aon",v$,x$,x0
+    if v$="N" status$(2,1)="2"; goto l4100
+    if pos(direction$="BF")=0 status$(2,1)="4"; goto l4100
 
 rem --- Clear Schedule Detail Files
 
-        read (sfm06_dev,key=firm_id$+wo_num$,dom=*next)
+	while 1
+		read (sfm05_dev,key=firm_id$+wo_num$,knum="AON_WONUM",dom=*next)
+		read record (sfm05_dev,end=*break) sfm05a$
+		if pos(firm_id$+wo_num$=sfm05a.firm_id$+sfm05a.wo_no$)<>1 then break
+		remove (sfm05_dev,key=sfm05a.firm_id$+sfm05a.op_code$+sfm05a.sched_date$+sfm05a.wo_no$+sfm05a.oper_seq_ref$)
+	wend
 
-        while more
-            sfm06a_key$=key(sfm06_dev,end=*break)
-            if pos(firm_id$+wo_num$=sfm06a_key$)<>1 then break
-            remove (sfm06_dev,key=sfm06a_key$)
-            remove (sfm05_dev,key=sfm06a_key.firm_id$+sfm06a_key.op_code$+sfm06a_key.sched_date$+sfm06a_key.wo_no$+sfm06a_key.op_seq$,dom=*continue)
-        wend
+l1000: rem --- Capture Subcontract Lead Time information
 
-rem --- Capture Subcontract Lead Time information
+    if sfs01a.po_interface$<>"Y" goto l1800
+    read (sfe32_dev,key=firm_id$+sfe32a.wo_location$+wo_num$,dom=*next)
 
-        if sfs01a.po_interface$="Y"
-            read (sfe32_dev,key=firm_id$+"  "+wo_num$+"C",dom=*next)
+l1030: rem --- Read Loop
 
-rem --- Read Loop
+    k$=key(sfe32_dev,end=l1200)
+    if pos(firm_id$+sfe32a.wo_location$+wo_num$=k$)<>1 goto l1200
+    read record (sfe32_dev) sfe32a$
+    if sfe32a.line_type$<>"S" goto l1030
+    subs$=subs$+sfe32a.oper_seq_ref$+sfe32a.subcont_seq$+str(sfe32a.lead_time:"000")+"        "
+    goto l1030
 
-            while more
-                sfe32a_key$=key(sfe32_dev,end=*break)
-                if pos(firm_id$+"  "+wo_num$+"C"=sfe32a_key$)<>1 then break
-                read record (sfe32_dev) sfe32a$
-                if sfe32a.line_type$="S" then 
-                    subs$=subs$+sfe32a.op_seq$+sfe32a.subcont_seq$+str(sfe32a.lead_time:"000")+"      "
-                endif
-            wend
+l1200: rem --- Set Required Date in Subcontracts for Forward method
 
-rem --- Set Required Date in Subcontracts for Forward method
+    if direction$<>"F" goto l1800
 
-            if direction$="F"
-                f_yr=num(v$(1,4))
-                f_mth=num(v$(5,2))
-                f_day=num(v$(7,2))
-                occ=1
-                flag=0
-                while more
-                    leadpos=pos("   "=subs$,15,occ)
-                    if leadpos<>0
-                        lead=num(subs$(leadpos+6,3))
-                        while more
-                            find record (pom01_dev,key=firm_id$+str(f_yr)+str(f_mth:"00"),dom=*break) pom01a$
-                            for x=f_day to pom01a.days_in_mth
-                                n=n+1
-                                daystat$[n]=FIELD(pom01a$,"day_status_"+str(x:"00"))
-                                if lead<=0 and daystat$[n]="W" then break
-                                if daystat$[n]="W" then 
-                                    lead=lead-1
-                                endif
-                                f_day=f_day+1
-                            next x
+    f_yr=num(v$(1,4))
+    f_mth=num(v$(5,2))
+    f_day=num(v$(7,2))
+    occ=1
+l1230:
+    leadpos=pos(fill(oper_seq_ref_len)=subs$,oper_seq_ref_len+subcont_seq_len+11,occ)
+    if leadpos=0 goto l1800
+    lead=num(subs$(leadpos+oper_seq_ref_len+subcont_seq_len,3))
+l1260:
+    find record (pom01_dev,key=firm_id$+str(f_yr:"0000")+str(f_mth:"00"),dom=l1550) pom01a$
+    for x=f_day to pom01a.days_in_mth
+        if lead<=0 and field(pom01a$,"day_status_"+str(x:"00"))="W" exitto l1500
+        if field(pom01a$,"day_status_"+str(x:"00"))="W" lead=lead-1
+        f_day=f_day+1
+    next x
+    if lead<=0 and field(pom01a$,"day_status_"+str(pom01a.days_in_mth:"00"))="W" and f_day<=pom01a.days_in_mth goto l1500
+    f_mth=f_mth+1
+    f_day=1
+	if f_mth>12
+		f_mth=1
+		f_yr=f_yr+1
+	endif
+    goto l1260
 
-                            if lead<=0 and daystat$[n]="W" and f_day<=l0 then break
-                            f_mth=f_mth+1
-                            f_day=1
-                            if f_mth>12 then 
-                                f_mth=1
-                                f_yr=f_yr+1
-                            endif
-                        wend
+l1500: rem --- Save date for Subcontracts without op seq and try again
 
-rem --- Save date for Subcontracts without op seq and try again
+    subs$(leadpos+oper_seq_ref_len+subcont_seq_len+3,8)=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    v1$=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    v$=v1$
+    occ=occ+1
+    goto l1230
+l1550:
+    status$(2,1)="5"
+    goto l4100
 
-                        subs$(leadpos+9,6)=str(f_mth:"00")+str(f_day:"00")+str(f_yr)
-                        v1$=str(f_yr)+str(f_mth:"00")+str(f_day:"00")
-                        v$=v1$
-                        occ=occ+1
-                    else
-                        flag=1
-                        break
-                    endif
-                wend
-                
-                if(!flag)
-                    status$(2,1)="5"
-                    break
-                endif
-            endif
-        endif
+l1800: rem --- Get Operation record from woe-02
 
-rem --- Get Operation record from woe-02
+    first_time$="Y"
+    if direction$="F" read (sfe02_dev,key=firm_id$+sfe02a.wo_location$+wo_num$,dom=*next)
+    if direction$<>"F" read (sfe02_dev,key=firm_id$+sfe02a.wo_location$+wo_num$+$ff$,dom=*next)
 
-        first_time$="Y"
-        if direction$="F" then 
-            read (sfe02_dev,key=firm_id$+"  "+wo_num$,dom=*next)
-        else
-            read (sfe02_dev,key=firm_id$+"  "+wo_num$+"B",dom=*next)
-        endif
+l1840: rem --- Read Loop
 
-
-rem --- Read Loop
-
-        dim sfx02$:templates$[4]; rem --- Get the record_id_* field of sf
-        sfx02_fields$=fattr(sfx02$,"")
-        xfield_record_id$=sfx02_fields$(pos("wo_no"=cvs(sfx02_fields$,8)))
-        xfield_record_id$=xfield_record_id$(pos($0A$=xfield_record_id$)+1)
-        xfield_record_id$=xfield_record_id$(1,pos($0A$=xfield_record_id$)-1)
-        while more
-            if direction$="F" then 
-                sfe02a_key$=key(sfe02_dev,end=*break) 
-            else 
-                sfe02a_key$=keyp(sfe02_dev,end=*break)
-            endif
-            if pos(firm_id$+"  "+wo_num$=sfe02a_key$)<>1 then break
-            record_id_field$=field(sfe02a_key$,xfield_record_id$,err=*break); rem value of record_id_* field
-            if record_id_field$<>"A" then break
-            gosub read_back
-
-            if sfe02a.line_type$<>"M"
-                op_code$= sfe02a.op_code$
-                dim c[13]
-                find record (opcode_dev,key=firm_id$+op_code$,dom=*next) opcode$
-                v= sfe02a.total_time+ sfe02a.move_time+opcode.queue_time
+    if direction$="F"
+		k$=key(sfe02_dev,end=l2300)
+	else
+		k$=keyp(sfe02_dev,end=l2300)
+	endif
+    if pos(firm_id$+sfe02a.wo_location$+wo_num$=k$)<>1 goto l2300
+    gosub l4500
+    if sfe02a.line_type$="M" goto l2070
+    op_code$=sfe02a.op_code$
+    find record (opcode_dev,key=firm_id$+op_code$,dom=*next) opcode$
+    v=sfe02a.total_time+sfe02a.move_time+opcode.queue_time
 
 rem --- Calculate Date
- 
-                odate$=sfe02a.require_date$
-                if direction$="F"
-                    v=opcode.queue_time
-                    ele=0
-                    if v>=0 gosub calc_fut_date
-                endif
 
-rem "Checking for >=0 forces re-initialization required if all B[] vars here are zero.
+    odate$=sfe02a.require_date$
+    if direction$="F"
+		v=opcode.queue_time
+		ele=0
+		if v>0
+			gosub l6000
+		endif
+	endif
+    if direction$="F"
+		v=sfe02a.setup_time
+		ele=1
+		if v>0
+			gosub l6020
+		endif
+	endif
+    if direction$="F"
+		v=sfe02a.total_time-sfe02a.setup_time
+		ele=2
+		if v>0
+			gosub l6020
+		endif
+	endif
+    if direction$="F"
+		v=sfe02a.move_time
+		ele=3
+		if v>0
+			gosub l6015
+		endif
+	endif
+    if direction$="B" gosub l5000
+    v1$=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    v$=v1$
+    if status$(2,1)<>"0" goto l4100
 
-                if direction$="F" then 
-                    v=sfe02a.setup_time
-                    ele=1
-                    if v>0 then 
-                        lab_flag=1
-                        gosub calc_fut_date_2
-                    endif
-                endif
-                if direction$="F" then
-                    v=sfe02a.total_time-sfe02a.setup_time
-                    ele=2
-                    if v>0 then 
-                        lab_flag=1
-                        gosub calc_fut_date_2
-                    endif
-                endif
-                if direction$="F" then
-                    v=sfe02a.move_time
-                    ele=3
-                    if v>0 then 
-                        lab_flag=0
-                        gosub calc_fut_date_1
-                    endif
-                endif
-                if direction$="B" then gosub calc_past_date
-                v1$=str(f_yr)+str(f_mth:"00")+str(f_day:"00")
-                v$=v1$
-                if status$(2,1)<>"0" then break
-                opnssort$=sfe02a.firm_id$+"D"+sfe02a.wo_location$+sfe02a.op_code$+odate$+sfe02a.wo_no$+sfe02a.op_seq$
-                remove (sfe03_dev,key=opnssort$,dom=*next)
+l2070:
+    write record (sfe02_dev) sfe02a$
+    if direction$="B" gosub l4500
+    goto l1840
 
-                opnssort$=sfe02a.firm_id$+"D"+sfe02a.wo_location$+sfe02a.op_code$+sfe02a.require_date$+sfe02a.wo_no$+sfe02a.op_seq$
-                write record (sfe03_dev,key=opnssort$) sfe03d$
-            endif
-            write record (sfe02_dev,key=sfe02a_key$) sfe02a$
-            if direction$="B" then gosub read_back
-        wend
-rem --- Set Required Date in Subcontracts for Backward method
+l2300: rem --- Set Required Date in Subcontracts for Backward method
 
-        if direction$="B"
-            f_yr=num(v$(1,4))
-            f_mth=num(v$(5,2))
-            f_day=num(v$(7,2))
-            occ=1
-            flag1=0    
-            flag2=0
-            while more
-                leadpos=pos("   "=subs$,-15,occ)
-                if leadpos<>0
-                    lead=num(subs$(leadpos+6,3))
-                    
-                    while more
-                        find record (pom01_dev,key=firm_id$+str(f_yr)+str(f_mth:"00"),dom=*break) pom01a$
-                        if f_day>=1
-                            if f_day>l0 then f_day=l0
-                            n=0
-                            for x=f_day to 1 step -1
-                                n=n+1
-                                daystat$[n]=FIELD(pom01a$,"day_status_"+str(x:"00"))
-                                if lead<=0 and daystat$[n]="W" then 
-                                    flag2=1
-                                    break
-                                endif
-                                if daystat$[n]="W" then lead=lead-1
-                                f_day=f_day+1
-                            next x
-                            if flag2=1 then break
-                            if lead<=0 and f_day>0 then break
-                        endif
-                        f_mth=f_mth-1
-                        f_day=31
-                        if f_mth<1 then 
-                            f_mth=12
-                            f_yr=f_yr-1
-                        endif
-                    wend
+    if direction$<>"B" goto l3000
+    f_yr=num(v$(1,4))
+    f_mth=num(v$(5,2))
+    f_day=num(v$(7,2))
+    occ=1
+l2330:
+    leadpos=pos(fill(oper_seq_ref_len)=subs$,-(oper_seq_ref_len+subcont_seq_len+11),occ)
+    if leadpos=0 goto l3000
+    lead=num(subs$(leadpos+oper_seq_ref_len+subcont_seq_len,3))
+l2360:
+    find record (pom01_dev,key=firm_id$+str(f_yr:"0000")+str(f_mth:"00"),dom=l2750) pom01a$
+    if f_day<1 goto l2450
+    if f_day>pom01a.days_in_mth
+		f_day=pom01a.days_in_mth
+	endif
+    for x=f_day to 1 step -1
+        if lead<=0 and field(pom01a$,"day_status_"+str(x:"00"))="W" exitto l2700
+        if field(pom01a$,"day_status_"+str(x:"00"))="W" lead=lead-1
+        f_day=f_day-1
+    next x
+    if lead<=0 and f_day>0 goto l2700
+l2450:
+    f_mth=f_mth-1
+    f_day=31
+    if f_mth<1 f_mth=12,f_yr=f_yr-1
+    goto l2360
 
-rem --- Save date for Subcontracts without op seq and try again
+l2700: rem --- Save date for Subcontracts without op seq and try again
 
-                    subs$(leadpos+9,6)=str(f_mth:"00")+str(f_day:"00")+str(f_yr)
-                    v1$=str(f_yr)+str(f_mth:"00")+str(f_day:"00")
-                    v$=v1$
-                    occ=occ+1
-                else
-                    flag1=1
-                    break
-                endif
-            wend
-            
-            if flag1=0 then
-                status$(2,1)="5"
-                break
-            endif
+    subs$(leadpos+oper_seq_ref_len+subcont_seq_len+3,8)=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    v1$=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    v$=v1$
+    occ=occ+1
+    goto l2330
+l2750:
+    status$(2,1)="5"
+    goto l4100
 
-        endif
+l3000: rem --- Rewrite Subcontract records with operation sequences
 
-rem --- Rewrite Subcontract records with operation sequences
-        if sfs01a.po_interface$="Y"
-            if !(len(subs$)=0 or direction$="B")
-                for x=1 to len(subs$) step 15
-                    extract record (sfe32_dev,key=firm_id$+"  "+wo_num$+"C"+subs$(x+3,3),dom=*continue) sfe32a$
-                    if sfe32a.require_date$<>"   " and 
-:                      fndate$(subs$(x+9,6))<>sfe32a.require_date$ and 
-:                       pos(sfe32a$(52,1)="RP")>0 then 
+    if sfs01a.po_interface$<>"Y" goto done
+    if len(subs$)=0 or direction$="B" goto done
+    for x=1 to len(subs$) step oper_seq_ref_len+subcont_seq_len+11
+        extract record (sfe32_dev,key=firm_id$+sfe32a.wo_location$+wo_num$+subs$(x+oper_seq_ref_len,3),dom=l3080) sfe32a$
+        if num(sfe32a.require_date$)<>0 and subs$(x+oper_seq_ref_len+subcont_seq_len+3,8)<>sfe32a.require_date$ and pos(sfe32a.po_status$="RP")>0 status$(1,1)="1"
+        sfe32a.require_date$=subs$(x+oper_seq_ref_len+subcont_seq_len+3,8)
+        write record (sfe32_dev) sfe32a$
+    l3080:
+    next x
 
-                        status$(1,1)="1"
+done:rem " --- Done - Successful"
 
-                    endif
-                    sfe32a.require_date$=fndate$(subs$(x+9,6))
-                    write record (sfe32_dev,key=firm_id$+"  "+wo_num$+"C"+subs$(x+3,3)) sfe32a$
-                next x
-            endif
-        endif
-done: rem --- Done - Successful
-        if len(v1$)=0 then v1$=v0$
-        if v0_len=3 then  v1$=fndate$(fndate$(v1$))
-        if direction$="B" then 
-            direction$="F"
-            ret_date$=v1$
-            v$=v1$
-            used_hrs=0
-            subs$=""
-            continue
-        endif
-        if method$<>"F"
-            if orig_date$<v$
-                v0$=""
-                call pgmdir$+"adc_daydates.aon",end_date$,v0$,-1
-                direction$="B"
-                v1$=v0$,v$=v0$,end_date$=v0$,pass=pass+1
-                if pass>99 then 
-                    status$(2,1)="6"
-                    goto std_exit
-                endif
-                if pass=2 then call pgmdir$+"syc_wa.bbx",0,12,3,35,18,"",pass_name$
-                print @(1,0),'sb',"Pass: ",'sf',pass:"#0",
-                continue
-            endif
-            v1$=ret_date$
-        endif
-        v0$=from_date$
-        break
-    wend
+    if len(v1$)=0 v1$=v0$
+    if direction$="B"
+		direction$="F"
+		ret_date$=v1$
+		v$=v1$
+		used_hrs=0
+		subs$=""
+		goto l800
+	endif
+    if method$="F" goto l4070
+    if orig_date$>=v$ goto l4065
+    v0$=""
+    call pgmdir$+"adc_daydates.aon",end_date$,v0$,-1
+    direction$="B"
+    v1$=v0$
+    v$=v0$
+    end_date$=v0$
+    pass=pass+1
+    if pass>99 status$(2,1)="6"; goto std_exit
+    goto l800
+l4065:
+    v1$=ret_date$
+l4070:
+    v0$=from_date$
+    goto std_exit
 
-rem --- Done - Unsuccessful
+l4100: rem --- Done - Unsuccessful
 
     goto std_exit
 
-read_back: rem --- Read backwards allowing for different language platforms
+l4500: rem --- Read backwards allowing for different language platforms
 
-    extract record (sfe02_dev,key=sfe02a_key$) sfe02a$
+    extract record (sfe02_dev,key=k$) sfe02a$
     return
 
-calc_past_date: rem --- Calculate Past Date
+rem --- Calculate Past Date
+l5000:
     f_yr=num(v$(1,4))
     f_mth=num(v$(5,2))
     f_day=num(v$(7,2))
     occ=1
-    break_flag=0
-    if sfs01a.po_interface$="Y"
-        while more
-            leadpos=pos(sfe02a.op_seq$=subs$,-15,occ)
-            if leadpos=0 then break
-            subs$(leadpos+9,6)=str(f_mth:"00")+str(f_day:"00")+str(f_yr)
-            lead=num(subs$(leadpos+6,3))
-            
-            while more
-                break_flag=1
-                find record (pom01_dev,key=firm_id$+str(f_yr)+str(f_mth:"00"),dom=*break) pom01a$
-                break_flag=0
-                if f_day>l0 then f_day=l0
-                n=0
-                for x=f_day to 1 step -1
-                    n=n+1
-                    daystat$[n]=FIELD(pom01a$,"day_status_"+str(x:"00"))
-                    if lead<=0 and daystat$[n]="W" then break
-                    if daystat$[n]="W" then 
-                        lead=lead-1
-                    endif
-                    f_day=f_day-1
-                next x
-                f_mth=f_mth-1
-                f_day=31
-                if f_mth<1 then 
-                    f_mth=12
-                    f_yr=f_yr-1
-                endif
-            wend
-            if(break_flag)
-                break
-rem --- Save Date for Subcontracts and try again
-            occ=occ+1
-        wend
-    endif
-    
-    if(break_flag)
-        break_flag=0
-        status$(2,1)="5"
-        return
-    endif
+    if sfs01a.po_interface$<>"Y" goto l5300
+l5030:
+    leadpos=pos(sfe02a.op_seq$=subs$,-(oper_seq_ref_len+subcont_seq_len+11),occ)
+    if leadpos=0 goto l5300
+    subs$(leadpos+oper_seq_ref_len+subcont_seq_len+3,8)=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    lead=num(subs$(leadpos+oper_seq_ref_len+subcont_seq_len,3))
+l5060:
+    find record (pom01_dev,key=firm_id$+str(f_yr:"0000")+str(f_mth:"00"),dom=l5950) pom01a$
+    if f_day>pom01a.days_in_mth f_day=pom01a.days_in_mth
+    for x=f_day to 1 step -1
+        if lead<=0 and field(pom01a$,"day_status_"+str(x:"00"))="W" exitto l5200
+        if field(pom01a$,"day_status_"+str(x:"00"))="W" lead=lead-1
+        f_day=f_day-1
+    next x
+    f_mth=f_mth-1
+    f_day=31
+    if f_mth<1 f_mth=12,f_yr=f_yr-1
+    goto l5060
 
-rem --- Do Operations
-    dim hrsperday[31]
-    if sfs01a.po_interface$<>"M"
-        while more
-            break_flag=1
-            find record (sfm04_dev,key=firm_id$+op_code$+str(f_yr)+str(f_mth:"00"),dom=*break) sfm04a$
-            break_flag=0
-            n=0
-            for x=f_day to 1 step -1
-                n=n+1
-                hrsperday[n]=num(FIELD(sfm04a$,"hrs_per_day_"+str(x:"00")))
-                if hrsperday[n]<0 then 
-                    break_flag=1
-                    break
-                endif
-                if !(hrsperday[n]>0 and used_hrs>hrsperday[n])
-                    if hrsperday[n]>0 then 
-                        if used_hrs+v>=hrsperday[n] then 
-                            v=v-(hrsperday[n]-used_hrs)
-                            used_hrs=used_hrs+(hrsperday[n]-used_hrs) 
-                        else 
-                            used_hrs=used_hrs+v
-                            v=0
-                        endif
-                    endif
-                endif
-                if v<=0 then 
-                    if hrsperday[n]>0 then 
-                        f_day=x
-                        break
-                    endif
-                endif
-                used_hrs=0
-            next x
-            x$=""
-            call pgmdir$+"adc_daydates.aon",str(f_yr)+str(f_mth:"00")+"01",x$,-1
-            f_yr=num(x$(1,4))
-            f_mth=num(x$(5,2))
-            f_day=num(x$(7,2))
-        wend
-        sfe02a.require_date$=fndate$(fndate$(v$))
-        if(break_flag)
-            break_flag=0
-            status$(2,1)="1"
-        endif
-    endif
+l5200: rem --- Save Date for Subcontracts and try again
 
+    occ=occ+1
+    goto l5030
+
+l5300: rem --- Do Operations
+
+    if sfe02a.line_type$="M" goto l5490
+l5310:
+    find record (sfm04_dev,key=firm_id$+op_code$+str(f_yr:"0000")+str(f_mth:"00"),dom=l5900) sfm04a$
+    for x=f_day to 1 step -1
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))<0 exitto l5900
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))>0 and used_hrs>nfield(sfm04a$,"hrs_per_day_"+str(x:"00")) goto l5350
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))>0
+			if used_hrs+v>=nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))
+				v=v-(nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))-used_hrs)
+				used_hrs=used_hrs+(nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))-used_hrs)
+			else
+				used_hrs=used_hrs+v
+				v=0
+			endif
+		endif
+    l5350:
+        if v<=0
+			if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))>0
+				f_day=x
+				exitto l5480
+			endif
+		endif
+        used_hrs=0
+    next x
+    x$=""
+    call pgmdir$+"adc_daydates.aon",str(f_yr:"0000")+str(f_mth:"00")+"01",x$,-1
+    f_yr=num(x$(1,4))
+    f_mth=num(x$(5,2))
+    f_day=num(x$(7,2))
+    goto l5310
+l5480:
+    sfe02a.require_date$=v$
+l5490:
     return
 
-opdate_not_scheduled: rem --- Operation Date Not Scheduled
+l5900: rem --- Operation Date Not Scheduled
 
     status$(2,1)="1"
     return
 
-purdate_not_scehduled: rem --- Purchase Date Not Scheduled
+l5950: rem --- Purchase Date Not Scheduled
 
     status$(2,1)="5"
     return
 
-calc_fut_date: rem --- Calculate Future Date
-
+l6000: rem --- Calculate Future Date
 
     f_yr=num(v$(1,4))
     f_mth=num(v$(5,2))
     f_day=num(v$(7,2))
     occ=1
+l6015:
+    if sfe02a.line_type$="M" goto l6200
+l6020:
+    find record (sfm04_dev,key=firm_id$+op_code$+str(f_yr:"0000")+str(f_mth:"00"),dom=l6500) sfm04a$
+    if sfm04a.days_in_mth=0 goto l6500
+    for x=f_day to sfm04a.days_in_mth
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))<0 exitto l6500
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))>0 and used_hrs>nfield(sfm04a$,"hrs_per_day_"+str(x:"00")) goto l6065
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))>0 gosub l6600
+        if nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))>0
+			if used_hrs+v>=nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))
+				v=v-(nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))-used_hrs)
+				used_hrs=used_hrs+(nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))-used_hrs)
+			else
+				used_hrs=used_hrs+v
+				v=0
+			endif
+		endif
+    l6065:
+        sfe02a.require_date$=v$
+        if v<=0
+			f_day=x
+			sfe02a.require_date$=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+			exitto l6200
+		endif
+        used_hrs=0
+        first_time$="N"
+    next x
+    f_mth=f_mth+1
+    f_day=1
+    if f_mth>12 f_yr=f_yr+1,f_mth=1
+    goto l6020
 
-calc_fut_date_1:
+l6200: rem --- Do Subcontracts
 
-    lab_flag=0
-    if sfe02a.line_type$<>"M" then lab_flag=1
-    
-calc_fut_date_2:
-    dim hrsperday[31]
-   
-    if lab_flag=1 then
-        while more
-            break_flag=1
-            find record (sfm04_dev,key=firm_id$+op_code$+str(f_yr)+str(f_mth:"00"),dom=*break) sfm04a$
-            break_flag=0
-            if sfm04a.days_in_mth=0 then 
-                break_flag=1
-                break
-            endif
-            n=0
-            for x=f_day to sfm04a.days_in_mth
-                n=n+1
-                hrsperday[n]=num(FIELD(sfm04a$,"hrs_per_day_"+str(x:"00")))
-                if hrsperday[n]<0 then 
-                    break_flag=1
-                    break
-                endif
-                if !(hrsperday[n]>0 and used_hrs>hrsperday[n])
-                    if hrsperday[n]>0 then gosub wrt_scheduled_detail_files
-                    if hrsperday[n]>0 then 
-                        if used_hrs+v>=hrsperday[n] then 
-                            v=v-(hrsperday[n]-used_hrs)
-                            used_hrs=used_hrs+(hrsperday[n]-used_hrs) 
-                        else 
-                            used_hrs=used_hrs+v,v=0
-                        endif
-                    endif
-                endif
-                sfe02a.require_date$=fndate$(fndate$(v$))
-                if v<=0 then 
-                    f_day=x
-                    sfe02a.require_date$=fndate$(str(f_mth:"00")+str(f_day:"00")+str(f_yr))
-                    break
-                endif
-                used_hrs=0
-                first_time$="N"
-            next x
-            if(break_flag)
-                break
-            f_mth=f_mth+1
-            f_day=1
-            if f_mth>12 then 
-                f_yr=f_yr+1
-                f_mth=1
-            endif
-        wend
-        if(break_flag)
-            break_flag=0
-            status$(2,1)="1"
-            return
-        endif
+    if sfs01a.po_interface$<>"Y" or ele<>3 goto l6490
+l6220:
+    leadpos=pos(sfe02a.op_seq$=subs$,oper_seq_ref_len+subcont_seq_len+11,occ)
+    if leadpos=0 goto l6490
+    lead=num(subs$(leadpos+oper_seq_ref_len+subcont_seq_len,3))
+l6250:
+    find record (pom01_dev,key=firm_id$+str(f_yr:"0000")+str(f_mth:"00"),dom=l6550) pom01a$
+    for x=f_day to pom01a.days_in_mth
+        if lead<=0 and field(pom01a$,"day_status_"+str(x:"00"))="W" exitto l6400
+        if field(pom01a$,"day_status_"+str(x:"00"))="W" lead=lead-1
+        f_day=f_day+1
+    next x
+    if lead<=0 and field(pom01a$,"day_status_"+str(x:"00"))="W" and f_day<=pom01a.days_in_mth goto l6400
+    f_mth=f_mth+1
+	f_day=1
+    if f_mth>12
+		f_mth=1
+		f_yr=f_yr+1
+	endif
+    goto l6250                                                  
 
-    endif
+l6400: rem --- Save Date for Subcontracts and try again
 
-rem --- Do Subcontracts
-    break_flag=0
-    if !(sfs01a.po_interface$<>"Y" or ele<>3)
-        while more
-            leadpos=pos(sfe02a_key.op_seq$=subs$,15,occ)
+    subs$(leadpos+oper_seq_ref_len+subcont_seq_len+3,8)=str(f_yr:"0000")+str(f_mth:"00")+str(f_day:"00")
+    occ=occ+1                                                  
+    goto l6220                                                  
+l6490: return                                                  
 
-            if leadpos<>0
-                lead=num(subs$(leadpos+6,3))
-                while more
-                    break_flag=1
-                    find record (pom01_dev,key=firm_id$+str(f_yr)+str(f_mth:"00"),dom=*break) pom01a$
-                    break_flag=0
-                    for x=f_day to l0
-                        n=n+1
-                        daystat$[n]=FIELD(pom01a$,"day_status_"+str(x:"00"))
-                        if lead<=0 and daystat$[n]="W" then break
-                        if daystat$[n]="W" then lead=lead-1
-                        f_day=f_day+1
-                    next x
-                    if lead<=0 and daystat$[n]="W" and f_day<=l0 then break
-                    f_mth=f_mth+1
-                    f_day=1
-                    if f_mth>12 then 
-                        f_mth=1
-                        f_yr=f_yr+1
-                    endif
-                wend
-                
-                if(break_flag)
-                    break
-rem --- Save Date for Subcontracts and try again
-
-                subs$(leadpos+9,6)=str(f_mth:"00")+str(f_day:"00")+str(f_yr)
-                occ=occ+1
-            endif
-        wend
-    endif
-
-    if(break_flag)
-        break_flag=0
-        status$(2,1)="5"; rem --- Purchase Date Not Scheduled
-    endif
-    return
-
-date_not_scheduled: rem --- Date Not Scheduled
-
+rem --- Date Not Scheduled
+l6500:
     status$(2,1)="1"
-    return
-
-purchdt_not_scheduled: rem --- Purchase Date Not Scheduled
+    return                                                  
+l6550: rem " --- Purchase Date Not Scheduled"
     status$(2,1)="5"
-    return
+    return                                                  
+l6600: rem " --- Write Schedule Detail Files
 
-wrt_scheduled_detail_files: rem --- Write Schedule Detail Files
+	dim sfm05a$:fattr(sfm05a$)
+	sfm05a.firm_id$=firm_id$
+	sfm05a.op_code$=op_code$
+	sfm05a.sched_date$=str(f_yr:"0000")+str(f_mth:"00")+str(x:"00")
+	sfm05a.wo_no$=wo_num$
+	sfm05a.oper_seq_ref$=sfe02a.internal_seq_no$
+    if used_hrs+v>nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))
+		z=nfield(sfm04a$,"hrs_per_day_"+str(x:"00"))-used_hrs
+	else
+		z=v
+	endif
+    extract record (sfm05_dev,key=firm_id$+sfm05a.op_code$+sfm05a.sched_date$+sfm05a.wo_no$+sfm05a.oper_seq_ref$,knum="PRIMARY",dom=*next) sfm05a$
+	if ele=0 sfm05a.queue_time=sfm05a.queue_time+z
+	if ele=1 sfm05a.setup_time=sfm05a.setup_time+z
+	if ele=2 sfm05a.runtime_hrs=sfm05a.runtime_hrs+z
+	if ele=3 sfm05a.move_time=sfm05a.move_time+z
+    write record (sfm05_dev) sfm05a$
+    return                                                  
 
-    sfm05a_key$=firm_id$+op_code$+fndate$(str(f_yr)+str(f_mth:"00")+str(x:"00"))+wo_num$+sfe02a.op_seq$
-    if used_hrs+v>hrsperday[n] then 
-        z=hrsperday[n]-used_hrs 
-    else 
-        z=v
-    endif
-    extract record (sfm05_dev,key=sfm05a_key$,dom=*next) sfm05a$
-    xsfm05$=fattr(sfm05a$,""); rem --- Retrieve the data w[ele] data from sfm05a
-    xsfm05$=xsfm05$(pos("queue_time"=cvs(xsfm05$,8)))
-    if ele > 0 then
-        for i=0 to ele-1
-           xsfm05$=xsfm05$(pos($0A$=xsfm05$)+1)   
-        next i
-    endif
-    sfm05_ele_field$=xsfm05$(1,pos($0A$=xsfm05$)-1)
-    FIELD sfm05a$,sfm05_ele_field$=num(FIELD(sfm05a$,sfm05_ele_field$))+z
+open_tables: rem --- Open Tables
 
-    rem w[ele]=w[ele]+z
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
 
-    write record (sfm05_dev,key=sfm05a_key$) sfm05a$
-    sfm06a_key$=sfm05a.firm_id$+sfm05a.wo_no$+sfm05a.op_seq$+sfm05a.op_code$+sfm05a.sched_date$
-    write record (sfm06_dev,key=sfm06a_key$) sfm06a$
-    return
+	if open_status$<>"" then
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=open_status$
+		gosub disp_message
+		rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+		release
+	endif
+
+	return
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+	return
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -680,6 +538,27 @@ rem --- Format inventory item description
 
     def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
 
+rem --- Format zip/postal code
+
+    def fnzipcode$(q$)
+        q$=cvs(q$,4)
+        if len(cvs(q$,2))<>9 and len(cvs(q$,2))<>6 return q$
+        if len(cvs(q$,2))=9
+            q1$="[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$
+            if q1<>0
+                if q$(6,4)="0000" return q$(1,5)
+            return q$(1,5)+"-"+q$(6,4)
+            endif
+        endif
+        if len(cvs(q$,2))=6
+            q1$="[a-zA-Z][0-9][a-zA-Z][0-9][a-zA-Z][0-9]"
+            q1=mask(cvs(q$,2),q1$)
+            if q1=0 return q$ else return q$(1,3)+" "+q$(4,3)
+        endif
+    fnend
+
 rem --- Date/time handling functions
 
     def fndate$(q$)
@@ -688,7 +567,6 @@ rem --- Date/time handling functions
         if q1$="" q1$=q$
         return q1$
     fnend
-    
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
@@ -755,6 +633,7 @@ std_error_release:
     release
 
 rem #endinclude std_error.src
+
 rem #include std_missing_params.src
 
 std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
@@ -762,8 +641,8 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
-:                                   str(err:"000"),rd_err_text$,rd_err_act$
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)

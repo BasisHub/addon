@@ -134,7 +134,7 @@ rem ==========================================================================
 
 		rem --- Now fill vectors
 
-		read record(ivm02_dev,key=firm_id$+wh$+item$,dom=*next) ivm02$
+		read record(ivm02_dev,key=firm_id$+wh$+bmm02.item_id$,dom=*next) ivm02$
 		dim ivm01$:fattr(ivm01$)
 		find record(ivm01_dev,key=firm_id$+bmm02.item_id$,dom=*next) ivm01$
 		avail=ivm02.qty_on_hand-ivm02.qty_commit

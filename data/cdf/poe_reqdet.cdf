@@ -224,7 +224,7 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs
 		callpoint!.setColumnData("POE_REQDET.UNIT_MEASURE","")
 		callpoint!.setColumnData("POE_REQDET.WAREHOUSE_ID",callpoint!.getHeaderColumnData("POE_REQHDR.WAREHOUSE_ID"))
 		callpoint!.setColumnData("POE_REQDET.WO_NO","")
-		callpoint!.setColumnData("POE_REQDET.WO_SEQ_REF","")
+		callpoint!.setColumnData("POE_REQDET.WK_ORD_SEQ_REF","")
 
 
 endif
@@ -234,7 +234,6 @@ if callpoint!.getDevObject("line_type")="O"
 else
 	callpoint!.setColumnData("POE_REQDET.REQ_QTY","")
 endif
-
 [[POE_REQDET.REQ_QTY.AVAL]]
 rem --- call poc.ua to retrieve unit cost from ivm-05, at least that's what v6 did here
 rem --- send in: R/W for retrieve or write

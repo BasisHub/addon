@@ -1,0 +1,648 @@
+rem --- Work Order Transaction History Report - Transaction Print
+rem --- Program sfr_wotranshist_o1.aon v8.0.0 04Jan2008 (sfr_jb/sfr_wordtrans_o1.aon)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:00:34)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+        setesc std_error
+        seterr std_error
+
+rem --- Retrieve the program path
+
+        pgmdir$=stbl("+DIR_PGM",err=*next)
+        precision ivs01_precision
+
+rem --- Document initializations
+
+        OutVect!=bbjAPI().getSysGui().makeVector()
+        HdrVect!=bbjAPI().getSysGui().makeVector()
+        BrkVect!=bbjAPI().getSysGui().makeVector()
+        TotVect!=bbjAPI().getSysGui().makeVector()
+        rep_date$=date(0:"%Mz/%Dz/%Yd")
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rep_prog$=pgm(-2)
+
+rem --- Retrieve sysinfo data
+
+        sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+        dim sysinfo$:sysinfo_template$
+        sysinfo$=stbl("+SYSINFO",err=*next)
+        milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+        firm_id$=sysinfo.firm_id$
+
+rem --- Init Data
+
+        dim t[2],u[2]
+        headings$[2]=h3$
+        headings$[3]=h4$
+		headings$[4]=hdaterange$
+        headings$[5]=h7$
+        more=1
+	
+rem --- Column Headings
+
+    if pos("O"=transtype$)>0 then
+        columns = 10
+        dim columns$[columns,10]
+		columns$[0,0]="WO/Date",             columns$[0,1]="C",columns$[0,2]="8"
+        columns$[1,0]="Src",                 columns$[1,1]="C",columns$[1,2]="8"
+        columns$[2,0]="   ",                 columns$[2,1]="C",columns$[2,2]="3"; rem v12 doesn't print seq_refs
+        columns$[3,0]="Item/Vendor/OpCd",    columns$[3,1]="C",columns$[3,2]="20"
+		columns$[4,0]="UM/Desc/Employee",    columns$[4,1]="C",columns$[4,2]="20"
+		columns$[5,0]="P.O.",	        	 columns$[5,1]="C",columns$[5,2]="15"
+        columns$[6,0]="Cmplt Qty",           columns$[6,1]="N",columns$[6,2]="8",columns$[6,3]=m2$
+        columns$[7,0]="SetUp hrs",           columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m2$
+        columns$[8,0]="Total Units",         columns$[8,1]="N",columns$[8,2]="8",columns$[8,3]=m2$
+        columns$[9,0]="Rate",                columns$[9,1]="N",columns$[9,2]="8",columns$[9,3]=m3$
+        columns$[10,0]="Amount",             columns$[10,1]="N",columns$[10,2]="12",columns$[10,3]=m1$,columns$[10,10]="T"
+    else
+        columns = 8
+        dim columns$[columns,10]
+		columns$[0,0]="WO/Date",             columns$[0,1]="C",columns$[0,2]="8"
+        columns$[1,0]="Src",                 columns$[1,1]="C",columns$[1,2]="8"
+        columns$[2,0]="   ",                 columns$[2,1]="C",columns$[2,2]="3"; rem v12 doesn't print seq_refs
+        columns$[3,0]="Item/Vendor/OpCd",    columns$[3,1]="C",columns$[3,2]="20"
+		columns$[4,0]="UM/Desc/Employee",	 columns$[4,1]="C",columns$[4,2]="20"
+		columns$[5,0]="P.O.",       		 columns$[5,1]="C",columns$[5,2]="15"
+        columns$[6,0]="Units",               columns$[6,1]="N",columns$[6,2]="8",columns$[6,3]=m2$
+        columns$[7,0]="Rate",                columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m3$
+        columns$[8,0]="Amount",              columns$[8,1]="N",columns$[8,2]="12",columns$[8,3]=m1$,columns$[8,10]="T"
+    endif
+
+rem --- Background
+
+        call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
+
+rem --- Get SQL view joining sfe01 with a mimic of legacy SFM-07 / WOM-07 / SFX_WOTRANXR
+rem   - Narrow the query of that view using the selections from the OE form
+rem   - This record set will be used as driver instead of sfe-01 and sfm-07
+
+    sql_prep$=""
+    sql_prep$=sql_prep$+"SELECT * "
+    sql_prep$=sql_prep$+"FROM vw_WOs_with_tran as vwWOs "
+	
+	rem Modify the query of that view per user selections in OE form	
+
+		where_clause$="WHERE vwWOs.firm_id = '"+firm_id$+"' AND "
+
+		rpt_order=pos(sequence$="WBCT")-1
+		switch rpt_order
+			case 0
+				beging$=wofrom$
+				ending$=wothru$
+				if beging$<>"" where_clause$=where_clause$+"vwWOs.wo_no >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"vwWOs.wo_no <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY vwWOs.wo_location,vwWOs.wo_no"
+				break
+			case 1
+				beging$=billfrom$
+				ending$=billthru$
+				where_clause$=where_clause$+"vwWOs.warehouse_id = '"+whse$+"' AND "
+				where_clause$=where_clause$+"vwWOs.item_id <> '' AND "; rem If by Bill, exclude non-stock WO-types 			
+				if beging$<>"" where_clause$=where_clause$+"vwWOs.item_id >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"vwWOs.item_id <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY vwWOs.warehouse_id,vwWOs.item_id,vwWOs.wo_location,vwWOs.wo_no"
+				break
+			case 2
+				beging$=custfrom$
+				ending$=custthru$
+				where_clause$=where_clause$+"vwWOs.customer_id <> '' AND "			
+				if beging$<>"" where_clause$=where_clause$+"vwWOs.customer_id >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"vwWOs.customer_id <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY vwWOs.customer_ID,vwWOs.order_no,vwWOs.sls_ord_seq_ref,vwWOs.wo_location,vwWOs.wo_no "			
+				break
+			case 3
+				beging$=wotfrom$
+				ending$=wotthru$
+				if beging$<>"" where_clause$=where_clause$+"vwWOs.wo_type >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"vwWOs.wo_type <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY vwWOs.wo_type,vwWOs.wo_location,vwWOs.wo_no"			
+				break
+			case default
+				break
+		swend
+	
+	rem Limit recordset to Open? or Closed? O/E selection
+		if wo_status$="C" where_clause$=where_clause$+"vwWOs.wo_status = 'C' AND "
+		if wo_status$="O" where_clause$=where_clause$+"vwWOs.wo_status = 'O' AND "
+	
+	rem Limit recordset to date range O/E selection
+		if datefrom$<>"" where_clause$=where_clause$+"vwWOs.trans_date >= '"+datefrom$+"' AND "
+		if datethru$<>"" where_clause$=where_clause$+"vwWOs.trans_date <= '"+datethru$+"' AND "
+
+	rem Limit recordset to transaction type O/E selections
+		if pos("M"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'M' AND "
+		if pos("O"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'O' AND "
+		if pos("S"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'S' AND "
+	
+    rem Complete the WHERE clause
+		where_clause$=cvs(where_clause$,2)
+		if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
+
+	rem Complete the ORDER BY clause	
+		order_clause$=order_clause$+",vwWOs.trans_date,vwWOs.record_id,vwWOs.trans_seq "
+    
+	rem Complete sql_prep$
+		sql_prep$=sql_prep$+where_clause$+order_clause$	
+
+	rem Exec the completed query
+		sql_chan=sqlunt
+		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+		sqlprep(sql_chan)sql_prep$
+		dim read_tpl$:sqltmpl(sql_chan)
+		sqlexec(sql_chan)
+
+init_data: rem --- Init Data
+	dim s[2]
+	t1$=""
+	l2=0
+	prev_wo$=""
+
+rem --- Main Read
+    while more
+		read_tpl$ = sqlfetch(sql_chan,err=*break)
+
+		if prev_wo$<>read_tpl.wo_no$
+			if prev_wo$<>"" and l2>0 gosub wo_subtot
+
+			dim s[2]
+			t1$=""
+			l2=0
+			prev_wo$=read_tpl.wo_no$
+		endif
+		
+		if sequence$<>"W" then 
+            if sequence$="T" data1$=read_tpl.wo_type$
+            if sequence$="C" data1$=read_tpl.customer_id$
+            if sequence$="B" data1$=read_tpl.item_id$
+            if data1$<>t0$ then gosub sub_total
+        endif
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+        if read_tpl.wo_category$="I" 
+            find record (ivm01a_dev,key=firm_id$+read_tpl.item_id$,dom=init_data) ivm01a$
+            read_tpl.description_01$=ivm01a.item_desc$(1,min(desc[1],30))
+        endif
+
+rem --- Process Transactions
+
+        if read_tpl.wo_status$<>"C" or read_tpl.closed_date$>sf_prevper_enddate$ then 
+            tran01_dev=sft01a_dev; tran01a$=sft01_tpls$
+            tran02_dev=sft21a_dev; tran02a$=sft21_tpls$
+            tran03_dev=sft31a_dev; tran03a$=sft31_tpls$
+        else
+            tran01_dev=sft03a_dev; tran01a$=sft03_tpls$
+            tran02_dev=sft23a_dev; tran02a$=sft23_tpls$
+            tran03_dev=sft33a_dev; tran03a$=sft33_tpls$
+        endif
+
+            if read_tpl.record_id$="O" then 
+				sftran_dev=tran01_dev
+				dim sftran$:tran01a$
+				record_id_field$="O"
+			endif
+            if read_tpl.record_id$="M" then 
+				sftran_dev=tran02_dev
+				dim sftran$:tran02a$
+				record_id_field$="M"
+			endif
+            if read_tpl.record_id$="S" then  
+				sftran_dev=tran03_dev
+				dim sftran$:tran03a$
+				record_id_field$="S"
+			endif
+
+			sftran_read_k$=read_tpl.firm_id$
+			sftran_read_k$=sftran_read_k$+read_tpl.wo_location$
+			sftran_read_k$=sftran_read_k$+read_tpl.wo_no$
+			sftran_read_k$=sftran_read_k$+read_tpl.trans_date$
+			sftran_read_k$=sftran_read_k$+read_tpl.trans_seq$
+			
+			find record (sftran_dev,key=sftran_read_k$,dom=*continue) sftran$
+            if transtype$<>"" then if pos(record_id_field$=transtype$)=0 then continue
+            if read_tpl.trans_date$(1,6)<>t1$ then gosub date_subtot
+            if l2<=0 
+                OutVect!.addItem(read_tpl.wo_no$); rem columns$[0
+                if read_tpl.wo_category$="I"
+                    x0$=read_tpl.item_id$
+                    x0$=x0$(1,pos("   "=x0$+"   ")-1)+" "+read_tpl.description_01$,x0$=x0$(1,30)
+                    OutVect!.addItem(x0$); rem columns$[1
+                else
+                    OutVect!.addItem(read_tpl.description_01$); rem columns$[1
+                endif  
+                xwk=fnblank(2)
+                OutVect!.addItem(fill(20)+"Type: "+read_tpl.wo_type$+" Cat: "
+:								 +read_tpl.wo_category$+"  Stat: "+read_tpl.wo_status$
+:								 +"  Whse: "+read_tpl.warehouse_id$+"  Sched Prod: "
+:								 +str(read_tpl.sch_prod_qty:m2$)); rem columns$[4
+                xwk=fnblank(columns-4); rem "finish the row
+				if pos("0"<read_tpl.customer_id$)>0 then
+                    rem NOTE: in v6 Cust/Ord info is flush right, but those are numeric cols in DocOut, so I moved left w/indent
+					OutVect!.addItem(fill(5)+"Cust: "+fnmask$(read_tpl.customer_id$,c1$)+"  Order: "+read_tpl.order_no$); rem columns$[0
+					xwk=fnblank(columns); rem "finish the row
+				else
+					rem xwk=fnblank(columns+1); rem "blank row
+				endif
+					
+            endif 
+		
+rem --- Now Print It
+
+            if read_tpl.record_id$="O" then 
+                OutVect!.addItem(fndate$(sftran.trans_date$))
+                OutVect!.addItem(read_tpl.record_id$)
+                xwk=fnblank(1); rem OutVect!.addItem(sftran.oper_seq_ref$); rem v12 doesn't print seq_refs
+                gosub operation_details
+                OutVect!.addItem(str(sftran.units))
+                OutVect!.addItem(str(sftran.unit_cost))
+                OutVect!.addItem(str(sftran.ext_cost))
+            endif
+
+            if read_tpl.record_id$="M" then 
+                OutVect!.addItem(fndate$(sftran.trans_date$))
+                OutVect!.addItem("M")
+                xwk=fnblank(1); rem OutVect!.addItem(sftran.material_seq_ref$); rem v12 doesn't print seq_refs
+                gosub material_details
+                if pos("O"=transtype$)>0 then xwk=fnblank(2)
+                OutVect!.addItem(str(sftran.units))
+                OutVect!.addItem(str(sftran.unit_cost))
+                OutVect!.addItem(str(sftran.ext_cost))
+				gosub lotserial_details
+            endif
+
+            if read_tpl.record_id$="S" then 
+                OutVect!.addItem(fndate$(sftran.trans_date$))
+                OutVect!.addItem(read_tpl.record_id$)
+                xwk=fnblank(1); rem OutVect!.addItem(sftran.subcont_seq_ref$); rem v12 doesn't print seq_refs
+                gosub subcontract_details
+                if pos("O"=transtype$)>0 then xwk=fnblank(2)
+                OutVect!.addItem(str(sftran.units))
+                OutVect!.addItem(str(sftran.unit_cost))
+                OutVect!.addItem(str(sftran.ext_cost))
+            endif
+            
+            l=l+1
+            l0=l0+1,l2=l2+1
+            if record_id_field$="O" then 
+                d[0]=d[0]+sftran.units
+                t[0]=t[0]+sftran.units
+                s[0]=s[0]+sftran.units
+                u[0]=u[0]+sftran.units
+                d[2]=d[2]+sftran.setup_time
+                t[2]=t[2]+sftran.setup_time
+                s[2]=s[2]+sftran.setup_time
+                u[2]=u[2]+sftran.setup_time
+            endif
+            d[1]=d[1]+sftran.ext_cost
+            t[1]=t[1]+sftran.ext_cost
+            s[1]=s[1]+sftran.ext_cost
+            u[1]=u[1]+sftran.ext_cost
+
+    wend 
+	if prev_wo$<>"" and l2>0 gosub wo_subtot
+   
+done: rem --- End
+
+        t9$="U"
+        if sequence$<>"W" then gosub sub_total
+		xwk=fnblank(columns+1); rem "blank row
+        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+        xwk=fnblank(1)
+        OutVect!.addItem("Grand Total: ")
+        if pos("O"=transtype$)>0 then 
+            xwk=fnblank(2)
+            OutVect!.addItem("Total Hours: "+str(u[0]:m2$)+" Setup Hours: "+str(u[2]:m2$)); rem columns$[4
+        else
+            xwk=fnblank(3)
+		endif
+        xwk=fnblank(columns-5)
+		OutVect!.addItem(str(u[1]:m1$))
+        xwk=fnblank(columns)
+		
+		out_action$="FORMAT"
+		
+		SQLCLOSE(sql_chan)
+		
+        goto std_exit
+
+
+sub_head:rem --- Sub Heading
+        if sequence$="T" then
+            OutVect!.addItem(t0$)
+            OutVect!.addItem(h5$)
+            xwk=fnblank(columns-1)
+        endif
+        if sequence$="C" then
+			OutVect!.addItem(fnmask$(t0$,c1$))
+            OutVect!.addItem(h5$)            
+			xwk=fnblank(columns-1)
+        endif
+    return
+
+sub_total: rem --- First Sub Total
+
+        if t0$<>"" and l0>1 then 
+            rem xwk=fnblank(columns+1); rem "blank row
+			TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+            xwk=fnblank(1)	
+            OutVect!.addItem(h9$+" "+cvs(t0$,2)+"   "+"Total: ")
+            if pos("O"=transtype$)>0 then 
+                xwk=fnblank(2)
+                OutVect!.addItem("Total Hours: "+str(t[0]:m2$)+" Setup Hours: "+str(t[2]:m2$))
+                xwk=fnblank(5); rem "finish row
+            else
+                xwk=fnblank(6); rem "finish row
+            endif			
+			OutVect!.addItem(str(t[1]))            
+			xwk=fnblank(columns+1); rem "blank row
+			
+        endif
+
+        if t9$<>"" then return
+        dim t[2]
+        t0$=data1$
+        l0=0
+
+        if sequence$="T" then
+            dim h5$(20); let h5$(1)="*** Not On File ***"
+            find record (sfm10a_dev,key=firm_id$+"A"+t0$,dom=*return) sfm10a$
+            h5$=sfm10a.code_desc$
+            gosub sub_head
+        endif
+        if sequence$="C" then
+            dim h5$(30); let h5$(1)="*** Not On File ***"
+            find record (arm01a_dev,key=firm_id$+t0$,dom=*return) arm01a$
+            h5$=arm01a.customer_name$
+            gosub sub_head
+        endif
+    return
+
+date_subtot:rem --- Date Subtotal
+        if t1$<>"" then             
+            TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+            xwk=fnblank(1)
+            OutVect!.addItem("Month "+fnh$(t1$)+"   "+"Total: ")
+            if pos("O"=transtype$)>0 then 
+                xwk=fnblank(2)
+                OutVect!.addItem("Total Hours: "+str(d[0]:m2$)+" Setup Hours: "+str(d[2]:m2$))
+                xwk=fnblank(5); rem "finish row
+            else
+                xwk=fnblank(6); rem "finish row
+            endif
+            OutVect!.addItem(str(d[1]))
+			xwk=fnblank(columns+1); rem "blank row
+        endif
+
+        if t9$<>"" then return
+        dim d[2]
+        t1$=read_tpl.trans_date$(1,6)
+        l=l+3
+    return
+
+wo_subtot: rem --- W/O Subtotal
+
+        if t9$="" then let t9$="B"
+        gosub date_subtot
+        if t9$="B" then let t9$=""
+        
+        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+        xwk=fnblank(1)
+        OutVect!.addItem("Work Order "+prev_wo$+" Total: ")
+        if pos("O"=transtype$)>0 then 
+            xwk=fnblank(2)
+            OutVect!.addItem("Total Hours: "+str(s[0]:m2$)+" Setup Hours: "+str(s[2]:m2$))
+            xwk=fnblank(5); rem "finish row
+        else
+            xwk=fnblank(6); rem "finish row
+        endif
+        OutVect!.addItem(str(s[1]))
+        xwk=fnblank(columns+1); rem "blank row
+    return
+
+material_details: rem --- Materials Here
+
+    dim x0$(30),x1$(20),x2$(30); let x0$(1)="*** Not On File ***",x1$(1)=x0$
+   
+    if record_id_field$="M"
+        find record (ivm01a_dev,key=firm_id$+sftran.item_id$,dom=*next) ivm01a$
+        
+		rem -- Columns$[3,x]-[5,x]
+		OutVect!.addItem(pad(cvs(sftran.item_id$,2),20))
+		OutVect!.addItem("UM: "+sftran.unit_measure$+fill(5)+ivm01a.item_desc$)
+		OutVect!.addItem("")
+    endif
+	return
+
+
+lotserial_details: rem --- Lot/Serial Here
+
+    if record_id_field$="M"
+        if ivm01a.lotser_item$+ivm01a.inventoried$="YY" and pos(ivs01a.lotser_flag$="LS")<>0 then 
+rem --- Serial Numbers Here
+            if read_tpl.wo_status$<>"C" or read_tpl.closed_date$>sf_prevper_enddate$ then 
+                lstran_dev=sft11a_dev
+                dim lstran$:sft11_tpls$
+            else
+                lstran_dev=sft12a_dev
+                dim lstran$:sft12_tpls$
+            endif
+
+            while more
+                k1$=key(lstran_dev,end=*break)
+                if pos(sftran.firm_id$+sftran.wo_location$+sftran.wo_no$+sftran.trans_date$+sftran.trans_seq$=k1$)=1 then
+                    read record (lstran_dev) lstran$ 
+rem --- Print It Here
+                    if ivs01a.lotser_flag$="S" then lotser$="Serial: " else lotser$="Lot: "
+                    xwk=fnblank(3)
+                    
+					rem -- Columns$[3,x]
+					if lstran_dev=sft11a_dev then 
+						OutVect!.addItem(lotser$+lstran.lotser_no$+"  Issued:"+str(lstran.cls_inp_qty:m2$)+"  Cost:"+str(lstran.closed_cost:m3$)+"  Amount: "+str(lstran.ext_cost:m1$))
+                    endif
+					
+					if lstran_dev=sft12a_dev then 
+						OutVect!.addItem(lotser$+lstran.lotser_no$+"  Issued:"+str(lstran.qty_closed:m2$)+"  Cost:"+str(lstran.unit_cost:m3$)+"  Amount: "+str(lstran.ext_cost:m1$))
+					endif
+					xwk=fnblank(columns-3)
+                else
+					break
+				endif
+            wend 
+        endif
+    endif
+    return
+	
+subcontract_details: rem --- Subcontracts Here
+
+        dim x0$(30),x1$(20),x2$(30); let x0$(1)="*** Not On File ***",x1$(1)=x0$
+        if record_id_field$="S"
+            if po$="Y" then find record (apm01a_dev,key=firm_id$+sftran.vendor_id$,dom=*next) apm01a$
+            
+			rem -- Columns$[3,x]-[5,x]
+			OutVect!.addItem(fnmask$(sftran.vendor_id$,c3$)+"  "+apm01a.vendor_name$)
+			OutVect!.addItem("")
+			OutVect!.addItem("PO #: "+sftran.po_no$); rem +sftran.pur_ord_seq_ref$); rem v12 doesn't print seq_refs
+        endif
+        return
+
+operation_details: rem --- Operations Here
+        dim x0$(30),x1$(20),x2$(30); let x0$(1)="*** Not On File ***",x1$(1)=x0$
+        if record_id_field$="O"
+            x1$="Invalid Op Code"
+            find record (opcode_dev,key=firm_id$+sftran.op_code$,dom=label3) opcode$
+            x1$=opcode.code_desc$
+            label3:
+            find record (empcode_dev,key=firm_id$+sftran.employee_no$,dom=*next) empcode$
+            
+			rem -- Columns$[3,x]-[5,x]
+			OutVect!.addItem(sftran.op_code$+"  "+x1$)
+            OutVect!.addItem(fnmask$(sftran.employee_no$,c5$)+" "+empcode.empl_surname$+empcode.empl_givname$)
+			OutVect!.addItem("")
+			 
+			rem -- Columns$[6,x]-[7,x]
+			OutVect!.addItem(str(sftran.complete_qty))
+            OutVect!.addItem(str(sftran.setup_time))
+        endif
+        return
+
+rem #include std_functions.src
+rem --- Standard AddonSoftware functions (01Mar2006)
+rem --- Functions used to retrieve form values
+
+    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
+    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
+    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
+:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
+    def fnget_table$(q0$)=rd_alias_id$
+    def fni$(q$)=q$(1,2)+chr(32*pos("C"=rec$))+q$(3)
+rem --- Miscellaneous functions
+
+    def fncenter(q$,q)=int((q-len(q$))/2)
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)=cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+    
+    def fnyy$(q$)=q$(3,2)
+    def fnclock$(q$)=date(0:"%hz:%mz %p")
+    def fntime$(q$)=date(0:"%Hz%mz")
+    def fnh$(q1$)=q1$(5,2)+"/"+q1$(1,4)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+rem --- fnbasename$: Strip path and optionally the suffix from a file name
+
+    def fnbasename$(q$,q0$)
+        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
+        if q then q$=q$(q+1)
+        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
+    return q$
+
+rem --- fnglobal: Return numeric value of passed stbl variable
+
+    def fnglobal(q$,q1)
+        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
+        return q1
+    fnend
+
+rem --- fnglobal$: Return string value of passed STBL variable
+
+    def fnglobal$(q$,q1$)
+        q1$=stbl(q$,err=*next)
+        return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+
+rem #endinclude std_functions.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5):"00000"),
+:                                str(err:"000"),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+rem #endinclude std_end.src
+
+    end

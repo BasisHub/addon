@@ -35,8 +35,10 @@ rem --- Retrieve sysinfo data
 
 rem --- retrieve masks 
         call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",m1$,0,m1
-        call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",m2$,0,m2
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",m2$,0,m2
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","I","",g5$,0,acctmask
         call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","R","",m3$,0,m3
+        call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","I","",c1$,0,custmask
         m4$="#,###,##0.00"
 
 rem --- Check & Adjust Masks
@@ -45,48 +47,137 @@ rem --- Check & Adjust Masks
 		call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,m2
         m9=m1*11+m2*2+8
 
-rem --- Init Data
+rem --- Assign Title, Record, and keys
 
-        dim j$(m9,"-"),h9$(m1*5+m2,"-"),h7$(m1*5+m2),t[10],u[10],a[10],o[13]
-        o[0]=131-(m1*11+m2*2+8)
-        o[1]=o[0]+m2,o[2]=o[1]+m1,o[3]=o[2]+m1,o[4]=o[3]+m1,o[5]=o[4]+m1,o[6]=o[5]+m1,o[7]=o[6]+m2,o[8]=o[7]+m1,o[9]=o[8]+m1
-        o[10]=o[9]+m1,o[11]=o[10]+m1,o[12]=o[11]+m1,o[13]=o[12]+m1
-        h9$(1,1)="+"
-        h9$(len(h9$),1)="+",h8$=h9$
-        h8$(int(len(h8$)/2)-6,12)=" Standards "
-        h9$(int(len(h9$)/2)-4,8)=" Actual "
-        h6$=h7$
-        h7$(3)="Operations",h7$(m2+m1*3-7)="Mat'ls",h7$(m2+m1*4-6)="Sub's",h7$(len(h7$)-5)="W.O."
-        h6$(3)="Hours"
-        h6$(m2+m1-7)="Direct",h6$(m2+m1*2-7)="Ovrhd",h6$(m2+m1*3-6)="Total",h6$(m2+m1*4-6)="Total",h6$(len(h6$)-6)="Total"
+        action=pos(sequence$="WBCT")-1
+        switch action
+            case 0
+                h3$="Work Order Sequence"
+                beging$=wofrom$
+                ending$=wothru$
+                dim key_tpl$:sfe01a_key_tpl$
+                begin_key$=firm_id$+sfe01a.wo_location$+beging$
+                keynum$="PRIMARY"
+                break
+            case 1
+                h3$="Bill Number Sequence for Warehouse "+whse$
+                beging$=billfrom$
+                ending$=billthru$
+                dim key_tpl$:sfe01a_key_alt3$
+                begin_key$=firm_id$+whse$+beging$
+                keynum$="AO_WH_ITM_LOC_WO"
+                break
+            case 2
+                h3$="Customer Sequence"
+                beging$=custfrom$
+                ending$=custthru$
+                dim key_tpl$:sfe01a_key_alt2$
+                begin_key$=firm_id$+beging$
+                keynum$="AO_CST_ORD_LINE"
+                break
+            case 3
+                h3$="Work Order Type Sequence"
+                beging$=wotfrom$
+                ending$=wotthru$
+                dim key_tpl$:sfe01a_key_alt1$
+                begin_key$=firm_id$+beging$
+                keynum$="AO_TYP_LOC_WO"
+                break
+            case default
+                break
+        swend
+
+        h4$=""
+        if pos("O"=wostatus$)>0 then let h4$=h4$+"Open/"
+        if pos("C"=wostatus$)>0 then let h4$=h4$+"Closed/"
+        if pos("P"=wostatus$)>0 then let h4$=h4$+"Planned/"
+        if pos("Q"=wostatus$)>0 then let h4$=h4$+"Quoted/"
+        h4$=h4$(1,len(h4$)-1)
+		
+        if beging$<> "" h4$=h4$+" Beginning With "+cvs(beging$,2) else h4$=h4$+" Beginning With First"
+        if ending$<> "" h4$=h4$+" and Ending With "+ending$ else h4$=h4$+" and Ending with Last "
+ 
+	    if includecost$<>"" then
+			h6$="For Cost Overruns "
+		else
+			h6$=""
+		endif
+		
+        if abs(min_variance)>999.9 then 
+            min_variance$="exceeding 999.9%" 
+        else 
+            min_variance$="of "+str(min_variance:"####.00-")+"%"
+        endif
+		
+		if min_variance = 0 then
+			h6$=h6$+"For All Variances"
+		else 
+			h6$=h6$+"With Minimum Variances "+min_variance$
+		endif
+		
+        if as_of_date$<>"" then 
+			let h6$=h6$+" As Of "+fndate$(as_of_date$) 
+     	endif
+		
         headings$[2]=h3$
         headings$[3]=h4$
-        headings$[4]=h$
+        headings$[4]=h6$
+
+rem --- Init Data
         m9$="####.00-"
         more=1
-        flag=0
+rem        flag=0
 
+		rem --- In v6 t[], u[], b[], c[x,y] and a[] were parallel arrays for various totals
+		rem --- A[] was particularly confusing because it implied a relationship with
+		rem --- sfe01 (WOE-01) that does not exist.
+		
+		rem --- For clarity, these arrays are now split into x_standards[] and x_actuals[]
+		rem --- were the x is replaced by a, t, b, or u where used in the code
+		
+			rem x_standards[0] = OP Hrs				; v6 A[0] -- accum woe-02 W[2]
+			rem x_standards[1] = OP Direct Cost		; v6 A[1] -- accum woe-02 W[2]*W[6]
+			rem x_standards[2] = OP Ovrhd Cost		; v6 A[9] -- accum woe-02 W[3]-W[2]*W[6]
+			rem x_standards[3] = Mat Cost			; v6 A[2] -- accum woe-22 W[3]
+			rem x_standards[4] = Sub Cost			; v6 A[3] -- accum woe-32 W[3]
+			rem x_standards[5] = WO Closed Cost	ToDt; v6 A[8] -- woe-01 [3]
+		
+			rem x_actuals[0] = OP Hrs				; v6 A[4]  -- accum woT-01 W[0]
+			rem x_actuals[1] = OP Direct Cost		; v6 A[5]  -- accum woT-01 (W[0]+W[6])*W[3]
+			rem x_actuals[2] = OP Ovrhd Cost		; v6 A[10] -- accum woT-01 W[2]-(W[0]+W[6])*W[3]
+			rem x_actuals[3] = Mat Cost				; v6 A[6]  -- accum woT-21 W[2]
+			rem x_actuals[4] = Sub Cost				; v6 A[7]  -- accum woT-31 W[2]
+			rem x_actuals[5] = not used
+
+		dim a_standards[5]
+		dim a_actuals[5]
+		dim b_standards[5]
+		dim b_actuals[5]
+		dim t_standards[5]
+		dim t_actuals[5]
+		dim u_standards[5]
+		dim u_actuals[5]
 
 rem --- Column Headings 
- 
+
         dim columns$[15,10]
         columns = 15
-            columns$[0,0]="WO#",                                    columns$[0,1]="C",columns$[0,2]="7"
-            columns$[1,0]="Type",                                   columns$[1,1]="C",columns$[1,2]="11"
-            columns$[2,0]="+-------------^Operations Hours",        columns$[2,1]="N",columns$[2,2]="8",columns$[2,3]=m4$,  columns$[2,10]="T"
-            columns$[3,0]="----------------^Direct",                columns$[3,1]="N",columns$[3,2]="10",columns$[3,3]=m1$, columns$[3,10]="T"
-            columns$[4,0]="---Standard--^Ovrhd",                    columns$[4,1]="N",columns$[4,2]="9",columns$[4,3]=m1$,  columns$[4,10]="T"
-            columns$[5,0]="----------------^Mat'ls Total",          columns$[5,1]="N",columns$[5,2]="9",columns$[5,3]=m1$,  columns$[5,10]="T"
-            columns$[6,0]="----------------^Sub's Total",           columns$[6,1]="N",columns$[6,2]="9",columns$[6,3]=m1$,  columns$[6,10]="T"
-            columns$[7,0]="-------------+^W.O Total",               columns$[7,1]="N",columns$[7,2]="8",columns$[7,3]=m1$,  columns$[7,10]="T"
-            columns$[8,0]="+-------------^Operations Hours",        columns$[8,1]="N",columns$[8,2]="8",columns$[8,3]=m2$,  columns$[8,10]="T"
-            columns$[9,0]="------------^Direct",                    columns$[9,1]="N",columns$[9,2]="7",columns$[9,3]=m1$,  columns$[9,10]="T"
-            columns$[10,0]="---Actual--^Ovrhd",                     columns$[10,1]="N",columns$[10,2]="7",columns$[10,3]=m1$,  columns$[10,10]="T"
-            columns$[11,0]="----------------^Mat'ls Total",         columns$[11,1]="N",columns$[11,2]="9",columns$[11,3]=m1$,  columns$[11,10]="T"
-            columns$[12,0]="----------------^Sub's Total",          columns$[12,1]="N",columns$[12,2]="9",columns$[12,3]=m1$,  columns$[12,10]="T"
-            columns$[13,0]="-------------+^W.O Total",              columns$[13,1]="N",columns$[13,2]="8",columns$[13,3]=m1$,  columns$[13,10]="T"
-            columns$[14,0]="^Variance",                             columns$[14,1]="N",columns$[14,2]="8",columns$[14,3]=m1$,  columns$[14,10]="T"
-            columns$[15,0]="%",                                     columns$[15,1]="N",columns$[15,2]="6",columns$[15,3]=m9$,  columns$[15,10]="T"
+            columns$[0,0]="^^WO#",                 columns$[0,1]="C", columns$[0,2]="7"
+            columns$[1,0]="^Type/^Bill",                columns$[1,1]="C", columns$[1,2]="10"
+            columns$[2,0]="Standards^Ops^Hours",   columns$[2,1]="N", columns$[2,2]="8",  columns$[2,3]=m2$,  columns$[2,10]="T"
+            columns$[3,0]="Standards^Ops^Direct",  columns$[3,1]="N", columns$[3,2]="9",  columns$[3,3]=m1$,  columns$[3,10]="T"
+            columns$[4,0]="Standards^Ops^Ovrhd",   columns$[4,1]="N", columns$[4,2]="9",  columns$[4,3]=m1$,  columns$[4,10]="T"
+            columns$[5,0]="Standards^Mat'ls^Total",columns$[5,1]="N", columns$[5,2]="9",  columns$[5,3]=m1$,  columns$[5,10]="T"
+            columns$[6,0]="Standards^Sub's^Total", columns$[6,1]="N", columns$[6,2]="9",  columns$[6,3]=m1$,  columns$[6,10]="T"
+            columns$[7,0]="Standards^W.O.^Total",  columns$[7,1]="N", columns$[7,2]="8",  columns$[7,3]=m1$,  columns$[7,10]="T"
+            columns$[8,0]="Actuals^Ops^Hours",     columns$[8,1]="N", columns$[8,2]="8",  columns$[8,3]=m2$,  columns$[8,10]="T"
+            columns$[9,0]="Actuals^Ops^Direct",    columns$[9,1]="N", columns$[9,2]="9",  columns$[9,3]=m1$,  columns$[9,10]="T"
+            columns$[10,0]="Actuals^Ops^Ovrhd",    columns$[10,1]="N",columns$[10,2]="9", columns$[10,3]=m1$, columns$[10,10]="T"
+            columns$[11,0]="Actuals^Mat'ls^Total", columns$[11,1]="N",columns$[11,2]="9", columns$[11,3]=m1$, columns$[11,10]="T"
+            columns$[12,0]="Actuals^Sub's^Total",  columns$[12,1]="N",columns$[12,2]="9", columns$[12,3]=m1$, columns$[12,10]="T"
+            columns$[13,0]="Actuals^W.O.^Total",   columns$[13,1]="N",columns$[13,2]="8", columns$[13,3]=m1$, columns$[13,10]="T"
+            columns$[14,0]="^Variance",            columns$[14,1]="N",columns$[14,2]="8", columns$[14,3]=m1$, columns$[14,10]="T"
+            columns$[15,0]="%",                    columns$[15,1]="N",columns$[15,2]="6", columns$[15,3]=m9$, columns$[15,10]="T"
 
 rem --- Background
 
@@ -94,47 +185,58 @@ rem --- Background
            
 rem --- Init Read
 
-            read (sfe01a_dev,key=begin_key$,knum=keynum$,dom=main)
-            flag=1
+        extractrecord(sfe01a_dev,key=begin_key$,knum=keynum$,dom=*next)
 
-main: rem --- Main Read
+rem --- Main Read
 
     while more
 
-        if (!flag)
-            key_tpl$=key(sfe01a_dev,knum=keynum$,end=done)
-            if pos(firm_id$=key_tpl$)<>1 then break
+		dim a_standards[5]
+		dim a_actuals[5]
+		
+        key_tpl$=key(sfe01a_dev,knum=keynum$,end=*break)
+        if pos(firm_id$=key_tpl$)<>1 then break
 
-            if ending$<>"" 
-                if sequence$="W" and key_tpl.firm_id$+key_tpl.wo_location$+key_tpl.wo_no$>firm_id$+key_tpl.wo_location$+ending$ then break
-                if sequence$="B" and key_tpl.firm_id$+key_tpl.warehouse_id$+key_tpl.item_id$>firm_id$+whse$+ending$ then break
-                if sequence$="C" and key_tpl.firm_id$+key_tpl.customer_id$>firm_id$+ending$ then break
-                if sequence$="T" and key_tpl.firm_id$+key_tpl.wo_type$>firm_id$+ending$ then break   
-            else
-                if sequence$="B" and whse$<>"" and key_tpl.warehouse_id$>whse$ then break
-            endif
-            if sequence$<>"W" then
-rem --- Breaks
-                if sequence$="B" then
-                    data1$=key_tpl.warehouse_id$+key_tpl.item_id$
-                else
-                    if sequence$="T" then
-                        data1$=key_tpl.wo_type$
-                    else
-                        data1$=key_tpl.customer_id$
-                    endif
-                endif
-                if data1$<>t0$ then gosub first_sub_tot
-                read (sfe01a_dev,knum=keynum$)
-            endif
+        if ending$<>"" 
+            if sequence$="W" and key_tpl.firm_id$+key_tpl.wo_location$+key_tpl.wo_no$>firm_id$+key_tpl.wo_location$+ending$ then break
+            if sequence$="B" and key_tpl.firm_id$+key_tpl.warehouse_id$+key_tpl.item_id$>firm_id$+whse$+ending$ then break
+            if sequence$="C" and key_tpl.firm_id$+key_tpl.customer_id$>firm_id$+ending$ then break
+            if sequence$="T" and key_tpl.firm_id$+key_tpl.wo_type$>firm_id$+ending$ then break   
+        else
+            if sequence$="B" and whse$<>"" and key_tpl.warehouse_id$>whse$ then break
         endif
 
-rem --- reset flag so that next time while..wend loop executes from beginning
+		rem --- If by Cust make sure WO is linked to a customer
+			if sequence$="C" and (cvs(key_tpl.customer_id$,2))="" then
+				read (sfe01a_dev)
+				continue
+			endif
+			
+		rem --- If by Bill make sure WO is for a bill
+			if sequence$="B" and (cvs(key_tpl.item_id$,2))="" then
+				read (sfe01a_dev)
+				continue
+			endif
+        			
+rem --- Breaks
+        if sequence$<>"W" then
+            if sequence$="B" then
+                data1$=key_tpl.warehouse_id$+key_tpl.item_id$
+            else
+                if sequence$="T" then
+                    data1$=key_tpl.wo_type$
+                else
+                    data1$=key_tpl.customer_id$
+                endif
+            endif
+			
+            if data1$<>t0$ then gosub first_sub_tot
+            read (sfe01a_dev,knum=keynum$)
+        endif
 
-reset_flg:
-
-        flag=0
         read record (sfe01a_dev,key=key_tpl$,knum=keynum$,dom=*continue) sfe01a$
+		a_standards[5]=sfe01a.cls_cst_todt
+
         if pos(sfe01a.wo_status$="PQ")>0 then continue
         if sfe01a.wo_category$="I"
             find record (ivm01a_dev,key=firm_id$+sfe01a.item_id$,dom=label2) ivm01a$
@@ -144,39 +246,40 @@ reset_flg:
 label2:
 
         if wostatus$="C" and sfe01a.wo_status$<>"C" then continue
-        if wostatus$="O" and sfe01a.wo_status$="C" and closedate$="" then continue
-        if wostatus$="O" and sfe01a.wo_status$="C" and sfe01a.closed_date$<=closedate$ then continue
-        if wostatus$="C" and sfe01a.closed_date$>closedate$ then continue
-        if sfe01a.wo_status$="C" then sfe01a.dealer_num_02=0
-        if closedate$<>"" then 
-            if sfe01a.closed_date$>closedate$ then sfe01a.dealer_num_02=0
+        if wostatus$="O" and sfe01a.wo_status$="C" and as_of_date$="" then continue
+        if wostatus$="O" and sfe01a.wo_status$="C" and sfe01a.closed_date$<=as_of_date$ then continue
+        if wostatus$="C" and sfe01a.closed_date$>as_of_date$ then continue
+        if sfe01a.wo_status$="C" then a_standards[5]=0
+        if as_of_date$<>"" then 
+            if sfe01a.closed_date$>as_of_date$ then a_standards[5]=0
         endif
 
 rem --- Calculate Standards
 
         sfreq_dev=sfe02a_dev
         dim sfreq_key$:sfe02a_key_tpl$
-        dim sfreqa$:templates$[8]
-        record_id$="A"
+        dim sfreqa$:sfe02_tpls$
+
         while more
             read (sfreq_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
             call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
             while more
                 sfreq_key$=key(sfreq_dev,end=*break)
                 if sfreq_key.firm_id$+sfreq_key.wo_location$+sfreq_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then break
                 read record (sfreq_dev) sfreqa$
-                action=pos(record_id$="ABC")
-                switch action
-                    case 1
-                        sfe01a.cls_cst_todt=sfe01a.cls_cst_todt+sfreqa.total_time
-                        sfe01a.cls_inp_qty=sfe01a.cls_inp_qty+sfreqa.total_time*sfreqa.direct_rate
-                        rate=rate+sfreqa.tot_std_cost-sfreqa.total_time*sfreqa.direct_rate
+
+                switch sfreq_dev
+                    case sfe02a_dev; REM processing sfe02
+                        a_standards[0]=a_standards[0]+sfreqa.total_time
+                        a_standards[1]=a_standards[1]+sfreqa.total_time*sfreqa.direct_rate
+                        a_standards[2]=a_standards[2]+sfreqa.tot_std_cost-sfreqa.total_time*sfreqa.direct_rate
                         break
-                    case 2
-                        sfe01a.closed_cost=sfe01a.closed_cost+sfreqa.total_cost
+                    case sfe22a_dev; REM processing sfe22
+                        a_standards[3]=a_standards[3]+sfreqa.total_cost
                         break
-                    case 3
-                        sfe01a.est_yield=sfe01a.est_yield+sfreqa.total_cost
+                    case sfe23a_dev; REM processing sfe32
+                        a_standards[4]=a_standards[4]+sfreqa.total_cost
                         break
                     case default
                         break
@@ -184,16 +287,14 @@ rem --- Calculate Standards
             wend
 
             if sfreq_dev=sfe02a_dev
-               sfreq_dev=sfe22a_dev 
-               dim sfreq_key$:sfe22a_key_tpl$
-               dim sfreqa$:templates$[9]
-               record_id$="B"
+				sfreq_dev=sfe22a_dev 
+				dim sfreq_key$:sfe22a_key_tpl$
+				dim sfreqa$:sfe22_tpls$
             else
                 if sfreq_dev=sfe22a_dev 
                    sfreq_dev=sfe32a_dev
                    dim sfreq_key$:sfe32a_key_tpl$
-                   dim sfreqa$:templates$[10]
-                   record_id$="C"
+                   dim sfreqa$:sfe32_tpls$
                 else
                    break
                 endif
@@ -219,33 +320,32 @@ rem --- Calculate Actuals
         endif
 
         sftran_dev=tran01_dev
-        record_id1$="O"
         
         while more
 
             if sftran_dev=sft01a_dev then 
-                dim sftran$:templates$[13] 
-                dim sftran_key$:templates$[13] 
+                dim sftran$:sft01_tpls$ 
+                dim sftran_key$:sft01a_key_tpl$ 
             else 
                 if sftran_dev=sft03a_dev then 
-                    dim sftran$:templates$[14] 
-                    dim sftran_key$:templates$[14] 
+                    dim sftran$:sft03_tpls$ 
+                    dim sftran_key$:sft03a_key_tpl$ 
                 else     
                     if sftran_dev=sft21a_dev then 
-                        dim sftran$:templates$[15] 
-                        dim sftran_key$:templates$[15] 
+                        dim sftran$:sft21_tpls$ 
+                        dim sftran_key$:sft21a_key_tpl$ 
                     else     
                         if sftran_dev=sft23a_dev then 
-                            dim sftran$:templates$[16] 
-                            dim sftran_key$:templates$[16] 
+                            dim sftran$:sft23_tpls$ 
+                            dim sftran_key$:sft23a_key_tpl$ 
                         else    
                             if sftran_dev=sft31a_dev then 
-                                dim sftran$:templates$[17] 
-                                dim sftran_key$:templates$[17] 
+                                dim sftran$:sft31_tpls$ 
+                                dim sftran_key$:sft31a_key_tpl$ 
                             else 
-                                if sftran_dec=sft33a_dev then 
-                                    dim sftran$:templates$[18] 
-                                    dim sftran_key$:templates$[18] 
+                                if sftran_dev=sft33a_dev then 
+                                    dim sftran$:sft33_tpls$ 
+                                    dim sftran_key$:sft33a_key_tpl$ 
                                 endif
                             endif
                         endif
@@ -254,43 +354,44 @@ rem --- Calculate Actuals
             endif
         
             read (sftran_dev,key=sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$,dom=*next)
-            print @(column+17,11),key_tpl.wo_no$,
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
             while more
 
                 sftran_key$=key(sftran_dev,end=*break)
                 if sftran_key.firm_id$+sftran_key.wo_location$+sftran_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_location$+sfe01a.wo_no$ then break
-                if period$<>"" then 
-                    if sftran_key.trans_date$>period$ then break
+                if as_of_date$<>"" then 
+                    if sftran_key.trans_date$>as_of_date$ then break
                 endif
                 read record (sftran_dev) sftran$
 
-                switch pos(record_id1$="OMS")
-                    case 1
-                        sfe01a.reserved_num=sfe01a.reserved_num+sftran.units
+                switch sftran_dev
+                    case sft01_dev
+                    case sft03_dev
+                        a_actuals[0]=a_actuals[0]+sftran.units
                         x=(sftran.units+sftran.setup_time)*sftran.direct_rate
-                        sfe01a.reserved_num_02=sfe01a.reserved_num_02+x
-                        extra_cost=extra_cost+sftran.ext_cost-x
-                        break
-                    case 2
-                        sfe01a.dealer_num_01=sfe01a.dealer_num_01+sftran.ext_cost
-                        break
-                    case 3
-                        sfe01a.dealer_num_02=sfe01a.dealer_num_02+sftran.ext_cost
-                        break
+                        a_actuals[1]=a_actuals[1]+x
+                        a_actuals[2]=a_actuals[2]+sftran.ext_cost-x
+                    break
+                    case sft21_dev
+                    case sft23_dev
+                        a_actuals[3]=a_actuals[3]+sftran.ext_cost
+                    break
+                    case sft31_dev
+                    case sft33_dev
+                        a_actuals[4]=a_actuals[4]+sftran.ext_cost
+                    break
                     case default
+                    break
                 swend
-                continue
 
             wend
 
             if sftran_dev=tran01_dev
                 sftran_dev=tran02_dev
-                record_id1$="M"
             else
                 if sftran_dev=tran02_dev
                     sftran_dev=tran03_dev
-                    record_id1$="S"
                 else
                     break
                 endif
@@ -300,14 +401,16 @@ rem --- Calculate Actuals
 
 rem --- Calc Totals, Variance, Etc.
 
-        a0=sfe01a.cls_inp_qty+sfe01a.closed_cost+ sfe01a.est_yield+rate
-        a1=sfe01a.reserved_num_02+sfe01a.dealer_num_01+sfe01a.dealer_num_02+extra_cost
-        a2=a0-a1
-        if a0<>0 then 
-            a3=(a0-a1)*100/a0 
+        a0_standard_tot=a_standards[1]+a_standards[2]+a_standards[3]+a_standards[4]
+        a1_actual_tot=a_actuals[1]+a_actuals[2]+a_actuals[3]+a_actuals[4]
+        a2_variance=a0_standard_tot-a1_actual_tot
+		
+        if a0_standard_tot<>0 then 
+            a3_variance_percent=(a0_standard_tot-a1_actual_tot)*100/a0_standard_tot 
         else 
-            a3=0
+            a3_variance_percent=0
         endif
+		
         if sfe01a.wo_category$="I" then 
             x$=sfe01a.item_id$
             x$=x$(1,pos("   "=x$+"   ")-1)
@@ -315,74 +418,82 @@ rem --- Calc Totals, Variance, Etc.
         endif
 
 rem --- Print
+        if includecost$="Y" and a3_variance_percent<min_variance then continue
+        if includecost$="N" and abs(a3_variance_percent)<min_variance then continue
 
-        if r1$="Y" and a3<r0 then continue
-        if r1$="N" and abs(a3)<r0 then continue
-
-        if l+3>l9 then gosub sub_head
-        blank=fnblank(16)
+		blank=fnblank(16)
         OutVect!.addItem(sfe01a.wo_no$)
         OutVect!.addItem(sfe01a.wo_type$+" "+sfe01a.description_01$)
                 
-        if abs(a3)>999.9 then 
-            a3$=" ****** " 
+        if abs(a3_variance_percent)>999.9 then 
+            a3_variance_percent$=" ****** " 
         else 
-            a3$=str(a3:"####.00-")
+            a3_variance_percent$=str(a3_variance_percent:"####.00-")
         endif
 
         blank=fnblank(14)
         blank=fnblank(2)
-        OutVect!.addItem(str(sfe01a.cls_cst_todt))
-        OutVect!.addItem(str(sfe01a.cls_inp_qty))
-        OutVect!.addItem(str(rate))
-        OutVect!.addItem(str(sfe01a.closed_cost))
-        OutVect!.addItem(str(sfe01a.est_yield))
-        OutVect!.addItem(str(a0))
-        OutVect!.addItem(str(sfe01a.reserved_num))
-        OutVect!.addItem(str(sfe01a.reserved_num_02))
-        OutVect!.addItem(str(extra_cost))
-        OutVect!.addItem(str(sfe01a.dealer_num_01))
-        OutVect!.addItem(str(sfe01a.dealer_num_02))
-        OutVect!.addItem(str(a1))
-        OutVect!.addItem(str(a2))
-        OutVect!.addItem(str(a3$))
+        OutVect!.addItem(str(a_standards[0])); rem Op hours
+        OutVect!.addItem(str(a_standards[1])); rem Op Direct
+        OutVect!.addItem(str(a_standards[2])); rem Op Overhead
+        OutVect!.addItem(str(a_standards[3])); rem Mats
+
+        OutVect!.addItem(str(a_standards[4])); rem Subs
+        OutVect!.addItem(str(a0_standard_tot))
+        OutVect!.addItem(str(a_actuals[0])); rem Op Hours
+        OutVect!.addItem(str(a_actuals[1])); rem Op Direct
+        OutVect!.addItem(str(a_actuals[2])); rem Op Overhead
+        OutVect!.addItem(str(a_actuals[3])); rem Mats
+        OutVect!.addItem(str(a_actuals[4])); rem Subs
+        OutVect!.addItem(str(a1_actual_tot))
+        OutVect!.addItem(str(a2_variance))
+        OutVect!.addItem(str(a3_variance_percent$))
        
-        if sfe01a.dealer_num_03<>0 then 
+        if a_standards[5]<>0 then 
             blank=fnblank(12)
             OutVect!.addItem("Closed: ")
-            OutVect!.addItem(str(-sfe01a.dealer_num_03))
+            OutVect!.addItem(str(-a_standards[5]))
             blank=fnblank(2)
             blank=fnblank(12)
             OutVect!.addItem("Net Open: ")
-            OutVect!.addItem(str(a1-sfe01a.dealer_num_03))
-            blank=fnblank(2)
-            
+            OutVect!.addItem(str(a1_actual_tot-a_standards[5]))
+            blank=fnblank(2)            
         endif
-        
+
         l0=l0+1
-        dim b[10] 
+
+		dim b_standards[5]
+		dim b_actuals[5]
+		dim sfw02a$:sfw02_tpls$
+		
         sfw02a.firm_id$=sfe01a.firm_id$
         sfw02a.wo_location$=sfe01a.wo_location$
         sfw02a.wo_type$=sfe01a.wo_type$
         sfw02a.wo_category$=sfe01a.wo_category$
         find record (sfw02a_dev,key=sfw02a.firm_id$+sfw02a.wo_location$+sfw02a.wo_type$,dom=*next) sfw02a$
 
-        sfe01_field$=fattr(sfe01a$,"")
-        sfe01_field$=sfe01_field$(pos("cls_cst_todt"=cvs(sfe01_field$,8)))
-        for x=0 to 8
-            xfield$=sfe01_field$(1,pos($0A$=sfe01_field$)-1)
-            t[x]=t[x]+num(FIELD(sfe01a$,xfield$,err=*break))
-            u[x]=u[x]+num(FIELD(sfe01a$,xfield$,err=*break))
-            b[x]=b[x]+num(FIELD(sfe01a$,xfield$,err=*break))
-            sfe01_field$=sfe01_field$(pos($0A$=sfe01_field$)+1)
-        next x
+        for x=0 to 5
+            t_standards[x]=t_standards[x]+a_standards[x]
+            u_standards[x]=u_standards[x]+a_standards[x]
+            b_standards[x]=b_standards[x]+a_standards[x]
 
-        t[x]=t[x]+rate
-        u[x]=u[x]+rate
-        b[x]=b[x]+rate
-        t[x]=t[x]+extra_cost
-        u[x]=u[x]+extra_cost
-        b[x]=b[x]+extra_cost
+            t_actuals[x]=t_actuals[x]+a_actuals[x]
+            u_actuals[x]=u_actuals[x]+a_actuals[x]
+            b_actuals[x]=b_actuals[x]+a_actuals[x]
+        next x
+		
+		sfw02a.std_hrs=sfw02a.std_hrs+b_standards[0]
+		sfw02a.std_dir_tot=sfw02a.std_dir_tot+b_standards[1]
+		sfw02a.std_ovhd_tot=sfw02a.std_ovhd_tot+b_standards[2]
+		sfw02a.std_mat_tot=sfw02a.std_mat_tot+b_standards[3]
+		sfw02a.std_sub_tot=sfw02a.std_sub_tot+b_standards[4]
+		sfw02a.cls_cst_todt=sfw02a.cls_cst_todt+b_standards[5]		
+		
+		sfw02a.actual_hrs=sfw02a.actual_hrs+b_actuals[0]
+		sfw02a.act_dir_tot=sfw02a.act_dir_tot+b_actuals[1]
+		sfw02a.act_ovhd_tot=sfw02a.act_ovhd_tot+b_actuals[2]
+		sfw02a.act_mat_tot=sfw02a.act_mat_tot+b_actuals[3]
+		sfw02a.act_sub_tot=sfw02a.act_sub_tot+b_actuals[4]
         write record (sfw02a_dev,key=sfw02a.firm_id$+sfw02a.wo_location$+sfw02a.wo_type$) sfw02a$
 
    wend
@@ -391,146 +502,209 @@ done: rem --- End
 
         t9$="U"
         if sequence$<>"W" then gosub first_sub_tot
-        u0=u[1]+u[2]+u[3]+u[9]
-        u1=u[5]+u[6]+u[7]+u[10],u2=u0-u1
-        if u0<>0 then u3=(u0-u1)*100/u0 else u3=0
-        if u[8]<>0 
-            if u0 then u6=(u0-(u1-u[8]))*100/u0 else u6=0
-        endif
+		
+        u0_standard_tot=u_standards[1]+u_standards[2]+u_standards[3]+u_standards[4]
+        u1_actual_tot=u_actuals[1]+u_actuals[2]+u_actuals[3]+u_actuals[4]
+		u2_variance=u0_standard_tot-u1_actual_tot
+		
+        if u0_standard_tot<>0 then 
+			u3_variance_percent=(u0_standard_tot-u1_actual_tot)*100/u0_standard_tot 
+		else 
+			u3_variance_percent=0
+		endif
+
         blank=fnblank(16)
         TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
         blank=fnblank(1)
         OutVect!.addItem("Report Total:")
-        OutVect!.addItem(str(u[0]))
-        OutVect!.addItem(str(u[1]))
-        OutVect!.addItem(str(u[9]))
-        OutVect!.addItem(str(u[2]))
-        OutVect!.addItem(str(u[3]))
-        OutVect!.addItem(str(u0))
-        OutVect!.addItem(str(u[4]))
-        OutVect!.addItem(str(u[5]))
-        OutVect!.addItem(str(u[10]))
-        OutVect!.addItem(str(u[6]))
-        OutVect!.addItem(str(u[7]))
-        OutVect!.addItem(str(u1))
-        OutVect!.addItem(str(u2))
-        OutVect!.addItem(str(u3))
-    
+		
+		OutVect!.addItem(str(u_standards[0])); rem Op hours
+        OutVect!.addItem(str(u_standards[1])); rem Op Direct
+        OutVect!.addItem(str(u_standards[2])); rem Op Overhead
+        OutVect!.addItem(str(u_standards[3])); rem Mats
+        OutVect!.addItem(str(u_standards[4])); rem Subs
+        OutVect!.addItem(str(u0_standard_tot:m4$))
+        OutVect!.addItem(str(u_actuals[0])); rem Op Hours
+        OutVect!.addItem(str(u_actuals[1])); rem Op Direct
+        OutVect!.addItem(str(u_actuals[2])); rem Op Overhead
+        OutVect!.addItem(str(u_actuals[3])); rem Mats
+        OutVect!.addItem(str(u_actuals[4])); rem Subs
+        OutVect!.addItem(str(u1_actual_tot:m4$))
+        OutVect!.addItem(str(u2_variance))
+        OutVect!.addItem(str(u3_variance_percent))
 
-    if u[8]<>0 then 
-        blank=fnblank(12)
-        OutVect!.addItem("Closed: ")
-        OutVect!.addItem(str(-u[8]))
-        blank=fnblank(2)
-        blank=fnblank(12)
-        OutVect!.addItem("Net Open: ")
-        OutVect!.addItem(str(u1-u[8]))
-        blank=fnblank(2)
-       
-    endif
+      
+        if u_standards[5]<>0 then 
+            blank=fnblank(12)
+            OutVect!.addItem("Closed: ")
+            OutVect!.addItem(str(-u_standards[5]))
+            blank=fnblank(2)
+            blank=fnblank(12)
+            OutVect!.addItem("Net Open: ")
+            OutVect!.addItem(str(u1_actual_tot-u_standards[5]))
+            blank=fnblank(2)
+		endif
     
         BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
 
 rem --- Subtotals By Type
 
-        dim c[2,10],t[10],u[10]
+		dim b_standards[5]
+		dim b_actuals[5]
+		dim c_standards[2,5]
+		dim c_actuals[2,5]
+		dim t_standards[5]
+		dim t_actuals[5]		
+		dim u_standards[5]
+		dim u_actuals[5]
+
         OutVect!.addItem("Totals By Type: ")
         blank=fnblank(15)
         blank=fnblank(16)
     
     call pgmdir$+"adc_progress.aon","N","","","","Totals By Type:",0,sfw02a_dev,1,meter_num,status
+	
     read (sfw02a_dev,key=firm_id$,dom=*next)
+	
     while more
         k5$=key(sfw02a_dev,end=*break)
         if pos(firm_id$=k5$)<>1 then break
         read record (sfw02a_dev) sfw02a$
+		
         sfm10a.code_desc$="*** Not On File ***"
         find record (sfm10a_dev,key=firm_id$+"A"+sfw02a.wo_type$,dom=*next) sfm10a$
+		
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        OutVect!.addItem(sfw02a.wo_category$)
-        OutVect!.addItem(sfm10a.code_desc$)
-        OutVect!.addItem(str(fnmask$(sfm10a.gl_wip_acct$,g5$)))
-        OutVect!.addItem(str(fnmask$(sfm10a.gl_close_to$,g5$)))
-        blank=fnblank(12)
-        b0=sfw02a.std_ops_tot+sfw02a.std_mat_tot+sfw02a.std_sub_tot+b[9]
-        b1=sfw02a.act_ops_tot+sfw02a.act_mat_tot+sfw02a.act_sub_tot+b[10],b2=b0-b1
-        if b0<>0 then b3=(b0-b1)*100/b0 else b3=0
+		
+		b_standards[0]=sfw02a.std_hrs
+		b_standards[1]=sfw02a.std_dir_tot
+		b_standards[2]=sfw02a.std_ovhd_tot
+		b_standards[3]=sfw02a.std_mat_tot
+		b_standards[4]=sfw02a.std_sub_tot
+		b_standards[5]=sfw02a.cls_cst_todt
+		b_actuals[0]=sfw02a.actual_hrs
+		b_actuals[1]=sfw02a.act_dir_tot
+		b_actuals[2]=sfw02a.act_ovhd_tot
+		b_actuals[3]=sfw02a.act_mat_tot
+		b_actuals[4]=sfw02a.act_sub_tot
 
+        OutVect!.addItem(sfw02a.wo_type$)
+        OutVect!.addItem(sfm10a.code_desc$)
+        if num(sfm10a.gl_wip_acct$)<>0 then
+			OutVect!.addItem(str(fnmask$(sfm10a.gl_wip_acct$,g5$)))
+		else
+			blank=fnblank(1)
+		endif
+        if num(sfm10a.gl_close_to$)<>0 then
+			OutVect!.addItem(str(fnmask$(sfm10a.gl_close_to$,g5$)))
+        else
+			blank=fnblank(1)
+		endif
+		blank=fnblank(12)
+
+        b0_standard_tot=b_standards[1]+b_standards[2]+b_standards[3]+b_standards[4]
+        b1_actual_tot=b_actuals[1]+b_actuals[2]+b_actuals[3]+b_actuals[4]
+        b2_variance=b0_standard_tot-b1_actual_tot
+		
+        if b0_standard_tot<>0 then 
+            b3_variance_percent=(b0_standard_tot-b1_actual_tot)*100/b0_standard_tot 
+        else 
+            b3_variance_percent=0
+        endif
+	               
+        if abs(b3_variance_percent)>999.9 then 
+            b3_variance_percent$=" ****** " 
+        else 
+            b3_variance_percent$=str(b3_variance_percent:"####.00-")
+        endif
 
         blank=fnblank(2)
-        OutVect!.addItem(str(sfw02a.std_hrs$))
-        OutVect!.addItem(str(sfw02a.std_ops_tot))
-        OutVect!.addItem(str(b[9]))
-        OutVect!.addItem(str(sfw02a.std_mat_tot))
-        OutVect!.addItem(str(sfw02a.std_sub_tot))
-        OutVect!.addItem(str(b0))
-        OutVect!.addItem(str(sfw02a.actual_hrs))
-        OutVect!.addItem(str(sfw02a.act_ops_tot))
-        OutVect!.addItem(str(b[10]))
-        OutVect!.addItem(str(sfw02a.act_mat_tot))
-        OutVect!.addItem(str(act_sub_tot))
-        OutVect!.addItem(str(b1))
-        OutVect!.addItem(str(b2))
-        OutVect!.addItem(str(b3))
+        OutVect!.addItem(str(b_standards[0])); rem Op hours
+        OutVect!.addItem(str(b_standards[1])); rem Op Direct
+        OutVect!.addItem(str(b_standards[2])); rem Op Overhead
+        OutVect!.addItem(str(b_standards[3])); rem Mats
+        OutVect!.addItem(str(b_standards[4])); rem Subs
+        OutVect!.addItem(str(b0_standard_tot))
+        OutVect!.addItem(str(b_actuals[0])); rem Op Hours
+        OutVect!.addItem(str(b_actuals[1])); rem Op Direct
+        OutVect!.addItem(str(b_actuals[2])); rem Op Overhead
+        OutVect!.addItem(str(b_actuals[3])); rem Mats
+        OutVect!.addItem(str(b_actuals[4])); rem Subs
+        OutVect!.addItem(str(b1_actual_tot))
+        OutVect!.addItem(str(b2_variance))
+        OutVect!.addItem(str(b3_variance_percent$))
 
-        if b[8]<>0 then 
+		if sfw02a.cls_cst_todt<>0 then 
             blank=fnblank(12)
             OutVect!.addItem("Closed: ")
-            OutVect!.addItem(str(-b[8]))
+            OutVect!.addItem(str(-sfw02a.cls_cst_todt))
             blank=fnblank(2)
             blank=fnblank(12)
             OutVect!.addItem("Net Open: ")
-            OutVect!.addItem(str(b1-b[8]))
-            blank=fnblank(2)
-           
+            OutVect!.addItem(str(b1_actual_tot-sfw02a.cls_cst_todt))
+            blank=fnblank(2)           
         endif
-        
+     
         y=pos(sfm10a.wo_category$="INR")-1
         if y<0 then y=1
-        for x=0 to 10
-            c[y,x]=c[y,x]+b[x]
-            t[x]=t[x]+b[x]
+        for x=0 to 5
+			c_standards[y,x]=c_standards[y,x]+b_standards[x]
+			c_actuals[y,x]=c_actuals[y,x]+b_actuals[x]
+			t_standards[x]=t_standards[x]+b_standards[x]
+			t_actuals[x]=t_actuals[x]+b_actuals[x]			
         next x
-               
+
    wend 
 
 rem --- Report Totals
 
-        t0=t[1]+t[2]+t[3]+t[9]
-        t1=t[5]+t[6]+t[7]+t[10],t2=t0-t1
-        if t0<>0 then t3=(t0-t1)*100/t0 else t3=0
+        t0_standard_tot=t_standards[1]+t_standards[2]+t_standards[3]+t_standards[4]
+        t1_actual_tot=t_actuals[1]+t_actuals[2]+t_actuals[3]+t_actuals[4]
+		t2_variance=t0_standard_tot-t1_actual_tot
+		
+        if t0_standard_tot<>0 then 
+			t3_variance_percent=(t0_standard_tot-t1_actual_tot)*100/t0_standard_tot 
+		else 
+			t3_variance_percent=0
+		endif
+
+        if abs(t3_variance_percent)>999.9 then 
+            t3_variance_percent$=" ****** " 
+        else 
+            t3_variance_percent$=str(t3_variance_percent:"####.00-")
+        endif
+		
         blank=fnblank(16)
         TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
         blank=fnblank(1)
         OutVect!.addItem("Report Total:")
-        OutVect!.addItem(str(t[0]))
-        OutVect!.addItem(str(t[1]))
-        OutVect!.addItem(str(t[9]))
-        OutVect!.addItem(str(t[2]))
-        OutVect!.addItem(str(t[3]))
-        OutVect!.addItem(str(t0))
-        OutVect!.addItem(str(t[4]))
-        OutVect!.addItem(str(t[5]))
-        OutVect!.addItem(str(t[10]))
-        OutVect!.addItem(str(t[6]))
-        OutVect!.addItem(str(t[7]))
-        OutVect!.addItem(str(t1))
-        OutVect!.addItem(str(t2))
-        OutVect!.addItem(str(t3))
-        if t[8]<>0 then 
+		
+		OutVect!.addItem(str(t_standards[0])); rem Op hours
+        OutVect!.addItem(str(t_standards[1])); rem Op Direct
+        OutVect!.addItem(str(t_standards[2])); rem Op Overhead
+        OutVect!.addItem(str(t_standards[3])); rem Mats
+        OutVect!.addItem(str(t_standards[4])); rem Subs
+        OutVect!.addItem(str(t0_standard_tot))
+        OutVect!.addItem(str(t_actuals[0])); rem Op Hours
+        OutVect!.addItem(str(t_actuals[1])); rem Op Direct
+        OutVect!.addItem(str(t_actuals[2])); rem Op Overhead
+        OutVect!.addItem(str(t_actuals[3])); rem Mats
+        OutVect!.addItem(str(t_actuals[4])); rem Subs
+        OutVect!.addItem(str(t1_actual_tot))
+        OutVect!.addItem(str(t2_variance))
+        OutVect!.addItem(str(t3_variance_percent$))
+
+        if t_standards[5]<>0 then 
             blank=fnblank(12)
             OutVect!.addItem("Closed: ")
-            OutVect!.addItem(str(-t[8]))
+            OutVect!.addItem(str(-t_standards[5]))
             blank=fnblank(2)
             blank=fnblank(12)
             OutVect!.addItem("Net Open: ")
-            OutVect!.addItem(str(t1-t[8]))
+            OutVect!.addItem(str(t1_actual_tot-t_standards[5]))
             blank=fnblank(2)
+		endif
 
-        endif 
-    
-
-    
 rem --- Now Subtotal By Category
 
         blank=fnblank(16)
@@ -553,75 +727,106 @@ rem --- Now Subtotal By Category
             endif
             blank=fnblank(15)
 
-            c0=c[y,1]+c[y,2]+c[y,3]+c[y,9]
-            c1=c[y,5]+c[y,6]+c[y,7]+c[y,10],c2=c0-c1
-            if c0<>0 then c3=(c0-c1)*100/c0 else c3=0
-            blank=fnblank(2)
-            OutVect!.addItem(str(c[y,0]))
-            OutVect!.addItem(str(c[y,1]))
-            OutVect!.addItem(str(c[y,9]))
-            OutVect!.addItem(str(c[y,2]))
-            OutVect!.addItem(str(c[y,3]))
-            OutVect!.addItem(str(c0))
-            OutVect!.addItem(str(c[y,4]))
-            OutVect!.addItem(str(c[y,5]))
-            OutVect!.addItem(str(c[y,10]))
-            OutVect!.addItem(str(c[y,6]))
-            OutVect!.addItem(str(c[y,7]))
-            OutVect!.addItem(str(c1))
-            OutVect!.addItem(str(c2))
-            OutVect!.addItem(str(c3))
+			c0_standard_tot=c_standards[y,1]+c_standards[y,2]+c_standards[y,3]+c_standards[y,4]
+			c1_actual_tot=c_actuals[y,1]+c_actuals[y,2]+c_actuals[y,3]+c_actuals[y,4]
+			c2_variance=c0_standard_tot-c1_actual_tot
+		
+			if c0_standard_tot<>0 then 
+				c3_variance_percent=(c0_standard_tot-c1_actual_tot)*100/c0_standard_tot 
+			else 
+				c3_variance_percent=0
+			endif
 
-            if c[y,8]<>0 then 
-                blank=fnblank(12)
-                OutVect!.addItem("Closed: ")
-                OutVect!.addItem(str(-c[y,8]))
-                blank=fnblank(2)
-                blank=fnblank(12)
-                OutVect!.addItem("Net Open: ")
-                OutVect!.addItem(str(c1-c[y,8]))
-                blank=fnblank(2)
+			if abs(c3_variance_percent)>999.9 then 
+				c3_variance_percent$=" ****** " 
+			else 
+				c3_variance_percent$=str(c3_variance_percent:"####.00-")
+			endif
+			
+            blank=fnblank(2)
+
+			OutVect!.addItem(str(c_standards[y,0])); rem Op hours
+			OutVect!.addItem(str(c_standards[y,1])); rem Op Direct
+			OutVect!.addItem(str(c_standards[y,2])); rem Op Overhead
+			OutVect!.addItem(str(c_standards[y,3])); rem Mats
+			OutVect!.addItem(str(c_standards[y,4])); rem Subs
+			OutVect!.addItem(str(c0_standard_tot))
+			OutVect!.addItem(str(c_actuals[y,0])); rem Op Hours
+			OutVect!.addItem(str(c_actuals[y,1])); rem Op Direct
+			OutVect!.addItem(str(c_actuals[y,2])); rem Op Overhead
+			OutVect!.addItem(str(c_actuals[y,3])); rem Mats
+			OutVect!.addItem(str(c_actuals[y,4])); rem Subs
+			OutVect!.addItem(str(c1_actual_tot))
+			OutVect!.addItem(str(c2_variance))
+			OutVect!.addItem(str(c3_variance_percent$))
+
+			if c_standards[y,5]<>0 then 
+				blank=fnblank(12)
+				OutVect!.addItem("Closed: ")
+				OutVect!.addItem(str(-c_standards[y,5]))
+				blank=fnblank(2)
+				blank=fnblank(12)
+				OutVect!.addItem("Net Open: ")
+				OutVect!.addItem(str(c1_actual_tot-c_standards[y,5]))
+				blank=fnblank(2)
+			endif
 
             endif
-            for x=0 to 10
-                u[x]=u[x]+c[y,x]
+            for x=0 to 5
+                u_standards[x]=u_standards[x]+c_standards[y,x]
+				u_actuals[x]=u_actuals[x]+c_actuals[y,x]
             next x
         next y
 
 rem --- Report Totals
 
-        u0=u[1]+u[2]+u[3]+u[9]
-        u1=u[5]+u[6]+u[7]+u[10],u2=u0-u1
-        if u0<>0 then u3=(u0-u1)*100/u0 else u3=0
+        u0_standard_tot=u_standards[1]+u_standards[2]+u_standards[3]+u_standards[4]
+        u1_actual_tot=u_actuals[1]+u_actuals[2]+u_actuals[3]+u_actuals[4]
+		u2_variance=u0_standard_tot-u1_actual_tot
+		
+        if u0_standard_tot<>0 then 
+			u3_variance_percent=(u0_standard_tot-u1_actual_tot)*100/u0_standard_tot 
+		else 
+			u3_variance_percent=0
+		endif
+        
+        if abs(u3_variance_percent)>999.9 then 
+            u3_variance_percent$=" ****** " 
+        else 
+            u3_variance_percent$=str(u3_variance_percent:"####.00-")
+        endif
+
         blank=fnblank(16)
         TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
         blank=fnblank(1)
         OutVect!.addItem("Report Total:")
-        OutVect!.addItem(str(u[0]))
-        OutVect!.addItem(str(u[1]))
-        OutVect!.addItem(str(u[9]))
-        OutVect!.addItem(str(u[2]))
-        OutVect!.addItem(str(u[3]))
-        OutVect!.addItem(str(u0))
-        OutVect!.addItem(str(u[4]))
-        OutVect!.addItem(str(u[5]))
-        OutVect!.addItem(str(u[10]))
-        OutVect!.addItem(str(u[6]))
-        OutVect!.addItem(str(u[7]))
-        OutVect!.addItem(str(u1))
-        OutVect!.addItem(str(u2))
-        OutVect!.addItem(str(u3))
-        if u[8]<>0 then 
+		
+		OutVect!.addItem(str(u_standards[0])); rem Op hours
+        OutVect!.addItem(str(u_standards[1])); rem Op Direct
+        OutVect!.addItem(str(u_standards[2])); rem Op Overhead
+        OutVect!.addItem(str(u_standards[3])); rem Mats
+        OutVect!.addItem(str(u_standards[4])); rem Subs
+        OutVect!.addItem(str(u0_standard_tot))
+        OutVect!.addItem(str(u_actuals[0])); rem Op Hours
+        OutVect!.addItem(str(u_actuals[1])); rem Op Direct
+        OutVect!.addItem(str(u_actuals[2])); rem Op Overhead
+        OutVect!.addItem(str(u_actuals[3])); rem Mats
+        OutVect!.addItem(str(u_actuals[4])); rem Subs
+        OutVect!.addItem(str(u1_actual_tot))
+        OutVect!.addItem(str(u2_variance))
+        OutVect!.addItem(str(u3_variance_percent$))
+		 
+		if u_standards[5]<>0 then 
             blank=fnblank(12)
             OutVect!.addItem("Closed: ")
-            OutVect!.addItem(str(-u[8]))
+            OutVect!.addItem(str(-u_standards[5]))
             blank=fnblank(2)
             blank=fnblank(12)
             OutVect!.addItem("Net Open: ")
-            OutVect!.addItem(str(u1-u[8]))
+            OutVect!.addItem(str(u1_actual_tot-u_standards[5]))
             blank=fnblank(2)
-
-        endif
+		endif
+		
         goto std_exit
 
 
@@ -633,17 +838,15 @@ sub_head:  rem --- Sub Heading
                 OutVect!.addItem(t0$)
                 OutVect!.addItem(h5$)
                 blank=fnblank(14)
-                blank=fnblank(16)
-
                 break
+				
             case 2
                 blank=fnblank(16)
-                OutVect!.addItem(str(fnmask$(t0$(1,c0),c1$)))
+                OutVect!.addItem(str(fnmask$(t0$(1,custmask),c1$)))
                 OutVect!.addItem(h5$)
                 blank=fnblank(14)
-                blank=fnblank(16)
-
                 break
+				
             case default
                 break
         swend
@@ -652,38 +855,53 @@ sub_head:  rem --- Sub Heading
 first_sub_tot:   rem --- First Sub Total
 
         if t0$<>"" and l0>1 then
-            if l+2>l9 then gosub sub_head
-            t0=t[1]+t[2]+t[3]+t[9]
-            t1=t[5]+t[6]+t[7]+t[10],t2=t0-t1
-            if t0<>0 then t3=(t0-t1)*100/t0 else t3=0
+            
+			t0_standard_tot=t_standards[1]+t_standards[2]+t_standards[3]+t_standards[4]
+			t1_actual_tot=t_actuals[1]+t_actuals[2]+t_actuals[3]+t_actuals[4]
+			t2_variance=t0_standard_tot-t1_actual_tot
+		
+			if t0_standard_tot<>0 then 
+				t3_variance_percent=(t0_standard_tot-t1_actual_tot)*100/t0_standard_tot 
+			else 
+				t3_variance_percent=0
+			endif
+		
+		    if abs(t3_variance_percent)>999.9 then 
+				t3_variance_percent$=" ****** " 
+			else 
+				t3_variance_percent$=str(t3_variance_percent:"####.00-")
+			endif
+
             blank=fnblank(16)
             TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+			
             if sequence$="T" then 
-                OutVect!.addItem("Type")
-                OutVect!.addItem(t0$+"Totals")
+                OutVect!.addItem("Type "+t0$)
+                OutVect!.addItem(" Totals")
             else 
                 if sequence$="C" then
                     OutVect!.addItem("Customer")
-                    OutVect!.addItem(str(fnmask$(t0$(1,c0),c1$))+"Totals")
+                    OutVect!.addItem(str(fnmask$(t0$(1,custmask),c1$))+" Totals")
                 else
-                    OutVect!.addItem("Item Code"+t0$(3))
-                    OutVect!.addItem("Totals")
+                    OutVect!.addItem("Item "+cvs(t0$(3),2)+" Totals:")
+                    blank=fnblank(1)
                 endif
             endif
-            OutVect!.addItem(str(t[0]:m2$))
-            OutVect!.addItem(str(t[1]:m1$))
-            OutVect!.addItem(str(t[9]:m1$))
-            OutVect!.addItem(str(t[2]:m1$))
-            OutVect!.addItem(str(t[3]:m1$))
-            OutVect!.addItem(str(t0:m1$))
-            OutVect!.addItem(str(t[4]:m2$))
-            OutVect!.addItem(str(t[5]:m1$))
-            OutVect!.addItem(str(t[10]:m1$))
-            OutVect!.addItem(str(t[6]:m1$))
-            OutVect!.addItem(str(t[7]:m1$))
-            OutVect!.addItem(str(t1:m1$))
-            OutVect!.addItem(str(t2:m1$))
-            OutVect!.addItem(str(t3:"####.00-"))
+			
+			OutVect!.addItem(str(t_standards[0])); rem Op hours
+			OutVect!.addItem(str(t_standards[1])); rem Op Direct
+			OutVect!.addItem(str(t_standards[2])); rem Op Overhead
+			OutVect!.addItem(str(t_standards[3])); rem Mats
+			OutVect!.addItem(str(t_standards[4])); rem Subs
+			OutVect!.addItem(str(t0_standard_tot))
+			OutVect!.addItem(str(t_actuals[0])); rem Op Hours
+			OutVect!.addItem(str(t_actuals[1])); rem Op Direct
+			OutVect!.addItem(str(t_actuals[2])); rem Op Overhead
+			OutVect!.addItem(str(t_actuals[3])); rem Mats
+			OutVect!.addItem(str(t_actuals[4])); rem Subs
+			OutVect!.addItem(str(t1_actual_tot))
+			OutVect!.addItem(str(t2_variance))
+			OutVect!.addItem(str(t3_variance_percent$))
             blank=fnblank(16)
 
         endif 
@@ -691,7 +909,9 @@ first_sub_tot:   rem --- First Sub Total
 
 label3:
 
-        dim t[10]
+		dim t_standards[5]
+		dim t_actuals[5]
+		
         t0$=data1$
         l0=0
         switch pos(sequence$="TC") 
@@ -708,7 +928,8 @@ label3:
                 dim h5$(30)
                 h5$(1)="*** Not On File ***"
                 find record (arm01a_dev,key=firm_id$+t0$,dom=*break) arm01a$
-                gosub sub_head
+                h5$=arm01a.customer_name$
+				gosub sub_head
                 break
         swend 
         return
@@ -747,6 +968,14 @@ rem --- Date/time handling functions
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
 
+    def fndate$(q$)
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+ 
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
     def fnmask$(q1$,q2$)

@@ -20,7 +20,13 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+
+rem --- Get Batch information
     
+	call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+	batch_no$=stbl("+BATCH_NO")
+	process_id$=stbl("+PROCESS_ID")
+
 rem --- set rd_alias_id$
     
     rd_alias_id$=pgm(-2)
@@ -58,7 +64,7 @@ rem --- Open/Lock files
     files$[6]="ivm-02",ids$[6]="IVM_ITEMWHSE"
     files$[7]="ivc_whsecode",ids$[7]="IVC_WHSECODE"
     files$[8]="ivs_params",ids$[8]="IVS_PARAMS"
-    files$[9]="poe-04",ids$[9]="POE_RECHDR",options$[9]="L"
+    files$[9]="poe-04",ids$[9]="POE_RECHDR"
     files$[10]="poe-14",ids$[10]="POE_RECDET"
     files$[11]="poe-24",ids$[11]="POE_RECLSDET"
     files$[12]="pom-02",ids$[12]="POC_LINECODE"
@@ -68,6 +74,11 @@ rem --- Open/Lock files
     files$[16]="pow-05",ids$[16]="POW_RECNSTCK",options$[16]="C"
     files$[17]="pow-08",ids$[17]="POW_RECBYWO",options$[17]="C"
     files$[18]="pow-09",ids$[18]="POW_RECBYORD",options$[18]="C"
+
+	if num(batch_no$)=0 
+		options$[9]="L"
+		options$[10]="L"
+	endif
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,18,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -165,8 +176,6 @@ rem --- Parameters
     source$=pgm(-2)
     call pgmdir$+"glc_ctlcreate.aon",err=*next,source$,n2$,glw11$,gl$,status
     if status goto std_exit
-    process_id$=stbl("+PROCESS_ID")
-    batch_no$=stbl("+BATCH_NO")
 
 rem --- Initializations
 
@@ -193,6 +202,7 @@ rem --- Initializations
     ls=0
     headings$[0]=sysinfo.firm_name$
     headings$[1]=sysinfo.task_desc$
+	if num(batch_no$)<>0 headings$[2]="Batch: "+batch_no$
     headings$[3]="[HEADER]"
     number=0
     nf$=Translate!.getTranslation("AON_(NOT_ON_FILE)")
@@ -281,17 +291,22 @@ rem --- Additional File Opens
     endif
 
     if gl$<>"N"
-        files$[26]="glm-01",ids$[26]="GLM_ACCT"
-        files$[27]="glw-11",ids$[27]="GLW_DAILYDETAIL";rem no longer clearing entire file; ,options$[27]="CL"
+		files=3,begfile=1,endfile=files
+		dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
 
-        call pgmdir$+"adc_fileopen.aon",action,26,27,files$[all],options$[all],
+        files$[1]="glm-01",ids$[1]="GLM_ACCT"
+		files$[2]="glt-04",ids$[2]="GLE_DAILYDETAIL"
+        files$[3]="glw-11",ids$[3]="GLW_DAILYDETAIL"
+
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
         if status goto std_exit
 
-        glm01_dev=channels[26]
-        glw11_dev=channels[27]
+        glm01_dev=channels[1]
+		glt04_dev=channels[2]
+        glw11_dev=channels[3]
 
-        dim glm01a$:templates$[26]
+        dim glm01a$:templates$[1]
         
 rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
 
@@ -301,19 +316,21 @@ rem --- Clear trans for this firm/process/batch from glw-11 work file (if not ba
     endif
 
     if sf$<>"N"
-        files$[28]="sfe-01",ids$[28]="SFE_WOMASTR"
-        files$[29]="sfe-04",ids$[29]="SFE_WOTRANS"
-        files$[30]="sfm-10",ids$[30]="SFC_WOTYPECD"
+		files=3,begfile=1,endfile=files
+		dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]="sfe-01",ids$[1]="SFE_WOMASTR"
+        files$[2]="sfe-04",ids$[2]="SFE_WOTRANS"
+        files$[3]="sfm-10",ids$[3]="SFC_WOTYPECD"
 
-        call pgmdir$+"adc_fileopen.aon",action,28,30,files$[all],options$[all],
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
         if status goto std_exit
 
-        sfe01_dev=channels[28]
-        sfe04_dev=channels[29]
-        sfm10_dev=channels[30] 
+        sfe01_dev=channels[1]
+        sfe04_dev=channels[2]
+        sfm10_dev=channels[3] 
 
-        dim sfe01a$:templates$[28],sfe04a$:templates$[29],sfm10a$:templates$[30]
+        dim sfe01a$:templates$[1],sfe04a$:templates$[2],sfm10a$:templates$[3]
     endif
 
 rem --- Resize masks and set print positions
@@ -332,6 +349,7 @@ rem --- Position file
         k$=key(poe04_dev,end=*break)
         if pos(firm_id$=k$)<>1 break
         read record (poe04_dev) poe04a$
+		if poe04a.batch_no$<>batch_no$ continue
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
 rem --- Header fields
@@ -617,7 +635,7 @@ l3500: rem --- Write sort records
             pow08a.firm_id$=firm_id$
             pow08a.warehouse_id$=poe14a.warehouse_id$
             pow08a.wo_no$=poe14a.wo_no$
-            pow08a.wo_seq_ref$=poe14a.wo_seq_ref$
+            pow08a.wk_ord_seq_ref$=poe14a.wk_ord_seq_ref$
             pow08a.vendor_id$=poe04a.vendor_id$
             pow08a.receiver_no$=poe14a.receiver_no$
             pow08a.po_no$=poe14a.po_no$
@@ -633,14 +651,21 @@ l3500: rem --- Write sort records
             pow09a.po_no$=poe14a.po_no$
             pow09a.po_int_seq_ref$=poe14a.internal_seq_no$
 
-            if pos(pom02a.line_type$="NO") write record (pow05_dev,key=pow05a.firm_id$+pow05a.warehouse_id$+       pow05a.recpt_date$+pow05a.item_id$+pow05a.order_memo$+pow05a.vendor_id$+pow05a.receiver_no$+       pow05a.po_no$+pow05a.po_int_seq_ref$) pow05a$
-            if cvs(pow08a.wo_no$+pow08a.wo_seq_ref$,3)<>"" write record (pow08_dev,key=pow08a.firm_id$+pow08a.warehouse_id$+       pow08a.wo_no$+pow08a.wo_seq_ref$+pow08a.vendor_id$+pow08a.receiver_no$+pow08a.po_no$+pow08a.po_int_seq_ref$) pow08a$
-            if cvs(pow09a.customer_id$+pow09a.order_no$+pow09a.so_int_seq_ref$,3)<>"" write record (pow09_dev,key=pow09a.firm_id$+       pow09a.warehouse_id$+pow09a.customer_id$+pow09a.order_no$+pow09a.so_int_seq_ref$+pow09a.vendor_id$+       pow09a.receiver_no$+pow09a.po_no$+pow09a.po_int_seq_ref$) pow09a$
+            if pos(pom02a.line_type$="NO") then 
+				write record (pow05_dev) pow05a$
+			endif
+            if cvs(pow08a.wo_no$+pow08a.wk_ord_seq_ref$,3)<>"" then 
+				write record (pow08_dev) pow08a$
+			endif
+            if cvs(pow09a.customer_id$+pow09a.order_no$+pow09a.so_int_seq_ref$,3)<>"" 
+				write record (pow09_dev) pow09a$
+			endif
+			
             if pom02a.line_type$<>"S" goto l3600
             find record (pow03_dev,key=pow03a.firm_id$+pow03a.warehouse_id$+pow03a.item_id$,dom=*next) pow03a$
             pow03a.qty_received=pow03a.qty_received+(poe14a.qty_received*poe14a.conv_factor)
-            write record (pow03_dev,key=pow03a.firm_id$+pow03a.warehouse_id$+pow03a.item_id$) pow03a$
-            write record (pow04_dev,key=pow04a.firm_id$+pow04a.warehouse_id$+pow04a.recpt_date$+pow04a.item_id$+       pow04a.vendor_id$+pow04a.receiver_no$+pow04a.po_no$+pow04a.po_int_seq_ref$) pow04a$
+            write record (pow03_dev) pow03a$
+            write record (pow04_dev) pow04a$
 
 l3600: rem --- Accumulate totals
 
@@ -694,9 +719,11 @@ rem --- Print list of lines with lot/serial number differences
         dim poe14a$:fattr(poe14a$)
         read record (poe14_dev,key=k.firm_id$+k.receiver_no$+k.internal_seq_no$,knum="PRIMARY")poe14a$
         read record (poe04_dev,key=k.firm_id$+k.receiver_no$,knum="PRIMARY")poe04a$
+		if poe04a.batch_no$<>batch_no$ goto end_next
+		
         apm01a.firm_id$=firm_id$,apm01a.vendor_id$=poe04a.vendor_id$
         find record (apm01_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
-    l4640:
+
         let stock=lineqty[x]*factor[x],dif=stock-lsqty[x]
 
         xvf=fnblank(3)
@@ -713,6 +740,7 @@ rem --- Print list of lines with lot/serial number differences
 
         recs=recs+1
         let l=l+1
+end_next:
     next x
 
 l4900: rem --- Run next overlay
@@ -977,19 +1005,27 @@ std_missing_params_release:
 
 rem #endinclude std_missing_params.src
 
+std_exit_no_report:
+
+    OutVect!=null()
+
+std_exit_no_update:
+
+   if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj",
+:         "ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,
+:         rd_table_chans$[all],lock_status$
+    endif
+ 
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
     out_action$="FORMAT"
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
-
-std_exit_no_report:
-
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
-    OutVect!=null()
-    goto std_exit
-
     end

@@ -1,3 +1,49 @@
+[[BME_PRODUCT.BEND]]
+rem --- remove software lock on batch, if batching
+
+	batch$=stbl("+BATCH_NO",err=*next)
+	if num(batch$)<>0
+		lock_table$="ADM_PROCBATCHES"
+		lock_record$=firm_id$+stbl("+PROCESS_ID")+batch$
+		lock_type$="X"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	endif
+[[BME_PRODUCT.ITEM_ID.BINQ]]
+rem --- Do custom query
+
+	query_id$="BOM_ITEMS"
+	query_mode$="DEFAULT"
+	dim filter_defs$[1,1]
+	filter_defs$[1,0] = "IVM_ITEMWHSE.WAREHOUSE_ID"
+	filter_defs$[1,1] = "='"+callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")+"'"
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		form!,
+:		query_id$,
+:		query_mode$,
+:		table_chans$[all],
+:		sel_key$,filter_defs$[all]
+
+	if sel_key$<>""
+		call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:			"IVM_ITEMWHSE",
+:			"PRIMARY",
+:			ivm_whse_key$,
+:			table_chans$[all],
+:			status$
+		dim ivm_whse_key$:ivm_whse_key$
+		ivm_whse_key$=sel_key$
+		callpoint!.setColumnData("BME_PRODUCT.ITEM_ID",ivm_whse_key.item_id$,1)
+	endif
+	callpoint!.setStatus("ACTIVATE-ABORT")
+[[BME_PRODUCT.BTBL]]
+rem --- Get Batch information
+
+call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+callpoint!.setTableColumnAttribute("BME_PRODUCT.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[BME_PRODUCT.ARAR]]
 rem --- Get Unit of Sale
 
@@ -23,13 +69,6 @@ rem --- Validate Quantity
 	endif
 [[BME_PRODUCT.ADIS]]
 rem --- set comments
-
-	if callpoint!.getDevObject("multi_wh")<>"Y"
-		gosub disable_wh
-	else
-		wh$=callpoint!.getDevObject("def_wh")
-		callpoint!.setColumnData("BME_PRODUCT.WAREHOUSE_ID",wh$)
-	endif
 
 	bill_no$=callpoint!.getColumnData("BME_PRODUCT.ITEM_ID")
 	gosub disp_bill_comments
@@ -178,6 +217,14 @@ rem --- Additional Init
 	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"IV",glw11$,gl$,status
 	if status<>0 goto std_exit
 	callpoint!.setDevObject("glint",gl$)
+
+rem --- Additional Init
+
+	gl$="N"
+	status=0
+	source$=pgm(-2)
+	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"BM",glw11$,gl$,status
+	if status<>0 goto std_exit
 [[BME_PRODUCT.ITEM_ID.AINV]]
 rem --- Item synonym processing
 

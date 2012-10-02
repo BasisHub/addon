@@ -1,10 +1,12 @@
 [[OPE_INVCASH.BWAR]]
-rem --- if a credit card transaction, perform mod10 check on cc# field and mask
+rem --- if a credit card transaction, perform mod10 check on pymt ID field and mask
+rem --- note: only for backward compatability; credit card # in its own field as of v12
+rem --- but used to be stored in pymt ID field
 
 	wtype$=callpoint!.getDevObject("cash_code_type")
 	ccmask$="X"
 	ccmask$=stbl("+CARD_FILL_CHAR",ERR=*next)
-	if wtype$="P"
+	if wtype$="P" and cvs(callpoint!.getColumnData("OPE_INVCASH.PAYMENT_ID"),3)<>""
 		cc_card_raw$=cvs(callpoint!.getColumnData("OPE_INVCASH.PAYMENT_ID"),3)
 		cc_card$=""
 		cc_status$=""
@@ -16,8 +18,9 @@ rem --- if a credit card transaction, perform mod10 check on cc# field and mask
 		if len(cc_card$)>4 
 			gosub mod10_check
 			if cc_status$=""
-			cc_card_raw$(1,len(cc_card_raw$)-4)=fill(len(cc_card_raw$)-4,ccmask$)
-			callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID",cc_card_raw$)
+				cc_card_raw$(1,len(cc_card_raw$)-4)=fill(len(cc_card_raw$)-4,ccmask$)
+				callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID",cc_card_raw$)
+			endif
 		endif
 	endif
 [[OPE_INVCASH.<CUSTOM>]]
@@ -168,37 +171,36 @@ rem --- Validate cash receipt code
 
 rem --- Disable fields and set minimums by trans type
 
-	if cashcode_rec.trans_type$ = "C" then 		
+	if cashcode_rec.trans_type$ = "C" then
+ 		callpoint!.setColumnData("OPE_INVCASH.EXPIRE_DATE","",1)
+		callpoint!.setColumnData("OPE_INVCASH.CREDIT_CARD_NO","",1)
 		callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 1)
-		callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 0)
 		callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 1)
+		callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 0)		
+		callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 0)
 		callpoint!.setTableColumnAttribute("OPE_INVCASH.AR_CHECK_NO","MINL","1")
 		rem callpoint!.setTableColumnAttribute("OPE_INVCASH.PAYMENT_ID","MINL","1")
 	else
-		if cashcode_rec.trans_type$ = "P" then 		
+		if cashcode_rec.trans_type$ = "P" then
+ 			callpoint!.setColumnData("OPE_INVCASH.AR_CHECK_NO","",1)
+			callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID","",1)
 			callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 1)
-			callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 0)
-			callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 1)
+			callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 1)		
+			callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 0)			
+			callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 0)
 			callpoint!.setTableColumnAttribute("OPE_INVCASH.EXPIRE_DATE","MINL","1")
 			callpoint!.setTableColumnAttribute("OPE_INVCASH.PAYMENT_ID","MINL","1")
 		else
 			if cashcode_rec.trans_type$ = "$" then
+ 				callpoint!.setColumnData("OPE_INVCASH.AR_CHECK_NO","",1)
+				callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID","",1)
+ 				callpoint!.setColumnData("OPE_INVCASH.EXPIRE_DATE","",1)
+				callpoint!.setColumnData("OPE_INVCASH.CREDIT_CARD_NO","",1)
 				callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 0)
 				callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 0)
 				callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 0)
+				callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 0)
 			endif
-		endif
-	endif
-
-rem --- Memo or Credit Card#?
-
-	if cashcode_rec.trans_type$ = "C" then 
-		util.changeText(Form!, Translate!.getTranslation("AON_CREDIT_CARD_OR_ABA_NO"), Translate!.getTranslation("AON_ABA_NO"))
-		util.changeText(Form!, Translate!.getTranslation("AON_CREDIT_CARD_NO"), Translate!.getTranslation("AON_ABA_NO"))
-	else
-		if cashcode_rec.trans_type$ = "P" then
-			util.changeText(Form!, Translate!.getTranslation("AON_CREDIT_CARD_OR_ABA_NO"), Translate!.getTranslation("AON_CREDIT_CARD_NO"))
-			util.changeText(Form!, Translate!.getTranslation("AON_ABA_NO"), Translate!.getTranslation("AON_CREDIT_CARD_NO"))
 		endif
 	endif
 
