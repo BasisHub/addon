@@ -5,64 +5,63 @@ VERSION "4.0"
 WINDOW 1000 "Executive Summary As Of " 100 100 597 428
 BEGIN
     DIALOGBEHAVIOR
+    EVENTMASK 1073742856
     INVISIBLE
     KEYBOARDNAVIGATION
     MANAGESYSCOLOR
-    EVENTMASK 1073742856
     NAME "grp_status"
-
-    TOOLBUTTON 2000, "", 5, 5, 20, 20
+    TOOLBUTTON 2000, "BITMAP=sys/images/im_tb_fst_m.png", 5, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_nb_fst_i.png" 
+        IMAGEFILE "sys/images/im_tb_fst_m.png"
         NAME "btn_prev_yr"
         SHORTCUE "Previous year"
     END
 
-    TOOLBUTTON 2001, "", 24, 5, 20, 20
+    TOOLBUTTON 2001, "BITMAP=sys/images/im_tb_prv_m.png", 24, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_nb_prv_i.png" 
+        IMAGEFILE "sys/images/im_tb_prv_m.png"
         NAME "btn_prev_mo"
         SHORTCUE "Previous month"
     END
 
-    TOOLBUTTON 2002, "", 126, 5, 20, 20
+    TOOLBUTTON 2002, "BITMAP=sys/images/im_tb_nxt_m.png", 126, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_nb_nxt_i.png" 
+        IMAGEFILE "sys/images/im_tb_nxt_m.png"
         NAME "btn_next_mo"
         SHORTCUE "Next month"
     END
 
-    TOOLBUTTON 2003, "", 145, 5, 20, 20
+    TOOLBUTTON 2003, "BITMAP=sys/images/im_tb_lst_m.png", 145, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_nb_lst_i.png" 
+        IMAGEFILE "sys/images/im_tb_lst_m.png"
         NAME "btn_next_yr"
         SHORTCUE "Next year"
     END
 
-    TOOLBUTTON 2004, "", 164, 5, 20, 20
+    TOOLBUTTON 2004, "BITMAP=sys/images/im_tb_cal_f.png", 164, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_cal_f.png" 
+        IMAGEFILE "sys/images/im_tb_cal_f.png"
         NAME "btn_curr_mo"
         SHORTCUE "Current month"
     END
 
     TREE 3000, 5, 28, 180, 64
     BEGIN
-        FONT "Tahoma" 8, Normal
-        NAME "tre_options"
         CLIENTEDGE
+        FONT "Tahoma" 8
+        NAME "tre_options"
     END
 
     EDIT 2100, "", 44, 6, 82, 18
     BEGIN
-        READONLY
-        JUSTIFICATION 16384
-        FONT "Tahoma" 8, Bold
-        NAME "Edit Control"
         CLIENTEDGE
+        FONT "Tahoma" 8,bold
+        JUSTIFICATION 16384
+        NAME "Edit Control"
+        READONLY
     END
 
-    TABCONTROL 4000, "tab_type", 190, 4, 398, 407
+    TABCONTROL 4000, "", 190, 4, 398, 407
     BEGIN
         AUTOMANAGEMENT
         NAME "tab_type"
@@ -72,43 +71,45 @@ BEGIN
 
     CHILD-WINDOW 10010, 10010, 0, 0
     BEGIN
-        NAME "cwn_calendar" 
+        NAME "cwn_calendar"
     END
 
     CHILD-WINDOW 10020, 10020, 0, 0
     BEGIN
-        NAME "cwn_chart_bar" 
+        NAME "cwn_chart_bar"
     END
+
 END
 
-CHILD-WINDOW 10010 0 0 500 400
+CHILD-WINDOW 10010 0 0 498 398
 BEGIN
-    KEYBOARDNAVIGATION
+    BACKGROUNDCOLOR RGB(252,252,254)
     BORDERLESS
     EVENTMASK 3287287492
-    BACKGROUNDCOLOR RGB(252,252,254)
+    KEYBOARDNAVIGATION
     NAME "cwn_calendar"
-
-    GRID 5000, "ROW=-1COL=0", 5, 5, 391, 248
+    GRID 5000, "", 5, 5, 391, 248
     BEGIN
-        ROWS 0
-        MAXCOLS 65535
+        CLIENTEDGE
         COLUMNHEAD 20, 5001
         COLUMNS 255
         HORIZLINES
-        VERTLINES
+        MAXCOLS 2147483647
         NAME "grd_calendar"
-        CLIENTEDGE
+        ROWS 0
         NOT TABTRAVERSABLE
+        USERSIZE
+        VERTLINES
     END
+
 END
 
-CHILD-WINDOW 10020 0 0 500 400
+CHILD-WINDOW 10020 0 0 498 398
 BEGIN
-    KEYBOARDNAVIGATION
+    BACKGROUNDCOLOR RGB(252,252,254)
     BORDERLESS
     EVENTMASK 3287287492
-    BACKGROUNDCOLOR RGB(252,252,254)
+    KEYBOARDNAVIGATION
     NAME "cwn_chart_bar"
 END
 
