@@ -74,7 +74,7 @@ rem ==========================================================================
 	rem --- Which print program to run?
 
 		if run_by$ = "order" then
-			call stbl("+DIR_PGM")+"opc_picklist.aon", cust_id$, order_no$, callpoint!, table_chans$[all], status
+			call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
 			if status = 999 then goto std_exit
 		else
 			if run_by$ = "invoice" then
@@ -166,7 +166,6 @@ rem --- Make sure everything is entered
 		case default
 
 	swend
-
 [[OPE_CREDITACTION.CREDIT_ACTION.AVAL]]
 rem --- Send back credit action response
 	

@@ -265,29 +265,31 @@ rem --- Does the total of lot/serial# match the qty ordered for each detail line
 
 	rem --- Detail loop
 
-		for row=0 to recs!.size()-1
-			gridrec$ = recs!.getItem(row)
+		if recs!.size() then
+			for row=0 to recs!.size()-1
+				gridrec$ = recs!.getItem(row)
 
-			if ordHelp!.isLottedSerial(gridrec.item_id$) then
-				lot_ser_total = ordHelp!.totalLotSerialAmount( gridrec.internal_seq_no$ )
+				if ordHelp!.isLottedSerial(gridrec.item_id$) then
+					lot_ser_total = ordHelp!.totalLotSerialAmount( gridrec.internal_seq_no$ )
 
-				if lot_ser_total <> gridrec.qty_ordered then
-					if user_tpl.lotser_flag$ = "L" then
-						lot_ser$ = "lots"
-					else
-						lot_ser$ = "serial numbers"
+					if lot_ser_total <> gridrec.qty_ordered then
+						if user_tpl.lotser_flag$ = "L" then
+							lot_ser$ = "lots"
+						else
+							lot_ser$ = "serial numbers"
+						endif
+					
+						msg_id$ = "OP_ITEM_LS_TOTAL"
+						dim msg_tokens$[3]
+						msg_tokens$[0] = str(gridrec.qty_ordered)
+						msg_tokens$[1] = cvs(gridrec.item_id$, 2)
+						msg_tokens$[2] = lot_ser$
+						msg_tokens$[3] = str(lot_ser_total)
+						gosub disp_message
 					endif
-				
-					msg_id$ = "OP_ITEM_LS_TOTAL"
-					dim msg_tokens$[3]
-					msg_tokens$[0] = str(gridrec.qty_ordered)
-					msg_tokens$[1] = cvs(gridrec.item_id$, 2)
-					msg_tokens$[2] = lot_ser$
-					msg_tokens$[3] = str(lot_ser_total)
-					gosub disp_message
 				endif
-			endif
-		next row
+			next row
+		endif
 	endif
 
 rem --- Cash Transaction

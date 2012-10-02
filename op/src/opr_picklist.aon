@@ -1,0 +1,194 @@
+rem --- Batch Picklist Printing
+rem --- Program opr_picklist v8.0.0 12Jun2009 (opr_na)
+rem --- Created by adx_codeport.bbj v1.1.5 (06/12/2009 11:58:46)
+
+rem --- AddonSoftware Version 8.0.0 - 12Jun2009
+rem --- Copyright (c) 1981-2009 AddonSoftware
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- For type checking
+
+    use ::sys/prog/bao_option.bbj::Option
+    
+    declare Option option!
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open File(s)
+
+	num_files=3
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+	open_tables$[1] = "OPE_PRNTLIST", open_opts$[1] = "OTA"
+    open_tables$[2] = "OPE_ORDHDR",   open_opts$[2] = "OTA"
+    open_tables$[3] = "OPE_ORDDET",   open_opts$[3] = "OTA"
+    
+    gosub open_tables
+    
+    ope04_dev = num(open_chans$[1])
+    ope01_dev = num(open_chans$[2])
+	ope11_dev = num(open_chans$[3])
+    
+    dim ope04a$:open_tpls$[1]
+    dim ope01a$:open_tpls$[2]
+    dim ope11a$:open_tpls$[3]
+	
+rem --- Assign form input values to local variables
+
+    cust_id$ = option!.getOptionData("customer_id")
+    which_ones$=option!.getOptionData("PRINT_LIST");rem picklists, quotes, or both
+	
+rem --- Initialize Data
+
+    declare BBjVector custIds!
+    declare BBjVector orderNos!
+    
+    custIds!  = BBjAPI().makeVector()
+    orderNos! = BBjAPI().makeVector()
+    
+    start_block = 1
+
+rem --- Initial Read
+
+    read (ope04_dev, key=firm_id$+"O"+"  "+cust_id$, dom=*next)
+
+rem --- Main Read, create customer and order vectors
+
+    while 1
+
+        read record (ope04_dev, end=*break) ope04a$
+        if ope04a$.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"O" then break
+
+        if start_block then
+            bad_record = 1
+            extract record (ope01_dev, key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
+	        if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") then continue
+            bad_record = 0
+        endif
+
+        if bad_record then
+            remove (ope04_dev, key=firm_id$+"O"+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
+            continue
+        endif
+        
+        custIds!.addItem( ope01a.customer_id$ )
+        orderNos!.addItem( ope01a.order_no$ )
+        
+    wend
+
+rem --- Did we find any invoices to print?    
+    
+    if custIds!.size() = 0 or orderNos!.size() = 0 then
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit
+    endif
+    
+rem --- Call the picklist printing program with the vectors
+
+    call pgmdir$+"opc_picklist.aon::batch_pick", custIds!, orderNos!, option!, table_chans$[all], status
+    goto std_exit
+    
+open_tables: rem --- Open Tables
+
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message: rem --- Display Message Dialog
+
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
+
+	return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

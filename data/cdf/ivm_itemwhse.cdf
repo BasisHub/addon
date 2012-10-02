@@ -1,15 +1,3 @@
-[[IVM_ITEMWHSE.AWRI]]
-rem --- disable price fields
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.CUR_PRICE",0)
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.PRI_PRICE",0)
-[[IVM_ITEMWHSE.ARAR]]
-rem --- disable price fields
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.CUR_PRICE",0)
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.PRI_PRICE",0)
-[[IVM_ITEMWHSE.AREC]]
-rem --- Enable price fields
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.CUR_PRICE",1)
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.PRI_PRICE",1)
 [[IVM_ITEMWHSE.BDEL]]
 rem --- Allow this warehouse to be deleted?
 
@@ -108,10 +96,6 @@ if str(callpoint!.getDevObject("lot_serial_item"))<>"Y"
 else
 	callpoint!.setOptionEnabled("IVM_LSMASTER",1)
 endif
-
-rem --- disable price fields
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.CUR_PRICE",0)
-callpoint!.setColumnEnabled("IVM_ITEMWHSE.PRI_PRICE",0)
 [[IVM_ITEMWHSE.AOPT-HIST]]
 iv_item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
