@@ -92,17 +92,11 @@ rem --- Parameters
 	endif
 
 label1:
-	dim p[6],g[4],info$[20]
+	dim g[4],info$[20]
 	for x=0 to 4
 		g[x]=num(g2$(x*2+1,2),err=*next)
 	next x
-	g[2]=num(gls01a.current_year$)
-	p[0]=ivs01a.item_id_len
-	p[1]=ivs01a.vendor_prd_len
-	p[2]=num(ivs01a.precision$)
-	p[3]=ivs01a.ls_no_len
-	p[5]=num(ivs01a.current_per$)
-	p[6]=num(ivs01a.current_year$)
+
 	call pgmdir$+"adc_application.aon","BM",info$[all]
 	gl$=info$[9]
 	call pgmdir$+"adc_application.aon","AP",info$[all]
@@ -110,10 +104,9 @@ label1:
 
 rem --- Init Data
 
-	precision p[2]
+	precision num(ivs01a.precision$)
 	ref1$=""
 	ref2$=""
-	ref3$=Translate!.getTranslation("AON_PROD_ENTRY")
 	costmethod$=ivs01a.cost_method$
 	lifofifo$=ivs01a.lifofifo$
 	more=1
@@ -137,6 +130,8 @@ rem --- Additional File Opens
 		open_tables$[1]="GLM_ACCT",open_opts$[1]="OTA"
 		open_tables$[2]="GLE_DAILYDETAIL",open_opts$[2]="OTA"
 
+        gosub open_tables
+        
         glm01_dev=num(open_chans$[1]);dim glm01a$:open_tpls$[1]
         glt04_dev=num(open_chans$[2]);dim glt04a$:open_tpls$[2]
     endif 
@@ -274,27 +269,19 @@ rem --- Distribution
 updategl: rem --- Update G/L
 
                 if update$="N" then let parentgl$=bms01a.gl_wip_acct$ else let parentgl$=ivacct$
-                account$=parentgl$
-                when$=bme01a.prod_date$
                 amount=unitcost*fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered
                 units=fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)*bme01a.qty_ordered
                 precision 2
                 amount=amount*1
                 value=value+amount
-                memo$=Translate!.getTranslation("AON_ITEM_")+cvs(bme01a.item_id$,2)
-                gosub glpost
-                account$=childgl$
                 amount=-amount
                 units=-units
-                memo$=Translate!.getTranslation("AON_ITEM_")+cvs(bmm02a.item_id$,2)
-                gosub glpost
                 precision num(ivs01a.precision$)
 
 rem --- Loop back for next record
             wend 
 rem --- Operation & Subcontract Distribution
 
-            memo$=Translate!.getTranslation("AON_VARIANCE")
             gosub operation
             if ap$="Y" then gosub subcontracts
             if costmethod$="R" and bme01a.qty_ordered>=0 then 
@@ -304,16 +291,11 @@ rem --- Operation & Subcontract Distribution
                     find record (ivm01_dev,key=firm_id$+parent$,dom=update_last_used_flag) ivm01a$
                     find record (ivm02_dev,key=bme01a.firm_id$+bme01a.warehouse_id$+parent$,dom=*next) ivm02a$
                     unitcost=ivm02a.unit_cost
-                    when$=bme01a.prod_date$
-                    account$=r0$(27,g[4])
                     tcost=unitcost
                     amount=value-tcost*bme01a.qty_ordered
                     units=0
-                    gosub glpost
                     if update$="N" then let parentgl$=bms01a.gl_wip_acct$ else let parentgl$=ivacct$
-                    account$=parentgl$
                     amount=-amount
-                    gosub glpost
                 endif
             endif 
         endif 
@@ -381,16 +363,10 @@ subcontracts: rem --- Subcontracts
 		if bmm05a.divisor=0 then let bmm05a.divisor=1
 		a0=bme01a.qty_ordered*bmm05a.unit_cost*fnsub(bmm05a.qty_required,bmm05a.alt_factor,bmm05a.divisor)
 		units=bme01a.qty_ordered*fnsub(bmm05a.qty_required,bmm05a.alt_factor,bmm05a.divisor)
-		when$=bme01a.prod_date$
-		account$=parentgl$
 		amount=a0
 		value=value+amount
-		memo$=Translate!.getTranslation("AON_ITEM_")+cvs(bme01a.item_id$,2)+" "+bmm05a.ext_comments$
-		gosub glpost
-		account$=r0$(17,g[4])
 		amount=-a0
 		units=-units
-		gosub glpost       
 	wend
 	
 	return
@@ -425,28 +401,18 @@ rem --- Direct Labor
 		precision 2
 		directcost=directcost*1
 		ohcost=ohcost*1
-		account$=bmm08a.gl_dir_lab$
-		when$=bme01a.prod_date$
 		amount=-directcost
 		units=-units
-		memo$=Translate!.getTranslation("AON_ITEM_")+cvs(bme01a.item_id$,2)+" "+bmm08a.code_desc$
-		gosub glpost
-		account$=parentgl$
 		amount=directcost
 		units=-units
 		value=value+directcost
-		gosub glpost
 
 rem --- Overhead
 
-		account$=bmm08a.gl_ovh_var$
 		amount=-ohcost,units=-ounits
-		gosub glpost
-		let account$=parentgl$
 		amount=ohcost
 		units=ounits
 		value=value+ohcost
-		gosub glpost
 		precision num(ivs01a.precision$)
 	wend 
 	
@@ -461,15 +427,6 @@ explode: rem --- Explode Phantom Bills
 	info[0]=bme01a.qty_ordered*bmm02a.qty_required,info[1]=bmm01a.est_yield*bmm01a2.est_yield/100
 	call pgmdir$+"bmc_explodeupdate.aon",channel[all],info$[all],info[all],bme01a.item_id$,rd_table_chans$[all],Translate!
 	value=value+info[2]
-	
-	return
-
-rem --- Standard G/L Posting Routine
-
-glpost:
-	if gl$="Y" then
-		call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,glt14_dev,account$,when$,ref1$,ref2$,ref3$,memo$,amount,units,status
-	endif 
 	
 	return
 
