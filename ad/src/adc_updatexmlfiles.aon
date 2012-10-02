@@ -1,0 +1,437 @@
+rem ==========================================================================
+rem --- adc_updatexmlfiles.aon 
+rem --- Call to copy and update sync XML files created via Barista's utility
+rem --- Create Sync File Backup
+rem --- 
+rem --- AddonSoftware Version 10.0
+rem --- Copyright © 2010, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+
+rem --- NEWSYCNLOC$    : Location of target data/sync directory being updated (Input)
+rem --- OLDSYNCLOC$    : Location of source data/sync directory for upgrades (Input)
+rem --- SYNCBACKUPDIR$ : Location of sync backup directory for upgrades (Input)
+rem --- UPGRADE%       : 0=Not an upgrade so copy data/1=Upgrade so don't copy data (Input)
+rem --- RDFORM!        : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%       : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS         : Status code/0=No error (Returned)
+
+    declare BBjTopLevelWindow rdForm!
+
+    seterr std_error
+    setesc std_error
+    enter newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,wait4ok%,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Copy and update sync XML files
+
+    declare UpdateSyncXmlFiles utility!
+    utility! = new UpdateSyncXmlFiles(rdForm!, wait4ok%)
+    utility!.updateXmlFiles(newSyncLoc$, oldSyncLoc$, syncBackupDir$, upgrade%)
+    
+done: rem --- All done
+    
+    goto std_exit
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+rem /**
+rem  * Utility Class for copying and updating sync XML files created via Barista's 
+rem  * utility Create Sync File Backup
+rem  */
+    use java.io.File
+    use java.util.Vector
+    use ::bbtranslator.bbj::BBTranslator
+
+    class public UpdateSyncXmlFiles
+        field private BBjInt wait4ok% = 0
+        field private BBjNumber BLOCKSIZE = 2^20
+        field private BBjNumber log_dev = 0
+        field private BBjNumber meter_proc_recs = 0
+        field private BBjNumber meter_total_recs = 15
+        field private BBjString dir_syp$=stbl("+DIR_SYP")
+        field private BBjSysGui sysGUI!
+        field private BBjTopLevelWindow form!
+        field private BBjTopLevelWindow meter!
+
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjTopLevelWindow rdForm!
+        rem  * @param BBjInt wait4ok
+        rem  */
+        method public UpdateSyncXmlFiles(BBjTopLevelWindow rdForm!, BBjInt wait4ok%)
+            #sysGUI! = BBjAPI().getSysGui()
+            #form! = rdForm!
+            #wait4ok% = wait4ok%
+        methodend
+
+        rem /**
+        rem  * Update sync XML files.
+        rem  *
+        rem  * Copies XML files from old location to new location, then updates XML files
+        rem  * in new location. 
+        rem  *
+        rem  * @param BBjString newSyncLoc$
+        rem  * @param BBjString oldSyncLoc$
+        rem  * @param BBjString syncBackupDir$
+        rem  * @param BBjInt upgrade%
+        rem  */
+        method public void updateXmlFiles(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
+            if upgrade% then #meter_total_recs = 90
+            #meter! = #createProgressMeter()
+            #openLog(newSyncLoc$, oldSyncLoc$, syncBackupDir$, upgrade%)
+
+            if upgrade%
+                #copyXmlFiles(new File(syncBackupDir$), new File(newSyncLoc$))
+                #mergeXmlFiles(new File(oldSyncLoc$), new File(newSyncLoc$))
+            endif
+            #updateXmlFiles(new File(newSyncLoc$))
+
+            #closeLog()
+            #destroyProgressMeter()
+        methodend
+
+        rem /**
+        rem  * Copy XML files.
+        rem  *
+        rem  * Copies XML files from source directory to target directory, 
+        rem  *
+        rem  * @param File sourceDir!
+        rem  * @param File targetDir!
+        rem  */
+        method private void copyXmlFiles(File sourceDir!, File targetDir!)
+            declare File sourceXml!
+            declare File targetXml!
+
+            rem --- get list of what is in the source dir, and process it
+            declare Vector fileVector!
+            fileVector! = new Vector(java.util.Arrays.asList(sourceDir!.list()))
+            if(fileVector!.size()>0) then
+                #log("")
+                for i=0 to fileVector!.size()-1
+                    rem --- skip if it's not a XML file
+                    xmlName$ = cast(BBjString, fileVector!.get(i))
+                    sourceXml! = new File(sourceDir!, xmlName$)
+                    if(! sourceXml!.isFile() or !cast(BBjString, xmlName$).endsWith(cast(BBjString, ".xml"))) then
+                        #log("SKIPPED: " + sourceXml!.getPath())
+                        continue
+                    endif
+
+                
+                    rem --- copy file
+                    targetXml! = new File(targetDir!, xmlName$)
+                    #incrementProgressMeter("copying: " + targetXml!.getPath())
+                    sourceChan=unt
+                    open(sourceChan,isz=-1)sourceXml!.getPath()
+                    targetChan=unt
+                    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")targetXml!.getPath()
+                    while 1
+                        readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                        writerecord(targetChan)record$
+                    wend
+                    close(sourceChan)
+                    close(targetChan)
+                    #log("COPIED: " + sourceXml!.getPath())
+                next i
+            endif
+    
+        methodend
+
+        rem /**
+        rem  * Merge XML files.
+        rem  *
+        rem  * Merges XML files from source directory into XML files in target directory, 
+        rem  *
+        rem  * @param File sourceDir!
+        rem  * @param File targetDir!
+        rem  */
+        method private void mergeXmlFiles(File sourceDir!, File targetDir!)
+
+            rem --- Strategy for merging XML files hasn't been developed yet.
+            rem --- For now just overwrite files in target directory.
+            #copyXmlFiles(sourceDir!, targetDir!)
+    
+        methodend
+
+        rem /**
+        rem  * Update XML files in directory. 
+        rem  *
+        rem  * @param File dir!
+        rem  */
+        method private void updateXmlFiles(File dir!)
+            declare Vector fileVector!
+            declare File xml!
+            fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
+            aonDir$ = #parseAonPath(dir!.getPath())
+            startLocalPath$ = "<LOCALE_PATH>"
+            startLocalPathLen = len(startLocalPath$)
+            endLocalPath$ = "</LOCALE_PATH>"
+            startDdMountDir$ = "<DD_MOUNT_DIR>"
+            startDdMountDirLen = len(startDdMountDir$)
+            endDdMountDir$ = "</DD_MOUNT_DIR>"
+
+            rem --- process files in directory
+            if(fileVector!.size()>0) then
+                #log("")
+                for i=0 to fileVector!.size()-1
+                    name$ = cast(BBjString, fileVector!.get(i))
+                    xml! = new File(dir!, name$)
+        
+                    rem --- update adm_modules~[01007514..].xml files
+                    if cast(BBjString, name$).matches("adm_modules~\[01007514..\]\.xml")
+                        #incrementProgressMeter("updating: " + xml!.getPath())
+                        #log("UPDATED: " + xml!.getPath())
+                        
+                        rem --- move xml file to backup file with unique name
+                        bakFile$=xml!.getPath() + ".bak"
+                        j=0
+                        testChan=unt
+                        while 1
+                            open(testChan,err=*break)bakFile$
+                            close(testChan)
+                            j=j+1
+                            bakFile$=xml!.getPath() + ".bak" + str(j)
+                        wend
+                        rename xml!.getPath() to bakFile$, err=*next
+                        
+                        rem --- copy backup file back to xml file, making necessary updates
+                        sourceChan=unt
+                        open(sourceChan,isz=-1)bakFile$
+                        targetChan=unt
+                        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")xml!.getPath()
+                        while 1
+                            read(sourceChan,end=*break)record$
+
+                            rem --- replace path in <LOCALE_PATH> lines
+                            if(pos(startLocalPath$=record$)) then
+                                #log("  <<< " + record$)
+                                line$ = record$(1,pos(startLocalPath$=record$) + startLocalPathLen - 1)
+                                line$ = line$ + aonDir$ + "/prop/"
+                                line$ = line$ + record$(pos(endLocalPath$=record$, -1))
+                                record$ = line$
+                                #log("  >>> " + record$)
+                            endif
+
+                            rem --- replace path in <DD_MOUNT_DIR> lines
+                            if(pos(startDdMountDir$=record$)) then
+                                #log("  <<< " + record$)
+                                line$ = record$(1,pos(startDdMountDir$=record$) + startDdMountDirLen - 1)
+                                line$ = line$ + aonDir$ + "/"
+                                line$ = line$ + record$(pos(endDdMountDir$=record$, -1))
+                                record$ = line$
+                                #log("  >>> " + record$)
+                            endif
+        
+                            write(targetChan)record$
+                            print(log_dev)record$
+                        wend
+                        close(sourceChan)
+                        close(targetChan)
+                    endif
+                next i
+            endif
+        methodend
+
+        rem /**
+        rem  * Parse aon directory path from given path.
+        rem  *
+        rem  * @param BBjString path$
+        rem  * @return BBjString aonPath$
+        rem  */
+        method private BBjString parseAonPath(BBjString path$)
+        aonDir$ = ""
+
+            rem --- Flip directory path separators to "/"
+            pos=pos("\"=path$)
+            while pos
+                path$=path$(1, pos-1)+"/"+path$(pos+1)
+                pos=pos("\"=path$)
+            wend
+
+            rem --- Get aon directory location from path
+            if pos("/aon/"=path$+"/")
+                aonDir$=path$(1, pos("/aon/"=path$+"/") + len("/aon") - 1)
+            else
+                rem --- aon directory not found, so use directory containing the data/sync directory
+                if pos("/data/sync/"=path$+"/")
+                    aonDir$=path$(1, pos("/data/sync/"=path$+"/") - 1)
+                endif
+            endif
+            methodret aonDir$
+        methodend
+
+        rem /**
+        rem  * Create progress meter.
+        rem  *
+        rem  * @return BBjTopLevelWindow meterWin!
+        rem  */
+        method private BBjTopLevelWindow createProgressMeter()
+
+            rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+            rem declare BBjTopLevelWindow meterWin!
+            
+            declare BBTranslator Translator!
+            Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+            meter_title$=Translator!.getTranslation("AON_UPDATING")+"..."
+            #meter_proc_recs=0
+            meter_text$=""
+            meter_action$="WIN-LST"
+            if #wait4ok% then meter_action$=meter_action$+"-OK"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               meterWin!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+            methodret meterWin!
+        methodend
+
+        rem /**
+        rem  * Increment progress meter.
+        rem  *
+        rem  * @param File sourceDirectory
+        rem  */
+        method private void incrementProgressMeter(BBjString meter_text$)
+            #meter_proc_recs=#meter_proc_recs+1
+            meter_action$="MTR-LST"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Destroy progress meter.
+        rem  */
+        method private void destroyProgressMeter()
+            #meter_proc_recs=#meter_total_recs
+            meter_action$="LST-END"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Open log file.
+        rem  *
+        rem  * @param BBjString newSyncLoc$
+        rem  * @param BBjString oldSyncLoc$
+        rem  * @param BBjString syncBackupDir$
+        rem  * @param BBjInt upgrade%
+        rem  */
+        method private void openLog(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
+            rem --- log directory is under aon at same level as data directory
+            aonDir$ = #parseAonPath(newSyncLoc$)
+            logDir$ = aonDir$ + "/logs"
+            appDir$ = aonDir$
+
+            rem --- create top-level directory (aon) at new location, and make sure it's writable
+            declare File appDir!
+            appDir! = new File(appDir$)
+            if (! appDir!.exists()) then
+                appDir!.mkdirs()
+                appDir!.setExecutable(1,0)
+                appDir!.setReadable(1,0)
+                appDir!.setWritable(1,0)
+            endif
+            
+            rem --- create logs directory at new location
+            declare File logDir!
+            logDir! = new File(logDir$)
+            if(! logDir!.exists()) then
+                logDir!.mkdirs()
+                logDir!.setExecutable(1,0)
+                logDir!.setWritable(1,0)
+                logDir!.setReadable(1,0)
+            endif
+
+            rem --- create and open log file
+            log$ = logDir$+"/updatexml_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+            erase log$,err=*next
+            string log$
+            #log_dev=unt
+            open(#log_dev)log$
+            
+            rem --- write log header info
+            print(#log_dev)"Updatexml log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            print(#log_dev)"Location of new sync XML files: " + newSyncLoc$
+            if upgrade%
+                print(#log_dev)"Location of old sync XML files: " + oldSyncLoc$
+                print(#log_dev)"Sync backup directory: " + syncBackupDir$
+            endif
+        methodend
+
+        rem /**
+        rem  * Write to log file.
+        rem  *
+        rem  * @param BBjString text$
+        rem  */
+        method private void log(BBjString text$)
+            print(#log_dev)text$
+        methodend
+
+        rem /**
+        rem  * Close log file.
+        rem  */
+        method private void closeLog()
+            print(#log_dev)
+            print(#log_dev)"Updatexml log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(#log_dev)
+        methodend
+        
+    classend
+    
+    end

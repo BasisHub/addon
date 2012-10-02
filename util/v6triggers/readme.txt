@@ -1,0 +1,13 @@
+BASIS currently uses three triggers in their own Addon hybrid environment. The trigger source code provided here is for reference/tutorial purposes. They are not intended for general use in other environments.
+
+glm-01.trigger.aw.src - is set as an after write trigger on the glm-01 table in Barista Addon. It's purpose is to replicate any changes to glm-01 to GLM-01 in our 6.1 installation. Since our GL is maintained in Barista Addon we need changes to the glm-01 to go to 6.1 GLM-01 so that they are available for use in GL distribution from our 6.1 modules.
+
+GLT-04.trigger.iw.src - is set as an instead of write trigger on the GLT-04 table in 6.1 Addon. It's purpose is to move data into the glt-04 (daily detail file) in Barista Addon. It supports parallel operation, writes go to both tables. The parallel mode was useful for us in proving the concept and once done can be removed causing writes to be done only to the gl4-04.
+
+GLT-05.trigger.iw.src - is set as an instead of write trigger on the GLT-05 table in 6.1 Addon. It's purpose is intercept writes to the GLT-05 table and dump them since there is no glt-05 in Barista Addon. It also supports parallel operation allowing the write to proceed to the GLT-05 table for use in the proof of concept phase. Once complete it can be removed which then simply discards the write to GLT-05.
+
+Notes:
+
+There is an outstanding BBj issue with Configuration (Bugzilla #17369). When triggers are set up in EM there is one config file for all triggers. This can be a problem for a site that has triggers for multiple systems. In the case of Barista Addon running along side another non-Barista application that also has triggers and it's own config. In this case you may need to set some STBLs and/or specify pathnames directly in the trigger source.
+
+Additional notes concerning this folder and the src directory underneath. Any files with an extension of .trigger in this directory may be used in a standard production Barista/Version 6 environment. You will find at least one file in the src directory with extensions of .src that match each .trigger file. These files (both the .trigger and .src) are usable with a standard install of Barista and version 6 in a hybrid environment. The .trigger file(s) should be placed in the same directory as the version 6 data files, and the .src file(s) should be placed in a src directory directly underneath the version 6 data directory. Currently (as of 2/4/2010) there are not enough triggers to install and have working properly as a whole. They are being stored here in order to keep them in the repository. We are working on the Payroll triggers first. Once complete, the Manufacturing system will be worked on.

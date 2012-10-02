@@ -1,0 +1,380 @@
+rem ==========================================================================
+rem --- adc_copyaon.aon 
+rem --- Call to copy aon directory and sub-directories from one location to another,
+rem --- with or without data files.
+rem --- 
+rem --- AddonSoftware Version 10.0
+rem --- Copyright © 2010, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+
+rem --- OLDLOCATION$ : Location of source aon directory being copied (Input)
+rem --- NEWLOCATION$ : Location of target aon directory (Input)
+rem --- UPGRADE%     : 0=Not an upgrade so copy data/1=Upgrade so don't copy data (Input)
+rem --- HELP%        : 0=Do not copy AddonHelp.jar/1=Copy AddonHelp.jar (Input)
+rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS       : Status code/0=No error (Returned)
+
+    declare BBjTopLevelWindow rdForm!
+
+    seterr std_error
+    setesc std_error
+    enter oldLocation$,newLocation$,upgrade%,help%,rdForm!,wait4ok%,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Recursively copy oldLocation to newLocation
+
+    declare CopyAonDir utility!
+    utility! = new CopyAonDir(rdForm!, wait4ok%)
+    utility!.copyAonDirectory(oldLocation$, newLocation$, upgrade%, help%)
+    
+done: rem --- All done
+    
+    goto std_exit
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+rem /**
+rem  * Utility Class for recursively copying aon directory, skipping specific
+rem  * pre-defined directories and files.
+rem  */
+    use java.io.File
+    use java.util.Vector
+    use ::bbtranslator.bbj::BBTranslator
+
+    class public CopyAonDir
+        field private Vector skipDirs! = new Vector()
+        field private BBjInt wait4ok% = 0
+        field private BBjNumber BLOCKSIZE = 2^20
+        field private BBjNumber log_dev = 0
+        field private BBjNumber meter_proc_recs = 0
+        field private BBjNumber meter_total_recs = 2500
+        field private BBjString dir_syp$=stbl("+DIR_SYP")
+        field private BBjSysGui sysGUI!
+        field private BBjTopLevelWindow form!
+        field private BBjTopLevelWindow meter!
+
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjTopLevelWindow rdForm!
+        rem  * @param BBjInt wait4ok
+        rem  */
+        method public CopyAonDir(BBjTopLevelWindow rdForm!, BBjInt wait4ok%)
+            #sysGUI! = BBjAPI().getSysGui()
+            #form! = rdForm!
+            #wait4ok% = wait4ok%
+            
+            rem --- don't copy these directories, skip them
+            rem --- CVS
+            rem --- .svn
+            rem --- callpoints
+            rem --- data/arc
+            rem --- data/def
+            rem --- help/WebHelp
+            sep$ = File.separator
+            #skipDirs!.add(sep$+"CVS")
+            #skipDirs!.add(sep$+".svn")
+            #skipDirs!.add(sep$+"callpoints")
+            #skipDirs!.add(sep$+"data"+sep$+"arc")
+            #skipDirs!.add(sep$+"data"+sep$+"def")
+            #skipDirs!.add(sep$+"help"+sep$+"WebHelp")
+        methodend
+
+        rem /**
+        rem  * Recursively copy aon directory.
+        rem  *
+        rem  * Recursively copies aon directory for old location to new location, 
+        rem  * skipping specific pre-defined directories and files.
+        rem  *
+        rem  * @param BBjString oldLocation$
+        rem  * @param BBjString newLocation$
+        rem  * @param BBjInt skipDataFiles
+        rem  * @param BBjInt helpFile
+        rem  */
+        method public void copyAonDirectory(BBjString oldLocation$, BBjString newLocation$, BBjInt skipDataFiles%, BBjInt helpFile%)
+            if skipDataFiles then #meter_total_recs = 2000
+            #meter! = #createProgressMeter()
+            #openLog(skipDataFiles, oldLocation$, newLocation$)
+
+            #copyAonDirectory(new File(oldLocation$), new File(newLocation$), skipDataFiles%, helpFile%)
+
+            #closeLog()
+            #destroyProgressMeter()
+        methodend
+
+        rem /**
+        rem  * Recursively copy aon directory.
+        rem  *
+        rem  * Recursively copies aon directory from source File to target File, 
+        rem  * skipping specific pre-defined directories and files.
+        rem  *
+        rem  * @param File source
+        rem  * @param File target
+        rem  * @param BBjNumber skipDataFiles
+        rem  * @param BBjInt helpFile
+        rem  */
+        method private void copyAonDirectory(File source!, File target!, BBjInt skipDataFiles%, BBjInt helpFile%)
+    
+            rem -- recursively process directories and copy files
+            if(source!.isDirectory()) then
+            
+                rem --- skip this directory?
+                if(#skipDirectory(source!))then
+                    #log("SKIPPED: " + source!.getPath())
+                    methodret
+                endif
+            
+                rem --- create new directory if it doesn't exist
+                if(! target!.exists()) then
+                    target!.mkdirs()
+                    target!.setExecutable(1,0)
+                    target!.setWritable(1,0)
+                    target!.setReadable(1,0)
+                endif
+
+                rem --- get list of what is in the source dir, and process it
+                declare Vector fileVector!
+                fileVector! = new Vector(java.util.Arrays.asList(source!.list()))
+                if(fileVector!.size()>0) then
+                    for i=0 to fileVector!.size()-1
+                        #copyAonDirectory(new File(source!, cast(BBjString, fileVector!.get(i))), 
+:                                         new File(target!, cast(BBjString, fileVector!.get(i))), 
+:                                         skipDataFiles%, helpFile%)
+                    next i
+                endif
+                
+            else
+            
+                rem --- for upgrades, skip data files in data directory
+                if(skipDataFiles%) then
+                    parent$ = source!.getParent()
+                    if(cast(BBjString, parent$).endsWith(cast(BBjString, File.separator + "data"))) then
+                        #log("SKIPPED: " + source!.getPath())
+                        methodret
+                    endif
+                endif
+            
+                rem --- skip AddonHelp.jar?
+                if(!helpFile%) then
+                    if(cast(BBjString, source!.getPath()).endsWith(cast(BBjString, "AddonHelp.jar"))) then
+                        #log("SKIPPED: " + source!.getPath())
+                        methodret
+                    endif
+                endif
+                
+                rem --- copy file
+                #incrementProgressMeter(source!.getPath())
+                sourceChan=unt
+                open(sourceChan,isz=-1)source!.getPath()
+                targetChan=unt
+                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+                while 1
+                    readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                    writerecord(targetChan)record$
+                wend
+                close(sourceChan)
+                close(targetChan)
+                #log("COPIED: " + source!.getPath())
+               
+            endif
+        methodend
+
+        rem /**
+        rem  * Skip copy of some aon directories.
+        rem  *
+        rem  * @param File sourceDirectory
+        rem  *
+        rem  * @return BBjInt (1=true  false=0)
+        rem  */
+        method private BBjInt skipDirectory(File source!)
+            skipDir% = 0
+            
+            if(source!.isDirectory()) then
+                path$ = source!.getPath()
+                for i=0 to #skipDirs!.size()-1
+                    if(cast(BBjString, path$).endsWith(cast(BBjString, #skipDirs!.get(i)))) then
+                        skipDir% = 1
+                        break
+                    endif
+                next i
+            endif
+            
+            methodret skipDir%
+        methodend
+
+        rem /**
+        rem  * Create progress meter.
+        rem  *
+        rem  * @return BBjTopLevelWindow meterWin!
+        rem  */
+        method private BBjTopLevelWindow createProgressMeter()
+
+            rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+            rem declare BBjTopLevelWindow meterWin!
+            
+            declare BBTranslator Translator!
+            Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+            meter_title$=Translator!.getTranslation("AON_COPYING")+"..."
+            #meter_proc_recs=0
+            meter_text$=""
+            meter_action$="WIN-LST"
+            if #wait4ok% then meter_action$=meter_action$+"-OK"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               meterWin!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+            methodret meterWin!
+        methodend
+
+        rem /**
+        rem  * Increment progress meter.
+        rem  *
+        rem  * @param File sourceDirectory
+        rem  */
+        method private void incrementProgressMeter(BBjString meter_text$)
+            #meter_proc_recs=#meter_proc_recs+1
+            meter_action$="MTR-LST"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Destroy progress meter.
+        rem  */
+        method private void destroyProgressMeter()
+
+            #meter_proc_recs=#meter_total_recs
+            meter_action$="LST-END"
+
+            call #dir_syp$+"bam_prog_bar.bbj",
+:               #sysGUI!,
+:               #form!,
+:               #meter!,
+:               meter_title$,
+:               #meter_total_recs,
+:               #meter_proc_recs,
+:               meter_text$,
+:               meter_action$
+        methodend
+
+        rem /**
+        rem  * Open log file.
+        rem  *
+        rem  * @param BBjNumber skipDataFiles
+        rem  * @param BBjString oldLocation$
+        rem  * @param BBjString newLocation$
+        rem  */
+        method private void openLog(BBjNumber skipDataFiles, BBjString oldLocation$, BBjString newLocation$)
+            logDir$ = newLocation$ + "/logs"
+            appDir$ = newLocation$
+
+            rem --- create top-level directory (aon) at new location, and make sure it's writable
+            declare File appDir!
+            appDir! = new File(appDir$)
+            if (! appDir!.exists()) then
+                appDir!.mkdirs()
+                appDir!.setExecutable(1,0)
+                appDir!.setReadable(1,0)
+                appDir!.setWritable(1,0)
+            endif
+            
+            rem --- create logs directory at new location
+            declare File logDir!
+            logDir! = new File(logDir$)
+            if(! logDir!.exists()) then
+                logDir!.mkdirs()
+                logDir!.setExecutable(1,0)
+                logDir!.setWritable(1,0)
+                logDir!.setReadable(1,0)
+            endif
+
+            rem --- create and open log file
+            log$ = logDir$+"/copyaon_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+            erase log$,err=*next
+            string log$
+            #log_dev=unt
+            open(#log_dev)log$
+            
+            rem --- write log header info
+            print(#log_dev)"Copyaon log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            print(#log_dev)"Old source location: " + oldLocation$
+            print(#log_dev)"New target location: " + newLocation$
+            if skipDataFiles
+                print(#log_dev)"Data files skipped."
+            else
+                print(#log_dev)"Data files copied."
+            endif
+            print(#log_dev)
+        methodend
+
+        rem /**
+        rem  * Write to log file.
+        rem  *
+        rem  * @param BBjString text$
+        rem  */
+        method private void log(BBjString text$)
+            print(#log_dev)text$
+        methodend
+
+        rem /**
+        rem  * Close log file.
+        rem  */
+        method private void closeLog()
+            print(#log_dev)"Copyaon log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(#log_dev)
+        methodend
+        
+    classend
+    
+    end

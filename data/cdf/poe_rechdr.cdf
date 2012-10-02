@@ -597,7 +597,7 @@ rem --- read thru selected sales order and build list of lines for which line co
 
 	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*return)ope_ordhdr$
 
-	read (ope_orddet_dev,key=firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$,knum="AO_CUST_PRD_LINE",dom=*next)
+	read (ope_orddet_dev,key=firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$,knum="PRIMARY",dom=*next)
 
 	while 1
 		read record (ope_orddet_dev,end=*break)ope_orddet$

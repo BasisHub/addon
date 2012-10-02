@@ -1,8 +1,24 @@
-[[POE_PODET.QTY_ORDERED.BINP]]
-if callpoint!.getDevObject("line_type")="O"  
-	callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.QTY_ORDERED",0)
-	callpoint!.setFocus("POE_PODET.UNIT_COST")
-endif
+[[POE_PODET.REQD_DATE.AVAL]]
+ord_date$=cvs(callpoint!.getHeaderColumnData("POE_POHDR.ORD_DATE"),2)
+req_date$=cvs(callpoint!.getUserInput(),2)
+promise_date$=cvs(callpoint!.getColumnData("POE_PODET.PROMISE_DATE"),2)
+not_b4_date$=cvs(callpoint!.getColumnData("POE_PODET.NOT_B4_DATE"),2)
+
+gosub validate_dates
+[[POE_PODET.PROMISE_DATE.AVAL]]
+ord_date$=cvs(callpoint!.getHeaderColumnData("POE_POHDR.ORD_DATE"),2)
+req_date$=cvs(callpoint!.getColumnData("POE_PODET.REQD_DATE"),2)
+promise_date$=cvs(callpoint!.getUserInput(),2)
+not_b4_date$=cvs(callpoint!.getColumnData("POE_PODET.NOT_B4_DATE"),2)
+
+gosub validate_dates
+[[POE_PODET.NOT_B4_DATE.AVAL]]
+ord_date$=cvs(callpoint!.getHeaderColumnData("POE_POHDR.ORD_DATE"),2)
+req_date$=cvs(callpoint!.getColumnData("POE_PODET.REQD_DATE"),2)
+promise_date$=cvs(callpoint!.getColumnData("POE_PODET.PROMISE_DATE"),2)
+not_b4_date$=cvs(callpoint!.getUserInput(),2)
+
+gosub validate_dates
 [[POE_PODET.BDEL]]
 rem --- before delete; check to see if this row is disabled (as it will be if there have been any receipts)...if so don't allow delete
 rem --- otherwise, reverse the OO quantity in ivm-02
@@ -182,57 +198,91 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	ok_to_write$="Y"
 
-	if cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="" or 
-:		cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" 
-			ok_to_write$="N"
-			focus_column$="POE_PODET.PO_LINE_CODE"
+	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)=""
+		ok_to_write$="N"
+		focus_column$="POE_PODET.PO_LINE_CODE"
+		translate$="AON_LINE_CODE"
 	endif
 
-	if pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="SD")<>0 
-		if cvs(callpoint!.getColumnData("POE_PODET.ITEM_ID"),3)="" or
-:		num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))<=0 or
-:		num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0 or
-:		num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" 
+		ok_to_write$="N"
+		focus_column$="POE_PODET.WAREHOUSE_ID"
+		translate$="AON_WAREHOUSE"
+	endif
+
+	if ok_to_write$<>"Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="SD")<>0 
+		if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.ITEM_ID"),3)=""
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ITEM_ID"
+			translate$="AON_ITEM"
+		endif
+		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))<=0
+			ok_to_write$="N"
+			focus_column$="POE_PODET.CONV_FACTOR"
+			translate$="AON_CONVERSION_FACTOR"
+		endif
+		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
+			ok_to_write$="N"
+			focus_column$="POE_PODET.UNIT_COST"
+			translate$="AON_UNIT_COST"
+		endif
+		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+			ok_to_write$="N"
+			focus_column$="POE_PODET.QTY_ORDERED"
+			translate$="AON_QUANTITY_ORDERED"
 		endif
 	endif
 
-	if cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="N" 
-		if num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0 or
-:		num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="N" 
+		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
+			ok_to_write$="N"
+			focus_column$="POE_PODET.UNIT_COST"
+			translate$="AON_UNIT_COST"
+		endif
+		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+			ok_to_write$="N"
+			focus_column$="POE_PODET.QTY_ORDERED"
+			translate$="AON_QUANTITY_ORDERED"
+		endif
+	endif
+
+	if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="O" 
+		if ok_to_write$<>"Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
+			ok_to_write$="N"
+			focus_column$="POE_PODET.UNIT_COST"
+			translate$="AON_UNIT_COST"
+		endif
+	endif
+
+	if ok_to_write$<>"Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="NOV")<>0 
+		if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ORDER_MEMO"
+			translate$="AON_MEMO"
 		endif
 	endif
 
-	if cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="O" 
-		if num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
-			ok_to_write$="N"
-			focus_column$="POE_PODET.ORDER_MEMO"
-		endif
-	endif
-
-	if pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="NOV")<>0 
-		if cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),3)="" 
-			ok_to_write$="N"
-			focus_column$="POE_PODET.ORDER_MEMO"
-		endif
-	endif
-
-	if callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
-		if pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="DSNO")<>0
-			if cvs(callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF"),3)="" 
+	if ok_to_write$<>"Y" and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
+		if ok_to_write$<>"Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="DSNO")<>0
+			if ok_to_write$<>"Y" and cvs(callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF"),3)="" 
 				ok_to_write$="N"
 				focus_column$="POE_PODET.SO_INT_SEQ_REF"
+				translate$="AON_SO_SEQ_NO"
 			endif
 		endif
 	endif
 
 	if ok_to_write$<>"Y"
 		msg_id$="PO_REQD_DET"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=""
+		if translate$<>""
+			msg_tokens$[1]=Translate!.getTranslation(translate$)
+		endif
 		gosub disp_message
 		callpoint!.setFocus(num(callpoint!.getValidationRow()),focus_column$)
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
 	endif
 	
 	rem -- now loop thru entire gridVect to make sure SO line reference, if used, isn't used >1 time
@@ -319,6 +369,12 @@ endif
 callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)
 
+rem --- set dates from Header
+
+callpoint!.setColumnData("POE_PODET.NOT_B4_DATE",callpoint!.getHeaderColumnData("POE_POHDR.NOT_B4_DATE"))
+callpoint!.setColumnData("POE_PODET.REQD_DATE",callpoint!.getHeaderColumnData("POE_POHDR.REQD_DATE"))
+callpoint!.setColumnData("POE_PODET.PROMISE_DATE",callpoint!.getHeaderColumnData("POE_POHDR.PROMISE_DATE"))
+
 callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_PODET.PO_LINE_CODE")
 [[POE_PODET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
@@ -382,12 +438,6 @@ rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callp
 		callpoint!.setColumnData("POE_PODET.WO_SEQ_REF","")
 
 endif
-
-if callpoint!.getDevObject("line_type")="O" 
-	callpoint!.setColumnData("POE_PODET.QTY_ORDERED","1")
-else
-	callpoint!.setColumnData("POE_PODET.QTY_ORDERED","")
-endif
 [[POE_PODET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
 
@@ -396,7 +446,9 @@ if pos("ABORT"=callpoint!.getStatus())<>0
 	callpoint!.setUserInput("")
 endif
 [[POE_PODET.<CUSTOM>]]
+rem ==========================================================================
 update_line_type_info:
+rem ==========================================================================
 
 	poc_linecode_dev=fnget_dev("POC_LINECODE")
 	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
@@ -406,12 +458,93 @@ update_line_type_info:
 		po_line_code$=callpoint!.getColumnData("POE_PODET.PO_LINE_CODE")
 	endif
 	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
-	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
+
+rem --- Manually enable/disable fields based on Line Type
+
+rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
+	switch pos(poc_linecode.line_type$="SNOMV")
+		case 1; rem Standard
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ITEM_ID",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ORDER_MEMO",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_MEASURE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.CONV_FACTOR",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.QTY_ORDERED",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_COST",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.LOCATION",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.REQD_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PROMISE_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NOT_B4_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PO_MSG_CODE",1)
+			break
+		case 2; rem Non-stock
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ORDER_MEMO",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_MEASURE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.CONV_FACTOR",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.QTY_ORDERED",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_COST",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.LOCATION",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.REQD_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PROMISE_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NOT_B4_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PO_MSG_CODE",1)
+			break
+		case 3; rem Other
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ORDER_MEMO",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_MEASURE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.CONV_FACTOR",0)
+			callpoint!.setColumnData("POE_PODET.QTY_ORDERED","1")
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.QTY_ORDERED",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_COST",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.LOCATION",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.REQD_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PROMISE_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NOT_B4_DATE",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PO_MSG_CODE",1)
+			callpoint!.setStatus("REFGRID")
+			break
+		case 4; rem Memo
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ORDER_MEMO",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_MEASURE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.CONV_FACTOR",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.QTY_ORDERED",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_COST",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.LOCATION",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.REQD_DATE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PROMISE_DATE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NOT_B4_DATE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PO_MSG_CODE",0)
+			break
+		case 5; rem Vendor Part Number
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ITEM_ID",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.ORDER_MEMO",1)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_MEASURE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.CONV_FACTOR",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.QTY_ORDERED",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.UNIT_COST",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.LOCATION",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.REQD_DATE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PROMISE_DATE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NOT_B4_DATE",0)
+			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.PO_MSG_CODE",0)
+			break
+		case default; rem everything else
+			break
+	swend
 	callpoint!.setDevObject("line_type",poc_linecode.line_type$)
 
 return
 
+rem ==========================================================================
 validate_whse_item:
+rem ==========================================================================
 	ivm_itemwhse_dev=fnget_dev("IVM_ITEMWHSE")
 	dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
 	change_flag=0
@@ -442,10 +575,13 @@ validate_whse_item:
 		if num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))=0 then callpoint!.setColumnData("POE_PODET.CONV_FACTOR",str(1))
 		if cvs(callpoint!.getColumnData("POE_PODET.LOCATION"),2)="" then callpoint!.setColumnData("POE_PODET.LOCATION","STOCK")
 		callpoint!.setColumnData("POE_PODET.UNIT_COST",str(num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))*ivm_itemwhse.unit_cost))
+		callpoint!.setStatus("REFRESH")
 	endif
 return
-	
+
+rem ==========================================================================	
 missing_warehouse:
+rem ==========================================================================
 
 	msg_id$="IV_ITEM_WHSE_INVALID"
 	dim msg_tokens$[1]
@@ -455,7 +591,9 @@ missing_warehouse:
 
 return
 
+rem ==========================================================================
 update_header_tots:
+rem ==========================================================================
 
 if pos(".AVAL"=callpoint!.getCallpointEvent())
 	if callpoint!.getVariableName()="POE_PODET.QTY_ORDERED"
@@ -488,7 +626,9 @@ endif
 
 return
 
+rem ==========================================================================
 calculate_header_tots:
+rem ==========================================================================
 
 total_amt=num(callpoint!.getDevObject("total_amt"))
 old_price=round(num(callpoint!.getDevObject("qty_this_row"))*num(callpoint!.getDevObject("cost_this_row")),2) 
@@ -507,7 +647,10 @@ rem print "new_total: ",new_total
 
 return
 
+rem ==========================================================================
 update_iv_oo:
+rem ==========================================================================
+
 rem --- used for un/delete rows; make sure curr_qty is set (+/-) before entry
 
 curr_whse$ = callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID")
@@ -527,5 +670,43 @@ print "---Update OO: item = ", cvs(items$[2], 2), ", WH: ", items$[1], ", qty ="
 				
 call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 if status then exitto std_exit
+
+return
+
+rem ==========================================================================
+validate_dates: rem --- validate dates
+rem ==========================================================================
+
+	bad_date = 0
+
+	if ord_date$<>"" and req_date$<>"" and ord_date$>req_date$ then
+		bad_date = 1
+	endif
+
+	if ord_date$<>"" and promise_date$<>"" and ord_date$>promise_date$ then
+		bad_date = 1
+	endif
+
+	if ord_date$<>"" and not_b4_date$<>"" and ord_date$>not_b4_date$ then
+		bad_date = 1
+	endif
+
+	if req_date$<>"" and promise_date$<>"" and req_date$<promise_date$ then
+		bad_date = 1
+	endif
+
+	if req_date$<>"" and not_b4_date$<>"" and req_date$<not_b4_date$ then
+		bad_date = 1
+	endif
+
+	if promise_date$<>"" and not_b4_date$<>"" and promise_date$<not_b4_date$ then
+		bad_date = 1
+	endif
+
+	if bad_date then
+		msg_id$="INVALID_DATE"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
 
 return

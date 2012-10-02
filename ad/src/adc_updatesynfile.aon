@@ -1,0 +1,634 @@
+rem ==========================================================================
+rem --- adc_updatesynfile.aon 
+rem --- Call to updates addon.syn file in new install location for upgrades.
+rem --- 
+rem --- AddonSoftware Version 10.0
+rem --- Copyright © 2010, BASIS International, Ltd.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+
+rem --- UPDATESYNFILE$ : Absolute path to the addon.syn file being updated (Input)
+rem --- OLDSYNFILE$    : Absolute path to the old addon.syn file (Input)
+rem --- UPGRADE%       : 0=Not an upgrade so don't merge with old syn/1=Upgrade so merge with old syn (Input)
+rem --- DATAMAP!       : HashMap of STBL data paths, keyed by STBL (Input)
+rem --- RDFORM!        : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%       : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS         : Status code/0=No error (Returned)
+
+    use java.io.File
+    use java.util.HashMap
+    use ::bbtranslator.bbj::BBTranslator
+
+    declare HashMap dataMap!
+    declare java.util.Set keys!
+    declare java.util.Iterator iter!
+
+    seterr std_error
+    setesc std_error
+    enter updateSynFile$,oldSynFile$,upgrade%,dataMap!,rdForm!,wait4ok%,status
+
+rem --- Initializations
+
+    status=0
+    dir_syp$=stbl("+DIR_SYP")
+    sysGUI! = BBjAPI().getSysGui()
+    
+rem --- Start progress meter
+                
+    declare BBTranslator Translator!
+    Translator! = BBTranslator.getInstance( stbl("+PROPS_NAME"), stbl("+USER_LOCALE"), null(), stbl("+PROPS_PATH") )
+    meter_title$=Translator!.getTranslation("AON_UPDATING")+"..."
+    meter_total_recs=10
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST"
+    if wait4ok% then meter_action$=meter_action$+"-OK"
+    gosub disp_meter
+    
+rem --- Flip directory path separators
+    filePath$=updateSynFile$
+    gosub fix_path
+    updateSynFile$=filePath$
+
+    filePath$=oldSynFile$
+    gosub fix_path
+    oldSynFile$=filePath$
+
+rem --- Get aon directory location from addon.syn file
+	aonDir$=updateSynFile$(1, pos("/config/"=updateSynFile$)-1)
+    
+rem --- Open log file
+    location$ = aonDir$
+    gosub open_log
+    
+rem --- Get new version from addon.syn file
+
+    synVersion$ = "0000"
+    synFilePath$ = updateSynFile$
+    gosub get_syn_version
+    newVersion$ = "_v"+synVersion$
+
+rem --- Rename addon.syn to addon_vnnnn.syn, and update paths
+
+    search$ = "../apps/aon"
+    replace$ = aonDir$
+    stbLine$ = "STBL=SET +"
+    stbLen = len(stbLine$)
+    cfgLine$ = "CFG=+"
+    cfgLen = len(cfgLine$)
+    
+    rem --- insure unique file name for addon_vnnnn.syn
+    oldName$=updateSynFile$
+    if pos(".syn"=oldName$) then oldName$=oldName$(1,pos(".syn"=oldName$)-1)
+    if pos("_v"=oldName$) then oldName$=oldName$(1,pos("_v"=oldName$)-1)
+    
+    newSynFile$=oldName$ + newVersion$ + ".syn"
+    i=0
+    testChan=unt
+    while 1
+        syn%=0
+        bak%=0
+        
+        if 1
+            open(testChan,err=*endif)newSynFile$
+            close(testChan)
+            syn%=1
+        endif
+        
+        if 1
+            rem --- also avoid backup file names
+            open(testChan,err=*endif)newSynFile$+".bak"
+            close(testChan)
+            syn%=1
+        endif
+        
+        if syn% or bak%
+            i=i+1
+            newSynFile$=oldName$ + newVersion$ + "_" + str(i) + ".syn"
+        else
+            break
+        endif
+    wend
+    
+    rem --- Increment progress meter
+
+    meter_text$="create: "+newSynFile$
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+    rem --- copy addon.syn file to addon_vnnnn.syn (where nnnn=new version)
+    sourceChan=unt
+    open(sourceChan,isz=-1)updateSynFile$
+    targetChan=unt
+    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")newSynFile$
+    while 1
+        read(sourceChan,end=*break)record$
+        rem --- replace "../apps/aon" in paths with aonDir$
+        gosub search_replace
+
+        rem --- replace data paths in STBL DATA lines
+        if(pos(stbLine$=record$) = 1) then
+            data$ = record$(stbLen + 1, pos("="=record$(stbLen + 1)) - 1)
+            if(dataMap!.containsKey(data$)) then
+                record$ = stbLine$ + data$ + "=" + cast(BBjString, dataMap!.get(data$))
+                if pos(record$(len(record$))="/\")=0 then record$=record$ +  "/"
+            endif
+        endif
+
+        rem --- replace data paths in CFG DATA lines
+        if(pos(cfgLine$=record$) = 1) then
+            data$ = record$(cfgLen + 1, pos("="=record$(cfgLen + 1)) - 1)
+            if(dataMap!.containsKey(data$)) then
+                record$ = cfgLine$ + data$ + "=" + cast(BBjString, dataMap!.get(data$))
+                if pos(record$(len(record$))="/\")=0 then record$=record$ +  "/"
+            endif
+        endif
+        
+        write(targetChan)record$
+        print(log_dev)record$
+    wend
+    close(sourceChan)
+    close(targetChan)
+
+    rem --- Increment progress meter
+
+    meter_text$="backup: "+updateSynFile$
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)meter_text$
+
+    rem --- remove addon.syn now that we're done with it, save as a backup
+    rename updateSynFile$ to updateSynFile$ + ".bak", err=*next
+
+rem --- For upgrades, merge old .syn file into new addon_vnnnn.syn
+
+    if(upgrade%) then
+        rem --- get old version from old .syn file
+        synVersion$ = ""
+        synFilePath$ = oldSynFile$
+        gosub get_syn_version
+        oldVersion$ = "_V"+synVersion$
+    
+        rem --- insure unique file name for addon_VNNNN.syn.bak
+        oldName$=oldSynFile$(pos("/"=oldSynFile$,-1)+1)
+        oldBase$=oldName$
+        if pos(".syn"=oldBase$) then oldBase$=oldBase$(1,pos(".syn"=oldBase$)-1)
+        if pos("_v"=oldBase$) then oldBase$=oldBase$(1,pos("_v"=oldBase$)-1)
+        if pos("_V"=oldBase$) then oldBase$=oldBase$(1,pos("_V"=oldBase$)-1)
+    
+        bakOldSynFile$=aonDir$ + "/config/" + oldBase$ + oldVersion$ + ".syn.bak"
+        i=0
+        testChan=unt
+        while 1
+            open(testChan,err=*break)bakOldSynFile$
+            close(testChan)
+            i=i+1
+            bakOldSynFile$=aonDir$ + "/config/" + oldBase$ + oldVersion$ + "_" + str(i) + ".syn.bak"
+        wend
+
+        rem --- Increment progress meter
+
+        meter_text$="backup: "+bakOldSynFile$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+
+        rem --- copy old .syn file to addon_VNNNN.syn.bak in new install location (where NNNN=old version)
+        sourceChan=unt
+        open(sourceChan,isz=-1)oldSynFile$
+        targetChan=unt
+        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")bakOldSynFile$
+        while 1
+            read(sourceChan,end=*break)record$
+            write(targetChan)record$
+            print(log_dev)record$
+        wend
+        close(sourceChan)
+        close(targetChan)
+
+        rem --- Increment progress meter
+
+        meter_text$="read: "+bakOldSynFile$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+        
+        rem --- put old addon_vNNNN.syn records into a HashMap of ArrayLists
+        use java.util.ArrayList
+        declare ArrayList oldList!
+        declare HashMap oldMap!
+        oldMap! = new HashMap()
+        oldChan=unt
+        open(oldChan,isz=-1)bakOldSynFile$
+        while 1
+            read(oldChan,end=*break)record$
+            if(pos("="=record$)) then
+                key$ = record$(1, pos("="=record$) - 1)
+                if(oldMap!.containsKey(key$)) then
+                    oldList! = cast(ArrayList, oldMap!.get(key$))
+                    oldList!.add(record$)
+                else
+                    oldList! = new ArrayList()
+                    oldList!.add(record$)
+                    oldMap!.put(key$, oldList!)
+                endif
+            endif
+        wend
+        close(oldChan)
+
+        rem --- Increment progress meter
+
+        meter_text$="read: "+newSynFile$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        rem --- put new addon_vnnn.syn records in an ArrayList
+        declare ArrayList newList!
+        newList! = new ArrayList()
+        newChan=unt
+        open(newChan,isz=-1)newSynFile$
+        while 1
+            read(newChan,end=*break)record$
+            newList!.add(record$)
+        wend
+        close(newChan)
+
+        rem --- Increment progress meter
+
+        meter_text$="merge files"
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+        
+        rem --- remove from old addon_vNNNN.syn HashMap lines that already exist in new addon_vnnn.syn ArrayList
+        for i=0 to newList!.size()-1
+            newRec$ = cast(BBjString, newList!.get(i))
+            if(pos("="=newRec$)) then
+                key$ = newRec$(1, pos("="=newRec$) - 1)
+                if(oldMap!.containsKey(key$)) then
+                    oldList! = cast(ArrayList, oldMap!.get(key$))
+
+                    switch (BBjAPI().TRUE)
+                        case key$ = "ACOMP"
+                            rem --- remove ACOMP lines from old List
+                            oldList! = new ArrayList()
+                            oldMap!.put(key$, oldList!)
+                            print(log_dev)"remove old ACOMP lines"
+                            break
+                        case key$ = "DIR"
+                            rem --- remove DIR lines from old List
+                            oldList! = new ArrayList()
+                            oldMap!.put(key$, oldList!)
+                            print(log_dev)"remove old DIR lines"
+                            break
+                        case key$ = "SYS"
+                            rem --- remove SYS lines from old List
+                            oldList! = new ArrayList()
+                            oldMap!.put(key$, oldList!)
+                            print(log_dev)"remove old SYS lines"
+                            break
+                        case key$ = "MENU"
+                            rem --- remove MENU lines from old List
+                            oldList! = new ArrayList()
+                            oldMap!.put(key$, oldList!)
+                            print(log_dev)"remove old MENU lines"
+                            break
+                        case key$ = "APROD"
+                            rem --- if new APROD line exists in old List, remove it from old List
+                            newKey$ = newRec$(1, pos(";"=newRec$))
+                            for j=0 to oldList!.size()-1
+                                oldRec$ = cast(BBjString, oldList!.get(j))
+                                oldKey$ = oldRec$(1, pos(";"=oldRec$))
+                                if(oldKey$ = newKey$) then
+                                    oldList!.remove(j)
+                                    print(log_dev)"remove old APROD line: "+oldKey$
+                                    if oldList!.size() = 0 then oldMap!.remove(key$)
+                                    break
+                                endif
+                            next j
+                            break
+                        case key$ = "STBL"
+                            pos = pos(" "=newRec$)
+                            newKey$ = newRec$(pos + 1, pos("="=newRec$(pos)) - 1)
+                            rem --- remove these STBL lines from NEW List
+                            if(pos("+DOC_DIR_"=newKey$) = 1 or
+:                              pos("+SHOW_PRINTERS"=newKey$) = 1 or
+:                              pos("+AON_IMAGES"=newKey$) = 1 or
+:                              pos("+CUST_IMAGES"=newKey$) = 1 or
+:                              pos("+FORM_LOGO"=newKey$) = 1 or
+:                              pos("+MDI_TITLE"=newKey$) = 1) then
+                                newList!.set(i, ""); rem - can't remove while looping over the list
+                                print(log_dev)"remove new STBL line: "+newKey$
+                                break
+                            endif
+
+                            rem --- if new STBL line exists in old List, remove it from old List
+                            for j=0 to oldList!.size()-1
+                                oldRec$ = cast(BBjString, oldList!.get(j))
+                                pos = pos(" "=oldRec$)
+                                oldKey$ = oldRec$(pos + 1, pos("="=oldRec$(pos)) - 1)
+                                if(oldKey$ = newKey$) then
+                                    oldList!.remove(j)
+                                    print(log_dev)"remove old STBL line: "+oldKey$
+                                    if oldList!.size() = 0 then oldMap!.remove(key$)
+                                    break
+                                endif
+                            next j
+                            break
+                        case key$ = "PREFIX"
+                            rem --- if new PREFIX line exists in old List, remove it from old List
+                            newKey$ = newRec$(pos("/aon/"=newRec$))
+                            for j=0 to oldList!.size()-1
+                                oldRec$ = cast(BBjString, oldList!.get(j))
+                                oldKey$ = oldRec$(pos("/aon/"=oldRec$))
+                                if(oldKey$ = newKey$) then
+                                    oldList!.remove(j)
+                                    print(log_dev)"remove old PREFIX line: "+oldKey$
+                                    if oldList!.size() = 0 then oldMap!.remove(key$)
+                                    break
+                                endif
+                            next j
+                            break
+                        case key$ = "CFG"
+                            rem --- if new CFG line exists in old List, remove it from old List
+                            newKey$ = newRec$(1, pos("="=newRec$,1,2))
+                            for j=0 to oldList!.size()-1
+                                oldRec$ = cast(BBjString, oldList!.get(j))
+                                oldKey$ = oldRec$(1, pos("="=oldRec$,1,2))
+                                if(oldKey$ = newKey$) then
+                                    oldList!.remove(j)
+                                    print(log_dev)"remove old CFG line: "+oldKey$
+                                    if oldList!.size() = 0 then oldMap!.remove(key$)
+                                    break
+                                endif
+                            next j
+                            break
+                        case key$ = "LANG"
+                            rem --- if new LANG line exists in old List, remove it from old List
+                            for j=0 to oldList!.size()-1
+                                oldRec$ = cast(BBjString, oldList!.get(j))
+                                if(oldRec$ = newRec$) then
+                                    oldList!.remove(j)
+                                    print(log_dev)"remove old LANG line: "+oldKey$
+                                    if oldList!.size() = 0 then oldMap!.remove(key$)
+                                    break
+                                endif
+                            next j
+                            break
+                        case key$ = "DEVICE"
+                            rem --- if new DEVICE line exists in old List, remove it from NEW List
+                            newKey$ = newRec$(1, pos(" "=newRec$,1,2))
+                            for j=0 to oldList!.size()-1
+                                oldRec$ = cast(BBjString, oldList!.get(j))
+                                oldKey$ = oldRec$(1, pos(" "=oldRec$,1,2))
+                                if(oldKey$ = newKey$) then
+                                    newList!.set(i, ""); rem - can't remove while looping over the list
+                                    print(log_dev)"remove new DEVICE line: "+newKey$
+                                    break
+                                endif
+                            next j
+                            break
+                        case default
+                            rem --- other lines ... skip
+                            break
+                    swend                    
+                    
+                else
+                    rem --- this addon_vnnn.syn line does not exist old addon_vNNNN.syn, so leave it as-is
+                endif
+            endif
+        next i
+        
+        rem --- copy remaining old addon_vNNNN.syn HashMap lines to new addon_vnnn.syn ArrayList
+        declare java.util.Set keys!
+        keys! = oldMap!.keySet()
+        declare java.util.Iterator iter!
+        iter! = keys!.iterator()
+        while(iter!.hasNext())
+            key$ = cast(BBjString, iter!.next())
+            oldList! = cast(ArrayList, oldMap!.get(key$))
+            rem --- insert old list in front of similar lines in new list
+            inserted = 0
+            for i=0 to newList!.size()-1
+                newRec$ = cast(BBjString, newList!.get(i))
+                if(pos("="=newRec$)) then
+                    newKey$ = newRec$(1, pos("="=newRec$) - 1)
+                    if(newKey$ = key$) then
+                        newList!.addAll(i, oldList!)
+                        inserted = 1
+                        break
+                    endif
+                endif
+            next i
+            rem --- didn't find line in new list, so add it to the end
+            if(!inserted) then
+                newList!.addAll(oldList!)
+            endif
+        wend
+
+        rem --- Increment progress meter
+
+        meter_text$="write: "+newSynFile$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+        
+        rem --- overwrite addon_vnnn.syn file with new addon_vnnn.syn ArrayList
+        newChan=unt
+        open(newChan,isz=-1,mode="O_CREATE,O_TRUNC")newSynFile$
+        for i=0 to newList!.size()-1
+            newRec$ = cast(BBjString, newList!.get(i))
+            if(cvs(newRec$,3)="") then
+                rem --- skip blank lines
+                continue
+            endif
+            
+            write(newChan)newRec$
+            print(log_dev)newRec$
+        next i
+        close(newChan)
+
+    endif
+    
+done: rem --- All done
+    
+    rem --- Stop progress meter
+                
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    
+    print(log_dev)"Updatesyn log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+fix_path: rem --- Flip directory path separators
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+    return
+
+get_syn_version: rem --- Get version from SYS line in addon.syn file
+    parsed=0
+    synChan=unt
+    open(synChan,isz=-1)synFilePath$
+    while 1
+        read(synChan,end=*break)record$
+        rem --- locate SYS line
+        if(pos("SYS="=record$) = 1) then
+            rem --- parse version from SYS line
+            start$ = "^Version "
+            startLen = len(start$)
+            startPos = pos(start$=record$)
+            end$ = " - "
+            endPos = pos(end$=record$(startPos + startLen))
+            if startPos>0 and endPos>0
+                parsed=1
+                synVersion$ = cvs(record$(startPos + startLen, endPos - 1),3)
+                rem -- remove decimal point
+                dotPos = pos("."=synVersion$)
+                if(dotPos) then
+                    synVersion$ = synVersion$(1, dotPos - 1) + synVersion$(dotPos + 1)
+                endif
+            endif
+            break
+        endif
+    wend
+    close(synChan)
+    return
+    
+search_replace: rem --- Search record$ for search$, and replace with replace$
+    pos = pos(search$=record$)
+    if(pos) then
+        record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
+    endif
+    
+    if(pos(search$=record$)) then gosub search_replace
+    return
+
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+
+    rem --- create top-level directory (aon) at new location, and make sure it's writable
+    appDir$ = location$
+    declare File appDir!
+    appDir! = new File(appDir$)
+    if (! appDir!.exists()) then
+        appDir!.mkdirs()
+        appDir!.setExecutable(1,0)
+        appDir!.setReadable(1,0)
+        appDir!.setWritable(1,0)
+    endif
+            
+    rem --- create logs directory at location
+    logDir$ = location$ + "/logs"
+    declare File logDir!
+    logDir! = new File(logDir$)
+    if(! logDir!.exists()) then
+        logDir!.mkdirs()
+        logDir!.setExecutable(1,0)
+        logDir!.setWriteable(1,0)
+        logDir!.setReadable(1,0)
+    endif
+
+    rem --- create and open log file
+    log$ = logDir$+"/updatesyn_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"Updatesyn log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)"Update addon.syn file: " + updateSynFile$
+    keys! = dataMap!.keySet()
+    iter! = keys!.iterator()
+    while(iter!.hasNext())
+        key$ = cast(BBjString, iter!.next())
+        if len(key$)=6 and pos("DATA"=key$)=3 then
+            print(log_dev)"+" + key$ + " = " + cast(BBjString, dataMap!.get(key$))
+        endif
+    wend
+    if upgrade%
+        print(log_dev)"Merge old addon.syn file."
+    else
+        print(log_dev)"Do not merge old addon.syn file."
+    endif
+    print(log_dev)"Old addon.syn file: " + oldSynFile$
+    print(log_dev)
+
+    return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+    
+    end

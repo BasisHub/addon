@@ -4,10 +4,29 @@ rem --- Item synonym processing
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[OPE_PRICEQUOTE.WAREHOUSE_ID.AVAL]]
 rem --- Fill arrays
-cust_id$=callpoint!.getColumnData("OPE_PRICEQUOTE.CUSTOMER_ID")
-wh$=callpoint!.getUserInput()
-item$=callpoint!.getColumnData("OPE_PRICEQUOTE.ITEM_ID")
-gosub build_arrays
+	cust_id$=callpoint!.getColumnData("OPE_PRICEQUOTE.CUSTOMER_ID")
+	wh$=callpoint!.getUserInput()
+	item$=callpoint!.getColumnData("OPE_PRICEQUOTE.ITEM_ID")
+
+rem --- Validate the Item/Warehouse combination is valid
+
+	ivm02_dev=fnget_dev("IVM_ITEMWHSE")
+	found_it = 0
+	if wh$="" or item$="" found_it = 1
+
+	if found_it=0
+		readrecord(ivm02_dev,key=firm_id$+wh$+item$,dom=*next); found_it = 1
+	endif
+
+	if found_it = 0
+		msg_id$="IV_ITEM_WHSE_INVALID"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=wh$
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	else
+		gosub build_arrays
+	endif
 [[OPE_PRICEQUOTE.AOPT-AVLE]]
 rem -- call inquiry program to view Sales Analysis records
 syspgmdir$=stbl("+DIR_SYP",err=*next)
@@ -51,7 +70,7 @@ build_arrays:
 		dim ivm06a$:fnget_tpl$("IVM_ITEMPRIC")
 		precision 9
 		readrecord(arm02_dev,key=firm_id$+cust_id$+"  ")arm02a$
-		readrecord(ivm02_dev,key=firm_id$+wh$+item$)ivm02a$
+		readrecord(ivm02_dev,key=firm_id$+wh$+item$,dom=*next)ivm02a$
 		readrecord(ivm01_dev,key=firm_id$+item$)ivm01a$
 		readrecord (ivcprice_dev,key=firm_id$+"E"+ivm01a.item_class$+arm02a.pricing_code$,dom=*next)ivcprice$
 		listprice=ivm02a.cur_price*(100-ivcprice.break_disc_01)/100
@@ -127,15 +146,19 @@ dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
 dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
 
 valid_wh$="N"
+wh$=callpoint!.getColumnData("OPE_PRICEQUOTE.WAREHOUSE_ID")
 while 1
 	readrecord(ivm01_dev,key=firm_id$+callpoint!.getUserInput(),dom=*break)ivm01a$
-	readrecord(ivm02_dev,key=firm_id$+callpoint!.getColumnData("OPE_PRICEQUOTE.WAREHOUSE_ID")+
+	readrecord(ivm02_dev,key=firm_id$+wh$+
 :			callpoint!.getUserInput(),dom=*break)ivm02a$
 	valid_wh$="Y"
 	break
 wend
 if valid_wh$="N"
-	callpoint!.setMessage("IV_NO_ITEM_WH")
+	msg_id$="IV_ITEM_WHSE_INVALID"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=wh$
+	gosub disp_message
 	callpoint!.setStatus("ABORT")
 else
 	callpoint!.setColumnData("OPE_PRICEQUOTE.ITEM_CLASS",ivm01a.item_class$)
@@ -144,7 +167,6 @@ else
 	callpoint!.setColumnData("OPE_PRICEQUOTE.QTY_COMMIT",str(ivm02a.qty_commit))
 	callpoint!.setColumnData("OPE_PRICEQUOTE.QTY_ON_HAND",str(ivm02a.qty_on_hand))
 	cust_id$=callpoint!.getColumnData("OPE_PRICEQUOTE.CUSTOMER_ID")
-	wh$=callpoint!.getColumnData("OPE_PRICEQUOTE.WAREHOUSE_ID")
 	item$=callpoint!.getUserInput()
 	gosub build_arrays
 	callpoint!.setStatus("REFRESH")
@@ -209,4 +231,3 @@ ivcprice_dev=num(open_chans$[5]),ivcprice_tpl$=open_tpls$[5]
 ivm01_dev=num(open_chans$[6]),ivm01_tpl$=open_tpls$[6]
 ivm06_dev=num(open_chans$[7]),ivm06_tpl$=open_tpls$[7]
 ivcwhse_dev=num(open_chans$[8]),ivcwhse_tpl$=open_tpls$[8]
-

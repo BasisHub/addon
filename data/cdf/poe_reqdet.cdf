@@ -67,57 +67,91 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	ok_to_write$="Y"
 
-	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="" or 
-:		cvs(callpoint!.getColumnData("POE_REQDET.WAREHOUSE_ID"),3)="" 
+	if ok_to_write$="Y" and  cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)=""
 		ok_to_write$="N"
 		focus_column$="POE_REQDET.PO_LINE_CODE"
+		translate$="AON_LINE_CODE"
 	endif
 
-	if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="SD")<>0 
-		if cvs(callpoint!.getColumnData("POE_REQDET.ITEM_ID"),3)="" or
-:		num(callpoint!.getColumnData("POE_REQDET.CONV_FACTOR"))<=0 or
-:		num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
-:		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0
+	if ok_to_write$="Y" and  cvs(callpoint!.getColumnData("POE_REQDET.WAREHOUSE_ID"),3)="" 
+		ok_to_write$="N"
+		focus_column$="POE_REQDET.WAREHOUSE_ID"
+		translate$="AON_WAREHOUSE"
+	endif
+
+	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="SD")<>0 
+		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_REQDET.ITEM_ID"),3)=""
 			ok_to_write$="N"
 			focus_column$="POE_REQDET.ITEM_ID"
+			translate$="AON_ITEM"
+		endif
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_REQDET.CONV_FACTOR"))<=0
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.CONV_FACTOR"
+			translate$="AON_CONVERSION_FACTOR"
+		endif
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.UNIT_COST"
+			translate$="AON_UNIT_COST"
+		endif
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.REQ_QTY"
+			translate$="AON_QUANTITY_REQUIRED"
 		endif
 	endif
 
-	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="N" 
-		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0 or
-:		num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0
+	if ok_to_write$="Y" and  cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="N" 
+		if ok_to_write$="Y" and  num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.UNIT_COST"
+			translate$="AON_UNIT_COST"
+		endif
+		if ok_to_write$="Y" and  num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))<=0
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.REQ_QTY"
+			translate$="AON_QUANTITY_REQUIRED"
+		endif
+	endif
+
+	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="O" 
+		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0
+			ok_to_write$="N"
+			focus_column$="POE_REQDET.UNIT_COST"
+			translate$="AON_UNIT_COST"
+		endif
+	endif
+
+	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="MNOV")<>0 
+		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_REQDET.ORDER_MEMO"
+			translate$="AON_MEMO"
 		endif
 	endif
 
-	if cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="O" 
-		if num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))<0
-			ok_to_write$="N"
-			focus_column$="POE_REQDET.ORDER_MEMO"
-		endif
-	endif
-
-	if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="MNOV")<>0 
-		if cvs(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"),3)="" 
-			ok_to_write$="N"
-			focus_column$="POE_REQDET.ORDER_MEMO"
-		endif
-	endif
-
-	if callpoint!.getHeaderColumnData("POE_REQHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
-		if pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="DSNO")<>0
-			if cvs(callpoint!.getColumnData("POE_REQDET.SO_INT_SEQ_REF"),3)="" 
+	if ok_to_write$="Y" and callpoint!.getHeaderColumnData("POE_REQHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
+		if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="DSNO")<>0
+			if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_REQDET.SO_INT_SEQ_REF"),3)="" 
 				ok_to_write$="N"
 				focus_column$="POE_REQDET.SO_INT_SEQ_REF"
+				translate$="AON_SO_SEQ_NO"
 			endif
 		endif
 	endif
 
 	if ok_to_write$<>"Y"
 		msg_id$="PO_REQD_DET"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=""
+		if translate$<>""
+			msg_tokens$[1]=Translate!.getTranslation(translate$)
+		endif
 		gosub disp_message
 		callpoint!.setFocus(num(callpoint!.getValidationRow()),focus_column$)
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
 	endif
 
 	rem -- now loop thru entire gridVect to make sure SO line reference, if used, isn't used >1 time
@@ -293,7 +327,6 @@ validate_whse_item:
 	endif
 	
 	if change_flag and cvs(item_id$,2)<>"" then
-rem	if cvs(item_id$,2)<>"" then
 		read record (ivm_itemwhse_dev,key=firm_id$+whse$+item_id$,knum="PRIMARY",dom=missing_warehouse) ivm_itemwhse$
 		ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 		dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
@@ -303,6 +336,7 @@ rem	if cvs(item_id$,2)<>"" then
 		if num(callpoint!.getColumnData("POE_REQDET.CONV_FACTOR"))=0 then callpoint!.setColumnData("POE_REQDET.CONV_FACTOR",str(1))
 		if cvs(callpoint!.getColumnData("POE_REQDET.LOCATION"),2)="" then callpoint!.setColumnData("POE_REQDET.LOCATION","STOCK")
 		callpoint!.setColumnData("POE_REQDET.UNIT_COST",str(num(callpoint!.getColumnData("POE_REQDET.CONV_FACTOR"))*ivm_itemwhse.unit_cost))
+		callpoint!.setStatus("REFRESH")
 	endif
 return
 		
