@@ -236,9 +236,10 @@ rem --- Use SQL queries to gather needed data
 			sql_prep$=sql_prep$+"LEFT JOIN SFC_WOTYPECD AS typ "; rem To get TypeCode Desc, STDACT_FLAG, & GL accts, if there
 			sql_prep$=sql_prep$+"       ON wo.Firm_ID+'A'+wo.WO_Type "
 			sql_prep$=sql_prep$+"        = typ.Firm_ID+'A'+typ.WO_Type	"
-			sql_prep$=sql_prep$+"WHERE wo.Firm_ID + wo.WO_Location + wo.WO_No  "; rem Limit to firm+WO_No
-			sql_prep$=sql_prep$+"    = '"+firm_id$ + wo_loc$+ wo_no$+"' "
-			
+			sql_prep$=sql_prep$+"WHERE wo.Firm_ID = '"+firm_id$+"' "
+			sql_prep$=sql_prep$+"  AND wo.WO_Location = '"+wo_loc$+"' "
+			sql_prep$=sql_prep$+"  AND wo.WO_No = '"+wo_no$+"' "			
+
 			sql_chan=sqlunt
 			sqlopen(sql_chan,err=*next)stbl("+DBNAME")
 			sqlprep(sql_chan)sql_prep$

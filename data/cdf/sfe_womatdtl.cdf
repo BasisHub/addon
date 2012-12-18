@@ -29,7 +29,7 @@ rem --- May want to reprint pick list if commitments changed
 				sfe_womatisd_dev=fnget_dev("SFE_WOMATISD")
 				sfe_womatish_key$=firm_id$+callpoint!.getHeaderColumnData("SFE_WOMATHDR.WO_LOCATION")+
 :					callpoint!.getHeaderColumnData("SFE_WOMATHDR.WO_NO")
-				read(sfe_womatish_dev,key=sfe_womatish_key$,dom=*next); have_issues=1
+				extractrecord(sfe_womatish_dev,key=sfe_womatish_key$,dom=*next)x$; have_issues=1; rem --- Advisory locking
 				if have_issues then
 					rem --- NOTE: This code should never get executed because of check for existing materials issues in ADIS of main form.
 					remove(sfe_womatish_dev,key=sfe_womatish_key$)

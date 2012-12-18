@@ -1,3 +1,25 @@
+[[SFE_WOMASTR.ADTW]]
+rem --- Re-launch sfe_womatl form after a bill is exploded
+	while callpoint!.getDevObject("explode_bills")="Y"
+		key_pfx$=firm_id$+callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")+callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+
+		dim dflt_data$[3,1]
+		dflt_data$[1,0]="FIRM_ID"
+		dflt_data$[1,1]=firm_id$
+		dflt_data$[2,0]="WO_LOCATION"
+		dflt_data$[2,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
+		dflt_data$[3,0]="WO_NO"
+		dflt_data$[3,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+
+		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:			"SFE_WOMATL",
+:			stbl("+USER_ID"),
+:			"MNT",
+:			key_pfx$,
+:			table_chans$[all],
+:			"",
+:			dflt_data$[all]
+	wend
 [[SFE_WOMASTR.AOPT-LSNO]]
 rem --- launch sfe_wolotser form to assign lot/serial numbers
 rem --- should only be enabled if on an inventory type WO, if item is lotted/serialized, and if params have LS set.
@@ -73,7 +95,7 @@ rem --- Loop thru materials detail - uncommit lot/serial only (i.e. atamo uncomm
 	read (sfe13_dev,key=firm_id$+wo_location$+wo_no$,dom=*next,dir=0)
 	while 1
 		sfe13_key$=key(sfe13_dev,end=*break)
-		read record (sfe13_dev)sfe_womathdr$
+		extract record (sfe13_dev)sfe_womathdr$; rem --- Advisory locking
 		if pos(firm_id$+wo_location$+wo_no$=sfe13_key$)<>1 then break
 
 		read (sfe23_dev,key=firm_id$+wo_location$+wo_no$,dom=*next)
@@ -104,8 +126,8 @@ rem --- Remove sfm-05 (sfe_woschdl)
 	read (sfm05_dev,key=firm_id$+wo_no$,knum=AO_WONUM,dom=*next)
 
 	while 1
-		read record(sfm05_dev,end=*break)sfe_woschdl$
-		if sfe_woschdl.firm_id$+sfe_woschdl.wo_no$<>firm_id$+wo_no$ then continue
+		extract record(sfm05_dev,end=*break)sfe_woschdl$; rem --- Advisory locking
+		if sfe_woschdl.firm_id$+sfe_woschdl.wo_no$<>firm_id$+wo_no$ then read(sfm05_dev); continue
 		remove (sfm05_dev,key=sfe_woschdl.firm_id$+sfe_woschdl.op_code$+sfe_woschdl.sched_date$+sfe_woschdl.wo_no$+sfe_woschdl.oper_seq_ref$,dom=*next)
 	wend
 
@@ -177,6 +199,9 @@ rem --- won't work there (too late).
 rem --- Set new record flag
 
 	callpoint!.setDevObject("new_rec","Y")
+	callpoint!.setDevObject("mark_to_explode",""); rem --- this needs to be initialized for sfe_womatl form here
+	callpoint!.setDevObject("explode_bills","N")
+
 
 rem --- Open tables
 
@@ -346,7 +371,7 @@ rem --- need to see if date has been changed; if so, prompt to change in sfe-02/
 			read (sfe02_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)
 			while 1
 				k$=key(sfe02_dev,end=*break)
-				readrecord(sfe02_dev)sfe_wooprtn$
+				extractrecord(sfe02_dev)sfe_wooprtn$; rem --- Advisory locking
 				if sfe_wooprtn.firm_id$+sfe_wooprtn.wo_location$+sfe_wooprtn.wo_no$<>firm_id$+wo_loc$+wo_no$ then break
 				sfe_wooprtn.require_date$=new_dt$
 				sfe_wooprtn$=field(sfe_wooprtn$)
@@ -357,7 +382,7 @@ rem --- need to see if date has been changed; if so, prompt to change in sfe-02/
 			read (sfe22_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)
 			while 1
 				k$=key(sfe22_dev,end=*break)
-				readrecord(sfe22_dev)sfe_womatl$
+				extractrecord(sfe22_dev)sfe_womatl$; rem --- Advisory locking
 				if sfe_womatl.firm_id$+sfe_womatl.wo_location$+sfe_womatl.wo_no$<>firm_id$+wo_loc$+wo_no$ then break
 				sfe_womatl.require_date$=new_dt$
 				sfe_womatl$=field(sfe_womatl$)
@@ -368,7 +393,7 @@ rem --- need to see if date has been changed; if so, prompt to change in sfe-02/
 			read (sfe23_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)
 			while 1
 				k$=key(sfe23_dev,end=*break)
-				readrecord(sfe23_dev)sfe_womatdtl$
+				extractrecord(sfe23_dev)sfe_womatdtl$; rem --- Advisory locking
 				if sfe_womatdtl.firm_id$+sfe_womatdtl.wo_location$+sfe_womatdtl.wo_no$<>firm_id$+wo_loc$+wo_no$ then break
 				sfe_womatdtl.require_date$=new_dt$
 				sfe_womatdtl$=field(sfe_womatdtl$)
@@ -866,6 +891,7 @@ rem --- Only allow changes to status if P or Q
 	if pos(status$="PQ")=0
 		callpoint!.setUserInput(old_status$)
 	endif
+	callpoint!.setDevObject("wo_status",callpoint!.getUserInput())
 [[SFE_WOMASTR.WO_TYPE.AVAL]]
 rem --- Only allow change to Type if it's the same Category
 
@@ -892,8 +918,23 @@ rem --- If new order, check for type of Work Order and disable Item or Descripti
 	endif
 
 	if typecode.wo_category$<>"I"
+		callpoint!.setColumnData("SFE_WOMASTR.ITEM_ID","",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.ITEM_ID",0)
+		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE","",1)
+		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","N",1)
+		callpoint!.setOptionEnabled("LSNO",0)
+		callpoint!.setColumnData("SFE_WOMASTR.DRAWING_NO","",1)
+		callpoint!.setColumnData("SFE_WOMASTR.DRAWING_REV","",1)
+		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE","",1)
+		callpoint!.setColumnData("SFE_WOMASTR.BILL_REV","",1)
+		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",1)
+		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",1)
 	else
+		if callpoint!.getDevObject("new_rec")="Y"
+			callpoint!.setColumnEnabled("SFE_WOMASTR.ITEM_ID",1)
+		endif
+		callpoint!.setColumnData("SFE_WOMASTR.DESCRIPTION_01","",1)
+		callpoint!.setColumnData("SFE_WOMASTR.DESCRIPTION_02","",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",0)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",0)
 	endif
@@ -936,7 +977,7 @@ rem --- create WO comments from BOM comments
 			sfe_wocomnt.sequence_no$=str(num(bmm_billcmts.sequence_num$):seq_mask$)
 			sfe_wocomnt.ext_comments$=bmm_billcmts.std_comments$
 			sfe_wocomnt$=field(sfe_wocomnt$)
-			write record (sfe07_dev)sfe_wocomnts$
+			write record (sfe07_dev)sfe_wocomnt$
 		wend
 
 	endif
@@ -1073,9 +1114,10 @@ launch_mats:
 		swend
 	endif
 
-rem --- Set new_rec to N
+rem --- Set new_rec to N and disable Item Number
 
 	callpoint!.setDevObject("new_rec","N")
+	callpoint!.setColumnEnabled("SFE_WOMASTR.ITEM_ID",0)
 
 rem --- disable Copy function if closed or not an N category
 

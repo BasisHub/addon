@@ -114,7 +114,7 @@ rem --- Now loop through vectOldOps to create/update new Op Codes
 					endif
 				endif
 
-				read record (cal_dev,key=firm_id$+vectSelected!.getItem(y)+cal.year$+cal.month$,dom=*next) calnew$
+				extract record (cal_dev,key=firm_id$+vectSelected!.getItem(y)+cal.year$+cal.month$,dom=*next) calnew$; rem --- Advisory locking
 				if cvs(calnew.firm_id$,2)=""
 				rem --- new record
 

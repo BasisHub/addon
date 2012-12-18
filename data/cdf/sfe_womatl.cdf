@@ -1,23 +1,51 @@
+[[<<DISPLAY>>.EXPLODE_BILL.AVAL]]
+rem --- Enable/disable explode field
+	callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL",callpoint!.getUserInput())
+	gosub enable_explode
+[[SFE_WOMATL.ITEM_ID.BINP]]
+rem --- Capture current item_id so will know later if it was changed
+	callpoint!.setDevObject("prev_item_id",callpoint!.getColumnData("SFE_WOMATL.ITEM_ID"))
+[[SFE_WOMATL.LINE_TYPE.BINP]]
+rem --- Capture current line_type so will know later if it was changed
+	callpoint!.setDevObject("prev_line_type",callpoint!.getColumnData("SFE_WOMATL.LINE_TYPE"))
+[[SFE_WOMATL.LINE_TYPE.AVAL]]
+rem --- Skip if line_type didn't changed
+	line_type$=callpoint!.getUserInput()
+	if line_type$=callpoint!.getDevObject("prev_line_type") then break
+
+rem --- Enable/disable explode field
+	callpoint!.setColumnData("SFE_WOMATL.LINE_TYPE",line_type$)
+	gosub enable_explode
+[[SFE_WOMATL.AGDR]]
+rem --- Enable/disable explode field
+	gosub enable_explode
 [[SFE_WOMATL.BWRI]]
-rem --- If BOM is installed, build a string of item/seq# for any item that's a bill; used for explosion when exiting
+rem --- Maintain a string of item/seq# for any bill being exploded (explosion done on exit)
 
-	if callpoint!.getDevObject("bm")="Y" and callpoint!.getColumnData("SFE_WOMATL.LINE_TYPE")="S"
+	rem --- Add/remove to string of bills being exploded
+	explode_bills$=callpoint!.getDevObject("explode_bills")
+	item_id$=callpoint!.getColumnData("SFE_WOMATL.ITEM_ID")
+	mat_isn$=callpoint!.getColumnData("SFE_WOMATL.INTERNAL_SEQ_NO")
+	tmp$=mat_isn$+"^"+item_id$+"^^"
 
-		bmm01_dev=fnget_dev("BMM_BILLMAST")
-		dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
-
-		item_id$=callpoint!.getColumnData("SFE_WOMATL.ITEM_ID")
-		material_seq$=callpoint!.getColumnData("SFE_WOMATL.MATERIAL_SEQ")
-
-		read record (bmm01_dev,key=firm_id$+item_id$,dom=*next)bmm_billmast$
-
-		if pos(firm_id$+item_id$=bmm_billmast$)=1
-			explode_bills$=callpoint!.getDevObject("explode_bills")
-			tmp$=material_seq$+"^"+item_id$+"^^"
-			if pos(tmp$=explode_bills$)=0
-				explode_bills$=explode_bills$+tmp$
-				callpoint!.setDevObject("explode_bills",explode_bills$)
-			endif
+	rem --- Bug 6493: On grids callpoint!.getColumnData("<<DISPLAY>>.field") does NOT return data for the current validation row
+	rem --- So must test check box directly instead of <<DISPLAY>>.EXPLODE_BILL
+	grid! = Form!.getControl(num(stbl("+GRID_CTL")))
+	row=callpoint!.getValidationRow()
+	column=3; rem --- check box column
+	checked$=iff(grid!.getCellState(row,column),"Y","N")
+	if checked$="Y" then
+		rem --- Add to string of bills being exploded
+		if pos(tmp$=explode_bills$)=0
+			explode_bills$=explode_bills$+tmp$
+			callpoint!.setDevObject("explode_bills",explode_bills$)
+		endif
+	else
+		rem --- Remove from string of bills being exploded
+		start=pos(tmp$=explode_bills$)
+		if start then
+			explode_bills$=explode_bills$(1,start-1)+explode_bills$(start+len(tmp$))
+			callpoint!.setDevObject("explode_bills",explode_bills$)
 		endif
 	endif
 [[SFE_WOMATL.BEND]]
@@ -49,14 +77,11 @@ rem --- prompt user to explode them; if yes, explode, then re-launch form so use
 				tmp=pos("^^"=explode_bills$+"^^")
 				explode_bill$=explode_bills$(1,tmp-1)
 				explode_bills$=explode_bills$(tmp+2)	
-				material_seq$=explode_bill$(1,pos("^"=explode_bill$)-1)
+				mat_isn$=explode_bill$(1,pos("^"=explode_bill$)-1)
 				explode_bill$=explode_bill$(pos("^"=explode_bill$)+1)	
 
 				dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
 				read record (bmm01_dev,key=firm_id$+explode_bill$,dom=*continue)bmm_billmast$
-
-				rem 0590 DIM T0$(0),T[10,1]
-				rem 0600 LET X=0,T[X,0]=1,T[X,1]=1,T=1
 			
 				all_bills$=""
 				x=0
@@ -73,13 +98,13 @@ rem --- prompt user to explode them; if yes, explode, then re-launch form so use
 				allbills[x,0]=t
 
 				gosub explode_bills
-				rem --- now remove the original bill record
-				remove(sfe22_dev,key=firm_id$+wo_loc$+wo_no$+material_seq$,dom=*next)
-		
+
 				callpoint!.setDevObject("explode_bills","Y")
 			wend
 		else
-			callpoint!.setDevObject("explode_bills","N")
+			rem --- Don't exit, they want to edit bills selected for explosion
+			callpoint!.setStatus("ABORT")
+			break
 		endif
 	endif
 [[SFE_WOMATL.AGRE]]
@@ -134,6 +159,79 @@ rem --- Calc Totals
 	scrap_factor=num(callpoint!.getColumnData("SFE_WOMATL.SCRAP_FACTOR"))
 	gosub calculate_totals
 [[SFE_WOMATL.<CUSTOM>]]
+rem =========================================================
+
+init_wo_sfe22_recs: rem ---Initialize vector with current sfe-22 (sfe_womatl) records for given work order
+
+rem --- incoming data:
+rem --- wo_no$
+rem --- wo_loc$
+rem --- sfe_womatl$
+
+rem =========================================================
+
+	wo_sfe22_recs!=BBjAPI().makeVector()
+	dim sfe_womatl$:fattr(sfe_womatl$)
+	read(sfe22_dev,key=firm_id$+wo_loc$+wo_no$,knum="PRIMARY",dom=*next)
+	while 1
+		sfe22_key$=key(sfe22_dev,end=*break)
+		if pos(firm_id$+wo_loc$+wo_no$=sfe22_key$)<>1 then break
+		readrecord(sfe22_dev)sfe_womatl$
+		wo_sfe22_recs!.addItem(sfe_womatl$)
+	wend
+	return
+
+rem ==========================================================================
+enable_explode: rem --- Enable/disable explode field (and initialize)
+rem ==========================================================================
+	rem --- Enable explode when item is a Bill on non-stock planned or quote WO, or a phantom
+	row=callpoint!.getValidationRow()
+	if callpoint!.getDevObject("bm")="Y" and callpoint!.getColumnData("SFE_WOMATL.LINE_TYPE")="S"
+		bmm01_dev=fnget_dev("BMM_BILLMAST")
+		dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
+		item_id$=callpoint!.getColumnData("SFE_WOMATL.ITEM_ID")
+
+		bmm01_found=0
+		read record (bmm01_dev,key=firm_id$+item_id$,dom=*next)bmm_billmast$; bmm01_found=1
+		if bmm01_found then
+			if bmm_billmast.phantom_bill$="Y" then
+				rem --- Always explode phantom bills
+				rem --- Disable so explode can't be cancelled
+				callpoint!.setColumnEnabled(row,"<<DISPLAY>>.EXPLODE_BILL",0)
+				callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","Y",1)
+				callpoint!.setStatus("MODIFIED")
+			else
+				if callpoint!.getDevObject("wo_category")="N" and pos(callpoint!.getDevObject("wo_status")="PQ") then
+					rem --- Enable so explode can be changed for non-stock planned or quote work orders
+					callpoint!.setColumnEnabled(row,"<<DISPLAY>>.EXPLODE_BILL",1)
+					mark_pos=pos(callpoint!.getColumnData("SFE_WOMATL.INTERNAL_SEQ_NO")=callpoint!.getDevObject("mark_to_explode"))
+					if callpoint!.getDevObject("new_item") or mark_pos then
+						rem --- For new bill, check explode
+						callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","Y",1)
+						callpoint!.setStatus("MODIFIED")
+						if mark_pos then
+							rem --- Remove from mark_to_explode
+							mark_len=len(callpoint!.getColumnData("SFE_WOMATL.INTERNAL_SEQ_NO"))
+							mark_to_explode$=callpoint!.getDevObject("mark_to_explode")
+							mark_to_explode$=mark_to_explode$(1,mark_pos-1)+mark_to_explode$(mark_pos+mark_len)
+							callpoint!.setDevObject("mark_to_explode",mark_to_explode$)
+						endif
+					endif
+				else
+					callpoint!.setColumnEnabled(row,"<<DISPLAY>>.EXPLODE_BILL",0)
+					callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","N",1)
+				endif
+			endif
+		else
+			callpoint!.setColumnEnabled(row,"<<DISPLAY>>.EXPLODE_BILL",0)
+			callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","N",1)
+		endif
+	else
+		callpoint!.setColumnEnabled(row,"<<DISPLAY>>.EXPLODE_BILL",0)
+		callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","N",1)
+	endif
+	return
+
 rem ========================================================
 calculate_totals:
 rem ========================================================
@@ -162,6 +260,7 @@ rem --- incoming data:
 rem --- wo_no$
 rem --- wo_loc$
 rem --- new_bill$
+rem --- mat_isn$
 rem --- sfe_womastr$
 
 rem =========================================================
@@ -190,6 +289,7 @@ rem =========================================================
 	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",sfe22_key_tpl$,rd_table_chans$[all],status$
 	dim sfe22_prev_key$:sfe22_key_tpl$
 
+	mark_to_explode$=""
 	all_bills$=new_bill$
 	curr_bill$=new_bill$
 	subs$=""
@@ -198,6 +298,9 @@ rem =========================================================
 	dim yld[99]
 	yld[0]=num(sfe_womastr.est_yield$)
 	yld=yld[0]
+
+	wfattr$=fattr(sfe_womatl$,"INTERNAL_SEQ_NO")
+	mat_isn_len=dec(wfattr$(10,2))
 
 	wfattr$=fattr(sfe_womatl$,"MATERIAL_SEQ")
 	material_seq_len=dec(wfattr$(10,2))
@@ -216,6 +319,20 @@ rem =========================================================
 
 	wfattr$=fattr(bmm_billmat$,"ITEM_ID")
 	item_len=dec(wfattr$(10,2))
+
+	rem --- Get vector of wo's current sfe_womatl records
+	gosub init_wo_sfe22_recs
+	rem --- Initialize vector index for inserting next sfe_womatl record
+	if num(mat_isn$)>0 then
+		dim sfe_womatl$:fattr(sfe_womatl$)
+		sfe22_key$=firm_id$+wo_loc$+wo_no$+mat_isn$
+		read record (sfe22_dev,key=sfe22_key$,knum="AO_MAT_SEQ",dom=*next)sfe_womatl$
+		next_mat_seq=max(1,num(sfe_womatl.material_seq$))
+	else
+		next_mat_seq=1
+		endif
+	rem --- Remove from vector the bill being exploded
+	if num(mat_isn$)>0 and wo_sfe22_recs!.size()>0 then wo_sfe22_recs!.removeItem(next_mat_seq-1)
 
 mats_next_bill:
 	read (bmm02_dev,key=firm_id$+curr_bill$,dom=*next)
@@ -251,6 +368,7 @@ mats_loop:
 		if bmm_billmat.line_type$="M"
 			sfe_womatl.line_type$="M"
 			sfe_womatl.ext_comments$=bmm_billmat.ext_comments$
+			phantom_bill$="N"
 		else
 			sfe_womatl.unit_measure$=ivm_itemmast.unit_of_sale$
 			sfe_womatl.require_date$=sfe_womastr.eststt_date$
@@ -290,31 +408,35 @@ mats_loop:
 		if phantom_bill$<>"Y"
 			rem --- now write materials rec
 			rem --- not phantom, or not a bill, or just a message line (6400)
-			read (sfe22_dev,key=firm_id$+wo_loc$+wo_no$+$FF$,dom=*next)
-			sfe_womatl.material_seq$=fill(material_seq_len,"0")
-			dim sfe22_prev_key$:fattr(sfe22_prev_key$)
-			sfe22_prev_key$=keyp(sfe22_dev,end=no_prev_mats_key)
-			if pos(firm_id$+wo_loc$+wo_no$=sfe22_prev_key$)=1 then sfe_womatl.material_seq$=sfe22_prev_key.material_seq$
-			if pos("9"<>sfe22_prev_key.material_seq$)=0 
+			sfe_womatl.material_seq$=str(next_mat_seq:mat_seq_mask$)
+			if pos("9"<>sfe_womatl.material_seq$)=0 
 				msg_id$="SF_NO_MORE_SEQ"
 				gosub disp_message
 				exitto back_up_levels
 			endif
-no_prev_mats_key:
-			sfe_womatl.material_seq$=str(num(sfe_womatl.material_seq$)+1:mat_seq_mask$)
 			internal_seq_no$=""
 			call stbl("+DIR_SYP")+"bas_sequences.bbj","INTERNAL_SEQ_NO",internal_seq_no$,table_chans$[all],"QUIET"
 			sfe_womatl.internal_seq_no$=internal_seq_no$
 
 			if ivm_itemwhse.special_ord$="Y" then sfe_womatl.po_status$="S"
 
+			rem --- Insert exploded bill records into vector
 			sfe_womatl$=field(sfe_womatl$)
-			writerecord (sfe22_dev)sfe_womatl$
+			wo_sfe22_recs!.insertItem(next_mat_seq-1,sfe_womatl$)
+			next_mat_seq=next_mat_seq+1
 
-			if cvs(bmm_billmat.op_int_seq_ref$,3)<>""			
-				if mats$="" mats_offset=len(bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$)
-				mats$=mats$+bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$+sfe_womatl.material_seq$
+			rem --- Keep track if this is a bill so can mark to explode on initial redisplay
+			if sfe_womatl.item_id$=bmm_billmast.bill_no$ then
+				mark_to_explode$=mark_to_explode$+sfe_womatl.internal_seq_no$+";"
 			endif
+
+			rem --- sfe_wooprtn.internal_seq_no$ doesn't change when/if operations are re-sequenced,
+			rem --- so this shouldn't be needed anymore (wgh 11/14/2012)
+rem			if cvs(bmm_billmat.op_int_seq_ref$,3)<>""			
+rem				if mats$="" mats_offset=len(bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$)
+rem				mats$=mats$+bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$+sfe_womatl.internal_seq_no$
+rem			endif
+
 		else
 			rem --- down one level; then exitto mats_next_bill
 			all_bills$=all_bills$+bmm_billmat.item_id$
@@ -340,6 +462,23 @@ no_prev_mats_key:
 
 	wend
 
+	rem --- Overwrite wo's existing sfe_womatl records with records in vector
+	mat_seq=1
+	while mat_seq<=wo_sfe22_recs!.size()
+		sfe_womatl$=wo_sfe22_recs!.getItem(mat_seq-1)
+		sfe_womatl.material_seq$=str(mat_seq:mat_seq_mask$)
+		if pos("9"<>sfe_womatl.material_seq$)=0 
+			msg_id$="SF_NO_MORE_SEQ"
+			gosub disp_message
+			exitto back_up_levels
+		endif
+		sfe22_key$=sfe_womatl.firm_id$+sfe_womatl.wo_location$+sfe_womatl.wo_no$+sfe_womatl.material_seq$
+		extractrecord(sfe22_dev,key=sfe22_key$,knum="PRIMARY",dom=*next)x$; rem --- Advisory locking
+		sfe_womatl$=field(sfe_womatl$)
+		writerecord(sfe22_dev)sfe_womatl$
+		mat_seq=mat_seq+1
+	wend
+
 back_up_levels: rem --- this is the 6900 part - move on to ops and subs for phantoms, or do final ops/subs
 
 	if all_bills$<>new_bill$
@@ -361,6 +500,8 @@ next_bill_level:
 		if callpoint!.getDevObject("po")="Y" then gosub do_subcontracts
 		rem all done... should now be ready to display what's just been added to mats grid
 	endif
+
+	callpoint!.setDevObject("mark_to_explode",mark_to_explode$)
 	return
 
 rem =========================================================
@@ -446,17 +587,20 @@ no_prev_ops_key:
 
 		if subs$="" subs_offset=len(curr_bill$+bmm_billoper.internal_seq_no$)
 		subs$=subs$+curr_bill$+bmm_billoper.internal_seq_no$+sfe_wooprtn.internal_seq_no$
-	
-		while 1
-			mats_pos=pos(bmm_billoper.bill_no$+bmm_billoper.internal_seq_no$=mats$,mats_offset+material_seq_len,occ)
-			if mats_pos=0 then break
-			dim sfe_womatl2$:fattr(sfe_womatl$)
-			extract record (sfe22_dev,key=firm_id$+wo_loc$+wo_no$+mats$(mats_pos+mats_offset,material_seq_len),dom=*break)sfe_womatl2$
-			sfe_womatl2.oper_seq_ref$=sfe_wooprtn.internal_seq_no$
-			sfe_womatl2$=field(sfe_womatl2$)
-			write record (sfe22_dev)sfe_womatl2$
-			occ=occ+1
-		wend
+
+		rem --- sfe_wooprtn.internal_seq_no$ doesn't change when/if operations are re-sequenced,
+		rem --- so this shouldn't be needed anymore (wgh 11/14/2012)
+rem		while 1
+rem			mats_pos=pos(bmm_billoper.bill_no$+bmm_billoper.internal_seq_no$=mats$,mats_offset+mat_isn_len,occ)
+rem			if mats_pos=0 then break
+rem			dim sfe_womatl2$:fattr(sfe_womatl$)
+rem			sfe22_key$=firm_id$+wo_loc$+wo_no$+mats$(mats_pos+mats_offset,mat_isn_len)
+rem			extract record (sfe22_dev,key=sfe22_key$,knum="AO_MAT_SEQ",dom=*break)sfe_womatl2$
+rem			sfe_womatl2.oper_seq_ref$=sfe_wooprtn.internal_seq_no$
+rem			sfe_womatl2$=field(sfe_womatl2$)
+rem			write record (sfe22_dev)sfe_womatl2$
+rem			occ=occ+1
+rem		wend
 	
 	wend
 
@@ -502,7 +646,7 @@ do_subcontracts:
 		else
 			sfe_wosubcnt.unit_measure$=""
 			sfe_wosubcnt.description$=""
-			sfe_wosubcnt.ext_comments$=bill_billsub.ext_comments$
+			sfe_wosubcnt.ext_comments$=bmm_billsub.ext_comments$
 		endif
 
 		subs_pos=pos(bmm_billsub.bill_no$+bmm_billsub.op_int_seq_ref$=subs$,subs_offset+op_isn_len)
@@ -558,6 +702,16 @@ rem =========================================================
 	endif
 	return
 [[SFE_WOMATL.ITEM_ID.AVAL]]
+rem --- Skip if item_id didn't change
+	item_id$=callpoint!.getUserInput()
+	if item_id$=callpoint!.getDevObject("prev_item_id") then break
+
+rem --- Enable/disable explode field for new/changed item
+	callpoint!.setColumnData("SFE_WOMATL.ITEM_ID",item_id$)
+	callpoint!.setDevObject("new_item",1)
+	gosub enable_explode
+	callpoint!.setDevObject("new_item",0)
+
 rem --- Set default Unit Cost
 
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
@@ -566,8 +720,8 @@ rem --- Set default Unit Cost
 	dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
 	whse_id$=callpoint!.getDevObject("default_wh")
 
-	read record(ivm01_dev,key=firm_id$+callpoint!.getUserInput())ivm01a$
-	read record (ivm02_dev,key=firm_id$+whse_id$+callpoint!.getUserInput()) ivm02a$
+	read record(ivm01_dev,key=firm_id$+item_id$)ivm01a$
+	read record (ivm02_dev,key=firm_id$+whse_id$+item_id$) ivm02a$
 
 	callpoint!.setColumnData("SFE_WOMATL.IV_UNIT_COST",str(ivm02a.unit_cost))
 	callpoint!.setColumnData("SFE_WOMATL.UNIT_MEASURE",ivm01a.unit_of_sale$,1)
@@ -580,15 +734,11 @@ rem --- Set default Unit Cost
 	divisor=num(callpoint!.getColumnData("SFE_WOMATL.DIVISOR"))
 	scrap_factor=num(callpoint!.getColumnData("SFE_WOMATL.SCRAP_FACTOR"))
 	gosub calculate_totals
-
 [[SFE_WOMATL.BSHO]]
 use ::sfo_SfUtils.aon::SfUtils
 declare SfUtils sfUtils!
 
 rem --- init data
-
-rem 0590 DIM T0$(0),T[10,1]
-rem 0600 LET X=0,T[X,0]=1,T[X,1]=1,T=1
 
 	all_bills$=""
 	x=0
@@ -601,6 +751,7 @@ rem 0600 LET X=0,T[X,0]=1,T[X,1]=1,T=1
 	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","PRIMARY",sfe02_key_tpl$,rd_table_chans$[all],status$
 	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOSUBCNT","PRIMARY",sfe32_key_tpl$,rd_table_chans$[all],status$
 
+	callpoint!.setDevObject("new_item",0)
 	callpoint!.setDevObject("explode_bills","")
 	callpoint!.setDevObject("special_order","")
 
@@ -614,11 +765,13 @@ rem --- see if we're on a new WO that's for an I-category bill, and if so explod
 
 		dim bmm_billmat$:fnget_tpl$("BMM_BILLMAT")
 		dim sfe_womastr$:fnget_tpl$("SFE_WOMASTR")
+		dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
 
 		wo_no$=callpoint!.getDevObject("wo_no")
 		wo_loc$=callpoint!.getDevObject("wo_loc")
 		read record (sfe01_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womastr$
 		new_bill$=sfe_womastr.item_id$
+		mat_isn$=pad("",len(sfe_womatl.internal_seq_no$),"0")
 
 		if cvs(new_bill$,3)<>""
 			read(bmm02_dev,key=firm_id$+new_bill$,dom=*next)

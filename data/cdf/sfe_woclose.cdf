@@ -297,7 +297,7 @@ rem --- Work order scheduled to be closed?
 	dim closedwo$:fnget_tpl$("1SFE_CLOSEDWO")
 	wo_location$=callpoint!.getColumnData("SFE_WOCLOSE.WO_LOCATION")
 	wo_no$=callpoint!.getColumnData("SFE_WOCLOSE.WO_NO")
-	findrecord(closedwo_dev,key=firm_id$+wo_location$+wo_no$,dom=*next)closedwo$
+	extractrecord(closedwo_dev,key=firm_id$+wo_location$+wo_no$,dom=*next)closedwo$; rem --- Advisory locking
 	callpoint!.setDevObject("set_status_save",0)
 	if closedwo.wo_no$=wo_no$ then
 		rem --- Reopen closed work order?

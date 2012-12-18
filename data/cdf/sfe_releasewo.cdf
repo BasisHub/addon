@@ -196,7 +196,7 @@ rem --- Release/commit
 		dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
 		dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
 
-		read record (sfe01_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womastr$
+		extract record (sfe01_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womastr$; rem --- Advisory locking
 		if pos(firm_id$+wo_loc$+wo_no$=sfe_womastr$)=1
 
 			rem --- update on order qty
@@ -206,8 +206,7 @@ rem --- Release/commit
 			call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 
 			rem --- process womathdr/dtl
-			read (sfe13_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)
-			read record (sfe13_dev,end=*next)sfe_womathdr$
+			extract record (sfe13_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womathdr$; rem --- Advisory locking
 			if pos(firm_id$+wo_loc$+wo_no$=sfe_womathdr$)<>1
 
 				sfe_womathdr.firm_id$=firm_id$

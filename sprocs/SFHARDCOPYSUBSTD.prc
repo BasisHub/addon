@@ -47,8 +47,9 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
 	temp$="VENDOR:C(1*), DESC:C(1*), OP_SEQ:C(1*), DATE_REQ:C(1*), STATUS:C(1*), "
-	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*)"
-
+	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
+	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
+	
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
 rem --- Get Barista System Program directory
@@ -61,6 +62,8 @@ rem --- Get masks
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 	iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
+	sf_cost_mask$=fngetmask$("sf_cost_mask","###,##0.0000-",masks$)
+	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.00-",masks$)
 	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
 	vendor_mask$=fngetmask$("vendor_mask","000000",masks$)
 
@@ -163,8 +166,8 @@ rem			data!.setFieldValue("DESC",read_tpl.description$)
 			data!.setFieldValue("UNITS_EA",str(read_tpl.units:ad_units_mask$))
 			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:ad_units_mask$))
 			if report_type$<>"T"
-				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:iv_cost_mask$))
-				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:iv_cost_mask$))
+				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
+				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_amt_mask$))
 			endif
 		endif
 		rs!.insert(data!)
@@ -197,9 +200,12 @@ rem --- Output Totals
 		rs!.insert(data!)
 	
 		data! = rs!.getEmptyRecordData()
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("VENDOR","Total Subcontracts")
-		data!.setFieldValue("COST_EA",str(tot_cost_ea:iv_cost_mask$))
-		data!.setFieldValue("COST_TOT",str(tot_cost_tot:iv_cost_mask$))
+		data!.setFieldValue("COST_EA",str(tot_cost_ea:sf_cost_mask$))
+		data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_amt_mask$))
+		data!.setFieldValue("COST_EA_RAW",str(tot_cost_ea))
+		data!.setFieldValue("COST_TOT_RAW",str(tot_cost_tot))
 		rs!.insert(data!)
 	endif
 	

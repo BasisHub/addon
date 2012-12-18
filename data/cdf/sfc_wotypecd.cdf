@@ -1,4 +1,4 @@
-[[SFC_WOTYPECD.ARAR]]
+[[SFC_WOTYPECD.ADIS]]
 rem --- Disable variance accounts
 
 	stdact_flag$=callpoint!.getColumnData("SFC_WOTYPECD.STDACT_FLAG")
@@ -11,7 +11,7 @@ rem --- Disable variance accounts
 [[SFC_WOTYPECD.<CUSTOM>]]
 rem =====================================================
 disable_accts:
-rem - std_flag$	input
+rem - stdact_flag$	input
 rem =====================================================
 rem --- Disable 4 G/L Accounts if posting at Actuals
 

@@ -12,6 +12,8 @@ APM-11 Bank Reconciliation
 	These 2 triggers will maintain the Barista version of the Bank Rec file instead of maintaining the v6 version.
 GLM-03 Journal ID Codes
 	This trigger will read from the Barista version of the file so that the version 6 file will no longer need to be maintained.
+GLM-06 Audit Control Detail
+	These 2 triggers will ensure that the Barista version of the file will maintain synchronicity with the v6 file so that the Audit Control Number for the Payroll Check Register will use what the Barista file contains.
 GLT-04 Daily Transaction Detail
 	This trigger will write to the Barista version of the file instead of writing to the v6 file.
 GLT-05 Transaction Detail Sort

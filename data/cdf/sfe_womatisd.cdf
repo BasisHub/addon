@@ -228,7 +228,7 @@ rem --- Delete lot/serial and inventory commitments. Must do this before sfe_wom
 		while 1
 			sfe_wolsissu_key$=key(sfe_wolsissu_dev,end=*break)
 			if pos(firm_loc_wo$+sfe_womatisd.internal_seq_no$=sfe_wolsissu_key$)<>1 then break
-			readrecord(sfe_wolsissu_dev)sfe_wolsissu$
+			extractrecord(sfe_wolsissu_dev)sfe_wolsissu$; rem --- Advisory locking
 
 			rem --- Delete lot/serial commitments
 			items$[1]=sfe_womatisd.warehouse_id$

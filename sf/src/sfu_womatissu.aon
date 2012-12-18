@@ -44,13 +44,19 @@ rem --- Start progress meter and position header file
 rem --- Read next Issue Inventory Transaction (SFE_WOTRANS) record
 
     while 1
-        read record (wotrans_dev,end=*break)wotrans$
+        extract record (wotrans_dev,end=*break)wotrans$; rem --- Advisory locking
         if wotrans.firm_id$<>firm_id$ then break
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
         rem --- Get Material Issues Header (SFE_WOMATISH, sfe-15) record for this transaction (and batch)
         sfe15_key$=firm_id$+batch_no$+wotrans.wo_location$+wotrans.wo_no$
-        extract record (sfe15_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*continue) sfe15a$; rem --- skip if wrong batch
+        sfe15_found=0
+        extract record (sfe15_dev,key=sfe15_key$,knum="BATCH_KEY",dom=*next) sfe15a$; sfe15_found=1
+        if !sfe15_found then
+            rem --- skip if wrong batch
+            read (wotrans_dev)
+            continue
+        endif
 
         rem --- Get Work Order Entry (SFE_WOMASTR, sfe-01) record
         dim sfe01a$:fattr(sfe01a$)
@@ -67,7 +73,7 @@ rem --- Read next Issue Inventory Transaction (SFE_WOTRANS) record
             sfe25_key$=key(sfe25_dev,end=*break)
             if pos(sfe15_key$=sfe25_key$)<>1 then break
             extract record (sfe25_dev) sfe25a$
-            if sfe25a.qty_issued=0 then continue
+            if sfe25a.qty_issued=0 then read(sfe25_dev); continue
 
             rem --- Get inventory item
             dim ivm01a$:fattr(ivm01a$)

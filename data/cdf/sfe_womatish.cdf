@@ -64,7 +64,7 @@ rem --- Delete inventory issues and commitments. Must do this before sfe_womatis
 			while 1
 				sfe_wolsissu_key$=key(sfe_wolsissu_dev,end=*break)
 				if pos(firm_loc_wo$+sfe_womatisd.internal_seq_no$=sfe_wolsissu_key$)<>1 then break
-				readrecord(sfe_wolsissu_dev)sfe_wolsissu$
+				extractrecord(sfe_wolsissu_dev)sfe_wolsissu$; rem --- Advisory locking
 
 				rem --- Delete lot/serial commitments
 				items$[1]=sfe_womatisd.warehouse_id$
@@ -307,7 +307,7 @@ rem --- New materials issues entry or no existing materials issues
 
 					dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
 					findrecord(sfe_womatl_dev,key=firm_loc_wo$+sfe_womatisd.womatdtl_seq_ref$,knum="AO_MAT_SEQ",dom=*next)sfe_womatl$
-					if sfe_womatl.oper_seq_ref$="" then continue
+					if sfe_womatl.oper_seq_ref$="" then read (sfe_womatisd_dev); continue
 
 					rem --- Was this operation selected?
 					if !all_selected then
@@ -315,7 +315,7 @@ rem --- New materials issues entry or no existing materials issues
 						iter!=selected_ops!.keySet().iterator()
 						while iter!.hasNext()
 							op_seq$=iter!.next()
-							if selected_ops!.get(op_seq$)="" then continue
+							if selected_ops!.get(op_seq$)="" then read (sfe_womatisd_dev); continue
 							if selected_ops!.get(op_seq$)=sfe_womatl.oper_seq_ref$ then
 								oprtn_selected=1
 								break

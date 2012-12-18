@@ -88,7 +88,7 @@ rem --- Open files with adc (Change from adc to bac once Barista is enhanced)
     files$[1]="ivm-01",    ids$[1]="IVM_ITEMMAST"
 	files$[2]="sfs_params",ids$[2]="SFS_PARAMS"
 	files$[3]="ivs_params",ids$[3]="IVS_PARAMS"	
-	files$[4]="gls_params",ids$[4]="IVS_PARAMS"		
+	files$[4]="gls_params",ids$[4]="GLS_PARAMS"		
     files$[5]="sft-01",    ids$[5]="SFT_OPNOPRTR"
 	files$[6]="sft-03",    ids$[6]="SFT_CLSOPRTR"
 	files$[7]="sft-21",    ids$[7]="SFT_OPNMATTR"
@@ -96,7 +96,6 @@ rem --- Open files with adc (Change from adc to bac once Barista is enhanced)
 	files$[9]="sft-31",    ids$[9]="SFT_OPNSUBTR"
 	files$[10]="sft-33",   ids$[10]="SFT_CLSSUBTR"
 
-	
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -364,7 +363,7 @@ rem --- Construct sql_prep$
 
 		sql_prep$=sql_prep$+"SELECT "+select$+" "
 		sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "
-		sql_prep$=sql_prep$+"LEFT JOIN ("+trans_tbl_query$+" "
+		sql_prep$=sql_prep$+"INNER JOIN ("+trans_tbl_query$+" "
 		sql_prep$=sql_prep$+"          ) AS trans"
 		sql_prep$=sql_prep$+"       ON mast.firm_id+mast.wo_location+mast.wo_no "
 		sql_prep$=sql_prep$+"        = trans.firm_id+trans.wo_location+trans.wo_no " 

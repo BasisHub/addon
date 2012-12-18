@@ -133,7 +133,7 @@ rem --- Delete inventory issues.
 	dim sfe_wolsissu$:fnget_tpl$("SFE_WOLSISSU")
 
 	have_issues=0
-	read(sfe_womatish_dev,key=firm_loc_wo$,dom=*next); have_issues=1
+	extractrecord(sfe_womatish_dev,key=firm_loc_wo$,dom=*next)x$; have_issues=1; rem --- Advisory locking
 	if have_issues then
 		rem --- NOTE: This code should never get executed because of check for existing materials issues in ADIS.
 		remove(sfe_womatish_dev,key=firm_loc_wo$)
@@ -141,7 +141,7 @@ rem --- Delete inventory issues.
 		while 1
 			sfe_womatisd_key$=key(sfe_womatisd_dev,end=*break)
 			if pos(firm_loc_wo$=sfe_womatisd_key$)<>1 then break
-			readrecord(sfe_womatisd_dev)sfe_womatisd$
+			extractrecord(sfe_womatisd_dev)sfe_womatisd$; rem --- Advisory locking
 			remove(sfe_womatisd_dev,key=sfe_womatisd_key$)
 
 			rem --- Delete lot/serial commitments if any
@@ -150,7 +150,7 @@ rem --- Delete inventory issues.
 				while 1
 					sfe_wolsissu_key$=key(sfe_wolsissu_dev,end=*break)
 					if pos(firm_loc_wo$+sfe_womatisd.internal_seq_no$=sfe_wolsissu_key$)<>1 then break
-					readrecord(sfe_wolsissu_dev)sfe_wolsissu$
+					extractrecord(sfe_wolsissu_dev)sfe_wolsissu$; rem --- Advisory locking
 					remove(sfe_wolsissu_dev,key=sfe_wolsissu_key$)
 
 					rem --- Delete lot/serial commitments

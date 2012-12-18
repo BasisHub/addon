@@ -64,17 +64,20 @@ rem --- Main Read
 
             t1$=""
 			
-            read record (sfreq_dev,key=sfreq_key$) sfreqa$
+            extract record (sfreq_dev,key=sfreq_key$) sfreqa$; rem --- Advisory locking
 
-			sfe01_readk$=sfreq_key.firm_id$+sfreq_key.wo_location$+sfreq_key.wo_no$      
-			find record (sfe01a_dev,key=sfe01_readk$,dom=*continue) sfe01a$
-			if pos(sfe01a.wo_status$=wostatus$)=0 then  continue
-			if sfe01a.wo_category$="R" then  continue; rem skip recurring WOs
+			sfe01_readk$=sfreq_key.firm_id$+sfreq_key.wo_location$+sfreq_key.wo_no$
+            sfe01a_found=0
+			find record (sfe01a_dev,key=sfe01_readk$,dom=*next) sfe01a$; sfe01a_found=1
+            if !sfe01a_found or pos(sfe01a.wo_status$=wostatus$)=0 or sfe01a.wo_category$="R" then
+                read (sfreq_dev)
+                continue
+            endif
 					
 			if sfreq_dev<>sfe22a_dev then 
 				rem --- process sfe-32/SFE_WOSUBCNT, subcontracts
                 if sfreqa.line_type$<>"I" then 
-					if cur_wo_no$<>sfreqa.wo_no$ and sfreqa.line_type$<>"S" then continue
+					if cur_wo_no$<>sfreqa.wo_no$ and sfreqa.line_type$<>"S" then read(sfreq_dev); continue
 
 rem --- Breaks
 					if len(cvs(message$,2))>0 and (sfreqa.line_type$<>"M" or cur_wo_no$<>sfreqa.wo_no$) 
@@ -87,14 +90,16 @@ rem --- Breaks
 
 rem --- Process Subcontracts
 
-					if sfreqa.line_type$="M" and process$="N" then continue; rem skip messages assoc'd with skipped non-message lines
+					if sfreqa.line_type$="M" and process$="N" then read(sfreq_dev); continue; rem skip messages assoc'd with skipped non-message lines
 					if sfreqa.line_type$="S" then t1$=sfreqa.vendor_id$
 					if sfreqa.line_type$="S" and num(sfreqa.po_no$)>0 then 
 						process$="N"; rem skip if already assoc'd w/a PO
+                        read(sfreq_dev)
 						continue
 					endif
 					if sfreqa.po_status$="C" then 
 						process$="N"; rem skip if closed
+                        read(sfreq_dev)
 						continue
 					endif
 				
@@ -102,6 +107,7 @@ rem --- Process Subcontracts
 					last_type$=sfreqa.line_type$
 					if sfreqa.line_type$="M" then 
 						message$=message$+cvs(sfreqa.ext_comments$,2)+" "
+                        read(sfreq_dev)
 						continue
 					endif
 
@@ -135,16 +141,27 @@ rem --- Process Non-Stock Items
 		
 				dim info$[15],info[2]
 			
-				if cvs(sfreqa.po_no$+sfreqa.pur_ord_seq_ref$,2)<>"" then continue; rem "Skip if already assoc'd w/a PO
-				find record (ivm02a_dev,key=firm_id$+sfreqa.warehouse_id$+sfreqa.item_id$,dom=*continue) ivm02a$
-				if ivm02a.special_ord$<>"Y" then continue
+				if sfreqa.total_units=0 or cvs(sfreqa.po_no$+sfreqa.pur_ord_seq_ref$,2)<>"" then
+                    rem "Skip if already assoc'd w/a PO
+                    read(sfreq_dev)
+                    continue
+                endif
+                ivm02a_found=0
+				find record (ivm02a_dev,key=firm_id$+sfreqa.warehouse_id$+sfreqa.item_id$,dom=*next) ivm02a$; ivm02a_found=1
+				if !ivm02a_found or ivm02a.special_ord$<>"Y" then
+                    read(sfreq_dev)
+                    continue
+                endif
 				vendor$=ivm02a.vendor_id$
 				cost=ivm02a.unit_cost
-			
-				find record (ivm01a_dev,key=firm_id$+sfreqa.item_id$,dom=*continue) ivm01a$
+
+                ivm01a_found=0
+				find record (ivm01a_dev,key=firm_id$+sfreqa.item_id$,dom=*next) ivm01a$; ivm01a_found=1
 				if ivm01a.stock_level$="I" then let vendor$=ivm01a.vendor_id$
-				if vendor$="      " then continue
-				if sfreqa.total_units=0 then continue
+				if !ivm01a_found or vendor$="      " then
+                    read(sfreq_dev)
+                    continue
+                endif
 				info$[0]=firm_id$
 				info$[1]=vendor$
 				info$[2]="S"

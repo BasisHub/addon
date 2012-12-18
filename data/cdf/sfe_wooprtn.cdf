@@ -181,9 +181,9 @@ rem ===============================================================
 	wo_no$=callpoint!.getColumnData("SFE_WOOPRTN.WO_NO")
 	isn$=callpoint!.getColumnData("SFE_WOOPRTN.INTERNAL_SEQ_NO")
 
+	read (sfm05_dev,key=firm_id$+wo_no$+isn$,knum="AON_WONUM",dom=*next)
 	while 1
-		read (sfm05_dev,key=firm_id$+wo_no$+isn$,knum="AON_WONUM",dom=*next)
-		read record (sfm05_dev,end=*break) sfm05a$
+		extract record (sfm05_dev,end=*break) sfm05a$; rem --- Advisory locking
 		if pos(firm_id$+wo_no$+isn$=sfm05a.firm_id$+sfm05a.wo_no$+sfm05a.oper_seq_ref$)<>1 break
 		remove (sfm05_dev,key=firm_id$+sfm05a.op_code$+sfm05a.sched_date$+sfm05a.wo_no$+sfm05a.oper_seq_ref$)
 	wend

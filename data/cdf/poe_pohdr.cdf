@@ -693,11 +693,11 @@ rem --- call adc_application to see if SF is installed
 	call stbl("+DIR_PGM")+"adc_application.aon","SF",info$[all]
 	callpoint!.setDevObject("SF_installed",info$[20])
 	if info$[20]="Y"
-		num_files=2
+		num_files=3
 		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 		open_tables$[1]="SFE_WOMATL",open_opts$[1]="OTA"
 		open_tables$[2]="SFE_WOSUBCNT",open_opts$[2]="OTA"
-
+		open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
 		gosub open_tables
 	endif
 

@@ -48,7 +48,7 @@ rem --- look at po/req number; if different than it was when we entered the row,
 
 		rem --- used to reference different po# (i.e., changed from one po# to another, or have now removed the po# from this subs line)
 		if cvs(po_no_was$,3)<>""
-			find record (remove_link_dev,key=firm_id$+po_no_was$+po_seq_ref_was$,dom=*endif)remove_link$
+			extract record (remove_link_dev,key=firm_id$+po_no_was$+po_seq_ref_was$,dom=*endif)remove_link$; rem --- Advisory locking
 			remove_link.wo_no$=""
 			remove_link.wk_ord_seq_ref$=""
 			remove_link$=field(remove_link$)
@@ -56,7 +56,7 @@ rem --- look at po/req number; if different than it was when we entered the row,
 		endif		
 		rem --- now references different po# (i.e., changed from one po# to another, or have now set a po# on this subs line)
 		if cvs(po_no_now$,3)<>""
-			find record (create_link_dev,key=firm_id$+po_no_now$+po_seq_ref_now$,dom=*endif)create_link$
+			extract record (create_link_dev,key=firm_id$+po_no_now$+po_seq_ref_now$,dom=*endif)create_link$; rem --- Advisory locking
 			create_link.wo_no$=callpoint!.getColumnData("SFE_WOSUBCNT.WO_NO")
 			create_link.wk_ord_seq_ref$=callpoint!.getColumnData("SFE_WOSUBCNT.INTERNAL_SEQ_NO")
 			create_link$=field(create_link$)
@@ -68,9 +68,17 @@ rem --- need to use custom query so we get back both po# and line#
 rem --- throw message to user and abort manual entry
 
 	if cvs(callpoint!.getUserInput(),3)<>""
-		callpoint!.setMessage("SF_USE_QUERY")
-		callpoint!.setStatus("ABORT")
+		if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOSUBCNT.PO_NO")
+			if callpoint!.getDevObject("po_looked_up")<>"Y"
+				callpoint!.setMessage("SF_USE_QUERY")
+				callpoint!.setStatus("ABORT")
+			endif
+		endif
+	else
+		callpoint!.setColumnData("SFE_WOSUBCNT.PUR_ORD_SEQ_REF","",1)
 	endif
+
+	callpoint!.setDevObject("po_looked_up","N")
 [[SFE_WOSUBCNT.BGDR]]
 rem --- get PO#/req# and ISN, load up corresponding item info
 
@@ -151,7 +159,13 @@ rem --- Query displays PO's/Req's for given firm/vendor, only showing those not 
 		callpoint!.setColumnData("SFE_WOSUBCNT.PO_NO",po_req_no$,1)
 		callpoint!.setColumnData("SFE_WOSUBCNT.PUR_ORD_SEQ_REF",po_req_line$,1)
 		callpoint!.setColumnData("<<DISPLAY>>.DISP_ITEM",line_desc$,1)
+		callpoint!.setDevObject("po_looked_up","Y")
 		callpoint!.setStatus("MODIFIED")
+	else
+		callpoint!.setColumnData("SFE_WOSUBCNT.PO_NO","",1)
+		callpoint!.setColumnData("SFE_WOSUBCNT.PUR_ORD_SEQ_REF","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.DISP_ITEM","",1)
+		callpoint!.setDevObject("po_looked_up","N")
 	endif
 
 	callpoint!.setStatus("ACTIVATE-ABORT")
@@ -172,6 +186,7 @@ rem --- save current po status flag, po/req# and line#
 	callpoint!.setDevObject("start_po_no",callpoint!.getColumnData("SFE_WOSUBCNT.PO_NO"))
 	callpoint!.setDevObject("start_po_status",callpoint!.getColumnData("SFE_WOSUBCNT.PO_STATUS"))
 	callpoint!.setDevObject("start_po_seq_ref",callpoint!.getColumnData("SFE_WOSUBCNT.PUR_ORD_SEQ_REF"))
+	callpoint!.setDevObject("po_looked_up","N")
 [[SFE_WOSUBCNT.PO_STATUS.AVAL]]
 rem --- Disable PO Number and Sequence?
 
