@@ -93,7 +93,7 @@ rem --- Build SQL statement
 	sql_prep$=sql_prep$+"where apm_vendhist.firm_id='"+firm_id$+"' and apm_vendhist.vendor_id='"+vendor_id$+"' "
 
 	sql_chan=sqlunt
-	sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 	sqlprep(sql_chan)sql_prep$
 	dim read_tpl$:sqltmpl(sql_chan)
 	sqlexec(sql_chan)

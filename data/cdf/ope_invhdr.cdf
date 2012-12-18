@@ -2307,18 +2307,17 @@ rem ==========================================================================
 			callpoint!.setStatus("NEWREC")
 			locked = 1
 		else
-			callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", inv_no$)
-			callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "I")
-			callpoint!.setColumnData("OPE_INVHDR.INVOICE_DATE", sysinfo.system_date$)
-			callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "N")
-			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "Y")
-			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N"); rem debug, forcing the lock off for now, this isn't working correctly
+			callpoint!.setColumnData("OPE_INVHDR.AR_INV_NO", inv_no$,1)
+			callpoint!.setColumnData("OPE_INVHDR.ORDINV_FLAG", "I",1)
+			callpoint!.setColumnData("OPE_INVHDR.INVOICE_DATE", sysinfo.system_date$,1)
+			callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "N",1)
+			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "Y",1)
+			callpoint!.setColumnData("OPE_INVHDR.LOCK_STATUS", "N",1); rem debug, forcing the lock off for now, this isn't working correctly
 			user_tpl.prev_disc_code$ = ""
 			user_tpl.price_code$ = "Y"
 			order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 			gosub add_to_batch_print
 			callpoint!.setOptionEnabled("UINV",1)
-			callpoint!.setStatus("SAVE;REFRESH")
 		endif
 		
 	endif

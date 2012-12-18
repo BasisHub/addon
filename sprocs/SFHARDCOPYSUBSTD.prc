@@ -140,7 +140,7 @@ rem --- Build SQL statement
 	sql_prep$=sql_prep$+"from sfe_wosubcnt where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
 	
 	sql_chan=sqlunt
-	sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 	sqlprep(sql_chan)sql_prep$
 	dim read_tpl$:sqltmpl(sql_chan)
 	sqlexec(sql_chan)

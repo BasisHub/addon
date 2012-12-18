@@ -430,12 +430,11 @@ mats_loop:
 				mark_to_explode$=mark_to_explode$+sfe_womatl.internal_seq_no$+";"
 			endif
 
-			rem --- sfe_wooprtn.internal_seq_no$ doesn't change when/if operations are re-sequenced,
-			rem --- so this shouldn't be needed anymore (wgh 11/14/2012)
-rem			if cvs(bmm_billmat.op_int_seq_ref$,3)<>""			
-rem				if mats$="" mats_offset=len(bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$)
-rem				mats$=mats$+bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$+sfe_womatl.internal_seq_no$
-rem			endif
+			rem --- Link material requirement to operation
+			if cvs(bmm_billmat.op_int_seq_ref$,3)<>""			
+				if mats$="" mats_offset=len(bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$)
+				mats$=mats$+bmm_billmat.bill_no$+bmm_billmat.op_int_seq_ref$+sfe_womatl.internal_seq_no$
+			endif
 
 		else
 			rem --- down one level; then exitto mats_next_bill
@@ -588,19 +587,18 @@ no_prev_ops_key:
 		if subs$="" subs_offset=len(curr_bill$+bmm_billoper.internal_seq_no$)
 		subs$=subs$+curr_bill$+bmm_billoper.internal_seq_no$+sfe_wooprtn.internal_seq_no$
 
-		rem --- sfe_wooprtn.internal_seq_no$ doesn't change when/if operations are re-sequenced,
-		rem --- so this shouldn't be needed anymore (wgh 11/14/2012)
-rem		while 1
-rem			mats_pos=pos(bmm_billoper.bill_no$+bmm_billoper.internal_seq_no$=mats$,mats_offset+mat_isn_len,occ)
-rem			if mats_pos=0 then break
-rem			dim sfe_womatl2$:fattr(sfe_womatl$)
-rem			sfe22_key$=firm_id$+wo_loc$+wo_no$+mats$(mats_pos+mats_offset,mat_isn_len)
-rem			extract record (sfe22_dev,key=sfe22_key$,knum="AO_MAT_SEQ",dom=*break)sfe_womatl2$
-rem			sfe_womatl2.oper_seq_ref$=sfe_wooprtn.internal_seq_no$
-rem			sfe_womatl2$=field(sfe_womatl2$)
-rem			write record (sfe22_dev)sfe_womatl2$
-rem			occ=occ+1
-rem		wend
+		rem --- Link material requirement to operation
+		while 1
+			mats_pos=pos(bmm_billoper.bill_no$+bmm_billoper.internal_seq_no$=mats$,mats_offset+mat_isn_len,occ)
+			if mats_pos=0 then break
+			dim sfe_womatl2$:fattr(sfe_womatl$)
+			sfe22_key$=firm_id$+wo_loc$+wo_no$+mats$(mats_pos+mats_offset,mat_isn_len)
+			extract record (sfe22_dev,key=sfe22_key$,knum="AO_MAT_SEQ",dom=*break)sfe_womatl2$
+			sfe_womatl2.oper_seq_ref$=sfe_wooprtn.internal_seq_no$
+			sfe_womatl2$=field(sfe_womatl2$)
+			write record (sfe22_dev)sfe_womatl2$
+			occ=occ+1
+		wend
 	
 	wend
 

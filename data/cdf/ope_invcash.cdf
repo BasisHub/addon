@@ -179,7 +179,6 @@ rem --- Disable fields and set minimums by trans type
 		callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 0)		
 		callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 0)
 		callpoint!.setTableColumnAttribute("OPE_INVCASH.AR_CHECK_NO","MINL","1")
-		rem callpoint!.setTableColumnAttribute("OPE_INVCASH.PAYMENT_ID","MINL","1")
 	else
 		if cashcode_rec.trans_type$ = "P" then
  			callpoint!.setColumnData("OPE_INVCASH.AR_CHECK_NO","",1)
@@ -189,7 +188,6 @@ rem --- Disable fields and set minimums by trans type
 			callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 0)			
 			callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 0)
 			callpoint!.setTableColumnAttribute("OPE_INVCASH.EXPIRE_DATE","MINL","1")
-			callpoint!.setTableColumnAttribute("OPE_INVCASH.PAYMENT_ID","MINL","1")
 		else
 			if cashcode_rec.trans_type$ = "$" then
  				callpoint!.setColumnData("OPE_INVCASH.AR_CHECK_NO","",1)

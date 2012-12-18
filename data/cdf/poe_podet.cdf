@@ -470,13 +470,12 @@ rem --- look at wo number; if different than it was when we entered the row, upd
 	wo_no_now$=callpoint!.getColumnData("POE_PODET.WO_NO")
 	wo_seq_ref_now$=callpoint!.getColumnData("POE_PODET.WK_ORD_SEQ_REF")
 
-	sfe_womatl=fnget_dev("SFE_WOMATL")
-	sfe_wosub=fnget_dev("SFE_WOSUBCNT")
-
-	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
-	dim sfe_wosub$:fnget_tpl$("SFE_WOSUBCNT")
-
 	if wo_no_was$+wo_seq_ref_was$<>wo_no_now$+wo_seq_ref_now$
+		sfe_womatl=fnget_dev("SFE_WOMATL")
+		sfe_wosub=fnget_dev("SFE_WOSUBCNT")
+		dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+		dim sfe_wosub$:fnget_tpl$("SFE_WOSUBCNT")
+
 		rem --- used to reference different wo# (i.e., changed from one wo# to another, or have now removed the wo# from this PO line)
 		if cvs(wo_no_was$,3)<>""
 			if line_type$="S"

@@ -239,7 +239,7 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		rem sql_prep$=sql_prep$+"    = '01  0001024'  "
 		
 		sql_chan=sqlunt
-		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+		sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 		sqlprep(sql_chan)sql_prep$
 		
 		dim read_tpl$:sqltmpl(sql_chan)
@@ -407,7 +407,7 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		
 		sqlclose(sql_chan)
 		sql_chan=sqlunt
-		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+		sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 		sqlprep(sql_chan)sql_prep$
 		
 		dim read_tpl$:sqltmpl(sql_chan)
@@ -465,7 +465,7 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		
 		sqlclose(sql_chan)
 		sql_chan=sqlunt
-		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+		sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 		sqlprep(sql_chan)sql_prep$
 		
 		dim read_tpl$:sqltmpl(sql_chan)
