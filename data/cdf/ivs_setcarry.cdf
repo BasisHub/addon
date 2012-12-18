@@ -45,7 +45,7 @@ rem "update ivs-01 - ABC rec
 	gridABC!=UserObj!.getItem(num(user_tpl.gridABCOfst$))
 	gridRows=gridABC!.getNumRows()
 	if gridRows
-		readrecord(ivs01_dev,key=firm_id$+"IV02")ivs01a$
+		readrecord(ivs01_dev,key=firm_id$+"IV02")ivs01a$; rem Advisory Locking
 		for row=0 to gridRows-1
 			field ivs01a$,"ABC_PERCENTS_"+str(row+1:"00")=gridABC!.getCellText(row,1)
 			field ivs01a$,"ABC_FACTORS_"+str(row+1:"00")=gridABC!.getCellText(row,2)
@@ -57,7 +57,7 @@ rem "update ivs-01 - ABC rec
 			callpoint!.setStatus("ABORT")
 		endif
 		ivs01a$=field(ivs01a$)
-		writerecord(ivs01_dev,key=firm_id$+"IV02")ivs01a$
+		writerecord(ivs01_dev)ivs01a$
 	endif
 [[IVS_SETCARRY.ASIZ]]
 	if UserObj!<>null()

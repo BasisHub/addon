@@ -31,6 +31,7 @@ rem --- Get the IN parameters used by the procedure
 	wo_no$ = sp!.getParameter("WO_NO")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
+	report_type$ = sp!.getParameter("REPORT_TYPE")
 	
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -60,6 +61,7 @@ rem --- Get masks
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 	iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
+	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.00-",masks$)
 	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
 	sf_hours_mask$=fngetmask$("sf_hours_mask","#,##0.00",masks$)
 	sf_rate_mask$=fngetmask$("sf_rate_mask","###.00",masks$)
@@ -115,7 +117,7 @@ rem --- Build SQL statement
 
 	sql_prep$="select op_code, require_date, runtime_hrs, pcs_per_hour, direct_rate, ovhd_rate, setup_time, "
 	sql_prep$=sql_prep$+"hrs_per_pce, unit_cost, total_time, tot_std_cost, line_type, ext_comments "
-	sql_prep$=sql_prep$+"from sfe_wooprtn where firm_id = '"+firm_id$+"' and wo_no = '"+wo_no$+"'"
+	sql_prep$=sql_prep$+"from sfe_wooprtn where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
 	
 	sql_chan=sqlunt
 	sqlopen(sql_chan,err=*next)stbl("+DBNAME")
@@ -140,13 +142,15 @@ rem --- Trip Read
 			data!.setFieldValue("REQ_DATE",fndate$(read_tpl.require_date$))
 			data!.setFieldValue("HOURS",str(read_tpl.hrs_per_pce:sf_hours_mask$))
 			data!.setFieldValue("PC_HR",str(read_tpl.pcs_per_hour:ad_units_mask$))
-			data!.setFieldValue("DIRECT",str(read_tpl.direct_rate:sf_rate_mask$))
-			data!.setFieldValue("OVHD",str(read_tpl.ovhd_rate:sf_rate_mask$))
 			data!.setFieldValue("UNITS_EA",str(read_tpl.runtime_hrs:ad_units_mask$))
-			data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:iv_cost_mask$))
 			data!.setFieldValue("SETUP",str(read_tpl.setup_time:sf_hours_mask$))
 			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_time:ad_units_mask$))
-			data!.setFieldValue("COST_TOT",str(read_tpl.tot_std_cost:iv_cost_mask$))
+			if report_type$<>"T"
+				data!.setFieldValue("DIRECT",str(read_tpl.direct_rate:sf_rate_mask$))
+				data!.setFieldValue("OVHD",str(read_tpl.ovhd_rate:sf_rate_mask$))
+				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:iv_cost_mask$))
+				data!.setFieldValue("COST_TOT",str(read_tpl.tot_std_cost:sf_amt_mask$))
+			endif
 		endif
 		tot_recs=tot_recs+1
 		rs!.insert(data!)
@@ -158,7 +162,7 @@ rem --- Trip Read
 
 rem --- Output Totals
 
-	if tot_recs>0
+	if tot_recs>0 and report_type$<>"T"
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("UNITS_EA",fill(20,"_"))
 		data!.setFieldValue("COST_EA",fill(20,"_"))
@@ -171,7 +175,7 @@ rem --- Output Totals
 		data!.setFieldValue("UNITS_EA",str(tot_units_ea:iv_cost_mask$))
 		data!.setFieldValue("COST_EA",str(tot_cost_ea:iv_cost_mask$))
 		data!.setFieldValue("UNITS_TOT",str(tot_units_tot:iv_cost_mask$))
-		data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_rate_mask$))
+		data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_amt_mask$))
 		rs!.insert(data!)
 	endif
 

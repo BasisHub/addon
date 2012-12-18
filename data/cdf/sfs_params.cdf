@@ -39,8 +39,6 @@ rem ==========================================================
 		callpoint!.setColumnEnabled("SFS_PARAMS.PO_INTERFACE",0)
 	endif
 
-rem Force Payroll to not be installed until Basis generates a Payroll Application
-	callpoint!.setDevObject("pr","N")
 	if callpoint!.getDevObject("pr")<>"Y"
 		callpoint!.setColumnData("SFS_PARAMS.PR_INTERFACE","N",1)
 		callpoint!.setColumnEnabled("SFS_PARAMS.PR_INTERFACE",0)

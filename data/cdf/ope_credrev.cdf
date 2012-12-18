@@ -24,6 +24,8 @@ rem --- Update Credit changes to master file
 		ope03a.firm_id$=firm_id$
 		ope03a.rev_date$=tick_date$
 		ope03a.customer_id$=customer_id$
+		ope03_key$=ope03a.firm_id$+ope03a.rev_date$+ope03a.customer_id$+ope03a.order_no$
+		extractrecord(ope_dev,key=ope03_key$,dom=*next)x$; rem Advisory Locking
 		ope03a$=field(ope03a$)
 		writerecord(ope03_dev)ope03a$
 	endif

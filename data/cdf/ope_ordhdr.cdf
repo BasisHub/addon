@@ -974,7 +974,7 @@ rem --- Does order exist?
 	start_block = 1
 
 	if start_block then
-		find record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$
+		extract record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$; rem Advisory Locking
 		found = 1
 	endif
 
@@ -1228,6 +1228,8 @@ rem --- Create a default POS record
 
 	pointofsale_rec.firm_id$         = firm_id$
 	pointofsale_rec.pos_station$ = pad(station$, 16)
+	pointofsale_key$=pointofsale_rec.firm_id$+pointofsale_rec.default_station$
+	extractrecord(pointofsale_dev,key=pointofsale_key$,dom=*next)x$; rem Advisory Locking
 	pointofsale_rec.skip_whse$       = "N"
 	pointofsale_rec.val_ctr_prt$     = sysinfo.printer_id$
 	pointofsale_rec.val_rec_prt$     = sysinfo.printer_id$
@@ -1292,14 +1294,20 @@ rem --- Convert Quote?
 				read record (ope11_dev, key=firm_id$+ar_type$+cust$+ord$, dom=*next)
 
 				while 1
-					read record (ope11_dev, end=*break) ope11a$
+					extract record (ope11_dev, end=*break) ope11a$; rem Advisory Locking
 
 					if pos(firm_id$+ar_type$+cust$+ord$=ope11a.firm_id$+
-:						ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 
-:						break
+:						ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 then
+						read(ope11_dev)
+						break
 					endif
 
-					read record (opc_linecode_dev, key=firm_id$+ope11a.line_code$, dom=*continue) opc_linecode$
+					linecode_found=0
+					read record (opc_linecode_dev, key=firm_id$+ope11a.line_code$, dom=*next) opc_linecode$; linecode_found=1
+					if !linecode_found then
+						read(ope11_dev)
+						continue
+					endif
 					ope11a.commit_flag$ = "Y"
 					ope11a.pick_flag$   = "N"
 					if ope11a.est_shp_date$>user_tpl.def_commit$ then ope11a.commit_flag$="N"
@@ -1374,7 +1382,7 @@ rem --- Write/Remove manual ship to file
 		remove (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*next)
 	else
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
-		read record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*next) ordship_tpl$
+		extract record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*next) ordship_tpl$; rem Advisory Locking
 
 		ordship_tpl.firm_id$     = firm_id$
 		ordship_tpl.customer_id$ = cust_id$
@@ -1667,6 +1675,8 @@ rem ==========================================================================
 			ope01a.total_sales     = ope01a.total_sales*line_sign
 
 			write record (ope01_dev) ope01a$
+			ope01_key$=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$
+			extractrecord(ope01_dev,key=ope01_key$)ope01a$; rem Advisory Locking
 			callpoint!.setStatus("SETORIG")
 
 			user_tpl.price_code$   = ope01a.price_code$
@@ -1686,6 +1696,8 @@ rem ==========================================================================
 				call stbl("+DIR_PGM")+"adc_copyfile.aon",opt31a$,ope31a$,status
 				if status=999 then exitto std_exit
 				ope31a.order_no$ = ope01a.order_no$
+				ope31_key$=ope31a.firm_no$+ope31a.customer_id$+ope31a.order_no$
+				extractrecord(ope31_dev,key=ope31_key$,dom=*next)x$; rem Advisory Locking
 				ope31a$ = field(ope31a$)
 				write record (ope31_dev) ope31a$
 			endif
@@ -1778,6 +1790,8 @@ rem ==========================================================================
 				disp_line_no=disp_line_no+1
 				line_no_mask$=callpoint!.getDevObject("line_no_mask")
 				ope11a.line_no$=str(disp_line_no:line_no_mask$)
+				ope11_key$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
+				extractrecord(ope11_dev,key=ope11_key$,dom=*next)x$; rem Advisory Locking
 
 				ope11a$ = field(ope11a$)
 
@@ -1883,7 +1897,7 @@ rem ==========================================================================
 	ar_type$ =ope11a.ar_type$
 	cust$    =ope11a.customer_id$
 	ord$     =seq_id$
-	read record (ope01_dev, key=firm_id$+ar_type$+cust$+ord$) ope01a$
+	extract record (ope01_dev, key=firm_id$+ar_type$+cust$+ord$) ope01a$; rem Advisory Locking
 
 	dim pc_files[6]
 	pc_files[1] = fnget_dev("IVM_ITEMMAST")
@@ -1950,7 +1964,10 @@ rem ==========================================================================
 	ope_prntlist.ar_type$     = "  "
 	ope_prntlist.customer_id$ = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 	ope_prntlist.order_no$    = order_no$
+	ope_prntlist_key$=ope_prntlist.firm_id$+ope_prntlist.ordinv_flag$+ope_prntlist.ar_type$+ope_prntlist.customer_id$+ope_prntlist.order_no$
+	extractrecord(ope_prntlist_dev,key=ope_prntlist_key$,dom=*next)x$; rem Advisory Lockint
 
+	ope_prntlist$ = field(ope_prntlist$)
 	write record (ope_prntlist_dev) ope_prntlist$
 
 	return

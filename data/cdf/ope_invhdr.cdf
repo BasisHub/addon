@@ -123,8 +123,10 @@ rem --- Invoice History Header, set to void
 	opt_invhdr_rec$ = util.copyFields(opt_invhdr_tpl$, callpoint!)
 	opt_invhdr_rec.invoice_type$ = "V"
 
-	opt_invhdr_rec$ = field(opt_invhdr_rec$)
 	if cvs(opt_invhdr_rec.ar_inv_no$,2)<>""
+		opt_invhdr_key$=opt_invhdr_rec.firm_id$+opt_invhdr_rec.ar_type$+opt_invhdr_rec.customer_id$+opt_invhdr_rec.ar_inv_no$
+		extractrecord(opt_invhdr_dev,key=opt_invhdr_key$,dom=*next)x$; rem Advisory Locking
+		opt_invhdr_rec$ = field(opt_invhdr_rec$)
 		write record (opt_invhdr_dev) opt_invhdr_rec$
 	endif
 
@@ -163,6 +165,8 @@ rem --- Reset Invoice record to Order
 
 	ope_invhdr_rec$ = field(ope_invhdr_rec$)
 	write record (ope_invhdr_dev) ope_invhdr_rec$
+	ope_invhdr_key$=ope_invhdr_rec.firm_id$+ope_invhdr_rec.ar_type$+ope_invhdr_rec.customer_id$+ope_invhdr_rec.order_no$
+	extractrecord(ope_invhdr_dev,key=ope_invhdr_key$)ope_invhdr_rec$; rem Advisory Locking
 	callpoint!.setStatus("SETORIG")
 
 rem --- Reset the print file
@@ -174,7 +178,9 @@ rem --- Reset the print file
 		prntlist_rec.ordinv_flag$ = "O"
 		prntlist_rec.customer_id$ = cust_id$
 		prntlist_rec.order_no$    = order_no$
-
+		prntlist_key$=prntlist_rec.firm_id$+prntlist_rec.ordinv_flag$+prntlist_rec.ar_type$+prntlist_rec.customer_id$+prntlist_rec.order_no$
+		extract record(prntlist_dev,key=prntlist_key$,dom=*next)x$; rem Advisory Locking
+		prntlist_rec$ = field(prntlist_rec$)
 		write record (prntlist_dev) prntlist_rec$
 	endif
 
@@ -522,6 +528,8 @@ rem --- Calculate taxes and write it back
 :												num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
+	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$
+	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
 	callpoint!.setStatus("SETORIG")
 
 rem --- Credit action
@@ -706,6 +714,8 @@ rem --- Remove invoice from ope-04 and rewrite as order (void)
 	ope_prntlist.ordinv_flag$="I"
 	ope_prntlist.customer_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
 	ope_prntlist.order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	ope_prntlist_key$=ope_prntlist.firm_id$+ope_prntlist.ordinv_flag$+ope_prntlist.ar_type$+ope_prntlist.customer_id$+ope_prntlist.order_no$
+	extractrecord(ope_prntlist_dev,key=ope_prntlist_key$,dom=*next)x$; rem Advisory Lockint
 	ope_prntlist$=field(ope_prntlist$)
 	write record (ope_prntlist_dev)ope_prntlist$
 
@@ -728,6 +738,8 @@ rem --- clear availability
 
 	ope01a$ = field(ope01a$)
 	write record (ope01_dev) ope01a$
+	ope01_key$=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$
+	extractrecord(ope01_dev,key=ope01_key$)ope01a$; rem Advisory Locking
 [[OPE_INVHDR.SHIPTO_NO.BINP]]
 rem --- Save old value
 
@@ -871,9 +883,12 @@ rem --- Retain Order is No
 	prntlist_rec.ordinv_flag$ = "I"
 	prntlist_rec.customer_id$ = cust_id$
 	prntlist_rec.order_no$    = order_no$
-	callpoint!.setStatus("SAVE-NEWREC-REFRESH")
-
+	prntlist_key$=prntlist_rec.firm_id$+prntlist_rec.ordinv_flag$+prntlist_rec.ar_type$+prntlist_rec.customer_id$+prntlist_rec.order_no$
+	extractrecord(prntlist_dev,key=prntlist_key$,dom=*next)x$; rem Advisory Locking
+	prntlist_rec$ = field(prntlist_rec$)
 	write record (prntlist_dev) prntlist_rec$
+
+	callpoint!.setStatus("SAVE-NEWREC-REFRESH")
 
 rem --- Remove committments for detail records by calling ATAMO
 
@@ -1013,7 +1028,6 @@ rem --- Position the file at the correct record
 
 		while 1
 			read record (ope01_dev,key=start_key$,dom=*break)
-			extract record (ope01_dev,key=start_key$)
 			break
 		wend
 	endif
@@ -1109,7 +1123,7 @@ rem --- Write/Remove manual ship to file
 		remove (ordship_dev,key=firm_id$+cust_id$+order_no$,dom=*next)
 	else
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
-		read record (ordship_dev, key=firm_id$+cust_id$+order_no$ ,dom=*next) ordship_tpl$
+		extract record (ordship_dev, key=firm_id$+cust_id$+order_no$ ,dom=*next) ordship_tpl$; rem Advisory Locking
 
 		ordship_tpl.firm_id$     = firm_id$
 		ordship_tpl.customer_id$ = cust_id$
@@ -1275,7 +1289,7 @@ rem --- Does order exist?
 	start_block = 1
 
 	if start_block then
-		find record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$
+		extract record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$; rem Advisory Locking
 		found = 1
 	endif
 
@@ -1714,6 +1728,8 @@ rem ==========================================================================
 	ope_prntlist.ar_type$     = "  "
 	ope_prntlist.customer_id$ = cust_id$
 	ope_prntlist.order_no$    = order_no$
+	ope_prntlist_key$=ope_prntlist.firm_id$+ope_prntlist.ordinv_flag$+ope_prntlist.ar_type$+ope_prntlist.customer_id$+ope_prntlist.order_no$
+	extractrecord(ope_prntlist_dev,key=ope_prntlist_key$,dom=*next)x$; rem Advisory Lockint
 
 	ope_prntlist$ = field(ope_prntlist$)
 	write record (ope_prntlist_dev) ope_prntlist$
@@ -1921,6 +1937,8 @@ rem ==========================================================================
 			ope01a.total_sales     = ope01a.total_sales*line_sign
 
 			write record (ope01_dev) ope01a$
+			ope01_key$=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$
+			extractrecord(ope01_dev,key=ope01_key$)ope01a$; rem Advisory Locking
 			callpoint!.setStatus("SETORIG")
 
 			user_tpl.price_code$   = ope01a.price_code$
@@ -1940,6 +1958,8 @@ rem ==========================================================================
 				call stbl("+DIR_PGM")+"adc_copyfile.aon",opt31a$,ope31a$,status
 				if status=999 then exitto std_exit
 				ope31a.order_no$ = ope01a.order_no$
+				ope31_key$=ope31a.firm_no$+ope31a.customer_id$+ope31a.order_no$
+				extractrecord(ope31_dev,key=ope31_key$,dom=*next)x$; rem Advisory Locking
 				ope31a$ = field(ope31a$)
 				write record (ope31_dev) ope31a$
 			endif
@@ -2031,6 +2051,8 @@ rem ==========================================================================
 				disp_line_no=disp_line_no+1
 				line_no_mask$=callpoint!.getDevObject("line_no_mask")
 				ope11a.line_no$=str(disp_line_no:line_no_mask$)
+				ope11_key$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
+				extractrecord(ope11_dev,key=ope11_key$,dom=*next)x$; rem Advisory Locking
 
 				ope11a$ = field(ope11a$)
 				write record (ope11_dev) ope11a$
@@ -2068,7 +2090,7 @@ rem ==========================================================================
 	ar_type$ =ope11a.ar_type$
 	cust$    =ope11a.customer_id$
 	ord$     =seq_id$
-	read record (ope01_dev, key=firm_id$+ar_type$+cust$+ord$) ope01a$
+	extract record (ope01_dev, key=firm_id$+ar_type$+cust$+ord$) ope01a$; rem Advisory Locking
 
 	dim pc_files[6]
 	pc_files[1] = fnget_dev("IVM_ITEMMAST")
@@ -2122,6 +2144,8 @@ rem ==========================================================================
 		gosub get_disk_rec
 		ordhdr_rec$ = field(ordhdr_rec$)
 		write record (ordhdr_dev) ordhdr_rec$
+		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$
+		extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
 
 		callpoint!.setStatus("SETORIG")
 		print "---Print status written, """, ordhdr_rec.print_status$, """"; rem debug
@@ -2215,6 +2239,8 @@ rem --- Make sure everything's written back to disk
 	gosub get_disk_rec
 	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
+	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$
+	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
 
 rem --- Call printing program
 
@@ -2340,6 +2366,8 @@ rem --- Write flag to disk
 
 	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
+	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$
+	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
 
 	return
 
@@ -2354,7 +2382,7 @@ rem ==========================================================================
 
 	print "in: get_disk_rec..."; rem debug
 
-	file_name$  = "OPE_ORDHDR"
+	file_name$  = "OPE_INVHDR"
 	ordhdr_dev  = fnget_dev(file_name$)
 	ordhdr_tpl$ = fnget_tpl$(file_name$)
 	dim ordhdr_rec$:ordhdr_tpl$
@@ -2366,7 +2394,7 @@ rem ==========================================================================
 	start_block = 1
 
 	if start_block then
-		read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ordhdr_rec$
+		extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ordhdr_rec$; rem Advisory Locking
 		found = 1
 	endif
 
@@ -2377,7 +2405,9 @@ rem --- Copy in any form data that's changed
 rem debug --- This is a Barista kludge
 
 	if !found then 
-		write record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*endif) ordhdr_rec$
+		write record (ordhdr_dev,  dom=*endif) ordhdr_rec$
+		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$
+		extract record (ordhdr_dev, key=ordhdr_key$) ordhdr_rec$; rem Advisory Locking
 		callpoint!.setStatus("SETORIG")
 	endif
 
@@ -2510,9 +2540,10 @@ rem --- Get default POS station
 	station$ = stbl("OPE_DEF_STATION", err=*next)
 
 	file$ = "OPM_POINTOFSALE"
+	pointofsale_dev=fnget_dev(file$)
 	dim pointofsale_rec$:fnget_tpl$(file$)
 
-	find record (fnget_dev(file$), key=firm_id$+pad(station$, 16), dom=no_pointofsale) pointofsale_rec$
+	find record (pointofsale_dev, key=firm_id$+pad(station$, 16), dom=no_pointofsale) pointofsale_rec$
 	goto end_pointofsale
 
 no_pointofsale: rem --- Should we create a default record?
@@ -2535,6 +2566,8 @@ rem --- Create a default POS record
 
 	pointofsale_rec.firm_id$         = firm_id$
 	pointofsale_rec.default_station$ = pad(station$, 16)
+	pointofsale_key$=pointofsale_rec.firm_id$+pointofsale_rec.default_station$
+	extractrecord(pointofsale_dev,key=pointofsale_key$,dom=*next)x$; rem Advisory Locking
 	pointofsale_rec.skip_whse$       = "N"
 	pointofsale_rec.val_ctr_prt$     = sysinfo.printer_id$
 	pointofsale_rec.val_rec_prt$     = sysinfo.printer_id$
@@ -2596,7 +2629,7 @@ rem --- Open needed files
 	open_tables$[22]="IVT_LSTRANS",  open_opts$[22]="OTA"
 	open_tables$[23]="OPT_INVHDR",   open_opts$[23]="OTA"
 	open_tables$[24]="OPT_INVDET",   open_opts$[24]="OTA"
-	open_tables$[25]="OPE_ORDDET",   open_opts$[25]="OTA"
+	open_tables$[25]="OPE_INVDET",   open_opts$[25]="OTA"
 	open_tables$[26]="OPT_INVSHIP",  open_opts$[26]="OTA"
 	open_tables$[27]="OPE_CREDDATE", open_opts$[27]="OTA"
 	open_tables$[28]="IVC_WHSECODE", open_opts$[28]="OTA"
@@ -2610,7 +2643,7 @@ rem --- Open needed files
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
 	open_tables$[37]="OPC_DISCCODE", open_opts$[37]="OTA"
 	open_tables$[38]="OPC_TAXCODE",  open_opts$[38]="OTA"
-	open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
+	open_tables$[39]="OPE_INVHDR",   open_opts$[39]="OTA"
 	open_tables$[40]="ARC_TERMCODE", open_opts$[40]="OTA"
 	open_tables$[41]="IVM_ITEMSYN",open_opts$[41]="OTA"
 	

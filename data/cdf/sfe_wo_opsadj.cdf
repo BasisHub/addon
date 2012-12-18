@@ -56,7 +56,7 @@ print 'show',
 : " flags="+str(event.flags)+"(s/b 12)",
 : " x="+str(event.x),
 : " y="+str(event.y)
- 
+
 rem control id 5000 is what was used for the custom grid, so change it as necessary in the following line
 if event.code$="N"  then
       generic$=notice(gui_dev,event.x)
@@ -64,6 +64,7 @@ if event.code$="N"  then
       notice$=generic$
       if event.flags=12 or event.flags=6 then
             print "GridKeypress: $"+hta(notice.wparam$)+"$: ",
+	    print "col/row: ",notice.col,"/",notice.row
             keycode=notice.wparam
             gosub keycode
       endif
@@ -80,12 +81,6 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 
 rem print 'show'
 rem open (unt)"X0"
-s!=bbjAPI().getSysGui()
-e!=s!.getLastEvent()
-
-rem escape;rem ? e!.getKeyCode() and e!.isControlDown()
-rem	if last_event!.getKeyCode()=6 and last_event!.isControlDown() = true escape
-
 
 	dim gui_event$:tmpl(gui_dev)
 	dim notify_base$:noticetpl(0,0)
@@ -106,6 +101,8 @@ rem	if last_event!.getKeyCode()=6 and last_event!.isControlDown() = true escape
 	curr_col = dec(notice.col$);rem 0 based
 	grid_ctx=gridOps!.getContextID()
 
+rem print "gui_event.flags: ",gui_event.flags,"curr_col: ",curr_col,"notice code: ",notice.code
+rem keycode=notice.wparam; gosub keycode
 rem if curr_col=17 escape; rem print e!.getKeyCode()
 rem escape;rem ? e!.getKeyCode() and e!.isControlDown()
 rem	if last_event!.getKeyCode()=6 and last_event!.isControlDown() = true escape
@@ -233,20 +230,26 @@ rem --- New Tran Date
 			gosub switch_colors
 			break
 
-		case 6;rem "Special Key"
+		case 6;rem "Special Key" - escape
 			if notice.wparam=8
 				gridOps!.endEdit()
 			endif
 			break
 
-		case 12; rem Lookup
+		case 12; rem Lookup;rem CAH
 			if curr_col=17
-rem				escape;rem ? notice.wparam
-			endif
-			break
-		case 1; rem Lookup
-			if curr_col=17
-rem				escape;rem ? notice.wparam
+				keycode=notice.wparam
+				keycode$=bin(keycode,2)
+				if asc(and(keycode$,$2000$)) and keycode$=$2006$
+					key_pfx$=firm_id$
+					call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","PRIMARY",key_tpl$,table_chans$[all],status$
+					dim sel_key$:key_tpl$
+					call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"SFE_WOMASTR","SELECT",table_chans$[all],key_pfx$,"",sel_key$	
+					if len(sel_key$)>0
+						VectOps!.setItem((curr_row*num(user_tpl.gridOpsCols$))+17,sel_key.wo_no$)
+						gridOps!.setCellText(curr_row,curr_col,sel_key.wo_no$)
+					endif
+				endif
 			endif
 			break
 
@@ -478,8 +481,9 @@ rem ==========================================================================
 	attr_ops_col$[18,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_ops_col$[18,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=callpoint!.getDevObject("wo_no_mask")
 	attr_ops_col$[18,fnstr_pos("MAXL",attr_def_col_str$[0,0],5)]=str(callpoint!.getDevObject("wo_no_len"))
-rem	attr_ops_col$[18,fnstr_pos("DTAB",attr_def_col_str$[0,0],5)]="SFE_WOMASTR"
-	attr_ops_col$[18,fnstr_pos("DCOL",attr_def_col_str$[0,0],5)]="DESC"
+	attr_ops_col$[18,fnstr_pos("DTAB",attr_def_col_str$[0,0],5)]="SFE_WOMASTR"
+	attr_ops_col$[18,fnstr_pos("DCOL",attr_def_col_str$[0,0],5)]="ITEM_ID"
+	attr_ops_col$[18,fnstr_pos("DKEY",attr_def_col_str$[0,0],5)]=firm_id$+"  "
 
 	attr_ops_col$[19,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="NEW_DATE"
 	attr_ops_col$[19,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_ADJUST")+" "+Translate!.getTranslation("AON_DATE")
@@ -496,7 +500,7 @@ rem	attr_ops_col$[18,fnstr_pos("DTAB",attr_def_col_str$[0,0],5)]="SFE_WOMASTR"
 
 	attr_disp_col$=attr_ops_col$[0,1]
 
-	call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridOps!,"CHECKS-COLH-DATES-LIGHT-LINES-SIZEC",num_rpts_rows,
+	call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridOps!,"CHECKS-COLH-DATES-LINES-LIGHT-SIZEC-CELL",num_rpts_rows,
 :		attr_def_col_str$[all],attr_disp_col$,attr_ops_col$[all]
 
 	return

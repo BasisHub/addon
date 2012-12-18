@@ -380,7 +380,7 @@ rem --- Set precision
 	precision num(callpoint!.getDevObject("precision"))
 
 rem --- Validate employee_no with SFM_EMPLMAST instead of PRM_EMPLMAST when PR not installed
-	if pr$<>"Y" then callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","DTAB","SFM_EMPLMAST")
+	if pr$="Y" then callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")
 [[SFE_TIMEWODET.AGCL]]
 rem --- set preset val for batch_no
 	callpoint!.setTableColumnAttribute("SFE_TIMEWODET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)

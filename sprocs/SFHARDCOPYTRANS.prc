@@ -38,7 +38,7 @@ rem --- Get the IN parameters used by the procedure
     transtype$ = sp!.getParameter("TRANSTYPE"); rem list of trans types to include on report
 	
 	sf_prevper_enddate$ = sp!.getParameter("SF_PREVPER_ENDDATE")
-	
+
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 	if len(masks$)>0
@@ -60,6 +60,10 @@ rem --- Columns for the record set are defined using a string template
 
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
+rem --- If no TransTypes were specified, exit
+
+	if pos("M"=transtype$)=0 and pos("O"=transtype$)=0 and pos("S"=transtype$)=0 goto send_resultset
+	
 rem --- Get Barista System Program directory
 
 	sypdir$=""
@@ -206,44 +210,173 @@ rem   - Narrow the query of that view using the selections passed in.
 rem   - This record set will be used as driver instead of sfe-01 and sfm-07.
 
     sql_prep$=""
+	select$=""
 	where_clause$=""
 	order_clause$=""
-	
-    sql_prep$=sql_prep$+"SELECT * "
-    sql_prep$=sql_prep$+"FROM vw_WOs_with_tran as vwWOs "
-	
-	rem Modify the query of that view per passed-in parameters	
 
-		where_clause$="WHERE vwWOs.firm_id+vwWOs.wo_location = '"+firm_id$+wo_loc$+"' AND "
-
-	rem Limit recordset to WO being reported on
-		where_clause$=where_clause$+"vwWOs.wo_no = '"+wo_no$+"' AND "
+rem --- Construct the main SELECT list
+	select$=select$+"       mast.firm_id "
+	select$=select$+"     , mast.wo_location "
+	select$=select$+"     , mast.wo_no "
+	select$=select$+"     , mast.wo_status "
+	select$=select$+"     , mast.closed_date "
+	select$=select$+"     , trans.trans_date "
+	select$=select$+"     , trans.trans_type "
+	select$=select$+"     , trans.record_id "
+	select$=select$+"     , trans.trans_seq  "
+	select$=select$+"     , trans.seq_ref  "
+	select$=select$+"     , trans.trans_warehouse_id  "
+	select$=select$+"     , trans.trans_item_id  "
+		
+rem --- Construct the WHERE clause
+	rem Limit recordset to the Firm+Location+WO being reported on
+		where_clause$=where_clause$+"WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' AND "
 
 	rem Limit recordset to date range parameters
-		if datefrom$<>"" where_clause$=where_clause$+"vwWOs.trans_date >= '"+datefrom$+"' AND "
-		if datethru$<>"" where_clause$=where_clause$+"vwWOs.trans_date <= '"+datethru$+"' AND "
-
-	rem Limit recordset to transaction type parameter
-		if pos("M"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'M' AND "
-		if pos("O"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'O' AND "
-		if pos("S"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'S' AND "
+		if datefrom$<>"" where_clause$=where_clause$+"trans_date >= '"+datefrom$+"' AND "
+		if datethru$<>"" where_clause$=where_clause$+"trans_date <= '"+datethru$+"' AND "
 	
-    rem Complete the WHERE clause
+    rem Remove and trailing 'AND' from the WHERE clause
 		where_clause$=cvs(where_clause$,2)
 		if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
 
-	rem Complete the ORDER BY clause	
-		order_clause$=order_clause$+" ORDER BY vwWOs.trans_date,vwWOs.record_id,vwWOs.trans_seq "
+rem --- Construct the ORDER BY clause	
+		order_clause$=order_clause$+" ORDER BY trans_date,record_id,trans_seq "
     
-	rem Complete sql_prep$
-		sql_prep$=sql_prep$+where_clause$+order_clause$	
+rem --- Construct the various potential transaction SELECTs to be UNIONed	
+	rem Open Operations Transactions
+		opn_ops_select$=" "
+		opn_ops_select$=opn_ops_select$+"SELECT oops.firm_id "
+		opn_ops_select$=opn_ops_select$+"     , oops.wo_location "
+		opn_ops_select$=opn_ops_select$+"     , oops.wo_no "
+		opn_ops_select$=opn_ops_select$+"     , oops.trans_date "
+		opn_ops_select$=opn_ops_select$+"     , 'OpenOprs' AS trans_type "
+		opn_ops_select$=opn_ops_select$+"     , 'O' AS record_id "
+		opn_ops_select$=opn_ops_select$+"     , oops.trans_seq  "
+		opn_ops_select$=opn_ops_select$+"     , oops.oper_seq_ref AS seq_ref  "
+		opn_ops_select$=opn_ops_select$+"     , '' AS trans_warehouse_id  "
+		opn_ops_select$=opn_ops_select$+"     , '' AS trans_item_id  "
+		opn_ops_select$=opn_ops_select$+"FROM sft_opnoprtr AS oops "
+		opn_ops_select$=opn_ops_select$+where_clause$
+		
+	rem Closed Operations Transactions
+		clsd_ops_select$=" "
+		clsd_ops_select$=clsd_ops_select$+"SELECT cops.firm_id "
+		clsd_ops_select$=clsd_ops_select$+"     , cops.wo_location "
+		clsd_ops_select$=clsd_ops_select$+"     , cops.wo_no "
+		clsd_ops_select$=clsd_ops_select$+"     , cops.trans_date "
+		clsd_ops_select$=clsd_ops_select$+"     , 'ClosedOprs' AS trans_type "
+		clsd_ops_select$=clsd_ops_select$+"     , 'O' AS record_id "
+		clsd_ops_select$=clsd_ops_select$+"     , cops.trans_seq  "
+		clsd_ops_select$=clsd_ops_select$+"     , cops.oper_seq_ref AS seq_ref  "
+		clsd_ops_select$=clsd_ops_select$+"     , '' AS trans_warehouse_id  "
+		clsd_ops_select$=clsd_ops_select$+"     , '' AS trans_item_id  "
+		clsd_ops_select$=clsd_ops_select$+"FROM sft_clsoprtr AS cops "
+		clsd_ops_select$=clsd_ops_select$+where_clause$	
+		
+	rem Open Materials Transactions
+		opn_mat_select$=" "
+		opn_mat_select$=opn_mat_select$+"SELECT omat.firm_id "
+		opn_mat_select$=opn_mat_select$+"     , omat.wo_location "
+		opn_mat_select$=opn_mat_select$+"     , omat.wo_no "
+		opn_mat_select$=opn_mat_select$+"     , omat.trans_date "
+		opn_mat_select$=opn_mat_select$+"     , 'Openmat' AS trans_type "
+		opn_mat_select$=opn_mat_select$+"     , 'M' AS record_id "
+		opn_mat_select$=opn_mat_select$+"     , omat.trans_seq  "
+		opn_mat_select$=opn_mat_select$+"     , omat.material_seq_ref AS seq_ref  "
+		opn_mat_select$=opn_mat_select$+"     , omat.warehouse_id AS trans_warehouse_id  "
+		opn_mat_select$=opn_mat_select$+"     , omat.item_id AS trans_item_id  "
+		opn_mat_select$=opn_mat_select$+"FROM sft_opnmattr AS omat "
+		opn_mat_select$=opn_mat_select$+where_clause$
+		
+	rem Closed Materials Transactions
+		clsd_mat_select$=" "
+		clsd_mat_select$=clsd_mat_select$+"SELECT cmat.firm_id "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.wo_location "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.wo_no "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.trans_date "
+		clsd_mat_select$=clsd_mat_select$+"     , 'Closedmat' AS trans_type "
+		clsd_mat_select$=clsd_mat_select$+"     , 'M' AS record_id "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.trans_seq  "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.material_seq_ref AS seq_ref  "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.warehouse_id AS trans_warehouse_id  "
+		clsd_mat_select$=clsd_mat_select$+"     , cmat.item_id AS trans_item_id  "
+		clsd_mat_select$=clsd_mat_select$+"FROM sft_clsmattr AS cmat "
+		clsd_mat_select$=clsd_mat_select$+where_clause$			
+		
+	rem Open Subcontracts Transactions
+		opn_sub_select$=" "
+		opn_sub_select$=opn_sub_select$+"SELECT osub.firm_id "
+		opn_sub_select$=opn_sub_select$+"     , osub.wo_location "
+		opn_sub_select$=opn_sub_select$+"     , osub.wo_no "
+		opn_sub_select$=opn_sub_select$+"     , osub.trans_date "
+		opn_sub_select$=opn_sub_select$+"     , 'Opensubs' AS trans_type "
+		opn_sub_select$=opn_sub_select$+"     , 'S' AS record_id "
+		opn_sub_select$=opn_sub_select$+"     , osub.trans_seq  "
+		opn_sub_select$=opn_sub_select$+"     , osub.subcont_seq_ref AS seq_ref  "
+		opn_sub_select$=opn_sub_select$+"     , '' AS trans_warehouse_id  "
+		opn_sub_select$=opn_sub_select$+"     , '' AS trans_item_id  "
+		opn_sub_select$=opn_sub_select$+"FROM sft_opnsubtr AS osub "
+		opn_sub_select$=opn_sub_select$+where_clause$
+		
+	rem Closed Subcontracts Transactions
+		clsd_sub_select$=" "
+		clsd_sub_select$=clsd_sub_select$+"SELECT csub.firm_id "
+		clsd_sub_select$=clsd_sub_select$+"     , csub.wo_location "
+		clsd_sub_select$=clsd_sub_select$+"     , csub.wo_no "
+		clsd_sub_select$=clsd_sub_select$+"     , csub.trans_date "
+		clsd_sub_select$=clsd_sub_select$+"     , 'ClosedSubs' AS trans_type "
+		clsd_sub_select$=clsd_sub_select$+"     , 'S' AS record_id "
+		clsd_sub_select$=clsd_sub_select$+"     , csub.trans_seq  "
+		clsd_sub_select$=clsd_sub_select$+"     , csub.subcont_seq_ref AS seq_ref  "
+		clsd_sub_select$=clsd_sub_select$+"     , '' AS trans_warehouse_id  "
+		clsd_sub_select$=clsd_sub_select$+"     , '' AS trans_item_id  "
+		clsd_sub_select$=clsd_sub_select$+"FROM sft_clssubtr AS csub "
+		clsd_sub_select$=clsd_sub_select$+where_clause$	
+		
+rem --- Limit recordset to transaction type parameter
+		trans_tbl_query$=""
+		
+		if pos("O"=transtype$)>0 
+			trans_tbl_query$=trans_tbl_query$+opn_ops_select$
+			trans_tbl_query$=trans_tbl_query$+" UNION "
+			trans_tbl_query$=trans_tbl_query$+clsd_ops_select$
+			trans_tbl_query$=trans_tbl_query$+" UNION "			
+		endif
+		if pos("M"=transtype$)>0 
+			trans_tbl_query$=trans_tbl_query$+opn_mat_select$
+			trans_tbl_query$=trans_tbl_query$+" UNION "
+			trans_tbl_query$=trans_tbl_query$+clsd_mat_select$
+			trans_tbl_query$=trans_tbl_query$+" UNION "
+		endif
+
+		if pos("S"=transtype$)>0 
+			trans_tbl_query$=trans_tbl_query$+opn_sub_select$
+			trans_tbl_query$=trans_tbl_query$+" UNION "
+			trans_tbl_query$=trans_tbl_query$+clsd_sub_select$
+		endif
+
+	rem Remove any trailing 'UNION' from the list of transaction table queries
+		trans_tbl_query$=cvs(trans_tbl_query$,2)
+		if trans_tbl_query$(len(trans_tbl_query$)-4,5)="UNION" trans_tbl_query$=trans_tbl_query$(1,len(trans_tbl_query$)-5)
+	
+rem --- Construct sql_prep$	
+
+		sql_prep$=sql_prep$+"SELECT "+select$+" "
+		sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "
+		sql_prep$=sql_prep$+"LEFT JOIN ("+trans_tbl_query$+" "
+		sql_prep$=sql_prep$+"          ) AS trans"
+		sql_prep$=sql_prep$+"       ON mast.firm_id+mast.wo_location+mast.wo_no "
+		sql_prep$=sql_prep$+"        = trans.firm_id+trans.wo_location+trans.wo_no " 
+		sql_prep$=sql_prep$+"WHERE mast.firm_id = '"+firm_id$+"' AND mast.wo_location = '"+wo_loc$+"' AND mast.wo_no = '"+wo_no$+"' "
+		sql_prep$=sql_prep$+order_clause$	
 
 	rem Exec the completed query
-	sql_chan=sqlunt
-	sqlopen(sql_chan,err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan,err=std_exit)
+		sql_chan=sqlunt
+		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+		sqlprep(sql_chan)sql_prep$
+		dim read_tpl$:sqltmpl(sql_chan)
+		sqlexec(sql_chan,err=std_exit)
 
 rem --- Init constants, totals and total-break vars
 	more = 1 
@@ -267,7 +400,6 @@ rem --- Trip Read
 		data! = rs!.getEmptyRecordData()
 	
 rem --- Process Transactions
-
         if read_tpl.wo_status$<>"C" or read_tpl.closed_date$>sf_prevper_enddate$ then 
             tran01_dev=sft01a_dev; tran01a$=sft01_tpls$
             tran02_dev=sft21a_dev; tran02a$=sft21_tpls$
@@ -299,7 +431,7 @@ rem --- Process Transactions
 		sftran_read_k$=sftran_read_k$+read_tpl.wo_no$
 		sftran_read_k$=sftran_read_k$+read_tpl.trans_date$
 		sftran_read_k$=sftran_read_k$+read_tpl.trans_seq$
-			
+	
 		find record (sftran_dev,key=sftran_read_k$,dom=*continue) sftran$
         if transtype$<>"" then if pos(record_id_field$=transtype$)=0 then continue
         if read_tpl.trans_date$(1,6)<>prev_date$ then gosub date_subtot
@@ -404,6 +536,7 @@ rem --- Output Totals
 	rs!.insert(data!)
 	
 rem --- Tell the stored procedure to return the result set.
+send_resultset:
 
 	sp!.setRecordSet(rs!)
 	goto std_exit

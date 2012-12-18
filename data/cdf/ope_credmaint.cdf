@@ -50,8 +50,8 @@ rem --- Delete the order
 	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 
 	readrecord(ivs_params_dev,key=firm_id$+"IV00")ivs01a$
-	readrecord(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=no_delete)ope01a$
-	if ope01a.invoice_type$="I" goto no_delete
+	extractrecord(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=no_delete)ope01a$; rem Advisory Locking
+	if ope01a.invoice_type$="I" then read(ope01_dev); goto no_delete
 
 	call "ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 
@@ -159,7 +159,7 @@ rem --- Modify Information
 rem --- Update Credit changes to master file
 	arm02_dev=fnget_dev("ARM_CUSTDET")
 	dim arm02a$:fnget_tpl$("ARM_CUSTDET")
-	readrecord(arm02_dev,key=firm_id$+callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")+"  ")arm02a$
+	extractrecord(arm02_dev,key=firm_id$+callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")+"  ")arm02a$; rem Advisory Locking
 	arm02a.cred_hold$=cred_hold$
 	arm02a.credit_limit=num(cred_limit$)
 	arm02a$=field(arm02a$)
@@ -184,12 +184,13 @@ rem --- Release an Order from Credit Hold
 	dim ope01a$:fnget_tpl$("OPE_ORDHDR")
 	arc_terms_dev=fnget_dev("ARC_TERMCODE")
 	while 1
-		readrecord(ope01_dev,key=firm_id$+"  "+cust$+ord$,dom=*break)ope01a$
+		extractrecord(ope01_dev,key=firm_id$+"  "+cust$+ord$,dom=*break)ope01a$; rem Advisory Locking
 		rem --- allow change to Terms Code
 		callpoint!.setDevObject("terms",ope01a.terms_code$)
 		call stbl("+DIR_SYP")+"bam_run_prog.bbj","OPE_CREDTERMS",stbl("+USER_ID"),"MNT","",table_chans$[all]
 		ope01a.terms_code$=callpoint!.getDevObject("terms")
 		readrecord(arc_terms_dev,key=firm_id$+"A"+ope01a.terms_code$,dom=*next);goto good_code
+		read(ope01_dev)
 		continue
 good_code:
 		ope01a.credit_flag$="R"
@@ -264,6 +265,8 @@ update_tickler: rem --- Modify Tickler date
 		ope03a.rev_date$=tick_date$
 		ope03a.customer_id$=cust_no$
 		ope03a.order_no$=ord$
+		ope03_key$=ope03a.firm_id$+ope03a.rev_date$+ope03a.customer_id$+ope03a.order_no$
+		extractrecord(ope03_dev,key=ope03_key$,dom=*next)x$; rem Advisory Locking
 		ope03a$=field(ope03a$)
 		writerecord(ope03_dev)ope03a$
 	endif

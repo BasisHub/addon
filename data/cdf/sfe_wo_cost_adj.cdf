@@ -59,7 +59,7 @@ if callpoint!.getColumnData("SFE_WO_COST_ADJ.LEVEL_SELECTION")="S"
 	endif
 endif
 
-callpoint!.setStatus("ABORT")
+callpoint!.setStatus("ABORT-ACTIVATE")
 [[SFE_WO_COST_ADJ.WO_NO.AVAL]]
 rem --- Fill form
 
@@ -80,15 +80,17 @@ rem --- Fill form
 
 rem --- Soft lock the Work Order
 
-		lock_table$="SFE_WOMASTR"
-		lock_record$=firm_id$+wo_no$
-		lock_type$="S"
-		lock_status$=""
-		lock_disp$="M"
-		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
-		if lock_status$<>""
-			callpoint!.setStatus("ABORT")
-			break
+		if callpoint!.getDevObject("current_wo")<>wo_no$
+			lock_table$="SFE_WOMASTR"
+			lock_record$=firm_id$+wo_no$
+			lock_type$="S"
+			lock_status$=""
+			lock_disp$="M"
+			call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+			if lock_status$<>""
+				callpoint!.setStatus("ABORT")
+				break
+			endif
 		endif
 
 rem --- check to see if recs exist for a different batch
@@ -134,6 +136,7 @@ rem --- passed all tests - go ahead and show the info
 		endif
 		callpoint!.setColumnData("<<DISPLAY>>.UNIT_MEASURE",sfe_womast.unit_measure$,1)
 		callpoint!.setColumnData("<<DISPLAY>>.WAREHOUSE_ID",sfe_womast.warehouse_id$,1)
+		callpoint!.setDevObject("current_wo",wo_no$)
 	endif
 [[SFE_WO_COST_ADJ.BSHO]]
 rem --- Set Custom Query for BOM Item Number
@@ -171,6 +174,7 @@ rem --- Open tables
 
 rem --- Additional Init
 
+	callpoint!.setDevObject("current_wo","")
 	gl$="N"
 	status=0
 	source$=pgm(-2)

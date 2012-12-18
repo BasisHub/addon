@@ -43,10 +43,11 @@ rem --- Roll thru grid rows, saving the pending action of checked records
 	
 		physcode_key$ = key(physcode_dev, end=*break)
 		if pos(firm_id$+whse$ = physcode_key$) <> 1 then break
-		read record (physcode_dev) physcode_rec$
+		extract record (physcode_dev) physcode_rec$; rem Advisory Locking
 
 		if physcode_rec.phys_inv_sts$ <> "0" then 
 			selected_all = 0
+			read (physcode_dev)
 			continue
 		endif
 		

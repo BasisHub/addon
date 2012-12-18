@@ -74,6 +74,14 @@ scan_source:rem --- Scan Source Directory and build vectors to populate gridFile
 		if pos("SH"=cvs(dir_file$,4))=1 then continue
 		if pos("Z"=cvs(dir_file$,4))=1 then continue
 		if len(cvs(dir_file$,3))>6 then continue
+		if pos("WOX-"=cvs(dir_file$,4))=1 then continue
+		if cvs(dir_file$,4)="SYM-09" then continue
+		if cvs(dir_file$,4)="SYM-19" then continue
+		if cvs(dir_file$,4)="SYM-39" then continue
+		if cvs(dir_file$,4)="SYM-49" then continue
+		if cvs(dir_file$,4)="GLM-06" then continue
+		if cvs(dir_file$,4)="GLM-18" then continue
+		if cvs(dir_file$,4)="GLW-11" then continue
 		dir_files$=dir_files$+pad(dir_file$,6)
 	wend
 

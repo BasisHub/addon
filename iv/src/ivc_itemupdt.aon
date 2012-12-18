@@ -205,7 +205,15 @@ rem --- Validate arguments
 rem --- Retrieve ivm-01 Item Master
 
     ivm01k0$=firm_id$+item$
-    find record (ivm01_dev,key=ivm01k0$,dom=missing_record_error) ivm01a$
+    ivm01_extracted=0
+    extract record (ivm01_dev,key=ivm01k0$,dom=missing_record_error,err=*next,tim=2) ivm01a$; ivm01_extracted=1; rem Advisory Locking
+    if !ivm01_extracted then
+        rem --- If extract times out, then record probably open in item maintenace as other transactions on
+        rem --- ivm-01 won't hold the extract long. Do a read hear to avoid an error zero. This probably won't
+        rem --- impact other ivm-01 transactions, just item maintenace which will be told the record has been
+        rem --- modified by another user.
+        read record (ivm01_dev,key=ivm01k0$,dom=missing_record_error) ivm01a$
+    endif
     if ls_flag then ls = (ivm01a.lotser_item$ = "Y")
 
 rem --- ivm-01 Item Master
@@ -215,6 +223,8 @@ rem --- ivm-01 Item Master
         rem ivm01a.lstrec_date$ = fnl$(ivm01a.lstrec_date$, ymd$)
         ivm01a$=field(ivm01a$)
         write record (ivm01_dev) ivm01a$
+    else
+        if ivm01_extracted then read(ivm01_dev)
     endif
 
 rem --- ivm-02 Warehouse
@@ -222,7 +232,15 @@ rem --- ivm-02 Warehouse
     if dropship and action$<>"RC" then goto lot_serial_trans
     if action$="TA" then goto update_lifo_fifo
     ivm02k0$=firm_id$+whse$+item$
-    find record (ivm02_dev,key=ivm02k0$,dom=missing_record_error) ivm02a$
+    ivm02_extracted=0
+    extract record (ivm02_dev,key=ivm02k0$,dom=missing_record_error,err=*next,tim=2) ivm02a$; ivm02_extracted=0; rem Advisory Locking
+    if !ivm02_extracted then
+        rem --- If extract times out, then record probably open in item maintenace as other transactions on
+        rem --- ivm-02 won't hold the extract long. Do a read hear to avoid an error zero. This probably won't
+        rem --- impact other ivm-02 transactions, just item maintenace which will be told the record has been
+        rem --- modified by another user.
+        read record (ivm02_dev,key=ivm02k0$,dom=missing_record_error) ivm02a$
+    endif
     lastphys=16
     physical=8
     unit=11
@@ -266,7 +284,7 @@ receive_a_tier: rem --- For receipts, add to existing tier or create new one
         goto create_a_tier
     endif
 
-    read record (ivm04_dev) ivm04a$
+    extract record (ivm04_dev) ivm04a$; rem Advisory Locking
 
     if  ivm04a.unit_cost <> cost or 
 :       action$ <> ivm04a.trans_source$ or
@@ -274,6 +292,7 @@ receive_a_tier: rem --- For receipts, add to existing tier or create new one
 :       ( pos(action$="OPRC",2)     and ivm04a.trans_ref$ <> refs$[3] ) or
 :       ( pos(action$="OPRC",2) = 0 and ivm04a.trans_ref$ <> refs$[2] )
 :   then
+        read (ivm04_dev)
         goto receive_a_tier
     endif
 
@@ -368,7 +387,7 @@ update_item_vendor: rem --- ivm-05 Vendor Information
         ivm05a.firm_id$=firm_id$,ivm05a.vendor_id$=refs$[1]
         ivm05a.item_id$=item$
         ivm05a.prisec_flag$="S"
-        find record (ivm05_dev,key=ivm05a.firm_id$+ivm05a.vendor_id$+ivm05a.item_id$,dom=*next) ivm05a$
+        extract record (ivm05_dev,key=ivm05a.firm_id$+ivm05a.vendor_id$+ivm05a.item_id$,dom=*next) ivm05a$; rem Advisory Locking
         ivm05a.last_po_date$=ymd$
         ivm05a.last_po_cost=refs[1]
         ivm05a.last_po_lead=refs[3]
@@ -396,7 +415,7 @@ rem --- ivm-12 Inventory Activity
         endif
 
         ivm12a_key$ = ivm12a.firm_id$+ivm12a.warehouse_id$+ivm12a.item_id$+ivm12a.year$+ivm12a.period$
-        find record (ivm12_dev,key=ivm12a_key$,dom=*next) ivm12a$
+        extract record (ivm12_dev,key=ivm12a_key$,dom=*next) ivm12a$; rem Advisory Locking
 
         if action=0 then 
             if cvs(lotser$,2)="" then
@@ -414,8 +433,8 @@ rem --- ivm-12 Inventory Activity
 rem --- Now update Beginning Balances in all records moving forward in Inventory Activity file
 		if action <> 0
 			while 1
-				read record (ivm12_dev,end=*break) ivm12a$
-				if pos(firm_id$+whse$+item$=ivm12a$)<>1 break
+				extract record (ivm12_dev,end=*break) ivm12a$; rem Advisory Locking
+				if pos(firm_id$+whse$+item$=ivm12a$)<>1 then read(ivm12_dev); break
 				ivm12a.beg_balance=ivm12a.beg_balance+amount
 				ivm12a$=field(ivm12a$)
 				write record (ivm12_dev) ivm12a$
@@ -443,7 +462,7 @@ rem --- ivt-04 Inventory Transactions
         goto write_trans_rec
     endif
 
-    read record (ivt04_dev,key=k$,dom=write_trans_rec) ivt04a$
+    extract record (ivt04_dev,key=k$,dom=write_trans_rec) ivt04a$; rem Advisory Locking
 
 rem --- Update existing ivt-04 record
 
@@ -476,6 +495,8 @@ write_trans_rec: rem --- Write new ivt-04 record
         gosub init_trans_hist_rec
         ivt04a$=field(ivt04a$)
         write record (ivt04_dev) ivt04a$
+    else
+        read (ivt04_dev)
     endif
 
 update_lot_serial: rem --- ivm-07 Lot/Serial Number
@@ -488,12 +509,12 @@ update_lot_serial: rem --- ivm-07 Lot/Serial Number
     ivm07a.item_id$=item$
     ivm07a.lotser_no$=lotser$
     ivm07a_key$ = ivm07a.firm_id$+ivm07a.warehouse_id$+ivm07a.item_id$+ivm07a.lotser_no$
-    find record (ivm07_dev,key=ivm07a_key$,dom=create_lot_master) ivm07a$
+    extract record (ivm07_dev,key=ivm07a_key$,dom=create_lot_master) ivm07a$; rem Advisory Locking
     goto update_lot_master
 
 create_lot_master: rem --- Create ivm-07 Lot/Serial Master
 
-    if pos(action$="BOIAIRPHRCOPTIWO",2)=0 goto update_lot_act
+    if pos(action$="BOIAIRPHRCOPTIWO",2)=0 then read(ivm07_dev); goto update_lot_act
     ivm07a.ls_location$=refs$[10]
     ivm07a.ls_comments$=refs$[11]
     ivm07a.std_cost=cost
@@ -551,7 +572,7 @@ update_lot_act: rem --- ivm-17 Lot/Serial Activity
         endif
 
         ivm17a_key$ = ivm17a.firm_id$+ivm17a.warehouse_id$+ivm17a.item_id$+ivm17a.lotser_no$+ivm17a.year$+ivm17a.period$
-        find record (ivm17_dev,key=ivm17a_key$,dom=*next) ivm17a$
+        extract record (ivm17_dev,key=ivm17a_key$,dom=*next) ivm17a$; rem Advisory Locking
 
         if action=0 then 
             ivm17a.beg_balance=amount
@@ -565,8 +586,8 @@ update_lot_act: rem --- ivm-17 Lot/Serial Activity
 rem --- Now update Beginning Balances in all records moving forward in Lot/Serial Activity file
 		if action <> 0
 			while 1
-				readrecord (ivm17_dev,end=*break) ivm17a$
-				if pos(firm_id$+whse$+item$+lotser$=ivm17a$)<>1 break
+				extract record (ivm17_dev,end=*break) ivm17a$; rem Advisory Locking
+				if pos(firm_id$+whse$+item$+lotser$=ivm17a$)<>1 then read(ivm17_dev); break
 				ivm17a.beg_balance=ivm17a.beg_balance+amount
 				ivm17a$=field(ivm17a$)
 				write record (ivm17_dev) ivm17a$
@@ -588,6 +609,9 @@ lot_serial_trans: rem --- ivt-01 Lot/Serial Transactions
         channel=ivt01_dev
         if dropship then location$=Translate!.getTranslation("AON_DROPSHIP")
         gosub init_trans_hist_rec
+        ivt01_key$=ivt01a.firm_id$+ivt01a.warehouse_id$+ivt01a.item_id$+ivt01a.lotser_no$+
+:           ivt01a.trans_date$+ivt01a.iv_hist_seq$
+        extract record (ivt01_dev,key=ivt01_key$,dom=*next)x$; rem Advisory Locking
         ivt01a$=field(ivt01a$)
         write record (ivt01_dev) ivt01a$
     endif
@@ -603,6 +627,9 @@ rem --- ivt-02 Lot/Serial By Customer Xref (are we going to use this?)
         ivt02a.warehouse_id$=whse$
         ivt02a.item_id$=item$
         ivt02a.iv_hist_seq$=ivt01a.iv_hist_seq$
+        ivt02_key$=ivt02a.firm_id$+ivt02a.customer_id$+ivt02a.product_type$+ivt02a.lotser_no$+
+:           ivt02a.trans_date$+ivt02a.warehouse_id$+ivt02a.item_id$+ivt02a.iv_hist_seq$
+        extract record (ivt02_dev,key=ivt02_key$,dom=*next)x$; rem Advisory Locking
         ivt02a$=field(ivt02a$)
         write record (ivt02_dev) ivt02a$
     endif
@@ -620,6 +647,9 @@ rem --- ivt-03 Lot/Serial By Vendor Xref (are we going to use this?)
         ivt03a.iv_hist_seq$=ivt01a.iv_hist_seq$
         if action$="OP" then ivt03a.vendor_id$=vendor$
         if cvs(ivt03a.vendor_id$,2)<>"" then 
+            ivt03_key$=ivt03a.firm_id$+ivt03a.vendor_id$+ivt03a.product_type$+ivt03a.lotser_no$+
+:               ivt03a.trans_date$+ivt03a.warehouse_id$+ivt03a.item_id$+ivt03a.iv_hist_seq$
+            extract record (ivt03_dev,key=ivt03_key$,dom=*next)x$; rem Advisory Locking
             ivt03a$=field(ivt03a$)
             write record (ivt03_dev) ivt03a$
         endif

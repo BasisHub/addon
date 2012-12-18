@@ -128,18 +128,20 @@ rem --- Initialize Progress Meter
 rem --- Header loop
 
     while more  
-        read record (ope01_dev,end=*break) ope01a$
-        if firm_id$<>ope01a.firm_id$ break
+        extract record (ope01_dev,end=*break) ope01a$; rem Advisory Locking
+        if firm_id$<>ope01a.firm_id$ then read(ope01_dev); break
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
-        if ope01a.invoice_type$="P" continue
-        if ope01a.invoice_type$="I" continue
-        if ope01a.lock_status$<>"N" continue
+        if ope01a.invoice_type$="P" then read(ope01_dev); continue
+        if ope01a.invoice_type$="I" then read(ope01_dev); continue
+        if ope01a.lock_status$<>"N" then read(ope01_dev); continue
 
         new$="NO"
+        ope01_key$=key(ope01_dev)
         ope01a.lock_status$ = "Y"; rem "Lock it while processing
         ope01a$ = field(ope01a$)
         write record (ope01_dev) ope01a$
+        extract record (ope01_dev,key=ope01_key$) ope01a$; rem Advisory Locking
 
         rem input "--- customer/order: " + ope01a.customer_id$ + "/" + ope01a.order_no$, *; rem debug
 
@@ -148,15 +150,20 @@ rem --- Header loop
         read (ope11_dev,key=firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
 
         while more
-            read record (ope11_dev,end=*break) ope11a$
-            if firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$<>ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$ break
+            extract record (ope11_dev,end=*break) ope11a$; rem Advisory Locking
+            if firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$<>ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$ then read(ope11_dev); break
             print "------line: ", ope11a$.line_no$; rem debug
             print "------commit flag: ", ope11a.commit_flag$; rem debug
-            if ope11a.commit_flag$="Y" continue
+            if ope11a.commit_flag$="Y" then read(ope11_dev); continue
             print "------ship date: ", ope11a.est_shp_date$; rem debug
-            if ope11a.est_shp_date$>next$ continue
+            if ope11a.est_shp_date$>next$ then read(ope11_dev); continue
 
-            find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
+            opm02_found=0
+            find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$; opm02_found=1
+            if !opm02_found then
+                read(ope11_dev)
+                continue
+            endif
 
             if pos(opm02a.line_type$="NOM")=0
                 if opm02a.dropship$<>"Y"
@@ -214,7 +221,7 @@ rem --- Header loop
             ope01a.total_cost=ope01a.total_cost+unit_cost*ope11a.qty_shipped
             precision num(ivs01a.precision$)
             ope11a$ = field(ope11a$)
-            write record (ope11_dev,key=ope11a_key$) ope11a$
+            write record (ope11_dev) ope11a$
 
             new$="YES"; rem "Changed one. Generate pick ticket."
             recs=recs+1
@@ -258,6 +265,9 @@ rem --- Header loop
                 ope04a.ar_type$     = ope01a.ar_type$
                 ope04a.customer_id$ = ope01a.customer_id$
                 ope04a.order_no$    = ope01a.order_no$
+                ope04_key$=ope04a.firm_id$+ope04a.ordinv_flag$+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$
+                extract record (ope04_dev,key=ope04_key$,dom=*next)x$; rem Advisory Locking
+                ope04a$ = field(ope04a$)
                 write record (ope04_dev) ope04a$
                 goto Unlock_Order
 
@@ -322,6 +332,8 @@ Update_Credit: rem --- Update Credit Manager Tickler File
     ope03a.rev_date$    = ope01a.order_date$
     ope03a.customer_id$ = ope01a.customer_id$
     ope03a.order_no$    = ope01a.order_no$
+    ope03_key$=ope03a.firm_id$+ope03a.rev_date$+ope03a.customer_id$+ope03a.order_no$
+    extract record (ope03_dev,key=ope03_key$,dom=*next)x$; rem Advisory Locking
     ope03a$ = field(ope03a$)
     write record (ope03_dev) ope03a$
 

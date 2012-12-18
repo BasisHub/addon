@@ -1,6 +1,12 @@
 [[SFE_WOMASTR.AOPT-LSNO]]
 rem --- launch sfe_wolotser form to assign lot/serial numbers
 rem --- should only be enabled if on an inventory type WO, if item is lotted/serialized, and if params have LS set.
+	callpoint!.setDevObject("warehouse_id",callpoint!.getColumnData("SFE_WOMASTR.WAREHOUSE_ID"))
+	callpoint!.setDevObject("item_id",callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"))
+	callpoint!.setDevObject("cls_inp_qty",callpoint!.getColumnData("SFE_WOMASTR.CLS_INP_QTY"))
+	callpoint!.setDevObject("qty_cls_todt",callpoint!.getColumnData("SFE_WOMASTR.QTY_CLS_TODT"))
+	callpoint!.setDevObject("closed_cost",callpoint!.getColumnData("SFE_WOMASTR.CLOSED_COST"))
+	callpoint!.setDevObject("wolotser_action","schedule")
 
 	key_pfx$=firm_id$+callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")+callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
 
@@ -224,6 +230,15 @@ rem --- Open tables
 	po$=sfs_params.po_interface$
 	pr$=sfs_params.pr_interface$
 
+	if pos(ivs_params.lotser_flag$="LS") then
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+		open_tables$[1]="IVM_LSMASTER",open_opts$[1]="OTA@"
+
+		gosub open_tables
+	endif
+
 	num_files=6
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
@@ -302,52 +317,9 @@ rem --- alter control label and prompt for Bill No vs. Item ID depending on whet
 		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID","PROM",Translate!.getTranslation("AON_ENTER_INVENTORY_ITEM_ID","Enter a valid Inventory Item ID",1))
 	endif
 [[SFE_WOMASTR.WO_NO.AVAL]]
-rem --- Do we need to create a new work order number?
-
-	new_seq$ = "N"
-	wo_no$ = callpoint!.getUserInput()
-
-	if cvs(wo_no$, 2) = "" then 
-
-	rem --- Option on work order no field to assign a new sequence on null must be cleared
-
-		call stbl("+DIR_SYP")+"bas_sequences.bbj","WO_NO",wo_no$,table_chans$[all]
-		
-		if wo_no$ = "" then
-			callpoint!.setStatus("ABORT")
-			break; rem --- exit callpoint
-		else
-			callpoint!.setUserInput(wo_no$)
-			new_seq$ = "Y"
-		endif
-	endif
-
-rem --- Does order exist?
-
-	sfe01_dev = fnget_dev("SFE_WOMASTR")
-	dim sfe01a$:fnget_tpl$("SFE_WOMASTR")
-
-	wo_loc$=sfe01a.wo_location$
-	found = 0
-	start_block = 1
-
-	if start_block then
-		find record (sfe01_dev, key=firm_id$+wo_loc$+wo_no$, dom=*endif)
-		found = 1
-	endif
-
-rem --- A new record must be the next sequence
-
-	if found = 0 and new_seq$ = "N"  and callpoint!.getDevObject("wo_no") = "" then
-		msg_id$ = "SF_NEW_ORD_USE_SEQ"
-		gosub disp_message	
-		callpoint!.setFocus("SFE_WOMASTR.WO_NO")
-		break; rem --- exit from callpoint
-	endif
-
 rem --- put WO number and loc in DevObject
 
-	callpoint!.setDevObject("wo_no",wo_no$)
+	callpoint!.setDevObject("wo_no",callpoint!.getUserInput())
 	callpoint!.setDevObject("wo_loc",callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION"))
 [[SFE_WOMASTR.OPENED_DATE.AVAL]]
 rem --- need to see if date has been changed; if so, prompt to change in sfe-02/22/23 as well
@@ -1128,6 +1100,8 @@ rem =========================================================
 
 rem --- Build Sequence list button
 
+	wo_cat$=callpoint!.getColumnData("SFE_WOMASTR.WO_CATEGORY")
+
 	ope11_dev=fnget_dev("OPE_ORDDET")
 	dim ope11a$:fnget_tpl$("OPE_ORDDET")
 	opc_linecode=fnget_dev("OPC_LINECODE")
@@ -1151,19 +1125,35 @@ rem --- Build Sequence list button
 		if pos(firm_id$+ope_ordhdr.ar_type$+cust$+order$=ope11a$)<>1 break
 		dim opc_linecode$:fattr(opc_linecode$)
 		read record (opc_linecode,key=firm_id$+ope11a.line_code$,dom=*next)opc_linecode$
-		if pos(opc_linecode.line_type$="SP")=0 continue
-		dim ivm01a$:fattr(ivm01a$)
-		read record (ivm01_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm01a$
-		ops_lines!.addItem(ope11a.internal_seq_no$)
-		item_list$=item_list$+ope11a.item_id$
-		work_var=pos(ope11a.item_id$=item_list$,len(ope11a.item_id$),0)
-		if work_var>1
-			work_var$=cvs(ope11a.item_id$,2)+"("+str(work_var)+")"
-		else
-			work_var$=cvs(ope11a.item_id$,2)
+		if wo_cat$="R" continue
+		if wo_cat$="I" and pos(opc_linecode.line_type$="SP")=0 continue
+		if wo_cat$="N" and pos(opc_linecode.line_type$="N")=0 continue
+		if wo_cat$="I"
+			dim ivm01a$:fattr(ivm01a$)
+			read record (ivm01_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm01a$
+			ops_lines!.addItem(ope11a.internal_seq_no$)
+			item_list$=item_list$+$ff$+ope11a.item_id$
+			work_var=pos($ff$+ope11a.item_id$=item_list$,1,0)
+			if work_var>1
+				work_var$=cvs(ope11a.item_id$,2)+"("+str(work_var)+")"
+			else
+				work_var$=cvs(ope11a.item_id$,2)
+			endif
+			ops_items!.addItem(work_var$)
+			ops_list!.addItem(work_var$+" - "+ivm01a.item_desc$)
 		endif
-		ops_items!.addItem(work_var$)
-		ops_list!.addItem(work_var$+" - "+ivm01a.item_desc$)
+		if wo_cat$="N"
+			ops_lines!.addItem(ope11a.internal_seq_no$)
+			item_list$=item_list$+$ff$+ope11a.order_memo$
+			work_var=pos($ff$+ope11a.order_memo$=item_list$,1,0)
+			if work_var>1
+				work_var$=cvs(ope11a.order_memo$,2)+"("+str(work_var)+")"
+			else
+				work_var$=cvs(ope11a.order_memo$,2)
+			endif
+			ops_items!.addItem(work_var$)
+			ops_list!.addItem(work_var$)
+		endif
 	wend
 
 	if ops_lines!.size()>0

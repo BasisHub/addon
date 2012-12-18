@@ -1,0 +1,133 @@
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem 
+rem after read
+rem This trigger assumes that it is being used in a non-modified Barista and Addon
+rem Version 6 environment. If there have been any modifications to these systems,
+rem be sure to thoroughly examine this trigger and test changes.
+
+	setopts $080872202c2e$
+
+	seterr throw_error
+
+rem ---  Get the Trigger object from the BBj File System
+
+    td! = BBjAPI().getFileSystem().getTriggerData()
+
+	ky$=td!.getKey()
+	rec_data$=td!.getReadBuffer()
+
+	myns!=BBjAPI().getGlobalNamespace()
+	wkdir$ = myns!.getValue("work_dir")
+	gldir$ = myns!.getValue("gldata")
+	pgmdir$ = myns!.getValue("pgmdir")
+
+	x$=stbl("+SYSINFO_TPL",myns!.getValue("sysinfo_tpl"))
+	x$=stbl("+SYSINFO",myns!.getValue("sysinfo"))
+	x$=stbl("+DIR_SYP",myns!.getValue("rd_dir_syp"))
+	x$=stbl("+DIR_IMG",myns!.getValue("rd_dir_img"))
+	x$=stbl("+DIR_SYS",myns!.getValue("rd_dir_sys"))
+	x$=stbl("+GUI_DEVICE",myns!.getValue("rd_gui_dev"))
+	x$=stbl("+FILE_USR",myns!.getValue("rd_file_usr"))
+	x$=stbl("+FILE_SET",myns!.getValue("rd_file_set"))
+	x$=stbl("+USER_ID",myns!.getValue("rd_user_id"))
+	x$=stbl("+DIR_USR",myns!.getValue("rd_dir_usr"))
+	x$=stbl("+AON_APPCOMPANY",myns!.getValue("aon_appcompany"))
+	x$=stbl("+MASTER_USER",myns!.getValue("master_user"))
+	
+	return_default$="Y"
+	
+rem --- Open template file for use in getting Barista template for correct file
+
+	tpl_dev=unt
+	open (tpl_dev,err=throw_error) wkdir$+"sys/data/ddm_table_tpls.dat"
+
+rem --- See if it's a Payroll record
+	if ky$(3,10)="PR Chk Reg"
+	rem --- Payroll record
+		alias$="ADM_AUDITCONTROL"
+		filename$="glm-06"
+		gosub get_template
+		glm06_dev=unt
+		open (glm06_dev,err=throw_error)gldir$+filename$
+		read record(glm06_dev,key=pad(ky$(1,12),18)+"001",dom=return_default)tpl$
+		glm06$="firm_id:c(2),process_id:c(10),program_name:c(8*=10),journal_id:c(2),reserved_1:c(8),"
+		glm06$=glm06$+"lstuse_date:c(6),lstuse_time:c(4),lstupd_date:c(6),lstupd_time:c(4),file_name:c(6),"
+		glm06$=glm06$+"gl_audit:c(1),gl_work_file:c(1),detail_flag:c(1),prt_gl_sum:c(1),reserved_2:c(23*=10),"
+		glm06$=glm06$+"gl_post_memo:c(30*=10),dealer_str:c(1*=10),cur_adt_nbr:n(1*=10),res_num_1:n(1*=10),"
+		glm06$=glm06$+"res_num_2:n(1*=10),res_num_3:n(1*=10),res_num_4:n(1*=10),dlr_num_1:n(1*=10),"
+		glm06$=glm06$+"dlr_num_2:n(1*=10)"
+		dim glm06$:glm06$
+		glm06.firm_id$ = tpl.firm_id$
+		glm06.process_id$ = tpl.process_id$
+		glm06.program_name$ = "PRR.HA  "
+		glm06.journal_id$ = tpl.journal_id$
+		glm06.lstuse_date$ = fnd$(tpl.lstuse_date$)
+		glm06.lstuse_time$ = tpl.lstuse_time$
+		glm06.lstupd_date$ = fnd$(tpl.lstupd_date$)
+		glm06.lstupd_time$ = tpl.lstupd_time$
+		glm06.file_name$ = tpl.file_name$
+		glm06.gl_audit$ = tpl.gl_audit$
+		glm06.gl_work_file$ = tpl.gl_work_file$
+		glm06.detail_flag$ = tpl.detail_level$
+		glm06.prt_gl_sum$ = tpl.prt_gl_sum$
+		glm06.gl_post_memo$ = tpl.gl_post_memo$
+		glm06.cur_adt_nbr = tpl.audit_number
+		return_default$="N"
+	endif
+
+	if return_default$="Y" goto return_default
+
+	td!.setReadBuffer(glm06$)
+	goto std_exit
+		
+rem --- Subroutines
+
+get_template:
+
+	read (tpl_dev,key=pad(alias$,16),dom=throw_error) *,*,tpl$
+	dim tpl$:tpl$
+	
+	return
+	
+throw_error:
+
+	throw lst(pgm(tcb(5))) , err
+	goto std_exit
+
+rem --- Functions
+
+	rem --- fnyy$ returns a 2 character year (A0-E9) from a 4 character year
+	def fnyy$(q1$)
+		q3$=" ABCDE56789ABCDEFGHIJ"
+		q1$(1,1)=q3$(pos(q1$(1,1)=" 0123456789ABCDEFGHIJ"))
+		return q1$
+	fnend
+
+	rem --- returns a 2 character period/year from a 4 character period/year
+	def fni$(q$)
+		q$=pad(q$,4)
+		q1$=chr(num(q$(1,2))+32)
+		q2$=chr(num(q$(3,2))+32)
+		return q1$+q2$
+	fnend
+	
+	rem --- returns a 3 character packed date from an 8 character year/month/day
+	def fnd$(q$)
+		q$=pad(q$,8)
+		if cvs(q$,2)="" return "   "
+		q1$=chr(num(q$(5,2))+32)+chr(num(q$(7,2))+32)
+		if q$(1,2)="19"
+			q2$=chr(num(q$(3,2))+32)
+		else
+			q2$=chr(num(q$(3,2))+132)
+		endif
+		return q2$+q1$
+	fnend
+	
+return_default:
+
+	td!.setReadBuffer(rec_data$)
+	goto std_exit
+
+std_exit:    

@@ -165,7 +165,7 @@ rem --- New Tran Date
 			gosub switch_colors
 			break
 
-		case 6; rem "Special Key"
+		case 6; rem "Special Key" - escape
 			if notice.wparam=8
 				gridSubs!.endEdit()
 			endif
@@ -173,12 +173,18 @@ rem --- New Tran Date
 
 		case 12; rem Lookup
 			if curr_col=11
-rem				escape;rem ? notice.wparam
-			endif
-			break
-		case 1; rem Lookup
-			if curr_col=11
-rem				escape;rem ? notice.wparam
+				keycode=notice.wparam
+				keycode$=bin(keycode,2)
+				if asc(and(keycode$,$2000$)) and keycode$=$2006$
+					key_pfx$=firm_id$
+					call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMASTR","PRIMARY",key_tpl$,table_chans$[all],status$
+					dim sel_key$:key_tpl$
+					call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"SFE_WOMASTR","SELECT",table_chans$[all],key_pfx$,"",sel_key$
+					if len(sel_key$)>0
+						VectOps!.setItem((curr_row*num(user_tpl.gridOpsCols$))+17,sel_key.wo_no$)
+						gridOps!.setCellText(curr_row,curr_col,sel_key.wo_no$)
+					endif
+				endif
 			endif
 			break
 
@@ -367,8 +373,7 @@ rem ==========================================================================
 	attr_sub_col$[12,fnstr_pos("MAXL",attr_def_col_str$[0,0],5)]=str(callpoint!.getDevObject("wo_no_len"))
 	attr_sub_col$[12,fnstr_pos("DTAB",attr_def_col_str$[0,0],5)]="SFE_WOMASTR"
 	attr_sub_col$[12,fnstr_pos("DCOL",attr_def_col_str$[0,0],5)]="ITEM_ID"
-	attr_sub_col$[12,fnstr_pos("DKEY",attr_def_col_str$[0,0],5)]="[+FIRM_ID]+@"
-	attr_sub_col$[12,fnstr_pos("ETYP",attr_def_col_str$[0,0],5)]="WO_NO"
+	attr_sub_col$[12,fnstr_pos("DKEY",attr_def_col_str$[0,0],5)]=firm_id$+"  "
 
 	attr_sub_col$[13,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="NEW_DATE"
 	attr_sub_col$[13,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_ADJUST")+" "+Translate!.getTranslation("AON_DATE")
@@ -385,7 +390,7 @@ rem ==========================================================================
 
 	attr_disp_col$=attr_sub_col$[0,1]
 
-	call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridSubs!,"CHECKS-COLH-DATES-LIGHT-LINES-SIZEC",num_rpts_rows,
+	call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridSubs!,"CHECKS-COLH-DATES-LINES-LIGHT-SIZEC-CELL",num_rpts_rows,
 :		attr_def_col_str$[all],attr_disp_col$,attr_sub_col$[all]
 
 	return

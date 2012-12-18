@@ -66,7 +66,9 @@ rem --- Columns for the record set are defined using a string template
 	temp$=temp$+"LAST_ACT_DATE:C(1*), ITEM_DESC_1:C(1*), ITEM_DESC_2:C(1*), DRAWING_NO:C(1*), REV:C(1*), "
 	temp$=temp$+"INCLUDE_LOTSER:C(1*), MAST_CLS_INP_QTY_STR:C(1*), MAST_CLS_INP_DT:C(1*), MAST_CLOSED_COST_STR:C(1*), "
 	temp$=temp$+"COMPLETE_YN:C(1*), COST_MASK:C(1*), UNITS_MASK:C(1*), AMT_MASK:C(1*), "	
-	temp$=temp$+"COST_MASK_PATTERN:C(1*), UNITS_MASK_PATTERN:C(1*), AMT_MASK_PATTERN:C(1*)"		
+	temp$=temp$+"COST_MASK_PATTERN:C(1*), UNITS_MASK_PATTERN:C(1*), AMT_MASK_PATTERN:C(1*), "	
+	temp$=temp$+"WO_STATUS_LETTER:C(1*), CLOSED_DATE_RAW:C(1*)"	
+	
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
 rem --- Get Barista System Program directory
@@ -155,7 +157,7 @@ rem --- Get IV Params for Lot/Serial flag
 	
 rem --- Build SQL statement
     sql_prep$=""
-	where_clause$=""
+	where_clause$=" firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND "
 	order_clause$=""
 	
 	sql_prep$="select * from sfe_womastr "
@@ -271,6 +273,7 @@ rem --- Trip Read
 				endif
 			endif
 		endif
+		data!.setFieldValue("WO_STATUS_LETTER",read_tpl.wo_status$)
 		data!.setFieldValue("WO_STATUS",read_tpl.wo_status$+" "+stat$)
 		if cvs(read_tpl.customer_id$,3)<>""
 			dim arm_custmast$:fattr(arm_custmast$)
@@ -283,6 +286,7 @@ rem --- Trip Read
 		data!.setFieldValue("WAREHOUSE_ID",read_tpl.warehouse_id$)
 		data!.setFieldValue("ITEM_ID",read_tpl.item_id$)
 		data!.setFieldValue("OPENED_DATE",fndate$(read_tpl.opened_date$))
+		data!.setFieldValue("CLOSED_DATE_RAW",read_tpl.closed_date$)
 		data!.setFieldValue("LAST_CLOSE",fndate$(read_tpl.closed_date$))
 		if cvs(read_tpl.closed_date$,3)="" data!.setFieldValue("LAST_CLOSE","")
 		dim sfc_type$:fattr(sfc_type$)

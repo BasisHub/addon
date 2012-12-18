@@ -1,0 +1,352 @@
+rem --- Closed Recurring Work Order Update
+rem --- Program sfu_ra v8.0.0 16Jan2008 (sfu_ra)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/16/2008 09:47:38)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+    next_overlay$="";rem --- clear next_var and outvect! so bas_process_end doesn't loop...i.e., don't run anything after this
+    if OutVect!<>null() OutVect!=null()
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get user approval to update
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Initialize inventory item update
+    call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",ivfiles[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+
+rem --- Start progress meter and position header file
+
+    call stbl("+DIR_PGM")+"adc_progress.aon","NC","","","","",0,sfe04_dev,1,meter_num,status
+    read (sfe04_dev,key=firm_id$+"  ",dom=*next)
+
+rem --- Read next Closed Work Order Transaction (SFE-CLOSEDWO) record
+
+    while 1
+        sfe04_key$=key(sfe04_dev,end=*break)
+        if pos(firm_id$+"  "=sfe04_key$)<>1 then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+        sfe01_found=0
+        extract record (sfe01_dev,key=sfe04_key$,dom=*next) sfe01a$; sfe01_found=1; rem Advisory locking
+        if !sfe01_found then
+            remove (sfe04_dev,key=sfe04_key$,dom=*next)
+            continue
+        endif
+        if sfe01a.wo_category$<>"R" then 
+            read (sfe04_dev)
+            continue
+        endif
+        refs$[1]=sfe01a.customer_id$
+        refs$[2]=sfe01a.order_no$
+        refs$[3]=sfe01a.wo_no$
+        refs$[4]=sfe01a.wo_type$
+
+        rem --- Calculate actuals from transactions
+        dim d[4],t[5]
+        for tran=1 to 3
+            switch tran
+                case 1
+                    wotran_dev=sft01_dev
+                    dim sftran$:fattr(sft01a$)
+                    break
+                case 2
+                    wotran_dev=sft21_dev
+                    dim sftran$:fattr(sft21a$)
+                    break
+                case 3
+                    wotran_dev=sft31_dev
+                    dim sftran$:fattr(sft31a$)
+                    break
+            swend
+            read(wotran_dev,key=sfe04_key$,dom=*next)
+            while 1
+                wotran_key$=key(wotran_dev,end=*break)
+                if pos(sfe04_key$=wotran_key$)<>1 then break
+                readrecord(wotran_dev)sftran$
+                switch wotran_dev
+                    case sft01_dev
+                        rem --- split direct and overhead
+                        d[1]=d[1]+sftran.units*sftran.direct_rate
+                        d[2]=d[2]+sftran.ext_cost-sftran.units*sftran.direct_rate                            
+                    break
+                    case sft21_dev 
+                        d[3]=d[3]+sftran.ext_cost
+                    break
+                    case sft31_dev 
+                        d[4]=d[4]+sftran.ext_cost
+                    break                       
+                swend
+                d[0]=d[0]+sftran.ext_cost
+            wend
+        next tran
+
+        rem --- Calculate totals
+        t[0]=-(d[0]-sfe01a.cls_cst_todt)
+        t[1]=sfe01a.cls_inp_qty*sfe01a.closed_cost
+
+        rem --- Do Variances Here
+        dim sfm10a$:fattr(sfm10a$)
+        find record (sfm10a_dev,key=firm_id$+"A"+sfe01a.wo_type$,dom=*next) sfm10a$
+        if sfe01a.complete_flg$<>"Y" then 
+            t[0]=-t[1]
+        else
+            if sfm10a.stdact_flag$="A" then 
+                t[1]=d[0]-sfe01a.cls_cst_todt
+            else
+                rem --- Calc Standards
+                dim e[4]
+                for req=1 to 3
+                    switch req
+                        case 1
+                            sfreq_dev=sfe02_dev
+                            dim sfreqa$:fattr(sfe02a$)
+                            cost_field$="TOT_STD_COST"
+                            break
+                        case 2
+                            sfreq_dev=sfe22_dev
+                            dim sfreqa$:fattr(sfe22a$)
+                            cost_field$="TOTAL_COST"
+                            break
+                        case 3
+                            sfreq_dev=sfe32_dev
+                            dim sfreqa$:fattr(sfe32a$)
+                            cost_field$="TOTAL_COST"
+                            break
+                    swend
+                    read(sfreq_dev,key=sfe04_key$,dom=*next)
+                    while 1
+                        sfreq_key$=key(sfreq_dev,end=*break)
+                        if pos(sfe04_key$=sfreq_key$)<>1 then break
+                        readrecord(sfreq_dev)sfreqa$
+                        switch sfreq_dev
+                            case sfe02_dev
+                                e[1]=e[1]+sfreqa.total_time*sfreqa.direct_rate
+                                e[2]=e[2]+nfield(sfreqa$,cost_field$)-sfreqa.total_time*sfreqa.direct_rate
+                                break
+                            case sfe22_dev
+                                let e[3]=e[3]+nfield(sfreqa$,cost_field$)
+                                break
+                            case sfe32_dev
+                                let e[4]=e[4]+nfield(sfreqa$,cost_field$)
+                                break                                                           
+                        swend 
+                        e[0]=e[0]+nfield(sfreqa$,cost_field$)
+                    wend
+                next req
+
+                rem --- Calc Variances
+                precision 2
+                if e[0]=0 then 
+                    y0=0
+                else
+                    if sfe01a.sch_prod_qty=sfe01a.qty_cls_todt+sfe01a.cls_inp_qty or 
+:                       e[0]=0 or sfe01a.recalc_flag$="N" then 
+                        y0=sfe01a.cls_inp_qty*sfe01a.closed_cost+sfe01a.cls_cst_todt 
+                    else    
+                        rem --- Pro-Rate Standards
+                        if sfe01a.sch_prod_qty<>0 then 
+                            y0=e[0]*(sfe01a.qty_cls_todt+sfe01a.cls_inp_qty)/sfe01a.sch_prod_qty 
+                        else 
+                            y0=0 
+                        endif    
+                        if y0<>e[0] then 
+                            if e[0]=0 then 
+                                e[1]=0
+                                e[3]=0
+                                e[4]=0    
+                            else
+                                e[1]=e[1]*y0/e[0]
+                                e[3]=e[3]*y0/e[0]
+                                e[4]=e[4]*y0/e[0]
+                            endif 
+                            e[2]=y0-(e[1]+e[4]+e[3])
+                        endif
+                    endif
+                endif
+                rem --- Calc Variance
+                t[2]=d[1]-e[1]
+                t[4]=d[3]-e[3]
+                t[5]=d[4]-e[4]
+                t[3]=d[0]-(y0+t[2]+t[4]+t[5]); rem "Any left overs goto OH VNCE
+            endif
+        endif
+
+        rem --- Complete?
+        precision ivs01_precision
+        sfe01a.qty_cls_todt=sfe01a.qty_cls_todt+sfe01a.cls_inp_qty
+        sfe01a.cls_cst_todt=sfe01a.cls_cst_todt+sfe01a.cls_inp_qty*sfe01a.closed_cost
+        if sfe01a.complete_flg$="Y" then
+            rem --- Complete it
+            sfe01a.closed_date$=sfe01a.cls_inp_date$
+            sfe01a.wo_status$="C"
+
+            rem --- Remove Schedule Detail Records
+            read (sfm05alt_dev,key=sfe01a.firm_id$+sfe01a.wo_no$,knum="ON_WONUM",dom=*next)
+            while 1
+                sfm05alt_key$=key(sfm05alt_dev,end=*break)
+                if sfm05alt_key.firm_id$+sfm05alt_key.wo_no$<>sfe01a.firm_id$+sfe01a.wo_no$ then break
+                remove (sfm05_dev,key=sfm05alt_key.firm_id$+sfm05alt_key.op_code$+sfm05alt_key.sched_date$+sfm05alt_key.wo_no$+sfm05alt_key.oper_seq_ref$,dom=*next)
+            wend 
+
+            rem --- Reset ivm-02 Committed If All Were Not Issued
+            remove (sfe13_dev,key=sfe04_key$,dom=*next)
+            read (sfe23_dev,key=sfe04_key$,dom=*next)
+            while 1
+                sfe23_key$=key(sfe23_dev,end=*break)
+                if pos(sfe04_key$=sfe23_key$)<>1 then break
+                read record (sfe23_dev) sfe23a$
+                if sfe23a.qty_ordered<>sfe23a.tot_qty_iss 
+                    action$="UC"
+                    items$[0]=firm_id$
+                    items$[1]=sfe23a.warehouse_id$
+                    items$[2]=sfe23a.item_id$
+                    items$[3]=""
+                    refs[0]=sfe23a.qty_ordered-sfe23a.tot_qty_iss 
+                    gosub update_inventory
+                endif 
+                remove (sfe23_dev,key=sfe23_key$,dom=*next)
+            wend 
+
+            remove (sfe15_dev,key=sfe04_key$,dom=*next)
+            read (sfe25_dev,key=sfe04_key$,dom=*next)
+            while 1
+                sfe25_key$=key(sfe25_dev,end=*break)
+                if pos(sfe04_key$=sfe25_key$)<>1 then break
+                remove (sfe25_dev,key=sfe25_key$,dom=*next)
+            wend
+
+        else
+
+            rem --- Don't complete    
+            if sfe01a.closed_date$<sfe01a.cls_inp_date$ then  
+                let sfe01a.closed_date$=sfe01a.cls_inp_date$
+            endif
+            sfe01a.cls_inp_date$=""
+            sfe01a.complete_flg$=""
+            sfe01a.recalc_flag$=""
+
+            rem --- Recurring Purge, Move to History"
+            for tran=1 to 3
+                switch tran
+                    case 1
+                        wotran_dev=sft01_dev
+                        wohist_dev=sft03_dev
+                        dim sftran$:fattr(sft01a$)
+                        break
+                    case 2
+                        wotran_dev=sft21_dev
+                        wohist_dev=sft23_dev
+                        dim sftran$:fattr(sft21a$)
+                        break
+                    case 3
+                        wotran_dev=sft31_dev
+                        wohist_dev=sft33_dev
+                        dim sftran$:fattr(sft31a$)
+                        break
+                swend
+                read(wotran_dev,key=sfe04_key$,dom=*next)
+                while 1
+                    wotran_key$=key(wotran_dev,end=*break)
+                    if pos(sfe04_key$=wotran_key$)<>1 then break
+                    readrecord(wotran_dev)sftran$
+                    writerecord(wohist_dev)sftran$
+                    remove(wotran_dev,key=wotran_key$,dom=*next)
+                wend
+            next tran
+
+        endif
+        sfe01a.cls_inp_qty=0
+        sfe01a.closed_cost=0
+
+        rem --- Update sfe_womastr
+        write record (sfe01_dev) sfe01a$
+        remove (sfe04_dev,key=sfe04_key$,dom=*next)
+    wend
+
+done: rem --- End
+
+    if gl$="Y"
+        call pgmdir$+"glc_update.aon",glm01a_dev,glt04a_dev,glw11_dev,status
+        call pgmdir$+"glc_ctlupdate.aon",status
+        call pgmdir$+"glc_ctldelete.aon",status
+    endif
+    call pgmdir$+"adc_batchdelete.aon",status
+    goto std_exit
+
+update_inventory: rem --- Update Inventory Information
+    call pgmdir$+"ivc_itemupdt.aon",action$,ivfiles[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+    return                                                  
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

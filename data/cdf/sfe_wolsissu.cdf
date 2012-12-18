@@ -113,19 +113,25 @@ rem --- lotser_no is disabled except for a new row, so can init entire new row h
 		break
 	endif
 
+rem --- Validate this lot/serial number and get data
+	item_id$=callpoint!.getDevObject("item_id")
+	warehouse_id$=callpoint!.getDevObject("warehouse_id")
+	ivm_lsmaster_dev=fnget_dev("IVM_LSMASTER")
+	dim ivm_lsmaster$:fnget_tpl$("IVM_LSMASTER")
+	findrecord(ivm_lsmaster_dev,key=firm_id$+warehouse_id$+item_id$+lotser_no$,dom=*next)ivm_lsmaster$
+	if ivm_lsmaster.lotser_no$<>lotser_no$ then
+		msg_id$="IV_SERLOT_NOT_FOUND"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
 rem --- Reset quantity left_to_issue and tot_ls_qty_issued if lotser_no changed on new row
 	qty_issued=num(callpoint!.getColumnData("SFE_WOLSISSU.QTY_ISSUED"))
 	left_to_issue=num(callpoint!.getDevObject("left_to_issue"))
 	tot_ls_qty_issued=num(callpoint!.getDevObject("tot_ls_qty_issued"))
 	callpoint!.setDevObject("left_to_issue",left_to_issue+qty_issued)
 	callpoint!.setDevObject("tot_ls_qty_issued",tot_ls_qty_issued-qty_issued)
-
-rem --- Get data for this lot/serial number
-	item_id$=callpoint!.getDevObject("item_id")
-	warehouse_id$=callpoint!.getDevObject("warehouse_id")
-	ivm_lsmaster_dev=fnget_dev("IVM_LSMASTER")
-	dim ivm_lsmaster$:fnget_tpl$("IVM_LSMASTER")
-	findrecord(ivm_lsmaster_dev,key=firm_id$+warehouse_id$+item_id$+lotser_no$)ivm_lsmaster$
 
 rem --- Init issued quantity to quantity left to issue
 	tot_ls_qty_issued=num(callpoint!.getDevObject("tot_ls_qty_issued"))

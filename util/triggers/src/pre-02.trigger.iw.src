@@ -1,0 +1,112 @@
+rem AddonSoftware
+rem Copyright BASIS International Ltd.
+rem 
+rem instead of write
+rem This trigger assumes that it is being used in a non-modified Barista and Addon
+rem Version 6 environment. If there have been any modifications to these systems,
+rem be sure to thoroughly examine this trigger and test changes.
+
+	setopts $080872202c2e$
+
+	seterr throw_error
+
+rem ---  Get the Trigger object from the BBj File System
+
+    td! = BBjAPI().getFileSystem().getTriggerData()
+
+	myns!=BBjAPI().getGlobalNamespace()
+	wkdir$ = myns!.getValue("work_dir")
+	prdir$ = stbl("+V6DATA",err=throw_error)
+
+rem --- Template for the Barista pre-02 that will be written out to a v6 record instead
+
+	tpl_dev=unt
+	open (tpl_dev,err=throw_error) wkdir$+"sys/data/ddm_table_tpls.dat"
+	read (tpl_dev,key=pad("PRE_DAYTIME",16),dom=throw_error) *,*,pre_daytime$
+	dim inRec$:pre_daytime$
+
+	inRec$=td!.getWriteBuffer()
+	inRec$=field(inRec$)
+
+rem --- Open v6 Payroll Entry file
+
+	pre02_dev=unt
+	open (pre02_dev,err=throw_error)prdir$+"PRE-02"
+
+rem --- Assign the data
+
+	dim pre02_0$(32)
+	dim pre02_1$(12)
+	dim pre02[2]
+	pre02_0$(1)=inRec.firm_id$
+	pre02_0$(3)=inRec.employee_no$
+	pre02_0$(12)=inRec.pr_time_seq$
+	pre02_0$(15)=fnpackdate$(inRec.trans_date$)
+	pre02_0$(18)=inRec.pay_code$
+	pre02_0$(20)=inRec.title_code$
+	pre02_0$(22)=inRec.dept_code$
+	pre02_0$(24)=""
+	pre02_1$=inRec.pr_job_no$
+	pre02[0]=inRec.rate
+	pre02[1]=inRec.units
+	pre02[2]=inRec.extended_amt
+
+rem --- Set the sequence number
+
+	trip_key$=pre02_0$(1,11)
+	seq_no = 0
+	keylen = len(trip_key$)
+	tryKey$=trip_key$+$ff$
+	read (pre02_dev,key=tryKey$,dom=*next)
+	k$=keyp(pre02_dev,end=set_seq)
+	if k$(1,keylen) = trip_key$
+		seq_no = num(k$(keylen+1))
+	endif
+set_seq:
+	if seq_no+1 > 999
+		pre02_0$(12,3)="999"
+		dim pre02_sum[2]
+		read (pre02_dev,key = trip_key$+"999") pre02_sum0$,pre02_sum1$,pre02_sum[all]
+		pre02[1] = pre02[1] + pre02_sum[1]
+		pre02[2] = pre02[2] + pre02_sum[2]
+		if pre02[1]<>0
+			pre02[0] = pre02[2] / pre02[1]
+		else
+			pre02[0] = 0
+		endif
+		pre02_0$(12,3) = "999"
+	else
+		pre02_0$(12,3) = str(seq_no + 1:"000")
+	endif
+
+rem '----write the data
+
+	write (pre02_dev,key=pre02_0$(1,14))pre02_0$,pre02_1$,pre02[all]
+	close(pre02_dev)
+	
+	goto std_exit
+
+throw_error:
+
+	throw lst(pgm(tcb(5))) , err
+	goto std_exit
+	
+rem --- Functions
+
+	rem --- fnyy$ returns a 3 character packed date (v6 style) from an 8 character Barista date
+	def fnpackdate$(q1$)=chr(fnyy_year(q1$(3,2))+32)+chr(num(q1$(5,2))+32)+chr(num(q1$(7,2))+32)
+
+	def fnyy_year(q2$)
+		q=num(fnyy21_yy$(q2$))
+		IF q<90
+			q=q+100
+		endif
+		return q
+	fnend
+
+	def fnyy21_yy$(q3$)
+		q4$=" 01234567890123456789",q3$(1,1)=q4$(pos(q3$(1,1)=" 0123456789ABCDEFGHIJ"))
+		return q3$
+	fnend
+	
+std_exit:

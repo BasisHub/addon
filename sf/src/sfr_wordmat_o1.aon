@@ -6,166 +6,190 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
-    setesc std_error
-    seterr std_error
+	setesc std_error
+	seterr std_error
 
 rem --- Retrieve the program path
 
-    pgmdir$=stbl("+DIR_PGM",err=*next)
+	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
-    firm_id$=sysinfo.firm_id$
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=*next)
+	milestone=50
+	milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	firm_id$=sysinfo.firm_id$
+
+rem --- Document initializations
+
+	OutVect!=bbjAPI().makeVector()
+	HdrVect!=bbjAPI().makeVector()
+	BrkVect!=bbjAPI().makeVector()
+	TotVect!=bbjAPI().makeVector()
+
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+	rep_prog$=pgm(-2)
+
+rem --- Column Headings
+
+	dim columns$[12,10]
+	columns=13
+	columns$[0,0]=Translate!.getTranslation("AON_ITEM"),               columns$[0,1]="C",columns$[0,2]="15"
+	columns$[1,0]=Translate!.getTranslation("AON_TYPE"),               columns$[1,1]="C",columns$[1,2]="10"
+	columns$[2,0]=Translate!.getTranslation("AON_UM"),                 columns$[2,1]="C",columns$[2,2]="10"
+	columns$[3,0]=Translate!.getTranslation("AON_WO^NUMBER"),          columns$[3,1]="C",columns$[3,2]="10"
+	columns$[4,0]=Translate!.getTranslation("AON_WO^TYPE"),            columns$[4,1]="C",columns$[4,2]="5"
+	columns$[5,0]=Translate!.getTranslation("AON_START^DATE"),         columns$[5,1]="C",columns$[5,2]="10"
+	columns$[6,0]=Translate!.getTranslation("AON_COMPLETE")+"^"+Translate!.getTranslation("AON_DATE"),columns$[6,1]="C",columns$[6,2]="10"
+	columns$[7,0]=Translate!.getTranslation("AON_REQ'D")+"^"+Translate!.getTranslation("AON_QTY"), columns$[7,1]="N",columns$[7,2]="10",columns$[7,3]=m2$,columns$[7,10]="T"
+	columns$[8,0]=Translate!.getTranslation("AON_ON_HAND"),            columns$[8,1]="N",columns$[8,2]="10",columns$[8,3]=m2$,columns$[8,10]="T"
+	columns$[9,0]=Translate!.getTranslation("AON_COMMITTED"),         columns$[9,1]="N",columns$[9,2]="10",columns$[9,3]=m2$,columns$[9,10]="T"
+	columns$[10,0]=Translate!.getTranslation("AON_AVAILABLE"),         columns$[10,1]="N",columns$[10,2]="10",columns$[10,3]=m2$,columns$[10,10]="T"
+	columns$[11,0]=Translate!.getTranslation("AON_ON_ORDER"),          columns$[11,1]="N",columns$[11,2]="10",columns$[11,3]=m2$,columns$[11,10]="T"
+	columns$[12,0]=Translate!.getTranslation("AON_MFG'D_ITEM"),        columns$[12,1]="C",columns$[12,2]="10"
 
 rem --- Init Data
 
-    more=1
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFW_RQMTXWHS","PRIMARY",sfw10a_key_pritpl$,rd_table_chans$[all],status$
-
-rem --- Additional File Opens
-
-    call pgmdir$+"adc_printer.aon",printer_dev,1,"","",status
-    if status then goto std_exit
+	more=1
 
 rem --- Background
 
-    call pgmdir$+"adc_progress.aon","N","","","","",0,sfw10_dev,1,meter_num,status
+	call pgmdir$+"adc_progress.aon","N","","","","",0,sfw10_dev,1,meter_num,status
 
 rem --- Init Read
 
-    read (sfw10a_dev,key=firm_id$,dom=*next)
-
 rem --- Main Read
-    while more
-            
-        dim sfw10a_key$:sfw10a_key_pritpl$
-        sfw10a_key$=key(sfw10a_dev,end=done)
-        if sfw10a_key.firm_id$<>firm_id$ then break 
-        read (sfw10a_dev)
+	while more
+		sql_rec$=sqlfetch(sql_chan,err=*break)
 
 rem --- Breaks
 
-        if sfw10a_key.warehouse_id$<>whse$ then gosub first_subtot
-        find record (ivm01a_dev,key=firm_id$+sfw10a_key.item_id$,dom=*continue) ivm01a2$
-        if prodtype$<>"" and ivm01a2.product_type$<>prodtype$ then 
-            read (sfw10a_dev,key=sfw10a_key.firm_id$+sfw10a_key.warehouse_id$+sfw10a_key.item_id$+$ff$,dom=*continue)
-        endif
-        if sfw10a_key.item_id$<>t1$ then gosub item_subtot
-        if t1$="" then continue
-        print @(40,11),sfw10a_key.warehouse_id$,"-",sfw10a_key.item_id$,
+		if sql_rec.warehouse_id$<>whse$ then gosub first_subtot
+		if sql_rec.item_id$<>t1$ then gosub item_subtot
+		if t1$="" then continue
 
 rem --- Additional Reads
 
-        find record (sfe01a_dev,key=sfw10a_key.firm_id$+"  "+sfw10a_key.wo_no$,dom=*continue) sfe01a$
-        if datethru$<>"" then 
-            if pos(" "<>sfe01a.eststt_date$)>0 and sfe01a.eststt_date$>datefrom$ then continue
-        endif
-        if datethru$<>"" then 
-            if pos(" "<>sfe01a.estcmp_date$)>0 and sfe01a.estcmp_date$<datethru$ then continue
-        endif
-        find record (sfe23a_dev,key=sfe01a_key.firm_id$+sfe01a_key.wo_location$+sfe01a_key.wo_number$+sfe01a_key.step_no$,dom=*next) sfe23a$
-        sfe23a.unit_cost=sfe23a.qty_ordered-sfe23a.tot_qty_iss
+		find record (sfe01a_dev,key=firm_id$+"  "+sql_rec.wo_no$,dom=*continue) sfe01a$
+		if datethru$<>"" then 
+			if pos(" "<>sfe01a.eststt_date$)>0 and sfe01a.eststt_date$>datefrom$ then continue
+		endif
+		if datethru$<>"" then 
+			if pos(" "<>sfe01a.estcmp_date$)>0 and sfe01a.estcmp_date$<datethru$ then continue
+		endif
+		req_qty=sql_rec.qty_ordered-sql_rec.tot_qty_iss
 
 rem --- Print
 
-        if l+1>l9 then gosub itm_hd
-        print (printer_dev)@(100-m2*5-30),sfe01a.wo_number$,"  ",sfe01a.wo_type$," ",fndate$(sfe01a.eststt_date$)," ",
-:                          fndate$(sfe01a.estcmp_date$),@(100-m2*5),sfe23a.unit_cost:m2$,@(100),
-        if sfe01a.wo_category$="I" then 
-            print (printer_dev)@(100),sfe01a.item_id$,
-        endif
-        if sfe01a.wo_category$<>"I" then 
-            print (printer_dev)@(100),sfe01a.description$,
-        endif
-        print (printer_dev)""
-        l=l+1
-        t0=t0+sfe23a.unit_cost
-           
-    wend
+		xvk=fnblank(3)
+		outVect!.addItem(sql_rec.wo_no$)
+		outVect!.addItem(sfe01a.wo_type$)
+		outVect!.addItem(fndate$(sfe01a.eststt_date$))
+		outVect!.addItem(fndate$(sfe01a.estcmp_date$))
+		outVect!.addItem(str(req_qty))
+		xvk=fnblank(4)
+		if sfe01a.wo_category$="I" then 
+			outVect!.addItem(sfe01a.item_id$)
+		else
+			outVect!.addItem(sfe01a.description_01$)
+		endif
+		record_count=record_count+1
+		if mod(recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,ignore_status
+		t0=t0+req_qty
 
-done: rem --- End
+	wend
 
-    t9$="U"
-    gosub first_subtot
-    goto std_exit
+rem --- End
 
-report_heading: rem --- Report Heading
+	if record_count=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
 
-    l=headings+1
-    headings$[2]=h3$
-    headings$[3]=h6$
-    call pgmdir$+"adc_rpthead.aon",printer_dev,headings$[all],headings,h,h0,when$,clock$,status
-    if status then exitto std_exit
-    print (printer_dev)Translate!.getTranslation("AON_ITEM_"),@(100-m2*5-27),Translate!.getTranslation("AON_WO"),@(100-m2*5-21),Translate!.getTranslation("AON_WO"),@(100-m2*5-17),Translate!.getTranslation("AON_START"),
-:                              @(100-m2*5-8),Translate!.getTranslation("AON_COMPLETE"),@(100-m2*4-6),Translate!.getTranslation("AON_REQ'D"),@(100-m2*3-4),Translate!.getTranslation("AON_ON-"),
-:                              @(100-m2*2-5),Translate!.getTranslation("AON_COM-"),@(100-m2-7),Translate!.getTranslation("AON_AVAIL-"),@(100-5),Translate!.getTranslation("AON_ON")
-
-    print (printer_dev)Translate!.getTranslation("AON_CODE"),@(p0+3),Translate!.getTranslation("AON_TYPE__UM"),@(100-m2*5-29),Translate!.getTranslation("AON_NUMBER"),@(100-m2*5-22),Translate!.getTranslation("AON_TYPE"),
-:                             @(100-m2*5-16),Translate!.getTranslation("AON_DATE"),@(100-m2*5-6),Translate!.getTranslation("AON_DATE"),@(100-m2*4-4),Translate!.getTranslation("AON_QTY"),(100-m2*3-5),Translate!.getTranslation("AON_HAND"),
-:                             @(100-m2*2-7),Translate!.getTranslation("AON_MITTED"),@(100-m2-5),Translate!.getTranslation("AON_ABLE"),@(100-6),Translate!.getTranslation("AON_ORDER"),@(101),Translate!.getTranslation("AON_MFG'D_ITEM"),'lf'
-    l=l+3
-    return
-
+	t9$="U"
+	gosub first_subtot
+	goto std_exit
 
 itm_hd: rem --- Item Heading
 
-    if l+3>l9 then gosub report_heading
-    print (printer_dev)@(0),ivm01a1.item_id$,@(p0+3),ivm01a1.product_type$,"  ",ivm01a1.unit_of_sale$,'lf',@(3),ivm01a1.item_desc$
-    l=l+2
-    return
+	outVect!.addItem(ivm01a.item_id$)
+	outVect!.addItem(ivm01a.product_type$)
+	outVect!.addItem(ivm01a.unit_of_sale$)
+	xvk=fnblank(10)
 
+	outVect!.addItem("  "+ivm01a.item_desc$)
+	xvk=fnblank(12)
+
+	return
 
 first_subtot:  rem --- First Sub Total
 
-    if whse$<>"" 
-        if t9$="" then let t9$="T"
-        gosub item_subtot
-        if t9$="T" then let t9$="",t1$=""
-    endif 
+	if whse$<>"" 
+		if t9$="" then let t9$="T"
+		gosub item_subtot
+		if t9$="T" then let t9$="",t1$=""
+	endif 
 
-    if t9$<>"" then return
-    dim h4$(30)
-    ivm10c.code_desc$ =Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
-    whse$=sfw10a_key.warehouse_id$
-    t1$=""
-    find record (ivm10c_dev,key=firm_id$+"C"+whse$,dom=*next) ivm10c$
-    h6$=Translate!.getTranslation("AON_WAREHOUSE:_")+whse$+"  "+ ivm10c.code_desc$
-    l=l9+5
-    return
-
+	if t9$<>"" then return
+	dim h4$(30)
+	ivm10c.short_name$ =Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+	whse$=sql_rec.warehouse_id$
+	t1$=""
+	find record (ivm10c_dev,key=firm_id$+"C"+whse$,dom=*next) ivm10c$
+	h6$=Translate!.getTranslation("AON_WAREHOUSE:_")+whse$+"  "+ ivm10c.short_name$
+	BrkVect!.addItem(str(OutVect!.size()/columns))
+	HdrVect!.addItem(h6$)
+	l=l9+5
+	return
 
 item_subtot:  rem --- Item Subtotals
 
-    if t1$<>"" 
-        if l+2*sgn(l1)+2>l9 then gosub itm_hd
-        print (printer_dev)@(100-m2*5-15),Translate!.getTranslation("AON_ITEM_TOTAL:_"),@(100-m2*5),t0:m2$,
-        print (printer_dev)@(100-m2*4),ivm02a.qty_on_hand:m2$,ivm02a.qty_commit:m2$,ivm02a.qty_on_hand-ivm02a.qty_commit:m2$,
-:       ivm02a.qty_on_order:m2$,'lf'
-        l=l+2
-        l1=0
-    endif
+	if t1$<>""
+rem		if l+2*sgn(l1)+2>l9 then gosub itm_hd
+		TotVect!.addItem(str(OutVect!.size()/columns))
+		xvk=fnblank(5)
+		outVect!.addItem(Translate!.getTranslation("AON_ITEM_TOTAL:_"))
+		outVect!.addItem("")
+		outVect!.addItem(str(t0))
+		outVect!.addItem(str(ivm02a.qty_on_hand))
+		outVect!.addItem(str(ivm02a.qty_commit))
+		outVect!.addItem(str(ivm02a.qty_on_hand-ivm02a.qty_commit))
+		outVect!.addItem(str(ivm02a.qty_on_order))
+		outVect!.addItem("")
+		
+		xvk=fnblank(13)
+		l1=0
+	endif
 
-    if t9$<>"" then return
-    t1$=sfw10a_key.item_id$
-    t0=0
-    find record (ivm01a_dev,key=firm_id$+t1$,dom=label2) ivm01a1$
-    ivm01a1.item_desc$=fnitem$(ivm01a1.item_desc$,desc[1],desc[2],desc[3])
+	if t9$<>"" then return
+	t1$=sql_rec.item_id$
+	t0=0
+	find record (ivm01a_dev,key=firm_id$+t1$,dom=label2) ivm01a$
+	ivm01a.item_desc$=fnitem$(ivm01a.item_desc$,desc[1],desc[2],desc[3])
 
 label2:
 
-    find record (ivm02a_dev,key=firm_id$+whse$+t1$,dom=no_warehouse) ivm02a$
-    gosub itm_hd
-    return
-
+	find record (ivm02a_dev,key=firm_id$+whse$+t1$,dom=no_warehouse) ivm02a$
+	gosub itm_hd
+	return
 
 no_warehouse: rem --- No Warehouse
 
-    read (sfw10a_dev,key=sfw10a_key.firm_id$+sfw10a_key.warehouse_id$+sfw10a_key.item_id$+$ff$,dom=*next)
-    t1$=""
+	read (sfw10a_dev,key=sfw10a_key.firm_id$+sfw10a_key.warehouse_id$+sfw10a_key.item_id$+$ff$,dom=*next)
+	t1$=""
+	return
+
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
     return
 
 rem #include std_functions.src
@@ -216,6 +240,15 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
     fnend
 
 rem --- fnbasename$: Strip path and optionally the suffix from a file name
@@ -294,6 +327,13 @@ std_exit: rem --- Standard program end (01Mar2006)
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
+
 rem #endinclude std_end.src
 
     end

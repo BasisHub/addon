@@ -25,7 +25,13 @@ rem --- Suppress Barista's default delete message
 	callpoint!.setStatus("QUIET")
 [[SFE_WOMATISH.BDEL]]
 rem --- Retain commitment on delete?
-	msg_id$="SF_DELETE_ISSUE"
+
+	if callpoint!.getColumnData("SFE_WOMATISH.WO_CATEGORY") = "R"
+		msg_id$="SF_DELETE_ISSUE_REC"
+	else
+		msg_id$="SF_DELETE_ISSUE"
+	endif
+
 	gosub disp_message
 	if msg_opt$="C" then
 		callpoint!.setStatus("ABORT")
@@ -276,6 +282,7 @@ rem --- New materials issues entry or no existing materials issues
 			rem --- Check if all operations were selected
 			all_selected=1
 			iter!=selected_ops!.values().iterator()
+
 			while iter!.hasNext()
 				op$=iter!.next()
 				if op$="" then
@@ -314,7 +321,10 @@ rem --- New materials issues entry or no existing materials issues
 								break
 							endif
 						wend
-						if !oprtn_selected then continue
+						if !oprtn_selected then
+							read (sfe_womatisd_dev)
+							continue
+						endif
 					endif
 
 					dim ivm_itemwhse$:ivm_itemwhse_tpl$

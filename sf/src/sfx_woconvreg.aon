@@ -1,0 +1,317 @@
+rem --- Conversion Work Order Register
+rem --- Program sfx_woconvreg.aon v8.0.0 17Jan2008 (wox_ba and wox_bb)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/17/2008 12:44:38)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- set rd_alias_id$, if needed, for DocOut Settings
+
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif
+
+rem --- See if batching
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
+                
+rem --- Get user approval to proceed
+
+	msg_id$="AON_RUN_QUERY"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=sysinfo.task_desc$
+	gosub disp_message
+	if msg_opt$<>"Y" then goto std_exit_no_report
+
+rem --- Open/Lock Files
+
+	num_files=9
+	dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+
+	open_tables$[1] ="SFS_PARAMS",    open_opts$[1] = "OTA"
+	open_tables$[2] ="IVS_PARAMS",    open_opts$[2] = "OTA"
+	open_tables$[3] ="SFE_WOCONVRN",  open_opts$[3] = "OTA"
+	open_tables$[4] ="SFE_WOMASTR",   open_opts$[4] = "OTA"
+	open_tables$[5] ="SFE_WOOPRTN",   open_opts$[5] = "OTA"
+	open_tables$[6] ="SFT_OPNMATTR",  open_opts$[6] = "OTA"
+	open_tables$[7] ="SFT_OPNOPRTR",  open_opts$[7] = "OTA"
+	open_tables$[8] ="SFT_OPNSUBTR",  open_opts$[8] = "OTA"
+	open_tables$[9] ="IVM_ITEMMAST",  open_opts$[9] = "OTA"
+
+    rem --- Lock if not bathing
+    if num(batch_no$)=0 then 
+        open_opts$[3]=open_opts$[3]+"L"
+    endif
+    
+	gosub open_tables
+	
+    sfs01a_dev = num(open_chans$[1])
+    ivs01a_dev = num(open_chans$[2])
+    sfe05a_dev = num(open_chans$[3])
+    sfe01a_dev = num(open_chans$[4])
+    sfe02a_dev = num(open_chans$[5])
+    sft21a_dev = num(open_chans$[6])
+    sft01a_dev = num(open_chans$[7])
+    sft31a_dev = num(open_chans$[8])
+    ivm01a_dev = num(open_chans$[9])
+
+rem --- Dimension string templates
+
+    dim sfs01a$:open_tpls$[1],ivs01a$:open_tpls$[2],sfe05a$:open_tpls$[3],
+:       sfe01a$:open_tpls$[4],sfe02a$:open_tpls$[5],sft21a$:open_tpls$[6],
+:       sft01a$:open_tpls$[7],sft31a$:open_tpls$[8],ivm01a$:open_tpls$[9]
+
+rem --- Retrieve parameter records
+    
+    find record (sfs01a_dev,key=firm_id$+"SF00",dom=std_missing_params) sfs01a$
+    gl$="N"; rem --- Conversion Work Order Register/Update does not post GL
+    
+    find record (ivs01a_dev,key=firm_id$+"IV00",err=std_missing_params) ivs01a$
+    ivs01_precision=num(ivs01a.precision$)
+    dim desc[3]
+    desc[1]=num(ivs01a.desc_len_01$)
+    desc[2]=num(ivs01a.desc_len_02$)
+    desc[3]=num(ivs01a.desc_len_03$)
+
+rem --- Initializations
+
+    width=132
+    headings=2
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    if num(batch_no$)<>0 then headings$[1]=headings$[1]+ Translate!.getTranslation("AON__(BATCH:_")+batch_no$+")"        
+    when$=sysinfo.system_date$
+    clock$=""
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","A","",m1$,0,m1
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","SF","U","",m2$,0,m2
+    dim t[4]
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+    
+    rem --- Column headings
+    columns=7
+    dim columns$[columns,10]
+    columns$[0,0]=Translate!.getTranslation("AON_WO_#"),       columns$[0,1]="C",columns$[0,2]=str(max(len(sfe01a.wo_no$),10))
+    columns$[1,0]=Translate!.getTranslation("AON_ITEM"),       columns$[1,1]="C",columns$[1,2]=str(max(len(sfe01a.item_id$),20))
+    columns$[2,0]=Translate!.getTranslation("AON_DESCRIPTION"),columns$[2,1]="C",columns$[2,2]=str(min(desc[1],30)+1)
+    columns$[3,0]=Translate!.getTranslation("AON_HOURS"),      columns$[3,1]="N",columns$[3,2]=str(max(m2,10)),columns$[3,3]=m1$,columns$[3,10]="T"
+    columns$[4,0]=Translate!.getTranslation("AON_LABOR"),      columns$[4,1]="N",columns$[4,2]=str(max(m2,10)),columns$[4,3]=m2$,columns$[4,10]="T"
+    columns$[5,0]=Translate!.getTranslation("AON_MAT'LS"),     columns$[5,1]="N",columns$[5,2]=str(max(m2,10)),columns$[5,3]=m2$,columns$[5,10]="T"
+    columns$[6,0]=Translate!.getTranslation("AON_SUB'S"),      columns$[6,1]="N",columns$[6,2]=str(max(m2,10)),columns$[6,3]=m2$,columns$[6,10]="T"
+    columns$[7,0]=Translate!.getTranslation("AON_TOTAL"),      columns$[7,1]="N",columns$[7,2]=str(max(m2,10)),columns$[7,3]=m2$,columns$[7,10]="T"
+
+rem --- Start progress meter and position header file
+
+    recs=0
+    call pgmdir$+"adc_progress.aon","NC","","","","",8,sfe05a_dev,1,meter_num,status
+    read (sfe05a_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
+
+rem --- Read next Conversion Work Order Entry (SFE_WOCONVRN) record
+
+    while 1
+        read record (sfe05a_dev,end=*break) sfe05a$
+        if sfe05a.firm_id$+sfe05a.batch_no$<>firm_id$+batch_no$ then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        recs=recs+1
+
+        rem --- Breaks
+        read record (sfe01a_dev,key=sfe05a.firm_id$+sfe05a.wo_location$+sfe05a.wo_no$,dom=*continue) sfe01a$
+        if sfe01a.wo_category$="I" then 
+            find record (ivm01a_dev,key=firm_id$+sfe01a.item_id$,dom=*endif) ivm01a$
+            sfe01a.description_01$=ivm01a.item_desc$(1,min(desc[1],30))
+        endif
+
+        rem --- Print
+        OutVect!.addItem(sfe05a.wo_no$)
+        OutVect!.addItem(sfe01a.item_id$)
+        OutVect!.addItem(sfe01a.description_01$)
+        OutVect!.addItem(str(sfe05a.hrs))
+        OutVect!.addItem(str(sfe05a.act_ops_tot))
+        OutVect!.addItem(str(sfe05a.act_mat_tot))
+        OutVect!.addItem(str(sfe05a.act_sub_tot))
+        OutVect!.addItem(str(sfe05a.act_ops_tot+sfe05a.act_mat_tot+sfe05a.act_sub_tot)) 
+        
+        rem --- Accumulate totals
+        t[0]=t[0]+sfe05a.hrs
+        t[1]=t[1]+sfe05a.act_ops_tot
+        t[2]=t[2]+sfe05a.act_mat_tot
+        t[3]=t[3]+sfe05a.act_sub_tot
+        t[4]=t[4]+sfe05a.act_ops_tot+sfe05a.act_mat_tot+sfe05a.act_sub_tot
+    wend
+
+rem --- Report totals
+     
+        xwk=fnblank(columns+1)
+        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+        xwk=fnblank(2)
+        OutVect!.addItem(Translate!.getTranslation("AON_REPORT_TOTALS:"))
+        OutVect!.addItem(str(t[0]))
+        OutVect!.addItem(str(t[1]))
+        OutVect!.addItem(str(t[2]))
+        OutVect!.addItem(str(t[3]))
+        OutVect!.addItem(str(t[4]))
+
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+rem --- Destroy the progress meter and run the next overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    update$=pgmdir$+"sfx_woconvupdt.aon"
+
+    overlay$=update$
+    if gl$="Y" then overlay$=pgmdir$+"glr_recap.aon"
+    next_overlay$=overlay$
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
+    
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+    
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #endinclude disp_message.src
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

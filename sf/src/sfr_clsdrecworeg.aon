@@ -1,0 +1,895 @@
+rem --- Closed Recurring Work Order Summary Register
+rem --- Program sfr_clsdrecworeg.aon v8.0.0 04Jan2008 (sfr_ra)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/04/2008 11:36:00)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- See if batching
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")    
+                
+rem --- Get user approval to proceed
+
+    msg_id$="AON_RUN_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_report
+    
+rem --- Open/Lock files
+
+    num_files=24
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA"
+    open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
+    open_tables$[3]="SFC_WOTYPECD",open_opts$[3]="OTA"
+    open_tables$[4]="SFE_CLOSEDWO",open_opts$[4]="OTA"
+    open_tables$[5]="SFE_WOLOTSER",open_opts$[5]="OTA"
+    open_tables$[6]="SFE_WOMASTR",open_opts$[6]="OTA"
+    open_tables$[7]="SFE_WOMATDTL",open_opts$[7]="OTA"
+    open_tables$[8]="SFE_WOMATHDR",open_opts$[8]="OTA"
+    open_tables$[9]="SFE_WOMATISD",open_opts$[9]="OTA"
+    open_tables$[10]="SFE_WOMATISH",open_opts$[10]="OTA"
+    open_tables$[11]="SFE_WOMATL",open_opts$[11]="OTA"
+    open_tables$[12]="SFE_WOOPRTN",open_opts$[12]="OTA"
+    open_tables$[13]="SFE_WOSCHDL",open_opts$[13]="OTA[1]"
+    open_tables$[14]="SFE_WOSCHDL",open_opts$[14]="OTA[2]"
+    open_tables$[15]="SFE_WOSUBCNT",open_opts$[15]="OTA"
+    open_tables$[16]="SFT_OPNMATTR",open_opts$[16]="OTA"
+    open_tables$[17]="SFT_OPNOPRTR",open_opts$[17]="OTA"
+    open_tables$[18]="SFT_OPNSUBTR",open_opts$[18]="OTA"
+    open_tables$[19]="SFW_CLSWOXTY",open_opts$[19]="OTAIL"
+    open_tables$[20]="IVM_ITEMMAST",open_opts$[20]="OTA"
+    open_tables$[21]="IVM_ITEMWHSE",open_opts$[21]="OTA"
+    open_tables$[22]="SFT_CLSMATTR",open_opts$[22]="OTA"
+    open_tables$[23]="SFT_CLSOPRTR",open_opts$[23]="OTA"
+    open_tables$[24]="SFT_CLSSUBTR",open_opts$[24]="OTA"
+
+    gosub open_tables
+
+    sfs01a_dev=num(open_chans$[1])
+    ivs01a_dev=num(open_chans$[2])
+    sfm10a_dev=num(open_chans$[3])
+    sfe04_dev=num(open_chans$[4])
+    sfe06_dev=num(open_chans$[5])
+    sfe01_dev=num(open_chans$[6])
+    sfe23_dev=num(open_chans$[7])
+    sfe13_dev=num(open_chans$[8])
+    sfe25_dev=num(open_chans$[9])
+    sfe15_dev=num(open_chans$[10])
+    sfe22_dev=num(open_chans$[11])
+    sfe02_dev=num(open_chans$[12])
+    sfm05_dev=num(open_chans$[13])
+    sfm05alt_dev=num(open_chans$[14])
+    sfe32_dev=num(open_chans$[15])
+    sft21_dev=num(open_chans$[16])
+    sft01_dev=num(open_chans$[17])
+    sft31_dev=num(open_chans$[18])
+    sfw07a_dev=num(open_chans$[19])
+    ivm_itemmast_dev=num(open_chans$[20])
+    ivm_itemwhse_dev=num(open_chans$[21])
+    sft23_dev=num(open_chans$[22])
+    sft03_dev=num(open_chans$[23])
+    sft33_dev=num(open_chans$[24])
+	
+rem --- Dimension string templates
+
+    dim sfs01a$:open_tpls$[1],ivs01a$:open_tpls$[2],sfm10a$:open_tpls$[3],
+:       sfe04b$:open_tpls$[4],sfe06a$:open_tpls$[5],sfe01a$:open_tpls$[6],
+:       sfe23a$:open_tpls$[7],sfe13a$:open_tpls$[8],sfe25a$:open_tpls$[9],
+:       sfe15a$:open_tpls$[10],sfe22a$:open_tpls$[11],sfe02a$:open_tpls$[12],
+:       sfm05a$:open_tpls$[13],sfm05alt$:open_tpls$[14],sfe32a$:open_tpls$[15],
+:       sft21a$:open_tpls$[16],sft01a$:open_tpls$[17],sft31a$:open_tpls$[18],
+:       sfw07a$:open_tpls$[19],ivm_itemmast$:open_tpls$[20],ivm_itemwhse$:open_tpls$[21],
+:       sft23a$:open_tpls$[22],sft03a$:open_tpls$[23],sft33a$:open_tpls$[24]
+
+rem --- Get SF parameters
+
+    find record (sfs01a_dev,key=firm_id$+"SF00",dom=std_missing_params) sfs01a$
+    ar$=sfs01a.ar_interface$
+    gl$=sfs01a.post_to_gl$
+    dim p[2]
+    p[0]=num(sfs01a.empl_no_len$)
+    p[1]=num(sfs01a.current_per$)
+    p[2]=num(sfs01a.current_year$)
+    
+    call pgmdir$+"adc_getmask.aon","","SF","A","",m1$,0,m1
+    call pgmdir$+"adc_getmask.aon","","SF","U","",m2$,0,m2
+    call pgmdir$+"adc_getmask.aon","","SF","R","",m3$,0,m3
+
+    if ar$="Y" 
+         call pgmdir$+"adc_application.aon","AR",info$[all]
+         ar$=info$[20]
+    endif
+
+    if gl$="Y"
+        gl$="N"
+        status=0
+        source$=pgm(-2)
+        call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"SF",glw11$,gl$,status
+        if status<>0 goto std_exit
+    endif
+
+rem --- Get IV parameters
+
+    find record (ivs01a_dev,key=firm_id$+"IV00",dom=std_missing_params) ivs01a$
+    ivs01_precision=num(ivs01a.precision$)
+    dim desc[3]
+    desc[1]=num(ivs01a.desc_len_01$)
+    desc[2]=num(ivs01a.desc_len_02$)
+    desc[3]=num(ivs01a.desc_len_03$)
+    ls$=ivs01a.lotser_flag$
+
+rem --- Additional File Opens
+
+    num_files=8
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    
+    if ar$="Y"
+        open_tables$[1]="ARS_PARAMS",open_opts$[1]="OTA"
+        open_tables$[2]="ARC_DISTCODE",open_opts$[2]="OTA"
+        open_tables$[3]="OPE_ORDDET",open_opts$[3]="OTA"
+    endif
+    if gl$="Y"
+        open_tables$[5]="GLS_PARAMS",open_opts$[5]="OTA"
+        open_tables$[6]="GLE_DAILYDETAIL",open_opts$[6]="OTA"
+        open_tables$[7]="GLM_ACCT",open_opts$[7]="OTA"
+        open_tables$[8]="GLW_DAILYDETAIL",open_opts$[8]="OTA"
+    endif
+
+    gosub open_tables
+
+    dist_by_item$="N"
+    if ar$="Y"
+        ars_params_dev=num(open_chans$[1])
+        arc_distcode_dev=num(open_chans$[2])
+        ope11_dev=num(open_chans$[3])
+        dim ars_params$:open_tpls$[1]
+        dim arc_distcode$:open_tpls$[2]
+        dim ope11a$:open_tpls$[3]
+        call stbl("+DIR_PGM")+"adc_application.aon","AR",info$[all]
+        ar$=info$[20]
+        if ar$="Y"
+            find record (ars_params_dev,key=firm_id$+"AR00",dom=*endif) ars_params$
+            dist_by_item$=ars_params.dist_by_item$
+        endif
+    endif
+
+    if gl$="Y"
+        gls_params_dev=num(open_chans$[5])
+        glt04a_dev=num(open_chans$[6])
+        glm01a_dev=num(open_chans$[7])
+        glw11_dev=num(open_chans$[8])
+        dim gls_params$:open_tpls$[5]
+        dim glt04a$:open_tpls$[6]
+        dim glm01a$:open_tpls$[7]
+        dim glw11$:open_tpls$[8]
+    
+        rem --- Clear trans for this firm/process/batch from glw-11 work file (if not batching, batch_no$ is zero, and will clear all recs this firm/process)
+        rec_pfx$=firm_id$+process_id$+batch_no$
+        call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",glw11_dev,rec_pfx$,status
+    endif
+
+rem --- Initializations
+
+    dim g[4]
+    if gl$="Y" then
+        rem --- Get GL parameters
+        find record (gls_params_dev,key=firm_id$+"GL00",dom=std_missing_params) gls_params$
+        g[0]=num(gls_params.total_pers$)
+        g[1]=num(gls_params.current_per$)
+        g[2]=num(gls_params.current_year$)
+        g[3]=num(gls_params.acct_length$)
+        g[4]=num(gls_params.max_acct_len$)
+    endif
+
+    width=132
+    headings=2
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$
+    when$=sysinfo.system_date$
+    clock$=""
+
+    rem --- Resize masks as needed
+    if width-fnw(m1,m2,m3)<=30
+        while 1
+            xm1=m1-1, xm2=m2-1, xm3=m3-1
+            call pgmdir$+"adc_sizemask.aon",m1$,m1,6,xm1
+            if width-fnw(m1,m2,m3)>30 then break
+            call pgmdir$+"adc_sizemask.aon",m2$,m2,7,xm2
+            if width-fnw(m1,m2,m3)>30 then break
+            call pgmdir$+"adc_sizemask.aon",m3$,m3,6,xm3
+            if width-fnw(m1,m2,m3)>30 then break
+        wend
+    endif
+
+rem --- Document initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+    HdrVect!=bbjAPI().getSysGui().makeVector()
+    BrkVect!=bbjAPI().getSysGui().makeVector()
+    TotVect!=bbjAPI().getSysGui().makeVector()
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Column Headings
+
+    columns = 18
+    dim columns$[columns,11]
+        
+    columns$[0,0]=Translate!.getTranslation("AON_WO^NUMBER"),         columns$[0,1]="C", columns$[0,2]="6"
+    columns$[1,0]=Translate!.getTranslation("AON_TYPE"),              columns$[1,1]="C", columns$[1,2]="4"
+    columns$[2,0]=Translate!.getTranslation("AON_CT"),                columns$[2,1]="C", columns$[2,2]="2"
+    columns$[3,0]=Translate!.getTranslation("AON_CLOSE^DT"),          columns$[3,1]="C", columns$[3,2]="7"
+    columns$[4,0]=Translate!.getTranslation("AON_DESCRIPTION"),       columns$[4,1]="C", columns$[4,2]="8"
+    columns$[5,0]=Translate!.getTranslation("AON_PROD^QTY"),          columns$[5,1]="N", columns$[5,2]=str(m2+1),columns$[5,3]=m2$
+    columns$[6,0]=Translate!.getTranslation("AON_PRIOR^CLOSE"),       columns$[6,1]="N", columns$[6,2]=str(m2+1),columns$[6,3]=m2$
+    columns$[7,0]=Translate!.getTranslation("AON_THIS^CLOSE"),        columns$[7,1]="N", columns$[7,2]=str(m2+1),columns$[7,3]=m2$
+    columns$[8,0]=Translate!.getTranslation("AON_STILL^OPEN"),        columns$[8,1]="N", columns$[8,2]=str(m2+1),columns$[8,3]=m2$
+    columns$[9,0]=Translate!.getTranslation("AON_CMP"),               columns$[9,1]="C", columns$[9,2]="3"
+    columns$[10,0]=Translate!.getTranslation("AON_UNIT^COST"),        columns$[10,1]="N",columns$[10,2]=str(m3+1),columns$[10,3]=m3$
+    columns$[11,0]=Translate!.getTranslation("AON_TOTAL^ACTUAL^COST"),columns$[11,1]="N",columns$[11,2]=str(m1+1),columns$[11,3]=m1$,columns$[11,10]="T"
+    columns$[12,0]=Translate!.getTranslation("AON_PRIOR^CLOSE"),      columns$[12,1]="N",columns$[12,2]=str(m1+1),columns$[12,3]=m1$,columns$[12,10]="T"
+    columns$[13,0]=Translate!.getTranslation("AON_CURRENT^WIP"),      columns$[13,1]="N",columns$[13,2]=str(m1+1),columns$[13,3]=m1$,columns$[13,10]="T"
+    columns$[14,0]=Translate!.getTranslation("AON_CLOSED^VALUE"),     columns$[14,1]="N",columns$[14,2]=str(m1+1),columns$[14,3]=m1$,columns$[14,10]="T"
+    variance$=Translate!.getTranslation("AON_VARIANCE")
+    direct$=Translate!.getTranslation("AON_DIRECT")
+    dashes$=pad("-",m1*2+10,"-")
+    columns$[15,0]=dashes$+variance$+dashes$+"^"+direct$,             columns$[15,1]="N",columns$[15,2]=str(m1+1),columns$[15,3]=m1$,columns$[15,5]="C^R",columns$[15,10]="T",columns$[15,11]="4^1"
+    columns$[16,0]=Translate!.getTranslation("AON_OVERHEAD"),         columns$[16,1]="N",columns$[16,2]=str(m1+1),columns$[16,3]=m1$,columns$[16,10]="T"
+    columns$[17,0]=Translate!.getTranslation("AON_MAT'LS"),           columns$[17,1]="N",columns$[17,2]=str(m1+1),columns$[17,3]=m1$,columns$[17,10]="T"
+    columns$[18,0]=Translate!.getTranslation("AON_SUBS"),             columns$[18,1]="N",columns$[18,2]=str(m1+1),columns$[18,3]=m1$,columns$[18,10]="T"
+
+rem --- Final Initializations
+
+    recs=0
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,sfe04_dev,1,meter_num,ignore_status
+    
+rem --- Init 
+
+		default_precision=tcb(14)
+		precision default_precision
+
+rem --- Use SQL queries to gather needed data
+
+	rem --- Use VIEWs, SF_OPNTRAN_VALS and SF_COSTSUMS_ACTO, for Open Transactions 
+	rem ---  (NOTE: Closed WO Det and Summary do not use Closed Transactions) 
+	rem ---		SFT_OPNOPRTR sft-01
+	rem ---		SFT_OPNMATTR sft-21
+	rem ---		SFT_OPNSUBTR sft-31
+
+		tran_val_view$=" SF_OPNTRAN_VALS "
+		tran_costsums_view$=" SF_COSTSUMS_ACTO "; rem ACTO=Use Open Trans files to accum Actual
+		
+	rem --- Build Main query 
+		rem --- Build select statement (cols we want returned from the SQL query)
+
+			select$=""
+			select$=select$+"wo.WO_NO,        wo.WO_LOCATION,  wo.WO_CATEGORY, "
+			select$=select$+"wo.DESCRIPTION_01, wo.ITEM_ID,    wo.WAREHOUSE_ID, "
+			select$=select$+"wo.CLOSED_DATE,  wo.WO_TYPE,      wo.COMPLETE_FLG, "
+			select$=select$+"wo.LSTACT_DATE,  wo.CLS_INP_DATE, wo.SCH_PROD_QTY, "
+			select$=select$+"wo.CLS_INP_QTY,  wo.QTY_CLS_TODT, wo.CLS_CST_TODT, "
+			select$=select$+"wo.CLOSED_COST,  wo.RECALC_FLAG, "
+
+			select$=select$+"typ.CODE_DESC,   typ.STDACT_FLAG, typ.GL_PUR_ACCT, "
+			select$=select$+"typ.GL_WIP_ACCT, typ.GL_CLOSE_TO, typ.GL_LAB_VAR, "
+			select$=select$+"typ.GL_OVH_VAR,  typ.GL_MAT_VAR,  typ.GL_SUB_VAR, "			
+			
+			select$=select$+"wh.UNIT_COST,    req.TOT_STD_COST,act.TOT_ACT_COST, "
+			select$=select$+"cs_std.TOT_STD_DIR_COST, cs_std.TOT_STD_OVH_COST, "	
+			select$=select$+"cs_std.TOT_STD_MAT_COST, cs_std.TOT_STD_SUB_COST, "	
+			
+			select$=select$+"cs_act.TOT_ACT_DIR_COST, cs_act.TOT_ACT_OVH_COST, "	
+			select$=select$+"cs_act.TOT_ACT_MAT_COST, cs_act.TOT_ACT_SUB_COST, "	
+			select$=select$+"cs_act.TOT_ACT_OPS_COST "				
+				
+		rem --- Build clause for getting the Transactions/Actual cost of WO
+		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
+			actuals$=""
+			actuals$=actuals$+" (SELECT tran.Firm_ID"
+			actuals$=actuals$+"        ,tran.WO_Location"
+			actuals$=actuals$+"        ,tran.WO_No"
+			actuals$=actuals$+"        ,SUM(tran.Ext_Cost) AS TOT_ACT_COST"
+			actuals$=actuals$+"  FROM "+tran_val_view$+" AS tran"; rem The VIEW used here is determined above
+			actuals$=actuals$+"  GROUP BY tran.Firm_ID,tran.WO_Location,tran.WO_No"; rem SUM() based on firm+loc+woNo
+			actuals$=actuals$+" ) AS act  "
+			
+		rem --- Build clause for getting the total Standard/Requirement cost of WO
+		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
+			requirements$=""
+			requirements$=requirements$+" (SELECT std.Firm_ID"
+			requirements$=requirements$+"        ,std.WO_Location"
+			requirements$=requirements$+"        ,std.WO_No"
+			requirements$=requirements$+"        ,SUM(std.Total_Cost) AS TOT_STD_COST"
+			requirements$=requirements$+"  FROM SF_WO_REQ_VALS AS std"
+			requirements$=requirements$+"  GROUP BY std.Firm_ID,std.WO_Location,std.WO_No"; rem SUM() based on firm+loc+woNo
+			requirements$=requirements$+" ) AS req  "
+			
+		rem --- Build clause for getting the Standard Requirements' accumulated costs for GL breakdown (direct, overhead, Mat, Sub)
+		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
+			costsums_std$=""
+			costsums_std$=costsums_std$+" (SELECT * "
+			costsums_std$=costsums_std$+"  FROM SF_COSTSUMS_STD"
+			costsums_std$=costsums_std$+" ) AS cs_std  "
+
+		rem --- Build clause for getting the Standard Requirements' accumulated costs for GL breakdown (direct, overhead, Mat, Sub)
+		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
+			costsums_act$=""
+			costsums_act$=costsums_act$+" (SELECT * "
+			costsums_act$=costsums_act$+"  FROM "+tran_costsums_view$+" "
+			costsums_act$=costsums_act$+" ) AS cs_act  "
+						
+		rem --- Build the complete SQL SELECT statement
+
+			sql_prep$=""
+			sql_prep$=sql_prep$+"SELECT "+select$
+			sql_prep$=sql_prep$+"FROM "+requirements$; rem The query, requirements$, is used here as a table
+			sql_prep$=sql_prep$+"INNER JOIN SFE_WOMASTR AS wo "
+			sql_prep$=sql_prep$+"	ON req.Firm_ID+req.WO_Location+req.WO_No "
+			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "
+			sql_prep$=sql_prep$+"LEFT JOIN "+actuals$; rem The query, actuals$, is used here as a table; LEFT JOIN since there may not be transactions
+			sql_prep$=sql_prep$+"	ON act.Firm_ID+act.WO_Location+act.WO_No "
+			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "	
+			sql_prep$=sql_prep$+"LEFT JOIN "+costsums_std$; rem The query, costsums_std$, is used here as a table; LEFT JOIN since there may not be cs_stdations
+			sql_prep$=sql_prep$+"	ON cs_std.Firm_ID+cs_std.WO_Location+cs_std.WO_No "
+			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "				
+			sql_prep$=sql_prep$+"LEFT JOIN "+costsums_act$; rem The query, costsums_act$, is used here as a table; LEFT JOIN since there may not be cs_actations
+			sql_prep$=sql_prep$+"	ON cs_act.Firm_ID+cs_act.WO_Location+cs_act.WO_No "
+			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "	
+			sql_prep$=sql_prep$+"LEFT JOIN IVM_ITEMWHSE AS wh "; rem To get IV UnitCost, if there
+			sql_prep$=sql_prep$+"	ON wo.firm_id+wo.warehouse_id+wo.item_id "
+			sql_prep$=sql_prep$+"	 = wh.firm_id+wh.warehouse_id+wh.item_id "
+			sql_prep$=sql_prep$+"LEFT JOIN SFC_WOTYPECD AS typ "; rem To get TypeCode Desc, STDACT_FLAG, & GL accts, if there
+			sql_prep$=sql_prep$+"       ON wo.Firm_ID+'A'+wo.WO_Type "
+			sql_prep$=sql_prep$+"        = typ.Firm_ID+'A'+typ.WO_Type	"
+			sql_prep$=sql_prep$+"WHERE wo.Firm_ID+wo.WO_Location+wo.WO_No "; rem Limit to RECs in Closed WO file, SFE_CLOSEDWO
+			sql_prep$=sql_prep$+"   IN (SELECT clsd.firm_id+clsd.WO_Location+clsd.WO_No "
+			sql_prep$=sql_prep$+"       FROM SFE_CLOSEDWO AS clsd)"
+			sql_prep$=sql_prep$+"  AND wo.WO_Category = 'R'"; rem Recurring Only
+
+			sql_chan=sqlunt
+			sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+			sqlprep(sql_chan)sql_prep$
+			dim read_tpl$:sqltmpl(sql_chan)
+			sqlexec(sql_chan)
+
+rem --- Main Read
+
+    while 1
+
+        read_tpl$ = sqlfetch(sql_chan,end=*break)
+        recs=recs+1
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Assign values from SQL query
+		
+		wo_no$	 			= read_tpl.WO_NO$
+		wo_location$	 	= read_tpl.WO_LOCATION$
+		wo_type$		 	= read_tpl.WO_TYPE$
+		wo_category$	 	= read_tpl.WO_CATEGORY$
+		item_id$			= read_tpl.ITEM_ID$
+		warehouse_id$		= read_tpl.WAREHOUSE_ID$
+		description_01$	 	= read_tpl.DESCRIPTION_01$ 
+		closed_date$ 	 	= read_tpl.CLOSED_DATE$
+		WO_TypeCode_desc$ 	= read_tpl.CODE_DESC$
+		lstact_date_raw$ 	= read_tpl.LSTACT_DATE$
+		cls_inp_date_raw$	= read_tpl.CLS_INP_DATE$
+		curr_prod_qty 	 	= read_tpl.SCH_PROD_QTY
+		prior_clsd_qty 	 	= read_tpl.QTY_CLS_TODT
+		this_close_qty 	 	= read_tpl.CLS_INP_QTY
+		complete_yn$ 	 	= read_tpl.COMPLETE_FLG$
+		recalc_flag$ 		= read_tpl.RECALC_FLAG$
+
+		closed_cost         = read_tpl.CLOSED_COST
+		iv_unit_cost 	 	= read_tpl.UNIT_COST
+		wo_cost_at_std 	 	= read_tpl.TOT_STD_COST
+		close_at_std_act$	= read_tpl.STDACT_FLAG$
+		wo_cost_at_act 	 	= read_tpl.TOT_ACT_COST
+		prior_closed_amt 	= read_tpl.CLS_CST_TODT
+		
+		curr_wip_value 		= wo_cost_at_act - prior_closed_amt
+		curr_close_value	= this_close_qty * closed_cost
+		
+		wo_std_dir_Cost	= read_tpl.TOT_STD_DIR_COST
+		wo_std_Ovh_Cost	= read_tpl.TOT_STD_OVH_COST
+		wo_std_mat_Cost	= read_tpl.TOT_STD_MAT_COST
+		wo_std_sub_Cost	= read_tpl.TOT_STD_SUB_COST
+				
+		wo_act_dir_Cost	= read_tpl.TOT_ACT_DIR_COST
+		wo_act_Ovh_Cost	= read_tpl.TOT_ACT_OVH_COST
+		wo_act_mat_Cost	= read_tpl.TOT_ACT_MAT_COST
+		wo_act_sub_Cost	= read_tpl.TOT_ACT_SUB_COST
+		wo_act_Ops_Cost	= read_tpl.TOT_ACT_OPS_COST		
+
+		rem --- GL accts from SQL query (from JOIN to WO Type Code)
+		gl_wip_acct$  	  = read_tpl.GL_WIP_ACCT$
+		gl_close_to_acct$ = read_tpl.GL_CLOSE_TO$
+		gl_pur_acct$	  = read_tpl.GL_PUR_ACCT$
+		gl_lab_var_acct$  = read_tpl.GL_LAB_VAR$
+		gl_ovh_var_acct$  = read_tpl.GL_OVH_VAR$
+		gl_mat_var_acct$  = read_tpl.GL_MAT_VAR$
+		gl_sub_var_acct$  = read_tpl.GL_SUB_VAR$
+		
+		rem --- Breaks
+
+		tot_act_cost=0
+		tot_prior_closed=0
+		tot_curr_wip=0
+		tot_closed_Value=0
+		tot_dir_Var=0
+		tot_Mats_Var=0
+		tot_Subs_Var=0
+		tot_Ovhd_Var=0
+
+rem --- Init GL_Acct_amts[] and GL_Accts[], parallel arrays for postings
+			rem [0] Work in Process
+			rem [1] Close to Account
+			rem [2] Direct Variance
+			rem [3] Overhead Variance
+			rem [4] Material Variance
+			rem [5] Subcontract Variance
+
+		dim GL_Acct_amts[5]
+		dim GL_Accts$[5]
+
+rem --- Assign GL Account numbers 		
+		GL_Accts$[0]=gl_wip_acct$
+		GL_Accts$[1]=gl_close_to_acct$
+		GL_Accts$[2]=gl_lab_var_acct$
+		GL_Accts$[3]=gl_ovh_var_acct$
+		GL_Accts$[4]=gl_mat_var_acct$
+		GL_Accts$[5]=gl_sub_var_acct$
+		
+rem --- Calculate Close Value, Variances, etc.
+
+        precision 2
+        tot_act_cost=wo_cost_at_act*1
+        tot_prior_closed=prior_closed_amt*1
+		tot_curr_wip=tot_act_cost-tot_prior_closed
+		tot_closed_Value=this_close_qty*closed_cost
+
+		IF complete_yn$="Y" THEN 
+			bal_still_open_qty=0
+		else
+			LET bal_still_open_qty=curr_prod_qty-(prior_clsd_qty+this_close_qty)
+		endif
+
+        if complete_yn$<>"N"
+            if close_at_std_act$="A"
+                let tot_closed_Value=tot_curr_wip
+	        else
+				precision default_precision
+				if curr_prod_qty=prior_clsd_qty+this_close_qty 
+:								or wo_cost_at_std=0 
+:								or recalc_flag$="N" then
+                    prorte=(this_close_qty*closed_cost)+prior_closed_amt
+                else
+				rem --- Pro-Rate Standards If Needed
+ 
+					if curr_prod_qty<>0  
+						prorte=wo_cost_at_std*(prior_clsd_qty+this_close_qty)/curr_prod_qty 
+					else 
+						prorte=0 
+					endif
+					
+                    if prorte<>wo_cost_at_std
+                        if wo_cost_at_std=0
+							wo_std_dir_Cost=0
+							wo_std_mat_Cost=0
+							wo_std_sub_Cost=0
+						else	
+							wo_std_dir_Cost=wo_std_dir_Cost*prorte/wo_cost_at_std
+                            wo_std_mat_Cost=wo_std_mat_Cost*prorte/wo_cost_at_std
+                            wo_std_sub_Cost=wo_std_sub_Cost*prorte/wo_cost_at_std
+                        endif
+                        wo_std_Ovh_Cost=prorte-(wo_std_dir_Cost+wo_std_mat_Cost+wo_std_sub_Cost)
+                    endif
+				endif
+
+rem --- Now Calculate Variances
+                precision 2
+                
+                tot_act_cost=tot_act_cost*1
+                tot_prior_closed=tot_prior_closed*1
+				tot_curr_wip=tot_act_cost-tot_prior_closed
+				tot_closed_Value=this_close_qty*closed_cost
+				
+                tot_dir_Var=round(wo_std_dir_Cost)-round(wo_act_dir_Cost)
+                tot_Mats_Var=round(wo_std_mat_Cost)-round(wo_act_mat_Cost)
+				tot_Subs_Var=round(wo_std_sub_Cost)-round(wo_act_sub_Cost)
+				tot_Ovhd_Var=round(prorte)-tot_act_cost-(tot_dir_Var+tot_Mats_Var+tot_Subs_Var); rem "All left overs in OH Vnce
+            endif
+		endif
+		
+	rem --- Store GL amounts
+		GL_Acct_amts[0]=tot_curr_wip
+		GL_Acct_amts[1]=tot_closed_Value
+		GL_Acct_amts[2]=tot_dir_Var
+		GL_Acct_amts[3]=tot_Ovhd_Var
+		GL_Acct_amts[4]=tot_Mats_Var
+		GL_Acct_amts[5]=tot_Subs_Var
+			
+        dim x1$(30)
+
+            let x1$=description_01$
+        
+		precision default_precision
+
+rem --- Print
+	rem --- First line for WO
+        OutVect!.addItem(wo_no$)
+        OutVect!.addItem(wo_type$)
+        OutVect!.addItem(wo_category$)
+        OutVect!.addItem(fndate$(cls_inp_date_raw$))
+        OutVect!.addItem(x1$)
+		
+    rem --- Second line for WO
+		xwk=fnblank(19)
+		OutVect!.addItem(str(curr_prod_qty))
+	    xwk=fnblank(1)
+		OutVect!.addItem(str(this_close_qty))
+        xwk=fnblank(1)
+		OutVect!.addItem(str(complete_yn$))
+        xwk=fnblank(1)
+		OutVect!.addItem(str(tot_act_cost));     rem tot_act_cost_t[0]
+        xwk=fnblank(1)
+		OutVect!.addItem(str(tot_curr_wip));     rem tot_curr_wip_t[2]
+        xwk=fnblank(1)
+		OutVect!.addItem(str(tot_dir_Var));      rem tot_dir_Var_t[4]
+        xwk=fnblank(1)
+		OutVect!.addItem(str(tot_Mats_Var));     rem tot_Mats_Var_t[5]
+	
+	rem --- Third line for WO
+		xwk=fnblank(6)
+		xwk=fnblank(1)
+		OutVect!.addItem(str(prior_clsd_qty))
+		xwk=fnblank(1)
+		OutVect!.addItem(str(bal_still_open_qty));rem bal_still_open_qty_t0
+		xwk=fnblank(1)
+		OutVect!.addItem(str(closed_cost))
+		xwk=fnblank(1)
+		OutVect!.addItem(str(tot_prior_closed)); rem tot_prior_closed_t[1]
+		xwk=fnblank(1)
+		OutVect!.addItem(str(tot_closed_Value)); rem tot_closed_Value_t[3]
+		xwk=fnblank(1)
+		OutVect!.addItem(str(tot_Ovhd_Var));     rem tot_Ovhd_Var_t[7]
+		xwk=fnblank(1)
+		OutVect!.addItem(str(tot_Subs_Var));     rem tot_Subs_Var_t[6]
+	
+rem --- Accumulate report grand totals
+        grand_act_cost		=grand_act_cost+tot_act_cost ;     rem u[0]
+        grand_prior_closed	=grand_prior_closed+tot_prior_closed ; rem u[1]
+        grand_curr_wip		=grand_curr_wip+tot_curr_wip ;     rem u[2]
+        grand_closed_Value	=grand_closed_Value+tot_closed_Value ; rem u[3]
+        grand_dir_Var		=grand_dir_Var+tot_dir_Var ;      rem u[4]
+        grand_Ovhd_Var		=grand_Ovhd_Var+tot_Ovhd_Var ;     rem u[7]
+        grand_Mats_Var		=grand_Mats_Var+tot_Mats_Var ;     rem u[5]
+        grand_Subs_Var		=grand_Subs_Var+tot_Subs_Var ;     rem u[6]
+				
+rem --- Sort By Type
+
+        sfw07a.firm_id$=firm_id$
+        sfw07a.wo_type$=wo_type$
+        sfw07a.tot_act_cost=0
+        sfw07a.pri_cls_amt =0
+        sfw07a.tot_wip_amt =0
+        sfw07a.tot_clsd_amt=0
+        sfw07a.tot_dir_var =0
+        sfw07a.tot_mat_var =0
+        sfw07a.tot_sub_var =0
+        sfw07a.tot_ovhd_var=0
+		
+        extract record (sfw07a_dev,key=sfw07a.firm_id$+sfw07a.wo_type$,dom=*next) sfw07a$
+        sfw07a.tot_act_cost=sfw07a.tot_act_cost+tot_act_cost
+        sfw07a.pri_cls_amt =sfw07a.pri_cls_amt+tot_prior_closed
+        sfw07a.tot_wip_amt =sfw07a.tot_wip_amt+tot_curr_wip
+        sfw07a.tot_clsd_amt=sfw07a.tot_clsd_amt+tot_closed_Value
+        sfw07a.tot_dir_var =sfw07a.tot_dir_var+tot_dir_Var
+        sfw07a.tot_mat_var =sfw07a.tot_mat_var+tot_Mats_Var
+        sfw07a.tot_sub_var =sfw07a.tot_sub_var+tot_Subs_Var
+        sfw07a.tot_ovhd_var=sfw07a.tot_ovhd_var+tot_Ovhd_Var
+        sfw07a$=field(sfw07a$)
+        write record (sfw07a_dev,key=sfw07a.firm_id$+sfw07a.wo_type$) sfw07a$
+
+rem --- Sort By G/L
+     
+		rem --- Make balancing GL entry for not-completed WOs
+		if complete_yn$<>"Y" 
+			GL_Acct_amts[0]=GL_Acct_amts[1]; rem tot_curr_wip=tot_closed_Value
+		endif
+		
+		rem --- Send GL data to GLRecap
+		for x=0 to 5
+			if GL_Acct_amts[x]=0 then continue
+			if x<>1 then GL_Acct_amts[x]=-GL_Acct_amts[x]
+            
+			account$=GL_Accts$[x]
+            gldate$=cls_inp_date_raw$
+			amount=GL_Acct_amts[x]
+			units=0
+            memo$=description_01$
+            ref1$=Translate!.getTranslation("AON_WO_")+wo_no$
+			ref2$=Translate!.getTranslation("AON_WHSE_")+warehouse_id$
+            ref3$=Translate!.getTranslation("AON_TYPE_")+wo_type$
+	
+			gosub glrecap
+        next x
+
+    wend
+
+done: rem --- End
+
+    rem --- First line of Grand 
+		xwk=fnblank(19)
+        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+        xwk=fnblank(4)
+        OutVect!.addItem(Translate!.getTranslation("AON_REPORT_TOTALS:_"))
+        xwk=fnblank(6)
+        OutVect!.addItem(str(grand_act_cost));	rem grand_act_cost_u[0]
+        OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_curr_wip));	rem grand_curr_wip_u[2]
+        OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_dir_Var));	rem grand_dir_Var_u[4]
+        OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_Mats_Var));	rem grand_Mats_Var_u[5]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+	
+	rem --- Second line of Grand 
+		xwk=fnblank(12)
+		OutVect!.addItem(str(grand_prior_closed)); rem grand_prior_closed_u[1]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_closed_Value)); rem grand_closed_Value_u[3]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_Ovhd_Var));     rem grand_Ovhd_Var_u[7]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_Subs_Var));     rem grand_Subs_Var_u[6]
+		
+rem --- Now Print By Type
+
+        dim type_tots[7]
+        read (sfw07a_dev,key=firm_id$,dom=*next)
+        xwk=fnblank(18)
+        xwk=fnblank(3)
+        OutVect!.addItem(Translate!.getTranslation("AON_SUMMARY_BY_WORK_ORDER_TYPE"))
+        xwk=fnblank(16)
+
+        while 1
+            k$=key(sfw07a_dev,end=*break)
+            if pos(firm_id$=k$)<>1 then break
+            read record (sfw07a_dev,key=k$) sfw07a$
+            
+			dim x0$(30)
+			dim x1$(50,"0")
+			let x0$(6)=Translate!.getTranslation("AON_***_NOT_ON_FILE_***")
+            
+			find record (sfm10a_dev,key=firm_id$+"A"+sfw07a.wo_type$,dom=*next) sfm10a$
+            
+			xwk=fnblank(3)
+            OutVect!.addItem(sfw07a.wo_type$+" "+sfm10a.code_desc$)
+            xwk=fnblank(9)
+			
+			rem --- First line of Type tots 
+			OutVect!.addItem(str(sfw07a.tot_wip_amt))
+			xwk=fnblank(1)
+			OutVect!.addItem(str(sfw07a.tot_dir_var))
+			xwk=fnblank(1)
+			OutVect!.addItem(str(sfw07a.tot_mat_var))
+		
+			rem --- Second line of Type tots 
+			xwk=fnblank(14)
+			xwk=fnblank(1)
+			OutVect!.addItem(str(sfw07a.tot_clsd_amt))
+			xwk=fnblank(1)
+			OutVect!.addItem(str(sfw07a.tot_ovhd_var))
+			xwk=fnblank(1)
+			OutVect!.addItem(str(sfw07a.tot_sub_var))
+
+        wend
+
+rem --- Report Totals Again (For WO Type section)
+	
+
+    rem --- First line of Grand 
+		xwk=fnblank(19)
+        TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
+        xwk=fnblank(4)
+        OutVect!.addItem(Translate!.getTranslation("AON_REPORT_TOTALS:_"))
+        xwk=fnblank(7)
+        rem OutVect!.addItem(str(grand_act_cost));     rem grand_act_cost_u[0]
+        xwk=fnblank(1)
+		OutVect!.addItem(str(grand_curr_wip));     rem grand_curr_wip_u[2]
+        OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_dir_Var));      rem grand_dir_Var_u[4]
+        OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_Mats_Var));     rem grand_Mats_Var_u[5]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+		
+	rem --- Second line of Grand 
+		xwk=fnblank(12)
+		xwk=fnblank(1)
+		rem OutVect!.addItem(str(grand_prior_closed)); rem grand_prior_closed_u[1]
+		xwk=fnblank(1)
+		OutVect!.addItem(str(grand_closed_Value)); rem grand_closed_Value_u[3]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_Ovhd_Var));     rem grand_Ovhd_Var_u[7]
+		OutVect!.addItem(" "); 	rem Space so underline prints
+		OutVect!.addItem(str(grand_Subs_Var));     rem grand_Subs_Var_u[6]
+				
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+				
+rem --- Destroy the progress meter and run the next overlay
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
+    update$=pgmdir$+"sfu_clsdrecworeg.aon"
+    overlay$=update$
+    if gl$="Y" then overlay$=pgmdir$+"glr_recap.aon"
+    next_overlay$=overlay$
+    if update$=""
+        goto std_exit_no_update
+    else
+        goto std_exit
+    endif
+
+glrecap: rem --- Standard G/L Recap Routine
+
+    if gl$="Y"
+        call pgmdir$+"glc_glpost.aon",glm01a_dev,glw11_dev,notused,account$,gldate$,ref1$,ref2$,ref3$,memo$,amount,units,status
+    endif
+    return
+	
+rem --- Standard AddonSoftware functions (01Mar2006)
+
+rem --- Miscellaneous functions
+
+    def fnw(q1,q2,q3)=(q1+1)*8+(q2+1)*4+(q3+1)
+
+rem --- Date/time handling functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+    
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+	
+rem #include disp_message.src
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #endinclude disp_message.src
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
+    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:                                str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit_no_report:
+
+    OutVect!=null();rem nothing to print, or some other err such that no report
+    
+std_exit_no_update:
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

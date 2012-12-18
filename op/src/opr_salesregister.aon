@@ -359,11 +359,12 @@ rem --- Check to see if record is in use in Invoice Entry
 			continue
 		endif
 		
-        read record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$, dom=*continue) ope01a$
-        if ope01a.print_status$<>"Y" then continue
+        extract record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$, dom=*continue) ope01a$; rem Advisory Locking
+        if ope01a.print_status$<>"Y" then read(ope01_dev); continue
         
         if pos(ope01a.lock_status$="12")<>0 then 
             no_records_prev_posted = 0
+            read(ope01_dev)
             continue
         endif
 
@@ -371,7 +372,6 @@ rem --- Check to see if record is in use in Invoice Entry
             find record (ope41_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$, dom=*next) ope41a$
         endif
 
-        extract record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$) ope01a$
         ope01a.lock_status$="S"
         ope01a$ = field(ope01a$)
         write record (ope01_dev) ope01a$
@@ -452,13 +452,17 @@ rem --- Check to see if record is in use in Invoice Entry
             if ope11a_key.firm_id$     <> ope01a.firm_id$     then break
             if ope11a_key.customer_id$ <> ope01a.customer_id$ then break
             if ope11a_key.order_no$    <> ope01a.order_no$    then break
-            read record (ope11_dev) ope11a$
+            extract record (ope11_dev) ope11a$; rem Advisory Locking
             find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$; rem y0$, y1$
 
             if opm02a.dropship$<>"Y" or ars01a.dropshp_cost$<>"Y" then
                 if pos(opm02a.line_type$="PS")>0 and ope11a.qty_shipped<>0 then 
                     gosub cal_cur_item_cost; rem "Go get current cost
+                else
+                    read (ope11_dev)
                 endif
+            else
+                read (ope11_dev)
             endif
 
             if ope11a.ext_price<0 then t[1]=t[1]+ope11a.ext_price
@@ -475,7 +479,7 @@ rem --- Check to see if record is in use in Invoice Entry
             find record (opw21_dev, key=opw21a.firm_id$+opw21a.ar_type$+opw21a.line_code$, dom=*next) opw21a$
             opw21a.invoice_amt = opw21a.invoice_amt + ope11a.ext_price
             opw21a$ = field(opw21a$)
-            write record (opw21_dev,key=opw21a.firm_id$+opw21a.ar_type$+opw21a.line_code$) opw21a$
+            write record (opw21_dev) opw21a$
             t[6]=t[6]+ope11a.ext_price
 
         rem --- Determine GL Postings Here
@@ -610,7 +614,7 @@ rem --- Check to see if record is in use in Invoice Entry
         find record (opw11_dev, key=opw11a.firm_id$+opw11a.ar_type$+opw11a.territory$, dom=*next) opw11a$
         opw11a.invoice_amt = opw11a.invoice_amt+t0
         opw11a$ = field(opw11a$)
-        write record (opw11_dev,key=opw11a.firm_id$+opw11a.ar_type$+opw11a.territory$) opw11a$
+        write record (opw11_dev) opw11a$
 
     rem --- Salesperson Codes
 
@@ -621,7 +625,7 @@ rem --- Check to see if record is in use in Invoice Entry
         find record (opw31_dev, key=opw31a.firm_id$+opw31a.ar_type$+opw31a.slspsn_code$, dom=*next) opw31a$
         opw31a.invoice_amt = opw31a.invoice_amt+t0
         opw31a$ = field(opw31a$)
-        write record (opw31_dev,key=opw31a.firm_id$+opw31a.ar_type$+opw31a.slspsn_code$) opw31a$
+        write record (opw31_dev) opw31a$
 
     rem --- GL Detail For Freight, Discount
 
@@ -708,6 +712,7 @@ rem --- Check to see if record is in use in Invoice Entry
         nothing_posted = 0
 
     wend
+    read(ope01_dev,end=*next); rem release extract
 
 rem --- Totals
 
@@ -855,6 +860,8 @@ rem --- Report On Tier Cost For Sold Items
     ivw05a.order_no$=ope11a.order_no$
     ivw05a.item_id$=ope11a.item_id$
     ivw05a.line_no$=ope11a.line_no$
+    ivw05_key$=ivw05a.firm_id$+ivw05a.ar_type$+ivw05a.customer_id$+ivw05a.order_no$+ivw05a.item_id$+ivw05a.line_no$
+    extract record (ivw05_dev,key=ivw05_key$,dom=*next)x$; rem Advisory Locking
     ivw05a$ = field(ivw05a$)
     write record (ivw05_dev) ivw05a$
 
@@ -893,12 +900,14 @@ rem dim d2$(62),d[20],h[2]
         while more
             ope21a_key$=key(ope21_dev,end=*break)
             if pos(ls_start$=ope21a_key$) <> 1 then break
-            read record (ope21_dev) ope21a$
+            extract record (ope21_dev) ope21a$; rem Advisory Locking
 
             if ivm01a.inventoried$<>"Y" then 
                 ope21a.unit_cost=icost
                 ope21a$ = field(ope21a$)
                 write record (ope21_dev) ope21a$; rem "Reset cost if not inventoried
+            else
+                read (ope21_dev)
             endif
 
             total_shipped  = total_shipped  + ope21a.qty_shipped

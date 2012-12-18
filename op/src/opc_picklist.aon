@@ -322,13 +322,13 @@ rem --- Main Read
 
 		if type = on_demand
             if no_col_data
-                read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$
+                extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$; rem Advisory Locking
             else
                 ope01a$ = util.copyFields(fattr(ope01a$), callpoint!)
             endif
 		else
 			if pos(cust_id$+order_no$=printed_orders$,len(cust_id$)+len(order_no$))=0 goto next_read
-			read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$
+			extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$; rem Advisory Locking
 		endif
 		
 rem --- Set Firm ID for Credit Review and Release orders
@@ -426,8 +426,7 @@ rem --- set number of lines to print
                 find record (ordship_dev, key=firm_id$+ope01a.customer_id$+ope01a.order_no$, dom=*endif) ope31!
                 c$ = func.formatAddress(ope31!, address, 7)
             endif
-            
-            read (ordhdr_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$, dom=*next)
+
         else
             if ope01a.shipto_type$ = "S" then
                 shipto$ = ""
@@ -556,7 +555,11 @@ rem --- set number of lines to print
 			endif
 
 			ope01a$=field(ope01a$)
-			write record (ordhdr_dev) ope01a$		
+			write record (ordhdr_dev) ope01a$	
+
+        else
+
+			read (ordhdr_dev)	
 
         endif
 		
@@ -670,6 +673,8 @@ rem --- Clear Print Flags
 		
 all_done:
 
+    read(ordhdr_dev,end=*next); rem release extract
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 	goto std_exit
 	
@@ -702,7 +707,7 @@ rem --- Create pages from both physical and display objects
     declare BBjFormPage pagePrint!
 
     pagePDF!   = docPDF!.createPage()
-    pagePrint! = docPrint!.createPage(err=std_error)
+    pagePrint! = docPrint!.createPage(err=invalid_printer)
 
     pdf!.setPage(pagePrint!)
 
@@ -1036,35 +1041,37 @@ valid_lines: rem --- Look for valid lines here
     read (orddet_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,knum="PRIMARY",dom=*next)
 
     while more
-        read record (orddet_dev, end=*break) ope11a$
-        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ = ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 break
-        find record (linecode_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
+        extract record (orddet_dev, end=*break) ope11a$; rem Advisory Locking
+        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ = ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 then read(orddet_dev); break
+        found_linecode=0
+        find record (linecode_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$; found_linecode=1
+        if !found_linecode then
+            read(orddet_dev)
+            continue
+        endif
 
         if ope01a.invoice_type$<>"P"
-            if ope11a.commit_flag$="N" continue
+            if ope11a.commit_flag$="N" then read(orddet_dev); continue
             if whse$<>"" and ope11a.warehouse_id$<>whse$
-                if ope11a.pick_flag$<>"Y"
-                    allprint$="NO"
-                    continue 
-                else 
-                    continue
-                endif
+                if ope11a.pick_flag$<>"Y" then allprint$="NO"
+                read(orddet_dev)
+                continue 
             endif
         endif
         
-        if ope01a.reprint_flag$<>"Y" and ope11a.pick_flag$="Y" continue; rem "Not a reprint and already printed for selected warehouse(s)
-        if ope01a.reprint_flag$="Y" and ope11a.pick_flag$<>"Y" continue; rem "A reprint and not printed yet for selected warehouse(s)
+        if ope01a.reprint_flag$<>"Y" and ope11a.pick_flag$="Y" then read(orddet_dev); continue; rem "Not a reprint and already printed for selected warehouse(s)
+        if ope01a.reprint_flag$="Y" and ope11a.pick_flag$<>"Y" then read(orddet_dev); continue; rem "A reprint and not printed yet for selected warehouse(s)
 
         if after$="YES" then 
             ope11a.pick_flag$ = "Y"
             ope11a$ = field(ope11a$)
             write record (orddet_dev) ope11a$
+        else
+            read(orddet_dev)
         endif
 
         print$="YES"
     wend
-
-    read (ordhdr_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$)
 
     return
 
@@ -1201,6 +1208,13 @@ disp_message: rem --- Display a message
 :       table_chans$[all]
 
     return
+
+invalid_printer:
+
+	msg_id$="AD_NOPRINTER"
+	gosub disp_message
+	status=998
+	goto std_exit
 
 rem #endinclude disp_message.src
 

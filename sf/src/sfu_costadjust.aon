@@ -60,14 +60,14 @@ rem --- Assign Adjustment and Transaction Channels
 	record_id_flag=0; rem 0 = processing Operations; 1 = processing subcontracts
 
 	if gl$="Y"
-		files=1
+		num_files=1
 		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-		open_tables$[1]="GLE_DAILYDETAIL",open_opts$="OTA"
+		open_tables$[1]="GLE_DAILYDETAIL",open_opts$[1]="OTA"
 
 		gosub open_tables
 
-		glt04_dev=channels[1]
-		dim glt04a$:templates$[1]
+		glt04_dev=num(open_chans$[1])
+		dim glt04a$:open_tpls$[1]
 	endif
 
 	call pgmdir$+"adc_progress.aon","N","","","","",0,sfadj_dev,1,meter_num,ignore_status
@@ -144,8 +144,9 @@ rem --- Update The Transactions
 				sftran.setup_time=field_a3
 			endif
 			if newwo$<>"Y" then 
-				write record (wotran_dev,key=sftran_key$) sftran$
+				write record (wotran_dev) sftran$
 			else
+
 rem --- Add transaction to wot-01 or wot-31
 				seq_mask$=fill(len(sftran.trans_seq$),"0")
 				pos1$=(sftran.firm_id$+sftran.wo_location$+sftran.wo_no$+sftran.trans_date$)
@@ -154,10 +155,11 @@ rem --- Add transaction to wot-01 or wot-31
 				read (wotran_dev,key=k2$,dom=*next)
 				wotran_key$=keyp(wotran_dev,end=free_sequences)
 				v2=1
-				if pos(k2$(1,len(pos1$))=wotran_key$)=1 then v2=num(wotran_key.tran_key$)+1
+				if pos(k2$(1,len(pos1$))=wotran_key$)=1 then v2=num(wotran_key.trans_seq$)+1
 				flag=0
 				if v2<1000 then 
 					k2$=k2$(1,len(pos1$))+str(v2:seq_mask$)
+					sftran.trans_seq$=str(v2:seq_mask$)
 				else
 free_sequences: rem --- Any free sequences left between 000 and 999
 				v2=-1
@@ -174,10 +176,9 @@ free_sequences: rem --- Any free sequences left between 000 and 999
 rem --- Write record using free sequence number
 				if flag = 0 then
 					sftran.firm_id$=firm_id$
-rem jpb I think this has already been established when finding the original transaction
-rem	jpb				sftran.wo_location$=k2.wo_location$
-rem jpb					sftran.wo_no$=k2.wo_no$
-rem jpb					sftran.trans_date$=k2.trans_date$
+					sftran.wo_location$=k2.wo_location$
+					sftran.wo_no$=k2.wo_no$
+					sftran.trans_date$=k2.trans_date$
 					sftran$=field(sftran$)
 					write record (wotran_dev) sftran$
 				else
@@ -186,7 +187,6 @@ rem --- Summary posting when no free records exist
 					k2$=k2$(1,len(pos1$))+"999"
 					extract record (wotran_dev,key=k2$) sftran$
 					if record_id_flag=1 then 
-rem jpb                        sftran.reserved_str$=Translate!.getTranslation("AON_SUMMARY_TRANSACTION")
 						sftran.wo_units=sftran.wo_units+sfadja.new_units
 						sftran.ext_cost=sftran.ext_cost+sfadja.new_units*field_a1
 						if sftran.wo_units<>0 then 
@@ -228,9 +228,11 @@ rem --- Update The Last Activity Date
 				write record (woe01_dev) woe01a$
 			endif
 remove_record: rem --- Remove Record
-            remove (sfadj_dev,key=k$,dom=*break)
+            remove (sfadj_dev,key=k$,dom=*continue)
+			read (sfadj_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
         wend
-done: rem --- Overlay
+
+rem --- Change files
 
 		if sfadj_dev=woe42_dev then break
 		sfadj_dev=woe42_dev
@@ -250,6 +252,8 @@ done: rem --- Overlay
 		field_w6=0
 
 	wend
+
+rem --- End of process
 
 	if gl$="Y"
 		call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status

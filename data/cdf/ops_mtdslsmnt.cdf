@@ -4,8 +4,8 @@ rem --- populate variables
 	dim ops_mtdsales$:fnget_tpl$("OPS_MTDSALES")
 	ars_mtdcash_dev=fnget_dev("ARS_MTDCASH")
 	dim ars_mtdcash$:fnget_tpl$("ARS_MTDCASH")
-	readrecord(ops_mtdsales_dev,key=firm_id$+"S",dom=*next)ops_mtdsales$
-	readrecord(ars_mtdcash_dev,key=firm_id$+"C",dom=*next)ars_mtdcash$
+	extractrecord(ops_mtdsales_dev,key=firm_id$+"S",dom=*next)ops_mtdsales$; rem Advisory Locking
+	extractrecord(ars_mtdcash_dev,key=firm_id$+"C",dom=*next)ars_mtdcash$; rem Advisory Locking
 
 	ops_mtdsales.firm_id$=firm_id$
 	ops_mtdsales.record_id_s$="S"

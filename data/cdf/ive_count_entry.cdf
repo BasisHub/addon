@@ -410,6 +410,10 @@ print "in write_record"; rem debug
 
 	gosub set_key_data
 
+	physical_key$=physical_rec.firm_id$+physical_rec.warehouse_id$+physical_rec.pi_cyclecode$+physical_rec.location$+
+:		physical_rec.item_id$+physical_rec.lotser_no$
+	extract record(physical_dev,key=physical_key$,dom=*next)x$; rem Advisory Locking
+
 	physical_rec.cutoff_date$  = callpoint!.getColumnData("IVE_COUNT_ENTRY.CUTOFF_DATE")
 	physical_rec.entered_flag$ = user_tpl.entered_flag$
 	physical_rec.lotser_item$  = user_tpl.lotser_item$

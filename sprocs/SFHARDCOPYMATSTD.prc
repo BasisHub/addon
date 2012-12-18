@@ -31,6 +31,7 @@ rem --- Get the IN parameters used by the procedure
 	wo_no$ = sp!.getParameter("WO_NO")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
+	report_type$ = sp!.getParameter("REPORT_TYPE")
 
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -140,7 +141,7 @@ rem --- Build SQL statement
 
 	sql_prep$="select item_id, oper_seq_ref, scrap_factor, divisor, alt_factor, qty_required, "
 	sql_prep$=sql_prep$+"units, unit_cost, total_units, total_cost, line_type, ext_comments "
-	sql_prep$=sql_prep$+"from sfe_womatl where firm_id = '"+firm_id$+"' and wo_no = '"+wo_no$+"'"
+	sql_prep$=sql_prep$+"from sfe_womatl where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
 	
 	sql_chan=sqlunt
 	sqlopen(sql_chan,err=*next)stbl("+DBNAME")
@@ -167,9 +168,11 @@ rem --- Trip Read
 			data!.setFieldValue("FACTOR",str(read_tpl.alt_factor:sf_rate_mask$))
 			data!.setFieldValue("QTY_REQ",str(read_tpl.qty_required:sf_rate_mask$))
 			data!.setFieldValue("UNITS_EA",str(read_tpl.units:iv_cost_mask$))
-			data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:iv_cost_mask$))
 			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:iv_cost_mask$))
-			data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_rate_mask$))
+			if report_type$<>"T"
+				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:iv_cost_mask$))
+				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_rate_mask$))
+			endif
 		endif
 		rs!.insert(data!)
 		
@@ -193,7 +196,7 @@ rem --- Trip Read
 	wend
 
 rem --- Output Totals
-	if tot_recs>0
+	if tot_recs>0 and report_type$<>"T"
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("COST_EA",fill(20,"_"))
 		data!.setFieldValue("COST_TOT",fill(20,"_"))

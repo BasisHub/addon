@@ -1,0 +1,216 @@
+rem --- Conversion Work Order Register Update
+rem --- Program sfx_woconvupdt.aon v8.0.0 17Jan2008 (wox_da)
+rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (02/12/2008 05:52:59)
+
+rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+
+    setesc std_error
+    seterr std_error
+
+    next_overlay$="";rem --- clear next_var and outvect! so adc_process_end doesn't loop...i.e., don't run anything after this
+    OutVect!=null()
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    dim sysinfo$:stbl("+SYSINFO_TPL")
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get user approval to update
+
+    msg_id$="AON_UPDT_QUERY"
+    dim x$:stbl("+SYSINFO_TPL")
+    dim msg_tokens$[1]
+    x$=stbl("+SYSINFO")                                                            
+    msg_tokens$[1]=x.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_update
+
+rem --- Initializations
+
+        sys_date$=sysinfo.system_date$
+        precision ivs01_precision
+
+rem --- Start progress meter and position header file
+
+    call pgmdir$+"adc_progress.aon","NC","","","","",8,sfe05a_dev,1,meter_num,status
+    read (sfe05a_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
+
+rem --- Read next Conversion Work Order Entry (SFE_WOCONVRN) record
+
+    while 1
+        read record (sfe05a_dev,end=*break) sfe05a$
+        if sfe05a.firm_id$+sfe05a.batch_no$<>firm_id$+batch_no$ then break
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+        rem --- Operations
+        if sfe05a.act_ops_tot<>0 then 
+            dim sfe02a$:fattr(sfe02a$)
+            read (sfe02a_dev,key=sfe05a.firm_id$+sfe05a.wo_location$+sfe05a.wo_no$,dom=*next)
+            if 1
+            sfe02a_key$=key(sfe02a_dev,end=*endif)
+                if pos(sfe05a.firm_id$+sfe05a.wo_location$+sfe05a.wo_no$=sfe02a_key$)=1 then 
+                    read record (sfe02a_dev,key=sfe02a_key$) sfe02a$
+                endif
+            endif
+            dim sft01a$:fattr(sft01a$)
+            sft01a.firm_id$=sfe05a.firm_id$
+            sft01a.wo_location$=sfe05a.wo_location$
+            sft01a.wo_no$=sfe05a.wo_no$
+            sft01a.trans_date$=sys_date$
+            sft01a.trans_seq$="001"
+            sft01a.oper_seq_ref$=sfe02a.internal_seq_no$
+            sft01a.op_code$=sfe02a.op_code$
+            sft01a.employee_no$="CNVERSION"
+            sft01a.units=sfe05a.hrs
+            sft01a.unit_cost=sfe05a.direct_rate*(1+sfe05a.ovhd_rate)
+            sft01a.ext_cost=sfe05a.act_ops_tot
+            sft01a.direct_rate=sfe05a.direct_rate
+            sft01a.ovhd_rate=sfe05a.direct_rate*sfe05a.ovhd_rate
+            
+            rem --- Get next operation transaction sequence number and write record
+            next_seq_no=1
+            sequence_no_mask$=fill(len(sft01a.trans_seq$),"0")
+            sft01_trip$=sft01a.firm_id$+sft01a.wo_location$+sft01a.wo_no$+sft01a.trans_date$
+            read (sft01a_dev,key=sft01_trip$+$ff$,dom=*next)
+            previous_key$=""
+            previous_key$=keyp(sft01a_dev,end=*next)
+            if pos(sft01_trip$=previous_key$)=1 then
+                next_seq_no=num(previous_key$(1+len(sft01_trip$)),err=*next)+1
+            endif
+            sft01a.trans_seq$=str(next_seq_no:sequence_no_mask$)
+            write record (sft01a_dev) sft01a$
+        endif
+
+        rem --- Materials
+        if sfe05a.act_mat_tot<>0 then 
+            dim sft21a$:fattr(sft21a$)
+            sft21a.firm_id$=sfe05a.firm_id$
+            sft21a.wo_location$=sfe05a.wo_location$
+            sft21a.wo_no$=sfe05a.wo_no$
+            sft21a.trans_date$=sys_date$
+            sft21a.trans_seq$="001"
+            sft21a.material_seq_ref$=str(1:fill(len(sft21a.material_seq_ref$),"0"))
+            sft21a.unit_measure$="CV"
+            sft21a.warehouse_id$=ivs01a.warehouse_id$
+            sft21a.item_id$="CONVERSION"
+            sft21a.units=1
+            sft21a.unit_cost=sfe05a.act_mat_tot
+            sft21a.ext_cost=sfe05a.act_mat_tot
+            
+            rem --- Get next materials transaction sequence number and write record
+            next_seq_no=1
+            sequence_no_mask$=fill(len(sft21a.trans_seq$),"0")
+            sft21_trip$=sft21a.firm_id$+sft21a.wo_location$+sft21a.wo_no$+sft21a.trans_date$
+            read (sft21a_dev,key=sft21_trip$+$ff$,dom=*next)
+            previous_key$=""
+            previous_key$=keyp(sft21a_dev,end=*next)
+            if pos(sft21_trip$=previous_key$)=1 then
+                next_seq_no=num(previous_key$(1+len(sft21_trip$)),err=*next)+1
+            endif
+            sft21a.trans_seq$=str(next_seq_no:sequence_no_mask$)
+            write record (sft21a_dev) sft21a$
+        endif
+
+        rem --- Subcontracts
+        if sfe05a.act_sub_tot<>0 then 
+            dim sft31a$:fattr(sft31a$)
+            sft31a.firm_id$=sfe05a.firm_id$
+            sft31a.wo_location$=sfe05a.wo_location$
+            sft31a.wo_no$=sfe05a.wo_no$
+            sft31a.trans_date$=sys_date$
+            sft31a.trans_seq$="001"
+            sft31a.subcont_seq_ref$=str(1:fill(len(sft31a.subcont_seq_ref$),"0"))
+            sft31a.vendor_id$="000000"
+            sft31a.po_no$="CONVRSN"
+            sft31a.units=1
+            sft31a.unit_cost=sfe05a.act_sub_tot
+            sft31a.ext_cost=sfe05a.act_sub_tot
+            
+            rem --- Get next subcontracts transaction sequence number and write record
+            next_seq_no=1
+            sequence_no_mask$=fill(len(sft31a.trans_seq$),"0")
+            sft31_trip$=sft31a.firm_id$+sft31a.wo_location$+sft31a.wo_no$+sft31a.trans_date$
+            read (sft31a_dev,key=sft31_trip$+$ff$,dom=*next)
+            previous_key$=""
+            previous_key$=keyp(sft31a_dev,end=*next)
+            if pos(sft31_trip$=previous_key$)=1 then
+                next_seq_no=num(previous_key$(1+len(sft31_trip$)),err=*next)+1
+            endif
+            sft31a.trans_seq$=str(next_seq_no:sequence_no_mask$)
+            write record (sft31a_dev) sft31a$
+        endif
+            
+        rem --- Remove this SFE_WOCONVRN record (MUST use primary key for remove)
+        remove (sfe05a_dev,key=sfe05a.firm_id$+sfe05a.wo_location$+sfe05a.wo_no$)
+    wend
+
+rem --- All done
+
+    if gl$="Y"
+        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
+        call pgmdir$+"glc_ctlupdate.aon",status
+        call pgmdir$+"glc_ctldelete.aon",status
+    endif
+
+    call pgmdir$+"adc_batchdelete.aon",status
+    goto std_exit
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_error_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_error_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_error_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_error_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    msg_id$="UPDATE_COMPLETE"
+    dim msg_tokens$[1]
+    msg_opt$=""
+    gosub disp_message
+
+std_exit_no_update: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

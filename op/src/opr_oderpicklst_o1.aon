@@ -96,7 +96,9 @@ rem --- Inits
         call pgmdir$+"adc_progress.aon","N","","","","",0,ope01_dev,1,meter_num,status
         if status = 999 then goto std_exit
     else
-        read (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)ope01a$
+        rem --- Read header for on-demand printing
+        extract record (ope01_dev, key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=std_exit) ope01a$; rem Advisory Locking
+        total=0
         p8$="Y"
         if ope01a.invoice_type$="S" then
             msg_id$="OP_PRINTPRICES"
@@ -111,10 +113,6 @@ rem --- Inits
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
         if status = 999 then goto std_exit
 
-    rem --- Read header for on-demand printing
-
-        read record (ope01_dev, key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=std_exit) ope01a$
-        total=0
         goto On_Demand
     endif
 
@@ -129,7 +127,7 @@ rem --- Initial Read
         ope04a_key$=key(ope04_dev,end=*break)
         read (ope04_dev)
         if ope04a_key.firm_id$+ope04a_key.ordinv_flag$<>firm_id$+"O" break
-        find record (ope01_dev,key=ope04a_key.firm_id$+ope04a_key.ar_type$+ope04a_key.customer_id$+ope04a_key.order_no$,dom=Remove_bad) ope01a$
+        extract record (ope01_dev,key=ope04a_key.firm_id$+ope04a_key.ar_type$+ope04a_key.customer_id$+ope04a_key.order_no$,dom=Remove_bad) ope01a$; rem Advisory Locking
         if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") then continue
 
     On_Demand: rem --- Here for on-demand printing
@@ -436,6 +434,7 @@ rem --- Clear Print Flags
             remove (ope04_dev,key=ope04a_key$)
         endif
     wend
+    read(ope01_dev,end=*next); rem release extract
 
 all_done: rem --- Done with update
 
@@ -679,23 +678,27 @@ valid_lines: rem --- Look for valid lines here
     while more
         ope11a_key$=key(ope11_dev,end=*break)
         if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$=ope11a_key$)<>1 break
-        read record (ope11_dev) ope11a$
-        find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
+        extract record (ope11_dev) ope11a$; rem Advisory Locking
+        opm02_found=0
+        find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$; opm02_found=1
+        if !opm02_found then
+            read(ope11_dev)
+            continue
+        endif
 
         if ope01a.invoice_type$<>"P"
-            if ope11a.commit_flag$="N" continue
+            if ope11a.commit_flag$="N" then read(ope11_dev); continue
             if whse$<>"" and ope11a.warehouse_id$<>whse$
                 if ope11a.pick_flag$<>"Y"
                     allprint$="NO"
-                    continue 
-                else 
-                    continue
                 endif
+                read(ope11_dev)
+                continue 
             endif
         endif
 
-        if ope01a.reprint_flag$<>"Y" and ope11a.pick_flag$="Y" continue; rem "Not a reprint and already printed for selected warehouse(s)
-        if ope01a.reprint_flag$="Y" and ope11a.pick_flag$<>"Y" continue; rem "A reprint and not printed yet for selected warehouse(s)
+        if ope01a.reprint_flag$<>"Y" and ope11a.pick_flag$="Y" then read(ope11_dev); continue; rem "Not a reprint and already printed for selected warehouse(s)
+        if ope01a.reprint_flag$="Y" and ope11a.pick_flag$<>"Y" then read(ope11_dev); continue; rem "A reprint and not printed yet for selected warehouse(s)
         
         if after$="YES" then 
             ope11a.pick_flag$ = "Y"
@@ -705,8 +708,6 @@ valid_lines: rem --- Look for valid lines here
         
         print$="YES"
     wend
-
-    read (ope01_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$)
 
     return
 

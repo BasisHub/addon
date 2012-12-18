@@ -1,3 +1,7 @@
+[[APE_INVOICEHDR.AWIN]]
+rem --- setup utility
+
+	use ::ado_util.src::util
 [[APE_INVOICEHDR.ARNF]]
 if user_tpl.multi_dist$<>"Y"
 	callpoint!.setColumnData("APE_INVOICEHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
@@ -507,7 +511,7 @@ inv_no_y=inv_no!.getY()
 inv_no_height=inv_no!.getHeight()
 inv_no_width=inv_no!.getWidth()
 cmts_x=cmts!.getX()
-nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
+nxt_ctlID=util.getNextControlID()
 Form!.addStaticText(nxt_ctlID,inv_no_x+inv_no_width+25,inv_no_y,cmts_x-(inv_no_x+inv_no_width+25),inv_no_height*2,"")
 user_tpl.open_inv_textID$=str(nxt_ctlID)
 rem --- add the display control holding the distribution balance to userObj!

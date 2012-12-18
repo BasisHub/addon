@@ -175,7 +175,8 @@ rem --- Read next invoice header --- Main Loop Starts
         read record (ope04_dev, end=*break) ope04a$
         if ope04a.firm_id$+ope04a.ordinv_flag$<>firm_id$+"I" then break
 
-        read record (ope01_dev, key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*continue) ope01a$
+        ope01_key$=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$
+        extract record (ope01_dev, key=ope01_key$, dom=*continue) ope01a$; rem Advisory Locking
     rem if ope01a.print_status$<>"Y" or (ope01a.lock_status$<>"1" and ope01a.lock_status$<>"2") then continue
         if ope01a.print_status$<>"Y" or ope01a.lock_status$<>"1" then continue
 
@@ -183,11 +184,11 @@ rem --- Read next invoice header --- Main Loop Starts
             find record (ope41_dev, key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=*next) ope41a$
         endif
 
-        extract record (ope01_dev, key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$) ope01a$
         if cvs(ope01a.invoice_date$,2)="" then ope01a.invoice_date$=sysinfo.system_date$
         ope01a.lock_status$="2"
         ope01a$ = field(ope01a$)
         write record (ope01_dev) ope01a$
+        extract record (ope01_dev, key=ope01_key$) ope01a$; rem Advisory Locking
 
         something_backord=0
         something_commit=0
@@ -270,7 +271,7 @@ rem --- Read next invoice header --- Main Loop Starts
                     break
                 endif
 
-                read record (ope11_dev) ope11a$
+                extract record (ope11_dev) ope11a$; rem Advisory Locking
                 z0$(1)=z9$
                 ref3$=ope11a.line_no$
                 acct$=""
@@ -349,7 +350,7 @@ rem --- Read next invoice header --- Main Loop Starts
                                 while more
                                     ope21a_key$=key(ope21_dev,end=*break)
                                     if pos(ls_start$=ope21a_key$)<>1 then break
-                                    read record (ope21_dev) ope21a$
+                                    extract record (ope21_dev) ope21a$; rem Advisory Locking
                                     ls_nbr$=ope21a.lotser_no$
                                     cost=ope21a.unit_cost
                                     qnty=ope21a.qty_shipped
@@ -361,7 +362,7 @@ rem --- Read next invoice header --- Main Loop Starts
 
                                 rem --- Lot/Serial Invoice History
 
-                                    if ls$<>"Y" or ivm01a.lotser_item$<>"Y" then break
+                                    if ls$<>"Y" or ivm01a.lotser_item$<>"Y" then read(ope21_dev); break
                                 rem opt21a.firm_id$        = ope21a.firm_id$
                                 rem opt21a.ar_type$        = ope21a.ar_type$
                                 rem opt21a.customer_id$    = ope21a.customer_id$
@@ -495,7 +496,7 @@ rem --- Read next invoice header --- Main Loop Starts
                     art01a.ar_inv_no$=ope01a.ar_inv_no$
                     art01a.sequence_00$="00"
                     key_value$ = art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$+art01a.sequence_00$
-                    find record (art01_dev, key=key_value$, dom=ar_open_inv_hdr) art01a$
+                    extract record (art01_dev, key=key_value$, dom=ar_open_inv_hdr) art01a$; rem Advisory Locking
                     goto ar_open_inv_det_smry_record
 
                 ar_open_inv_hdr: rem --- AR Open Invoice Header
@@ -562,6 +563,8 @@ rem --- Read next invoice header --- Main Loop Starts
                         endif
                     endif
 
+                    art11_key$=art11a.firm_id$+art11a.ar_type$+art11a.customer_id$+art11a.ar_inv_no$+art11a.sequence_num$
+                    extract record (art11_dev,key=art11_key$,dom=*next)x$; rem Advisory Locking
                     art11a.trans_type$="I"
                     art11a.trans_date$=ope01a.invoice_date$
                     art11a.refchk_no$=ope01a.ar_inv_no$
@@ -578,7 +581,7 @@ rem --- Read next invoice header --- Main Loop Starts
                 glt15a.gl_account$=z6$(11,10)
                 glt15a.trans_no$=pad(ope01a.invoice_date$,8)(3,6)+"S"
                 glt15a.trans_amt=0
-                find record (glt15_dev,key=glt15a.firm_id$+glt15a.gl_account$+glt15a.trans_no$,dom=*next) glt15a$
+                extract record (glt15_dev,key=glt15a.firm_id$+glt15a.gl_account$+glt15a.trans_no$,dom=*next) glt15a$; rem Advisory Locking
 
                 glt15a.trans_type$="D"
                 glt15a.posted_code$="O"
@@ -598,7 +601,7 @@ rem --- Read next invoice header --- Main Loop Starts
             if ope01a.cash_sale$<>"Y" then arm02a.aging_cur = arm02a.aging_cur+total_ext+ope01a.tax_amount+ope01a.freight_amt-ope01a.discount_amt
             credit = arm02a.aging_future+arm02a.aging_cur+arm02a.aging_30+arm02a.aging_60+arm02a.aging_90+arm02a.aging_120; rem "Current Credit
             arm02a$ = field(arm02a$)
-            write record (arm02_dev,key=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$) arm02a$
+            write record (arm02_dev) arm02a$
             goto accumulate_mtd_sales
 
         rem --- Update MTD Cash Totals (***Orphan Code***)
@@ -608,7 +611,7 @@ rem --- Read next invoice header --- Main Loop Starts
                 extract record (ops10_dev,key=s0$,dom=*next) ops10c$
                 if ope01a.invoice_date$<=g9$ then s[0]=s[0]+h[0]
                 if ope01a.invoice_date$>g9$ then s[3]=s[3]+h[0]
-                write record (ops10_dev,key=s0$) ops10c$
+                write record (ops10_dev) ops10c$
             endif
 
         accumulate_mtd_sales: rem --- Accoumulate MTD Sales
@@ -658,7 +661,7 @@ rem --- Read next invoice header --- Main Loop Starts
 
             arm06a.firm_id$=firm_id$
             arm06a.customer_id$=ope01a.customer_id$
-            find record (arm06_dev,key=arm06a.firm_id$+arm06a.customer_id$,dom=*next) arm06a$
+            extract record (arm06_dev,key=arm06a.firm_id$+arm06a.customer_id$,dom=*next) arm06a$; rem Advisory Locking
 
             arm06a.lstinv_date$=ope01a.invoice_date$
 
@@ -683,7 +686,7 @@ rem --- Read next invoice header --- Main Loop Starts
             endif
 
             arm06a$ = field(arm06a$)
-            write record (arm06_dev,key=arm06a.firm_id$+arm06a.customer_id$) arm06a$
+            write record (arm06_dev) arm06a$
         endif
 
     rem --- Remove print record / Update history
@@ -692,6 +695,8 @@ rem --- Read next invoice header --- Main Loop Starts
 
 		opt01a$=ope01a$
         opt01a.ar_inv_no$=ope01a.ar_inv_no$
+        opt01_key$=opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$
+        extract record (opt01_dev,key=opt01_key$,dom=*next)x$; rem Advisory Locking
         opt01a.lock_status$="2"
         opt01a.order_no$=ope01a.order_no$
         opt01a.total_sales=total_ext
@@ -707,6 +712,8 @@ rem --- Read next invoice header --- Main Loop Starts
 			opt71a.ar_type$      = ope01a.ar_type$
 			opt71a.slspsn_code$  = ope01a.slspsn_code$
 			opt71a.ar_inv_no$    = ope01a.ar_inv_no$
+            opt71_key$=opt71a.firm_id$+opt71a.ar_type$+opt71a.slspsn_code$+opt71a.ar_inv_no$
+            extract record (opt71_dev,key=opt71_key$,dom=*next)x$; rem Advisory Locking
 			opt71a.customer_id$  = ope01a.customer_id$
 			opt71a.invoice_type$ = ope01a.invoice_type$
 			opt71a.invoice_date$ = ope01a.invoice_date$
@@ -714,7 +721,7 @@ rem --- Read next invoice header --- Main Loop Starts
 			opt71a.comm_amt      = ope01a.comm_amt
 			opt71a.total_sales   = ope01a.total_sales
 			opt71a.total_cost    = ope01a.total_cost
-
+            opt71a$ = field(opt71a$)
 			write record (opt71_dev) opt71a$
 		endif
 		
@@ -757,6 +764,8 @@ rem --- Read next invoice header --- Main Loop Starts
             ope04a.ordinv_flag$="O"
             ope04a.ar_type$=ope01a.ar_type$
             ope04a.customer_id$=ope01a.customer_id$
+            ope04_key$=ope04a.firm_id$+ope04a.ordinv_flag$+ope04a.ar_type$+ope04a.customer_id$
+            extract record (ope04_dev,key=ope04_key$,dom=*next)x$; rem Advisory Locking
             ope04a.order_no$=ope01a.order_no$
             ope04a$ = field(ope04a$)
             write record (ope04_dev) ope04a$
@@ -898,13 +907,13 @@ remove_tickler: rem --- Remove ope-03 Credit Manager Tickler File Records
 
 update_salestax_history: rem --- Update Sales Tax History
 
-    find record (art02_dev,key=firm_id$+art02a.tax_code$+art02a.year$+art02a.month$,dom=*next) art02a$
+    extract record (art02_dev,key=firm_id$+art02a.tax_code$+art02a.year$+art02a.month$,dom=*next) art02a$; rem Advisory Locking
     art02a.taxable_amt = art02a.taxable_amt+ope01a.taxable_amt
     art02a.tax_amount  = art02a.tax_amount+tax_amt
     art02a.gross_sales = art02a.gross_sales+total_ext+ope01a.freight_amt-ope01a.discount_amt
     if ope01a.taxable_amt<0 then art02a.returns = art02a.returns+ope01a.taxable_amt
     art02a$ = field(art02a$)
-    write record (art02_dev,key=x$) art02a$
+    write record (art02_dev) art02a$
 
     return
 

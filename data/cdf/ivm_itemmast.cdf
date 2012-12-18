@@ -274,7 +274,7 @@ rem --- See if Auto Numbering in effect
 			if item_len=0 then item_len=20; rem Needed?
 			chk_digit$ = ""
 			if ivs01a.auto_no_iv$="C" then item_len=item_len-1
-			read record (ivs10_dev,key=firm_id$+"N",dom=*next) ivs10n$
+			extract record (ivs10_dev,key=firm_id$+"N",dom=*next) ivs10n$; rem Advisory Locking
 			ivs10n.firm_id$ = firm_id$
 			ivs10n.record_id_n$ = "N"
 
@@ -287,13 +287,14 @@ rem --- See if Auto Numbering in effect
 			dim max_num$(min(item_len,10),"9")
 
 			if next_num>num(max_num$) then 
+				read (ivs10_dev)
 				msg_id$="NO_MORE_NUMBERS"
 				gosub disp_message
 				callpoint!.setStatus("ABORT")
 			else
 				ivs10n.nxt_item_id=next_num+1
 				ivs10n$=field(ivs10n$)
-				write record (ivs10_dev,key=firm_id$+"N") ivs10n$
+				write record (ivs10_dev) ivs10n$
 				next_num$=str(next_num)
 
 				if ivs01a.auto_no_iv$="C" then 
@@ -315,6 +316,8 @@ rem --- Write synonyms of the Item Number, UPC Code and Bar Code
 	item_id$=callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
 	ivm_itemsyn.item_synonym$=item_id$
 	ivm_itemsyn.item_id$=item_id$
+	ivm_itemsyn_key$=ivm_itemsyn.firm_id$+ivm_itemsyn.item_synonym$+ivm_itemsyn.item_id$
+	extract record (ivm_itemsyn_dev,key=ivm_itemsyn_key$,dom=*next)x$; rem Advisory Locking
 	ivm_itemsyn$=field(ivm_itemsyn$)
 	write record (ivm_itemsyn_dev) ivm_itemsyn$
 
@@ -334,12 +337,16 @@ rem --- Add new UPC Code and Bar Code
 	if cvs(callpoint!.getColumnData("IVM_ITEMMAST.BAR_CODE"),3)<>""
 		ivm_itemsyn.item_synonym$=callpoint!.getColumnData("IVM_ITEMMAST.BAR_CODE")
 		ivm_itemsyn.item_id$=item_id$
+		ivm_itemsyn_key$=ivm_itemsyn.firm_id$+ivm_itemsyn.item_synonym$+ivm_itemsyn.item_id$
+		extract record (ivm_itemsyn_dev,key=ivm_itemsyn_key$,dom=*next)x$; rem Advisory Locking
 		ivm_itemsyn$=field(ivm_itemsyn$)
 		write record (ivm_itemsyn_dev) ivm_itemsyn$
 	endif
 	if cvs(callpoint!.getColumnData("IVM_ITEMMAST.UPC_CODE"),3)<>""
 		ivm_itemsyn.item_synonym$=callpoint!.getColumnData("IVM_ITEMMAST.UPC_CODE")
 		ivm_itemsyn.item_id$=item_id$
+		ivm_itemsyn_key$=ivm_itemsyn.firm_id$+ivm_itemsyn.item_synonym$+ivm_itemsyn.item_id$
+		extract record (ivm_itemsyn_dev,key=ivm_itemsyn_key$,dom=*next)x$; rem Advisory Locking
 		ivm_itemsyn$=field(ivm_itemsyn$)
 		write record (ivm_itemsyn_dev) ivm_itemsyn$
 	endif
@@ -388,7 +395,6 @@ rem --- if this is a newly added record, launch warehouse/stocking, vendors, and
 :			dflt_data$[all]
 
 	endif
-
 [[IVM_ITEMMAST.BDEL]]
 rem --- Allow this item to be deleted?
 

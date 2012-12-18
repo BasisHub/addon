@@ -45,7 +45,7 @@ rem --- from AP Types file (apc_typecode)
 :				"APM_VENDHIST",
 :				user_id$,
 :				"",
-:				"",
+:				firm_id$+cp_vendor_id$,
 :				table_chans$[all],
 :				"",
 :				dflt_data$[all]

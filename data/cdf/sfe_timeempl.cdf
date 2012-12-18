@@ -1,3 +1,6 @@
+[[SFE_TIMEEMPL.BSHO]]
+rem --- Hold on to the control for entered_hrs so it can be updated in detail grid
+	callpoint!.setDevObject("control_entered_hrs",callpoint!.getControl("<<DISPLAY>>.ENTERED_HRS"))
 [[SFE_TIMEEMPL.BWAR]]
 rem --- Check entered hrs
 	total_hrs=num(callpoint!.getColumnData("SFE_TIMEEMPL.TOTAL_HRS"))
@@ -85,7 +88,11 @@ rem --- Remove software lock on batch when batching
 
 
 
-[[SFE_TIMEEMPL.BSHO]]
+[[SFE_TIMEEMPL.BTBL]]
+rem --- Get Batch information
+	call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
+	callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
 rem --- Open Files
 	num_files=5
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -211,11 +218,4 @@ rem --- Additional file opens
 	callpoint!.setDevObject("opcode_tpl",open_tpls$[9])
 
 rem --- Validate employee_no with SFM_EMPLMAST instead of PRM_EMPLMAST when PR not installed
-	if pr$<>"Y" then callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.EMPLOYEE_NO","DTAB","SFM_EMPLMAST")
-
-rem --- Hold on to the control for entered_hrs so it can be updated in detail grid
-	callpoint!.setDevObject("control_entered_hrs",callpoint!.getControl("<<DISPLAY>>.ENTERED_HRS"))
-[[SFE_TIMEEMPL.BTBL]]
-rem --- Get Batch information
-	call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
-	callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+	if pr$="Y" then callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")

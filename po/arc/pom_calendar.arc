@@ -14,37 +14,32 @@ BEGIN
     BEGIN
     END
 
-    TOOLBUTTON 101, "BITMAP=sys/images/im_tb_fst_m.png", 19, 19, 20, 20
+    TOOLBUTTON 101, "", 19, 19, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_fst_m.png"
         NAME "btn_prev_yr"
         SHORTCUE "Previous year"
     END
 
-    TOOLBUTTON 102, "BITMAP=sys/images/im_tb_prv_m.png", 38, 19, 20, 20
+    TOOLBUTTON 102, "", 38, 19, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_prv_m.png"
         NAME "btn_prev_mo"
         SHORTCUE "Previous month"
     END
 
-    TOOLBUTTON 103, "BITMAP=sys/images/im_tb_nxt_m.png", 151, 19, 20, 20
+    TOOLBUTTON 103, "", 151, 19, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_nxt_m.png"
         NAME "btn_next_mo"
         SHORTCUE "Next month"
     END
 
-    TOOLBUTTON 104, "BITMAP=sys/images/im_tb_lst_m.png", 170, 19, 20, 20
+    TOOLBUTTON 104, "", 170, 19, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_lst_m.png"
         NAME "btn_next_yr"
         SHORTCUE "Next year"
     END
 
-    TOOLBUTTON 105, "BITMAP=sys/images/im_tb_cal_f.png", 189, 19, 20, 20
+    TOOLBUTTON 105, "", 189, 19, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_cal_f.png"
         NAME "btn_curr_mo"
         SHORTCUE "Current month"
     END

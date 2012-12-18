@@ -64,7 +64,7 @@ rem ==========================================================================
 		file_name$="OPE_ORDHDR"
 		ordhdr_dev = fnget_dev(file_name$)
 		dim ordhdr_rec$:fnget_tpl$(file_name$)
-		read record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ordhdr_rec$
+		extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ordhdr_rec$; rem Advisory Locking
 		ordhdr_rec.credit_flag$  = "R"
 		ordhdr_rec.reprint_flag$ = "Y"
 		ordhdr_rec$ = field(ordhdr_rec$)

@@ -10,37 +10,33 @@ BEGIN
     KEYBOARDNAVIGATION
     MANAGESYSCOLOR
     NAME "grp_status"
-    TOOLBUTTON 2000, "BITMAP=sys/images/im_tb_fst_m.png", 5, 5, 20, 20
+    TOOLBUTTON 2000, "", 5, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_fst_m.png"
+        JUSTIFICATION 32768
         NAME "btn_prev_yr"
         SHORTCUE "Previous year"
     END
 
-    TOOLBUTTON 2001, "BITMAP=sys/images/im_tb_prv_m.png", 24, 5, 20, 20
+    TOOLBUTTON 2001, "", 24, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_prv_m.png"
         NAME "btn_prev_mo"
         SHORTCUE "Previous month"
     END
 
-    TOOLBUTTON 2002, "BITMAP=sys/images/im_tb_nxt_m.png", 126, 5, 20, 20
+    TOOLBUTTON 2002, "", 126, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_nxt_m.png"
         NAME "btn_next_mo"
         SHORTCUE "Next month"
     END
 
-    TOOLBUTTON 2003, "BITMAP=sys/images/im_tb_lst_m.png", 145, 5, 20, 20
+    TOOLBUTTON 2003, "", 145, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_lst_m.png"
         NAME "btn_next_yr"
         SHORTCUE "Next year"
     END
 
-    TOOLBUTTON 2004, "BITMAP=sys/images/im_tb_cal_f.png", 164, 5, 20, 20
+    TOOLBUTTON 2004, "", 164, 5, 20, 20
     BEGIN
-        IMAGEFILE "sys/images/im_tb_cal_f.png"
         NAME "btn_curr_mo"
         SHORTCUE "Current month"
     END
@@ -81,7 +77,7 @@ BEGIN
 
 END
 
-CHILD-WINDOW 10010 0 0 498 398
+CHILD-WINDOW 10010 0 0 494 394
 BEGIN
     BACKGROUNDCOLOR RGB(252,252,254)
     BORDERLESS
@@ -104,7 +100,7 @@ BEGIN
 
 END
 
-CHILD-WINDOW 10020 0 0 498 398
+CHILD-WINDOW 10020 0 0 494 394
 BEGIN
     BACKGROUNDCOLOR RGB(252,252,254)
     BORDERLESS
