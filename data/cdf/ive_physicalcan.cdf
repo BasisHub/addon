@@ -96,7 +96,11 @@ rem --- of event it is.  In this case, we're toggling checkboxes on/off in form 
 			notice$  = notify_base$
 			this_row = notice.row
 			this_col = notice.col
-			this_action$ = str( cycleData!.getItem( this_row * 4 + this_col ) )
+			if this_row>=0
+				this_action$ = str( cycleData!.getItem( this_row * 4 + this_col ) )
+			else
+				this_action$ = "0"
+			endif
 
 			rem --- Don't change a record with a panding action of 5 (delete)
 			if this_action$ <> "5" then
@@ -297,6 +301,7 @@ rem ==========================================================================
 					if cycleData!.getItem(i) = "5" then util.disableGridCell( cast(BBjStandardGrid, grid!), 0, row)
 				else
 					grid!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_UNCHECKED)
+					util.enableGridCell( cast(BBjStandardGrid, grid!), 0, row)
 				endif
 
 				grid!.setCellText(row, 0, "")

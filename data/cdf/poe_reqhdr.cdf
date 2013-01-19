@@ -214,6 +214,13 @@ vendor_id$=callpoint!.getUserInput()
 gosub vendor_info
 gosub disp_vendor_comments
 
+rem --- Now override the defaults with the Vendor info if not blank
+	if cvs(apm01a.ap_ship_via$,3)<>""
+		callpoint!.setColumnData("POE_REQHDR.AP_SHIP_VIA",apm01a.ap_ship_via$,1)
+	endif
+	if cvs(apm01a.fob$,3)<>""
+		callpoint!.setColumnData("POE_REQHDR.FOB",apm01a.fob$,1)
+	endif
 [[POE_REQHDR.<CUSTOM>]]
 vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")

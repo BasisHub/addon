@@ -140,6 +140,13 @@ vendor_id$=callpoint!.getUserInput()
 gosub vendor_info
 gosub disp_vendor_comments
 
+rem --- Now override the defaults with the Vendor info if not blank
+	if cvs(apm01a.ap_ship_via$,3)<>""
+		callpoint!.setColumnData("POE_RECHDR.AP_SHIP_VIA",apm01a.ap_ship_via$,1)
+	endif
+	if cvs(apm01a.fob$,3)<>""
+		callpoint!.setColumnData("POE_RECHDR.FOB",apm01a.fob$,1)
+	endif
 [[POE_RECHDR.DROPSHIP.AVAL]]
 rem --- if turning off dropship flag, clear devObject items
 

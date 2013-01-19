@@ -1,3 +1,13 @@
+[[SFS_PARAMS.PR_INTERFACE.AVAL]]
+rem --- If Interface is turned on, enable Std/Act flag
+
+	pr_inter$=callpoint!.getUserInput()
+	if pr_inter$<>"Y"
+		callpoint!.setColumnData("SFS_PARAMS.PAY_ACTSTD","S",1)
+		callpoint!.setColumnEnabled("SFS_PARAMS.PAY_ACTSTD",0)
+	else
+		callpoint!.setColumnEnabled("SFS_PARAMS.PAY_ACTSTD",1)
+	endif
 [[SFS_PARAMS.AREC]]
 rem --- Init new record
 	gl_installed$=callpoint!.getDevObject("gl_installed")

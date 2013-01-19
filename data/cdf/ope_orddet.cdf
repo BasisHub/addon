@@ -44,6 +44,18 @@ rem --- Enable repricing, options, lots
 	gosub enable_repricing
 	gosub enable_addl_opts
 	gosub able_lot_button
+
+rem --- Force focus when Warehouse Code entry is skipped
+
+	if callpoint!.getDevObject("skipWHCode") = "Y" then
+		callpoint!.setDevObject("skipWHCode","N"); rem --- skip warehouse code entry only once
+		if pos(user_tpl.line_type$="SP") then 
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.ITEM_ID",1)
+		else
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.ORDER_MEMO",1)
+		endif
+		break
+	endif
 [[OPE_ORDDET.AOPT-ADDL]]
 print "Det:AOPT.ADDL"; rem debug
 
@@ -331,7 +343,12 @@ rem --- Force focus on Warehouse when Line Code entry is skipped
 
 	if callpoint!.getDevObject("skipLineCode") = "Y" then
 		callpoint!.setDevObject("skipLineCode","N"); rem --- skip line code entry only once
-		callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.WAREHOUSE_ID")
+		if  callpoint!.getDevObject("skipWHCode") = "Y" then
+			callpoint!.setDevObject("skipWHCode","N")
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.ITEM_ID",1)
+		else
+			callpoint!.setFocus(num(callpoint!.getValidationRow()),"OPE_ORDDET.WAREHOUSE_ID",1)
+		endif
 
 		rem --- initialize detail line for default line_code
 		line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
@@ -774,6 +791,9 @@ rem --- Set defaults for new record
 	rem --- For new lines may want to skip line code entry the first time.
 	callpoint!.setDevObject("skipLineCode",user_tpl.skip_ln_code$)
 
+	rem --- For new lines may want to skip warehouse code entry the first time.
+	callpoint!.setDevObject("skipWHCode",user_tpl.skip_whse$)
+
 	rem --- Is the default line code for dropships?
 	file$ = "OPC_LINECODE"
 	dim opc_linecode$:fnget_tpl$(file$)
@@ -813,8 +833,7 @@ rem (Fires regardles of new or existing row.  Use callpoint!.getGridRowNewStatus
 rem --- See if we're coming back from Recalc button
 
 	if callpoint!.getDevObject("rcpr_row") <> ""
-rem --- per bug 5587 disable setFocus until Barista bug 5586 is fixed
-rem		callpoint!.setFocus(num(callpoint!.getDevObject("rcpr_row")),"OPE_ORDDET.UNIT_PRICE")
+		callpoint!.setFocus(num(callpoint!.getDevObject("rcpr_row")),"OPE_ORDDET.UNIT_PRICE")
 		callpoint!.setDevObject("rcpr_row","")
 		callpoint!.setDevObject("details_changed","Y")
 		break
@@ -884,6 +903,10 @@ rem --- Set buttons
 rem --- Set availability info
 
 	gosub set_avail
+
+rem --- May want to skip line code entry, and/or warehouse code entry, the first time.
+	callpoint!.setDevObject("skipLineCode",user_tpl.skip_ln_code$)
+	callpoint!.setDevObject("skipWHCode",user_tpl.skip_whse$)
 [[OPE_ORDDET.AGRE]]
 rem --- Clear/set flags
 
@@ -959,7 +982,7 @@ rem --- Warehouse and Item must be correct
 		rem callpoint!.setStatus("ABORT")
 
 		rem --- using this instead to force focus if item/whse invalid -- i.e., don't let user leave corrupt row
-		callpoint!.setFocus(this_row,"OPE_ORDDET.ITEM_ID")
+		callpoint!.setFocus(this_row,"OPE_ORDDET.ITEM_ID",1)
 		break; rem --- exit callpoint
 	endif
 

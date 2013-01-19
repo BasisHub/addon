@@ -1,3 +1,53 @@
+[[GLM_SUMMACTIVITY.AOPT-DETL]]
+rem --- Run the custom query to show details about the current cell
+
+	gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
+	curr_row=gridActivity!.getSelectedRow()
+	curr_col=gridActivity!.getSelectedColumn()
+	record_type$=gridActivity!.getCellText(curr_row,0)
+	record_type$=record_type$(pos("("=record_type$,-1,1)+1,1)
+
+rem --- call custom query
+
+	post_per$=str(curr_col-1:"00")
+
+	if pos(record_type$="024")>0
+rem --- Set proper record ID
+		record$=" "
+		current_year=num(callpoint!.getDevObject("gls_cur_yr"))
+		if record_type$="2"
+			current_year=current_year-1
+		else
+			if record_type$="4"
+				current_year=current_year+1
+			endif
+		endif
+		if callpoint!.getDevObject("gl_yr_closed") <> "Y"
+			current_year=current_year+1
+		endif
+		post_year$=str(current_year:"0000")
+		dim filter_defs$[3,2]
+		filter_defs$[0,0]="GLT_TRANSDETAIL.FIRM_ID"
+		filter_defs$[0,1]="='"+firm_id$+"'"
+		filter_defs$[0,2]="LOCK"
+		filter_defs$[1,0]="GLT_TRANSDETAIL.GL_ACCOUNT"
+		filter_defs$[1,1]="='"+callpoint!.getColumnData("GLM_SUMMACTIVITY.GL_ACCOUNT")+"'"
+		filter_defs$[1,2]="LOCK"
+		filter_defs$[2,0]="GLT_TRANSDETAIL.POSTING_YEAR"
+		filter_defs$[2,1]="='"+post_year$+"'"
+		filter_defs$[2,2]="LOCK"
+		filter_defs$[3,0]="GLT_TRANSDETAIL.POSTING_PER"
+		filter_defs$[3,1]="='"+post_per$+"'"
+		filter_defs$[3,2]="LOCK"
+
+		call stbl("+DIR_SYP")+"bax_query.bbj",
+:			gui_dev, form!,
+:			"GL_AMOUNT_INQ",
+:			"DEFAULT",
+:			table_chans$[all],
+:			sel_key$,
+:			filter_defs$[all]
+	endif
 [[GLM_SUMMACTIVITY.AWIN]]
 rem print 'show'
 
@@ -56,6 +106,7 @@ gridActivity!.setSelectedColumn(0)
 
 gridActivity!.setCallback(gridActivity!.ON_GRID_EDIT_START,"custom_event")
 gridActivity!.setCallback(gridActivity!.ON_GRID_EDIT_STOP,"custom_event")
+gridActivity!.setCallback(gridActivity!.ON_GRID_MOUSE_UP,"custom_event")
 
 rem ---  store desired data (mostly offsets of items in UserObj) in user_tpl
 tpl_str$="pers:c(5),pers_ofst:c(5),codes_ofst:c(5),codeList_ofst:c(5),grid_ctlID:c(5),grid_ofst:c(5),"+
@@ -89,6 +140,8 @@ rem format the grid, and set first column to be a pull-down
 gosub format_gridActivity
 gosub set_column1_list
 util.resizeWindow(Form!, SysGui!)
+
+callpoint!.setOptionEnabled("DETL",0)
 [[GLM_SUMMACTIVITY.AREC]]
 rem compare budget columns/types from gls01 with 1st/3rd char of key of glm18
 rem set the 4 listbuttons accordingly, and read/display corres glm02 data
@@ -149,7 +202,6 @@ else
 	callpoint!.setMessage("GL_REPLICATE")
 	callpoint!.setStatus("ABORT")
 endif
-
 [[GLM_SUMMACTIVITY.ASIZ]]
  if UserObj!<>null()
 	gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
@@ -162,7 +214,7 @@ rem process custom event
 rem see basis docs notice() function, noticetpl() function, notify event, grid control notify events for more info
 rem this routine is executed when callbacks have been set to run a 'custom event'
 rem analyze gui_event$ and notice$ to see which control's callback triggered the event, and what kind of event it is
-			
+
 dim gui_event$:tmpl(gui_dev)
 dim notify_base$:noticetpl(0,0)
 gui_event$=SysGUI!.getLastEventString()
@@ -172,48 +224,57 @@ if ctl_ID=num(user_tpl.grid_ctlID$)
 		notify_base$=notice(gui_dev,gui_event.x%)
 		dim notice$:noticetpl(notify_base.objtype%,gui_event.flags%)
 		notice$=notify_base$
-	endif
 
-gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
-curr_row=dec(notice.row$)
-curr_col=dec(notice.col$)
+		gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
+		curr_row=dec(notice.row$)
+		curr_col=dec(notice.col$)
 
-switch notice.code
+		switch notice.code
 	
-	case 7;rem edit stop
+			case 7;rem edit stop
 
-		if curr_col=0
-			record_type$=gridActivity!.getCellText(curr_row,curr_col)
-			record_type$=record_type$(pos("("=record_type$,-1,1)+1,2)
-			glm02_key$=firm_id$+callpoint!.getColumnData("GLM_SUMMACTIVITY.GL_ACCOUNT")+record_type$(1,1)
-			col_type$=record_type$(2,1)
-			x=curr_row
-			gosub build_vectGLSummary
-			gridActivity!.setCellText(curr_row,1,vectGLSummary!)
-			if pos(record_type$(1,1)="024",1)<>0
-				gridActivity!.setRowEditable(curr_row,0)
-				gridActivity!.setCellEditable(curr_row,curr_col,1)
-			else
-				gridActivity!.setRowEditable(curr_row,1)
-			endif
-		else
-			vectGLSummary!=SysGUI!.makeVector() 
-			for x=1 to num(user_tpl.pers$)+1
-				vectGLSummary!.addItem(gridActivity!.getCellText(curr_row,x))
-			next x
-			gosub calculate_end_bal
-			gridActivity!.setCellText(curr_row,1,vectGLSummary!)
-			gosub update_glm_acctsummary		
-		endif
-		gosub check_for_budgets
-	break
+				if curr_col=0
+					record_type$=gridActivity!.getCellText(curr_row,curr_col)
+					record_type$=record_type$(pos("("=record_type$,-1,1)+1,2)
+					glm02_key$=firm_id$+callpoint!.getColumnData("GLM_SUMMACTIVITY.GL_ACCOUNT")+record_type$(1,1)
+					col_type$=record_type$(2,1)
+					x=curr_row
+					gosub build_vectGLSummary
+					gridActivity!.setCellText(curr_row,1,vectGLSummary!)
+					if pos(record_type$(1,1)="024",1)<>0
+						gridActivity!.setRowEditable(curr_row,0)
+						gridActivity!.setCellEditable(curr_row,curr_col,1)
+					else
+						gridActivity!.setRowEditable(curr_row,1)
+					endif
+				else
+					vectGLSummary!=SysGUI!.makeVector() 
+					for x=1 to num(user_tpl.pers$)+1
+						vectGLSummary!.addItem(gridActivity!.getCellText(curr_row,x))
+					next x
+					gosub calculate_end_bal
+					gridActivity!.setCellText(curr_row,1,vectGLSummary!)
+					gosub update_glm_acctsummary		
+				endif
+				gosub check_for_budgets
+			break
 
-	case 8;rem edit start
-		if curr_col=0 then user_tpl.sv_record_tp$=gridActivity!.getCellText(curr_row,curr_col)
-	break
+			case 8;rem edit start
+				if curr_col=0 then user_tpl.sv_record_tp$=gridActivity!.getCellText(curr_row,curr_col)
+			break
 
-swend
+			case 14;rem mouse up on a cell
+				record_type$=gridActivity!.getCellText(curr_row,0)
+				record_type$=record_type$(pos("("=record_type$,-1,1)+1,1)
+				if curr_col=0 or curr_col=1 or curr_col=num(callpoint!.getDevObject("tot_pers"))+2 or pos(record_type$="024")=0
+					callpoint!.setOptionEnabled("DETL",0)
+				else
+					callpoint!.setOptionEnabled("DETL",1)
+				endif
+			break
 
+		swend
+	endif
 endif
 [[GLM_SUMMACTIVITY.<CUSTOM>]]
 update_glm_acctsummary:
@@ -349,12 +410,17 @@ rem -- this vector is refreshed from grid after an edit - used to drive glm-02 u
 		for y=0 to gridActivity!.getNumColumns()-1
 			vectActivity!.addItem(gridActivity!.getCellText(x,y))
 		next y
-	next x 
+	next x
+escape;rem ? vectActivity!
 	UserObj!.setItem(num(user_tpl.vectActivity_ofst$),vectActivity!)
 
 return
 
+rem =======================================================
 build_vectGLSummary:
+rem glm02_key$:	input
+rem col_type$:		input
+rem =======================================================
 
 	glm02_dev=fnget_dev("GLM_ACCTSUMMARY")
 	glm02_tpl$=fnget_tpl$("GLM_ACCTSUMMARY")

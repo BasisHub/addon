@@ -45,7 +45,7 @@ rem "update ivs-01 - ABC rec
 	gridABC!=UserObj!.getItem(num(user_tpl.gridABCOfst$))
 	gridRows=gridABC!.getNumRows()
 	if gridRows
-		readrecord(ivs01_dev,key=firm_id$+"IV02")ivs01a$; rem Advisory Locking
+		extractrecord(ivs01_dev,key=firm_id$+"IV02",dom=*next)ivs01a$; rem Advisory Locking
 		for row=0 to gridRows-1
 			field ivs01a$,"ABC_PERCENTS_"+str(row+1:"00")=gridABC!.getCellText(row,1)
 			field ivs01a$,"ABC_FACTORS_"+str(row+1:"00")=gridABC!.getCellText(row,2)
@@ -141,7 +141,7 @@ create_reports_vector:
 rem	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_len
 rem	more=1
 	dim ivs01a$:fattr(ivs01a$)
-	read record (ivs01_dev,key=firm_id$+"IV02") ivs01a$
+	read record (ivs01_dev,key=firm_id$+"IV02",dom=*next) ivs01a$
 	vectABC!=SysGUI!.makeVector()
 rem	vectABCSel!=SysGUI!.makeVector()
 	rows=0

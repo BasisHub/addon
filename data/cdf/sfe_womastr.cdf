@@ -754,13 +754,18 @@ rem --- Schedule the Work Order
 	callpoint!.setDevObject("order_no",callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"))
 	callpoint!.setDevObject("item_id",callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"))
 
+	sched_flag$=callpoint!.getColumnData("SFE_WOMASTR.SCHED_FLAG")
+	eststt_date$=callpoint!.getColumnData("SFE_WOMASTR.ESTSTT_DATE")
+	estcmp_date$=callpoint!.getColumnData("SFE_WOMASTR.ESTCMP_DATE")
+
 	dim dflt_data$[3,1]
 	dflt_data$[1,0]="SCHED_FLAG"
-	dflt_data$[1,1]=callpoint!.getColumnData("SFE_WOMASTR.SCHED_FLAG")
+	dflt_data$[1,1]=sched_flag$
 	dflt_data$[2,0]="ESTSTT_DATE"
-	dflt_data$[2,1]=callpoint!.getColumnData("SFE_WOMASTR.ESTSTT_DATE")
+	dflt_data$[2,1]=eststt_date$
 	dflt_data$[3,0]="ESTCMP_DATE"
-	dflt_data$[3,1]=callpoint!.getColumnData("SFE_WOMASTR.ESTCMP_DATE")
+	dflt_data$[3,1]=estcmp_date$
+
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		"SFR_SCHEDWO",
 :		stbl("+USER_ID"),
@@ -770,13 +775,15 @@ rem --- Schedule the Work Order
 :		"",
 :		dflt_data$[all]
 
-	if callpoint!.getDevObject("sched_method")<>""
-		start_date$=callpoint!.getDevObject("start_date")
-		comp_date$=callpoint!.getDevObject("comp_date")
-		sched_method$=callpoint!.getDevObject("sched_method")
+	sched_method$=callpoint!.getDevObject("sched_method")
+	start_date$=callpoint!.getDevObject("start_date")
+	comp_date$=callpoint!.getDevObject("comp_date")
+
+	if sched_method$<>"" and
+:	(sched_method$<>sched_flag$ or start_date$<>eststt_date$ or comp_date$<>estcmp_date$) then
+		callpoint!.setColumnData("SFE_WOMASTR.SCHED_FLAG",sched_method$,1)
 		callpoint!.setColumnData("SFE_WOMASTR.ESTSTT_DATE",start_date$,1)
 		callpoint!.setColumnData("SFE_WOMASTR.ESTCMP_DATE",comp_date$,1)
-		callpoint!.setColumnData("SFE_WOMASTR.SCHED_FLAG",sched_method$,1)
 		callpoint!.setStatus("MODIFIED")
 	endif
 [[SFE_WOMASTR.ORDER_NO.AVAL]]

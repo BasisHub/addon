@@ -330,7 +330,9 @@ rem print 'show';rem debug
 use ::ado_util.src::util
 
 rem --- set default line code based on param file
-callpoint!.setTableColumnAttribute("POE_PODET.PO_LINE_CODE","DFLT",str(callpoint!.getDevObject("dflt_po_line_code")))
+if cvs(callpoint!.getDevObject("dflt_po_line_code"),2)<>"" then
+	callpoint!.setTableColumnAttribute("POE_PODET.PO_LINE_CODE","DFLT",str(callpoint!.getDevObject("dflt_po_line_code")))
+endif
 [[POE_PODET.ITEM_ID.AINV]]
 rem --- Item synonym processing
 
@@ -338,11 +340,17 @@ rem --- Item synonym processing
 [[POE_PODET.AGRE]]
 rem --- check data to see if o.k. to leave row (only if the row isn't marked as deleted)
 
+poc_linecode_dev=fnget_dev("POC_LINECODE")
+dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+po_line_code$=callpoint!.getColumnData("POE_PODET.PO_LINE_CODE")
+read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
+line_type$=poc_linecode.line_type$
+
 if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	ok_to_write$="Y"
 
-	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)=""
+	if ok_to_write$="Y" and cvs(po_line_code$,3)=""
 		ok_to_write$="N"
 		focus_column$="POE_PODET.PO_LINE_CODE"
 		translate$="AON_LINE_CODE"
@@ -354,7 +362,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		translate$="AON_WAREHOUSE"
 	endif
 
-	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="SD")<>0 
+	if ok_to_write$="Y" and pos(line_type$="SD")<>0 
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.ITEM_ID"),3)=""
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ITEM_ID"
@@ -377,7 +385,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="N" 
+	if ok_to_write$="Y" and line_type$="N" 
 		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.UNIT_COST"
@@ -390,7 +398,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="O" 
+	if ok_to_write$="Y" and line_type$="O" 
 		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_PODET.UNIT_COST"
@@ -398,7 +406,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="NOV")<>0 
+	if ok_to_write$="Y" and pos(line_type$="NOV")<>0 
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_PODET.ORDER_MEMO"
@@ -407,7 +415,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 	endif
 
 	if ok_to_write$="Y" and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
-		if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),3)="DSNO")<>0
+		if ok_to_write$="Y" and pos(line_type$="DSNO")<>0
 			if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF"),3)="" 
 				ok_to_write$="N"
 				focus_column$="POE_PODET.SO_INT_SEQ_REF"
@@ -457,12 +465,6 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 endif
 
 rem --- look at wo number; if different than it was when we entered the row, update and/or remove link in corresponding wo detail line
-
-	poc_linecode_dev=fnget_dev("POC_LINECODE")
-	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
-	po_line_code$=callpoint!.getColumnData("POE_PODET.PO_LINE_CODE")
-	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
-	line_type$=poc_linecode.line_type$
 
 	wo_no_was$=callpoint!.getDevObject("start_wo_no")
 	wo_seq_ref_was$=callpoint!.getDevObject("start_wo_seq_ref")
@@ -773,7 +775,7 @@ rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 		case default; rem everything else
 			break
 	swend
-			callpoint!.setStatus("REFRESH")
+	callpoint!.setStatus("REFRESH")
 	callpoint!.setDevObject("line_type",poc_linecode.line_type$)
 
 return

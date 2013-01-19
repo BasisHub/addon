@@ -3,11 +3,14 @@ rem --- Recalculate totals
 
 	disc_amt = num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getUserInput())
+	prev_freight_amt=num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	gosub calculate_tax
 	gosub disp_totals
 
- 	callpoint!.setFocus("OPE_ORDHDR.DISCOUNT_AMT")
 	callpoint!.setDevObject("was_on_tot_tab","Y")
+	if freight_amt<>prev_freight_amt then
+	 	callpoint!.setFocus("<<DISPLAY>>.NET_SALES")
+	endif
 [[OPE_ORDHDR.DISCOUNT_AMT.AVAL]]
 rem --- Discount Amount cannot exceed Total Sales Amount
 
@@ -100,6 +103,7 @@ rem --- Clear availability information
 	callpoint!.setDevObject("was_on_tot_tab","N")
 	callpoint!.setDevObject("details_changed","N")
 	callpoint!.setDevObject("new_rec","Y")
+	callpoint!.setDevObject("create_quote","S")
 
 	gosub init_msgs
 [[OPE_ORDHDR.ARAR]]
@@ -283,6 +287,7 @@ rem --- Has customer and order number been entered?
 
 	if cvs(cust_id$, 2) = "" or cvs(order_no$, 2) = "" then
 		callpoint!.setStatus("ABORT")
+		break
 	endif
 
 rem --- Check Ship-to's
@@ -291,6 +296,8 @@ rem --- Check Ship-to's
 	shipto_no$  = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
 	gosub check_shipto
 	if user_tpl.shipto_warned
+		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_TYPE")
+		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
 
@@ -720,10 +727,11 @@ rem --- Restrict lookup to orders
 
 	if selected_key$<>"" then 
 		callpoint!.setStatus("RECORD:[" + selected_key$ +"]")
-		callpoint!.setStatus("ACTIVATE")
 	else
 		callpoint!.setStatus("ABORT")
 	endif
+	callpoint!.setStatus("ACTIVATE")
+
 [[OPE_ORDHDR.AOPT-RPRT]]
 rem --- Check for printing in next batch and set
 
@@ -1066,8 +1074,7 @@ end_of_reprintable:
 
 		cust_id$   = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 		order_no$  = callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
-		callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S")
-
+		callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE",str(callpoint!.getDevObject("create_quote")),1)
 		rem --- Set dflt invoice type in OrderHelper object
 
 		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
@@ -1082,7 +1089,7 @@ end_of_reprintable:
 		read record (arm01_dev,key=firm_id$+cust_id$, dom=*next) arm01a$
 
 		callpoint!.setColumnData("OPE_ORDHDR.SHIPMNT_DATE",user_tpl.def_ship$)
-		callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S")
+		callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE",str(callpoint!.getDevObject("create_quote")),1)
 		callpoint!.setColumnData("OPE_ORDHDR.ORDINV_FLAG","O")
 		callpoint!.setColumnData("OPE_ORDHDR.INVOICE_DATE",sysinfo.system_date$)
 		callpoint!.setColumnData("OPE_ORDHDR.AR_SHIP_VIA",arm01a.ar_ship_via$)
@@ -1228,7 +1235,7 @@ rem --- Create a default POS record
 
 	pointofsale_rec.firm_id$         = firm_id$
 	pointofsale_rec.pos_station$ = pad(station$, 16)
-	pointofsale_key$=pointofsale_rec.firm_id$+pointofsale_rec.default_station$
+	pointofsale_key$=pointofsale_rec.firm_id$+pointofsale_rec.pos_station$
 	extractrecord(pointofsale_dev,key=pointofsale_key$,dom=*next)x$; rem Advisory Locking
 	pointofsale_rec.skip_whse$       = "N"
 	pointofsale_rec.val_ctr_prt$     = sysinfo.printer_id$
@@ -1259,7 +1266,7 @@ rem --- Convert Quote?
 		if inv_type$="P" then 
 			msg_id$="OP_NO_CONVERT"
 			gosub disp_message
-			callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S")
+			callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S",1)
 			callpoint!.setStatus("REFRESH:OPE_ORDHDR.INVOICE_TYPE-ABORT")
 			callpoint!.setUserInput("S")
 		endif
@@ -1275,7 +1282,8 @@ rem --- Convert Quote?
 				callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG","")
 	
 				callpoint!.setColumnData("OPE_ORDHDR.PRINT_STATUS","N")
-				callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S")
+				callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S",1)
+
 				ope11_dev        = fnget_dev("OPE_ORDDET")
 				ivs01_dev        = fnget_dev("IVS_PARAMS")
 				opc_linecode_dev = fnget_dev("OPC_LINECODE")
@@ -1638,6 +1646,11 @@ rem ==========================================================================
 
 	if copy_ok$="Y" then 
 
+		msg_id$="OP_CREATE_QUOTE"
+		gosub disp_message
+		create_quote$=msg_opt$
+		callpoint!.setDevObject("create_quote",create_quote$)
+
 		if line_sign=1 then 
 			msg_id$ = "OP_REPRICE_ORD"
 			gosub disp_message
@@ -1660,7 +1673,7 @@ rem ==========================================================================
 			ope01a.freight_amt     = ope01a.freight_amt*line_sign
 			callpoint!.setDevObject("frt_amt",str(ope01a.freight_amt))
 			ope01a.invoice_date$   = user_tpl.def_ship$
-			ope01a.invoice_type$   = "S"
+			ope01a.invoice_type$ = create_quote$
 			ope01a.lock_status$ = "N"
 			ope01a.order_date$     = sysinfo.system_date$
 			ope01a.order_no$       = seq_id$
@@ -1779,6 +1792,10 @@ rem ==========================================================================
 					ope11a.commit_flag$ = "N"
 				endif
 
+				if create_quote$="P"
+					ope11a.commit_flag$ = "N"
+				endif
+
 				if user_tpl.blank_whse$="N" and cvs(ope11a.warehouse_id$,2)="" and 
 :					opc_linecode.dropship$="Y" and user_tpl.dropship_whse$="N"
 :				then
@@ -1791,7 +1808,7 @@ rem ==========================================================================
 				line_no_mask$=callpoint!.getDevObject("line_no_mask")
 				ope11a.line_no$=str(disp_line_no:line_no_mask$)
 				ope11_key$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
-				extractrecord(ope11_dev,key=ope11_key$,dom=*next)x$; rem Advisory Locking
+				extractrecord(ope11_dev,key=ope11_key$,dom=*next,knum="PRIMARY")x$; rem Advisory Locking
 
 				ope11a$ = field(ope11a$)
 
@@ -2016,6 +2033,7 @@ rem --- Should we call Credit Action?
 :			callpoint!.getColumnData("CREDIT_FLAG") <> "R" then
 		callpoint!.setDevObject("run_by", "order")
 		call user_tpl.pgmdir$+"opc_creditaction.aon", cust_id$, order_no$, table_chans$[all], callpoint!, action$, status
+		callpoint!.setStatus("ACTIVATE")
 		if status = 999 then goto std_exit
 
 	rem --- Delete the order

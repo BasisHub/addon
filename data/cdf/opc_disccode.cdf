@@ -1,8 +1,3 @@
-[[OPC_DISCCODE.DISC_PERCENT.AVAL]]
-if  num(callpoint!.getUserInput() )<0 
-:	callpoint!.setUserInput("0")
-	callpoint!.setStatus("REFRESH-ABORT")                           
-endif
 [[OPC_DISCCODE.<CUSTOM>]]
 #include std_missing_params.src
 [[OPC_DISCCODE.BSHO]]

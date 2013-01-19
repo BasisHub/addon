@@ -410,7 +410,7 @@ rem --- See if BOM is being used
 	read record(sfs_params,key=firm_id$+"SF00",dom=std_missing_params) sfs_params$
 
 	if sfs_params.bm_interface$<>"Y"
-		callpoint!.setTableColumnAttribute("SFM_CAL_CREATE.OP_CODE","DTAB","SFC_OPRTNCOD")
+		callpoint!.setTableColumnAttribute("SFM_CAL_COPY.OP_CODE","DTAB","SFC_OPRTNCOD")
 	endif
 
 	callpoint!.setDevObject("bm_interface",sfs_params.bm_interface$)

@@ -1,3 +1,58 @@
+[[SFE_LOADBAL.ARAR]]
+rem --- Default Op Code to first in the file
+
+	opcode_dev=callpoint!.getDevObject("opcode_chan")
+	dim opcode$:callpoint!.getDevObject("opcode_tpl")
+
+	read (opcode_dev,key=firm_id$,dom=*next)
+	read record (opcode_dev,dom=*next) opcode$
+	if firm_id$=opcode.firm_id$
+		callpoint!.setColumnData("SFE_LOADBAL.OP_CODE",opcode.op_code$,1)
+	endif
+[[SFE_LOADBAL.BFMC]]
+rem --- open files/init
+
+	num_files=5
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
+	open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
+	open_tables$[4]="SFE_WOSCHDL",open_opts$[4]="OTA"
+	open_tables$[5]="SFM_OPCALNDR",open_opts$[5]="OTA"
+
+	gosub open_tables
+
+	sfs_params=num(open_chans$[1])
+
+	dim sfs_params$:open_tpls$[1]
+	dim ivs_params$:open_tpls$[2]
+
+	read record (sfs_params,key=firm_id$+"SF00",dom=std_missing_params)sfs_params$
+	bm$=sfs_params.bm_interface$
+
+	if bm$="Y"
+		call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
+		bm$=info$[20]
+	endif
+
+	if bm$<>"Y"
+		callpoint!.setTableColumnAttribute("SFE_LOADBAL.OP_CODE","DTAB","SFC_OPRTNCOD")
+	endif
+
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	if bm$<>"Y"
+		open_tables$[1]="SFC_OPRTNCOD",open_opts$[1]="OTA"
+	else
+		open_tables$[1]="BMC_OPCODES",open_opts$[1]="OTA"
+	endif
+
+	callpoint!.setDevObject("bm",bm$)
+
+	gosub open_tables
+
+	callpoint!.setDevObject("opcode_chan",num(open_chans$[1]))
+	callpoint!.setDevObject("opcode_tpl",open_tpls$[1])
 [[SFE_LOADBAL.ZOOM_LEVEL.AVAL]]
 rem --- call graphing routine
 
@@ -280,50 +335,6 @@ rem ========================================================
 
 #include std_missing_params.src
 [[SFE_LOADBAL.BSHO]]
-rem --- open files/init
-
-	num_files=5
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA"
-	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
-	open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
-	open_tables$[4]="SFE_WOSCHDL",open_opts$[4]="OTA"
-	open_tables$[5]="SFM_OPCALNDR",open_opts$[5]="OTA"
-
-	gosub open_tables
-
-	sfs_params=num(open_chans$[1])
-
-	dim sfs_params$:open_tpls$[1]
-	dim ivs_params$:open_tpls$[2]
-
-	read record (sfs_params,key=firm_id$+"SF00",dom=std_missing_params)sfs_params$
-	bm$=sfs_params.bm_interface$
-
-	if bm$="Y"
-		call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
-		bm$=info$[20]
-	endif
-
-	if bm$<>"Y"
-		callpoint!.setTableColumnAttribute("SFE_LOADBAL.OP_CODE","DTAB","SFC_OPRTNCOD")
-	endif
-
-	num_files=1
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	if bm$<>"Y"
-		open_tables$[1]="SFC_OPRTNCOD",open_opts$[1]="OTA"
-	else
-		open_tables$[1]="BMC_OPCODES",open_opts$[1]="OTA"
-	endif
-
-	callpoint!.setDevObject("bm",bm$)
-
-	gosub open_tables
-
-	callpoint!.setDevObject("opcode_chan",num(open_chans$[1]))
-	callpoint!.setDevObject("opcode_tpl",open_tpls$[1])
-
 rem --- add bar chart to form
 
 	ctl_id=num(stbl("+CUSTOM_CTL"))

@@ -69,8 +69,8 @@ rem --- Remove Paid Transactions
 		rec_data.cur_stmt_amt$=callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT")
 		rec_data.book_balance$=callpoint!.getColumnData("GLM_BANKMASTER.BOOK_BALANCE")
 		writerecord(fnget_dev("GLM_BANKMASTER"))rec_data$
-		glm08_key$=rec_data.firm_id$+rec_data.budget_code$+rec_data.amt_or_units$
-		extractrecord(fnget_dev("GLM_BANKMASTER"),key=glm08_key$)x$; rem Advisory Locking
+		glm05_key$=rec_data.firm_id$+rec_data.gl_account$
+		extractrecord(fnget_dev("GLM_BANKMASTER"),key=glm05_key$)x$; rem Advisory Locking
 
 	endif
 [[GLM_BANKMASTER.CUR_STMT_AMT.AVAL]]

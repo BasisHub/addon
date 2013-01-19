@@ -83,11 +83,15 @@ rem --- Recalculate Tax Amount and Totals
 
 	disc_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getUserInput())
+	prev_freight_amt=num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
 	gosub calculate_tax
 	gosub disp_totals
 
-	callpoint!.setFocus("OPE_INVHDR.DISCOUNT_AMT")
 	callpoint!.setDevObject("was_on_tot_tab","Y")
+	if freight_amt<>prev_freight_amt then
+	 	callpoint!.setFocus("<<DISPLAY>>.NET_SALES")
+	endif
+
 [[OPE_INVHDR.FREIGHT_AMT.BINP]]
 rem --- Now we've been on the Totals tab
 
@@ -593,6 +597,7 @@ rem --- Has customer and order number been entered?
 
 	if cvs(cust_id$, 2) = "" or cvs(order_no$, 2) = "" then
 		callpoint!.setStatus("ABORT")
+		break
 	endif
 
 rem --- Check Ship-to's
@@ -601,6 +606,8 @@ rem --- Check Ship-to's
 	shipto_no$  = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
 	gosub check_shipto
 	if user_tpl.shipto_warned
+		callpoint!.setFocus("OPE_INVHDR.SHIPTO_TYPE")
+		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
 
@@ -1108,10 +1115,10 @@ rem --- Restrict lookup to orders
 
 	if selected_key$<>"" then 
 		callpoint!.setStatus("RECORD:[" + selected_key$ +"]")
-		callpoint!.setStatus("ACTIVATE")
 	else
 		callpoint!.setStatus("ABORT")
 	endif
+	callpoint!.setStatus("ACTIVATE")
 [[OPE_INVHDR.AWRI]]
 rem --- Write/Remove manual ship to file
 
@@ -2052,7 +2059,7 @@ rem ==========================================================================
 				line_no_mask$=callpoint!.getDevObject("line_no_mask")
 				ope11a.line_no$=str(disp_line_no:line_no_mask$)
 				ope11_key$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
-				extractrecord(ope11_dev,key=ope11_key$,dom=*next)x$; rem Advisory Locking
+				extractrecord(ope11_dev,knum="PRIMARY",key=ope11_key$,dom=*next)x$; rem Advisory Locking
 
 				ope11a$ = field(ope11a$)
 				write record (ope11_dev) ope11a$
@@ -2181,6 +2188,7 @@ rem --- Should we call Credit Action?
 	if user_tpl.credit_installed$ = "Y" and inv_type$ <> "P" and cvs(cust_id$, 2) <> "" and cvs(order_no$, 2) <> "" then
 		callpoint!.setDevObject("run_by", "invoice")
 		call user_tpl.pgmdir$+"opc_creditaction.aon", cust_id$, order_no$, table_chans$[all], callpoint!, action$, status
+		callpoint!.setStatus("ACTIVATE")
 		if status = 999 then goto std_exit
 
 	rem --- Delete the order
@@ -2564,8 +2572,8 @@ rem --- Create a default POS record
 	sysinfo$=stbl("+SYSINFO")
 
 	pointofsale_rec.firm_id$         = firm_id$
-	pointofsale_rec.default_station$ = pad(station$, 16)
-	pointofsale_key$=pointofsale_rec.firm_id$+pointofsale_rec.default_station$
+	pointofsale_rec.pos_station$ = pad(station$, 16)
+	pointofsale_key$=pointofsale_rec.firm_id$+pointofsale_rec.pos_station$
 	extractrecord(pointofsale_dev,key=pointofsale_key$,dom=*next)x$; rem Advisory Locking
 	pointofsale_rec.skip_whse$       = "N"
 	pointofsale_rec.val_ctr_prt$     = sysinfo.printer_id$

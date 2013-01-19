@@ -1,8 +1,25 @@
+[[SFR_SCHEDWO.ESTSTT_DATE.AVAL]]
+rem --- Completion date can't be before start date
+	if callpoint!.getColumnData("SFR_SCHEDWO.ESTCMP_DATE")<>"" and
+:	callpoint!.getColumnData("SFR_SCHEDWO.ESTCMP_DATE")<callpoint!.getUserInput() then
+		msg_id$="SF_ESTCMP_B4_ESTSTT"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+[[SFR_SCHEDWO.ESTCMP_DATE.AVAL]]
+rem --- Start date can't be after completion date
+	if callpoint!.getColumnData("SFR_SCHEDWO.ESTSTT_DATE")<>"" and
+:	callpoint!.getColumnData("SFR_SCHEDWO.ESTSTT_DATE")>callpoint!.getUserInput() then
+		msg_id$="SF_ESTCMP_B4_ESTSTT"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 [[SFR_SCHEDWO.SCHED_FLAG.AVAL]]
 rem --- Set default Start and Completion Date for Manual
 
-	if cvs(callpoint!.getColumnData("SFR_SCHEDWO.SCHED_FLAG"),2)<>"M" and
-:		callpoint!.getUserInput()="M"
+	if callpoint!.getColumnData("SFR_SCHEDWO.SCHED_FLAG")<>callpoint!.getUserInput() then
 		ivm_itemwhse=fnget_dev("IVM_ITEMWHSE")
 		dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
 		read record (ivm_itemwhse,key=firm_id$+callpoint!.getDevObject("default_wh")+
@@ -13,6 +30,24 @@ rem --- Set default Start and Completion Date for Manual
 		if new_date$<>"N"
 			callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE",stbl("+SYSTEM_DATE"),1)
 			callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE",new_date$,1)
+			switch pos(callpoint!.getUserInput()="MFB")
+				case 1
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE",stbl("+SYSTEM_DATE"),1)
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE",new_date$,1)
+					break
+				case 2
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE",stbl("+SYSTEM_DATE"),1)
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE","",1)
+					break
+				case 3
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE","",1)
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE",new_date$,1)
+					break
+				case default
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE","",1)
+					callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE","",1)
+					break
+			swend
 		endif
 	endif
 [[SFR_SCHEDWO.BSHO]]

@@ -21,7 +21,7 @@ rem --- Main process
 		while 1
 			read record(apt_invdet,end=*break) apt_invdet$
 			if apt_invdet.firm_id$+apt_invdet.ap_type$+apt_invdet.vendor_id$+apt_invdet.ap_inv_no$<>hdr_key$ break
-			open_invs=open_invs+(apt_invdet.trans_amt+apt_invdet.trans_disc)
+			open_invs=open_invs+apt_invdet.trans_amt
 		wend
 	wend
 

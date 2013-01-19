@@ -23,12 +23,17 @@ rem --- Set Custom Query for BOM Item Number
 [[SFR_WOTRANSHIST.REPORT_SEQ.AVAL]]
 rem ---- If By Bill and a whse hasn't been entered, default whse
 
-whse_columndat$=callpoint!.getColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID")
+whse_columndat1$=callpoint!.getColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID_1")
+whse_columndat2$=callpoint!.getColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID_2")
 
 if callpoint!.getUserInput()="B"
-	if cvs(whse_columndat$,2)="" then 
+	if cvs(whse_columndat1$,2)="" then 
 		whse$=callpoint!.getDevObject("dflt_whse")
-		callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID",whse$,1)
+		callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID_1",whse$,1)
+	endif
+	if cvs(whse_columndat2$,2)="" then 
+		whse$=callpoint!.getDevObject("dflt_whse")
+		callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID_2",whse$,1)
 	endif
 endif
 [[SFR_WOTRANSHIST.<CUSTOM>]]
@@ -102,4 +107,5 @@ rem           (form builds list w/o regards to the params)
 rem --- Set default Warehouse
 
 	whse$=callpoint!.getDevObject("dflt_whse")
-	callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID",whse$,1)
+	callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID_1",whse$,1)
+	callpoint!.setColumnData("SFR_WOTRANSHIST.WAREHOUSE_ID_2",whse$,1)

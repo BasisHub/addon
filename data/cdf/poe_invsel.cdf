@@ -1,3 +1,42 @@
+[[POE_INVSEL.PO_NO.BINQ]]
+rem --- Do custom query
+
+	query_id$="PO_INVRECPT"
+	query_mode$="DEFAULT"
+	dim filter_defs$[2,2]
+	filter_defs$[1,0] = "POT_RECHDR.FIRM_ID"
+	filter_defs$[1,1] = "='"+callpoint!.getColumnData("POE_INVSEL.FIRM_ID")+"'"
+	filter_defs$[1,2] = "LOCK"
+	filter_defs$[2,0] = "POT_RECHDR.VENDOR_ID"
+	filter_defs$[2,1] = "='" + callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+"'"
+	filter_defs$[2,2] = "LOCK"
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		form!,
+:		query_id$,
+:		query_mode$,
+:		table_chans$[all],
+:		sel_key$,filter_defs$[all]
+
+	if sel_key$<>""
+		call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:			"POT_RECHDR",
+:			"PRIMARY",
+:			pot_rec_key$,
+:			table_chans$[all],
+:			status$
+
+		dim pot_rec_key$:pot_rec_key$
+		pot_rec_key$=sel_key$
+		callpoint!.setColumnData("POE_INVSEL.PO_NO",pot_rec_key.po_no$,1)
+		callpoint!.setColumnData("POE_INVSEL.RECEIVER_NO",pot_rec_key.receiver_no$,1)
+		gosub accum_receiver_tot; rem accumulate total for po/receiver# entered
+		gosub calc_grid_tots
+		gosub disp_totals
+		callpoint!.setStatus("MODIFIED")
+	endif
+	callpoint!.setStatus("ACTIVATE-ABORT")
 [[POE_INVSEL.AGRN]]
 rem --- enable/disable Invoice Detail button
 
@@ -202,7 +241,7 @@ wend
 
 
 
-if pos(".AVAL"=event$)<>0
+if pos(".AVAL"=event$)<>0 or pos(".BINQ"=event$)<>0
 	if foundone
 		read record (pot_rechdr_dev,key=firm_id$+pot_recdet.po_no$+pot_recdet.receiver_no$,dom=*next)pot_rechdr$
 		find record (apc_termscode_dev,key=firm_id$+"C"+pot_rechdr.ap_terms_code$,dom=*next)apc_termscode$

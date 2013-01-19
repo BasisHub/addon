@@ -1,3 +1,21 @@
+[[ARM_CUSTMAST.AOPT-STMT]]
+rem On Demand Statement
+
+cp_cust_id$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+user_id$=stbl("+USER_ID")
+key_pfx$=cp_cust_id$
+
+dim dflt_data$[2,1]
+dflt_data$[1,0]="CUSTOMER_ID"
+dflt_data$[1,1]=cp_cust_id$
+call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:                       "ARR_STMT_DEMAND",
+:                       user_id$,
+:                   	"",
+:                       key_pfx$,
+:                       table_chans$[all],
+:                       "",
+:                       dflt_data$[all]
 [[ARM_CUSTMAST.BDEL]]
 rem  --- Check for Open AR Invoices
 	delete_msg$=""

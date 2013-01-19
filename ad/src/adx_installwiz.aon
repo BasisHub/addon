@@ -1,11 +1,14 @@
 rem ==========================================================================
 rem --- adx_installwiz.aon 
-rem --- Utility to automate installation (not upgrade yet) of Addon.
+rem --- Utility to automate new Addon installation.
 rem --- 
 rem --- AddonSoftware Version 11.0
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 rem ==========================================================================
+
+    use java.io.File
+    use ::ado_file.src::FileObject
 
     setesc std_error
     seterr std_error
@@ -13,40 +16,91 @@ rem ==========================================================================
 rem --- Initializations
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
+    dir_syp$=stbl("+DIR_SYP")
+    sysGUI! = BBjAPI().getSysGui()
 
 rem --- Get user inputs
 
-    newLocation$=Option!.getOptionData("NEW_INSTALL_LOC") + "/aon"
+    dbName$=Option!.getOptionData("DB_NAME")
+    appDesc$=Option!.getOptionData("APP_DESC")
+    newAonLoc$=Option!.getOptionData("NEW_INSTALL_LOC")
+    newAonDir$=newAonLoc$ + "/aon"
+    newBarDir$=newAonLoc$ + "/barista"
     newFirm$=Option!.getOptionData("NEW_FIRM_ID")
     copyData%=int(num(Option!.getOptionData("COPY_DATA")))
     help%=int(num(Option!.getOptionData("APP_HELP")))
+    rdAdmin!=cast(BBjAdminBase, callpoint!.getDevObject("rdAdmin"))
 
-	rem --- Flip directory path separators for newLocation
-	filePath$=newLocation$
+	rem --- Flip directory path separators for newAonDir
+	filePath$=newAonDir$
 	gosub fix_path
-	newLocation$=filePath$
+	newAonDir$=filePath$
     
-rem --- Recursively copy oldLocation to newLocation
+rem --- Start progress meter
+    meter_title$=Translate!.getTranslation("AON_INSTALL_WIZ")
+    meter_total_recs=5
+    if cvs(newFirm$,2)<>"" then meter_total_recs=meter_total_recs+1
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter
+
+rem --- Open log file
+    location$ = newAonDir$
+    gosub open_log
+    
+rem --- Recursively copy oldLocation to newAonDir
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_COPY_AON")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
 
 	rem --- Set oldLocation to aon directory under the current download directory
-    sep$ = java.io.File.separator
+    sep$ = File.separator
     bbjHome$=java.lang.System.getProperty("basis.BBjHome")
     oldLocation$ = bbjHome$ + sep$ + "apps" + sep$ + "aon"
 
-    call pgmdir$+"adc_copyaon.aon",oldLocation$,newLocation$,copyData%,help%,rdForm!,0,status
+    call pgmdir$+"adc_copyaon.aon",oldLocation$,newAonDir$,copyData%,help%,rdForm!,0,status
     
 rem --- Update new addon.syn file
 
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDATE_SYN")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
 	rem --- Set updateSynFile to addon.syn at the new install location
-    updateSynFile$=newLocation$+"/config/addon.syn"
+    updateSynFile$=newAonDir$+"/config/addon.syn"
 
 	rem --- Set upgrade off
     upgrade%=0
     oldSynFile$=""
-    
+
+    rem --- Get old aon path from SYSDIR/DIR line
+    oldAonDir$=""
+	synDev=unt, more=0
+	open(synDev,isz=-1,err=*next)updateSynFile$; more=1
+	while more
+		read(synDev,end=*break)record$
+        
+		rem --- process SYSDIR/DIR lines
+		if(pos("DIR="=record$) = 1 or pos("SYSDIR="=record$) = 1) then
+            xpos = pos("="=record$)
+            oldAonDir$ = cvs(record$(xpos+1),3)
+            break
+		endif
+ 	wend
+	close(synDev)
+   
 	rem --- Build stblMap HashMap of SYSSTBL/STBL data paths, keyed by STBL
 	rem --- Build pfxList ArrayList of SYSPFX/PREFIX data paths
-	search$="",replace$=""
+	search$=oldAonDir$
+    replace$=newAonDir$+"/"
     use java.util.HashMap
     declare HashMap stblMap!
 	stblMap!=new HashMap()
@@ -58,15 +112,8 @@ rem --- Update new addon.syn file
 	while more
 		read(synDev,end=*break)record$
 
-        rem --- get old aon path from SYSDIR/DIR line
 		key$ = record$(1, pos("="=record$) - 1)
 		switch (BBjAPI().TRUE)
-			case key$ = "DIR"
-			case key$ = "SYSDIR"
-				xpos = pos("="=record$)
-				search$ = cvs(record$(xpos+1),3)
-				replace$ = newLocation$+"/"
-				break
 			case key$ = "STBL"
 			case key$ = "SYSSTBL"
 				xpos=pos(" "=record$)
@@ -74,7 +121,13 @@ rem --- Update new addon.syn file
 				record$=cvs(record$(pos("="=record$,1,2)+1),3)
 				aList!=new ArrayList()
 				aList!.add(record$)
-				gosub search_replace
+                if cvs(stbl$,3)="+MDI_TITLE" then
+                    rem --- Set +MDI_TITLE to appDesc$
+                    record$=appDesc$
+                else
+                    rem --- Do search and replace to update aon path
+                    gosub search_replace
+                endif
 				aList!.add(record$)
 				stblMap!.put(stbl$, aList!)
 				break
@@ -91,23 +144,46 @@ rem --- Update new addon.syn file
 				rem --- other lines ... skip
 				break
 		swend
-
-		rem --- process SYSSTBL/STBL lines
-		if(pos("STBL="=record$) = 1 or pos("SYSSTBL="=record$) = 1) then
-		endif
-
-		rem --- process SYSPFX/PREFIX lines
-		if(pos("PREFIX"=record$) = 1 or pos("SYSPFX"=record$) = 1) then
-		endif
 	wend
 	close(synDev)
 
     call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
     
+rem --- Add new application to Barista Installation Manager
+rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of it's terminating release
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_BIM_CREATE")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+    rem --- Launch bai_install_manager.bbj
+	bar_dir$=dir("")
+	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
+	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
+:	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
+:	+" "+$22$+bar_dir$+"/sys/prog/bai_install_manager.bbj"+$22$
+	user_arg$=" - "
+:	+" -u"+rdAdmin!.getUser()
+:	+" -id"+dbName$
+:	+" -desc"+$22$+appDesc$+$22$
+:	+" -loc"+$22$+newAonLoc$+$22$
+	scall_result=scall(run_arg$+user_arg$,err=*next)
+    
 rem --- Update new sync XML files
+rem --- BIM clears barista/settings dir, so must do this step after BIMing and before auto-sync
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDATE_XML")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
 
 	rem --- Set newSyncLoc to sync directory at the new install location
-    newSyncLoc$=newLocation$+"/data/sync"
+    newSyncLoc$=newAonDir$+"/data/sync"
 
 	rem --- Set upgrade off
     upgrade%=0
@@ -116,11 +192,54 @@ rem --- Update new sync XML files
 
     call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
 
+rem --- Launch auto-sync in new barista for the new addon.syn
+rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to bypass bar_login.bbj in the new barista
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_AUTO_SYNC")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+    rem --- Launch bax_dd_synch_auto.bbj
+	bar_dir$=newBarDir$
+	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
+	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
+:	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
+:	+" "+$22$+bar_dir$+"/sys/prog/bax_launch_task.bbj"+$22$
+	user_arg$=" - "
+:	+" -u"+rdAdmin!.getUser()
+:	+" -p"+rdAdmin!.getPassword()
+:	+" -t"+"DDM_TABLES"
+:	+" -y"+"A"
+:	+" -a" +"bax_dd_synch_auto.bbj"+$22$+" - "+" -f"+"../aon/config/addon.syn"+" -b"+$22$
+:	+" -w"
+	scall_result=scall(run_arg$+user_arg$,err=*next)
+
 rem --- Setup new firm
 
-    call pgmdir$+"adc_firmsetup.aon",newLocation$+"/data",newFirm$,copyData%,rdForm!,1,status
+    if cvs(newFirm$,2)<>"" then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_SETUP_FIRM")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        call pgmdir$+"adc_firmsetup.aon",newAonDir$+"/data",newFirm$,copyData%,rdForm!,0,status
+    endif
     
 done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)"Installwiz log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
 
     goto std_exit
 
@@ -140,6 +259,63 @@ search_replace: rem --- Search record$ for search$, and replace with replace$
 	if(pos) then
 		record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
 	endif
+    return
+	
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+    logDir$ = FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/installwiz_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"Installwiz log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+    print(log_dev)"New Database Name: " + dbName$
+    print(log_dev)"New Description: " + appDesc$
+    print(log_dev)"New aon Location: " + newAonDir$
+    print(log_dev)"New Firm ID: " + newFirm$
+    if copyData% then
+        print(log_dev)"Install demo data."
+    else
+        print(log_dev)"Do not install demo data."
+    endif
+    if help% then
+        print(log_dev)"Install Addon help file."
+    else
+        print(log_dev)"Do not install Addon help file."
+    endif
+    print(log_dev)
+
     return
     
 rem #include std_error.src

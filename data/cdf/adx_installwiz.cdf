@@ -1,3 +1,10 @@
+[[ADX_INSTALLWIZ.DB_NAME.AVAL]]
+rem --- Validate new database name
+
+	db_name$ = callpoint!.getUserInput()
+	gosub validate_new_db_name
+	callpoint!.setUserInput(db_name$)
+	if abort then break
 [[ADX_INSTALLWIZ.ASHO]]
 rem --- Don't allow running the utility if Addon doesn't exist at Basis download location
 
@@ -43,6 +50,35 @@ rem --- Declare Java classes used
 	use java.io.File
 	use ::ado_file.src::FileObject
 [[ADX_INSTALLWIZ.<CUSTOM>]]
+validate_new_db_name: rem --- Validate new database name
+
+	abort=0
+
+	rem --- Barista uses all upper case db names
+	db_name$=cvs(db_name$,4)
+
+	rem --- Don't allow database if it's already in Enterprise Manager
+	call stbl("+DIR_SYP")+"bac_em_login.bbj",SysGUI!,Form!,rdAdmin!,rd_status$
+	if rd_status$="ADMIN" then
+		db! = rdAdmin!.getDatabase(db_name$,err=dbNotFound)
+
+		rem --- This db already exists, so don't allow it
+		msg_id$="AD_DB_EXISTS"
+		gosub disp_message
+	endif
+
+	rem --- Abort, need to re-enter database name
+	callpoint!.setColumnData("ADX_INSTALLWIZ.DB_NAME", db_name$)
+	callpoint!.setFocus("ADX_INSTALLWIZ.DB_NAME")
+	callpoint!.setStatus("ABORT")
+	abort=1
+
+dbNotFound:
+	rem --- Okay to use this db name, it doesn't already exist
+	callpoint!.setDevObject("rdAdmin", rdAdmin!)
+
+	return
+
 validate_aon_dir: rem --- Validate directory for aon new install location
 
 	abort=0

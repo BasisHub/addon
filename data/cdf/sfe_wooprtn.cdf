@@ -47,6 +47,7 @@ rem --- Deal with Schedule Records
 	run_time=SfUtils.opUnits(hrs_per_pc,pcs_per_hr,yield)
 	move_time=num(callpoint!.getColumnData("SFE_WOOPRTN.MOVE_TIME"))
 	add_date$=callpoint!.getColumnData("SFE_WOOPRTN.REQUIRE_DATE")
+
 	if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOOPRTN.SETUP_TIME")
 		gosub remove_sched
 		gosub add_sched
@@ -68,6 +69,21 @@ rem --- Check for valid quantity
 		gosub disp_message
 		callpoint!.setColumnData("SFE_WOOPRTN.PCS_PER_HOUR","1",1)
 		callpoint!.setFocus(callpoint!.getValidationRow(),"SFE_WOOPRTN.PCS_PER_HOUR")
+	endif
+
+rem --- Deal with Schedule Records
+
+	setup_time=num(callpoint!.getColumnData("SFE_WOOPRTN.SETUP_TIME"))
+	hrs_per_pc=num(callpoint!.getColumnData("SFE_WOOPRTN.HRS_PER_PCE"))
+	pcs_per_hr=num(callpoint!.getUserInput())
+	yield=num(callpoint!.getDevObject("wo_est_yield"))
+	run_time=SfUtils.opUnits(hrs_per_pc,pcs_per_hr,yield)
+	move_time=num(callpoint!.getColumnData("SFE_WOOPRTN.MOVE_TIME"))
+	add_date$=callpoint!.getColumnData("SFE_WOOPRTN.REQUIRE_DATE")
+
+	if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOOPRTN.SETUP_TIME")
+		gosub remove_sched
+		gosub add_sched
 	endif
 
 rem --- Calculate totals
@@ -137,6 +153,7 @@ rem ===============================================================
 	dir_rate=num(callpoint!.getColumnData("SFE_WOOPRTN.DIRECT_RATE"))
 	ovhd_rate=num(callpoint!.getColumnData("SFE_WOOPRTN.OVHD_RATE"))
 	setup=num(callpoint!.getColumnData("SFE_WOOPRTN.SETUP_TIME"))
+	setup_time=setup
 	gosub calc_totals
 
 	return
@@ -163,12 +180,13 @@ rem ===============================================================
 	new_tot_dols=SfUtils.opTotStdCost(sched_qty,hrs_per_pc,dir_rate,ovhd_rate,pcs_per_hr,yield,setup)
 	callpoint!.setColumnData("SFE_WOOPRTN.TOTAL_TIME",str(new_tot_time))
 	callpoint!.setColumnData("SFE_WOOPRTN.TOT_STD_COST",str(new_tot_dols))
-	if old_tot_time<>new_tot_time
+
+rem	if old_tot_time<>new_tot_time * need to make this happen every time - 12/12/12
 		gosub remove_sched
 rem jpb need to add the correct records back in - not happening right now.
-rem jpb None of the input variables are being sent in
+rem jpb None of the input variables are being sent in * I think this is happening now - need more testing - 12/12/12
 		gosub add_sched
-	endif
+rem	endif * need to make this happen every time - 12/12/12
 
 	return
 
@@ -198,29 +216,34 @@ rem move_time:	input
 rem add_date$:	input
 rem ===============================================================
 
-	sfm05_dev=fnget_dev("SFE_WOSCHDL")
-	dim sfm05a$:fnget_tpl$("SFE_WOSCHDL")
-	queue_time=num(callpoint!.getColumnData("<<DISPLAY>>.QUEUE_TIME"))
+	if callpoint!.getColumnData("SFE_WOOPRTN.LINE_TYPE")="S"
+		sfm05_dev=fnget_dev("SFE_WOSCHDL")
+		dim sfm05a$:fnget_tpl$("SFE_WOSCHDL")
+		queue_time=num(callpoint!.getColumnData("<<DISPLAY>>.QUEUE_TIME"))
 
-	sfm05a.firm_id$=firm_id$
-	sfm05a.op_code$=callpoint!.getColumnData("SFE_WOOPRTN.OP_CODE")
-	sfm05a.sched_date$=add_date$
-	sfm05a.wo_no$=callpoint!.getColumnData("SFE_WOOPRTN.WO_NO")
-	sfm05a.oper_seq_ref$=callpoint!.getColumnData("SFE_WOOPRTN.INTERNAL_SEQ_NO")
-	sfm05a.queue_time=queue_time
-	sfm05a.setup_time=setup_time
-	sfm05a.runtime_hrs=run_time
-	sfm05a.move_time=move_time
-	sfm05a$=field(sfm05a$)
-	write record (sfm05_dev) sfm05a$
+		sfm05a.firm_id$=firm_id$
+		sfm05a.op_code$=callpoint!.getColumnData("SFE_WOOPRTN.OP_CODE")
+		sfm05a.sched_date$=add_date$
+		sfm05a.wo_no$=callpoint!.getColumnData("SFE_WOOPRTN.WO_NO")
+		sfm05a.oper_seq_ref$=callpoint!.getColumnData("SFE_WOOPRTN.INTERNAL_SEQ_NO")
+		sfm05a.queue_time=queue_time
+		sfm05a.setup_time=setup_time
+		sfm05a.runtime_hrs=run_time
+		sfm05a.move_time=move_time
+		sfm05a$=field(sfm05a$)
+		write record (sfm05_dev) sfm05a$
+	endif
 
 	return
 [[SFE_WOOPRTN.AGDR]]
 rem --- Display Queue time
 
 	op_code$=callpoint!.getColumnData("SFE_WOOPRTN.OP_CODE")
-	gosub disp_queue
+	add_date$=callpoint!.getColumnData("SFE_WOOPRTN.REQUIRE_DATE")
+	setup=num(callpoint!.getColumnData("SFE_WOOPRTN.SETUP_TIME"))
+	move_time=num(callpoint!.getColumnData("SFE_WOOPRTN.MOVE_TIME"))
 
+	gosub disp_queue
 [[SFE_WOOPRTN.BSHO]]
 use ::sfo_SfUtils.aon::SfUtils
 declare SfUtils sfUtils!

@@ -14,59 +14,11 @@ rem --- if dropshipping, retrieve/display specified shipto address
 		dim rec$:fattr(arm_custship$)
 		rec$=arm_custship$
 		gosub fill_dropship_address
-		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$)
-	endif
-
-	callpoint!.setStatus("REFRESH")
-[[POE_POHDR.PO_NO.AINP]]
-rem --- enable Create PO from Req button
-
-	callpoint!.setOptionEnabled("CRPO",1)
-[[POE_POHDR.AOPT-CRPO]]
-rem --- Lookup requisiton
-rem --- Can't have Barista do the lookup because it also validates, which fails after req is deleted when po is created.
-
-	po_no$=cvs(callpoint!.getColumnData("POE_POHDR.PO_NO"),3)
-	vendor_id$=cvs(callpoint!.getColumnData("POE_POHDR.VENDOR_ID"),3)
-
-	if po_no$=""
-		msg_id$="PO_INVAL_PO"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	else
-		rd_key$ = ""
-		if vendor_id$=""
-			key_pfx$  = firm_id$
-			key_id$   = "PRIMARY"
-		else
-			key_pfx$  = firm_id$ + vendor_id$
-			key_id$   = "AO_VEND_REQ"
-		endif
-
-		call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:			gui_dev,
-:			Form!,
-:			"POE_REQHDR",
-:			"LOOKUP",
-:			table_chans$[all],
-:			key_pfx$,
-:			key_id$,
-:			rd_key$
-
-		if rd_key$<>"" then 
-			if vendor_id$=""
-				req_no$=rd_key$(3)
-			else
-				req_no$=rd_key$(9)
-			endif
-			callpoint!.setColumnData("POE_POHDR.REQ_NO",req_no$)
-			callpoint!.setStatus("REFRESH")
-		endif
+		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$,1)
 	endif
 [[POE_POHDR.BPFX]]
 rem --- disable buttons
 
-	callpoint!.setOptionEnabled("CRPO",0)
 	callpoint!.setOptionEnabled("QPRT",0)
 	callpoint!.setOptionEnabled("DPRT",0)
 [[POE_POHDR.ORD_DATE.AVAL]]
@@ -247,6 +199,13 @@ vendor_id$=callpoint!.getUserInput()
 gosub vendor_info
 gosub disp_vendor_comments
 
+rem --- Now override the defaults with the Vendor info if not blank
+	if cvs(apm01a.ap_ship_via$,3)<>""
+		callpoint!.setColumnData("POE_POHDR.AP_SHIP_VIA",apm01a.ap_ship_via$,1)
+	endif
+	if cvs(apm01a.fob$,3)<>""
+		callpoint!.setColumnData("POE_POHDR.FOB",apm01a.fob$,1)
+	endif
 [[POE_POHDR.DROPSHIP.AVAL]]
 rem --- if turning off dropship flag, clear devObject items
 
@@ -262,21 +221,19 @@ gosub enable_dropship_fields
 [[POE_POHDR.CUSTOMER_ID.AVAL]]
 rem --- if dropshipping, retrieve/display specified shipto address
 
-	callpoint!.setColumnData("POE_POHDR.ORDER_NO","")
-	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO","")
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_1","")
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_2","")
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_3","")
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_4","")
-	callpoint!.setColumnData("POE_POHDR.DS_CITY","")
-	callpoint!.setColumnData("POE_POHDR.DS_NAME","")
-	callpoint!.setColumnData("POE_POHDR.DS_STATE_CD","")
-	callpoint!.setColumnData("POE_POHDR.DS_ZIP_CODE","")
+	callpoint!.setColumnData("POE_POHDR.ORDER_NO","",1)
+	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_1","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_2","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_3","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_4","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_CITY","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_NAME","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_STATE_CD","",1)
+	callpoint!.setColumnData("POE_POHDR.DS_ZIP_CODE","",1)
 
 	tmp_customer_id$=callpoint!.getUserInput()
 	gosub shipto_cust;rem will refresh address w/ that from order once order# is entered
-	
-	callpoint!.setStatus("REFRESH")
 [[POE_POHDR.ORDER_NO.AVAL]]
 rem --- if dropshipping, retrieve specified sales order and display shipto address
 
@@ -357,7 +314,7 @@ gosub  form_inits
 rem --- set total order amt
 
 total_amt=num(callpoint!.getDevObject("total_amt"))
-callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOTAL",str(total_amt))
+callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOTAL",str(total_amt),1)
 tamt!=callpoint!.getDevObject("tamt")
 tamt!.setValue(total_amt)
 
@@ -373,9 +330,6 @@ rem --- enable/disable buttons
 	if po_no$<>""
 		callpoint!.setOptionEnabled("QPRT",1)
 		callpoint!.setOptionEnabled("DPRT",1)
-		if vendor_id$<>""
-			callpoint!.setOptionEnabled("CRPO",0)
-		endif
 	endif
 [[POE_POHDR.AWRI]]
 rem --- need to put out poe_poprint record
@@ -384,28 +338,10 @@ gosub queue_for_printing
 
 
 [[POE_POHDR.REQ_NO.AVAL]]
-rem --- Validate requisition number
-rem --- Can't have Barista validate since req is deleted after po is created.
-
-	req_no$=cvs(callpoint!.getUserInput(),3)
-	valid_req=1
-
-	if req_no$<>""
-		valid_req=0
-		poe_reqhdr_dev=fnget_dev("POE_REQHDR")
-		find (poe_reqhdr_dev,key=firm_id$+req_no$,dom=*endif) 
-		valid_req=1
-	endif
-
-	if !(valid_req)
-		msg_id$="PO_INVAL_REQ_LK"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	endif
-
 rem --- Load PO from requisition
 
-if req_no$<>"" and valid_req
+req_no$=cvs(callpoint!.getUserInput(),3)
+if req_no$<>""
 
 	msg_id$="PO_CREATE_REQ"
 	gosub disp_message
@@ -546,16 +482,16 @@ rem --- Set Defaults
 		if pos(firm_id$+vendor_id$=tmp$)<>1 then goto done_apm_vendhist
 		read record(apm02_dev,key=tmp$)apm02a$
 	done_apm_vendhist:
-	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOTAL","")
-	callpoint!.setColumnData("POE_POHDR.WAREHOUSE_ID",ivs_params.warehouse_id$)
+	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOTAL","",1)
+	callpoint!.setColumnData("POE_POHDR.WAREHOUSE_ID",ivs_params.warehouse_id$,1)
 	gosub whse_addr_info
-	callpoint!.setColumnData("POE_POHDR.ORD_DATE",sysinfo.system_date$)
-	callpoint!.setColumnData("POE_POHDR.AP_TERMS_CODE",apm02a.ap_terms_code$)
-	callpoint!.setColumnData("POE_POHDR.PO_FRT_TERMS",pos_params.po_frt_terms$)
-	callpoint!.setColumnData("POE_POHDR.AP_SHIP_VIA",pos_params.ap_ship_via$)
-	callpoint!.setColumnData("POE_POHDR.FOB",pos_params.fob$)
-	callpoint!.setColumnData("POE_POHDR.HOLD_FLAG",pos_params.hold_flag$)
-	callpoint!.setColumnData("POE_POHDR.PO_MSG_CODE",pos_params.po_msg_code$)
+	callpoint!.setColumnData("POE_POHDR.ORD_DATE",sysinfo.system_date$,1)
+	callpoint!.setColumnData("POE_POHDR.AP_TERMS_CODE",apm02a.ap_terms_code$,1)
+	callpoint!.setColumnData("POE_POHDR.PO_FRT_TERMS",pos_params.po_frt_terms$,1)
+	callpoint!.setColumnData("POE_POHDR.AP_SHIP_VIA",pos_params.ap_ship_via$,1)
+	callpoint!.setColumnData("POE_POHDR.FOB",pos_params.fob$,1)
+	callpoint!.setColumnData("POE_POHDR.HOLD_FLAG",pos_params.hold_flag$,1)
+	callpoint!.setColumnData("POE_POHDR.PO_MSG_CODE",pos_params.po_msg_code$,1)
 [[POE_POHDR.WAREHOUSE_ID.AVAL]]
 gosub whse_addr_info
 [[POE_POHDR.REQD_DATE.AVAL]]
@@ -758,17 +694,16 @@ vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")
 	dim apm01a$:fnget_tpl$("APM_VENDMAST")
 	read record(apm01_dev,key=firm_id$+vendor_id$,dom=*next)apm01a$
-	callpoint!.setColumnData("<<DISPLAY>>.V_ADDR1",apm01a.addr_line_1$)
-	callpoint!.setColumnData("<<DISPLAY>>.V_ADDR2",apm01a.addr_line_2$)
+	callpoint!.setColumnData("<<DISPLAY>>.V_ADDR1",apm01a.addr_line_1$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.V_ADDR2",apm01a.addr_line_2$,1)
 	if cvs(apm01a.city$+apm01a.state_code$+apm01a.zip_code$,3)<>""
-		callpoint!.setColumnData("<<DISPLAY>>.V_CITY",cvs(apm01a.city$,3)+", "+apm01a.state_code$+"  "+apm01a.zip_code$)
+		callpoint!.setColumnData("<<DISPLAY>>.V_CITY",cvs(apm01a.city$,3)+", "+apm01a.state_code$+"  "+apm01a.zip_code$,1)
 	else
-		callpoint!.setColumnData("<<DISPLAY>>.V_CITY","")
+		callpoint!.setColumnData("<<DISPLAY>>.V_CITY","",1)
 	endif
-	callpoint!.setColumnData("<<DISPLAY>>.V_CONTACT",apm01a.contact_name$)
-	callpoint!.setColumnData("<<DISPLAY>>.V_PHONE",apm01a.phone_no$)
-	callpoint!.setColumnData("<<DISPLAY>>.V_FAX",apm01a.fax_no$)
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("<<DISPLAY>>.V_CONTACT",apm01a.contact_name$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.V_PHONE",apm01a.phone_no$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.V_FAX",apm01a.fax_no$,1)
 return
 
 disp_vendor_comments:	
@@ -785,20 +720,18 @@ disp_vendor_comments:
 			cmt_text$ = cmt_text$ + cvs(apm_vendcmts.std_comments$,3)+$0A$
 		endif				
 	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$,1)
 return
 
 purch_addr_info: rem --- get and display Purchase Address Info
 	apm05_dev=fnget_dev("APM_VENDADDR")
 	dim apm05a$:fnget_tpl$("APM_VENDADDR")
 	read record(apm05_dev,key=firm_id$+vendor_id$+purch_addr$,dom=*next)apm05a$
-	callpoint!.setColumnData("<<DISPLAY>>.PA_ADDR1",apm05a.addr_line_1$)
-	callpoint!.setColumnData("<<DISPLAY>>.PA_ADDR2",apm05a.addr_line_2$)
-	callpoint!.setColumnData("<<DISPLAY>>.PA_CITY",apm05a.city$)
-	callpoint!.setColumnData("<<DISPLAY>>.PA_STATE",apm05a.state_code$)
-	callpoint!.setColumnData("<<DISPLAY>>.PA_ZIP",apm05a.zip_code$)
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("<<DISPLAY>>.PA_ADDR1",apm05a.addr_line_1$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.PA_ADDR2",apm05a.addr_line_2$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.PA_CITY",apm05a.city$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.PA_STATE",apm05a.state_code$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.PA_ZIP",apm05a.zip_code$,1)
 return
 
 whse_addr_info: rem --- get and display Warehouse Address Info
@@ -810,12 +743,11 @@ whse_addr_info: rem --- get and display Warehouse Address Info
 		warehouse_id$=callpoint!.getColumnData("POE_POHDR.WAREHOUSE_ID")
 	endif
 	read record(ivc_whsecode_dev,key=firm_id$+"C"+warehouse_id$,dom=*next)ivc_whsecode$
-	callpoint!.setColumnData("<<DISPLAY>>.W_ADDR1",ivc_whsecode$.addr_line_1$)
-	callpoint!.setColumnData("<<DISPLAY>>.W_ADDR2",ivc_whsecode$.addr_line_2$)
-	callpoint!.setColumnData("<<DISPLAY>>.W_CITY",ivc_whsecode$.city$)
-	callpoint!.setColumnData("<<DISPLAY>>.W_STATE",ivc_whsecode$.state_code$)
-	callpoint!.setColumnData("<<DISPLAY>>.W_ZIP",ivc_whsecode$.zip_code$)
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("<<DISPLAY>>.W_ADDR1",ivc_whsecode$.addr_line_1$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.W_ADDR2",ivc_whsecode$.addr_line_2$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.W_CITY",ivc_whsecode$.city$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.W_STATE",ivc_whsecode$.state_code$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.W_ZIP",ivc_whsecode$.zip_code$,1)
 return
 
 dropship_shipto: rem --- get and display shipto from Sales Order if dropship indicated, and OE installed
@@ -830,7 +762,7 @@ dropship_shipto: rem --- get and display shipto from Sales Order if dropship ind
 
 	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*next)ope_ordhdr$
 	shipto_no$=ope_ordhdr.shipto_no$
-	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO",shipto_no$)
+	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO",shipto_no$,1)
 	if cvs(shipto_no$,3)=""
 		gosub shipto_cust
 	endif
@@ -839,17 +771,15 @@ dropship_shipto: rem --- get and display shipto from Sales Order if dropship ind
 		dim rec$:fattr(ope_ordship$)
 		rec$=ope_ordship$
 		gosub fill_dropship_address
-		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$)
+		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$,1)
 	endif
 	if num(shipto_no$,err=*endif)>0 and num(shipto_no$,err=*endif)<99
 		read record (arm_custship_dev,key=firm_id$+tmp_customer_id$+shipto_no$,dom=*next)arm_custship$
 		dim rec$:fattr(arm_custship$)
 		rec$=arm_custship$
 		gosub fill_dropship_address
-		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$)
+		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$,1)
 	endif
-
-	callpoint!.setStatus("REFRESH")
 return
 
 shipto_cust:
@@ -861,18 +791,18 @@ shipto_cust:
 	dim rec$:fattr(arm_custmast$)
 	rec$=arm_custmast$
 	gosub fill_dropship_address
-	callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.customer_name$)
+	callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.customer_name$,1)
 
 return
 
 fill_dropship_address:
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_1",rec.addr_line_1$)
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_2",rec.addr_line_2$)
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_3",rec.addr_line_3$)
-	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_4",rec.addr_line_4$)
-	callpoint!.setColumnData("POE_POHDR.DS_CITY",rec.city$)
-	callpoint!.setColumnData("POE_POHDR.DS_STATE_CD",rec.state_code$)
-	callpoint!.setColumnData("POE_POHDR.DS_ZIP_CODE",rec.zip_code$)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_1",rec.addr_line_1$,1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_2",rec.addr_line_2$,1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_3",rec.addr_line_3$,1)
+	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_4",rec.addr_line_4$,1)
+	callpoint!.setColumnData("POE_POHDR.DS_CITY",rec.city$,1)
+	callpoint!.setColumnData("POE_POHDR.DS_STATE_CD",rec.state_code$,1)
+	callpoint!.setColumnData("POE_POHDR.DS_ZIP_CODE",rec.zip_code$,1)
 return
 
 get_dropship_order_lines:
@@ -978,10 +908,6 @@ else
 		callpoint!.setColumnEnabled("POE_POHDR.SHIPTO_NO",0)
 	endif
 endif
-
-
-callpoint!.setStatus("REFRESH")
-
 return
 
 queue_for_printing:
