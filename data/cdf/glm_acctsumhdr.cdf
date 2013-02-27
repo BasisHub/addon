@@ -255,27 +255,16 @@ rem format the grid, and set first column to be a pull-down
 [[GLM_ACCTSUMHDR.ARAR]]
 rem --- Set initial values for period and year
 
+	fiscal_per$=callpoint!.getDevObject("gls_cur_per")
+	fiscal_yr$=callpoint!.getDevObject("gls_cur_yr")
 	callpoint!.setColumnData("<<DISPLAY>>.CURRENT_PER",stbl("+PER"),1)
 	callpoint!.setColumnData("<<DISPLAY>>.CURRENT_YEAR",stbl("+YEAR"),1)
-	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_PER",stbl("+PER"),1)
-	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_YEAR",stbl("+YEAR"),1)
+	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_PER",fiscal_per$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_YEAR",fiscal_yr$,1)
 
 	gosub display_mtd_ytd
 
-rem --- gl acct# has come in from main grid (glm_acct); get acct master, set acct tp and detail flag
-rem --- then gosub fill_gridActivity, which reads corres. glm-02 recs and displays in the grid
-
-rem	glm01_dev=fnget_dev("GLM_ACCTSUMHDR")
-rem	dim glm01a$:fnget_tpl$("GLM_ACCTSUMHDR")
-
-rem	read record (glm01_dev,key=firm_id$+callpoint!.getColumnData("GLM_ACCTSUMHDR.GL_ACCOUNT"),dom=*next)glm01a$
-rem	if cvs(glm01a.gl_account$,3)<>""
-rem		callpoint!.setColumnData("GLM_ACCTSUMHDR.GL_ACCT_TYPE",glm01a.gl_acct_type$)
-rem		callpoint!.setColumnData("GLM_ACCTSUMHDR.DETAIL_FLAG",glm01a.detail_flag$)
-		gosub fill_gridActivity
-rem	else
-rem			callpoint!.setStatus("ABORT")
-rem	endif
+	gosub fill_gridActivity
 [[GLM_ACCTSUMHDR.BSHO]]
 rem --- Open/Lock files
 
@@ -318,6 +307,7 @@ find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 	callpoint!.setDevObject("tot_pers",gls01a.total_pers$)
 	callpoint!.setDevObject("gl_yr_closed",gls01a.gl_yr_closed$)
 	callpoint!.setDevObject("gls_cur_yr",gls01a.current_year$)
+	callpoint!.setDevObject("gls_cur_per",gls01a.current_per$)
 [[<<DISPLAY>>.CURRENT_PER.AVAL]]
 rem --- set variables
 

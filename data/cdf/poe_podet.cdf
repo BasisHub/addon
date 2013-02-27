@@ -158,11 +158,12 @@ rem --- otherwise, reverse the OO quantity in ivm-02
 
 	on_rcvr$="N"
 	item$=callpoint!.getColumnData("POE_PODET.ITEM_ID")
+	po_no$=callpoint!.getColumnData("POE_PODET.PO_NO")
 	poe_recdet=fnget_dev("POE_RECDET")
-	read(poe_recdet,key=firm_id$+item$,knum="ITEM_PO",dom=*next)
+	read(poe_recdet,key=firm_id$+item$+po_no$,knum="ITEM_PO",dom=*next)
 	while 1
 		k$=key(poe_recdet,end=*break)
-		if pos(firm_id$+item$=k$)<>1 break
+		if pos(firm_id$+item$+po_no$=k$)<>1 break
 		on_rcvr$="Y"
 		break
 	wend

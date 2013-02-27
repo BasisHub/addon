@@ -2087,11 +2087,18 @@ rem ==========================================================================
 
 	print "in do_picklist..."; rem debug
 
+	set_reprint_flag$=""
+	set_reprint_flag_old_value$=""
 	if callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "Y" then 
+		set_reprint_flag$="Y"
+		set_reprint_flag_value$=callpoint!.getColumnData("OPE_ORDHDR.REPRINT_FLAG")
 		callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG", "Y")
 	endif
 
 	call user_tpl.pgmdir$+"opc_picklist.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
+	if set_reprint_flag$<>""
+		callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG", set_reprint_flag_value$)
+	endif
 	if status = 999 then goto std_exit
 
 	if status = 998 return

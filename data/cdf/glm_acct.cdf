@@ -38,7 +38,8 @@ rem --- set variables
 	per$=callpoint!.getUserInput()
 	callpoint!.setDevObject("cur_per",per$)
 	x$=stbl("+PER",per$)
-
+	tns!=BBjAPI().getNamespace("GLM_ACCT","drill",1)
+	tns!.setValue("cur_per",per$)
 	gosub check_modified
 
 	gosub display_mtd_ytd
@@ -54,10 +55,12 @@ rem -- Ensure valid period
 [[GLM_ACCT.ARAR]]
 rem --- Set initial values for period and year
 
+	fiscal_per$=callpoint!.getDevObject("gls_cur_per")
+	fiscal_yr$=callpoint!.getDevObject("gls_cur_yr")
 	callpoint!.setColumnData("<<DISPLAY>>.CURRENT_PER",stbl("+PER"),1)
 	callpoint!.setColumnData("<<DISPLAY>>.CURRENT_YEAR",stbl("+YEAR"),1)
-	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_PER",stbl("+PER"),1)
-	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_YEAR",stbl("+YEAR"),1)
+	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_PER",fiscal_per$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_YEAR",fiscal_yr$,1)
 
 	gosub display_mtd_ytd
 [[GLM_ACCT.BDEL]]
@@ -433,3 +436,4 @@ find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 	callpoint!.setDevObject("tot_pers",gls01a.total_pers$)
 	callpoint!.setDevObject("gl_yr_closed",gls01a.gl_yr_closed$)
 	callpoint!.setDevObject("gls_cur_yr",gls01a.current_year$)
+	callpoint!.setDevObject("gls_cur_per",gls01a.current_per$)
