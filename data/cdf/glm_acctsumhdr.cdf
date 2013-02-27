@@ -314,7 +314,8 @@ rem --- set variables
 	per$=callpoint!.getUserInput()
 	callpoint!.setDevObject("cur_per",per$)
 	x$=stbl("+PER",per$)
-
+	tns!=BBjAPI().getNamespace("GLM_ACCT","drill",1)
+	tns!.setValue("cur_per",per$)
 	gosub check_modified
 
 	gosub display_mtd_ytd
