@@ -1,4 +1,32 @@
 [[GLM_BANKMASTER.AOPT-POST]]
+rem --- Check Statement Date and Amount
+
+	pri_date$=callpoint!.getColumnData("GLM_BANKMASTER.PRI_END_DATE")
+	cur_date$=callpoint!.getColumnData("GLM_BANKMASTER.CURSTM_DATE")
+	amt=num(callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT"))
+
+	dim msg_tokens$[0]
+	msg_opt$=""
+	if cur_date$<pri_date$
+		msg_id$="GL_BANK_PRIDATE"
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
+	dim msg_tokens$[0]
+	msg_opt$=""
+	if amt<=0
+		msg_id$="GL_BANK_NEGBAL"
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
 rem " --- Recalc Summary Info
 
 	gosub calc_totals
@@ -85,6 +113,7 @@ rem " --- Calculate Summary info
 rem " --- Recalc Summary Info
 
 	gosub calc_totals
+
 [[GLM_BANKMASTER.AOPT-DETL]]
 rem " --- Recalc Summary Info
 
@@ -147,7 +176,9 @@ rem - Set up disabled controls
 	dctl$[6]="<<DISPLAY>>.NO_TRANS"
 	gosub disable_ctls
 [[GLM_BANKMASTER.<CUSTOM>]]
+rem ====================================================
 check_date: rem --- Check Statement Ending Date
+rem ====================================================
 
 	status=0
 	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",pgm(-2),"GL","","",status
@@ -168,7 +199,9 @@ check_date: rem --- Check Statement Ending Date
 	endif
 	return
 
+rem ====================================================
 calc_totals: rem --- Calculate Totals for Summary Information
+rem ====================================================
 
 	glt05_dev=user_tpl.glt05_dev
 	glt15_dev=user_tpl.glt15_dev
@@ -219,7 +252,9 @@ rem --- Setup display variables
 	if end_bal>num(callpoint!.getColumnData("GLM_BANKMASTER.BOOK_BALANCE")) over_under$="OVER"
 	return
 
+rem ====================================================
 disable_ctls:rem --- disable selected control
+rem ====================================================
 
 	for dctl=1 to 6
 		dctl$=dctl$[dctl]
@@ -292,8 +327,8 @@ rem --- Back out transactions for period after statement date"
 	total_amt=total_amt-amount
 
 rem --- All Done"
-	callpoint!.setColumnData("GLM_BANKMASTER.BOOK_BALANCE",str(total_amt))
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("GLM_BANKMASTER.BOOK_BALANCE",str(total_amt),1)
+	callpoint!.setStatus("MODIFIED")
 
 rem " --- Recalc Summary Info
 
