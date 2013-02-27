@@ -1,3 +1,30 @@
+[[APM_VENDMAST.AOPT-HCPY]]
+rem --- Go run the Hard Copy form
+
+	vend$=callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID")
+	temp$=callpoint!.getColumnData("APM_VENDMAST.TEMP_VEND")
+	if temp$="Y"
+		type$="T"
+	else
+		type$="P"
+	endif
+
+	dim dflt_data$[3,1]
+	dflt_data$[1,0]="VENDOR_ID_1"
+	dflt_data$[1,1]=vend$
+	dflt_data$[2,0]="VENDOR_ID_2"
+	dflt_data$[2,1]=vend$
+	dflt_data$[3,0]="VENDOR_TYPE"
+	dflt_data$[3,1]=type$
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"APR_DETAIL",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
 [[APM_VENDMAST.VENDOR_ID.AVAL]]
 if num(callpoint!.getUserInput(),err=*endif)=0
 	callpoint!.setMessage("INPUT_ERR_MAIN")
@@ -144,7 +171,7 @@ endif
 [[APM_VENDMAST.BSHO]]
 rem --- Open/Lock files
 
-	files=7,begfile=1,endfile=files
+	files=8,begfile=1,endfile=files
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="APE_INVOICEHDR";rem --- ape-01
 	files$[2]="APT_INVOICEHDR";rem --- apt-01
@@ -153,6 +180,7 @@ rem --- Open/Lock files
 	files$[5]="GLS_PARAMS";rem --- gls-01
 	files$[6]="IVS_PARAMS";rem --- ivs-01
 	files$[7]="APC_TYPECODE"
+	files$[8]="APE_INVOICEDET"
 
 	for wkx=begfile to endfile
 		options$[wkx]="OTA"
@@ -174,6 +202,7 @@ rem --- Open/Lock files
 
 rem --- Dimension miscellaneous string templates
 	dim aps01a$:templates$[4],gls01a$:templates$[5],ivs01c$:templates$[6]
+	dim ape11a$:templates$[8]
 
 rem --- Retrieve parameter data
 	dim info$[20]
@@ -200,7 +229,7 @@ rem --- Retrieve parameter data
 :		user_tpl.multi_types$=aps01a.multi_types$,user_tpl.multi_dist$=aps01a.multi_dist$,
 :		user_tpl.ret_flag$=aps01a.ret_flag$,user_tpl.use_replen$=aps01a.use_replen$,
 :		user_tpl.gl_total_pers$=gls01a.total_pers$,user_tpl.gl_current_per$=gls01a.current_per$,
-:		user_tpl.gl_current_year$=gls01a.current_year$,user_tpl.gl_max_len$=gls01a.max_acct_len$
+:		user_tpl.gl_current_year$=gls01a.current_year$,user_tpl.gl_max_len$=str(max(10,len(ape11a.gl_account$)):"00")
 	
 rem --- used to also open ivm-03 if iv$="Y", but using alt keys on ivm-01 instead
 rem --- knum=3 is firm/vendor/item, knum=9 is firm/buyer/vendor/item

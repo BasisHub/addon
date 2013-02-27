@@ -829,17 +829,32 @@ rem --- read thru selected sales order and build list of lines for which line co
 		if ope_orddet.firm_id$+ope_orddet.ar_type$+ope_orddet.customer_id$+ope_orddet.order_no$<>
 :			ope_ordhdr.firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$ then break
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
-			read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
-			order_lines!.addItem(ope_orddet.internal_seq_no$)
-			item_list$=item_list$+ope_orddet.item_id$
-			work_var=pos(ope_orddet.item_id$=item_list$,len(ope_orddet.item_id$),0)
-			if work_var>1
-				work_var$=cvs(ope_orddet.item_id$,2)+"("+str(work_var)+")"
+			if cvs(ope_orddet.item_id$,2)="" then
+				rem --- Non-stock item
+				order_lines!.addItem(ope_orddet.internal_seq_no$)
+				nonstk_list$=nonstk_list$+ope_orddet.order_memo$
+				work_var=pos(ope_orddet.order_memo$=item_list$,len(ope_orddet.order_memo$),0)
+				if work_var>1
+					work_var$=cvs(ope_orddet.order_memo$,2)+"("+str(work_var)+")"
+				else
+					work_var$=cvs(ope_orddet.order_memo$,2)
+				endif
+				order_items!.addItem(work_var$)
+				order_list!.addItem(Translate!.getTranslation("AON_NON-STOCK")+": "+work_var$)
 			else
-				work_var$=cvs(ope_orddet.item_id$,2)
+				rem --- Inventoried item
+				read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
+				order_lines!.addItem(ope_orddet.internal_seq_no$)
+				item_list$=item_list$+ope_orddet.item_id$
+				work_var=pos(ope_orddet.item_id$=item_list$,len(ope_orddet.item_id$),0)
+				if work_var>1
+					work_var$=cvs(ope_orddet.item_id$,2)+"("+str(work_var)+")"
+				else
+					work_var$=cvs(ope_orddet.item_id$,2)
+				endif
+				order_items!.addItem(work_var$)
+				order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 			endif
-			order_items!.addItem(work_var$)
-			order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 		endif
 	wend
 

@@ -433,8 +433,33 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs
 		callpoint!.setColumnData("POE_REQDET.WAREHOUSE_ID",callpoint!.getHeaderColumnData("POE_REQHDR.WAREHOUSE_ID"))
 		callpoint!.setColumnData("POE_REQDET.WO_NO","")
 		callpoint!.setColumnData("POE_REQDET.WK_ORD_SEQ_REF","")
+		callpoint!.setStatus("REFRESH")
 
+	rem --- If a V line type immediately follows an S line type containing an item with this vendor's part number,
+	rem --- that number is automatically displayed.
+	if line_type$="V" and callpoint!.getValidationRow()>0  then
+		rem --- Get line code for previous row
+		dtl!=gridVect!.getItem(0)
+		dim rec$:dtlg_param$[1,3]
+		rec$=dtl!.getItem(callpoint!.getValidationRow()-1)
+		prev_row_line_code$=rec.po_line_code$
+		prev_row_item_id$=rec.item_id$
 
+		rem --- Get line type for previous row's line code
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		read record(poc_linecode_dev,key=firm_id$+prev_row_line_code$,dom=*next)poc_linecode$
+		prev_row_line_type$=poc_linecode.line_type$
+
+		rem --- Get this vendor's part number for item
+		if prev_row_line_type$="S" then
+			ivm_itemvend_dev=fnget_dev("IVM_ITEMVEND")
+			dim ivm_itemvend$:fnget_tpl$("IVM_ITEMVEND")
+			vendor_id$=callpoint!.getHeaderColumnData("POE_REQHDR.VENDOR_ID")
+			read record(ivm_itemvend_dev,key=firm_id$+vendor_id$+prev_row_item_id$,dom=*next)ivm_itemvend$
+			callpoint!.setColumnData("POE_REQDET.ORDER_MEMO",ivm_itemvend.vendor_item$)
+		endif
+	endif
 endif
 
 if callpoint!.getDevObject("line_type")="O" 

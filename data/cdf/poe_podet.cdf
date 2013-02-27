@@ -319,7 +319,7 @@ status=0
 
 call stbl("+DIR_PGM")+"poc_itemvend.aon","R","P",vendor_id$,ord_date$,item_id$,conv_factor,unit_cost,qty_ordered,callpoint!.getDevObject("iv_prec"),status
 
-callpoint!.setColumnData("POE_PODET.UNIT_COST",str(unit_cost))
+callpoint!.setColumnData("POE_PODET.UNIT_COST",str(unit_cost),1)
 
 gosub update_header_tots
 callpoint!.setDevObject("qty_this_row",num(callpoint!.getUserInput()))
@@ -643,7 +643,6 @@ rem I think if line type changes on existing row, need to uncommit whatever's on
 gosub update_line_type_info
 
 if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),2) then
-rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("POE_PODET.PO_LINE_CODE"),2) then
 		callpoint!.setColumnData("POE_PODET.PO_LINE_CODE",callpoint!.getUserInput())
 		callpoint!.setColumnData("POE_PODET.CONV_FACTOR","")
 		callpoint!.setColumnData("POE_PODET.FORECAST","")
@@ -665,6 +664,32 @@ rem if cvs(callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID"),3)="" or cvs(callp
 		callpoint!.setColumnData("POE_PODET.WO_NO","")
 		callpoint!.setColumnData("POE_PODET.WK_ORD_SEQ_REF","")
 		callpoint!.setStatus("REFRESH")
+
+	rem --- If a V line type immediately follows an S line type containing an item with this vendor's part number,
+	rem --- that number is automatically displayed.
+	if line_type$="V" and callpoint!.getValidationRow()>0  then
+		rem --- Get line code for previous row
+		dtl!=gridVect!.getItem(0)
+		dim rec$:dtlg_param$[1,3]
+		rec$=dtl!.getItem(callpoint!.getValidationRow()-1)
+		prev_row_line_code$=rec.po_line_code$
+		prev_row_item_id$=rec.item_id$
+
+		rem --- Get line type for previous row's line code
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		read record(poc_linecode_dev,key=firm_id$+prev_row_line_code$,dom=*next)poc_linecode$
+		prev_row_line_type$=poc_linecode.line_type$
+
+		rem --- Get this vendor's part number for item
+		if prev_row_line_type$="S" then
+			ivm_itemvend_dev=fnget_dev("IVM_ITEMVEND")
+			dim ivm_itemvend$:fnget_tpl$("IVM_ITEMVEND")
+			vendor_id$=callpoint!.getHeaderColumnData("POE_POHDR.VENDOR_ID")
+			read record(ivm_itemvend_dev,key=firm_id$+vendor_id$+prev_row_item_id$,dom=*next)ivm_itemvend$
+			callpoint!.setColumnData("POE_PODET.ORDER_MEMO",ivm_itemvend.vendor_item$)
+		endif
+	endif
 endif
 
 gosub enable_by_line_type

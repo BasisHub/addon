@@ -1,3 +1,23 @@
+[[ARM_CUSTMAST.AOPT-HCPY]]
+rem --- Go run the Hard Copy form
+
+	callpoint!.setDevObject("cust_id",callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID"))
+	cust$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+
+	dim dflt_data$[2,1]
+	dflt_data$[1,0]="CUSTOMER_ID_1"
+	dflt_data$[1,1]=cust$
+	dflt_data$[2,0]="CUSTOMER_ID_2"
+	dflt_data$[2,1]=cust$
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"ARR_DETAIL",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
 [[ARM_CUSTMAST.AOPT-STMT]]
 rem On Demand Statement
 

@@ -56,6 +56,8 @@ rem --- Set initial values for period and year
 
 	callpoint!.setColumnData("<<DISPLAY>>.CURRENT_PER",stbl("+PER"),1)
 	callpoint!.setColumnData("<<DISPLAY>>.CURRENT_YEAR",stbl("+YEAR"),1)
+	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_PER",stbl("+PER"),1)
+	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_YEAR",stbl("+YEAR"),1)
 
 	gosub display_mtd_ytd
 [[GLM_ACCT.BDEL]]
@@ -384,6 +386,7 @@ rem --- Display MTD and YTD
 
 	callpoint!.setColumnData("<<DISPLAY>>.MTD_TOTAL",str(cur_amt),1)
 	callpoint!.setColumnData("<<DISPLAY>>.YTD_TOTAL",str(ytd_amt),1)
+	callpoint!.setColumnData("<<DISPLAY>>.YTD_BALANCE",str(ytd_amt+glm02.begin_amt),1)
 
 	return
 

@@ -1,3 +1,7 @@
+[[ARE_CASHHDR.ADEQ]]
+rem --- Need to delete orphan are-11 and (are_cashdet) are-31 (are_cashbal) records in ADEQ instead of ADEL
+rem --- because ADEL doesn't fire when a new un-saved cash receipt entry is deleted.
+gosub delete_cashdet_cashbal
 [[ARE_CASHHDR.AABO]]
 rem --- user has elected to not save changes
 rem --- remove any orphan are_cashdet and are_cashgl records, and update are_cashbal accordingly 
@@ -92,7 +96,7 @@ if len(currdtl$)
 	rem escape;rem for testing -- shouldn't ever contain anything at this point
 	gosub include_new_OA_trans
 endif
-disp_applied=chk_applied+gl_applied
+disp_applied=chk_applied-gl_applied
 disp_bal=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))-disp_applied
 callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(disp_applied))
 callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(disp_bal))
@@ -165,8 +169,6 @@ if data_present$="Y"
 endif
 
 gosub update_cashhdr_cashdet_cashbal
-[[ARE_CASHHDR.ADEL]]
-gosub delete_cashdet_cashbal
 [[ARE_CASHHDR.ADIS]]
 gosub calc_header
 [[ARE_CASHHDR.AOPT-OACT]]
@@ -693,8 +695,8 @@ gl_distribution:
 	wend
 	glapp=gl_applied
 	user_tpl.gl_applied$=str(-gl_applied);rem added 5/16/07.ch
-	callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))-glapp))
-	callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_APPLIED"))+glapp))
+    callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))+glapp))
+    callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_APPLIED"))-glapp))
 	Form!.getControl(num(user_tpl.GLind_id$)).setText(Translate!.getTranslation("AON_*_INCLUDES_GL_DISTRIBUTIONS"))
 	Form!.getControl(num(user_tpl.GLstar_id$)).setText("*")
 	callpoint!.setStatus("REFRESH")
@@ -1414,7 +1416,7 @@ rem --- read thru existing are-21's and store total GL amt posted this check
 	if len(currdtl$)
 		gosub include_new_OA_trans
 	endif
-	disp_applied=chk_applied+gl_applied
+    disp_applied=chk_applied-gl_applied
 
 	disp_bal=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))-disp_applied
 	callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",str(disp_applied))
