@@ -808,7 +808,9 @@ rem --- Enable / Disable buttons
 		else
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
-			callpoint!.setOptionEnabled("CRCH",1)
+            if user_tpl.credit_installed$="Y"
+                callpoint!.setOptionEnabled("CRCH",1)
+            endif
 			gosub able_cash_sale
 
 			if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")<> "I" then
@@ -1488,7 +1490,9 @@ rem --- Enable Duplicate buttons, printer
 		callpoint!.setOptionEnabled("CINV", 1)
 	endif
 
-	callpoint!.setOptionEnabled("CRCH",1)
+	if user_tpl.credit_installed$="Y"
+		callpoint!.setOptionEnabled("CRCH",1)
+	endif
 [[OPE_INVHDR.CUSTOMER_ID.AINP]]
 print "Hdr:CUSTOMER_ID.AINP"; rem debug
 

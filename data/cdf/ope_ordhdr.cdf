@@ -366,7 +366,9 @@ rem --- Enable buttons
 		callpoint!.setOptionEnabled("CINV",1)
 	endif
 
-	callpoint!.setOptionEnabled("CRCH",1)
+	if user_tpl.credit_installed$="Y"
+		callpoint!.setOptionEnabled("CRCH",1)
+	endif
 [[OPE_ORDHDR.SLSPSN_CODE.AVAL]]
 print "Hdr:SLSPSN_CODE.AVAL"; rem debug
 
@@ -456,7 +458,9 @@ print "Hdr:APFE"; rem debug
 rem --- Enable buttons as appropriate
 
 	if cvs(callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID"),2)<>""
-		callpoint!.setOptionEnabled("CRCH",1)
+        if user_tpl.credit_installed$="Y"
+            callpoint!.setOptionEnabled("CRCH",1)
+        endif
 
 		if cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"),2)=""
 			callpoint!.setOptionEnabled("DINV",1)

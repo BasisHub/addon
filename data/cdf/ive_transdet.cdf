@@ -648,8 +648,11 @@ print "in TRANS_QTY.AVAL"; rem debug
 
 rem --- Check the transaction qty
 
-	trans_qty = num( callpoint!.getUserInput() )
-	gosub test_qty
+	failed=0
+	if user_tpl.trans_type$<>"A"
+		trans_qty = num( callpoint!.getUserInput() )
+		gosub test_qty
+	endif
 
 	if !(failed) then 
 

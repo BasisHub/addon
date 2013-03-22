@@ -29,6 +29,7 @@ rem --- Get the IN parameters used by the procedure
 	from_bill$ = sp!.getParameter("BILL_NO_1")
 	thru_bill$ = sp!.getParameter("BILL_NO_2")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
+	whse$ = sp!.getParameter("WHSE")
 
 	sv_wd$=dir("")
 	chdir barista_wd$
@@ -45,12 +46,13 @@ rem --- Get Barista System Program directory
 
 rem --- Open files with adc
 
-    files=4,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
     files$[2]="bmm-01",ids$[2]="BMM_BILLMAST"
     files$[3]="bmm-02",ids$[3]="BMM_BILLMAT"
     files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
+	files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -59,6 +61,7 @@ rem --- Open files with adc
     bmm_billmast_dev1= channels[2]
     bmm_billmat_dev  = channels[3]
     ivm_itemmast_dev = channels[4]
+	ivm_itemwhse_dev = channels[5]
 
 rem --- Dimension string templates
 
@@ -68,13 +71,14 @@ rem --- Dimension string templates
 
 goto no_bac_open
 rem --- Open Files    
-    num_files = 4
+    num_files = 5
     dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
 
 	open_tables$[1]="BMM_BILLMAST",  open_opts$[1] = "OTA"
 	open_tables$[2]="BMM_BILLMAST",  open_opts$[2] = "OTA[_2]"
 	open_tables$[3]="BMM_BILLMAT",   open_opts$[3] = "OTA"
 	open_tables$[4]="IVM_ITEMMAST",   open_opts$[4] = "OTA"
+	open_tables$[5]="IVM_ITEMWHSE",   open_opts$[5] = "OTA"
 
 call sypdir$+"bac_open_tables.bbj",
 :       open_beg,
@@ -91,10 +95,12 @@ call sypdir$+"bac_open_tables.bbj",
 	bmm_billmast_dev1 = num(open_chans$[2])
 	bmm_billmat_dev   = num(open_chans$[3])
 	ivm_itemmast_dev  = num(open_chans$[4])
+	ivm_itemwhse_dev  = num(open_chans$[5])
 
 	dim bmm_billmast$:open_tpls$[1]
 	dim bmm_billmat$:open_tpls$[3]
 	dim ivm_itemmast$:open_tpls$[4]
+
 no_bac_open:
 rem --- Trip Read
 
@@ -106,6 +112,7 @@ rem --- Trip Read
 		if cvs(thru_bill$,2)<>""
 			if cvs(bmm_billmast.bill_no$,2)>cvs(thru_bill$,2) break
 		endif
+		find (ivm_itemwhse_dev,key=firm_id$+whse$+bmm_billmast.bill_no$,dom=*continue)
 
 		sub_assmbly$=bmm_billmast.bill_no$
 		gosub output_bill
@@ -120,6 +127,7 @@ rem --- Now find all sub-bills within the main bill
 			if pos(firm_id$+bmm_billmast.bill_no$=bmm_billmat$)<>1 break
 			if bmm_billmat.line_type$<>"S" continue
 			find (bmm_billmast_dev1,key=firm_id$+bmm_billmat.item_id$,dom=*continue)
+			find (ivm_itemwhse_dev,key=firm_id$+whse$+bmm_billmat.item_id$,dom=*continue)
 			bill_numbers$=bill_numbers$+"*"+bmm_billmat.item_id$
 		wend
 		while pos("*"=bill_numbers$,bill_len+1)>0
@@ -185,6 +193,5 @@ output_bill:
 	
 	return
 	
-	std_exit:
-	
-	end
+std_exit:
+    end
