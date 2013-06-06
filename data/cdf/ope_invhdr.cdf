@@ -1,3 +1,22 @@
+[[<<DISPLAY>>.SADD1.AVAL]]
+rem --- Check Ship-to's
+
+	shipto_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
+	shipto_no$  = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
+	gosub check_shipto
+	if user_tpl.shipto_warned
+		break; rem --- exit callpoint
+	endif
+[[OPE_INVHDR.ASVA]]
+rem --- Check Ship-to's
+
+	shipto_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
+	shipto_no$  = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
+	gosub check_shipto
+	if user_tpl.shipto_warned
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
 [[OPE_INVHDR.CUSTOMER_PO_NO.AVAL]]
 rem --- Check for duplicate PO numbers
 
@@ -671,17 +690,6 @@ rem --- Has customer and order number been entered?
 		break
 	endif
 
-rem --- Check Ship-to's
-
-	shipto_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
-	shipto_no$  = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
-	gosub check_shipto
-	if user_tpl.shipto_warned
-		callpoint!.setFocus("OPE_INVHDR.SHIPTO_TYPE")
-		callpoint!.setStatus("ABORT")
-		break; rem --- exit callpoint
-	endif
-
 rem --- Check to see if we need to go to the totals tab
 			
 rem --- Force focus on the Totals tab
@@ -725,6 +733,7 @@ rem --- Disable Ship To fields
 		status = 0
 	endif
 	callpoint!.setColumnEnabled(column!, status)
+	callpoint!.setDevObject("abort_shipto_no",0)
 
 	column!.clear()
 	column!.addItem("<<DISPLAY>>.SNAME")
@@ -751,6 +760,8 @@ rem --- Check Ship-to's
 	shipto_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
 	gosub check_shipto
 	if user_tpl.shipto_warned
+		callpoint!.setDevObject("abort_shipto_no",1)
+		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
 
@@ -825,6 +836,14 @@ rem --- Save old value
 
 rem --- Enable/Disable Cash Sale button
 	gosub able_cash_sale
+
+rem --- Allow changing shipto_type when abort shipto_no
+	if callpoint!.getDevObject("abort_shipto_no") then
+		callpoint!.setDevObject("abort_shipto_no",0)
+		callpoint!.setFocus("OPE_INVHDR.SHIPTO_TYPE")
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
 [[OPE_INVHDR.AOPT-CINV]]
 rem --- Credit Historical Invoice
 
@@ -2574,16 +2593,18 @@ rem ==========================================================================
 	if shipto_type$ = "S" and cvs(shipto_no$, 2) = "" then
 		msg_id$ = "OP_SHIPTO_NO_MISSING"
 		gosub disp_message
-		callpoint!.setFocus("OPE_IVNHDR.SHIPTO_NO")
 		user_tpl.shipto_warned = 1
-	else
-		ship_addr1_var$ = "<<DISPLAY>>.SADD1"
-		if shipto_type$ = "M" and cvs(callpoint!.getColumnData(ship_addr1_var$), 2) = "" then
-			msg_id$ = "OP_MAN_SHIPTO_NEEDED"
-			gosub disp_message
-			callpoint!.setFocus(ship_addr1_var$)
-			user_tpl.shipto_warned = 1
-		endif
+	endif
+	if shipto_type$ = "M" and cvs(callpoint!.getColumnData("<<DISPLAY>>.SADD1"), 2) = "" then
+		msg_id$ = "OP_MAN_SHIPTO_NEEDED"
+		gosub disp_message
+		user_tpl.shipto_warned = 1
+	endif
+	if user_tpl.shipto_warned
+		shiptoType!=callpoint!.getControl("OPE_INVHDR.SHIPTO_TYPE")
+		shiptoType_ctx=shiptoType!.getContextID()
+		sysgui!.setContext(shiptoType_ctx)
+		callpoint!.setFocus("OPE_INVHDR.SHIPTO_TYPE")
 	endif
 		
 	return

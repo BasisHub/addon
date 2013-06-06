@@ -1,3 +1,22 @@
+[[OPE_ORDHDR.ASVA]]
+rem --- Check Ship-to's
+
+	shipto_no$  = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
+	shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
+	gosub check_shipto
+	if user_tpl.shipto_warned
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
+[[<<DISPLAY>>.SADD1.AVAL]]
+rem --- Check Ship-to's
+
+	shipto_no$  = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
+	shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
+	gosub check_shipto
+	if user_tpl.shipto_warned
+		break; rem --- exit callpoint
+	endif
 [[OPE_ORDHDR.CUSTOMER_PO_NO.AVAL]]
 rem --- Check for duplicate PO numbers
 
@@ -365,12 +384,6 @@ rem --- Check Ship-to's
 
 	shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
 	shipto_no$  = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
-	gosub check_shipto
-	if user_tpl.shipto_warned
-		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_TYPE")
-		callpoint!.setStatus("ABORT")
-		break; rem --- exit callpoint
-	endif
 
 rem --- Check to see if we need to go to the totals tab
 
@@ -524,6 +537,14 @@ print "SHIPTO:BINP"; rem debug
 rem --- Save old value
 
 	user_tpl.prev_ship_to$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
+
+rem --- Allow changing shipto_type when abort shipto_no
+	if callpoint!.getDevObject("abort_shipto_no") then
+		callpoint!.setDevObject("abort_shipto_no",0)
+		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_TYPE")
+		callpoint!.setStatus("ABORT")
+		break; rem --- exit callpoint
+	endif
 [[OPE_ORDHDR.APFE]]
 print "Hdr:APFE"; rem debug
 
@@ -1034,6 +1055,8 @@ rem --- Check Ship-to's
 	shipto_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
 	gosub check_shipto
 	if user_tpl.shipto_warned
+		callpoint!.setDevObject("abort_shipto_no",1)
+		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
 
@@ -1278,6 +1301,7 @@ rem --- Disable Ship To fields
 		status = 0
 	endif
 	callpoint!.setColumnEnabled(column!, status)
+	callpoint!.setDevObject("abort_shipto_no",0)
 
 	column!.clear()
 	column!.addItem("<<DISPLAY>>.SNAME")
@@ -2363,16 +2387,19 @@ rem ==========================================================================
 	if shipto_type$ = "S" and cvs(shipto_no$, 2) = "" then
 		msg_id$ = "OP_SHIPTO_NO_MISSING"
 		gosub disp_message
-		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_NO")
 		user_tpl.shipto_warned = 1
-	else
+	endif
 		ship_addr1_var$ = "<<DISPLAY>>.SADD1"
-		if shipto_type$ = "M" and cvs(callpoint!.getColumnData(ship_addr1_var$), 2) = "" then
-			msg_id$ = "OP_MAN_SHIPTO_NEEDED"
-			gosub disp_message
-			callpoint!.setFocus(ship_addr1_var$)
-			user_tpl.shipto_warned = 1
-		endif
+	if shipto_type$ = "M" and cvs(callpoint!.getColumnData("<<DISPLAY>>.SADD1"), 2) = "" then
+		msg_id$ = "OP_MAN_SHIPTO_NEEDED"
+		gosub disp_message
+		user_tpl.shipto_warned = 1
+	endif
+	if user_tpl.shipto_warned
+		shiptoType!=callpoint!.getControl("OPE_ORDHDR.SHIPTO_TYPE")
+		shiptoType_ctx=shiptoType!.getContextID()
+		sysgui!.setContext(shiptoType_ctx)
+		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_TYPE")
 	endif
 		
 	return

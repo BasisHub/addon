@@ -10,6 +10,7 @@ rem --- Generate new lot/serial numbers
 	dim womastr$:fnget_tpl$("@SFE_WOMASTR")
 	wo_location$=callpoint!.getColumnData("SFE_AUTOGENLS.WO_LOCATION")
 	wo_no$=callpoint!.getColumnData("SFE_AUTOGENLS.WO_NO")
+	read record(womastr_dev,key=firm_id$+wo_location$+wo_no$,dom=*next)womastr$
 	warehouse_id$=callpoint!.getColumnData("SFE_AUTOGENLS.WAREHOUSE_ID")
 	item_id$=callpoint!.getColumnData("SFE_AUTOGENLS.ITEM_ID")
 
@@ -79,7 +80,7 @@ rem --- Generate new lot/serial numbers
 			wolotser1.qty_cls_todt=0
 			wolotser1.cls_cst_todt=0
 			wolotser1.cls_inp_qty=0
-			wolotser1.closed_cost=0
+			wolotser1.closed_cost=womastr.closed_cost
 			while write_wolotser
 				next_seq_no=next_seq_no+1
 				if next_seq_no>seq_max then break
