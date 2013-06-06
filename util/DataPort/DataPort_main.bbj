@@ -16,7 +16,8 @@ rem
     setesc std_error
     seterr std_error
 
-use java.util.Iterator
+    use java.io.File
+    use java.util.Vector
 
 rem --- Dictionary file templates
 dim ddm01$:"data_name:c(12*),description:c(30),lstrev:c(6),data_type:c(1),reserved_str:c(68*),fld_length:n(3*),display_len:n(3*),reserved_num:n(1*)"
@@ -79,6 +80,51 @@ rem --- initialization
     print (err_dev)"DataPort Start Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "+$0a$
 
     print (err_dev)" Porting Addon "+str(source_version)+" data files from folder "+source_folder$+" to "+destin_folder$+$0a$
+
+rem --- Disable triggers found in data directories
+    rd_dbserver$="localhost"
+    rd_dbserver$=stbl("+DBSERVER",err=*next)
+    rd_dbport=2002
+    rd_dbport=num(stbl("+DBPORT",err=*next),err=*next)
+    rd_dbssl=0
+    rd_dbssl=num(stbl("+DBSSL",err=*next),err=*next)
+    rd_user$="admin"
+    rd_user$=stbl("+USER_ID",err=*next)
+    rd_password$="admin123"
+    rdNSGroup!=BBjAPI().getGroupNamespace()
+    rdNSAdmin!=BBjAPI().getNamespace("adminobjects","barista",1)
+    rdAdmin!=rdNSAdmin!.getValue("+bar_admin_"+cvs(rd_user$,11),err=*next)
+    if rdAdmin!<>null() then
+        rd_user$=rdAdmin!.getUser()
+        rd_password$=rdAdmin!.getPassword()
+    endif
+    aAdminBase!=com.basis.api.admin.BBjAdminFactory.getBBjAdmin(java.net.InetAddress.getByName(rd_dbserver$),rd_dbport,rd_dbssl,rd_user$,rd_password$)
+    disabledTriggers!=BBjAPI().makeVector()
+    dataDirs!=BBjAPI().makeVector()
+    dataDirs!.addItem(source_folder$); rem --- DataPort source directory
+    dataDirs!.addItem(destin_folder$); rem --- DataPort destination directory
+    dataDirs!.addItem(stbl("+DIR_DAT")); rem --- Data directory for current Addon instance
+    dirsIter!=dataDirs!.iterator()
+    while dirsIter!.hasNext()
+        triggerDir!=new File(dirsIter!.next())
+        triggers!=new Vector(java.util.Arrays.asList(triggerDir!.listFiles(new TriggerFilter())))
+        if triggers!.size() then
+            iter!=triggers!.iterator()
+            while iter!.hasNext()
+                trigger$=iter!.next().getAbsolutePath()
+                trigger$=trigger$(1,pos(".trigger"=trigger$,-1)-1)
+                aAdminTriggers!=aAdminBase!.getTriggers(trigger$)
+                enable!=aAdminTriggers!.getBoolean(BBjAdminTriggers.ENABLED)
+                if enable! then
+                    aAdminTriggers!.setBoolean(BBjAdminTriggers.ENABLED, 0)
+                    aAdminTriggers!.commit()
+                    disabledTriggers!.addItem(trigger$)
+                    print "Disabled triggers for: ",trigger$
+                    print (log_dev)"Disabled triggers for: ",trigger$
+                endif
+            wend
+        endif
+    wend
 
 rem --- Set the hook for dealer custom call
 
@@ -1159,6 +1205,19 @@ rem --- Populate sequence record(s)
 rem --- Initialize *s_params.post_to_gl with SYM-04's post_gl flag
 
     gosub init_params_post_gl
+
+    rem --- Enable disabled triggers
+    if disabledTriggers!.size() then
+        iter!=disabledTriggers!.iterator()
+        while iter!.hasNext()
+            trigger$=iter!.next()
+            aAdminTriggers!=aAdminBase!.getTriggers(trigger$)
+            aAdminTriggers!.setBoolean(BBjAdminTriggers.ENABLED, 1)
+            aAdminTriggers!.commit()
+            print "Enabled triggers for: ",trigger$
+            print (log_dev)"Enabled triggers for: ",trigger$
+        wend
+    endif
     
 rem --- Done    
 
@@ -2543,3 +2602,18 @@ std_error: rem --- Standard error handler (22Feb2013)
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 
     release
+
+rem /**
+rem  * TriggerFilter Class to filter *.trigger files.
+rem  */
+class public TriggerFilter implements java.io.FilenameFilter
+
+    method public boolean accept(File dir!, String file!)
+        if file!.endsWith(".trigger")
+            methodret Boolean.valueOf("true")
+        else
+            methodret Boolean.valueOf("false")
+        endif
+    methodend
+    
+classend
