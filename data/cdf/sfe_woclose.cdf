@@ -1,3 +1,36 @@
+[[SFE_WOCLOSE.BOVE]]
+rem --- Do custom query
+
+	query_id$="SF_CLOSE"
+	query_mode$="DEFAULT"
+	dim filter_defs$[2,2]
+	filter_defs$[1,0] = "SFE_WOMASTR.FIRM_ID"
+	filter_defs$[1,1] = "='"+firm_id$+"'"
+	filter_defs$[1,2] = "LOCK"
+	filter_defs$[2,0] = "SFE_WOMASTR.WO_STATUS"
+	filter_defs$[2,1] = "='O'"
+	filter_defs$[2,2] = "LOCK"
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		form!,
+:		query_id$,
+:		query_mode$,
+:		table_chans$[all],
+:		sel_key$,filter_defs$[all]
+
+	if sel_key$<>""
+		call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:			"SFE_WOCLOSE",
+:			"PRIMARY",
+:			sfe_close_key$,
+:			table_chans$[all],
+:			status$
+		dim sfe_close_key$:sfe_close_key$
+		sfe_close_key$=sel_key$
+		callpoint!.setColumnData("SFE_WOCLOSE.WO_NO",sfe_close_key.wo_no$,1)
+	endif
+	callpoint!.setStatus("ACTIVATE-ABORT")
 [[SFE_WOCLOSE.AOPT-LSNO]]
 rem --- Launch sfe_wolotser form to assign lot/serial numbers
 	gosub do_wolotser
@@ -569,7 +602,7 @@ rem ==========================================================================
 use ::sfo_SfUtils.aon::SfUtils
 
 rem --- Open Files
-	num_files=13
+	num_files=14
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA@"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA@"
@@ -584,6 +617,7 @@ rem --- Open Files
 	open_tables$[11]="IVM_ITEMMAST",open_opts$[11]="OTA@"
 	open_tables$[12]="IVM_ITEMWHSE",open_opts$[12]="OTA@"
 	open_tables$[13]="IVC_WHSECODE",open_opts$[13]="OTA@"
+	open_tables$[14]="SFE_WOMASTR",open_opts$[14]="OTA"
 
 	gosub open_tables
 

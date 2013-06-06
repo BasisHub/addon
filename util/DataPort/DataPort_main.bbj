@@ -408,6 +408,12 @@ next_file:
         seq_no_files!.put(cvs(datafile$,8),"y")
         do_sequence_numbers=1
     endif
+    
+    rem --- Initialize and update glm-06 and adm-09/19/39
+    if cvs(datafile$,8)="glm-06" then
+        gosub init_update_glm06
+        goto next_file
+    endif
 
     rem --- Split old header/detail files into separate files
     switch pos(cvs(datafile$,8)="woe-11;woe-21;woe-31;",7)
@@ -689,10 +695,10 @@ next_rec:
     if copy_sys01 and field(old_rec$,old_fieldlist.name$[2],err=*continue) + field(old_rec$,old_fieldlist.name$[3],err=*continue) <> file_normalization$(1,4) then
        goto next_rec
     endif
-if copy_sys01 and file_normalization$(1,4)="AR00" then
-    rem --- Write ARS_CUSTDFLT for ARS-01A records
-    gosub write_ars_custdflt_recs
-endif
+    if copy_sys01 and file_normalization$(1,4)="AR00" then
+        rem --- Write ARS_CUSTDFLT for ARS-01A records
+        gosub write_ars_custdflt_recs
+    endif
 
     if source_version=6 and datafile$="ARM-10" and record_id_field$="RECORD_ID_G" then
         rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) records from version 6 ARM-10G records
@@ -903,16 +909,7 @@ rem --- date formatting
               break
            case 2
            case 6
-              if len(cvs(value$,3)) then
-                 if asc(value$)>=65 then
-                    value$=str(200+asc(value$)-65)+value$(2)
-                 else
-                    value$="19"+value$
-                 endif
-                 value$=str(num(value$(1,4),err=*next)+add_year)+value$(5)
-              else
-                 value$=pad("",8)
-              endif
+              gosub fix_yymmdd_date
               break
            case 8
               value$=str(num(value$(1,4))+add_year)+value$(5)
@@ -1945,6 +1942,438 @@ reformat_address:
     new_rec.state_code$=state$
 return; rem ' reformat_address
 
+init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
+    rem ---     Input: firms$
+
+    rem --- Open files in Barista-Addon's data directory
+    num_files=4
+    dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
+    rd_open_tables$[1]="ADM_AUDITCONTROL",rd_open_opts$[1]="OTA"; rem --- glm-06
+    rd_open_tables$[2]="ADM_PROCMASTER",rd_open_opts$[2]="OTA"; rem --- adm-09
+    rd_open_tables$[3]="ADM_PROCDETAIL",rd_open_opts$[3]="OTA"; rem --- adm-19
+    rd_open_tables$[4]="ADM_PROCTABLES",rd_open_opts$[4]="OTA"; rem --- adm-39
+    
+    gosub open_tables
+    
+    glm06_dev=num(rd_open_chans$[1]);dim glm06$:rd_open_tpls$[1]
+    adm09_dev=num(rd_open_chans$[2]);dim adm09$:rd_open_tpls$[2]
+    adm19_dev=num(rd_open_chans$[3]);dim adm19$:rd_open_tpls$[3]
+    adm39_dev=num(rd_open_chans$[4]);dim adm39$:rd_open_tpls$[4]
+
+    rem --- Create and open new files in target directory
+    table_alias$="ADM_AUDITCONTROL",new_datafile$="glm-06",file_id$=new_datafile$
+    erase destin_folder$+"/"+cvs(new_datafile$,version_cvs),err=*next
+    gosub check_for_definition
+    glm06_trgt=new_file
+
+    table_alias$="ADM_PROCMASTER",new_datafile$="adm-09",file_id$=new_datafile$
+    erase destin_folder$+"/"+cvs(new_datafile$,version_cvs),err=*next
+    gosub check_for_definition
+    adm09_trgt=new_file
+
+    table_alias$="ADM_PROCDETAIL",new_datafile$="adm-19",file_id$=new_datafile$
+    erase destin_folder$+"/"+cvs(new_datafile$,version_cvs),err=*next
+    gosub check_for_definition
+    adm19_trgt=new_file
+
+    table_alias$="ADM_PROCTABLES",new_datafile$="adm-39",file_id$=new_datafile$
+    erase destin_folder$+"/"+cvs(new_datafile$,version_cvs),err=*next
+    gosub check_for_definition
+    adm39_trgt=new_file
+
+    rem --- Initialize glm-06 and adm-09/19/39 from Barista-Addon's data directory
+    if len(firms$)>0
+        glm06_initialized=0
+        adm09_initialized=0
+        adm19_initialized=0
+        adm39_initialized=0
+        for firms=1 to len(firms$) step 2
+            this_firm$=firms$(firms,2); rem --- new install may not be using this firm yet
+            
+            glm06_firm$=""
+            read(glm06_dev,key=glm06_firm$,dom=*next)
+            while 1
+                rem --- Find first non-blank firm
+                glm06_key$=key(glm06_dev,err=*break)
+                if len(glm06_key$)>=2 then
+                    glm06_firm$=glm06_key$(1,2)
+                    if cvs(glm06_firm$,2)<>"" then break
+                endif
+                read(glm06_dev)
+            wend
+            read(glm06_dev,key=glm06_firm$,dom=*next)
+            while 1
+                readrecord(glm06_dev,err=*break)glm06$
+                if glm06.firm_id$<>glm06_firm$ then break
+                glm06.firm_id$=this_firm$
+                glm06.lstuse_date$=""
+                glm06.lstuse_time$=""
+                glm06.lstupd_date$=""
+                glm06.lstupd_time$=""
+                glm06.audit_number=0
+                glm06$=field(glm06$)
+                writerecord(glm06_trgt)glm06$
+                glm06_initialized=1
+            wend
+
+            read(adm09_dev,key="",err=*next)
+            while 1
+                readrecord(adm09_dev,err=*break)adm09$
+                adm09.firm_id$=this_firm$
+                adm09$=field(adm09$)
+                writerecord(adm09_trgt)adm09$
+                adm09_initialized=1
+            wend
+            
+            read(adm19_dev,key="",err=*next)
+            while 1
+                readrecord(adm19_dev,err=*break)adm19$
+                adm19.firm_id$=this_firm$
+                adm19$=field(adm19$)
+                writerecord(adm19_trgt)adm19$
+                adm19_initialized=1
+            wend
+            
+            read(adm39_dev,key="",err=*next)
+            while 1
+                readrecord(adm39_dev,err=*break)adm39$
+                adm39.firm_id$=this_firm$
+                adm39$=field(adm39$)
+                writerecord(adm39_trgt)adm39$
+                adm39_initialized=1
+            wend
+        next firms    
+
+        if !glm06_initialized then
+            print "*** ERROR ***: Couldn't initialize ADM_AUDITCONTROL (glm-06)"
+            print (err_dev)"*** ERROR ***: Couldn't initialize ADM_AUDITCONTROL (glm-06)"
+        endif
+        if !adm09_initialized then
+            print "*** ERROR ***: Couldn't initialize ADM_PROCMASTER (adm-09)"
+            print (err_dev)"*** ERROR ***: Couldn't initialize ADM_PROCMASTER (adm-09)"
+        endif
+        if !adm19_initialized then
+            print "*** ERROR ***: Couldn't initialize ADM_PROCDETAIL (adm-19)"
+            print (err_dev)"*** ERROR ***: Couldn't initialize ADM_PROCDETAIL (adm-19)"
+        endif
+        if !adm39_initialized then
+            print "*** ERROR ***: Couldn't initialize ADM_PROCTABLES (adm-39)"
+            print (err_dev)"*** ERROR ***: Couldn't initialize ADM_PROCTABLES (adm-39)"
+        endif
+    endif
+
+    rem --- Update glm-06 and adm-09/19/39 from source files
+    if len(firms$)>0
+        rem --- Open files in source directory
+        glm06_src=unt
+        open (glm06_src)source_folder$+"/"+cvs("glm-06",version_cvs)
+        port_sym09=0
+        sym09_src=unt
+        open (sym09_src,err=*next)source_folder$+"/"+cvs("sym-09",version_cvs); port_sym09=1
+        port_sym19=0
+        sym19_src=unt
+        open (sym19_src,err=*next)source_folder$+"/"+cvs("sym-19",version_cvs); port_sym19=1
+        port_sym39=0
+        sym39_src=unt
+        open (sym39_src,err=*next)source_folder$+"/"+cvs("sym-39",version_cvs); port_sym39=1
+        if !port_sym09 then
+            print "*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-09",version_cvs)
+            print (err_dev)"*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-09",version_cvs)
+        endif
+        if !port_sym19 then
+            print "*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-19",version_cvs)
+            print (err_dev)"*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-19",version_cvs)
+        endif
+        if !port_sym39 then
+            print "*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-39",version_cvs)
+            print (err_dev)"*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-39",version_cvs)
+        endif
+
+        rem --- read posting_controls into hash map
+        posting_controls! = new java.util.HashMap()
+        dim post_ctl$:"old_proc:c(10*=124),prog:c(8*=124),new_proc:c(16*=124),seq_nums:c(3*=)"
+        post_ctl_xref = unt
+        open (post_ctl_xref)filedir$+"posting_controls_xref"
+        while 1
+           read (post_ctl_xref,end=*break)post_ctl$
+           if len(post_ctl$) then
+              keyval$ = post_ctl.old_proc$+"."+cvs(post_ctl.prog$,version_cvs)
+              dataVec! = BBjAPI().makeVector()
+              dataVec!.addItem(post_ctl.new_proc$)
+              dataVec!.addItem(cvs(post_ctl.seq_nums$,2))
+              posting_controls!.put(keyval$,dataVec!)
+           endif
+        wend
+        close (post_ctl_xref)
+
+        rem --- read processes and process_details into hash maps
+        processes! = new java.util.HashMap()
+        process_details! = new java.util.HashMap()
+        dim proc_pgm$:"old_proc:c(10*=124),prog:c(8*=124),new_proc:c(16*=124),seq_nums:c(3*=)"
+        proc_pgm_xref = unt
+        open (proc_pgm_xref)filedir$+"process_pgms_xref"
+        while 1
+           read (proc_pgm_xref,end=*break)proc_pgm$
+           if len(proc_pgm$) then
+              keyval$ = proc_pgm.old_proc$
+              dataval$ = proc_pgm.new_proc$
+              processes!.put(keyval$,dataval$)
+              keyval$ = proc_pgm.old_proc$+"."+cvs(proc_pgm.prog$,version_cvs)
+              dataVec! = BBjAPI().makeVector()
+              dataVec!.addItem(proc_pgm.new_proc$)
+              dataVec!.addItem(cvs(proc_pgm.seq_nums$,2))
+              process_details!.put(keyval$,dataVec!)
+           endif
+        wend
+        close (proc_pgm_xref)
+
+        rem --- read process_files into hash maps
+        process_files! = new java.util.HashMap()
+        dim proc_file$:"old_proc:c(10*=124),file:c(6*=124),new_proc:c(16*=124),seq_num:c(3*=)"
+        proc_file_xref = unt
+        open (proc_file_xref)filedir$+"process_files_xref"
+        while 1
+           read (proc_file_xref,end=*break)proc_file$
+           if len(proc_file$) then
+              keyval$ = proc_file.old_proc$+"."+cvs(proc_file.file$,version_cvs)
+              dataVec! = BBjAPI().makeVector()
+              dataVec!.addItem(proc_file.new_proc$)
+              dataVec!.addItem(cvs(proc_file.seq_num$,2))
+              process_files!.put(keyval$,dataVec!)
+           endif
+        wend
+        close (proc_file_xref)
+
+        glm06_updated=0
+        adm09_updated=0
+        adm19_updated=0
+        adm39_updated=0
+        for firms=1 to len(firms$) step 2
+            this_firm$=firms$(firms,2)
+            
+            read(glm06_src,key=this_firm$,err=*next)
+            while 1
+                dim glm06_0$(20),glm06_1$(63),glm06_2$(30)
+                read(glm06_src,err=*break)glm06_0$(1),glm06_1$(1),glm06_2$(1),glm06_3$,glm06_0
+                if glm06_0$(1,2)<>this_firm$ then break
+                old_proc$=glm06_0$(3,10)
+                prog$=glm06_0$(13,8)                               
+                if posting_controls!.containsKey(old_proc$+"."+prog$) then
+                    rem --- Maps to new standard glm-06 record
+                    dataVec!=cast(BBjVector,posting_controls!.get(old_proc$+"."+prog$))
+                    new_proc$=dataVec!.getItem(0)
+                    seq_nums$=dataVec!.getItem(1)
+                    while len(seq_nums$)>=3
+                        rem --- Old process can map to more than one instance of new process, re 'WO Time Sh'
+                        seq$=seq_nums$(1,3)
+                        seq_nums$=iff(pos(":"=seq_nums$)=0,"",seq_nums$(1+pos(":"=seq_nums$)))
+                        readrecord(glm06_trgt,key=this_firm$+new_proc$+seq$,dom=*continue)glm06$
+                        glm06.journal_id$=glm06_1$(1,2)
+                        value$=glm06_1$(11,6)
+                        gosub fix_yymmdd_date
+                        glm06.lstuse_date$=value$
+                        glm06.lstuse_time$=glm06_1$(17,4)
+                        value$=glm06_1$(21,6)
+                        gosub fix_yymmdd_date
+                        glm06.lstupd_date$=value$
+                        glm06.lstupd_time$=glm06_1$(27,4)
+                        glm06.gl_audit$=glm06_1$(37,1)
+                        glm06.detail_level$=glm06_1$(39,1)
+                        glm06.prt_gl_sum$=glm06_1$(40,1)
+                        glm06.gl_post_memo$=glm06_2$
+                        glm06.audit_number=glm06_0
+                        glm06$=field(glm06$)
+                        writerecord(glm06_trgt)glm06$
+                        glm06_updated=1
+                    wend
+                else
+                    rem --- Does not map to new standard glm-06 record
+                    dim glm06$:fattr(glm06$)
+                    glm06.firm_id$=this_firm$
+                    glm06.process_id$=old_proc$
+                    rem glm06.sequence_no$=???
+                    glm06.process_alias$=""
+                    glm06.process_program$=prog$
+                    glm06.journal_id$=glm06_1$(1,2)
+                    value$=glm06_1$(11,6)
+                    gosub fix_yymmdd_date
+                    glm06.lstuse_date$=value$
+                    glm06.lstuse_time$=glm06_1$(17,4)
+                    value$=glm06_1$(21,6)
+                    gosub fix_yymmdd_date
+                    glm06.lstupd_date$=value$
+                    glm06.lstupd_time$=glm06_1$(27,4)
+                    glm06.file_name$=glm06_1$(31,6)
+                    glm06.gl_audit$=glm06_1$(37,1)
+                    glm06.gl_work_file$=glm06_1$(38,1)
+                    glm06.detail_level$=glm06_1$(39,1)
+                    glm06.prt_gl_sum$=glm06_1$(40,1)
+                    glm06.gl_post_memo$=glm06_2$
+                    glm06.audit_number=glm06_0
+                    
+                    rem --- Get next sequence_no for this new record
+                    seq_no=1
+                    while seq_no<1000
+                        read(glm06_trgt,key=glm06.firm_id$+glm06.process_id$+str(seq_no:"000"),dom=*break)
+                        seq_no=seq_no+1
+                    wend
+                    if seq_no>999 then seq_no=0
+                    glm06.sequence_no$=str(seq_no:"000")
+
+                    glm06$=field(glm06$)
+                    writerecord(glm06_trgt)glm06$
+                    glm06_updated=1
+                endif
+            wend
+
+            if port_sym09 then
+                read(sym09_src,key="",err=*next)
+                while 1
+                    dim sym09_0$(10),sym09_1$(30),sym09_2$(23)
+                    read(sym09_src,err=*break)sym09_0$(1),sym09_1$(1),sym09_2$(1)
+                    old_proc$=sym09_0$
+                    if processes!.containsKey(old_proc$) then
+                        rem --- Maps to new standard adm-09 record
+                        new_proc$=cast(BBjString,processes!.get(old_proc$))
+                        readrecord(adm09_trgt,key=this_firm$+new_proc$,dom=*continue)adm09$
+                        adm09.batch_entry$=sym09_2$(3,1)
+                    else
+                        rem --- Does not map to new standard adm-09 record
+                        dim adm09$:fattr(adm09$)
+                        adm09.firm_id$=this_firm$
+                        adm09.process_id$=pad(old_proc$,16)
+                        adm09.description$=sym09_1$
+                        adm09.process_mod_id$=sym09_2$(1,2)
+                        adm09.batch_entry$=sym09_2$(3,1)
+                        adm09.allow_batch$=" "
+                    endif
+                    adm09$=field(adm09$)
+                    writerecord(adm09_trgt)adm09$
+                    adm09_updated=1
+                wend
+            endif
+
+            if port_sym19 then
+                read(sym19_src,key="",err=*next)
+                while 1
+                    dim sym19_0$(18),sym19_1$(30),sym19_2$(11)
+                    read(sym19_src,err=*break)sym19_0$(1),sym19_1$(1),sym19_2$(1)
+                    old_proc$=sym19_0$(1,10)
+                    prog$=sym19_0$(11,8)                               
+                    if process_details!.containsKey(old_proc$+"."+prog$) then
+                        rem --- Maps to new standard adm-19 record
+                        dataVec!=cast(BBjVector,process_details!.get(old_proc$+"."+prog$))
+                        new_proc$=dataVec!.getItem(0)
+                        seq_nums$=dataVec!.getItem(1)
+                        while len(seq_nums$)>=3
+                            rem --- Old process can map to more than one instance of new process, re 'WO Time Sh'
+                            seq$=seq_nums$(1,3)
+                            seq_nums$=iff(pos(":"=seq_nums$)=0,"",seq_nums$(1+pos(":"=seq_nums$)))
+                            readrecord(adm19_trgt,key=this_firm$+new_proc$+seq$,dom=*continue)adm19$
+                            adm19.new_batch$=sym19_2$(1,1)
+                            adm19$=field(adm19$)
+                            writerecord(adm19_trgt)adm19$
+                            adm19_updated=1
+                        wend
+                    else
+                        rem --- Does not map to new standard adm-19 record
+                        dim adm19$:fattr(adm19$)
+                        adm19.firm_id$=this_firm$
+                        adm19.process_id$=pad(old_proc$,16)
+                        rem adm19.sequence_no$=???
+                        adm19.dd_table_alias$=""
+                        adm19.program_name$=prog$
+                        adm19.description$=sym19_1$
+                        adm19.new_batch$=sym19_2$(1,1)
+                    
+                        rem --- Get next sequence_no for this new record
+                        seq_no=1
+                        while seq_no<1000
+                            read(adm19_trgt,key=adm19.firm_id$+adm19.process_id$+str(seq_no:"000"),dom=*break)
+                            seq_no=seq_no+1
+                        wend
+                        if seq_no>999 then seq_no=0
+                        adm19.sequence_no$=str(seq_no:"000")
+
+                        adm19$=field(adm19$)
+                        writerecord(adm19_trgt)adm19$
+                        adm19_updated=1
+                    endif
+                wend
+            endif
+
+            if port_sym39 then
+                read(sym39_src,key="",err=*next)
+                while 1
+                    dim sym39_0$(16)
+                    read(sym39_src,err=*break)sym39_0$(1)
+                    old_proc$=sym39_0$(1,10)
+                    file$=sym39_0$(11,6)                               
+                    if process_files!.containsKey(old_proc$+"."+file$) then
+                        rem --- Maps to new standard adm-39 record
+                        rem --- Don't change new standard adm-39 record
+                        adm39_updated=1
+                    else
+                        if pos(cvs("GLW-",version_cvs)=file$)=1 then
+                            rem --- Do not copy old v6 GLW-* records forward to new adm-39
+                        else
+                            rem --- Does not map to new standard adm-39 record
+                            dim adm39$:fattr(adm39$)
+                            adm39.firm_id$=this_firm$
+                            adm39.process_id$=pad(old_proc$,16)
+                            rem adm39.sequence_no$=???
+                            adm39.dd_table_alias$=pad(" ",16)
+                            adm39.dd_file_name$=pad(file$,30)
+                        
+                            rem --- Get next sequence_no for this new record
+                            seq_no=1
+                            while seq_no<1000
+                                read(adm39_trgt,key=adm39.firm_id$+adm39.process_id$+str(seq_no:"000"),dom=*break)
+                                seq_no=seq_no+1
+                            wend
+                            if seq_no>999 then seq_no=0
+                            adm39.sequence_no$=str(seq_no:"000")
+
+                            adm39$=field(adm39$)
+                            writerecord(adm39_trgt)adm39$
+                            adm39_updated=1
+                        endif
+                    endif
+                wend
+            endif
+        next firms
+        
+        if glm06_updated then
+            print "   Copied data from "+cvs("glm-06",version_cvs)
+            print(log_dev)"   Copied data from "+cvs("glm-06",version_cvs)
+        else
+            print "*** ERROR ***: Data not copied from "+cvs("glm-06",version_cvs)
+            print (err_dev)"*** ERROR ***: Data not copied from "+cvs("glm-06",version_cvs)
+        endif
+        if port_sym09 and adm09_updated then
+            print "   Copied data from "+cvs("sym-09",version_cvs)
+            print(log_dev)"   Copied data from "+cvs("sym-09",version_cvs)
+        else
+            print "*** ERROR ***: Data not copied from "+cvs("sym-09",version_cvs)
+            print (err_dev)"*** ERROR ***: Data not copied from "+cvs("sym-09",version_cvs)
+        endif
+        if port_sym19 and adm19_updated then
+            print "   Copied data from "+cvs("sym-19",version_cvs)
+            print(log_dev)"   Copied data from "+cvs("sym-19",version_cvs)
+        else
+            print "*** ERROR ***: Data not copied from "+cvs("sym-19",version_cvs)
+            print (err_dev)"*** ERROR ***: Data not copied from "+cvs("sym-19",version_cvs)
+        endif
+        if port_sym39 and adm39_updated then
+            print "   Copied data from "+cvs("sym-39",version_cvs)
+            print(log_dev)"   Copied data from "+cvs("sym-39",version_cvs)
+        else
+            print "*** ERROR ***: Data not copied from "+cvs("sym-39",version_cvs)
+            print (err_dev)"*** ERROR ***: Data not copied from "+cvs("sym-39",version_cvs)
+        endif
+    endif
+    return
+
 split_header_detail_recs: rem --- Split old header/detail files into separate files
     rem --- Do not alter v6/v7 file so it can still be used as-is on existing v6/v7 system.
     rem --- Copy v6/v7 file to temporary v6/v7 header and detail files.
@@ -2026,6 +2455,21 @@ split_header_detail_recs: rem --- Split old header/detail files into separate fi
     rem --- Append temporary file to vectPort!
     vectPort!.addItem(cvs(split_temp_file$,version_cvs))
     return
+    
+fix_yymmdd_date: rem --- Convert yy dates to yyyy, and yymmdd dates to yyyymmdd
+    rem ---     Input/Out: value$
+    if len(cvs(value$,3)) then
+        value$=fnyy_yy21$(value$)
+        if asc(value$)>=65 then
+            value$=str(200+asc(value$)-65)+value$(2)
+        else
+            value$="19"+value$
+        endif
+        value$=str(num(value$(1,4),err=*next)+add_year)+value$(5)
+    else
+        value$=pad("",8)
+    endif
+    return
 
 disp_meter:rem --- Display Progress Meter
 
@@ -2072,6 +2516,13 @@ eoj:
       goto eof
    endif
    return
+
+rem --- Convert 2-Char Year to 21st Century 2-Char Year
+    def fnyy_yy21$(q$)
+        q3$=" ABCDE56789ABCDEFGHIJ"
+        q$(1,1)=q3$(pos(q$(1,1)=" 0123456789ABCDEFGHIJ"))
+        return q$
+    fnend
 
 std_error: rem --- Standard error handler (22Feb2013)
 

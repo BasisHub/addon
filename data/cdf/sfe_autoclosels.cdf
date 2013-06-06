@@ -1,3 +1,7 @@
+[[SFE_AUTOCLOSELS.BFMC]]
+rem --- set DevObjects
+
+	callpoint!.setDevObject("ls_closed",0)
 [[SFE_AUTOCLOSELS.<CUSTOM>]]
 rem ==========================================================================
 validate_lotser_no: rem --- Verify lotser_no exists for this wo_no

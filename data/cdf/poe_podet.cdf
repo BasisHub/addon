@@ -237,80 +237,51 @@ if callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y"
 	curr_whse$ = callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID")
 	curr_item$ = callpoint!.getColumnData("POE_PODET.ITEM_ID")
 	curr_qty   = num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED")) * num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))
+	curr_qty$   = callpoint!.getColumnData("POE_PODET.QTY_ORDERED")
+	curr_conv$ = callpoint!.getColumnData("POE_PODET.CONV_FACTOR")
 
-	prior_whse$ = callpoint!.getColumnUndoData("POE_PODET.WAREHOUSE_ID")
-	prior_item$ = callpoint!.getColumnUndoData("POE_PODET.ITEM_ID")
-	prior_qty   = num(callpoint!.getColumnUndoData("POE_PODET.QTY_ORDERED")) * num(callpoint!.getColumnUndoData("POE_PODET.CONV_FACTOR"))
+	prior_whse$ = callpoint!.getDevObject("prior_wh")
+	prior_item$ = callpoint!.getDevObject("prior_item")
+	prior_qty   = num(callpoint!.getDevObject("prior_qty")) * num(callpoint!.getDevObject("prior_conv"))
 
-	rem --- Has there been any change?
 
-	if curr_whse$ <> prior_whse$ or 
-:		curr_item$ <> prior_item$ or 
-:		curr_qty   <> prior_qty 
-:	then
+	rem --- Initialize inventory item update
 
-		rem --- Initialize inventory item update
+	status=999
+	call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+	if status then exitto std_exit
 
-		status=999
-		call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-		if status then exitto std_exit
+	rem --- reverse OO prior item and warehouse
 
-		rem --- Items or warehouses are different: reverse OO on previous
+	if prior_whse$<>"" and prior_item$<>"" and prior_qty<>0 then
+		items$[1] = prior_whse$
+		items$[2] = prior_item$
+		refs[0]   = -prior_qty
 
-		if (prior_whse$<>"" and prior_whse$<>curr_whse$) or 
-:		   (prior_item$<>"" and prior_item$<>curr_item$)
-:		then
-
-		rem --- reverse OO prior item and warehouse
-
-			if prior_whse$<>"" and prior_item$<>"" and prior_qty<>0 then
-				items$[1] = prior_whse$
-				items$[2] = prior_item$
-				refs[0]   = -prior_qty
-
-				print "---reverse OO: item = ", cvs(items$[2], 2), ", WH: ", items$[1], ", qty =", refs[0]; rem debug
+		print "---reverse OO: item = ", cvs(items$[2], 2), ", WH: ", items$[1], ", qty =", refs[0]; rem debug
 				
-				call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then exitto std_exit
-			endif
-
-			rem --- Update OO quantity for current item and warehouse
-
-			if curr_whse$<>"" and curr_item$<>"" and curr_qty<>0 then
-				items$[1] = curr_whse$
-				items$[2] = curr_item$
-				refs[0]   = curr_qty 
-
-				print "-----Update OO: item = ", cvs(items$[2], 2), ", WH: ", items$[1], ", qty =", refs[0]; rem debug
-
-				call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then exitto std_exit
-			endif
-
-		endif
-
-		rem --- New record or item and warehouse haven't changed: update OO w difference
-
-		if	(prior_whse$="" or prior_whse$=curr_whse$) and 
-:			(prior_item$="" or prior_item$=curr_item$) 
-:		then
-
-			rem --- Update OO quantity for current item and warehouse
-
-			if curr_whse$<>"" and curr_item$<>"" and curr_qty - prior_qty <> 0
-				items$[1] = curr_whse$
-				items$[2] = curr_item$
-				refs[0]   = curr_qty - prior_qty
-
-				print "-----Update OO: item = ", cvs(items$[2], 2), ", WH: ", items$[1], ", qty =", refs[0]; rem debug
-
-				call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then exitto std_exit
-			endif
-
-		endif
-
+		call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+		if status then exitto std_exit
 	endif
+
+	rem --- Update OO quantity for current item and warehouse
+
+	if curr_whse$<>"" and curr_item$<>"" and curr_qty<>0 then
+		items$[1] = curr_whse$
+		items$[2] = curr_item$
+		refs[0]   = curr_qty 
+
+		print "-----Update OO: item = ", cvs(items$[2], 2), ", WH: ", items$[1], ", qty =", refs[0]; rem debug
+
+		call stbl("+DIR_PGM")+"ivc_itemupdt.aon","OO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
+		if status then exitto std_exit
+	endif
+
+	callpoint!.setDevObject("prior_wh",curr_whse$)
+	callpoint!.setDevObject("prior_item",curr_item$)
+	callpoint!.setDevObject("prior_qty",curr_qty$)
+	callpoint!.setDevObject("prior_conv",curr_conv$)
+
 endif
 [[POE_PODET.QTY_ORDERED.AVAL]]
 rem --- call poc_itemvend.aon (poc.ua) to retrieve unit cost from ivm-05
@@ -555,6 +526,15 @@ rem --- save current po status flag, po/req# and line#
 	callpoint!.setDevObject("start_wo_no",callpoint!.getColumnData("POE_PODET.WO_NO"))
 	callpoint!.setDevObject("start_wo_seq_ref",callpoint!.getColumnData("POE_PODET.WK_ORD_SEQ_REF"))
 	callpoint!.setDevObject("wo_looked_up","N")
+
+	wh$=callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID")
+	item$=callpoint!.getColumnData("POE_PODET.ITEM_ID")
+	qty$=callpoint!.getColumnData("POE_PODET.QTY_ORDERED")
+	conv$=callpoint!.getColumnData("POE_PODET.CONV_FACTOR")
+	callpoint!.setDevObject("prior_wh",wh$)
+	callpoint!.setDevObject("prior_item",item$)
+	callpoint!.setDevObject("prior_qty",qty$)
+	callpoint!.setDevObject("prior_conv",conv$)
 [[POE_PODET.UNIT_COST.AVAL]]
 gosub update_header_tots
 callpoint!.setDevObject("cost_this_row",num(callpoint!.getUserInput()))

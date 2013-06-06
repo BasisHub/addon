@@ -145,11 +145,25 @@ rem --- Close lot/serial items
 	callpoint!.setDevObject("max_qty",max_qty)
 	callpoint!.setDevObject("sequence_no",callpoint!.getColumnData("SFE_WOLOTSER.SEQUENCE_NO"))
 	wo_location$=callpoint!.getColumnData("SFE_WOLOTSER.WO_LOCATION")
+
+rem --- Get first non-closed Lot Number
+	lotser_no$=""
+	numrecs=GridVect!.size()
+	dim gridrec$:fnget_tpl$("SFE_WOLOTSER")
+	if numrecs>0
+		for reccnt=0 to numrecs-1
+			gridrec$=GridVect!.getItem(reccnt)
+			if gridrec.complete_flg$<>"Y"
+				lotser_no$=gridrec.lotser_no$
+				reccnt=numrecs
+			endif
+		next reccnt
+	endif
 	wo_no$=callpoint!.getColumnData("SFE_WOLOTSER.WO_NO")
 
 	dim dflt_data$[4,1]
 	dflt_data$[1,0]="LOTSER_NO"
-	dflt_data$[1,1]=callpoint!.getColumnData("SFE_WOLOTSER.LOTSER_NO")
+	dflt_data$[1,1]=lotser_no$
 	dflt_data$[2,0]="CLOSE_QTY"
 	dflt_data$[2,1]=str(max_qty)
 	dflt_data$[3,0]="WO_LOCATION"
@@ -428,6 +442,7 @@ rem --- Adjust how many lot/serial items have been scheduled
 
 rem --- Refresh grid with new sfe_wolotser records just created
 	callpoint!.setStatus("CLEAR-REFGRID")
+	callpoint!.setFocus(0,"SFE_WOLOTSER.LOTSER_NO",0)
 
 rem --- Enable/disable additional options
 	gosub enable_options

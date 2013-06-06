@@ -34,7 +34,7 @@ rem --- so can display new detail in grid.
 		call stbl("+DIR_SYP")+"bas_sequences.bbj","INTERNAL_SEQ_NO",internal_seq_no$,table_chans$[all],"QUIET"
 		sfe_womatdtl.internal_seq_no$=internal_seq_no$
 		sfe_womatdtl_key$=sfe_womatdtl.firm_id$+sfe_womatdtl.wo_location$+sfe_womatdtl.wo_no$+sfe_womatdtl.internal_seq_no$
-		find(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next); continue
+		find(sfe_womatdtl_dev,key=sfe_womatdtl_key$,knum="PRIMARY",dom=*next); continue
 
 		rem --- Initialize and write new SFE_WOMATDTL record
 		sfe_womatdtl.unit_measure$=sfe_womatl.unit_measure$
@@ -110,7 +110,7 @@ rem --- Delete inventory commitments. Must do this before sfe_womatisd records a
 	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
 
 	firm_loc_wo$=firm_id$+callpoint!.getColumnData("SFE_WOMATHDR.WO_LOCATION")+callpoint!.getColumnData("SFE_WOMATHDR.WO_NO")
-	read(sfe_womatdtl_dev,key=firm_loc_wo$,dom=*next)
+	read(sfe_womatdtl_dev,key=firm_loc_wo$,knum="PRIMARY",dom=*next)
 	while 1
 		sfe_womatdtl_key$=key(sfe_womatdtl_dev,end=*break)
 		if pos(firm_loc_wo$=sfe_womatdtl_key$)<>1 then break
@@ -228,7 +228,7 @@ rem ==========================================================================
 	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
 
 	firm_loc_wo$=firm_id$+callpoint!.getColumnData("SFE_WOMATHDR.WO_LOCATION")+callpoint!.getColumnData("SFE_WOMATHDR.WO_NO")
-	read(sfe_womatdtl_dev,key=firm_loc_wo$,dom=*next)
+	read(sfe_womatdtl_dev,key=firm_loc_wo$,knum="PRIMARY",dom=*next)
 	while 1
 		sfe_womatdtl_key$=key(sfe_womatdtl_dev,end=*break)
 		if pos(firm_loc_wo$=sfe_womatdtl_key$)<>1 then break
@@ -238,7 +238,7 @@ rem ==========================================================================
 	return
 [[SFE_WOMATHDR.BSHO]]
 rem --- Open Files
-	num_files=12
+	num_files=13
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
@@ -246,12 +246,13 @@ rem --- Open Files
 	open_tables$[4]="SFE_WOCOMMIT",open_opts$[4]="OTA"
 	open_tables$[5]="SFE_WOTRANS",open_opts$[5]="OTA"
 	open_tables$[6]="SFE_WOMATISH",open_opts$[6]="OTA"
-	open_tables$[7]="SFE_WOMATISD ",open_opts$[7]="OTA"
+	open_tables$[7]="SFE_WOMATISD",open_opts$[7]="OTA"
 	open_tables$[8]="SFE_WOMATL",open_opts$[8]="OTA"
 	open_tables$[9]="SFC_WOTYPECD",open_opts$[9]="OTA"
 	open_tables$[10]="IVM_ITEMMAST",open_opts$[10]="OTA"
 	open_tables$[11]="IVM_ITEMWHSE",open_opts$[11]="OTA"
 	open_tables$[12]="IVC_WHSECODE",open_opts$[12]="OTA"
+	open_tables$[13]="SFE_WOLSISSU",open_opts$[13]="OTA"
 
 	gosub open_tables
 

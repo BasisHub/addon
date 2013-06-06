@@ -1,3 +1,10 @@
+[[<<DISPLAY>>.TEMP_TAB_STOP.BINP]]
+rem --- "Hidden" field to allow enter/tab from single enabled field
+rem --- Temporary workaround for Barista bug 6925
+
+	callpoint!.setFocus("<<DISPLAY>>.ITEM_DESC_SEG_1")
+	callpoint!.setStatus("ABORT")
+	break
 [[IVM_ITEMMAST.PRODUCT_TYPE.AVAL]]
 rem --- Set SA Level if new record
 	if callpoint!.getRecordMode()="A"

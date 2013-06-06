@@ -15,9 +15,13 @@ rem --- Do custom query
 
 	query_id$="BOM_ITEMS"
 	query_mode$="DEFAULT"
-	dim filter_defs$[1,1]
-	filter_defs$[1,0] = "IVM_ITEMWHSE.WAREHOUSE_ID"
-	filter_defs$[1,1] = "='"+callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")+"'"
+	dim filter_defs$[2,2]
+	filter_defs$[1,0] = "IVM_ITEMWHSE.FIRM_ID"
+	filter_defs$[1,1] = "='"+firm_id$+"'"
+	filter_defs$[1,2] = "DEFAULT"
+	filter_defs$[2,0] = "IVM_ITEMWHSE.WAREHOUSE_ID"
+	filter_defs$[2,1] = "='"+callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")+"'"
+	filter_defs$[2,2] = "DEFAULT"
 
 	call stbl("+DIR_SYP")+"bax_query.bbj",
 :		gui_dev,

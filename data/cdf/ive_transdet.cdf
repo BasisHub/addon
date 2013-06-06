@@ -319,6 +319,7 @@ rem ==========================================================================
 		file_name$ = "IVM_ITEMMAST"
 		dim ivm01a$:fnget_tpl$(file_name$)
 		find record (fnget_dev(file_name$), key=firm_id$+item$) ivm01a$
+		callpoint!.setDevObject("lot_ser",ivm01a.lotser_item$)
 
 		file_name$ = "IVM_ITEMWHSE"
 		dim ivm02a$:fnget_tpl$(file_name$)
@@ -668,6 +669,16 @@ rem --- Check the transaction qty
 		endif
 	else
 		callpoint!.setStatus("ABORT")
+	endif
+
+rem --- check Serialized Item for quantity 1
+
+	if callpoint!.getDevObject("lot_ser")="Y" and user_tpl.serialized=1
+		if abs(num(callpoint!.getUserInput()))<>1
+			msg_id$="IV_SERIAL_ONE"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+		endif
 	endif
 [[IVE_TRANSDET.AGRE]]
 print "after grid row exit (AGRE)"; rem debug

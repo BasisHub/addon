@@ -130,6 +130,7 @@ rem --- set devobject
 	callpoint!.setDevObject("yield",0)
 	callpoint!.setDevObject("master_bill","")
 	callpoint!.setDevObject("lotsize",0)
+	callpoint!.setColumnData("<<DISPLAY>>.WHERE_LAST_USED","",1)
 [[BMM_BILLMAST.EST_YIELD.AVAL]]
 rem --- Set devobject
 
@@ -140,6 +141,20 @@ rem --- Set DevObjects
 	callpoint!.setDevObject("yield",num(callpoint!.getColumnData("BMM_BILLMAST.EST_YIELD")))
 	callpoint!.setDevObject("master_bill",callpoint!.getColumnData("BMM_BILLMAST.BILL_NO"))
 	callpoint!.setDevObject("lotsize",num(callpoint!.getColumnData("BMM_BILLMAST.STD_LOT_SIZE")))
+
+	source$=callpoint!.getColumnData("BMM_BILLMAST.SOURCE_CODE")
+	in_prod$=Translate!.getTranslation("AON_IN_PRODUCTION_ENTRY")
+	in_wo$=Translate!.getTranslation("AON_IN_WORK_ORDERS")
+	if source$="B"
+		callpoint!.setColumnData("<<DISPLAY>>.WHERE_LAST_USED",in_prod$,1)
+	else
+		if source$="W"
+			callpoint!.setColumnData("<<DISPLAY>>.WHERE_LAST_USED",in_wo$,1)
+		else
+			callpoint!.setColumnData("<<DISPLAY>>.WHERE_LAST_USED","",1)
+		endif
+	endif
+	
 [[BMM_BILLMAST.BSHO]]
 rem --- Set DevObjects required
 

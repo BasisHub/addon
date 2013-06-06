@@ -722,8 +722,7 @@ rem				endif
 :					gridInvoices!.getCellText(row_no, 11),
 :					str(payment_amt)
 :				)
-				callpoint!.setDevObject("tot_payments",str(tot_payments))
-				callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
+
 		rem --- Checked -> not checked
 
 			else
@@ -773,11 +772,22 @@ rem				endif
 :					str(apt01a.discount_amt),
 :					"0"
 :				)
-				callpoint!.setDevObject("tot_payments","0")
-				callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS","0",1)
+
 			endif
 		next curr_row
 	endif
+rem --- Calculate current value of selected invoices
+	tot_payments=0
+	if vectInvoicesMaster!.size() > 0
+	for x=1 to vect_size step user_tpl.MasterCols
+		if vectInvoicesMaster!.getItem(x)="Y"
+			tot_payments=tot_payments+num(vectInvoicesMaster!.getItem(x+12))
+		endif
+	next x
+	endif
+
+	callpoint!.setDevObject("tot_payments",str(tot_payments))
+	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 
 	SysGUI!.setRepaintEnabled(1)
 
