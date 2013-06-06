@@ -3,9 +3,9 @@ rem
 rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
-
 rem ' Return sales totals by customer by customer type for a given month period
-rem ' SETERR ERROR_ROUTINE
+
+seterr sproc_error
 
 rem ' Declare some variables ahead of time
 declare BBjStoredProcedureData sp!
@@ -100,12 +100,10 @@ sqlclose (chan)
 sp!.setRecordSet(rs!)
 end
 
-rem ' Error routine
-ERROR_ROUTINE:
-    SETERR DONE
-    msg$ = "Error #" + str(err) + " occured in " + pgm(-1) + " at line " + str(tcb(5))
-    if err = 77 then msg$ = msg$ + $0d0a$ + "SQL Err: " + sqlerr(chan)
-    java.lang.System.out.println(msg$)
-    if tcb(13) then exit else end
+sproc_error:rem --- SPROC error trap/handler
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
 
 

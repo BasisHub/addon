@@ -1,3 +1,33 @@
+[[IVS_PARAMS.ASVA]]
+rem --- Validate Description Lengths
+
+	desc1=num(callpoint!.getColumnData("IVS_PARAMS.DESC_LEN_01"))
+	desc2=num(callpoint!.getColumnData("IVS_PARAMS.DESC_LEN_02"))
+	desc3=num(callpoint!.getColumnData("IVS_PARAMS.DESC_LEN_03"))
+	tot_len$=callpoint!.getTableColumnAttribute("IVS_PARAMS.DESC_LEN_01","MAXV")
+
+	if desc1+desc2+desc3>num(tot_len$)
+		msg_id$="IV_DESC_TOO_LONG"
+		dim msg_tokens$[1]
+		msg_tokens$[0]=tot_len$
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+
+	if desc3<>0 and desc2=0
+		msg_id$="IV_DESC3_NODESC2"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+
+	if desc1=0
+		msg_id$="INPUT_ERR_VALUE"
+		dim msg_tokens$[1]
+		msg_tokens$[0]=callpoint!.getTableColumnAttribute("IVS_PARAMS.DESC_LEN_01","DESC")
+		msg_tokens$[1]="1-"+tot_len$
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
 [[IVS_PARAMS.AREC]]
 rem --- Init new record
 	gl_installed$=callpoint!.getDevObject("gl_installed")

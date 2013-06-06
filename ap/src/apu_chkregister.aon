@@ -164,13 +164,28 @@ rem --- Vendor
         while more
             extract record (apm02_dev,key=firm_id$+ape04a.vendor_id$+ape04a.ap_type$,dom=*break) apm02a$
             apm02a.lstpay_date$=apw01a.check_date$
-            apm02a.open_invs=apm02a.open_invs-ape04a.invoice_amt-ape04a.discount_amt
-            if apw01a.check_date$<=prior_g9$ apm02a.pri_yr_discs=apm02a.pro_yr_discs+ape04a.discount_amt,apm02a.pyr_payments=apm02a.pyr_payments+ape04a.invoice_amt
-            if apw01a.check_date$>prior_g9$ and apw01a.check_date$<=g9$ apm02a.ytd_discs=apm02a.ytd_discs+ape04a.discount_amt,apm02a.ytd_payments=apm02a.ytd_payments+ape04a.invoice_amt
-            if apw01a.check_date$>g9$ apm02a.nyr_disc=apm02a.nyr_disc+ape04a.discount_amt,apm02a.nyr_payments=apm02a.nyr_payments+ape04a.invoice_amt
-            if apw01a.check_date$<=prior_g8$ apm02a.pri_cal_pmt=apm02a.pri_cal_pmt+ape04a.invoice_amt
-            if apw01a.check_date$>prior_g8$ and apw01a.check_date$<=g8$ apm02a.cur_cal_pmts=apm02a.cur_cal_pmts+ape04a.invoice_amt
-            if apw01a.check_date$>g8$ apm02a.nxt_cyr_pmts=apm02a.nxt_cyr_pmts+ape04a.invoice_amt
+            apm02a.open_invs=apm02a.open_invs-(ape04a.payment_amt+ape04a.discount_amt)
+            if apw01a.check_date$<=prior_g9$
+				apm02a.pri_yr_discs=apm02a.pro_yr_discs+ape04a.discount_amt
+				apm02a.pyr_payments=apm02a.pyr_payments+ape04a.payment_amt
+			endif
+            if apw01a.check_date$>prior_g9$ and apw01a.check_date$<=g9$
+				apm02a.ytd_discs=apm02a.ytd_discs+ape04a.discount_amt
+				apm02a.ytd_payments=apm02a.ytd_payments+ape04a.payment_amt
+			endif
+            if apw01a.check_date$>g9$
+				apm02a.nyr_disc=apm02a.nyr_disc+ape04a.discount_amt
+				apm02a.nyr_payments=apm02a.nyr_payments+ape04a.payment_amt
+			endif
+            if apw01a.check_date$<=prior_g8$
+				apm02a.pri_cal_pmt=apm02a.pri_cal_pmt+ape04a.payment_amt
+			endif
+            if apw01a.check_date$>prior_g8$ and apw01a.check_date$<=g8$
+				apm02a.cur_cal_pmts=apm02a.cur_cal_pmts+ape04a.payment_amt
+			endif
+            if apw01a.check_date$>g8$
+				apm02a.nxt_cyr_pmts=apm02a.nxt_cyr_pmts+ape04a.payment_amt
+			endif
             apm02a$=field(apm02a$)
             write record (apm02_dev) apm02a$
             break
@@ -217,11 +232,10 @@ open_checks: rem --- Open Checks
         apt05a.check_date$=apw01a.check_date$
         apt05a.trans_type$="C"
         apt05a.ap_dist_code$=k2$ ;rem jpb k2$?
-        apt05a.invoice_amt=ape04a.invoice_amt+ape04a.discount_amt+ape04a.retention
+        apt05a.invoice_amt=ape04a.payment_amt+ape04a.discount_amt+ape04a.retention
         apt05a.discount_amt=ape04a.discount_amt
         apt05a.retention=ape04a.retention
-        apt05_key$=firm_id$+apw01a.ap_type$+apt05a.check_no$+apt05a.vendor_id$+apt05a.ap_inv_no$
-        write record (apt05_dev,key=apt05_key$,dom=remove_open_invoice) apt05a$
+        write record (apt05_dev,dom=remove_open_invoice) apt05a$
         if br$="Y" if gl$="Y" gosub update_bank_rec
         goto remove_open_invoice
 
@@ -240,8 +254,7 @@ void_check: rem --- Void Check
         apt05a.check_no$=apw01a.check_no$
         apt05a.check_date$=apw01a.check_date$
         apt05a.trans_type$="V"
-        apt05_key$=firm_id$+apw01a.ap_type$+apt05a.check_no$+apt05a.vendor_id$+apt05a.ap_inv_no$
-        write record (apt05_dev,key=apt05_key$,dom=remove_check) apt05a$
+        write record (apt05_dev,dom=remove_check) apt05a$
         if br$="Y" x9$=x9$+apt05a.check_no$
 
 remove_check: rem --- Remove Check
@@ -278,7 +291,7 @@ update_open_invoice: rem --- update open invoice
     t[0]=apt01a.invoice_amt
     t[1]=apt01a.discount_amt
     t[2]=apt01a.retention
-    d9$=apt01a.ap_dist_code$    
+    d9$=apt01a.ap_dist_code$
     read (apt11_dev,key=apt01_key$,dom=*next)
 
 rem --- Accumulate any adjustments/payments
@@ -309,7 +322,7 @@ rem --- Write detail
     apt11a.trans_type$="C"
     apt11a.trans_ref$=apw01a.check_no$
     apt11a.trans_date$=apw01a.check_date$
-    apt11a.trans_amt=(-ape04a.invoice_amt)+ape04a.retention
+    apt11a.trans_amt=(-ape04a.payment_amt)-ape04a.discount_amt
     apt11a.trans_disc=-ape04a.discount_amt
     apt11a$=field(apt11a$)
     write record (apt11_dev) apt11a$
@@ -350,9 +363,9 @@ rem --- Detail
     find record (apm01_dev,key=firm_id$+apt05a.vendor_id$,dom=*next) apm01a$
     let glt05a.description$=apm01a.vendor_name$
     let q$=glt05a.description$
-    let glt05a.check_amount=apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention
+    let glt05a.check_amount=ape04a.payment_amt
     extract record (glt05_dev,key=firm_id$+glt05a.gl_account$+glt05a.check_no$,dom=*next) glt05a$;
-:      let glt05a.check_amount=glt05a.check_amount+apt05a.invoice_amt-apt05a.discount_amt-apt05a.retention,glt05a.description$=q$;rem Advisory Locking
+:      let glt05a.check_amount=glt05a.check_amount+ape04a.payment_amt,glt05a.description$=q$;rem Advisory Locking
     glt05a$=field(glt05a$)
     write record (glt05_dev) glt05a$
 
@@ -434,25 +447,24 @@ return
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (01Apr2006)
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
 
     rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_SYP",err=std_error_exit)
-    call pgmdir$+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
+    if pgm(-1)<>pgm(-2) status=999; exit 
     release
 
 rem #endinclude std_error.src

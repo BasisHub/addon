@@ -40,24 +40,24 @@ done: rem --- All done
    
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (01Apr2006)
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
 
     rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
+    if pgm(-1)<>pgm(-2) status=999; exit 
     release
 
 rem #endinclude std_error.src
@@ -116,6 +116,7 @@ rem  */
         rem  * @param BBjInt upgrade%
         rem  */
         method public void updateXmlFiles(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
+            seterr method_error
             appDir$ = #parseAppPath(newSyncLoc$)
             if upgrade% then 
 				rem --- count number of settings files
@@ -166,6 +167,16 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 
             #closeLog()
             #destroyProgressMeter()
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -178,6 +189,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 		rem  * @param java.io.FilenameFilter filter!
         rem  */
         method private void copyFiles(File sourceDir!, File targetDir!, java.io.FilenameFilter filter!)
+            seterr method_error
             declare File sourceXml!
             declare File targetXml!
             
@@ -202,20 +214,32 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
                     rem --- copy file
                     targetXml! = new File(targetDir!, xmlName$)
                     #incrementProgressMeter("copying: " + targetXml!.getPath())
-                    sourceChan=unt
-                    open(sourceChan,isz=-1)sourceXml!.getPath()
-                    targetChan=unt
-                    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")targetXml!.getPath()
-                    while 1
-                        readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
-                        writerecord(targetChan)record$
-                    wend
-                    close(sourceChan)
-                    close(targetChan)
+                    rem --- skip if source and target are the same
+                    if !FileObject.isSameFile(sourceXml!.getPath(),targetXml!.getPath()) then
+                        sourceChan=unt
+                        open(sourceChan,isz=-1)sourceXml!.getPath()
+                        targetChan=unt
+                        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")targetXml!.getPath()
+                        while 1
+                            readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                            writerecord(targetChan)record$
+                        wend
+                        close(sourceChan)
+                        close(targetChan)
+                    endif
                     #log("COPIED: " + sourceXml!.getPath())
                 next i
             endif
-    
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -229,6 +253,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 		rem  * @return HashMap <VERSION_ID> keyed by <ASC_PROD_ID>
         rem  */
         method private HashMap getModuleVersion(File dir!)
+            seterr method_error
 			declare HashMap newVers!
 			newVers! = new HashMap()
         
@@ -283,6 +308,15 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
             endif
             
             methodret newVers!
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -308,6 +342,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 		rem  * @param HashMap newVers!
         rem  */
         method private void updateXmlFiles(File dir!, HashMap newVers!)
+            seterr method_error
         
             rem --- Validate directory
             if dir! = null() or !dir!.exists() or !dir!.isDirectory() or dir!.list() = null()
@@ -410,6 +445,16 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
                     endif
                 next i
             endif
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -423,6 +468,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 		rem  * @return int count
         rem  */
         method private BBjInt copyDirectories(File source!, File target!)
+            seterr method_error
 			count%=0
     
             rem -- recursively process directories and copy files
@@ -452,16 +498,19 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
                 rem --- copy file
 				if target!<>null() then
 					#incrementProgressMeter("copying: " + source!.getPath())
-					sourceChan=unt
-					open(sourceChan,isz=-1,err=*endif)source!.getPath()
-					targetChan=unt
-					open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
-					while 1
-						readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
-						writerecord(targetChan)record$
-					wend
-					close(sourceChan)
-					close(targetChan)
+                    rem --- skip if source and target are the same
+                    if !FileObject.isSameFile(source!.getPath(),target!.getPath()) then
+                        sourceChan=unt
+                        open(sourceChan,isz=-1,err=*endif)source!.getPath()
+                        targetChan=unt
+                        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+                        while 1
+                            readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                            writerecord(targetChan)record$
+                        wend
+                        close(sourceChan)
+                        close(targetChan)
+                    endif
 					#log("COPIED: " + source!.getPath())
 				endif
 				count%=count% + 1
@@ -469,6 +518,15 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
             endif
 
             methodret count%
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -478,7 +536,8 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
         rem  * @return BBjString aonPath$
         rem  */
         method private BBjString parseAppPath(BBjString path$)
-        appDir$ = path$
+            seterr method_error
+            appDir$ = path$
 
             rem --- Flip directory path separators to "/"
             pos=pos("\"=path$)
@@ -492,6 +551,15 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 				appDir$=path$(1, pos("/data/"=path$+"/",-1) - 1)
 			endif
             methodret appDir$
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -501,11 +569,21 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
         rem  * @return BBjString settingsPath$
         rem  */
         method private BBjString parseSettingsPath(BBjString path$)
+            seterr method_error
 
             appDir$ = #parseAppPath(path$)
 			settingsDir$ = appDir$(1,pos("/"=appDir$,-1)) + "barista/settings"
 
             methodret settingsDir$
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -514,6 +592,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
         rem  * @return BBjTopLevelWindow meterWin!
         rem  */
         method private BBjTopLevelWindow createProgressMeter()
+            seterr method_error
 
             rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
             rem declare BBjTopLevelWindow meterWin!
@@ -536,6 +615,15 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
 :               meter_text$,
 :               meter_action$
             methodret meterWin!
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -585,6 +673,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
         rem  * @param BBjInt upgrade%
         rem  */
         method private void openLog(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
+            seterr method_error
             rem --- log directory is under aon at same level as data directory
             appDir$ = #parseAppPath(newSyncLoc$)
             logDir$ = appDir$ + "/logs"
@@ -607,6 +696,16 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
                 print(#log_dev)"Location of old sync XML files: " + oldSyncLoc$
                 print(#log_dev)"Sync backup directory: " + syncBackupDir$
             endif
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**

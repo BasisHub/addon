@@ -1,3 +1,16 @@
+[[POE_REQDET.CONV_FACTOR.AVAL]]
+rem --- Recalc Unit Cost
+
+	prev_fact=num(callpoint!.getColumnData("POE_REQDET.CONV_FACTOR"))
+	new_fact=num(callpoint!.getUserInput())
+	unit_cost=num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))
+	if num(callpoint!.getUserInput())<>prev_fact and prev_fact<>0
+		unit_cost=unit_cost/prev_fact
+		unit_cost=unit_cost*new_fact
+		callpoint!.setColumnData("POE_REQDET.UNIT_COST",str(unit_cost),1)
+		gosub update_header_tots
+		callpoint!.setDevObject("cost_this_row",unit_cost)
+	endif
 [[POE_REQDET.WO_NO.AVAL]]
 rem --- need to use custom query so we get back both po# and line#
 rem --- throw message to user and abort manual entry
@@ -495,6 +508,12 @@ callpoint!.setDevObject("qty_this_row",num(callpoint!.getUserInput()))
 callpoint!.setDevObject("cost_this_row",unit_cost);rem setting both qty and cost because cost may have changed based on qty break
 [[POE_REQDET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
+
+	if callpoint!.getHeaderColumnData("POE_REQHDR.WAREHOUSE_ID")<>pad(callpoint!.getUserInput(),2)
+		msg_id$="PO_WHSE_NOT_MATCH"
+		gosub disp_message
+	endif
+
 	gosub validate_whse_item
 [[POE_REQDET.AGDR]]
 rem --- After Grid Display Row
@@ -596,9 +615,14 @@ if pos(".AVAL"=callpoint!.getCallpointEvent())
 	if callpoint!.getVariableName()="POE_REQDET.REQ_QTY"
 		new_qty=num(callpoint!.getUserInput())
 		new_cost=num(callpoint!.getColumnData("POE_REQDET.UNIT_COST"))
-	else
+	endif
+	if callpoint!.getVariableName()="POE_REQDET.UNIT_COST"
 		new_qty=num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))
 		new_cost=num(callpoint!.getUserInput())
+	endif
+	if callpoint!.getVariableName()="POE_REQDET.CONV_FACTOR"
+		new_qty=num(callpoint!.getColumnData("POE_REQDET.REQ_QTY"))
+		new_cost=unit_cost
 	endif
 	gosub calculate_header_tots
 endif

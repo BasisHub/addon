@@ -1,3 +1,26 @@
+[[OPT_INVHDR.AOPT-COMM]]
+rem --- Display Comments form
+
+	ar_type$=callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")
+	cust$=callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")
+	order$=callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")
+
+	dim dflt_data$[3,1]
+	dflt_data$[1,0] = "AR_TYPE"
+	dflt_data$[1,1] = ar_type$
+	dflt_data$[2,0] = "CUSTOMER_ID"
+	dflt_data$[2,1] = cust$
+	dflt_data$[3,0] = "ORDER_NO"
+	dflt_data$[3,1] = order$
+	comment_pfx$=firm_id$+ar_type$+cust$+order$
+
+	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:		"OPE_ORDCOMMENTS", 
+:		stbl("+USER_ID"), 
+:		"MNT", 
+:		comment_pfx$,
+:		table_chans$[all], 
+:		dflt_data$[all]
 [[OPT_INVHDR.AFMC]]
 rem --- Inits
 

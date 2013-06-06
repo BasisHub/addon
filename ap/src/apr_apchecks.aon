@@ -1,41 +1,196 @@
-rem --- Check Printing (Print Overlay)
-rem --- Program apr_apchecks v8.0.0 19Oct2007 (apr_eb)
+rem --- AP Check Printing for Jasper version of checks (Print Overlay)
+rem --- Program apr_apchecks-jasper.aon v8.0.0 19Oct2007 (apr_eb)
 rem --- Created by adx_codeport.bbx v1.1.5 (10/19/2007 05:37:14)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
+rem --- (3/6/2013)
+rem --- New Jasper version took the name, apr_apchecks.aon
+rem --- BBjForm version renamed to apr_apchecks_BBjForm.aon
+
+rem --- NOTES...
+
+rem --- Assumptions
+rem ---   - Accounting Stub drives overflow logic since it may have more rows if 'Print GL on Stub' param is set.
+rem ---   - Memos print on both stubs if the 'Print Memo on Stub' flag is set.
+rem ---   - Invoice info matches on the stubs for each check page regardless of overflow
+rem ---     For example, say the Accting stub requires 3 pages (checks) such that check 1001 prints Inv 1 and 2,
+rem ---     check 1002 prints Invs 3, 4, and 5, and check 1003 prints rest of Inv 5 plus Inv 6.
+
+rem ---                               Check 1001             Check 1002                Check 1003
+rem ---                             ---------------         ---------------           ---------------
+rem ---         Accounting stub     First page of rows      Second page of rows        Third page of rows
+rem ---                            (Invs 1, 2 w/GL)        (Invs 3, 4, 5 w/GL)        (Invs 5 w/rest of GL, 6 w/GL)
+rem ---         Acct stub totals    ** Continued **         ** Continued **            Values
+rem ---                             --------------------------------------------------------------------------
+rem ---         Vendor stub        (Invs 1, 2,blank rows)  (Invs 3, 4, 5,blank rows)  (Invs 6, w/blank rows)
+rem ---         Vend stub totals    ** Continued **         ** Continued **	           Values
+rem ---                             --------------------------------------------------------------------------
+rem ---         Check itself         VOID                    VOID                      Check data
+
+
+rem --- Report components
+rem ---   O/E Form
+rem ---      apr_checksjasper
+rem ---         Introduces one additional control for selecting check section order
+rem ---   Addon Backend
+rem ---      apr_apchecks-jasper.aon
+rem ---         Uses essentially pre-jasper logic, to fill the print work file, apw_chkjasperprn, 
+rem ---         which is processed by the jaspers and .prcs.
+rem ---   SPROCS
+rem ---      APCHECKS_MAIN.prc
+rem ---         Gets driver info from apw_chkjasperprn by using SELECT DISTINCT. 
+rem ---         Rwsult set is passed back to Main jasper to use in calling sub-reports (stub and check).
+rem ---      APCHECKS_STUB.prc
+rem ---         Processes based on input param specifying Vendor stub or Accounting stub.
+rem ---         Does a SELECT on apw_chkjasperprn to get, format and pass to jasper stub data.
+rem ---         Rows passed out include the Totals row with formatted totals, and may include
+rem ---         blank rows to ensure jasper prints the totals in the totals line.
+rem ---      APCHECKS_CHECK.prc
+rem ---         Does a SELECT on apw_chkjasperprn to get, format and pass to jasper check data: 
+rem ---            check date, check amount, and the text of the "Exactly" string.
+rem ---   Jaspers
+rem ---      APCheck-Main.jasper/jrxml
+rem ---         Just a driver, prints no actual data.
+rem ---         Has three Detail sections each may print either stub or check.
+rem ---         When printing stub, Main passes the specific stub-type (Vendor/Accouting) to stub-SPROC.
+rem ---         Due to the nature of checks printing on stock, the sizes of each section are important.
+rem ---      APCheck-Stub.jasper/jrxml
+rem ---         Prints "Vendor Copy" or "Accounting Copy" depending on stub-type passed in.
+rem ---         Does NOT do totally or formatting, just prints what's in apw_chkjasperprn.
+rem ---      APCheck-Check.jasper/jrxml
+rem ---         The actual check section. Prints either VOID or the payment amounts.
+rem ---   New Files: apw_chkjasperprn and adx_locks
+rem ---      apw_chkjasperprn
+rem ---         This new workfile, apw_chkjasperprn, holds all data needed by the jaspers and .prcs for printing.
+rem ---         It is similar in concept to the DocOut's OutVect!.
+rem ---         The SPROCs query this work file for data in each jasper Detail section.
+rem ---         It is ordered by firm, APType, check#, and allows the three sections (Stub, Stub, Check)
+rem ---         to print in various orders.
+rem ---         The order of the check section printing is determined by O/E selection which is passed to the
+rem ---         jaspers that take care of printing the data.
+rem ---      adx_locks
+rem ---         New table, adx_locks, is essentially used to put a softlock on apw_chkjasperprn.
+rem ---         We don't want data in apw_chkjasperprn to be changed while a print run is processing,
+rem ---         but locking apw_chkjasperprn directly caused Jasper to err when trying to access the locked table.
+rem ---          - Written to in callpoint ASVA, After Save Validation passes other tests.
+rem ---          - Removed in .aon when exiting program.
+rem ---                 Note: Old behavior allowed checks to be run repeatedly. This hasn't changed other than the
+rem ---                       requirement that an actual print run be completed before another can start for a firm.
+
+
     setesc std_error
     seterr std_error
 
+	use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+
+	declare BBJasperReport BBjReport!
+	declare BBJasperViewerWindow BBjReportWindow! 
+    
+    params! = Option!.getOptionMap()
+		
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 50
+	
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
 
+	rem --- Set document Directory
+
+    docdir$=stbl("+DOC_DIR_PDF",err=*next)
+
 rem --- Retrieve sysinfo data
 
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=*next)
-    firm_id$=sysinfo.firm_id$
+    sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
 
+    dim sysinfo$:sysinfo_tpl$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    user_id$=sysinfo.user_id$
+    proc_date$=date(jul(num(sysinfo.system_date$(1,4)),num(sysinfo.system_date$(5,2)),num(sysinfo.system_date$(7,2))):stbl("+DATE_MASK"))
+    firm_id$=sysinfo.firm_id$
+    firm_name$=sysinfo.firm_name$
+	menu_option_id$=sysinfo.menu_option_id$
+
+rem --- Derive/set path and filename for logo to go on form
+
+    logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+    logo_filenm$=""
+    if logo_file$<>""
+        logo_chn=unt
+        open (logo_chn,err=*endif)logo_file$
+        logo_filenm$=fid(logo_chn)(9)
+        close (logo_chn)
+    endif
+
+rem --- Set Report Name & Subreport directory
+
+    reportDir$ = stbl("+DIR_REPORTS",err=*next)   
+    temp = unt
+    open (temp)reportDir$
+    reportDir$ = fid(temp)(9)+"/"
+    close (temp)
+    reportBaseName$ = "APCheck-Main"
+    filename$ = reportDir$ + reportBaseName$ + ".jasper"
+
+    declare BBJasperReport report!
+    
+rem --- Check for user authentication; create connection string in url$
+
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    rem dbtimeout$="&socket_timeout=5000"
+  
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    rem dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT",err=*next)
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
+
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
+	
+	dbname$ = stbl("+DBNAME")
+	dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+		if pos("jdbc:"=cvs(dbname$,8))=1 then			
+			url$=dbname$+url_user$+dbssl$
+		else
+			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$
+		endif
+    endif
+	
 rem --- Open/Lock files
 
-    files=9,begfile=1,endfile=files
+    files=11,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="aps_params",ids$[1]="APS_PARAMS"
-    files$[2]="ape-04",ids$[2]="APE_CHECKS"
-    files$[3]="apm-01",ids$[3]="APM_VENDMAST"
-    files$[4]="ape-04",ids$[4]="APE_CHECKS"
-    files$[5]="apm_payaddr",ids$[5]="APM_PAYADDR"
+    files$[1]="aps_params",  ids$[1]="APS_PARAMS"
+    files$[2]="ape-04",      ids$[2]="APE_CHECKS"
+    files$[3]="apm-01",      ids$[3]="APM_VENDMAST"
+    files$[4]="ape-04",      ids$[4]="APE_CHECKS"
+    files$[5]="apm_payaddr", ids$[5]="APM_PAYADDR"
     files$[6]="apc_typecode",ids$[6]="APC_TYPECODE"
-    files$[7]="apt-02",ids$[7]="APT_INVOICEDIST"
-    files$[8]="apw-01",ids$[8]="APW_CHECKINVOICE"
-    files$[9]="aps_report",ids$[9]="APS_REPORT"
-
+    files$[7]="apt-02",      ids$[7]="APT_INVOICEDIST"
+    files$[8]="apw-01",      ids$[8]="APW_CHECKINVOICE"
+    files$[9]="aps_report",  ids$[9]="APS_REPORT"
+	files$[10]="apw_chkjasperprn",ids$[10]="APW_CHKJASPERPRN"
+	files$[11]="adx_locks",  ids$[11]="ADX_LOCKS"
+	
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto add_done
 
     aps01_dev=channels[1]
     ape04_dev=channels[2]
@@ -46,12 +201,20 @@ rem --- Open/Lock files
     apt02_dev=channels[7]
     apw01_dev=channels[8]
     aps01b_dev=channels[9]
+	apw_chkprn_dev=channels[10]; rem apw_chkjasperprn
+	adxlocks_dev=channels[11]
 
 rem --- Dimension string templates
 
     dim aps01a$:templates$[1],ape04a$:templates$[2],apm01a$:templates$[3]
     dim ape04b$:templates$[4],apm08a$:templates$[5],apm10a$:templates$[6]
     dim apt02a$:templates$[7],apw01a$:templates$[8],aps01b$:templates$[9]
+	dim apw_chkprn$:templates$[10]
+	dim adxlocks$:templates$[11]
+
+rem --- Clear any existing (stale) recs for this firm from the jasper print file
+
+	call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",apw_chkprn_dev,firm_id$,status
 
 rem --- Assign form input values to local variables
 
@@ -60,14 +223,20 @@ rem --- Assign form input values to local variables
     restart$=option!.getOptionData("PICK_CHECK")
     ap_type$=option!.getOptionData("AP_TYPE")
     vendor_id$=option!.getOptionData("VENDOR_ID")
+	
+	form_order$=option!.getOptionData("FORM_ORDER")
+	top_part$=form_order$(1,1)
+	middle_part$=form_order$(2,1)
+	bottom_part$=form_order$(3,1)
 
 rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-    call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_length
-    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
     
+	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",vend_mask$,0,vendor_length
+    call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",gl_acct_mask$,0,gl_acct_length
+	
 rem --- Set A/P Type if multiple types not installed
 
     if aps01a.multi_types$<>"Y"
@@ -75,24 +244,28 @@ rem --- Set A/P Type if multiple types not installed
         aptype_len=dec(aptype$(10,2))
         dim ap_type$(aptype_len)
     endif
-
+	
 initializations: rem --- Initializations
 
     q6=0
     show_progress=1
-    t0$=""
-    t1$=""
-    dim t[2]
-    m1$="########.00CR"
-    m8$="*#######"
-    m9$="*"+m1$(2,10)
-    l9=12
-    l=0
-    rem h0=0
+    prev_aptype_t0$=""
+    prev_aptype_vend_t1$=""
+    dim t[3]
+	
+    stub_amt_mask$="########.00CR"
+    exactly_amt_mask$="*#######"
+    check_amt_mask$="*"+stub_amt_mask$(2,10)
+	
     more=1
-    stub_offset=266
     recs=0
+	memodist_width=len(stub_amt_mask$)+gl_acct_length+3; rem Memo/GL Dist col width to align-Rt GL amts which are appended to GL Accts (aligned-L)
+	
+	acctstub_rowcnt=1; rem 1-based Accting Stub may have more rows than vend stub, so use it to determine overflow (old 'L')
+	vendstub_rowcnt=1; rem 1-based
 
+	max_stub_rows=14; rem change this to change # rows printing on stub. AND CHANGE jrxml to accomodate diff # of rows.
+	
 rem --- Check From Address
 
     aps01b_key$=firm_id$+"AP02"
@@ -106,44 +279,70 @@ rem --- Check From Address
         stub_address$=ap_address$(36,35)
     endif
 
+rem --- Assign needed jasper params 
 
-rem --- Open the printer
+	params!.put("REPORT_NAME",sysinfo.task_desc$)
+    params!.put("FIRM_ID",firm_id$)
+	params!.put("FIRM_NAME",firm_name$)
+    params!.put("BARISTA_WD",dir(""))  
 
-    textfont!   = new java.awt.Font("Times New Roman",java.awt.Font.PLAIN,10)
-    italicfont! = new java.awt.Font("Times New Roman",java.awt.Font.ITALIC,10)
-    boldfont!   = new java.awt.Font("Times New Roman",java.awt.Font.BOLD,10)
-    largefont!  = new java.awt.Font("Arial",java.awt.Font.BOLD,26)
+	params!.put("CHECK_DATE",check_date$)
+    params!.put("AP_TYPE",ap_type$)
+    params!.put("VENDOR_ID",vendor_id$)
 
-    left_justify=0
-    right_justify=1
-    center_justify=2
+	params!.put("TOP_PART",top_part$)
+    params!.put("MIDDLE_PART",middle_part$)
+    params!.put("BOTTOM_PART",bottom_part$)
+	
+	params!.put("VEND_MASK", vend_mask$)
+	params!.put("GL_ACCT_MASK", gl_acct_mask$)
+	params!.put("STUB_AMT_MASK", stub_amt_mask$)
+	params!.put("EXACTLY_AMT_MASK", exactly_amt_mask$)
+	params!.put("CHECK_AMT_MASK", check_amt_mask$)
+	
+	params!.put("AP_ADDRESS1_NAME",aps01b.name$)
+	params!.put("AP_ADDRESS2",ap_address$(1,35))
+	params!.put("AP_ADDRESS3",ap_address$(36,35))
+	params!.put("AP_ADDRESS4",ap_address$(71))
+	params!.put("AP_ADDR3_STUB",stub_address$)
+	
+	params!.put("LOGO_FILE",logo_filenm$)
+	
+	params!.put("MAX_STUB_ROWS",str(max_stub_rows))
 
-rem create file
-    myAPI!=BBjAPI()
-    myBBjPrinter!=myAPI!.getBBjPrinter(1,err=*next)
-    if myBBjPrinter!=null()
-        msg_id$="AD_NOPRINTER"
-        gosub disp_message
-        goto std_exit
-    endif
+rem --- Initialize the print work file fields
 
-rem Create a set of request attributes
-    requestAttributes!=new javax.print.attribute.HashPrintRequestAttributeSet()
-    requestAttributes!.add(javax.print.attribute.standard.MediaSizeName.NA_LETTER)
-    requestAttributes!.add(javax.print.attribute.standard.OrientationRequested.PORTRAIT)
+	rem firm_id$ As was input via params
+	rem ap_type$ Starts as was input via params/adjusted above; possibly modified below
+	
+	check_no_mask$="0000000"
+	rem check_no$ Starts as was input via params; incremented below
+	
+	chk_pagenum_mask$="000"
+	chk_pagenum=1; rem Will be one for one-page checks; incremented on overflow
+	
+	section_type$=top_part$; rem Start with top of check
+	
+	section_detseq_mask$="00000"
+	section_detseq$=str(1:section_detseq_mask$); rem 1-based ID of rows in a section
+	
+	rem check_date$ As was input via params--constant	
+	rem vendor_id$ Starts as was input via params
+	
+	stub_inv_no$=""; rem Assigned in stub sections
+	stub_inv_date$=""; rem Assigned in stub sections
+	stub_memo_dist$=""; rem Possible Memo or GL distribution info on accounting stub
+	stub_is_total$="N"; rem Y when rec is total line for a stub
+	
+	chk_is_void$="N"; rem Y means print VOID on the check instead of amount
+	chk_exactly$=""; rem Text for amount on check ('Exactly*10*dollars'...)
+	chk_amt_str$=""; rem Masked check amount or "*VOID*"
 
-    x!=new java.lang.Float(0.25).floatValue()
-    y!=new java.lang.Float(0.25).floatValue()
-    w!=new java.lang.Float(8.0).floatValue()
-    h!=new java.lang.Float(10.5).floatValue()
-    units=javax.print.attribute.standard.MediaPrintableArea.INCH
-    a!=new javax.print.attribute.standard.MediaPrintableArea(x!,y!,w!,h!,units)
-
-    requestAttributes!.add(a!)
-    myBBjPrinter!.setAttributes(requestAttributes!)
-
-    doc!=myBBjPrinter!.getForm(0)
-
+	stub_inv_amt=0
+	stub_inv_discamt=0
+	stub_inv_amt_pd=0
+	chk_amt=0
+	
 rem --- Start progress meter and position check File (ape-04)
 
     call pgmdir$+"adc_progress.aon","NC","","","","",0,ape04_dev,1,meter_num,status
@@ -154,6 +353,7 @@ rem --- Init Read
     if restart$="Y" read (ape04_dev,key=firm_id$+ap_type$+vendor_id$,dom=*next)
 
 rem --- Main Read
+rem --- First pass gets Accounting stub and actual check data
 
     while more
         k$=key(ape04_dev,end=*break)
@@ -163,312 +363,402 @@ rem --- Main Read
 
 rem --- Breaks
 
-        if ape04a.ap_type$<>t0$ gosub ap_type_break
-        if ape04a.ap_type$+ape04a.vendor_id$<>t1$ gosub new_vendor 
+        if ape04a.ap_type$<>prev_aptype_t0$ gosub ap_type_break
+        if ape04a.ap_type$+ape04a.vendor_id$<>prev_aptype_vend_t1$ gosub new_vendor 
 
         gosub inv_detail
 
 rem --- Accumulate
 
-        t[0]=t[0]+ape04a.invoice_amt+ape04a.retention
+        t[0]=t[0]+ape04a.invoice_amt; rem +ape04a.retention
         t[1]=t[1]+ape04a.discount_amt
         t[2]=t[2]+ape04a.retention
+		t[3]=t[3]+ape04a.payment_amt
     wend
 
 rem --- Totals
 
-    t9$="E"
+    t9$="E"; do_vend_header=0
     gosub new_vendor
 
-    if recs=0
-        msg_id$="DOC_OUTPUT_NODATA"
-        gosub disp_message
-        goto std_exit_no_report
-    endif
+    rem --- invoke jasper
+    report! = new BBJasperReport(filename$,url$)
+    report!.putParams(params!)
 
-    doc!.preview()
-    rem doc!.print()
+    locale$ = stbl("!LOCALE")
+    locale$ = stbl("+USER_LOCALE",err=*next)
+    report!.setLocale(locale$)
 
+rem --- Fill Report and Show
+
+    declare BBJasperViewerWindow viewerWindow!
+
+    report!.fill(1)
+    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,reportTitle$,$00080093$)
+    
+    viewerWindow!.setReleaseOnClose(0)
+    viewerWindow!.show(0)
+    declare BBjTopLevelWindow bbjWindow!
+    bbjWindow!= viewerWindow!.getViewerWindow()
+	cancelled=1
+    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win",err=*next); cancelled=0
+	if cancelled then goto close_win
+        
+rem --- Event Control
+
+    process_events,err=*same
+
+	release
+
+close_win:rem --- Viewer Window Closed
+
+    viewerWindow!.destroy(err=*next)
+	
+all_done: rem --- Exit
+
+	rem --- Clear softlock on jasper work file, apw_chkjasperprn	
+	remove (adxlocks_dev,key=firm_id$+menu_option_id$,dom=*next)
+	
     goto std_exit
-
-check_header: rem --- Check Stub Header
-
-    l=0
-    right_margin=568
-    dim col[6]
-    col[1]=67
-    col[2]=162
-    col[3]=261
-    col[4]=343
-    col[5]=446
-    col[6]=500
-
-    page!=doc!.createPage(err=std_error)
-    page!.setRightMargin(18)
-    page!.setLeftMargin(18)
-    page!.setTopMargin(18)
-    page!.setBottomMargin(18)
-
-    return
-
-check_stub:
-
-    tmp=fntext(6,1+stub,aps01b.name$,boldfont!)
-    tmp=fntext(6,12+stub,ap_address$(1,35),textfont!)
-    tmp=fntext(6,24+stub,stub_address$,textfont!)   
-
-    tmp=fntext(175,1+stub,x1$,boldfont!)
-    tmp=fntext2(350,1+stub,50,0+stub,Translate!.getTranslation("AON_CHECK_NO:"),italicfont!,right_justify)
-    tmp=fntext(400,1+stub,check_no$,boldfont!)
-    tmp=fntext(175,12+stub,vend_name$,boldfont!)
-    tmp=fntext(175,24+stub,Translate!.getTranslation("AON_CHECK_DATE:"),italicfont!)
-    tmp=fntext(228,24+stub,fndate$(check_date$),boldfont!)
-
-    tmp=fntext2(0,36+stub,col[1],36+stub,Translate!.getTranslation("AON_INV_DATE"),italicfont!,center_justify)
-    tmp=fntext(col[1]+6,36+stub,Translate!.getTranslation("AON_INV_NUMBER"),italicfont!)
-    tmp=fntext2(col[2],36+stub,col[3]-col[2]-6,36+stub,Translate!.getTranslation("AON_INV_AMOUNT"),italicfont!,right_justify)
-    tmp=fntext2(col[3],36+stub,col[4]-col[3]-6,36+stub,Translate!.getTranslation("AON_DISCOUNT"),italicfont!,right_justify)
-    tmp=fntext2(col[4],36+stub,col[5]-col[4]-6,36+stub,Translate!.getTranslation("AON_AMT_PAID"),italicfont!,right_justify)
-
-    memo_dist$=""
-    if aps01a.ap_chk_memo$="Y" then memo_dist$=memo_dist$+Translate!.getTranslation("AON_MEMO")
-    if aps01a.ap_chk_memo$="Y" and aps01a.ap_chk_dist$="Y" then memo_dist$=memo_dist$+"/"
-    if aps01a.ap_chk_dist$="Y" memo_dist$=memo_dist$+Translate!.getTranslation("AON_DISTRIBUTION")
-    tmp=fntext(col[5]+6,36+stub,memo_dist$,italicfont!)
-
-    tmp=fnbox(0,0+stub,right_margin,228)
-    tmp=fnline(0,36+stub,right_margin,36+stub)
-    tmp=fnline(0,48+stub,right_margin,48+stub)
-
-    tmp=fnline(166,0+stub,166,36+stub)
-    tmp=fnline(col[1],36+stub,col[1],216+stub)
-    tmp=fnline(col[2],36+stub,col[2],216+stub)
-    tmp=fnline(col[3],36+stub,col[3],216+stub)
-    tmp=fnline(col[4],36+stub,col[4],216+stub)
-    tmp=fnline(col[5],36+stub,col[5],216+stub)  
-
-    return
+	
 
 inv_detail: rem --- Invoice Detail
 
-    if l>l9 gosub overflow
+    if acctstub_rowcnt>max_stub_rows gosub overflow
+	
+	acctstub_row_has_printed=0; rem Will need to print row if doesn't print in Memo or GLDist sections
+	vendstub_row_has_printed=0; rem Will need to print row if doesn't print in Memo section
+	
+	rem --- Conditionally print invoice's memo on stubs
+	if aps01a.ap_chk_memo$="Y" and cvs(ape04a.ap_inv_memo$, 2) <> "" then 
+		stub_memo_dist$=ape04a.ap_inv_memo$(1,16)
+		
+		section_type$=  "A"; rem accounting stub
+		gosub check_stub_detail
+		acctstub_rowcnt=acctstub_rowcnt+1
+		acctstub_row_has_printed=1
+		
+		section_type$=  "V"; rem vendor stub
+		gosub check_stub_detail
+		vendstub_rowcnt=vendstub_rowcnt+1		
+		vendstub_row_has_printed=1
+	endif
 
-    row=49+l*12
-
-    stub=0
-    gosub check_stub_detail
-    stub=stub_offset
-    gosub check_stub_detail
-
-    l1=0
-
-    if cvs(ape04a.ap_inv_memo$, 2) <> "" then 
-        if aps01a.ap_chk_memo$="Y" then 
-            tmp=fntext(col[5]+6,row,ape04a.ap_inv_memo$(1,16),boldfont!)
-            tmp=fntext(col[5]+6,row+stub_offset,ape04a.ap_inv_memo$(1,16),boldfont!)
-        endif
-
-        if aps01a.ap_chk_dist$ <> "N" then 
-            if aps01a.ap_chk_memo$="Y" then l=l+1,l1=l1+1
-            row=49+l*12 
-        endif
-    endif
-
-    if aps01a.ap_chk_dist$ <> "N" then 
+    rem --- Conditionally print invoice's GL Distribution on Accounting stub
+	if aps01a.ap_chk_dist$ <> "N" then 
         read (apt02_dev,key=firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$,dom=*next)
 
         while 1
             k1$=key(apt02_dev,end=*break)
             if k1$(1,21)<>firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$ then break
             read record (apt02_dev) apt02a$
-            if l>l9 then gosub overflow
-            row=49+l*12
-
             if ape04a.orig_inv_amt then 
-                x0=apt02a.gl_post_amt*(ape04a.invoice_amt+ape04a.retention)/ape04a.orig_inv_amt 
+                gl_post_amt=apt02a.gl_post_amt*(ape04a.payment_amt+ape04a.discount_amt)/ape04a.orig_inv_amt 
             else 
-                x0=0
+                gl_post_amt=0
             endif
 
-            x$=fnmask$(apt02a.gl_account$(1,acct_length),g0$)
-            y$=str(x0:m1$)
-            y$=y$(pos(" "<>y$))
-            if l+1>l9 then gosub overflow
-            row=49+l*12
-            tmp=fntext(col[5]+6,row,x$,boldfont!)
-            tmp=fntext(col[5]+6,row+stub_offset,x$,boldfont!)
-            x$=y$
-            tmp=fntext2(col[6], row, right_margin-col[6]-6, row, x$, boldfont!, right_justify)
-            tmp=fntext2(col[6], row+stub_offset, right_margin-col[6]-6, row+stub_offset, x$, boldfont!, right_justify)    
-            l1=l1+1
-            l=l+1
-            x$(1)=""
-            row=49+l*12
+            gl_account$=fnmask$(apt02a.gl_account$(1,gl_acct_length),gl_acct_mask$)
+            gl_post_amt$=str(gl_post_amt:stub_amt_mask$)
+            gl_post_amt$=gl_post_amt$(pos(" "<>gl_post_amt$))
+
+			rem --- Split GL Account and Amount to two lines if necessary
+			dim x$(memodist_width)
+			x$(1)=cvs(gl_account$,2)
+			x$(memodist_width-len(gl_post_amt$)+1)=gl_post_amt$
+
+            if acctstub_rowcnt+1>max_stub_rows then gosub overflow
+			
+			stub_memo_dist$=x$
+            
+			section_type$=  "A"; rem accounting stub
+			gosub check_stub_detail
+            acctstub_rowcnt=acctstub_rowcnt+1
+
+			acctstub_row_has_printed=1
         wend
+
     endif
-
-    if l1=0 l=l+1
-    row=49+l*12
-
+	
+	rem --- print invoice data if not already printed w/Memo or GLDist
+	if acctstub_row_has_printed=0
+		stub_memo_dist$=""
+		
+		section_type$=  "A"; rem accounting stub
+		gosub check_stub_detail
+		acctstub_rowcnt=acctstub_rowcnt+1
+	endif
+	
+	if vendstub_row_has_printed=0
+		stub_memo_dist$=""
+			
+		section_type$=  "V"; rem vendor stub
+		gosub check_stub_detail
+		vendstub_rowcnt=vendstub_rowcnt+1
+	endif
     return
 
 check_stub_detail:
 
-    tmp = fntext2(0, row+stub, col[1], row+stub, fndate$(ape04a.invoice_date$), boldfont!, center_justify)
-    tmp = fntext(col[1]+6, row+stub, ape04a.ap_inv_no$, boldfont!)
-    tmp = fntext2(col[2], row+stub, col[3]-col[2]-6, row+stub, str(ape04a.invoice_amt + ape04a.retention:m1$), boldfont!, right_justify)
-    tmp = fntext2(col[3], row+stub, col[4]-col[3]-6 ,row+stub, str(ape04a.discount_amt:m1$), boldfont!, right_justify)
-    tmp = fntext2(col[4], row+stub, col[5]-col[4]-6, row+stub, str(ape04a.invoice_amt - ape04a.discount_amt:m1$), boldfont!, right_justify)
+	rem --- Write STUB detail row record to jasper print file
+	
+    dim apw_chkprn$:fattr(apw_chkprn$)
+	
+    apw_chkprn.firm_id$=       firm_id$
+    apw_chkprn.ap_type$=       ape04a.ap_type$
+    apw_chkprn.check_no$=      check_no$
+    apw_chkprn.chk_pagenum$=   str(chk_pagenum:chk_pagenum_mask$)
+    apw_chkprn.section_type$=  section_type$
 
+	if section_type$="A" 
+		apw_chkprn.section_detseq$=str(acctstub_rowcnt:section_detseq_mask$)
+	else
+		apw_chkprn.section_detseq$=str(vendstub_rowcnt:section_detseq_mask$)
+	endif
+	
+	apw_chkprn.check_date$=    check_date$
+	apw_chkprn.vendor_id$=     ape04a.vendor_id$
+	
+	apw_chkprn.stub_inv_no$=    ape04a.ap_inv_no$
+	apw_chkprn.stub_inv_date$=  ape04a.invoice_date$
+	apw_chkprn.stub_memo_dist$= stub_memo_dist$
+	apw_chkprn.stub_is_total$=  "N"	
+	
+    apw_chkprn.chk_is_void$=   chk_is_void$
+	apw_chkprn.chk_exactly$=   ""
+	apw_chkprn.chk_amt_str$=   ""
+	
+	apw_chkprn.stub_inv_amt=    ape04a.invoice_amt
+	apw_chkprn.stub_inv_discamt=ape04a.discount_amt
+	apw_chkprn.stub_inv_amt_pd= ape04a.payment_amt
+	
+	apw_chkprn.chk_amt=0
+	
+    write record (apw_chkprn_dev) apw_chkprn$
+	
     return
 
 stub_total: rem --- Stub Total
 
-    stub=0
-
-    tmp=fntext2(col[2],204,col[3]-col[2]-6,204,str(t[0]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[3],204,col[4]-col[3]-6,204,str(t[1]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[4],204,col[5]-col[4]-6,204,str(t[0]-t[2]-t[1]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[5],216,118,216,Translate!.getTranslation("AON_ACCOUNTING_COPY"),boldfont!,right_justify)
-    tmp=fnbox2(col[1],204,col[2]-col[1],12)
-    tmp=fntext3(col[1],204,col[2]-col[1]-6,204,Translate!.getTranslation("AON_TOTALS"),boldfont!,right_justify)
-
-    tmp=fnline(0,204,right_margin,204)
-    tmp=fnline(0,216,right_margin,216)
-
-    gosub check_stub
-
-    stub=stub_offset
-
-    tmp=fntext2(col[2],204+stub_offset,col[3]-col[2]-6,204+stub,str(t[0]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[3],204+stub_offset,col[4]-col[3]-6,204+stub,str(t[1]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[4],204+stub_offset,col[5]-col[4]-6,204+stub,str(t[0]-t[2]-t[1]:m1$),boldfont!,right_justify)
-    tmp=fntext2(col[5],216+stub_offset,118,216+stub,Translate!.getTranslation("AON_VENDOR_COPY"),boldfont!,right_justify)
-    tmp=fnbox2(col[1],204+stub,col[2]-col[1],12)
-    tmp=fntext3(col[1],204+stub,col[2]-col[1]-6,204+stub_offset,Translate!.getTranslation("AON_TOTALS"),boldfont!,right_justify)
-
-    tmp=fnline(0,204+stub,right_margin,204+stub)
-    tmp=fnline(0,216+stub,right_margin,216+stub)
-
-    gosub check_stub
-
+	rem --- Write STUB TOTAL record to jasper print file
+	
+    dim apw_chkprn$:fattr(apw_chkprn$)
+	
+    apw_chkprn.firm_id$=       firm_id$
+    apw_chkprn.ap_type$=       prev_aptype_vend_t1$
+    apw_chkprn.check_no$=      check_no$
+    apw_chkprn.chk_pagenum$=   str(chk_pagenum:chk_pagenum_mask$)
+    apw_chkprn.section_type$=  section_type$
+	
+	if section_type$="A" 
+		apw_chkprn.section_detseq$=str(acctstub_rowcnt:section_detseq_mask$)
+	else
+		apw_chkprn.section_detseq$=str(vendstub_rowcnt:section_detseq_mask$)
+	endif
+	
+	apw_chkprn.check_date$=    check_date$
+	apw_chkprn.vendor_id$=     prev_aptype_vend_t1$(3,6)
+	
+	apw_chkprn.stub_inv_no$=    ""
+	apw_chkprn.stub_inv_date$=  ""
+	apw_chkprn.stub_memo_dist$= stub_memo_dist$; rem passed in since variable: overflow vs actual total
+	apw_chkprn.stub_is_total$=  "Y"	
+	
+    apw_chkprn.chk_is_void$=   "N"
+	apw_chkprn.chk_exactly$=   ""
+	apw_chkprn.chk_amt_str$=   ""
+	
+	apw_chkprn.stub_inv_amt=    stub_inv_amt; rem passed in since variable: overflow vs actual total
+	apw_chkprn.stub_inv_discamt=stub_inv_discamt; rem passed in since variable: overflow vs actual total
+	apw_chkprn.stub_inv_amt_pd= stub_inv_amt_pd; rem passed in since variable: overflow vs actual total
+	
+	apw_chkprn.chk_amt=0
+	
+    write record (apw_chkprn_dev) apw_chkprn$
+	
+	stub_inv_amt=     0
+	stub_inv_discamt= 0
+	stub_inv_amt_pd=  0
+	stub_memo_dist$= ""
+	
     return
 
 check_face: rem --- Print Check
 
-    call pgmdir$+"adc_address.aon",address$,24,3,9,35
-
-    x$=str(fpt(t[0]-t[2]-t[1])*100:"00")
-    if x$="00" then x$="NO"
-
-    gosub common_check_face
-
-    exactly$=Translate!.getTranslation("AON_EXACTLY*")+str(int(t[0]-t[2]-t[1]):m8$)+Translate!.getTranslation("AON_*DOLLARS*AND*")+x$+Translate!.getTranslation("AON_*CENTS")
-    tmp=fntext(36,612,exactly$,boldfont!)
-
-    tmp=fntext2(332,582, 58,582,fndate$(check_date$),boldfont!,center_justify)
-    tmp=fntext2(390,582, 54,582,check_no$,boldfont!,center_justify)
-    tmp=fntext2(444,582,118,582,str(t[0]-t[1]-t[2]:m9$),boldfont!,right_justify)
-
-    tmp=fntext(72,672,vend_name$,boldfont!)
-    tmp=fntext(72,684,address$(1,35),boldfont!)
-    tmp=fntext(72,696,address$(36,35),boldfont!)
-    tmp=fntext(72,708,address$(71,35),boldfont!)
+	chk_amt=t[3]
+    check_tot_cents$=str(fpt(chk_amt)*100:"00")
+    if check_tot_cents$="00" then check_tot_cents$="NO"
+	
+    chk_exactly$=Translate!.getTranslation("AON_EXACTLY*")+str(int(chk_amt):exactly_amt_mask$)+Translate!.getTranslation("AON_*DOLLARS*AND*")+check_tot_cents$+Translate!.getTranslation("AON_*CENTS")
+    
+    chk_amt_str$=str(chk_amt:check_amt_mask$)
 
     dim apw01a$:fattr(apw01a$)
     apw01a.firm_id$=firm_id$
-    apw01a.ap_type$=t1$(1,2)
+    apw01a.ap_type$=prev_aptype_vend_t1$(1,2)
     apw01a.check_no$=check_no$
     apw01a.comp_or_void$="C"
     apw01a.check_date$=check_date$
-    apw01a.vendor_id$=t1$(3,6)
+    apw01a.vendor_id$=prev_aptype_vend_t1$(3,6)
     apw01a.ap_inv_no$=t2.ap_inv_no$
     if aps01a.multi_types$="Y" remove (apw01_dev,key=firm_id$+"  "+apw01a.check_no$,dom=*next)
     write record (apw01_dev) apw01a$
 
-    return
-
-common_check_face:
-
-    tmp=fnbox2(332,564, 58, 12)
-    tmp=fnbox2(390,564, 54, 12)
-    tmp=fnbox2(444,564,124, 12)
-    tmp=fnbox(332,576, 58, 24)
-    tmp=fnbox(390,576, 54, 24)
-    tmp=fnbox(444,576,124, 24)
-
-    tmp=fntext3(332,564,58,12,Translate!.getTranslation("AON_DATE"),textfont!,center_justify)
-    tmp=fntext3(390,564,54,12,Translate!.getTranslation("AON_CHECK_#"),textfont!,center_justify)
-    tmp=fntext3(444,564,118,12,Translate!.getTranslation("AON_AMOUNT"),textfont!,right_justify)
-
-    tmp=fntext(36,552,aps01b.name$,boldfont!)
-    tmp=fntext(36,564,ap_address$(1,35),textfont!)
-    tmp=fntext(36,576,ap_address$(36,35),textfont!)
-    tmp=fntext(36,588,ap_address$(71),textfont!)
-
-    tmp=fntext(6,672,Translate!.getTranslation("AON_PAY"),italicfont!)
-    tmp=fntext(6,684,Translate!.getTranslation("AON_TO_THE"),italicfont!)
-    tmp=fntext(6,696,Translate!.getTranslation("AON_ORDER"),italicfont!)
-    tmp=fntext(6,708,Translate!.getTranslation("AON_OF"),italicfont!)
-
-    tmp=fnbox(342,720,216,1)
-    tmp=fntext2(342,722,216,722,Translate!.getTranslation("AON_AUTHORIZED_SIGNATURE"),italicfont!,center_justify)
-
+	rem --- Write CHECK record to jasper print file
+	
+    dim apw_chkprn$:fattr(apw_chkprn$)
+	
+    apw_chkprn.firm_id$=       firm_id$
+    apw_chkprn.ap_type$=       prev_aptype_vend_t1$(1,2)
+    apw_chkprn.check_no$=      check_no$
+    apw_chkprn.chk_pagenum$=   str(chk_pagenum:chk_pagenum_mask$)
+    apw_chkprn.section_type$=  "C"
+	apw_chkprn.section_detseq$=str(1:section_detseq_mask$); rem Check itself has only one rec
+	
+	apw_chkprn.check_date$=    check_date$
+	apw_chkprn.vendor_id$=     prev_aptype_vend_t1$(3,6)
+	
+	apw_chkprn.stub_inv_no$=    ""
+	apw_chkprn.stub_inv_date$=  ""
+	apw_chkprn.stub_memo_dist$= ""	
+	apw_chkprn.stub_is_total$=  ""	
+	
+    apw_chkprn.chk_is_void$=   "N"
+	apw_chkprn.chk_exactly$=   chk_exactly$
+	apw_chkprn.chk_amt_str$=   chk_amt_str$
+	
+	apw_chkprn.stub_inv_amt=0
+	apw_chkprn.stub_inv_discamt=0
+	apw_chkprn.stub_inv_amt_pd=0
+	
+	apw_chkprn.chk_amt=chk_amt
+	
+    write record (apw_chkprn_dev) apw_chkprn$
+	
     return
 
 overflow: rem --- Overflow
 
-    gosub cont_and_void
-    gosub check_header
-    return
+	chk_is_void$="Y"
+
+    rem --- Write stubs' Total rec w/"*Continued*" so stub prints right
+	stub_inv_amt=     0
+	stub_inv_discamt= 0
+	stub_inv_amt_pd=  0
+	stub_memo_dist$= "** Continued **"
+	
+	section_type$=  "A"; rem accounting stub
+	gosub stub_total; rem accounting stub
+	acctstub_rowcnt=1
+		
+	stub_inv_amt=     0
+	stub_inv_discamt= 0
+	stub_inv_amt_pd=  0
+	stub_memo_dist$= "** Continued **"
+	section_type$=  "V"; rem vendor stub
+	gosub stub_total; rem vendor stub
+	vendstub_rowcnt=1
+	
+	rem --- Write void for check itself
+	gosub void_check
+
+	rem --- Increment counter of number of checks for this vend/aptype
+	chk_pagenum=chk_pagenum+1
+	
+	acctstub_rowcnt=1
+	vendstub_rowcnt=1
+	chk_is_void$="N"	
+    		
+	return
 
 void_check: rem --- Void check
 
-    gosub common_check_face
-
-    tmp=fntext(36,612,Translate!.getTranslation("AON_***VOID***VOID***VOID***VOID***"),boldfont!)
-    tmp=fntext2(332,582, 58,582,fndate$(check_date$),boldfont!,center_justify)
-    tmp=fntext2(390,582, 54,582,check_no$,boldfont!,center_justify)
-    tmp=fntext2(444,582,118,582,Translate!.getTranslation("AON_***VOID***"),boldfont!,right_justify)
-
-    tmp=fntext2(342,690,216,690,"**VOID**VOID**",largefont!,center_justify)
+    chk_exactly$=Translate!.getTranslation("AON_***VOID***VOID***VOID***VOID***")
+    chk_amt_str$=Translate!.getTranslation("AON_***VOID***")
 
 rem --- Write Void
 
-    apw01a.firm_id$=firm_id$
-    apw01a.ap_type$=ape04a.ap_type$
-    apw01a.check_no$=check_no$
+    apw01a.firm_id$=     firm_id$
+    apw01a.ap_type$=     ape04a.ap_type$
+    apw01a.check_no$=    check_no$
     apw01a.comp_or_void$="V"
-    apw01a.vendor_id$=ape04a.vendor_id$
-    apw01a.check_date$=check_date$
-    apw01a.ap_inv_no$=ape04a.ap_inv_no$
+    apw01a.vendor_id$=   ape04a.vendor_id$
+    apw01a.check_date$=  check_date$
+    apw01a.ap_inv_no$=   ape04a.ap_inv_no$
     if aps01a.multi_types$<>"Y" apw01a.ap_type$=""
     write record (apw01_dev) apw01a$
-    gosub increment_check
 
+	rem --- Write VOID record to jasper print file
+	
+    dim apw_chkprn$:fattr(apw_chkprn$)
+	
+    apw_chkprn.firm_id$=       firm_id$
+    apw_chkprn.ap_type$=       ape04a.ap_type$
+    apw_chkprn.check_no$=      check_no$
+    apw_chkprn.chk_pagenum$=   str(chk_pagenum:chk_pagenum_mask$)
+    apw_chkprn.section_type$=  "C"
+	apw_chkprn.section_detseq$=str(1:section_detseq_mask$); rem Check itself has only one rec
+	
+	apw_chkprn.check_date$=    check_date$
+	apw_chkprn.vendor_id$=     ape04a.vendor_id$
+	
+	apw_chkprn.stub_inv_no$=    ""
+	apw_chkprn.stub_inv_date$=  ""
+	apw_chkprn.stub_memo_dist$= ""
+	apw_chkprn.stub_is_total$=  ""	
+	
+    apw_chkprn.chk_is_void$=   chk_is_void$
+	apw_chkprn.chk_exactly$=   chk_exactly$
+	apw_chkprn.chk_amt_str$=   chk_amt_str$
+	
+	apw_chkprn.stub_inv_amt=0
+	apw_chkprn.stub_inv_discamt=0
+	apw_chkprn.stub_inv_amt_pd=0
+	
+	apw_chkprn.chk_amt=chk_amt
+	
+    write record (apw_chkprn_dev) apw_chkprn$
+	
+	gosub increment_check
+	
     return
 
 new_vendor: rem --- New Vendor
 
-    if t1$ <> "" then 
-        gosub stub_total
+    if prev_aptype_vend_t1$ <> "" then 
+		stub_inv_amt=     t[0]
+		stub_inv_discamt= t[1]
+		stub_inv_amt_pd=  t[3]
+		stub_memo_dist$=  ""
+			
+		section_type$=  "A"; rem accounting stub
+		gosub stub_total; rem accounting stub
+		acctstub_rowcnt=1
+			
+		stub_inv_amt=     t[0]
+		stub_inv_discamt= t[1]
+		stub_inv_amt_pd=  t[3]
+		stub_memo_dist$=  ""
+		section_type$=  "V"; rem vendor stub
+		gosub stub_total; rem vendor stub
+		vendstub_rowcnt=1
 
-        if t[0]-t[2]-t[1] <= 0 then 
+        if t[3] <= 0 then 
             gosub void_check 
         else 
             gosub check_face
         endif
 
 rem --- Now go back and re-write ape-04 using ape04_dev2 and ape04b$
-rem --- using the current check number and firm_id$ + t1$ (ap type and vendor number)
+rem --- using the current check number and firm_id$ + prev_aptype_vend_t1$ (ap type and vendor number)
 
         dim ape04b$:fattr(ape04b$)
 
-        read(ape04_dev2,key=firm_id$+t1$,dom=*next)
+        read(ape04_dev2,key=firm_id$+prev_aptype_vend_t1$,dom=*next)
 
         while more
             extract record (ape04_dev2,end=*break) ape04b$;rem Advisory Locking
-            if pos(firm_id$+t1$=ape04b$)<>1 then read (ape04_dev2); break
+            if pos(firm_id$+prev_aptype_vend_t1$=ape04b$)<>1 then read (ape04_dev2); break
             ape04b.check_no$ = check_no$
             ape04b$ = field(ape04b$)
             write record (ape04_dev2) ape04b$
@@ -479,20 +769,21 @@ rem --- using the current check number and firm_id$ + t1$ (ap type and vendor nu
 
 vendor_header:
 
-    if t9$ = "" then
-        dim x1$(vendor_length)
-        dim t[2]
+    if do_vend_header then
+        dim t[3]
+		chk_pagenum=1
+		
         dim address$(81)
         dim apm01a$:fattr(apm01a$)
         dim t2$:fattr(ape04a$)
         t2$=ape04a$
-        accntid$=""
+        
         find record (apm01_dev,key=firm_id$+ape04a.vendor_id$,dom=*next) apm01a$
-        address$(1)=apm01a.addr_line_1$+apm01a.addr_line_2$+apm01a.city$+apm01a.state_code$+apm01a.zip_code$,vend_name$=apm01a.vendor_name$
-        x1$(1)=fnmask$(ape04a.vendor_id$(1,vendor_length),m0$)
-
-        t1$=ape04a.ap_type$+ape04a.vendor_id$
-        accntid$=apm01a.vendor_acct$
+        address$(1)=apm01a.addr_line_1$+apm01a.addr_line_2$+apm01a.city$+apm01a.state_code$+apm01a.zip_code$
+		vend_name$=apm01a.vendor_name$
+        
+		prev_aptype_vend_t1$=ape04a.ap_type$+ape04a.vendor_id$
+        
         start_block = 1
 
         if start_block
@@ -500,8 +791,6 @@ vendor_header:
             address$(1) = apm08a.addr_line_1$+apm08a.addr_line2$+apm08a.city$+apm08a.state_code$+apm08a.zip_code$
             vend_name$  = apm08a.vendor_name$
         endif
-
-        gosub check_header
     endif
     
     return
@@ -510,28 +799,20 @@ increment_check: rem --- Increment Check #
 
     p8=num(check_no$)+1
     if p8>9999999 p8=1
-    check_no$=str(p8:fill(7,"0"))
+    check_no$=str(p8:check_no_mask$)
     if show_progress call pgmdir$+"adc_progress.aon","S","","","",check_no$,0,0,1,0,ignore_status
 
     return
 
-cont_and_void: rem --- Continue and Void Check
-
-    rem debug --- the following lines have not been converted
-    rem print (printer_dev)h9$(1,l9-l+1)
-    rem print (printer_dev)@(h0+22+2*m1),Translate!.getTranslation("AON_*CONTINUED*")
-    gosub void_check
-
-    return
 
 ap_type_break: rem --- AP Type Break
 
     while more
-        t9$="A"
+        t9$="A"; do_vend_header=0
         gosub new_vendor
-        t0$=ape04a.ap_type$
-        t1$=""
-        t9$=""
+        prev_aptype_t0$=ape04a.ap_type$
+        prev_aptype_vend_t1$=""
+        t9$=""; do_vend_header=1
         ap_type$=""
         if aps01a.ap_check_seq$="N" and q6 then break
         q6=1
@@ -541,7 +822,7 @@ rem --- New Checks
 
         if aps01a.ap_check_seq$ = "Y" then
             dim msg_tokens$[1]
-            find record (apm10_dev,key=firm_id$+"A"+t0$,dom=*next) apm10a$
+            find record (apm10_dev,key=firm_id$+"A"+prev_aptype_t0$,dom=*next) apm10a$
             msg_id$="AP_CHECKS"
             msg_tokens$[1]=cvs(apm10a.code_desc$,3)
             gosub disp_message
@@ -632,99 +913,6 @@ rem --- fnglobal$: Return string value of passed STBL variable
 
 rem #endinclude std_functions.src   
     
-rem --- fntext: Form Text command
-
-    def fntext(tmp_x,tmp_y,tmp_text$,tmp_font!)
-        tmp_text$=cvs(tmp_text$,3)
-        tmp!.destroy(err=*next)
-        tmp!=page!.newParagraph()
-        tmp!.setHorizontalFill(1)
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setText(tmp_text$)
-        tmp!.setFont(tmp_font!)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fntext2: Form Text command
-
-    def fntext2(tmp_x,tmp_y,tmp_x2,tmp_y2,tmp_text$,tmp_font!,tmp_just)
-        tmp_text$=cvs(tmp_text$,3)
-        tmp!.destroy(err=*next)
-        tmp!=page!.newParagraph()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
-        if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
-        if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
-        tmp!.setText(tmp_text$)
-        tmp!.setFont(tmp_font!)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fntext3: Form Text command
-
-    def fntext3(tmp_x,tmp_y,tmp_x2,tmp_y2,tmp_text$,tmp_font!,tmp_just)
-        tmp_text$=cvs(tmp_text$,3)
-        tmp!.destroy(err=*next)
-        tmp!=page!.newParagraph()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        if tmp_just then tmp!.setSize(tmp_x2,tmp_y2)
-        if tmp_just=1 then tmp!.setHorizontalAlignment(tmp!.RIGHT_JUSTIFIED)
-        if tmp_just=2 then tmp!.setHorizontalAlignment(tmp!.CENTER_JUSTIFIED)
-        tmp!.setBackgroundColor(myAPI!.makeColor("Black"))
-        tmp!.setTextColor(myAPI!.makeColor("White"))
-        tmp!.setText(tmp_text$)
-        tmp!.setFont(tmp_font!)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnbox: Form Box command
-
-    def fnbox(tmp_x,tmp_y,tmp_w,tmp_h)
-        tmp!=page!.newFrame()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setWidth(tmp_w)
-        tmp!.setHeight(tmp_h)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnbox2: Form Box command
-
-    def fnbox2(tmp_x,tmp_y,tmp_w,tmp_h)
-        tmp!=page!.newFrame()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setWidth(tmp_w)
-        tmp!.setHeight(tmp_h)
-        tmp!.setFillColor(myAPI!.makeColor(Translate!.getTranslation("AON_BLACK")))
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnline: Form Line command
-
-    def fnline(tmp_x,tmp_y,tmp_w,tmp_h)
-        tmp!=page!.newLine()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmp!.setWidth(tmp_w)
-        tmp!.setHeight(tmp_h)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
-rem --- fnframe: Form Frame command
-
-    def fnframe(tmp_x,tmp_y,tmp_x2,tmp_y2)
-        tmp!=page!.newFrame()
-        tmp!.setPosition(new java.awt.Point(tmp_x,tmp_y))
-        tmpdim!=new java.awt.Dimension(tmp_x2,tmp_y2)
-        tmp!.setSize(tmpdim!)
-        page!.add(tmp!)
-        return(1)
-    fnend
-
 rem #include std_error.src
 
 std_error: rem --- Standard error handler (01Apr2006)

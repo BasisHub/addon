@@ -1,3 +1,73 @@
+[[OPE_INVHDR.CUSTOMER_PO_NO.AVAL]]
+rem --- Check for duplicate PO numbers
+
+	if callpoint!.getDevObject("check_po_dupes")="Y"
+		po_no$=pad(callpoint!.getUserInput(),num(callpoint!.getTableColumnAttribute("OPE_INVHDR.CUSTOMER_PO_NO","MAXL")))
+		cust_no$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+		order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+		ope_polookup_dev=num(callpoint!.getDevObject("ope_polookup"))
+		dim ope_polookup$:fnget_tpl$("OPE_INVHDR")
+
+		read (ope_polookup_dev,key=firm_id$+po_no$+cust_no$,knum="CUST_PO",dom=*next)
+		found_dupe$=""
+		while 1
+			read record (ope_polookup_dev,end=*break) ope_polookup$
+			if pos(firm_id$+po_no$+cust_no$=ope_polookup.firm_id$+ope_polookup.customer_po_no$+ope_polookup.customer_id$)<>1 break
+			if order_no$<>ope_polookup.order_no$
+				found_dupe$=found_dupe$+"O"+ope_polookup.order_no$
+			endif
+		wend
+
+		opt_invlookup_dev=num(callpoint!.getDevObject("opt_invlookup"))
+		dim opt_invlookup$:fnget_tpl$("OPT_INVHDR")
+		read (opt_invlookup_dev,key=firm_id$+po_no$+cust_no$,knum="CUST_PO",dom=*next)
+		while 1
+			read record (opt_invlookup_dev,end=*break) opt_invlookup$
+			if pos(firm_id$+po_no$+cust_no$=opt_invlookup.firm_id$+opt_invlookup.customer_po_no$+opt_invlookup.customer_id$)<>1 break
+			if order_no$<>opt_invlookup.order_no$
+				found_dupe$=found_dupe$+"H"+opt_invlookup.ar_inv_no$
+			endif
+		wend
+	endif
+
+	if cvs(found_dupe$,2)<>""
+		msg_id$="OP_DUPLICATE_POS"
+		gosub disp_message
+		if msg_opt$="D"
+			callpoint!.setDevObject("customer",callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"))
+			callpoint!.setDevObject("found_dupe",found_dupe$)
+			call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:				"OPE_DUPEPO", 
+:				stbl("+USER_ID"), 
+:				"", 
+:				"", 
+:				table_chans$[all], 
+:				dflt_data$[all]
+		endif
+	endif
+[[OPE_INVHDR.AOPT-COMM]]
+rem --- Display Comments form
+
+	ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
+	cust$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+
+	dim dflt_data$[3,1]
+	dflt_data$[1,0] = "AR_TYPE"
+	dflt_data$[1,1] = ar_type$
+	dflt_data$[2,0] = "CUSTOMER_ID"
+	dflt_data$[2,1] = cust$
+	dflt_data$[3,0] = "ORDER_NO"
+	dflt_data$[3,1] = order$
+	comment_pfx$=firm_id$+ar_type$+cust$+order$
+
+	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
+:		"OPE_ORDCOMMENTS", 
+:		stbl("+USER_ID"), 
+:		"MNT", 
+:		comment_pfx$,
+:		table_chans$[all], 
+:		dflt_data$[all]
 [[OPE_INVHDR.TAX_AMOUNT.BINP]]
 rem --- Enable/Disable Cash Sale button
 	gosub able_cash_sale
@@ -272,6 +342,7 @@ rem --- Set flags
 	callpoint!.setOptionEnabled("RPRT",0)
 	callpoint!.setOptionEnabled("PRNT",0)
 	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 
 rem --- Clear order helper object
@@ -790,6 +861,7 @@ print "Hdr:APFE"; rem debug
 rem --- Enable / Disable buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("COMM",0)
 
 	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" then
 		if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2) = ""
@@ -808,9 +880,10 @@ rem --- Enable / Disable buttons
 		else
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
-            if user_tpl.credit_installed$="Y"
-                callpoint!.setOptionEnabled("CRCH",1)
-            endif
+			if user_tpl.credit_installed$="Y"
+				callpoint!.setOptionEnabled("CRCH",1)
+			endif
+			callpoint!.setOptionEnabled("COMM",1)
 			gosub able_cash_sale
 
 			if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")<> "I" then
@@ -852,6 +925,7 @@ print "Hdr:BPFX"; rem debug
 rem --- Disable buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 	callpoint!.setOptionEnabled("DINV",0)
 	callpoint!.setOptionEnabled("CINV",0)
@@ -1399,6 +1473,7 @@ rem --- New record, set default
 		callpoint!.setColumnData("OPE_INVHDR.TAX_CODE",arm02a.tax_code$)
 		callpoint!.setColumnData("OPE_INVHDR.PRICING_CODE",arm02a.pricing_code$)
 		callpoint!.setColumnData("OPE_INVHDR.ORD_TAKEN_BY",sysinfo.user_id$)
+		callpoint!.setColumnData("OPE_INVHDR.FOB",arm01a.fob$)
 
 		callpoint!.setDevObject("disc_code",arm02a.disc_code$)
 		user_tpl.disc_code$    = arm02a.disc_code$
@@ -1493,6 +1568,7 @@ rem --- Enable Duplicate buttons, printer
 	if user_tpl.credit_installed$="Y"
 		callpoint!.setOptionEnabled("CRCH",1)
 	endif
+	callpoint!.setOptionEnabled("COMM",1)
 [[OPE_INVHDR.CUSTOMER_ID.AINP]]
 print "Hdr:CUSTOMER_ID.AINP"; rem debug
 
@@ -1870,35 +1946,43 @@ rem ==========================================================================
 
 	while 1
 		rd_key$ = ""
-		call stbl("+DIR_SYP")+"bam_inquiry.bbj",
+		dim filter_defs$[2,2]
+		filter_defs$[0,0]="FIRM_ID"
+		filter_defs$[0,1]="='"+firm_id$+"'"
+		filter_defs$[0,2]="LOCK"
+		filter_defs$[1,0]="AR_TYPE"
+		filter_defs$[1,1]="='"+callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")+"'"
+		filter_defs$[1,2]="LOCK"
+		filter_defs$[2,0]="CUSTOMER_ID"
+		filter_defs$[2,1]="='"+callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")+"'"
+		filter_defs$[2,2]="LOCK"
+		call stbl("+DIR_SYP")+"bax_query.bbj",
 :			gui_dev,
 :			Form!,
-:			"OPT_INVHDR",
-:			"LOOKUP",
+:			"OP_INVOICELOOKUP",
+:			"",
 :			table_chans$[all],
-:			key_pfx$,
-:			"PRIMARY",
-:			rd_key$
+:			rd_key$,
+:			filter_defs$[all]
 
 		if cvs(rd_key$,2)<>"" then 
-			key_pfx_det$ = rd_key$
-			call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:				gui_dev,
-:				Form!,
-:				"OPT_INVDET",
-:				"LOOKUP",
-:				table_chans$[all],
-:				key_pfx_det$,
+			call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:				"OPT_INVHDR",
 :				"PRIMARY",
-:				rd_key_det$
-
-			if cvs(rd_key_det$,2)<>"" then 
-				opt01_dev = fnget_dev("OPT_INVHDR")
-				dim opt01a$:fnget_tpl$("OPT_INVHDR")
-				read record (opt01_dev, key=rd_key$) opt01a$
-				break
+:				key_temp$,
+:				table_chans$[all],
+:				status$
+			if rd_key$(len(rd_key$),1)="^"
+				rd_key$=rd_key$(1,len(rd_key$)-1)
 			endif
 
+			dim key_temp$:key_temp$
+			key_temp$=rd_key$
+			key_opt$=key_temp.firm_id$+key_temp.ar_type$+key_temp.customer_id$+key_temp.ar_inv_no$
+			opt01_dev = fnget_dev("OPT_INVHDR")
+			dim opt01a$:fnget_tpl$("OPT_INVHDR")
+			read record (opt01_dev, key=key_opt$) opt01a$
+			break
 		else
 			copy_ok$="N"
 			break
@@ -2614,7 +2698,7 @@ rem                 = 1 -> user_tpl.hist_ord$ = "N"
 
 rem --- Open needed files
 
-	num_files=41
+	num_files=42
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
@@ -2657,8 +2741,14 @@ rem --- Open needed files
 	open_tables$[39]="OPE_INVHDR",   open_opts$[39]="OTA"
 	open_tables$[40]="ARC_TERMCODE", open_opts$[40]="OTA"
 	open_tables$[41]="IVM_ITEMSYN",open_opts$[41]="OTA"
-	
-gosub open_tables
+	open_tables$[42]="OPE_INVHDR",open_opts$[42]="OTAN[2_]"
+
+	gosub open_tables
+
+	callpoint!.setDevObject("opt_invlookup",open_chans$[23])
+	callpoint!.setDevObject("opt_invlookup_tpl",open_tpls$[23])
+	callpoint!.setDevObject("ope_polookup",open_chans$[42])
+	callpoint!.setDevObject("ope_polookup_tpl",open_tpls$[42])
 
 rem --- Verify that there are line codes - abort if not.
 
@@ -2690,6 +2780,7 @@ rem --- get AR Params
 	read record (num(open_chans$[4]), key=firm_id$+"AR00") ars01a$
 	if ars01a.op_totals_warn$="" ars01a.op_totals_warn$="4"
 	callpoint!.setDevObject("totals_warn",ars01a.op_totals_warn$)
+	callpoint!.setDevObject("check_po_dupes",ars01a.op_check_dupe_po$)
 
 	dim ars_credit$:open_tpls$[7]
 	read record (num(open_chans$[7]), key=firm_id$+"AR01") ars_credit$
@@ -2958,6 +3049,7 @@ rem --- Enable buttons
 	callpoint!.setOptionEnabled("CASH",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 
 rem --- Parse table_chans$[all] into an object

@@ -8,7 +8,7 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
-seterr error_routine
+seterr sproc_error
 
 use java.util.Calendar
 use java.util.GregorianCalendar
@@ -51,7 +51,11 @@ rem --- Open files with adc
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
     pom_calendar_dev = channels[1]
 
 rem --- Dimension string templates
@@ -69,7 +73,11 @@ rem --- Open/Lock files
     next wkx
     call stbl("+DIR_SYP")+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :       chans$[all],templates$[all],table_chans$[all],batch,status$
-    if status$<>"" goto done
+    if status$<>"" then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
     pom_calendar_dev=num(chans$[1])
                     
@@ -214,10 +222,8 @@ rem --- Date/time handling functions
         return q1$
     fnend
 
-rem --- Error routine
-error_routine:
-    seterr done
-    msg$ = "Error #" + str(err) + " occured in " + pgm(-1) + " at line " + str(tcb(5))
-    if err = 77 then msg$ = msg$ + $0d0a$ + "SQL Err: " + sqlerr(chan)
-    java.lang.System.out.println(msg$)
-    if tcb(13) then exit else end
+sproc_error:rem --- SPROC error trap/handler
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num

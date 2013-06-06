@@ -23,6 +23,11 @@ rem --- Disable the entire Retention column (does this do anything?)
 
 	gridInvoices! = UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
 	util.disableGridColumn(gridInvoices!, user_tpl.retention_col)
+
+rem --- Display calculated total payments
+
+	tot_payments=num(callpoint!.getDevObject("tot_payments"))
+	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 [[APE_PAYSELECT.DISC_DATE_DT.AVAL]]
 rem --- Set filters on grid
 	gosub filter_recs
@@ -206,6 +211,7 @@ rem ==========================================================================
 	more=1
 	read (apt01_dev,key=firm_id$,dom=*next)
 	rows=0
+	tot_payments=0
 
 	while more
 		read record (apt01_dev, end=*break) apt01a$
@@ -244,7 +250,7 @@ rem ==========================================================================
 			inv_amt = ape04a.invoice_amt
 			disc_amt = ape04a.discount_amt
 			ret_amt = ape04a.retention
-			pymnt_amt = inv_amt - disc_amt - ret_amt
+			pymnt_amt = ape04a.payment_amt
 			amt_due = inv_amt - ret_amt - disc_amt - pymnt_amt
 		endif
 
@@ -287,9 +293,12 @@ rem ==========================================================================
 			vectInvoicesMaster!.addItem(apt01a.disc_date$); rem 17
 			vectInvoicesMaster!.addItem(apt01a.invoice_amt$); rem 18
 			rows=rows+1
+			tot_payments=tot_payments+pymnt_amt
 		endif
 	wend
 
+	callpoint!.setDevObject("tot_payments",str(tot_payments))
+	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 	callpoint!.setStatus("REFRESH")
 	
 	return
@@ -313,6 +322,7 @@ rem ==========================================================================
 
 	TempRows! = gridInvoices!.getSelectedRows()
 	numcols   = gridInvoices!.getNumColumns()
+	tot_payments=num(callpoint!.getDevObject("tot_payments"))
 
 	if TempRows!.size() > 0 then
 		for curr_row=1 to TempRows!.size()
@@ -385,7 +395,7 @@ rem				endif
 :					gridInvoices!.getCellText(row_no, 11),
 :					str(payment_amt)
 :				)
-
+				tot_payments=tot_payments+payment_amt
 		rem --- Checked -> not checked
 
 			else
@@ -410,6 +420,8 @@ rem				endif
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
+				tot_payments=tot_payments-num(gridInvoices!.getCellText(row_no,12))
+
 				if apt01a.discount_amt<0 then apt01a.discount_amt=0
 
 				gridInvoices!.setCellState(row_no,0,0)
@@ -432,6 +444,9 @@ rem				endif
 :				)
 			endif
 		next curr_row
+		callpoint!.setDevObject("tot_payments",str(tot_payments))
+		callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
+
 	endif
 
 	SysGUI!.setRepaintEnabled(1)
@@ -629,6 +644,7 @@ rem ==========================================================================
 
 	vect_size = num(vectInvoicesMaster!.size())
 	rows = 0
+	tot_payments=0
 
 	for x=1 to vect_size step user_tpl.MasterCols
 		if vectInvoicesMaster!.getItem(x-1)="Y"
@@ -690,6 +706,7 @@ rem				endif
 				gridInvoices!.setCellText(row_no, 10, "0.00")
 				payment_amt = apt01a.invoice_amt - num(gridInvoices!.getCellText(row_no,11)) - apt01a.retention
 				gridInvoices!.setCellText(row_no, 12, str(payment_amt))
+				tot_payments=tot_payments+payment_amt
 				vectInvoices!.setItem(row_no * numcols, "Y")
 				dummy = fn_setmast_flag(
 :					vectInvoices!.getItem(row_no*numcols+2),
@@ -705,7 +722,8 @@ rem				endif
 :					gridInvoices!.getCellText(row_no, 11),
 :					str(payment_amt)
 :				)
-
+				callpoint!.setDevObject("tot_payments",str(tot_payments))
+				callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 		rem --- Checked -> not checked
 
 			else
@@ -755,6 +773,8 @@ rem				endif
 :					str(apt01a.discount_amt),
 :					"0"
 :				)
+				callpoint!.setDevObject("tot_payments","0")
+				callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS","0",1)
 			endif
 		next curr_row
 	endif
@@ -911,6 +931,7 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 					ape04a.discount_amt  = disc_to_take
 					ape04a.retention     = apt01a.retention+retention
 					ape04a.orig_inv_amt  = apt01a.invoice_amt
+					ape04a.payment_amt = amt_to_pay
 
 					ape04a$=field(ape04a$)
 					extract record (ape04_dev, key=apt01_key$, dom=*next) dummy$; rem Advisory Locking
@@ -1051,6 +1072,7 @@ rem --- Add grid to store invoices, with checkboxes for user to select one or mo
 
 rem --- Misc other init
 
+	callpoint!.setDevObject("tot_payments","0")
 	gridInvoices!.setColumnEditable(0,1)
 	gridInvoices!.setColumnEditable(11,1)
 	gridInvoices!.setColumnEditable(12,1)
@@ -1119,6 +1141,7 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 			dim apm01a$:fnget_tpl$("APM_VENDMAST")
 			apt01_dev = fnget_dev("APT_INVOICEHDR")
 			dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
+			tot_payments=num(callpoint!.getDevObject("tot_payments"))
 
 		rem --- Discount Amount
 
@@ -1132,6 +1155,7 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 				retent_amt = num(gridInvoices!.getCellText(curr_row,13))
 				gosub get_master_offset
 				orig_inv_amt = num(vectInvoicesMaster!.getItem((mast_offset)+18))
+				tot_payments=tot_payments-pmt_amt;rem back out old payment in prep for adding new one
 
 				if sgn(disc_amt) <> sgn(orig_inv_amt) then 
 					disc_amt = abs(disc_amt) * sgn(orig_inv_amt)
@@ -1213,7 +1237,7 @@ rem						endif
 					if gridInvoices!.getCellState(curr_row,0) = 1 then 
 						x=curr_row
 						gosub switch_value
-							curr_row=x
+						curr_row=x
 					endif
 				else
 					if gridInvoices!.getCellState(curr_row,0)=0 then
@@ -1266,8 +1290,8 @@ rem						endif
 :					str(disc_amt),
 :					str(pmt_amt)
 :				)
+				tot_payments=tot_payments+num(vectInvoices!.getItem(curr_row*num(user_tpl.gridInvoicesCols$)+12))
 			endif
-
 rem --- Payment Amount
 
 			if curr_col=12
@@ -1314,7 +1338,7 @@ rem --- Now calculate proper Amt Due, Payment and Discount amounts
 				retent_amt = num(gridInvoices!.getCellText(curr_row,13))
 				gosub get_master_offset
 				orig_inv_amt = num(vectInvoicesMaster!.getItem((mast_offset)+18))
-
+				tot_payments=tot_payments-num(vectInvoicesMaster!.getItem((mast_offset)+13));rem back out old payment in prep for adding new one
 				if sgn(pmt_amt) <> sgn(orig_inv_amt) then 
 					pmt_amt = abs(pmt_amt) * sgn(orig_inv_amt)
 					gridInvoices!.setCellText(curr_row,12,str(pmt_amt))
@@ -1402,6 +1426,11 @@ rem						endif
 :					str(disc_amt),
 :					str(pmt_amt)
 :				)
+				tot_payments=tot_payments+num(vectInvoices!.getItem(curr_row*num(user_tpl.gridInvoicesCols$)+12))
 			endif
+			callpoint!.setDevObject("tot_payments",str(tot_payments))
 		break
 	swend
+
+	tot_payments=num(callpoint!.getDevObject("tot_payments"))
+	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)

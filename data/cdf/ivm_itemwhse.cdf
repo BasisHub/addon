@@ -225,14 +225,7 @@ endif
 [[IVM_ITEMWHSE.AOPT-HIST]]
 iv_item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
-rem --- call stbl("+DIR_PGM")+"ivm_itemWhseActivity.aon",
-:	gui_dev,
-:	Form!,
-:	iv_whse_id$,
-:	iv_item_id$,                                       
-:	table_chans$[all]
 
-rem --- run dir_pgm$+"ivr_itmWhseAct.aon"
 call stbl("+DIR_PGM")+"ivr_itmWhseAct.aon",iv_item_id$,iv_whse_id$,table_chans$[all]
 [[IVM_ITEMWHSE.AOPT-LIFO]]
 cp_item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")

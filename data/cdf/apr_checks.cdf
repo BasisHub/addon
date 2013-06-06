@@ -11,23 +11,19 @@ if callpoint!.getUserInput()="Y"
 endif
 [[APR_CHECKS.BSHO]]
 rem --- See if we need to disable AP Type
-	files=1,begfile=1,endfile=files
-	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-	files$[1]="aps_params",ids$[1]="APS_PARAMS"; rem  aps-01
-	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                         ids$[all],templates$[all],channels[all],batch,status
-	if status then
-		remove_process_bar:
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-	 	release
-	endif
+rem --- and see if a print run in currently running
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="ADX_LOCKS",   open_opts$[2]="OTA"
+	gosub open_tables
 
+	aps01_dev=fnget_dev("APS_PARAMS")
+	adxlocks_dev=fnget_dev("ADX_LOCKS")
 
-	aps01_dev=channels[1]
-rem --- Dimension string templates
-	dim aps01a$:templates$[1]
+	dim aps01a$:fnget_tpl$("APS_PARAMS")
+	dim adxlocks$:fnget_tpl$("ADX_LOCKS")
+
 rem --- Get parameters
 	aps01_key$=firm_id$+"AP00"
 	readrecord(aps01_dev,key=aps01_key$,dom=std_missing_params)aps01a$
@@ -37,6 +33,27 @@ rem --- Get parameters
 		ctl_stat$="I"
 		gosub disable_fields
 	endif
+
+rem --- Abort if a check run is actively running
+	pgm_name_fattr$=fattr(adxlocks$,"MENU_OPTION_ID")
+	len_pgm_name_fattr=dec(pgm_name_fattr$(10,2))
+	
+	dim taskname$(len_pgm_name_fattr)
+	taskname$(1)=callpoint!.getTableAttribute("ALID")
+
+	while 1
+		extract record(adxlocks_dev, key=firm_id$+taskname$, dom=*break)
+		
+		msg_id$="AP_CHKS_PRINTING"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		if pos("PASSVALID"=msg_opt$)=0
+			callpoint!.setStatus("EXIT")		
+		endif
+
+		break
+	wend
 [[APR_CHECKS.<CUSTOM>]]
 disable_fields:
 rem --- used to disable/enable controls depending on parameter settings
@@ -99,3 +116,19 @@ rem --- Set focus on the Check Date field
 	chk_date!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
 	chk_date!.focus()
 endif
+
+rem --- If all is well, write the softlock so only one jasper printing per firm can be run at a time
+	currstatus$=callpoint!.getStatus()
+
+	if len(cvs(currstatus$,2))=0
+		menu_option_id$=callpoint!.getTableAttribute("ALID")
+
+		adxlocks_dev=fnget_dev("ADX_LOCKS")
+		dim adxlocks$:fnget_tpl$("ADX_LOCKS")
+
+		adxlocks.firm_id$=firm_id$
+		adxlocks.menu_option_id$=menu_option_id$
+
+		extract record(adxlocks_dev,key=firm_id$+menu_option_id$,dom=*next)dummy$; rem Advisory Locking
+		write record(adxlocks_dev)adxlocks$
+	endif

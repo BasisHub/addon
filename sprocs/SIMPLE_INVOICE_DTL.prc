@@ -6,6 +6,8 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+seterr sproc_error
+
 declare BBjStoredProcedureData sp!
 declare BBjRecordSet rs!
 declare BBjRecordData data!
@@ -35,7 +37,11 @@ dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
 files$[1]="are-15",ids$[1]="ARE_INVDET"
 
 call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-if status goto std_exit
+if status then
+    seterr 0
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "File open error.",1001
+endif
 
 are15=channels[1]
 
@@ -95,6 +101,12 @@ rem --- Date/time handling functions
     def fnyy$(q$)=q$(3,2)
     def fnclock$(q$)=date(0:"%hz:%mz %p")
     def fntime$(q$)=date(0:"%Hz%mz")
+
+sproc_error:rem --- SPROC error trap/handler
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
 
 std_exit:
 end

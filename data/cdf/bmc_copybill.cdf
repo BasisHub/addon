@@ -57,6 +57,7 @@ rem --- copy Bill Master
 	read record (old_bmm_mast,key=firm_id$+old_bill$) bmm_mast$
 	bmm_mast.bill_no$=new_bill$
 	bmm_mast.create_date$=stbl("+SYSTEM_DATE")
+	bmm_mast.lstact_date$=""
 	bmm_mast$=field(bmm_mast$)
 	write record (new_bmm_mast) bmm_mast$
 	callpoint!.setDevObject("new_bill",new_bill$)

@@ -6,6 +6,8 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+seterr sproc_error
+
 declare BBjStoredProcedureData sp!
 declare BBjRecordSet rs!
 declare BBjRecordData data!
@@ -47,7 +49,11 @@ rem --- open files
     files$[4]="ars_report",ids$[4]="ARS_REPORT"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
     arm01=channels[1]
     art01=channels[2]
@@ -210,7 +216,11 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         return str(q1$:q2$)
     fnend
 
+sproc_error:rem --- SPROC error trap/handler
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+    
 std_exit:
-end
-
-
+    end

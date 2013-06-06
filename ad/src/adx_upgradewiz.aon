@@ -136,7 +136,7 @@ rem --- Update new addon.syn file
     call pgmdir$+"adc_updatesynfile.aon",newSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
 
 rem --- Add new application to Barista Installation Manager
-rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of it's terminating release
+rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of its terminating release
 
     rem --- Increment progress meter
     meter_text$=Translate!.getTranslation("AON_BIM_CREATE")
@@ -144,6 +144,31 @@ rem --- Run BIM bai_install_manager.bbj program via synchronous system call beca
     meter_action$="MTR-LST"
     gosub disp_meter
     print(log_dev)meter_text$
+
+    rem --- Create new session specific classpath (SSCP) in Enterprise Manager
+    sscpName$=cvs(dbName$,8)
+    needAddonprop=1
+    needBaristaprop=1
+    paths!=BBjAPI().makeVector()
+    env!=BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getEnvironment()
+    paths!=env!.getClasspath(BBjAPI().getConfig().getCurrentCommandLineObject().getOriginalClasspathName(),err=*next)
+    if paths!.size()>0 then
+        for i=0 to paths!.size()-1
+            if pos("addonprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to addonprop.jar
+                paths!.setItem(i,newAonLoc$+"/aon/prop/addonprop.jar")
+                needAddonprop=0
+            endif
+            if pos("baristaprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to baristaprop.jar
+                paths!.setItem(i,newAonLoc$+"/barista/sys/prop/baristaprop.jar")
+                needBaristaprop=0
+            endif
+        next i
+    endif
+    if needBaristaprop then paths!.addItem(newAonLoc$+"/barista/sys/prop/baristaprop.jar")
+    if needAddonprop then paths!.addItem(newAonLoc$+"/aon/prop/addonprop.jar")
+    env!.setClasspath(sscpName$, paths!)
 
     rem --- Launch bai_install_manager.bbj
 	bar_dir$=dir("")
@@ -156,6 +181,7 @@ rem --- Run BIM bai_install_manager.bbj program via synchronous system call beca
 :	+" -id"+dbName$
 :	+" -desc"+$22$+appDesc$+$22$
 :	+" -loc"+$22$+newAonLoc$+$22$
+:   +" -cp"+$22$+sscpName$+$22$
 	scall_result=scall(run_arg$+user_arg$,err=*next)
     
 rem --- Update new sync XML files (and copy old barista/settings dir)
@@ -488,24 +514,24 @@ open_log:rem --- Open log file
     
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (01Apr2006)
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
 
     rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
+    if pgm(-1)<>pgm(-2) status=999; exit 
     release
 
 rem #endinclude std_error.src
@@ -543,6 +569,7 @@ rem  */
         rem  * @return Vector of all descendents of parent$
         rem  */
         method public Vector getDescendents(BBjString parent$)
+            seterr method_error
             declare Vector childVect!
             
             if #appMap!.containsKey(parent$) then
@@ -556,6 +583,15 @@ rem  */
                 endif
             endif
             methodret #descendentVect!
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
         
     classend

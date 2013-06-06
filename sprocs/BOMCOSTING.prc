@@ -9,6 +9,8 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+seterr sproc_error
+
 rem --- Set of utility methods
 
 	use ::ado_func.src::func
@@ -30,6 +32,8 @@ rem --- Get the IN parameters used by the procedure
 	thru_bill$ = sp!.getParameter("BILL_NO_2")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	whse$ = sp!.getParameter("WHSE")
+	all_dates$ = sp!.getParameter("ALL_DATES")
+	prod_date$ = sp!.getParameter("PROD_DATE")
 
 	sv_wd$=dir("")
 	chdir barista_wd$
@@ -56,7 +60,11 @@ rem --- Open files with adc
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
     bmm_billmast_dev = channels[1]
     bmm_billmast_dev1= channels[2]
     bmm_billmat_dev  = channels[3]
@@ -90,6 +98,11 @@ call sypdir$+"bac_open_tables.bbj",
 :		table_chans$[all],
 :		open_batch,
 :		open_status$
+    if open_status$<>"" then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
 	bmm_billmast_dev  = num(open_chans$[1])
 	bmm_billmast_dev1 = num(open_chans$[2])
@@ -126,9 +139,19 @@ rem --- Now find all sub-bills within the main bill
 			readrecord (bmm_billmat_dev,end=*break) bmm_billmat$
 			if pos(firm_id$+bmm_billmast.bill_no$=bmm_billmat$)<>1 break
 			if bmm_billmat.line_type$<>"S" continue
-			find (bmm_billmast_dev1,key=firm_id$+bmm_billmat.item_id$,dom=*continue)
-			find (ivm_itemwhse_dev,key=firm_id$+whse$+bmm_billmat.item_id$,dom=*continue)
-			bill_numbers$=bill_numbers$+"*"+bmm_billmat.item_id$
+			if cvs(prod_date$,2)="" or
+:				(cvs(prod_date$,2)<>"" and
+:				 prod_date$ >= bmm_billmat.effect_date$ and
+:				 cvs(bmm_billmat.obsolt_date$,2)="") or
+:				((cvs(prod_date$,2)<>"" and
+:				 prod_date$ >= bmm_billmat.effect_date$ and
+:				 cvs(bmm_billmat.obsolt_date$,2)<>"") and
+:				 prod_date$ < bmm_billmat.obsolt_date$) or
+:				all_dates$ = "Y"
+				find (bmm_billmast_dev1,key=firm_id$+bmm_billmat.item_id$,dom=*continue)
+				find (ivm_itemwhse_dev,key=firm_id$+whse$+bmm_billmat.item_id$,dom=*continue)
+				bill_numbers$=bill_numbers$+"*"+bmm_billmat.item_id$
+			endif
 		wend
 		while pos("*"=bill_numbers$,bill_len+1)>0
 			bill_pos=pos("*"=bill_numbers$,bill_len+1)
@@ -160,8 +183,18 @@ rem --- next_bill$ is the next subbill to use - input
 		readrecord (bmm_billmat_dev,end=*break) bmm_billmat$
 		if pos(firm_id$+next_bill$=bmm_billmat$)<>1 break
 		if bmm_billmat.line_type$<>"S" continue
-		find (bmm_billmast_dev1,key=firm_id$+bmm_billmat.item_id$,dom=*continue)
-		bill_numbers$=bill_numbers$(1,bill_pos+bill_len)+"*"+bmm_billmat.item_id$+bill_numbers$(bill_pos+bill_len+1)
+		if cvs(prod_date$,2)="" or
+:			(cvs(prod_date$,2)<>"" and
+:			 prod_date$ >= bmm_billmat.effect_date$ and
+:			 cvs(bmm_billmat.obsolt_date$,2)="") or
+:			((cvs(prod_date$,2)<>"" and
+:			 prod_date$ >= bmm_billmat.effect_date$ and
+:			 cvs(bmm_billmat.obsolt_date$,2)<>"") and
+:			 prod_date$ < bmm_billmat.obsolt_date$) or
+:			all_dates$ = "Y"
+			find (bmm_billmast_dev1,key=firm_id$+bmm_billmat.item_id$,dom=*continue)
+			bill_numbers$=bill_numbers$(1,bill_pos+bill_len)+"*"+bmm_billmat.item_id$+bill_numbers$(bill_pos+bill_len+1)
+		endif
 	wend
 	
 	return
@@ -192,6 +225,12 @@ output_bill:
 	rs!.insert(data!)
 	
 	return
+
+sproc_error:rem --- SPROC error trap/handler
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
 	
 std_exit:
     end

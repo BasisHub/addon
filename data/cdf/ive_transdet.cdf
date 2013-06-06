@@ -483,18 +483,18 @@ rem ==========================================================================
 		endif
 	endif
 
-	rem --- At this point, if the item is lotted or serialied, the qty is ok
+	rem --- At this point, if the item is lotted or serialized, the qty is ok
 	if user_tpl.this_item_lot_or_ser then goto test_qty_end
 
-	rem --- Is the quantity more than available?
+	rem --- Is the quantity more than On Hand?
 	if callpoint!.getDevObject("qty_ok")<>"Y"
 		if (user_tpl.trans_type$ = "I" or 
 :			(user_tpl.trans_type$ = "A" and trans_qty < 0) or 
 :			(user_tpl.trans_type$ = "C" and trans_qty > 0) ) and
-:			abs(trans_qty) > user_tpl.avail 
+:			abs(trans_qty) > user_tpl.qoh
 :		then
-			msg_id$ = "IV_QTY_OVER_AVAIL"
-			msg_tokens$[0] = str(user_tpl.avail)
+			msg_id$ = "IV_QTY_OVER_QOH"
+			msg_tokens$[0] = str(user_tpl.qoh)
 			insufficient=1
 			goto test_qty_err
 			endif
@@ -514,7 +514,8 @@ rem ==========================================================================
 test_qty_err: rem --- Failed
 
 	gosub disp_message
-	if insufficient = 1 and pos("PASSVALID"=msg_opt$)<>0
+	if (insufficient = 1 and pos("PASSVALID"=msg_opt$)<>0) or
+:	   msg_id$ = "IV_QTY_OVER_QOH"
 		failed = 0
 		callpoint!.setDevObject("qty_ok","Y")
 	else

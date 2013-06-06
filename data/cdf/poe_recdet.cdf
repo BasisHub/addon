@@ -755,8 +755,8 @@ callpoint!.setDevObject("cost_this_row",0)
 rem callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.PO_LINE_CODE"); rem shouldn't need now that Barista bug 3999 fixed
 [[POE_RECDET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
-rem --- this code was already here... is it right?
-if callpoint!.getHeaderColumnData("POE_RECHDR.WAREHOUSE_ID")<>pad(callpoint!.getUserInput(),2) then
+
+if callpoint!.getHeaderColumnData("POE_RECHDR.WAREHOUSE_ID")<>pad(callpoint!.getUserInput(),2)
 	msg_id$="PO_WHSE_NOT_MATCH"
 	gosub disp_message
 endif

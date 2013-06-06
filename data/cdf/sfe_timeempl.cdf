@@ -34,6 +34,11 @@ rem --- Init entered hrs
 		entered_hrs=entered_hrs+timedet.hrs+timedet.setup_time
 	wend
 	callpoint!.setColumnData("<<DISPLAY>>.ENTERED_HRS",str(entered_hrs),1)
+
+	empcode_dev=callpoint!.getDevObject("empcode_dev")
+	dim empcode$:callpoint!.getDevObject("empcode_tpl")
+	findrecord(empcode_dev,key=firm_id$+rec_data.employee_no$,dom=*next)empcode$
+	callpoint!.setColumnData("<<DISPLAY>>.NAME",cvs(empcode.empl_surname$,2)+", "+cvs(empcode.empl_givname$,2),1)
 [[SFE_TIMEEMPL.AREC]]
 rem --- Init new record
 	entered_hrs=0
@@ -43,13 +48,16 @@ rem --- Init new record
 	callpoint!.setDevObject("hrlysalary","")
 [[SFE_TIMEEMPL.EMPLOYEE_NO.AVAL]]
 rem --- Init for this employee
+
+	empcode_dev=callpoint!.getDevObject("empcode_dev")
+	dim empcode$:callpoint!.getDevObject("empcode_tpl")
+	findrecord(empcode_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)empcode$
 	if callpoint!.getDevObject("pr")="Y" then
-		empcode_dev=callpoint!.getDevObject("empcode_dev")
-		dim empcode$:callpoint!.getDevObject("empcode_tpl")
-		findrecord(empcode_dev,key=firm_id$+callpoint!.getUserInput(),dom=*next)empcode$
 		callpoint!.setDevObject("normal_title",empcode.normal_title$)
 		callpoint!.setDevObject("hrlysalary",empcode.hrlysalary$)
 	endif
+
+	callpoint!.setColumnData("<<DISPLAY>>.NAME",cvs(empcode.empl_surname$,2)+", "+cvs(empcode.empl_givname$,2),1)
 [[SFE_TIMEEMPL.AREA]]
 rem --- Init for this employee
 	if callpoint!.getDevObject("pr")="Y" then

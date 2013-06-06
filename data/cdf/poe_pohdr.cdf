@@ -199,12 +199,24 @@ vendor_id$=callpoint!.getUserInput()
 gosub vendor_info
 gosub disp_vendor_comments
 
+rem --- set defaults from Parameter record
+
+	pos_params_chn=fnget_dev("POS_PARAMS")
+	dim pos_params$:fnget_tpl$("POS_PARAMS")
+	read record(pos_params_chn,key=firm_id$+"PO00")pos_params$
+	callpoint!.setColumnData("POE_POHDR.PO_FRT_TERMS",pos_params.po_frt_terms$,1)
+	callpoint!.setColumnData("POE_POHDR.AP_SHIP_VIA",pos_params.ap_ship_via$,1)
+	callpoint!.setColumnData("POE_POHDR.FOB",pos_params.fob$,1)
+
 rem --- Now override the defaults with the Vendor info if not blank
 	if cvs(apm01a.ap_ship_via$,3)<>""
 		callpoint!.setColumnData("POE_POHDR.AP_SHIP_VIA",apm01a.ap_ship_via$,1)
 	endif
 	if cvs(apm01a.fob$,3)<>""
 		callpoint!.setColumnData("POE_POHDR.FOB",apm01a.fob$,1)
+	endif
+	if cvs(apm01a.po_frt_terms$,3)<>""
+		callpoint!.setColumnData("POE_POHDR.PO_FRT_TERMS",apm01a.po_frt_terms$,1)
 	endif
 [[POE_POHDR.DROPSHIP.AVAL]]
 rem --- if turning off dropship flag, clear devObject items

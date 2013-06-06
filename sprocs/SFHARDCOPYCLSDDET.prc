@@ -9,6 +9,8 @@ rem
 rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
+
+seterr sproc_error
 	
 rem --- Set of utility methods
 
@@ -117,7 +119,11 @@ rem --- Open files with adc
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 	
     ivm_itemmast_dev=channels[1]
     ivm_itemwhse_dev=channels[2]	
@@ -612,6 +618,12 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 		q$=q$(1,q-1)
 		return q$
 	fnend
+
+sproc_error:rem --- SPROC error trap/handler
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
 
 	std_exit:
 	

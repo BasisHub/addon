@@ -2,6 +2,7 @@
 rem --- Disable header buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
+	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 	callpoint!.setOptionEnabled("DINV",0)
 	callpoint!.setOptionEnabled("CINV",0)

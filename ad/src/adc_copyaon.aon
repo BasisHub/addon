@@ -39,24 +39,24 @@ done: rem --- All done
    
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (01Apr2006)
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
 
     rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),
-:                                str(err),rd_err_text$,rd_err_act$
-    if pos("EXIT"=rd_err_act$) goto std_error_exit
-    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
-std_error_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_error_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_error_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
+    if pgm(-1)<>pgm(-2) status=999; exit 
     release
 
 rem #endinclude std_error.src
@@ -99,6 +99,7 @@ rem  */
         rem  * @param BBjInt wait4ok
         rem  */
         method public CopyAonDir(BBjTopLevelWindow rdForm!, BBjInt wait4ok%)
+            seterr method_error
             #sysGUI! = BBjAPI().getSysGui()
             #form! = rdForm!
             #wait4ok% = wait4ok%
@@ -117,6 +118,16 @@ rem  */
             #skipDirs!.add(sep$+"data"+sep$+"arc")
             #skipDirs!.add(sep$+"data"+sep$+"def")
             #skipDirs!.add(sep$+"help"+sep$+"WebHelp")
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -131,6 +142,7 @@ rem  */
         rem  * @param BBjInt helpFile
         rem  */
         method public void copyAonDirectory(BBjString oldLocation$, BBjString newLocation$, BBjInt demoData%, BBjInt helpFile%)
+            seterr method_error
             if demoData% then #meter_total_recs = #meter_total_recs + 500
             #meter! = #createProgressMeter()
             #openLog(demoData%, oldLocation$, newLocation$)
@@ -223,6 +235,16 @@ rem  */
 			
             #closeLog()
             #destroyProgressMeter()
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -237,6 +259,7 @@ rem  */
         rem  * @param BBjInt helpFile
         rem  */
         method private void copyAonDirectory(File source!, File target!, BBjInt demoData%, BBjInt helpFile%)
+            seterr method_error
     
             rem -- recursively process directories and copy files
             if(source!.isDirectory()) then
@@ -280,21 +303,34 @@ rem  */
                     endif
                 endif
                 
-                rem --- copy file
-                #incrementProgressMeter(source!.getPath())
-                sourceChan=unt
-                open(sourceChan,isz=-1)source!.getPath()
-                targetChan=unt
-                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
-                while 1
-                    readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
-                    writerecord(targetChan)record$
-                wend
-                close(sourceChan)
-                close(targetChan)
+                rem --- skip if source and target are the same
+                if !FileObject.isSameFile(source!.getPath(),target!.getPath()) then
+                    rem --- copy file
+                    #incrementProgressMeter(source!.getPath())
+                    sourceChan=unt
+                    open(sourceChan,isz=-1)source!.getPath()
+                    targetChan=unt
+                    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target!.getPath()
+                    while 1
+                        readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                        writerecord(targetChan)record$
+                    wend
+                    close(sourceChan)
+                    close(targetChan)
+                endif
                 #log("COPIED: " + source!.getPath())
                
             endif
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -305,6 +341,7 @@ rem  */
         rem  * @return BBjInt (1=true  false=0)
         rem  */
         method private BBjInt skipDirectory(File source!)
+            seterr method_error
             skipDir% = 0
             
             if(source!.isDirectory()) then
@@ -318,6 +355,15 @@ rem  */
             endif
             
             methodret skipDir%
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -326,6 +372,7 @@ rem  */
         rem  * @return BBjTopLevelWindow meterWin!
         rem  */
         method private BBjTopLevelWindow createProgressMeter()
+            seterr method_error
 
             rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
             rem declare BBjTopLevelWindow meterWin!
@@ -348,6 +395,15 @@ rem  */
 :               meter_text$,
 :               meter_action$
             methodret meterWin!
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -397,6 +453,7 @@ rem  */
         rem  * @param BBjString newLocation$
         rem  */
         method private void openLog(BBjInt demoData%, BBjString oldLocation$, BBjString newLocation$)
+            seterr method_error
             logDir$ = newLocation$ + "/logs"
             appDir$ = newLocation$
             
@@ -420,6 +477,16 @@ rem  */
                 print(#log_dev)"Demo data not included."
             endif
             print(#log_dev)
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**

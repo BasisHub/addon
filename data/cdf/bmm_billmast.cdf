@@ -100,11 +100,11 @@ rem --- set defaults for new record
 		ivm01_dev=fnget_dev("IVM_ITEMMAST")
 		dim ivm01$:fnget_tpl$("IVM_ITEMMAST")
 		read record (ivm01_dev,key=firm_id$+item$)ivm01$
-		callpoint!.setColumnData("BMM_BILLMAST.CREATE_DATE",stbl("+SYSTEM_DATE"))
-		callpoint!.setColumnData("BMM_BILLMAST.UNIT_MEASURE",ivm01.unit_of_sale$)
-		callpoint!.setColumnData("BMM_BILLMAST.STD_LOT_SIZE","1")
-		callpoint!.setColumnData("BMM_BILLMAST.EST_YIELD","100")
-		callpoint!.setStatus("REFRESH")
+		callpoint!.setColumnData("BMM_BILLMAST.CREATE_DATE",stbl("+SYSTEM_DATE"),1)
+		callpoint!.setColumnData("BMM_BILLMAST.UNIT_MEASURE",ivm01.unit_of_sale$,1)
+		callpoint!.setColumnData("BMM_BILLMAST.STD_LOT_SIZE","1",1)
+		callpoint!.setColumnData("BMM_BILLMAST.EST_YIELD","100",1)
+		callpoint!.setStatus("MODIFIED")
 	endif
 [[BMM_BILLMAST.AOPT-COPY]]
 rem --- Go run the Copy form
