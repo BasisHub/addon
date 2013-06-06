@@ -361,9 +361,9 @@ rem --- Calculate standard cost, actual cost and last op code seq number
 	last_op_cd_seq_no$=""
 	sch_prod_qty=num(callpoint!.getColumnData("SFE_WOCLOSE.SCH_PROD_QTY"))
 	wo_category$=callpoint!.getColumnData("SFE_WOCLOSE.WO_CATEGORY")
+	dim itemwhse$:fnget_tpl$("@IVM_ITEMWHSE")
 	if wo_category$="I" then
 		itemwhse_dev=fnget_dev("@IVM_ITEMWHSE")
-		dim itemwhse$:fnget_tpl$("@IVM_ITEMWHSE")
 		whse$=callpoint!.getColumnData("SFE_WOCLOSE.WAREHOUSE_ID")
 		item$=callpoint!.getColumnData("SFE_WOCLOSE.ITEM_ID")
 		findrecord(itemwhse_dev,key=firm_id$+whse$+item$,dom=*endif)itemwhse$

@@ -321,7 +321,7 @@ rem --- New materials issues entry or no existing materials issues
 						iter!=selected_ops!.keySet().iterator()
 						while iter!.hasNext()
 							op_seq$=iter!.next()
-							if selected_ops!.get(op_seq$)="" then read (sfe_womatisd_dev); continue
+							if selected_ops!.get(op_seq$)="" then continue
 							if selected_ops!.get(op_seq$)=sfe_womatl.oper_seq_ref$ then
 								oprtn_selected=1
 								break

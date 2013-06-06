@@ -812,9 +812,9 @@ rem --- Validate Open Sales Order
 			break
 		endif
 
-		gosub build_ord_line
-
 	endif
+
+	gosub build_ord_line
 [[SFE_WOMASTR.CUSTOMER_ID.AVAL]]
 rem --- Disable Order info if Customer not entered
 
@@ -1143,7 +1143,7 @@ rem --- enable Release/Commit
 rem =========================================================
 build_ord_line:
 rem 	cust$		input
-rem	order_no$	input
+rem	order$		input
 rem	validate_ord$	input
 rem =========================================================
 
@@ -1168,40 +1168,42 @@ rem --- Build Sequence list button
 	ctlSeqRef!=callpoint!.getControl("SFE_WOMASTR.SLS_ORD_SEQ_REF")
 	ctlSeqRef!.removeAllItems()
 
-	read(ope11_dev,key=firm_id$+ope_ordhdr.ar_type$+cust$+order$,dom=*next)
-	while 1
-		read record (ope11_dev,end=*break) ope11a$
-		if pos(firm_id$+ope_ordhdr.ar_type$+cust$+order$=ope11a$)<>1 break
-		dim opc_linecode$:fattr(opc_linecode$)
-		read record (opc_linecode,key=firm_id$+ope11a.line_code$,dom=*next)opc_linecode$
-		if wo_cat$="R" continue
-		if wo_cat$="I" and pos(opc_linecode.line_type$="SP")=0 continue
-		if wo_cat$="N" and pos(opc_linecode.line_type$="N")=0 continue
-		if wo_cat$="I"
-			dim ivm01a$:fattr(ivm01a$)
-			read record (ivm01_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm01a$
-			ops_lines!.addItem(ope11a.internal_seq_no$)
-			item_list$=item_list$+$ff$+ope11a.item_id$
-			work_var=pos($ff$+ope11a.item_id$=item_list$,1,0)
-			if work_var>1
-				work_var$=cvs(ope11a.item_id$,2)+"("+str(work_var)+")"
-			else
-				work_var$=cvs(ope11a.item_id$,2)
+	if cvs(order$,3)<>""
+		read(ope11_dev,key=firm_id$+ope_ordhdr.ar_type$+cust$+order$,dom=*next)
+		while 1
+			read record (ope11_dev,end=*break) ope11a$
+			if pos(firm_id$+ope_ordhdr.ar_type$+cust$+order$=ope11a$)<>1 break
+			dim opc_linecode$:fattr(opc_linecode$)
+			read record (opc_linecode,key=firm_id$+ope11a.line_code$,dom=*next)opc_linecode$
+			if wo_cat$="R" continue
+			if wo_cat$="I" and pos(opc_linecode.line_type$="SP")=0 continue
+			if wo_cat$="N" and pos(opc_linecode.line_type$="N")=0 continue
+			if wo_cat$="I"
+				dim ivm01a$:fattr(ivm01a$)
+				read record (ivm01_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm01a$
+				ops_lines!.addItem(ope11a.internal_seq_no$)
+				item_list$=item_list$+$ff$+ope11a.item_id$
+				work_var=pos($ff$+ope11a.item_id$=item_list$,1,0)
+				if work_var>1
+					work_var$=cvs(ope11a.item_id$,2)+"("+str(work_var)+")"
+				else
+					work_var$=cvs(ope11a.item_id$,2)
+				endif
+				ops_items!.addItem(work_var$)
+				ops_list!.addItem(work_var$+" - "+ivm01a.item_desc$)
 			endif
-			ops_items!.addItem(work_var$)
-			ops_list!.addItem(work_var$+" - "+ivm01a.item_desc$)
-		endif
-		if wo_cat$="N"
-			ops_lines!.addItem(ope11a.internal_seq_no$)
-			item_list$=item_list$+$ff$+ope11a.order_memo$
-			work_var=pos($ff$+ope11a.order_memo$=item_list$,1,0)
-			if work_var>1
-				work_var$=cvs(ope11a.order_memo$,2)+"("+str(work_var)+")"
-			else
-				work_var$=cvs(ope11a.order_memo$,2)
+			if wo_cat$="N"
+				ops_lines!.addItem(ope11a.internal_seq_no$)
+				item_list$=item_list$+$ff$+ope11a.order_memo$
+				work_var=pos($ff$+ope11a.order_memo$=item_list$,1,0)
+				if work_var>1
+					work_var$=cvs(ope11a.order_memo$,2)+"("+str(work_var)+")"
+				else
+					work_var$=cvs(ope11a.order_memo$,2)
+				endif
+				ops_items!.addItem(work_var$)
+				ops_list!.addItem(work_var$)
 			endif
-			ops_items!.addItem(work_var$)
-			ops_list!.addItem(work_var$)
 		endif
 	wend
 
