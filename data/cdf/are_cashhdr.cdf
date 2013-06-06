@@ -746,6 +746,7 @@ rem ---   once vectors are built, they're stored in UserObj!
  	vectInvSel!=SysGUI!.makeVector()
 	OA_chkbox!=Form!.getControl(num(user_tpl.OA_chkbox_id$))
 	zbal_chkbox!=Form!.getControl(num(user_tpl.zbal_chkbox_id$))
+	zbal_checked=zbal_chkbox!.isSelected()
 	other_avail=0
 	chk_applied=0
 	read(art_invhdr_dev,key=inv_key$,dom=*next)
@@ -782,7 +783,7 @@ rem ---   once vectors are built, they're stored in UserObj!
 			if len(currdtl$) gosub include_curr_tran_amts
 			rem --- now load invoice vector w/ data to display in grid		
 		
-				if inv_amt or zbal_chkbox!.isSelected() 
+				if inv_amt or zbal_checked
 					vectInvoice!.addItem("")
 					vectInvoice!.addItem(art01a.ar_inv_no$)
 					vectInvoice!.addItem(fnmdy$(art01a.invoice_date$))

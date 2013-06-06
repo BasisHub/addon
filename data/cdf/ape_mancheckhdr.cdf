@@ -1,3 +1,18 @@
+[[APE_MANCHECKHDR.ADEL]]
+rem --- Verify all G/L Distribution records get deleted
+
+	ape12_dev=fnget_dev("APE_MANCHECKDIST")
+	ap_type$=callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
+	check_no$=callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")
+	vend$=callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
+
+	read(ape12_dev,key=firm_id$+ap_type$+check_no$+vend$,dom=*next)
+	while 1
+		ape12_key$=key(ape12_dev,end=*break)
+		read(ape12_dev)
+		if pos(firm_id$+ap_type$+check_no$+vend$=ape12_key$)<>1 break
+		remove (ape12_dev,key=ape12_key$)
+	wend
 [[APE_MANCHECKHDR.AP_TYPE.AVAL]]
 user_tpl.dflt_ap_type$=callpoint!.getUserInput()
 if user_tpl.dflt_ap_type$=""
@@ -194,10 +209,8 @@ get_vendor_history:
 :		callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
 			user_tpl.dflt_dist_cd$=apm02a.ap_dist_code$
 			user_tpl.dflt_gl_account$=apm02a.gl_account$
-			pfx$="GLNS",nm$="GL Dist"
-			GLNS!=BBjAPI().getNamespace(pfx$,nm$,1)
-			GLNS!.setValue("dflt_gl",apm02a.gl_account$)
-			GLNS!.setValue("dflt_dist",apm02a.ap_dist_code$)
+			callpoint!.setDevObject("dflt_gl",apm02a.gl_account$)
+			callpoint!.setDevObject("dflt_dist",apm02a.ap_dist_code$)
 			vend_hist$="Y"
 	endif
 return
@@ -437,15 +450,13 @@ endif
 gls01a_key$=firm_id$+"GL00"
 find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 user_tpl.units_flag$=gls01a.units_flag$
-pfx$="GLNS",nm$="GL Dist"
-GLNS!=BBjAPI().getNamespace(pfx$,nm$,1)
-GLNS!.setValue("GLMisc",user_tpl.misc_entry$)
-GLNS!.setValue("GLUnits",user_tpl.units_flag$)
-GLNS!.setValue("gl_int",user_tpl.glint$)
-GLNS!.setValue("dist_amt","")
-GLNS!.setValue("dflt_gl","")
-GLNS!.setValue("dflt_dist","")
-GLNS!.setValue("tot_inv","")
+callpoint!.setDevObject("GLMisc",user_tpl.misc_entry$)
+callpoint!.setDevObject("GLUnits",user_tpl.units_flag$)
+callpoint!.setDevObject("gl_int",user_tpl.glint$)
+callpoint!.setDevObject("dist_amt","")
+callpoint!.setDevObject("dflt_gl","")
+callpoint!.setDevObject("dflt_dist","")
+callpoint!.setDevObject("tot_inv","")
 [[APE_MANCHECKHDR.ARNF]]
 rem --- Look in check history for this check number
 

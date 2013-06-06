@@ -1279,3 +1279,5 @@ rem --- enable all enterable fields
 rem --- Item synonym processing
 
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
+	item$=callpoint!.getUserInput()
+	callpoint!.setColumnData("SFE_WOMASTR.ITEM_ID",item$,1)

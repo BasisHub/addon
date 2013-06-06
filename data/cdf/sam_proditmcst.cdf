@@ -1,3 +1,31 @@
+[[SAM_PRODITMCST.BOVE]]
+rem --- Restrict lookup to orders
+			
+	alias_id$ = "SAM_CUSTOMER"
+	inq_mode$ = ""
+	key_pfx$  = firm_id$
+	key_id$   = "AO_PRD_ITM_CST"
+			
+	dim filter_defs$[1,1]
+			
+	call stbl("+DIR_SYP")+"bam_inquiry.bbj",
+:		gui_dev,
+:		Form!,
+:		alias_id$,
+:		inq_mode$,
+:		table_chans$[all],
+:		key_pfx$,
+:		key_id$,
+:		selected_key$,
+:		filter_defs$[all],
+:		search_defs$[all]
+			
+	if selected_key$<>"" then 
+		callpoint!.setStatus("RECORD:[" + selected_key$ +"]")
+	else
+		callpoint!.setStatus("ABORT")
+	endif
+	callpoint!.setStatus("ACTIVATE")
 [[SAM_PRODITMCST.ITEM_ID.AINV]]
 rem --- Item synonym processing
 

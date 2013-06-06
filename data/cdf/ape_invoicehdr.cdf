@@ -221,6 +221,7 @@ if gl$="Y"
 		acct_dt!.focus()
 	endif
 endif
+
 if status<=99
 	bal_amt=num(callpoint!.getColumnData("APE_INVOICEHDR.INVOICE_AMT"))-num(user_tpl.tot_dist$)
 	if bal_amt<>0
@@ -228,7 +229,7 @@ if status<=99
 		gosub disp_message
 		if msg_opt$="N"
 			gosub calc_grid_tots
-			gosub disp_dist_bal			
+			gosub disp_dist_bal
 			callpoint!.setStatus("REFRESH-ABORT")
 		endif
 	endif
@@ -436,7 +437,9 @@ rem ----------------------------------------------------------------------------
 	if numrecs>0
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
-			if cvs(gridrec$,3)<>"" then tdist=tdist+num(gridrec.gl_post_amt$)
+			if cvs(gridrec$,3)<>"" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y"
+				tdist=tdist+num(gridrec.gl_post_amt$)
+			endif
 		next reccnt
 		user_tpl.tot_dist$=str(tdist)
 	endif

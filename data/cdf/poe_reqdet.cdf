@@ -296,7 +296,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			msg_tokens$[1]=Translate!.getTranslation(translate$)
 		endif
 		gosub disp_message
-		callpoint!.setFocus(num(callpoint!.getValidationRow()),focus_column$)
+		callpoint!.setFocus(num(callpoint!.getValidationRow()),focus_column$,1)
 		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
@@ -316,7 +316,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 					if pos(rec.so_int_seq_ref$+"^"=so_lines_referenced$)<>0 
 						msg_id$="PO_DUP_SO_LINE"
 						gosub disp_message
-						callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_REQDET.SO_INT_SEQ_REF")
+						callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_REQDET.SO_INT_SEQ_REF",1)
 						break
 					else
 						so_lines_referenced$=so_lines_referenced$+rec.so_int_seq_ref$+"^"

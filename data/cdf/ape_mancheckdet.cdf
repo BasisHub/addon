@@ -165,11 +165,11 @@ gosub disp_tots
 [[APE_MANCHECKDET.DISCOUNT_AMT.AVAL]]
 net_paid=num(callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))-num(callpoint!.getUserInput())
 callpoint!.setColumnData("APE_MANCHECKDET.NET_PAID_AMT",str(net_paid))
-glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
-glns!.setValue("dist_amt",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
-glns!.setValue("dflt_dist",user_tpl.dflt_dist_cd$)
-glns!.setValue("dflt_gl",user_tpl.dflt_gl_account$)
-glns!.setValue("tot_inv",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
+
+callpoint!.setDevObject("dist_amt",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
+callpoint!.setDevObject("dflt_dist",user_tpl.dflt_dist_cd$)
+callpoint!.setDevObject("dflt_gl",user_tpl.dflt_gl_account$)
+callpoint!.setDevObject("tot_inv",callpoint!.getColumnData("APE_MANCHECKDET.INVOICE_AMT"))
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[APE_MANCHECKDET.INVOICE_AMT.AVAL]]
 rem --- if invoice # isn't in open invoice file, invoke GL Dist grid
@@ -177,11 +177,10 @@ rem --- if invoice # isn't in open invoice file, invoke GL Dist grid
 net_paid=num(callpoint!.getUserInput())-num(callpoint!.getColumnData("APE_MANCHECKDET.DISCOUNT_AMT"))
 callpoint!.setColumnData("APE_MANCHECKDET.NET_PAID_AMT",str(net_paid))
 
-glns!=bbjapi().getNamespace("GLNS","GL Dist",1)
-glns!.setValue("dist_amt",callpoint!.getUserInput())
-glns!.setValue("dflt_dist",user_tpl.dflt_dist_cd$)
-glns!.setValue("dflt_gl",user_tpl.dflt_gl_account$)
-glns!.setValue("tot_inv",callpoint!.getUserInput())
+callpoint!.setDevObject("dist_amt",callpoint!.getUserInput())
+callpoint!.setDevObject("dflt_dist",user_tpl.dflt_dist_cd$)
+callpoint!.setDevObject("dflt_gl",user_tpl.dflt_gl_account$)
+callpoint!.setDevObject("tot_inv",callpoint!.getUserInput())
 
 apt_invoicehdr_dev=fnget_dev("APT_INVOICEHDR")			
 dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
@@ -211,6 +210,7 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 		curr_col=grid!.getSelectedColumn()
 		rem --- invoke GL Dist form
 		gosub get_gl_tots
+		callpoint!.setDevObject("invoice_amt",callpoint!.getUserInput())
 		user_id$=stbl("+USER_ID")
 		dim dflt_data$[1,1]
 		dflt_data$[1,0]="GL_ACCOUNT"
@@ -218,14 +218,15 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 		key_pfx$=callpoint!.getColumnData("APE_MANCHECKDET.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE")+
 :			callpoint!.getColumnData("APE_MANCHECKDET.CHECK_NO")+callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")+
 :			callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+		callpoint!.setDevObject("key_pfx",key_pfx$)
 		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
-:		"APE_MANCHECKDIST",
-:		user_id$,
-:		"MNT",
-:		key_pfx$,
-:		table_chans$[all],
-:		"",
-:		dflt_data$[all]
+:			"APE_MANCHECKDIST",
+:			user_id$,
+:			"MNT",
+:			key_pfx$,
+:			table_chans$[all],
+:			"",
+:			dflt_data$[all]
 		rem --- Reset focus on detail row where GL Dist was executed
 		sysgui!.setContext(grid_ctx)
 		grid!.startEdit(curr_row,curr_col)
@@ -421,9 +422,7 @@ get_gl_tots:
 			more_dtl=0
 		endif
 	wend
-		pfx$="GLNS",nm$="GL Dist"
-		GLNS!=BBjAPI().getNamespace(pfx$,nm$,1)
-		GLNS!.setValue("dist_amt",str(amt_dist))
+	callpoint!.setDevObject("dist_amt",str(amt_dist))
 return
 
 delete_gldist:

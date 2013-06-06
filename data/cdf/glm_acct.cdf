@@ -1,3 +1,16 @@
+[[GLM_ACCT.ADEL]]
+rem --- Remove all glm-02 recs
+
+	glm02_dev=fnget_dev("GLM_ACCTSUMMARY")
+	dim glm02a$:fnget_tpl$("GLM_ACCTSUMMARY")
+	this_acct$=callpoint!.getColumnData("GLM_ACCT.GL_ACCOUNT")
+	read(glm02_dev,key=firm_id$+this_acct$,dom=*next)
+	while 1
+		glm02_key$=key(glm02_dev,end=*break)
+		read record (glm02_dev) glm02a$
+		if pos(firm_id$+this_acct$=glm02a$)<>1 break
+		remove (glm02_dev,key=glm02_key$)
+	wend
 [[<<DISPLAY>>.CURRENT_YEAR.AVAL]]
 rem --- set variables
 
@@ -70,22 +83,15 @@ rem --- Check for activity
 	reason$=""
 
 rem --- Check glm-02 for activity
-	files=1,begfile=1,endfile=files
-	dim files$[files],options$[files],chans$[files],templates$[files]
-	files$[1]="GLM_ACCTSUMMARY",options$[1]="OTA"
 
-	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
-:		chans$[all],templates$[all],table_chans$[all],batch,status$
-
-	glm02_dev=num(chans$[1])
-	dim glm02a$:templates$[1]
+	glm02_dev=fnget_dev("GLM_ACCTSUMMARY")
+	dim glm02a$:fnget_tpl$("GLM_ACCTSUMMARY")
 	this_acct$=callpoint!.getColumnData("GLM_ACCT.GL_ACCOUNT")
 	read(glm02_dev,key=firm_id$+this_acct$,dom=*next)
 	while 1
 		readrecord (glm02_dev,end=*break)glm02a$
 		if pos(firm_id$+this_acct$=glm02a.firm_id$+glm02a.gl_account$)<>1 break
-		if glm02a.begin_amt<>0 break
-		if glm02a.begin_units<>0 break
+		if pos(glm02a.record_id$="024")=0 continue
 		for x=1 to mp
 			if nfield(glm02a$,"period_amt_"+str(x:"00"))<>0 okay$="N"
 			if nfield(glm02a$,"period_units_"+str(x:"00"))<>0 okay$="N"
@@ -96,21 +102,14 @@ rem --- Check glm-02 for activity
 		endif
 	wend
 
-	files=1,begfile=1,endfile=files
-	dim files$[files],options$[files],chans$[files],templates$[files]
-	files$[1]="GLM_ACCTSUMMARY",options$[1]="CX"
-
-	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
-:		chans$[all],templates$[all],table_chans$[all],batch,status$
-
 rem --- Check glt-06 for history
 	if okay$="Y"
-	files=1,begfile=1,endfile=files
-	dim files$[files],options$[files],chans$[files],templates$[files]
-	files$[1]="GLT_TRANSDETAIL",options$[1]="OTA"
+		files=1,begfile=1,endfile=files
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[1]="GLT_TRANSDETAIL",options$[1]="OTA"
 
-	call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
-:		chans$[all],templates$[all],table_chans$[all],batch,status$
+		call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
+:			chans$[all],templates$[all],table_chans$[all],batch,status$
 
 		glt06_dev=num(chans$[1])
 		read (glt06_dev,key=firm_id$+this_acct$,dom=*next)
@@ -287,13 +286,6 @@ rem --- Disallow delete if flag is set
 		msg_tokens$[1]=reason$
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
-	else
-		msg_id$="ENTRY_DTL_DELETE"
-		msg_opt$=""
-		gosub disp_message
-		if msg_opt$="N"
-			callpoint!.setStatus("ABORT")
-		endif
 	endif
 [[GLM_ACCT.AOPT-TRAN]]
 rem Transaction History Inquiry
@@ -437,3 +429,6 @@ find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 	callpoint!.setDevObject("gl_yr_closed",gls01a.gl_yr_closed$)
 	callpoint!.setDevObject("gls_cur_yr",gls01a.current_year$)
 	callpoint!.setDevObject("gls_cur_per",gls01a.current_per$)
+
+	tns!=BBjAPI().getNamespace("GLM_ACCT","drill",1)
+	tns!.setValue("cur_per",gls01a.current_per$)

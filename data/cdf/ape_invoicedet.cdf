@@ -1,3 +1,18 @@
+[[APE_INVOICEDET.ADGE]]
+rem --- Verify totals balance
+
+	gosub calc_grid_tots
+	gosub disp_totals
+[[APE_INVOICEDET.AWRI]]
+rem --- Verify totals balance
+
+	gosub calc_grid_tots
+	gosub disp_totals
+[[APE_INVOICEDET.BDGX]]
+rem --- Verify totals balance
+
+	gosub calc_grid_tots
+	gosub disp_totals
 [[APE_INVOICEDET.AGRN]]
 rem --- entering grid row; default the amount to balance on invoice; if row 0, default GL acct# 
 
