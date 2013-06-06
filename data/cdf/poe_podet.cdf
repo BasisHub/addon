@@ -39,16 +39,18 @@ rem --- Query displays WO's for given firm/vendor, only showing those not alread
 				saved_seq$=subs.subcont_seq$
 			endif
 
-			dim filter_defs$[6,2]
+			dim filter_defs$[7,2]
 			filter_defs$[1,0]="SFE_WOSUBCNT.FIRM_ID"
 			filter_defs$[1,1]="='"+firm_id$ +"'"
 			filter_defs$[1,2]="LOCK"
-			filter_defs$[2,0]="SFE_WOSUBCNT.VENDOR_ID"
-			filter_defs$[2,1]="='"+callpoint!.getHeaderColumnData("POE_POHDR.VENDOR_ID")+"'"
-			filter_defs$[2,2]="LOCK"
-			filter_defs$[3,0]="SFE_WOSUBCNT.PO_NO"
-			filter_defs$[3,1]="=''"
-			filter_defs$[3,2]="LOCK"
+			rem --- Allow different vendor than what is on WO subcontract line
+			rem filter_defs$[2,0]="SFE_WOSUBCNT.VENDOR_ID"
+			rem filter_defs$[2,1]="='"+callpoint!.getHeaderColumnData("POE_POHDR.VENDOR_ID")+"'"
+			rem filter_defs$[2,2]="LOCK"
+			rem --- Previous PO may not have been for full quantity on WO subcontract line
+			rem filter_defs$[3,0]="SFE_WOSUBCNT.PO_NO"
+			rem filter_defs$[3,1]="=''"
+			rem filter_defs$[3,2]="LOCK"
 			filter_defs$[4,0]="SFE_WOSUBCNT.LINE_TYPE"
 			filter_defs$[4,1]="='S' "
 			filter_defs$[4,2]="LOCK"
@@ -58,11 +60,15 @@ rem --- Query displays WO's for given firm/vendor, only showing those not alread
 			filter_defs$[6,0]="SFE_WOMASTR.WO_STATUS"
 			filter_defs$[6,1]="not in ('Q','C') "
 			filter_defs$[6,2]="LOCK"
+			filter_defs$[7,0]="SFE_WOSUBCNT.WO_NO"
+			filter_defs$[7,1]=" LIKE '"+callpoint!.getDevObject("lookup_wo_no")+"%'"
+			filter_defs$[7,2]="LOCK"
 
 			call stbl("+DIR_SYP")+"bax_query.bbj",gui_dev,form!,"SF_SUBDETAIL","",table_chans$[all],sf_sub_key$,filter_defs$[all]
 			wo_type$="N"
 			wo_key$=sf_sub_key$
 			if wo_key$="" wo_key$=firm_id$+wo_loc$+saved_wo$+saved_seq$
+			callpoint!.setDevObject("lookup_wo_no","")
 			break
 		case 2;rem Special Order Item
 			whse$=callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID")
@@ -132,6 +138,7 @@ rem --- Query displays WO's for given firm/vendor, only showing those not alread
 rem --- need to use custom query so we get back both po# and line#
 rem --- throw message to user and abort manual entry
 
+	callpoint!.setDevObject("lookup_wo_no",callpoint!.getUserInput())
 	if cvs(callpoint!.getUserInput(),3)<>""
 		if callpoint!.getUserInput()<>callpoint!.getColumnData("POE_PODET.WO_NO")
 			if callpoint!.getDevObject("wo_looked_up")<>"Y"
@@ -526,6 +533,7 @@ rem --- save current po status flag, po/req# and line#
 	callpoint!.setDevObject("start_wo_no",callpoint!.getColumnData("POE_PODET.WO_NO"))
 	callpoint!.setDevObject("start_wo_seq_ref",callpoint!.getColumnData("POE_PODET.WK_ORD_SEQ_REF"))
 	callpoint!.setDevObject("wo_looked_up","N")
+	callpoint!.setDevObject("lookup_wo_no","")
 
 	wh$=callpoint!.getColumnData("POE_PODET.WAREHOUSE_ID")
 	item$=callpoint!.getColumnData("POE_PODET.ITEM_ID")

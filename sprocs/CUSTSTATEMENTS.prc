@@ -120,11 +120,11 @@ while 1
 	data!.setFieldValue("STATEMENT_DATE",fndate$(statement_date$))
 	data!.setFieldValue("CUSTOMER_ID",fnmask$(customer$(1,customer_size),cust_mask$))
 	data!.setFieldValue("CUST_NAME",arm01.customer_name$)
-	data!.setFieldValue("ADDRESS1", address$(1,30))
-	data!.setFieldValue("ADDRESS2", address$(31,30))
-	data!.setFieldValue("ADDRESS3", address$(61,30))
-	data!.setFieldValue("ADDRESS4", address$(91,30))
-	data!.setFieldValue("ADDRESS5", address$(121,30))
+	data!.setFieldValue("ADDRESS2", address$(1,30))
+	data!.setFieldValue("ADDRESS3", address$(31,30))
+	data!.setFieldValue("ADDRESS4", address$(61,30))
+	data!.setFieldValue("ADDRESS5", address$(91,30))
+	data!.setFieldValue("ADDRESS6", address$(121,30))
 	data!.setFieldValue("INVOICE_DATE",fndate$(art01.invoice_date$))
 	data!.setFieldValue("AR_INV_NO",art01.ar_inv_no$)
 	data!.setFieldValue("INV_TYPE",inv_type$)
@@ -167,6 +167,19 @@ format_address_block:
 	read record(arm01,key=firm_id$ + customer$)arm01$
     address$=arm01.addr_line_1$+arm01.addr_line_2$+arm01.addr_line_3$+arm01.addr_line_4$+arm01.city$+arm01.state_code$+arm01.zip_code$
     call pgmdir$+"adc_address.aon",address$,24,5,9,30
+	dim tmp_address$(150)
+	y=121
+	for x=121 to 1 step -30
+		if cvs(address$(x,30),2)<>""
+			tmp_address$(y,30)=address$(x,30)
+			y=y-30
+		endif
+	next x
+	if y>1
+		tmp_address$(y,30)=arm01.customer_name$
+		arm01.customer_name$=""
+	endif
+	address$=tmp_address$
     
 return
 
