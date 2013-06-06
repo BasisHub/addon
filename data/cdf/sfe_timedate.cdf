@@ -36,7 +36,9 @@ rem --- Init for this employee
 	if callpoint!.getDevObject("pr")="Y" then
 		empcode_dev=callpoint!.getDevObject("empcode_dev")
 		dim empcode$:callpoint!.getDevObject("empcode_tpl")
-		findrecord(empcode_dev,key=firm_id$+callpoint!.getColumnData("SFE_TIMEDATE.EMPLOYEE_NO"),dom=*next)empcode$
+		rem --- temporary work around for Barista bug 6742
+		rem findrecord(empcode_dev,key=firm_id$+callpoint!.getColumnData("SFE_TIMEDATE.EMPLOYEE_NO"),dom=*next)empcode$
+		findrecord(empcode_dev,key=firm_id$+rec_data.employee_no$,dom=*next)empcode$
 		callpoint!.setDevObject("normal_title",empcode.normal_title$)
 		callpoint!.setDevObject("hrlysalary",empcode.hrlysalary$)
 	endif

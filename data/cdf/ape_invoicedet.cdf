@@ -64,8 +64,8 @@ calc_grid_tots:
 				tdist=tdist+num(gridrec.gl_post_amt$)
 			endif
 		next reccnt
-		user_tpl.tot_dist$=str(tdist)
 	endif
+	user_tpl.tot_dist$=str(tdist)
 return
 
 

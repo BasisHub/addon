@@ -1,13 +1,19 @@
 [[SFE_WOMATISH.AREA]]
 rem --- Hold on to sfe_womatish key
 
-	wo_no$=callpoint!.getColumnData("SFE_WOMATISH.WO_NO")
+	rem --- temporary work around for Barista bug 6742
+	rem wo_no$=callpoint!.getColumnData("SFE_WOMATISH.WO_NO")
+	wo_no$=rec_data.wo_no$
 	callpoint!.setDevObject("wo_no",wo_no$)
-	wo_location$=callpoint!.getColumnData("SFE_WOMATISH.WO_LOCATION")
+	rem --- temporary work around for Barista bug 6742
+	rem wo_location$=callpoint!.getColumnData("SFE_WOMATISH.WO_LOCATION")
+	wo_location$=rec_data.wo_location$
 	callpoint!.setDevObject("wo_location",wo_location$)
-	sfe_womatish_key$=firm_id$+callpoint!.getColumnData("SFE_WOMATISH.BATCH_NO")+wo_location$+wo_no$
+	rem --- temporary work around for Barista bug 6742
+	rem sfe_womatish_key$=firm_id$+callpoint!.getColumnData("SFE_WOMATISH.BATCH_NO")+wo_location$+wo_no$
+	sfe_womatish_key$=firm_id$+rec_data.batch_no$+wo_location$+wo_no$
 	callpoint!.setDevObject("sfe_womatish_key",sfe_womatish_key$)
-	firm_loc_wo$=firm_id$+callpoint!.getColumnData("SFE_WOMATISH.WO_LOCATION")+wo_no$
+	firm_loc_wo$=firm_id$+wo_location$+wo_no$
 	callpoint!.setDevObject("firm_loc_wo",firm_loc_wo$)
 [[SFE_WOMATISH.WO_NO.AVAL]]
 rem --- Hold on to sfe_womatish key

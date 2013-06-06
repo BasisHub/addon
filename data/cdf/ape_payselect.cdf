@@ -34,6 +34,7 @@ rem --- Set filters on grid
 	gosub filter_recs
 [[APE_PAYSELECT.PAYMENT_GRP.AVAL]]
 rem --- Set filters on grid
+
 	gosub filter_recs
 [[APE_PAYSELECT.DUE_DATE_OP.AVAL]]
 rem --- Set filters on grid
@@ -225,19 +226,26 @@ rem ==========================================================================
 
 			apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 			apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+			apt01a.retention = apt01a.retention + apt11a.trans_ret
 		wend
 		if apt01a.discount_amt<0 then apt01a.discount_amt=0
+		inv_amt = apt01a.invoice_amt
+		disc_amt = apt01a.discount_amt
+		ret_amt = apt01a.retention
+		amt_due = inv_amt - ret_amt - disc_amt
+		pymnt_amt=0
 
 	rem --- override discount and payment amounts if already in ape04 (computer checks)
 
-		disc_amt=apt01a.discount_amt
-		pymnt_amt=0
 		dim ape04a$:fattr(ape04a$)
 		read record(ape04_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next) ape04a$
 
 		if cvs(ape04a.firm_id$,2)<>""
-			disc_amt  = ape04a.discount_amt
-			pymnt_amt = ape04a.invoice_amt
+			inv_amt = ape04a.invoice_amt
+			disc_amt = ape04a.discount_amt
+			ret_amt = ape04a.retention
+			pymnt_amt = inv_amt - disc_amt - ret_amt
+			amt_due = inv_amt - ret_amt - disc_amt - pymnt_amt
 		endif
 
 	rem --- Now fill vectors
@@ -253,11 +261,11 @@ rem ==========================================================================
 			vectInvoices!.addItem(apt01a.hold_flag$);rem 6
 			vectInvoices!.addItem(date(jul(apt01a.inv_due_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 7
 			vectInvoices!.addItem(date(jul(apt01a.disc_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 8
-			vectInvoices!.addItem(str(apt01a.invoice_amt - pymnt_amt)); rem 9
-			vectInvoices!.addItem(str(apt01a.invoice_amt - apt01a.retention - disc_amt - pymnt_amt)); rem 10
+			vectInvoices!.addItem(str(inv_amt)); rem 9
+			vectInvoices!.addItem(str(amt_due)); rem 10
 			vectInvoices!.addItem(str(disc_amt)); rem 11
 			vectInvoices!.addItem(str(pymnt_amt)); rem 12
-			vectInvoices!.addItem(apt01a.retention$); rem 13
+			vectInvoices!.addItem(str(ret_amt)); rem 13
 
 			vectInvoicesMaster!.addItem("Y"); rem 0
 			vectInvoicesMaster!.addItem(apt01a.selected_for_pay$); rem 1
@@ -269,11 +277,11 @@ rem ==========================================================================
 			vectInvoicesMaster!.addItem(apt01a.hold_flag$);rem 7
 			vectInvoicesMaster!.addItem(date(jul(apt01a.inv_due_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 8
 			vectInvoicesMaster!.addItem(date(jul(apt01a.disc_date$,"%Yd%Mz%Dz"):stbl("+DATE_GRID"))); rem 9
-			vectInvoicesMaster!.addItem(str(apt01a.invoice_amt - pymnt_amt)); rem 10
-			vectInvoicesMaster!.addItem(str(apt01a.invoice_amt - apt01a.retention - disc_amt - pymnt_amt)); rem 11
+			vectInvoicesMaster!.addItem(str(inv_amt)); rem 10
+			vectInvoicesMaster!.addItem(str(amt_due)); rem 11
 			vectInvoicesMaster!.addItem(str(disc_amt)); rem 12
 			vectInvoicesMaster!.addItem(str(pymnt_amt)); rem 13
-			vectInvoicesMaster!.addItem(apt01a.retention$); rem 14
+			vectInvoicesMaster!.addItem(str(ret_amt)); rem 14
 			vectInvoicesMaster!.addItem(apt01a.inv_due_date$); rem 15
 			vectInvoicesMaster!.addItem(apt01a.vendor_id$); rem 16
 			vectInvoicesMaster!.addItem(apt01a.disc_date$); rem 17
@@ -347,6 +355,7 @@ rem				endif
 
 					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
 				if apt01a.discount_amt<0 then apt01a.discount_amt=0
 
@@ -399,6 +408,7 @@ rem				endif
 
 					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
 				if apt01a.discount_amt<0 then apt01a.discount_amt=0
 
@@ -615,6 +625,7 @@ rem ==========================================================================
 
 	TempRows! = gridInvoices!.getSelectedRows()
 	numcols   = gridInvoices!.getNumColumns()
+	mastercols =num(user_tpl.MasterCols$)
 
 	vect_size = num(vectInvoicesMaster!.size())
 	rows = 0
@@ -717,11 +728,16 @@ rem				endif
 
 					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
+					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
 				if apt01a.discount_amt<0 then apt01a.discount_amt=0
-
+				inv_amt = apt01a.invoice_amt
+				disc_amt = apt01a.discount_amt
+				ret_amt = apt01a.retention
+				amt_due = inv_amt - ret_amt - disc_amt
 				gridInvoices!.setCellState(row_no,0,0)
-				gridInvoices!.setCellText(row_no, 10, str(str(apt01a.invoice_amt - apt01a.retention - apt01a.discount_amt)))
+				gridInvoices!.setCellText(row_no, 10, str(amt_due))
+				vectInvoicesMaster!.setItem(row_no*mastercols+11,str(amt_due))
 				gridInvoices!.setCellText(row_no,11,str(apt01a.discount_amt))
 				gridInvoices!.setCellText(row_no,12,"0.00")
 				dummy = fn_setmast_flag(
@@ -731,6 +747,7 @@ rem				endif
 :					"N",
 :					"0"
 :				)
+
 				dummy = fn_setmast_amts(
 :					vectInvoices!.getItem(row_no*numcols+2),
 :					vectInvoices!.getItem(row_no*numcols+3),
@@ -860,8 +877,19 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 :								   vectInvoicesMaster!.getItem(row+6)
 				extract record (apt01_dev, key=apt01_key$) apt01a$; rem Advisory Locking
 				orig_inv_amt   = num(vectInvoicesMaster!.getItem(row+18))
+				inv_amt = num(vectInvoicesMaster!.getItem(row+10))
 				disc_to_take = num(vectInvoicesMaster!.getItem(row+12))
 				amt_to_pay   = num(vectInvoicesMaster!.getItem(row+13))
+				payments=0
+				retention=0
+
+				read(apt11_dev,key=apt01_key$,dom=*next)
+				while 1
+					read record(apt11_dev,end=*break)apt11a$
+					if pos(apt01_key$=apt11a$)<>1 break
+					payments=payments+apt11a.trans_amt
+					retention=retention+apt11a.trans_ret
+				wend
 
 				if vectInvoicesMaster!.getItem(row+1)<>"Y"
 					apt01a.selected_for_pay$="N"
@@ -879,9 +907,9 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 					ape04a.invoice_date$ = apt01a.invoice_date$
 					ape04a.inv_due_date$ = apt01a.inv_due_date$
 					ape04a.disc_date$    = apt01a.disc_date$
-					ape04a.invoice_amt   = amt_to_pay+disc_to_take
+					ape04a.invoice_amt   = inv_amt
 					ape04a.discount_amt  = disc_to_take
-					ape04a.retention     = apt01a.retention
+					ape04a.retention     = apt01a.retention+retention
 					ape04a.orig_inv_amt  = apt01a.invoice_amt
 
 					ape04a$=field(ape04a$)
