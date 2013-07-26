@@ -111,6 +111,16 @@ look_for_invoice:
 		ctl_name$="APE_INVOICEHDR.NET_INV_AMT"
 		ctl_stat$="D"
 		gosub disable_fields
+
+		apt11_dev=fnget_dev("APT_INVOICEDET")
+		dim apt11a$:fnget_tpl$("APT_INVOICEDET")
+		read(apt11_dev,key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$,dom=*next)
+		while 1
+			readrecord (apt11_dev,end=*break) apt11a$
+			if pos(firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$=apt11a$)<>1 break
+			apt01a.invoice_amt = apt01a.invoice_amt+apt11a.trans_amt
+		wend
+
 		Form!.getControl(num(user_tpl.open_inv_textID$)).setText(Translate!.getTranslation("AON_ADJUST_OPEN_INVOICE:_")+$0A$+fndate$(apt01a.invoice_date$)+
 :			",  "+str(num(apt01a.invoice_amt$):user_tpl.amt_msk$))
 		callpoint!.setStatus("ABLEMAP-REFRESH-ACTIVATE")

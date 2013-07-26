@@ -118,6 +118,7 @@ rem --- Disable display fields
 	column!.addItem("<<DISPLAY>>.BCITY")
 	column!.addItem("<<DISPLAY>>.BSTATE")
 	column!.addItem("<<DISPLAY>>.BZIP")
+	column!.addItem("<<DISPLAY>>.BCNTRY_ID")
 	column!.addItem("<<DISPLAY>>.ORDER_TOT")
 
 	if ars01a.job_nos$<>"Y" then 
@@ -135,6 +136,7 @@ rem --- Disable display fields
 	column!.addItem("<<DISPLAY>>.SCITY")
 	column!.addItem("<<DISPLAY>>.SSTATE")
 	column!.addItem("<<DISPLAY>>.SZIP")
+	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
 	callpoint!.setColumnEnabled(column!, -1)
 
 	callpoint!.setColumnEnabled(column!, -1)
@@ -329,6 +331,7 @@ rem ==========================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.BCITY",  custmast_tpl.city$)
 	callpoint!.setColumnData("<<DISPLAY>>.BSTATE", custmast_tpl.state_code$)
 	callpoint!.setColumnData("<<DISPLAY>>.BZIP",   custmast_tpl.zip_code$)
+	callpoint!.setColumnData("<<DISPLAY>>.BCNTRY_ID",   custmast_tpl.cntry_id$)
 
 	return
 
@@ -355,6 +358,7 @@ rem ==========================================================================
 			callpoint!.setColumnData("<<DISPLAY>>.SCITY",custship_tpl.city$)
 			callpoint!.setColumnData("<<DISPLAY>>.SSTATE",custship_tpl.state_code$)
 			callpoint!.setColumnData("<<DISPLAY>>.SZIP",custship_tpl.zip_code$)
+			callpoint!.setColumnData("<<DISPLAY>>.SCNTRY_ID",custship_tpl.cntry_id$)
 		else
 			callpoint!.setColumnData("<<DISPLAY>>.SNAME",Translate!.getTranslation("AON_SAME"))
 			callpoint!.setColumnData("<<DISPLAY>>.SADD1","")
@@ -364,6 +368,7 @@ rem ==========================================================================
 			callpoint!.setColumnData("<<DISPLAY>>.SCITY","")
 			callpoint!.setColumnData("<<DISPLAY>>.SSTATE","")
 			callpoint!.setColumnData("<<DISPLAY>>.SZIP","")
+			callpoint!.setColumnData("<<DISPLAY>>.SCNTRY_ID","")
 		endif
 
 	else

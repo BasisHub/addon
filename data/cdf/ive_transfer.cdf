@@ -183,7 +183,11 @@ rem --- Is qty valid?
 
 	qty = num( callpoint!.getUserInput() )
 	gosub check_qty
-	if !(failed) then gosub display_ext
+	if !(failed)
+		gosub display_ext
+	else
+		callpoint!.setStatus("ABORT")
+	endif
 [[IVE_TRANSFER.LOTSER_NO.AVAL]]
 print "debug - in LOTSRE_NO.AVAL"; rem debug
 
@@ -472,7 +476,6 @@ rem ===========================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.PURCHASE_UM",ivm01a.purchase_um$)
 	callpoint!.setStatus("REFRESH")
 
-
 return
 
 rem ===========================================================================
@@ -504,7 +507,7 @@ rem ===========================================================================
 	endif
 
 	rem --- Quantity can only be 1 for serial#'s
-	if qty > 1 and user_tpl.item_is_serial% then
+	if qty <> 1 and user_tpl.item_is_serial% then
 		callpoint!.setMessage("IV_SER_JUST_ONE")
 		failed = 1
 		goto check_qty_end

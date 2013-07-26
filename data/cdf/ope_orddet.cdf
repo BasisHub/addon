@@ -237,6 +237,8 @@ rem --- Set shipped and back ordered
 	qty_ord    = num(callpoint!.getUserInput())
 
 	if qty_ord = 0 then
+		msg_id$="OP_QTY_ZERO"
+		gosub disp_message
 		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
@@ -382,6 +384,12 @@ rem --- Clear quantities if line type is Memo or Other
 rem --- Set product types for certain line types 
 
 	if pos(linecode_rec.line_type$="NOP") then
+		if num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")) = 0 then
+			msg_id$="OP_QTY_ZERO"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
 		if linecode_rec.prod_type_pr$ = "D" then			
 			callpoint!.setColumnData("OPE_ORDDET.PRODUCT_TYPE", linecode_rec.product_type$)
 		else
@@ -801,7 +809,7 @@ rem --- Set defaults for new record
 	opc_linecode.dropship$ = "N"
 	find record (fnget_dev(file$), key=firm_id$+callpoint!.getColumnData("OPE_ORDDET.LINE_CODE"), dom=*next) opc_linecode$
 
-	if opc_linecode.dropship$ = "Y" or inv_type$ = "P" or ship_date$ > user_tpl.def_commit$ then
+	if inv_type$ = "P" or ship_date$ > user_tpl.def_commit$ then
  		callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "N")
 	else
 		callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "Y")
@@ -918,6 +926,10 @@ rem --- Clear/set flags
 		break; rem --- exit callpoint
 	endif
 
+	if  callpoint!.getGridRowDeleteStatus(this_row) = "Y"
+		break; rem --- exit callpoint
+	endif
+
 	user_tpl.detail_modified = 1
 
 rem --- Returns
@@ -925,6 +937,18 @@ rem --- Returns
 	if num( callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED") ) < 0 then
 		callpoint!.setColumnData( "OPE_ORDDET.QTY_SHIPPED", callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED") )
 		callpoint!.setColumnData("OPE_ORDDET.QTY_BACKORD", "0")
+	endif
+
+rem --- Verify Qty Ordered is not 0
+
+	if pos(user_tpl.line_type$="SNP") then
+		if num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")) = 0
+			msg_id$="OP_QTY_ZERO"
+			gosub disp_message
+			callpoint!.setFocus(this_row,"OPE_ORDDET.QTY_ORDERED",1)
+			callpoint!.setStatus("ABORT")
+			break; rem --- exit callpoint
+		endif
 	endif
 
 rem --- What is extended price?
@@ -1862,7 +1886,7 @@ rem ==========================================================================
 		callpoint!.setColumnData("OPE_ORDDET.VENDOR_ID", "")
 		callpoint!.setColumnData("OPE_ORDDET.DROPSHIP", "")
 
-		if user_tpl.line_dropship$ = "Y" or inv_type$ = "P" or callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE") > user_tpl.def_commit$ then
+		if inv_type$ = "P" or callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE") > user_tpl.def_commit$ then
  			callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "N")
 		else
 			callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "Y")

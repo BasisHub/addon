@@ -31,22 +31,25 @@ read (adm_proctables_dev,key=firm_id$+process_id$,dom=*next)
 keys_used=0
 file_count=0
 
-while 1
-	read record (adm_proctables_dev,end=*break)adm_proctables$
-	if pos(firm_id$+process_id$=adm_proctables$)<>1 then break
-	if pos("GLW_DAILYDETAIL"=adm_proctables.dd_table_alias$) then continue
-	file_count=file_count+1
-	num_files=1
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]=adm_proctables.dd_table_alias$,open_opts$[1]="OTA"
-	gosub open_tables
-	if num(open_chans$[1])
-		x$=fin(num(open_chans$[1]))
-		keys_used=keys_used+dec(x$(77,4))
+rem wgh ... 7005
+if callpoint!.getColumnData("ADM_PROCMASTER.ALLOW_BATCH")="Y" then
+	while 1
+		read record (adm_proctables_dev,end=*break)adm_proctables$
+		if pos(firm_id$+process_id$=adm_proctables$)<>1 then break
+		if pos("GLW_DAILYDETAIL"=adm_proctables.dd_table_alias$) then continue
+		file_count=file_count+1
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]=adm_proctables.dd_table_alias$,open_opts$[1]="OTA"
+		gosub open_tables
+		if num(open_chans$[1])
+			x$=fin(num(open_chans$[1]))
+			keys_used=keys_used+dec(x$(77,4))
+		endif
+	wend
+endif
 
-	endif
-wend
-
+rem wgh ... 7005
 if file_count>0 and keys_used=0
 	callpoint!.setColumnEnabled("ADM_PROCMASTER.BATCH_ENTRY",1)
 else

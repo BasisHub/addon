@@ -236,6 +236,29 @@ callpoint!.setStatus("MODIFIED-REFRESH-ACTIVATE")
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
 print "Det: AP_INV_NO.AVAL"; rem debug
 
+rem --- Check to make sure Invoice isn't already in the grid
+
+	this_inv$=callpoint!.getUserInput()
+	recVect!=GridVect!.getItem(0)
+	dim gridrec$:dtlg_param$[1,3]
+	numrecs=recVect!.size()
+	break_out=0
+	if numrecs>0
+		for reccnt=0 to numrecs-1
+			gridrec$=recVect!.getItem(reccnt)
+			if cvs(gridrec$,3)<> ""
+				if gridrec.ap_inv_no$=this_inv$
+					msg_id$="AP_DUPE_INV"
+					gosub disp_message
+					callpoint!.setStatus("ABORT")
+					break_out=1
+					break
+				endif
+			endif
+		next reccnt
+	endif
+	if break_out=1 break
+
 rem --- Look for Open Invoice
 
 	apt_invoicehdr_dev = fnget_dev("APT_INVOICEHDR")

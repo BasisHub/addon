@@ -7,13 +7,13 @@ if callpoint!.getUserInput()="Y"
 	readrecord (APM_EMAILFAX_dev,key=firm_id$+callpoint!.getColumnData("APM_VENDRPT_CTL.VENDOR_ID"),dom=*next)APM_EMAILFAX$
 	readrecord (APM01_dev,key=firm_id$+callpoint!.getColumnData("APM_VENDRPT_CTL.VENDOR_ID"),dom=*next)APM01a$	
 	if cvs(callpoint!.getColumnData("APM_VENDRPT_CTL.FAX_NOS"),3)=""
-		callpoint!.setColumnData("APM_VENDRPT_CTL.FAX_NOS",APM_EMAILFAX.fax_nos$)	
+		callpoint!.setColumnData("APM_VENDRPT_CTL.FAX_NOS",APM_EMAILFAX.fax_nos$,1)	
 	endif
 	if cvs(callpoint!.getColumnData("APM_VENDRPT_CTL.VENDOR_NAME"),3)=""
-		callpoint!.setColumnData("APM_VENDRPT_CTL.VENDOR_NAME",APM01a.vendor_name$)
+		callpoint!.setColumnData("APM_VENDRPT_CTL.VENDOR_NAME",APM01a.vendor_name$,1)
 	endif
 	if cvs(callpoint!.getColumnData("APM_VENDRPT_CTL.FAX_TO"),3)=""
-		callpoint!.setColumnData("APM_VENDRPT_CTL.FAX_TO",APM_EMAILFAX.fax_to$)
+		callpoint!.setColumnData("APM_VENDRPT_CTL.FAX_TO",APM_EMAILFAX.fax_to$,1)
 	endif
 endif
 [[APM_VENDRPT_CTL.EMAIL_YN.AVAL]]
@@ -25,10 +25,10 @@ if callpoint!.getUserInput()="Y"
 	readrecord (APM_EMAILFAX_dev,key=firm_id$+callpoint!.getColumnData("APM_VENDRPT_CTL.VENDOR_ID"),dom=*next)APM_EMAILFAX$
 	readrecord (APM01_dev,key=firm_id$+callpoint!.getColumnData("APM_VENDRPT_CTL.VENDOR_ID"),dom=*next)APM01a$	
 	if cvs(callpoint!.getColumnData("APM_VENDRPT_CTL.EMAIL_TO"),3)=""
-		callpoint!.setColumnData("APM_VENDRPT_CTL.EMAIL_TO",APM_EMAILFAX.email_to$)	
+		callpoint!.setColumnData("APM_VENDRPT_CTL.EMAIL_TO",APM_EMAILFAX.email_to$,1)	
 	endif
 	if cvs(callpoint!.getColumnData("APM_VENDRPT_CTL.EMAIL_CC"),3)=""
-		callpoint!.setColumnData("APM_VENDRPT_CTL.EMAIL_CC",APM_EMAILFAX.email_cc$)
+		callpoint!.setColumnData("APM_VENDRPT_CTL.EMAIL_CC",APM_EMAILFAX.email_cc$,1)
 	endif
 endif
 [[APM_VENDRPT_CTL.BSHO]]
@@ -37,4 +37,3 @@ num_files=1
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="APM_EMAILFAX",open_opts$[1]="OTA"
 gosub open_tables
-

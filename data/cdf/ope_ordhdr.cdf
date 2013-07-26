@@ -539,11 +539,13 @@ rem --- Save old value
 	user_tpl.prev_ship_to$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_NO")
 
 rem --- Allow changing shipto_type when abort shipto_no
-	if callpoint!.getDevObject("abort_shipto_no") then
-		callpoint!.setDevObject("abort_shipto_no",0)
-		callpoint!.setFocus("OPE_ORDHDR.SHIPTO_TYPE")
-		callpoint!.setStatus("ABORT")
-		break; rem --- exit callpoint
+	if callpoint!.getDevObject("abort_shipto_no")<>null() then
+		if num(callpoint!.getDevObject("abort_shipto_no"),err=*endif)
+			callpoint!.setDevObject("abort_shipto_no",0)
+			callpoint!.setFocus("OPE_ORDHDR.SHIPTO_TYPE")
+			callpoint!.setStatus("ABORT")
+			break; rem --- exit callpoint
+		endif
 	endif
 [[OPE_ORDHDR.APFE]]
 print "Hdr:APFE"; rem debug
@@ -1734,13 +1736,13 @@ rem ==========================================================================
 	while 1
 		rd_key$ = ""
 		dim filter_defs$[2,2]
-		filter_defs$[0,0]="FIRM_ID"
+		filter_defs$[0,0]="OPT_INVDET.FIRM_ID"
 		filter_defs$[0,1]="='"+firm_id$+"'"
 		filter_defs$[0,2]="LOCK"
-		filter_defs$[1,0]="AR_TYPE"
+		filter_defs$[1,0]="OPT_INVDET.AR_TYPE"
 		filter_defs$[1,1]="='"+callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")+"'"
 		filter_defs$[1,2]="LOCK"
-		filter_defs$[2,0]="CUSTOMER_ID"
+		filter_defs$[2,0]="OPT_INVDET.CUSTOMER_ID"
 		filter_defs$[2,1]="='"+callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")+"'"
 		filter_defs$[2,2]="LOCK"
 		call stbl("+DIR_SYP")+"bax_query.bbj",

@@ -225,12 +225,21 @@ rem --- Retrieve parameter data
 :		"multi_types:c(1),multi_dist:c(1),ret_flag:c(1),use_replen:c(1),"+
 :		"gl_total_pers:c(2),gl_current_per:c(2),gl_current_year:c(4),gl_acct_len:c(2),gl_max_len:c(2)"
 
-	user_tpl.app$="AP",user_tpl.gl_interface$=gl$,user_tpl.po_installed$=po$,user_tpl.iv_installed$=iv$,
-:		user_tpl.multi_types$=aps01a.multi_types$,user_tpl.multi_dist$=aps01a.multi_dist$,
-:		user_tpl.ret_flag$=aps01a.ret_flag$,user_tpl.use_replen$=aps01a.use_replen$,
-:		user_tpl.gl_total_pers$=gls01a.total_pers$,user_tpl.gl_current_per$=gls01a.current_per$,
-:		user_tpl.gl_current_year$=gls01a.current_year$,user_tpl.gl_max_len$=str(max(10,len(ape11a.gl_account$)):"00")
+	user_tpl.app$="AP"
+	user_tpl.gl_interface$=gl$
+	user_tpl.po_installed$=po$
+	user_tpl.iv_installed$=iv$
+	user_tpl.multi_types$=aps01a.multi_types$
+	user_tpl.multi_dist$=aps01a.multi_dist$
+	user_tpl.ret_flag$=aps01a.ret_flag$
+	user_tpl.use_replen$=aps01a.use_replen$
+	user_tpl.gl_total_pers$=gls01a.total_pers$
+	user_tpl.gl_current_per$=gls01a.current_per$
+	user_tpl.gl_current_year$=gls01a.current_year$
+	user_tpl.gl_max_len$=str(max(10,len(ape11a.gl_account$)):"00")
 	
+	callpoint!.setDevObject("aps_single_dist_code",aps01a.ap_dist_code$)
+
 rem --- used to also open ivm-03 if iv$="Y", but using alt keys on ivm-01 instead
 rem --- knum=3 is firm/vendor/item, knum=9 is firm/buyer/vendor/item
 	if po$="Y"

@@ -1,3 +1,10 @@
+[[SFE_WOOPRTN.BFMC]]
+rem --- set validation table for op codes to use sf codes if no bom interface (or bom not installed)
+
+	if callpoint!.getDevObject("bm")<>"Y"
+		callpoint!.setTableColumnAttribute("SFE_WOOPRTN.OP_CODE","DTAB","SFC_OPRTNCOD")
+	endif
+
 [[SFE_WOOPRTN.BDEL]]
 rem --- v6 didn't do this, but before deleting, check to make sure the op isn't used in a material or subcontract line
 [[SFE_WOOPRTN.REQUIRE_DATE.AVAL]]
@@ -247,12 +254,6 @@ rem --- Display Queue time
 [[SFE_WOOPRTN.BSHO]]
 use ::sfo_SfUtils.aon::SfUtils
 declare SfUtils sfUtils!
-
-rem --- set validation table for op codes to use sf codes if no bom interface (or bom not installed)
-
-	if callpoint!.getDevObject("bm")<>"Y"
-		callpoint!.setTableColumnAttribute("SFE_WOOPRTN.OP_CODE","DTAB","SFC_OPRTNCOD")
-	endif
 
 rem --- Disable grid if Closed Work Order
 

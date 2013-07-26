@@ -1,3 +1,18 @@
+[[GLR_BUDGETREPORT.ASVA]]
+rem --- set up selections from display fields
+
+codes!=UserObj!.getItem(0)
+
+for x=1 to 4
+	wk_id$=callpoint!.getTableColumnAttribute("<<DISPLAY>>.BUD_CD_"+str(x),"CTLI")
+	wk_ctl!=Form!.getControl(num(wk_id$))
+	list_row=wk_ctl!.getSelectedIndex() - 1
+	if list_row>=0
+		callpoint!.setDevObject("id"+str(x),codes!.getItem(list_row))
+	else
+		callpoint!.setDevObject("id"+str(x),"  ")
+	endif
+next x
 [[GLR_BUDGETREPORT.ARER]]
 rem look at cols and tps in param rec; translate those to matching entry in the <<DISPLAY>> lists and set selected index
 

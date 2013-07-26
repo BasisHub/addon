@@ -1,3 +1,15 @@
+[[SFE_WOMASTR.ASVA]]
+rem --- Disable Scheduled Quantity and Yield if Inventory Item
+
+	typecode_dev=fnget_dev("SFC_WOTYPECD")
+	dim typecode$:fnget_tpl$("SFC_WOTYPECD")
+
+	type$=callpoint!.getColumnData("SFE_WOMASTR.WO_TYPE")
+	readrecord(typecode_dev,key=firm_id$+"A"+type$)typecode$
+	if typecode.wo_category$="I"
+		callpoint!.setColumnEnabled("SFE_WOMASTR.SCH_PROD_QTY",0)
+		callpoint!.setColumnEnabled("SFE_WOMASTR.EST_YIELD",0)
+	endif
 [[SFE_WOMASTR.ADTW]]
 rem --- Re-launch sfe_womatl form after a bill is exploded
 	while callpoint!.getDevObject("explode_bills")="Y"

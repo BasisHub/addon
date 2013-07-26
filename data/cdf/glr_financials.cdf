@@ -26,7 +26,10 @@ if recs_written=0
 	gosub disp_message
 	callpoint!.setStatus("ABORT")
 else
-	close (gle04_dev);rem "will re-open and lock in gle_financials (pgm run from here)
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLE_FINANCIALRPT",open_opts$[1]="C"
+	gosub open_tables
 endif
 [[GLR_FINANCIALS.ARAR]]
 gls01_dev=fnget_dev("GLS_PARAMS")

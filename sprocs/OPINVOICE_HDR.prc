@@ -328,7 +328,18 @@ rem --- Main Read
     nothing_printed = 0
         
 all_done:    rem --- End of invoice -- Send data out
+
+rem --- Format addresses to be bottom justified
+	address$=b$
+	line_len=bill_addrLine_len
+	gosub format_address
+	b$=address$
 	
+	address$=c$
+	line_len=cust_addrLine_len
+	gosub format_address
+	c$=address$
+
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("INVOICE_NO", ar_inv_no$)
 		data!.setFieldValue("INVOICE_DATE", invoice_date$)
@@ -384,6 +395,19 @@ rem Tell the stored procedure to return the result set.
 	sp!.setRecordSet(rs!)
     
 	goto std_exit
+
+format_address: rem --- Reformat address to bottom justify
+
+	dim tmp_address$(7*line_len)
+	y=6*line_len+1
+	for x=y to 1 step -line_len
+		if cvs(address$(x,line_len),2)<>""
+			tmp_address$(y,line_len)=address$(x,line_len)
+			y=y-line_len
+		endif
+	next x
+	address$=tmp_address$
+	return
 
 get_stdMessage: rem --- Get Standard Message lines
 	

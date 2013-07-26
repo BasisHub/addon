@@ -1,4 +1,11 @@
 [[APM_VENDREPL.BSHO]]
+rem --- Open necessary channel
+
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="IVM_ITEMMAST",open_opts$[1]="OTA"
+	gosub open_tables
+
 rem --- Disable Buyer Code if IV not installed
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]

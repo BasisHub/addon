@@ -174,6 +174,41 @@ if user_tpl.trans_type$ = "R" or (user_tpl.trans_type$="A" and trans_qty>0) then
 	break; rem --- exit callpoint
 endif
 
+item$=callpoint!.getColumnData("IVE_TRANSDET.ITEM_ID")
+whse$=callpoint!.getColumnData("IVE_TRANSDET.WAREHOUSE_ID")
+gosub get_whse_item
+
+rem --- Check the transaction qty
+
+	failed=0
+	if user_tpl.trans_type$<>"A"
+		gosub test_qty
+	endif
+
+	if !(failed) then 
+
+		rem --- Calculate and display extended cost
+		unit_cost = num( callpoint!.getColumnData("IVE_TRANSDET.UNIT_COST") )
+		gosub calc_ext_cost
+
+		rem --- Enter cost only for receipts and adjusting up (that is, incoming)
+		if user_tpl.trans_type$ = "R" or (user_tpl.trans_type$ = "A" and trans_qty > 0) then
+			util.enableGridCell(Form!, 10); rem --- Cost
+		endif
+	else
+		callpoint!.setStatus("ABORT")
+	endif
+
+rem --- check Serialized Item for quantity 1
+
+	if callpoint!.getDevObject("lot_ser")="Y" and user_tpl.serialized=1
+		if abs(num(callpoint!.getUserInput()))<>1
+			msg_id$="IV_SERIAL_ONE"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
+
 rem --- Re-commit quantity
 
 	status = 999
@@ -215,6 +250,19 @@ if user_tpl.trans_type$ = "R" or (user_tpl.trans_type$="A" and trans_qty>0) then
 	print "Receipts don't commit"; rem debug
 	break; rem --- exit callpoint
 endif
+
+rem --- Check to make sure record exists before uncommitting
+
+	trans_det=fnget_dev("IVE_TRANSDET")
+	trans_no$=callpoint!.getColumnData("IVE_TRANSDET.IV_TRANS_NO")
+	trans_seq$=callpoint!.getColumnData("IVE_TRANSDET.SEQUENCE_NO")
+	found_rec=0
+	while 1
+		read record (trans_det,key=firm_id$+trans_no$+trans_seq$,dom=*break)
+		found_rec=1
+		break
+	wend
+	if found_rec=0 break
 
 rem --- Uncommit quantity
 

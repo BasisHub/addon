@@ -723,6 +723,13 @@ next_rec:
     if pos("00"=old_rec$)=1 goto next_rec
 	if pos("FIRM_ID"=fattr(old_rec$))=1 if pos(old_rec.firm_id$=firms$,2)=0 goto next_rec
 
+    rem --- Don't port blank GL account numbers in GLM-10 Chart Of Accounts Breaks
+    if cvs(ddm03.file_name$,8)="glm-10"
+        if cvs(old_rec.acct_nbr_brk$,3)=""
+            goto next_rec
+        endif
+    endif
+
 	rem --- fix data based on an old bug discovered in v6 (never fixed in v6) while writing data
 	rem --- IV Period End swapped the Operator ID and System Date fields in the BB records
 	if cvs(ddm03.file_name$,8)="ivt-04" or cvs(ddm03.file_name$,8)="ivt-01"
@@ -909,12 +916,22 @@ rem     name from the dictionary of the source data. datafile$ is the source dat
         endif
 
 rem --- Check value of new field for blanks if part of primary key
-        if pos(new_fieldlist.name$[field]+$0a$=key_temp$)>0
+        if pos($0a$+new_fieldlist.name$[field]+$0a$=$0a$+key_temp$+$0a$)>0
             if cvs(value$,2)=""
                 if pos(new_fieldlist.name$[field]+$0a$=blank_fields$)=0
                     if field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))=null()
+                            rem --- Do NOT report thes missing key fields, they are optional
+                            if cvs(new_datafile$,2)="apt-05" and cvs(new_fieldlist.name$[field],2)="AP_INV_NO" goto no_msg
+                            if cvs(new_datafile$,2)="art-06" and cvs(new_fieldlist.name$[field],2)="AR_CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="art-16" and cvs(new_fieldlist.name$[field],2)="AR_CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="art-26" and cvs(new_fieldlist.name$[field],2)="AR_CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="bme-01" and cvs(new_fieldlist.name$[field],2)="BM_REFERENCE" goto no_msg
+                            if cvs(new_datafile$,2)="glt-06" and cvs(new_fieldlist.name$[field],2)="GL_ADT_NO" goto no_msg
+                            if cvs(new_datafile$,2)="ope-03" and cvs(new_fieldlist.name$[field],2)="ORDER_NO" goto no_msg
+                            if pos("sam-"=cvs(new_datafile$,2))=1 and cvs(new_fieldlist.name$[field],2)="ITEM_ID" goto no_msg
                         blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
                         print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" has a blank value and no translation specified." 
+no_msg:
                     endif
                 endif    
             endif
@@ -1241,6 +1258,8 @@ write_opc_msg_recs: rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) r
     if old_rec.record_id$="1" then
         rec=0
         opm04_rec.firm_id$=old_rec.firm_id$
+        translate_value!=field_translations!.get("MESSAGE_CODE."+cvs(old_rec.message_code$,3))
+        if translate_value!<>null() then old_rec.message_code$=str(translate_value!)
         opm04_rec.message_code$=old_rec.message_code$
         opm04_rec.code_desc$=old_rec.code_desc$
         opm04_rec$=field(opm04_rec$)
@@ -1251,6 +1270,8 @@ write_opc_msg_recs: rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) r
     write_opm14_recs=0
     for i=5 to 1 step -1
         opm14_rec.firm_id$=old_rec.firm_id$
+        translate_value!=field_translations!.get("MESSAGE_CODE."+cvs(old_rec.message_code$,3))
+        if translate_value!<>null() then old_rec.message_code$=str(translate_value!)
         opm14_rec.message_code$=old_rec.message_code$
         opm14_rec.message_seq$=str(i+rec:"00")
         opm14_rec.message_text$=field(old_rec$,"MESSAGE_TEXT_"+str(i:"00"))
@@ -1986,7 +2007,6 @@ reformat_address:
        next x
     endif
 
-    REM ' TODO: More detail here?
     if city$="" or state$="" then
        print(err_dev)"Error copying address fields"
     endif
@@ -2126,6 +2146,12 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
         rem --- Open files in source directory
         glm06_src=unt
         open (glm06_src)source_folder$+"/"+cvs("glm-06",version_cvs)
+        port_sym04=0
+        sym04_src=unt
+        open (sym04_src,err=*next)source_folder$+"/"+cvs("sym-04",version_cvs); port_sym04=1
+        port_sym06=0
+        sym06_src=unt
+        open (sym06_src,err=*next)source_folder$+"/"+cvs("sym-06",version_cvs); port_sym06=1
         port_sym09=0
         sym09_src=unt
         open (sym09_src,err=*next)source_folder$+"/"+cvs("sym-09",version_cvs); port_sym09=1
@@ -2135,6 +2161,14 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
         port_sym39=0
         sym39_src=unt
         open (sym39_src,err=*next)source_folder$+"/"+cvs("sym-39",version_cvs); port_sym39=1
+        if !port_sym04 then
+            print "*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-04",version_cvs)
+            print (err_dev)"*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-04",version_cvs)
+        endif
+        if !port_sym06 then
+            print "*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-06",version_cvs)
+            print (err_dev)"*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-06",version_cvs)
+        endif
         if !port_sym09 then
             print "*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-09",version_cvs)
             print (err_dev)"*** ERROR ***: Couldn't find source file "+source_folder$+"/"+cvs("sym-09",version_cvs)
@@ -2291,11 +2325,19 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
                     dim sym09_0$(10),sym09_1$(30),sym09_2$(23)
                     read(sym09_src,err=*break)sym09_0$(1),sym09_1$(1),sym09_2$(1)
                     old_proc$=sym09_0$
+                    if cvs(old_proc$,2)="" then continue
+                    dim sym04_1$(64)
+                    if port_sym04 then
+                        read(sym04_src,key=sym09_2$(1,2),dom=*next)*,sym04_1$
+                    endif
+                    dim sym06_2$(16)
+                    if port_sym06 then
+                        read(sym06_src,key=this_firm$,dom=*next)*,*,sym06_2$
+                    endif
                     if processes!.containsKey(old_proc$) then
                         rem --- Maps to new standard adm-09 record
                         new_proc$=cast(BBjString,processes!.get(old_proc$))
                         readrecord(adm09_trgt,key=this_firm$+new_proc$,dom=*continue)adm09$
-                        adm09.batch_entry$=sym09_2$(3,1)
                     else
                         rem --- Does not map to new standard adm-09 record
                         dim adm09$:fattr(adm09$)
@@ -2303,9 +2345,14 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
                         adm09.process_id$=pad(old_proc$,16)
                         adm09.description$=sym09_1$
                         adm09.process_mod_id$=sym09_2$(1,2)
-                        adm09.batch_entry$=sym09_2$(3,1)
                         adm09.allow_batch$=" "
                     endif
+                    rem --- BATCH_ENTRY is 'Y' only if it's 'Y' in SYM-04 and SYM-06 and SYM-09
+                    if sym04_1$(47,1)="Y" and sym06_2$(2,1)="Y" and sym09_2$(3,1)="Y" then
+                        adm09.batch_entry$="Y"
+                    else
+                        adm09.batch_entry$="N"
+                    endif                    
                     adm09$=field(adm09$)
                     writerecord(adm09_trgt)adm09$
                     adm09_updated=1
@@ -2318,6 +2365,7 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
                     dim sym19_0$(18),sym19_1$(30),sym19_2$(11)
                     read(sym19_src,err=*break)sym19_0$(1),sym19_1$(1),sym19_2$(1)
                     old_proc$=sym19_0$(1,10)
+                    if cvs(old_proc$,2)="" then continue
                     prog$=sym19_0$(11,8)                               
                     if process_details!.containsKey(old_proc$+"."+prog$) then
                         rem --- Maps to new standard adm-19 record
@@ -2367,6 +2415,7 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
                     dim sym39_0$(16)
                     read(sym39_src,err=*break)sym39_0$(1)
                     old_proc$=sym39_0$(1,10)
+                    if cvs(old_proc$,2)="" then continue
                     file$=sym39_0$(11,6)                               
                     if process_files!.containsKey(old_proc$+"."+file$) then
                         rem --- Maps to new standard adm-39 record
@@ -2431,6 +2480,14 @@ init_update_glm06: rem --- Initialize and update glm-06 and adm-09/19/39
             print (err_dev)"*** ERROR ***: Data not copied from "+cvs("sym-39",version_cvs)
         endif
     endif
+    
+    rem --- Close files opened in source directory for this subroutine
+    close(glm06_src)
+    if port_sym04 then close(sym04_src)
+    if port_sym06 then close(sym06_src)
+    if port_sym09 then close(sym09_src)
+    if port_sym19 then close(sym19_src)
+    if port_sym39 then close(sym39_src)
     return
 
 split_header_detail_recs: rem --- Split old header/detail files into separate files

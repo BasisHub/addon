@@ -157,7 +157,6 @@ rem --- Lot/serial processing if needed
 	endif
 [[SFE_WOCLOSE.CLOSED_COST.BINP]]
 rem --- As needed, initialize actual closed cost and closed value
-	closed_cost=num(callpoint!.getUserInput())
 	if num(callpoint!.getColumnData("SFE_WOCLOSE.CLOSED_COST"))=0 then
 		stdact_flag$=callpoint!.getDevObject("stdact_flag")
 		complete_flg$=callpoint!.getColumnData("SFE_WOCLOSE.COMPLETE_FLG")

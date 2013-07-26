@@ -28,10 +28,21 @@ rem --- Main process
 	callpoint!.setColumnData("APM_VENDHIST.OPEN_INVS",str(open_invs),1)
 [[APM_VENDHIST.ARNF]]
 rem --- initialize new record
+
+	apc_typecode=fnget_dev("APC_TYPECODE")
+	dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
+	read record (apc_typecode,key=firm_id$+"A"+callpoint!.getColumnData("APM_VENDHIST.AP_TYPE"),dom=*next)apc_typecode$
+
 	if user_tpl.multi_dist$<>"Y"
-		callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE",user_tpl.dflt_dist_code$)
-		callpoint!.setStatus("REFRESH")
+		ap_dist_code$=callpoint!.getDevObject("aps_single_dist_code")
+	else
+		ap_dist_code$=apc_typecode.ap_dist_code$
 	endif
+
+	callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE",ap_dist_code$,1)
+	callpoint!.setColumnData("APM_VENDHIST.PAYMENT_GRP",apc_typecode.payment_grp$,1)
+	callpoint!.setColumnData("APM_VENDHIST.AP_TERMS_CODE",apc_typecode.ap_terms_code$,1)
+	callpoint!.setStatus("SAVE")
 [[APM_VENDHIST.AREC]]
 if user_tpl.multi_types$<>"Y" 
 	callpoint!.setColumnData("APM_VENDHIST.AP_TYPE",user_tpl.dflt_ap_type$)
@@ -134,29 +145,15 @@ if gl$<>"Y"
 	ctl_stat$="I"
 	gosub disable_fields
 endif
-[[APM_VENDHIST.AP_DIST_CODE.AVAL]]
-if user_tpl.multi_dist$="Y" and callpoint!.getUserInput()=""
-	callpoint!.setUserInput("  ")
-	callpoint!.setStatus("REFRESH")
-endif
 [[APM_VENDHIST.AP_TYPE.AVAL]]
-if callpoint!.getUserInput()=""
-	callpoint!.setUserInput("  ")
-	callpoint!.setStatus("REFRESH")
-endif
-
 rem --- get default distribution code	
 	apc_typecode_dev=fnget_dev("APC_TYPECODE")
 	dim apc_typecode$:fnget_tpl$("APC_TYPECODE")
 	find record (apc_typecode_dev,key=firm_id$+"A"+callpoint!.getUserInput(),err=*next)apc_typecode$
-	if cvs(apc_typecode$,2)<>""
-		user_tpl.dflt_dist_code$=apc_typecode.ap_dist_code$
-	endif
+rem	if cvs(apc_typecode$,2)<>""
+rem		user_tpl.dflt_dist_code$=apc_typecode.ap_dist_code$
+rem	endif
 
-if user_tpl.multi_dist$<>"Y"
-	callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE",user_tpl.dflt_dist_code$)
-	callpoint!.setStatus("REFRESH")
-endif
 [[APM_VENDHIST.<CUSTOM>]]
 disable_fields:
 	rem --- used to disable/enable controls depending on parameter settings

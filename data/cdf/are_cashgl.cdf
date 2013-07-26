@@ -1,10 +1,13 @@
+[[ARE_CASHGL.GL_ACCOUNT.AVAL]]
+rem --- set default amount
+
+	callpoint!.setColumnData("ARE_CASHGL.GL_POST_AMT",str(callpoint!.getDevObject("dflt_gl_amt")),1)
+	callpoint!.setDevObject("dflt_gl_amt","")
 [[ARE_CASHGL.BSHO]]
 rem --- Get Batch information
 
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("ARE_CASHGL.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-[[ARE_CASHGL.GL_POST_AMT.AVAL]]
-rem escape;rem post amt aval
 [[ARE_CASHGL.BEND]]
 rem --- used to prevent user from getting out of GL grid until they posted something... not sure why
 rem --- so rem'd the message and abort lines below rather than ripping out all code, 
