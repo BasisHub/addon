@@ -733,6 +733,7 @@ rem --- Set default Unit Cost
 	scrap_factor=num(callpoint!.getColumnData("SFE_WOMATL.SCRAP_FACTOR"))
 	gosub calculate_totals
 [[SFE_WOMATL.BSHO]]
+use ::ado_util.src::util
 use ::sfo_SfUtils.aon::SfUtils
 declare SfUtils sfUtils!
 
@@ -838,17 +839,11 @@ rem --- fill listbox for use with Op Sequence
 	callpoint!.setTableColumnAttribute("SFE_WOMATL.OPER_SEQ_REF","LDAT",ldat$)
 	col_hdr$=callpoint!.getTableColumnAttribute("SFE_WOMATL.OPER_SEQ_REF","LABS")
 	my_grid!=Form!.getControl(5000)
-	num_grid_cols=my_grid!.getNumColumns()
-	ListColumn=-1
-	for xwk=0 to num_grid_cols-1
-		if my_grid!.getColumnHeaderCellText(xwk)=col_hdr$ then ListColumn=xwk
-	next xwk
-	if ListColumn>=0
-		my_control!=my_grid!.getColumnListControl(ListColumn)
-		my_control!.removeAllItems()
-		my_control!.insertItems(0,ops_list!)
-		my_grid!.setColumnListControl(ListColumn,my_control!)
-	endif
+	ListColumn=util.getGridColumnNumber(my_grid!, col_hdr$)
+	my_control!=my_grid!.getColumnListControl(ListColumn)
+	my_control!.removeAllItems()
+	my_control!.insertItems(0,ops_list!)
+	my_grid!.setColumnListControl(ListColumn,my_control!)
 [[SFE_WOMATL.ITEM_ID.AINV]]
 rem --- Item synonym processing
 

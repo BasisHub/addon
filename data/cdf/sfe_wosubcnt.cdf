@@ -315,6 +315,8 @@ rem ========================================================
 
 	return
 [[SFE_WOSUBCNT.BSHO]]
+use ::ado_util.src::util
+
 rem --- Disable grid if Closed Work Order or Recurring or PO not installed
 
 	if callpoint!.getDevObject("wo_status")="C" or
@@ -376,17 +378,11 @@ rem --- fill listbox for use with Op Sequence
 	callpoint!.setTableColumnAttribute("SFE_WOSUBCNT.OPER_SEQ_REF","LDAT",ldat$)
 	col_hdr$=callpoint!.getTableColumnAttribute("SFE_WOSUBCNT.OPER_SEQ_REF","LABS")
 	my_grid!=Form!.getControl(5000)
-	num_grid_cols=my_grid!.getNumColumns()
-	ListColumn=-1
-	for xwk=0 to num_grid_cols-1
-		if my_grid!.getColumnHeaderCellText(xwk)=col_hdr$ then ListColumn=xwk
-	next xwk
-	if ListColumn>=0
-		my_control!=my_grid!.getColumnListControl(ListColumn)
-		my_control!.removeAllItems()
-		my_control!.insertItems(0,ops_list!)
-		my_grid!.setColumnListControl(ListColumn,my_control!)
-	endif
+	ListColumn=util.getGridColumnNumber(my_grid!, col_hdr$)
+	my_control!=my_grid!.getColumnListControl(ListColumn)
+	my_control!.removeAllItems()
+	my_control!.insertItems(0,ops_list!)
+	my_grid!.setColumnListControl(ListColumn,my_control!)
 
 rem --- Check for PO Installed
 rem --- confusion in old code - seems subs grid isn't accessible if PO not installed, but other tests in the code look at the PO flag

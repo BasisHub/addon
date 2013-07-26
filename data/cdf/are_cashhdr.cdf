@@ -38,7 +38,6 @@ rem --- Get Batch information
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("ARE_CASHHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 
-
 [[ARE_CASHHDR.PAYMENT_AMT.BINP]]
 rem --- store value in control prior to input so we'll know at AVAL if it changed
 user_tpl.binp_pay_amt=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))
@@ -377,6 +376,44 @@ callpoint!.setStatus("REFRESH-ABLEMAP-ACTIVATE")
 [[ARE_CASHHDR.CASH_REC_CD.AVAL]]
 wk_cash_cd$=callpoint!.getUserInput()
 gosub get_cash_rec_cd
+
+rem --- Enable/disable controls based on Cash Receipt code
+gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))
+OA_chkbox!=Form!.getControl(num(user_tpl.OA_chkbox_id$))
+zbal_chkbox!=Form!.getControl(num(user_tpl.zbal_chkbox_id$))
+asel_chkbox!=Form!.getControl(num(user_tpl.asel_chkbox_id$))
+switch (BBjAPI().TRUE)
+	case user_tpl.arglboth$="A"
+		rem --- Post to AR only
+		callpoint!.setOptionEnabled("GLED",0)
+		callpoint!.setOptionEnabled("OACT",1)
+		gridInvoice!.setEnabled(1)
+		OA_chkbox!.setEditable(1)
+		zbal_chkbox!.setEditable(1)
+		asel_chkbox!.setEditable(1)
+		break
+	case user_tpl.arglboth$="G"
+		rem --- Post to GL only
+		callpoint!.setOptionEnabled("GLED",1)
+		callpoint!.setOptionEnabled("OACT",0)
+		gridInvoice!.setEnabled(0)
+		OA_chkbox!.setSelected(0)
+		OA_chkbox!.setEditable(0)
+		zbal_chkbox!.setSelected(0)
+		zbal_chkbox!.setEditable(0)
+		asel_chkbox!.setSelected(0)
+		asel_chkbox!.setEditable(0)
+		break
+	case default
+		rem --- Post to both AR and GL
+		callpoint!.setOptionEnabled("GLED",1)
+		callpoint!.setOptionEnabled("OACT",1)
+		gridInvoice!.setEnabled(1)
+		OA_chkbox!.setEditable(1)
+		zbal_chkbox!.setEditable(1)
+		asel_chkbox!.setEditable(1)
+		break
+swend
 [[ARE_CASHHDR.CUSTOMER_ID.AVAL]]
 tmp_cust_id$=callpoint!.getUserInput()
 gosub get_customer_balance
@@ -921,6 +958,9 @@ return
 rem ==================================================================
 fill_bottom_grid:
 rem ==================================================================
+	rem --- Don't fill grid when Cash Receipt code posts to GL only
+	if user_tpl.arglboth$="G" then return
+
 rem	SysGUI!.setRepaintEnabled(0)
 	gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))
 	minrows=num(user_tpl.gridInvoice_rows$)

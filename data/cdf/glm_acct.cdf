@@ -1,3 +1,8 @@
+[[GLM_ACCT.AREC]]
+rem --- Set Default value for Detail Flag
+
+	detail_flag$=callpoint!.getDevObject("detail_flag")
+	callpoint!.setColumnData("GLM_ACCT.DETAIL_FLAG",detail_flag$)
 [[GLM_ACCT.ADEL]]
 rem --- Remove all glm-02 recs
 
@@ -429,6 +434,10 @@ find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 	callpoint!.setDevObject("gl_yr_closed",gls01a.gl_yr_closed$)
 	callpoint!.setDevObject("gls_cur_yr",gls01a.current_year$)
 	callpoint!.setDevObject("gls_cur_per",gls01a.current_per$)
+	if gls01a.detail_flag$<>"Y"
+		callpoint!.setColumnEnabled("GLM_ACCT.DETAIL_FLAG",-1)
+	endif
+	callpoint!.setDevObject("detail_flag",gls01a.detail_flag$)
 
 	tns!=BBjAPI().getNamespace("GLM_ACCT","drill",1)
 	tns!.setValue("cur_per",gls01a.current_per$)
