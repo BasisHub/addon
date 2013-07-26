@@ -482,10 +482,10 @@ rem --- Get current and prior values
 	curr_qty   = num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
 	curr_commit$=callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")
 
-	prior_whse$ = callpoint!.getColumnUndoData("OPE_INVDET.WAREHOUSE_ID")
-	prior_item$ = callpoint!.getColumnUndoData("OPE_INVDET.ITEM_ID")
-	prior_qty   = num(callpoint!.getColumnUndoData("OPE_INVDET.QTY_ORDERED"))
-	prior_commit$=callpoint!.getColumnUndoData("OPE_INVDET.COMMIT_FLAG")
+	prior_whse$ = callpoint!.getDevObject("prior_whse")
+	prior_item$ = callpoint!.getDevObject("prior_item")
+	prior_qty   = callpoint!.getDevObject("prior_qty")
+	prior_commit$=callpoint!.getDevObject("prior_commit")
 
 rem --- Don't commit/uncommit Quotes or DropShips
 
@@ -493,10 +493,8 @@ rem --- Don't commit/uncommit Quotes or DropShips
 
 rem --- Has there been any change?
 
-	if	(curr_whse$ <> prior_whse$ or 
-:		 curr_item$ <> prior_item$ or 
-:		 curr_qty   <> prior_qty) and
-:		curr_commit$ = prior_commit$
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or
+:		((curr_whse$ <> prior_whse$ or  curr_item$ <> prior_item$ or curr_qty   <> prior_qty) and curr_commit$ = prior_commit$)
 :	then
 
 rem --- Initialize inventory item update
@@ -766,7 +764,9 @@ print "Det:BUDE"; rem debug
 
 rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 
-	if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")="Y"
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))<>"Y" and
+:		callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")="Y"
+:	then
 		action$="CO"
 		gosub uncommit_iv
 	endif
@@ -820,7 +820,9 @@ rem --- Buttons start disabled
 [[OPE_INVDET.BDEL]]
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
-	if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")="Y"
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))<>"Y" and
+:		callpoint!.getColumnData("OPE_IVNDET.COMMIT_FLAG")="Y"
+:	then
 		action$="UC"
 		gosub uncommit_iv
 	endif
@@ -840,7 +842,7 @@ rem (Fires regardles of new or existing row.  Use callpoint!.getGridRowNewStatus
 
 rem --- Disable by line type (Needed because Barista is skipping Line Code)
 
-	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) = ""
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) <> "Y"
 		line_code$ = callpoint!.getColumnData("OPE_INVDET.LINE_CODE")
 		gosub disable_by_linetype
 	endif
@@ -889,6 +891,10 @@ rem --- Set previous values
 	user_tpl.prev_boqty      = num(callpoint!.getColumnData("OPE_INVDET.QTY_BACKORD"))
 	user_tpl.prev_shipqty    = num(callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
 	user_tpl.prev_unitprice  = num(callpoint!.getColumnData("OPE_INVDET.UNIT_PRICE"))
+	callpoint!.setDevObject("prior_whse",callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID"))
+	callpoint!.setDevObject("prior_item",callpoint!.getColumnData("OPE_INVDET.ITEM_ID"))
+	callpoint!.setDevObject("prior_qty",user_tpl.prev_qty_ord)
+	callpoint!.setDevObject("prior_commit",callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG"))
 
 rem --- Set buttons
 

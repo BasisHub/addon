@@ -481,7 +481,6 @@ rem --- store dtlGrid! and column for sales order line# reference listbutton (wi
 	dtlWin!=Form!.getChildWindow(1109)
 	dtlGrid!=dtlWin!.getControl(5900)
 	callpoint!.setDevObject("dtl_grid",dtlGrid!)
-	callpoint!.setDevObject("so_seq_ref_col",15)
 
 rem --- call glc_ctlcreate
 

@@ -676,7 +676,7 @@ rem --- store dtlGrid! and column for sales order line# reference listbutton (wi
 	dtlWin!=Form!.getChildWindow(1109)
 	dtlGrid!=dtlWin!.getControl(5900)
 	callpoint!.setDevObject("dtl_grid",dtlGrid!)
-	callpoint!.setDevObject("so_seq_ref_col",14)
+	callpoint!.setDevObject("so_seq_ref_col",13)
 [[POE_POHDR.PURCH_ADDR.AVAL]]
 vendor_id$=callpoint!.getColumnData("POE_POHDR.VENDOR_ID")
 purch_addr$=callpoint!.getUserInput()

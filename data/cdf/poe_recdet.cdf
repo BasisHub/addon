@@ -278,9 +278,9 @@ if callpoint!.getHeaderColumnData("POE_RECHDR.DROPSHIP")<>"Y" and cvs(callpoint!
 	curr_item$ = callpoint!.getColumnData("POE_RECDET.ITEM_ID")
 	curr_qty   = (num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))-num(callpoint!.getColumnData("POE_RECDET.QTY_PREV_REC"))) * num(callpoint!.getColumnData("POE_RECDET.CONV_FACTOR"))
 
-	prior_whse$ = callpoint!.getColumnUndoData("POE_RECDET.WAREHOUSE_ID")
-	prior_item$ = callpoint!.getColumnUndoData("POE_RECDET.ITEM_ID")
-	prior_qty   = (num(callpoint!.getColumnUndoData("POE_RECDET.QTY_ORDERED"))-num(callpoint!.getColumnUndoData("POE_RECDET.QTY_PREV_REC"))) * num(callpoint!.getColumnUndoData("POE_RECDET.CONV_FACTOR"))
+	prior_whse$ = callpoint!.getDevObject("prior_whse")
+	prior_item$ = callpoint!.getDevObject("prior_item")
+	prior_qty   = (callpoint!.getDevObject("prior_qty_ordered")-callpoint!.getDevObject("prior_prev_rec")) * callpoint!.getDevObject("prior_conv_factor")
 
 	rem --- Has there been any change?
 
@@ -657,6 +657,12 @@ rem print "AGRN "
 rem print "qty this row: ",callpoint!.getDevObject("qty_this_row")
 rem print "cost this row: ",callpoint!.getDevObject("cost_this_row")
 
+	callpoint!.setDevObject("prior_whse",callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"))
+	callpoint!.setDevObject("prior_item",callpoint!.getColumnData("POE_RECDET.ITEM_ID"))
+	callpoint!.setDevObject("prior_qty_ordered",num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED")))
+	callpoint!.setDevObject("prior_prev_rec",num(callpoint!.getColumnData("POE_RECDET.QTY_PREV_REC")))
+	callpoint!.setDevObject("prior_conv_factor",num(callpoint!.getColumnData("POE_RECDET.CONV_FACTOR")))
+
 item_id$=callpoint!.getColumnData("POE_RECDET.ITEM_ID")
 gosub enable_serial
 
@@ -731,10 +737,12 @@ if ldat$<>""
 	callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",1)
 	callpoint!.setTableColumnAttribute("POE_RECDET.SO_INT_SEQ_REF","LDAT",ldat$)
 	g!=callpoint!.getDevObject("dtl_grid")
-	c!=g!.getColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")))
+	col_hdr$=callpoint!.getTableColumnAttribute("POE_RECDET.SO_INT_SEQ_REF","LABS")
+	col_ref=util.getGridColumnNumber(g!, col_hdr$)
+	c!=g!.getColumnListControl(col_ref)
 	c!.removeAllItems()
 	c!.insertItems(0,order_list!)
-	g!.setColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")),c!)	
+	g!.setColumnListControl(col_ref,c!)	
 else
 	callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",0)
 endif 

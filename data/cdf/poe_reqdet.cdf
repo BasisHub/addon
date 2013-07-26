@@ -172,10 +172,12 @@ if ldat$<>""
 	callpoint!.setColumnEnabled(-1,"POE_REQDET.SO_INT_SEQ_REF",1)
 	callpoint!.setTableColumnAttribute("POE_REQDET.SO_INT_SEQ_REF","LDAT",ldat$)
 	g!=callpoint!.getDevObject("dtl_grid")
-	c!=g!.getColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")))
+	col_hdr$=callpoint!.getTableColumnAttribute("POE_REQDET.SO_INT_SEQ_REF","LABS")
+	col_ref=util.getGridColumnNumber(g!, col_hdr$)
+	c!=g!.getColumnListControl(col_ref)
 	c!.removeAllItems()
 	c!.insertItems(0,order_list!)
-	g!.setColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")),c!)	
+	g!.setColumnListControl(col_ref,c!)	
 else
 	callpoint!.setColumnEnabled(-1,"POE_REQDET.SO_INT_SEQ_REF",0)
 endif 
@@ -220,7 +222,6 @@ rem --- save current po status flag, po/req# and line#
 rem --- check data to see if o.k. to leave row (only if the row isn't marked as deleted)
 
 rem print "col data: ",callpoint!.getColumnData("POE_REQDET.REQ_QTY")
-rem print "undo data: ",callpoint!.getColumnUndoData("POE_REQDET.REQ_QTY")
 rem print "disk data: ",callpoint!.getColumnDiskData("POE_REQDET.REQ_QTY")
 
 if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"

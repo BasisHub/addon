@@ -566,10 +566,12 @@ if ldat$<>""
 	callpoint!.setColumnEnabled(-1,"POE_PODET.SO_INT_SEQ_REF",1)
 	callpoint!.setTableColumnAttribute("POE_PODET.SO_INT_SEQ_REF","LDAT",ldat$)
 	g!=callpoint!.getDevObject("dtl_grid")
-	c!=g!.getColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")))
+	col_hdr$=callpoint!.getTableColumnAttribute("POE_PODET.SO_INT_SEQ_REF","LABS")
+	col_ref=util.getGridColumnNumber(g!, col_hdr$)
+	c!=g!.getColumnListControl(col_ref)
 	c!.removeAllItems()
 	c!.insertItems(0,order_list!)
-	g!.setColumnListControl(num(callpoint!.getDevObject("so_seq_ref_col")),c!)	
+	g!.setColumnListControl(col_ref,c!)
 else
 	callpoint!.setColumnEnabled(-1,"POE_PODET.SO_INT_SEQ_REF",0)
 endif 

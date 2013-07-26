@@ -45,6 +45,9 @@ rem --- enable/disable Invoice Detail button
 rem --- disable Invoice Detail button
 	callpoint!.setOptionEnabled("INVB",0)
 [[POE_INVSEL.AOPT-INVB]]
+dist_bal=num(callpoint!.getHeaderColumnData("POE_INVHDR.INVOICE_AMT"))-num(callpoint!.getDevObject("tot_gl"))
+callpoint!.setDevObject("invdet_bal",str(dist_bal));rem send in Invoice Header Amt - g/l amount
+
 pfx$=firm_id$+callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
 dim dflt_data$[3,1]
 dflt_data$[1,0]="AP_TYPE"

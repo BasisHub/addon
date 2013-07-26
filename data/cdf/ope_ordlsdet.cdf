@@ -2,6 +2,7 @@
 rem --- keep track of starting qty for this line, so we can accurately check avail qty minus what's already been committed
 
 	user_tpl.prev_ord = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"))
+	callpoint!.setDevObject("prior_lot",callpoint!.getColumnData("OPE_ORDLSDET.LOTSER_NO"))
 [[OPE_ORDLSDET.AUDE]]
 print "AUDE"; rem debug
 
@@ -150,8 +151,8 @@ rem --- Check quantities, do commits if this row isn't deleted
 			curr_lot$ = callpoint!.getColumnData("OPE_ORDLSDET.LOTSER_NO")
 			curr_qty  = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"))
 
-			prior_lot$ = callpoint!.getColumnUndoData("OPE_ORDLSDET.LOTSER_NO")
-			prior_qty  = num(callpoint!.getColumnUndoData("OPE_ORDLSDET.QTY_ORDERED"))
+			prior_lot$ = callpoint!.getDevObject("prior_lot")
+			prior_qty  = user_tpl.prev_ord
 
 		rem --- Has there been any change?
 

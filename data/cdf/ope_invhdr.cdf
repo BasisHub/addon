@@ -690,6 +690,20 @@ rem --- Has customer and order number been entered?
 		break
 	endif
 
+rem --- Check for Order Total
+
+	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+		msg_id$="OP_TOT_UNDER_MIN"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
+
 rem --- Check to see if we need to go to the totals tab
 			
 rem --- Force focus on the Totals tab
@@ -1053,6 +1067,20 @@ rem --- Remove committments for detail records by calling ATAMO
 		remove (creddate_dev, key=firm_id$+ord_date$+cust$+ord$, err=*next)	
 	endif
 [[OPE_INVHDR.BPRK]]
+rem --- Check for Order Total
+
+	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+		msg_id$="OP_TOT_UNDER_MIN"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
+
 	if pos(callpoint!.getDevObject("totals_warn")="24")>0
 		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
 			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
@@ -1099,6 +1127,20 @@ eof_pkey: rem --- If end-of-file or end-of-firm, rewind to last record in this f
 		endif
 	wend
 [[OPE_INVHDR.BNEK]]
+rem --- Check for Order Total
+
+	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+		msg_id$="OP_TOT_UNDER_MIN"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
+
 	if pos(callpoint!.getDevObject("totals_warn")="24")>0
 		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
 			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""

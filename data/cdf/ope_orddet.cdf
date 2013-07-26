@@ -486,10 +486,10 @@ rem --- Get current and prior values
 	line_ship_date$=callpoint!.getColumnData("OPE_ORDDET.EST_SHP_DATE")
 	curr_commit$=callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")
 
-	prior_whse$ = callpoint!.getColumnUndoData("OPE_ORDDET.WAREHOUSE_ID")
-	prior_item$ = callpoint!.getColumnUndoData("OPE_ORDDET.ITEM_ID")
-	prior_qty   = num(callpoint!.getColumnUndoData("OPE_ORDDET.QTY_ORDERED"))
-	prior_commit$=callpoint!.getColumnUndoData("OPE_ORDDET.COMMIT_FLAG")
+	prior_whse$ = callpoint!.getDevObject("prior_whse")
+	prior_item$ = callpoint!.getDevObject("prior_item")
+	prior_qty   = callpoint!.getDevObject("prior_qty")
+	prior_commit$=callpoint!.getDevObject("prior_commit")
 
 rem --- Don't commit/uncommit Quotes or DropShips
 
@@ -497,10 +497,8 @@ rem --- Don't commit/uncommit Quotes or DropShips
 
 rem --- Has there been any change?
 
-	if	(curr_whse$ <> prior_whse$ or 
-:		 curr_item$ <> prior_item$ or 
-:		 curr_qty   <> prior_qty) and
-:		curr_commit$ = prior_commit$
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or
+:		((curr_whse$ <> prior_whse$ or  curr_item$ <> prior_item$ or curr_qty   <> prior_qty) and curr_commit$ = prior_commit$)
 :	then
 
 rem --- Initialize inventory item update
@@ -777,7 +775,9 @@ rem --- Is this item lot/serial?
 [[OPE_ORDDET.BUDE]]
 rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 
-	if callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y"
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))<>"Y" and
+:		callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y"
+:	then
 		action$="CO"
 		gosub uncommit_iv
 	endif
@@ -830,7 +830,9 @@ rem --- Buttons start disabled
 [[OPE_ORDDET.BDEL]]
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
-	if callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y"
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))<>"Y" and
+:		callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y"
+:	then
 		action$="UC"
 		gosub uncommit_iv
 	endif
@@ -850,7 +852,7 @@ rem --- See if we're coming back from Recalc button
 
 rem --- Disable by line type (Needed because Barista is skipping Line Code)
 
-	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) = ""
+	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow())) <> "Y"
 		line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
 		gosub disable_by_linetype
 	endif
@@ -899,6 +901,11 @@ rem --- Set previous values
 	user_tpl.prev_boqty      = num(callpoint!.getColumnData("OPE_ORDDET.QTY_BACKORD"))
 	user_tpl.prev_shipqty    = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
 	user_tpl.prev_unitprice  = num(callpoint!.getColumnData("OPE_ORDDET.UNIT_PRICE"))
+	callpoint!.setDevObject("prior_whse",callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID"))
+	callpoint!.setDevObject("prior_item",callpoint!.getColumnData("OPE_ORDDET.ITEM_ID"))
+	callpoint!.setDevObject("prior_qty",user_tpl.prev_qty_ord)
+	callpoint!.setDevObject("prior_commit",callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG"))
+
 
 rem --- Set buttons
 

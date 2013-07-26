@@ -1,3 +1,5 @@
+[[BMM_BILLSUB.BDTW]]
+use ::ado_util.src::util
 [[BMM_BILLSUB.OBSOLT_DATE.AVAL]]
 rem --- Check for valid dates
 
@@ -148,7 +150,9 @@ rem --- fill listbox for use with Op Sequence
 	callpoint!.setTableColumnAttribute("BMM_BILLSUB.OP_INT_SEQ_REF","LDAT",ldat$)
 	my_grid!=Form!.getControl(5000)
 	ListColumn=11
-	my_control!=my_grid!.getColumnListControl(ListColumn)
+	col_hdr$=callpoint!.getTableColumnAttribute("BMM_BILLSUB.OP_INT_SEQ_REF","LABS")
+	col_ref=util.getGridColumnNumber(my_grid!, col_hdr$)
+	my_control!=my_grid!.getColumnListControl(col_ref)
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
-	my_grid!.setColumnListControl(ListColumn,my_control!)
+	my_grid!.setColumnListControl(col_ref,my_control!)

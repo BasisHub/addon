@@ -1,3 +1,5 @@
+[[BMM_BILLMAT.BDTW]]
+use ::ado_util.src::util
 [[BMM_BILLMAT.BWRI]]
 rem --- Divisor and Alt Factor need to be 1 if 0
 
@@ -242,11 +244,12 @@ rem --- fill listbox for use with Op Sequence
 
 	callpoint!.setTableColumnAttribute("BMM_BILLMAT.OP_INT_SEQ_REF","LDAT",ldat$)
 	my_grid!=Form!.getControl(5000)
-	ListColumn=5
-	my_control!=my_grid!.getColumnListControl(ListColumn)
+	col_hdr$=callpoint!.getTableColumnAttribute("BMM_BILLMAT.OP_INT_SEQ_REF","LABS")
+	col_ref=util.getGridColumnNumber(my_grid!, col_hdr$)
+	my_control!=my_grid!.getColumnListControl(col_ref)
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
-	my_grid!.setColumnListControl(ListColumn,my_control!)
+	my_grid!.setColumnListControl(col_ref,my_control!)
 [[BMM_BILLMAT.ITEM_ID.AINV]]
 rem --- Check for item synonyms
 
