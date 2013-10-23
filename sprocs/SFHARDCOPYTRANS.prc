@@ -56,10 +56,14 @@ rem ---
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-    temp$="TRANS_DATE:C(1*), SOURCE:C(1*), ITEM_VEND_OPER:C(1*), "
+          temp$="TRANS_DATE:C(1*), SOURCE:C(1*), ITEM_VEND_OPER:C(1*), "
     temp$=temp$+"DESC:C(1*), PO_NUM:C(1*), COMPLETE_QTY:C(1*), SETUP_HRS:C(1*), "
-    temp$=temp$+"UNITS:C(1*), RATE:C(1*), AMOUNT:C(1*)" 
-
+    temp$=temp$+"UNITS:C(1*), RATE:C(1*), AMOUNT:C(1*), " 
+	temp$=temp$+"LOTSER_LBL:C(1*), LOTSER:C(1*), LSISSUED:C(1*), LSCOST:C(1*), "
+	temp$=temp$+"THIS_IS_DT_TOTAL_LINE:C(1*), THIS_IS_WO_TOTAL_LINE:C(1*), " 
+	temp$=temp$+"TOT_ROW_LBL:C(1*), TOT_HRS_LBL:C(1*), TOT_HOURS:C(1*), "
+	temp$=temp$+"TOT_SETUP_LBL:C(1*), TOT_SETUP_HRS:C(1*) "	
+	
     rs! = BBJAPI().createMemoryRecordSet(temp$)
 
 rem --- If no TransTypes were specified, exit
@@ -530,18 +534,18 @@ rem --- Process Transactions
     wend
 
 rem --- Output Totals
+rem --- Note: The report jasper report definition draws a top line for these totals
 
     doing_end=1
     gosub date_subtot
-    
-    data! = rs!.getEmptyRecordData(); rem Add totals' underscores
-    data!.setFieldValue("AMOUNT",fill(20,"_"))
-    rs!.insert(data!)
-    
-    data! = rs!.getEmptyRecordData()
-    data!.setFieldValue("ITEM_VEND_OPER","Work Order Totals")       
-    data!.setFieldValue("DESC","Total Hours: "+str(grand_tot_hours:sf_hours_mask$))             
-    data!.setFieldValue("PO_NUM","Setup Hours: "+str(grand_tot_setup_hours:sf_hours_mask$))
+
+	data! = rs!.getEmptyRecordData()
+	data!.setFieldValue("THIS_IS_WO_TOTAL_LINE","Y")
+    data!.setFieldValue("TOT_ROW_LBL","Work Order Totals")       
+    data!.setFieldValue("TOT_HRS_LBL","Total Hours:")  
+	data!.setFieldValue("TOT_HOURS",str(grand_tot_hours:sf_hours_mask$))  
+    data!.setFieldValue("TOT_SETUP_LBL","Setup Hours:")
+	data!.setFieldValue("TOT_SETUP_HRS",str(grand_tot_setup_hours:sf_hours_mask$))
     data!.setFieldValue("AMOUNT",str(grand_tot_cost:sf_amt_mask$))  
 
     rs!.insert(data!)
@@ -683,39 +687,42 @@ rem --- Serial Numbers Here
         read record (lstran_dev,end=*break) lstran$ 
 
         if pos(read_ls_key$=lstran$)=1 then      
-            if ivs_params.lotser_flag$="S" then lotser$="Serial: " else lotser$="Lot: "
-            data!.setFieldValue("ITEM_VEND_OPER",lotser$+lstran.lotser_no$)
+            if ivs_params.lotser_flag$="S" then lotser_lbl$="Serial:" else lotser_lbl$="Lot:"
+            
+			data!.setFieldValue("LOTSER_LBL",lotser_lbl$)
+			data!.setFieldValue("LOTSER",lstran.lotser_no$)
 
             if lstran_dev=sft11a_dev then 
-                data!.setFieldValue("DESC","Issued:"+str(lstran.cls_inp_qty:sf_units_mask$))    
-                data!.setFieldValue("PO_NUM","Cost:"+str(lstran.closed_cost:sf_cost_mask$))
+                data!.setFieldValue("LSISSUED",str(lstran.cls_inp_qty:sf_units_mask$))    
+                data!.setFieldValue("LSCOST",str(lstran.closed_cost:sf_cost_mask$))
             else
-                data!.setFieldValue("DESC","Issued:"+str(lstran.qty_closed:sf_units_mask$))
-                data!.setFieldValue("PO_NUM","Cost:"+str(lstran.unit_cost:sf_cost_mask$))
+                data!.setFieldValue("LSISSUED",str(lstran.qty_closed:sf_units_mask$))
+                data!.setFieldValue("LSCOST",str(lstran.unit_cost:sf_cost_mask$))
             endif
             
             rs!.insert(data!)
         else
             break
         endif
+		lotser_lbl$=""
     wend 
     
     return
 
 rem --- Subtotals for date breaks
 date_subtot:rem --- Date Subtotal
+rem --- Note: The report jasper report definition draws a top line for these totals
 
     if prev_date$<>"" then     
-
-        data! = rs!.getEmptyRecordData(); rem Add totals' underscores
-        data!.setFieldValue("AMOUNT",fill(20,"_"))
-        rs!.insert(data!)
     
         data! = rs!.getEmptyRecordData()    
-        data!.setFieldValue("ITEM_VEND_OPER","Month "+fnh$(prev_date$)+" Total ")   
+        data!.setFieldValue("THIS_IS_DT_TOTAL_LINE","Y")
+		data!.setFieldValue("TOT_ROW_LBL","Month "+fnh$(prev_date$)+" Total ")   
         if pos("O"=transtype$)>0 then 
-            data!.setFieldValue("DESC","Total Hours: "+str(date_tot_hours:sf_hours_mask$))          
-            data!.setFieldValue("PO_NUM","Setup Hours: "+str(date_tot_setup_hours:sf_hours_mask$))
+            data!.setFieldValue("TOT_HRS_LBL","Total Hours:")
+			data!.setFieldValue("TOT_HOURS",str(date_tot_hours:sf_hours_mask$))			
+            data!.setFieldValue("TOT_SETUP_LBL","Setup Hours:")
+			data!.setFieldValue("TOT_SETUP_HRS",str(date_tot_setup_hours:sf_hours_mask$))
         endif
         data!.setFieldValue("AMOUNT",str(date_tot_cost:sf_cost_mask$))
     

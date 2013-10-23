@@ -34,6 +34,8 @@ rem --- Get the IN parameters used by the procedure
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
 	report_type$ = sp!.getParameter("REPORT_TYPE")
+	item_len = num(sp!.getParameter("ITEM_LEN_PARAM"))
+	print_costs$ = sp!.getParameter("PRINT_COSTS")
 
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -72,11 +74,17 @@ rem	call stbl("+DIR_SYP")+"bas_process_beg.bbj",stbl("+USER_ID"),rd_table_chans$
 	sf_hours_mask$=fngetmask$("sf_hours_mask","#,##0.00",masks$)
 	sf_units_mask$=fngetmask$("sf_units_mask","#,##0.00",masks$)
 	sf_rate_mask$=fngetmask$("sf_rate_mask","###.00",masks$)
+	sf_matlfact_mask$=fngetmask$("sf_matlfact_mask","###.0",masks$)
+	
 
-rem --- Init totals
+rem --- Init totals and max itemPlusDesc len
 
 	tot_cost_ea=0
 	tot_cost_tot=0
+	
+	max_itemPlusDesc_len=48; rem Max real estate available for lines printing Item and Desc
+	                         rem Pgm logic sends item_ID(1,IVParamItemLen) plus as much desc as fits
+	itemPlusDesc_fudge=1.4; rem Fudge factor to deal w/the proportional font we use as standard
 	
 rem --- Open files with adc
 
@@ -147,7 +155,8 @@ rem --- generate vector for use with Op Sequence
 		else
 			work_var$=sfe02a.op_code$
 		endif
-		ops_list!.addItem(work_var$+" - "+opcode_tpl.code_desc$)
+REM		ops_list!.addItem(work_var$+" - "+opcode_tpl.code_desc$) ; REM TEMPORARILY REM'D
+		ops_list!.addItem(work_var$)		
 	wend
 
 rem --- Build SQL statement
@@ -172,78 +181,80 @@ rem --- Trip Read
 
 		dim ivm_itemmast$:fattr(ivm_itemmast$)
 		read record (ivm_itemmast_dev,key=firm_id$+read_tpl.item_id$,dom=*next) ivm_itemmast$
+		
 		if read_tpl.line_type$="M"
-			data!.setFieldValue("ITEM",read_tpl.ext_comments$)
+			rem --- Send data row for Memos
+			data!.setFieldValue("ITEM",read_tpl.ext_comments$); rem Note: Memos are allowed more print space
+			rs!.insert(data!)
 		else
- 			data!.setFieldValue("REF_NO",read_tpl.wo_ref_num$)
-			data!.setFieldValue("ITEM",read_tpl.item_id$)
-			data!.setFieldValue("SCRAP",str(read_tpl.scrap_factor:sf_units_mask$))
-			data!.setFieldValue("DIVISOR",str(read_tpl.divisor:sf_units_mask$))
-			data!.setFieldValue("FACTOR",str(read_tpl.alt_factor:sf_units_mask$))
-			data!.setFieldValue("QTY_REQ",str(read_tpl.qty_required:sf_units_mask$))
-			data!.setFieldValue("UNITS_EA",str(read_tpl.units:sf_units_mask$))
-			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:sf_units_mask$))
-			if report_type$<>"T"
-				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
-				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_amt_mask$))
-			endif
-		endif
-		rs!.insert(data!)
-
-		rem --- Item description for non-M lines
-		if read_tpl.line_type$<>"M"		
-		
-			rem --- To fit the form, if item desc > 30, make it two lines of 30
-			item_desc1$=cvs(ivm_itemmast.item_desc$,2)
-			item_desc2$=""
-
-			if len(item_desc1$)>30
-				item_desc2$=item_desc1$(31)
-				item_desc1$=item_desc1$(1,30)
-			endif
-		
-			rem --- Always 'print' 1st up-to-30 chars of item desc
-			data! = rs!.getEmptyRecordData()
-			data!.setFieldValue("ITEM","   "+item_desc1$)
+			rem --- Send data row for non-Memos
+			data!.setFieldValue("REF_NO",read_tpl.wo_ref_num$)
+			
+			gosub build_itemfield
+			data!.setFieldValue("ITEM",item_n_desc1$); rem From build_itemfield routine
+			
 			if cvs(read_tpl.oper_seq_ref$,3)<>""
 				if ops_lines!.size()
 					for x=0 to ops_lines!.size()-1
 						if read_tpl.oper_seq_ref$=ops_lines!.getItem(x)
-							data!.setFieldValue("OP_SEQ","Op Code: "+ops_list!.getItem(x))
+							data!.setFieldValue("OP_SEQ",ops_list!.getItem(x))
 						endif
 					next x
 				endif
 			endif
-			rs!.insert(data!)
-				
-			rem --- If more than 30 chars of item desc, 'print' them
-			if cvs(item_desc2$,2)<>""	
-				data! = rs!.getEmptyRecordData()
-				data!.setFieldValue("ITEM","   "+item_desc2$)
-				rs!.insert(data!)
+			
+			data!.setFieldValue("SCRAP",str(read_tpl.scrap_factor:sf_matlfact_mask$))
+			data!.setFieldValue("DIVISOR",str(read_tpl.divisor:sf_matlfact_mask$))
+			data!.setFieldValue("FACTOR",str(read_tpl.alt_factor:sf_matlfact_mask$))
+			data!.setFieldValue("QTY_REQ",str(read_tpl.qty_required:sf_units_mask$))
+			data!.setFieldValue("UNITS_EA",str(read_tpl.units:sf_units_mask$))
+			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:sf_units_mask$))
+			
+			if print_costs$="Y"
+				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
+				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_amt_mask$))
+			endif
+			
+			rs!.insert(data!)		
+
+			rem --- For non-Travelers, print 2nd line w/rest of the item desc if not all would fit
+			if report_type$<>"T"
+				if cvs(item_n_desc2$,2)<>""	
+					data! = rs!.getEmptyRecordData()
+					data!.setFieldValue("ITEM","  "+item_n_desc2$)
+					rs!.insert(data!)
+				endif
 			endif
 		endif
-
+		
 		tot_recs=tot_recs+1
 		tot_cost_ea=tot_cost_ea+read_tpl.unit_cost
 		tot_cost_tot=tot_cost_tot+read_tpl.total_cost
 	wend
 
 rem --- Output Totals
-	if tot_recs>0 and report_type$<>"T"
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("COST_EA",fill(20,"_"))
-		data!.setFieldValue("COST_TOT",fill(20,"_"))
-		rs!.insert(data!)
+rem --- Note: The report jasper report definition draws a top line for these totals
 
+	if tot_recs>0 
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
-		data!.setFieldValue("ITEM","Total Materials")
-		data!.setFieldValue("COST_EA",str(tot_cost_ea:sf_cost_mask$))
-		data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_amt_mask$))
-		data!.setFieldValue("COST_EA_RAW",str(tot_cost_ea))
-		data!.setFieldValue("COST_TOT_RAW",str(tot_cost_tot))
+
+		if print_costs$="Y"
+			data!.setFieldValue("ITEM","Total Materials")
+			data!.setFieldValue("COST_EA",str(tot_cost_ea:sf_cost_mask$))
+			data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_amt_mask$))
+			data!.setFieldValue("COST_EA_RAW",str(tot_cost_ea))
+			data!.setFieldValue("COST_TOT_RAW",str(tot_cost_tot))
+		else
+			data!.setFieldValue("ITEM","")
+			data!.setFieldValue("COST_EA","0")
+			data!.setFieldValue("COST_TOT","0")
+			data!.setFieldValue("COST_EA_RAW","0")
+			data!.setFieldValue("COST_TOT_RAW","0")	
+		endif
+		
 		rs!.insert(data!)
+		
 	endif
 	
 rem --- Tell the stored procedure to return the result set.
@@ -251,6 +262,38 @@ rem --- Tell the stored procedure to return the result set.
 	sp!.setRecordSet(rs!)
 	goto std_exit
 
+build_itemfield: rem --- Build ITEM field for non-Memos: Item plus Desc
+rem --   The routine is for non-memos, 
+rem --     - The ITEM field is a combo of the item plus as much desc as possible.
+rem --     - Space for the item uses the number of chars from IV Params Item Len.
+rem --     - As much desc as possible is appended to the ITEM field after the item id.
+rem --     - Change the constant, max_itemPlusDesc_len, to allow more desc to print.
+rem --     - Non-Travelers, since they aren't printed and number of pages isn't an issue, 
+rem --       have a second line of description if the Desc Len IV Param is set to have more
+rem --       than prints on the main line.
+rem ---  Memos are handled in main code: 
+rem --     - The ITEM field is the memo itself.
+rem --     - The full memo prints because there are no numeric cols taking space.
+
+	rem --- Build ITEM field based on report type and item len param
+		temp_itemPlusDesc$=read_tpl.item_id$(1,item_len)+"  "+cvs(ivm_itemmast.item_desc$,2)
+		
+	rem --- To fit the form, if temp_itemPlusDesc$ is too long make it two lines
+		if len(temp_itemPlusDesc$)>max_itemPlusDesc_len
+			item_n_desc1$=temp_itemPlusDesc$(1,max_itemPlusDesc_len)
+			item_n_desc2$=fill(int(item_len*itemPlusDesc_fudge)," ")+"  "+temp_itemPlusDesc$(max_itemPlusDesc_len+1)
+			if len(item_n_desc2$)>max_itemPlusDesc_len
+				item_n_desc2$=item_n_desc2$(1,max_itemPlusDesc_len)
+			endif
+		else
+			item_n_desc1$=temp_itemPlusDesc$
+			item_n_desc2$=""
+			endif
+		endif	
+
+return
+
+	
 rem --- Functions
 
     def fndate$(q$)

@@ -21,6 +21,7 @@ rem     Make any changes to the G/L posting in opr_salesregister, not here!
 rem --- Use Statements
 
     use ::ado_func.src::func
+    use ::sys/prog/bao_valid_card.bbj::CreditCard
 
 rem --- Retrieve the program path
 
@@ -181,6 +182,7 @@ rem --- Read next invoice header --- Main Loop Starts
         if ope01a.print_status$<>"Y" or ope01a.lock_status$<>"1" then continue
 
         if ope01a.cash_sale$="Y" then
+            dim ope41a$:fattr(ope41a$)
             find record (ope41_dev, key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=*next) ope41a$
         endif
 
@@ -228,6 +230,7 @@ rem --- Read next invoice header --- Main Loop Starts
 
             if ope01a.cash_sale$="Y" then
                 dim z6$(100,"0")
+                dim arm10c$:fattr(arm10c$)
                 find record (arm10c_dev, key=firm_id$+"C"+ope41a.cash_rec_cd$, dom=*endif) arm10c$
                 z0$(11,10)=arm10c.gl_cash_acct$
                 z6$(1)=z0$
@@ -489,7 +492,6 @@ rem --- Read next invoice header --- Main Loop Starts
             while more
                 precision 2
                 if total_ext<>ope01a.total_sales then ope01a.total_sales=total_ext
-                if ope01a.cash_sale$<>"Y" then
                     art01a.firm_id$=ope01a.firm_id$
                     art01a.ar_type$=ope01a.ar_type$
                     art01a.customer_id$=ope01a.customer_id$
@@ -523,6 +525,7 @@ rem --- Read next invoice header --- Main Loop Starts
                     art01a.disc_allowed=(total_ext-ope01a.discount_amt)*arm10a.disc_percent/100
                     art01a$ = field(art01a$)
                     write record (art01_dev) art01a$
+                    if ope01a.cash_sale$="Y" then goto ar_open_inv_det_smry_record
                     break
 
                 ar_open_inv_det_smry_record: rem --- AR Open Invoice Detail Summary Record
@@ -539,7 +542,11 @@ rem --- Read next invoice header --- Main Loop Starts
                     if art11a.trans_type$="C" then art11a.trans_type$="A"
                     art11a.trans_date$=ope01a.invoice_date$
                     art11a.ar_inv_no$=ope01a.ar_inv_no$
-                    art11a.trans_amt=art11a.trans_amt+total_ext+ope01a.tax_amount+ope01a.freight_amt-ope01a.discount_amt
+                    if ope01a.cash_sale$="Y" then
+                        art11a.trans_amt=art11a.trans_amt-ope41a.tendered_amt
+                    else
+                        art11a.trans_amt=art11a.trans_amt+total_ext+ope01a.tax_amount+ope01a.freight_amt-ope01a.discount_amt
+                    endif
                     art11a$ = field(art11a$)
                     write record (art11_dev) art11a$
                     break
@@ -565,14 +572,34 @@ rem --- Read next invoice header --- Main Loop Starts
 
                     art11_key$=art11a.firm_id$+art11a.ar_type$+art11a.customer_id$+art11a.ar_inv_no$+art11a.sequence_num$
                     extract record (art11_dev,key=art11_key$,dom=*next)x$; rem Advisory Locking
-                    art11a.trans_type$="I"
                     art11a.trans_date$=ope01a.invoice_date$
-                    art11a.refchk_no$=ope01a.ar_inv_no$
-                    art11a.trans_amt=total_ext+ope01a.tax_amount+ope01a.freight_amt-ope01a.discount_amt
+                    if ope01a.cash_sale$="Y" then
+                        art11a.trans_type$="C"
+                        art11a.trans_amt=-ope41a.tendered_amt
+                        if arm10c.trans_type$ = "C" then
+                            art11a.refchk_no$=ope41a.ar_check_no$
+                        else
+                            if arm10c.trans_type$ = "P" then
+                                credCard! = new CreditCard()
+                                cc_config$="BAR_CREDIT_CARD"
+                                cc_no$=""
+                                cc_no$=credCard!.getMaskedCardValue(credCard!.decryptCard(cvs(ope41a.credit_card_no$,2),cc_config$),err=*next)
+                                wk$=fattr(art11a$,"refchk_no")
+                                refchk_len=dec(wk$(10,2))
+                                if len(cc_no$)>=refchk_len then cc_no$=cc_no$(len(cc_no$)-refchk_len+1)            
+                                art11a.refchk_no$=cc_no$
+                            else
+                                art11a.refchk_no$="Cash"
+                            endif
+                        endif
+                    else
+                        art11a.trans_type$="I"
+                        art11a.trans_amt=total_ext+ope01a.tax_amount+ope01a.freight_amt-ope01a.discount_amt
+                        art11a.refchk_no$=ope01a.ar_inv_no$
+                    endif
                     art11a$ = field(art11a$)
                     write record (art11_dev) art11a$
                     break
-                endif
 
             rem --- Bank Reconciliation
 

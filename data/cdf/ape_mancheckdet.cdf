@@ -32,6 +32,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 	vendor_id$  = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID")
 
 	if trans_type$ = "M" then 
+
 		if cvs(ap_type$, 2) <> "" and cvs(vendor_id$, 2) <> "" then
 			key_pfx$ = firm_id$ + ap_type$ + vendor_id$
 
@@ -50,6 +51,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 			print "---rd_key: """, rd_key$, """"; rem debug
 
 			if rd_key$ <> "" then
+
 				apt01_dev = fnget_dev("APT_INVOICEHDR")
 				dim apt01a$:fnget_tpl$("APT_INVOICEHDR")
 
@@ -94,7 +96,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 			
 					rem callpoint!.setTableColumnAttribute("APE_MANCHECKDET.AP_INV_NO","DFLT",apt01a.ap_inv_no$)
 					callpoint!.setColumnData("APE_MANCHECKDET.AP_INV_NO",apt01a.ap_inv_no$)
-					callpoint!.setStatus("REFRESH")
+ 					callpoint!.setStatus("REFRESH")
 					util.forceEdit(Form!, 0); rem start editing the invoice number on this row
 
 				rem --- Total open invoice amounts
@@ -230,21 +232,26 @@ if apt01a$(1,len(apt01ak1$))<>apt01ak1$ and num(callpoint!.getUserInput())<>0
 		rem --- Reset focus on detail row where GL Dist was executed
 		sysgui!.setContext(grid_ctx)
 		grid!.startEdit(curr_row,curr_col)
+		callpoint!.setStatus("ACTIVATE")
 	endif	
 endif
-callpoint!.setStatus("MODIFIED-REFRESH-ACTIVATE")
+callpoint!.setStatus("MODIFIED-REFRESH")
+
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
 print "Det: AP_INV_NO.AVAL"; rem debug
 
 rem --- Check to make sure Invoice isn't already in the grid
 
 	this_inv$=callpoint!.getUserInput()
+	this_row=callpoint!.getValidationRow()
 	recVect!=GridVect!.getItem(0)
 	dim gridrec$:dtlg_param$[1,3]
 	numrecs=recVect!.size()
 	break_out=0
 	if numrecs>0
 		for reccnt=0 to numrecs-1
+			if reccnt=this_row then continue
+			if callpoint!.getGridRowDeleteStatus(reccnt)="Y" then continue
 			gridrec$=recVect!.getItem(reccnt)
 			if cvs(gridrec$,3)<> ""
 				if gridrec.ap_inv_no$=this_inv$

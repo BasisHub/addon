@@ -410,8 +410,10 @@ rem --- Round
 		callpoint!.setUserInput( str(round( num(callpoint!.getUserInput()), 2)) )
 	endif
 
-rem --- For uncommitted "O" line types, move ext_price to unit_price until committed
-	if callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" and user_tpl.line_type$ = "O" then
+rem --- For uncommitted "O" line type sales (not quotes), move ext_price to unit_price until committed
+	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" and
+:	callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" and user_tpl.line_type$ = "O" 
+:	then
 		rem --- Don't overwrite existing unit_price with zero
 		if num(callpoint!.getUserInput()) then
 			callpoint!.setColumnData("OPE_ORDDET.UNIT_PRICE", callpoint!.getUserInput())
@@ -1044,7 +1046,7 @@ rem --- Set price and discount
 		endif
 	endif
 	
-rem --- Set amounts for non-commited "other" type detail lines
+rem --- For uncommitted "O" line type sales (not quotes), move ext_price to unit_price until committed
 
 	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" and
 :		callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N"         and
@@ -1898,7 +1900,9 @@ rem ==========================================================================
 		callpoint!.setColumnData("OPE_ORDDET.VENDOR_ID", "")
 		callpoint!.setColumnData("OPE_ORDDET.DROPSHIP", "")
 
-		if inv_type$ = "P" or callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE") > user_tpl.def_commit$ then
+		if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") = "P" or 
+:		callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE") > user_tpl.def_commit$ 
+:		then
  			callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "N")
 		else
 			callpoint!.setColumnData("OPE_ORDDET.COMMIT_FLAG", "Y")

@@ -1,3 +1,9 @@
+[[SFE_WOMATL.AGRN]]
+rem --- Set ROW_NUM
+	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+	wk$=fattr(sfe_womatl$,"material_seq")
+	new_row_num=1+callpoint!.getValidationRow()
+	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
 [[SFE_WOMATL.AOPT-AUTO]]
 rem --- Update displayed row nums for inserted and deleted rows, or
 	if callpoint!.getDevObject("insertedRows")+callpoint!.getDevObject("deletedRows") then
@@ -211,13 +217,6 @@ rem --- check to see if item is marked special order in IV warehouse rec; if so,
 [[SFE_WOMATL.AREC]]
 rem --- Initializations
 	callpoint!.setDevObject("special_order","N")
-
-
-rem --- Set ROW_NUM
-	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
-	wk$=fattr(sfe_womatl$,"material_seq")
-	new_row_num=1+callpoint!.getValidationRow()
-	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
 
 rem --- Maintain count of inserted rows (don't count if last row)
 	if GridVect!.size()>1+callpoint!.getValidationRow() then

@@ -99,17 +99,15 @@ rem --- Initializations
 
 rem --- Document columns
 
-    dim columns$[9,3]
+    columns=6
+    dim columns$[columns,3]
     columns$[0,0]=Translate!.getTranslation("AON_CUST_NO"),columns$[0,1]="C",columns$[0,2]="8"
-    columns$[1,0]=Translate!.getTranslation("AON_NAME"),columns$[1,1]="C",columns$[1,2]="20"
-    columns$[2,0]=Translate!.getTranslation("AON_ADDRESS_1"),columns$[2,1]="C",columns$[2,2]="18"
-    columns$[3,0]=Translate!.getTranslation("AON_ADDRESS_2"),columns$[3,1]="C",columns$[3,2]="18"
-    columns$[4,0]=Translate!.getTranslation("AON_ADDRESS_3"),columns$[4,1]="C",columns$[4,2]="15"
-    columns$[5,0]=Translate!.getTranslation("AON_ADDRESS_4"),columns$[5,1]="C",columns$[5,2]="15"
-    columns$[6,0]=Translate!.getTranslation("AON_CITY"),columns$[6,1]="C",columns$[6,2]="15"
-    columns$[7,0]=Translate!.getTranslation("AON_STATE"),columns$[7,1]="C",columns$[7,2]="5"
-    columns$[8,0]=Translate!.getTranslation("AON_POSTAL"),columns$[8,1]="C",columns$[8,2]="8"
-    columns$[9,0]=Translate!.getTranslation("AON_PHONE"),columns$[9,1]="C",columns$[9,2]="10"
+    columns$[1,0]=Translate!.getTranslation("AON_NAME"),columns$[1,1]="C",columns$[1,2]="30"
+    columns$[2,0]=Translate!.getTranslation("AON_ADDRESS"),columns$[2,1]="C",columns$[2,2]="24"
+    columns$[3,0]=Translate!.getTranslation("AON_CITY"),columns$[3,1]="C",columns$[3,2]="15"
+    columns$[4,0]=Translate!.getTranslation("AON_STATE"),columns$[4,1]="C",columns$[4,2]="5"
+    columns$[5,0]=Translate!.getTranslation("AON_POSTAL"),columns$[5,1]="C",columns$[5,2]="8"
+    columns$[6,0]=Translate!.getTranslation("AON_PHONE"),columns$[6,1]="C",columns$[6,2]="10"
     
 
 rem --- Start progress meter and position file
@@ -139,26 +137,23 @@ rem --- Read next Customer Master (arm-01) record
           if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           read record (arm01_dev) arm01a$
 
-          rem --- Prepare line
+          rem --- Prepare Address lines
 
-          address$=""
-          x$=arm01a.addr_line_1$+arm01a.addr_line_2$+arm01a.addr_line_3$+arm01a.addr_line_4$+
-:            arm01a.city$+arm01a.state_code$+arm01a.zip_code$
-          call pgmdir$+"adc_address.aon",x$,24,5,9,24
-          for x=1 to 120 step 24
-              l$=cvs(x$(x,24),2)
-              if l$<>"" then if address$<>"" address$=address$+", "
-              address$=address$+l$
-          next x
+          addrVect!=bbjAPI().getSysGui().makeVector()
+          if cvs(arm01a.addr_line_1$,2)<>"" then addrVect!.addItem(arm01a.addr_line_1$)
+          if cvs(arm01a.addr_line_2$,2)<>"" then addrVect!.addItem(arm01a.addr_line_2$)
+          if cvs(arm01a.addr_line_3$,2)<>"" then addrVect!.addItem(arm01a.addr_line_3$)
+          if cvs(arm01a.addr_line_4$,2)<>"" then addrVect!.addItem(arm01a.addr_line_4$)
 
           rem --- Store document line
 
           OutVect!.addItem(fnmask$(arm01a.customer_id$(1,customer_size),m0$))
           OutVect!.addItem(arm01a.customer_name$)
-          OutVect!.addItem(arm01a.addr_line_1$)
-          OutVect!.addItem(arm01a.addr_line_2$)
-          OutVect!.addItem(arm01a.addr_line_3$)
-          OutVect!.addItem(arm01a.addr_line_4$)
+          if addrVect!.size()>0 then
+              OutVect!.addItem(addrVect!.getItem(0))
+          else
+              OutVect!.addItem("")
+          endif
           OutVect!.addItem(arm01a.city$)
           OutVect!.addItem(arm01a.state_code$)
           call stbl("+DIR_SYP")+"bac_getmask.bbj","P",cvs(arm01a.zip_code$,2),"",postal_mask$
@@ -169,6 +164,15 @@ rem --- Read next Customer Master (arm-01) record
           phone$=cvs(arm01a.phone_no$,2)
           phone$=str(phone$:phone_mask$,err=*next)
           OutVect!.addItem(phone$)
+        
+          if addrVect!.size()>1 then
+              for i=1 to addrVect!.size()-1
+                  xwk=fnblank(2)
+                  OutVect!.addItem(addrVect!.getItem(i))
+                  xwk=fnblank(columns-2)
+              next i
+          endif
+        
           recs=recs+1
 
           rem --- Loop back for next customer master
@@ -186,6 +190,15 @@ rem --- All done
     goto std_exit
 
 rem --- Functions
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
 
 rem --- Functions used to retrieve form values
 

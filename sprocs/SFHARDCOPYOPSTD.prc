@@ -34,6 +34,7 @@ rem --- Get the IN parameters used by the procedure
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
 	report_type$ = sp!.getParameter("REPORT_TYPE")
+	print_costs$ = sp!.getParameter("PRINT_COSTS")
 	
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -124,7 +125,7 @@ rem --- Get proper Op Code Maintenance table
 	
 	opcode_dev=channels[5]
 	dim opcode_tpl$:templates$[5]
-	
+
 rem --- Build SQL statement
 
 	sql_prep$="select op_code, require_date, runtime_hrs, pcs_per_hour, direct_rate, ovhd_rate, setup_time, "
@@ -157,7 +158,8 @@ rem --- Trip Read
 			data!.setFieldValue("UNITS_EA",str(read_tpl.runtime_hrs:sf_units_mask$))
 			data!.setFieldValue("SETUP",str(read_tpl.setup_time:sf_hours_mask$))
 			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_time:sf_units_mask$))
-			if report_type$<>"T"
+			
+			if print_costs$="Y"
 				data!.setFieldValue("DIRECT",str(read_tpl.direct_rate:sf_rate_mask$))
 				data!.setFieldValue("OVHD",str(read_tpl.ovhd_rate:sf_rate_mask$))
 				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
@@ -174,23 +176,25 @@ rem --- Trip Read
 
 rem --- Output Totals
 
-	if tot_recs>0 and report_type$<>"T"
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("UNITS_EA",fill(20,"_"))
-		data!.setFieldValue("COST_EA",fill(20,"_"))
-		data!.setFieldValue("UNITS_TOT",fill(20,"_"))
-		data!.setFieldValue("COST_TOT",fill(20,"_"))
-		rs!.insert(data!)
-	
+	if tot_recs>0 
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("OP_CODE","Total Operations")
-		data!.setFieldValue("UNITS_EA",str(tot_units_ea:iv_cost_mask$))
-		data!.setFieldValue("COST_EA",str(tot_cost_ea:sf_cost_mask$))
-		data!.setFieldValue("UNITS_TOT",str(tot_units_tot:iv_cost_mask$))
-		data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_amt_mask$))
-		data!.setFieldValue("COST_EA_RAW",str(tot_cost_ea))
-		data!.setFieldValue("COST_TOT_RAW",str(tot_cost_tot))
+		data!.setFieldValue("UNITS_EA",str(tot_units_ea:sf_units_mask$))
+		data!.setFieldValue("UNITS_TOT",str(tot_units_tot:sf_units_mask$))
+			
+		if  print_costs$="Y"
+			data!.setFieldValue("COST_EA",str(tot_cost_ea:sf_amt_mask$))
+			data!.setFieldValue("COST_TOT",str(tot_cost_tot:sf_amt_mask$))
+			data!.setFieldValue("COST_EA_RAW",str(tot_cost_ea))
+			data!.setFieldValue("COST_TOT_RAW",str(tot_cost_tot))	
+		else	
+			data!.setFieldValue("COST_EA","0")
+			data!.setFieldValue("COST_TOT","0")
+			data!.setFieldValue("COST_EA_RAW","0")
+			data!.setFieldValue("COST_TOT_RAW","0")	
+		endif
+		
 		rs!.insert(data!)
 	endif
 

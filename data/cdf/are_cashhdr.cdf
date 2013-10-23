@@ -212,6 +212,7 @@ else
 endif
 [[ARE_CASHHDR.AREC]]
 rem --- clear custom controls (grids) and UserObj! items
+
 gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))                             
 gridInvoice!.clearMainGrid()				
 gridInvoice!.setColumnStyle(0,SysGUI!.GRID_STYLE_UNCHECKED)				
@@ -225,6 +226,7 @@ UserObj!.setItem(num(user_tpl.existing_dtl$),"")
 user_tpl.existing_chk$=""
 user_tpl.gl_applied$="0"
 user_tpl.binp_pay_amt=0
+
 Form!.getControl(num(user_tpl.GLind_id$)).setText("")
 Form!.getControl(num(user_tpl.GLstar_id$)).setText("")
 [[ARE_CASHHDR.ASIZ]]
@@ -308,15 +310,35 @@ call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
 user_tpl.amt_msk$=imsk$
 gls01a_key$=firm_id$+"GL00"
 find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+
 rem --- add custom controls, checkboxes and grids
 UserObj!=SysGUI!.makeVector()
 nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
-OA_chkbox!=Form!.addCheckBox(nxt_ctlID,555,52,200,20,Translate!.getTranslation("AON_SHOW_ON-ACCOUNT_AND_CREDITS?"),$04$)
-zbal_chkbox!=Form!.addCheckBox(nxt_ctlID+1,555,72,200,20,Translate!.getTranslation("AON_SHOW_ZERO-BALANCE_INVOICES?"),$$)
-asel_chkbox!=Form!.addCheckBox(nxt_ctlID+2,555,92,200,20,Translate!.getTranslation("AON_AUTO-SELECT_BY_INVOICE?"),$$)
+
+base_ctl!=callpoint!.getControl("<<DISPLAY>>.DISP_CUST_BAL")
+base_x=base_ctl!.getX()
+tmp_x=base_x+base_ctl!.getWidth()+10
+tmp_y=base_ctl!.getY()+base_ctl!.getHeight()
+tmp_h=base_ctl!.getHeight()
+tmp_w=200
+
+applied_ctl!=callpoint!.getControl("<<DISPLAY>>.DISP_APPLIED")
+app_x=applied_ctl!.getX()
+app_y=applied_ctl!.getY()
+app_w=applied_ctl!.getWidth()
+app_h=applied_ctl!.getHeight()
+
+rem --- position the three checkboxes relative to the Customer Balance control
+OA_chkbox!=Form!.addCheckBox(nxt_ctlID,tmp_x,tmp_y,tmp_w,tmp_h,Translate!.getTranslation("AON_SHOW_ON-ACCOUNT_AND_CREDITS?"),$04$)
+zbal_chkbox!=Form!.addCheckBox(nxt_ctlID+1,tmp_x,tmp_y+tmp_h+1,tmp_w,tmp_h,Translate!.getTranslation("AON_SHOW_ZERO-BALANCE_INVOICES?"),$$)
+asel_chkbox!=Form!.addCheckBox(nxt_ctlID+2,tmp_x,tmp_y+(tmp_h+1)*2,tmp_w,tmp_h,Translate!.getTranslation("AON_AUTO-SELECT_BY_INVOICE?"),$$)
+
 gridInvoice!=Form!.addGrid(nxt_ctlID+3,5,160,700,210)
-Form!.addStaticText(nxt_ctlID+4,450,140,200,20,"")
-Form!.addStaticText(nxt_ctlID+5,550,118,20,20,"")
+
+rem --- position the static text (to show when there is a GL dist included) relative to the Applied Amt control
+Form!.addStaticText(nxt_ctlID+4,app_x,app_y+app_h+3,tmp_w,tmp_h,"")
+Form!.addStaticText(nxt_ctlID+5,app_x+app_w+5,app_y,20,tmp_h,"")
+
 rem --- store ctl ID's of custom controls				
 user_tpl.OA_chkbox_id$=str(nxt_ctlID)
 user_tpl.zbal_chkbox_id$=str(nxt_ctlID+1)
@@ -1210,6 +1232,11 @@ rem ==================================================================
 			gridInvoice!.setCellText(clicked_row,num(user_tpl.disc_taken_ofst$),str(new_disc))
 			gridInvoice!.setCellText(clicked_row,num(user_tpl.new_bal_ofst$),
 :					vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))
+			rem --- Warn when End Balance goes negative
+			if num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))<0 and (old_pay<>new_pay or old_disc<>new_disc)
+				msg_id$="AR_CREDIT_BALANCE"
+				gosub disp_message
+			endif
 			rem --- if this is an OA/CM line (test inv amt, curr amt), then applied amt just increases total to apply
 			if num(vectInvoice!.getItem(clicked_row*cols+4))<0
 :				or num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.cur_bal_ofst$))) <0
@@ -1239,7 +1266,7 @@ rem ==================================================================
 			endif
 			Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
 			UserObj!.setItem(num(user_tpl.pymt_dist$),pymt_dist$)
-			callpoint!.setStatus("REFRESH-MODIFIED"); rem "added MODIFIED 19sept07.CH, as events in dtl grid no longer 'turning on' save icon
+			callpoint!.setStatus("REFRESH-MODIFIED")
 			
 		break
 		case 8;rem --- edit start

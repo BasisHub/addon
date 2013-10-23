@@ -17,10 +17,6 @@ rem --- Save changes made based on Applications installed
 
 	callpoint!.setStatus("SAVE")
 [[SFS_PARAMS.ARAR]]
-rem --- Set defaults
-
-	gosub set_defaults
-
 rem --- Update post_to_gl if GL is uninstalled
 	gl_installed$=callpoint!.getDevObject("gl_installed")
 	if gl_installed$<>"Y" and callpoint!.getColumnData("SFS_PARAMS.POST_TO_GL")="Y" then
@@ -58,6 +54,7 @@ rem ==========================================================
 		callpoint!.setColumnEnabled("SFS_PARAMS.OVERHD_TYPE",0)
 	endif
 
+	callpoint!.setColumnData("SFS_PARAMS.TIME_ENTRY_S","E",1)
 	callpoint!.setColumnData("SFS_PARAMS.MAX_EMPL_NO","9")
 
 	return
@@ -75,15 +72,17 @@ rem --- Validate Time Entry table is empty if value changes
 		old_chan=fnget_dev("SFE_TIMEWO")
 	endif
 
-	read(old_chan,key=firm_id$,dom=*next)
-	while 1
-		k$=key(old_chan,end=*break)
-		if pos(firm_id$=k$)<>1 break
-		msg_id$="SF_BATCH_CHANGE"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-		break
-	wend
+	if old_chan then
+		read(old_chan,key=firm_id$,dom=*next)
+		while 1
+			k$=key(old_chan,end=*break)
+			if pos(firm_id$=k$)<>1 break
+			msg_id$="SF_BATCH_CHANGE"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		wend
+	endif
 [[SFS_PARAMS.TIME_CLK_FLG.BINP]]
 rem --- Set default if Time Sheet Entry set to 
 

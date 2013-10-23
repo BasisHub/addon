@@ -11,9 +11,9 @@ rem --- All Rights Reserved
 
     use ::bbjasper.bbj::BBJasperReport
     use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::bbjasper.bbj::BBJasperViewerControl
 
 	declare BBJasperReport BBjReport!
-	declare BBJasperViewerWindow BBjReportWindow! 
     
     params! = Option!.getOptionMap()
 		
@@ -277,11 +277,13 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
         rem --- Get Next Document Number and update Document Audit for master copy of pdf, if first time thru
 
         if master_document
-            call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",master_doc_id$,rd_table_chans$[all] 
-            master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"      
-        
-            call stbl("+DIR_SYP")+"bac_documents.bbj",master_doc_id$,rep_date_stamp$,rep_time_stamp$,rd_doc_source$,rd_doc_ext$,docdir$,
-:               rd_source_type$,rd_source_alias$,"C","",rd_table_chans$[all],"",master_doc_name$,masterBaseName$,doc_keywords$
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            gosub document_whse
+            rd_archive_action$=""
+            master_doc_id$=rd_doc_id$
+            master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"
         endif
 
     rem --- Document Output Report Parameters
@@ -338,23 +340,126 @@ rem --- done
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
 
-rem --- bring up master statement document in jasper viewer  
-
-    if master_report!<>null()
-        master_report!.exportToPDF(BBjAPI().FALSE, docdir$+master_doc_name$)
-        BBjReportWindow! = new BBJasperViewerWindow(master_report!,0,0,screen_width,screen_height,masterBaseName$,$00080093$)
-        BBjReportWindow!.center()
-        BBjReportWindow!.show(1)
-        BBjReportWindow!.destroy()
-    endif
-
     if total_recs=0
         msg_id$="DOC_OUTPUT_NODATA"
         gosub disp_message
         goto std_exit_no_report
-    endif    
+    endif
 
-    goto std_exit
+    if master_report!=null() then goto std_exit
+
+rem --- export the master doc as PDF
+
+    repTitle$=masterBaseName$
+    rd_doc_id$=master_doc_id$
+    
+    rem --- bring up master statement document in jasper viewer  
+
+    rem --- get a pdf path from +DOC_DIR_PDF
+    rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
+    gosub doc_path
+
+    rem --- previous version auto exported to pdf regardless of user action in jasper viewer
+    rem --- so gosub-ing the export routine here to keep backward compatible
+    gosub OnSaveMenuButton
+    
+    declare BBJasperViewerWindow viewerWindow!
+    viewerWindow! = new BBJasperViewerWindow(master_report!,0,0,screen_width,screen_height,repTitle$,$00080093$)
+
+    viewerControl! = viewerWindow!.getViewerControl()
+    viewerControl!.setGoogleDefaultDocument(repTitle$)
+    viewerControl!.setDefaultSaveFolder(rd_doc_path$)
+    viewerControl!.setDefaultSaveFile(repTitle$)
+
+    rem --- set callbacks for when user presses save or email buttons in jasper viewer
+    rem --- note: saveAs or saveAsGDoc not intercepted, just regular save
+    saveMenuButton! = viewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+    saveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnSaveMenuButton")
+
+    emailToolButton! = viewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+    emailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnEmailToolButton")
+
+    viewerWindow!.setReleaseOnClose(0)
+    viewerWindow!.show(0)
+
+    declare BBjTopLevelWindow bbjWindow!
+    bbjWindow!= viewerWindow!.getViewerWindow()
+    cancelled=1
+    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win",err=*next); cancelled=0
+    if cancelled then goto close_win
+
+rem --- Event Control
+
+    process_events,err=*same
+
+    release
+
+ document_whse:rem --- Write record to Barista document warehouse (ads_documents)
+
+    call stbl("+DIR_SYP")+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       rd_archive_action$,
+:       rd_doc_name$,
+:       rep_title$,
+:       rd_doc_keywords$
+
+    return
+
+doc_path:rem --- Get Document Path
+rem --- forcing a pdf save to this location for release 13.03
+rem --- eventually, want to make the save functionality mimic (as closely as possible) Barista
+rem --- so it can save based on user's doc group and doc settings
+
+    if rd_doc_path$="" then
+        rd_tmp_dir$=stbl("+DOC_DIR_PDF",err=*endif)
+        rd_temp_wd$=dsk("")+dir("")
+        if pos(":"=rd_tmp_dir$) setdrive rd_tmp_dir$(1,pos(":"=rd_tmp_dir$)-1),err=*next
+        chdir rd_tmp_dir$,err=*next
+        rd_doc_path$=dsk("")+dir("")
+        if pos(":"=rd_temp_wd$) setdrive rd_temp_wd$(1,pos(":"=rd_temp_wd$)-1)
+        chdir rd_temp_wd$
+    endif
+
+    return
+
+OnSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_name$=repTitle$+".pdf"
+        rd_doc_ext$="PDF"
+        master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        gosub document_whse
+    endif
+    return    
+
+OnEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+
+    return
+
+close_win:rem --- Viewer Window Closed
+    viewerWindow!.destroy()
+    rdForm!.destroy(err=*next)
+    if tcb(13) then exit
+    release
 
 adjustments: rem --- Accumulate any adjustments for the current invoice
 

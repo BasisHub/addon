@@ -176,19 +176,28 @@ rem --- Validate Item/Whse
 	gosub check_item_whse
 	if callpoint!.getDevObject("item_wh_failed") = "1" break
 
-rem --- Get Unit of Sale
+rem --- Get item info from ivm_itemmast
 
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
 	dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
-
-	while 1
-		read record (ivm01_dev,key=firm_id$+item$,dom=*break)ivm01a$
+	read record (ivm01_dev,key=firm_id$+item$,dom=*next)ivm01a$
+	if ivm01a.item_id$=item$ then
+		rem --- Get Unit of Sale
 		callpoint!.setColumnData("<<DISPLAY>>.UNIT_OF_SALE",ivm01a.unit_of_sale$,1)
-		break
-	wend
+	endif
 
 	bill_no$=item$
 	gosub disp_bill_comments
+
+	rem --- Cannot update inventoried lotted/serialed items
+	if ivm01a.lotser_item$="Y" and ivm01a.inventoried$="Y" then
+		callpoint!.setColumnData("BME_PRODUCT.UPDATE_FLAG","N",1)
+		callpoint!.setColumnEnabled("BME_PRODUCT.UPDATE_FLAG",0)
+		msg_id$="NOT_UPDT_INV_LS_ITEM"
+		gosub disp_message
+	else
+		callpoint!.setColumnEnabled("BME_PRODUCT.UPDATE_FLAG",1)
+	endif
 [[BME_PRODUCT.BSHO]]
 rem --- Open files
 

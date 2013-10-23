@@ -62,14 +62,16 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-	temp$="FIRM_ID:C(2), WO_NO:C(7*), WO_TYPE:C(1*), WO_CATEGORY:C(1*), WO_STATUS:C(1*), CUSTOMER_ID:C(1*), "
+	      temp$="FIRM_ID:C(2), WO_NO:C(7*), WO_TYPE:C(1*), WO_CATEGORY:C(1*), WO_STATUS:C(1*), CUSTOMER_ID:C(1*), "
 	temp$=temp$+"SLS_ORDER_NO:C(1*), WAREHOUSE_ID:C(1*), ITEM_ID:C(1*), OPENED_DATE:C(1*), LAST_CLOSE:C(1*), "
 	temp$=temp$+"TYPE_DESC:C(1*), PRIORITY:C(1*), UOM:C(1*), YIELD:C(1*), PROD_QTY:C(1*), COMPLETED:C(1*), "
 	temp$=temp$+"LAST_ACT_DATE:C(1*), ITEM_DESC_1:C(1*), ITEM_DESC_2:C(1*), DRAWING_NO:C(1*), REV:C(1*), "
 	temp$=temp$+"INCLUDE_LOTSER:C(1*), MAST_CLS_INP_QTY_STR:C(1*), MAST_CLS_INP_DT:C(1*), MAST_CLOSED_COST_STR:C(1*), "
 	temp$=temp$+"COMPLETE_YN:C(1*), COST_MASK:C(1*), UNITS_MASK:C(1*), AMT_MASK:C(1*), "	
 	temp$=temp$+"COST_MASK_PATTERN:C(1*), UNITS_MASK_PATTERN:C(1*), AMT_MASK_PATTERN:C(1*), "	
-	temp$=temp$+"WO_STATUS_LETTER:C(1*), CLOSED_DATE_RAW:C(1*)"	
+	temp$=temp$+"WO_STATUS_LETTER:C(1*), CLOSED_DATE_RAW:C(1*), "	
+	temp$=temp$+"ITEM_LEN_PARAM:C(1*),"	; rem Used in MatStd to get more real estate for desc
+	temp$=temp$+"PRINT_COSTS:C(1*)"	; rem Used throughout to determine whether cost(s) and cost header(s) prints
 	
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
@@ -99,12 +101,13 @@ rem          ##0.00;##0.00-   Positives only
 
 rem --- Open files with adc
 
-    files=4,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="ivm-01",ids$[1]="IVM_ITEMMAST"
 	files$[2]="sfm-10",ids$[2]="SFC_WOTYPECD"
 	files$[3]="arm-01",ids$[3]="ARM_CUSTMAST"
 	files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
+	files$[5]="sfs_params",ids$[5]="SFS_PARAMS"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -117,6 +120,7 @@ rem --- Open files with adc
 	sfc_type_dev=channels[2]
 	arm_custmast=channels[3]
 	ivs_params=channels[4]
+	sfs_params=channels[5]
 	
 rem --- Dimension string templates
 
@@ -124,6 +128,7 @@ rem --- Dimension string templates
 	dim sfc_type$:templates$[2]
 	dim arm_custmast$:templates$[3]
 	dim ivs_params$:templates$[4]
+	dim sfs_params$:templates$[5]
 	
 goto no_bac_open
 rem --- Open Files    
@@ -162,9 +167,22 @@ call sypdir$+"bac_open_tables.bbj",
 	dim ivs_params$:open_tpls$[4]	
 
 no_bac_open:
-rem --- Get IV Params for Lot/Serial flag
+rem --- Get IV Params for Lot/Serial flag and item length
 	ivs_params_key$=firm_id$+"IV00"
     find record (ivs_params,key=ivs_params_key$) ivs_params$
+	item_len_param$ = ivs_params.item_id_len$
+
+rem --- Get 'Print Costs on Traveler' SF param
+
+	read record (sfs_params,key=firm_id$+"SF00") sfs_params$
+	
+rem --- Set constant defining whether to print costs 
+
+	if report_type$<>"T" or (report_type$="T" and sfs_params.print_costs$="Y")
+		print_costs$="Y"
+	else
+		print_costs$="N"
+	endif	
 	
 rem --- Build SQL statement
     sql_prep$=""
@@ -248,7 +266,8 @@ rem  	 	report_type$ rem M = WO Detail Rpt from *M*enu
         case default
             break
     swend
-	
+
+
 	sql_chan=sqlunt
 	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 	sqlprep(sql_chan)sql_prep$
@@ -275,6 +294,9 @@ rem --- Trip Read
 		data!.setFieldValue("WO_NO",read_tpl.wo_no$)
 		data!.setFieldValue("WO_TYPE",read_tpl.wo_type$)
 		data!.setFieldValue("WO_CATEGORY",read_tpl.wo_category$)
+		data!.setFieldValue("ITEM_LEN_PARAM",item_len_param$)
+		data!.setFieldValue("PRINT_COSTS",print_costs$)		
+			
 		if read_tpl.wo_status$="O"
 			stat$="**Open**"
 		else
@@ -295,7 +317,7 @@ rem --- Trip Read
 			read record (arm_custmast,key=firm_id$+read_tpl.customer_id$,dom=*next) arm_custmast$
 			data!.setFieldValue("CUSTOMER_ID","Customer: "+fnmask$(read_tpl.customer_id$,cust_mask$)+" "+arm_custmast.customer_name$)
 			if num(read_tpl.order_no$)<>0
-				data!.setFieldValue("SLS_ORDER_NO","Sales Order: "+read_tpl.order_no$)
+				data!.setFieldValue("SLS_ORDER_NO","Sales Order: "+read_tpl.order_no$+"-"+read_tpl.sls_ord_seq_ref$)
 			endif
 		endif
 		data!.setFieldValue("WAREHOUSE_ID",read_tpl.warehouse_id$)
