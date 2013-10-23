@@ -377,15 +377,20 @@ rem --- Clear quantities if line type is Memo or Other
 		callpoint!.setColumnData("OPE_INVDET.QTY_SHIPPED", "0")
 	endif
 
-rem --- Set product types for certain line types 
+rem --- Order quantity is required for S, N and P line types
 
-	if pos(linecode_rec.line_type$="NOP") then
+	if pos(linecode_rec.line_type$="SNP") then
 		if num(callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED")) = 0 then
 			msg_id$="OP_QTY_ZERO"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
 			break
 		endif
+	endif
+
+rem --- Set product types for certain line types 
+
+	if pos(linecode_rec.line_type$="NOP") then
 		if linecode_rec.prod_type_pr$ = "D" then			
 			callpoint!.setColumnData("OPE_INVDET.PRODUCT_TYPE", linecode_rec.product_type$)
 		else

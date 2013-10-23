@@ -58,7 +58,7 @@ rem --- create the in memory recordset for return
 	dataTemplate$ = dataTemplate$ + "item_id:c(1*), item_desc:c(1*), um:c(1*), "
 	dataTemplate$ = dataTemplate$ + "price_raw:c(1*), price_masked:c(1*), "
 	dataTemplate$ = dataTemplate$ + "extended_raw:c(1*), extended_masked:c(1*), internal_seq_no:c(1*), "
-	dataTemplate$ = dataTemplate$ + "item_is_ls:c(1), linetype_allows_ls:c(1)"
+	dataTemplate$ = dataTemplate$ + "item_is_ls:c(1), linetype_allows_ls:c(1),ship_qty:c(1*)"
 
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
@@ -103,6 +103,7 @@ rem --- Main
 				
 			order_qty_masked$ =   ""
 			ship_qty_masked$ =    ""
+			ship_qty$ =           ""
 			backord_qty_masked$ = ""
 			item_id$ =            ""
 			item_desc$ =          ""
@@ -151,6 +152,7 @@ line_detail: rem --- Item Detail
 			if pos(opm02a.line_type$="MO")=0 then
 				order_qty_masked$= str(ope11a.qty_ordered:qty_mask$)
 				ship_qty_masked$= str(ope11a.qty_shipped:qty_mask$)
+				ship_qty$= str(ope11a.qty_shipped)
 				backord_qty_masked$= str(ope11a.qty_backord:qty_mask$)
 			endif
 
@@ -183,6 +185,7 @@ line_detail: rem --- Item Detail
 			data! = rs!.getEmptyRecordData()
 			data!.setFieldValue("ORDER_QTY_MASKED", order_qty_masked$)
 			data!.setFieldValue("SHIP_QTY_MASKED", ship_qty_masked$)
+			data!.setFieldValue("SHIP_QTY", ship_qty$)
 			data!.setFieldValue("BACKORD_QTY_MASKED", backord_qty_masked$)
 			data!.setFieldValue("ITEM_ID", item_id$)
 			data!.setFieldValue("ITEM_DESC", item_desc$)

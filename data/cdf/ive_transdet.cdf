@@ -118,8 +118,16 @@ ls_lookup: rem --- Call the lot lookup window and set default lot, lot location,
  	if pos(user_tpl.trans_type$ = "IC") then 
 		ls_type$="Z"
 	endif
- 	if pos(user_tpl.trans_type$ = "A") then 
+ 	if pos(user_tpl.trans_type$ = "A") then
+		pos_neg=sgn(num(callpoint!.getColumnData("IVE_TRANSDET.TRANS_QTY")))
 		ls_type$="A"
+		if user_tpl.serialized=1
+			if pos_neg>=0 ls_type$="C"
+			if pos_neg<0 ls_type$="O"
+		endif
+		if user_tpl.lotted=1
+			if pos_neg<0 ls_type$="O"
+		endif
 	endif
 
 	dim dflt_data$[3,1]

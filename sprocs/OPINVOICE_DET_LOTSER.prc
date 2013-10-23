@@ -160,10 +160,10 @@ rem --- Process through SQL results
 	rem --- Compare LS shipped qty with Item's Shipped Qty
 	rem --- If they do not match, send underscores to 
 	rem --- prompt for L/S entry/write-in on the invoice.
-		
+
 	if total_lotser_qty_shipped <> ope11_qty_shipped
 	
-		for y=1 to ope11_qty_shipped - total_lotser_qty_shipped
+		for y=1 to max(abs(ope11_qty_shipped - total_lotser_qty_shipped),1)
 			data! = rs!.getEmptyRecordData()
 			
 			data!.setFieldValue("LOTSER_NO", FILL(20,"_"))				

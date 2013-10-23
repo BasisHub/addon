@@ -1,3 +1,8 @@
+[[ARE_CASHHDR.ARAR]]
+rem --- Enable/disable controls based on Cash Receipt code
+	wk_cash_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
+	gosub get_cash_rec_cd
+	gosub able_controls
 [[ARE_CASHHDR.AABO]]
 rem --- user has elected to not save changes -- remove any are_cashgl recs already added (don't want orphans)
 
@@ -374,46 +379,10 @@ else
 endif
 callpoint!.setStatus("REFRESH-ABLEMAP-ACTIVATE")
 [[ARE_CASHHDR.CASH_REC_CD.AVAL]]
-wk_cash_cd$=callpoint!.getUserInput()
-gosub get_cash_rec_cd
-
 rem --- Enable/disable controls based on Cash Receipt code
-gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))
-OA_chkbox!=Form!.getControl(num(user_tpl.OA_chkbox_id$))
-zbal_chkbox!=Form!.getControl(num(user_tpl.zbal_chkbox_id$))
-asel_chkbox!=Form!.getControl(num(user_tpl.asel_chkbox_id$))
-switch (BBjAPI().TRUE)
-	case user_tpl.arglboth$="A"
-		rem --- Post to AR only
-		callpoint!.setOptionEnabled("GLED",0)
-		callpoint!.setOptionEnabled("OACT",1)
-		gridInvoice!.setEnabled(1)
-		OA_chkbox!.setEditable(1)
-		zbal_chkbox!.setEditable(1)
-		asel_chkbox!.setEditable(1)
-		break
-	case user_tpl.arglboth$="G"
-		rem --- Post to GL only
-		callpoint!.setOptionEnabled("GLED",1)
-		callpoint!.setOptionEnabled("OACT",0)
-		gridInvoice!.setEnabled(0)
-		OA_chkbox!.setSelected(0)
-		OA_chkbox!.setEditable(0)
-		zbal_chkbox!.setSelected(0)
-		zbal_chkbox!.setEditable(0)
-		asel_chkbox!.setSelected(0)
-		asel_chkbox!.setEditable(0)
-		break
-	case default
-		rem --- Post to both AR and GL
-		callpoint!.setOptionEnabled("GLED",1)
-		callpoint!.setOptionEnabled("OACT",1)
-		gridInvoice!.setEnabled(1)
-		OA_chkbox!.setEditable(1)
-		zbal_chkbox!.setEditable(1)
-		asel_chkbox!.setEditable(1)
-		break
-swend
+	wk_cash_cd$=callpoint!.getUserInput()
+	gosub get_cash_rec_cd
+	gosub able_controls
 [[ARE_CASHHDR.CUSTOMER_ID.AVAL]]
 tmp_cust_id$=callpoint!.getUserInput()
 gosub get_customer_balance
@@ -492,6 +461,52 @@ rem ==================================================================
 	else
 		gridInvoice!.setColumnEditable(num(user_tpl.disc_taken_ofst$),0)
 	endif
+return
+
+rem ==================================================================
+ able_controls: rem --- Enable/disable controls based on Cash Receipt code
+rem ==================================================================
+	gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))
+	OA_chkbox!=Form!.getControl(num(user_tpl.OA_chkbox_id$))
+	zbal_chkbox!=Form!.getControl(num(user_tpl.zbal_chkbox_id$))
+	asel_chkbox!=Form!.getControl(num(user_tpl.asel_chkbox_id$))
+	switch (BBjAPI().TRUE)
+		case user_tpl.arglboth$="A"
+			rem --- Post to AR only
+			callpoint!.setOptionEnabled("GLED",0)
+			callpoint!.setOptionEnabled("OACT",1)
+			gridInvoice!.setEnabled(1)
+			OA_chkbox!.setEditable(1)
+			zbal_chkbox!.setEditable(1)
+			asel_chkbox!.setEditable(1)
+			break
+		case user_tpl.arglboth$="G"
+			rem --- Post to GL only
+			callpoint!.setOptionEnabled("GLED",1)
+			callpoint!.setOptionEnabled("OACT",0)
+			gridInvoice!.clearMainGrid()				
+			gridInvoice!.setColumnStyle(0,SysGUI!.GRID_STYLE_UNCHECKED)				
+			gridInvoice!.setSelectedCell(0,0)
+			gridInvoice!.setEnabled(0)
+			OA_chkbox!.setSelected(0)
+			OA_chkbox!.setEditable(0)
+			zbal_chkbox!.setSelected(0)
+			zbal_chkbox!.setEditable(0)
+			asel_chkbox!.setSelected(0)
+			asel_chkbox!.setEditable(0)
+			break
+		case default
+			rem --- Post to both AR and GL
+			callpoint!.setOptionEnabled("GLED",1)
+			callpoint!.setOptionEnabled("OACT",1)
+			gridInvoice!.setEnabled(1)
+			OA_chkbox!.setEditable(1)
+			zbal_chkbox!.setEditable(1)
+			asel_chkbox!.setEditable(1)
+			break
+	swend
+
+	callpoint!.setStatus("REFRESH")
 return
 
 rem ==================================================================

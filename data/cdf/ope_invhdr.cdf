@@ -1785,6 +1785,11 @@ rem ==========================================================================
 		callpoint!.setColumnData("OPE_INVHDR.TAX_CODE",custdet.tax_code$)
 	endif
 
+	disc_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	gosub calculate_tax
+	gosub disp_totals
+
 	callpoint!.setStatus("REFRESH")
 
 	return
@@ -2635,14 +2640,16 @@ rem IN: disc_amt
 rem IN: freight_amt
 rem ==========================================================================
 
-	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,
-:										num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
-:										num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
+	if cvs(callpoint!.getColumnData("OPE_INVHDR.TAX_CODE"),2) <> ""
+		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+		ordHelp!.setTaxCode(callpoint!.getColumnData("OPE_INVHDR.TAX_CODE"))
+		tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,
+:											num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+:											num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 
-	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
-	callpoint!.setStatus("REFRESH")
-
+		callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
+		callpoint!.setStatus("REFRESH")
+	endif
 	return
 
 rem ==========================================================================

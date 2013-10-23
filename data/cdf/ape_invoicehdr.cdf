@@ -1,3 +1,39 @@
+[[APE_INVOICEHDR.VENDOR_ID.BINQ]]
+rem --- Call custom query to only select vendors with selected AP Type
+
+	ap_type$=callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE")
+	if cvs(ap_type$,2)<>""
+		myapi! = BBjAPI()
+		myNS! = myapi!.getNamespace("ap_type","query",1)
+		myNS!.setValue("ap_type",ap_type$)
+
+		dim filter_defs$[1,2]
+		filter_defs$[1,0]="APM_VENDMAST.FIRM_ID"
+		filter_defs$[1,1]="='"+firm_id$+"'"
+		filter_defs$[1,2]="LOCK"
+
+		call STBL("+DIR_SYP")+"bax_query.bbj",
+:			gui_dev, 
+:			form!,
+:			"AP_INV_VEND",
+:			"DEFAULT",
+:			table_chans$[all],
+:			sel_key$,
+:			filter_defs$[all]
+
+		if sel_key$<>""
+			call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:				"APM_VENDMAST",
+:				"PRIMARY",
+:				apm_vend_key$,
+:				table_chans$[all],
+:				status$
+			dim apm_vend_key$:apm_vend_key$
+			apm_vend_key$=sel_key$
+			callpoint!.setColumnData("APE_INVOICEHDR.VENDOR_ID",apm_vend_key.vendor_id$,1)
+		endif
+		callpoint!.setStatus("ACTIVATE-ABORT")
+	endif
 [[APE_INVOICEHDR.AWIN]]
 rem --- setup utility
 

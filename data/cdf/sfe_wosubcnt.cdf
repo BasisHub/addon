@@ -1,3 +1,7 @@
+[[SFE_WOSUBCNT.AGDR]]
+rem --- Show ISN as Reference Number
+	isn$=callpoint!.getColumnData("SFE_WOSUBCNT.INTERNAL_SEQ_NO")
+	callpoint!.setColumnData("<<DISPLAY>>.REFERENCE_NO",isn$(7),1)
 [[SFE_WOSUBCNT.AGRE]]
 rem --- look at po/req number; if different than it was when we entered the row, update and/or remove link in corresponding po/req detail line
 
@@ -180,6 +184,10 @@ rem --- enable/disable PO-related fields based on PO Status (enabled if P or R)
 	
 	line_type$=callpoint!.getColumnData("SFE_WOSUBCNT.LINE_TYPE")
 	gosub enable_po_fields
+
+rem --- Show ISN as Reference Number
+	isn$=callpoint!.getColumnData("SFE_WOSUBCNT.INTERNAL_SEQ_NO")
+	callpoint!.setColumnData("<<DISPLAY>>.REFERENCE_NO",isn$(7),1)
 
 rem --- save current po status flag, po/req# and line#
 

@@ -1,3 +1,21 @@
+[[ARR_AGINGREPORT.COL_FORMAT.AVAL]]
+rem --- Enable/Disable Comments field based on this value
+
+	if callpoint!.getUserInput()="Y"
+		callpoint!.setColumnData("ARR_AGINGREPORT.CUST_COMMENTS","",1)
+		callpoint!.setColumnEnabled("ARR_AGINGREPORT.CUST_COMMENTS",0)
+	else
+		callpoint!.setColumnEnabled("ARR_AGINGREPORT.CUST_COMMENTS",1)
+	endif
+[[ARR_AGINGREPORT.REPORT_SUMM_DET.AVAL]]
+rem --- Enable/Disable Comments field based on this value
+
+	if callpoint!.getUserInput()="S"
+		callpoint!.setColumnData("ARR_AGINGREPORT.CUST_COMMENTS","",1)
+		callpoint!.setColumnEnabled("ARR_AGINGREPORT.CUST_COMMENTS",0)
+	else
+		callpoint!.setColumnEnabled("ARR_AGINGREPORT.CUST_COMMENTS",1)
+	endif
 [[ARR_AGINGREPORT.AGEDATE_FUT_FROM.AVAL]]
 tmp_cur_from$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM")
 tmp_30_from$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_30_FROM")
