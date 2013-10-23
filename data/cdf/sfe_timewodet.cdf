@@ -1,43 +1,21 @@
+[[SFE_TIMEWODET.AWRI]]
+
+	gosub calc_header_hrs
+[[SFE_TIMEWODET.BDGX]]
+
+	gosub calc_header_hrs
 [[SFE_TIMEWODET.BDEL]]
-rem --- Update entered_hrs
-	previous_hrs=num(callpoint!.getDevObject("previous_hrs"))
-	previous_setup_time=num(callpoint!.getDevObject("previous_setup_time"))
-	entered_hrs=num(callpoint!.getHeaderColumnData("<<DISPLAY>>.ENTERED_HRS"))
-	entered_hrs=entered_hrs-previous_hrs-previous_setup_time
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.ENTERED_HRS",str(entered_hrs))
-	control_entered_hrs!=callpoint!.getDevObject("control_entered_hrs")
-	control_entered_hrs!.setText(str(entered_hrs))
-	callpoint!.setStatus("REFRESH")
+
+	gosub calc_header_hrs
 [[SFE_TIMEWODET.AUDE]]
-rem --- Update entered_hrs
-	hrs=num(callpoint!.getDevObject("previous_hrs"))
-	setup_time=num(callpoint!.getDevObject("previous_setup_time"))
-	entered_hrs=num(callpoint!.getHeaderColumnData("<<DISPLAY>>.ENTERED_HRS"))
-	entered_hrs=entered_hrs+hrs+setup_time
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.ENTERED_HRS",str(entered_hrs))
-	control_entered_hrs!=callpoint!.getDevObject("control_entered_hrs")
-	control_entered_hrs!.setText(str(entered_hrs))
-	callpoint!.setStatus("REFRESH")
+
+	gosub calc_header_hrs
 [[SFE_TIMEWODET.AGRE]]
 rem --- Display operation step
 	oper_seq_no$=callpoint!.getColumnData("SFE_TIMEWODET.OPER_SEQ_REF")
 	gosub set_op_step
 
-rem --- Update entered_hrs, unless row has been deleted
-	if callpoint!.getGridRowDeleteStatus(callpoint!.getValidationRow())<>"Y" then
-		hrs=num(callpoint!.getColumnData("SFE_TIMEWODET.HRS"))
-		setup_time=num(callpoint!.getColumnData("SFE_TIMEWODET.SETUP_TIME"))
-		previous_hrs=num(callpoint!.getDevObject("previous_hrs"))
-		previous_setup_time=num(callpoint!.getDevObject("previous_setup_time"))
-		if hrs<>previous_hrs or setup_time<>previous_setup_time then
-			entered_hrs=num(callpoint!.getHeaderColumnData("<<DISPLAY>>.ENTERED_HRS"))
-			entered_hrs=entered_hrs+(hrs-previous_hrs)+(setup_time-previous_setup_time)
-			callpoint!.setHeaderColumnData("<<DISPLAY>>.ENTERED_HRS",str(entered_hrs))
-			control_entered_hrs!=callpoint!.getDevObject("control_entered_hrs")
-			control_entered_hrs!.setText(str(entered_hrs))
-			callpoint!.setStatus("REFRESH")
-		endif
-	endif
+	gosub calc_header_hrs
 [[SFE_TIMEWODET.BGDR]]
 rem --- Display operation step
 	oper_seq_no$=callpoint!.getColumnData("SFE_TIMEWODET.OPER_SEQ_REF")
@@ -314,6 +292,27 @@ rem ==========================================================================
 	dim wooprtn$:callpoint!.getDevObject("sfe_wooprtn_tpl")
 	findrecord(wooprtn_dev,key=firm_id$+wo_location$+wo_no$+oper_seq_no$,knum="AO_OP_SEQ",dom=*next)wooprtn$
 	callpoint!.setColumnData("<<DISPLAY>>.OP_STEP",wooprtn.op_seq$,1)
+	return
+
+rem ==========================================================================
+calc_header_hrs:
+rem ==========================================================================
+
+	entered_hrs=0
+	dim dtl_rec$:fnget_tpl$("SFE_TIMEWODET")
+	dtl_vect!=GridVect!.getItem(0)
+	if dtl_vect!<>null() and dtl_vect!.size()
+	for i=0 to dtl_vect!.size()-1
+		dtl_rec$=dtl_vect!.getItem(i)
+		if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y"
+			entered_hrs=entered_hrs+dtl_rec.hrs+dtl_rec.setup_time
+		endif
+	next i
+	callpoint!.setHeaderColumnData("<<DISPLAY>>.ENTERED_HRS",str(entered_hrs))
+	control_entered_hrs!=callpoint!.getDevObject("control_entered_hrs")
+	control_entered_hrs!.setText(str(entered_hrs))
+	callpoint!.setStatus("REFRESH")
+
 	return
 [[SFE_TIMEWODET.STOP_TIME.AVAL]]
 rem --- Capture entry so can be used for next new start time

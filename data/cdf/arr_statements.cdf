@@ -76,8 +76,9 @@ disable_ctls:rem --- disable selected control - I = inactive, blank = active
 	return
 [[ARR_STATEMENTS.ARAR]]
 rem --- Set default value
-	callpoint!.setColumnData("ARR_STATEMENTS.CURSTM_DATE",date(0:"%Yd%Mz%Dz"))
-	callpoint!.setStatus("REFRESH")
+	dim sysinfo$:stbl("+SYSINFO_TPL")
+	sysinfo$=stbl("+SYSINFO")
+	callpoint!.setColumnData("ARR_STATEMENTS.CURSTM_DATE",sysinfo.system_date$,1)
 	dctl$="ARR_STATEMENTS.CUSTOMER_ID"
 	dmap$="I"
 	gosub disable_ctls
@@ -87,4 +88,3 @@ rem --- Set default value
 	dctl$="ARR_STATEMENTS.REPORT_SEQUENCE"
 	dmap$=" "
 	gosub disable_ctls
-

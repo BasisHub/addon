@@ -1,3 +1,6 @@
+[[<<DISPLAY>>.PLACE_HOLDER.BINP]]
+rem --- Second input field needed so can tab/enter out of COMMIT_THRU field
+callpoint!.setFocus("OPU_COMMREL.COMMIT_THRU")
 [[OPU_COMMREL.AREC]]
 rem --- Open table and get template
 

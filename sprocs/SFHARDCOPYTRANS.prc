@@ -268,8 +268,8 @@ rem --- Construct the various potential transaction SELECTs to be UNIONed
         opn_ops_select$=opn_ops_select$+"     , 'O' AS record_id "
         opn_ops_select$=opn_ops_select$+"     , oops.trans_seq  "
         opn_ops_select$=opn_ops_select$+"     , oops.oper_seq_ref AS seq_ref  "
-        opn_ops_select$=opn_ops_select$+"     , '' AS trans_warehouse_id  "
-        opn_ops_select$=opn_ops_select$+"     , '' AS trans_item_id  "
+        opn_ops_select$=opn_ops_select$+"     , ' ' AS trans_warehouse_id  "
+        opn_ops_select$=opn_ops_select$+"     , ' ' AS trans_item_id  "
         opn_ops_select$=opn_ops_select$+"FROM sft_opnoprtr AS oops "
         opn_ops_select$=opn_ops_select$+where_clause$
         
@@ -283,8 +283,8 @@ rem --- Construct the various potential transaction SELECTs to be UNIONed
         clsd_ops_select$=clsd_ops_select$+"     , 'O' AS record_id "
         clsd_ops_select$=clsd_ops_select$+"     , cops.trans_seq  "
         clsd_ops_select$=clsd_ops_select$+"     , cops.oper_seq_ref AS seq_ref  "
-        clsd_ops_select$=clsd_ops_select$+"     , '' AS trans_warehouse_id  "
-        clsd_ops_select$=clsd_ops_select$+"     , '' AS trans_item_id  "
+        clsd_ops_select$=clsd_ops_select$+"     , ' ' AS trans_warehouse_id  "
+        clsd_ops_select$=clsd_ops_select$+"     , ' ' AS trans_item_id  "
         clsd_ops_select$=clsd_ops_select$+"FROM sft_clsoprtr AS cops "
         clsd_ops_select$=clsd_ops_select$+where_clause$ 
         
@@ -328,8 +328,8 @@ rem --- Construct the various potential transaction SELECTs to be UNIONed
         opn_sub_select$=opn_sub_select$+"     , 'S' AS record_id "
         opn_sub_select$=opn_sub_select$+"     , osub.trans_seq  "
         opn_sub_select$=opn_sub_select$+"     , osub.subcont_seq_ref AS seq_ref  "
-        opn_sub_select$=opn_sub_select$+"     , '' AS trans_warehouse_id  "
-        opn_sub_select$=opn_sub_select$+"     , '' AS trans_item_id  "
+        opn_sub_select$=opn_sub_select$+"     , ' ' AS trans_warehouse_id  "
+        opn_sub_select$=opn_sub_select$+"     , ' ' AS trans_item_id  "
         opn_sub_select$=opn_sub_select$+"FROM sft_opnsubtr AS osub "
         opn_sub_select$=opn_sub_select$+where_clause$
         
@@ -343,8 +343,8 @@ rem --- Construct the various potential transaction SELECTs to be UNIONed
         clsd_sub_select$=clsd_sub_select$+"     , 'S' AS record_id "
         clsd_sub_select$=clsd_sub_select$+"     , csub.trans_seq  "
         clsd_sub_select$=clsd_sub_select$+"     , csub.subcont_seq_ref AS seq_ref  "
-        clsd_sub_select$=clsd_sub_select$+"     , '' AS trans_warehouse_id  "
-        clsd_sub_select$=clsd_sub_select$+"     , '' AS trans_item_id  "
+        clsd_sub_select$=clsd_sub_select$+"     , ' ' AS trans_warehouse_id  "
+        clsd_sub_select$=clsd_sub_select$+"     , ' ' AS trans_item_id  "
         clsd_sub_select$=clsd_sub_select$+"FROM sft_clssubtr AS csub "
         clsd_sub_select$=clsd_sub_select$+where_clause$ 
         
@@ -461,7 +461,8 @@ rem --- Process Transactions
         rem --- Based on Trans Type, fill type-specific fields
 
         transtype=pos(read_tpl.record_id$="MOS")-1
-        switch transtype
+ 
+		switch transtype
             case 0
                 rem --- Materials
                 dim ivm_itemmast$:fattr(ivm_itemmast$)
