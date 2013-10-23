@@ -48,8 +48,8 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-	temp$="ITEM:C(1*), OP_SEQ:C(1*), SCRAP:C(1*), DIVISOR:C(1*), FACTOR:C(1*), QTY_REQ:C(1*), "
-	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
+	temp$="REF_NO:C(1*), ITEM:C(1*), OP_SEQ:C(1*), SCRAP:C(1*), DIVISOR:C(1*), FACTOR:C(1*), "
+	temp$=temp$+"QTY_REQ:C(1*), UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
 	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
 	
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
@@ -70,14 +70,14 @@ rem	call stbl("+DIR_SYP")+"bas_process_beg.bbj",stbl("+USER_ID"),rd_table_chans$
 	sf_cost_mask$=fngetmask$("sf_cost_mask","###,##0.0000-",masks$)
 	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.00-",masks$)
 	sf_hours_mask$=fngetmask$("sf_hours_mask","#,##0.00",masks$)
-	sf_units_mask$=fngetmask$("sf_units_mask","#,##0.00",mask$)
+	sf_units_mask$=fngetmask$("sf_units_mask","#,##0.00",masks$)
 	sf_rate_mask$=fngetmask$("sf_rate_mask","###.00",masks$)
 
 rem --- Init totals
 
 	tot_cost_ea=0
 	tot_cost_tot=0
-
+	
 rem --- Open files with adc
 
     files=5,begfile=1,endfile=files
@@ -152,7 +152,7 @@ rem --- generate vector for use with Op Sequence
 
 rem --- Build SQL statement
 
-	sql_prep$="select item_id, oper_seq_ref, scrap_factor, divisor, alt_factor, qty_required, "
+	sql_prep$="select wo_ref_num, item_id, oper_seq_ref, scrap_factor, divisor, alt_factor, qty_required, "
 	sql_prep$=sql_prep$+"units, unit_cost, total_units, total_cost, line_type, ext_comments "
 	sql_prep$=sql_prep$+"from sfe_womatl where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
 	
@@ -175,23 +175,36 @@ rem --- Trip Read
 		if read_tpl.line_type$="M"
 			data!.setFieldValue("ITEM",read_tpl.ext_comments$)
 		else
+ 			data!.setFieldValue("REF_NO",read_tpl.wo_ref_num$)
 			data!.setFieldValue("ITEM",read_tpl.item_id$)
-			data!.setFieldValue("SCRAP",str(read_tpl.scrap_factor:sf_hours_mask$))
+			data!.setFieldValue("SCRAP",str(read_tpl.scrap_factor:sf_units_mask$))
 			data!.setFieldValue("DIVISOR",str(read_tpl.divisor:sf_units_mask$))
-			data!.setFieldValue("FACTOR",str(read_tpl.alt_factor:sf_rate_mask$))
-			data!.setFieldValue("QTY_REQ",str(read_tpl.qty_required:sf_rate_mask$))
-			data!.setFieldValue("UNITS_EA",str(read_tpl.units:iv_cost_mask$))
-			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:iv_cost_mask$))
+			data!.setFieldValue("FACTOR",str(read_tpl.alt_factor:sf_units_mask$))
+			data!.setFieldValue("QTY_REQ",str(read_tpl.qty_required:sf_units_mask$))
+			data!.setFieldValue("UNITS_EA",str(read_tpl.units:sf_units_mask$))
+			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:sf_units_mask$))
 			if report_type$<>"T"
 				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
 				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_amt_mask$))
 			endif
 		endif
 		rs!.insert(data!)
+
+		rem --- Item description for non-M lines
+		if read_tpl.line_type$<>"M"		
 		
-		if read_tpl.line_type$<>"M"
+			rem --- To fit the form, if item desc > 30, make it two lines of 30
+			item_desc1$=cvs(ivm_itemmast.item_desc$,2)
+			item_desc2$=""
+
+			if len(item_desc1$)>30
+				item_desc2$=item_desc1$(31)
+				item_desc1$=item_desc1$(1,30)
+			endif
+		
+			rem --- Always 'print' 1st up-to-30 chars of item desc
 			data! = rs!.getEmptyRecordData()
-			data!.setFieldValue("ITEM","   "+ivm_itemmast.item_desc$)
+			data!.setFieldValue("ITEM","   "+item_desc1$)
 			if cvs(read_tpl.oper_seq_ref$,3)<>""
 				if ops_lines!.size()
 					for x=0 to ops_lines!.size()-1
@@ -202,7 +215,15 @@ rem --- Trip Read
 				endif
 			endif
 			rs!.insert(data!)
+				
+			rem --- If more than 30 chars of item desc, 'print' them
+			if cvs(item_desc2$,2)<>""	
+				data! = rs!.getEmptyRecordData()
+				data!.setFieldValue("ITEM","   "+item_desc2$)
+				rs!.insert(data!)
+			endif
 		endif
+
 		tot_recs=tot_recs+1
 		tot_cost_ea=tot_cost_ea+read_tpl.unit_cost
 		tot_cost_tot=tot_cost_tot+read_tpl.total_cost

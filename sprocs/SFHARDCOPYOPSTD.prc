@@ -66,7 +66,7 @@ rem --- Get masks
 	iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
 	sf_cost_mask$=fngetmask$("sf_cost_mask","###,##0.0000-",masks$)
 	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.00-",masks$)
-	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
+	sf_units_mask$=fngetmask$("sf_units_mask","#,###.00",masks$)
 	sf_hours_mask$=fngetmask$("sf_hours_mask","#,##0.00",masks$)
 	sf_rate_mask$=fngetmask$("sf_rate_mask","###.00",masks$)
 	
@@ -153,10 +153,10 @@ rem --- Trip Read
 			data!.setFieldValue("OP_CODE",read_tpl.op_code$+" "+opcode_tpl.code_desc$)
 			data!.setFieldValue("REQ_DATE",fndate$(read_tpl.require_date$))
 			data!.setFieldValue("HOURS",str(read_tpl.hrs_per_pce:sf_hours_mask$))
-			data!.setFieldValue("PC_HR",str(read_tpl.pcs_per_hour:ad_units_mask$))
-			data!.setFieldValue("UNITS_EA",str(read_tpl.runtime_hrs:ad_units_mask$))
+			data!.setFieldValue("PC_HR",str(read_tpl.pcs_per_hour:sf_units_mask$))
+			data!.setFieldValue("UNITS_EA",str(read_tpl.runtime_hrs:sf_units_mask$))
 			data!.setFieldValue("SETUP",str(read_tpl.setup_time:sf_hours_mask$))
-			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_time:ad_units_mask$))
+			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_time:sf_units_mask$))
 			if report_type$<>"T"
 				data!.setFieldValue("DIRECT",str(read_tpl.direct_rate:sf_rate_mask$))
 				data!.setFieldValue("OVHD",str(read_tpl.ovhd_rate:sf_rate_mask$))

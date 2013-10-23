@@ -48,7 +48,7 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-	temp$="VENDOR:C(1*), DESC:C(1*), OP_SEQ:C(1*), DATE_REQ:C(1*), STATUS:C(1*), "
+	temp$="REF_NO:C(1*), VENDOR:C(1*), DESC:C(1*), OP_SEQ:C(1*), DATE_REQ:C(1*), STATUS:C(1*), "
 	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
 	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
 	
@@ -66,7 +66,7 @@ rem --- Get masks
 	iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
 	sf_cost_mask$=fngetmask$("sf_cost_mask","###,##0.0000-",masks$)
 	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.00-",masks$)
-	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
+	sf_units_mask$=fngetmask$("sf_units_mask","#,###.00",masks$)
 	vendor_mask$=fngetmask$("vendor_mask","000000",masks$)
 
 rem --- Init totals
@@ -145,7 +145,7 @@ rem --- generate vector for use with Op Sequence
 
 rem --- Build SQL statement
 
-	sql_prep$="select vendor_id, description, oper_seq_ref, require_date, po_status, "
+	sql_prep$="select wo_ref_num, vendor_id, description, oper_seq_ref, require_date, po_status, "
 	sql_prep$=sql_prep$+"units, unit_cost, total_units, total_cost, line_type, ext_comments "
 	sql_prep$=sql_prep$+"from sfe_wosubcnt where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
 	
@@ -161,6 +161,25 @@ rem --- Trip Read
 	while 1
 		read_tpl$ = sqlfetch(sql_chan,end=*break)
 
+		rem --- Change read_tpl.po_status$ to be human-friendly
+		
+		switch pos(read_tpl.po_status$="RPC")
+			case 1
+				postatus$="Req"
+			break
+			case 2
+				postatus$="PO"
+			break
+			case 3
+				postatus$="Rcpt"
+			break
+			case default
+				postatus$="None"			
+			break
+		swend
+		
+		rem --- Assign to data!
+		
 		data! = rs!.getEmptyRecordData()
 
 		dim apm_vendmast$:fattr(apm_vendmast$)
@@ -168,13 +187,14 @@ rem --- Trip Read
 		if read_tpl.line_type$<>"S"
 			data!.setFieldValue("VENDOR",read_tpl.ext_comments$)
 		else
+ 			data!.setFieldValue("REF_NO",read_tpl.wo_ref_num$)
 			data!.setFieldValue("VENDOR",fnmask$(read_tpl.vendor_id$,vendor_mask$)+" "+apm_vendmast.vendor_name$)
 rem			data!.setFieldValue("OP_SEQ",fndate$(read_tpl.require_date$))
 rem			data!.setFieldValue("DESC",read_tpl.description$)
 			data!.setFieldValue("DATE_REQ",fndate$(read_tpl.require_date$))
-			data!.setFieldValue("STATUS",read_tpl.po_status$)
-			data!.setFieldValue("UNITS_EA",str(read_tpl.units:ad_units_mask$))
-			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:ad_units_mask$))
+			data!.setFieldValue("STATUS",postatus$)
+			data!.setFieldValue("UNITS_EA",str(read_tpl.units:sf_units_mask$))
+			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:sf_units_mask$))
 			if report_type$<>"T"
 				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
 				data!.setFieldValue("COST_TOT",str(read_tpl.total_cost:sf_amt_mask$))

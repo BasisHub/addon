@@ -201,7 +201,11 @@ rem --- Build SQL statement
             break
     swend
 
-	if len(wostatus$)>0
+	rem --- Limit resultset to Opened/Closed/Planned/Quoted based on wostatus$
+	rem --- UNLESS all four of them are specified--indicating all
+	
+	if len(wostatus$)>0  
+:	 and !(pos("O"=wostatus$)>0 and pos("C"=wostatus$)>0 and pos("P"=wostatus$)>0 and pos("Q"=wostatus$)>0)
 		where_clause$=where_clause$+" ("
 		if pos("O"=wostatus$)>0 where_clause$=where_clause$+" wo_status = 'O' OR "
 		if pos("C"=wostatus$)>0 where_clause$=where_clause$+" wo_status = 'C' OR "
@@ -388,15 +392,16 @@ get_traveler_join:
 	
 	tj_post$=""
 	tj_post$=tj_post$+") AS m "
-	tj_post$=tj_post$+"ON o.firm_id+o.wo_location+o.wo_no"
- 	tj_post$=tj_post$+" = m.firm_id+m.wo_location+m.wo_no "
+	tj_post$=tj_post$+"ON o.firm_id=m.firm_id AND "
+	tj_post$=tj_post$+"   o.wo_location=m.wo_location AND "
+	tj_post$=tj_post$+"   o.wo_no=m.wo_no "
 		
 	travel_join_pre$=tj_pre$
 	travel_join_post$=tj_post$
 	
 	return
 
-rem --- Build JOIN to wrap Traveler print file, sfe_openedwo, around sfe_womastr JOIN
+rem --- Build JOIN to wrap Closed WO print file, sfe_closedwo, around sfe_womastr JOIN
 get_closedwo_join:
 	cw_pre$=""
 	cw_pre$=cw_pre$+"SELECT m.firm_id"
@@ -440,8 +445,10 @@ get_closedwo_join:
 	
 	cw_post$=""
 	cw_post$=cw_post$+") AS m "
-	cw_post$=cw_post$+"ON c.firm_id+c.wo_location+c.wo_no"
- 	cw_post$=cw_post$+" = m.firm_id+m.wo_location+m.wo_no "
+	cw_post$=cw_post$+"ON c.firm_id=m.firm_id AND "
+	cw_post$=cw_post$+"   c.wo_location=m.wo_location AND "
+	cw_post$=cw_post$+"   c.wo_no=m.wo_no "
+
 		
 	closedwo_join_pre$=cw_pre$
 	closedwo_join_post$=cw_post$

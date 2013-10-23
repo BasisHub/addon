@@ -162,6 +162,7 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
             
             rem --- update xml files in data/sync dir
             #updateXmlFiles(new File(appDir$ + "/data/sync"))
+            
             rem --- update xml files in data/admin_backup dir
             #updateXmlFiles(new File(appDir$ + "/data/admin_backup"), newVers!)
 
@@ -232,7 +233,7 @@ method_error:rem --- Method error trap/handler
             endif
             methodret
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
@@ -309,7 +310,7 @@ method_error:rem --- Method error trap/handler
             
             methodret newVers!
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
@@ -320,10 +321,9 @@ method_error:rem --- Method error trap/handler
         methodend
 
         rem /**
-        rem  * Update adm_modules XML files in directory. 
+        rem  * Update XML files in directory. 
         rem  *
-        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
-		rem  * to point to current project's directories.
+        rem  * Exclude <VERSION_ID> tags from update.
         rem  *
         rem  * @param File dir!
         rem  */
@@ -332,11 +332,9 @@ method_error:rem --- Method error trap/handler
         methodend
 
         rem /**
-        rem  * Update adm_modules XML files in directory. 
+        rem  * Update XML files in directory. 
         rem  *
-        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
-		rem  * to point to current project's directories. Update <VERSION_ID> tags
-		rem  * from given HashMap keyed by ASC_PROD_ID.
+		rem  * Update <VERSION_ID> tags from given HashMap keyed by ASC_PROD_ID.
         rem  *
         rem  * @param File dir!
 		rem  * @param HashMap newVers!
@@ -353,18 +351,6 @@ method_error:rem --- Method error trap/handler
             declare File xml!
             fileVector! = new Vector(java.util.Arrays.asList(dir!.list()))
             appDir$ = #parseAppPath(dir!.getPath())
-			startProdIdTag$ = "<ASC_PROD_ID>"
-			startProdIdTagLen = len(startProdIdTag$)
-			endProdIdTag$ = "</ASC_PROD_ID>"
-			startVersionTag$ = "<VERSION_ID>"
-			startVersionTagLen = len(startVersionTag$)
-			endVersionTag$ = "</VERSION_ID>"
-            startLocalPath$ = "<LOCALE_PATH>"
-            startLocalPathLen = len(startLocalPath$)
-            endLocalPath$ = "</LOCALE_PATH>"
-            startDdMountDir$ = "<DD_MOUNT_DIR>"
-            startDdMountDirLen = len(startDdMountDir$)
-            endDdMountDir$ = "</DD_MOUNT_DIR>"
 
             rem --- process files in directory
             if(fileVector!.size()>0) then
@@ -373,78 +359,179 @@ method_error:rem --- Method error trap/handler
                     name$ = cast(BBjString, fileVector!.get(i))
                     xml! = new File(dir!, name$)
                     
-                    rem --- update adm_modules~*.xml files (consolidated and non-consolidated)
-                    if cast(BBjString, name$).matches("adm_modules~.*\.xml")
-                        #incrementProgressMeter("updating: " + xml!.getPath())
-                        #log("UPDATED: " + xml!.getPath())
-                        
-                        rem --- move xml file to backup file with unique name
-                        bakFile$=xml!.getPath() + ".bak"
-                        j=0
-                        testChan=unt
-                        while 1
-                            open(testChan,err=*break)bakFile$
-                            close(testChan)
-                            j=j+1
-                            bakFile$=xml!.getPath() + ".bak" + str(j)
-                        wend
-                        rename xml!.getPath() to bakFile$, err=*next
-                        
-                        rem --- copy backup file back to xml file, making necessary updates
-						module$=""
-						version$=""
-                        sourceChan=unt
-                        open(sourceChan,isz=-1)bakFile$
-                        targetChan=unt
-                        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")xml!.getPath()
-                        while 1
-                            read(sourceChan,end=*break)record$
-
-							rem --- get module ID in <ASC_PROD_ID> lines
-							if(pos(startProdIdTag$=record$)) then
-								module$ = record$(pos(startProdIdTag$=record$) + startProdIdTagLen)
-								module$ = cvs(module$(1, pos(endProdIdTag$=module$) - 1),3)
-							endif
-
-                            rem --- replace version in <VERSION_ID> lines
-							rem --- assumes <VERSION_ID> line comes after <ASC_PROD_ID> line
-                            if(pos(startVersionTag$=record$)) and newVers!<>null() and newVers!.containsKey(module$) then
-                                #log("  <<< " + record$)
-                                line$ = record$(1,pos(startVersionTag$=record$) + startVersionTagLen - 1)
-                                line$ = line$ + cast(BBjString, newVers!.get(module$))
-                                line$ = line$ + record$(pos(endVersionTag$=record$, -1))
-                                record$ = line$
-                                #log("  >>> " + record$)
-                            endif
-
-                            rem --- replace path in <LOCALE_PATH> lines
-                            if(pos(startLocalPath$=record$)) then
-                                #log("  <<< " + record$)
-                                line$ = record$(1,pos(startLocalPath$=record$) + startLocalPathLen - 1)
-                                line$ = line$ + appDir$ + "/prop/"
-                                line$ = line$ + record$(pos(endLocalPath$=record$, -1))
-                                record$ = line$
-                                #log("  >>> " + record$)
-                            endif
-
-                            rem --- replace path in <DD_MOUNT_DIR> lines
-                            if(pos(startDdMountDir$=record$)) then
-                                #log("  <<< " + record$)
-                                line$ = record$(1,pos(startDdMountDir$=record$) + startDdMountDirLen - 1)
-                                line$ = line$ + appDir$ + "/"
-                                line$ = line$ + record$(pos(endDdMountDir$=record$, -1))
-                                record$ = line$
-                                #log("  >>> " + record$)
-                            endif
-        
-                            write(targetChan)record$
-                            print(log_dev)record$
-                        wend
-                        close(sourceChan)
-                        close(targetChan)
+                    rem --- skip except adm_modules~*.xml files
+                    if !cast(BBjString, name$).matches("adm_modules~.*\.xml") and
+:                   !cast(BBjString, name$).matches("ads_autolaunch~.*\.xml")
+:                   then 
+                        continue
                     endif
+                        
+                    rem --- move xml file to backup file with unique name
+                    #incrementProgressMeter("updating: " + xml!.getPath())
+                    #log("UPDATED: " + xml!.getPath())
+                    bakFile$=xml!.getPath() + ".bak"
+                    j=0
+                    testChan=unt
+                    while 1
+                        open(testChan,err=*break)bakFile$
+                        close(testChan)
+                        j=j+1
+                        bakFile$=xml!.getPath() + ".bak" + str(j)
+                    wend
+                    rename xml!.getPath() to bakFile$, err=*next
+                    
+                    rem --- copy backup file back to xml file, making necessary updates
+                    sourceChan=unt
+                    open(sourceChan,isz=-1)bakFile$
+                    targetChan=unt
+                    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")xml!.getPath()
+                    
+                    rem --- update adm_modules~*.xml files (consolidated and non-consolidated)
+                    if cast(BBjString, name$).matches("adm_modules~.*\.xml") then
+                        #updateAdmModulesXmlFiles(sourceChan, targetChan, appDir$, newVers!)
+                    endif
+                    
+                    rem --- update ads_autolaunch~*.xml files (consolidated and non-consolidated)
+                    if cast(BBjString, name$).matches("ads_autolaunch~.*\.xml") then
+                        #updateAdsAutolaunchXmlFiles(sourceChan, targetChan)
+                    endif
+
+                    close(sourceChan)
+                    close(targetChan)
                 next i
             endif
+            methodret
+            
+method_error: rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Update adm_modules XML file. 
+        rem  *
+        rem  * Update <LOCAL_PATH> and <DD_MOUNT_DIR> tags in adm_modules XML files 
+        rem  * to point to current project's directories. Update <VERSION_ID> tags
+        rem  * from given HashMap keyed by ASC_PROD_ID.
+        rem  *
+        rem  * @param BBjNumber sourceChan
+        rem  * @param BBjNumber targetChan
+        rem  * @param BBjString appDir$
+        rem  * @param HashMap newVers!
+        rem  */
+        method private void updateAdmModulesXmlFiles(BBjNumber sourceChan, BBjNumber targetChan, BBjString appDir$, HashMap newVers!)
+            seterr method_error
+            startProdIdTag$ = "<ASC_PROD_ID>"
+            startProdIdTagLen = len(startProdIdTag$)
+            endProdIdTag$ = "</ASC_PROD_ID>"
+            startVersionTag$ = "<VERSION_ID>"
+            startVersionTagLen = len(startVersionTag$)
+            endVersionTag$ = "</VERSION_ID>"
+            startLocalPath$ = "<LOCALE_PATH>"
+            startLocalPathLen = len(startLocalPath$)
+            endLocalPath$ = "</LOCALE_PATH>"
+            startDdMountDir$ = "<DD_MOUNT_DIR>"
+            startDdMountDirLen = len(startDdMountDir$)
+            endDdMountDir$ = "</DD_MOUNT_DIR>"
+
+            rem --- copy backup file back to xml file, making necessary updates
+            while 1
+                read(sourceChan,end=*break)record$
+
+                rem --- get module ID in <ASC_PROD_ID> lines
+                if(pos(startProdIdTag$=record$)) then
+                    module$ = record$(pos(startProdIdTag$=record$) + startProdIdTagLen)
+                    module$ = cvs(module$(1, pos(endProdIdTag$=module$) - 1),3)
+                endif
+
+                rem --- replace version in <VERSION_ID> lines
+                rem --- assumes <VERSION_ID> line comes after <ASC_PROD_ID> line
+                if(pos(startVersionTag$=record$)) and newVers!<>null() and newVers!.containsKey(module$) then
+                    #log("  <<< " + record$)
+                    line$ = record$(1,pos(startVersionTag$=record$) + startVersionTagLen - 1)
+                    line$ = line$ + cast(BBjString, newVers!.get(module$))
+                    line$ = line$ + record$(pos(endVersionTag$=record$, -1))
+                    record$ = line$
+                    #log("  >>> " + record$)
+                endif
+
+                rem --- replace path in <LOCALE_PATH> lines
+                if(pos(startLocalPath$=record$)) then
+                    #log("  <<< " + record$)
+                    line$ = record$(1,pos(startLocalPath$=record$) + startLocalPathLen - 1)
+                    line$ = line$ + appDir$ + "/prop/"
+                    line$ = line$ + record$(pos(endLocalPath$=record$, -1))
+                    record$ = line$
+                    #log("  >>> " + record$)
+                endif
+
+                rem --- replace path in <DD_MOUNT_DIR> lines
+                if(pos(startDdMountDir$=record$)) then
+                    #log("  <<< " + record$)
+                    line$ = record$(1,pos(startDdMountDir$=record$) + startDdMountDirLen - 1)
+                    line$ = line$ + appDir$ + "/"
+                    line$ = line$ + record$(pos(endDdMountDir$=record$, -1))
+                    record$ = line$
+                    #log("  >>> " + record$)
+                endif
+
+                write(targetChan)record$
+            wend
+            methodret
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Update ads_autolaunch XML file. 
+        rem  *
+        rem  * Update <PROCESS_STATUS> tags in ads_autolaunch XML files 
+        rem  * to re-set status 'C' to status 'N'.
+        rem  *
+        rem  * @param BBjNumber sourceChan
+        rem  * @param BBjNumber targetChan
+        rem  */
+        method private void updateAdsAutolaunchXmlFiles(BBjNumber sourceChan, BBjNumber targetChan)
+            seterr method_error
+            startProcStatusTag$ = "<PROCESS_STATUS>"
+            startProcStatusTagLen = len(startProcStatusTag$)
+            endProcStatusTag$ = "</PROCESS_STATUS>"
+
+            rem --- copy backup file back to xml file, making necessary updates
+            while 1
+                read(sourceChan,end=*break)record$
+
+                rem --- process <PROCESS_STATUS> lines
+                if(pos(startProcStatusTag$=record$)) then
+
+                    rem --- get current status in <PROCESS_STATUS> lines
+                    status$ = record$(pos(startProcStatusTag$=record$) + startProcStatusTagLen)
+                    status$ = cvs(status$(1, pos(endProcStatusTag$=status$) - 1),3)
+                    rem --- re-set status 'C' to status 'N' in <PROCESS_STATUS> lines
+                    if status$="C" then
+                        #log("  <<< " + record$)
+                        line$ = record$(1,pos(startProcStatusTag$=record$) + startProcStatusTagLen - 1)
+                        line$ = line$ + "N"
+                        line$ = line$ + record$(pos(endProcStatusTag$=record$, -1))
+                        record$ = line$
+                        #log("  >>> " + record$)
+                    endif
+                endif
+
+                write(targetChan)record$
+            wend
             methodret
             
 method_error:rem --- Method error trap/handler
@@ -519,7 +606,7 @@ method_error:rem --- Method error trap/handler
 
             methodret count%
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
@@ -552,7 +639,7 @@ method_error:rem --- Method error trap/handler
 			endif
             methodret appDir$
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
@@ -576,7 +663,7 @@ method_error:rem --- Method error trap/handler
 
             methodret settingsDir$
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
@@ -616,7 +703,7 @@ method_error:rem --- Method error trap/handler
 :               meter_action$
             methodret meterWin!
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
@@ -698,7 +785,7 @@ method_error:rem --- Method error trap/handler
             endif
             methodret
             
-method_error:rem --- Method error trap/handler
+method_error: rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$

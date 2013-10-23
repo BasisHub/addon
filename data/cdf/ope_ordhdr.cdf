@@ -2396,19 +2396,21 @@ rem IN: disc_amt
 rem IN: freight_amt
 rem ==========================================================================
 
+	prev_sub_tot=num(callpoint!.getColumnData("<<DISPLAY>>.SUBTOTAL"))
+	prev_net_sales=num(callpoint!.getColumnData("<<DISPLAY>>.NET_SALES"))
 	ttl_ext_price = num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
 	tax_amt = num(callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT"))
 	sub_tot = ttl_ext_price - disc_amt
 	net_sales = sub_tot + tax_amt + freight_amt
 
-	callpoint!.setColumnData("OPE_ORDHDR.TOTAL_COST",str(ttl_ext_cost))
-	callpoint!.setColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
-	callpoint!.setColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
-	callpoint!.setColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
-	callpoint!.setColumnData("OPE_ORDHDR.FREIGHT_AMT",str(freight_amt))
-	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT",str(net_sales))
+	callpoint!.setColumnData("OPE_ORDHDR.TOTAL_COST",str(ttl_ext_cost),1)
+	callpoint!.setColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt),1)
+	callpoint!.setColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot),1)
+	callpoint!.setColumnData("<<DISPLAY>>.NET_SALES", str(net_sales),1)
+	callpoint!.setColumnData("OPE_ORDHDR.FREIGHT_AMT",str(freight_amt),1)
+	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT",str(net_sales),1)
 
-	callpoint!.setStatus("REFRESH")
+	if sub_tot<>prev_sub_tot or prev_net_sales<>net_sales then callpoint!.setStatus("MODIFIED")
 
 	return
 

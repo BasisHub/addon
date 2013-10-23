@@ -31,7 +31,6 @@ read (adm_proctables_dev,key=firm_id$+process_id$,dom=*next)
 keys_used=0
 file_count=0
 
-rem wgh ... 7005
 if callpoint!.getColumnData("ADM_PROCMASTER.ALLOW_BATCH")="Y" then
 	while 1
 		read record (adm_proctables_dev,end=*break)adm_proctables$
@@ -49,7 +48,6 @@ if callpoint!.getColumnData("ADM_PROCMASTER.ALLOW_BATCH")="Y" then
 	wend
 endif
 
-rem wgh ... 7005
 if file_count>0 and keys_used=0
 	callpoint!.setColumnEnabled("ADM_PROCMASTER.BATCH_ENTRY",1)
 else

@@ -1,7 +1,84 @@
-[[SFE_WOMATL.AGRN]]
-rem --- Show ISN as Reference Number
-	isn$=callpoint!.getColumnData("SFE_WOMATL.INTERNAL_SEQ_NO")
-	callpoint!.setColumnData("<<DISPLAY>>.REFERENCE_NO",isn$(7),1)
+[[SFE_WOMATL.AOPT-AUTO]]
+rem --- Update displayed row nums for inserted and deleted rows, or
+	if callpoint!.getDevObject("insertedRows")+callpoint!.getDevObject("deletedRows") then
+		msg_id$="SF_UPDATE_ROW_NO"
+		gosub disp_message
+
+		callpoint!.setDevObject("insertedRows",0)
+		callpoint!.setDevObject("deletedRows",0)
+		callpoint!.setStatus("REFGRID")
+		break
+	endif
+
+rem --- Auto create Reference Numbers
+	callpoint!.setDevObject("GridVect",GridVect!)
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"SFE_WOREFNUM",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+
+rem --- Update grid with changes
+	callpoint!.setStatus("REFGRID")
+[[SFE_WOMATL.BUDE]]
+rem --- verify wo_ref_num is unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("SFE_WOMATL.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			refnumMap!.put(wo_ref_num$,"")
+		endif
+	endif
+
+rem --- Maintain count of deleted rows
+	deletedRows=callpoint!.getDevObject("deletedRows")
+	deletedRows=deletedRows-1
+	callpoint!.setDevObject("deletedRows",deletedRows)
+[[SFE_WOMATL.WO_REF_NUM.BINP]]
+rem --- Capture starting wo_ref_num
+	prev_wo_ref_num$=callpoint!.getColumnData("SFE_WOMATL.WO_REF_NUM")
+	callpoint!.setDevObject("prev_wo_ref_num",prev_wo_ref_num$)
+[[SFE_WOMATL.BDEL]]
+rem --- Update refnumMap!
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("SFE_WOMATL.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.remove(wo_ref_num$)
+	endif
+
+rem --- Maintain count of deleted rows
+	deletedRows=callpoint!.getDevObject("deletedRows")
+	deletedRows=deletedRows+1
+	callpoint!.setDevObject("deletedRows",deletedRows)
+[[SFE_WOMATL.WO_REF_NUM.AVAL]]
+rem --- Verify wo_ref_num is unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getUserInput()
+	prev_wo_ref_num$=callpoint!.getDevObject("prev_wo_ref_num")
+	if wo_ref_num$<>prev_wo_ref_num$ then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			if cvs(wo_ref_num$,2)<>"" then refnumMap!.put(wo_ref_num$,"")
+			if cvs(prev_wo_ref_num$,2)<>"" then refnumMap!.remove(prev_wo_ref_num$)
+		endif
+	endif
 [[<<DISPLAY>>.EXPLODE_BILL.AVAL]]
 rem --- Enable/disable explode field
 	callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL",callpoint!.getUserInput())
@@ -24,10 +101,18 @@ rem --- Enable/disable explode field
 rem --- Enable/disable explode field
 	gosub enable_explode
 
-rem --- Show ISN as Reference Number
-	isn$=callpoint!.getColumnData("SFE_WOMATL.INTERNAL_SEQ_NO")
-	callpoint!.setColumnData("<<DISPLAY>>.REFERENCE_NO",isn$(7),1)
+rem --- Set ROW_NUM (material_seq may not be numbered sequentially from one when DataPorted)
+	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+	wk$=fattr(sfe_womatl$,"material_seq")
+	new_row_num=1+callpoint!.getValidationRow()
+	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
 
+rem --- Track wo_ref_num in Map to insure they are unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("SFE_WOMATL.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.put(wo_ref_num$,"")
+	endif
 [[SFE_WOMATL.BWRI]]
 rem --- Maintain a string of item/seq# for any bill being exploded (explosion done on exit)
 
@@ -124,9 +209,22 @@ rem --- check to see if item is marked special order in IV warehouse rec; if so,
 		if callpoint!.getDevObject("special_order")="Y" then callpoint!.setColumnData("SFE_WOMATL.PO_STATUS","S")
 	endif
 [[SFE_WOMATL.AREC]]
-rem --- initializations
-
+rem --- Initializations
 	callpoint!.setDevObject("special_order","N")
+
+
+rem --- Set ROW_NUM
+	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+	wk$=fattr(sfe_womatl$,"material_seq")
+	new_row_num=1+callpoint!.getValidationRow()
+	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
+
+rem --- Maintain count of inserted rows (don't count if last row)
+	if GridVect!.size()>1+callpoint!.getValidationRow() then
+		insertedRows=callpoint!.getDevObject("insertedRows")
+		insertedRows=insertedRows+1
+		callpoint!.setDevObject("insertedRows",insertedRows)
+	endif
 [[SFE_WOMATL.SCRAP_FACTOR.AVAL]]
 rem --- Calc Totals
 
@@ -749,6 +847,11 @@ declare SfUtils sfUtils!
 
 rem --- init data
 
+	refnumMap!=new java.util.HashMap()
+	callpoint!.setDevObject("refnumMap",refnumMap!)
+	callpoint!.setDevObject("insertedRows",0)
+	callpoint!.setDevObject("deletedRows",0)
+
 	all_bills$=""
 	x=0
 	t=1
@@ -798,9 +901,16 @@ rem --- Disable grid if Closed Work Order or Recurring
 		callpoint!.setTableAttribute("OPTS",opts$+"BID")
 
 		x$=callpoint!.getTableColumns()
+		worefnumPos=pos("SFE_WOMATL.WO_REF_NUM"=x$)
 		for x=1 to len(x$) step 40
-			opts$=callpoint!.getTableColumnAttribute(cvs(x$(x,40),2),"OPTS")
-			callpoint!.setTableColumnAttribute(cvs(x$(x,40),2),"OPTS",o$+"C"); rem - makes cells read only
+			rem --- Don't disable wo_ref_num for Bills Of Materials unless WO is closed
+			if x<>worefnumPos or
+:			(x=worefnumPos and 
+:			(callpoint!.getDevObject("wo_status")="C" or (callpoint!.getDevObject("wo_category")<>"I" and callpoint!.getDevObject("bm")<>"Y")))
+:			then
+				opts$=callpoint!.getTableColumnAttribute(cvs(x$(x,40),2),"OPTS")
+				callpoint!.setTableColumnAttribute(cvs(x$(x,40),2),"OPTS",opts$+"C"); rem - makes cells read only
+			endif
 		next x
 	endif
 
@@ -854,6 +964,13 @@ rem --- fill listbox for use with Op Sequence
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
 	my_grid!.setColumnListControl(ListColumn,my_control!)
+
+rem --- Disable WO_REF_NUM when locked or WO closed
+	if callpoint!.getDevObject("lock_ref_num")="Y" or callpoint!.getDevObject("wo_status")="C" then
+		opts$=callpoint!.getTableColumnAttribute("SFE_WOMATL.WO_REF_NUM","OPTS")
+		callpoint!.setTableColumnAttribute("SFE_WOMATL.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
+		callpoint!.setOptionEnabled("AUTO",0)
+	endif
 [[SFE_WOMATL.ITEM_ID.AINV]]
 rem --- Item synonym processing
 

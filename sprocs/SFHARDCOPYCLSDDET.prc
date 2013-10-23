@@ -113,8 +113,8 @@ rem --- Open files with adc
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="ivm-01",ids$[1]="IVM_ITEMMAST"
     files$[2]="ivm-02",ids$[2]="IVM_ITEMWHSE"	
-	files$[3]="ARC_DISTCODE",ids$[3]="ARC_DISTCODE"
-	files$[4]="ARS_PARAMS",ids$[4]="ARS_PARAMS"
+	files$[3]="arc_distcode",ids$[3]="ARC_DISTCODE"
+	files$[4]="ars_params",ids$[4]="ARS_PARAMS"
 	files$[5]="glm-01",ids$[5]="GLM_ACCT"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
@@ -151,15 +151,15 @@ rem --- Init
 
 rem --- Use SQL queries to gather needed data
 
-	rem --- Use VIEWs, SF_OPNTRAN_VALS and SF_COSTSUMS_ACTO, for Open Transactions 
-	rem ---  (NOTE: Closed WO Det and Summary do not use Closed Transactions) 
-	rem ---		SFT_OPNOPRTR sft-01
-	rem ---		SFT_OPNMATTR sft-21
-	rem ---		SFT_OPNSUBTR sft-31
+	rem --- Go construct open transactions subquery (for actuals)
+	gosub opentrans_subquery
+	
+	rem --- Go construct standards/requirements subquery
+	gosub stds_subquery
 		
-		tran_val_view$=" SF_OPNTRAN_VALS "
-		tran_costsums_view$=" SF_COSTSUMS_ACTO "; rem ACTO=Use Open Trans files to accum Actual
-		
+	rem --- Go construct standards' costs' sums subquery
+	gosub stds_costsum_subquery
+			
 	rem --- Build Main query 
 		rem --- Build select statement (cols we want returned from the SQL query)
 
@@ -181,43 +181,76 @@ rem --- Use SQL queries to gather needed data
 			select$=select$+"cs_act.TOT_ACT_MAT_COST, cs_act.TOT_ACT_SUB_COST, "	
 			select$=select$+"cs_act.TOT_ACT_OPS_COST "			
 			
-			
-		rem --- Build clause for getting the Transactions/Actual cost of WO
+		rem --- Build clause for getting the total Transactions/Actual cost of WO
 		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
 			actuals$=""
-			actuals$=actuals$+" (SELECT tran.Firm_ID"
-			actuals$=actuals$+"        ,tran.WO_Location"
-			actuals$=actuals$+"        ,tran.WO_No"
+			actuals$=actuals$+" (SELECT tran.firm_id"
+			actuals$=actuals$+"        ,tran.wo_location"
+			actuals$=actuals$+"        ,tran.wo_no"
 			actuals$=actuals$+"        ,SUM(tran.Ext_Cost) AS TOT_ACT_COST"
-			actuals$=actuals$+"  FROM "+tran_val_view$+" AS tran"; rem The VIEW used here is determined above
-			actuals$=actuals$+"  GROUP BY tran.Firm_ID,tran.WO_Location,tran.WO_No"; rem SUM() based on firm+loc+woNo
+			actuals$=actuals$+"  FROM "+opentrans$+" AS tran"; rem The VIEW used here is determined above
+			actuals$=actuals$+"  GROUP BY tran.firm_id,tran.wo_location,tran.wo_no"; rem SUM() based on firm+loc+woNo
 			actuals$=actuals$+" ) AS act  "
 			
 		rem --- Build clause for getting the total Standard/Requirement cost of WO
 		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
 			requirements$=""
-			requirements$=requirements$+" (SELECT std.Firm_ID"
-			requirements$=requirements$+"        ,std.WO_Location"
-			requirements$=requirements$+"        ,std.WO_No"
-			requirements$=requirements$+"        ,SUM(std.Total_Cost) AS TOT_STD_COST"
-			requirements$=requirements$+"  FROM SF_WO_REQ_VALS AS std"
-			requirements$=requirements$+"  GROUP BY std.Firm_ID,std.WO_Location,std.WO_No"; rem SUM() based on firm+loc+woNo
+			requirements$=requirements$+" (SELECT std.firm_id"
+			requirements$=requirements$+"        ,std.wo_location"
+			requirements$=requirements$+"        ,std.wo_no"
+			requirements$=requirements$+"        ,SUM(std.total_cost) AS TOT_STD_COST"
+			requirements$=requirements$+"  FROM "+std_reqs$+" AS std "
+			requirements$=requirements$+"  GROUP BY std.firm_id,std.wo_location,std.wo_no"; rem SUM() based on firm+loc+woNo
 			requirements$=requirements$+" ) AS req  "
 			
 		rem --- Build clause for getting the Standard Requirements' accumulated costs for GL breakdown (direct, overhead, Mat, Sub)
 		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
 			costsums_std$=""
 			costsums_std$=costsums_std$+" (SELECT * "
-			costsums_std$=costsums_std$+"  FROM SF_COSTSUMS_STD"
+			costsums_std$=costsums_std$+"  FROM "+std_costsums$
 			costsums_std$=costsums_std$+" ) AS cs_std  "
 
-		rem --- Build clause for getting the Standard Requirements' accumulated costs for GL breakdown (direct, overhead, Mat, Sub)
+		rem --- Build clause for getting the accumulated Actual/transaction costs for GL breakdown (direct, overhead, Mat, Sub)
 		rem ---   Note: This SQL query's resultset(a table) will be JOINed in main query
 			costsums_act$=""
-			costsums_act$=costsums_act$+" (SELECT * "
-			costsums_act$=costsums_act$+"  FROM "+tran_costsums_view$+" "
-			costsums_act$=costsums_act$+" ) AS cs_act  "
-
+			costsums_act$=costsums_act$+" (SELECT wo.firm_id"
+			costsums_act$=costsums_act$+"        ,wo.wo_location"
+			costsums_act$=costsums_act$+"        ,wo.wo_no"
+			costsums_act$=costsums_act$+"        ,(SELECT SUM(ops.ext_cost)"
+			costsums_act$=costsums_act$+"          FROM SFT_OPNOPRTR AS ops"
+			costsums_act$=costsums_act$+"          WHERE ops.firm_id=wo.firm_id"
+			costsums_act$=costsums_act$+"            AND ops.wo_location=wo.wo_location"
+			costsums_act$=costsums_act$+"            AND ops.wo_no=wo.wo_no"
+			costsums_act$=costsums_act$+"          ) AS tot_act_ops_cost"
+			costsums_act$=costsums_act$+"        ,(SELECT SUM(ops.units * ops.direct_rate) "
+			costsums_act$=costsums_act$+"          FROM SFT_OPNOPRTR AS ops"
+			costsums_act$=costsums_act$+"          WHERE ops.firm_id=wo.firm_id"
+			costsums_act$=costsums_act$+"            AND ops.wo_location=wo.wo_location"
+			costsums_act$=costsums_act$+"            AND ops.wo_no=wo.wo_no"
+			costsums_act$=costsums_act$+"          ) AS tot_act_dir_cost"
+			costsums_act$=costsums_act$+"        ,(SELECT SUM(ops.ext_cost-(ops.units * ops.direct_rate)) "
+			costsums_act$=costsums_act$+"          FROM SFT_OPNOPRTR AS ops"
+			costsums_act$=costsums_act$+"          WHERE ops.firm_id=wo.firm_id"
+			costsums_act$=costsums_act$+"            AND ops.wo_location=wo.wo_location"
+			costsums_act$=costsums_act$+"            AND ops.wo_no=wo.wo_no"
+			costsums_act$=costsums_act$+"          ) AS tot_act_ovh_cost"
+			costsums_act$=costsums_act$+"        ,(SELECT SUM(mats.ext_cost) "
+			costsums_act$=costsums_act$+"          FROM SFT_OPNMATTR AS mats"
+			costsums_act$=costsums_act$+"          WHERE mats.firm_id=wo.firm_id"
+			costsums_act$=costsums_act$+"            AND mats.wo_location=wo.wo_location"
+			costsums_act$=costsums_act$+"            AND mats.wo_no=wo.wo_no"
+			costsums_act$=costsums_act$+"          ) AS tot_act_mat_cost"
+			costsums_act$=costsums_act$+"        ,(SELECT SUM(subs.ext_cost) "
+			costsums_act$=costsums_act$+"          FROM SFT_OPNSUBTR AS subs"
+			costsums_act$=costsums_act$+"          WHERE subs.firm_id=wo.firm_id"
+			costsums_act$=costsums_act$+"            AND subs.wo_location=wo.wo_location"
+			costsums_act$=costsums_act$+"            AND subs.wo_no=wo.wo_no"
+			costsums_act$=costsums_act$+"          ) AS tot_act_sub_cost"
+			costsums_act$=costsums_act$+"  FROM SFE_WOMASTR AS wo	  "
+			costsums_act$=costsums_act$+"  WHERE wo.firm_id = '"+firm_id$+"' "
+			costsums_act$=costsums_act$+"    AND wo.wo_location = '"+wo_loc$+"' "
+			costsums_act$=costsums_act$+"    AND wo.wo_no = '"+wo_no$+"' "	
+			costsums_act$=costsums_act$+" ) AS cs_act  "				
 						
 		rem --- Build the complete SQL SELECT statement
 
@@ -225,26 +258,32 @@ rem --- Use SQL queries to gather needed data
 			sql_prep$=sql_prep$+"SELECT "+select$
 			sql_prep$=sql_prep$+"FROM "+requirements$; rem The query, requirements$, is used here as a table
 			sql_prep$=sql_prep$+"INNER JOIN SFE_WOMASTR AS wo "
-			sql_prep$=sql_prep$+"	ON req.Firm_ID+req.WO_Location+req.WO_No "
-			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "
-			sql_prep$=sql_prep$+"LEFT JOIN "+actuals$; rem The query, actuals$, is used here as a table; LEFT JOIN since there may not be transactions
-			sql_prep$=sql_prep$+"	ON act.Firm_ID+act.WO_Location+act.WO_No "
-			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "	
-			sql_prep$=sql_prep$+"LEFT JOIN "+costsums_std$; rem The query, costsums_std$, is used here as a table; LEFT JOIN since there may not be cs_stdations
-			sql_prep$=sql_prep$+"	ON cs_std.Firm_ID+cs_std.WO_Location+cs_std.WO_No "
-			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "				
-			sql_prep$=sql_prep$+"LEFT JOIN "+costsums_act$; rem The query, costsums_act$, is used here as a table; LEFT JOIN since there may not be cs_actations
-			sql_prep$=sql_prep$+"	ON cs_act.Firm_ID+cs_act.WO_Location+cs_act.WO_No "
-			sql_prep$=sql_prep$+"	 = wo.Firm_ID+wo.WO_Location+wo.WO_No "	
+			sql_prep$=sql_prep$+"	ON req.firm_id=wo.firm_id "
+			sql_prep$=sql_prep$+"  AND req.wo_location=wo.wo_location "
+			sql_prep$=sql_prep$+"  AND req.wo_no=wo.wo_no "
+			sql_prep$=sql_prep$+"LEFT JOIN "+actuals$; rem The query, tran_costsums_view$, is used here as a table; LEFT JOIN since there may not be transactions
+			sql_prep$=sql_prep$+"	ON act.firm_id=wo.firm_id "
+			sql_prep$=sql_prep$+"  AND act.wo_location=wo.wo_location "
+			sql_prep$=sql_prep$+"  AND act.wo_no=wo.wo_no "
+			sql_prep$=sql_prep$+"LEFT JOIN "+costsums_std$; rem The query, costsums_std$, is used here as a table; LEFT JOIN since there may not be cs_stds
+			sql_prep$=sql_prep$+"	ON cs_std.firm_id=wo.firm_id "
+			sql_prep$=sql_prep$+"  AND cs_std.wo_location=wo.wo_location "
+			sql_prep$=sql_prep$+"  AND cs_std.wo_no=wo.wo_no "
+			sql_prep$=sql_prep$+"LEFT JOIN "+costsums_act$; rem The query, costsums_act$, is used here as a table; LEFT JOIN since there may not be cs_acts
+			sql_prep$=sql_prep$+"	ON cs_act.firm_id=wo.firm_id "
+			sql_prep$=sql_prep$+"  AND cs_act.wo_location=wo.wo_location "
+			sql_prep$=sql_prep$+"  AND cs_act.wo_no=wo.wo_no "
 			sql_prep$=sql_prep$+"LEFT JOIN IVM_ITEMWHSE AS wh "; rem To get IV UnitCost, if there
-			sql_prep$=sql_prep$+"	ON wo.firm_id+wo.warehouse_id+wo.item_id "
-			sql_prep$=sql_prep$+"	 = wh.firm_id+wh.warehouse_id+wh.item_id "
+			sql_prep$=sql_prep$+"	ON wo.firm_id=wh.firm_id "
+			sql_prep$=sql_prep$+"  AND wo.warehouse_id=wh.warehouse_id "
+			sql_prep$=sql_prep$+"  AND wo.item_id=wh.item_id "
 			sql_prep$=sql_prep$+"LEFT JOIN SFC_WOTYPECD AS typ "; rem To get TypeCode Desc, STDACT_FLAG, & GL accts, if there
-			sql_prep$=sql_prep$+"       ON wo.Firm_ID+'A'+wo.WO_Type "
-			sql_prep$=sql_prep$+"        = typ.Firm_ID+'A'+typ.WO_Type	"
-			sql_prep$=sql_prep$+"WHERE wo.Firm_ID = '"+firm_id$+"' "
-			sql_prep$=sql_prep$+"  AND wo.WO_Location = '"+wo_loc$+"' "
-			sql_prep$=sql_prep$+"  AND wo.WO_No = '"+wo_no$+"' "			
+			sql_prep$=sql_prep$+"       ON wo.firm_id=typ.firm_id "
+			sql_prep$=sql_prep$+"      AND typ.record_id_a='A' "
+			sql_prep$=sql_prep$+"      AND wo.wo_type=typ.wo_type "
+			sql_prep$=sql_prep$+"WHERE wo.firm_id = '"+firm_id$+"' "
+			sql_prep$=sql_prep$+"  AND wo.wo_location = '"+wo_loc$+"' "
+			sql_prep$=sql_prep$+"  AND wo.wo_no = '"+wo_no$+"' "			
 
 			sql_chan=sqlunt
 			sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -266,8 +305,8 @@ rem --- Assign values from SQL query
 	complete_yn$ 	 	= read_tpl.COMPLETE_FLG$
 	recalc_flag$ 		= read_tpl.RECALC_FLAG$
 
-	IF complete_yn$<>"Y" THEN 
-		LET bal_still_open_qty=curr_prod_qty-(prior_clsd_qty+this_close_qty)
+	if complete_yn$<>"Y" then 
+		bal_still_open_qty=curr_prod_qty-(prior_clsd_qty+this_close_qty)
 	else
 		bal_still_open_qty=0
 	endif
@@ -565,7 +604,108 @@ rem --- Tell the stored procedure to return the result set.
 	goto std_exit
 
 rem --- Subroutines
-		
+
+rem --- Construct a subquery to get standards/requirements
+rem --- Limits to the firm+wo_location+wo_no passed in
+	stds_subquery:
+		std_reqs$=std_reqs$+" (SELECT ops.firm_id"
+		std_reqs$=std_reqs$+"        ,ops.wo_location"
+		std_reqs$=std_reqs$+"        ,ops.wo_no"
+		std_reqs$=std_reqs$+"        ,ops.tot_std_cost AS total_cost"
+		std_reqs$=std_reqs$+"   FROM sfe_wooprtn AS ops"
+		std_reqs$=std_reqs$+"  WHERE ops.firm_id = '"+firm_id$+"' "
+		std_reqs$=std_reqs$+"    AND ops.wo_location = '"+wo_loc$+"' "
+		std_reqs$=std_reqs$+"    AND ops.wo_no = '"+wo_no$+"' "	
+		std_reqs$=std_reqs$+"        UNION "
+		std_reqs$=std_reqs$+"  SELECT mat.firm_id"
+		std_reqs$=std_reqs$+"        ,mat.wo_location"
+		std_reqs$=std_reqs$+"        ,mat.wo_no"
+		std_reqs$=std_reqs$+"        ,mat.total_cost AS total_cost"
+		std_reqs$=std_reqs$+"   FROM sfe_womatl AS mat"
+		std_reqs$=std_reqs$+"  WHERE mat.firm_id = '"+firm_id$+"' "
+		std_reqs$=std_reqs$+"    AND mat.wo_location = '"+wo_loc$+"' "
+		std_reqs$=std_reqs$+"    AND mat.wo_no = '"+wo_no$+"' "	
+		std_reqs$=std_reqs$+"        UNION "
+		std_reqs$=std_reqs$+"  SELECT sub.firm_id"
+		std_reqs$=std_reqs$+"        ,sub.wo_location"
+		std_reqs$=std_reqs$+"        ,sub.wo_no"
+		std_reqs$=std_reqs$+"        ,sub.total_cost AS total_cost"
+		std_reqs$=std_reqs$+"   FROM sfe_wosubcnt AS sub"
+		std_reqs$=std_reqs$+"  WHERE sub.firm_id = '"+firm_id$+"' "
+		std_reqs$=std_reqs$+"    AND sub.wo_location = '"+wo_loc$+"' "
+		std_reqs$=std_reqs$+"    AND sub.wo_no = '"+wo_no$+"' "
+		std_reqs$=std_reqs$+" ) "		
+	return
+
+rem --- Construct a subquery to get open transactions
+rem --- Limits to the firm+wo_location+wo_no passed in
+	opentrans_subquery:
+		opentrans$=opentrans$+" (SELECT ops.firm_id"
+		opentrans$=opentrans$+"        ,ops.wo_location"
+		opentrans$=opentrans$+"        ,ops.wo_no"
+		opentrans$=opentrans$+"        ,ops.ext_cost"
+		opentrans$=opentrans$+"   FROM sft_opnoprtr AS ops"
+		opentrans$=opentrans$+"  WHERE ops.firm_id = '"+firm_id$+"' "
+		opentrans$=opentrans$+"    AND ops.wo_location = '"+wo_loc$+"' "
+		opentrans$=opentrans$+"    AND ops.wo_no = '"+wo_no$+"' "			
+		opentrans$=opentrans$+"        UNION "
+		opentrans$=opentrans$+"  SELECT mat.firm_id"
+		opentrans$=opentrans$+"        ,mat.wo_location"
+		opentrans$=opentrans$+"        ,mat.wo_no"
+		opentrans$=opentrans$+"        ,mat.ext_cost"
+		opentrans$=opentrans$+"   FROM sft_opnmattr AS mat"
+		opentrans$=opentrans$+"  WHERE mat.firm_id = '"+firm_id$+"' "
+		opentrans$=opentrans$+"    AND mat.wo_location = '"+wo_loc$+"' "
+		opentrans$=opentrans$+"    AND mat.wo_no = '"+wo_no$+"' "			
+		opentrans$=opentrans$+"        UNION "
+		opentrans$=opentrans$+"  SELECT sub.firm_id"
+		opentrans$=opentrans$+"        ,sub.wo_location"
+		opentrans$=opentrans$+"        ,sub.wo_no"
+		opentrans$=opentrans$+"        ,sub.ext_cost"
+		opentrans$=opentrans$+"   FROM sft_opnsubtr AS sub"
+		opentrans$=opentrans$+"  WHERE sub.firm_id = '"+firm_id$+"' "
+		opentrans$=opentrans$+"    AND sub.wo_location = '"+wo_loc$+"' "
+		opentrans$=opentrans$+"    AND sub.wo_no = '"+wo_no$+"' "		
+		opentrans$=opentrans$+" )  "		
+	return	
+	
+rem --- Construct a subquery to get standards' costs' sums
+rem --- Limits to the firm+wo_location+wo_no passed in
+	stds_costsum_subquery:
+		std_costsums$=std_costsums$+" (SELECT wo.firm_id"
+		std_costsums$=std_costsums$+"        ,wo.wo_location"
+		std_costsums$=std_costsums$+"        ,wo.wo_no"
+		std_costsums$=std_costsums$+"        ,(SELECT SUM(ops.total_time * ops.direct_rate)"
+		std_costsums$=std_costsums$+"          FROM sfe_wooprtn AS ops"
+		std_costsums$=std_costsums$+"          WHERE ops.firm_id = '"+firm_id$+"' "
+		std_costsums$=std_costsums$+"            AND ops.wo_location = '"+wo_loc$+"' "
+		std_costsums$=std_costsums$+"            AND ops.wo_no = '"+wo_no$+"' "
+		std_costsums$=std_costsums$+"         ) AS tot_std_dir_cost"
+		std_costsums$=std_costsums$+"        ,(SELECT SUM(ops.tot_std_cost-(ops.total_time * ops.direct_rate))"
+		std_costsums$=std_costsums$+"          FROM sfe_wooprtn AS ops"
+		std_costsums$=std_costsums$+"          WHERE ops.firm_id = '"+firm_id$+"' "
+		std_costsums$=std_costsums$+"            AND ops.wo_location = '"+wo_loc$+"' "
+		std_costsums$=std_costsums$+"            AND ops.wo_no = '"+wo_no$+"' "
+		std_costsums$=std_costsums$+"         ) AS tot_std_ovh_cost"
+		std_costsums$=std_costsums$+"        ,(SELECT SUM(mats.total_cost)"
+		std_costsums$=std_costsums$+"          FROM sfe_womatl AS mats"
+		std_costsums$=std_costsums$+"          WHERE mats.firm_id = '"+firm_id$+"' "
+		std_costsums$=std_costsums$+"            AND mats.wo_location = '"+wo_loc$+"' "
+		std_costsums$=std_costsums$+"            AND mats.wo_no = '"+wo_no$+"' "
+		std_costsums$=std_costsums$+"         ) AS tot_std_mat_cost"
+		std_costsums$=std_costsums$+"        ,(SELECT SUM(subs.total_cost)"
+		std_costsums$=std_costsums$+"          FROM sfe_wosubcnt AS subs"
+		std_costsums$=std_costsums$+"          WHERE subs.firm_id = '"+firm_id$+"' "
+		std_costsums$=std_costsums$+"            AND subs.wo_location = '"+wo_loc$+"' "
+		std_costsums$=std_costsums$+"            AND subs.wo_no = '"+wo_no$+"' "
+		std_costsums$=std_costsums$+"         ) AS tot_std_sub_cost"
+		std_costsums$=std_costsums$+"  FROM sfe_womastr AS wo"
+		std_costsums$=std_costsums$+"  WHERE wo.firm_id = '"+firm_id$+"' "
+		std_costsums$=std_costsums$+"    AND wo.wo_location = '"+wo_loc$+"' "
+		std_costsums$=std_costsums$+"    AND wo.wo_no = '"+wo_no$+"' "
+		std_costsums$=std_costsums$+" ) "	
+	return	
+	
 rem --- Functions
 
 rem --- Format inventory item description

@@ -84,7 +84,7 @@ rem --- Build SQL statement
 	
 	rem Modify the query of that view per passed-in parameters	
 
-		where_clause$="WHERE lots.firm_id+lots.wo_location = '"+firm_id$+wo_loc$+"' AND "
+		where_clause$="WHERE lots.firm_id = '"+firm_id$+"' AND lots.wo_location = '"+wo_loc$+"' AND "
 
 	rem Limit recordset to WO being reported on
 		where_clause$=where_clause$+"lots.wo_no = '"+wo_no$+"' AND "

@@ -1,7 +1,53 @@
+[[SFE_WOSUBCNT.WO_REF_NUM.BINP]]
+rem --- Capture starting wo_ref_num
+	prev_wo_ref_num$=callpoint!.getColumnData("SFE_WOSUBCNT.WO_REF_NUM")
+	callpoint!.setDevObject("prev_wo_ref_num",prev_wo_ref_num$)
 [[SFE_WOSUBCNT.AGDR]]
-rem --- Show ISN as Reference Number
-	isn$=callpoint!.getColumnData("SFE_WOSUBCNT.INTERNAL_SEQ_NO")
-	callpoint!.setColumnData("<<DISPLAY>>.REFERENCE_NO",isn$(7),1)
+rem --- Track wo_ref_num in Map to insure they are unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("SFE_WOSUBCNT.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.put(wo_ref_num$,"")
+	endif
+[[SFE_WOSUBCNT.WO_REF_NUM.AVAL]]
+rem --- Verify wo_ref_num is unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getUserInput()
+	if cvs(wo_ref_num$,2)<>"" and cvs(wo_ref_num$,2)<>callpoint!.getDevObject("prev_wo_ref_num") then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			refnumMap!.put(wo_ref_num$,"")
+		endif
+	endif
+[[SFE_WOSUBCNT.BDEL]]
+rem --- Update refnumMap!
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("SFE_WOSUBCNT.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.remove(wo_ref_num$)
+	endif
+[[SFE_WOSUBCNT.BUDE]]
+rem --- Verify wo_ref_num is unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("SFE_WOSUBCNT.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			refnumMap!.put(wo_ref_num$,"")
+		endif
+	endif
 [[SFE_WOSUBCNT.AGRE]]
 rem --- look at po/req number; if different than it was when we entered the row, update and/or remove link in corresponding po/req detail line
 
@@ -185,10 +231,6 @@ rem --- enable/disable PO-related fields based on PO Status (enabled if P or R)
 	line_type$=callpoint!.getColumnData("SFE_WOSUBCNT.LINE_TYPE")
 	gosub enable_po_fields
 
-rem --- Show ISN as Reference Number
-	isn$=callpoint!.getColumnData("SFE_WOSUBCNT.INTERNAL_SEQ_NO")
-	callpoint!.setColumnData("<<DISPLAY>>.REFERENCE_NO",isn$(7),1)
-
 rem --- save current po status flag, po/req# and line#
 
 	callpoint!.setDevObject("start_po_no",callpoint!.getColumnData("SFE_WOSUBCNT.PO_NO"))
@@ -325,6 +367,11 @@ rem ========================================================
 [[SFE_WOSUBCNT.BSHO]]
 use ::ado_util.src::util
 
+rem --- init data
+
+	refnumMap!=new java.util.HashMap()
+	callpoint!.setDevObject("refnumMap",refnumMap!)
+
 rem --- Disable grid if Closed Work Order or Recurring or PO not installed
 
 	if callpoint!.getDevObject("wo_status")="C" or
@@ -406,4 +453,10 @@ rem --- so even tho' code above says to disable the entire grid if PO not instal
 		callpoint!.setColumnEnabled(-1,"SFE_WOSUBCNT.PUR_ORD_SEQ_REF",1)
 		callpoint!.setColumnEnabled(-1,"SFE_WOSUBCNT.PO_NO",1)
 		callpoint!.setColumnEnabled(-1,"SFE_WOSUBCNT.LEAD_TIME",1)
+	endif
+
+rem --- Disable WO_REF_NUM when locked
+	if callpoint!.getDevObject("lock_ref_num")="Y" then
+		opts$=callpoint!.getTableColumnAttribute("SFE_WOSUBCNT.WO_REF_NUM","OPTS")
+		callpoint!.setTableColumnAttribute("SFE_WOSUBCNT.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
 	endif

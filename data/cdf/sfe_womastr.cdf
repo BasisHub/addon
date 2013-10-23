@@ -1,3 +1,28 @@
+[[SFE_WOMASTR.LOCK_REF_NUM.BINP]]
+rem --- Need to know if LOCK_REF_NUM is changed
+	prev_lockrefnum$=callpoint!.getColumnData("SFE_WOMASTR.LOCK_REF_NUM")
+	callpoint!.setDevObject("prev_lockrefnum",prev_lockrefnum$)
+[[SFE_WOMASTR.LOCK_REF_NUM.AVAL]]
+rem --- Notify when LOCK_REF_NUM is changed
+	prev_lockrefnum$=callpoint!.getDevObject("prev_lockrefnum")
+	lock_ref_num$=callpoint!.getUserInput()
+	callpoint!.setDevObject("lock_ref_num",lock_ref_num$)
+	if lock_ref_num$<>prev_lockrefnum$ then
+		dim msg_tokens$[2]
+		if lock_ref_num$="Y" then
+			msg_tokens$[1] = "lock"
+			msg_tokens$[2] = "cannot"
+		else
+			msg_tokens$[1] = "unlock"
+			msg_tokens$[2] = "can"
+		endif
+		msg_id$="SF_REFNUM_LOCK"
+		gosub disp_message
+		if msg_opt$<>"Y" then 
+			callpoint!.setColumnData("SFE_WOMASTR.LOCK_REF_NUM",prev_lockrefnum$,1)
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
 [[SFE_WOMASTR.ASVA]]
 rem --- Disable Scheduled Quantity and Yield if Inventory Item
 
@@ -592,6 +617,7 @@ rem --- set DevObjects
 	callpoint!.setDevObject("prod_qty",callpoint!.getColumnData("SFE_WOMASTR.SCH_PROD_QTY"))
 	callpoint!.setDevObject("wo_est_yield",callpoint!.getColumnData("SFE_WOMASTR.EST_YIELD"))
 	callpoint!.setDevObject("wo_category",callpoint!.getColumnData("SFE_WOMASTR.WO_CATEGORY"))
+	callpoint!.setDevObject("lock_ref_num",callpoint!.getColumnData("SFE_WOMASTR.LOCK_REF_NUM"))
 [[SFE_WOMASTR.EST_YIELD.AVAL]]
 rem --- Set DevObject
 
@@ -677,6 +703,11 @@ rem --- Copy the Work Order
 :		table_chans$[all],
 :		"",
 :		dflt_data$[all]
+
+rem --- Set LOCK_REF_NUM=Y for copied WO
+	callpoint!.setColumnData("SFE_WOMASTR.LOCK_REF_NUM","Y",1)
+	lockRefNum!=callpoint!.getControl("SFE_WOMASTR.LOCK_REF_NUM")
+	lockRefNum!.setSelected(1)
 
 	callpoint!.setStatus("SAVE")
 [[SFE_WOMASTR.SCH_PROD_QTY.AVAL]]
@@ -1250,6 +1281,8 @@ rem --- Disable Additional Options
 
 rem --- set defaults
 
+	callpoint!.setColumnData("SFE_WOMASTR.LOCK_REF_NUM","N")
+	callpoint!.setDevObject("lock_ref_num",callpoint!.getColumnData("SFE_WOMASTR.LOCK_REF_NUM"))
 	callpoint!.setColumnData("SFE_WOMASTR.WAREHOUSE_ID",str(callpoint!.getDevObject("default_wh")))
 	callpoint!.setColumnData("SFE_WOMASTR.OPENED_DATE",stbl("+SYSTEM_DATE"))
 	callpoint!.setColumnData("SFE_WOMASTR.ESTSTT_DATE",stbl("+SYSTEM_DATE"))

@@ -1,7 +1,7 @@
 [[SFE_WOCLOSE.BOVE]]
 rem --- Do custom query
 
-	query_id$="SF_CLOSE"
+	query_id$="SF_CLOSE_1"
 	query_mode$="DEFAULT"
 	dim filter_defs$[2,2]
 	filter_defs$[1,0] = "SFE_WOMASTR.FIRM_ID"

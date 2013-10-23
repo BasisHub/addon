@@ -233,8 +233,10 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
 		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no,oper_seq_ref "
 		sql_prep$=sql_prep$+"          ) AS acto "
-		sql_prep$=sql_prep$+"       ON std.firm_id+std.wo_location+std.wo_no+std.internal_seq_no "
-		sql_prep$=sql_prep$+"        = acto.firm_id+acto.wo_location+acto.wo_no+acto.oper_seq_ref "
+		sql_prep$=sql_prep$+"       ON std.firm_id=acto.firm_id "
+		sql_prep$=sql_prep$+"      AND std.wo_location=acto.wo_location "
+		sql_prep$=sql_prep$+"      AND std.wo_no=acto.wo_no "
+		sql_prep$=sql_prep$+"      AND std.internal_seq_no=acto.oper_seq_ref "
 		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
 		sql_prep$=sql_prep$+"                 ,wo_location "
 		sql_prep$=sql_prep$+"                 ,wo_no "
@@ -247,11 +249,11 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
 		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no,oper_seq_ref "
 		sql_prep$=sql_prep$+"          ) AS actc "
-		sql_prep$=sql_prep$+"       ON std.firm_id+std.wo_location+std.wo_no+std.internal_seq_no "
-		sql_prep$=sql_prep$+"        = actc.firm_id+actc.wo_location+actc.wo_no+actc.oper_seq_ref "
+		sql_prep$=sql_prep$+"       ON std.firm_id=actc.firm_id "
+		sql_prep$=sql_prep$+"      AND std.wo_location=actc.wo_location "
+		sql_prep$=sql_prep$+"      AND std.wo_no=actc.wo_no "
+		sql_prep$=sql_prep$+"      AND std.internal_seq_no=actc.oper_seq_ref "
 		sql_prep$=sql_prep$+"WHERE std.firm_id = '"+firm_id$+"' AND std.wo_location = '"+wo_loc$+"' AND std.wo_no = '"+wo_no$+"' "
-
-		rem sql_prep$=sql_prep$+"    = '01  0001024'  "
 		
 		sql_chan=sqlunt
 		sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -323,7 +325,7 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 			
 		wend
 	
-	rem --- Output Ops Dir and Ovhd totals lines (Direct Total and Overhead Total)
+	rem --- Output Ops Dir and Ovhd totals lines (Direct Total and Overhead Total) 
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("STD_AMT",fill(20,"_"))
 		data!.setFieldValue("ACT_AMT",fill(20,"_"))
@@ -404,8 +406,9 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
 		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
 		sql_prep$=sql_prep$+"          ) AS macto "		
-		sql_prep$=sql_prep$+"       ON mstd.firm_id+mstd.wo_location+mstd.wo_no "
-		sql_prep$=sql_prep$+"        = macto.firm_id+macto.wo_location+macto.wo_no "
+		sql_prep$=sql_prep$+"       ON mstd.firm_id=macto.firm_id "
+		sql_prep$=sql_prep$+"      AND mstd.wo_location=macto.wo_location "
+		sql_prep$=sql_prep$+"      AND mstd.wo_no=macto.wo_no "
 		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
 		sql_prep$=sql_prep$+"                 ,wo_location "
 		sql_prep$=sql_prep$+"                 ,wo_no "
@@ -414,11 +417,10 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
 		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
 		sql_prep$=sql_prep$+"          ) AS mactc "			
-		sql_prep$=sql_prep$+"       ON mstd.firm_id+mstd.wo_location+mstd.wo_no "
-		sql_prep$=sql_prep$+"        = mactc.firm_id+mactc.wo_location+mactc.wo_no "
+		sql_prep$=sql_prep$+"       ON mstd.firm_id=mactc.firm_id "
+		sql_prep$=sql_prep$+"      AND mstd.wo_location=mactc.wo_location "
+		sql_prep$=sql_prep$+"      AND mstd.wo_no=mactc.wo_no "
 		sql_prep$=sql_prep$+"WHERE mstd.firm_id = '"+firm_id$+"' AND mstd.wo_location = '"+wo_loc$+"' AND mstd.wo_no = '"+wo_no$+"' "
-		
-		rem sql_prep$=sql_prep$+"    = '01  0001024'  "
 		
 		sqlclose(sql_chan)
 		sql_chan=sqlunt
@@ -462,8 +464,9 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
 		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
 		sql_prep$=sql_prep$+"          ) AS sacto "		
-		sql_prep$=sql_prep$+"       ON sstd.firm_id+sstd.wo_location+sstd.wo_no "
-		sql_prep$=sql_prep$+"        = sacto.firm_id+sacto.wo_location+sacto.wo_no "
+		sql_prep$=sql_prep$+"       ON sstd.firm_id=sacto.firm_id "
+		sql_prep$=sql_prep$+"      AND sstd.wo_location=sacto.wo_location "
+		sql_prep$=sql_prep$+"      AND sstd.wo_no=sacto.wo_no "
 		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
 		sql_prep$=sql_prep$+"                 ,wo_location "
 		sql_prep$=sql_prep$+"                 ,wo_no "
@@ -472,11 +475,11 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
 		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
 		sql_prep$=sql_prep$+"          ) AS sactc "			
-		sql_prep$=sql_prep$+"       ON sstd.firm_id+sstd.wo_location+sstd.wo_no "
-		sql_prep$=sql_prep$+"        = sactc.firm_id+sactc.wo_location+sactc.wo_no "
+		sql_prep$=sql_prep$+"       ON sstd.firm_id=sactc.firm_id "
+		sql_prep$=sql_prep$+"      AND sstd.wo_location=sactc.wo_location "
+		sql_prep$=sql_prep$+"      AND sstd.wo_no=sactc.wo_no "
 		sql_prep$=sql_prep$+"WHERE sstd.firm_id = '"+firm_id$+"' AND sstd.wo_location = '"+wo_loc$+"' AND sstd.wo_no = '"+wo_no$+"' "
 		
-		rem sql_prep$=sql_prep$+"    = '01  0001024'  "
 		
 		sqlclose(sql_chan)
 		sql_chan=sqlunt
