@@ -1,3 +1,38 @@
+[[IVC_ITEMLOOKUP.ASIZ]]
+rem --- Maintain minimum Form size
+	minFormWidth=950
+	minFormHeight=350
+	formWidth=Form!.getWidth()
+	formHeight=Form!.getHeight()
+	if formWidth<minFormWidth or formHeight<minFormHeight then
+		formWidth=max(formWidth,minFormWidth)
+		formHeight=max(formHeight,minFormHeight)
+		Form!.setSize(formWidth,formHeight)
+	endif
+
+rem --- Resize search grid
+	gridSearch!=callpoint!.getDevObject("gridSearch")
+	gridYpos=gridSearch!.getY()
+	gridXpos=gridSearch!.getX()
+	gridSearch!.setSize((formWidth-gridXpos)-(5+325),(formHeight-gridYpos)-60)
+	gridSearch!.setFitToGrid(1)
+	vectSearch!=callpoint!.getDevObject("vectSearch")
+	gosub load_vect_into_grid
+
+rem --- Resize item info window
+	dims_tmpl$=callpoint!.getDevObject("dims_tmpl")
+	dim w$:dims_tmpl$
+	w$=callpoint!.getDevObject("child_window_dims")
+	w.h=(formHeight-w.y)-60
+	w.x=formWidth-325
+	callpoint!.setDevObject("child_window_dims", w$)
+	infoWin!=callpoint!.getDevObject("infoWin")
+	infoWin!.setSize(w.w,w.h)
+	infoWin!.setLocation(w.x,w.y)
+
+rem --- Resize item group box
+	grpBox!=infoWin!.getControl(15999)
+	grpBox!.setSize(w.w-10,w.h-10)
 [[IVC_ITEMLOOKUP.ASVA]]
 rem --- set find_item only if OK is clicked
 
@@ -106,11 +141,15 @@ rem ---	open rather than one that might have already been open on another channe
 
 	callpoint!.setDevObject("ivm_itemmast_dev",open_chans$[1])
 
+rem --- Initialize search results vector
+	vectSearch!=SysGUI!.makeVector()
+	callpoint!.setDevObject("vectSearch",vectSearch!)
+
 rem ---  Set up grid
 
 	dims_tmpl$ = "x:u(2),y:u(2),w:u(2),h:u(2)"
 	dim g$:dims_tmpl$
-	g.x = 10, g.y = 75, g.w = 400, g.h = 220
+	g.x = 10, g.y = 65, g.w = 610, g.h = 230
 	callpoint!.setDevObject("dims_tmpl", dims_tmpl$)
 	callpoint!.setDevObject("grid_dims", g$)
 
@@ -129,8 +168,9 @@ rem ---  Set up grid
 	dim attr_def_col_str$[0,0]
 	attr_def_col_str$[0,0]=callpoint!.getColumnAttributeTypes()
 	def_grid_cols=3
-	num_rows=10
 	dim attr_grid_col$[def_grid_cols,len(attr_def_col_str$[0,0])/5]
+	min_rows=9
+	callpoint!.setDevObject("min_rows",min_rows)
 
 	dvar_pos = fnstr_pos("DVAR", attr_def_col_str$[0,0], 5)
 	labs_pos = fnstr_pos("LABS", attr_def_col_str$[0,0], 5)
@@ -146,7 +186,7 @@ rem ---  Set up grid
 
 	attr_grid_col$[3,dvar_pos]="DESC"
 	attr_grid_col$[3,labs_pos]=Translate!.getTranslation("AON_DESCRIPTION")
-	attr_grid_col$[3,ctlw_pos]="125"	
+	attr_grid_col$[3,ctlw_pos]="350"	
 	
 	for curr_attr=1 to def_grid_cols
 		attr_grid_col$[0,1] = attr_grid_col$[0,1] + 
@@ -159,7 +199,7 @@ rem ---  Set up grid
 :		gui_dev,
 :		gridSearch!,
 :		"LINES-COLH",
-:		num_rows,
+:		min_rows,
 :		attr_def_col_str$[all],
 :		attr_disp_col$,
 :		attr_grid_col$[all]
@@ -167,24 +207,24 @@ rem ---  Set up grid
 rem --- Create Item Information window			
 		
 	dim w$:dims_tmpl$
-	w.x = 420, w.y = 65, w.w = 420, w.h = 225
+	w.x = 625, w.y = 55, w.w = 320, w.h = 230
 	callpoint!.setDevObject("child_window_dims", w$)
 
 	cxt=SysGUI!.getAvailableContext()
 	infoWin!=form!.addChildWindow(15000, w.x, w.y, w.w, w.h, "", $00000800$, cxt)
 	SysGUI!.setContext(cxt)
 
-	infoWin!.addGroupBox(15999,5,5,415,220,Translate!.getTranslation("AON_INVENTORY_DETAIL"),$$)
+	infoWin!.addGroupBox(15999,5,5,w.w-10,w.h-10,Translate!.getTranslation("AON_INVENTORY_DETAIL"),$$)
 	
 	infoWin!.addStaticText(15001,10,25,75,15,Translate!.getTranslation("AON_PRODUCT_TYPE:"),$8000$)
+	infoWin!.addStaticText(15005,10,45,75,15,"",$8000$)
 
 	infoWin!.addStaticText(15003,10,65,75,15,Translate!.getTranslation("AON_UNIT_OF_SALE:"),$8000$)
 	infoWin!.addStaticText(15004,10,85,75,15,Translate!.getTranslation("AON_WEIGHT:"),$8000$)
 
-	infoWin!.addStaticText(15005,200,25,75,15,"",$8000$)
-	infoWin!.addStaticText(15006,200,45,75,15,Translate!.getTranslation("AON_LAST_RECEIPT:"),$8000$)
-	infoWin!.addStaticText(15007,200,65,75,15,Translate!.getTranslation("AON_LAST_ISSUE:"),$8000$)
-	infoWin!.addStaticText(15008,200,85,75,15,Translate!.getTranslation("AON_LOT/SERIALIZED?:"),$8000$)
+	infoWin!.addStaticText(15006,175,65,75,15,Translate!.getTranslation("AON_LAST_RECEIPT:"),$8000$)
+	infoWin!.addStaticText(15007,175,85,75,15,Translate!.getTranslation("AON_LAST_ISSUE:"),$8000$)
+	infoWin!.addStaticText(15008,175,105,75,15,Translate!.getTranslation("AON_LOT/SERIALIZED?:"),$8000$)
 
 	infoWin!.addStaticText(15009,10,125,75,15,Translate!.getTranslation("AON_ON_HAND:"),$8000$)
 	infoWin!.addStaticText(15010,10,145,75,15,Translate!.getTranslation("AON_COMMITTED:"),$8000$)
@@ -193,44 +233,42 @@ rem --- Create Item Information window
 
 	rem --- above are labels, now add static text fields for data
 	callpoint!.setDevObject("prod_tp",  str(15101))
-	infoWin!.addStaticText(15101,95,25,75,15,"",$0000$)
+	infoWin!.addStaticText(15101,90,25,50,15,"",$0000$)
 
 	callpoint!.setDevObject("unit_sale",str(15103))
-	infoWin!.addStaticText(15103,95,65,75,15,"",$0000$)
+	infoWin!.addStaticText(15103,90,65,50,15,"",$0000$)
 
 	callpoint!.setDevObject("weight",str(15104))
-	infoWin!.addStaticText(15104,95,85,75,15,"",$0000$)
+	infoWin!.addStaticText(15104,90,85,50,15,"",$0000$)
 
 	callpoint!.setDevObject("alt_super_prompt",str(15005))
 	callpoint!.setDevObject("alt_super",str(15105))
-	infoWin!.addStaticText(15105,285,25,75,15,"",$0000$)
+	infoWin!.addStaticText(15105,90,45,125,15,"",$0000$)
 
 	callpoint!.setDevObject("last_receipt",str(15106))
-	infoWin!.addStaticText(15106,285,45,75,15,"",$0000$)
+	infoWin!.addStaticText(15106,255,65,55,15,"",$0000$)
 
 	callpoint!.setDevObject("last_issue",str(15107))
-	infoWin!.addStaticText(15107,285,65,75,15,"",$0000$)
+	infoWin!.addStaticText(15107,255,85,55,15,"",$0000$)
 
 	callpoint!.setDevObject("lot_ser",str(15108))
-	infoWin!.addStaticText(15108,285,85,75,15,"",$0000$)
+	infoWin!.addStaticText(15108,255,105,55,15,"",$0000$)
 
 	callpoint!.setDevObject("on_hand",str(15109))
-	infoWin!.addStaticText(15109,95,125,75,15,"",$0000$)
+	infoWin!.addStaticText(15109,90,125,75,15,"",$0000$)
 
 	callpoint!.setDevObject("committed",str(15110))
-	infoWin!.addStaticText(15110,95,145,75,15,"",$0000$)
+	infoWin!.addStaticText(15110,90,145,75,15,"",$0000$)
 
 	callpoint!.setDevObject("available",str(15111))
-	infoWin!.addStaticText(15111,95,165,75,15,"",$0000$)
+	infoWin!.addStaticText(15111,90,165,75,15,"",$0000$)
 
 	callpoint!.setDevObject("on_order",str(15112))
-	infoWin!.addStaticText(15112,95,185,75,15,"",$0000$)
+	infoWin!.addStaticText(15112,90,185,75,15,"",$0000$)
 
 	callpoint!.setDevObject("infoWin",infoWin!)			
 
-	if !util.alreadyResized() then 
-		util.resizeWindow(Form!, SysGui!)
-	endif
+	util.resizeWindow(Form!, SysGui!)
 [[IVC_ITEMLOOKUP.ACUS]]
 rem --- Process custom event -- used in this pgm to select lot and display info.
 rem
@@ -294,6 +332,7 @@ load_and_display_grid:
 		if len(cvs(search_text$,2)) > 0
 			if pos(firm_id$+cvs(search_text$,2)=skey$)<>1 break
 		endif
+		dim ivm_itemmast$:fattr(ivm_itemmast$)
 		read record (ivm_itemmast_dev,key=firm_id$+searchrec.item_id$,dom=*next)ivm_itemmast$
 	
 		vectSearch!.addItem(field(searchrec$,search_field$))
@@ -301,6 +340,7 @@ load_and_display_grid:
 		vectSearch!.addItem(ivm_itemmast.item_desc$)
 	wend
 
+	callpoint!.setDevObject("vectSearch",vectSearch!)
 	gosub load_vect_into_grid
 
 return
@@ -308,9 +348,11 @@ return
 load_vect_into_grid:
 
 	gridSearch!=callpoint!.getDevObject("gridSearch")
+	rem --- grid height = 24 + 19 * number of rows
+	min_rows=1+int((gridSearch!.getHeight()-24)/19)
 
-	if vectSearch!.size()
-		numrows=vectSearch!.size()/gridSearch!.getNumColumns()
+	if vectSearch!<>null() and vectSearch!.size()
+		numrows=max(vectSearch!.size()/gridSearch!.getNumColumns(),min_rows)
 		gridSearch!.clearMainGrid()
 		gridSearch!.setNumRows(numrows)
 		gridSearch!.setCellText(0,0,vectSearch!)
@@ -318,10 +360,8 @@ load_vect_into_grid:
 		gridSearch!.deselectAllCells()
 	else
 		gridSearch!.clearMainGrid()
-		gridSearch!.setNumRows(0)
+		gridSearch!.setNumRows(min_rows)
 	endif
-
-	callpoint!.setDevObject("vectSearch",vectSearch!)
 
 return
 
@@ -344,6 +384,7 @@ load_and_display_grid_sql:
 		vectSearch!.addItem(read_tpl.item_desc$)
  	wend
 
+	callpoint!.setDevObject("vectSearch",vectSearch!)
 	gosub load_vect_into_grid
 
 return

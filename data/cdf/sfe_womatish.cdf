@@ -54,8 +54,6 @@ rem --- Delete inventory issues and commitments. Must do this before sfe_womatis
 	dim sfe_womatisd$:fnget_tpl$("SFE_WOMATISD")
 	sfe_womatdtl_dev=fnget_dev("SFE_WOMATDTL")
 	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
-	sfe_wolsissu_dev=fnget_dev("SFE_WOLSISSU")
-	dim sfe_wolsissu$:fnget_tpl$("SFE_WOLSISSU")
 
 	firm_loc_wo$=callpoint!.getDevObject("firm_loc_wo")
 	read(sfe_womatisd_dev,key=firm_loc_wo$,knum="AO_DISP_SEQ",dom=*next)
@@ -66,6 +64,8 @@ rem --- Delete inventory issues and commitments. Must do this before sfe_womatis
 
 		rem --- Delete lot/serial commitments, but keep inventory commitments (for now)
 		if pos(callpoint!.getDevObject("lotser")="LS") then
+			sfe_wolsissu_dev=fnget_dev("SFE_WOLSISSU")
+			dim sfe_wolsissu$:fnget_tpl$("SFE_WOLSISSU")
 			read(sfe_wolsissu_dev,key=firm_loc_wo$+sfe_womatisd.internal_seq_no$,dom=*next)
 			while 1
 				sfe_wolsissu_key$=key(sfe_wolsissu_dev,end=*break)

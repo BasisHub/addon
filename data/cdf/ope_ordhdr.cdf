@@ -1711,7 +1711,7 @@ rem ==========================================================================
 
 		ordship_dev=fnget_dev("OPE_ORDSHIP")
 		dim ordship_tpl$:fnget_tpl$("OPE_ORDSHIP")
-		read record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*next) ordship_tpl$
+		read record (ordship_dev, key=firm_id$+cust_id$+order_no$, dom=*endif) ordship_tpl$
 
 		callpoint!.setColumnData("<<DISPLAY>>.SNAME",ordship_tpl.name$)
 		callpoint!.setColumnData("<<DISPLAY>>.SADD1",ordship_tpl.addr_line_1$)

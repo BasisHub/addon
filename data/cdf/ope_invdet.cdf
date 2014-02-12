@@ -407,7 +407,7 @@ rem --- Round
 	endif
 
 rem --- For uncommitted "O" line type sales (not quotes), move ext_price to unit_price until committed
-	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" and
+	if callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE") <> "P" and
 :	callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" and user_tpl.line_type$ = "O" 
 :	then
 		rem --- Don't overwrite existing unit_price with zero

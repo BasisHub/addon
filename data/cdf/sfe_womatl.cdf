@@ -967,9 +967,8 @@ rem --- fill listbox for use with Op Sequence
 		dim op_code$:fattr(op_code$)
 		read record (op_code,key=firm_id$+sfe02a.op_code$,dom=*next)op_code$
 		ops_lines!.addItem(sfe02a.internal_seq_no$)
-        ops_items!.addItem(sfe02a.wo_op_ref$)
+		ops_items!.addItem(sfe02a.wo_op_ref$)
 		ops_list!.addItem(sfe02a.wo_op_ref$+" - "+sfe02a.op_code$+" - "+op_code.code_desc$)
-		endif
 	wend
 
 	if ops_lines!.size()>0
