@@ -1,3 +1,94 @@
+[[ADX_COPYFIRM.ASVA]]
+rem --- Confirm ready to copy data
+	numSelected=0
+	vectFiles!=callpoint!.getDevObject("vectFiles")
+	if vectFiles!.size() > 0 then
+		numcols = num(user_tpl.gridFilesCols$)
+		for curr_row=1 to vectFiles!.size()/(numcols)-1
+			if vectFiles!.getItem(curr_row*numcols)="Y"
+				numSelected=numSelected+1
+			endif
+		next curr_row
+	endif
+	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
+	to_firm$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
+
+	if numSelected then
+		dim msg_tokens$[2]
+		msg_tokens$[0]=from_firm$
+		msg_tokens$[1]=to_firm$
+		msg_id$="AD_COPY_FIRM_CONF"
+		gosub disp_message
+		if msg_opt$<>"Y"then
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	else
+		msg_id$="AD_NO_SELECTION"
+		gosub disp_message
+		if msg_opt$<>"Y"then
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
+rem --- Copy selected data
+	if numSelected then
+		rem --- Start progress meter
+		meter_title$=Form!.getTitle()
+		meter_total_recs=numSelected
+		meter_proc_recs=0
+		meter_data$=""
+		meter_action$="WIN-LST-OK"
+		gosub disp_meter
+
+		rem --- Process selected files
+		numcols = num(user_tpl.gridFilesCols$)
+		for curr_row=0 to vectFiles!.size()/(numcols)-1
+			if vectFiles!.getItem(curr_row*numcols)="Y"
+				num_files=2
+				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+				open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
+				open_tables$[2]=vectFiles!.getItem(curr_row * numcols + 3)
+				open_opts$[1]="OTASN"
+				open_opts$[2]="OTASN"
+				gosub open_tables
+				from_table_dev=num(open_chans$[1])
+				to_table_dev=num(open_chans$[2])
+				table_tpl$=open_tpls$[1]
+
+				rem --- Increment progress meter
+				meter_data$=open_tables$[1]
+				meter_proc_recs=meter_proc_recs+1
+				meter_action$="MTR-LST"
+				gosub disp_meter
+
+				rem --- Now copy the records
+				if pos("firm_id:c"=table_tpl$)>0
+					read(from_table_dev,key=from_firm$,dom=*next)
+					while 1
+						dim rec_tpl$:table_tpl$
+						readrecord (from_table_dev,end=*break)rec_tpl$
+						if rec_tpl.firm_id$ <> from_firm$ break
+						rec_tpl.firm_id$ = to_firm$
+						writerecord (to_table_dev)rec_tpl$
+					wend
+					rem --- Close the from and to files
+					num_files=1
+					dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
+					open_opts$[1]="CX"
+					gosub open_tables
+				endif
+			endif
+		next curr_row
+
+		rem --- Stop progress meter
+		meter_data$=""
+		meter_proc_recs=meter_total_recs
+		meter_action$="LST-END"
+		gosub disp_meter
+	endif
 [[ADX_COPYFIRM.TO_FIRM_ID.AVAL]]
 rem --- Make sure 2 firms aren't the same
 	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
@@ -72,76 +163,6 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 
 		break
 	swend
-[[ADX_COPYFIRM.AOPT-CPYF]]
-rem --- Open/Lock files
-
-	vectFiles! = callpoint!.getDevObject("vectFiles")
-	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
-	numcols = num(user_tpl.gridFilesCols$)
-	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
-	to_firm$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
-
-	if cvs(from_firm$,2) = "" or cvs(to_firm$,2) = ""
-		msg_id$ = "AD_MISSING_FIRM"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-		break
-	endif
-
-	if vectFiles!.size() > 0
-		for curr_row=0 to vectFiles!.size()/(numcols)-1
-			if vectFiles!.getItem(curr_row*numcols)="Y"
-				num_files=2
-				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-				open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
-				open_tables$[2]=vectFiles!.getItem(curr_row * numcols + 3)
-				open_opts$[1]="OTASN"
-				open_opts$[2]="OTASN"
-				gosub open_tables
-				from_table_dev=num(open_chans$[1])
-				to_table_dev=num(open_chans$[2])
-				table_tpl$=open_tpls$[1]
-
-rem --- Now copy the records
-				if pos("firm_id:c"=table_tpl$)>0
-					read(from_table_dev,key=from_firm$,dom=*next)
-					while 1
-						dim rec_tpl$:table_tpl$
-						readrecord (from_table_dev,end=*break)rec_tpl$
-						if rec_tpl.firm_id$ <> from_firm$ break
-						rec_tpl.firm_id$ = to_firm$
-						writerecord (to_table_dev)rec_tpl$
-					wend
-rem --- Close the from and to files
-					num_files=1
-					dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
-					open_opts$[1]="CX"
-					gosub open_tables
-				endif
-			endif
-		next curr_row
-
-rem		callpoint!.setColumnData("ADX_COPYFIRM.ASC_COMP_ID","")
-rem		callpoint!.setColumnData("ADX_COPYFIRM.ASC_PROD_ID","")
-rem		callpoint!.setColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY","")
-rem		callpoint!.setColumnData("ADX_COPYFIRM.TO_FIRM_ID","")
-rem		callpoint!.setStatus("REFRESH")
-
-		vectFiles!.clear()
-		vectFilesMaster!.clear()
-		callpoint!.setDevObject("vectFiles",vectFiles!)
-		callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
-
-		gosub create_reports_vector
-		gosub fill_grid
-
-		prompt$="All records copied for selected table(s)."
-		x=msgbox(prompt$,64,task_description$)
-
-rem		callpoint!.setFocus("ADX_COPYFIRM.ASC_COMP_ID")
-		callpoint!.setStatus("NEWREC")
-	endif
 [[ADX_COPYFIRM.<CUSTOM>]]
 rem ==========================================================================
 format_grid: rem --- Use Barista program to format the grid
@@ -275,7 +296,7 @@ rem --- fill with File information
 							tot_recs=dec(table_fin$(77,4))
 						endif
 
-						vectFiles!.addItem("N"); rem 0
+						vectFiles!.addItem("Y"); rem 0
 						vectFiles!.addItem(ddm_tables.asc_comp_id$);rem 1
 						vectFiles!.addItem(ddm_tables.asc_prod_id$);rem 2
 						vectFiles!.addItem(ddm_tables.dd_table_alias$); rem 3
@@ -283,7 +304,7 @@ rem --- fill with File information
 						vectFiles!.addItem(str(tot_recs)); rem 5
 
 						vectFilesMaster!.addItem("Y"); rem 0 - Filtered Y or N
-						vectFilesMaster!.addItem("N"); rem 1 - Selected Y or N
+						vectFilesMaster!.addItem("Y"); rem 1 - Selected Y or N
 						vectFilesMaster!.addItem(ddm_tables.asc_comp_id$);rem 2
 						vectFilesMaster!.addItem(ddm_tables.asc_prod_id$); rem 3
 						vectFilesMaster!.addItem(ddm_tables.dd_table_alias$); rem 4

@@ -1,12 +1,48 @@
-[[ADX_CLEARFIRM.AOPT-CLRF]]
-rem --- Open/Lock files
-
-	vectFiles! = callpoint!.getDevObject("vectFiles")
-	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
-	numcols = num(user_tpl.gridFilesCols$)
+[[ADX_CLEARFIRM.ASVA]]
+rem --- Confirm ready to clear firm's selected data
+	numSelected=0
+	vectFiles!=callpoint!.getDevObject("vectFiles")
+	if vectFiles!.size() > 0 then
+		numcols = num(user_tpl.gridFilesCols$)
+		for curr_row=1 to vectFiles!.size()/(numcols)-1
+			if vectFiles!.getItem(curr_row*numcols)="Y"
+				numSelected=numSelected+1
+			endif
+		next curr_row
+	endif
 	firm$=callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY")
 
-	if vectFiles!.size() > 0
+	if numSelected then
+		dim msg_tokens$[1]
+		msg_tokens$[0]=firm$
+		msg_id$="AD_CLEAR_FIRM_FILES"
+		gosub disp_message
+		if msg_opt$<>"Y"then
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	else
+		msg_id$="AD_NO_SELECTION"
+		gosub disp_message
+		if msg_opt$<>"Y"then
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
+rem --- Clear firms selected data
+	if numSelected then
+		rem --- Start progress meter
+		meter_title$=Form!.getTitle()
+		meter_total_recs=numSelected
+		meter_proc_recs=0
+		meter_data$=""
+		meter_action$="WIN-LST-OK"
+		gosub disp_meter
+
+
+		rem --- Process selected files
+		numcols = num(user_tpl.gridFilesCols$)
 		for curr_row=0 to vectFiles!.size()/(numcols)-1
 			if vectFiles!.getItem(curr_row*numcols)="Y"
 				num_files=1
@@ -15,6 +51,14 @@ rem --- Open/Lock files
 				open_opts$[1]="OTASN"
 				gosub open_tables
 				table_dev=num(open_chans$[1])
+
+				rem --- Increment progress meter
+				meter_data$=open_tables$[1]
+				meter_proc_recs=meter_proc_recs+1
+				meter_action$="MTR-LST"
+				gosub disp_meter
+
+				rem --- Now clear the records
 				if cvs(firm$,2)=""
 					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
 					open_opts$[1]="CX"
@@ -29,26 +73,11 @@ rem --- Open/Lock files
 			endif
 		next curr_row
 
-		callpoint!.setColumnData("ADX_CLEARFIRM.ASC_COMP_ID","")
-		callpoint!.setColumnData("ADX_CLEARFIRM.ASC_PROD_ID","")
-		callpoint!.setColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY","")
-		callpoint!.setStatus("REFRESH")
-
-		vectFiles!.clear()
-		vectFilesMaster!.clear()
-		callpoint!.setDevObject("vectFiles",vectFiles!)
-		callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
-
-		gosub create_reports_vector
-		gosub fill_grid
-
-		if cvs(firm$,2)=""
-			prompt$="All firms cleared for selected table(s)."
-			x=msgbox(prompt$,64,task_description$)
-		else
-			prompt$="Selected table(s) cleared for firm "+firm$+"."
-			x=msgbox(prompt$,64,task_description$)
-		endif
+		rem --- Stop progress meter
+		meter_data$=""
+		meter_proc_recs=meter_total_recs
+		meter_action$="LST-END"
+		gosub disp_meter
 	endif
 [[ADX_CLEARFIRM.FIRM_ID_ENTRY.AVAL]]
 rem --- Set number of recs for firm selected

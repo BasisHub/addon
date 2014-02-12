@@ -354,6 +354,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		translate$="AON_WAREHOUSE"
 	endif
 
+	qty_ordered=num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))
 	if ok_to_write$="Y" and pos(line_type$="SD")<>0 
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_PODET.ITEM_ID"),3)=""
 			ok_to_write$="N"
@@ -370,7 +371,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			focus_column$="POE_PODET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
-		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+		if ok_to_write$="Y" and (qty_ordered=0 or (qty_ordered>0 and qty_ordered<num(callpoint!.getColumnData("POE_PODET.QTY_RECEIVED"))))
 			ok_to_write$="N"
 			focus_column$="POE_PODET.QTY_ORDERED"
 			translate$="AON_QUANTITY_ORDERED"
@@ -383,7 +384,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			focus_column$="POE_PODET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
-		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED"))<=0
+		if ok_to_write$="Y" and (qty_ordered=0 or (qty_ordered>0 and qty_ordered<num(callpoint!.getColumnData("POE_PODET.QTY_RECEIVED"))))
 			ok_to_write$="N"
 			focus_column$="POE_PODET.QTY_ORDERED"
 			translate$="AON_QUANTITY_ORDERED"
@@ -697,6 +698,11 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs
 endif
 
 gosub enable_by_line_type
+
+if line_type$="M" and cvs(callpoint!.getColumnData("POE_PODET.ORDER_MEMO"),2)=""
+	callpoint!.setColumnData("POE_PODET.ORDER_MEMO"," ")
+	callpoint!.setStatus("MODIFIED")
+endif
 [[POE_PODET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
 

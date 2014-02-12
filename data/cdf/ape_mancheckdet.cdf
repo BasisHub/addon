@@ -95,9 +95,8 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 				rem --- Set invoice as default
 			
 					rem callpoint!.setTableColumnAttribute("APE_MANCHECKDET.AP_INV_NO","DFLT",apt01a.ap_inv_no$)
-					callpoint!.setColumnData("APE_MANCHECKDET.AP_INV_NO",apt01a.ap_inv_no$)
- 					callpoint!.setStatus("REFRESH")
-					util.forceEdit(Form!, 0); rem start editing the invoice number on this row
+					callpoint!.setColumnData("APE_MANCHECKDET.AP_INV_NO",apt01a.ap_inv_no$,1)
+					callpoint!.setFocus(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_INV_NO",1)
 
 				rem --- Total open invoice amounts
 

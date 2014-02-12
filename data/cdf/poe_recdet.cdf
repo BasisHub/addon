@@ -529,7 +529,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="MNOV")<>0 
+	if ok_to_write$="Y" and pos(line_type$="NOV")<>0
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_RECDET.ORDER_MEMO"
@@ -826,6 +826,11 @@ rem if cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" or cvs(call
 endif
 
 	gosub enable_by_line_type
+
+if line_type$="M" and cvs(callpoint!.getColumnData("POE_RECDET.ORDER_MEMO"),2)=""
+	callpoint!.setColumnData("POE_RECDET.ORDER_MEMO"," ")
+	callpoint!.setStatus("MODIFIED")
+endif
 [[POE_RECDET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
 

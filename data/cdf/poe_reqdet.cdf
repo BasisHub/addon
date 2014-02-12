@@ -284,7 +284,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE"),3)="MNOV")<>0 
+	if ok_to_write$="Y" and pos(line_type$="NOV")<>0 
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"),3)="" 
 			ok_to_write$="N"
 			focus_column$="POE_REQDET.ORDER_MEMO"
@@ -483,6 +483,11 @@ else
 endif
 
 gosub enable_by_line_type
+
+if line_type$="M" and cvs(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"),2)=""
+	callpoint!.setColumnData("POE_REQDET.ORDER_MEMO"," ")
+	callpoint!.setStatus("MODIFIED")
+endif
 [[POE_REQDET.REQ_QTY.AVAL]]
 rem --- call poc.ua to retrieve unit cost from ivm-05, at least that's what v6 did here
 rem --- send in: R/W for retrieve or write

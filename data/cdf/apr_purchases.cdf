@@ -1,3 +1,12 @@
+[[APR_PURCHASES.PERIOD.AVAL]]
+rem --- Validate period
+	period=num(callpoint!.getUserInput())
+	if period<1 or period>num(callpoint!.getDevObject("tot_per")) then
+		msg_id$ = "INVALID_PERIOD"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 [[APR_PURCHASES.ARAR]]
 use ::ado_func.src::func	
 
@@ -28,11 +37,6 @@ rem --- Retrieve parameter data
 
 	aps01a_key$=firm_id$+"AP00"
 	find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
-	callpoint!.setColumnData("APR_PURCHASES.PERIOD",aps01a.current_per$)
-	callpoint!.setColumnData("APR_PURCHASES.YEAR",aps01a.current_year$)
-
-	tot_per$=func.getNumPeriods()
-	callpoint!.setTableColumnAttribute("APR_PURCHASES.PERIOD","MINV","01")
-	callpoint!.setTableColumnAttribute("APR_PURCHASES.PERIOD","MAXV",tot_per$)
-
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("APR_PURCHASES.PERIOD",aps01a.current_per$,1)
+	callpoint!.setColumnData("APR_PURCHASES.YEAR",aps01a.current_year$,1)
+	callpoint!.setDevObject("tot_per",func.getNumPeriods())

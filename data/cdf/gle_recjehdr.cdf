@@ -1,24 +1,4 @@
-[[GLE_RECJEHDR.REVERSE_DATE.AVAL]]
-rem perform date validation
-if user_tpl.glint$="Y"
-	
-	if cvs(callpoint!.getUserInput(),3)<>""
-		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getUserInput(),"N",period$,year$,status
-		if status>100 then callpoint!.setStatus("ABORT")	
-	endif
-endif
 [[GLE_RECJEHDR.ADIS]]
-rem --- perform date validation
-if user_tpl.glint$="Y"
-	
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_RECJEHDR.TRANS_DATE"),"N",period$,year$,status	
-	if status>100 callpoint!.setStatus("ABORT")	
-	
-	if cvs(callpoint!.getColumnData("GLE_RECJEHDR.REVERSE_DATE"),3)<>""
-		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_RECJEHDR.REVERSE_DATE"),"N",period$,year$,status
-		if status>100 then callpoint!.setStatus("ABORT")	
-	endif
-endif
 gosub calc_grid_tots
 gosub disp_totals
 [[GLE_RECJEHDR.BWRI]]
@@ -30,13 +10,6 @@ if bal<>0
 	msg_tokens$[1]=str(bal)
 	gosub disp_message
 	callpoint!.setStatus("ABORT")
-endif
-[[GLE_RECJEHDR.TRANS_DATE.AVAL]]
-rem --- perform date validation 
-if user_tpl.glint$="Y"
-	
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getUserInput(),"N",period$,year$,status	
-	if status>100 callpoint!.setStatus("ABORT")
 endif
 [[GLE_RECJEHDR.JOURNAL_ID.AVAL]]
 rem --- read glm03 -- make sure PERMIT_JE is "Y",
@@ -178,4 +151,3 @@ rem --- Disable display only columns
 	dctls!.addItem("<<DISPLAY>>.BALANCE")
 	dctls!.addItem("<<DISPLAY>>.UNITS")
 	gosub disable_ctls
-

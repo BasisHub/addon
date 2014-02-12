@@ -45,6 +45,9 @@ rem "update ivs-01 - ABC rec
 	gridABC!=UserObj!.getItem(num(user_tpl.gridABCOfst$))
 	gridRows=gridABC!.getNumRows()
 	if gridRows
+		ivs01a.firm_id$=firm_id$
+		ivs01a.IV$="IV"
+		ivs01a.sequence_02$="02"
 		extractrecord(ivs01_dev,key=firm_id$+"IV02",dom=*next)ivs01a$; rem Advisory Locking
 		for row=0 to gridRows-1
 			field ivs01a$,"ABC_PERCENTS_"+str(row+1:"00")=gridABC!.getCellText(row,1)

@@ -183,6 +183,10 @@ rem --- prompt user to explode them; if yes, explode, then re-launch form so use
 
 				dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
 				read record (bmm01_dev,key=firm_id$+explode_bill$,dom=*continue)bmm_billmast$
+				new_bill$=bmm_billmast.bill_no$
+					
+				dim sfe_womastr$:fnget_tpl$("SFE_WOMASTR")		
+				read record (sfe01_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womastr$
 			
 				all_bills$=""
 				x=0
@@ -190,12 +194,11 @@ rem --- prompt user to explode them; if yes, explode, then re-launch form so use
 				dim allbills[10,1]
 				allbills[x,0]=1
 				allbills[x,1]=1
-					
-				dim sfe_womastr$:fnget_tpl$("SFE_WOMASTR")		
-				read record (sfe01_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womastr$
 
-				new_bill$=bmm_billmast.bill_no$
-				t=num(callpoint!.getColumnData("SFE_WOMATL.UNITS"))
+				rem --- Get units for item being exploded
+				dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+				read record (sfe22_dev,key=firm_id$+wo_loc$+wo_no$+mat_isn$,knum="AO_MAT_SEQ",dom=*next)sfe_womatl$
+				t=sfe_womatl.units
 				allbills[x,0]=t
 
 				gosub explode_bills

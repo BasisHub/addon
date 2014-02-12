@@ -270,7 +270,7 @@ rem --- Recalc quantities
 :		( (qty_ord and qty_ord <> user_tpl.prev_qty_ord) or unit_price = 0 )
 :	then
 		gosub pricing
-	endif
+		endif
 
 rem --- Don't extend price until grid vector has been updated
 	rem qty_shipped = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
@@ -308,8 +308,6 @@ rem --- Has a valid whse/item been entered?
 		gosub check_item_whse
 	endif
 [[OPE_ORDDET.QTY_ORDERED.BINP]]
-print "Det:QTY_ORDERED.BINP"; rem debug
-
 rem --- Get prev qty / enable repricing, options, lots
 
 	user_tpl.prev_qty_ord = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
@@ -639,8 +637,8 @@ rem --- Set header total amounts
 
 	use ::ado_order.src::OrderHelper
 
-	cust_id$  = cvs(callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID"), 2)
-	order_no$ = cvs(callpoint!.getColumnData("OPE_ORDDET.ORDER_NO"), 2)
+	cust_id$  = callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_ORDDET.ORDER_NO")
 	inv_type$ = callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE")
 
 	if cust_id$<>"" and order_no$<>"" then
@@ -1353,7 +1351,7 @@ rem ==========================================================================
 	if price=0 then
 		msg_id$="ENTER_PRICE"
 		gosub disp_message
-		util.forceEdit(Form!, user_tpl.unit_price_col)
+		callpoint!.setFocus(callpoint!.getValidationRow(),"OPE_ORDDET.UNIT_PRICE",1)
 		enter_price_message = 1
 	else
 		callpoint!.setColumnData("OPE_ORDDET.UNIT_PRICE", str(round(price, round_precision)) )

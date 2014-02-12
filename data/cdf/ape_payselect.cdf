@@ -207,7 +207,6 @@ rem ==========================================================================
 create_reports_vector: rem --- Create a vector from the file to fill the grid
 rem ==========================================================================
 
-	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_len
 	more=1
 	read (apt01_dev,key=firm_id$,dom=*next)
 	rows=0
@@ -234,7 +233,7 @@ rem ==========================================================================
 			apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 			apt01a.retention = apt01a.retention + apt11a.trans_ret
 		wend
-		if apt01a.discount_amt<0 then apt01a.discount_amt=0
+        if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 		inv_amt = apt01a.invoice_amt
 		disc_amt = apt01a.discount_amt
 		ret_amt = apt01a.retention
@@ -261,7 +260,7 @@ rem ==========================================================================
 			vectInvoices!.addItem(apt01a.selected_for_pay$); rem 0
 			vectInvoices!.addItem(apt01a.payment_grp$); rem 1
 			vectInvoices!.addItem(apt01a.ap_type$); rem 2
-			vectInvoices!.addItem(func.alphaMask(apt01a.vendor_id$(1,vendor_len),m0$)); rem 3
+			vectInvoices!.addItem(apt01a.vendor_id$); rem 3
 			vectInvoices!.addItem(apm01a.vendor_name$); rem 4
 			vectInvoices!.addItem(apt01a.ap_inv_no$); rem 5
 			vectInvoices!.addItem(apt01a.hold_flag$);rem 6
@@ -277,7 +276,7 @@ rem ==========================================================================
 			vectInvoicesMaster!.addItem(apt01a.selected_for_pay$); rem 1
 			vectInvoicesMaster!.addItem(apt01a.payment_grp$); rem 2
 			vectInvoicesMaster!.addItem(apt01a.ap_type$); rem 3
-			vectInvoicesMaster!.addItem(func.alphaMask(apt01a.vendor_id$(1,vendor_len),m0$)); rem 4
+			vectInvoicesMaster!.addItem(apt01a.vendor_id$); rem 4
 			vectInvoicesMaster!.addItem(apm01a.vendor_name$); rem 5
 			vectInvoicesMaster!.addItem(apt01a.ap_inv_no$); rem 6
 			vectInvoicesMaster!.addItem(apt01a.hold_flag$);rem 7
@@ -332,7 +331,6 @@ rem ==========================================================================
 
 			if gridInvoices!.getCellState(row_no,0) = 0 then
 				vend$ = gridInvoices!.getCellText(row_no,3)
-				gosub strip_dashes
 				read record (apm01_dev, key=firm_id$+
 :					vend$, dom=*next) apm01a$
 
@@ -367,7 +365,7 @@ rem				endif
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
-				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 
 				gridInvoices!.setCellState(row_no,0,1)
 
@@ -401,7 +399,6 @@ rem				endif
 			else
 				rem --- re-initialize
 				vend$ = gridInvoices!.getCellText(row_no,3)
-				gosub strip_dashes
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
 :					vend$+
@@ -422,7 +419,7 @@ rem				endif
 				wend
 				tot_payments=tot_payments-num(gridInvoices!.getCellText(row_no,12))
 
-				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 
 				gridInvoices!.setCellState(row_no,0,0)
 				gridInvoices!.setCellText(row_no, 10, str(str(apt01a.invoice_amt - apt01a.retention - apt01a.discount_amt)))
@@ -605,21 +602,6 @@ rem ==========================================================================
 	return
 
 rem ==========================================================================
-strip_dashes: rem --- Strip dashes from Vendor Number and pad with zeros if necessary
-rem ==========================================================================
-
-	new_vend$=""
-
-	for dashes=1 to len(vend$)
-		if vend$(dashes,1)<>"-" then new_vend$=new_vend$+vend$(dashes,1)
-	next dashes
-
-	vend_len=num(callpoint!.getTableColumnAttribute("APE_PAYSELECT.VENDOR_ID","MAXL"))
-	vend$=pad(new_vend$,vend_len,"L","0")
-
-	return
-
-rem ==========================================================================
 set_value: rem --- Set Check Values for all rows - on/off
 		rem --- on_value$="Y" to set all to on
 		rem --- on_value$="N" to set all to off
@@ -659,7 +641,6 @@ rem ==========================================================================
 		rem --- set as checked
 			if on_value$="Y" then
 				vend$ = gridInvoices!.getCellText(row_no,3)
-				gosub strip_dashes
 				read record (apm01_dev, key=firm_id$+
 :					vend$, dom=*next) apm01a$
 
@@ -693,7 +674,7 @@ rem				endif
 					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 				wend
-				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 
 				gridInvoices!.setCellState(row_no,0,1)
 
@@ -728,7 +709,6 @@ rem				endif
 			else
 				rem --- re-initialize
 				vend$ = gridInvoices!.getCellText(row_no,3)
-				gosub strip_dashes
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(row_no,2)+
 :					vend$+
@@ -747,7 +727,7 @@ rem				endif
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
-				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 				inv_amt = apt01a.invoice_amt
 				disc_amt = apt01a.discount_amt
 				ret_amt = apt01a.retention
@@ -901,7 +881,6 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 
 			for row=0 to vectInvoicesMaster!.size()-1 step user_tpl.MasterCols
 				vend$ = vectInvoicesMaster!.getItem(row+4)
-				gosub strip_dashes
 				apt01_key$=firm_id$+vectInvoicesMaster!.getItem(row+3)+
 :								   vend$+
 :								   vectInvoicesMaster!.getItem(row+6)
@@ -957,7 +936,6 @@ rem --- First check to see if user_tpl.ap_check_seq$ is Y and multiple AP Types 
 rem --- Open/Lock files
 
 	use ::ado_util.src::util
-	use ::ado_func.src::func
 
 	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -1082,6 +1060,9 @@ rem --- Add grid to store invoices, with checkboxes for user to select one or mo
 
 rem --- Misc other init
 
+	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_len
+	gridInvoices!.setColumnMask(3,m0$)
+
 	callpoint!.setDevObject("tot_payments","0")
 	gridInvoices!.setColumnEditable(0,1)
 	gridInvoices!.setColumnEditable(11,1)
@@ -1184,7 +1165,6 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 				if disc_amt<>0 or inv_amt<>0 then 
 					if gridInvoices!.getCellState(curr_row,0)=0 then
 						vend$ = gridInvoices!.getCellText(row_no,3)
-						gosub strip_dashes
 						read record(apm01_dev, key=firm_id$+
 :							vend$, dom=*next) apm01a$
 
@@ -1252,7 +1232,6 @@ rem						endif
 				else
 					if gridInvoices!.getCellState(curr_row,0)=0 then
 						vend$ = gridInvoices!.getCellText(row_no,3)
-						gosub strip_dashes
 						read record (apm01_dev, key=firm_id$+
 :						vend$, dom=*next) apm01a$
 
@@ -1314,7 +1293,6 @@ rem --- Payment Amount
 				apt11_dev = fnget_dev("APT_INVOICEDET")
 				dim apt11a$:fnget_tpl$("APT_INVOICEDET")
 				vend$ = gridInvoices!.getCellText(curr_row,3)
-				gosub strip_dashes
 
 				read record (apt01_dev, key=firm_id$+
 :					gridInvoices!.getCellText(curr_row,2)+
@@ -1333,7 +1311,7 @@ rem --- Payment Amount
 					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 				wend
-				if apt01a.discount_amt<0 then apt01a.discount_amt=0
+                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 				gridInvoices!.setCellText(curr_row, 10, str(str(apt01a.invoice_amt - apt01a.retention - apt01a.discount_amt)))
 				gridInvoices!.setCellText(curr_row,11,str(apt01a.discount_amt))
 
@@ -1388,7 +1366,6 @@ rem --- Now calculate proper Amt Due, Payment and Discount amounts
 				else
 					if gridInvoices!.getCellState(curr_row,0)=0 then
 						vend$ = gridInvoices!.getCellText(row_no,3)
-						gosub strip_dashes
 						read record (apm01_dev, key=firm_id$+
 :							vend$, dom=*next) apm01a$
 

@@ -252,7 +252,7 @@ rem ===============================================================
 	callpoint!.setColumnData("SFE_WOOPRTN.UNIT_COST",str(unit_cost),1)
 
 	old_tot_time=num(callpoint!.getColumnData("SFE_WOOPRTN.TOTAL_TIME"))
-	new_tot_time=SfUtils.opTime(run_time,sched_qty,hrs_per_pc,pcs_per_hr,yield,setup)
+	new_tot_time=SfUtils.opTime(1,sched_qty,hrs_per_pc,pcs_per_hr,yield,setup)
 	new_tot_dols=SfUtils.opTotStdCost(sched_qty,hrs_per_pc,dir_rate,ovhd_rate,pcs_per_hr,yield,setup)
 	callpoint!.setColumnData("SFE_WOOPRTN.TOTAL_TIME",str(new_tot_time))
 	callpoint!.setColumnData("SFE_WOOPRTN.TOT_STD_COST",str(new_tot_dols))

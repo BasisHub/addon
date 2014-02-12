@@ -15,6 +15,7 @@ rem --- open files
 rem --- create list for available levels
 
 	ldat_list$=pad(Translate!.getTranslation("AON_TERRITORY"),20)+"~"+"T ;"
+	if pos(sas01a.terrcode_lev$="CPI") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_CUSTOMER"),20)+"~"+"C;"
 	if pos(sas01a.terrcode_lev$="PI") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_PRODUCT"),20)+"~"+"P ;"
 	if pos(sas01a.terrcode_lev$="I") ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_ITEM"),20)+"~"+"I ;"
 
