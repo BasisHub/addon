@@ -1,0 +1,625 @@
+rem ==========================================================================
+rem --- adx_quickcopywiz.aon 
+rem --- Utility to copy pre-built Barista Addon from <bbj_home> to external location.
+rem --- 
+rem --- AddonSoftware
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    use java.io.File
+    use ::ado_file.src::FileObject
+	use org.apache.commons.io.FileUtils
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    dir_syp$=stbl("+DIR_SYP")
+    sysGUI! = BBjAPI().getSysGui()
+
+rem --- Load up currently mounted (sync'd in) systems from bbjHome instance
+rem --- if something other than "../apps" appears in mount dir, don't run util - means they've synced in some external app
+	
+	mountedSys!=BBjAPI().makeVector()
+	synFile!=BBjAPI().makeVector()
+	
+	sql_prep$="SELECT MOUNT_DIR FROM DDM_SYSTEMS"
+	sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+	dir_tpl$=sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+	dim mounted_sys$:dir_tpl$
+	
+	while 1
+        mounted_sys$=sqlfetch(sql_chan,err=*break)
+		if pos("../apps"=mounted_sys.mount_dir$)<>1
+			msg_id$="AD_NO_QUICKCOPY"
+			dim msg_tokens$[1]
+			gosub disp_message
+			goto std_exit
+		else
+			mounted_sys!=mounted_sys.mount_dir$				
+			tmpchan=unt
+			tmp_file$=""
+			found=0
+			open(tmpchan,err=*next)mounted_sys!+"/config";found=1
+			while found
+				readrecord(tmpchan,end=*break)tmp_file$
+				if len(tmp_file$)>=4
+					if tmp_file$(len(tmp_file$)-3,4)=".syn"
+						synFile!.add(tmp_file$)
+						break
+					endif
+				endif
+			wend
+			mounted_sys.mount_dir$=mounted_sys!.replace("../","")
+			if pos(mounted_sys.mount_dir$(len(mounted_sys.mount_dir$),1)="/\")<>0 mounted_sys.mount_dir$=mounted_sys.mount_dir$(1,len(mounted_sys.mount_dir$)-1)
+			filepath$=mounted_sys.mount_dir$
+			gosub fix_path
+			mounted_sys.mount_dir$=filepath$
+			mountedSys!.add(mounted_sys.mount_dir$)
+			close(tmpchan,err=*next)
+		endif
+	wend
+
+	if mountedSys!.size()=0 then goto std_exit
+	sqlclose(sql_chan)
+	
+rem --- Get user inputs
+
+    dbName$=Option!.getOptionData("DB_NAME")
+    appDesc$=Option!.getOptionData("APP_DESC")
+    newAonLoc$=Option!.getOptionData("NEW_INSTALL_LOC")
+    rdAdmin!=cast(BBjAdminBase, callpoint!.getDevObject("rdAdmin"))
+
+rem --- Flip directory path separators for newAonLoc
+	filePath$=newAonLoc$
+	gosub fix_path
+	newAonLoc$=filePath$
+
+rem --- Start progress meter
+    meter_title$=Translate!.getTranslation("AON_QUICKCOPY_WIZ","Quick Copy Wizard",1)
+    meter_total_recs=8
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter    
+
+rem --- Open log file
+    location$ = newAonLoc$
+    gosub open_log
+
+rem --- Main processing
+	gosub copy_dirs
+	gosub update_defs
+	gosub update_addon_syn
+	gosub update_sync_xmls
+	gosub update_barista_cfgs
+	gosub attach_db
+	gosub reset_adm_modules
+	gosub reset_auto_sync
+	gosub update_barista_installs
+
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)"QuickCopy log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+	    
+copy_dirs:
+rem --- Recursively copy mounted app dirs and barista from bbjHome$ to newAonLoc$
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_COPY_APP_FILES","Copying application files",1)
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+    sep$ = "/";rem was using File.separator, which is "\" on Windows, but then fix_path routine flips it anyway
+    bbjHome$=java.lang.System.getProperty("basis.BBjHome")
+	filepath$=bbjHome$
+	gosub fix_path
+	bbjHome$=filepath$
+
+rem --- using BBj copy (via adc_copydir.aon) instead of this java copy, to avoid permissions issues on *x.
+rem	for copycnt=0 to mountedSys!.size()-1
+rem		mounted_sys$=mountedSys!.getItem(copycnt)
+rem		srcDir!=new java.io.File(bbjHome$+sep$+mounted_sys$)
+rem		destDir!=new java.io.File(newAonLoc$+sep$+mounted_sys$)
+rem		FileUtils.copyDirectory(srcDir!, destDir!)
+rem	next copycnt
+
+	for copycnt=0 to mountedSys!.size()-1
+		mounted_sys$=mountedSys!.getItem(copycnt)
+		call pgmdir$+"adc_copydir.aon",bbjHome$+sep$+mounted_sys$,newAonLoc$+sep$+mounted_sys$,rdForm!,0,status
+	next copycnt
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_COPY_BAR_FILES","Copying Barista files",1)
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+	
+	rem --- now copy barista; using BBj to avoid 'in use' errs
+	call pgmdir$+"adc_copydir.aon",bbjHome$+sep$+"barista",newAonLoc$+sep$+"barista",rdForm!,0,status
+
+	return
+
+update_defs:
+rem --- do string replace on "../" on .def files in all of the data/def/<lang> directories
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDATING_DEFS","Updating paths in .def files",1)
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+	
+	for copycnt=0 to mountedSys!.size()-1
+		mounted_sys$=mountedSys!.getItem(copycnt)
+		rem --- loop thru all <lang> folders
+		def_dir$=newAonLoc$+sep$+mounted_sys$+"/data/def"
+		dirchan=unt
+		found_dir=0
+		open(dirchan)def_dir$;found_dir=1
+
+		while found_dir
+			readrecord(dirchan,end=*break)lang_dir$
+			if pos(lang_dir$(len(lang_dir$),1)="\/")=0 then continue
+			langchan=unt
+			found_lang=0
+			open(langchan)def_dir$+sep$+lang_dir$;found_lang=1
+			while found_lang
+				readrecord(langchan,end=*break)def_file$
+				if len(def_file$)<4 then continue
+				if def_file$(len(def_file$)-3,4)<>".def" then continue				
+				oldDef! = FileUtils.readFileToString(new java.io.File(def_dir$+sep$+lang_dir$+sep$+def_file$))
+				newDef! = new java.io.File(def_dir$+sep$+lang_dir$+sep$+def_file$)
+				FileUtils.writeStringToFile(newDef!, oldDef!.replaceAll("\^../", "^"+newAonLoc$+sep$))
+			wend
+			close(langchan,err=*next)
+		wend
+		close(dirchan,err=*next)
+	next copycnt
+
+	return
+
+update_addon_syn:
+rem --- Update new addon.syn file
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDATE_SYN")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+	for syscnt=0 to mountedSys!.size()-1
+		mounted_sys$=mountedSys!.getItem(syscnt)
+		syn_file$=synFile!.getItem(syscnt)
+		rem --- Set updateSynFile to .syn at the new install location
+		newAppDir$=newAonLoc$+sep$+mounted_sys$
+		updateSynFile$=newAppDir$+"/config/"+syn_file$
+
+		rem --- Set upgrade off
+		upgrade%=0
+		oldSynFile$=""
+
+		rem --- Get old aon path from SYSDIR/DIR line
+		oldAonDir$=""
+		synDev=unt, more=0
+		open(synDev,isz=-1,err=*next)updateSynFile$; more=1
+		while more
+			read(synDev,end=*break)record$
+			
+			rem --- process SYSDIR/DIR lines
+			if(pos("DIR="=record$) = 1 or pos("SYSDIR="=record$) = 1) then
+				xpos = pos("="=record$)
+				oldAonDir$ = cvs(record$(xpos+1),3)
+				break
+			endif
+		wend
+		close(synDev)
+	   
+		rem --- Build stblMap HashMap of SYSSTBL/STBL data paths, keyed by STBL
+		rem --- Build pfxList ArrayList of SYSPFX/PREFIX data paths
+		filePath$=oldAonDir$
+		gosub fix_path
+		oldAonDir$=filePath$
+		search$=oldAonDir$
+		replace$=newAppDir$+"/"
+		use java.util.HashMap
+		declare HashMap stblMap!
+		stblMap!=new HashMap()
+		use java.util.ArrayList
+		declare ArrayList pfxList!
+		pfxList!=new ArrayList()
+		synDev=unt, more=0
+		open(synDev,isz=-1,err=*next)updateSynFile$; more=1
+		while more
+			read(synDev,end=*break)record$
+
+			key$ = record$(1, pos("="=record$) - 1)
+			switch (BBjAPI().TRUE)
+				case key$ = "STBL"
+				case key$ = "SYSSTBL"
+					xpos=pos(" "=record$)
+					stbl$=record$(xpos+1, pos("="=record$(xpos+1))-1)
+					record$=cvs(record$(pos("="=record$,1,2)+1),3)
+					aList!=new ArrayList()
+					aList!.add(record$)
+					if cvs(stbl$,3)="+MDI_TITLE" then
+						rem --- Set +MDI_TITLE to appDesc$
+						record$=appDesc$
+					else
+						rem --- Do search and replace to update aon path
+						gosub search_replace
+					endif
+					aList!.add(record$)
+					stblMap!.put(stbl$, aList!)
+					break
+				case key$ = "PREFIX"
+				case key$ = "SYSPFX"
+					record$=cvs(record$(pos("="=record$)+1),3)
+					aList!=new ArrayList()
+					aList!.add(record$)
+					gosub search_replace
+					aList!.add(record$)
+					pfxList!.add(aList!)
+					break
+				case default
+					rem --- other lines ... skip
+					break
+			swend
+		wend
+		close(synDev)
+
+		call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
+	next syscnt
+	
+	return
+
+update_sync_xmls:
+rem --- Update new sync XML files
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDATE_XML")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+	for syscnt=0 to mountedSys!.size()-1
+		mounted_sys$=mountedSys!.getItem(syscnt)
+		newAppDir$=newAonLoc$+sep$+mounted_sys$
+		rem --- Set newSyncLoc to sync directory at the new install location
+		newSyncLoc$=newAppDir$+"/data/sync"
+
+		rem --- Set upgrade off
+		upgrade%=0
+		oldSyncLoc$=""
+		syncBackupDir$=""
+
+		call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+	next syscnt
+	
+	return
+
+update_barista_cfgs:
+rem --- update the barista.cfg files w/ new dbName$
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_BAR_CFG","Updating barista.cfg",1)
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+	
+	rd_attr_desc$=pad("+DBNAME",20)+pad("+DBNAME_API",20)
+	dim rd_cfg_data$[len(rd_attr_desc$)/20]
+	rd_cfg_data$[0]=rd_attr_desc$
+	rd_temp_data$=stbl("+DBNAME")
+	rd_temp_stbl$=stbl("+DBNAME_API")
+	rd_temp_pos=pos(rd_temp_stbl$=rd_temp_data$)
+	if rd_temp_pos 
+		rd_temp_data$=rd_temp_data$(1,rd_temp_pos-1)+cvs(dbName$,3)+rd_temp_data$(rd_temp_pos+len(rd_temp_stbl$))
+	else
+		rd_temp_data$=cvs(dbName$,3)
+	endif
+	rd_cfg_data$[1]=rd_temp_data$
+	rd_cfg_data$[2]=cvs(dbName$,3)
+	rem --- loop thru all <lang> folders
+	cfg_dir$=newAonLoc$+"/barista/sys/config"
+	tmpchan=unt
+	found=0
+	open(tmpchan)cfg_dir$;found=1
+	while found
+		readrecord(tmpchan,end=*break)tmp_file$
+		if pos(tmp_file$(len(tmp_file$),1)="\/")=0 then continue
+		rd_curr_cfg$=cfg_dir$+"/"+tmp_file$+"barista.cfg"
+		call stbl("+DIR_SYP")+"bam_config.bbj",rd_curr_cfg$,"CFG","WRITE",rd_cfg_data$[all]
+	wend
+	return
+
+attach_db:
+rem --- attach to new database and set some properties
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_ATTACH_DB","Attaching to new database",1)
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+    rdAdmin!.attachDatabaseOnDisk(cvs(dbName$,3),cvs(newAonLoc$,3)+"/barista/bbdict/")
+
+    rdDatabase!=rdAdmin!.getDatabase(cvs(dbName$,3))
+
+    rdDatabase!.setString("DATABASE",cvs(dbName$,2))
+    rdDatabase!.setString("DICTIONARY",newAonLoc$+"/barista/bbdict/")
+    rdDatabase!.setString("+DIR_BRD",newAonLoc$+"/barista/sys/data/")
+    rdDatabase!.setString("+DIR_BRA",newAonLoc$+"/barista/sys/data/")
+    rdDatabase!.setString("ACCESSPOLICY","ALL")
+    rdDatabase!.setBoolean("ADVISORYLOCKING",BBjAPI().TRUE)
+    rdDatabase!.setBoolean("AUTO_ANALYZE_TABLES",BBjAPI().TRUE)
+    rdDatabase!.setBoolean("ENFORCE_VARCHAR_LENGTH",BBjAPI().TRUE)
+    rdDatabase!.setBoolean("STRICTKEYCHECKING",BBjAPI().TRUE)
+
+    rdDatabase!.commit()
+
+    rdAdmin!.reloadDatabaseConfig(err=*next)
+
+	return
+
+reset_adm_modules:
+rem --- replace ../ with newAonLoc$ in existing adm_modules recs for new database (except Barista ones)
+	
+	sql_prep$="UPDATE ADM_MODULES SET DD_MOUNT_DIR = REPLACE(DD_MOUNT_DIR,'../','"+newAonLoc$+"/'), "
+	sql_prep$=sql_prep$+"LOCALE_PATH = REPLACE(LOCALE_PATH,'../','"+newAonLoc$+"/') "
+	sql_prep$=sql_prep$+"WHERE ASC_PROD_ID NOT IN('ADB','DDB','SQB')"
+	sql_chan=sqlunt
+    sqlopen(sql_chan,err=*next)dbName$
+    sqlprep(sql_chan)sql_prep$
+    sqlexec(sql_chan)
+	
+rem --- also reset mount path in ddm_systems (mounted systems) for new database
+	sql_prep$="UPDATE DDM_SYSTEMS SET MOUNT_DIR = REPLACE(MOUNT_DIR,'../','"+newAonLoc$+"/')"
+    sqlprep(sql_chan)sql_prep$
+    sqlexec(sql_chan)
+	sqlclose(sql_chan)
+	
+	return
+
+reset_auto_sync:
+rem --- reset auto-launch record for the auto-sync process
+
+	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC'"
+	sql_chan=sqlunt
+	sqlopen(sql_chan,err=*next)dbName$
+    sqlprep(sql_chan)sql_prep$
+    sqlexec(sql_chan)
+	sqlclose(sql_chan)
+	
+	return
+
+update_barista_installs:
+rem --- Update XML Configuration File barista_installs.xml
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDT_INSTALLS","Updating barista_installs.xml",1)
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+	call stbl("+DIR_SYP")+"bax_version.bbj",rd_version_id$,""
+	newVersion$=rd_version_id$+"."+stbl("+BUILD_ID")
+	rd_line_sep$=java.lang.System.getProperty("line.separator") 
+    rd_temp_sep$=$01$	
+
+	gosub create_sscp
+    rd_base_prop$="-tT0 -q -CP"+sscpName$+" -WD"+$22$+newAonLoc$+"/barista"+$22$+" -c"+$22$+newAonLoc$+"/barista/sys/config/enu/barista.cfg"+$22$+" "+$22$+newAonLoc$+"/barista/sys/prog/bar_login.bbj"+$22$+" - aon"
+
+    rd_install_temp!=stbl("+DIR_CFG")
+    rd_install_temp$=rd_install_temp!.replace("\","/")
+    rd_install_file$=rd_install_temp$(1,pos("/"=rd_install_temp$,-1,2))+"barista_installs.xml"
+    rd_path_pos=pos("/"=rd_install_file$,-1)
+    if rd_path_pos<>0 rd_install_file_dir$=rd_install_file$(1,rd_path_pos)
+
+    rd_temp_tag$=$09$+"<RECORD id="+$22$+cvs(dbName$,136)+$22$+">"
+
+    rd_xml_chan=unt
+    open (unt)rd_install_file$
+        rd_xml_chan_fin$=fin(rd_xml_chan)
+        read record(rd_xml_chan,siz=dec($00$+rd_xml_chan_fin$(1,4)))rd_xml_data$
+    close (rd_xml_chan)
+
+    rdXMLData!=rd_xml_data$
+    rdXMLData!=rdXMLData!.replace($0d0a$,rd_temp_sep$)
+    rdXMLData!=rdXMLData!.replace($0d$,rd_temp_sep$)
+    rd_xml_data$=rdXMLData!.replace($0a$,rd_temp_sep$)
+
+	rd_rec_block$=
+:       $09$+"<RECORD id="+$22$+cvs(dbName$,136)+$22$+">"+rd_line_sep$+
+:       $0909$+"<ID id="+$22$+cvs(dbName$,136)+$22$+">"+dbName$+"</ID>"+rd_line_sep$+
+:       $0909$+"<DESCRIPTION id="+$22$+cvs(dbName$,136)+$22$+">"+appDesc$+"</DESCRIPTION>"+rd_line_sep$+
+:       $0909$+"<LOCATION id="+$22$+cvs(dbName$,136)+$22$+">"+newAonLoc$+"</LOCATION>"+rd_line_sep$+
+:       $0909$+"<VERSION id="+$22$+cvs(dbName$,136)+$22$+">"+newVersion$+"</VERSION>"+rd_line_sep$+
+:       $0909$+"<DATE_CREATED id="+$22$+cvs(dbName$,136)+$22$+">"+date(0:"%Yd%Mz%Dz%Hz%mz%sz")+"</DATE_CREATED>"+rd_line_sep$+
+:       $0909$+"<PROPERTIES id="+$22$+cvs(dbName$,136)+$22$+">"+rd_base_prop$+"</PROPERTIES>"+rd_line_sep$+
+:       $09$+"</RECORD>"+rd_line_sep$
+
+	rd_temp_pos=pos(rd_temp_tag$=rd_xml_data$)
+	if rd_temp_pos=0
+		rd_temp_pos=pos("</INSTALLATIONS>"=rd_xml_data$)
+		rd_xml_data$=rd_xml_data$(1,rd_temp_pos-1)+rd_rec_block$+rd_xml_data$(rd_temp_pos)
+	else
+		rd_temp_pos=pos(rd_temp_tag$=rd_xml_data$)
+		rd_temp_block=pos($09$+"</RECORD>"=rd_xml_data$(rd_temp_pos))+10
+		rd_xml_data$=rd_xml_data$(1,rd_temp_pos-1)+rd_rec_block$+rd_xml_data$(rd_temp_pos+rd_temp_block)
+	endif
+
+    rdXMLData!=rd_xml_data$
+    rdXMLData!=rdXMLData!.replace(rd_temp_sep$,rd_line_sep$)
+    rd_xml_data$=rdXMLData!
+
+    initfile rd_install_file$
+    rd_xml_chan=unt
+    open (unt)rd_install_file$
+    write record(rd_xml_chan)rd_xml_data$
+    close(rd_xml_chan)
+
+	return
+
+create_sscp:
+rem --- Create new session specific classpath (SSCP) in Enterprise Manager
+    
+    sscpName$=cvs(dbName$,8)
+    needAddonprop=1
+    needBaristaprop=1
+    paths!=BBjAPI().makeVector()
+    env!=BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getEnvironment()
+    paths!=env!.getClasspath(BBjAPI().getConfig().getCurrentCommandLineObject().getOriginalClasspathName(),err=*next)
+    if paths!.size()>0 then
+        for i=0 to paths!.size()-1
+            if pos("addonprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to addonprop.jar
+                paths!.setItem(i,newAonLoc$+"/apps/aon/prop/addonprop.jar")
+                needAddonprop=0
+            endif
+            if pos("baristaprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to baristaprop.jar
+                paths!.setItem(i,newAonLoc$+"/barista/sys/prop/baristaprop.jar")
+                needBaristaprop=0
+            endif
+        next i
+    endif
+    if needBaristaprop then paths!.addItem(newAonLoc$+"/barista/sys/prop/baristaprop.jar")
+    if needAddonprop then paths!.addItem(newAonLoc$+"/apps/aon/prop/addonprop.jar")
+    env!.setClasspath(sscpName$, paths!)
+
+	return
+
+fix_path: rem --- Flip directory path separators
+
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+    wend
+	return
+    
+search_replace: rem --- Search record$ for search$, and replace with replace$
+	rem --- Assumes only one occurrence of search$ per line so don't have 
+	rem --- to deal with situation where pos(search$=replace$)>0
+	pos = pos(search$=record$)
+	if(pos) then
+		record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
+	endif
+    return
+
+find_syn_file: rem --- open config dir for mounted system and locate .syn
+
+
+	
+	return
+	
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+    logDir$ = FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/quickcopywiz_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"QuickCopy log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+    print(log_dev)"New Database Name: " + dbName$
+    print(log_dev)"New Description: " + appDesc$
+    print(log_dev)"New Location: " + newAonLoc$
+
+    print(log_dev)
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

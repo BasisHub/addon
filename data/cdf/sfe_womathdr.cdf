@@ -41,6 +41,7 @@ rem --- so can display new detail in grid.
 		sfe_womatdtl.require_date$=sfe_womatl.require_date$
 		sfe_womatdtl.warehouse_id$=callpoint!.getColumnData("SFE_WOMATHDR.WAREHOUSE_ID")
 		sfe_womatdtl.item_id$=sfe_womatl.item_id$
+		sfe_womatdtl.wo_mat_ref$=sfe_womatl.wo_ref_num$
 		sfe_womatdtl.qty_ordered=sfe_womatl.total_units
 		sfe_womatdtl.tot_qty_iss=0
 		sfe_womatdtl.unit_cost=sfe_womatl.iv_unit_cost

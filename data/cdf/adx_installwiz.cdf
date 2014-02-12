@@ -21,29 +21,6 @@ rem --- Don't allow running the utility if Addon doesn't exist at Basis download
 		gosub disp_message
 		callpoint!.setStatus("EXIT")
 	endif
-[[ADX_INSTALLWIZ.COPY_DATA.AVAL]]
-rem -- Validate new firm ID with demo data
-
-	firm_id$=callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_FIRM_ID")
-	copy_data=num(callpoint!.getUserInput())
-	focus$="ADX_INSTALLWIZ.COPY_DATA"
-	gosub validate_firm_id
-	if abort then break
-[[ADX_INSTALLWIZ.NEW_FIRM_ID.AVAL]]
-rem -- Validate new firm ID with demo data
-
-	firm_id$=callpoint!.getUserInput()
-
-	rem --- Update status of checkboxes (work around for Barista bug 5616)
-	copy! = callpoint!.getControl("ADX_INSTALLWIZ.COPY_DATA")
-	callpoint!.setColumnData("ADX_INSTALLWIZ.COPY_DATA",str(copy!.isSelected()))
-	help! = callpoint!.getControl("ADX_INSTALLWIZ.APP_HELP")
-	callpoint!.setColumnData("ADX_INSTALLWIZ.APP_HELP",str(help!.isSelected()))
-
-	copy_data=num(callpoint!.getColumnData("ADX_INSTALLWIZ.COPY_DATA"))
-	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
-	gosub validate_firm_id
-	if abort then break
 [[ADX_INSTALLWIZ.BSHO]]
 rem --- Declare Java classes used
 
@@ -115,8 +92,8 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 		msg_tokens$[1]=new_loc$
 		gosub disp_message
 
-		callpoint!.setColumnData("ADX_COPYAON.NEW_INSTALL_LOC", new_loc$)
-		callpoint!.setFocus("ADX_COPYAON.NEW_INSTALL_LOC")
+		callpoint!.setColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC", new_loc$)
+		callpoint!.setFocus("ADX_INSTALLWIZ.NEW_INSTALL_LOC")
 		callpoint!.setStatus("ABORT")
 		abort=1
 		return
@@ -158,7 +135,7 @@ validate_firm_id: rem -- Validate new firm ID with demo data
 	abort=0
 
 	rem --- Firm is required unless with demo data
-	if firm_id$="" and !copy_data then
+	if firm_id$="" and copy_data$="P" then
 		msg_id$="AD_FIRM_WO_DEMO"
 		gosub disp_message
 		callpoint!.setFocus(focus$)
@@ -179,20 +156,6 @@ validate_firm_id: rem -- Validate new firm ID with demo data
 		return
 	endif
 
-	rem --- Cannot use firm 01 or 02 with demo data
-	if copy_data then
-		if pos(firm_id$="0102",2) then
-			msg_id$="AD_FIRM_DEMO_BAD"
-			dim msg_tokens$[1]
-			msg_tokens$[1]=firm_id$
-			gosub disp_message
-			callpoint!.setFocus(focus$)
-			callpoint!.setStatus("ABORT")
-			abort=1
-			return
-		endif
-	endif
-
 	return
 [[ADX_INSTALLWIZ.ASVA]]
 rem --- Validate directory for aon new install location
@@ -205,13 +168,11 @@ rem --- Validate directory for aon new install location
 rem -- Validate new firm ID with demo data
 
 	rem --- Update status of checkboxes (work around for Barista bug 5616)
-	copy! = callpoint!.getControl("ADX_INSTALLWIZ.COPY_DATA")
-	callpoint!.setColumnData("ADX_INSTALLWIZ.COPY_DATA",str(copy!.isSelected()))
 	help! = callpoint!.getControl("ADX_INSTALLWIZ.APP_HELP")
 	callpoint!.setColumnData("ADX_INSTALLWIZ.APP_HELP",str(help!.isSelected()))
 
 	firm_id$=callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_FIRM_ID")
-	copy_data=num(callpoint!.getColumnData("ADX_INSTALLWIZ.COPY_DATA"))
+	copy_data$=callpoint!.getColumnData("ADX_INSTALLWIZ.INSTALL_TYPE")
 	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
 	gosub validate_firm_id
 	if abort then break

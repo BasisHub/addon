@@ -208,7 +208,6 @@ rem --- Release/commit
 			rem --- process womathdr/dtl
 			extract record (sfe13_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)sfe_womathdr$; rem --- Advisory locking
 			if pos(firm_id$+wo_loc$+wo_no$=sfe_womathdr$)<>1
-
 				sfe_womathdr.firm_id$=firm_id$
 				sfe_womathdr.wo_location$=wo_loc$
 				sfe_womathdr.wo_no$=wo_no$
@@ -224,6 +223,8 @@ rem --- Release/commit
 					if pos(firm_id$+wo_loc$+wo_no$=sfe22_key$)<>1 then break
 					read record (sfe22_dev)sfe_womatl$
 					if sfe_womatl.line_type$="M" then continue
+					
+					find (sfe23_dev,key=firm_id$+wo_loc$+wo_no$+sfe_womatdtl.material_seq$,dom=*next);continue
 
 					sfe_womatdtl.firm_id$=firm_id$
 					sfe_womatdtl.wo_location$=wo_loc$
@@ -233,9 +234,7 @@ rem --- Release/commit
 					sfe_womatdtl.require_date$=sfe_womatl.require_date$
 					sfe_womatdtl.warehouse_id$=sfe_womathdr.warehouse_id$
 					sfe_womatdtl.item_id$=sfe_womatl.item_id$
-					
-					find (sfe23_dev,key=firm_id$+wo_loc$+wo_no$+sfe_womatdtl.material_seq$,dom=*next);continue
-
+					sfe_womatdtl.wo_mat_ref$=sfe_womatl.wo_ref_num$
 					sfe_womatdtl.qty_ordered=sfe_womatl.total_units
 					sfe_womatdtl.unit_cost=sfe_womatl.iv_unit_cost
 					sfe_womatdtl.issue_cost=sfe_womatdtl.unit_cost

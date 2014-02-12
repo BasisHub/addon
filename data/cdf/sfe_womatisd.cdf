@@ -424,6 +424,14 @@ able_lot_button: rem --- Enable/disable Lot/Serial button
 	endif
 	return
 [[SFE_WOMATISD.AGDR]]
+rem --- Init WO Material Reference
+	sfe_womatdtl_dev=fnget_dev("SFE_WOMATDTL")
+	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
+	firm_loc_wo$=callpoint!.getDevObject("firm_loc_wo")
+	sfe_womatdtl_key$=firm_loc_wo$+callpoint!.getColumnData("SFE_WOMATISD.WOMATDTL_SEQ_REF")
+	readrecord(sfe_womatdtl_dev,key=sfe_womatdtl_key$,dom=*next)sfe_womatdtl$
+	callpoint!.setColumnData("<<DISPLAY>>.WO_MAT_REF",sfe_womatdtl.wo_mat_ref$,1)
+
 rem --- Init DISPLAY columns
 	gosub init_display_cols
 [[SFE_WOMATISD.BGDR]]
