@@ -77,79 +77,214 @@ rem --- Background
 
         call pgmdir$+"adc_progress.aon","N","","","","",0,sfe01_dev,1,meter_num,status
 
-rem --- Get SQL view joining sfe01 with a mimic of legacy SFM-07 / WOM-07 / SFX_WOTRANXR
-rem   - Narrow the query of that view using the selections from the OE form
+rem --- Build query joining sfe01 with a transactions (replaces legacy SFM-07 / WOM-07 / SFX_WOTRANXR)
+rem   - Narrow the query using the selections from the OE form
 rem   - This record set will be used as driver instead of sfe-01 and sfm-07
 
-    sql_prep$=""
-    sql_prep$=sql_prep$+"SELECT * "
-    sql_prep$=sql_prep$+"FROM vw_WOs_with_tran as vwWOs "
 	
-	rem Modify the query of that view per user selections in OE form	
+	rem --- Build clauses to limit and sort query results per user selections in OE form	
 
-		where_clause$="WHERE vwWOs.firm_id = '"+firm_id$+"' AND "
+		where_clause$=""
+		where_clause$=where_clause$+"WHERE mast.firm_id = '"+firm_id$+"' AND "
+rem		where_clause$=where_clause$+"mast.wo_location = '  ' AND "
 
 		rpt_order=pos(sequence$="WBCT")-1
 		switch rpt_order
 			case 0
 				beging$=wofrom$
 				ending$=wothru$
-				if beging$<>"" where_clause$=where_clause$+"vwWOs.wo_no >= '"+beging$+"' AND "
-				if ending$<>"" where_clause$=where_clause$+"vwWOs.wo_no <= '"+ending$+"' AND "
-				order_clause$=" ORDER BY vwWOs.wo_location,vwWOs.wo_no"
+				if beging$<>"" where_clause$=where_clause$+"mast.wo_no >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"mast.wo_no <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY mast.wo_location, mast.wo_no"
 				break
 			case 1
 				beging$=billfrom$
 				ending$=billthru$
-				where_clause$=where_clause$+"vwWOs.warehouse_id >= '"+whse_from$+"' AND "
-				where_clause$=where_clause$+"vwWOs.warehouse_id <= '"+whse_thru$+"' AND "
-				where_clause$=where_clause$+"vwWOs.item_id <> '' AND "; rem If by Bill, exclude non-stock WO-types 			
-				if beging$<>"" where_clause$=where_clause$+"vwWOs.item_id >= '"+beging$+"' AND "
-				if ending$<>"" where_clause$=where_clause$+"vwWOs.item_id <= '"+ending$+"' AND "
-				order_clause$=" ORDER BY vwWOs.warehouse_id,vwWOs.item_id,vwWOs.wo_location,vwWOs.wo_no"
+				where_clause$=where_clause$+"mast.warehouse_id >= '"+whse_from$+"' AND "
+				where_clause$=where_clause$+"mast.warehouse_id <= '"+whse_thru$+"' AND "
+				where_clause$=where_clause$+"mast.item_id <> '' AND "; rem If by Bill, exclude non-stock WO-types 			
+				if beging$<>"" where_clause$=where_clause$+"mast.item_id >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"mast.item_id <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY mast.firm_id, mast.warehouse_id, mast.item_id, mast.wo_location, mast.wo_no"
 				break
 			case 2
 				beging$=custfrom$
 				ending$=custthru$
-				where_clause$=where_clause$+"vwWOs.customer_id <> '' AND "			
-				if beging$<>"" where_clause$=where_clause$+"vwWOs.customer_id >= '"+beging$+"' AND "
-				if ending$<>"" where_clause$=where_clause$+"vwWOs.customer_id <= '"+ending$+"' AND "
-				order_clause$=" ORDER BY vwWOs.customer_ID,vwWOs.order_no,vwWOs.sls_ord_seq_ref,vwWOs.wo_location,vwWOs.wo_no "			
+				where_clause$=where_clause$+"mast.customer_id <> '' AND "			
+				if beging$<>"" where_clause$=where_clause$+"mast.customer_id >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"mast.customer_id <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY mast.firm_id, mast.customer_ID, mast.order_no, mast.sls_ord_seq_ref, mast.wo_location, mast.wo_no "			
 				break
 			case 3
 				beging$=wotfrom$
 				ending$=wotthru$
-				if beging$<>"" where_clause$=where_clause$+"vwWOs.wo_type >= '"+beging$+"' AND "
-				if ending$<>"" where_clause$=where_clause$+"vwWOs.wo_type <= '"+ending$+"' AND "
-				order_clause$=" ORDER BY vwWOs.wo_type,vwWOs.wo_location,vwWOs.wo_no"			
+				if beging$<>"" where_clause$=where_clause$+"mast.wo_type >= '"+beging$+"' AND "
+				if ending$<>"" where_clause$=where_clause$+"mast.wo_type <= '"+ending$+"' AND "
+				order_clause$=" ORDER BY mast.firm_id, mast.wo_type, mast.wo_location, mast.wo_no"			
 				break
 			case default
 				break
 		swend
 	
 	rem Limit recordset to Open? or Closed? O/E selection
-		if wo_status$="C" where_clause$=where_clause$+"vwWOs.wo_status = 'C' AND "
-		if wo_status$="O" where_clause$=where_clause$+"vwWOs.wo_status = 'O' AND "
+		if wo_status$="C" where_clause$=where_clause$+"mast.wo_status = 'C' AND "
+		if wo_status$="O" where_clause$=where_clause$+"mast.wo_status = 'O' AND "
 	
 	rem Limit recordset to date range O/E selection
-		if datefrom$<>"" where_clause$=where_clause$+"vwWOs.trans_date >= '"+datefrom$+"' AND "
-		if datethru$<>"" where_clause$=where_clause$+"vwWOs.trans_date <= '"+datethru$+"' AND "
-
-	rem Limit recordset to transaction type O/E selections
-		if pos("M"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'M' AND "
-		if pos("O"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'O' AND "
-		if pos("S"=transtype$)=0 where_clause$=where_clause$+"vwWOs.record_id <> 'S' AND "
+		if datefrom$<>"" where_clause$=where_clause$+"tran.trans_date >= '"+datefrom$+"' AND "
+		if datethru$<>"" where_clause$=where_clause$+"tran.trans_date <= '"+datethru$+"' AND "
 	
-    rem Complete the WHERE clause
+    rem Complete the WHERE clause; strip trailing AND
 		where_clause$=cvs(where_clause$,2)
 		if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
-
+		
 	rem Complete the ORDER BY clause	
-		order_clause$=order_clause$+",vwWOs.trans_date,vwWOs.record_id,vwWOs.trans_seq "
-    
-	rem Complete sql_prep$
-		sql_prep$=sql_prep$+where_clause$+order_clause$	
+		order_clause$=order_clause$+", trans_date, record_id, trans_seq "
+	
+	rem --- Define the columns of the result set
+	rem --- Note: - The warehouse_id and item_id cols are literals for non-mats, 
+	rem ---         so they are added in each section
+	rem ---       - Record_ID is specific to the transaction type 
+	rem ---         so it is added in each section
+	
+	select$=""
+	select$=select$+"SELECT mast.firm_id"+$0a$
+	select$=select$+"     , mast.wo_location"+$0a$
+    select$=select$+"     , mast.wo_no"+$0a$
+    select$=select$+"     , mast.wo_type"+$0a$
+    select$=select$+"     , tran.trans_date"+$0a$
+    select$=select$+"     , tran.trans_seq"+$0a$
+    select$=select$+"     , mast.wo_category"+$0a$
+    select$=select$+"     , mast.wo_status"+$0a$
+    select$=select$+"     , mast.customer_id"+$0a$
+    select$=select$+"     , mast.order_no"+$0a$
+    select$=select$+"     , mast.sls_ord_seq_ref"+$0a$
+    select$=select$+"     , mast.unit_measure"+$0a$
+    select$=select$+"     , mast.warehouse_id"+$0a$
+    select$=select$+"     , mast.item_id"+$0a$
+    select$=select$+"     , mast.opened_date"+$0a$
+    select$=select$+"     , mast.closed_date"+$0a$
+    select$=select$+"     , mast.description_01"+$0a$
+    select$=select$+"     , mast.description_02"+$0a$
+    select$=select$+"     , mast.lotser_item"+$0a$
+    select$=select$+"     , mast.sch_prod_qty"+$0a$
+    select$=select$+"     , mast.qty_cls_todt"+$0a$
+    select$=select$+"     , mast.cls_cst_todt"+$0a$
+    select$=select$+"     , mast.cls_inp_qty"+$0a$
+    select$=select$+"     , mast.closed_cost"+$0a$
+	
+	rem --- Build the query based on the user selections
+	rem --- Query is a series of queries UNIONed based on transaction type O/E selections
+	
+	sql_prep$=""
+	need_union=0; rem Add a UNION ALL operator to sql_prep$ if set; there is already at least 1 query defined
+	
+	rem --- Conditionally include materials transactions
+		if pos("M"=transtype$)
+		
+			select_itemwh$=""
+			select_itemwh$=select_itemwh$+"     , tran.warehouse_id AS trans_warehouse_id"+$0a$
+			select_itemwh$=select_itemwh$+"     , tran.item_id AS trans_item_id"+$0a$
+			
+			sql_prep$=sql_prep$+select$
+			sql_prep$=sql_prep$+select_itemwh$
+			sql_prep$=sql_prep$+"     , 'M' AS record_id"+$0a$
+			sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "+$0a$
+			sql_prep$=sql_prep$+"INNER JOIN sft_opnmattr AS tran"+$0a$
+			sql_prep$=sql_prep$+"        ON mast.firm_id=tran.firm_id"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_location=tran.wo_location"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_no=tran.wo_no"+$0a$
+			sql_prep$=sql_prep$+where_clause$+$0a$
+			
+			sql_prep$=sql_prep$+"    UNION ALL"+$0a$
+			
+			sql_prep$=sql_prep$+select$
+			sql_prep$=sql_prep$+select_itemwh$
+			sql_prep$=sql_prep$+"     , 'M' AS record_id"+$0a$
+			sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "+$0a$
+			sql_prep$=sql_prep$+"INNER JOIN sft_clsmattr AS tran"+$0a$
+			sql_prep$=sql_prep$+"        ON mast.firm_id=tran.firm_id"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_location=tran.wo_location"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_no=tran.wo_no"+$0a$	
+			sql_prep$=sql_prep$+where_clause$+$0a$
+			
+			need_union=1
+		endif
+		
+	rem --- Conditionally include operations transactions
+		if pos("O"=transtype$)
+				
+			select_itemwh$=""
+			select_itemwh$=select_itemwh$+"     , ' ' AS trans_warehouse_id "+$0a$
+			select_itemwh$=select_itemwh$+"     , ' ' AS trans_item_id "+$0a$
 
+			if need_union
+				sql_prep$=sql_prep$+"    UNION ALL"+$0a$
+			endif 
+			
+			sql_prep$=sql_prep$+select$
+			sql_prep$=sql_prep$+select_itemwh$
+			sql_prep$=sql_prep$+"     , 'O' AS record_id"+$0a$
+			sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "+$0a$
+			sql_prep$=sql_prep$+"INNER JOIN sft_opnoprtr AS tran"+$0a$
+			sql_prep$=sql_prep$+"        ON mast.firm_id=tran.firm_id"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_location=tran.wo_location"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_no=tran.wo_no"+$0a$
+			sql_prep$=sql_prep$+where_clause$+$0a$
+			
+			sql_prep$=sql_prep$+"    UNION ALL"+$0a$
+			
+			sql_prep$=sql_prep$+select$
+			sql_prep$=sql_prep$+select_itemwh$
+			sql_prep$=sql_prep$+"     , 'O' AS record_id"+$0a$
+			sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "+$0a$
+			sql_prep$=sql_prep$+"INNER JOIN sft_clsoprtr AS tran"+$0a$
+			sql_prep$=sql_prep$+"        ON mast.firm_id=tran.firm_id"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_location=tran.wo_location"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_no=tran.wo_no"+$0a$	
+			sql_prep$=sql_prep$+where_clause$+$0a$
+			
+			need_union=1		
+		endif
+		
+	rem --- Conditionally include subcontracts transactions
+		if pos("S"=transtype$)
+				
+			select_itemwh$=""
+			select_itemwh$=select_itemwh$+"     , ' ' AS trans_warehouse_id "+$0a$
+			select_itemwh$=select_itemwh$+"     , ' ' AS trans_item_id "+$0a$
+
+			if need_union
+				sql_prep$=sql_prep$+"    UNION ALL"+$0a$
+			endif 
+			
+			sql_prep$=sql_prep$+select$
+			sql_prep$=sql_prep$+select_itemwh$
+			sql_prep$=sql_prep$+"     , 'S' AS record_id"+$0a$
+			sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "+$0a$
+			sql_prep$=sql_prep$+"INNER JOIN sft_opnsubtr AS tran"+$0a$
+			sql_prep$=sql_prep$+"        ON mast.firm_id=tran.firm_id"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_location=tran.wo_location"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_no=tran.wo_no"+$0a$
+			sql_prep$=sql_prep$+where_clause$+$0a$
+			
+			sql_prep$=sql_prep$+"    UNION ALL"+$0a$
+			
+			sql_prep$=sql_prep$+select$
+			sql_prep$=sql_prep$+select_itemwh$
+			sql_prep$=sql_prep$+"     , 'S' AS record_id"+$0a$
+			sql_prep$=sql_prep$+"FROM sfe_womastr AS mast "+$0a$
+			sql_prep$=sql_prep$+"INNER JOIN sft_clssubtr AS tran"+$0a$
+			sql_prep$=sql_prep$+"        ON mast.firm_id=tran.firm_id"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_location=tran.wo_location"+$0a$
+			sql_prep$=sql_prep$+"       AND mast.wo_no=tran.wo_no"+$0a$	
+			sql_prep$=sql_prep$+where_clause$+$0a$
+		
+		endif
+		
+	rem Complete sql_prep$
+		sql_prep$=sql_prep$+order_clause$	
+	
 	rem Exec the completed query
 		sql_chan=sqlunt
 		sqlopen(sql_chan,err=*next)stbl("+DBNAME")
@@ -332,6 +467,8 @@ done: rem --- End
         goto std_exit
 
 
+rem --- Subroutines	
+	
 sub_head:rem --- Sub Heading
         if sequence$="T" then
             OutVect!.addItem(t0$)

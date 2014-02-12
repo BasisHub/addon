@@ -82,7 +82,7 @@ rem --- Build SQL statement
     sql_prep$=sql_prep$+"SELECT * "
     sql_prep$=sql_prep$+"FROM SFE_WOLOTSER as lots "
 	
-	rem Modify the query of that view per passed-in parameters	
+	rem Modify the query per passed-in parameters	
 
 		where_clause$="WHERE lots.firm_id = '"+firm_id$+"' AND lots.wo_location = '"+wo_loc$+"' AND "
 

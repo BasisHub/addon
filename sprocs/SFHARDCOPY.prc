@@ -306,7 +306,11 @@ rem --- Trip Read
 				if read_tpl.wo_status$="C"
 					stat$="*Closed*"
 				else
-					stat$=""
+					if read_tpl.wo_status$="Q"
+						stat$="*Quoted*"
+					else				
+						stat$=""
+					endif
 				endif
 			endif
 		endif
