@@ -10,6 +10,8 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+developing=0; rem Set to 1 to turn on test pattern printing for development/debug
+
 seterr sproc_error
 
 rem --- Set of utility methods
@@ -49,7 +51,10 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-	temp$="REF_NO:C(1*), VENDOR:C(1*), DESC:C(1*), OP_SEQ:C(1*), DATE_REQ:C(1*), STATUS:C(1*), "
+	
+	temp$=""
+	temp$=temp$+"REF_NO:C(1*), VENDOR:C(1*), VENDNAME:C(1*), SUBDESC:C(1*), "
+	temp$=temp$+"COMMENT:C(1*), OP_SEQ:C(1*), DATE_REQ:C(1*), PO_STATUS:C(1*), POREQ_NO:C(1*), "
 	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
 	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
 	
@@ -146,10 +151,30 @@ rem --- generate vector for use with Op Sequence
 
 rem --- Build SQL statement
 
-	sql_prep$="select wo_ref_num, vendor_id, description, oper_seq_ref, require_date, po_status, "
-	sql_prep$=sql_prep$+"units, unit_cost, total_units, total_cost, line_type, ext_comments "
-	sql_prep$=sql_prep$+"from sfe_wosubcnt where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
-	
+	sql_prep$=""
+	sql_prep$=sql_prep$+"SELECT s.wo_ref_num "+$0a$
+	sql_prep$=sql_prep$+"     , s.vendor_id "+$0a$
+	sql_prep$=sql_prep$+"     , s.oper_seq_ref "+$0a$
+	sql_prep$=sql_prep$+"     , s.description "+$0a$
+	sql_prep$=sql_prep$+"     , s.require_date "+$0a$
+	sql_prep$=sql_prep$+"     , s.po_status "+$0a$
+	sql_prep$=sql_prep$+"     , s.units "+$0a$
+	sql_prep$=sql_prep$+"     , s.unit_cost "+$0a$
+	sql_prep$=sql_prep$+"     , s.total_units "+$0a$
+	sql_prep$=sql_prep$+"     , s.total_cost "+$0a$
+	sql_prep$=sql_prep$+"     , s.line_type "+$0a$
+	sql_prep$=sql_prep$+"     , s.ext_comments "+$0a$
+	sql_prep$=sql_prep$+"     , o.wo_op_ref "+$0a$
+	sql_prep$=sql_prep$+"  FROM sfe_wosubcnt s"+$0a$
+	sql_prep$=sql_prep$+"LEFT JOIN sfe_wooprtn o "+$0a$	
+	sql_prep$=sql_prep$+"       ON s.firm_id=o.firm_id "+$0a$	
+	sql_prep$=sql_prep$+"      AND s.wo_location=o.wo_location "+$0a$	
+	sql_prep$=sql_prep$+"      AND s.wo_no=o.wo_no "+$0a$	
+	sql_prep$=sql_prep$+"      AND s.oper_seq_ref=o.internal_seq_no "+$0a$	
+	sql_prep$=sql_prep$+" WHERE firm_id = '"+firm_id$+"' "+$0a$
+	sql_prep$=sql_prep$+"   AND wo_location = '"+wo_loc$+"' "+$0a$
+	sql_prep$=sql_prep$+"   AND wo_no = '"+wo_no$+"'"+$0a$
+		
 	sql_chan=sqlunt
 	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 	sqlprep(sql_chan)sql_prep$
@@ -185,15 +210,21 @@ rem --- Trip Read
 
 		dim apm_vendmast$:fattr(apm_vendmast$)
 		read record (apm_vendmast,key=firm_id$+read_tpl.vendor_id$,dom=*next) apm_vendmast$
+
+		if developing 
+			gosub send_test_pattern
+			continue
+		endif
+		
 		if read_tpl.line_type$<>"S"
-			data!.setFieldValue("VENDOR",read_tpl.ext_comments$)
+			data!.setFieldValue("COMMENT",read_tpl.ext_comments$)
 		else
  			data!.setFieldValue("REF_NO",read_tpl.wo_ref_num$)
-			data!.setFieldValue("VENDOR",fnmask$(read_tpl.vendor_id$,vendor_mask$)+" "+apm_vendmast.vendor_name$)
-rem			data!.setFieldValue("OP_SEQ",fndate$(read_tpl.require_date$))
-rem			data!.setFieldValue("DESC",read_tpl.description$)
+			data!.setFieldValue("VENDOR",fnmask$(read_tpl.vendor_id$,vendor_mask$))
+			data!.setFieldValue("VENDNAME",apm_vendmast.vendor_name$)
+			data!.setFieldValue("OP_SEQ",read_tpl.wo_op_ref$)
 			data!.setFieldValue("DATE_REQ",fndate$(read_tpl.require_date$))
-			data!.setFieldValue("STATUS",postatus$)
+			data!.setFieldValue("PO_STATUS",postatus$)
 			data!.setFieldValue("UNITS_EA",str(read_tpl.units:sf_units_mask$))
 			data!.setFieldValue("UNITS_TOT",str(read_tpl.total_units:sf_units_mask$))
 			if print_costs$="Y"
@@ -205,16 +236,7 @@ rem			data!.setFieldValue("DESC",read_tpl.description$)
 
 		if read_tpl.line_type$="S"
 			data! = rs!.getEmptyRecordData()
-			data!.setFieldValue("DESC",read_tpl.description$)
-			if cvs(read_tpl.oper_seq_ref$,3)<>""
-				if ops_lines!.size()
-					for x=0 to ops_lines!.size()-1
-						if read_tpl.oper_seq_ref$=ops_lines!.getItem(x)
-							data!.setFieldValue("OP_SEQ","Op Code: "+ops_list!.getItem(x))
-						endif
-					next x
-				endif
-			endif
+			data!.setFieldValue("SUBDESC",read_tpl.description$)
 			rs!.insert(data!)
 		endif
 
@@ -252,6 +274,37 @@ rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
+
+rem --- Subroutines
+	
+	rem --- Print test pattern of main fields for developing/debugging column placement
+	send_test_pattern: 
+	
+		if read_tpl.line_type$<>"S"
+			data!.setFieldValue("COMMENT",FILL(LEN(read_tpl.ext_comments$)-1,"W")+"x")
+		else
+ 			data!.setFieldValue("REF_NO","WXWXWX")
+			data!.setFieldValue("VENDOR","XWXWXW")
+			data!.setFieldValue("VENDNAME",FILL(LEN(apm_vendmast.vendor_name$)-1,"W")+"x")
+			data!.setFieldValue("OP_SEQ",FILL(LEN(read_tpl.wo_op_ref$)-1,"9")+"x")
+			data!.setFieldValue("DATE_REQ","98/65/6789")
+			data!.setFieldValue("PO_STATUS",FILL(LEN(postatus$)-1,"W")+"x")
+			data!.setFieldValue("UNITS_EA","x"+sf_units_mask$+"x")
+			data!.setFieldValue("UNITS_TOT","x"+sf_units_mask$+"x")
+			if print_costs$="Y"
+				data!.setFieldValue("COST_EA","x"+sf_cost_mask$+"x")
+				data!.setFieldValue("COST_TOT","x"+sf_amt_mask$+"x")
+			endif
+		endif
+		rs!.insert(data!)
+
+		if read_tpl.line_type$="S"
+			data! = rs!.getEmptyRecordData()
+			data!.setFieldValue("SUBDESC",FILL(LEN(read_tpl.description$)-1,"W")+"x")
+			rs!.insert(data!)
+		endif
+	
+	return
 
 rem --- Functions
 

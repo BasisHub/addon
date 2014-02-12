@@ -10,6 +10,8 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+developing=0; rem Set to 1 to turn on test pattern printing for development/debug
+
 seterr sproc_error
 
 rem --- Set of utility methods
@@ -48,8 +50,12 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-	temp$="OP_CODE:C(1*), DESC:C(1*), STD_HRS:C(1*), ACT_HRS:C(1*), VAR_HRS:C(1*), VAR_HRS_PCT:C(1*), "
-	temp$=temp$+"STD_AMT:C(1*), ACT_AMT:C(1*), VAR_AMT:C(1*), VAR_AMT_PCT:C(1*) "
+	
+	temp$=""
+	temp$=temp$+"REF_NO:C(1*), OP_CODE:C(1*), DESC:C(1*), "
+	temp$=temp$+"STD_HRS:C(1*), ACT_HRS:C(1*), VAR_HRS:C(1*), VAR_HRS_PCT:C(1*), "
+	temp$=temp$+"STD_AMT:C(1*), ACT_AMT:C(1*), VAR_AMT:C(1*), VAR_AMT_PCT:C(1*), "
+	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), TOTAL_LABEL:C(1*) "
 
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
@@ -192,68 +198,78 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 
 		sql_prep$=""
 		 
-		sql_prep$=sql_prep$+"SELECT  std.op_code "
-		sql_prep$=sql_prep$+"       ,std.code_desc "
-		sql_prep$=sql_prep$+"       ,std.total_time "
-		sql_prep$=sql_prep$+"       ,std.tot_std_cost "
-		sql_prep$=sql_prep$+"       ,std.direct_rate  "
-		sql_prep$=sql_prep$+"       ,std.ovhd_rate "
-		sql_prep$=sql_prep$+"       ,acto.op_hours   AS acto_ops_hrs "
-		sql_prep$=sql_prep$+"       ,acto.op_amt     AS acto_ops_amt "
-		sql_prep$=sql_prep$+"       ,acto.op_dir_amt AS acto_ops_dir_amt "
-		sql_prep$=sql_prep$+"       ,acto.op_oh_amt  AS acto_ops_oh_amt "
-		sql_prep$=sql_prep$+"       ,actc.op_hours   AS actc_ops_hrs "
-		sql_prep$=sql_prep$+"       ,actc.op_amt     AS actc_ops_amt "
-		sql_prep$=sql_prep$+"       ,actc.op_dir_amt AS actc_ops_dir_amt "
-		sql_prep$=sql_prep$+"       ,actc.op_oh_amt  AS actc_ops_oh_amt "
-		sql_prep$=sql_prep$+"FROM (SELECT firm_id "
-		sql_prep$=sql_prep$+"            ,wo_location "
-		sql_prep$=sql_prep$+"            ,wo_no "
-		sql_prep$=sql_prep$+"            ,op_seq "
-		sql_prep$=sql_prep$+"            ,internal_seq_no "
-		sql_prep$=sql_prep$+"            ,op_code "
-		sql_prep$=sql_prep$+"            ,code_desc "
-		sql_prep$=sql_prep$+"            ,total_time "
-		sql_prep$=sql_prep$+"            ,tot_std_cost "
-		sql_prep$=sql_prep$+"            ,direct_rate  "
-		sql_prep$=sql_prep$+"            ,ovhd_rate "
-		sql_prep$=sql_prep$+"      FROM sfe_wooprtn "
-		sql_prep$=sql_prep$+"      WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"        AND line_type = 'S' "		
-		sql_prep$=sql_prep$+"     ) AS std "
-		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
-		sql_prep$=sql_prep$+"                 ,wo_location "
-		sql_prep$=sql_prep$+"                 ,wo_no "
-		sql_prep$=sql_prep$+"                 ,oper_seq_ref "
-		sql_prep$=sql_prep$+"                 ,SUM(units+setup_time)  AS op_hours "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost)          AS op_amt "
-		sql_prep$=sql_prep$+"                 ,SUM(units*direct_rate) AS op_dir_amt "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost-(units*direct_rate)) AS op_oh_amt "
-		sql_prep$=sql_prep$+"           FROM sft_opnoprtr  "
-		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no,oper_seq_ref "
-		sql_prep$=sql_prep$+"          ) AS acto "
-		sql_prep$=sql_prep$+"       ON std.firm_id=acto.firm_id "
-		sql_prep$=sql_prep$+"      AND std.wo_location=acto.wo_location "
-		sql_prep$=sql_prep$+"      AND std.wo_no=acto.wo_no "
-		sql_prep$=sql_prep$+"      AND std.internal_seq_no=acto.oper_seq_ref "
-		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
-		sql_prep$=sql_prep$+"                 ,wo_location "
-		sql_prep$=sql_prep$+"                 ,wo_no "
-		sql_prep$=sql_prep$+"                 ,oper_seq_ref "
-		sql_prep$=sql_prep$+"                 ,SUM(units+setup_time)  AS op_hours "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost)          AS op_amt "
-		sql_prep$=sql_prep$+"                 ,SUM(units*direct_rate) AS op_dir_amt "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost-(units*direct_rate)) AS op_oh_amt "
-		sql_prep$=sql_prep$+"           FROM sft_clsoprtr  "
-		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no,oper_seq_ref "
-		sql_prep$=sql_prep$+"          ) AS actc "
-		sql_prep$=sql_prep$+"       ON std.firm_id=actc.firm_id "
-		sql_prep$=sql_prep$+"      AND std.wo_location=actc.wo_location "
-		sql_prep$=sql_prep$+"      AND std.wo_no=actc.wo_no "
-		sql_prep$=sql_prep$+"      AND std.internal_seq_no=actc.oper_seq_ref "
-		sql_prep$=sql_prep$+"WHERE std.firm_id = '"+firm_id$+"' AND std.wo_location = '"+wo_loc$+"' AND std.wo_no = '"+wo_no$+"' "
+		sql_prep$=sql_prep$+"SELECT std.op_code "+$0a$
+		sql_prep$=sql_prep$+"     , std.code_desc "+$0a$
+		sql_prep$=sql_prep$+"     , std.total_time "+$0a$
+		sql_prep$=sql_prep$+"     , std.tot_std_cost "+$0a$
+		sql_prep$=sql_prep$+"     , std.direct_rate  "+$0a$
+		sql_prep$=sql_prep$+"     , std.ovhd_rate "+$0a$
+		sql_prep$=sql_prep$+"     , std.wo_op_ref "+$0a$
+		sql_prep$=sql_prep$+"     , acto.op_hours   AS acto_ops_hrs "+$0a$
+		sql_prep$=sql_prep$+"     , acto.op_amt     AS acto_ops_amt "+$0a$
+		sql_prep$=sql_prep$+"     , acto.op_dir_amt AS acto_ops_dir_amt "+$0a$
+		sql_prep$=sql_prep$+"     , acto.op_oh_amt  AS acto_ops_oh_amt "+$0a$
+		sql_prep$=sql_prep$+"     , actc.op_hours   AS actc_ops_hrs "+$0a$
+		sql_prep$=sql_prep$+"     , actc.op_amt     AS actc_ops_amt "+$0a$
+		sql_prep$=sql_prep$+"     , actc.op_dir_amt AS actc_ops_dir_amt "+$0a$
+		sql_prep$=sql_prep$+"     , actc.op_oh_amt  AS actc_ops_oh_amt "+$0a$
+		sql_prep$=sql_prep$+"  FROM (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"             , wo_location "+$0a$
+		sql_prep$=sql_prep$+"             , wo_no "+$0a$
+		sql_prep$=sql_prep$+"             , op_seq "+$0a$
+		sql_prep$=sql_prep$+"             , internal_seq_no "+$0a$
+		sql_prep$=sql_prep$+"             , op_code "+$0a$
+		sql_prep$=sql_prep$+"             , code_desc "+$0a$
+		sql_prep$=sql_prep$+"             , wo_op_ref "+$0a$
+		sql_prep$=sql_prep$+"             , total_time "+$0a$
+		sql_prep$=sql_prep$+"             , tot_std_cost "+$0a$
+		sql_prep$=sql_prep$+"             , direct_rate  "+$0a$
+		sql_prep$=sql_prep$+"             , ovhd_rate "+$0a$
+		sql_prep$=sql_prep$+"          FROM sfe_wooprtn "+$0a$
+		sql_prep$=sql_prep$+"         WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"           AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"           AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           AND line_type = 'S' "+$0a$		
+		sql_prep$=sql_prep$+"       ) AS std "+$0a$
+		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"                , wo_location "+$0a$
+		sql_prep$=sql_prep$+"                , wo_no "+$0a$
+		sql_prep$=sql_prep$+"                , oper_seq_ref "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(units+setup_time)  AS op_hours "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost)          AS op_amt "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(units*direct_rate) AS op_dir_amt "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost-(units*direct_rate)) AS op_oh_amt "+$0a$
+		sql_prep$=sql_prep$+"             FROM sft_opnoprtr  "+$0a$
+		sql_prep$=sql_prep$+"            WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no,oper_seq_ref "+$0a$
+		sql_prep$=sql_prep$+"          ) AS acto "+$0a$
+		sql_prep$=sql_prep$+"       ON std.firm_id=acto.firm_id "+$0a$
+		sql_prep$=sql_prep$+"      AND std.wo_location=acto.wo_location "+$0a$
+		sql_prep$=sql_prep$+"      AND std.wo_no=acto.wo_no "+$0a$
+		sql_prep$=sql_prep$+"      AND std.internal_seq_no=acto.oper_seq_ref "+$0a$
+		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"                , wo_location "+$0a$
+		sql_prep$=sql_prep$+"                , wo_no "+$0a$
+		sql_prep$=sql_prep$+"                , oper_seq_ref "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(units+setup_time)  AS op_hours "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost)          AS op_amt "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(units*direct_rate) AS op_dir_amt "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost-(units*direct_rate)) AS op_oh_amt "+$0a$
+		sql_prep$=sql_prep$+"             FROM sft_clsoprtr  "+$0a$
+		sql_prep$=sql_prep$+"            WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no,oper_seq_ref "+$0a$
+		sql_prep$=sql_prep$+"          ) AS actc "+$0a$
+		sql_prep$=sql_prep$+"       ON std.firm_id=actc.firm_id "+$0a$
+		sql_prep$=sql_prep$+"      AND std.wo_location=actc.wo_location "+$0a$
+		sql_prep$=sql_prep$+"      AND std.wo_no=actc.wo_no "+$0a$
+		sql_prep$=sql_prep$+"      AND std.internal_seq_no=actc.oper_seq_ref "+$0a$
+		sql_prep$=sql_prep$+"WHERE std.firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"  AND std.wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"  AND std.wo_no = '"+wo_no$+"'"+$0a$
 		
 		sql_chan=sqlunt
 		sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -285,8 +301,16 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 				act_ops_oh_amt=read_tpl.acto_ops_oh_amt+read_tpl.actc_ops_oh_amt;    rem **Open plus Closed
 
 			rem --- Output Operations data
+
+			if developing 
+				gosub send_test_pattern
+				continue
+			endif
+
 			data! = rs!.getEmptyRecordData()
 
+			data!.setFieldValue("THIS_IS_TOTAL_LINE","N")
+			data!.setFieldValue("REF_NO",read_tpl.wo_op_ref$)
 			data!.setFieldValue("OP_CODE",op_code$)
 			data!.setFieldValue("DESC",op_code_desc$)		
 			data!.setFieldValue("STD_HRS",str(std_ops_tot_time:sf_hours_mask$))
@@ -326,15 +350,10 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		wend
 	
 	rem --- Output Ops Dir and Ovhd totals lines (Direct Total and Overhead Total) 
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("STD_AMT",fill(20,"_"))
-		data!.setFieldValue("ACT_AMT",fill(20,"_"))
-		data!.setFieldValue("VAR_AMT",fill(20,"_"))
-		data!.setFieldValue("VAR_AMT_PCT",fill(20,"_"))
-		rs!.insert(data!)
 		
 		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DESC","Direct Total")
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+		data!.setFieldValue("TOTAL_LABEL","Direct Total")
 		data!.setFieldValue("STD_AMT",str(tot_std_dir:iv_cost_mask$))
 		data!.setFieldValue("ACT_AMT",str(tot_act_dir:iv_cost_mask$))
 		data!.setFieldValue("VAR_AMT",str(tot_std_dir-tot_act_dir:iv_cost_mask$))
@@ -346,7 +365,8 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		rs!.insert(data!)
 
 		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DESC","Overhead Total")
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+		data!.setFieldValue("TOTAL_LABEL","Overhead Total")
 		data!.setFieldValue("STD_AMT",str(tot_std_oh:iv_cost_mask$))
 		data!.setFieldValue("ACT_AMT",str(tot_act_oh:iv_cost_mask$))
 		data!.setFieldValue("VAR_AMT",str(tot_std_oh-tot_act_oh:iv_cost_mask$))
@@ -356,17 +376,12 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 			data!.setFieldValue("VAR_AMT_PCT",str(0:sf_pct_mask$))
 		endif
 		rs!.insert(data!)
-		
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("STD_AMT",fill(20,"_"))
-		data!.setFieldValue("ACT_AMT",fill(20,"_"))
-		data!.setFieldValue("VAR_AMT",fill(20,"_"))
-		data!.setFieldValue("VAR_AMT_PCT",fill(20,"_"))
-		rs!.insert(data!)
+
 
 	rem --- Output Ops WO total line (Labor Total)
 		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DESC","Labor Total")
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+		data!.setFieldValue("TOTAL_LABEL","Labor Total")
 		data!.setFieldValue("STD_AMT",str(tot_std_dir+tot_std_oh:iv_cost_mask$))
 		data!.setFieldValue("ACT_AMT",str(tot_act_dir+tot_act_oh:iv_cost_mask$))
 		data!.setFieldValue("VAR_AMT",str((tot_std_dir+tot_std_oh)-(tot_act_dir+tot_act_oh):iv_cost_mask$))
@@ -386,41 +401,49 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 	rem --- One total line each so we can SUM() the recs
 		sql_prep$=""
 
-		sql_prep$=sql_prep$+"SELECT  mstd.std_mat_amt "
-		sql_prep$=sql_prep$+"       ,macto.acto_mat_amt "
-		sql_prep$=sql_prep$+"       ,mactc.actc_mat_amt "
-		sql_prep$=sql_prep$+"FROM (SELECT firm_id "
-		sql_prep$=sql_prep$+"            ,wo_location "
-		sql_prep$=sql_prep$+"            ,wo_no "
-		sql_prep$=sql_prep$+"            ,SUM(total_cost) AS std_mat_amt "
-		sql_prep$=sql_prep$+"      FROM sfe_womatl "
-		sql_prep$=sql_prep$+"      WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"        AND line_type = 'S' "		
-		sql_prep$=sql_prep$+"      GROUP BY firm_id,wo_location,wo_no "	
-		sql_prep$=sql_prep$+"     ) AS mstd "
-		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
-		sql_prep$=sql_prep$+"                 ,wo_location "
-		sql_prep$=sql_prep$+"                 ,wo_no "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost) AS acto_mat_amt "
-		sql_prep$=sql_prep$+"           FROM sft_opnmattr "
-		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
-		sql_prep$=sql_prep$+"          ) AS macto "		
-		sql_prep$=sql_prep$+"       ON mstd.firm_id=macto.firm_id "
-		sql_prep$=sql_prep$+"      AND mstd.wo_location=macto.wo_location "
-		sql_prep$=sql_prep$+"      AND mstd.wo_no=macto.wo_no "
-		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
-		sql_prep$=sql_prep$+"                 ,wo_location "
-		sql_prep$=sql_prep$+"                 ,wo_no "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost) AS actc_mat_amt "
-		sql_prep$=sql_prep$+"           FROM sft_clsmattr "
-		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
-		sql_prep$=sql_prep$+"          ) AS mactc "			
-		sql_prep$=sql_prep$+"       ON mstd.firm_id=mactc.firm_id "
-		sql_prep$=sql_prep$+"      AND mstd.wo_location=mactc.wo_location "
-		sql_prep$=sql_prep$+"      AND mstd.wo_no=mactc.wo_no "
-		sql_prep$=sql_prep$+"WHERE mstd.firm_id = '"+firm_id$+"' AND mstd.wo_location = '"+wo_loc$+"' AND mstd.wo_no = '"+wo_no$+"' "
+		sql_prep$=sql_prep$+"SELECT mstd.std_mat_amt "+$0a$
+		sql_prep$=sql_prep$+"     , macto.acto_mat_amt "+$0a$
+		sql_prep$=sql_prep$+"     , mactc.actc_mat_amt "+$0a$
+		sql_prep$=sql_prep$+"  FROM (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"             , wo_location "+$0a$
+		sql_prep$=sql_prep$+"             , wo_no "+$0a$
+		sql_prep$=sql_prep$+"             , SUM(total_cost) AS std_mat_amt "+$0a$
+		sql_prep$=sql_prep$+"          FROM sfe_womatl "+$0a$
+		sql_prep$=sql_prep$+"         WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"           AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"           AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           AND line_type = 'S' "+$0a$
+		sql_prep$=sql_prep$+"        GROUP BY firm_id,wo_location,wo_no "	+$0a$
+		sql_prep$=sql_prep$+"       ) AS mstd "+$0a$
+		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"                , wo_location "+$0a$
+		sql_prep$=sql_prep$+"                , wo_no "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost) AS acto_mat_amt "+$0a$
+		sql_prep$=sql_prep$+"             FROM sft_opnmattr "+$0a$
+		sql_prep$=sql_prep$+"            WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "+$0a$
+		sql_prep$=sql_prep$+"          ) AS macto "+$0a$
+		sql_prep$=sql_prep$+"       ON mstd.firm_id=macto.firm_id "+$0a$
+		sql_prep$=sql_prep$+"      AND mstd.wo_location=macto.wo_location "+$0a$
+		sql_prep$=sql_prep$+"      AND mstd.wo_no=macto.wo_no "+$0a$
+		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"                , wo_location "+$0a$
+		sql_prep$=sql_prep$+"                , wo_no "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost) AS actc_mat_amt "+$0a$
+		sql_prep$=sql_prep$+"             FROM sft_clsmattr "+$0a$
+		sql_prep$=sql_prep$+"            WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "+$0a$
+		sql_prep$=sql_prep$+"          ) AS mactc "+$0a$
+		sql_prep$=sql_prep$+"       ON mstd.firm_id=mactc.firm_id "+$0a$
+		sql_prep$=sql_prep$+"      AND mstd.wo_location=mactc.wo_location "+$0a$
+		sql_prep$=sql_prep$+"      AND mstd.wo_no=mactc.wo_no "+$0a$
+		sql_prep$=sql_prep$+"WHERE mstd.firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"  AND mstd.wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"  AND mstd.wo_no = '"+wo_no$+"'"+$0a$
 		
 		sqlclose(sql_chan)
 		sql_chan=sqlunt
@@ -444,43 +467,50 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 	rem --- One total line each so we can SUM() the recs
 		sql_prep$=""
 
-		sql_prep$=sql_prep$+"SELECT  sstd.std_sub_amt "
-		sql_prep$=sql_prep$+"       ,sacto.acto_sub_amt "
-		sql_prep$=sql_prep$+"       ,sactc.actc_sub_amt "
-		sql_prep$=sql_prep$+"FROM (SELECT firm_id "
-		sql_prep$=sql_prep$+"            ,wo_location "
-		sql_prep$=sql_prep$+"            ,wo_no "
-		sql_prep$=sql_prep$+"            ,SUM(total_cost) AS std_sub_amt "
-		sql_prep$=sql_prep$+"      FROM sfe_wosubcnt "
-		sql_prep$=sql_prep$+"      WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"        AND line_type = 'S' "		
-		sql_prep$=sql_prep$+"      GROUP BY firm_id,wo_location,wo_no "	
-		sql_prep$=sql_prep$+"     ) AS sstd "
-		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
-		sql_prep$=sql_prep$+"                 ,wo_location "
-		sql_prep$=sql_prep$+"                 ,wo_no "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost) AS acto_sub_amt "
-		sql_prep$=sql_prep$+"           FROM sft_opnsubtr "
-		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
-		sql_prep$=sql_prep$+"          ) AS sacto "		
-		sql_prep$=sql_prep$+"       ON sstd.firm_id=sacto.firm_id "
-		sql_prep$=sql_prep$+"      AND sstd.wo_location=sacto.wo_location "
-		sql_prep$=sql_prep$+"      AND sstd.wo_no=sacto.wo_no "
-		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "
-		sql_prep$=sql_prep$+"                 ,wo_location "
-		sql_prep$=sql_prep$+"                 ,wo_no "
-		sql_prep$=sql_prep$+"                 ,SUM(ext_cost) AS actc_sub_amt "
-		sql_prep$=sql_prep$+"           FROM sft_clssubtr "
-		sql_prep$=sql_prep$+"           WHERE firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND wo_no = '"+wo_no$+"' "
-		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "	
-		sql_prep$=sql_prep$+"          ) AS sactc "			
-		sql_prep$=sql_prep$+"       ON sstd.firm_id=sactc.firm_id "
-		sql_prep$=sql_prep$+"      AND sstd.wo_location=sactc.wo_location "
-		sql_prep$=sql_prep$+"      AND sstd.wo_no=sactc.wo_no "
-		sql_prep$=sql_prep$+"WHERE sstd.firm_id = '"+firm_id$+"' AND sstd.wo_location = '"+wo_loc$+"' AND sstd.wo_no = '"+wo_no$+"' "
-		
-		
+		sql_prep$=sql_prep$+"SELECT sstd.std_sub_amt "+$0a$
+		sql_prep$=sql_prep$+"     , sacto.acto_sub_amt "+$0a$
+		sql_prep$=sql_prep$+"     , sactc.actc_sub_amt "+$0a$
+		sql_prep$=sql_prep$+"  FROM (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"             , wo_location "+$0a$
+		sql_prep$=sql_prep$+"             , wo_no "+$0a$
+		sql_prep$=sql_prep$+"             , SUM(total_cost) AS std_sub_amt "+$0a$
+		sql_prep$=sql_prep$+"          FROM sfe_wosubcnt "+$0a$
+		sql_prep$=sql_prep$+"         WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"           AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"           AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           AND line_type = 'S' "+$0a$
+		sql_prep$=sql_prep$+"        GROUP BY firm_id,wo_location,wo_no "+$0a$
+		sql_prep$=sql_prep$+"       ) AS sstd "+$0a$
+		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"                , wo_location "+$0a$
+		sql_prep$=sql_prep$+"                , wo_no "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost) AS acto_sub_amt "+$0a$
+		sql_prep$=sql_prep$+"             FROM sft_opnsubtr "+$0a$
+		sql_prep$=sql_prep$+"            WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "+$0a$
+		sql_prep$=sql_prep$+"          ) AS sacto "+$0a$
+		sql_prep$=sql_prep$+"       ON sstd.firm_id=sacto.firm_id "+$0a$
+		sql_prep$=sql_prep$+"      AND sstd.wo_location=sacto.wo_location "+$0a$
+		sql_prep$=sql_prep$+"      AND sstd.wo_no=sacto.wo_no "+$0a$
+		sql_prep$=sql_prep$+"LEFT JOIN (SELECT firm_id "+$0a$
+		sql_prep$=sql_prep$+"                , wo_location "+$0a$
+		sql_prep$=sql_prep$+"                , wo_no "+$0a$
+		sql_prep$=sql_prep$+"                , SUM(ext_cost) AS actc_sub_amt "+$0a$
+		sql_prep$=sql_prep$+"             FROM sft_clssubtr "+$0a$
+		sql_prep$=sql_prep$+"            WHERE firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"              AND wo_no = '"+wo_no$+"'"+$0a$
+		sql_prep$=sql_prep$+"           GROUP BY firm_id,wo_location,wo_no "+$0a$
+		sql_prep$=sql_prep$+"          ) AS sactc "+$0a$
+		sql_prep$=sql_prep$+"       ON sstd.firm_id=sactc.firm_id "+$0a$
+		sql_prep$=sql_prep$+"      AND sstd.wo_location=sactc.wo_location "+$0a$
+		sql_prep$=sql_prep$+"      AND sstd.wo_no=sactc.wo_no "+$0a$
+		sql_prep$=sql_prep$+"WHERE sstd.firm_id = '"+firm_id$+"' "+$0a$
+		sql_prep$=sql_prep$+"  AND sstd.wo_location = '"+wo_loc$+"' "+$0a$
+		sql_prep$=sql_prep$+"  AND sstd.wo_no = '"+wo_no$+"'"+$0a$		
+	
 		sqlclose(sql_chan)
 		sql_chan=sqlunt
 		sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -502,7 +532,8 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 	rem --- Output materials and subcontract totals
 
 		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DESC","Materials")
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+		data!.setFieldValue("TOTAL_LABEL","Materials")
 		data!.setFieldValue("STD_AMT",str(std_mat_amt:iv_cost_mask$))
 		data!.setFieldValue("ACT_AMT",str(act_mat_amt:iv_cost_mask$))
 		data!.setFieldValue("VAR_AMT",str(std_mat_amt-act_mat_amt:iv_cost_mask$))
@@ -517,7 +548,8 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		rs!.insert(data!)
 
 		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DESC","Subcontracts")
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+		data!.setFieldValue("TOTAL_LABEL","Subcontracts")
 		data!.setFieldValue("STD_AMT",str(std_sub_amt:iv_cost_mask$))
 		data!.setFieldValue("ACT_AMT",str(act_sub_amt:iv_cost_mask$))
 		data!.setFieldValue("VAR_AMT",str(std_sub_amt-act_sub_amt:iv_cost_mask$))
@@ -532,20 +564,10 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		rs!.insert(data!)
 
 rem --- Output WO cost summary totals
-	
-	data! = rs!.getEmptyRecordData()
-	data!.setFieldValue("STD_HRS",fill(20,"_"))
-	data!.setFieldValue("ACT_HRS",fill(20,"_"))
-	data!.setFieldValue("VAR_HRS",fill(20,"_"))
-	data!.setFieldValue("VAR_HRS_PCT",fill(20,"_"))
-	data!.setFieldValue("STD_AMT",fill(20,"_"))
-	data!.setFieldValue("ACT_AMT",fill(20,"_"))
-	data!.setFieldValue("VAR_AMT",fill(20,"_"))
-	data!.setFieldValue("VAR_AMT_PCT",fill(20,"_"))
-	rs!.insert(data!)
 
 	data! = rs!.getEmptyRecordData()
-	data!.setFieldValue("DESC","WO Totals")
+	data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+	data!.setFieldValue("TOTAL_LABEL","WO Totals")
 	data!.setFieldValue("STD_HRS",str(wo_tot_std_hrs:iv_cost_mask$))
 	data!.setFieldValue("ACT_HRS",str(wo_tot_act_hrs:iv_cost_mask$))
 	data!.setFieldValue("VAR_HRS",str(wo_tot_std_hrs-wo_tot_act_hrs:iv_cost_mask$))
@@ -565,18 +587,8 @@ rem --- Output WO cost summary totals
 	rs!.insert(data!)
 
 	data! = rs!.getEmptyRecordData()
-	data!.setFieldValue("STD_HRS",fill(20,"_"))
-	data!.setFieldValue("ACT_HRS",fill(20,"_"))
-	data!.setFieldValue("VAR_HRS",fill(20,"_"))
-	data!.setFieldValue("VAR_HRS_PCT",fill(20,"_"))
-	data!.setFieldValue("STD_AMT",fill(20,"_"))
-	data!.setFieldValue("ACT_AMT",fill(20,"_"))
-	data!.setFieldValue("VAR_AMT",fill(20,"_"))
-	data!.setFieldValue("VAR_AMT_PCT",fill(20,"_"))
-	rs!.insert(data!)
-
-	data! = rs!.getEmptyRecordData()
-	data!.setFieldValue("DESC","Per Unit Totals")
+	data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
+	data!.setFieldValue("TOTAL_LABEL","Per Unit Totals")
 	if prod_qty<>0
 		data!.setFieldValue("STD_HRS",str(wo_tot_std_hrs/prod_qty:iv_cost_mask$))
 		data!.setFieldValue("ACT_HRS",str(wo_tot_act_hrs/prod_qty:iv_cost_mask$))
@@ -612,7 +624,35 @@ rem --- Tell the stored procedure to return the result set.
 	goto std_exit
 
 rem --- Subroutines
+	
+	rem --- Print test pattern of main fields for developing/debugging column placement
+	send_test_pattern: 
+		data! = rs!.getEmptyRecordData()
 
+		data!.setFieldValue("THIS_IS_TOTAL_LINE","N")
+		data!.setFieldValue("REF_NO","99999X")
+		data!.setFieldValue("OP_CODE",FILL(LEN(op_code$)-1,"W")+"x")
+		data!.setFieldValue("DESC",FILL(LEN(op_code_desc$)-1,"W")+"x")
+		data!.setFieldValue("STD_HRS","x"+sf_hours_mask$+"x")
+		
+		data!.setFieldValue("ACT_HRS","x"+sf_hours_mask$+"x")
+		data!.setFieldValue("VAR_HRS","x"+sf_hours_mask$+"x")
+		if std_ops_tot_time<>0
+			data!.setFieldValue("VAR_HRS_PCT","x"+sf_pct_mask$+"x")
+		else
+			data!.setFieldValue("VAR_HRS_PCT","x"+sf_pct_mask$+"x")
+		endif
+		data!.setFieldValue("STD_AMT","x"+iv_cost_mask$+"x")
+		data!.setFieldValue("ACT_AMT","x"+iv_cost_mask$+"x")
+		data!.setFieldValue("VAR_AMT","x"+iv_cost_mask$+"x")
+		if std_ops_amt<>0
+			data!.setFieldValue("VAR_AMT_PCT","x"+sf_pct_mask$+"x")
+		else
+			data!.setFieldValue("VAR_AMT_PCT","x"+sf_pct_mask$+"x")
+		endif
+		rs!.insert(data!)		
+	
+	return
 
 
 rem --- Functions

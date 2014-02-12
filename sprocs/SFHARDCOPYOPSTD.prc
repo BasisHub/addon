@@ -10,6 +10,8 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+developing=0; rem Set to 1 to turn on test pattern printing for development/debug
+
 seterr sproc_error
 
 rem --- Set of utility methods
@@ -49,9 +51,13 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
-	temp$="OP_CODE:C(1*), REQ_DATE:C(1*), HOURS:C(1*), PC_HR:C(1*), DIRECT:C(1*), OVHD:C(1*), "
-	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), SETUP:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
-	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
+	
+	temp$=""
+	temp$=temp$+"REF_NO:C(1*), OP_CODE:C(1*), CODE_DESC:C(1*), COMMENTS:C(1*), "
+	temp$=temp$+"REQ_DATE:C(1*), HOURS:C(1*), PC_HR:C(1*), DIRECT:C(1*), "
+	temp$=temp$+"OVHD:C(1*), UNITS_EA:C(1*), COST_EA:C(1*), SETUP:C(1*), "
+	temp$=temp$+"UNITS_TOT:C(1*), COST_TOT:C(1*), THIS_IS_TOTAL_LINE:C(1*), "	
+	temp$=temp$+"COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
 
 	rs! = BBJAPI().createMemoryRecordSet(temp$)
 
@@ -128,9 +134,15 @@ rem --- Get proper Op Code Maintenance table
 
 rem --- Build SQL statement
 
-	sql_prep$="select op_code, require_date, runtime_hrs, pcs_per_hour, direct_rate, ovhd_rate, setup_time, "
-	sql_prep$=sql_prep$+"hrs_per_pce, unit_cost, total_time, tot_std_cost, line_type, ext_comments "
-	sql_prep$=sql_prep$+"from sfe_wooprtn where firm_id = '"+firm_id$+"' and wo_location = '"+wo_loc$+"' and wo_no = '"+wo_no$+"'"
+	sql_prep$=""
+	sql_prep$=sql_prep$+"SELECT op_code, wo_op_ref, require_date, runtime_hrs "+$0a$
+	sql_prep$=sql_prep$+"     , pcs_per_hour, direct_rate, ovhd_rate, setup_time "+$0a$
+	sql_prep$=sql_prep$+"     , hrs_per_pce, unit_cost, total_time, tot_std_cost "+$0a$
+	sql_prep$=sql_prep$+"     , line_type, ext_comments "+$0a$
+	sql_prep$=sql_prep$+"  FROM sfe_wooprtn "+$0a$
+	sql_prep$=sql_prep$+" WHERE firm_id = '"+firm_id$+"' "+$0a$
+	sql_prep$=sql_prep$+"   AND wo_location = '"+wo_loc$+"' "+$0a$
+	sql_prep$=sql_prep$+"   AND wo_no = '"+wo_no$+"'"+$0a$
 	
 	sql_chan=sqlunt
 	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -148,10 +160,21 @@ rem --- Trip Read
 
 		dim opcode_tpl$:fattr(opcode_tpl$)
 		read record (opcode_dev,key=firm_id$+read_tpl.op_code$,dom=*next) opcode_tpl$
+
+		if developing 
+			gosub send_test_pattern
+			continue
+		endif
+				
 		if read_tpl.line_type$="M"
-			data!.setFieldValue("OP_CODE",read_tpl.ext_comments$)
+			Rem --- Send data row for Memos
+			data!.setFieldValue("COMMENTS",read_tpl.ext_comments$)
+			rs!.insert(data!)
 		else
-			data!.setFieldValue("OP_CODE",read_tpl.op_code$+" "+opcode_tpl.code_desc$)
+			rem --- Send data row for non-Memos
+			data!.setFieldValue("REF_NO",read_tpl.wo_op_ref$)
+			data!.setFieldValue("OP_CODE",read_tpl.op_code$)
+			data!.setFieldValue("CODE_DESC",opcode_tpl.code_desc$)
 			data!.setFieldValue("REQ_DATE",fndate$(read_tpl.require_date$))
 			data!.setFieldValue("HOURS",str(read_tpl.hrs_per_pce:sf_hours_mask$))
 			data!.setFieldValue("PC_HR",str(read_tpl.pcs_per_hour:sf_units_mask$))
@@ -165,9 +188,11 @@ rem --- Trip Read
 				data!.setFieldValue("COST_EA",str(read_tpl.unit_cost:sf_cost_mask$))
 				data!.setFieldValue("COST_TOT",str(read_tpl.tot_std_cost:sf_amt_mask$))
 			endif
+			rs!.insert(data!)			
 		endif
+		
 		tot_recs=tot_recs+1
-		rs!.insert(data!)
+		
 		tot_units_ea=tot_units_ea+read_tpl.runtime_hrs
 		tot_cost_ea=tot_cost_ea+read_tpl.unit_cost
 		tot_units_tot=tot_units_tot+read_tpl.total_time
@@ -203,6 +228,37 @@ rem --- Tell the stored procedure to return the result set.
 	sp!.setRecordSet(rs!)
 	goto std_exit
 
+rem --- Subroutines
+	
+	rem --- Print test pattern of main fields for developing/debugging column placement
+	send_test_pattern: 
+
+		if read_tpl.line_type$="M"
+			Rem --- Send data row for Memos
+			data!.setFieldValue("COMMENTS",FILL(LEN(read_tpl.ext_comments$)-1,"W")+"x")
+		else
+			rem --- Send data row for non-Memos
+			data!.setFieldValue("REF_NO","99999X")
+			data!.setFieldValue("OP_CODE",FILL(LEN(read_tpl.op_code$)-1,"W")+"X")
+			data!.setFieldValue("CODE_DESC",FILL(LEN(opcode_tpl.code_desc$)-1,"W")+"x")
+			data!.setFieldValue("REQ_DATE","98/65/6789")
+			data!.setFieldValue("HOURS","x"+sf_hours_mask$+"x")
+			data!.setFieldValue("PC_HR","x"+sf_units_mask$+"x")
+			data!.setFieldValue("UNITS_EA","x"+sf_units_mask$+"x")
+			data!.setFieldValue("SETUP","x"+sf_hours_mask$+"x")
+			data!.setFieldValue("UNITS_TOT","x"+sf_units_mask$+"x")
+			
+			if print_costs$="Y"
+				data!.setFieldValue("DIRECT","x"+sf_rate_mask$+"x")
+				data!.setFieldValue("OVHD","x"+sf_rate_mask$+"x")
+				data!.setFieldValue("COST_EA","x"+sf_cost_mask$+"x")
+				data!.setFieldValue("COST_TOT","x"+sf_amt_mask$+"x")
+			endif
+		endif	
+		rs!.insert(data!)
+	
+	return
+	
 rem --- Functions
 
     def fndate$(q$)

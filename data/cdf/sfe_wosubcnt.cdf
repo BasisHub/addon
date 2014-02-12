@@ -11,9 +11,10 @@ rem --- Track wo_ref_num in Map to insure they are unique
 	endif
 [[SFE_WOSUBCNT.WO_REF_NUM.AVAL]]
 rem --- Verify wo_ref_num is unique
-	refnumMap!=callpoint!.getDevObject("refnumMap")
 	wo_ref_num$=callpoint!.getUserInput()
-	if cvs(wo_ref_num$,2)<>"" and cvs(wo_ref_num$,2)<>callpoint!.getDevObject("prev_wo_ref_num") then
+	prev_wo_ref_num$=callpoint!.getDevObject("prev_wo_ref_num")
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	if wo_ref_num$<>prev_wo_ref_num$ then
 		if refnumMap!.containsKey(wo_ref_num$) then
 			msg_id$="SF_DUP_REF_NUM"
 			dim msg_tokens$[1]
@@ -22,7 +23,8 @@ rem --- Verify wo_ref_num is unique
 			callpoint!.setStatus("ABORT")
 			break
 		else
-			refnumMap!.put(wo_ref_num$,"")
+			if cvs(wo_ref_num$,2)<>"" then refnumMap!.put(wo_ref_num$,"")
+			if cvs(prev_wo_ref_num$,2)<>"" then refnumMap!.remove(prev_wo_ref_num$)
 		endif
 	endif
 [[SFE_WOSUBCNT.BDEL]]
@@ -382,9 +384,16 @@ rem --- Disable grid if Closed Work Order or Recurring or PO not installed
 		callpoint!.setTableAttribute("OPTS",opts$+"BID")
 
 		x$=callpoint!.getTableColumns()
+		worefnumPos=pos("SFE_WOSUBCNT.WO_REF_NUM"=x$)
 		for x=1 to len(x$) step 40
-			opts$=callpoint!.getTableColumnAttribute(cvs(x$(x,40),2),"OPTS")
-			callpoint!.setTableColumnAttribute(cvs(x$(x,40),2),"OPTS",o$+"C"); rem - makes cells read only
+			rem --- Don't disable wo_ref_num for Bills Of Materials unless WO is closed
+			if x<>worefnumPos or
+:			(x=worefnumPos and 
+:			(callpoint!.getDevObject("wo_status")="C" or (callpoint!.getDevObject("wo_category")<>"I" and callpoint!.getDevObject("bm")<>"Y")))
+:			then
+				opts$=callpoint!.getTableColumnAttribute(cvs(x$(x,40),2),"OPTS")
+				callpoint!.setTableColumnAttribute(cvs(x$(x,40),2),"OPTS",opts$+"C"); rem - makes cells read only
+			endif
 		next x
 	endif
 
@@ -412,15 +421,8 @@ rem --- fill listbox for use with Op Sequence
 		dim op_code$:fattr(op_code$)
 		read record (op_code,key=firm_id$+sfe02a.op_code$,dom=*next)op_code$
 		ops_lines!.addItem(sfe02a.internal_seq_no$)
-		op_code_list$=op_code_list$+sfe02a.op_code$
-		work_var=pos(sfe02a.op_code$=op_code_list$,len(sfe02a.op_code$),0)
-		if work_var>1
-			work_var$=sfe02a.op_code$+"("+str(work_var)+")"
-		else
-			work_var$=sfe02a.op_code$
-		endif
-		ops_items!.addItem(work_var$)
-		ops_list!.addItem(work_var$+" - "+op_code.code_desc$)
+        ops_items!.addItem(sfe02a.wo_op_ref$)
+        ops_list!.addItem(sfe02a.wo_op_ref$+" - "+sfe02a.op_code$+" - "+op_code.code_desc$)
 	wend
 
 	if ops_lines!.size()>0
@@ -438,6 +440,7 @@ rem --- fill listbox for use with Op Sequence
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
 	my_grid!.setColumnListControl(ListColumn,my_control!)
+    my_grid!.setColumnHeaderCellText(ListColumn,"Op Ref")
 
 rem --- Check for PO Installed
 rem --- confusion in old code - seems subs grid isn't accessible if PO not installed, but other tests in the code look at the PO flag

@@ -1,3 +1,25 @@
+[[<<DISPLAY>>.OP_REF.AVAL]]
+rem --- Use this op_ref to initialize op_code and oper_seq_ref
+	op_ref$=callpoint!.getUserInput()
+	wo_location$="  "
+	wo_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO")
+	wooprtn_dev=callpoint!.getDevObject("sfe_wooprtn_dev")
+	dim wooprtn$:callpoint!.getDevObject("sfe_wooprtn_tpl")
+	key$=firm_id$+wo_location$+wo_no$+op_ref$
+	findrecord(wooprtn_dev,key=key$,knum="AO_OP_REF",dom=*next)wooprtn$
+	rem --- Must be a Standard line type operation, not a Message
+	if wooprtn.line_type$<>"S" then
+		msg_id$ = "WO_STD_OP_LINE"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+	rem --- Op_code initializations
+	if wooprtn.internal_seq_no$<>callpoint!.getColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF") then
+		callpoint!.setColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF",wooprtn.internal_seq_no$)
+		op_code$=wooprtn.op_code$
+		gosub op_code_init
+	endif
 [[SFE_TIMEDATEDET.AWRI]]
 
 	gosub calc_header_hrs
@@ -15,9 +37,9 @@ rem --- Display appropriate WO description
 	wo_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO")
 	gosub set_wo_desc
 
-rem --- Display operation step
+rem --- Display operation ref
 	oper_seq_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF")
-	gosub set_op_step
+	gosub set_op_ref
 
 	gosub calc_header_hrs
 [[SFE_TIMEDATEDET.BGDR]]
@@ -25,17 +47,23 @@ rem --- Display appropriate WO description
 	wo_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO")
 	gosub set_wo_desc
 
-rem --- Display operation step
+rem --- Display operation ref
 	oper_seq_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF")
-	gosub set_op_step
+	gosub set_op_ref
 [[SFE_TIMEDATEDET.AGRN]]
 rem --- Display appropriate WO description
 	wo_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO")
 	gosub set_wo_desc
 
-rem --- Display operation step
+rem --- Display operation ref
 	oper_seq_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF")
-	gosub set_op_step
+	gosub set_op_ref
+
+rem --- Require op_ref entry
+	callpoint!.setTableColumnAttribute("<<DISPLAY>>.OP_REF","MINL","1")
+
+rem --- Set op_ref lookup
+	callpoint!.setTableColumnAttribute("<<DISPLAY>>.OP_REF","IDEF","AO_WO_OP_REF_LK")
 
 rem --- Op_code initializations
 	op_code$=callpoint!.getColumnData("SFE_TIMEDATEDET.OP_CODE")
@@ -44,73 +72,13 @@ rem --- Op_code initializations
 rem --- Hold on to starting values for hrs and setup_time
 	callpoint!.setDevObject("previous_hrs",callpoint!.getColumnData("SFE_TIMEDATEDET.HRS"))
 	callpoint!.setDevObject("previous_setup_time",callpoint!.getColumnData("SFE_TIMEDATEDET.SETUP_TIME"))
-[[SFE_TIMEDATEDET.OPER_SEQ_REF.BINP]]
-rem --- WO operation lookup
-	call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOOPRTN","PRIMARY",key_tpl$,rd_table_chans$[all],status$
-	dim wooprtn_key$:key_tpl$
-	dim filter_defs$[3,2]
-	filter_defs$[1,0]="SFE_WOOPRTN.FIRM_ID"
-	filter_defs$[1,1]="='"+firm_id$ +"'"
-	filter_defs$[1,2]="LOCK"
-	filter_defs$[2,0]="SFE_WOOPRTN.WO_NO"
-	filter_defs$[2,1]="='"+callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO")+"' "
-	filter_defs$[2,2]="LOCK"
-	filter_defs$[3,0]="SFE_WOOPRTN.LINE_TYPE"
-	filter_defs$[3,1]="<>'M' "
-	filter_defs$[3,2]="LOCK"
-	
-	call stbl("+DIR_SYP")+"bax_query.bbj",gui_dev,form!,"AO_WO_OPRTN_LK","",table_chans$[all],wooprtn_key$,filter_defs$[all]
-
-	if cvs(wooprtn_key$,2)<>"" then 
-		wooprtn_dev=callpoint!.getDevObject("sfe_wooprtn_dev")
-		dim wooprtn$:callpoint!.getDevObject("sfe_wooprtn_tpl")
-		key$=wooprtn_key.firm_id$+wooprtn_key.wo_location$+wooprtn_key.wo_no$+wooprtn_key.op_seq$
-		findrecord(wooprtn_dev,key=key$,knum="PRIMARY",dom=*next)wooprtn$
-
-		rem --- Op_code initializations
-		if wooprtn.internal_seq_no$<>callpoint!.getColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF") then
-			callpoint!.setColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF",wooprtn.internal_seq_no$,1)
-			callpoint!.setColumnData("<<DISPLAY>>.OP_STEP",wooprtn.op_seq$,1)
-			op_code$=wooprtn.op_code$
-			gosub op_code_init
-
-			callpoint!.setStatus("MODIFIED")
-		endif
-	endif
-
-	callpoint!.setStatus("ACTIVATE")
-[[SFE_TIMEDATEDET.OPER_SEQ_REF.AVAL]]
-rem --- Verify oper seq ref for this WO
-	oper_seq_no$=callpoint!.getUserInput()
-	wo_no$=callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO")
-	wo_location$="  "
-	wooprtn_dev=callpoint!.getDevObject("sfe_wooprtn_dev")
-	dim wooprtn$:callpoint!.getDevObject("sfe_wooprtn_tpl")
-	findrecord(wooprtn_dev,key=firm_id$+wo_location$+wo_no$+oper_seq_no$,knum="AO_OP_SEQ",dom=*next)wooprtn$
-	if wooprtn.line_type$="M" then
-		msg_id$ = "SF_LABOR_NOT"
-		gosub disp_message
-
-		rem --- Clear op_code initializations
-		callpoint!.setColumnData("<<DISPLAY>>.OP_STEP","",1)
-		op_code$=""
-		gosub op_code_init
-
-		callpoint!.setStatus("ABORT")
-		break
-	endif
-
-	rem --- Op_code initializations
-	callpoint!.setColumnData("<<DISPLAY>>.OP_STEP",wooprtn.op_seq$,1)
-	op_code$=wooprtn.op_code$
-	gosub op_code_init
 [[SFE_TIMEDATEDET.WO_NO.AVAL]]
 rem --- Re-initialize if wo_no changes
 	wo_no$=callpoint!.getUserInput()
 	if wo_no$<>callpoint!.getColumnData("SFE_TIMEDATEDET.WO_NO") then
 		callpoint!.setColumnData("<<DISPLAY>>.WO_DESC","",1)
-		callpoint!.setColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF","",1)
-		callpoint!.setColumnData("<<DISPLAY>>.OP_STEP","",1)
+		callpoint!.setColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF","")
+		callpoint!.setColumnData("<<DISPLAY>>.OP_REF","",1)
 		op_code$=""
 		gosub op_code_init
 	endif
@@ -153,8 +121,8 @@ rem --- Open WO lookup
 		gosub set_wo_desc
 
 		rem --- Re-initialize for wo_no change
-		callpoint!.setColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF","",1)
-		callpoint!.setColumnData("<<DISPLAY>>.OP_STEP","",1)
+		callpoint!.setColumnData("SFE_TIMEDATEDET.OPER_SEQ_REF","")
+		callpoint!.setColumnData("<<DISPLAY>>.OP_REF","",1)
 		op_code$=""
 		gosub op_code_init
 
@@ -370,7 +338,7 @@ rem ==========================================================================
 	return
 
 rem ==========================================================================
-set_op_step: rem --- Display operation step
+set_op_ref: rem --- Display operation reference
 rem --- oper_seq_no$: input
 rem ==========================================================================
 	wo_location$="  "
@@ -378,7 +346,7 @@ rem ==========================================================================
 	wooprtn_dev=callpoint!.getDevObject("sfe_wooprtn_dev")
 	dim wooprtn$:callpoint!.getDevObject("sfe_wooprtn_tpl")
 	findrecord(wooprtn_dev,key=firm_id$+wo_location$+wo_no$+oper_seq_no$,knum="AO_OP_SEQ",dom=*next)wooprtn$
-	callpoint!.setColumnData("<<DISPLAY>>.OP_STEP",wooprtn.op_seq$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.OP_REF",wooprtn.wo_op_ref$,1)
 	return
 
 rem ==========================================================================

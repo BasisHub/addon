@@ -69,9 +69,9 @@ rem --- Maintain count of deleted rows
 	callpoint!.setDevObject("deletedRows",deletedRows)
 [[SFE_WOMATL.WO_REF_NUM.AVAL]]
 rem --- Verify wo_ref_num is unique
-	refnumMap!=callpoint!.getDevObject("refnumMap")
 	wo_ref_num$=callpoint!.getUserInput()
 	prev_wo_ref_num$=callpoint!.getDevObject("prev_wo_ref_num")
+	refnumMap!=callpoint!.getDevObject("refnumMap")
 	if wo_ref_num$<>prev_wo_ref_num$ then
 		if refnumMap!.containsKey(wo_ref_num$) then
 			msg_id$="SF_DUP_REF_NUM"
@@ -613,6 +613,20 @@ next_bill_level:
 rem =========================================================
 do_operations:
 
+	dim sfe_wooprtn$:fattr(sfe_wooprtn$)
+	wk$=fattr(sfe_wooprtn$,"WO_OP_REF")
+	opRef_mask$=fill(dec(wk$(10,2)),"0")
+	if opRefMap!=null() then
+		opRefMap!=new java.util.HashMap()
+		read (sfe02_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)
+		while 1
+			sfe02_key$=key(sfe02_dev,end=*break)
+			if pos(firm_id$+wo_loc$+wo_no$=sfe02_key$)<>1 then break
+			readrecord(sfe02_dev)sfe_wooprtn$
+			opRefMap!.put(sfe_wooprtn.wo_op_ref$,"")
+		wend
+	endif
+
 	yld=num(sfe_womastr.est_yield$)
 	dim bmm_billoper$:fattr(bmm_billoper$)
 	dim sfe_wooprtn$:fattr(sfe_wooprtn$)
@@ -682,8 +696,21 @@ do_operations:
 			gosub disp_message
 			exitto back_up_levels
 		endif
+
 no_prev_ops_key:
 		sfe_wooprtn.op_seq$=str(num(sfe_wooprtn.op_seq$)+1:op_seq_mask$)
+
+		sfe_wooprtn.wo_op_ref$=""
+		nextOpRef=num(sfe_wooprtn.op_seq$)
+		while cvs(sfe_wooprtn.wo_op_ref$,2)=""
+			rem --- With 6 digit wo_op_ref, would need 1,000,000 operations to create an endless loop
+			if !opRefMap!.containsKey(str(nextOpRef,opRef_mask$)) then
+				sfe_wooprtn.wo_op_ref$=str(nextOpRef,opRef_mask$)
+				opRefMap!.put(sfe_wooprtn.wo_op_ref$,"")
+			endif
+			nextOpRef=nextOpRef+1
+		wend
+
 		internal_seq_no$=""
 		call stbl("+DIR_SYP")+"bas_sequences.bbj","INTERNAL_SEQ_NO",internal_seq_no$,table_chans$[all],"QUIET"
 		sfe_wooprtn.internal_seq_no$=internal_seq_no$
@@ -937,15 +964,9 @@ rem --- fill listbox for use with Op Sequence
 		dim op_code$:fattr(op_code$)
 		read record (op_code,key=firm_id$+sfe02a.op_code$,dom=*next)op_code$
 		ops_lines!.addItem(sfe02a.internal_seq_no$)
-		op_code_list$=op_code_list$+sfe02a.op_code$
-		work_var=pos(sfe02a.op_code$=op_code_list$,len(sfe02a.op_code$),0)
-		if work_var>1
-			work_var$=sfe02a.op_code$+"("+str(work_var)+")"
-		else
-			work_var$=sfe02a.op_code$
+        ops_items!.addItem(sfe02a.wo_op_ref$)
+		ops_list!.addItem(sfe02a.wo_op_ref$+" - "+sfe02a.op_code$+" - "+op_code.code_desc$)
 		endif
-		ops_items!.addItem(work_var$)
-		ops_list!.addItem(work_var$+" - "+op_code.code_desc$)
 	wend
 
 	if ops_lines!.size()>0
@@ -963,6 +984,7 @@ rem --- fill listbox for use with Op Sequence
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
 	my_grid!.setColumnListControl(ListColumn,my_control!)
+	my_grid!.setColumnHeaderCellText(ListColumn,"Op Ref")
 
 rem --- Disable WO_REF_NUM when locked or WO closed
 	if callpoint!.getDevObject("lock_ref_num")="Y" or callpoint!.getDevObject("wo_status")="C" then
