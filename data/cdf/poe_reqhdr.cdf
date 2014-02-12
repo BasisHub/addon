@@ -2,7 +2,7 @@
 rem --- if dropshipping, retrieve/display specified shipto address
 
 	shipto$=cvs(callpoint!.getUserInput(),3)
-	tmp_customer_id$=cvs(callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID"),3)
+	tmp_customer_id$=callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID")
 	
 	if shipto$="" then
 		rem --- no shipto, so use customer's address

@@ -878,15 +878,14 @@ rem --- Disable Order info if Customer not entered
 		endif
 	endif
 [[SFE_WOMASTR.ITEM_ID.AVAL]]
-rem --- Set default values
+rem --- Set default values if item_id changed
+	if callpoint!.getUserInput()=callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID") then break
 
 	ivm_itemmast=fnget_dev("IVM_ITEMMAST")
 	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
 
 	read record (ivm_itemmast,key=firm_id$+callpoint!.getUserInput(),dom=*break)ivm_itemmast$
-	if cvs(callpoint!.getColumnData("SFE_WOMASTR.UNIT_MEASURE"),3)=""
-		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE",ivm_itemmast.unit_of_sale$,1)
-	endif
+	callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE",ivm_itemmast.unit_of_sale$,1)
 	if callpoint!.getDevObject("lotser")<>"N" and ivm_itemmast.lotser_item$+ivm_itemmast.inventoried$="YY"
 		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","Y")
 		callpoint!.setOptionEnabled("LSNO",1)
@@ -970,13 +969,8 @@ rem --- If new order, check for type of Work Order and disable Item or Descripti
 	if typecode.wo_category$<>"I"
 		callpoint!.setColumnData("SFE_WOMASTR.ITEM_ID","",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.ITEM_ID",0)
-		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE","",1)
 		callpoint!.setColumnData("SFE_WOMASTR.LOTSER_ITEM","N",1)
 		callpoint!.setOptionEnabled("LSNO",0)
-		callpoint!.setColumnData("SFE_WOMASTR.DRAWING_NO","",1)
-		callpoint!.setColumnData("SFE_WOMASTR.DRAWING_REV","",1)
-		callpoint!.setColumnData("SFE_WOMASTR.UNIT_MEASURE","",1)
-		callpoint!.setColumnData("SFE_WOMASTR.BILL_REV","",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",1)
 	else
