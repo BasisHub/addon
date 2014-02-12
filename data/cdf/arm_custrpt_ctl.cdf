@@ -7,10 +7,10 @@ if callpoint!.getUserInput()="Y"
 	readrecord (arm_emailfax_dev,key=firm_id$+callpoint!.getColumnData("ARM_CUSTRPT_CTL.CUSTOMER_ID"),dom=*next)arm_emailfax$
 	readrecord (arm01_dev,key=firm_id$+callpoint!.getColumnData("ARM_CUSTRPT_CTL.CUSTOMER_ID"),dom=*next)arm01a$	
 	if cvs(callpoint!.getColumnData("ARM_CUSTRPT_CTL.EMAIL_TO"),3)=""
-		callpoint!.setColumnData("ARM_CUSTRPT_CTL.EMAIL_TO",arm_emailfax.email_to$)	
+		callpoint!.setColumnData("ARM_CUSTRPT_CTL.EMAIL_TO",arm_emailfax.email_to$,1)	
 	endif
 	if cvs(callpoint!.getColumnData("ARM_CUSTRPT_CTL.EMAIL_CC"),3)=""
-		callpoint!.setColumnData("ARM_CUSTRPT_CTL.EMAIL_CC",arm_emailfax.email_cc$)
+		callpoint!.setColumnData("ARM_CUSTRPT_CTL.EMAIL_CC",arm_emailfax.email_cc$,1)
 	endif
 endif
 [[ARM_CUSTRPT_CTL.FAX_YN.AVAL]]
@@ -22,13 +22,13 @@ if callpoint!.getUserInput()="Y"
 	readrecord (arm_emailfax_dev,key=firm_id$+callpoint!.getColumnData("ARM_CUSTRPT_CTL.CUSTOMER_ID"),dom=*next)arm_emailfax$
 	readrecord (arm01_dev,key=firm_id$+callpoint!.getColumnData("ARM_CUSTRPT_CTL.CUSTOMER_ID"),dom=*next)arm01a$	
 	if cvs(callpoint!.getColumnData("ARM_CUSTRPT_CTL.FAX_NOS"),3)=""
-		callpoint!.setColumnData("ARM_CUSTRPT_CTL.FAX_NOS",arm_emailfax.fax_nos$)	
+		callpoint!.setColumnData("ARM_CUSTRPT_CTL.FAX_NOS",arm_emailfax.fax_nos$,1)	
 	endif
 	if cvs(callpoint!.getColumnData("ARM_CUSTRPT_CTL.CUSTOMER_NAME"),3)=""
-		callpoint!.setColumnData("ARM_CUSTRPT_CTL.CUSTOMER_NAME",arm01a.customer_name$)
+		callpoint!.setColumnData("ARM_CUSTRPT_CTL.CUSTOMER_NAME",arm01a.customer_name$,1)
 	endif
 	if cvs(callpoint!.getColumnData("ARM_CUSTRPT_CTL.FAX_TO"),3)=""
-		callpoint!.setColumnData("ARM_CUSTRPT_CTL.FAX_TO",arm_emailfax.fax_to$)
+		callpoint!.setColumnData("ARM_CUSTRPT_CTL.FAX_TO",arm_emailfax.fax_to$,1)
 	endif
 endif
 [[ARM_CUSTRPT_CTL.BSHO]]
