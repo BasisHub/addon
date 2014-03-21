@@ -140,8 +140,10 @@ rem --- Write back here
 
 rem --- Need to commit?
 
+	committed_changed=0
 	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" and user_tpl.line_dropship$ = "N" then
 		if orig_commit$ = "Y" and callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" then
+			committed_changed=1
 			if user_tpl.line_type$ <> "O" then
 				callpoint!.setColumnData("OPE_ORDDET.QTY_BACKORD", "0")
 				callpoint!.setColumnData("OPE_ORDDET.QTY_SHIPPED", "0")
@@ -155,6 +157,7 @@ rem --- Need to commit?
 		endif
 
 		if orig_commit$ = "N" and callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "Y" then
+			committed_changed=1
 			callpoint!.setColumnData("OPE_ORDDET.QTY_SHIPPED", str(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")))
 			if user_tpl.line_taxable$ = "Y" and ( pos(user_tpl.line_type$ = "OMN") or user_tpl.item_taxable$ = "Y" ) then 
 				callpoint!.setColumnData("OPE_ORDDET.TAXABLE_AMT", str(ext_price))
@@ -1239,12 +1242,14 @@ calculate_discount: rem --- Calculate Discount Amount
 rem ==========================================================================
 
 	rem --- Don't update discount unless extended price has changed, otherwise might overwrite manually entered discount.
-	rem --- Must always update for a new or deleted record, or when from lot/serial entry and qty_shipped was changed.
+	rem --- Must always update for a new or deleted record, or when from lot/serial entry and qty_shipped was changed,
+	rem --- or when from Additional and committed was changed.
 	disc_amt=num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	if user_tpl.prev_ext_price<>num(callpoint!.getColumnData("OPE_ORDDET.EXT_PRICE")) or 
 :	callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())="Y" or
 :	callpoint!.getGridRowDeleteStatus(callpoint!.getValidationRow())="Y" or
-:	(callpoint!.getEvent()="AOPT-LENT" and qty_shipped_changed) then
+:	(callpoint!.getEvent()="AOPT-LENT" and qty_shipped_changed) or
+:	(callpoint!.getEvent()="AOPT-ADDL" and committed_changed) then
 		disc_code$=callpoint!.getDevObject("disc_code")
 
 		file_name$ = "OPC_DISCCODE"
@@ -1261,6 +1266,7 @@ rem ==========================================================================
 		endif
 
 		disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
+rem wgh ... 7597
 		callpoint!.setHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
 	endif
 	gosub calc_grid_totals

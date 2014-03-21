@@ -1,3 +1,11 @@
+[[SFE_WOMASTR.AENA]]
+rem --- Disable Barista menu items
+	wctl$="31031"; rem --- Save-As menu item in barista.ini
+	wmap$=callpoint!.getAbleMap()
+	wpos=pos(wctl$=wmap$,8)
+	wmap$(wpos+6,1)="X"
+	callpoint!.setAbleMap(wmap$)
+	callpoint!.setStatus("ABLEMAP")
 [[SFE_WOMASTR.LOCK_REF_NUM.BINP]]
 rem --- Need to know if LOCK_REF_NUM is changed
 	prev_lockrefnum$=callpoint!.getColumnData("SFE_WOMASTR.LOCK_REF_NUM")
@@ -173,7 +181,6 @@ rem --- Remove sfm-05 (sfe_woschdl)
 rem --- Reduce on order for scheduled prod qty
 
 	if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")="O" and callpoint!.getColumnData("SFE_WOMASTR.WO_CATEGORY")="I"
-rem escape;rem reduce OO - temp; remove after testing CAH 	
 		items$[1]=callpoint!.getColumnData("SFE_WOMASTR.WAREHOUSE_ID")
 		items$[2]=callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID")
 		refs[0]=-(num(callpoint!.getColumnData("SFE_WOMASTR.SCH_PROD_QTY"))-num(callpoint!.getColumnData("SFE_WOMASTR.QTY_CLS_TODT")))
@@ -477,8 +484,14 @@ rem --- Disable/enable based on status of closed/open
 		endif
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",1)
-		callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_NO",1)
-		callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_REV",1)
+		if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")="O" then
+			rem --- Can't change after WO is released
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_NO",0)
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_REV",0)
+		else
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_NO",1)
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_REV",1)
+		endif
 		callpoint!.setColumnEnabled("SFE_WOMASTR.EST_YIELD",1)
 		if callpoint!.getDevObject("mp")="Y"
 			callpoint!.setColumnEnabled("SFE_WOMASTR.FORECAST",1)

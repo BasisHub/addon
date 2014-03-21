@@ -19,8 +19,27 @@ rem --- Update displayed row nums for inserted and deleted rows, or
 		break
 	endif
 
+rem --- Keep track of lines to explode so they can be checked again when grid is refreshed
+	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+	grid! = Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("<<DISPLAY>>.EXPLODE_BILL","LABS")
+	explode_bill_column=util.getGridColumnNumber(grid!, col_hdr$)
+	col_hdr$=callpoint!.getTableColumnAttribute("SFE_WOMATL.INTERNAL_SEQ_NO","LABS")
+	isn_column=util.getGridColumnNumber(grid!, col_hdr$)
+	mark_to_explode$=""
+	if grid!.getNumRows()>0 then
+		for row=0 to grid!.getNumRows()-1
+			if grid!.getCellState(row,explode_bill_column) then
+				sfe_womatl$=GridVect!.get(row)
+				mark_to_explode$=mark_to_explode$+sfe_womatl.internal_seq_no$+";"
+			endif
+		next row
+	endif
+	callpoint!.setDevObject("mark_to_explode",mark_to_explode$)
+
 rem --- Auto create Reference Numbers
 	callpoint!.setDevObject("GridVect",GridVect!)
+	callpoint!.setDevObject("worefnum_status","")
 
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		"SFE_WOREFNUM",
@@ -32,7 +51,7 @@ rem --- Auto create Reference Numbers
 :		dflt_data$[all]
 
 rem --- Update grid with changes
-	callpoint!.setStatus("REFGRID")
+	if callpoint!.getDevObject("worefnum_status")<>"CANCEL" then callpoint!.setStatus("REFGRID")
 [[SFE_WOMATL.BUDE]]
 rem --- verify wo_ref_num is unique
 	refnumMap!=callpoint!.getDevObject("refnumMap")
@@ -137,6 +156,24 @@ rem --- prompt user to explode them; if yes, explode, then re-launch form so use
 		gosub disp_message
 		if msg_opt$="Y"
 
+			rem --- Build HashMap of deleted items so they don't get exploded
+			deleteItemMap!=new java.util.HashMap()
+			dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+			grid! = Form!.getControl(num(stbl("+GRID_CTL")))
+			col_hdr$=callpoint!.getTableColumnAttribute("<<DISPLAY>>.EXPLODE_BILL","LABS")
+			explode_bill_column=util.getGridColumnNumber(grid!, col_hdr$)
+			col_hdr$=callpoint!.getTableColumnAttribute("SFE_WOMATL.INTERNAL_SEQ_NO","LABS")
+			isn_column=util.getGridColumnNumber(grid!, col_hdr$)
+			if grid!.getNumRows()>0 then
+				for row=0 to grid!.getNumRows()-1
+					if callpoint!.getGridRowDeleteStatus(row)<>"Y" then continue
+					if grid!.getCellState(row,explode_bill_column) then
+						sfe_womatl$=GridVect!.get(row)
+						deleteItemMap!.put(sfe_womatl.internal_seq_no$,"Y")
+					endif
+				next row
+			endif
+
 			bmm01_dev=fnget_dev("BMM_BILLMAST")
 			sfe01_dev=fnget_dev("SFE_WOMASTR")
 			sfe22_dev=fnget_dev("SFE_WOMATL")
@@ -157,6 +194,9 @@ rem --- prompt user to explode them; if yes, explode, then re-launch form so use
 				explode_bills$=explode_bills$(tmp+2)	
 				mat_isn$=explode_bill$(1,pos("^"=explode_bill$)-1)
 				explode_bill$=explode_bill$(pos("^"=explode_bill$)+1)	
+
+				rem --- Don't explode items that are being deleted
+				if deleteItemMap!.containsKey(mat_isn$) then continue
 
 				dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
 				read record (bmm01_dev,key=firm_id$+explode_bill$,dom=*continue)bmm_billmast$
@@ -871,7 +911,18 @@ rem --- Set default Unit Cost
 	whse_id$=callpoint!.getDevObject("default_wh")
 
 	read record(ivm01_dev,key=firm_id$+item_id$)ivm01a$
-	read record (ivm02_dev,key=firm_id$+whse_id$+item_id$) ivm02a$
+	ivm02_found=0
+	read record (ivm02_dev,key=firm_id$+whse_id$+item_id$,dom=*next) ivm02a$; ivm02_found=1
+	if !ivm02_found then
+		msg_id$="SF_ITEM_NOT_IN_WH"
+		dim msg_tokens$[2]
+		msg_tokens$[1]=cvs(item_id$,2)
+		msg_tokens$[2]=whse_id$
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
 
 	callpoint!.setColumnData("SFE_WOMATL.IV_UNIT_COST",str(ivm02a.unit_cost))
 	callpoint!.setColumnData("SFE_WOMATL.UNIT_MEASURE",ivm01a.unit_of_sale$,1)

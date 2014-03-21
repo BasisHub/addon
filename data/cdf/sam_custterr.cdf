@@ -47,6 +47,7 @@ rem --- Calculate and display summary info
 		trip_key$=trip_key$+cust_id$
 		if cvs(prod_type$,2)<>"" 
 			trip_key$=trip_key$+prod_type$
+			ltrip_key$=ltrip_key$+prod_type$
 		else
 			callpoint!.setColumnData("SAM_CUSTTERR.PRODUCT_TYPE","")
 		endif

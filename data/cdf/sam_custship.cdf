@@ -33,6 +33,7 @@ rem --- Calculate and display summary info
 	item_id$=callpoint!.getColumnData("SAM_CUSTSHIP.ITEM_ID")
 	if cvs(shipto_no$,2)<>"" 
 		trip_key$=trip_key$+shipto_no$
+		ltrip_key$=ltrip_key$+shipto_no$
 	else
 		callpoint!.setColumnData("SAM_CUSTSHIP.SHIPTO_NO","")
 	endif

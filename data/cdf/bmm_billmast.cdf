@@ -1,3 +1,11 @@
+[[BMM_BILLMAST.AENA]]
+rem --- Disable Barista menu items
+	wctl$="31031"; rem --- Save-As menu item in barista.ini
+	wmap$=callpoint!.getAbleMap()
+	wpos=pos(wctl$=wmap$,8)
+	wmap$(wpos+6,1)="X"
+	callpoint!.setAbleMap(wmap$)
+	callpoint!.setStatus("ABLEMAP")
 [[BMM_BILLMAST.BILL_NO.AINP]]
 rem --- Make sure item exists before allowing user to continue
 [[BMM_BILLMAST.AOPT-PLST]]

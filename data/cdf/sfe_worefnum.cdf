@@ -1,3 +1,6 @@
+[[SFE_WOREFNUM.BEND]]
+rem --- Signal that re-numbering WO reference was cancelled
+	callpoint!.setDevObject("worefnum_status","CANCEL")
 [[SFE_WOREFNUM.<CUSTOM>]]
 rem =========================================================
 checkRefnumSize: rem --- Will new refnums be too large?

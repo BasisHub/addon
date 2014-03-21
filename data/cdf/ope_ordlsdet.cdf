@@ -572,15 +572,15 @@ rem --- Non-inventoried items do not have to exist (but can't be blank)
 		break
 	endif
 
-	if user_tpl.non_inventory then
-		goto set_qty_defaults
-	endif
-
 rem --- Validate open lot number
 
 	file_name$ = "IVM_LSMASTER"
 	lsmast_dev = fnget_dev(file_name$)
 	dim lsmast_tpl$:fnget_tpl$(file_name$)
+
+	if user_tpl.non_inventory then
+		goto set_qty_defaults
+	endif
 
 	got_rec$ = "N"
 	start_block = 1

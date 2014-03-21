@@ -1,3 +1,11 @@
+[[IVM_ITEMMAST.AENA]]
+rem --- Disable Barista menu items
+	wctl$="31031"; rem --- Save-As menu item in barista.ini
+	wmap$=callpoint!.getAbleMap()
+	wpos=pos(wctl$=wmap$,8)
+	wmap$(wpos+6,1)="X"
+	callpoint!.setAbleMap(wmap$)
+	callpoint!.setStatus("ABLEMAP")
 [[<<DISPLAY>>.TEMP_TAB_STOP.BINP]]
 rem --- "Hidden" field to allow enter/tab from single enabled field
 rem --- Temporary workaround for Barista bug 6925

@@ -776,10 +776,7 @@ rem --- Is this row deleted?
 rem --- Check for Lot/Serial number entry
 	item_id$=callpoint!.getColumnData("IVE_TRANSDET.ITEM_ID")
 	if cvs(item_id$,3) <> ""
-		ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
-		dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
-		readrecord(ivm_itemmast_dev,key=firm_id$+item_id$)ivm_itemmast$
-		if ivm_itemmast.inventoried$="Y" and ivm_itemmast.lotser_item$="Y"
+		if user_tpl.this_item_lot_or_ser then
 			if cvs(callpoint!.getColumnData("IVE_TRANSDET.LOTSER_NO"),3)=""
 				callpoint!.setMessage("OP_MISSING_LOTSER_NO")
 				callpoint!.setFocus(num(callpoint!.getValidationRow()),"IVE_TRANSDET.LOTSER_NO")

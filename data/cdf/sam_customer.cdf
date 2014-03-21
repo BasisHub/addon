@@ -27,6 +27,7 @@ rem --- Calculate and display summary info
 	item_no$=callpoint!.getColumnData("SAM_CUSTOMER.ITEM_ID")
 	if cvs(prod_type$,2)<>"" 
 		trip_key$=trip_key$+prod_type$
+		ltrip_key$=ltrip_key$+prod_type$
 	else
 		callpoint!.setColumnData("SAM_CUSTOMER.PRODUCT_TYPE","")
 	endif

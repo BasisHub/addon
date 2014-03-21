@@ -408,7 +408,7 @@ rem --- Round
 
 rem --- For uncommitted "O" line type sales (not quotes), move ext_price to unit_price until committed
 	if callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE") <> "P" and
-:	callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" and user_tpl.line_type$ = "O" 
+:	callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "N" and user_tpl.line_type$ = "O" 
 :	then
 		rem --- Don't overwrite existing unit_price with zero
 		if num(callpoint!.getUserInput()) then
@@ -828,7 +828,7 @@ rem --- Buttons start disabled
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
 	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))<>"Y" and
-:		callpoint!.getColumnData("OPE_IVNDET.COMMIT_FLAG")="Y"
+:		callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG")="Y"
 :	then
 		action$="UC"
 		gosub uncommit_iv
@@ -1362,7 +1362,7 @@ rem ==========================================================================
 	if price=0 then
 		msg_id$="ENTER_PRICE"
 		gosub disp_message
-		callpoint!.setFocus(callpoint!.getValidationRow(),"OPE_ORDDET.UNIT_PRICE",1)
+		callpoint!.setFocus(callpoint!.getValidationRow(),"OPE_INVDET.UNIT_PRICE",1)
 		enter_price_message = 1
 	else
 		callpoint!.setColumnData("OPE_INVDET.UNIT_PRICE", str(round(price, round_precision)) )

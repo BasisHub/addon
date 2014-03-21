@@ -4,7 +4,6 @@ rem --- get gl sales account for this distribution code
 	dist_code$ = callpoint!.getUserInput()
 
 	gosub get_gl_sales_acct
-
 [[ARE_INVHDR.BEND]]
 rem --- remove software lock on batch, if batching
 
@@ -244,6 +243,9 @@ rem --- also retrieve default dist/terms codes for customer
 		arm02a.firm_id$=arm01a.firm_id$,arm02a.customer_id$=arm01a.customer_id$,arm02a.ar_type$="  "
 		readrecord(arm_custdet_dev,key=arm02a.firm_id$+arm02a.customer_id$+arm02a.ar_type$,err=*next)arm02a$
 		callpoint!.setColumnData("ARE_INVHDR.AR_DIST_CODE",arm02a.ar_dist_code$)
+		rem --- get gl sales account for this distribution code
+		dist_code$=arm02a.ar_dist_code$
+		gosub get_gl_sales_acct
 	endif
 	if cvs(callpoint!.getColumnData("ARE_INVHDR.AR_TERMS_CODE"),3)=""
 		arm_custdet_dev=fnget_dev("ARM_CUSTDET")
