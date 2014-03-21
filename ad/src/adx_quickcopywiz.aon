@@ -19,8 +19,58 @@ rem --- Initializations
     pgmdir$=stbl("+DIR_PGM",err=*next)
     dir_syp$=stbl("+DIR_SYP")
     sysGUI! = BBjAPI().getSysGui()
+	
+rem --- Get user inputs
 
-rem --- Load up currently mounted (sync'd in) systems from bbjHome instance
+    dbName$=Option!.getOptionData("DB_NAME")
+    appDesc$=Option!.getOptionData("APP_DESC")
+    newAonLoc$=Option!.getOptionData("NEW_INSTALL_LOC")
+    rdAdmin!=cast(BBjAdminBase, callpoint!.getDevObject("rdAdmin"))
+
+rem --- Flip directory path separators for newAonLoc
+	filePath$=newAonLoc$
+	gosub fix_path
+	newAonLoc$=filePath$
+
+rem --- Start progress meter
+    meter_title$=Translate!.getTranslation("AON_QUICKCOPY_WIZ","Quick Copy Wizard",1)
+    meter_total_recs=8
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter    
+
+rem --- Open log file
+    location$ = newAonLoc$
+    gosub open_log
+
+rem --- Main processing
+	gosub get_mounted_systems
+	gosub copy_dirs
+	gosub update_defs
+	gosub update_addon_syn
+	gosub update_sync_xmls
+	gosub update_barista_cfgs
+	gosub attach_db
+	gosub reset_adm_modules
+	gosub reset_auto_sync
+	gosub update_barista_installs
+
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)"QuickCopy log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+get_mounted_systems:
+rem --- Load up currently mounted (sync'd in) systems from bbjHome instance, which should always be 'AddonSoftware'
 rem --- if something other than "../apps" appears in mount dir, don't run util - means they've synced in some external app
 	
 	mountedSys!=BBjAPI().makeVector()
@@ -28,7 +78,7 @@ rem --- if something other than "../apps" appears in mount dir, don't run util -
 	
 	sql_prep$="SELECT MOUNT_DIR FROM DDM_SYSTEMS"
 	sql_chan=sqlunt
-    sqlopen(sql_chan,err=*next)stbl("+DBNAME")
+    sqlopen(sql_chan)"AddonSoftware"
     sqlprep(sql_chan)sql_prep$
 	dir_tpl$=sqltmpl(sql_chan)
     sqlexec(sql_chan)
@@ -68,54 +118,8 @@ rem --- if something other than "../apps" appears in mount dir, don't run util -
 
 	if mountedSys!.size()=0 then goto std_exit
 	sqlclose(sql_chan)
-	
-rem --- Get user inputs
 
-    dbName$=Option!.getOptionData("DB_NAME")
-    appDesc$=Option!.getOptionData("APP_DESC")
-    newAonLoc$=Option!.getOptionData("NEW_INSTALL_LOC")
-    rdAdmin!=cast(BBjAdminBase, callpoint!.getDevObject("rdAdmin"))
-
-rem --- Flip directory path separators for newAonLoc
-	filePath$=newAonLoc$
-	gosub fix_path
-	newAonLoc$=filePath$
-
-rem --- Start progress meter
-    meter_title$=Translate!.getTranslation("AON_QUICKCOPY_WIZ","Quick Copy Wizard",1)
-    meter_total_recs=8
-    meter_proc_recs=0
-    meter_text$=""
-    meter_action$="WIN-LST-OK"
-    gosub disp_meter    
-
-rem --- Open log file
-    location$ = newAonLoc$
-    gosub open_log
-
-rem --- Main processing
-	gosub copy_dirs
-	gosub update_defs
-	gosub update_addon_syn
-	gosub update_sync_xmls
-	gosub update_barista_cfgs
-	gosub attach_db
-	gosub reset_adm_modules
-	gosub reset_auto_sync
-	gosub update_barista_installs
-
-done: rem --- All done
-    
-    rem --- Stop progress meter
-    meter_text$=""
-    meter_proc_recs=meter_total_recs
-    meter_action$="LST-END"
-    gosub disp_meter
-    print(log_dev)
-    print(log_dev)"QuickCopy log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
-    close(log_dev)
-
-    goto std_exit
+	return
 	    
 copy_dirs:
 rem --- Recursively copy mounted app dirs and barista from bbjHome$ to newAonLoc$
@@ -188,7 +192,7 @@ rem --- do string replace on "../" on .def files in all of the data/def/<lang> d
 				if def_file$(len(def_file$)-3,4)<>".def" then continue				
 				oldDef! = FileUtils.readFileToString(new java.io.File(def_dir$+sep$+lang_dir$+sep$+def_file$))
 				newDef! = new java.io.File(def_dir$+sep$+lang_dir$+sep$+def_file$)
-				FileUtils.writeStringToFile(newDef!, oldDef!.replaceAll("\^../", "^"+newAonLoc$+sep$))
+				FileUtils.writeStringToFile(newDef!, oldDef!.replaceAll("\^\.\./", "^"+newAonLoc$+sep$))
 			wend
 			close(langchan,err=*next)
 		wend
@@ -406,7 +410,7 @@ rem --- also reset mount path in ddm_systems (mounted systems) for new database
 reset_auto_sync:
 rem --- reset auto-launch record for the auto-sync process
 
-	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC'"
+	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC' OR PROCESS_ID='BUILDSPROC'"
 	sql_chan=sqlunt
 	sqlopen(sql_chan,err=*next)dbName$
     sqlprep(sql_chan)sql_prep$
@@ -433,16 +437,12 @@ rem --- Update XML Configuration File barista_installs.xml
 	gosub create_sscp
     rd_base_prop$="-tT0 -q -CP"+sscpName$+" -WD"+$22$+newAonLoc$+"/barista"+$22$+" -c"+$22$+newAonLoc$+"/barista/sys/config/enu/barista.cfg"+$22$+" "+$22$+newAonLoc$+"/barista/sys/prog/bar_login.bbj"+$22$+" - aon"
 
-    rd_install_temp!=stbl("+DIR_CFG")
-    rd_install_temp$=rd_install_temp!.replace("\","/")
-    rd_install_file$=rd_install_temp$(1,pos("/"=rd_install_temp$,-1,2))+"barista_installs.xml"
-    rd_path_pos=pos("/"=rd_install_file$,-1)
-    if rd_path_pos<>0 rd_install_file_dir$=rd_install_file$(1,rd_path_pos)
+    rd_install_file$=bbjHome$+"/barista/sys/config/barista_installs.xml"
 
     rd_temp_tag$=$09$+"<RECORD id="+$22$+cvs(dbName$,136)+$22$+">"
 
     rd_xml_chan=unt
-    open (unt)rd_install_file$
+    open (unt,err=*return)rd_install_file$
         rd_xml_chan_fin$=fin(rd_xml_chan)
         read record(rd_xml_chan,siz=dec($00$+rd_xml_chan_fin$(1,4)))rd_xml_data$
     close (rd_xml_chan)
@@ -530,12 +530,6 @@ search_replace: rem --- Search record$ for search$, and replace with replace$
 		record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
 	endif
     return
-
-find_syn_file: rem --- open config dir for mounted system and locate .syn
-
-
-	
-	return
 	
 disp_meter:rem --- Display Progress Meter
 

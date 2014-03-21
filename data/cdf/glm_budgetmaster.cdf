@@ -10,6 +10,10 @@ readrecord(gls01_dev,key=firm_id$+"GL00",err=std_missing_params)gls01a$
 if gls01a.budget_flag$<>"Y"
 	msg_id$="GL_NO_BUDG"
 	gosub disp_message
+	rem --- remove process bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
 	release
 endif
 [[GLM_BUDGETMASTER.AOPT-BREV]]

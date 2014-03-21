@@ -1,3 +1,26 @@
+[[GLE_JRNLHDR.APFE]]
+rem --- Validate dates
+if user_tpl.glint$="Y"
+	call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.TRANS_DATE"),"Y",period$,year$,status
+	if status>100  then
+		callpoint!.setFocus("GLE_JRNLHDR.TRANS_DATE")
+		callpoint!.setStatus("ABORT-ACTIVATE")
+		break
+	else
+		if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>""
+			call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),"Y",period$,year$,status
+			if status>100 then 
+				callpoint!.setFocus("GLE_JRNLHDR.REVERSE_DATE")
+				callpoint!.setStatus("ABORT-ACTIVATE")
+				break
+			endif
+		endif
+	endif
+endif
+[[GLE_JRNLHDR.ADIS]]
+rem --- calc and display totals (debits/credits, etc.)
+gosub calc_grid_tots
+gosub disp_totals
 [[GLE_JRNLHDR.BEND]]
 rem --- remove software lock on batch, if batching
 
@@ -28,19 +51,6 @@ if bal<>0
 		callpoint!.setStatus("ABORT")
 	endif
 endif
-[[GLE_JRNLHDR.ADIS]]
-rem --- perform date validation
-if user_tpl.glint$="Y"
-	
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.TRANS_DATE"),"Y",period$,year$,status
-	if status>100 callpoint!.setStatus("ABORT")
-	if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>""
-		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),"Y",period$,year$,status
-		if status>100 callpoint!.setStatus("ABORT")
-	endif
-rem --- calc and display totals (debits/credits, etc.)
-gosub calc_grid_tots
-gosub disp_totals
 [[GLE_JRNLHDR.REVERSE_DATE.AVAL]]
 rem --- perform date validation
 if user_tpl.glint$="Y"

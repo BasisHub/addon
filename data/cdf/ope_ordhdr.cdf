@@ -1,3 +1,57 @@
+[[OPE_ORDHDR.BPRI]]
+rem --- Check for Order Total
+
+	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+		msg_id$="OP_TOT_UNDER_MIN"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
+	if pos(callpoint!.getDevObject("totals_warn")="24")>0
+		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
+			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
+				callpoint!.setMessage("OP_TOTALS_TAB")
+				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
+				callpoint!.setDevObject("was_on_tot_tab","Y")
+				callpoint!.setStatus("ABORT-ACTIVATE")
+				break
+			endif
+		endif
+	endif
+[[OPE_ORDHDR.BNEX]]
+rem --- Check for Order Total
+
+	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+		msg_id$="OP_TOT_UNDER_MIN"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
+	if pos(callpoint!.getDevObject("totals_warn")="24")>0
+		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
+			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
+				callpoint!.setMessage("OP_TOTALS_TAB")
+				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
+				callpoint!.setDevObject("was_on_tot_tab","Y")
+				callpoint!.setStatus("ABORT-ACTIVATE")
+				break
+			endif
+		endif
+	endif
 [[OPE_ORDHDR.ASVA]]
 rem --- Check Ship-to's
 
@@ -500,34 +554,6 @@ rem --- Do credit status (management)
 		callpoint!.setStatus("ACTIVATE")
 	endif
 [[OPE_ORDHDR.BPRK]]
-print "Hdr:BPRK"; rem debug
-
-rem --- Check for Order Total
-
-	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
-	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
-		msg_id$="OP_TOT_UNDER_MIN"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
-		gosub disp_message
-		if msg_opt$="N"
-			callpoint!.setStatus("ABORT")
-		endif
-	endif
-
-	if pos(callpoint!.getDevObject("totals_warn")="24")>0
-		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
-			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
-				callpoint!.setMessage("OP_TOTALS_TAB")
-				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
-				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT-ACTIVATE")
-				break
-			endif
-		endif
-	endif
-
 rem --- Is previous record an order and not void?
 
 	file_name$ = "OPE_ORDHDR"
@@ -653,34 +679,6 @@ rem --- Capture current totals so we can tell later if they were changed in the 
 		callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
 	endif
 [[OPE_ORDHDR.BNEK]]
-print "Hdr:BNEK"; rem debug
-
-rem --- Check for Order Total
-
-	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
-	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
-		msg_id$="OP_TOT_UNDER_MIN"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
-		gosub disp_message
-		if msg_opt$="N"
-			callpoint!.setStatus("ABORT")
-		endif
-	endif
-
-	if pos(callpoint!.getDevObject("totals_warn")="24")>0
-		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
-			if callpoint!.getDevObject("details_changed")="Y" and callpoint!.getDevObject("rcpr_row")=""
-				callpoint!.setMessage("OP_TOTALS_TAB")
-				callpoint!.setFocus("OPE_ORDHDR.FREIGHT_AMT")
-				callpoint!.setDevObject("was_on_tot_tab","Y")
-				callpoint!.setStatus("ABORT-ACTIVATE")
-				break
-			endif
-		endif
-	endif
-
 rem --- Is next record an order and not void?
 
 	file_name$ = "OPE_ORDHDR"

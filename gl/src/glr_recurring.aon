@@ -43,13 +43,21 @@ rem --- Assign input values to local variables
     cycle$=cvs(Option!.getOptionData("CYCLE_CODE"),3);rem "will be null if all cycles selected
     rem --- postper$ and cycle_reversal$ used in update, but putting on the register Option Entry
     rem --- form so we don't need to build another one
-    postper$=Option!.getOptionData("POSTING_YEAR")+str(num(Option!.getOptionData("POSTING_PER")):"00")
+    postper$=Option!.getOptionData("POSTING_YEAR")+Option!.getOptionData("POSTING_MONTH")
     cycle_reversal$=Option!.getOptionData("REVERSAL_TP")
+    
+    yyyymm$=sysinfo.system_date$(1,6)
+    if postper$<>"" then let yyyymm$=postper$;rem "override sys dt w/ post yr/per specified by user
+    
 
 rem --- Initializations
 
     update$="glu_recurring.aon"
     gl$="N"
+    source$=pgm(-2)
+    status=0
+    call pgmdir$+"glc_ctlcreate.aon",err=std_exit_no_report,source$,"GL",glw11$,gl$,status
+    if status goto std_exit_no_report
     
 rem --- Open/Lock files
 
@@ -274,15 +282,11 @@ rem --- Run update overlay
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
 
-    if errors
-        gosub Display_Message
-        if special_flag$<>"Y" then update$=""
-    endif
-
-    next_overlay$="glr_recap.aon"
+    rem --- Recurring Journal does not post to GL directly
+rem    next_overlay$="glr_recap.aon"
+    next_overlay$=update$
     out_action$="PRT-PDF"   
     goto std_exit
-
 
 subheading: rem --- Subheading
 
@@ -335,14 +339,18 @@ missing_journal_id: rem --- Missing or invalid journal id code
 
 transaction_heading: rem --- Print transaction heading
 
-    if cvs(gle02a.reverse_date$,2)<>"" reversal$=fndate$(gle02a.reverse_date$)
+    reversal=cvs(gle02a.reverse_date$,2)<>"" and cvs(cycle_reversal$,2)<>""
+    if reversal=0 gosub end_of_month
+    if reversal if cycle_reversal$="C" gosub calculation
+    if reversal if cycle_reversal$="D" gosub bydate
+    if reversal then reversal$=gle02a.reverse_date$
    
     abc=fnblank(10)
     OutVect!.addItem(glm03a.journal_id$)
     OutVect!.addItem(glm03a.code_desc$)
     OutVect!.addItem(gle02a.je_trans_id$)
     OutVect!.addItem(fndate$(gle02a.trans_date$))
-    OutVect!.addItem(reversal$)
+    OutVect!.addItem(fndate$(reversal$))
     OutVect!.addItem(gle02a.description$)
     OutVect!.addItem(gle02a.cycle_code$)
     abc=fnblank(3)
@@ -350,14 +358,100 @@ transaction_heading: rem --- Print transaction heading
 
     t0$=gle02a.je_trans_id$
 
+rem --- Check dates
+
+    gldate$=gle02a.trans_date$
+    call pgmdir$+"glc_datecheck.aon",gldate$,verify$,period$,year$,glstatus
+    if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,l,errors,status
+    if stbl("+DTWARN_MSG",err=*endif)<>""
+        xwk=fnblank(2)
+        OutVect!.addItem(stbl("+DTWARN_MSG"))
+        xwk=fnblank(7)
+    endif
+    
+    if cvs(reversal$,2)="" goto transaction_break_exit
+    gldate$=reversal$
+    call pgmdir$+"glc_datecheck.aon",gldate$,verify$,period$,year$,glstatus
+    if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,l,errors,status
+    if stbl("+DTWARN_MSG",err=*endif)<>""
+        xwk=fnblank(2)
+        OutVect!.addItem(stbl("+DTWARN_MSG"))
+        xwk=fnblank(7)
+    endif
+
 transaction_break_exit:
 
     return
 
+calculation: rem --- Reversal by Calculation
+
+rem --- The new reversal date is based on the difference in days between
+rem --- the original transaction date and the original reversal date.
+
+    begdate$=gle02a.trans_date$
+    enddate$=gle02a.reverse_date$
+    numdays=0
+    call pgmdir$+"adc_daydates.aon",begdate$,enddate$,numdays
+    gosub end_of_month
+    begdate$=gle02a.trans_date$
+    enddate$=""
+    call pgmdir$+"adc_daydates.aon",begdate$,enddate$,numdays
+    gle02a.reverse_date$=enddate$
+    return
+
+bydate: rem --- Reversal by Date
+
+rem --- The new reversal date will occur on the same date (if possible)
+rem --- and the month and year will be based on the difference between
+rem --- the original transaction date and the original reversal date.
+
+    begdate$=gle02a.trans_date$
+    enddate$=gle02a.reverse_date$
+    years=num(enddate$(1,4))-num(begdate$(1,4))
+    months=num(enddate$(5,2))-num(begdate$(5,2))
+    new_day=num(enddate$(7,2))
+    if new_day<1 new_day=1
+    gosub end_of_month
+    begdate$=gle02a.trans_date$
+    new_month=num(begdate$(5,2))+months
+    new_year=num(begdate$(1,4))+years
+    while new_month<1
+          new_month=new_month+12
+          new_year=new_year+1
+    wend
+
+date_check: rem --- Make sure that new date is a valid one
+
+    valid_date=jul(new_year,new_month,new_day,err=previous_day)
+    goto bydate_exit
+
+previous_day: rem --- Ran past the end of the month, need to back up a day
+
+    new_day=new_day-1
+    goto date_check
+
+bydate_exit: rem --- Set reversal date and return
+
+    gle02a.reverse_date$=str(new_year:"0000")+str(new_month:"00")+str(new_day:"00")
+    return
+
+end_of_month: rem --- Make sure the date doesn't fall beyond the end of the month
+
+    month=num(yyyymm$(5,2))
+    xday=num(gle02a.trans_date$(7,2))
+    year=num(yyyymm$(1,4))
+    if month=2 
+:      if fpt(year/4)=0 and xday>29 xday=29 
+:         else if xday>28 xday=28
+    if (month=4 or month=6 or month=9 or month=11) and xday>30 xday=30
+    gle02a.trans_date$=str(year:"0000")+str(month:"00")+str(xday:"00")
+    return
+
 glrecap: rem --- Standard GL Recap Routine
 
-    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
-:                                            ref1$,ref2$,ref3$,memo$,amount,units,status
+    rem --- Recurring Journal does not post to GL directly
+rem    if gl$="Y" call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,notused,account$,gldate$,
+rem :                                            ref1$,ref2$,ref3$,memo$,amount,units,status
     return
     
 rem --- Functions
@@ -394,18 +488,9 @@ rem --- Create blank line in OutVect! (no return value wanted or needed)
         return q1
     fnend    
 
-
-Display_Message: rem --- Display Message Routine
-
-    msg_id$="AON_REG_ERRS"
-    gosub disp_message
-    if pos("PASSVALID"=msg_opt$)<>0 special_flag$="Y"
-    return
-
 disp_message:rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
-
     return
 
 rem #include std_error.src

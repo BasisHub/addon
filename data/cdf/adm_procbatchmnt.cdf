@@ -1,3 +1,11 @@
+[[ADM_PROCBATCHMNT.BDEQ]]
+rem --- don't allow delete if batch contains data
+
+if callpoint!.getDevObject("can_delete")="NO"
+	msg_id$="AD_BATCH_DTL"
+	gosub disp_message
+	callpoint!.setStatus("ABORT")
+endif
 [[ADM_PROCBATCHMNT.PROCESS_ID.AVAL]]
 rem --- enable orph scan button
 
@@ -78,24 +86,16 @@ if process_id$<>""
 		gosub disp_message
 	endif
 endif
-[[ADM_PROCBATCHMNT.BDEL]]
-rem --- don't allow delete if batch contains data
-
-if callpoint!.getDevObject("can_delete")="NO"
-	msg_id$="AD_BATCH_DTL"
-	gosub disp_message
-	callpoint!.setStatus("ABORT")
-endif
 [[ADM_PROCBATCHMNT.ADIS]]
 rem ---  don't allow delete if this batch is referenced in entry files
 
 adm_proctables_dev=fnget_dev("ADM_PROCTABLES")
 dim adm_proctables$:fnget_tpl$("ADM_PROCTABLES")
 
-read (adm_proctables_dev,key=firm_id$+process_id$,dom=*next)
-callpoint!.setDevObject("can_delete","")
 batch_no$=callpoint!.getColumnData("ADM_PROCBATCHMNT.BATCH_NO")
 process_id$=callpoint!.getColumnData("ADM_PROCBATCHMNT.PROCESS_ID")
+read (adm_proctables_dev,key=firm_id$+process_id$,dom=*next)
+callpoint!.setDevObject("can_delete","")
 
 form_opts$=callpoint!.getTableAttribute("OPTS")
 

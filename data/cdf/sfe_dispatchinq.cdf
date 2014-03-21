@@ -366,8 +366,13 @@ rem --- Work order still open?
 
 include_it:
 
-		desc$=cvs(ivm01a.item_desc$,2)
-		if sfe01a.wo_category$="I" desc$=cvs(sfe01a.item_id$,2)+" "+desc$
+		if sfe01a.wo_category$="I"
+			findrecord(ivm01_dev,key=sfe01a.firm_id$+sfe01a.item_id$,err=*next)ivm01a$
+			desc$=cvs(sfe01a.item_id$,2)+": "+cvs(ivm01a.item_desc$,3)
+		else
+			desc$=cvs(sfe01a.description_01$,2)
+		endif
+
 		movetime=sfm05a.move_time
 
 rem --- Shall we print it?

@@ -16,8 +16,12 @@ dim glm18a$:open_tpls$[3]
 
 readrecord(gls01_dev,key=firm_id$+"GL00",dom=std_missing_params)gls01a$
 if gls01a.budget_flag$<>"Y"
-	msg_id$="GL_NO_BUDGET"
+	msg_id$="GL_NO_BUDG"
 	gosub disp_message
+	rem --- remove process bar:
+	bbjAPI!=bbjAPI()
+	rdFuncSpace!=bbjAPI!.getGroupNamespace()
+	rdFuncSpace!.setValue("+build_task","OFF")
 	release
 endif
 

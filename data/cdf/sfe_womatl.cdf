@@ -651,12 +651,7 @@ do_operations:
 
 	yld=num(sfe_womastr.est_yield$)
 	dim bmm_billoper$:fattr(bmm_billoper$)
-	dim sfe_wooprtn$:fattr(sfe_wooprtn$)
 	dim sfe02_prev_key$:sfe02_key_tpl$
-
-	sfe_wooprtn.firm_id$=firm_id$
-	sfe_wooprtn.wo_location$=wo_loc$
-	sfe_wooprtn.wo_no$=wo_no$
 
 	read (bmm03_dev,key=firm_id$+curr_bill$,dom=*next)
 
@@ -673,6 +668,10 @@ do_operations:
 		if ok$="N" then continue
 
 		dim op_code$:callpoint!.getDevObject("opcode_tpl")
+		dim sfe_wooprtn$:fattr(sfe_wooprtn$)
+		sfe_wooprtn.firm_id$=firm_id$
+		sfe_wooprtn.wo_location$=wo_loc$
+		sfe_wooprtn.wo_no$=wo_no$
 		sfe_wooprtn.op_code$=bmm_billoper.op_code$
 		sfe_wooprtn.require_date$=sfe_womastr.opened_date$
 		sfe_wooprtn.line_type$=bmm_billoper.line_type$

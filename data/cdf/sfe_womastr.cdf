@@ -168,9 +168,8 @@ rem --- Remove sfm-05 (sfe_woschdl)
 	sfm05_dev=fnget_dev("SFE_WOSCHDL")
 	dim sfe_woschdl$:fnget_tpl$("SFE_WOSCHDL")
 	
-	read (sfm05_dev,key=firm_id$+wo_no$,knum=AO_WONUM,dom=*next)
-
 	while 1
+		read (sfm05_dev,key=firm_id$+wo_no$,knum="AON_WONUM",dom=*next)
 		extract record(sfm05_dev,end=*break)sfe_woschdl$; rem --- Advisory locking
 		if sfe_woschdl.firm_id$+sfe_woschdl.wo_no$<>firm_id$+wo_no$ then read(sfm05_dev); continue
 		remove (sfm05_dev,key=sfe_woschdl.firm_id$+sfe_woschdl.op_code$+sfe_woschdl.sched_date$+sfe_woschdl.wo_no$+sfe_woschdl.oper_seq_ref$,dom=*next)
@@ -807,6 +806,8 @@ rem --- Release/Commit the Work Order
 [[SFE_WOMASTR.AOPT-SCHD]]
 rem --- Schedule the Work Order
 
+	callpoint!.setDevObject("wo_no",callpoint!.getColumnData("SFE_WOMASTR.WO_NO"))
+	callpoint!.setDevObject("wo_location",callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION"))
 	callpoint!.setDevObject("order_no",callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"))
 	callpoint!.setDevObject("item_id",callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"))
 
@@ -835,6 +836,7 @@ rem --- Schedule the Work Order
 	start_date$=callpoint!.getDevObject("start_date")
 	comp_date$=callpoint!.getDevObject("comp_date")
 
+	rem --- sched_method$ is blank if sfr_schedwo was exited without scheduling
 	if sched_method$<>"" and
 :	(sched_method$<>sched_flag$ or start_date$<>eststt_date$ or comp_date$<>estcmp_date$) then
 		callpoint!.setColumnData("SFE_WOMASTR.SCHED_FLAG",sched_method$,1)
