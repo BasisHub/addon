@@ -1,3 +1,45 @@
+[[APE_INVOICEHDR.AOPT-VIDI]]
+rem --- Displaye invoice images in the browser
+	invimage_dev=fnget_dev("1APT_INVIMAGE")
+	dim invimage$:fnget_tpl$("1APT_INVIMAGE")
+	vendor_id$ = callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID")
+	ap_inv_no$ = callpoint!.getColumnData("APE_INVOICEHDR.AP_INV_NO")
+
+	read record(invimage_dev, key=firm_id$+vendor_id$+ap_inv_no$, dom=*next)
+	while 1
+		invimage_key$=key(invimage_dev,end=*break)
+		if pos(firm_id$+vendor_id$+ap_inv_no$=invimage_key$)<>1 then break
+		invimage$=fattr(invimage$)
+		read record(invimage_dev)invimage$
+
+		switch (BBjAPI().TRUE)
+			case invimage.scan_docs_to$="BDA"
+				rem --- Do Barista Doc Archive
+				break
+			case invimage.scan_docs_to$="GD "
+				rem --- Do Google Docs
+				BBjAPI().getThinClient().browse(cvs(invimage.doc_url$,2))
+				break
+			case default
+				rem --- Unknown ... skip
+				break
+		swend
+	wend
+
+
+[[APE_INVOICEHDR.AOPT-LIIM]]
+rem --- Select invoice image and upload
+	files=2
+	dim channels[files],templates$[files]
+	channels[1]=fnget_dev("APM_VENDMAST"),templates$[1]=fnget_tpl$("APM_VENDMAST")
+	channels[2]=fnget_dev("1APT_INVIMAGE"),templates$[2]=fnget_tpl$("1APT_INVIMAGE")
+	ap_type$ = callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE")
+	vendor_id$ = callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID")
+	ap_inv_no$ = callpoint!.getColumnData("APE_INVOICEHDR.AP_INV_NO")
+	man_check$ ="N"
+	scan_docs_to$=callpoint!.getDevObject("scan_docs_to")
+
+	call "apc_imageupload.aon", channels[all],templates$[all],ap_type$,vendor_id$,ap_inv_no$,man_check$,scan_docs_to$,status
 [[APE_INVOICEHDR.VENDOR_ID.BINQ]]
 rem --- Call custom query to only select vendors with selected AP Type
 
@@ -509,7 +551,7 @@ rem #endinclude fnget_control.src
 #include std_missing_params.src
 [[APE_INVOICEHDR.BSHO]]
 rem --- Open/Lock files
-files=9,begfile=1,endfile=files
+files=11,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="APT_INVOICEHDR";rem --- "apt-01"
 files$[2]="APT_INVOICEDET";rem --- "apt-11"
@@ -520,9 +562,13 @@ files$[6]="APS_PARAMS";rem --- "ads-01"
 files$[7]="GLS_PARAMS";rem --- "gls-01"
 files$[8]="APE_CHECKS"
 files$[9]="APE_MANCHECKDET"
+files$[10]="APS_PAYAUTH"
+files$[11]="APT_INVIMAGE"
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
 next wkx
+options$[10]="OTA@"
+options$[11]="OTA[1]"
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
 :	endfile,
@@ -629,5 +675,18 @@ endif
 if user_tpl.misc_entry$="N" c!.setColumnEditable(2,0)
 if user_tpl.units_flag$="N" c!.setColumnEditable(4,0)
 
+rem --- Get Payment Authorization parameter record
+
+	aps_payauth=num(chans$[10])
+	dim aps_payauth$:templates$[10]
+	readrecord(aps_payauth,key=firm_id$+"AP00",dom=*next)aps_payauth$
+	callpoint!.setDevObject("scan_docs_to",aps_payauth.scan_docs_to$)
+
+rem --- Disable Load Image and View Images options as needed
+
+	if !aps_payauth.use_pay_auth or aps_payauth.scan_docs_to$="NOT" then
+			callpoint!.setOptionEnabled("LIIM",0)
+			callpoint!.setOptionEnabled("VIDI",0)
+	endif
 
 		

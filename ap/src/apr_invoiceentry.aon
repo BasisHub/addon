@@ -48,7 +48,7 @@ rem --- Get user approval to proceed
 
 rem --- Open/Lock files
 
-    files=13,begfile=1,endfile=files
+    files=15,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="aps_params",ids$[1]="APS_PARAMS";rem "aps-01
     files$[2]="ape-01",ids$[2]="APE_INVOICEHDR";rem "ape-01
@@ -61,6 +61,8 @@ rem --- Open/Lock files
     files$[11]="apt-11",ids$[11]="APT_INVOICEDET";rem "apt-11
     files$[12]="gls_params",ids$[12]="GLS_PARAMS";rem "gls-01
     files$[13]="apc_distribution",ids$[13]="APC_DISTRIBUTION";rem "apm-10B
+    files$[14]="aps_payauth",ids$[14]="APS_PAYAUTH"
+    files$[15]="apt_invimage",ids$[15]="APT_INVIMAGE"
 
     if num(batch_no$)=0 then options$[2]="L";rem lock if not batching.CAH
     if num(batch_no$)=0 then options$[3]="L";rem lock if not batching.CAH
@@ -78,18 +80,22 @@ rem --- Open/Lock files
     apt11_dev=channels[11]
     gls01_dev=channels[12]
     apm10b_dev=channels[13]
+    payauth_dev=channels[14]
+    invimage_dev=channels[15]
 
 rem --- Dimension string templates
 
     dim ape01a$:templates$[2],ape11a$:templates$[3],apm01a$:templates$[4]
     dim apm02a$:templates$[5],apm10a$:templates$[7],apt01a$:templates$[8]
     dim apt02a$:templates$[9],apt11a$:templates$[11],aps01a$:templates$[1]
-    dim gls01a$:templates$[12],apm10b$:templates$[13]
-
+    dim gls01a$:templates$[12],apm10b$:templates$[13],payauth$:templates$[14]
+    dim invimage$:templates$[15]
+    
 rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    find record (payauth_dev,key=aps01a_key$,dom=*next) payauth$
     gls01a_key$=firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     call pgmdir$+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
@@ -127,6 +133,7 @@ rem --- Initializations
     msg$[0]=Translate!.getTranslation("AON_THIS_REPORT_IS_OUT_OF_BALANCE_OR_MISSING_INFORMATION")
     units=0
     errors=0
+    warnings=0
     glstatus=0
     done=0
     page=0
@@ -365,6 +372,31 @@ rem --- Read next Invoice Header (ape-01) record
             OutVect!.addItem(stbl("+DTWARN_MSG"))
             xwk=fnblank(12)
         endif
+        
+        rem --- Check for missing invoice images if using Payment Authorization
+        if payauth.use_pay_auth and ape01a.invoice_amt then
+            if payauth.scan_docs_to$<>"NOT" and payauth.warn_in_register then
+                found_image=0
+                read(invimage_dev,key=firm_id$+ape01a.vendor_id$+ape01a.ap_inv_no$,dom=*next)
+                invimage_key$=key(invimage_dev,end=*next)
+                if pos(firm_id$+ape01a.vendor_id$+ape01a.ap_inv_no$=invimage_key$)=1 then found_image=1
+
+                rem --- Missing invoice image?
+                if !found_image then
+                    rem --- Warn on register
+                    warnings=warnings+1
+                    OutVect!.addItem("")
+                    OutVect!.addItem(Translate!.getTranslation("AON_WARNING")+": "+Translate!.getTranslation("AON_MISSING")+
+:                                    " "+Translate!.getTranslation("AON_INVOICE_IMAGE"))
+                    xwk=fnblank(12)
+            
+                    rem --- Allow update?
+                    if !found_image and !payauth.ok_to_update then
+                        errors=errors+1
+                    endif
+                endif
+            endif
+        endif
 
         for x=0 to 2
             vt[x]=vt[x]+a[x]
@@ -468,16 +500,13 @@ rem --- All done
 
 rem --- Any errors encountered?
 
-    while errors
-        if lines+2>maxlines
-            xwk=fnblank(14)
-            OutVect!.addItem("")
-            OutVect!.addItem(Translate!.getTranslation("AON_WARNING:_THIS_REGISTER_IS_OUT_OF_BALANCE_OR_MISSING_INFORMATION"))
-            xwk=fnblank(12)
-            lines=lines+2
-        endif
-        break
-    wend
+    if errors or warnings then
+        xwk=fnblank(14)
+        OutVect!.addItem("")
+        OutVect!.addItem(Translate!.getTranslation("AON_WARNING:_THIS_REGISTER_IS_OUT_OF_BALANCE_OR_MISSING_INFORMATION"))
+        xwk=fnblank(12)
+        lines=lines+2
+    endif
 
 rem --- Destroy the progress meter and run the next overlay
 

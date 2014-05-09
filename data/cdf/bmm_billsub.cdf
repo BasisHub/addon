@@ -1,3 +1,55 @@
+[[BMM_BILLSUB.BUDE]]
+rem --- Verify wo_ref_num is unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("BMM_BILLSUB.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			refnumMap!.put(wo_ref_num$,"")
+		endif
+	endif
+[[BMM_BILLSUB.BDEL]]
+rem --- Update refnumMap!
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("BMM_BILLSUB.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.remove(wo_ref_num$)
+	endif
+[[BMM_BILLSUB.WO_REF_NUM.AVAL]]
+rem --- Verify wo_ref_num is unique
+	wo_ref_num$=callpoint!.getUserInput()
+	prev_wo_ref_num$=callpoint!.getDevObject("prev_wo_ref_num")
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	if wo_ref_num$<>prev_wo_ref_num$ then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			if cvs(wo_ref_num$,2)<>"" then refnumMap!.put(wo_ref_num$,"")
+			if cvs(prev_wo_ref_num$,2)<>"" then refnumMap!.remove(prev_wo_ref_num$)
+		endif
+	endif
+[[BMM_BILLSUB.AGDR]]
+rem --- Track wo_ref_num in Map to insure they are unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("BMM_BILLSUB.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.put(wo_ref_num$,"")
+	endif
+[[BMM_BILLSUB.WO_REF_NUM.BINP]]
+rem --- Capture starting wo_ref_num
+	prev_wo_ref_num$=callpoint!.getColumnData("BMM_BILLSUB.WO_REF_NUM")
+	callpoint!.setDevObject("prev_wo_ref_num",prev_wo_ref_num$)
 [[BMM_BILLSUB.BDTW]]
 use ::ado_util.src::util
 [[BMM_BILLSUB.OBSOLT_DATE.AVAL]]
@@ -99,6 +151,11 @@ rem --- Display Net Qty and Total Cost
 	use ::bmo_BmUtils.aon::BmUtils
 	declare BmUtils bmUtils!
 
+rem --- init data
+
+	refnumMap!=new java.util.HashMap()
+	callpoint!.setDevObject("refnumMap",refnumMap!)
+
 rem --- Only show form if A/P is installed
 
 	if callpoint!.getDevObject("ap_installed") <> "Y"
@@ -129,15 +186,8 @@ rem --- fill listbox for use with Op Sequence
 		dim bmm08a$:fattr(bmm08a$)
 		read record (bmm08_dev,key=firm_id$+bmm03a.op_code$,dom=*next)bmm08a$
 		ops_lines!.addItem(bmm03a.internal_seq_no$)
-		op_code_list$=op_code_list$+bmm03a.op_code$
-		work_var=pos(bmm03a.op_code$=op_code_list$,len(bmm03a.op_code$),0)
-		if work_var>1
-			work_var$=bmm03a.op_code$+"("+str(work_var)+")"
-		else
-			work_var$=bmm03a.op_code$
-		endif
-		ops_items!.addItem(work_var$)
-		ops_list!.addItem(work_var$+" - "+bmm08a.code_desc$)
+		ops_items!.addItem(bmm03a.wo_op_ref$)
+		ops_list!.addItem(bmm03a.wo_op_ref$+" - "+bmm03a.op_code$+" - "+bmm08a.code_desc$)
 	wend
 
 	if ops_lines!.size()>0
@@ -156,3 +206,10 @@ rem --- fill listbox for use with Op Sequence
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
 	my_grid!.setColumnListControl(col_ref,my_control!)
+    	my_grid!.setColumnHeaderCellText(ListColumn,"Op Ref")
+
+rem --- Disable WO_REF_NUM when locked
+	if callpoint!.getDevObject("lock_ref_num")="Y" then
+		opts$=callpoint!.getTableColumnAttribute("BMM_BILLSUB.WO_REF_NUM","OPTS")
+		callpoint!.setTableColumnAttribute("BMM_BILLSUB.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
+	endif

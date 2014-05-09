@@ -1,0 +1,235 @@
+rem --- Payment Authorization Approvers & Signers Listing
+rem --- Program apr_approvers
+
+rem --- AddonSoftware Version 14.00 - Apr2014
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+    setesc std_error
+    seterr std_error
+
+rem --- Inits
+
+    use ::bbtranslator.bbj::BBTranslator
+    declare BBTranslator Translate!
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Document Initializations
+
+    OutVect!=bbjAPI().getSysGui().makeVector()
+	rep_date$=date(0:"%Mz/%Dz/%Yd")
+	rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+	rep_time$=date(0:"%hz:%mz %p")
+	rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+    milestone=5
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+
+rem --- Retrieve SYSINFO Data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    num_files=4
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA@"
+    open_tables$[2]="APS_PAYAUTH",open_opts$[2]="OTA@"
+    open_tables$[3]="APM_APPROVERS",open_opts$[3]="OTA@"
+    open_tables$[4]="ADM_USER",open_opts$[4]="OTA@"
+
+    gosub open_tables
+
+    aps01_dev=num(open_chans$[1])
+    payauth_dev=num(open_chans$[2])
+    approver_dev=num(open_chans$[3])
+    user_dev=num(open_chans$[4])
+
+    dim aps01a$:open_tpls$[1]
+    dim payauth$:open_tpls$[2]
+    dim approver$:open_tpls$[3]
+    dim user$:open_tpls$[4]
+
+rem --- Retrieve parameter data
+    aps01a_key$=firm_id$+"AP00"
+    find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    call pgmdir$+"adc_getmask.aon","","AP","A","",m1$,0,0
+
+rem --- Verify using Payment Authorization
+    payauth_key$=aps01a_key$
+    dim payauth$:fattr(payauth$)
+    find record(payauth_dev,key=payauth_key$,dom=*next)payauth$
+    if !payauth.use_pay_auth then
+        msg_id$="PAYAUTH_PARAM_ERR"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+rem --- Report Headings
+
+	headings=1
+	dim headings$[headings]
+		headings$[0]=sysinfo.firm_name$
+		headings$[1]=sysinfo.task_desc$
+
+rem --- Column Headings
+
+    columns=7
+    dim columns$[columns,10]
+        columns$[0,0]=Translate!.getTranslation("DDM_ELEMENTS-USER_ID-DD_ATTR_LABL"),        
+:                                                                       columns$[0,1]="C",columns$[0,2]="16"
+        columns$[1,0]=Translate!.getTranslation("AON_NAME"),            columns$[1,1]="C",columns$[1,2]="30"
+        columns$[2,0]=Translate!.getTranslation("AON_CLERK"),           columns$[2,1]="C",columns$[2,2]="6"
+        columns$[3,0]=Translate!.getTranslation("AON_PRE^APV"),         columns$[3,1]="C",columns$[3,2]="5"
+        columns$[4,0]=Translate!.getTranslation("AON_SIGN"),            columns$[4,1]="C",columns$[4,2]="5"
+        columns$[5,0]=Translate!.getTranslation("AON_SIGNATURE_FILE"),  columns$[5,1]="C",columns$[5,2]="30"
+        columns$[6,0]=Translate!.getTranslation("AON_LIMIT^AUTH"),      columns$[6,1]="C",columns$[6,2]="6"
+        columns$[7,0]=Translate!.getTranslation("AON_MAXIMUM")+"^"+Translate!.getTranslation("AON_AUTH_LIMIT"),
+:                                                                       columns$[7,1]="N",columns$[7,2]="15",columns$[7,3]=m1$
+
+rem --- Start Progress Meter
+
+    call pgmdir$+"adc_progress.aon","NC","APM_APPROVERS","","","",0,approver_dev,1,meter_num,status
+	total_recs=0
+
+rem --- Get Records
+
+	read(approver_dev,key="",dom=*next)
+
+	while 1
+		readrecord(approver_dev,end=*break)approver$
+		dim user$:fattr(user$)
+		readrecord(user_dev,key=approver.user_id$,dom=*next)user$
+		
+		OutVect!.addItem(approver.user_id$)
+		OutVect!.addItem(user.name$)
+        OutVect!.addItem(iff(approver.payables_clerk,"Y","N"))
+		OutVect!.addItem(iff(approver.prelim_approval,"Y","N"))
+		OutVect!.addItem(iff(approver.check_signer,"Y","N"))
+		OutVect!.addItem(approver.signature_file$)
+        OutVect!.addItem(iff(approver.limit_auth,"Y","N"))
+        OutVect!.addItem(str(approver.max_auth_amt))
+
+		total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+	wend
+
+rem --- All done
+
+    if total_recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    outVect!.addItem(str(total_recs)+" "+Translate!.getTranslation("AON_RECORD(S)_LISTED"))
+    xwk=fnblank(columns)
+    
+    goto std_exit
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+   
+    def fnblank(q0)
+        for q1=1 to q0
+            OutVect!.addItem("")
+        next q1
+        return q1
+    fnend
+                    
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		rd_table_chans$[all]
+
+	return
+
+std_missing_params: rem --- Standard missing parameter handler (01Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:                                   str(err),rd_err_text$,rd_err_act$
+    if pos("EXIT"=rd_err_act$) goto std_missing_params_exit
+    if pos("ESCAPE"=rd_err_act$) seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+std_error: rem --- Standard error handler (01Apr2006)
+
+	err_text$=""
+	if tcb(5)<>0 and pgm(-1)=pgm(-2) err_text$=pgm(tcb(5),err=*next)
+	call stbl("+DIR_SYP")+"bac_error.bbj",err=std_error_exit,pgm(-2),str(tcb(5)),str(err),err_text$,err_act$
+	if pos("EXIT"=err_act$) goto std_error_exit
+	if pos("ESCAPE"=err_act$) seterr 0;setesc 0
+	if pos("RETRY"=err_act$) retry
+
+std_error_exit:
+
+	master_user$=cvs(stbl("+MASTER_USER",err=std_error_release),2)
+	sysinfo_template$=stbl("+SYSINFO_TPL",err=std_error_release)
+	dim sysinfo$:sysinfo_template$
+	sysinfo$=stbl("+SYSINFO",err=std_error_release)
+	if cvs(sysinfo.user_id$,2)=master_user$ escape
+
+std_error_release:
+
+	status=999
+	if pgm(-1)<>pgm(-2) exit
+	release
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    OutVect!=null()
+    goto std_exit
+
+    end

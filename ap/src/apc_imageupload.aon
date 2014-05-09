@@ -1,0 +1,346 @@
+rem --- Payment Authorization Upload Invoice Images
+rem --- Program apc_imageupload
+
+rem --- AddonSoftware Version 14.00 - Apr2014
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- channels[1]  : vendmast (apm-01) channel (input)
+rem ---         [2]  : invimage channel (input)
+rem --- templates$[1]: vendmast (apm-01) template (input)
+rem ---           [2]: invimage template (input)
+rem --- ap_type$     : AP type (input)
+rem --- vendor_id$   : Vendor ID (input)
+rem --- ap_inv_no$   : AP invoice number (input)
+rem --- man_check$   : Manual check Y/N flag (input)
+rem --- scan_docs_to$: Where the scanned docs are being uploaded to (input)
+rem --- status       : Status/0=No error (returned)
+
+    seterr std_error
+    setesc std_error
+
+    enter channels[all],templates$[all],ap_type$,vendor_id$,ap_inv_no$,man_check$,scan_docs_to$,status
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Declarations
+
+    use ::gapps.bbj::GDocsService
+    use ::gapps.bbj::GDoc
+    use ::gapps.bbj::GDocSaveDialog
+    
+    use java.net.URL
+    
+    use ::bbtranslator.bbj::BBTranslator
+    
+    declare GDoc doc!
+    declare GDocsService docsService!
+    declare GDocSaveDialog saveDialog!
+    
+    declare URL folderURL!
+    	        
+    declare BBjClientFile cf!
+    declare BBjClientFileSystem cfs!
+
+    declare BBTranslator Translate!
+    Translate! = BBTranslator.getInstance(stbl("+PROPS_NAME"),stbl("+USER_LOCALE"),null(),stbl("+PROPS_PATH"))
+
+
+rem --- Open Files
+
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="APE_INVOICEHDR",open_opts$[1]="OTA@"
+
+	gosub open_tables
+
+    invhdr_dev = num(open_chans$[1]);dim invhdr$:open_tpls$[1]
+	vendmast_dev = channels[1];dim vendmast$:templates$[1]
+    invimage_dev = channels[2];dim invimage$:templates$[2]
+
+begin_process: rem --- process
+	found = 0
+	read record(invhdr_dev,key=firm_id$+ap_type$+vendor_id$+ap_inv_no$,err=*next)invhdr$; found = 1 
+	
+	rem --- invoice not saved
+	if !found and man_check$<>"Y" then 
+		msg_id$="AP_INV_NOT_SAVED"
+		gosub disp_message
+		goto done
+	endif
+
+rem --- Select image
+	altPrompt$ = Translate!.getTranslation("AON_SELECT_FILE_TO_UPLOAD")+"."
+	clientPath$ = ""
+	nameOnClient$ = ""
+	extension$ = ""
+	filter$ = "pdf" + $0a$ + "*.pdf" + $0a$ + "jpeg" + $0a$ + "*.jpg" +$0a$ + "gif" + $0a$ + "*.gif" + $0a$ + "all" + $0a$ + "*.*"
+    response$ = FILEOPEN(altPrompt$,clientPath$,nameOnClient$,extension$,filter$, MODE="client")
+            
+    if response$="::CANCEL::" or response$="::BAD::" then
+        status=1
+		goto done
+	endif 
+
+rem --- Save selected image on server
+	cfs! = BBjAPI().getThinClient().getClientFileSystem()
+	cf!=cfs!.getClientFile(response$)
+
+    tempFileLocation$=cf!.copyFromClient()
+	nameOnServer$=response$
+	serverPath$ = stbl("+DOC_DIR_PDF")
+
+    rem --- strip the path and get the ordinary file name of the uploaded file
+    filePath$=nameOnServer$
+    gosub fix_path
+    nameOnServer$=filePath$
+    if pos("/"=nameOnServer$) then nameOnServer$=nameOnServer$(pos("/"=nameOnServer$,-1)+1)
+
+    erase serverPath$+nameOnServer$,err=*next
+    rename tempFileLocation$,serverPath$+nameOnServer$
+
+rem --- Preview selected image
+    call "apc_imagepreview.aon", serverPath$+nameOnServer$, retval$
+    if retval$ = "cancel" then 
+        document$ = serverPath$+nameOnServer$
+    	goto done
+    else
+    	if retval$ = "reselect" then
+    	    erase serverPath$+nameOnServer$,err=*next
+    	    goto begin_process
+  	    else
+  	        if retval$ <> "save" then
+                document$ = serverPath$+nameOnServer$
+                goto done
+            endif
+		endif
+	endif
+	
+rem --- Do Barista Doc Archive
+    if scan_docs_to$="BDA" then
+        rem --- Initialize Barista Doc Inquiry
+        document$=""
+        goto done
+    endif; rem --- Do Barista Doc Archive
+
+rem --- Do Google Docs
+    if scan_docs_to$="GD " then
+    	rem --- Get next sequence number
+    	next_seq_no=0
+    	trip_key$=firm_id$+vendor_id$+ap_inv_no$
+        read(invimage_dev,key=trip_key$+$ff$,dom=*next)
+        previous_key$=""
+        previous_key$=keyp(invimage_dev,end=*next)
+        if pos(trip_key$=previous_key$)=1 then
+            next_seq_no=1+num(previous_key$(1+len(trip_key$)),err=*next)
+        endif
+        wk$=fattr(invimage$,"SEQUENCE_NUM")
+        seq_no_mask$=fill(dec(wk$(10,2)),"0")
+        max_seq_no=num(fill(dec(wk$(10,2)),"9"))
+        if next_seq_no>max_seq_no then
+            msg_id$="AP_IMAGE_LIMIT"
+            gosub disp_message
+            goto done
+        endif
+        sequence$=str(next_seq_no:seq_no_mask$)
+    
+    	rem --- Build the folder name from vendor name and id and 
+    	read record(vendmast_dev,key=firm_id$+vendor_id$,dom=*next)vendmast$
+    	subdir$ = cvs(vendmast.vendor_name$,3)
+    	if len(subdir$)>15 then subdir$=subdir$(1,15)
+    	
+    	rem --- Remove slashes from directory name
+    	while 1
+    		ppos = pos("/"=subdir$)
+    		if ppos then 
+    			subdir$(ppos,1) = "_"
+    		else
+    			break
+    		endif
+    	wend
+    	while 1
+    		ppos = pos("\"=subdir$)
+    		if ppos then 
+    			subdir$(ppos,1) = "_"
+    		else
+    			break
+    		endif
+    	wend
+    		
+    	subdir$ = subdir$ + "_" + vendmast.vendor_id$
+    	folder$ = stbl("+DIR_INV_IMAGES") + subdir$ + "/"
+    
+        rem --- Ensure the user credentials are good
+        docsService! = new GDocsService()
+        rem ' are we authenticated
+    	authenticated = docsService!.isAuthenticated(0)
+    	if !authenticated then
+    		docsService!.resetAuthentication()
+    		authenticated = docsService!.isAuthenticated(1)
+    		if !authenticated then
+    			msg_id$="GENERIC_OK"
+    			dim msg_tokens$[1]
+    			msg_tokens$[1]=Translate!.getTranslation("AON_LOGIN_CANCELLED")
+    			gosub disp_message
+    			goto done
+    		endif
+    	endif
+    
+    	rem --- Ensure there is a folder there	
+    	succeeded=0
+    	docsService!.createFolder(folder$,err=*next); succeeded=1
+    	if !succeeded then
+    		rem ' error 306 is a create error
+    		rem ' error 307 means the folder is already there
+          	if err<>307 then
+        		msg_id$="AD_BAD_GDOC_FOLDER"
+        		dim msg_tokens$[3]
+        		msg_tokens$[1]=folder$
+                msg_tokens$[2]=errmes(-1)
+                msg_tokens$[3]=str(err)
+        		gosub disp_message
+                goto done
+    		endif
+    	endif
+    	
+    	rem --- Proceed with the upload
+    	document$ = serverPath$+nameOnServer$
+    	docTitle$ = cvs(ap_inv_no$,3) + "_" + sequence$
+    
+    	rem --- Determine file type
+    	type$=""
+    	ppos = pos("."=document$,-1)
+    	if ppos then type$ = document$(ppos+1)
+    
+    	rem --- Upload with no dialog
+    	if type$ = "pdf" then
+    		type$ = GDoc.getPDF_TYPE()
+    	else
+    		type$ = GDoc.getFILE_TYPE()
+    	endif
+    	convert = 1; rem --- convert to google file type
+    	success = 0
+    	doc! = docsService!.uploadDocument(document$, docTitle$, type$, folder$, convert, err=*next); success = 1
+    
+    	if !success then
+    	    msg_id$="AD_BAD_GDOC_UPLOAD"
+    		dim msg_tokens$[2]
+    		msg_tokens$[1]=document$
+            msg_tokens$[2]=errmes(-1)
+    		gosub disp_message
+    	else
+            rem --- Write the invoice image record
+    		dim invimage$:fattr(invimage$)
+    		invimage.firm_id$ = firm_id$
+    		invimage.vendor_id$ = vendor_id$
+    		invimage.ap_inv_no$ = ap_inv_no$
+    		invimage.sequence_num$ = sequence$
+            invimage.scan_docs_to$ = scan_docs_to$
+    		invimage.doc_url$ = doc!.getHref()
+    		invimage$=field(invimage$)
+    		write record(invimage_dev)invimage$
+    		msg_id$="AP_INVIMAGE_UPLOADED"
+    		gosub disp_message			
+    	endif
+    	
+    	goto done
+    endif; rem --- Do Google Docs
+
+done: rem --- All done
+    rem --- clean up
+    erase document$,err=*next
+    
+    goto std_exit
+
+fix_path: rem --- Flip directory path separators
+
+    pos=pos("\"=filePath$)
+    while pos
+        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+        pos=pos("\"=filePath$)
+     wend
+
+    return
+        
+close_tables: rem --- Close tables previously opened here
+        
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="APE_INVOICEHDR",open_opts$[1]="C@"
+
+    gosub open_tables
+    
+    return
+         
+            
+open_tables:rem --- Open Tables
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		rd_table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+			msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message:rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		rd_table_chans$[all]
+
+	return
+	
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; goto std_exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    gosub close_tables
+    exit
+
+rem #endinclude std_exit.src
+
+    end

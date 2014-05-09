@@ -1,3 +1,111 @@
+[[BMM_BILLMAT.AREC]]
+rem --- Maintain count of inserted rows (don't count if last row)
+	if GridVect!.size()>1+callpoint!.getValidationRow() then
+		insertedRows=callpoint!.getDevObject("insertedRows")
+		insertedRows=insertedRows+1
+		callpoint!.setDevObject("insertedRows",insertedRows)
+	endif
+[[BMM_BILLMAT.AOPT-AUTO]]
+rem --- Update displayed row nums for inserted and deleted rows, or
+	if callpoint!.getDevObject("insertedRows")+callpoint!.getDevObject("deletedRows") then
+		msg_id$="SF_UPDATE_ROW_NO"
+		gosub disp_message
+
+		callpoint!.setDevObject("insertedRows",0)
+		callpoint!.setDevObject("deletedRows",0)
+		callpoint!.setStatus("REFGRID")
+		break
+	endif
+
+rem --- Auto create Reference Numbers
+	callpoint!.setDevObject("MatlTable","BMM_BILLMAT")
+	callpoint!.setDevObject("GridVect",GridVect!)
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"SFE_WOREFNUM",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+
+rem --- Update grid with changes
+	callpoint!.setStatus("REFGRID")
+[[BMM_BILLMAT.AGRN]]
+rem --- Set ROW_NUM
+	dim bmm_billmat$:fnget_tpl$("BMM_BILLMAT")
+	wk$=fattr(bmm_billmat$,"material_seq")
+	new_row_num=1+callpoint!.getValidationRow()
+	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
+[[BMM_BILLMAT.AGDR]]
+rem --- Set ROW_NUM (material_seq may not be numbered sequentially from one when DataPorted)
+	dim bmm_billmat$:fnget_tpl$("BMM_BILLMAT")
+	wk$=fattr(bmm_billmat$,"material_seq")
+	new_row_num=1+callpoint!.getValidationRow()
+	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
+
+rem --- Track wo_ref_num in Map to insure they are unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("BMM_BILLMAT.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.put(wo_ref_num$,"")
+	endif
+[[BMM_BILLMAT.WO_REF_NUM.AVAL]]
+rem --- Verify wo_ref_num is unique
+	wo_ref_num$=callpoint!.getUserInput()
+	prev_wo_ref_num$=callpoint!.getDevObject("prev_wo_ref_num")
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	if wo_ref_num$<>prev_wo_ref_num$ then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			if cvs(wo_ref_num$,2)<>"" then refnumMap!.put(wo_ref_num$,"")
+			if cvs(prev_wo_ref_num$,2)<>"" then refnumMap!.remove(prev_wo_ref_num$)
+		endif
+	endif
+[[BMM_BILLMAT.BDEL]]
+rem --- Update refnumMap!
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("BMM_BILLMAT.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		refnumMap!.remove(wo_ref_num$)
+	endif
+
+rem --- Maintain count of deleted rows
+	deletedRows=callpoint!.getDevObject("deletedRows")
+	deletedRows=deletedRows+1
+	callpoint!.setDevObject("deletedRows",deletedRows)
+[[BMM_BILLMAT.WO_REF_NUM.BINP]]
+rem --- Capture starting wo_ref_num
+	prev_wo_ref_num$=callpoint!.getColumnData("BMM_BILLMAT.WO_REF_NUM")
+	callpoint!.setDevObject("prev_wo_ref_num",prev_wo_ref_num$)
+[[BMM_BILLMAT.BUDE]]
+rem --- verify wo_ref_num is unique
+	refnumMap!=callpoint!.getDevObject("refnumMap")
+	wo_ref_num$=callpoint!.getColumnData("BMM_BILLMAT.WO_REF_NUM")
+	if cvs(wo_ref_num$,2)<>"" then
+		if refnumMap!.containsKey(wo_ref_num$) then
+			msg_id$="SF_DUP_REF_NUM"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=wo_ref_num$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		else
+			refnumMap!.put(wo_ref_num$,"")
+		endif
+	endif
+
+rem --- Maintain count of deleted rows
+	deletedRows=callpoint!.getDevObject("deletedRows")
+	deletedRows=deletedRows-1
+	callpoint!.setDevObject("deletedRows",deletedRows)
 [[BMM_BILLMAT.BDTW]]
 use ::ado_util.src::util
 [[BMM_BILLMAT.BWRI]]
@@ -192,6 +300,13 @@ rem --- Setup java class for Derived Data Element
 	use ::bmo_BmUtils.aon::BmUtils
 	declare BmUtils bmUtils!
 
+rem --- init data
+
+	refnumMap!=new java.util.HashMap()
+	callpoint!.setDevObject("refnumMap",refnumMap!)
+	callpoint!.setDevObject("insertedRows",0)
+	callpoint!.setDevObject("deletedRows",0)
+
 rem --- Open files for later use
 
 	num_files=2
@@ -225,14 +340,8 @@ rem --- fill listbox for use with Op Sequence
 		read record (bmm08_dev,key=firm_id$+bmm03a.op_code$,dom=*next)bmm08a$
 		ops_lines!.addItem(bmm03a.internal_seq_no$)
 		op_code_list$=op_code_list$+bmm03a.op_code$
-		work_var=pos(bmm03a.op_code$=op_code_list$,len(bmm03a.op_code$),0)
-		if work_var>1
-			work_var$=bmm03a.op_code$+"("+str(work_var)+")"
-		else
-			work_var$=bmm03a.op_code$
-		endif
-		ops_items!.addItem(work_var$)
-		ops_list!.addItem(work_var$+" - "+bmm08a.code_desc$)
+		ops_items!.addItem(bmm03a.wo_op_ref$)
+		ops_list!.addItem(bmm03a.wo_op_ref$+" - "+bmm03a.op_code$+" - "+bmm08a.code_desc$)
 	wend
 
 	if ops_lines!.size()>0
@@ -250,6 +359,13 @@ rem --- fill listbox for use with Op Sequence
 	my_control!.removeAllItems()
 	my_control!.insertItems(0,ops_list!)
 	my_grid!.setColumnListControl(col_ref,my_control!)
+
+rem --- Disable WO_REF_NUM when locked
+	if callpoint!.getDevObject("lock_ref_num")="Y" then
+		opts$=callpoint!.getTableColumnAttribute("BMM_BILLMAT.WO_REF_NUM","OPTS")
+		callpoint!.setTableColumnAttribute("BMM_BILLMAT.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
+		callpoint!.setOptionEnabled("AUTO",0)
+	endif
 [[BMM_BILLMAT.ITEM_ID.AINV]]
 rem --- Check for item synonyms
 

@@ -64,7 +64,7 @@ rem --- Get 'IN' SPROC parameters
 rem --- Create the memory recordset for return to jasper
 
 	dataTemplate$ = ""
-	dataTemplate$ = dataTemplate$ + "check_date:C(8), "
+	dataTemplate$ = dataTemplate$ + "check_date:C(8), one_signature:C(80), two_signature_1:C(80), two_signature_2:C(80), "
 	dataTemplate$ = dataTemplate$ + "check_amt:C(1*), exactly_amt:C(1*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
@@ -78,8 +78,10 @@ rem --- Get data from work file
 
 	sql_prep$=""
 	sql_prep$=sql_prep$+"SELECT check_date "
+    sql_prep$=sql_prep$+"      ,signature_1 "
+    sql_prep$=sql_prep$+"      ,signature_2 "
 	sql_prep$=sql_prep$+"      ,chk_amt_str "
-	sql_prep$=sql_prep$+"      ,chk_exactly "
+    sql_prep$=sql_prep$+"      ,chk_exactly "
 	sql_prep$=sql_prep$+"FROM APW_CHKJASPERPRN "
 	sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' "
 	sql_prep$=sql_prep$+"  AND ap_type='"+ap_type$+"' "
@@ -100,6 +102,24 @@ rem --- Loop through result set from work file query
 		
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("CHECK_DATE", fndate$(read_tpl.check_date$))
+        if cvs(read_tpl.signature_2$,2)="" then
+            if cvs(read_tpl.signature_1$,1)="" then
+                rem --- No signatures on this check
+                data!.setFieldValue("ONE_SIGNATURE", "")
+                data!.setFieldValue("TWO_SIGNATURE_1", "")
+                data!.setFieldValue("TWO_SIGNATURE_2", "")
+            else
+                rem --- Have one signature on this check
+                data!.setFieldValue("ONE_SIGNATURE", cvs(stbl("+CUST_IMAGES")+read_tpl.signature_1$,2))
+                data!.setFieldValue("TWO_SIGNATURE_1", "")
+                data!.setFieldValue("TWO_SIGNATURE_2", "")
+            endif
+        else
+            rem --- Have two signatures on this check
+            data!.setFieldValue("ONE_SIGNATURE", "")
+            data!.setFieldValue("TWO_SIGNATURE_1", cvs(stbl("+CUST_IMAGES")+read_tpl.signature_1$,2))
+            data!.setFieldValue("TWO_SIGNATURE_2", cvs(stbl("+CUST_IMAGES")+read_tpl.signature_2$,2))
+        endif
 		data!.setFieldValue("CHECK_AMT", read_tpl.chk_amt_str$); rem Already in str; may include stars or VOID
 		data!.setFieldValue("EXACTLY_AMT", read_tpl.chk_exactly$); rem Includes the text "Exactly" and "***" 
 		

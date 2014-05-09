@@ -26,7 +26,7 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=10,begfile=1,endfile=files
+    files=13,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="aps_params",ids$[1]="APS_PARAMS"
     files$[2]="ape-04",ids$[2]="APE_CHECKS"
@@ -38,6 +38,10 @@ rem --- Open/Lock files
     files$[8]="apw-01",ids$[8]="APW_CHECKINVOICE"
     files$[9]="aps_report",ids$[9]="APS_REPORT"
 	files$[10]="adx_locks",  ids$[10]="ADX_LOCKS"
+    files$[11]="aps_payauth",ids$[11]="APS_PAYAUTH"
+    files$[12]="apm_approvers",ids$[12]="APM_APPROVERS"
+    files$[13]="apt_invapproval",ids$[13]="APT_INVAPPROVAL"
+    
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
 
@@ -51,11 +55,16 @@ rem --- Open/Lock files
     apw01_dev=channels[8]
     aps01b_dev=channels[9]
 	adxlocks_dev=channels[10]
+	payauth_dev=channels[11]
+    apm_approvers_dev=channels[12]
+    apt_invapproval_dev=channels[13]
+    
 rem --- Dimension string templates
 
     dim aps01a$:templates$[1],ape04a$:templates$[2],apm01a$:templates$[3]
     dim ape04b$:templates$[4],apm08a$:templates$[5],apm10a$:templates$[6]
     dim apt02a$:templates$[7],apw01a$:templates$[8],aps01b$:templates$[9]
+    dim payauth$:templates$[11],apm_approvers$:templates$[12],apt_invapproval$:templates$[13]
 
 rem --- Assign form input values to local variables
 
@@ -69,9 +78,41 @@ rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    find record (payauth_dev,key=aps01a_key$,dom=*next) payauth$
     call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_length
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
     
+rem --- If using Payment Authorization, get all possible signers and their signature files
+
+    if payauth.use_pay_auth then
+        rem --- Build HashMap of signature files
+        signerSignatureMap!=new java.util.HashMap()
+        read(apm_approvers_dev,key=firm_id$,dom=*next)
+        while 1
+            apm_approvers_key$=key(apm_approvers_dev,end=*break)
+            if pos(firm_id$=apm_approvers_key$)<>1 then break
+            readrecord(apm_approvers_dev)apm_approvers$
+            if apm_approvers.check_signer and !signerSignatureMap!.containsKey(apm_approvers.user_id$) then
+                signerSignatureMap!.put(apm_approvers.user_id$,apm_approvers.signature_file$)
+            endif
+        wend
+        
+        rem --- Build HashMap of authorization limits
+        signerAuthLimitMap!=new java.util.HashMap()
+        read(apm_approvers_dev,key=firm_id$,dom=*next)
+        while 1
+            apm_approvers_key$=key(apm_approvers_dev,end=*break)
+            if pos(firm_id$=apm_approvers_key$)<>1 then break
+            readrecord(apm_approvers_dev)apm_approvers$
+            if apm_approvers.check_signer and apm_approvers.limit_auth and !signerAuthLimitMap!.containsKey(apm_approvers.user_id$) then
+                signerAuthLimitMap!.put(apm_approvers.user_id$,apm_approvers.max_auth_amt)
+            endif
+        wend
+        
+        rem --- Create TreeSet for signers of current check
+        signerSet!=new java.util.TreeSet()
+    endif
+
 rem --- Set A/P Type if multiple types not installed
 
     if aps01a.multi_types$<>"Y"
@@ -178,6 +219,21 @@ rem --- Accumulate
         t[1]=t[1]+ape04a.discount_amt
         t[2]=t[2]+ape04a.retention
 		t[3]=t[3]+ape04a.payment_amt
+		
+        rem --- If using Payment Authorization, get signers that approved this invoice
+        if payauth.use_pay_auth then
+            partialkey$ = ape04a.firm_id$ + ape04a.vendor_id$ + ape04a.ap_inv_no$
+            read (apt_invapproval_dev, key=partialkey$, dom=*next)
+            while 1
+                apt_invapproval_key$=key(apt_invapproval_dev,end=*break)
+                if pos(partialkey$ = apt_invapproval_key$) <> 1 then break
+                read record(apt_invapproval_dev)apt_invapproval$
+                if apt_invapproval.approval_type$="S" then
+                    signerSet!.add(apt_invapproval.user_id$)
+                endif
+            wend
+        endif
+
     wend
 
 rem --- Totals
@@ -324,7 +380,7 @@ check_stub_detail:
     tmp = fntext2(col[2], row+stub, col[3]-col[2]-6, row+stub, str(ape04a.invoice_amt + ape04a.retention:m1$), boldfont!, right_justify)
     tmp = fntext2(col[3], row+stub, col[4]-col[3]-6 ,row+stub, str(ape04a.discount_amt:m1$), boldfont!, right_justify)
     tmp = fntext2(col[4], row+stub, col[5]-col[4]-6, row+stub, str(ape04a.payment_amt:m1$), boldfont!, right_justify)
-
+    
     return
 
 stub_total: rem --- Stub Total
@@ -416,8 +472,61 @@ common_check_face:
     tmp=fntext(6,696,Translate!.getTranslation("AON_ORDER"),italicfont!)
     tmp=fntext(6,708,Translate!.getTranslation("AON_OF"),italicfont!)
 
-    tmp=fnbox(342,720,216,1)
-    tmp=fntext2(342,722,216,722,Translate!.getTranslation("AON_AUTHORIZED_SIGNATURE"),italicfont!,center_justify)
+    signatureX=340
+    signatureY=720
+    signatureLen=220
+    tmp=fnbox(signatureX,signatureY,signatureLen,1)
+    tmp=fntext2(signatureX,signatureY+2,signatureLen,signatureY+2,Translate!.getTranslation("AON_AUTHORIZED_SIGNATURE"),italicfont!,center_justify)
+
+    rem --- If using Payment Authorization, put signature(s) on the check.
+    if payauth.use_pay_auth then
+        rem --- Remove approvers from signerSet! TreeSet that have exceeded ther authorization limit
+        iter!=signerSet!.iterator()
+        while iter!.hasNext()
+            signer$=iter!.next()
+                if signerAuthLimitMap!.containsKey(signer$)
+:               and cast(BBjNumber, signerAuthLimitMap!.get(signer$))>t[3] then
+                    signerSet!.remove(signer$)
+                endif
+        wend
+
+        rem --- Adjust signature position(s) for one or two signatures
+        imageWidth=140
+        imageHeight=44
+        signature_center=signatureX+signatureLen/2
+        if signerSet!.size()=1 then
+            rem --- Only one signature, center it on signature line
+            image1_X=signature_center-imageWidth/2
+            image2_X=0
+        else
+            rem --- Two signatures, evenly space them on signature line
+            gap=2
+            image1_X=signature_center-imageWidth-gap
+            image2_X=signature_center+gap
+        endif
+        
+        rem --- It is possible to have more than two signers approve invoices being paid by this check.
+        rem --- For now, just use the first two signers in the signerSet! TreeSet.
+        formImage! = page!.newImage()
+        formImage!.setURL("file:" + stbl("+CUST_IMAGES") + cast(BBjString, signerSignatureMap!.get(signerSet!.first())))
+        formImage!.setPosition(new java.awt.Point(image1_X,signatureY-imageHeight/2))
+        formImage!.setWidth(imageWidth)
+        formImage!.setHeight(imageHeight)
+        page!.add(formImage!)
+        
+        rem --- A second signature may be needed
+        if image2_X then
+            rem --- Remove first signer, so can get second signe
+            signer$=signerSet!.first()
+            signerSet!.remove(signer$)
+            formImage2! = page!.newImage()
+            formImage2!.setURL("file:" + stbl("+CUST_IMAGES") + cast(BBjString, signerSignatureMap!.get(signerSet!.first())))
+            formImage2!.setPosition(new java.awt.Point(image2_X,signatureY-imageHeight/2))
+            formImage2!.setWidth(imageWidth)
+            formImage2!.setHeight(imageHeight)
+            page!.add(formImage2!)
+        endif
+    endif
 
     return
 
@@ -495,6 +604,11 @@ vendor_header:
         find record (apm01_dev,key=firm_id$+ape04a.vendor_id$,dom=*next) apm01a$
         address$(1)=apm01a.addr_line_1$+apm01a.addr_line_2$+apm01a.city$+apm01a.state_code$+apm01a.zip_code$,vend_name$=apm01a.vendor_name$
         x1$(1)=fnmask$(ape04a.vendor_id$(1,vendor_length),m0$)
+
+        rem --- If using Payment Authorization, clear TreeSet for signers of current check
+        if payauth.use_pay_auth then
+            signerSet!.clear()
+        endif
 
         t1$=ape04a.ap_type$+ape04a.vendor_id$
         accntid$=apm01a.vendor_acct$

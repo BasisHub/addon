@@ -1,0 +1,112 @@
+rem --- Rebuild AP Invoice Balance
+rem --- Program apc_rebuildinvbal.aon
+
+rem --- AddonSoftware Version 14.00 - Apr2014
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
+rem --- status       : Status/0=No error (returned)
+
+    seterr std_error
+    setesc std_error
+    
+    enter theFirm$,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Get program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="apt-01",ids$[1]="APT_INVOICEHDR"
+    files$[2]="apt-11",ids$[2]="APT_INVOICEDET"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],
+:                           templates$[all],channels[all],batch,status
+    if status goto std_exit
+    apt01_dev=channels[1]
+    apt11_dev=channels[2]
+
+rem --- Dimension string templates
+
+    dim apt01a$:templates$[1],apt11a$:templates$[2]
+
+rem --- Total invoice balance for current firm
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,apt01_dev,1,meter_num,status
+    read(apt01_dev,key=theFirm$,dom=*next)
+    while 1
+        apt01_key$=key(apt01_dev,end=*break)
+        if cvs(theFirm$,2)<>"" and  pos(theFirm$=apt01_key$)<>1 then break
+        extractrecord(apt01_dev)apt01a$; rem Advisory Locking
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        invoice_bal=apt01a.invoice_amt
+
+        rem --- Add all transactions for this invoice
+        read(apt11_dev,key=apt01_key$,dom=*next)
+        while 1
+            apt11_key$=key(apt11_dev,end=*break)
+            if pos(apt01_key$=apt11_key$)<>1 then break
+            readrecord(apt11_dev)apt11a$
+            invoice_bal=invoice_bal+apt11a.trans_amt
+        wend
+
+        apt01a.invoice_bal=invoice_bal
+        atp01a$=field(apt01a$)
+        writerecord(apt01_dev)apt01a$
+    wend
+
+done: rem --- All done
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    goto std_exit
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src

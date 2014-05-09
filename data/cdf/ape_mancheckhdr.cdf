@@ -315,7 +315,7 @@ rem --- Disable button
 rem print 'show',; rem debug
 
 rem --- Open/Lock files
-files=30,begfile=1,endfile=12
+files=30,begfile=1,endfile=14
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="APE_MANCHECKHDR";rem --- "ape-02"
 files$[2]="APE_MANCHECKDIST";rem --- "ape-12"
@@ -327,12 +327,16 @@ files$[7]="APT_INVOICEDET";rem --- "apt-11"
 files$[8]="APT_CHECKHISTORY";rem --- "apt-05
 files$[9]="APC_TYPECODE";rem --- "apm-10A"
 files$[10]="APM_VENDCMTS";rem --- "apm-09
-files$[11]="APS_PARAMS";rem --- "ads-01"
+files$[11]="APS_PARAMS";rem --- "aps-01"
 files$[12]="GLS_PARAMS"
+files$[13]="APS_PAYAUTH"
+files$[14]="APT_INVIMAGE"
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
 next wkx
 options$[3]=options$[3]+"N"
+options$[13]="OTA@"
+options$[14]="OTA[1]"
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
 :	endfile,
@@ -352,7 +356,8 @@ if status$<>"" then
 endif
 aps01_dev=num(chans$[11])
 gls01_dev=num(chans$[12])
-dim aps01a$:templates$[11],gls01a$:templates$[12]
+aps_payauth=num(chans$[13])
+dim aps01a$:templates$[11],gls01a$:templates$[12],aps_payauth$:templates$[13]
 user_tpl_str$="firm_id:c(2),glint:c(1),glyr:c(4),glper:c(2),glworkfile:c(16),"
 user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"misc_entry:c(1),post_closed:c(1),units_flag:c(1),"
@@ -457,6 +462,12 @@ callpoint!.setDevObject("dist_amt","")
 callpoint!.setDevObject("dflt_gl","")
 callpoint!.setDevObject("dflt_dist","")
 callpoint!.setDevObject("tot_inv","")
+
+rem --- Get Payment Authorization parameter record
+
+	readrecord(aps_payauth,key=firm_id$+"AP00",dom=*next)aps_payauth$
+	callpoint!.setDevObject("use_pay_auth",aps_payauth.use_pay_auth)
+	callpoint!.setDevObject("scan_docs_to",aps_payauth.scan_docs_to$)
 [[APE_MANCHECKHDR.ARNF]]
 rem --- Look in check history for this check number
 

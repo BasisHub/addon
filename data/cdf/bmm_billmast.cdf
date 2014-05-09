@@ -6,6 +6,35 @@ rem --- Disable Barista menu items
 	wmap$(wpos+6,1)="X"
 	callpoint!.setAbleMap(wmap$)
 	callpoint!.setStatus("ABLEMAP")
+[[BMM_BILLMAST.ADIS]]
+rem --- set DevObjects
+
+	callpoint!.setDevObject("lock_ref_num",callpoint!.getColumnData("BMM_BILLMAST.LOCK_REF_NUM"))
+[[BMM_BILLMAST.LOCK_REF_NUM.AVAL]]
+rem --- Notify when LOCK_REF_NUM is changed
+	prev_lockrefnum$=callpoint!.getDevObject("prev_lockrefnum")
+	lock_ref_num$=callpoint!.getUserInput()
+	callpoint!.setDevObject("lock_ref_num",lock_ref_num$)
+	if lock_ref_num$<>prev_lockrefnum$ then
+		dim msg_tokens$[2]
+		if lock_ref_num$="Y" then
+			msg_tokens$[1] = "lock"
+			msg_tokens$[2] = "cannot"
+		else
+			msg_tokens$[1] = "unlock"
+			msg_tokens$[2] = "can"
+		endif
+		msg_id$="SF_REFNUM_LOCK"
+		gosub disp_message
+		if msg_opt$<>"Y" then 
+			callpoint!.setColumnData("BMM_BILLMAST.LOCK_REF_NUM",prev_lockrefnum$,1)
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
+[[BMM_BILLMAST.LOCK_REF_NUM.BINP]]
+rem --- Need to know if LOCK_REF_NUM is changed
+	prev_lockrefnum$=callpoint!.getColumnData("BMM_BILLMAST.LOCK_REF_NUM")
+	callpoint!.setDevObject("prev_lockrefnum",prev_lockrefnum$)
 [[BMM_BILLMAST.BILL_NO.AINP]]
 rem --- Make sure item exists before allowing user to continue
 [[BMM_BILLMAST.AOPT-PLST]]
@@ -127,6 +156,11 @@ rem --- Go run the Copy form
 :		"",
 :		table_chans$[all]
 
+	rem --- Set LOCK_REF_NUM=Y for copied BOM
+	callpoint!.setColumnData("BMM_BILLMAST.LOCK_REF_NUM","Y",1)
+	lockRefNum!=callpoint!.getControl("BMM_BILLMAST.LOCK_REF_NUM")
+	lockRefNum!.setSelected(1)
+
 	if callpoint!.getDevObject("new_bill")<>""
 		new_bill$=callpoint!.getDevObject("new_bill")
 		callpoint!.setColumnData("BMM_BILLMAST.BILL_NO",new_bill$)
@@ -139,6 +173,8 @@ rem --- set devobject
 	callpoint!.setDevObject("master_bill","")
 	callpoint!.setDevObject("lotsize",0)
 	callpoint!.setColumnData("<<DISPLAY>>.WHERE_LAST_USED","",1)
+	callpoint!.setColumnData("BMM_BILLMAST.LOCK_REF_NUM","N")
+	callpoint!.setDevObject("lock_ref_num",callpoint!.getColumnData("BMM_BILLMAST.LOCK_REF_NUM"))
 [[BMM_BILLMAST.EST_YIELD.AVAL]]
 rem --- Set devobject
 

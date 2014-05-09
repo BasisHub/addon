@@ -1,0 +1,135 @@
+rem --- Payment Authorization Preview Invoice Image Before Uploading
+rem --- Program apc_imagepreview
+
+rem --- AddonSoftware Version 14.00 - Apr2014
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- thefile$: Full path to the preview file (input)
+rem --- retval$ : Return value reselect/save/cancel (returned)
+
+    seterr std_error
+    setesc std_error
+
+    enter thefile$,retval$
+
+rem --- Declarations
+
+    use ::BBUtils.bbj::BBUtils
+    use ::bbtranslator.bbj::BBTranslator
+    
+    declare BBjSysGui sysgui!
+    declare BBjTopLevelWindow win!
+    
+    declare BBjHtmlView htmlviewer!
+    declare BBjImageCtrl imageviewer!
+    declare BBjButton reselect!
+    declare BBjButton save!
+    declare BBjButton cancel!
+
+    declare BBTranslator Translate!
+    Translate! = BBTranslator.getInstance(stbl("+PROPS_NAME"),stbl("+USER_LOCALE"),null(),stbl("+PROPS_PATH"))
+	
+rem --- Verify preview file provided
+    retval$ = "reselect"
+    if thefile$ = "" then goto reselect
+
+rem --- Create the Window for the program
+    winWidth = 615
+    winHeight = 150
+    
+    sysgui!=BBjAPI().getSysGui()
+    context = sysgui!.getAvailableContext()
+
+    winTitle$=Translate!.getTranslation("AON_INVOICE_IMAGE_PREVIEW")
+    win!=sysgui!.addWindow(context, 50, 50, winWidth, winHeight, winTitle$, $00080010$)
+    font! = sysgui!.makeFont("Tahoma", 8, sysgui!.PLAIN)
+
+rem --- Build web page
+    html$ ="<!DOCTYPE html>" +$0A$
+    html$ = html$ + "<html>" +$0A$
+    html$ = html$ + "<head>" +$0A$
+    html$ = html$ + "</head>" +$0A$
+    html$ = html$ + "<body>" +$0A$
+    html$ = html$ + "<BR><BR><center>Please see your web browser for the document image preview.</center>"+ $0A$
+    html$ = html$ + "</body>" +$0A$
+    html$ = html$ + "</html>" +$0A$
+    
+    htmlviewer! = win!.addHtmlView(100, 1, 1, 612, 130, html$, $0800$)
+
+rem --- show all files in the browser
+    sslReq = BBUtils.isWebServerSSLEnabled()
+    url$ = BBUtils.copyFileToWebServer(thefile$,"appreviewtemp", sslReq)
+    BBjAPI().getThinClient().browse(url$)
+	
+rem --- buttons
+    rem --- reselect! = win!.addButton(101, 370, 682, 80, 19, "Reselect")
+    btnLabel$=Translate!.getTranslation("AON_RESELECT")
+    reselect! = win!.addButton(101, 370, 132, 80, 19, btnLabel$)
+    reselect!.setFont(font!)
+
+    rem --- save! = win!.addButton(102, 451, 682, 80, 19, "Save")
+    btnLabel$=Translate!.getTranslation("AON_SAVE")
+    save! = win!.addButton(102, 451, 132, 80, 19, btnLabel$)
+    save!.setFont(font!)
+
+    rem --- cancel! = win!.addButton(103, 532, 682, 80, 19, "Cancel")
+    btnLabel$=Translate!.getTranslation("AON_CANCEL")
+    cancel! = win!.addButton(103, 532, 132, 80, 19, btnLabel$)
+    cancel!.setFont(font!)
+
+rem --- callbacks
+    reselect!.setCallback(reselect!.ON_BUTTON_PUSH, "reselect")
+    save!.setCallback(save!.ON_BUTTON_PUSH, "save")
+    cancel!.setCallback(cancel!.ON_BUTTON_PUSH, "cancel")
+    
+    win!.setVisible(1)
+    save!.focus()
+    
+    process_events,err=*same
+
+reselect:
+	retval$ = "reselect"
+	goto std_exit
+	
+save:
+	retval$ = "save"
+	goto std_exit
+
+cancel:
+	retval$ = "cancel"
+	goto std_exit
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; goto std_exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    win!.destroy()
+    exit
+
+rem #endinclude std_exit.src
+
+    end

@@ -38,6 +38,7 @@ rem --- Keep track of lines to explode so they can be checked again when grid is
 	callpoint!.setDevObject("mark_to_explode",mark_to_explode$)
 
 rem --- Auto create Reference Numbers
+	callpoint!.setDevObject("MatlTable","SFE_WOMATL")
 	callpoint!.setDevObject("GridVect",GridVect!)
 	callpoint!.setDevObject("worefnum_status","")
 

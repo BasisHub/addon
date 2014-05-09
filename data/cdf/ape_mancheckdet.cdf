@@ -1,7 +1,72 @@
+[[APE_MANCHECKDET.AGRN]]
+rem --- Enable Load Image and View Images options as needed
+
+	curr_row=callpoint!.getValidationRow()
+	rowstatus$ = callpoint!.getGridRowNewStatus(curr_row) + callpoint!.getGridRowModifyStatus(curr_row) + callpoint!.getGridRowDeleteStatus(curr_row)
+
+	if callpoint!.getDevObject("use_pay_auth") and callpoint!.getDevObject("scan_docs_to")<>"NOT" and pos("Y"=rowstatus$)=0 then
+		callpoint!.setOptionEnabled("VIMG",1)
+		callpoint!.setOptionEnabled("LIMG",1)
+	else
+		callpoint!.setOptionEnabled("VIMG",0)
+		callpoint!.setOptionEnabled("LIMG",0)
+	endif
+[[APE_MANCHECKDET.AOPT-VIMG]]
+rem --- Displaye invoice images in the browser
+	curr_row=callpoint!.getValidationRow()
+	rowstatus$ = callpoint!.getGridRowNewStatus(curr_row) + callpoint!.getGridRowModifyStatus(curr_row) + callpoint!.getGridRowDeleteStatus(curr_row)
+
+	if pos("Y" = rowstatus$) = 0 then 
+		invimage_dev=fnget_dev("1APT_INVIMAGE")
+		dim invimage$:fnget_tpl$("1APT_INVIMAGE")
+		vendor_id$ = callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")
+		ap_inv_no$ = callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+
+		read record(invimage_dev, key=firm_id$+vendor_id$+ap_inv_no$, dom=*next)
+		while 1
+			invimage_key$=key(invimage_dev,end=*break)
+			if pos(firm_id$+vendor_id$+ap_inv_no$=invimage_key$)<>1 then break
+			invimage$=fattr(invimage$)
+			read record(invimage_dev)invimage$
+
+			switch (BBjAPI().TRUE)
+				case invimage.scan_docs_to$="BDA"
+					rem --- Do Barista Doc Archive
+					break
+				case invimage.scan_docs_to$="GD "
+					rem --- Do Google Docs
+					BBjAPI().getThinClient().browse(cvs(invimage.doc_url$,2))
+					break
+				case default
+					rem --- Unknown ... skip
+					break
+			swend
+		wend
+	endif
+[[APE_MANCHECKDET.AOPT-LIMG]]
+rem --- Select invoice image and upload for current grid row
+	curr_row=callpoint!.getValidationRow()
+	rowstatus$ = callpoint!.getGridRowNewStatus(curr_row) + callpoint!.getGridRowModifyStatus(curr_row) + callpoint!.getGridRowDeleteStatus(curr_row)
+
+	if pos("Y" = rowstatus$) = 0 then 
+		files=2
+		dim channels[files],templates$[files]
+		channels[1]=fnget_dev("APM_VENDMAST"),templates$[1]=fnget_tpl$("APM_VENDMAST")
+		channels[2]=fnget_dev("1APT_INVIMAGE"),templates$[2]=fnget_tpl$("1APT_INVIMAGE")
+		ap_type$ = callpoint!.getColumnData("APE_MANCHECKDET.AP_TYPE")
+		vendor_id$ = callpoint!.getColumnData("APE_MANCHECKDET.VENDOR_ID")
+		ap_inv_no$ = callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+		man_check$ ="Y"
+		scan_docs_to$=callpoint!.getDevObject("scan_docs_to")
+
+	call "apc_imageupload.aon", channels[all],templates$[all],ap_type$,vendor_id$,ap_inv_no$,man_check$,scan_docs_to$,status
+	endif
 [[APE_MANCHECKDET.BDGX]]
-rem --- Disable open invoice button when going to header
+rem --- Disable buttons when going to header
 
 	callpoint!.setOptionEnabled("OINV",0)
+	callpoint!.setOptionEnabled("VIMG",0)
+	callpoint!.setOptionEnabled("LIMG",0)
 [[APE_MANCHECKDET.AP_INV_NO.BINP]]
 print "Det: AP_INV_NO.AVAL"; rem debug
 

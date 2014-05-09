@@ -171,7 +171,7 @@ rem --- Remove sfm-05 (sfe_woschdl)
 	while 1
 		read (sfm05_dev,key=firm_id$+wo_no$,knum="AON_WONUM",dom=*next)
 		extract record(sfm05_dev,end=*break)sfe_woschdl$; rem --- Advisory locking
-		if sfe_woschdl.firm_id$+sfe_woschdl.wo_no$<>firm_id$+wo_no$ then read(sfm05_dev); continue
+		if sfe_woschdl.firm_id$+sfe_woschdl.wo_no$<>firm_id$+wo_no$ then read(sfm05_dev); break
 		remove (sfm05_dev,key=sfe_woschdl.firm_id$+sfe_woschdl.op_code$+sfe_woschdl.sched_date$+sfe_woschdl.wo_no$+sfe_woschdl.oper_seq_ref$,dom=*next)
 	wend
 

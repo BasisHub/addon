@@ -29,8 +29,8 @@ rem =========================================================
 	last_num=total_inc+num(refnum_numeric$)
 
 	rem --- Calculate maximum allowable numeric
-	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
-	wk$=fattr(sfe_womatl$,"wo_ref_num")
+	dim matl_table$:fnget_tpl$(callpoint!.getDevObject("MatlTable"))
+	wk$=fattr(matl_table$,"wo_ref_num")
 	max_digits=dec(wk$(10,2))-len(refnum_base$)
 	max_num=num(pad("",max_digits,"9"))
 
@@ -91,16 +91,16 @@ rem --- Generate new refnums
 
 	rem --- Process refnums for range of selected grid rows
 	success=1
-	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
-	wk$=fattr(sfe_womatl$,"wo_ref_num")
+	dim matl_table$:fnget_tpl$(callpoint!.getDevObject("MatlTable"))
+	wk$=fattr(matl_table$,"wo_ref_num")
 	refnum_size=dec(wk$(10,2))
 	next_num=num(refnum_numeric$)
 	for row=first_row to last_row
 		rem --- Ok to overwrite existing refnum?
 		if owrite$<>"Y" then
 			rem --- Skip if this grid row already has a non-blank refnum
-			sfe_womatl$=tmpGridVect!.getItem(row-1)
-			if cvs(sfe_womatl.wo_ref_num$,2)<>"" then continue
+			matl_table$=tmpGridVect!.getItem(row-1)
+			if cvs(matl_table.wo_ref_num$,2)<>"" then continue
 		endif
 
 		rem --- Next refnum
@@ -121,18 +121,18 @@ rem --- Generate new refnums
 		tmpRefnumMap!.put(next_refnum$,"")
 
 		rem --- Update tmp grid vector
-		sfe_womatl$=tmpGridVect!.getItem(row-1)
-		sfe_womatl.wo_ref_num$=next_refnum$
-		tmpGridVect!.setItem(row-1,sfe_womatl$)
+		matl_table$=tmpGridVect!.getItem(row-1)
+		matl_table.wo_ref_num$=next_refnum$
+		tmpGridVect!.setItem(row-1,matl_table$)
 	next row
 
-	rem --- If success, update SFE_WOMATL records
+	rem --- If success, update Material Table (SFE_WOMATL or BMM_BILLMAT) records
 	if success then
-		sfe22_dev=fnget_dev("SFE_WOMATL")
+		matl_table_dev=fnget_dev(callpoint!.getDevObject("MatlTable"))
 		for row=first_row to last_row
-			sfe_womatl$=tmpGridVect!.getItem(row-1)
-			sfe_womatl$=field(sfe_womatl$)
-			write(sfe22_dev)sfe_womatl$
+			matl_table$=tmpGridVect!.getItem(row-1)
+			matl_table$=field(matl_table$)
+			write(matl_table_dev)matl_table$
 		next row
 	else
 		callpoint!.setStatus("ABORT")
@@ -183,8 +183,8 @@ rem --- Ending row can't be gretter than number of rows
 	endif
 [[SFE_WOREFNUM.AREC]]
 rem --- Initialize data
-	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
-	wk$=fattr(sfe_womatl$,"material_seq")
+	dim matl_table$:fnget_tpl$(callpoint!.getDevObject("MatlTable"))
+	wk$=fattr(matl_table$,"material_seq")
 	callpoint!.setColumnData("SFE_WOREFNUM.ROW_1",pad("1",dec(wk$(10,2)),"R","0"))
 
 	GridVect!=callpoint!.getDevObject("GridVect")
@@ -196,4 +196,3 @@ rem --- Initialize data
 	callpoint!.setColumnData("SFE_WOREFNUM.INCREMENT","5")
 
 	callpoint!.setDevObject("zfill_refnum","")
-
