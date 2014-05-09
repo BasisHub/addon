@@ -648,7 +648,7 @@ rem --- Set header total amounts
 
 		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 		ordHelp!.totalSalesDisk(cust_id$, order_no$, inv_type$)
-		
+
 		callpoint!.setHeaderColumnData( "OPE_ORDHDR.TOTAL_SALES", str(ordHelp!.getExtPrice()) )
 		callpoint!.setHeaderColumnData( "OPE_ORDHDR.TAXABLE_AMT", str(ordHelp!.getTaxable()) )
 		callpoint!.setHeaderColumnData( "OPE_ORDHDR.TOTAL_COST",  str(ordHelp!.getExtCost()) )
@@ -790,8 +790,6 @@ rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 		action$="CO"
 		gosub uncommit_iv
 	endif
-
-	gosub calculate_discount
 [[OPE_ORDDET.AREC]]
 rem --- Backorder is zero and disabled on a new record
 
@@ -845,8 +843,6 @@ rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 		action$="UC"
 		gosub uncommit_iv
 	endif
-
-	gosub calculate_discount
 [[OPE_ORDDET.AGRN]]
 rem (Fires regardles of new or existing row.  Use callpoint!.getGridRowNewStatus(callpoint!.getValidationRow()) to distinguish the two)
 
@@ -981,7 +977,6 @@ rem --- Has customer credit been exceeded?
 
 	gosub calc_grid_totals
 	
-	rem print "---over credit limit?"; rem debug
 	if user_tpl.balance - user_tpl.prev_ext_price + ttl_ext_price > user_tpl.credit_limit then 
 		rem print "---yes"; rem debug
 		gosub credit_exceeded
@@ -1243,12 +1238,13 @@ calculate_discount: rem --- Calculate Discount Amount
 rem ==========================================================================
 
 	rem --- Don't update discount unless extended price has changed, otherwise might overwrite manually entered discount.
-	rem --- Must always update for a new or deleted record, or when from lot/serial entry and qty_shipped was changed,
-	rem --- or when from Additional and committed was changed.
+	rem --- Must always update for a new, deleted  or undeleted record, or when from lot/serial entry and qty_shipped was 
+	rem --- changed, or when from Additional and committed was changed.
 	disc_amt=num(callpoint!.getHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT"))
 	if user_tpl.prev_ext_price<>num(callpoint!.getColumnData("OPE_ORDDET.EXT_PRICE")) or 
 :	callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())="Y" or
 :	callpoint!.getGridRowDeleteStatus(callpoint!.getValidationRow())="Y" or
+:	callpoint!.getEvent()="AUDE" or
 :	(callpoint!.getEvent()="AOPT-LENT" and qty_shipped_changed) or
 :	(callpoint!.getEvent()="AOPT-ADDL" and committed_changed) then
 		disc_code$=callpoint!.getDevObject("disc_code")
@@ -1277,8 +1273,6 @@ rem ==========================================================================
 calc_grid_totals: rem --- Roll thru all detail lines, totaling ext_price
                   rem     OUT: ttl_ext_price
 rem ==========================================================================
-
-	rem print "Det:in calc_grid_totals..."; rem debug
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 
@@ -1709,9 +1703,6 @@ rem ==========================================================================
 enable_repricing: rem --- Enable the Recalc Pricing button
 rem ==========================================================================
 
-	print "in enable_repricing..."; rem debug
-	print "---Line type: """, user_tpl.line_type$, """"; rem debug
-
 	if pos(user_tpl.line_type$="SP") then 
 		item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
 		wh$   = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
@@ -1722,8 +1713,6 @@ rem ==========================================================================
 			callpoint!.setOptionEnabled("RCPR",1)
 		endif
 	endif
-
-	print "out"; rem debug
 
 	return
 

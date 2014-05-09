@@ -778,8 +778,6 @@ rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 		action$="CO"
 		gosub uncommit_iv
 	endif
-
-	gosub calculate_discount
 [[OPE_INVDET.AREC]]
 rem --- Backorder is zero and disabled on a new record
 
@@ -834,8 +832,6 @@ rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 		action$="UC"
 		gosub uncommit_iv
 	endif
-
-	gosub calculate_discount
 [[OPE_INVDET.AGRN]]
 rem --- See if we're coming back from Recalc button
 
@@ -1255,12 +1251,15 @@ calculate_discount: rem --- Calculate Discount Amount
 rem ==========================================================================
 
 	rem --- Don't update discount unless extended price has changed, otherwise might overwrite manually entered discount.
-	rem --- Must always update for a new or deleted record, or when from lot/serial entry and qty_shipped was changed.
+	rem --- Must always update for a new, deleted  or undeleted record, or when from lot/serial entry and qty_shipped was 
+	rem --- changed, or when from Additional and committed was changed.
 	disc_amt=num(callpoint!.getHeaderColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	if user_tpl.prev_ext_price<>num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE")) or 
 :	callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())="Y" or
 :	callpoint!.getGridRowDeleteStatus(callpoint!.getValidationRow())="Y" or
-:	(callpoint!.getEvent()="AOPT-LENT" and qty_shipped_changed) then
+:	callpoint!.getEvent()="AUDE" or
+:	(callpoint!.getEvent()="AOPT-LENT" and qty_shipped_changed) or
+:	(callpoint!.getEvent()="AOPT-ADDL" and committed_changed) then
 		disc_code$=callpoint!.getDevObject("disc_code")
 
 		file_name$ = "OPC_DISCCODE"
