@@ -15,8 +15,8 @@ rem --- Confirm ready to copy data
 
 	if numSelected then
 		dim msg_tokens$[2]
-		msg_tokens$[0]=from_firm$
-		msg_tokens$[1]=to_firm$
+		msg_tokens$[1]=from_firm$
+		msg_tokens$[2]=to_firm$
 		msg_id$="AD_COPY_FIRM_CONF"
 		gosub disp_message
 		if msg_opt$<>"Y"then
@@ -26,10 +26,8 @@ rem --- Confirm ready to copy data
 	else
 		msg_id$="AD_NO_SELECTION"
 		gosub disp_message
-		if msg_opt$<>"Y"then
-			callpoint!.setStatus("ABORT")
-			break
-		endif
+		callpoint!.setStatus("ABORT")
+		break
 	endif
 
 rem --- Copy selected data

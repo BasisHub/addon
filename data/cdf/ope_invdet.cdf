@@ -703,6 +703,7 @@ rem --- Is this item lot/serial?
 			callpoint!.setDevObject("wh",            callpoint!.getColumnData("OPE_INVDET.WAREHOUSE_ID"))
 			callpoint!.setDevObject("item",          callpoint!.getColumnData("OPE_INVDET.ITEM_ID"))
 			callpoint!.setDevObject("ord_qty",       callpoint!.getColumnData("OPE_INVDET.QTY_ORDERED"))
+			callpoint!.setDevObject("qty_shipped",callpoint!.getColumnData("OPE_INVDET.QTY_SHIPPED"))
 			callpoint!.setDevObject("dropship_line", user_tpl.line_dropship$)
 			callpoint!.setDevObject("invoice_type",  callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE"))
 			callpoint!.setDevObject("unit_cost",       callpoint!.getColumnData("OPE_INVDET.UNIT_COST"))

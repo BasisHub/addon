@@ -24,10 +24,8 @@ rem --- Confirm ready to clear firm's selected data
 	else
 		msg_id$="AD_NO_SELECTION"
 		gosub disp_message
-		if msg_opt$<>"Y"then
-			callpoint!.setStatus("ABORT")
-			break
-		endif
+		callpoint!.setStatus("ABORT")
+		break
 	endif
 
 rem --- Clear firms selected data

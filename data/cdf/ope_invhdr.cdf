@@ -1235,7 +1235,9 @@ rem --- Restrict lookup to orders
 	inq_mode$ = "EXM_ITEM"
 	key_pfx$  = firm_id$
 	key_id$   = "PRIMARY"
-	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	rem bug 7564 --- cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	custControl!=callpoint!.getControl("OPE_INVHDR.CUSTOMER_ID")
+	cust_id$=custControl!.getText()
 
 	dim filter_defs$[2,1]
 	filter_defs$[1,0] = "OPE_INVHDR.INVOICE_TYPE"

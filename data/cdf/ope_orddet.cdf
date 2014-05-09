@@ -714,7 +714,8 @@ rem --- Is this item lot/serial?
 			callpoint!.setDevObject("from",          "order_entry")
 			callpoint!.setDevObject("wh",            callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID"))
 			callpoint!.setDevObject("item",          callpoint!.getColumnData("OPE_ORDDET.ITEM_ID"))
-			callpoint!.setDevObject("ord_qty",       callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
+			callpoint!.setDevObject("ord_qty", callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
+			callpoint!.setDevObject("qty_shipped",callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
 			callpoint!.setDevObject("dropship_line", user_tpl.line_dropship$)
 			callpoint!.setDevObject("invoice_type",  callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE"))
 			callpoint!.setDevObject("unit_cost",       callpoint!.getColumnData("OPE_ORDDET.UNIT_COST"))
@@ -1266,7 +1267,6 @@ rem ==========================================================================
 		endif
 
 		disc_amt = round(disccode_rec.disc_percent * ttl_ext_price / 100, 2)
-rem wgh ... 7597
 		callpoint!.setHeaderColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
 	endif
 	gosub calc_grid_totals

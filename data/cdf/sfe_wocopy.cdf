@@ -42,6 +42,8 @@ rem --- Now populate data from the old WO to the new
 			woreq_dev=fnget_dev("SFE_WOMATL")
 			woreq_devout=num(callpoint!.getDevObject("copy_mtl"))
 			dim woreq$:fnget_tpl$("SFE_WOMATL")
+			itemwhse_dev=fnget_dev("@IVM_ITEMWHSE")
+			dim itemwhse$:fnget_tpl$("@IVM_ITEMWHSE")
 		endif
 		if files=3
 			woreq_dev=fnget_dev("SFE_WOSUBCNT")
@@ -75,6 +77,15 @@ goto bypass_adjust; rem --- bypassing until we figure out what adjusting really 
 				endif
 			endif
 bypass_adjust:
+			if files=2 then
+				rem --- Recalculate total cost based on item's current unit price in ivm_itemwhse
+				findrecord(itemwhse_dev,key=woreq.firm_id$+woreq.warehouse_id$+woreq.item_id$,dom=*next)itemwhse$
+				woreq.iv_unit_cost=itemwhse.unit_cost
+				woreq.unit_cost=woreq.units*itemwhse.unit_cost
+				precision 2
+				woreq.total_cost=woreq.total_units*itemwhse.unit_cost
+				precision num(callpoint!.getDevObject("iv_precision"))
+			endif
 			if files=3
 				woreq.po_no$=""
 				woreq_po_line_no$=""
@@ -108,17 +119,20 @@ rem --- Close copy channel
 	open_tables$[3]="SFE_WOMATL",open_opts$[3]="X[2_]"
 	open_tables$[4]="SFE_WOSUBCNT",open_opts$[4]="X[2_]"
 	open_tables$[5]="SFE_WOCOMNT",open_opts$[5]="X[2_]"
+
 	gosub open_tables
 [[SFE_WOCOPY.BSHO]]
 rem --- Open tables for use during copy
 
-	num_files=5
+	num_files=6
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SFE_WOMASTR",open_opts$[1]="OTA[2_]"
 	open_tables$[2]="SFE_WOOPRTN",open_opts$[2]="OTA[2_]"
 	open_tables$[3]="SFE_WOMATL",open_opts$[3]="OTA[2_]"
 	open_tables$[4]="SFE_WOSUBCNT",open_opts$[4]="OTA[2_]"
 	open_tables$[5]="SFE_WOCOMNT",open_opts$[5]="OTA[2_]"
+	open_tables$[6]="IVM_ITEMWHSE",open_opts$[6]="OTA@"
+
 	gosub open_tables
 
 	callpoint!.setDevObject("copy_chan",open_chans$[1])
@@ -126,6 +140,7 @@ rem --- Open tables for use during copy
 	callpoint!.setDevObject("copy_mtl",open_chans$[3])
 	callpoint!.setDevObject("copy_sub",open_chans$[4])
 	callpoint!.setDevObject("copy_comm",open_chans$[5])
+	callpoint!.setDevObject("itemwhse",open_chans$[6])
 [[SFE_WOCOPY.WO_NO.AVAL]]
 rem --- Populate display fields
 

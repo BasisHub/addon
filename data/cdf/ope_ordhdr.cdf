@@ -835,15 +835,15 @@ rem --- Capture current totals so we can tell later if they were changed in the 
 	callpoint!.setDevObject("total_cost",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST"))
 	callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
 [[OPE_ORDHDR.BOVE]]
-print "Hdr:BOVE"; rem debug
-
 rem --- Restrict lookup to orders
 
 	alias_id$ = "OPE_ORDHDR"
 	inq_mode$ = "EXM_ITEM"
 	key_pfx$  = firm_id$
 	key_id$   = "PRIMARY"
-	cust_id$  = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+	rem bug 7564 --- cust_id$  = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+	custControl!=callpoint!.getControl("OPE_ORDHDR.CUSTOMER_ID")
+	cust_id$=custControl!.getText()
 
 	dim filter_defs$[3,1]
 	filter_defs$[1,0] = "OPE_ORDHDR.ORDINV_FLAG"
@@ -874,7 +874,6 @@ rem --- Restrict lookup to orders
 		callpoint!.setStatus("ABORT")
 	endif
 	callpoint!.setStatus("ACTIVATE")
-
 [[OPE_ORDHDR.AOPT-RPRT]]
 rem --- Check for printing in next batch and set
 
@@ -1538,8 +1537,6 @@ rem --- Set type in OrderHelper object
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	ordHelp!.setInv_type(inv_type$)
 [[OPE_ORDHDR.CUSTOMER_ID.AINP]]
-print "CUSTOMER_ID:AINP"; rem debug
-
 rem --- If cash customer, get correct customer number
 
 	if user_tpl.cash_sale$="Y" and cvs(callpoint!.getUserInput(),1+2+4)="C" then

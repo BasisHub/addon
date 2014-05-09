@@ -104,11 +104,7 @@ rem --- Update qty left to order
 
 rem --- Set shipped default
 
-	callpoint!.setTableColumnAttribute("OPE_ORDLSDET.QTY_SHIPPED","DFLT", str(qty_ordered))
-	callpoint!.setColumnData("OPE_ORDLSDET.QTY_ORDERED", str(qty_ordered))
-	print "---Setting both default and qty shipped:", qty_ordered; rem debug
-	callpoint!.setStatus("REFRESH")
-	print "---REFRESH"; rem debug
+	callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED", str(qty_ordered),1)
 [[OPE_ORDLSDET.AGRE]]
 print "AGRE"; rem debug
 
@@ -131,9 +127,7 @@ rem --- Check quantities, do commits if this row isn't deleted
 		if callpoint!.getGridRowNewStatus( callpoint!.getValidationRow() )    = "Y" or
 :		   callpoint!.getGridRowModifyStatus( callpoint!.getValidationRow() ) = "Y" 
 :		then
-			line_qty = num(callpoint!.getDevObject("ord_qty"))
 			lot_qty  = qty_ordered
-
 			gosub check_avail
 			if aborted then break; rem --- exit callpoint
 		endif
@@ -195,7 +189,6 @@ rem --- Check total quantity from all lines against ordered quantity and shipped
 
 	lot_qty  = 0
 	lot_ship = 0
-	line_qty = num(callpoint!.getDevObject("ord_qty"))
 	aborted  = 0
 
 	dim gridrec$:fattr(rec_data$)
@@ -249,22 +242,25 @@ rem --- Warn that selected lot/serial#'s does not match order qty
 
 		msg_tokens$[3] = str(callpoint!.getDevObject("ord_qty"))
 		gosub disp_message
-		callpoint!.setDevObject("total_shipped",str(lot_qty))
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
 	endif
 
 rem --- Send back qty shipped
 
-	callpoint!.setDevObject("total_shipped", str(lot_ship))
 	if lot_qty>num(callpoint!.getDevObject("ord_qty")) then
 		callpoint!.setStatus("ABORT")
+		break
 	endif
+	callpoint!.setDevObject("total_shipped", str(lot_ship))
 [[OPE_ORDLSDET.<CUSTOM>]]
 rem ==========================================================================
 check_avail: rem --- Check for available quantity
-             rem      IN: line_qty 
-	          rem          lot_qty 
-	          rem    OUT:  aborted - true/false
-             rem          committedNow!
+		rem      IN: lot_qty
+		rem   OUT: aborted - true/false
+		rem           committedNow!
 rem ==========================================================================
 
 	aborted = 0
@@ -403,7 +399,7 @@ rem --- Inits
 
 	dim user_tpl$:"non_inventory:u(1), left_to_ord:n(1*), prev_ord:n(1*)"
 	user_tpl.non_inventory = 0
-	user_tpl.left_to_ord = num(callpoint!.getDevObject("ord_qty"))
+	user_tpl.left_to_ord = num(callpoint!.getDevObject("ord_qty"))-num(callpoint!.getDevObject("qty_shipped"))
 	user_tpl.prev_ord = 0
 
 rem --- Set Lot/Serial button up properly
@@ -548,7 +544,6 @@ rem --- Get lot/serial record fields
 	wh$     = callpoint!.getDevObject("wh")
 	item$   = callpoint!.getDevObject("item")
  	ls_no$  = callpoint!.getUserInput()
-	ord_qty = num( callpoint!.getDevObject("ord_qty") )
 
 
 rem --- Non-inventoried items do not have to exist (but can't be blank)
@@ -615,22 +610,23 @@ set_qty_defaults: rem --- Set defaults
 
 	if num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED")) = 0 then
 		if callpoint!.getDevObject("lotser_flag")="S" then 
-			callpoint!.setColumnData("OPE_ORDLSDET.QTY_ORDERED","1")
+			callpoint!.setColumnData("OPE_ORDLSDET.QTY_ORDERED","1",1)
 			user_tpl.left_to_ord = user_tpl.left_to_ord - 1
 		else
-			ord_qty = min(lsmast_tpl.qty_on_hand, user_tpl.left_to_ord)
-			callpoint!.setColumnData("OPE_ORDLSDET.QTY_ORDERED", str(ord_qty))
-			user_tpl.left_to_ord = user_tpl.left_to_ord - ord_qty
+			if user_tpl.non_inventory then
+				ord_qty = user_tpl.left_to_ord
+			else
+				ord_qty = min(lsmast_tpl.qty_on_hand, user_tpl.left_to_ord)
+			endif
+			callpoint!.setColumnData("OPE_ORDLSDET.QTY_ORDERED", str(ord_qty),1)
 		endif
 	endif
-
-	print "---Left to ord:", user_tpl.left_to_ord; rem debug
 
 	if num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_SHIPPED")) = 0 then
 		if callpoint!.getDevObject("lotser_flag")="S" then
 			callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED","1")
 		else
-			callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED", str(ord_qty))
+			callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED",callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"),1)
 		endif
 	endif
 
