@@ -1188,8 +1188,9 @@ rem --- disable Copy function if closed or not an N category
 
 rem --- enable Release/Commit
 
-	if pos(callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")="PQ")<>0
+	if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")<>"C"
 		callpoint!.setOptionEnabled("RELS",1)
+		callpoint!.setOptionEnabled("SCHD",1)
 	endif
 [[SFE_WOMASTR.<CUSTOM>]]
 rem =========================================================

@@ -1,18 +1,22 @@
 [[OPE_INVHDR.BPRI]]
-rem --- Check for Order Total
+rem --- Check for Order Total on non-cash sales
 
-	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
-	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
-		msg_id$="OP_TOT_UNDER_MIN"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
-		gosub disp_message
-		if msg_opt$="N"
-			callpoint!.setStatus("ABORT")
-			break
+	if callpoint!.getColumnData("OPE_INVHDR.CASH_SALE")<>"Y"  then
+		ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+		if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+			call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+			msg_id$="OP_TOT_UNDER_MIN"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+			gosub disp_message
+			if msg_opt$="N"
+				callpoint!.setStatus("ABORT")
+				break
+			endif
 		endif
 	endif
+
+rem --- Check to see if we need to go to the totals tab
 
 	if pos(callpoint!.getDevObject("totals_warn")="24")>0
 		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
@@ -26,20 +30,24 @@ rem --- Check for Order Total
 		endif
 	endif
 [[OPE_INVHDR.BNEX]]
-rem --- Check for Order Total
+rem --- Check for Order Total on non-cash sales
 
-	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
-	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
-		msg_id$="OP_TOT_UNDER_MIN"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
-		gosub disp_message
-		if msg_opt$="N"
-			callpoint!.setStatus("ABORT")
-			break
+	if callpoint!.getColumnData("OPE_INVHDR.CASH_SALE")<>"Y"  then
+		ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+		if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+			call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+			msg_id$="OP_TOT_UNDER_MIN"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+			gosub disp_message
+			if msg_opt$="N"
+				callpoint!.setStatus("ABORT")
+				break
+			endif
 		endif
 	endif
+
+rem --- Check to see if we need to go to the totals tab
 
 	if pos(callpoint!.getDevObject("totals_warn")="24")>0
 		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
@@ -52,7 +60,6 @@ rem --- Check for Order Total
 			endif
 		endif
 	endif
-
 [[<<DISPLAY>>.SADD1.AVAL]]
 rem --- Check Ship-to's
 
@@ -503,6 +510,22 @@ rem --- Set discount code for use in Order Totals
 	gosub calculate_tax
 	gosub disp_totals
 [[OPE_INVHDR.AOPT-CASH]]
+rem --- Check minimum cash sale
+	min_csh_sale=callpoint!.getDevObject("min_csh_sale")
+	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+	if ord_tot>0 and ord_tot<min_csh_sale
+		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+		msg_id$="OP_CASH_UNDER_MIN"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=str(min_csh_sale:omsk$)
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
+
+
 rem --- Launch Cash Transaction
 
 	gosub get_cash
@@ -735,8 +758,6 @@ rem --- Does the total of lot/serial# match the qty shipped for each detail line
 		endif
 	endif
 [[OPE_INVHDR.BWRI]]
-print "Hdr:BWRI"; rem debug
-
 rem --- Has customer and order number been entered?
 
 	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
@@ -747,23 +768,23 @@ rem --- Has customer and order number been entered?
 		break
 	endif
 
-rem --- Check for Order Total
+rem --- Check for Order Total on non-cash sales
 
-	ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
-	if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
-		call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
-		msg_id$="OP_TOT_UNDER_MIN"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
-		gosub disp_message
-		if msg_opt$="N"
-			callpoint!.setStatus("ABORT")
+	if callpoint!.getColumnData("OPE_INVHDR.CASH_SALE")<>"Y"  then
+		ord_tot=num(callpoint!.getColumnData("<<DISPLAY>>.ORDER_TOT"))
+		if ord_tot>0 and ord_tot<user_tpl.min_ord_amt
+			call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
+			msg_id$="OP_TOT_UNDER_MIN"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=str(user_tpl.min_ord_amt:omsk$)
+			gosub disp_message
+			if msg_opt$="N"
+				callpoint!.setStatus("ABORT")
+			endif
 		endif
 	endif
 
 rem --- Check to see if we need to go to the totals tab
-			
-rem --- Force focus on the Totals tab
 
 	if pos(callpoint!.getDevObject("totals_warn")="34")>0
 		if pos(callpoint!.getDevObject("was_on_tot_tab")="N") > 0
@@ -3071,6 +3092,8 @@ rem --- Setup user_tpl$
 	user_tpl.new_order         = 0
 	user_tpl.credit_limit_warned = 0
 	user_tpl.shipto_warned     = 0
+
+	callpoint!.setDevObject("min_csh_sale",ars01a.min_csh_sale)
 
 rem --- Columns for the util disableCell() method
 

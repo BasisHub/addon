@@ -42,7 +42,7 @@ rem --- initialize new record
 	callpoint!.setColumnData("APM_VENDHIST.AP_DIST_CODE",ap_dist_code$,1)
 	callpoint!.setColumnData("APM_VENDHIST.PAYMENT_GRP",apc_typecode.payment_grp$,1)
 	callpoint!.setColumnData("APM_VENDHIST.AP_TERMS_CODE",apc_typecode.ap_terms_code$,1)
-	callpoint!.setStatus("SAVE")
+	callpoint!.setStatus("MODIFIED")
 [[APM_VENDHIST.AREC]]
 if user_tpl.multi_types$<>"Y" 
 	callpoint!.setColumnData("APM_VENDHIST.AP_TYPE",user_tpl.dflt_ap_type$)
@@ -153,7 +153,6 @@ rem --- get default distribution code
 rem	if cvs(apc_typecode$,2)<>""
 rem		user_tpl.dflt_dist_code$=apc_typecode.ap_dist_code$
 rem	endif
-
 [[APM_VENDHIST.<CUSTOM>]]
 disable_fields:
 	rem --- used to disable/enable controls depending on parameter settings

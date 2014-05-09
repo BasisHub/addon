@@ -1,3 +1,10 @@
+[[SFM_CAL_COPY.AREC]]
+rem --- Clear previous selections
+	vectOps!=UserObj!.getItem(num(user_tpl.vectOpsOfst$))
+	vectOps!.clear()
+	gosub create_reports_vector
+	gosub fill_grid
+	UserObj!.setItem(num(user_tpl.vectOpsOfst$),vectOps!)
 [[SFM_CAL_COPY.OP_CODE.AVAL]]
 rem --- Create vector excluding the current Op Code
 
@@ -373,9 +380,10 @@ rem ========================================================
 			endif
 		next x
 		first_date$=cal.year$+cal.month$+first_day$
-		callpoint!.setColumnData("SFM_CAL_COPY.FIRST_SCHED_DT",first_date$)
 		break
 	wend
+	callpoint!.setColumnData("SFM_CAL_COPY.FIRST_SCHED_DT",first_date$)
+	callpoint!.setColumnData("SFM_CAL_COPY.COPY_FROM_DT",first_date$)
 
 	last_date$="        "
 	read (cal_dev,key=firm_id$+current_opcode$,dom=*next)
@@ -392,6 +400,7 @@ rem ========================================================
 		last_date$=cal.year$+cal.month$+last_day$
 	wend
 	callpoint!.setColumnData("SFM_CAL_COPY.LAST_SCHED_DT",last_date$)
+	callpoint!.setColumnData("SFM_CAL_COPY.COPY_THRU_DT",last_date$)
 
 	return
 
