@@ -59,6 +59,7 @@ rem --- Initializations
     desc_len_03=num(ivs_params.desc_len_03$)
     more=1
     recs=0
+    errors=0
 
 rem --- Document columns
 
@@ -212,9 +213,12 @@ rem --- Read record from detail file
 
             read record (poe_reqdet_dev) poe_reqdet$
             if poc_linecode.firm_id$<>firm_id$ or poc_linecode.po_line_code$<>poe_reqdet.po_line_code$
+                dim poc_linecode$:fattr(poc_linecode$)
                 poc_linecode.firm_id$=firm_id$
                 poc_linecode.po_line_code$=poe_reqdet.po_line_code$
-                find record (poc_linecode_dev,key=poc_linecode.firm_id$+poc_linecode.po_line_code$,dom=other_line) poc_linecode$
+                poc_linecode.line_type$="*";rem in case line code not found
+                find record (poc_linecode_dev,key=poc_linecode.firm_id$+poc_linecode.po_line_code$,dom=*next) poc_linecode$
+                if poc_linecode.line_type$="*" then errors=errors+1
             endif
 
 rem --- Initialize detail line fields
@@ -261,12 +265,13 @@ rem --- Calculate extensions and branch based on line type
             po_extension=round(poe_reqdet.unit_cost*qty,2)
             if poc_linecode.line_type$="S" then iv_extension=round(ivm_itemwhse.unit_cost* qty*poe_reqdet.conv_factor,2)
 
-            action=pos(poc_linecode.line_type$="SNVMO")
+            action=pos(poc_linecode.line_type$="SNVMO*")
             std_line=1
             non_stock_line=2
             vend_line=3
             msg_line=4
             other_type_line=5
+            line_code_not_found=6
             flag=0
 
             switch action
@@ -367,6 +372,31 @@ rem --- Calculate extensions and branch based on line type
                     gosub other_line
                     break
 
+            case line_code_not_found
+
+                    xwk=fnblank(1)
+                    OutVect!.addItem(poe_reqdet.po_line_code$)
+                    OutVect!.addItem(poe_reqdet.warehouse_id$)
+                    OutVect!.addItem(poe_reqdet.item_id$)
+                    OutVect!.addItem(before$)
+                    OutVect!.addItem(fndate$(poe_reqdet.reqd_date$))
+                    OutVect!.addItem(promised$)
+                    OutVect!.addItem(poe_reqdet.unit_measure$)
+                    OutVect!.addItem(str(poe_reqdet.req_qty:m2$)+$00$+"R")
+                    OutVect!.addItem(str(ivm_itemwhse.unit_cost:m3$)+$00$+"R")
+                    OutVect!.addItem(str(iv_extension:m1$)+$00$+"R")
+                    OutVect!.addItem(str(poe_reqdet.unit_cost:m3$)+$00$+"R")
+                    OutVect!.addItem(str(po_extension:m1$)+$00$+"R")
+                    OutVect!.addItem(source$)
+                    xwk=fnblank(2)
+                    OutVect!.addItem(Translate!.getTranslation("AON_MISSING_LINE_CODE","***Error: Missing Line Code: ",1)+poc_linecode.po_line_code$)
+                    xwk=fnblank(3)
+                    OutVect!.addItem(wo$)
+                    xwk=fnblank(7)
+                    l=l+needed
+                    recs=recs+1
+                    break
+                    
             case default
                     flag=1
                     break
@@ -419,6 +449,11 @@ done: rem --- All done
     
 	next_overlay$="pou_reqsnreg.aon"
     out_action$="FORMAT"
+    
+    if errors
+        gosub Display_Message
+        if special_flag$<>"Y" then next_overlay$=""
+    endif
 	goto std_exit
 
 req_subheading: rem --- Requisition subheading
@@ -570,6 +605,13 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
     fnend
 
 rem #endinclude std_functions.src
+
+Display_Message: rem --- Display Message Routine
+
+    msg_id$="AON_REG_ERRS"
+    gosub disp_message
+    if pos("PASSVALID"=msg_opt$)<>0 special_flag$="Y"
+    return
 
 rem #include disp_message.src
 

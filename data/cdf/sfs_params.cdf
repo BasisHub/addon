@@ -16,6 +16,10 @@ rem --- Init new record
 rem --- Save changes made based on Applications installed
 
 	callpoint!.setStatus("SAVE")
+
+rem --- Enable/disable fields
+
+	gosub able_fields
 [[SFS_PARAMS.ARAR]]
 rem --- Update post_to_gl if GL is uninstalled
 	gl_installed$=callpoint!.getDevObject("gl_installed")
@@ -29,7 +33,7 @@ rem --- Set defaults
 	gosub set_defaults
 [[SFS_PARAMS.<CUSTOM>]]
 rem ==========================================================
-set_defaults:
+able_fields:
 rem ==========================================================
 
 	if callpoint!.getDevObject("bm")<>"Y"
@@ -53,6 +57,14 @@ rem ==========================================================
 		callpoint!.setColumnData("SFS_PARAMS.OVERHD_TYPE","",1)
 		callpoint!.setColumnEnabled("SFS_PARAMS.OVERHD_TYPE",0)
 	endif
+
+	return
+
+rem ==========================================================
+set_defaults:
+rem ==========================================================
+
+	gosub able_fields
 
 	callpoint!.setColumnData("SFS_PARAMS.TIME_ENTRY_S","E",1)
 	callpoint!.setColumnData("SFS_PARAMS.MAX_EMPL_NO","9")

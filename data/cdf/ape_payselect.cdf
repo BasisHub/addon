@@ -1026,7 +1026,7 @@ rem ==========================================================================
 	sqlopen(sql_chan)stbl("+DBNAME")
 	sql_prep$="SELECT firm_id,ap_type,vendor_id,ap_inv_no "
 	sql_prep$=sql_prep$+"FROM apt_invoicehdr "
-	sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' and invoice_bal>=0.01"
+	sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' and invoice_bal<>0"
 	sqlprep(sql_chan)sql_prep$
 	sqlexec(sql_chan)
 

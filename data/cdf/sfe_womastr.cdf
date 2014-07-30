@@ -485,9 +485,11 @@ rem --- Disable/enable based on status of closed/open
 		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",1)
 		if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")="O" then
 			rem --- Can't change after WO is released
+			callpoint!.setColumnEnabled("SFE_WOMASTR.WAREHOUSE_ID",0)
 			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_NO",0)
 			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_REV",0)
 		else
+			callpoint!.setColumnEnabled("SFE_WOMASTR.WAREHOUSE_ID",1)
 			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_NO",1)
 			callpoint!.setColumnEnabled("SFE_WOMASTR.DRAWING_REV",1)
 		endif
@@ -503,7 +505,6 @@ rem --- Disable/enable based on status of closed/open
 		callpoint!.setColumnEnabled("SFE_WOMASTR.PRIORITY",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.SCH_PROD_QTY",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.UNIT_MEASURE",1)
-		callpoint!.setColumnEnabled("SFE_WOMASTR.WAREHOUSE_ID",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.WO_TYPE",1)
 		callpoint!.setColumnEnabled("SFE_WOMASTR.WO_STATUS",1)
 	endif

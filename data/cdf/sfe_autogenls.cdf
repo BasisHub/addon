@@ -80,7 +80,7 @@ rem --- Generate new lot/serial numbers
 			wolotser1.qty_cls_todt=0
 			wolotser1.cls_cst_todt=0
 			wolotser1.cls_inp_qty=0
-			wolotser1.closed_cost=womastr.closed_cost
+			wolotser1.closed_cost=num(callpoint!.getDevObject("closed_cost"))
 			while write_wolotser
 				next_seq_no=next_seq_no+1
 				if next_seq_no>seq_max then break

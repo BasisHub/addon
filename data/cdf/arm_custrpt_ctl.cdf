@@ -1,5 +1,5 @@
 [[ARM_CUSTRPT_CTL.EMAIL_YN.AVAL]]
-if callpoint!.getUserInput()="Y"
+if callpoint!.getUserInput()="Y" 
 	arm_emailfax_dev=fnget_dev("ARM_EMAILFAX")
 	user_dev=fnget_dev("ADM_USER")
 	dim arm_emailfax$:fnget_tpl$("ARM_EMAILFAX")

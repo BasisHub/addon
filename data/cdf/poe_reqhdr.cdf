@@ -282,7 +282,7 @@ purch_addr_info: rem --- get and display Purchase Address Info
 	callpoint!.setColumnData("<<DISPLAY>>.PA_CITY",apm05a.city$)
 	callpoint!.setColumnData("<<DISPLAY>>.PA_STATE",apm05a.state_code$)
 	callpoint!.setColumnData("<<DISPLAY>>.PA_ZIP_CODE",apm05a.zip_code$)
-	callpoint!.setStatus("REFRESH-WAIT:.75")
+	callpoint!.setStatus("REFRESH")
 return
 
 whse_addr_info: rem --- get and display Warehouse Address Info
@@ -299,7 +299,7 @@ whse_addr_info: rem --- get and display Warehouse Address Info
 	callpoint!.setColumnData("<<DISPLAY>>.W_CITY",ivc_whsecode.city$)
 	callpoint!.setColumnData("<<DISPLAY>>.W_STATE",ivc_whsecode.state_code$)
 	callpoint!.setColumnData("<<DISPLAY>>.W_ZIP_CODE",ivc_whsecode.zip_code$)
-	callpoint!.setStatus("REFRESH-WAIT:.5")
+	callpoint!.setStatus("REFRESH")
 
 return
 

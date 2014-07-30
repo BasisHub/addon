@@ -1369,7 +1369,8 @@ print "Hdr:ASHO"; rem debug
 rem --- Get default dates, POS station
 
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj", "OPE_ORDDATES", stbl("+USER_ID"), "MNT", "", table_chans$[all]
-	user_tpl.def_ship$   = stbl("OPE_DEF_SHIP")
+	user_tpl.def_ship$   = stbl("OPE_DEF_SHIP",err=*next)
+	if cvs(user_tpl.def_ship$,2)="" then release
 	user_tpl.def_commit$ = stbl("OPE_DEF_COMMIT")
 
 rem --- Check for a POS record by station

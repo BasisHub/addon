@@ -221,15 +221,16 @@ if pos("POE_INVSEL.PO_NO.AVAL"=event$)
 	po_no$=callpoint!.getUserInput()
 endif
 
-ky_po_rec$=firm_id$+po_no$+receiver_no$
+ky_po_rec$=firm_id$+po_no$
 foundone=0
 line_tot=0
 
 read (pot_recdet_dev,key=ky_po_rec$,dom=*next)
 
 while 1
-	read record (pot_recdet_dev,end=*break)pot_recdet$
-	if pos(pot_recdet.firm_id$+pot_recdet.po_no$=ky_po_rec$)<>1 then break
+	recdet_key$=key(pot_recdet_dev,end=*break)
+	if pos(ky_po_rec$=recdet_key$)<>1 then break
+	read record (pot_recdet_dev)pot_recdet$
 	if cvs(receiver_no$,3)<>"" and pot_recdet.receiver_no$<>receiver_no$ then break
 	find record (poc_linecode_dev,key=firm_id$+pot_recdet.po_line_code$,dom=*next)poc_linecode$
 	if pos(poc_linecode.line_type$="VM")<>0 then continue

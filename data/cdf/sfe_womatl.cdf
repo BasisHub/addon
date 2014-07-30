@@ -1,3 +1,13 @@
+[[SFE_WOMATL.ITEM_ID.AINV]]
+rem --- To avoid endless loop, need second ABORT in AINV when ABORT executed in AVAL.
+	if callpoint!.getDevObject("item_wh_failed") then
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
+rem --- Item synonym processing
+
+	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SFE_WOMATL.AGRN]]
 rem --- Set ROW_NUM
 	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
@@ -115,6 +125,7 @@ rem --- Enable/disable explode field
 [[SFE_WOMATL.ITEM_ID.BINP]]
 rem --- Capture current item_id so will know later if it was changed
 	callpoint!.setDevObject("prev_item_id",callpoint!.getColumnData("SFE_WOMATL.ITEM_ID"))
+	callpoint!.setDevObject("item_wh_failed",0)
 [[SFE_WOMATL.LINE_TYPE.BINP]]
 rem --- Capture current line_type so will know later if it was changed
 	callpoint!.setDevObject("prev_line_type",callpoint!.getColumnData("SFE_WOMATL.LINE_TYPE"))
@@ -896,14 +907,7 @@ rem --- Skip if item_id didn't change
 	item_id$=callpoint!.getUserInput()
 	if item_id$=callpoint!.getDevObject("prev_item_id") then break
 
-rem --- Enable/disable explode field for new/changed item
-	callpoint!.setColumnData("SFE_WOMATL.ITEM_ID",item_id$)
-	callpoint!.setDevObject("new_item",1)
-	gosub enable_explode
-	callpoint!.setDevObject("new_item",0)
-
-rem --- Set default Unit Cost
-
+rem --- Verify item is in the production warehouse
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
 	ivm02_dev=fnget_dev("IVM_ITEMWHSE")
 	dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
@@ -920,9 +924,17 @@ rem --- Set default Unit Cost
 		msg_tokens$[2]=whse_id$
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
+		callpoint!.setDevObject("item_wh_failed",1)
 		break
 	endif
 
+rem --- Enable/disable explode field for new/changed item
+	callpoint!.setColumnData("SFE_WOMATL.ITEM_ID",item_id$)
+	callpoint!.setDevObject("new_item",1)
+	gosub enable_explode
+	callpoint!.setDevObject("new_item",0)
+
+rem --- Set default Unit Cost
 
 	callpoint!.setColumnData("SFE_WOMATL.IV_UNIT_COST",str(ivm02a.unit_cost))
 	callpoint!.setColumnData("SFE_WOMATL.UNIT_MEASURE",ivm01a.unit_of_sale$,1)
@@ -1061,7 +1073,3 @@ rem --- Disable WO_REF_NUM when locked or WO closed
 		callpoint!.setTableColumnAttribute("SFE_WOMATL.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
 		callpoint!.setOptionEnabled("AUTO",0)
 	endif
-[[SFE_WOMATL.ITEM_ID.AINV]]
-rem --- Item synonym processing
-
-	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"

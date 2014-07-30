@@ -409,8 +409,9 @@ if req_no$<>""
 		write record (poe_poprint_dev)poe_poprint$
 
 		read record(poe_reqdet_dev,key=firm_id$+req_no$,dom=*next)
+
 		while 1
-			read record(poe_reqdet_dev) poe_reqdet$
+			read record(poe_reqdet_dev,end=*break) poe_reqdet$
 			if poe_reqdet.req_no$<>req_no$ or poe_reqdet.firm_id$<>firm_id$ then break
 			dim poe_podet$:fnget_tpl$("POE_PODET")
 			call stbl("+DIR_PGM")+"adc_copyfile.aon",poe_reqdet$,poe_podet$,status
