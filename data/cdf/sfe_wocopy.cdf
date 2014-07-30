@@ -79,6 +79,7 @@ goto bypass_adjust; rem --- bypassing until we figure out what adjusting really 
 bypass_adjust:
 			if files=2 then
 				rem --- Recalculate total cost based on item's current unit price in ivm_itemwhse
+				dim itemwhse$:fnget_tpl$("@IVM_ITEMWHSE")
 				findrecord(itemwhse_dev,key=woreq.firm_id$+woreq.warehouse_id$+woreq.item_id$,dom=*next)itemwhse$
 				woreq.iv_unit_cost=itemwhse.unit_cost
 				woreq.unit_cost=woreq.units*itemwhse.unit_cost

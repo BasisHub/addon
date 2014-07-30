@@ -1188,6 +1188,8 @@ rem				endif
 :					apt01a.disc_date$ >= sysinfo.system_date$
 :				then
 					gridInvoices!.setCellText(row_no, 11, apt01a.discount_amt$)
+				else
+					gridInvoices!.setCellText(row_no, 11, "0.00")
 				endif
 
 				gridInvoices!.setCellText(row_no, 10, "0.00")
@@ -1497,6 +1499,8 @@ rem				endif
 :					apt01a.disc_date$ >= sysinfo.system_date$
 :				then
 					gridInvoices!.setCellText(row_no, 11, apt01a.discount_amt$)
+				else
+					gridInvoices!.setCellText(row_no, 11, "0.00")
 				endif
 
 				gridInvoices!.setCellText(row_no, 10, "0.00")

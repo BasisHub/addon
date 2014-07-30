@@ -32,9 +32,12 @@ if callpoint!.getColumnData("ARE_INVHDR.PRINT_STATUS") = "Y" then
 endif
 [[ARE_INVHDR.ADEL]]
 rem --- hdr/dtl have been deleted; now write back header w/ "V" flag
-are_invhdr_dev=fnget_dev("ARE_INVHDR")
-rec_data.sim_inv_type$="V"
-rec_data$=field(rec_data$); write record(are_invhdr_dev,key=rec_data.firm_id$+rec_data.ar_inv_no$)rec_data$
+
+	are_invhdr_dev=fnget_dev("ARE_INVHDR")
+	rec_data.sim_inv_type$="V"
+
+	rec_data$=field(rec_data$)
+	write record(are_invhdr_dev)rec_data$
 [[ARE_INVHDR.ADIS]]
 cust_key$=callpoint!.getColumnData("ARE_INVHDR.FIRM_ID")+callpoint!.getColumnData("ARE_INVHDR.CUSTOMER_ID")
 gosub disp_cust_addr
