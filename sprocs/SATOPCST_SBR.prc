@@ -127,7 +127,7 @@ rem --- Build result set for top five customers by sales
             while custIter!.hasNext()
                 customer_id$=custIter!.next()
                 topCustomers=topCustomers+1
-                if topCustomers>5 then break
+                if topCustomers>num_to_list then break
                 dim arm01a$:fattr(arm01a$)
                 findrecord(arm01a_dev,key=firm_id$+customer_id$,dom=*next)arm01a$
                 
@@ -151,7 +151,7 @@ rem --- Build result set for top five customers by sales
                     rs!.insert(data!)
                 wend
             wend
-            if topCustomers>5 then break
+            if topCustomers>num_to_list then break
         wend
     endif
 

@@ -505,11 +505,8 @@ rem ----------------------------------------------------------------------------
 	due_dt$=""
 	call stbl("+DIR_PGM")+"adc_duedate.aon",prox_days$,invdate$,num(apm10c.due_days$),due_dt$,status
 	callpoint!.setColumnData("APE_INVOICEHDR.INV_DUE_DATE",due_dt$)
-	if num(apm10c.disc_days$)<>0
-		invdate1$=invdate$
-		due_dt$=""
-		call stbl("+DIR_PGM")+"adc_duedate.aon","D",invdate1$,num(apm10c.disc_days$),due_dt$,status
-	endif
+	due_dt$=""
+	call stbl("+DIR_PGM")+"adc_duedate.aon",prox_days$,invdate$,num(apm10c.disc_days$),due_dt$,status
 	callpoint!.setColumnData("APE_INVOICEHDR.DISC_DATE",due_dt$)
 	user_tpl.disc_pct$=apm10c.disc_percent$
 	callpoint!.setStatus("REFRESH")

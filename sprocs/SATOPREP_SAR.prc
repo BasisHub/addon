@@ -1,7 +1,7 @@
 rem ----------------------------------------------------------------------------
 rem Program: SATOPREP_SAR.prc  
-rem Description: Stored Procedure to build a resultset that aon_dashboard.bbj
-rem              can use to populate the given dashboard widget
+rem Description: Stored Procedure to build a resultset that adx_aondashboard.aon
+rem rem              can use to populate the given dashboard widget
 rem 
 rem              Data returned is each period's SA totals by Salesrep for a
 rem              given year for the top n salesreps. It's based on Sales 
@@ -66,7 +66,6 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ =	sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
-	masks$ = sp!.getParameter("MASKS")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -77,167 +76,127 @@ rem --- Get Barista System Program directory
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 	
-rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
-
-	if len(masks$)>0
-		if masks$(len(masks$),1)<>"|"
-			masks$=masks$+"|"
-		endif
-	endif
-	
-rem --- Get masks
-
-	ar_amt_mask$=fngetmask$("ar_amt_mask","$###,###,##0.00-",masks$)	
-
-rem --- Get number of periods used by fiscal calendar
-
-	sql_prep$=""
-	sql_prep$=sql_prep$+"SELECT total_pers FROM gls_params "
-	sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' AND gl='GL' AND sequence_00='00'"
-	
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
-
-	read_tpl$ = sqlfetch(sql_chan,end=*break)
-	total_cal_periods=num(read_tpl.total_pers$)
-
-	sqlclose(sql_chan)
-	
 rem --- create the in memory recordset for return
 
-rem	dataTemplate$ = "PRODTYPE:C(25*),SALESREP:C(25*),TOTAL:N(10)"
-	dataTemplate$ = "SALESREP:C(25*),PERIOD:C(6),TOTAL:N(10)"
+    dataTemplate$ = "SALESREP:C(20*),PERIOD:C(6),TOTAL:C(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
-	
-rem --- Build the SELECT statement to be returned to caller
 
-	sql_prep$ = ""
+rem --- Open/Lock files
 
-	rem --- Build wrapper/outer query segements
-	rem ---------------------------------------
-	
-	rem --- Values for the SPROC return assignments
-	sql_prep$ = sql_prep$+"SELECT topReps.slspsn_code, LEFT(topReps.rep_name,15) AS rep_name "
-	sql_prep$ = sql_prep$+" 	, perTots.period , perTots.total "
-	sql_prep$ = sql_prep$+"FROM "
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="sam-03",ids$[1]="SAM_SALESPSN"
+    files$[2]="arc_salecode",ids$[2]="ARC_SALECODE"
+    files$[3]="gls_params",ids$[3]="GLS_PARAMS"
 
-	
-	rem --- Build query to determine TOP n reps for the year (based on total sales for the year)
-	rem ---------------------------------------
-	
-	sql_prep$ = sql_prep$+"  (SELECT TOP "+str(num_to_list)+" rep.slspsn_code "
-	sql_prep$ = sql_prep$+"              ,rep.rep_name "
-	sql_prep$ = sql_prep$+"              ,ROUND(SUM(rep.total),2) AS total "
-	sql_prep$ = sql_prep$+"   FROM "
-	sql_prep$ = sql_prep$+"     (SELECT  "
-	sql_prep$ = sql_prep$+"          r.slspsn_code "
-	sql_prep$ = sql_prep$+"	   	    ,c.code_desc AS rep_name "
-	sql_prep$ = sql_prep$+"	        ,(r.total_sales_01 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_02 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_03 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_04 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_05 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_06 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_07 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_08 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_09 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_10 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_11 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_12 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_13 "
-	sql_prep$ = sql_prep$+"		      ) AS total "
-	sql_prep$ = sql_prep$+"		 FROM sam_salespsn r "; rem r for rep
-	sql_prep$ = sql_prep$+"      LEFT JOIN arc_salecode c "; rem c for code
-	sql_prep$ = sql_prep$+"        ON c.firm_id=r.firm_id "
-	sql_prep$ = sql_prep$+"       AND c.slspsn_code=r.slspsn_code "
-	sql_prep$ = sql_prep$+"      WHERE r.firm_id='"+firm_id$+"' AND r.year='"+year$+"' "
-	sql_prep$ = sql_prep$+"     ) AS rep	 "
-	sql_prep$ = sql_prep$+"   GROUP BY rep.slspsn_code,rep.rep_name "
-	sql_prep$ = sql_prep$+"   ORDER BY total DESC "
-	sql_prep$ = sql_prep$+"  ) AS topReps "
-	
-	
-	rem --- Join TopRep query with period totals query (not yet built)
-	rem ---------------------------------------
-	sql_prep$ = sql_prep$+"LEFT JOIN "
-	sql_prep$ = sql_prep$+"  ("
-		
-	rem --- Build query to get Sales for each period for each sales rep
-	rem ---------------------------------------	
-	
-	rem --- Loop through periods UNIONing queries for ea period
-	for per=1 to total_cal_periods
-		per_num$=str(per:"00")
-		per_name_abbr$="p.abbr_name_"+per_num$
-		period_amt$="r.total_sales_"+per_num$
-		gosub add_to_sql_prep_byPeriod
-	next per
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-	rem --- Strip trailing "UNION "
-	if pos("UNION "=sql_prep$,-1)
-		sql_prep$=sql_prep$(1,len(sql_prep$)-6)
-	endif
+    sam03a_dev=channels[1]
+    arm10f_dev=channels[2]
+    glparams_dev=channels[3]
 
-	rem --- Add "ORDER BY and closing paren, name, and ON clause (for previous LEFT JOIN)"
-rem	sql_prep$=sql_prep$+" ORDER BY period, r.slspsn_code"
-	sql_prep$ = sql_prep$+"  ) AS perTots "
-		
-	sql_prep$ = sql_prep$+"ON topReps.slspsn_code=perTots.slspsn_code "	
+rem --- Dimension string templates
 
-	
-	rem --- Add final ORDER BY for outer query
-	rem ---------------------------------------		
-	sql_prep$ = sql_prep$+"ORDER BY topReps.slspsn_code, perTots.period "	
+    dim sam03a$:templates$[1]
+    dim arm10f$:templates$[2]
+    dim glparams$:templates$[3]
+    
+rem --- Get number of GL periods and period name abbreviations
+    periodAbbr!=BBjAPI().makeVector()
+    readrecord(glparams_dev,key=firm_id$+"GL00",dom=*next)glparams$
+    numGlPers=num(glparams.total_pers$)
+    for period=1 to numGlPers
+        abbrname$=field(glparams$,"ABBR_NAME_"+str(period:"00"))
+        periodAbbr!.addItem(abbrname$)
+    next period
+    
+rem --- Get total sales and period sales by salesperson
+rem --- salesMap! key=total sales for salesperson, holds slspsnMap! (in case more than one salesperson with same total sales)
+rem --- slspsnMap! key=salesperson, holds periodSalesVect!
+rem --- periodSalesVect! holds salesperson's sales by period
+    salesMap!=new java.util.TreeMap()
+    slspsn_code$=""
+    product_type$=""
+    read(sam03a_dev,key=firm_id$+year$,dom=*next)
+    while 1
+        readrecord(sam03a_dev,end=*break)sam03a$
+        if sam03a.firm_id$+sam03a.year$<>firm_id$+year$ then break
 
-	
-rem --- Execute the query
+        if sam03a.slspsn_code$<>slspsn_code$ then gosub slspsn_break
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
+        thisSales=sam03a.total_sales_01+sam03a.total_sales_02+sam03a.total_sales_03+sam03a.total_sales_04+
+:                 sam03a.total_sales_05+sam03a.total_sales_06+sam03a.total_sales_07+sam03a.total_sales_08+
+:                 sam03a.total_sales_09+sam03a.total_sales_10+sam03a.total_sales_11+sam03a.total_sales_12+
+:                 sam03a.total_sales_13
+        thisSales=round(thisSales,2)
+        slspsnSales=slspsnSales+thisSales
+        for period=1 to numGlPers
+            periodSales=nfield(sam03a$,"TOTAL_SALES_"+str(period:"00"))
+            periodSales=periodSalesVect!.get(period-1)+periodSales
+            periodSalesVect!.setItem(period-1,round(periodSales,2))
+        next period
+    wend
+    gosub slspsn_break
 
-rem --- Assign the SELECT results to rs!
-
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("SALESREP",read_tpl.rep_name$)
-		data!.setFieldValue("PERIOD",read_tpl.period$)
-		data!.setFieldValue("TOTAL",str(read_tpl.total))
-		rs!.insert(data!)
-
-	wend		
+rem --- Build result set for top five salespersons by sales
+    if salesMap!.size()>0 then
+        topSlspsns=0
+        salesDeMap!=salesMap!.descendingMap()
+        salesIter!=salesDeMap!.keySet().iterator()
+        while salesIter!.hasNext()
+            slspsnSales=salesIter!.next()
+            slspsnMap!=salesDeMap!.get(slspsnSales)
+            slspsnIter!=slspsnMap!.keySet().iterator()
+            while slspsnIter!.hasNext()
+                slspsn_code$=slspsnIter!.next()
+                topSlspsns=topSlspsns+1
+                if topSlspsns>num_to_list then break
+                dim arm10f$:fattr(arm10f$)
+                findrecord(arm10f_dev,key=firm_id$+"F"+slspsn_code$,dom=*next)arm10f$
+                
+                periodSalesVect!=slspsnMap!.get(slspsn_code$)
+                for period=1 to numGlPers
+                    data! = rs!.getEmptyRecordData()
+                    data!.setFieldValue("SALESREP",arm10f.code_desc$)
+                    data!.setFieldValue("PERIOD",str(period:"00")+"-"+periodAbbr!.get(period-1))
+                    data!.setFieldValue("TOTAL",str(periodSalesVect!.get(period-1)))
+                    rs!.insert(data!)
+                next period
+            wend
+            if topSlspsns>num_to_list then break
+        wend
+    endif
 
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
 
-rem --- Add SELECT to sql_prep$ based on include_type/gl_record_id (By Period)
-
-add_to_sql_prep_byPeriod:	
-
-	sql_prep$ = sql_prep$+"SELECT r.slspsn_code, LEFT(c.code_desc,15) AS rep_name  "
-	sql_prep$ = sql_prep$+",'"+per_num$+"-'+"+per_name_abbr$+" AS period "; rem Prepended per num for sorting
-	sql_prep$ = sql_prep$+",ROUND(sum("+period_amt$+"),2) AS Total "
-	sql_prep$ = sql_prep$+"FROM sam_salespsn r "; rem r for rep
-	sql_prep$ = sql_prep$+"LEFT JOIN arc_salecode c "; rem c for code
-	sql_prep$ = sql_prep$+"  ON c.firm_id=r.firm_id "
-	sql_prep$ = sql_prep$+" AND c.slspsn_code=r.slspsn_code "
-	sql_prep$ = sql_prep$+"LEFT JOIN gls_params p ON r.firm_id=p.firm_id "
-	sql_prep$ = sql_prep$+"WHERE r.firm_id='"+firm_id$+"' AND r.year='"+year$+"' "
-	sql_prep$ = sql_prep$+"GROUP BY r.slspsn_code, rep_name, period "
-
-	sql_prep$ = sql_prep$+"UNION "	
-
-	return
-
+slspsn_break: rem --- Salesperson break
+    if slspsn_code$<>"" then
+        if salesMap!.containsKey(slspsnSales) then
+            slspsnMap!=salesMap!.get(slspsnSales)
+        else
+            slspsnMap!=new java.util.HashMap()
+        endif
+        slspsnMap!.put(slspsn_code$,periodSalesVect!)
+        salesMap!.put(slspsnSales,slspsnMap!)
+    endif
+    
+    rem --- Initialize for next salesperson
+    slspsn_code$=sam03a.slspsn_code$
+    slspsnSales=0
+    periodSalesVect!=BBjAPI().makeVector()
+    for period=1 to numGlPers
+        periodSalesVect!.addItem(0)
+    next period
+    return
 	
 rem --- Functions
 

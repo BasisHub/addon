@@ -1,6 +1,6 @@
 rem ----------------------------------------------------------------------------
 rem Program: SATOPCST_BAR.prc  
-rem Description: Stored Procedure to build a resultset that aon_dashboard.bbj
+rem Description: Stored Procedure to build a resultset that adx_aondashboard.aon
 rem              can use to populate the given dashboard widget
 rem 
 rem              Data returned is current year SA totals for top 5 customers
@@ -53,7 +53,6 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ =	sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
-	masks$ = sp!.getParameter("MASKS")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -64,100 +63,101 @@ rem --- Get Barista System Program directory
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 	
-rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
-
-	if len(masks$)>0
-		if masks$(len(masks$),1)<>"|"
-			masks$=masks$+"|"
-		endif
-	endif
-
-	
-rem --- Get masks
-
-	ar_amt_mask$=fngetmask$("ar_amt_mask","$###,###,##0.00-",masks$)	
-	ar_cust_mask$=fngetmask$("cust_mask","UU-UUUU",masks$)		
-	
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "Dummy:C(1),CUSTOMER:C(25*),TOTAL:N(10)"
+	dataTemplate$ = "Dummy:C(1),CUSTOMER:C(30*),TOTAL:C(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 	
-rem --- Build the SELECT statement to be returned to caller
+rem --- Open/Lock files
 
-	sql_prep$ = ""
-	
-rem	sql_prep$ = sql_prep$+"SELECT TOP "+str(num_to_list)+" STR(cust.customer_id,'"+cust_mask$+"')+'  '+LEFT(cust.customer_name,15) AS customer"
-	sql_prep$ = sql_prep$+"SELECT TOP "+str(num_to_list)+" cust.customer_id, LEFT(cust.customer_name,15) AS customer_name"
-	sql_prep$ = sql_prep$+"        ,ROUND(SUM(cust.total),2) AS total "
-	sql_prep$ = sql_prep$+"FROM (SELECT  "
-	sql_prep$ = sql_prep$+"		 c.customer_id "
-	sql_prep$ = sql_prep$+"		,m.customer_name "
-	sql_prep$ = sql_prep$+"		,(c.total_sales_01 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_02 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_03 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_04 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_05 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_06 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_07 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_08 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_09 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_10 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_11 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_12 "
-	sql_prep$ = sql_prep$+"		 +c.total_sales_13 "
-	sql_prep$ = sql_prep$+"		  ) AS total "
-	sql_prep$ = sql_prep$+"      FROM sam_customer c "
-	sql_prep$ = sql_prep$+"      LEFT JOIN arm_custmast m "
-	sql_prep$ = sql_prep$+"      ON m.firm_id=c.firm_id "
-	sql_prep$ = sql_prep$+"	  AND m.customer_id=c.customer_id "
-	sql_prep$ = sql_prep$+"      WHERE c.firm_id='"+firm_id$+"' "
-	sql_prep$ = sql_prep$+"      AND c.year='"+year$+"' "
-	sql_prep$ = sql_prep$+"     ) cust	 "
-	sql_prep$ = sql_prep$+"GROUP BY cust.customer_id,cust.customer_name "
-	sql_prep$ = sql_prep$+"ORDER BY total DESC "
-	
-rem --- Execute the query
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="sam-01",ids$[1]="SAM_CUSTOMER"
+    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-rem --- Assign the SELECT results to rs!
+    sam01a_dev=channels[1]
+    arm01a_dev=channels[2]
 
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DUMMY"," ")
-rem		data!.setFieldValue("CUSTOMER",read_tpl.customer_id$) 
-		data!.setFieldValue("CUSTOMER",read_tpl.customer_name$)
-rem		str(num_to_list)+" STR(cust.customer_id,'"+cust_mask$+"')+'  '+LEFT(cust.customer_name,15) AS customer"
-		data!.setFieldValue("TOTAL",str(read_tpl.total))
-		rs!.insert(data!)
-	
-	wend		
+rem --- Dimension string templates
+
+    dim sam01a$:templates$[1]
+    dim arm01a$:templates$[2]
+    
+rem --- Get sales by customer
+rem --- salesMap! key=total sales for custom, holds customerMap! (in case more than one customer with same total sales)
+rem --- customerMap! key=customer, holds nothing (empty)
+    salesMap!=new java.util.TreeMap()
+    customer_id$=""
+    read(sam01a_dev,key=firm_id$+year$,dom=*next)
+    while 1
+        readrecord(sam01a_dev,end=*break)sam01a$
+        if sam01a.firm_id$+sam01a.year$<>firm_id$+year$ then break
+
+        if sam01a.customer_id$<>customer_id$ then gosub customer_break
+
+        thisSales=sam01a.total_sales_01+sam01a.total_sales_02+sam01a.total_sales_03+sam01a.total_sales_04+
+:                 sam01a.total_sales_05+sam01a.total_sales_06+sam01a.total_sales_07+sam01a.total_sales_08+
+:                 sam01a.total_sales_09+sam01a.total_sales_10+sam01a.total_sales_11+sam01a.total_sales_12+
+:                 sam01a.total_sales_13
+        thisSales=round(thisSales,2)
+        custSales=custSales+thisSales
+    wend
+    gosub customer_break
+
+rem --- Build result set for top five customers by sales
+    if salesMap!.size()>0 then
+        topCustomers=0
+        salesDeMap!=salesMap!.descendingMap()
+        salesIter!=salesDeMap!.keySet().iterator()
+        while salesIter!.hasNext()
+            custSales=salesIter!.next()
+            customerMap!=salesDeMap!.get(custSales)
+            custIter!=customerMap!.keySet().iterator()
+            while custIter!.hasNext()
+                customer_id$=custIter!.next()
+                topCustomers=topCustomers+1
+                if topCustomers>num_to_list then break
+                dim arm01a$:fattr(arm01a$)
+                findrecord(arm01a_dev,key=firm_id$+customer_id$,dom=*next)arm01a$
+                
+                data! = rs!.getEmptyRecordData()
+                data!.setFieldValue("DUMMY"," ")
+                data!.setFieldValue("CUSTOMER",arm01a.customer_name$)
+                data!.setFieldValue("TOTAL",str(custSales))
+                rs!.insert(data!)
+            wend
+            if topCustomers>num_to_list then break
+        wend
+    endif
 
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
 
-rem --- Add SELECT to sql_prep$ based on include_type/gl_record_id
-
-add_to_sql_prep:	
-		
-	sql_prep$ = sql_prep$+"SELECT '', b.gl_account as 'Account', "
-	sql_prep$ = sql_prep$+"ROUND(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 "
-	sql_prep$ = sql_prep$+"+s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ,2) as 'Total' "; rem  For Each Account' "
-	sql_prep$ = sql_prep$+"FROM glm_bankmaster b "
-	sql_prep$ = sql_prep$+"LEFT JOIN glm_acctsummary s "
-	sql_prep$ = sql_prep$+"ON b.firm_id=s.firm_id AND b.gl_account=s.gl_account "
-	sql_prep$ = sql_prep$+"WHERE b.firm_id='"+firm_id$+"' AND s.firm_id='"+firm_id$+"' AND s.record_id='"+gl_record_id$+"' "	
-	
-	return
+customer_break: rem --- Customer break
+    if customer_id$<>"" then
+        if salesMap!.containsKey(custSales) then
+            customerMap!=salesMap!.get(custSales)
+        else
+            customerMap!=new java.util.HashMap()
+        endif
+        customerMap!.put(customer_id$,"")
+        salesMap!.put(custSales,customerMap!)
+    endif
+    
+    rem --- Initialize for next customer
+    customer_id$=sam01a.customer_id$
+    custSales=0
+    return
 	
 rem --- Functions
 

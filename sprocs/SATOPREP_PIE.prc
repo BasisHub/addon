@@ -1,6 +1,6 @@
 rem ----------------------------------------------------------------------------
 rem Program: SATOPREP_PIC.prc  
-rem Description: Stored Procedure to build a resultset that aon_dashboard.bbj
+rem Description: Stored Procedure to build a resultset that adx_aonashboard.aon
 rem              can use to populate the given dashboard widget
 rem 
 rem              Data returned is current year SA totals for salesreps
@@ -53,7 +53,6 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ =	sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
-	masks$ = sp!.getParameter("MASKS")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -64,84 +63,100 @@ rem --- Get Barista System Program directory
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 	
-rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
-
-	if len(masks$)>0
-		if masks$(len(masks$),1)<>"|"
-			masks$=masks$+"|"
-		endif
-	endif
-
-	
-rem --- Get masks
-
-	ar_amt_mask$=fngetmask$("ar_amt_mask","$###,###,##0.00-",masks$)	
-	
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "SALESREP:C(25*),TOTAL:N(10)"
+	dataTemplate$ = "SALESREP:C(20*),TOTAL:C(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
-	
-rem --- Build the SELECT statement to be returned to caller
 
-	sql_prep$ = ""
-	
-	sql_prep$ = sql_prep$+"SELECT TOP "+str(num_to_list)+" rep.slspsn_code "
-	sql_prep$ = sql_prep$+"              ,rep.rep_name "
-	sql_prep$ = sql_prep$+"              ,ROUND(SUM(rep.total),2) AS total "
-	sql_prep$ = sql_prep$+"   FROM "
-	sql_prep$ = sql_prep$+"     (SELECT  "
-	sql_prep$ = sql_prep$+"          r.slspsn_code "
-	sql_prep$ = sql_prep$+"	   	    ,c.code_desc AS rep_name "
-	sql_prep$ = sql_prep$+"	        ,(r.total_sales_01 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_02 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_03 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_04 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_05 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_06 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_07 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_08 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_09 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_10 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_11 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_12 "
-	sql_prep$ = sql_prep$+"		     +r.total_sales_13 "
-	sql_prep$ = sql_prep$+"		      ) AS total "
-	sql_prep$ = sql_prep$+"		 FROM sam_salespsn r "; rem r for rep
-	sql_prep$ = sql_prep$+"      LEFT JOIN arc_salecode c "; rem c for code
-	sql_prep$ = sql_prep$+"        ON c.firm_id=r.firm_id "
-	sql_prep$ = sql_prep$+"       AND c.slspsn_code=r.slspsn_code "
-	sql_prep$ = sql_prep$+"      WHERE r.firm_id='"+firm_id$+"' AND r.year='"+year$+"' "
-	sql_prep$ = sql_prep$+"     ) AS rep	 "
-	sql_prep$ = sql_prep$+"   GROUP BY rep.slspsn_code,rep.rep_name "
-	sql_prep$ = sql_prep$+"   ORDER BY total DESC "
-write(debugchan)"sql_prep$ ="+sql_prep$ 
+rem --- Open/Lock files
 
-rem --- Execute the query
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="sam-03",ids$[1]="SAM_SALESPSN"
+    files$[2]="arc_salecode",ids$[2]="ARC_SALECODE"
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-rem --- Assign the SELECT results to rs!
+    sam03a_dev=channels[1]
+    arm10f_dev=channels[2]
 
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("SALESREP",read_tpl.rep_name$)
-		data!.setFieldValue("TOTAL",str(read_tpl.total))
-		rs!.insert(data!)
-	
-	wend		
+rem --- Dimension string templates
+
+    dim sam03a$:templates$[1]
+    dim arm10f$:templates$[2]
+    
+rem --- Get sales by salesperson and salesperson + product type
+rem --- salesMap! key=total sales for salesperson, holds slspsnMap! (in case more than one salesperson with same total sales)
+rem --- slspsnMap! key=salesperson, holds nothing (empty)
+    salesMap!=new java.util.TreeMap()
+    slspsn_code$=""
+    read(sam03a_dev,key=firm_id$+year$,dom=*next)
+    while 1
+        readrecord(sam03a_dev,end=*break)sam03a$
+        if sam03a.firm_id$+sam03a.year$<>firm_id$+year$ then break
+
+        if sam03a.slspsn_code$<>slspsn_code$ then gosub slspsn_break
+
+        thisSales=sam03a.total_sales_01+sam03a.total_sales_02+sam03a.total_sales_03+sam03a.total_sales_04+
+:                 sam03a.total_sales_05+sam03a.total_sales_06+sam03a.total_sales_07+sam03a.total_sales_08+
+:                 sam03a.total_sales_09+sam03a.total_sales_10+sam03a.total_sales_11+sam03a.total_sales_12+
+:                 sam03a.total_sales_13
+        thisSales=round(thisSales,2)
+        slspsnSales=slspsnSales+thisSales
+    wend
+    gosub slspsn_break
+
+rem --- Build result set for top five salespersons by sales
+    if salesMap!.size()>0 then
+        topSlspsns=0
+        salesDeMap!=salesMap!.descendingMap()
+        salesIter!=salesDeMap!.keySet().iterator()
+        while salesIter!.hasNext()
+            slspsnSales=salesIter!.next()
+            slspsnMap!=salesDeMap!.get(slspsnSales)
+            slspsnIter!=slspsnMap!.keySet().iterator()
+            while slspsnIter!.hasNext()
+                slspsn_code$=slspsnIter!.next()
+                topSlspsns=topSlspsns+1
+                if topSlspsns>num_to_list then break
+                dim arm10f$:fattr(arm10f$)
+                findrecord(arm10f_dev,key=firm_id$+"F"+slspsn_code$,dom=*next)arm10f$
+                
+                data! = rs!.getEmptyRecordData()
+                data!.setFieldValue("SALESREP",arm10f.code_desc$)
+                data!.setFieldValue("TOTAL",str(slspsnSales))
+                rs!.insert(data!)
+            wend
+            if topSlspsns>num_to_list then break
+        wend
+    endif
 
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
 
+slspsn_break: rem --- Salesperson break
+    if slspsn_code$<>"" then
+        if salesMap!.containsKey(slspsnSales) then
+            slspsnMap!=salesMap!.get(slspsnSales)
+        else
+            slspsnMap!=new java.util.HashMap()
+        endif
+        slspsnMap!.put(slspsn_code$,"")
+        salesMap!.put(slspsnSales,slspsnMap!)
+    endif
+    
+    rem --- Initialize for next customer
+    slspsn_code$=sam03a.slspsn_code$
+    slspsnSales=0
+    return
 	
 rem --- Functions
 
