@@ -87,35 +87,35 @@ rem --- Inits
 
 	use ::ado_util.src::util
 [[APE_MANCHECKDET.AOPT-OINV]]
-print "Det: AOPT.OINV"; rem debug
-
 rem -- Call inquiry program to view open invoices this vendor
 rem -- only allow if trans_type is manual (vs reversal/void)
-
 	trans_type$ = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.TRANS_TYPE")
-	ap_type$    = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.AP_TYPE")
-	vendor_id$  = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID")
-
 	if trans_type$ = "M" then 
-
-		if cvs(ap_type$, 2) <> "" and cvs(vendor_id$, 2) <> "" then
-			key_pfx$ = firm_id$ + ap_type$ + vendor_id$
+		ap_type$    = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.AP_TYPE")
+		vendor_id$  = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID")
 
 		rem --- Select an open invoice
+		if cvs(ap_type$, 2) <> "" and cvs(vendor_id$, 2) <> "" then
+			dim filter_defs$[4,2]
+			filter_defs$[1,0]="APT_INVOICEHDR.FIRM_ID"
+			filter_defs$[1,1]="='"+firm_id$+"'"
+			filter_defs$[1,2]="LOCK"
+			filter_defs$[2,0]="APT_INVOICEHDR.AP_TYPE"
+			filter_defs$[2,1]="='"+ap_type$+"'"
+			filter_defs$[2,2]="LOCK"
+			filter_defs$[3,0]="APT_INVOICEHDR.VENDOR_ID"
+			filter_defs$[3,1]="='"+vendor_id$+"'"
+			filter_defs$[3,2]="LOCK"
+			filter_defs$[4,0]="APT_INVOICEHDR.INVOICE_BAL"
+			filter_defs$[4,1]=">=0.01"
+			filter_defs$[4,2]="LOCK"
+			call stbl("+DIR_SYP")+"bax_query.bbj",gui_dev,form!,"APT_INVOICEHDR","BUILD",table_chans$[all],apt_invoicehdr_key$,filter_defs$[all]
 
-			call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:				gui_dev,
-:				Form!,
-:				"APT_INVOICEHDR",
-:				"LOOKUP",
-:				table_chans$[all],
-:				key_pfx$,
-:				"PRIMARY",
-:				rd_key$
-
-			print "---rd_key: """, rd_key$, """"; rem debug
-
-			if rd_key$ <> "" then
+			if apt_invoicehdr_key$ <>"" then
+				call stbl("+DIR_SYP")+"bac_key_template.bbj","APT_INVOICEHDR","PRIMARY",key_tpl$,rd_table_chans$[all],status$
+				dim rd_key$:key_tpl$
+				apt_invoicehdr_key$=apt_invoicehdr_key$+pad(" ",len(rd_key$))
+				rd_key$=apt_invoicehdr_key$(1,len(rd_key$))
 
 				apt01_dev = fnget_dev("APT_INVOICEHDR")
 				dim apt01a$:fnget_tpl$("APT_INVOICEHDR")

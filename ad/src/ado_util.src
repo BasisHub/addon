@@ -7,6 +7,8 @@ rem ==========================================================================
     use ::sys/prog/bao_callpoint.bbj::Callpoint
     use ::ado_func.src::func
     use ::adc_array.aon::ArrayObject
+
+    use ::bbtranslator.bbj::BBTranslator
     
     use java.util.HashMap
 
@@ -1364,7 +1366,77 @@ method_error:rem --- Method error trap/handler
             x$=stbl("+THROWN_ERR","TRUE")   
             throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
+    
+    rem /**
+    rem  * Initialize Barista processes for BUI
+    rem  *
+    rem  * Initializes needed Barista processes when running in BUI, and return
+    rem  * a BBTranslator object. 
+    rem  *
+    rem  * @return BBTranslator -- null() if not successful
+    rem  */
+        method public static BBTranslator initBUIProcess()
+            seterr method_error
+            declare BBTranslator Translate!
+            Translate!=null()
 
+            if argc()>1
+                for this_argc=1 to argc()-1
+                    this_argv$=argv(this_argc)
+                    if pos("-u"=this_argv$) then user_id$=cvs(this_argv$(3),4); break
+                next this_argc
+            endif
+            
+            if user_id$<>""
+                call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,table_chans$[all]
+            
+                session_pfx$=stbl("+SESSION_PREFIX",err=*next)
+                if session_pfx$="" then
+                    session_pfx$="barista_"+str(dec(info(3,1)):"0000000000000000")
+                    x$=stbl("+SESSION_PREFIX",session_pfx$)
+                endif
+    
+                rd_num_files=1
+                dim rd_open_tables$[1:rd_num_files],rd_open_opts$[1:rd_num_files],rd_open_chans$[1:rd_num_files],rd_open_tpls$[1:rd_num_files]
+                rd_open_tables$[1]="ADM_MODULES",rd_open_opts$[1]="OTA@"
+    
+                call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:                   rd_open_beg,
+:                   rd_open_end,
+:                   rd_open_tables$[all],
+:                   rd_open_opts$[all],
+:                   rd_open_chans$[all],
+:                   rd_open_tpls$[all],
+:                   rd_table_chans$[all],
+:                   rd_open_batch,
+:                   rd_open_status$
+
+                if rd_open_status$="" then
+                    adm_modules=num(rd_open_chans$[1]); dim adm_modules$:rd_open_tpls$[1]
+                    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+                    dim sysinfo$:sysinfo_template$
+                    sysinfo$=stbl("+SYSINFO",err=*next)
+                    readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*endif)adm_modules$
+                    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+                        locale_path$=adm_modules.locale_path$
+                        Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$)
+                        x$=stbl("+PROPS_NAME",adm_modules.locale_resource$)
+                        x$=stbl("+PROPS_PATH",locale_path$)
+                    endif
+                endif
+            endif
+            
+            methodret Translate!
+           
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
 
     classend
 

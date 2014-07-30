@@ -802,7 +802,14 @@ rem --- Set defaults for new record
 	file$ = "OPC_LINECODE"
 	dim opc_linecode$:fnget_tpl$(file$)
 	opc_linecode.dropship$ = "N"
-	find record (fnget_dev(file$), key=firm_id$+callpoint!.getColumnData("OPE_INVDET.LINE_CODE"), dom=*next) opc_linecode$
+	find record (fnget_dev(file$), key=firm_id$+user_tpl.line_code$, dom=*next) opc_linecode$
+
+	rem --- Allow blank memo lines when default line code is a Memo line type
+	if opc_linecode.line_type$="M" then
+		line_code$=user_tpl.line_code$
+		gosub line_code_init
+		callpoint!.setStatus("MODIFIED")
+	endif
 
 	if inv_type$ = "P" or ship_date$ > user_tpl.def_commit$ then
  		callpoint!.setColumnData("OPE_INVDET.COMMIT_FLAG", "N")

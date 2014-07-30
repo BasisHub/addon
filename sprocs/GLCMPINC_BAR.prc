@@ -13,6 +13,13 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
+GOTO SKIP_DEBUG
+Debug$= "C:\Dev_aon\aon\_SPROC-Debug\GLCMPINC_BAR_DebugPRC.txt"	
+string Debug$
+debugchan=unt
+open(debugchan)Debug$	
+write(debugchan)"Top of GLCMPINC_BAR "
+SKIP_DEBUG:
 
 seterr sproc_error
 
@@ -172,6 +179,7 @@ rem --- Build the SELECT statement to be returned to caller
 
 
 rem --- Execute the query
+write(debugchan)"sql_prep$="+sql_prep$
 
 	sql_chan=sqlunt
 	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -204,7 +212,7 @@ rem --- Add SELECT to sql_prep$ based on include_type/gl_record_id (By Period)
 add_to_sql_prep_byYear:	
 	sql_prep$ = sql_prep$+"SELECT DISTINCT "+year_calc$+" AS Year, "
 	sql_prep$ = sql_prep$+"' ' AS Period, "
-	sql_prep$ = sql_prep$+"ROUND(SUM(ABS(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 "
+	sql_prep$ = sql_prep$+"ROUND(ABS(SUM(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 "
 	sql_prep$ = sql_prep$+"+s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ))/1000,2) AS Total "
 	sql_prep$ = sql_prep$+"FROM glm_acct m "
 	sql_prep$ = sql_prep$+"LEFT JOIN glm_acctsummary s ON m.firm_id=s.firm_id AND m.gl_account=s.gl_account "
@@ -222,7 +230,7 @@ add_to_sql_prep_byPeriod:
 
 	sql_prep$ = sql_prep$+"SELECT DISTINCT "+year_calc$+" AS Year, "
 	sql_prep$ = sql_prep$+"'"+per_num$+"-'+"+per_name_abbr$+" AS Period, "; rem Prepended per num for sorting
-	sql_prep$ = sql_prep$+"ROUND(sum(ABS("+period_amt$+"))/1000,2) AS Total "
+	sql_prep$ = sql_prep$+"ROUND(ABS(SUM("+period_amt$+"))/1000,2) AS Total "
 	sql_prep$ = sql_prep$+"FROM glm_acct m "
 	sql_prep$ = sql_prep$+"LEFT JOIN glm_acctsummary s ON m.firm_id=s.firm_id AND m.gl_account=s.gl_account "
 	sql_prep$ = sql_prep$+"LEFT JOIN gls_params p ON m.firm_id=p.firm_id "

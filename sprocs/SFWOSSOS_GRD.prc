@@ -13,7 +13,7 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
-rem GOTO SKIP_DEBUG
+GOTO SKIP_DEBUG
 Debug$= "C:\Dev_aon\aon\_SPROC-Debug\SFWOSSOS_GRD_DebugPRC.txt"	
 string Debug$
 debugchan=unt
@@ -58,7 +58,7 @@ rem --- Get the IN parameters used by the procedure
 		wo_include_type$="A"; rem default to Open WOs only
 	endif
 	
-	if pos(so_include_type$="ABCDE")=0
+	if pos(so_include_type$="ABCDEFG")=0
 		so_include_type$="A"; rem default to Open SOs only
 	endif
 	
@@ -90,8 +90,7 @@ rem --- Get masks (not used in this particular SPROC)
 	
 rem --- create the in memory recordset for return
 
-rem	dataTemplate$ = "WO:C(7*),WO_ESTCOMPDT:C(8*),SO:C(7*),SO_REQSHIPDT:C(8*)"
-	dataTemplate$ = "WO:C(7*),Est_Cmplt:C(8*),SO:C(7*),Est_SHIP:C(8*)"
+	dataTemplate$ = "WO:C(7*), WO_Stat:C(1), Est_Cmplt:C(8*), SO:C(7*), SO_Stat:C(1), Est_Ship:C(8*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 
@@ -105,10 +104,14 @@ rem --- Build the SELECT statement to be returned to caller
 	
 	sql_prep$ = sql_prep$+"SELECT w.wo_no "
 	sql_prep$ = sql_prep$+"      ,w.estcmp_date "
-	sql_prep$ = sql_prep$+"      ,d.order_no "
+	sql_prep$ = sql_prep$+"      ,w.wo_status "
+	sql_prep$ = sql_prep$+"      ,h.order_no "
+	sql_prep$ = sql_prep$+"      ,CASE WHEN h.backord_flag='B' THEN h.backord_flag "
+	sql_prep$ = sql_prep$+"            ELSE h.invoice_type "
+	sql_prep$ = sql_prep$+"       END AS 'SO_Status' "
 	sql_prep$ = sql_prep$+"      ,CASE WHEN d.est_shp_date<>'' THEN d.est_shp_date "
 	sql_prep$ = sql_prep$+"            ELSE h.shipmnt_date "
-	sql_prep$ = sql_prep$+"       END AS 'ShipDate' "
+	sql_prep$ = sql_prep$+"       END AS 'ShipDate' "	
 	sql_prep$ = sql_prep$+"FROM sfe_womastr w "
 	sql_prep$ = sql_prep$+"LEFT JOIN ope_invdet d "
 	sql_prep$ = sql_prep$+"       ON w.firm_id=d.firm_id AND w.customer_id=d.customer_id  "
@@ -150,13 +153,12 @@ rem --- Build the SELECT statement to be returned to caller
 		endif
 		
 		rem ===========================
-		rem --- Strip trailing "AND " from wo_where$
+		rem --- Strip trailing "OR " from wo_where$
 		rem --- Add closing paren to wo_where$
 		rem ===========================
-		if pos("AND "=wo_where$,-1)
-			wo_where$=wo_where$(1,len(wo_where$)-4)
+		if pos("OR "=wo_where$,-1)
+			wo_where$=wo_where$(1,len(wo_where$)-3)
 		endif
-		wo_where$=wo_where$+") AND "
 		
 		rem --- Close WO's and prep for SO's clauses
 		wo_where$=wo_where$+") AND "
@@ -166,32 +168,36 @@ rem --- Build the SELECT statement to be returned to caller
 	rem --- WHERE logic for SOs ---
 	rem ===========================
 
-	so_where$=so_where$+"(h.ordinv_flag='O' AND ( "; rem Exclude invoices
+	so_where$=so_where$+"(h.ordinv_flag='O' "; rem Exclude invoices
+	
+	rem --- All non-invoiced SOs is the baseline, no filter logic to append
+	rem --- However, need to add " AND ( " if we aren't doing ALL SOs
 
-	rem --- All non-invoiced SOs is the baseline, so no logic to append
-
+	if pos(so_include_type$<>"G")
+		so_where$=so_where$+"AND ( "
+	endif
 	
 	rem --- Sales / Sales and Backorders / Sales and Quotes
 	if pos(so_include_type$="ADF")
-		so_where$=so_where$+"h.invoice_type='S' AND "
+		so_where$=so_where$+"h.invoice_type='S' OR "
 	endif
 
 	rem --- Backorders / Sales and Backorders / Backorders and Quotes
 	if pos(so_include_type$="BDE")
-		so_where$=so_where$+"h.backord_flag='B' AND "
+		so_where$=so_where$+"h.backord_flag='B' OR "
 	endif
 
 	rem --- Quotes / Sales and Quotes / Backorders and Quotes
 	if pos(so_include_type$="CEF")
-		so_where$=so_where$+"h.invoice_type='P' AND "
+		so_where$=so_where$+"h.invoice_type='P' OR "
 	endif
 
 	rem ===========================
-	rem --- Strip trailing "AND " from so_where$
+	rem --- Strip trailing "OR " from so_where$
 	rem --- Add closing paren to so_where$
 	rem ===========================
-	if pos("AND "=so_where$,-1)
-		so_where$=so_where$(1,len(so_where$)-4)+")"
+	if pos("OR "=so_where$,-1)
+		so_where$=so_where$(1,len(so_where$)-3)+")"
 	endif
 	so_where$=so_where$+") "
 
@@ -212,21 +218,38 @@ write(debugchan)"sql_prep$="+sql_prep$
 	sqlexec(sql_chan)
 
 rem --- Assign the SELECT results to rs!
-got_at_least_one=0
+	
+	got_at_least_one=0
+	
 	while 1
 		read_tpl$ = sqlfetch(sql_chan,end=*break)
 
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("WO",read_tpl.wo_no$)
-		data!.setFieldValue("Est_Cmplt",fndate$(read_tpl.estcmp_date$))
+		data!.setFieldValue("WO_Stat",read_tpl.wo_status$)
+		if cvs(read_tpl.estcmp_date$,2)=""
+			data!.setFieldValue("Est_Cmplt","-None-")		
+		else
+			data!.setFieldValue("Est_Cmplt",fndate$(read_tpl.estcmp_date$))		
+		endif
+		
 		data!.setFieldValue("SO",read_tpl.order_no$)
-		data!.setFieldValue("Est_SHIP",fndate$(read_tpl.ShipDate$))
-
+		if read_tpl.so_status$="P"
+			data!.setFieldValue("SO_Stat","Q"); rem For clarity/consistency in grid change P (proforma) to Q (quote)
+		else
+			data!.setFieldValue("SO_Stat",read_tpl.so_status$)
+		endif
+		if cvs(read_tpl.ShipDate$,2)=""
+			data!.setFieldValue("Est_Ship","-None-")
+		else
+			data!.setFieldValue("Est_Ship",fndate$(read_tpl.ShipDate$))		
+		endif
+		
 		rs!.insert(data!)
-got_at_least_one=1	
+		got_at_least_one=1	
 	wend		
-write(debugchan)"got_at_least_one="+str(got_at_least_one)
-if got_at_least_one=0
+
+	if got_at_least_one=0
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("WO","-None-")
 		data!.setFieldValue("Est_Cmplt","-None-")
@@ -234,7 +257,7 @@ if got_at_least_one=0
 		data!.setFieldValue("Est_SHIP","-None-")
 
 		rs!.insert(data!)		
-endif	
+	endif	
 	
 rem --- Tell the stored procedure to return the result set.
 

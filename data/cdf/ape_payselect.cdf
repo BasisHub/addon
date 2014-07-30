@@ -442,6 +442,12 @@ rem ==========================================================================
 				approval_list$ = approval_list$ + ts$ + $0A$
 			else
 				if apt_invapproval.approval_type$ = "S" then
+					already_approved=0
+					findrecord(apt_invapproval,key=firm_id$+vendor_id$+ap_inv_no$+apt_invapproval.sequence_num$,dom=*next); already_approved=1
+					if already_approved then
+						rem --- Don't count if record is in apt_invapproval, it's already been counted once
+						continue
+					endif
 					approved = approved + 1
 					approved_by$ = apt_invapproval.user_id$
 					approval_list$ = approval_list$ + Translate!.getTranslation("AON_APPROVED_BY") + ": " + cvs(apt_invapproval.user_id$,3) + " "

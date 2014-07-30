@@ -325,7 +325,7 @@ rem --- Init for this employee
 		if cvs(callpoint!.getColumnData("SFE_TIMEWODET.TITLE_CODE"),2)="" then
 			callpoint!.setColumnData("SFE_TIMEWODET.TITLE_CODE",empcode.normal_title$,1)
 		endif
-		if cvs(callpoint!.setColumnData("SFE_TIMEWODET.PAY_CODE"),2)="" then
+		if cvs(callpoint!.getColumnData("SFE_TIMEWODET.PAY_CODE"),2)="" then
 			callpoint!.setColumnData("SFE_TIMEWODET.PAY_CODE",str(callpoint!.getDevObject("reg_pay_code")),1)
 		endif
 	endif

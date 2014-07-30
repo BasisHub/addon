@@ -116,6 +116,8 @@ if cvs(callpoint!.getUserInput(),3)<>""
 				poe_recdet.qty_prev_rec$=poe_podet.qty_received$
 				if callpoint!.getDevObject("dflt_rec_qty")="Y"
 					poe_recdet.qty_received=poe_recdet.qty_ordered-poe_recdet.qty_prev_rec
+				else
+					poe_recdet.qty_received=0
 				endif
 				poe_recdet.batch_no$=stbl("+BATCH_NO",err=*next)
 				write record (poe_recdet_dev) poe_recdet$
