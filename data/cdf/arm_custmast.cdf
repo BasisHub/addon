@@ -1,3 +1,157 @@
+[[ARM_CUSTMAST.ASHO]]
+rem --- Create/embed dashboard to show aged balance
+
+	use ::ado_util.src::util
+	use ::dashboard/dashboard.bbj::Dashboard
+	use ::dashboard/dashboard.bbj::DashboardCategory
+	use ::dashboard/dashboard.bbj::DashboardControl
+	use ::dashboard/dashboard.bbj::DashboardWidget
+	use ::dashboard/dashboard.bbj::WidgetControl
+	use ::dashboard/widget.bbj::Widget
+	use ::dashboard/widget.bbj::BBjWidget
+	use ::dashboard/widget.bbj::ChartWidget
+	use ::dashboard/widget.bbj::PieChartWidget
+	use ::dashboard/widget.bbj::BarChartWidget
+
+	ctl_name$="ARM_CUSTPMTS.AVG_DAYS"
+	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
+	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
+	ctl1!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
+	ctl_name$="<<DISPLAY>>.DSP_BALANCE"
+	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
+	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
+	ctl2!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
+	childWin!=SysGUI!.getWindow(ctlContext).getControl(0)
+	save_ctx=SysGUI!.getContext()
+	SysGUI!.setContext(ctlContext)
+
+rem --- Create a dashboard w/ aging pie chart widget to the right of the Future control
+
+	dashboard! = new Dashboard("CustAging",Translate!.getTranslation("AON_AGING","Customer Aging",1))
+    
+rem --- Create a dashboard category, or tab, that holds the widget
+
+	dashboardCategory! = dashboard!.addDashboardCategory("Aging",Translate!.getTranslation("AON_AGING","Customer Aging",1))
+
+rem --- Create either a pie chart or bar chart - the latter if any of the aging buckets are negative
+
+	rem --- pie
+	name$="CUSTAGNG_PIE"
+	title$ = Translate!.getTranslation("AON_AGING","Customer Aging",1)
+	previewText$=Translate!.getTranslation("AON_CUSTOMER_AGING_PIE","Customer aging chart",1)
+	previewImage$=""
+	chartTitle$ = ""
+	flat = 0
+	legend=0
+	numSlices=6
+	widgetHeight=ctl2!.getY()+ctl2!.getHeight()-ctl1!.getY()
+	widgetWidth=widgetHeight+widgetHeight*.5
+	
+	agingDashboardPieWidget! = dashboardCategory!.addPieChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,flat,legend,numSlices)
+	agingPieWidget! = agingDashboardPieWidget!.getWidget()
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_FUTURE","Future",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_CURRENT","Current",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_30_DAYS","30 Days",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_60_DAYS","60 days",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_90_DAYS","90 days",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_120_DAYS","120 days",1), 0)
+	agingPieWidget!.setFontScalingFactor(1.2)
+
+	agingPieWidgetControl! = new WidgetControl(agingDashboardPieWidget!,childWin!,ctl1!.getX()+ctl1!.getWidth()+50,ctl1!.getY(),widgetWidth,widgetHeight,$$)
+	agingPieWidgetControl!.setVisible(0)
+
+	rem --- bar
+	name$="CUSTAGNG_BAR"
+	title$ = Translate!.getTranslation("AON_AGING","Customer Aging",1)
+	previewText$=Translate!.getTranslation("AON_CUSTOMER_AGING_PIE","Customer aging chart",1)
+	previewImage$=""
+	chartTitle$ = ""
+	domainTitle$ = ""
+	rangeTitle$ = Translate!.getTranslation("AON_BALANCE","Balance",1)
+	flat = 0
+	orientation=BarChartWidget.getORIENTATION_VERTICAL() 
+	legend=1
+	agingDashboardBarWidget! = dashboardCategory!.addBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend)
+	agingBarWidget! = agingDashboardBarWidget!.getWidget()
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_FUT","Fut",1), "",0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_CUR","Cur",1), "", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_30","30",1),"", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_60","60",1), "", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_90","90",1), "", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_120","120",1), "", 0)
+
+	agingBarWidgetControl! = new WidgetControl(agingDashboardBarWidget!,childWin!,ctl1!.getX()+ctl1!.getWidth()+50,ctl1!.getY(),widgetWidth,widgetHeight,$$)
+	agingBarWidgetControl!.setVisible(0)
+
+	callpoint!.setDevObject("dbPieWidget",agingDashboardPieWidget!)
+	callpoint!.setDevObject("dbPieWidgetControl",agingPieWidgetControl!)
+	callpoint!.setDevObject("dbBarWidget",agingDashboardBarWidget!)
+	callpoint!.setDevObject("dbBarWidgetControl",agingBarWidgetControl!)
+
+	SysGUI!.setContext(save_ctx)
+[[ARM_CUSTMAST.ADIS]]
+rem --- retrieve dashboard pie or bar chart widget and refresh for current customer/balances
+rem --- pie if all balances >=0, bar if any negatives, hide if all bals are 0
+
+	bal_fut=num(callpoint!.getColumnData("ARM_CUSTDET.AGING_FUTURE"))
+	bal_cur=num(callpoint!.getColumnData("ARM_CUSTDET.AGING_CUR"))
+	bal_30=num(callpoint!.getColumnData("ARM_CUSTDET.AGING_30"))
+	bal_60=num(callpoint!.getColumnData("ARM_CUSTDET.AGING_60"))
+	bal_90=num(callpoint!.getColumnData("ARM_CUSTDET.AGING_90"))
+	bal_120=num(callpoint!.getColumnData("ARM_CUSTDET.AGING_120"))
+
+	if !bal_fut and !bal_cur and !bal_30 and !bal_60 and !bal_90 and !bal_120
+
+		agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
+		agingPieWidgetControl!.setVisible(0)
+		agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
+		agingBarWidgetControl!.setVisible(0)
+
+	else
+
+		if bal_fut<0 or bal_cur<0 or bal_30<0 or bal_60<0 or bal_90<0 or bal_120<0
+
+			agingDashboardBarWidget!=callpoint!.getDevObject("dbBarWidget")
+			agingBarWidget! = agingDashboardBarWidget!.getWidget()
+			agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_FUT","Fut",1), "",bal_fut)
+			agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_CUR","Cur",1), "", bal_cur)
+			agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_30","30",1),"", bal_30)
+			agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_60","60",1), "", bal_60)
+			agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_90","90",1), "", bal_90)
+			agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_120","120",1), "", bal_120)
+			agingBarWidget!.refresh()
+
+			agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
+			agingPieWidgetControl!.setVisible(0)
+			agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
+			agingBarWidgetControl!.setVisible(1)
+
+		else
+
+			agingDashboardPieWidget!=callpoint!.getDevObject("dbPieWidget")
+			agingPieWidget! = agingDashboardPieWidget!.getWidget()
+			agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_FUTURE","Future",1), bal_fut)
+			agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_CURRENT","Current",1), bal_cur)
+			agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_30_DAYS","30 Days",1), bal_30 )
+			agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_60_DAYS","60 days",1), bal_60)
+			agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_90_DAYS","90 days",1), bal_90)
+			agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_120_DAYS","120 days",1), bal_120)
+			agingPieWidget!.refresh()
+
+			agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
+			agingPieWidgetControl!.setVisible(1)
+			agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
+			agingBarWidgetControl!.setVisible(0)
+
+		endif
+	
+	endif
+
+
+
+	
 [[ARM_CUSTMAST.AOPT-HCPY]]
 rem --- Go run the Hard Copy form
 
@@ -149,7 +303,34 @@ callpoint!.setColumnData("ARM_CUSTMAST.RETAIN_CUST","Y")
 if user_tpl.cm_installed$="Y" and user_tpl.dflt_cred_hold$="Y" 
 	callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD","Y")
 	callpoint!.setColumnUndoData("ARM_CUSTDET.CRED_HOLD","Y")
-endif              
+endif
+
+rem --- clear out the contents of the widgets
+
+	agingDashboardPieWidget!=callpoint!.getDevObject("dbPieWidget")
+	agingPieWidget! = agingDashboardPieWidget!.getWidget()
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_FUTURE","Future",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_CURRENT","Current",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_30_DAYS","30 Days",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_60_DAYS","60 days",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_90_DAYS","90 days",1), 0)
+	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_120_DAYS","120 days",1), 0)
+	agingPieWidget!.refresh()
+
+	agingDashboardBarWidget!=callpoint!.getDevObject("dbBarWidget")
+	agingBarWidget! = agingDashboardBarWidget!.getWidget()
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_FUT","Fut",1), "",0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_CUR","Cur",1), "", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_30","30",1),"", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_60","60",1), "", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_90","90",1), "", 0)
+	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_120","120",1), "", 0)
+	agingBarWidget!.refresh()
+
+	agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
+	agingPieWidgetControl!.setVisible(0)
+	agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
+	agingBarWidgetControl!.setVisible(0)
 [[ARM_CUSTMAST.BSHO]]
 rem --- Open/Lock files
 	dir_pgm$=stbl("+DIR_PGM")

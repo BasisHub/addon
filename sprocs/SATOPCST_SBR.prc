@@ -29,10 +29,6 @@ SKIP_DEBUG:
 
 seterr sproc_error
 
-rem --- Set of utility methods
-
-	use ::ado_func.src::func
-
 rem --- Declare some variables ahead of time
 
 	declare BBjStoredProcedureData sp!
@@ -53,7 +49,6 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ =	sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
-	masks$ = sp!.getParameter("MASKS")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -64,123 +59,137 @@ rem --- Get Barista System Program directory
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 	
-rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
-
-	if len(masks$)>0
-		if masks$(len(masks$),1)<>"|"
-			masks$=masks$+"|"
-		endif
-	endif
-
-	
-rem --- Get masks
-
-	ar_amt_mask$=fngetmask$("ar_amt_mask","$###,###,##0.00-",masks$)	
-	ar_cust_mask$=fngetmask$("cust_mask","UU-UUUU",masks$)		
-	
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "PRODTYPE:C(25*),CUSTOMER:C(25*),TOTAL:N(10)"
+	dataTemplate$ = "PRODTYPE:C(25*),CUSTOMER:C(25*),TOTAL:N(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
-	
-rem --- Build the SELECT statement to be returned to caller
 
-	sql_prep$ = ""
-	
-	sql_prep$ = sql_prep$+"SELECT bycust.customer_id, LEFT(bycust.customer_name,15) AS cust_name "
-	sql_prep$ = sql_prep$+" 	, byprod.product_type, LEFT(byprod.prod_desc,10) AS prod_desc , byprod.total "
-	sql_prep$ = sql_prep$+"FROM "
-	sql_prep$ = sql_prep$+"  (SELECT TOP "+str(num_to_list)+" cust.customer_id "
-	sql_prep$ = sql_prep$+"              ,cust.customer_name "
-	sql_prep$ = sql_prep$+"              ,ROUND(SUM(cust.total),2) AS total "
-	sql_prep$ = sql_prep$+"   FROM "
-	sql_prep$ = sql_prep$+"     (SELECT  "
-	sql_prep$ = sql_prep$+"          c.customer_id "
-	sql_prep$ = sql_prep$+"	   	    ,m.customer_name "
-	sql_prep$ = sql_prep$+"	        ,(c.total_sales_01 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_02 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_03 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_04 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_05 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_06 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_07 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_08 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_09 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_10 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_11 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_12 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_13 "
-	sql_prep$ = sql_prep$+"		      ) AS total "
-	sql_prep$ = sql_prep$+"		 FROM sam_customer c "
-	sql_prep$ = sql_prep$+"      LEFT JOIN arm_custmast m "
-	sql_prep$ = sql_prep$+"        ON m.firm_id=c.firm_id "
-	sql_prep$ = sql_prep$+"       AND m.customer_id=c.customer_id "
-	sql_prep$ = sql_prep$+"      WHERE c.firm_id='"+firm_id$+"' AND c.year='"+year$+"' "
-	sql_prep$ = sql_prep$+"     ) AS cust	 "
-	sql_prep$ = sql_prep$+"   GROUP BY cust.customer_id,cust.customer_name "
-	sql_prep$ = sql_prep$+"   ORDER BY total DESC "
-	sql_prep$ = sql_prep$+"  ) AS bycust "
-	sql_prep$ = sql_prep$+"LEFT JOIN "
-	sql_prep$ = sql_prep$+"  (SELECT cust.customer_id, cust.product_type, p.code_desc AS prod_desc, "
-	sql_prep$ = sql_prep$+"          ROUND(SUM(cust.total),2) AS total "
-	sql_prep$ = sql_prep$+"   FROM "
-	sql_prep$ = sql_prep$+"     (SELECT  "
-	sql_prep$ = sql_prep$+"   		 c.firm_id "
-	sql_prep$ = sql_prep$+"   		,c.product_type "
-	sql_prep$ = sql_prep$+"   		,c.customer_id "
-	sql_prep$ = sql_prep$+"	        ,(c.total_sales_01 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_02 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_03 "
-	sql_prep$ = sql_prep$+"          +c.total_sales_04 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_05 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_06 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_07 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_08 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_09 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_10 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_11 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_12 "
-	sql_prep$ = sql_prep$+"		     +c.total_sales_13 "
-	sql_prep$ = sql_prep$+"		      ) AS total "
-	sql_prep$ = sql_prep$+"		 FROM sam_customer c "
-	sql_prep$ = sql_prep$+"      WHERE c.firm_id='"+firm_id$+"' AND c.year='"+year$+"' "
-	sql_prep$ = sql_prep$+"     ) AS cust "
-	sql_prep$ = sql_prep$+"   LEFT JOIN ivc_prodcode p "
-	sql_prep$ = sql_prep$+"     ON p.firm_id=cust.firm_id "
-	sql_prep$ = sql_prep$+"    AND p.product_type=cust.product_type "
-	sql_prep$ = sql_prep$+"   GROUP BY cust.customer_id, p.code_desc, cust.product_type "
-	sql_prep$ = sql_prep$+"  ) AS byprod "
-	sql_prep$ = sql_prep$+"ON bycust.customer_id=byprod.customer_id "
-	sql_prep$ = sql_prep$+"ORDER BY bycust.customer_id,byprod.product_type "
-rem write(debugchan)"sql_prep$ ="+sql_prep$ 
+rem --- Open/Lock files
 
-rem --- Execute the query
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="sam-01",ids$[1]="SAM_CUSTOMER"
+    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
+    files$[3]="ivc_prodcode",ids$[3]="IVC_PRODCODE"
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-rem --- Assign the SELECT results to rs!
+    sam01a_dev=channels[1]
+    arm01a_dev=channels[2]
+    ivm10a_dev=channels[3]
 
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("CUSTOMER",read_tpl.cust_name$)
-		data!.setFieldValue("PRODTYPE",read_tpl.prod_desc$)
-		data!.setFieldValue("TOTAL",str(read_tpl.total))
-		rs!.insert(data!)
-	
-	wend		
+rem --- Dimension string templates
+
+    dim sam01a$:templates$[1]
+    dim arm01a$:templates$[2]
+    dim ivm10a$:templates$[3]
+    
+rem --- Get sales by customer and customer + product type
+rem --- salesMap! key=total sales for custom, holds custMap! (in case more than one customer with same total sales)
+rem --- customerMap! key=customer, holds prodTypeMap!
+rem --- prodTypeMap! key=product type, holds customer sales for product type
+    salesMap!=new java.util.TreeMap()
+    customer_id$=""
+    product_type$=""
+    read(sam01a_dev,key=firm_id$+year$,dom=*next)
+    while 1
+        readrecord(sam01a_dev,end=*break)sam01a$
+        if sam01a.firm_id$+sam01a.year$<>firm_id$+year$ then break
+
+        if sam01a.customer_id$<>customer_id$ then gosub customer_break
+        if sam01a.product_type$<>product_type$ then gosub prodType_break
+
+        thisSales=sam01a.total_sales_01+sam01a.total_sales_02+sam01a.total_sales_03+sam01a.total_sales_04+
+:                 sam01a.total_sales_05+sam01a.total_sales_06+sam01a.total_sales_07+sam01a.total_sales_08+
+:                 sam01a.total_sales_09+sam01a.total_sales_10+sam01a.total_sales_11+sam01a.total_sales_12+
+:                 sam01a.total_sales_13
+        thisSales=round(thisSales,2)
+        custSales=custSales+thisSales
+        prodTypeSales=prodTypeSales+thisSales
+    wend
+    gosub customer_break
+
+rem --- Build result set for top five customers by sales
+    if salesMap!.size()>0 then
+        topCustomers=0
+        salesDeMap!=salesMap!.descendingMap()
+        salesIter!=salesDeMap!.keySet().iterator()
+        while salesIter!.hasNext()
+            custSales=salesIter!.next()
+            customerMap!=salesDeMap!.get(custSales)
+            custIter!=customerMap!.keySet().iterator()
+            while custIter!.hasNext()
+                customer_id$=custIter!.next()
+                topCustomers=topCustomers+1
+                if topCustomers>5 then break
+                dim arm01a$:fattr(arm01a$)
+                findrecord(arm01a_dev,key=firm_id$+customer_id$,dom=*next)arm01a$
+                
+                prodTypeMap!=customerMap!.get(customer_id$)
+                prodIter!=prodTypeMap!.keySet().iterator()
+                while prodIter!.hasNext()
+                    product_type$=prodIter!.next()
+                    prodTypeSales=prodTypeMap!.get(product_type$)
+                    dim ivm10a$:fattr(ivm10a$)
+                    if product_type$=fill(len(ivm10a.product_type$)," ") then
+                        rem --- Sales might be summarized by customer with no product type
+                        ivm10a.code_desc$(1)=Translate!.getTranslation("AON_ALL")+" "+Translate!.getTranslation("AON_PRODUCT_TYPE")
+                    else
+                        findrecord(ivm10a_dev,key=firm_id$+"A"+product_type$,dom=*next)ivm10a$
+                    endif
+                
+                    data! = rs!.getEmptyRecordData()
+                    data!.setFieldValue("CUSTOMER",arm01a.customer_name$)
+                    data!.setFieldValue("PRODTYPE",ivm10a.code_desc$)
+                    data!.setFieldValue("TOTAL",str(prodTypeSales))
+                    rs!.insert(data!)
+                wend
+            wend
+            if topCustomers>5 then break
+        wend
+    endif
 
 rem --- Tell the stored procedure to return the result set.
 
-	sp!.setRecordSet(rs!)
-	goto std_exit
+    sp!.setRecordSet(rs!)
+    goto std_exit
 
-	
+customer_break: rem --- Customer break
+    gosub prodType_break
+    if customer_id$<>"" then
+        if salesMap!.containsKey(custSales) then
+            customerMap!=salesMap!.get(custSales)
+        else
+            customerMap!=new java.util.HashMap()
+        endif
+        customerMap!.put(customer_id$,prodTypeMap!)
+        salesMap!.put(custSales,customerMap!)
+    endif
+    
+    rem --- Initialize for next customer
+    customer_id$=sam01a.customer_id$
+    custSales=0
+    prodTypeMap!=new java.util.TreeMap()
+    product_type$=sam01a.product_type$
+    prodTypeSales=0
+    return
+    
+prodType_break: rem --- Product type break
+    if product_type$<>"" then
+        prodTypeMap!.put(product_type$,prodTypeSales)
+    endif
+
+    rem --- Initialize for next product type
+    product_type$=sam01a.product_type$
+    prodTypeSales=0
+    return
+    
 rem --- Functions
 
     def fndate$(q$)

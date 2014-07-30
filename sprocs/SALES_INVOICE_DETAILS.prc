@@ -27,7 +27,7 @@ chdir barista_wd$
 rem ' set up the sql query
 sql$ = "SELECT SUBSTRING(t1.ORDDET_SEQ_REF, 10, 3) as line_number, t1.line_code, t1.item_id as item_number, t1.order_memo, t1.qty_shipped, t1.unit_price, t1.ext_price "
 sql$ = sql$ + "FROM OPT_INVDET t1 " 
-sql$ = sql$ + "WHERE firm_id = '" + firm_id$ + "' AND CUSTOMER_ID = '" + customer_nbr$ + "' AND AR_INV_NO = '" + inv_nbr$ + "' "
+sql$ = sql$ + "WHERE firm_id = '" + firm_id$ + "' AND ar_type = '  ' AND CUSTOMER_ID = '" + customer_nbr$ + "' AND AR_INV_NO = '" + inv_nbr$ + "' "
 sql$ = sql$ + "ORDER BY t1.ORDDET_SEQ_REF"
 
 rem ' build the database url

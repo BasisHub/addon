@@ -1,3 +1,8 @@
+[[SFE_LOADBAL.ASIZ]]
+rem --- resize the chart control
+
+	bc_loadbal!=callpoint!.getDevObject("bc_loadbal")
+	if bc_loadbal!<>null() bc_loadbal!.setSize(form!.getWidth()-20, form!.getHeight()-100)
 [[SFE_LOADBAL.ARAR]]
 rem --- Default Op Code to first in the file
 
@@ -337,7 +342,12 @@ rem ========================================================
 [[SFE_LOADBAL.BSHO]]
 rem --- add bar chart to form
 
+	use ::ado_util.src::util
+
 	ctl_id=num(stbl("+CUSTOM_CTL"))
-	bc_loadbal! = form!.addBarChart(ctl_id, 10, 100, form!.getWidth()-20, form!.getHeight()-100, "Days", "Hours", 2,99,1, 1, 0)
+
+	bc_loadbal! = form!.addBarChart(ctl_id, 10, 100, form!.getWidth()-20, max(form!.getHeight()-100,250), "Days", "Hours", 2,99,1, 1, 0)
 	callpoint!.setDevObject("bc_loadbal",bc_loadbal!)
+
+	util.resizeWindow(Form!, SysGui!)
 	

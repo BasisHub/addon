@@ -2650,10 +2650,10 @@ rem --- Setup user_tpl$
 
 	tpl$ = 
 :		"credit_installed:c(1), " +
-:		"balance:n(15), " +
-:		"credit_limit:n(15), " +
+:		"balance:n(7*), " +
+:		"credit_limit:n(7*), " +
 :		"display_bal:c(1), " +
-:		"ord_tot:n(15), " +
+:		"ord_tot:n(7*), " +
 :		"def_ship:c(8), " + 
 :		"def_commit:c(8), " +
 :		"blank_whse:c(1), " +
@@ -2692,25 +2692,25 @@ rem --- Setup user_tpl$
 :		"amount_mask:c(1*)," +
 :		"line_taxable:c(1), " +
 :		"item_taxable:c(1), " +
-:		"min_line_amt:n(5), " +
-:		"min_ord_amt:n(5), " +
-:		"item_price:n(15), " +
+:		"min_line_amt:n(7*), " +
+:		"min_ord_amt:n(7*), " +
+:		"item_price:n(7*), " +
 :		"line_dropship:c(1), " +
 :		"dropship_cost:c(1), " +
 :		"lotser_flag:c(1), " +
 :		"new_detail:u(1), " +
 :		"prev_line_code:c(1*), " +
 :		"prev_item:c(1*), " +
-:		"prev_qty_ord:n(15), " +
-:		"prev_boqty:n(15), " +
-:		"prev_shipqty:n(15), " +
-:		"prev_ext_price:n(15), " +
-:		"prev_taxable:n(15), " +
-:		"prev_ext_cost:n(15), " +
+:		"prev_qty_ord:n(7*), " +
+:		"prev_boqty:n(7*), " +
+:		"prev_shipqty:n(7*), " +
+:		"prev_ext_price:n(7*), " +
+:		"prev_taxable:n(7*), " +
+:		"prev_ext_cost:n(7*), " +
 :		"prev_disc_code:c(1*), "+
 :		"prev_ship_to:c(1*), " +
-:		"prev_sales_total:n(15), " +
-:		"prev_unitprice:n(15), " +
+:		"prev_sales_total:n(7*), " +
+:		"prev_unitprice:n(7*), " +
 :		"detail_modified:u(1), " +
 :		"record_deleted:u(1), " +
 :		"item_wh_failed:u(1), " +

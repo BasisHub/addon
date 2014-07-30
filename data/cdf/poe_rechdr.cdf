@@ -301,19 +301,11 @@ rem --- PO Params
 	dim pos_params$:fnget_tpl$("POS_PARAMS")
 	read record(pos_params_chn,key=firm_id$+"PO00")pos_params$
 rem --- Set Defaults
-	apm02_dev=fnget_dev("APM_VENDHIST")
-	dim apm02a$:fnget_tpl$("APM_VENDHIST")
-	read record(apm02_dev,key=firm_id$+vendor_id$,dom=*next)
-	tmp$=key(apm02_dev,end=done_apm_vendhist)
-		if pos(firm_id$+vendor_id$=tmp$)<>1 then goto done_apm_vendhist
-		read record(apm02_dev,key=tmp$)apm02a$
-	done_apm_vendhist:
 	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOTAL","")
 	callpoint!.setColumnData("POE_RECHDR.WAREHOUSE_ID",ivs_params.warehouse_id$)
 	gosub whse_addr_info
 
 	callpoint!.setColumnData("POE_RECHDR.ORD_DATE",sysinfo.system_date$)
-	callpoint!.setColumnData("POE_RECHDR.AP_TERMS_CODE",apm02a.ap_terms_code$)
 	callpoint!.setColumnData("POE_RECHDR.PO_FRT_TERMS",pos_params.po_frt_terms$)
 	callpoint!.setColumnData("POE_RECHDR.AP_SHIP_VIA",pos_params.ap_ship_via$)
 	callpoint!.setColumnData("POE_RECHDR.FOB",pos_params.fob$)
@@ -677,17 +669,32 @@ rem --- read thru selected sales order and build list of lines for which line co
 		if ope_orddet.firm_id$+ope_orddet.ar_type$+ope_orddet.customer_id$+ope_orddet.order_no$<>
 :			ope_ordhdr.firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$ then break
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
-			read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
-			order_lines!.addItem(ope_orddet.internal_seq_no$)
-			item_list$=item_list$+ope_orddet.item_id$
-			work_var=pos(ope_orddet.item_id$=item_list$,len(ope_orddet.item_id$),0)
-			if work_var>1
-				work_var$=cvs(ope_orddet.item_id$,2)+"("+str(work_var)+")"
+			if cvs(ope_orddet.item_id$,2)="" then
+				rem --- Non-stock item
+				order_lines!.addItem(ope_orddet.internal_seq_no$)
+				nonstk_list$=nonstk_list$+ope_orddet.order_memo$
+				work_var=pos(ope_orddet.order_memo$=item_list$,len(ope_orddet.order_memo$),0)
+				if work_var>1
+					work_var$=cvs(ope_orddet.order_memo$,2)+"("+str(work_var)+")"
+				else
+					work_var$=cvs(ope_orddet.order_memo$,2)
+				endif
+				order_items!.addItem(work_var$)
+				order_list!.addItem(Translate!.getTranslation("AON_NON-STOCK")+": "+work_var$)
 			else
-				work_var$=cvs(ope_orddet.item_id$,2)
+				rem --- Inventoried item
+				read record (ivm_itemmast_dev,key=firm_id$+ope_orddet.item_id$,dom=*next)ivm_itemmast$
+				order_lines!.addItem(ope_orddet.internal_seq_no$)
+				item_list$=item_list$+ope_orddet.item_id$
+				work_var=pos(ope_orddet.item_id$=item_list$,len(ope_orddet.item_id$),0)
+				if work_var>1
+					work_var$=cvs(ope_orddet.item_id$,2)+"("+str(work_var)+")"
+				else
+					work_var$=cvs(ope_orddet.item_id$,2)
+				endif
+				order_items!.addItem(work_var$)
+				order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 			endif
-			order_items!.addItem(work_var$)
-			order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 		endif
 	wend
 
