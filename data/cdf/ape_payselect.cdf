@@ -691,20 +691,25 @@ rem ==========================================================================
 				reviewed_but_not_approved = reviewed_but_not_approved + 1
 				reviewed_but_not_approved$ = reviewed_but_not_approved$ + line$
 			else
-                if reviewed = 1 and approved = 1 and !callpoint!.getDevObject("two_sig_req") then
-                    approved_invoices = approved_invoices +1
-                    approved_invoices$ = approved_invoices$ + line$
-                else
-                    if reviewed =1 and approved = 1 and callpoint!.getDevObject("two_sig_req") and thisVendor_total > callpoint!.getDevObject("two_sig_amt") then
-                        partially_approved = partially_approved + 1
-                        partially_approved$ = partially_approved$ + line$
-                    else
-                        if reviewed = 1 and approved > 1 then
-                            approved_invoices = approved_invoices + 1
-                            approved_invoices$ = approved_invoices$ + line$
-                        endif
-                    endif
-                endif
+                			if reviewed = 1 and approved = 1 and !callpoint!.getDevObject("two_sig_req") then
+                    			approved_invoices = approved_invoices +1
+                   			approved_invoices$ = approved_invoices$ + line$
+                			else
+                    			if reviewed =1 and approved = 1 and callpoint!.getDevObject("two_sig_req") and thisVendor_total <= callpoint!.getDevObject("two_sig_amt") then
+	                    			approved_invoices = approved_invoices +1
+        		           			approved_invoices$ = approved_invoices$ + line$
+					else
+                    				if reviewed =1 and approved = 1 and callpoint!.getDevObject("two_sig_req") and thisVendor_total > callpoint!.getDevObject("two_sig_amt") then
+                        					partially_approved = partially_approved + 1
+                        					partially_approved$ = partially_approved$ + line$
+                    				else
+                        					if reviewed = 1 and approved > 1 then
+                            					approved_invoices = approved_invoices + 1
+                            					approved_invoices$ = approved_invoices$ + line$
+							endif
+                    				endif
+					endif
+                			endif
 			endif
 		endif
 	next row

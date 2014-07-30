@@ -308,7 +308,8 @@ close (int_seq_xref)
 rem --- read field_translations into hash map
 
 field_translations! = new java.util.HashMap()
-dim field_translations$:"fieldname:c(16*=124),old_value:c(16*=124),new_value:c(16*=)"
+code_masterfile! = new java.util.HashMap()
+dim field_translations$:"fieldname:c(16*=124),old_value:c(16*=124),new_value:c(16*=124),masterfile:c(20*=)"
 field_translations = unt
 open (field_translations)filedir$+"field_translations"
 while 1
@@ -317,9 +318,13 @@ while 1
       keyval$ = cvs(field_translations.fieldname$,7)+"."+cvs(field_translations.old_value$,3)
       dataval$ = cvs(field_translations.new_value$,7)
       field_translations!.put(keyval$,dataval$)
+      fieldname$ = cvs(field_translations.fieldname$,7)
+      masterfile$ = cvs(field_translations.masterfile$,3)
+      code_masterfile!.put(fieldname$,masterfile$)
    endif
 wend
 close (field_translations)
+used_translations! = new java.util.HashMap()
 
 rem --- read new_field_defaults into hash map
 
@@ -741,7 +746,15 @@ end_ddm04:
 next_rec:
     readrecord(old_file,end=eof)old_rec$
     if pos("00"=old_rec$)=1 goto next_rec
-	if pos("FIRM_ID"=fattr(old_rec$))=1 if pos(old_rec.firm_id$=firms$,2)=0 goto next_rec
+	if pos("FIRM_ID"=fattr(old_rec$))=1 then
+	    if pos(old_rec.firm_id$=firms$,2)=0 then
+	        goto next_rec
+        else
+            thisFirm$=old_rec.firm_id$
+        endif
+    else
+        thisFirm$=""
+    endif
 
     rem --- Don't port blank customer numbers in ARE-05 Simple Invoice Entry Header
     if cvs(ddm03.file_name$,8)="are-05"
@@ -787,7 +800,6 @@ next_rec:
         gosub write_opc_msg_recs
         goto next_rec
     endif
-	thisFirm$=""
 
 rem --- start field loop
 
@@ -947,7 +959,7 @@ rem --- Check value of new field for blanks if part of primary key
             if cvs(value$,2)=""
                 if pos(new_fieldlist.name$[field]+$0a$=blank_fields$)=0
                     if field_translations!.get(new_fieldlist.name$[field]+"."+cvs(value$,3))=null()
-                            rem --- Do NOT report thes missing key fields, they are optional
+                            rem --- Do NOT report these missing key fields, they are optional
                             if cvs(new_datafile$,2)="apt-05" and cvs(new_fieldlist.name$[field],2)="AP_INV_NO" goto no_msg
                             if cvs(new_datafile$,2)="art-06" and cvs(new_fieldlist.name$[field],2)="AR_CHECK_NO" goto no_msg
                             if cvs(new_datafile$,2)="art-16" and cvs(new_fieldlist.name$[field],2)="AR_CHECK_NO" goto no_msg
@@ -970,6 +982,16 @@ rem --- if this field.value is listed in flat file "field_translations" then tra
         if translate_value!<>null()
             translate_value$=str(translate_value!)
             value$=translate_value$
+            rem --- track translations used so can later verify records exist for them in master files
+            if used_translations!.containsKey(new_fieldlist.name$[field]) then
+                rem --- add current firm to firmSet! for this translations
+                firmSet!=cast(java.util.TreeSet,used_translations!.get(new_fieldlist.name$[field]))
+            else
+                rem --- init new firmSet! for this translation and add current firm to it
+                firmSet! = new java.util.TreeSet()
+            endif
+            firmSet!.add(thisFirm$)
+            used_translations!.put(new_fieldlist.name$[field],firmSet!)
         endif
 
 rem --- date formatting
@@ -1294,6 +1316,11 @@ rem --- Populate sequence record(s)
 rem --- Initialize *s_params.post_to_gl with SYM-04's post_gl flag
 
     gosub init_params_post_gl
+
+rem --- Verify master file records exist for used translations
+    if used_translations!.size() then
+        gosub verify_translation_master
+    endif
 
 rem --- Enable disabled triggers
     if disabledTriggers!.size() then
@@ -2799,6 +2826,96 @@ split_header_detail_recs: rem --- Split old header/detail files into separate fi
 
     rem --- Append temporary file to vectPort!
     vectPort!.addItem(cvs(split_temp_file$,version_cvs))
+    return
+
+verify_translation_master: rem --- Verify master file records exist for used translations
+    usedIter!=used_translations!.keySet().iterator()
+    while usedIter!.hasNext()
+        fieldname$=usedIter!.next()
+        
+        rem --- Open master file
+        masterfile$=code_masterfile!.get(fieldname$)
+        filename$=cvs(masterfile$,3)
+        if filename$="" then continue
+        key_field$=""
+        record_id$=""
+        xpos=pos(";"=filename$)
+        if xpos then
+            if pos("["=filename$(xpos+1))=1 then
+                rem --- Get key field name
+                key_field$=filename$(xpos+2)
+                key_field$=key_field$(1,len(key_field$)-1)
+                table_id$=cvs(filename$(1,xpos-1),4)
+                if file_xref!.get(cvs(filename$(1,xpos-1),4))<>null() then
+                    table_id$=cast(BBjString,file_xref!.get(cvs(filename$(1,xpos-1),4)),err=*next)
+                endif
+                call stbl("+DIR_SYP")+"bac_key_template.bbj",table_id$,"PRIMARY",key_fieldlist$,rd_table_chans$[all],rd_stat$
+                if rd_stat$<>"" then
+                        print (err_dev)"Primary key template for master file "+filename$+" not found for translation of "+fieldname$
+                endif
+            else
+                rem --- Get record ID
+                record_id$=filename$(xpos+1)
+            endif
+            filename$=filename$(1,xpos-1)
+        endif
+        master_found=0
+        master_chan=unt
+        open (master_chan,err=*next)destin_folder$+"/"+filename$;master_found=1
+        if !master_found then
+            print (err_dev)"Master file "+filename$+" not found for translation of "+fieldname$
+            continue
+        endif
+
+        rem --- Get value used for translation
+        transIter!=field_translations!.keySet().iterator()
+        while transIter!.hasNext()
+            transKey$=transIter!.next()
+            if fieldname$+"."=transKey$<>1 then continue
+            transValue$=field_translations!.get(transKey$)
+       
+            rem --- Check each firm for translation master record
+            firmSet!=cast(java.util.TreeSet,used_translations!.get(fieldname$))
+            firmIter!=firmSet!.iterator()
+            while firmIter!.hasNext()
+                firm$=firmIter!.next()
+                if key_field$=""then
+                    rem --- Use record ID for this master file record
+                    record$=""
+                    readrecord(master_chan,key=firm$+record_id$+transValue$,dom=*next)record$
+                    if cvs(record$,2)="" then
+                        print (err_dev)"Translation for "+fieldname$+"="+transValue$+ " not found in "+filename$+" for firm "+firm$
+                    endif
+                else
+                    rem --- Use key field for this master file record
+                    previous_key_field_value$=""
+                    read(master_chan,key=firm$,knum="PRIMARY",dom=*next)
+                    while 1
+                        dim key_tpl$:key_fieldlist$
+                        key_tpl$=key(master_chan,end=*break)
+                        if key_tpl.firm_id$<>firm$ then break
+                        read(master_chan) 
+                        fieldvalue$=field(key_tpl$,fieldname$)
+                        key_field_value$=key_tpl$(1,len(key_tpl$)-len(fieldvalue$))
+                        key_field_value$=key_field_value$(3)
+                        
+                        if previous_key_field_value$=key_field_value$ then continue
+                        previous_key_field_value$=key_field_value$
+                        
+                        record$=""
+                        readrecord(master_chan,key=firm$+key_field_value$+transValue$,dom=*next,end=*break)record$
+                        if cvs(record$,2)="" then
+                            print (err_dev)"Translation for "+fieldname$+"="+transValue$+ " not found in "+filename$+" for firm "+firm$
+:                           +" and "+key_field$+"="+key_field_value$
+                        endif
+                    wend
+                endif
+            wend
+        wend
+        
+        rem --- Close master file
+        close(master_chan)
+    wend
     return
     
 fix_yymmdd_date: rem --- Convert yy dates to yyyy, and yymmdd dates to yyyymmdd
