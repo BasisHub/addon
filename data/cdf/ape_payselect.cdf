@@ -97,6 +97,11 @@ rem --- Approve the invoice selected in the grid
 	rowsSelected! = gridInvoices!.getSelectedRows()
 	gridInvoices!.deselectAllCells()
 
+	rem --- Do all rows need actions by the user
+	if rowsSelected!.size() > 0 then
+		gosub find_rows_needing_action
+	endif
+
 	if rowsSelected!.size() =  0 then
 		msg_id$="GENERIC_OK"
 		dim msg_tokens$[1]
@@ -539,6 +544,79 @@ rem ==========================================================================
 
 	rem --- clear the row selection
 	gridInvoices!.deselectAllCells()
+
+	return
+
+rem ==========================================================================
+find_rows_needing_action: rem --- From a set of selected rows find those needing action by the user
+rem ==========================================================================
+	rem --- Shouldn't get here unless using Payment Authorization.
+	if !callpoint!.getDevObject("use_pay_auth")  then return
+
+	user$=sysinfo.user_id$
+	if apm_approvers.prelim_approval then
+		rem --- Reviewer
+		usertype$ = "R"
+	else
+		if apm_approvers.check_signer then
+			rem --- Approver
+			usertype$ = "A"
+		else
+			rem --- Not reviewer or approver
+			return
+		endif
+	endif
+
+	newRowsSelected! = BBjAPI().makeVector()
+
+	for item = 0 to rowsSelected!.size() - 1
+		row = num(rowsSelected!.getItem(item))
+		vendor_id$ = gridInvoices!.getCellText(row,3)
+		ap_inv_no$ = gridInvoices!.getCellText(row,5)
+         	inv_amt  = num(gridInvoices!.getCellText(curr_row,9))
+		vendorTotalsMap!=callpoint!.getDevObject("vendorTotalsMap")
+		thisVendor_total = cast(BBjNumber, vendorTotalsMap!.get(vendor_id$))
+		gosub get_approval_status
+				
+		if !reviewed and usertype$ = "R" then
+			newRowsSelected!.add(row)
+			continue
+		endif
+
+		if reviewed and !approved and usertype$ = "A" then
+			newRowsSelected!.add(row)
+			continue
+		endif
+
+		if reviewed and approved > 1 and usertype$ = "A" then
+			rem --- Already has two approvals
+			continue
+		endif				
+
+		if reviewed and approved = 1 and usertype$ = "A" then
+			rem --- One approval in. Is it by this user
+			if user$ = approved_by$ then
+				rem --- Already approved by this approver
+				continue
+			endif
+
+			rem --- If two sigantures required, is it less than the threshold
+			if callpoint!.getDevObject("two_sig_req") and thisVendor_total <= callpoint!.getDevObject("two_sig_amt") then
+				rem --- Second approval not needed
+				continue
+			endif
+
+			rem --- If two sigantures required, is it greater than the threshold
+			if callpoint!.getDevObject("two_sig_req") and thisVendor_total > callpoint!.getDevObject("two_sig_amt") then
+				rem --- second approval needed
+				newRowsSelected!.add(row)
+				continue
+			endif
+		endif
+	next item
+
+	rem --- Replace selection vectors
+	rowsSelected! = newRowsSelected!
 
 	return
 

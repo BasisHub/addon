@@ -1,3 +1,9 @@
+[[SFE_RELEASEWO.ASHO]]
+rem --- Warn when Material Requirements include item not in the production warehouse.
+	if callpoint!.getDevObject("allow_release")="N" then
+		msg_id$="SF_NOT_IN_PROD_WH"
+		gosub disp_message
+	endif
 [[SFE_RELEASEWO.<CUSTOM>]]
 rem =====================================================
 format_grid: rem --- format the grid that will display component shortages
@@ -91,7 +97,6 @@ rem =====================================================
 
 	wo_loc$=callpoint!.getDevObject("wo_loc")
 	wo_no$=callpoint!.getDevObject("wo_no")
-	allow_release$="Y"
 
 	read (sfe22_dev,key=firm_id$+wo_loc$+wo_no$,dom=*next)
 
@@ -100,15 +105,21 @@ rem =====================================================
 		read record (sfe22_dev)sfe_womatl$
 		if pos(firm_id$+wo_loc$+wo_no$=sfe_womatl$)<>1 then break
 		if sfe_womatl.line_type$="M" then continue
+		dim ivm_itemwhse$:fattr(ivm_itemwhse$)
 		read record (ivm02_dev,key=firm_id$+sfe_womatl.warehouse_id$+sfe_womatl.item_id$,dom=*next)ivm_itemwhse$
 		if cvs(ivm_itemwhse.item_id$,3)="" 
 			at_whse$=" - Not at warehouse!"
-			allow_release$="N"
+			callpoint!.setDevObject("allow_release","N")
 			callpoint!.setColumnEnabled("SFE_RELEASEWO.RELEASE",0)
+			callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_TRAVEL",0)
+			callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_PICK",0)
 		else
 			at_whse$=""
 			callpoint!.setColumnEnabled("SFE_RELEASEWO.RELEASE",1)
+			callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_TRAVEL",1)
+			callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_PICK",1)
 		endif
+		dim ivm_itemmast$:fattr(ivm_itemmast$)
 		read record (ivm01_dev,key=firm_id$+sfe_womatl.item_id$,dom=*next)ivm_itemmast$
 		vectAvail!.addItem(sfe_womatl.item_id$)
 		vectAvail!.addItem(cvs(ivm_itemmast.item_desc$,3)+at_whse$)
@@ -138,10 +149,14 @@ rem =====================================================
 		next curr_row
 	endif
 
-	if allow_release$="N"
+	if callpoint!.getDevObject("allow_release")="N"
 		callpoint!.setColumnEnabled("SFE_RELEASEWO.RELEASE",-1)
+		callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_TRAVEL",-1)
+		callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_PICK",-1)
 	else
 		callpoint!.setColumnEnabled("SFE_RELEASEWO.RELEASE",1)
+		callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_TRAVEL",1)
+		callpoint!.setColumnEnabled("SFE_RELEASEWO.PRINT_PICK",1)
 	endif
 
 
@@ -287,6 +302,7 @@ rem --- create grid to display shortages
 
 	call stbl("+DIR_SYP")+"bac_create_color.bbj","+ENTRY_ERROR_COLOR","255,224,224",error_color!,""
 	callpoint!.setDevObject("error_color",error_color!)
+	callpoint!.setDevObject("allow_release","Y")
 
 	gosub format_grid
 	gosub load_grid

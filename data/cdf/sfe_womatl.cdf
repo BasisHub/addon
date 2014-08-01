@@ -324,8 +324,9 @@ rem =========================================================
 rem ==========================================================================
 enable_explode: rem --- Enable/disable explode field (and initialize)
 rem ==========================================================================
-	rem --- Enable explode when item is a Bill on non-stock planned or quote WO, or a phantom
+	rem --- Enable explode when item is a Bill on non-stock planned or quote WO, else disable.
 	row=callpoint!.getValidationRow()
+	callpoint!.setColumnEnabled(row,"<<DISPLAY>>.EXPLODE_BILL",0)
 	if callpoint!.getDevObject("bm")="Y" and callpoint!.getColumnData("SFE_WOMATL.LINE_TYPE")="S"
 		bmm01_dev=fnget_dev("BMM_BILLMAST")
 		dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
@@ -433,6 +434,7 @@ rem =========================================================
 
 	all_bills$=new_bill$
 	curr_bill$=new_bill$
+	no_more_seq=0
 	subs$=""
 	mats$=""
 	mats_offset=0
@@ -553,7 +555,8 @@ mats_loop:
 			if pos("9"<>sfe_womatl.material_seq$)=0 
 				msg_id$="SF_NO_MORE_SEQ"
 				gosub disp_message
-				exitto back_up_levels
+				explode_bills$=""
+				exitto end_explode_bills
 			endif
 			internal_seq_no$=""
 			call stbl("+DIR_SYP")+"bas_sequences.bbj","INTERNAL_SEQ_NO",internal_seq_no$,table_chans$[all],"QUIET"
@@ -610,7 +613,8 @@ mats_loop:
 		if pos("9"<>sfe_womatl.material_seq$)=0 
 			msg_id$="SF_NO_MORE_SEQ"
 			gosub disp_message
-			exitto back_up_levels
+			explode_bills$=""
+			exitto end_explode_bills
 		endif
 		sfe22_key$=sfe_womatl.firm_id$+sfe_womatl.wo_location$+sfe_womatl.wo_no$+sfe_womatl.material_seq$
 		extractrecord(sfe22_dev,key=sfe22_key$,knum="PRIMARY",dom=*next)x$; rem --- Advisory locking
@@ -623,7 +627,17 @@ back_up_levels: rem --- this is the 6900 part - move on to ops and subs for phan
 
 	if all_bills$<>new_bill$
 		gosub do_operations
-		if callpoint!.getDevObject("po")="Y" then gosub do_subcontracts
+		if no_more_seq then
+			explode_bills$=""
+			goto end_explode_bills
+		endif
+		if callpoint!.getDevObject("po")="Y" then
+			gosub do_subcontracts
+			if no_more_seq then
+				explode_bills$=""
+				goto end_explode_bills
+			endif
+		endif
 		allbills[x,0]=0
 		allbills[x,1]=0
 next_bill_level:
@@ -637,10 +651,21 @@ next_bill_level:
 	else
 		curr_bill$=all_bills$
 		gosub do_operations
-		if callpoint!.getDevObject("po")="Y" then gosub do_subcontracts
+		if no_more_seq then
+			explode_bills$=""
+			goto end_explode_bills
+		endif
+		if callpoint!.getDevObject("po")="Y" then
+			gosub do_subcontracts
+			if no_more_seq then
+				explode_bills$=""
+				goto end_explode_bills
+			endif
+		endif
 		rem all done... should now be ready to display what's just been added to mats grid
 	endif
 
+end_explode_bills:
 	callpoint!.setDevObject("mark_to_explode",mark_to_explode$)
 	return
 
@@ -727,7 +752,8 @@ do_operations:
 		if pos("9"<>sfe02_prev_key.op_seq$)=0 
 			msg_id$="SF_NO_MORE_SEQ"
 			gosub disp_message
-			exitto back_up_levels
+			no_more_seq=1
+			exitto end_do_operations
 		endif
 
 no_prev_ops_key:
@@ -769,6 +795,7 @@ no_prev_ops_key:
 	
 	wend
 
+end_do_operations:
 	return
 
 rem =========================================================
@@ -827,7 +854,8 @@ do_subcontracts:
 		if pos("9"<>sfe32_prev_key.subcont_seq$)=0 
 			msg_id$="SF_NO_MORE_SEQ"
 			gosub disp_message
-			exitto back_up_levels
+			no_more_seq=1
+			exitto end_do_subcontracts
 		endif
 no_prev_subs_key:
 		sfe_wosubcnt.subcont_seq$=str(num(sfe_wosubcnt.subcont_seq$)+1:sub_seq_mask$)
@@ -840,6 +868,7 @@ no_prev_subs_key:
 		
 	wend
 
+end_do_subcontracts:
 	return
 
 rem =========================================================

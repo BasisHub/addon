@@ -68,7 +68,7 @@ rem --- Get masks
 
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 
-	iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
+	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.0000-",masks$)
 	sf_hours_mask$=fngetmask$("sf_hours_mask","#,##0.00-",masks$)
 	sf_pct_mask$=fngetmask$("sf_pct_mask","###.00-",masks$)
 	
@@ -322,9 +322,9 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 			else
 				data!.setFieldValue("VAR_HRS_PCT",str(0:sf_pct_mask$))
 			endif
-			data!.setFieldValue("STD_AMT",str(std_ops_amt:iv_cost_mask$))
-			data!.setFieldValue("ACT_AMT",str(act_ops_amt:iv_cost_mask$))
-			data!.setFieldValue("VAR_AMT",str(std_ops_amt-act_ops_amt:iv_cost_mask$))
+			data!.setFieldValue("STD_AMT",str(std_ops_amt:sf_amt_mask$))
+			data!.setFieldValue("ACT_AMT",str(act_ops_amt:sf_amt_mask$))
+			data!.setFieldValue("VAR_AMT",str(std_ops_amt-act_ops_amt:sf_amt_mask$))
 			if std_ops_amt<>0
 				data!.setFieldValue("VAR_AMT_PCT",str((std_ops_amt-act_ops_amt)/std_ops_amt*100:sf_pct_mask$))
 			else
@@ -354,9 +354,9 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("TOTAL_LABEL","Direct Total")
-		data!.setFieldValue("STD_AMT",str(tot_std_dir:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str(tot_act_dir:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str(tot_std_dir-tot_act_dir:iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str(tot_std_dir:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str(tot_act_dir:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str(tot_std_dir-tot_act_dir:sf_amt_mask$))
 		if tot_std_dir<>0
 			data!.setFieldValue("VAR_AMT_PCT",str((tot_std_dir-tot_act_dir)/tot_std_dir*100:sf_pct_mask$))
 		else
@@ -367,9 +367,9 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("TOTAL_LABEL","Overhead Total")
-		data!.setFieldValue("STD_AMT",str(tot_std_oh:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str(tot_act_oh:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str(tot_std_oh-tot_act_oh:iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str(tot_std_oh:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str(tot_act_oh:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str(tot_std_oh-tot_act_oh:sf_amt_mask$))
 		if tot_std_oh<>0
 			data!.setFieldValue("VAR_AMT_PCT",str((tot_std_oh-tot_act_oh)/tot_std_oh*100:sf_pct_mask$))
 		else
@@ -382,9 +382,9 @@ rem ---            Ops that are repeated on WOs are repeated by line here
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("TOTAL_LABEL","Labor Total")
-		data!.setFieldValue("STD_AMT",str(tot_std_dir+tot_std_oh:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str(tot_act_dir+tot_act_oh:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str((tot_std_dir+tot_std_oh)-(tot_act_dir+tot_act_oh):iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str(tot_std_dir+tot_std_oh:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str(tot_act_dir+tot_act_oh:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str((tot_std_dir+tot_std_oh)-(tot_act_dir+tot_act_oh):sf_amt_mask$))
 		if tot_std_dir+tot_std_oh<>0
 			data!.setFieldValue("VAR_AMT_PCT",str(((tot_std_dir+tot_std_oh)-(tot_act_dir+tot_act_oh))/(tot_std_dir+tot_std_oh)*100:sf_pct_mask$))
 		else
@@ -534,9 +534,9 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("TOTAL_LABEL","Materials")
-		data!.setFieldValue("STD_AMT",str(std_mat_amt:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str(act_mat_amt:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str(std_mat_amt-act_mat_amt:iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str(std_mat_amt:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str(act_mat_amt:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str(std_mat_amt-act_mat_amt:sf_amt_mask$))
 		if std_mat_amt<>0
 			data!.setFieldValue("VAR_AMT_PCT",str((std_mat_amt-act_mat_amt)/std_mat_amt*100:sf_pct_mask$))
 		else
@@ -550,9 +550,9 @@ rem --- Process Materials and Subcontracts (one total line for Mats one for Subs
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 		data!.setFieldValue("TOTAL_LABEL","Subcontracts")
-		data!.setFieldValue("STD_AMT",str(std_sub_amt:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str(act_sub_amt:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str(std_sub_amt-act_sub_amt:iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str(std_sub_amt:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str(act_sub_amt:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str(std_sub_amt-act_sub_amt:sf_amt_mask$))
 		if std_sub_amt<>0
 			data!.setFieldValue("VAR_AMT_PCT",str((std_sub_amt-act_sub_amt)/std_sub_amt*100:sf_pct_mask$))
 		else
@@ -568,17 +568,17 @@ rem --- Output WO cost summary totals
 	data! = rs!.getEmptyRecordData()
 	data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 	data!.setFieldValue("TOTAL_LABEL","WO Totals")
-	data!.setFieldValue("STD_HRS",str(wo_tot_std_hrs:iv_cost_mask$))
-	data!.setFieldValue("ACT_HRS",str(wo_tot_act_hrs:iv_cost_mask$))
-	data!.setFieldValue("VAR_HRS",str(wo_tot_std_hrs-wo_tot_act_hrs:iv_cost_mask$))
+	data!.setFieldValue("STD_HRS",str(wo_tot_std_hrs:sf_hours_mask$))
+	data!.setFieldValue("ACT_HRS",str(wo_tot_act_hrs:sf_hours_mask$))
+	data!.setFieldValue("VAR_HRS",str(wo_tot_std_hrs-wo_tot_act_hrs:sf_hours_mask$))
 	if wo_tot_std_hrs <> 0
 		data!.setFieldValue("VAR_HRS_PCT",str((wo_tot_std_hrs-wo_tot_act_hrs)/wo_tot_std_hrs*100:sf_pct_mask$))
 	else
 		data!.setFieldValue("VAR_HRS_PCT",str(0:sf_pct_mask$))
 	endif
-	data!.setFieldValue("STD_AMT",str(wo_tot_std_amt+std_mat_amt+std_sub_amt:iv_cost_mask$))
-	data!.setFieldValue("ACT_AMT",str(wo_tot_act_amt+act_mat_amt+act_sub_amt:iv_cost_mask$))
-	data!.setFieldValue("VAR_AMT",str((wo_tot_std_amt+std_mat_amt+std_sub_amt)-(wo_tot_act_amt+act_mat_amt+act_sub_amt):iv_cost_mask$))
+	data!.setFieldValue("STD_AMT",str(wo_tot_std_amt+std_mat_amt+std_sub_amt:sf_amt_mask$))
+	data!.setFieldValue("ACT_AMT",str(wo_tot_act_amt+act_mat_amt+act_sub_amt:sf_amt_mask$))
+	data!.setFieldValue("VAR_AMT",str((wo_tot_std_amt+std_mat_amt+std_sub_amt)-(wo_tot_act_amt+act_mat_amt+act_sub_amt):sf_amt_mask$))
 	if wo_tot_std_amt+std_mat_amt+std_sub_amt <> 0
 		data!.setFieldValue("VAR_AMT_PCT",str(((wo_tot_std_amt+std_mat_amt+std_sub_amt)-(wo_tot_act_amt+act_mat_amt+act_sub_amt))/(wo_tot_std_amt+std_mat_amt+std_sub_amt)*100:sf_pct_mask$))
 	else
@@ -590,30 +590,30 @@ rem --- Output WO cost summary totals
 	data!.setFieldValue("THIS_IS_TOTAL_LINE","Y")
 	data!.setFieldValue("TOTAL_LABEL","Per Unit Totals")
 	if prod_qty<>0
-		data!.setFieldValue("STD_HRS",str(wo_tot_std_hrs/prod_qty:iv_cost_mask$))
-		data!.setFieldValue("ACT_HRS",str(wo_tot_act_hrs/prod_qty:iv_cost_mask$))
-		data!.setFieldValue("VAR_HRS",str((wo_tot_std_hrs/prod_qty)-(wo_tot_act_hrs/prod_qty):iv_cost_mask$))
+		data!.setFieldValue("STD_HRS",str(wo_tot_std_hrs/prod_qty:sf_hours_mask$))
+		data!.setFieldValue("ACT_HRS",str(wo_tot_act_hrs/prod_qty:sf_hours_mask$))
+		data!.setFieldValue("VAR_HRS",str((wo_tot_std_hrs/prod_qty)-(wo_tot_act_hrs/prod_qty):sf_hours_mask$))
 		if wo_tot_std_hrs/prod_qty <> 0
 			data!.setFieldValue("VAR_HRS_PCT",str(((wo_tot_std_hrs/prod_qty)-(wo_tot_act_hrs/prod_qty))/(wo_tot_std_hrs/prod_qty)*100:sf_pct_mask$))
 		else
 			data!.setFieldValue("VAR_HRS_PCT",str(0:sf_pct_mask$))
 		endif
-		data!.setFieldValue("STD_AMT",str((wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str((wo_tot_act_amt+act_mat_amt+act_sub_amt)/prod_qty:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str(((wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty)-((wo_tot_act_amt+act_mat_amt+act_sub_amt)/prod_qty):iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str((wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str((wo_tot_act_amt+act_mat_amt+act_sub_amt)/prod_qty:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str(((wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty)-((wo_tot_act_amt+act_mat_amt+act_sub_amt)/prod_qty):sf_amt_mask$))
 		if (wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty <> 0
 			data!.setFieldValue("VAR_AMT_PCT",str((((wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty)-((wo_tot_act_amt+act_mat_amt+act_sub_amt)/prod_qty))/((wo_tot_std_amt+std_mat_amt+std_sub_amt)/prod_qty)*100:sf_pct_mask$))
 		else
 			data!.setFieldValue("VAR_AMT_PCT",str(0:sf_pct_mask$))
 		endif
 	else
-		data!.setFieldValue("STD_HRS",str(0:iv_cost_mask$))
-		data!.setFieldValue("ACT_HRS",str(0:iv_cost_mask$))
-		data!.setFieldValue("VAR_HRS",str(0:iv_cost_mask$))
+		data!.setFieldValue("STD_HRS",str(0:sf_hours_mask$))
+		data!.setFieldValue("ACT_HRS",str(0:sf_hours_mask$))
+		data!.setFieldValue("VAR_HRS",str(0:sf_hours_mask$))
 		data!.setFieldValue("VAR_HRS_PCT",str(0:sf_pct_mask$))
-		data!.setFieldValue("STD_AMT",str(0:iv_cost_mask$))
-		data!.setFieldValue("ACT_AMT",str(0:iv_cost_mask$))
-		data!.setFieldValue("VAR_AMT",str(0:iv_cost_mask$))
+		data!.setFieldValue("STD_AMT",str(0:sf_amt_mask$))
+		data!.setFieldValue("ACT_AMT",str(0:sf_amt_mask$))
+		data!.setFieldValue("VAR_AMT",str(0:sf_amt_mask$))
 		data!.setFieldValue("VAR_AMT_PCT",str(0:sf_pct_mask$))
 	endif
 	rs!.insert(data!)
@@ -642,9 +642,9 @@ rem --- Subroutines
 		else
 			data!.setFieldValue("VAR_HRS_PCT","x"+sf_pct_mask$+"x")
 		endif
-		data!.setFieldValue("STD_AMT","x"+iv_cost_mask$+"x")
-		data!.setFieldValue("ACT_AMT","x"+iv_cost_mask$+"x")
-		data!.setFieldValue("VAR_AMT","x"+iv_cost_mask$+"x")
+		data!.setFieldValue("STD_AMT","x"+sf_amt_mask$+"x")
+		data!.setFieldValue("ACT_AMT","x"+sf_amt_mask$+"x")
+		data!.setFieldValue("VAR_AMT","x"+sf_amt_mask$+"x")
 		if std_ops_amt<>0
 			data!.setFieldValue("VAR_AMT_PCT","x"+sf_pct_mask$+"x")
 		else

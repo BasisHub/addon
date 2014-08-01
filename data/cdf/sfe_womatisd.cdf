@@ -218,12 +218,12 @@ rem --- Initialize inventory item update
 rem --- Delete lot/serial and inventory commitments. Must do this before sfe_womatisd records are removed.
 	sfe_womatdtl_dev=fnget_dev("SFE_WOMATDTL")
 	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
-	sfe_wolsissu_dev=fnget_dev("SFE_WOLSISSU")
-	dim sfe_wolsissu$:fnget_tpl$("SFE_WOLSISSU")
 
 	rem --- Delete lot/serial commitments, but keep inventory commitments (for now)
 	firm_loc_wo$=callpoint!.getDevObject("firm_loc_wo")
 	if pos(callpoint!.getDevObject("lotser")="LS") then
+		sfe_wolsissu_dev=fnget_dev("SFE_WOLSISSU")
+		dim sfe_wolsissu$:fnget_tpl$("SFE_WOLSISSU")
 		read(sfe_wolsissu_dev,key=firm_loc_wo$+sfe_womatisd.internal_seq_no$,dom=*next)
 		while 1
 			sfe_wolsissu_key$=key(sfe_wolsissu_dev,end=*break)
