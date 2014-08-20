@@ -43,7 +43,35 @@ rem --- As needed, run previous version conversion utilities in order
 rem --- For version 14.00, initialize invoice_bal in apt_invoicehdr
 
     theFirm$=""
-    call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
+rem wgh ... 7951    call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
+    
+rem --- For version 14.10, update drilldown definitions in ddm_drill_defs
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_DRILL_DEFS",   open_opts$[1]="OTA@"
+    gosub open_tables
+    ddm_drilldefs_dev=num(open_chans$[1])
+    dim ddm_drilldefs$:open_tpls$[1]
+
+    rem --- Update AP_INVOICES drilldown definition
+    wk$=fattr(ddm_drilldefs$,"DRILL_DEF_ID")
+    dim drill_def_id$(dec(wk$(10,2)))
+    drill_def_id$(1)="AP_INVOICES"
+    readrecord(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)ddm_drilldefs$
+    if ddm_drilldefs.drill_def_id$=drill_def_id$ then
+        ddm_drilldefs.dd_filter_col_01$="INVOICE_BAL"
+        ddm_drilldefs.dd_filter_def_01$="<>0"
+        ddm_drilldefs.filter_prog$=""
+        writerecord(ddm_drilldefs_dev)ddm_drilldefs$
+    endif
+
+    rem --- Update GL_YTD_AMT drilldown definition
+    drill_def_id$(1)="GL_YTD_AMT"
+    readrecord(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)ddm_drilldefs$
+    if ddm_drilldefs.drill_def_id$=drill_def_id$ then
+        ddm_drilldefs.filter_prog$="glf_ytdamts.aon"
+        writerecord(ddm_drilldefs_dev)ddm_drilldefs$
+    endif
 
 done: rem --- All done
 
@@ -53,6 +81,29 @@ done: rem --- All done
     gosub disp_message
 
     goto std_exit
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
 
 disp_message: rem --- Display Message Dialog
 

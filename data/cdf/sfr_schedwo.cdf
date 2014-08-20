@@ -1,24 +1,6 @@
 [[SFR_SCHEDWO.BEND]]
 rem --- Clear sched_method to signal sfe_womastr that sfr_schedwo was exited without scheduling
 	callpoint!.setDevObject("sched_method","")
-[[SFR_SCHEDWO.ESTSTT_DATE.AVAL]]
-rem --- Completion date can't be before start date
-	if callpoint!.getColumnData("SFR_SCHEDWO.ESTCMP_DATE")<>"" and
-:	callpoint!.getColumnData("SFR_SCHEDWO.ESTCMP_DATE")<callpoint!.getUserInput() then
-		msg_id$="SF_ESTCMP_B4_ESTSTT"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-		break
-	endif
-[[SFR_SCHEDWO.ESTCMP_DATE.AVAL]]
-rem --- Start date can't be after completion date
-	if callpoint!.getColumnData("SFR_SCHEDWO.ESTSTT_DATE")<>"" and
-:	callpoint!.getColumnData("SFR_SCHEDWO.ESTSTT_DATE")>callpoint!.getUserInput() then
-		msg_id$="SF_ESTCMP_B4_ESTSTT"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-		break
-	endif
 [[SFR_SCHEDWO.SCHED_FLAG.AVAL]]
 rem --- Set default Start and Completion Date for Manual
 
@@ -77,6 +59,14 @@ rem --- Calculate dates
 		callpoint!.setStatus("ABORT")
 		break
 	else
+		rem --- Start date can't be after completion date
+		if callpoint!.getColumnData("SFR_SCHEDWO.ESTSTT_DATE")>callpoint!.getColumnData("SFR_SCHEDWO.ESTCMP_DATE") then
+			msg_id$="SF_ESTCMP_B4_ESTSTT"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+
 		rem --- Write/update records with new dates
 		eststt_date$=callpoint!.getColumnData("SFR_SCHEDWO.ESTSTT_DATE")
 		estcmp_date$=callpoint!.getColumnData("SFR_SCHEDWO.ESTCMP_DATE")

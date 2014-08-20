@@ -207,7 +207,7 @@ rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
 				if q1=len(q$)
 					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
 				else
-					q1$=q$(2,len(q$))+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
+					q1$=q$(2,len(q$)-1)+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
 				endif
 			endif
 			if pos("CR"=q$)=len(q$)-1

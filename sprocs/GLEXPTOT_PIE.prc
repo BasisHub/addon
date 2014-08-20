@@ -68,196 +68,81 @@ rem --- Get Barista System Program directory
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 	
-rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
-
-	if len(masks$)>0
-		if masks$(len(masks$),1)<>"|"
-			masks$=masks$+"|"
-		endif
-	endif
-
-	
-rem --- Get masks
-
-	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
-	gl_amt_mask$=fngetmask$("gl_amt_mask","$###,###,##0.00-",masks$)	
-	gl_acct_mask$=fngetmask$("gl_acct_mask","000-000",masks$)		
-	
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "CATEGORY:C(1*),TOTAL:N(10)"
+	dataTemplate$ = "CATEGORY:C(1*),TOTAL:C(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
-
 	
-rem --- Build the SELECT statement to be returned to caller
+rem --- Open/Lock files
 
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glm-01",ids$[1]="GLM_ACCT"
+    files$[2]="glm-02",ids$[2]="GLM_ACCTSUMMARY"
+    files$[3]="glm-10",ids$[3]="GLM_ACCTBREAKS"
+   
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-	sql_prep$ = ""
-	
-	rem --- Current Year Actual / All Actual / All / Curr&Prior Actual
-	if pos(include_type$="AGIJ")
-		gl_record_id$="0"
-		year_calc$="p.current_year"
-		gosub add_to_sql_prep
-	endif
+    glm01a_dev=channels[1]
+    glm02a_dev=channels[2]
+    glm10a_dev=channels[3]
+   
+rem --- Dimension string templates
 
-	rem --- Current Year Budget / All Budget / All / Curr&Prior Budget
-	if pos(include_type$="BHIK")
-		gl_record_id$="1"
-		year_calc$="p.current_year"
-		gosub add_to_sql_prep
-	endif	
+    dim glm01a$:templates$[1]
+    dim glm02a$:templates$[2]
+    dim glm10a$:templates$[3]
 
-	rem --- Prior Year Actual / All Actual / All / Curr&Prior Actual
-	if pos(include_type$="CGIJ")
-		gl_record_id$="2"
-		year_calc$="STR(NUM(p.current_year)-1)"
-		gosub add_to_sql_prep
-	endif	
+rem --- get data
 
-	rem --- Prior Year Budget / All Budget / All / Curr&Prior Budget
-	if pos(include_type$="DHIK")
-		gl_record_id$="3"
-		year_calc$="STR(NUM(p.current_year)-1)"
-		gosub add_to_sql_prep
-	endif	
-	
-	rem --- Next Year Actual / All Actual / All
-	if pos(include_type$="EGI")
-		gl_record_id$="4"
-		year_calc$="STR(NUM(p.current_year)+1)"
-		gosub add_to_sql_prep
-	endif
+    rem --- Current Year Actual only
+    gl_record_id$="0"
 
-	rem --- Next Year Budget / All Budget / All
-	if pos(include_type$="FHI")
-		gl_record_id$="5"
-		year_calc$="STR(NUM(p.current_year)+1)"
-		gosub add_to_sql_prep
-	endif	
-
-	rem --- Strip trailing "UNION "
-	if pos("UNION "=sql_prep$,-1)
-		sql_prep$=sql_prep$(1,len(sql_prep$)-6)
-	endif
-
-
-rem --- Execute the query
-
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
-
-rem --- Assign the SELECT results to rs!
-
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("CATEGORY",read_tpl.category$)
-		data!.setFieldValue("TOTAL",str(read_tpl.total))
-
-		rs!.insert(data!)
-
-	wend		
-
+    rem --- Get accounts breaks
+    start_brk_no$=""
+    end_brk_no$=""
+    read (glm10a_dev,key=firm_id$+start_brk_no$,dom=*next)
+    while 1
+        dim gm10a$:fattr(glm10a$)
+        readrecord(glm10a_dev,end=*next)glm10a$
+        if glm10a.firm_id$<>firm_id$ then dim gm10a$:fattr(glm10a$)
+        start_brk_no$=end_brk_no$
+        start_brk_desc$=end_brk_desc$
+        end_brk_no$=glm10a.acct_no_brk$
+        end_brk_desc$=glm10a.acct_bk_desc$
+        if start_brk_no$="" then continue
+    
+        acct_total=0
+        read (glm01a_dev,key=firm_id$+start_brk_no$,dir=0,dom=*next)
+        while 1
+            readrecord(glm01a_dev,end=*break)glm01a$
+            if glm01a.firm_id$<>firm_id$ then break
+            if glm01a.gl_account$>=end_brk_no$ and cvs(end_brk_no$,2)<>"" then break
+            if glm01a.gl_acct_type$<>acct_type$ then continue
+        
+            dim glm02a$:fattr(glm02a$)
+            readrecord(glm02a_dev,key=firm_id$+glm01a.gl_account$+gl_record_id$,dom=*next)glm02a$
+            acct_total=acct_total+glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
+:                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
+:                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13
+        wend
+        data! = rs!.getEmptyRecordData()
+        data!.setFieldValue("CATEGORY",start_brk_desc$)
+        data!.setFieldValue("TOTAL",str(abs(round(acct_total,2))))
+        rs!.insert(data!)
+        if cvs(end_brk_no$,2)="" then break
+    wend
+    
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
-
-rem --- Add SELECT to sql_prep$ based on include_type/gl_record_id
-
-add_to_sql_prep:	
-
-	sql_prep$ = sql_prep$+"SELECT   sq.category "
-	sql_prep$ = sql_prep$+"        ,ROUND(ABS(SUM (sq.yrtotal)),2) AS total "
-	sql_prep$ = sql_prep$+"FROM (SELECT  DISTINCT "
-	sql_prep$ = sql_prep$+"        m.firm_id, m.gl_account "
-	sql_prep$ = sql_prep$+"        ,(SELECT TOP 1 b.acct_bk_desc "
-	sql_prep$ = sql_prep$+"          FROM glm_acctbreaks b "
-	sql_prep$ = sql_prep$+"          WHERE b.firm_id='01' AND m.gl_account>=b.acct_no_brk "
-	sql_prep$ = sql_prep$+"          ORDER BY b.acct_no_brk DESC "
-	sql_prep$ = sql_prep$+"         ) as Category "
-	sql_prep$ = sql_prep$+"       ,(s.begin_amt+s.period_amt_01+s.period_amt_02+s.period_amt_03 "
-	sql_prep$ = sql_prep$+"        +s.period_amt_04+s.period_amt_05+s.period_amt_06 "
-	sql_prep$ = sql_prep$+"        +s.period_amt_07+s.period_amt_08+s.period_amt_09 "
-	sql_prep$ = sql_prep$+"        +s.period_amt_10+s.period_amt_11+s.period_amt_12+s.period_amt_13 "
-	sql_prep$ = sql_prep$+"        ) AS yrtotal "
-	sql_prep$ = sql_prep$+"      FROM glm_acct m "
-	sql_prep$ = sql_prep$+"      LEFT JOIN glm_acctsummary s "
-	sql_prep$ = sql_prep$+"      ON m.firm_id=s.firm_id "
-	sql_prep$ = sql_prep$+"      AND m.gl_account=s.gl_account  "
-	sql_prep$ = sql_prep$+"      WHERE m.firm_id='"+firm_id$+"' AND s.firm_id='"+firm_id$+"' AND m.gl_acct_type='"+acct_type$+"' AND s.record_id='"+gl_record_id$+"' "
-	sql_prep$ = sql_prep$+"     ) AS sq "
-	sql_prep$ = sql_prep$+"GROUP BY sq.category"	
-	
-	sql_prep$ = sql_prep$+"UNION "	
-	
-	return
-	
-rem --- Functions
-
-    def fndate$(q$)
-        q1$=""
-        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if q1$="" q1$=q$
-        return q1$
-    fnend
-
-rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
-
-    def fnmask$(q1$,q2$)
-        if q2$="" q2$=fill(len(q1$),"0")
-        return str(-num(q1$,err=*next):q2$,err=*next)
-        q=1
-        q0=0
-        while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
-        wend
-        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
-        return str(q1$:q2$)
-    fnend
-
-	def fngetmask$(q1$,q2$,q3$)
-		rem --- q1$=mask name, q2$=default mask if not found in mask string, q3$=mask string from parameters
-		q$=q2$
-		if len(q1$)=0 return q$
-		if q1$(len(q1$),1)<>"^" q1$=q1$+"^"
-		q=pos(q1$=q3$)
-		if q=0 return q$
-		q$=q3$(q)
-		q=pos("^"=q$)
-		q$=q$(q+1)
-		q=pos("|"=q$)
-		q$=q$(1,q-1)
-		return q$
-	fnend
-
-rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
-	def fngetPattern$(q$)
-		q1$=q$
-		if len(q$)>0
-			if pos("-"=q$)
-				q1=pos("-"=q$)
-				if q1=len(q$)
-					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
-				else
-					q1$=q$(2,len(q$))+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
-				endif
-			endif
-			if pos("CR"=q$)=len(q$)-1
-				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
-			endif
-			if q$(1,1)="(" and q$(len(q$),1)=")"
-				q1$=q$(2,len(q$)-2)+";"+q$
-			endif
-		endif
-		return q1$
-	fnend	
 
 sproc_error:rem --- SPROC error trap/handler
     rd_err_text$="", err_num=err

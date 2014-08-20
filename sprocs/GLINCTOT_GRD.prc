@@ -74,141 +74,115 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 			masks$=masks$+"|"
 		endif
 	endif
-
 	
 rem --- Get masks
 
-	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
 	gl_amt_mask$=fngetmask$("gl_amt_mask","$###,###,##0.00-",masks$)	
-	gl_acct_mask$=fngetmask$("gl_acct_mask","000-000",masks$)		
 	
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "DESCRIPTION:C(30*),YEAR:C(4*),TOTAL:C(1*)"
+	dataTemplate$ = "DESCRIPTION:C(30*),YEAR:C(4*),TOTAL:C(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
+    
+rem --- Open/Lock files
 
-	
-rem --- Build the SELECT statement to be returned to caller
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glm-01",ids$[1]="GLM_ACCT"
+    files$[2]="glm-02",ids$[2]="GLM_ACCTSUMMARY"
+    files$[3]="gls_params",ids$[3]="GLS_PARAMS"
+   
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-rem sql_prep$ = "SELECT DISTINCT m.gl_acct_desc as Description, p.current_year AS Year, STR(ROUND(ABS(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 +s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ),2),'$###,###,##0.00') AS Total FROM glm_acct m LEFT JOIN glm_acctsummary s ON m.firm_id=s.firm_id AND m.gl_account=s.gl_account LEFT JOIN gls_params p ON m.firm_id=p.firm_id WHERE m.firm_id='01' AND s.firm_id='01' AND m.gl_acct_type='I' AND s.record_id='0' UNION SELECT m.gl_acct_desc as Description ,STR(NUM(p.current_year)-1) AS Year ,STR(ROUND(ABS(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 +s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ),2),'$###,###,##0.00') AS Total FROM glm_acct m LEFT JOIN glm_acctsummary s ON m.firm_id=s.firm_id AND m.gl_account=s.gl_account LEFT JOIN gls_params p ON m.firm_id=p.firm_id WHERE m.firm_id='01' AND s.firm_id='01' AND m.gl_acct_type='I' AND s.record_id='2'"	
+    glm01a_dev=channels[1]
+    glm02a_dev=channels[2]
+    gls01a_dev=channels[3]
+   
+rem --- Dimension string templates
 
-	sql_prep$ = ""
-	
-	rem --- Current Year Actual / All Actual / All / Curr&Prior Actual
-	if pos(include_type$="AGIJ")
-		gl_record_id$="0"
-		year_calc$="p.current_year"
-		gosub add_to_sql_prep
-	endif
+    dim glm01a$:templates$[1]
+    dim glm02a$:templates$[2]
+    dim gls01a$:templates$[3]
 
-	rem --- Current Year Budget / All Budget / All / Curr&Prior Budget
-	if pos(include_type$="BHIK")
-		gl_record_id$="1"
-		year_calc$="p.current_year"
-		gosub add_to_sql_prep
-	endif	
+rem --- get data
 
-	rem --- Prior Year Actual / All Actual / All / Curr&Prior Actual
-	if pos(include_type$="CGIJ")
-		gl_record_id$="2"
-		year_calc$="STR(NUM(p.current_year)-1)"
-		gosub add_to_sql_prep
-	endif	
+    readrecord(gls01a_dev,key=firm_id$+"GL00",dom=*next)gls01a$
 
-	rem --- Prior Year Budget / All Budget / All / Curr&Prior Budget
-	if pos(include_type$="DHIK")
-		gl_record_id$="3"
-		year_calc$="STR(NUM(p.current_year)-1)"
-		gosub add_to_sql_prep
-	endif	
-	
-	rem --- Next Year Actual / All Actual / All
-	if pos(include_type$="EGI")
-		gl_record_id$="4"
-		year_calc$="STR(NUM(p.current_year)+1)"
-		gosub add_to_sql_prep
-	endif
+    idsVec! = BBjAPI().makeVector()
+    yearsVec! = BBjAPI().makeVector()
 
-	rem --- Next Year Budget / All Budget / All
-	if pos(include_type$="FHI")
-		gl_record_id$="5"
-		year_calc$="STR(NUM(p.current_year)+1)"
-		gosub add_to_sql_prep
-	endif	
+    rem --- Prior Year Actual / All Actual / All / Curr&Prior Actual
+    if pos(include_type$="CGIJ")
+        idsVec!.addItem("2")
+        yearsVec!.addItem(str(num(gls01a.current_year$)-1))
+    endif   
 
-	rem --- Strip trailing "UNION "
-	if pos("UNION "=sql_prep$,-1)
-		sql_prep$=sql_prep$(1,len(sql_prep$)-6)
-	endif
+    rem --- Prior Year Budget / All Budget / All / Curr&Prior Budget
+    if pos(include_type$="DHIK")
+        idsVec!.addItem("3")
+        yearsVec!.addItem(str(num(gls01a.current_year$)-1))
+    endif   
 
+    rem --- Current Year Actual / All Actual / All / Curr&Prior Actual
+    if pos(include_type$="AGIJ")
+        idsVec!.addItem("0")
+        yearsVec!.addItem(gls01a.current_year$)
+    endif
 
-rem --- Execute the query
+    rem --- Current Year Budget / All Budget / All / Curr&Prior Budget
+    if pos(include_type$="BHIK")
+        idsVec!.addItem("1")
+        yearsVec!.addItem(gls01a.current_year$)
+    endif   
+    
+    rem --- Next Year Actual / All Actual / All
+    if pos(include_type$="EGI")
+        idsVec!.addItem("4")
+        yearsVec!.addItem(str(num(gls01a.current_year$)+1))
+    endif
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
+    rem --- Next Year Budget / All Budget / All
+    if pos(include_type$="FHI")
+        idsVec!.addItem("5")
+        yearsVec!.addItem(str(num(gls01a.current_year$)+1))
+    endif   
 
-rem --- Assign the SELECT results to rs!
-
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DESCRIPTION",read_tpl.Description$)
-		data!.setFieldValue("YEAR",read_tpl.Year$)
-		data!.setFieldValue("TOTAL",read_tpl.Total$)
-
-		rs!.insert(data!)
-	
-	wend		
-
+    if idsVec!.size()>0 then
+        read (glm01a_dev,key=firm_id$,dom=*next)
+        while 1
+            readrecord(glm01a_dev,end=*break)glm01a$
+            if glm01a.firm_id$<>firm_id$ then break
+            if glm01a.gl_acct_type$<>acct_type$ then continue
+        
+            for i=0 to idsVec!.size()-1
+                acct_total=0
+                dim glm02a$:fattr(glm02a$)
+                readrecord(glm02a_dev,key=firm_id$+glm01a.gl_account$+idsVec!.getItem(i),dom=*next)glm02a$
+                acct_total=glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
+:                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
+:                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13
+                acct_total=abs(round(acct_total,2))
+                data! = rs!.getEmptyRecordData()
+                data!.setFieldValue("DESCRIPTION",glm01a.gl_acct_desc$)
+                data!.setFieldValue("YEAR",yearsVec!.getItem(i))
+                data!.setFieldValue("TOTAL",str(acct_total:gl_amt_mask$))
+                rs!.insert(data!)
+            next i
+        wend
+    endif
+    
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
-
-rem --- Add SELECT to sql_prep$ based on include_type/gl_record_id
-
-add_to_sql_prep:	
-	sql_prep$ = sql_prep$+"SELECT DISTINCT m.gl_acct_desc as Description, "
-	sql_prep$ = sql_prep$+year_calc$+" AS Year, "
-	sql_prep$ = sql_prep$+"STR(ROUND(ABS(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 "
-	sql_prep$ = sql_prep$+"+s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ),2),'"+gl_amt_mask$+"') AS Total "
-	sql_prep$ = sql_prep$+"FROM glm_acct m "
-	sql_prep$ = sql_prep$+"LEFT JOIN glm_acctsummary s ON m.firm_id=s.firm_id AND m.gl_account=s.gl_account "
-	sql_prep$ = sql_prep$+"LEFT JOIN gls_params p ON m.firm_id=p.firm_id "
-	sql_prep$ = sql_prep$+"WHERE m.firm_id='"+firm_id$+"' AND s.firm_id='"+firm_id$+"' AND m.gl_acct_type='"+acct_type$+"' AND s.record_id='"+gl_record_id$+"' "
-
-	sql_prep$ = sql_prep$+"UNION "	
-	
-	return
 	
 rem --- Functions
-
-    def fndate$(q$)
-        q1$=""
-        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if q1$="" q1$=q$
-        return q1$
-    fnend
-
-rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
-
-    def fnmask$(q1$,q2$)
-        if q2$="" q2$=fill(len(q1$),"0")
-        return str(-num(q1$,err=*next):q2$,err=*next)
-        q=1
-        q0=0
-        while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
-        wend
-        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
-        return str(q1$:q2$)
-    fnend
 
 	def fngetmask$(q1$,q2$,q3$)
 		rem --- q1$=mask name, q2$=default mask if not found in mask string, q3$=mask string from parameters
@@ -224,28 +198,6 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 		q$=q$(1,q-1)
 		return q$
 	fnend
-
-rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
-	def fngetPattern$(q$)
-		q1$=q$
-		if len(q$)>0
-			if pos("-"=q$)
-				q1=pos("-"=q$)
-				if q1=len(q$)
-					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
-				else
-					q1$=q$(2,len(q$))+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
-				endif
-			endif
-			if pos("CR"=q$)=len(q$)-1
-				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
-			endif
-			if q$(1,1)="(" and q$(len(q$),1)=")"
-				q1$=q$(2,len(q$)-2)+";"+q$
-			endif
-		endif
-		return q1$
-	fnend	
 
 sproc_error:rem --- SPROC error trap/handler
     rd_err_text$="", err_num=err

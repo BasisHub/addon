@@ -20,7 +20,6 @@ rem AddonSoftware
 rem Copyright BASIS International Ltd.
 rem ----------------------------------------------------------------------------
 
-
 seterr sproc_error
 
 rem --- Set of utility methods
@@ -45,100 +44,96 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ = sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
-	masks$ = sp!.getParameter("MASKS")
-
-rem --- dirs	
-	sv_wd$=dir("")
-	chdir barista_wd$
+    masks$ = sp!.getParameter("MASKS")
+    
+    rem --- Current Year Actual 
+    
+    if pos(include_type$="A")
+        gl_record_id$="0"
+    endif
+    
+    rem --- Prior Year Actual 
+    if pos(include_type$="C")
+        gl_record_id$="2"
+    endif   
+        
+rem --- dirs    
+    sv_wd$=dir("")
+    chdir barista_wd$
 
 rem --- Get Barista System Program directory
-	sypdir$=""
-	sypdir$=stbl("+DIR_SYP",err=*next)
-	pgmdir$=stbl("+DIR_PGM",err=*next)
-	
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
-	if len(masks$)>0
-		if masks$(len(masks$),1)<>"|"
-			masks$=masks$+"|"
-		endif
-	endif
-
-	
+    if len(masks$)>0
+        if masks$(len(masks$),1)<>"|"
+            masks$=masks$+"|"
+        endif
+    endif
+    
 rem --- Get masks
 
-	ad_units_mask$=fngetmask$("ad_units_mask","#,###.00",masks$)
-	gl_amt_mask$=fngetmask$("gl_amt_mask","$###,###,##0.00-",masks$)	
-	gl_acct_mask$=fngetmask$("gl_acct_mask","000-000",masks$)		
-	
+    gl_acct_mask$=fngetmask$("gl_acct_mask","000-000",masks$)       
+    
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "Dummy:C(1),ACCOUNT:C(4*),TOTAL:N(10)"
+    dataTemplate$ = "Dummy:C(1),ACCOUNT:C(1*),TOTAL:C(7*)"
 
-	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
-	
-rem --- Build the SELECT statement to be returned to caller
+    rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
+    
+rem --- Open/Lock files
 
-rem sql$ = "SELECT '', left(b.gl_account,5) as 'Account', (s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 +s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ) as 'Total For Each Account' FROM glm_bankmaster b LEFT JOIN glm_acctsummary s ON b.firm_id=s.firm_id AND b.gl_account=s.gl_account WHERE b.firm_id='01' AND s.firm_id='01' AND s.record_id='0'"
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="glm-05",ids$[1]="GLM_BANKMASTER"
+    files$[2]="glm-02",ids$[2]="GLM_ACCTSUMMARY"
+   
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-	sql_prep$ = ""
-	
-	rem --- Current Year Actual / All Actual / All / Curr&Prior Actual
-	
-	if pos(include_type$="A")
-		gl_record_id$="0"
-		year_calc$="p.current_year"
-		gosub add_to_sql_prep
-	endif
+    glm05a_dev=channels[1]
+    glm02a_dev=channels[2]
+   
+rem --- Dimension string templates
 
-rem --- Execute the query
+    dim glm05a$:templates$[1]
+    dim glm02a$:templates$[2]
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
-
-rem --- Assign the SELECT results to rs!
-
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("DUMMY"," ")
-		data!.setFieldValue("ACCOUNT",fnmask$(read_tpl.Account$,gl_acct_mask$))
-		data!.setFieldValue("TOTAL",str(read_tpl.total))
-
-		rs!.insert(data!)
-	
-	wend		
-
+rem --- get data
+ 
+   read (glm05a_dev,key=firm_id$,dom=*next)
+    while 1
+        readrecord(glm05a_dev,end=*break)glm05a$
+        if glm05a.firm_id$<>firm_id$ then break
+    
+        acct_total=0
+        readrecord(glm02a_dev,key=firm_id$+glm05a.gl_account$+gl_record_id$,dom=*continue)glm02a$
+        acct_total=glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
+:                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
+:                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13
+        acct_total=round(acct_total,2)
+        data! = rs!.getEmptyRecordData()
+        data!.setFieldValue("DUMMY"," ")
+        data!.setFieldValue("ACCOUNT",fnmask$(glm02a.gl_account$,gl_acct_mask$))
+        data!.setFieldValue("TOTAL",str(acct_total))
+                
+        rs!.insert(data!)
+        
+    wend
+    
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
-
-rem --- Add SELECT to sql_prep$ based on include_type/gl_record_id
-
-add_to_sql_prep:	
-		
-	sql_prep$ = sql_prep$+"SELECT '', b.gl_account as 'Account', "
-	sql_prep$ = sql_prep$+"ROUND(s.begin_amt +s.period_amt_01 +s.period_amt_02 +s.period_amt_03 +s.period_amt_04 +s.period_amt_05 +s.period_amt_06 "
-	sql_prep$ = sql_prep$+"+s.period_amt_07 +s.period_amt_08 +s.period_amt_09 +s.period_amt_10 +s.period_amt_11 +s.period_amt_12 +s.period_amt_13 ,2) as 'Total' "; rem  For Each Account' "
-	sql_prep$ = sql_prep$+"FROM glm_bankmaster b "
-	sql_prep$ = sql_prep$+"LEFT JOIN glm_acctsummary s "
-	sql_prep$ = sql_prep$+"ON b.firm_id=s.firm_id AND b.gl_account=s.gl_account "
-	sql_prep$ = sql_prep$+"WHERE b.firm_id='"+firm_id$+"' AND s.firm_id='"+firm_id$+"' AND s.record_id='"+gl_record_id$+"' "	
-	
-	return
 	
 rem --- Functions
-
-    def fndate$(q$)
-        q1$=""
-        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
-        if q1$="" q1$=q$
-        return q1$
-    fnend
 
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
@@ -169,28 +164,6 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 		q$=q$(1,q-1)
 		return q$
 	fnend
-
-rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
-	def fngetPattern$(q$)
-		q1$=q$
-		if len(q$)>0
-			if pos("-"=q$)
-				q1=pos("-"=q$)
-				if q1=len(q$)
-					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
-				else
-					q1$=q$(2,len(q$))+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
-				endif
-			endif
-			if pos("CR"=q$)=len(q$)-1
-				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
-			endif
-			if q$(1,1)="(" and q$(len(q$),1)=")"
-				q1$=q$(2,len(q$)-2)+";"+q$
-			endif
-		endif
-		return q1$
-	fnend	
 
 sproc_error:rem --- SPROC error trap/handler
     rd_err_text$="", err_num=err

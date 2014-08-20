@@ -187,7 +187,7 @@ rem --- Check total quantity from all lines against ordered quantity and shipped
 
 	declare BBjVector GridVect!
 
-	lot_qty  = 0
+	lot_ord  = 0
 	lot_ship = 0
 	aborted  = 0
 
@@ -219,7 +219,7 @@ rem --- Check total quantity from all lines against ordered quantity and shipped
 
 			rem --- Total lines
 
-				lot_qty  = lot_qty  + gridrec.qty_ordered
+				lot_ord  = lot_ord  + gridrec.qty_ordered
 				lot_ship = lot_ship + gridrec.qty_shipped
 			endif
 		next reccnt
@@ -229,10 +229,10 @@ rem --- Check total quantity from all lines against ordered quantity and shipped
 
 rem --- Warn that selected lot/serial#'s does not match order qty
 
-	if lot_qty <> num(callpoint!.getDevObject("ord_qty")) then 
+	if lot_ord <> num(callpoint!.getDevObject("ord_qty")) then 
 		msg_id$ = "OP_LOT_QTY_UNEQUAL"
 		dim msg_tokens$[3]
-		msg_tokens$[1] = str(lot_qty)
+		msg_tokens$[1] = str(lot_ord)
 
 		if callpoint!.getDevObject("lotser_flag") = "L" then 
 			msg_tokens$[2] = Translate!.getTranslation("AON_LOT_NUMBERS")
@@ -250,7 +250,7 @@ rem --- Warn that selected lot/serial#'s does not match order qty
 
 rem --- Send back qty shipped
 
-	if lot_qty>num(callpoint!.getDevObject("ord_qty")) then
+	if lot_ord>num(callpoint!.getDevObject("ord_qty")) then
 		callpoint!.setStatus("ABORT")
 		break
 	endif
@@ -303,7 +303,8 @@ rem ==========================================================================
 	print "in there_can_be_only_one..."; rem debug
 	aborted = 0
 
-	if callpoint!.getDevObject("lotser_flag") = "S" and abs(qty_ordered) <> 1 then 
+	if callpoint!.getDevObject("lotser_flag") = "S" and cvs(callpoint!.getColumnData("OPE_ORDLSDET.LOTSER_NO"),2)<>"" and
+:	abs(qty_ordered) <> 1 then 
 		msg_id$ = "IV_SERIAL_ONE"
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
@@ -537,8 +538,6 @@ rem --- See if there are any open lots
 		gosub disp_message
 	endif
 [[OPE_ORDLSDET.LOTSER_NO.AVAL]]
-print "LOTSER_NO.AVAL"; rem debug
-
 rem --- Get lot/serial record fields
 
 	wh$     = callpoint!.getDevObject("wh")
@@ -553,18 +552,10 @@ rem --- Non-inventoried items do not have to exist (but can't be blank)
 			msg_id$ = "IV_SERLOT_BLANK"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
-			valid_rec$ = "N"
-			print "valid_rec$=",valid_rec$; rem debug
+			break
 		endif
 
-		unit_cost = num( callpoint!.getDevObject("unit_cost") )
-		callpoint!.setColumnData("OPE_ORDLSDET.UNIT_COST", str(unit_cost))
-		callpoint!.setStatus("MODIFIED;REFRESH")
-		print "unit_cost=",unit_cost; rem debug
-	endif
-
-	if valid_rec$="N" then 
-		break
+		callpoint!.setColumnData("OPE_ORDLSDET.UNIT_COST", str(callpoint!.getDevObject("unit_cost")),1)
 	endif
 
 rem --- Validate open lot number

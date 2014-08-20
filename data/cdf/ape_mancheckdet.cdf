@@ -107,7 +107,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 			filter_defs$[3,1]="='"+vendor_id$+"'"
 			filter_defs$[3,2]="LOCK"
 			filter_defs$[4,0]="APT_INVOICEHDR.INVOICE_BAL"
-			filter_defs$[4,1]=">=0.01"
+			filter_defs$[4,1]="<>0"
 			filter_defs$[4,2]="LOCK"
 			call stbl("+DIR_SYP")+"bax_query.bbj",gui_dev,form!,"APT_INVOICEHDR","BUILD",table_chans$[all],apt_invoicehdr_key$,filter_defs$[all]
 

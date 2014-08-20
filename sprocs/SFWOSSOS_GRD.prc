@@ -82,11 +82,6 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 			masks$=masks$+"|"
 		endif
 	endif
-
-	
-rem --- Get masks (not used in this particular SPROC)
-
-
 	
 rem --- create the in memory recordset for return
 
@@ -94,178 +89,135 @@ rem --- create the in memory recordset for return
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 
-	
-rem --- Build the SELECT statement to be returned to caller
+rem --- Open/Lock files
 
-	sql_prep$ = ""
-	sql_where$ = ""
-	wo_where$ = ""
-	so_where$ = ""
-	
-	sql_prep$ = sql_prep$+"SELECT w.wo_no "
-	sql_prep$ = sql_prep$+"      ,w.estcmp_date "
-	sql_prep$ = sql_prep$+"      ,w.wo_status "
-	sql_prep$ = sql_prep$+"      ,h.order_no "
-	sql_prep$ = sql_prep$+"      ,CASE WHEN h.backord_flag='B' THEN h.backord_flag "
-	sql_prep$ = sql_prep$+"            ELSE h.invoice_type "
-	sql_prep$ = sql_prep$+"       END AS 'SO_Status' "
-	sql_prep$ = sql_prep$+"      ,CASE WHEN d.est_shp_date<>'' THEN d.est_shp_date "
-	sql_prep$ = sql_prep$+"            ELSE h.shipmnt_date "
-	sql_prep$ = sql_prep$+"       END AS 'ShipDate' "	
-	sql_prep$ = sql_prep$+"FROM sfe_womastr w "
-	sql_prep$ = sql_prep$+"LEFT JOIN ope_invdet d "
-	sql_prep$ = sql_prep$+"       ON w.firm_id=d.firm_id AND w.customer_id=d.customer_id  "
-	sql_prep$ = sql_prep$+"      AND w.order_no=d.order_no AND w.sls_ord_seq_ref=d.internal_seq_no "
-	sql_prep$ = sql_prep$+"LEFT JOIN ope_invhdr h "
-	sql_prep$ = sql_prep$+"       ON h.firm_id=d.firm_id AND h.customer_id=d.customer_id "
-	sql_prep$ = sql_prep$+"      AND h.order_no=d.order_no "
-	
-	sql_where$ = sql_where$+"WHERE w.firm_id='"+firm_id$+"' AND "
-	
-	rem ===========================
-	rem --- WHERE logic for WOs ---
-	rem ===========================
-	
-	rem --- Main WO where clause: Ignore if no SO linkage
-	wo_where$=wo_where$+"(w.customer_id<>'' AND w.order_no<>'' AND w.sls_ord_seq_ref<>'') AND "
-	
-		rem --- ANDed with a grouped set of WO status clauses which are ORed
-		wo_where$=wo_where$+"("
-		
-		rem --- All non-closed WOs
-		if pos(wo_include_type$="G")
-			wo_where$=wo_where$+"w.wo_status<>'C' OR "
-		endif	
-		
-		rem --- Open / Open and Planned / Open and Quotes
-		if pos(wo_include_type$="ADF")
-			wo_where$=wo_where$+"w.wo_status='O' OR "
-		endif
+    files=3,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="sfe-01",ids$[1]="SFE_WOMASTR"
+    files$[2]="ope-01",ids$[2]="OPE_ORDHDR"
+    files$[3]="ope-11",ids$[3]="OPE_ORDDET"
+   
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status then
+        seterr 0
+        x$=stbl("+THROWN_ERR","TRUE")   
+        throw "File open error.",1001
+    endif
 
-		rem --- Planned / Open and Planned / Planned and Quotes
-		if pos(wo_include_type$="BDE")
-			wo_where$=wo_where$+"w.wo_status='P' OR "
-		endif
+    sfe01a_dev=channels[1]
+    ope01a_dev=channels[2]
+    ope11a_dev=channels[3]
+   
+rem --- Dimension string templates
 
-		rem --- Quotes / Open and Quotes / Planned and Quotes
-		if pos(wo_include_type$="CEF")
-			wo_where$=wo_where$+"w.wo_status='Q' OR "
-		endif
-		
-		rem ===========================
-		rem --- Strip trailing "OR " from wo_where$
-		rem --- Add closing paren to wo_where$
-		rem ===========================
-		if pos("OR "=wo_where$,-1)
-			wo_where$=wo_where$(1,len(wo_where$)-3)
-		endif
-		
-		rem --- Close WO's and prep for SO's clauses
-		wo_where$=wo_where$+") AND "
-	
+    dim sfe01a$:templates$[1]
+    dim ope01a$:templates$[2]
+    dim ope11a$:templates$[3]
 
-	rem ===========================
-	rem --- WHERE logic for SOs ---
-	rem ===========================
+rem --- get data
 
-	so_where$=so_where$+"(h.ordinv_flag='O' "; rem Exclude invoices
-	
-	rem --- All non-invoiced SOs is the baseline, no filter logic to append
-	rem --- However, need to add " AND ( " if we aren't doing ALL SOs
+    ar_type$=ope01a.ar_type$
+    
+    rem --- All non-closed WOs
+    wo_status$=""
+    if pos(wo_include_type$="G") then wo_status$=wo_status$+"OPQ"
+        
+    rem --- Open / Open and Planned / Open and Quotes
+    if pos(wo_include_type$="ADF") then wo_status$=wo_status$+"O"
 
-	if pos(so_include_type$<>"G")
-		so_where$=so_where$+"AND ( "
-	endif
-	
-	rem --- Sales / Sales and Backorders / Sales and Quotes
-	if pos(so_include_type$="ADF")
-		so_where$=so_where$+"h.invoice_type='S' OR "
-	endif
+    rem --- Planned / Open and Planned / Planned and Quotes
+    if pos(wo_include_type$="BDE") then wo_status$=wo_status$+"P"
 
-	rem --- Backorders / Sales and Backorders / Backorders and Quotes
-	if pos(so_include_type$="BDE")
-		so_where$=so_where$+"h.backord_flag='B' OR "
-	endif
+    rem --- Quotes / Open and Quotes / Planned and Quotes
+    if pos(wo_include_type$="CEF") then wo_status$=wo_status$+"Q"
 
-	rem --- Quotes / Sales and Quotes / Backorders and Quotes
-	if pos(so_include_type$="CEF")
-		so_where$=so_where$+"h.invoice_type='P' OR "
-	endif
+    rem --- Get WOs linked to SOs
+    got_at_least_one=0  
+    read (sfe01a_dev,key=firm_id$,dom=*next)
+    while 1
+        readrecord(sfe01a_dev,end=*break)sfe01a$
+        if sfe01a.firm_id$<>firm_id$ then break
+        if sfe01a.customer_id$="" or sfe01a.order_no$="" or sfe01a.sls_ord_seq_ref$="" then continue
+        if pos(sfe01a.wo_status$=wo_status$)=0 then continue
 
-	rem ===========================
-	rem --- Strip trailing "OR " from so_where$
-	rem --- Add closing paren to so_where$
-	rem ===========================
-	if pos("OR "=so_where$,-1)
-		so_where$=so_where$(1,len(so_where$)-3)+")"
-	endif
-	so_where$=so_where$+") "
+        rem --- Get SO linked to this WO
+        readrecord(ope01a_dev,key=firm_id$+ar_type$+sfe01a.customer_id$+sfe01a.order_no$,dom=*continue)ope01a$
+        if ope01a.ordinv_flag$<>"O" then continue; rem --- Exclude invoices
 
-			
-	rem ===========================
-	rem --- Append the where clauses
-	rem ===========================
-	sql_prep$ = sql_prep$+sql_where$+wo_where$+so_where$
-	
+        switch pos(so_include_type$="ABCDEFG")
+            case 1; rem --- A = Sales (Open) SOs only
+                if ope01a.invoice_type$<>"S" then continue
+                break
+            case 2; rem --- B = Backorders only
+                if ope01a.backord_flag$<>"B" then continue
+                break
+            case 3; rem --- C = Quoted SOs only
+                if ope01a.invoice_type$<>"P" then continue
+                break
+            case 4; rem --- D = Sales and Backorders SOs
+                if ope01a.invoice_type$<>"S" and ope01a.backord_flag$<>"B" then continue
+                break
+            case 5; rem --- E = Backorders and Quotes SOs
+                if ope01a.invoice_type$<>"P" and ope01a.backord_flag$<>"B" then continue
+                break
+            case 6; rem --- F = Sales and Quotes (no B/Os)
+                if ope01a.backord_flag$="B" then continue
+                break
+            case 7; rem --- G = All uninvoiced (sales, B/Os and quotes)
+                break
+            case default
+                continue
+        swend
 
-rem --- Execute the query
-write(debugchan)"sql_prep$="+sql_prep$
+        readrecord(ope11a_dev,key=firm_id$+ar_type$+sfe01a.customer_id$+sfe01a.order_no$+sfe01a.sls_ord_seq_ref$,dom=*continue)ope11a$
 
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
+        data! = rs!.getEmptyRecordData()
+        data!.setFieldValue("WO",sfe01a.wo_no$)
+        data!.setFieldValue("WO_Stat",sfe01a.wo_status$)
+        if cvs(sfe01a.estcmp_date$,2)=""
+            data!.setFieldValue("Est_Cmplt","-None-")       
+        else
+            data!.setFieldValue("Est_Cmplt",fndate$(sfe01a.estcmp_date$))     
+        endif
+        data!.setFieldValue("SO",ope01a.order_no$)
+        if ope01a.backord_flag$="B" then
+            so_status$=ope01a.backord_flag$
+        else
+            so_status$=ope01a.invoice_type$
+        endif
+        if so_status$="P"
+            data!.setFieldValue("SO_Stat","Q"); rem For clarity/consistency in grid change P (proforma) to Q (quote)
+        else
+            data!.setFieldValue("SO_Stat",so_status$)
+        endif
+        if cvs(ope11a.est_shp_date$,2)<>"" then
+            shipdate$=ope11a.est_shp_date$
+        else
+            shipdate$=ope01a.shipmnt_date$
+        endif
+        if cvs(shipdate$,2)=""
+            data!.setFieldValue("Est_Ship","-None-")
+        else
+            data!.setFieldValue("Est_Ship",fndate$(shipdate$))     
+        endif
+        rs!.insert(data!)
+        got_at_least_one=1  
+    wend
 
-rem --- Assign the SELECT results to rs!
-	
-	got_at_least_one=0
-	
-	while 1
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("WO",read_tpl.wo_no$)
-		data!.setFieldValue("WO_Stat",read_tpl.wo_status$)
-		if cvs(read_tpl.estcmp_date$,2)=""
-			data!.setFieldValue("Est_Cmplt","-None-")		
-		else
-			data!.setFieldValue("Est_Cmplt",fndate$(read_tpl.estcmp_date$))		
-		endif
-		
-		data!.setFieldValue("SO",read_tpl.order_no$)
-		if read_tpl.so_status$="P"
-			data!.setFieldValue("SO_Stat","Q"); rem For clarity/consistency in grid change P (proforma) to Q (quote)
-		else
-			data!.setFieldValue("SO_Stat",read_tpl.so_status$)
-		endif
-		if cvs(read_tpl.ShipDate$,2)=""
-			data!.setFieldValue("Est_Ship","-None-")
-		else
-			data!.setFieldValue("Est_Ship",fndate$(read_tpl.ShipDate$))		
-		endif
-		
-		rs!.insert(data!)
-		got_at_least_one=1	
-	wend		
-
-	if got_at_least_one=0
-		data! = rs!.getEmptyRecordData()
-		data!.setFieldValue("WO","-None-")
-		data!.setFieldValue("Est_Cmplt","-None-")
-		data!.setFieldValue("SO","-None-")
-		data!.setFieldValue("Est_SHIP","-None-")
-
-		rs!.insert(data!)		
-	endif	
-	
+    if !got_at_least_one
+        data! = rs!.getEmptyRecordData()
+        data!.setFieldValue("WO","-None-")
+        data!.setFieldValue("Est_Cmplt","-None-")
+        data!.setFieldValue("SO","-None-")
+        data!.setFieldValue("Est_SHIP","-None-")
+        rs!.insert(data!)       
+    endif   
+    
 rem --- Tell the stored procedure to return the result set.
 
 	sp!.setRecordSet(rs!)
 	goto std_exit
 
-
-	
 rem --- Functions
 
     def fndate$(q$)
@@ -274,58 +226,6 @@ rem --- Functions
         if q1$="" q1$=q$
         return q1$
     fnend
-
-rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
-
-    def fnmask$(q1$,q2$)
-        if q2$="" q2$=fill(len(q1$),"0")
-        return str(-num(q1$,err=*next):q2$,err=*next)
-        q=1
-        q0=0
-        while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
-        wend
-        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
-        return str(q1$:q2$)
-    fnend
-
-	def fngetmask$(q1$,q2$,q3$)
-		rem --- q1$=mask name, q2$=default mask if not found in mask string, q3$=mask string from parameters
-		q$=q2$
-		if len(q1$)=0 return q$
-		if q1$(len(q1$),1)<>"^" q1$=q1$+"^"
-		q=pos(q1$=q3$)
-		if q=0 return q$
-		q$=q3$(q)
-		q=pos("^"=q$)
-		q$=q$(q+1)
-		q=pos("|"=q$)
-		q$=q$(1,q-1)
-		return q$
-	fnend
-
-rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
-	def fngetPattern$(q$)
-		q1$=q$
-		if len(q$)>0
-			if pos("-"=q$)
-				q1=pos("-"=q$)
-				if q1=len(q$)
-					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
-				else
-					q1$=q$(2,len(q$))+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
-				endif
-			endif
-			if pos("CR"=q$)=len(q$)-1
-				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
-			endif
-			if q$(1,1)="(" and q$(len(q$),1)=")"
-				q1$=q$(2,len(q$)-2)+";"+q$
-			endif
-		endif
-		return q1$
-	fnend	
 
 sproc_error:rem --- SPROC error trap/handler
     rd_err_text$="", err_num=err
