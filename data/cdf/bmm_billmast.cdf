@@ -169,9 +169,9 @@ rem --- Go run the Copy form
 [[BMM_BILLMAST.AREC]]
 rem --- set devobject
 
-	callpoint!.setDevObject("yield",0)
+	callpoint!.setDevObject("yield",100)
 	callpoint!.setDevObject("master_bill","")
-	callpoint!.setDevObject("lotsize",0)
+	callpoint!.setDevObject("lotsize",1)
 	callpoint!.setColumnData("<<DISPLAY>>.WHERE_LAST_USED","",1)
 	callpoint!.setColumnData("BMM_BILLMAST.LOCK_REF_NUM","N")
 	callpoint!.setDevObject("lock_ref_num",callpoint!.getColumnData("BMM_BILLMAST.LOCK_REF_NUM"))
@@ -202,9 +202,9 @@ rem --- Set DevObjects
 [[BMM_BILLMAST.BSHO]]
 rem --- Set DevObjects required
 
-	callpoint!.setDevObject("yield",0)
+	callpoint!.setDevObject("yield",100)
 	callpoint!.setDevObject("master_bill","")
-	callpoint!.setDevObject("lotsize",0)
+	callpoint!.setDevObject("lotsize",1)
 
 	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]

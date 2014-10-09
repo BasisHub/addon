@@ -142,6 +142,7 @@ rem --- Need to commit?
 
 	committed_changed=0
 	if callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE") <> "P" and user_tpl.line_dropship$ = "N" then
+
 		if orig_commit$ = "Y" and callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG") = "N" then
 			committed_changed=1
 			if user_tpl.line_type$ <> "O" then
@@ -172,6 +173,7 @@ rem --- Need to commit?
 				callpoint!.setColumnData("OPE_ORDDET.STD_LIST_PRC", "0")
 			endif
 		endif
+
 	endif
 
 	rem --- Grid vector must be updated before updating Totals tab
@@ -578,7 +580,11 @@ rem --- Commit quantity for current item and warehouse
 
 	endif
 
-rem --- Only do the next if the commit flag has been changed
+rem --- Only do the next if the commit flag has been changed (i.e. via Additional button/form)
+rem --- Note: AWRI will have been executed before launching that form to do first/main commit.
+rem --- When form is dismissed, row is marked modified, so when leaving it, AWRI will fire again,
+rem --- and that's when this code should be hit.
+
 	if curr_commit$ <> prior_commit$
 
 rem --- Initialize inventory item update
@@ -586,33 +592,19 @@ rem --- Initialize inventory item update
 		call user_tpl.pgmdir$+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 		if status then goto awri_update_hdr
 
-rem --- Flag changed from Commit to Uncommit: uncommit previous
+		action$=""
+		if curr_commit$ ="N" and prior_commit$ = "Y" then action$="UC"
+		if curr_commit$ = "Y" and prior_commit$ <> "Y" then action$="CO"
 
-		if curr_commit$ ="N" and prior_commit$ = "Y"
+		rem --- uncommit or commit, depending on action$
 
-rem --- Uncommit prior quantity
-
-			if prior_qty<>0 then
-				items$[1] = prior_whse$
-				items$[2] = prior_item$
-				refs[0]   = prior_qty
-				call user_tpl.pgmdir$+"ivc_itemupdt.aon","UC",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then goto awri_update_hdr
-			endif
+		if curr_qty<>0 and action$<>"" and curr_item$<>"" then
+			items$[1] = curr_whse$
+			items$[2] = curr_item$
+			refs[0]   = curr_qty
+			call user_tpl.pgmdir$+"ivc_itemupdt.aon",action$,chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 		endif
 
-		if curr_commit$ = "Y" and prior_commit$ <> "Y"
-
-rem --- Commit current quantity
-
-			if curr_qty<>0 then
-				items$[1] = curr_whse$
-				items$[2] = curr_item$
-				refs[0]   = curr_qty 
-				call user_tpl.pgmdir$+"ivc_itemupdt.aon","CO",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				if status then goto awri_update_hdr
-			endif
-		endif
 	endif
 
 awri_update_hdr: rem --- Update header
@@ -629,6 +621,15 @@ awri_update_hdr: rem --- Update header
 			callpoint!.setDevObject("details_changed","Y")
 		endif
 	endif
+
+rem --- set prior's = curr's here, since row has been written
+rem --- this way, if we stay on the same row, as will be the case if we've pressed Recalc, Lot/Ser, or Additional buttons,
+rem --- then next time thru AWRI it won't see a false difference between curr and pri, so won't over-commit
+
+	callpoint!.setDevObject("prior_whse", curr_whse$)
+	callpoint!.setDevObject("prior_item", curr_item$)
+	callpoint!.setDevObject("prior_qty", curr_qty)
+	callpoint!.setDevObject("prior_commit", curr_commit$)
 [[OPE_ORDDET.BDGX]]
 rem --- Disable detail-only buttons
 
@@ -917,7 +918,6 @@ rem --- Set previous values
 	callpoint!.setDevObject("prior_item",callpoint!.getColumnData("OPE_ORDDET.ITEM_ID"))
 	callpoint!.setDevObject("prior_qty",user_tpl.prev_qty_ord)
 	callpoint!.setDevObject("prior_commit",callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG"))
-
 
 rem --- Set buttons
 

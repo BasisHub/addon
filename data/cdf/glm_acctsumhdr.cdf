@@ -71,7 +71,6 @@ rem analyze gui_event$ and notice$ to see which control's callback triggered the
 			switch notice.code
 	
 				case 7;rem edit stop
-
 					if curr_col=0
 						record_type$=gridActivity!.getCellText(curr_row,curr_col)
 						record_type$=record_type$(pos("("=record_type$,-1,1)+1,2)
@@ -103,7 +102,7 @@ rem analyze gui_event$ and notice$ to see which control's callback triggered the
 
 				case 14;rem mouse up on a cell
 					record_type$=gridActivity!.getCellText(curr_row,0)
-					record_type$=record_type$(pos("("=record_type$,-1,1)+1,1)
+					if record_type$<>"" then record_type$=record_type$(pos("("=record_type$,-1,1)+1,1)
 					if curr_col=0 or curr_col=1 or curr_col=num(callpoint!.getDevObject("tot_pers"))+2 or pos(record_type$="024")=0
 						callpoint!.setOptionEnabled("DETL",0)
 					else
