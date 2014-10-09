@@ -58,23 +58,6 @@ rem --- Get Barista System Program directory
 	sypdir$=""
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
-
-rem --- Get number of periods used by fiscal calendar
-
-	sql_prep$=""
-	sql_prep$=sql_prep$+"SELECT total_pers FROM gls_params "
-	sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' AND gl='GL' AND sequence_00='00'"
-	
-	sql_chan=sqlunt
-	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
-	sqlprep(sql_chan)sql_prep$
-	dim read_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
-
-	read_tpl$ = sqlfetch(sql_chan,end=*break)
-	total_cal_periods=num(read_tpl.total_pers$)
-	
-	sqlclose(sql_chan)
 	
 rem --- create the in memory recordset for return
 

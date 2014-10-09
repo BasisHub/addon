@@ -4,32 +4,35 @@ rem --- Created by adx_codeport.bbx v1.1.5 (07/26/2007 09:54:15)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
 
-rem --- ACTION$    : Action to perform (input)
+rem --- ACTION$           : Action to perform (input)
 rem --- ""  = Return info for specific warehouse
 rem --- "A" = Return info for all warehouses
-rem --- CHANNELS[N]: Channel Numbers (input)
+rem --- CHANNELS[N]       : Channel Numbers (input)
 rem --- [2] = ivm-02
 rem --- [3] = ivm-03
-rem --- ITEM$[n]   : Inventory Item Information
+rem --- ITEM$[n]          : Inventory Item Information
 rem --- [0] = Firm ID
 rem --- [1] = Warehouse ID (optional)
 rem --- [2] = Inventory Item Number
-rem --- WHSE$[n]   : Warehouse Information (returned)
+rem --- WHSE$[n]          : Warehouse Information (returned)
 rem --- [0] = Warehouse ID
 rem --- [1] = ivm-02 second string
 rem --- [2] = ivm-02 third string
-rem --- WHSE[n]    : Warehouse Information (returned)
+rem --- WHSE[n]           : Warehouse Information (returned)
 rem --- [0] to [20] = ivm-02 numerics
-rem --- VALUE      : Total Value (returned)
-rem --- STATUS     : Status Code (returned)
-rem --- rd_table_chans$[ ] - array of open tables/channels
+rem --- VALUE             : Total Value (returned)
+rem --- TABLE_CHANS$[ ]   : Barista array of open tables/channels; do not alter (input)
+rem --- WHSEINFO_TPLS$[ ] : Array of string templates (return-input)
+rem --- [0] = IVM_ITEMWHSE record template
+rem --- [1] = IVM_ITEMWHSE PRIMARY key template
+rem --- [2] = IVM_ITEMWHSE AO_ITEM_WH key template
+rem --- STATUS            : Status Code (returned)
 
     seterr std_error
     setesc std_error
 
-    enter action$,channels[all],item$[all],whse$[all],whse[all],value,status,rd_table_chans$[all]
+    enter action$,channels[all],item$[all],whse$[all],whse[all],value,table_chans$[all],whseinfo_tpls$[all],status
 
 rem --- Retrieve the program path
 
@@ -42,27 +45,33 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
 
-rem --- Retrieve miscellaneous templates
+rem --- Retrieve templates as needed
 
+    x$=dims(whseinfo_tpls$[all],err=*next); if whseinfo_tpls$[0]<>"" then goto init_tpls
+    dim whseinfo_tpls$[3]
+
+    rem --- Retrieve record templates
     files=2,begfile=2,endfile=files
     dim ids$[files],templates$[files]
     ids$[2]="IVM_ITEMWHSE"; rem ivm-02A:
     call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
     if status goto std_exit
+    whseinfo_tpls$[0]=templates$[2]
 
-rem --- Dimension miscellaneous string templates
+    rem --- Retrieve key templates
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","PRIMARY",ivm02_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","AO_ITEM_WH",ivm02_key_tpl_02$,table_chans$[all],status$
+    whseinfo_tpls$[1]=ivm02_key_tpl$
+    whseinfo_tpls$[2]=ivm02_key_tpl_02$
 
-    dim ivm02a$:templates$[2]
-
-rem --- Retrieve key template
-
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","AO_ITEM_WH",ivm02_key_tpl_02$,rd_table_chans$[all],status$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","PRIMARY",ivm02_key_tpl$,rd_table_chans$[all],status$
+init_tpls: rem --- Initialize templates
+    dim ivm02a$:whseinfo_tpls$[0]
+    dim ivm02a_key$:whseinfo_tpls$[1]
+    dim k3$:whseinfo_tpls$[2]
 
 rem --- Initializations
 
     dim b0$(24),b1$(64),b[20]
-    dim ivm02a_key$:ivm02_key_tpl$
     ivm02_dev=channels[2]
     value=0
     firm_id$=item$[0]
@@ -87,7 +96,6 @@ rem --- Single Warehouse
     else
 rem --- Position warehouse file
 
-        dim k3$:ivm02_key_tpl_02$
         read (ivm02_dev,key=firm_id$+item_no$,knum="AO_ITEM_WH",dom=*next)
         more=1
        

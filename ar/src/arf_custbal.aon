@@ -1,0 +1,70 @@
+rem Invoice Sales Drilldown Link
+rem Proprietary Software. BASIS International Ltd.
+rem Program ID: ard_invoicesales.aon  <Apr 13, 2011>
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+    setesc std_error
+    seterr std_error
+
+    enter inq_mode$,rec_tpl$,calc_tpl$,table_chans$[all],status$
+
+rem inq_mode$      - not used until recently - current use not yet documented
+rem rec_tpl$       - Current row database columns
+rem calc_tpl$      - Current row calculated columns
+rem table_chans$[] - Barista opened channels array
+rem status$        - Returned status: "SKIP" = Skip current record
+
+    art_invdet=fnget_dev("ART_INVDET")
+    dim art_invdet$:fnget_tpl$("ART_INVDET")
+
+rem --- Main process
+
+    status$=""
+    hdr_key$=rec_tpl.firm_id$+rec_tpl.ar_type$+rec_tpl.customer_id$+rec_tpl.ar_inv_no$
+    calc_tpl.inv_bal=rec_tpl.invoice_amt
+    read(art_invdet,key=hdr_key$,dom=*next)
+    while 1
+        readrecord(art_invdet,end=*break)art_invdet$
+        if art_invdet.firm_id$+art_invdet.ar_type$+art_invdet.customer_id$+art_invdet.ar_inv_no$<>hdr_key$ then break
+        if art_invdet.trans_type$="C" then
+            calc_tpl.tot_trans=calc_tpl.tot_trans+(art_invdet.trans_amt+art_invdet.adjdisc_amt)
+            calc_tpl.inv_bal=calc_tpl.inv_bal+(art_invdet.trans_amt+art_invdet.adjdisc_amt)
+        endif
+    wend
+   
+    if calc_tpl.inv_bal=0 then status$="SKIP"
+
+    goto exit_prog
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=table_chans$[num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+    
+exit_prog:rem --- Exit Program
+
+    exit

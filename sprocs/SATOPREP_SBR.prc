@@ -53,6 +53,7 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ =	sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
+    all_prod_types$ = sp!.getParameter("ALL_PROD_TYPES")    
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -140,10 +141,10 @@ rem --- Build result set for top five salespersons by sales
                 while prodIter!.hasNext()
                     product_type$=prodIter!.next()
                     prodTypeSales=prodTypeMap!.get(product_type$)
-                    dim ivm10a$:fattr(ivm10a$)
+                    dim ivm10a$:fattr(ivm10a$)                    
                     if product_type$=fill(len(ivm10a.product_type$)," ") then
                         rem --- Sales might be summarized by customer with no product type
-                        ivm10a.code_desc$(1)=Translate!.getTranslation("AON_ALL")+" "+Translate!.getTranslation("AON_PRODUCT_TYPE")
+                        ivm10a.code_desc$=all_prod_types$
                     else
                         findrecord(ivm10a_dev,key=firm_id$+"A"+product_type$,dom=*next)ivm10a$
                     endif

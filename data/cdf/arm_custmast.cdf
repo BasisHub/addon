@@ -1,3 +1,19 @@
+[[ARM_CUSTPMTS.MTD_SALES.BDRL]]
+rem --- only allow this drilldown if OP is installed
+
+	gosub check_op
+[[ARM_CUSTPMTS.NMTD_SALES.BDRL]]
+rem --- only allow this drilldown if OP is installed
+
+	gosub check_op
+[[ARM_CUSTPMTS.PYR_SALES.BDRL]]
+rem --- only allow this drilldown if OP is installed
+
+	gosub check_op
+[[ARM_CUSTPMTS.YTD_SALES.BDRL]]
+rem --- only allow this drilldown if OP is installed
+
+	gosub check_op
 [[ARM_CUSTMAST.ASHO]]
 rem --- Create/embed dashboard to show aged balance
 
@@ -410,7 +426,24 @@ rem --- Disable Option for Jobs if OP not installed or Job flag not set
 		call stbl("+DIR_SYP")+"bam_enable_pop.bbj",Form!,enable_str$,disable_str$
 	endif
 [[ARM_CUSTMAST.<CUSTOM>]]
+rem ===================================
+check_op:rem --- this drilldown can only run if OP installed
+rem ===================================
+
+	if user_tpl.op_installed$<>"Y"
+		msg_id$="AD_NO_OP"
+		dim msg_tokens$[1]
+		msg_opt$=""
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+
+	return
+
+rem ===================================
 disable_ctls:rem --- disable selected control
+rem ===================================
+
     for dctl=1 to 17
         dctl$=dctl$[dctl]
         if dctl$<>""
@@ -423,5 +456,5 @@ disable_ctls:rem --- disable selected control
         endif
     next dctl
     return
-#include std_missing_params.src
 
+#include std_missing_params.src

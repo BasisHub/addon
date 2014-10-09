@@ -1,0 +1,61 @@
+rem YTD Sales Drilldown Link
+rem Proprietary Software. BASIS International Ltd.
+rem Program ID: ard_invoicesales.aon  <Apr 13, 2011>
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+    setesc std_error
+    seterr std_error
+
+    enter inq_mode$,rec_tpl$,calc_tpl$,table_chans$[all],status$
+
+rem inq_mode$      - not used until recently - current use not yet documented
+rem rec_tpl$       - Current row database columns
+rem calc_tpl$      - Current row calculated columns
+rem table_chans$[] - Barista opened channels array
+rem status$        - Returned status: "SKIP" = Skip current record
+
+rem --- Main process
+
+    status$=""
+    gls01a_dev=fnget_dev("GLS_PARAMS")
+    dim gls_params$:fnget_tpl$("GLS_PARAMS")
+    
+    inv_date$=rec_tpl.invoice_date$
+    call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01a_dev,rec_tpl.invoice_date$,period$,year$
+    readrecord(gls01a_dev,key=rec_tpl.firm_id$+"GL00",dom=exit_prog)gls_params$
+    if year$+period$<>gls_params.current_year$+gls_params.current_per$ then status$="SKIP"
+
+    goto exit_prog
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=table_chans$[num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+    
+exit_prog:rem --- Exit Program
+
+    exit

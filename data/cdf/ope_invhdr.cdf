@@ -279,6 +279,14 @@ rem --- Invoice History Header, set to void
 
 	opt_invhdr_rec$ = util.copyFields(opt_invhdr_tpl$, callpoint!)
 	opt_invhdr_rec.invoice_type$ = "V"
+	opt_invhdr_rec.tax_amount=0
+	opt_invhdr_rec.freight_amt=0
+	opt_invhdr_rec.discount_amt=0
+	opt_invhdr_rec.comm_percent=0
+	opt_invhdr_rec.taxable_amt=0
+	opt_invhdr_rec.comm_amt=0
+	opt_invhdr_rec.total_sales=0
+	opt_invhdr_rec.total_cost=0
 
 	if cvs(opt_invhdr_rec.ar_inv_no$,2)<>""
 		opt_invhdr_key$=opt_invhdr_rec.firm_id$+opt_invhdr_rec.ar_type$+opt_invhdr_rec.customer_id$+opt_invhdr_rec.ar_inv_no$
