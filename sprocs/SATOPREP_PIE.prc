@@ -130,7 +130,7 @@ rem --- Build result set for top five salespersons by sales
                 
                 data! = rs!.getEmptyRecordData()
                 data!.setFieldValue("SALESREP",arm10f.code_desc$)
-                data!.setFieldValue("TOTAL",str(slspsnSales))
+                data!.setFieldValue("TOTAL",cvs(str(abs(slspsnSales):"#########.00"),3))
                 rs!.insert(data!)
             wend
             if topSlspsns>num_to_list then break

@@ -124,7 +124,7 @@ rem --- get data
         if acct_total<min_amt then continue
         data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("ACCOUNT",fnmask$(glm02a.gl_account$,gl_acct_mask$))
-        data!.setFieldValue("TOTAL",str(acct_total))
+        data!.setFieldValue("TOTAL",cvs(str(abs(acct_total):"#########.00"),3))
                 
   		rs!.insert(data!)
         

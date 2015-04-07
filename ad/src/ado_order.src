@@ -37,10 +37,12 @@ rem ==========================================================================
         field private BBjString ordHeaderTmpl$
         field private BBjInt lineCodeDev%
         field private BBjString lineCodeTmpl$
+        field private HashMap lineCodeMap!
         field private BBjInt ordDetailDev%
         field private BBjString ordDetailTmpl$
         field private BBjInt itemMastDev%
         field private BBjString itemMastTmpl$
+        field private HashMap itemMastMap!
         field private BBjInt custDetailDev%
         field private BBjString custDetailTmpl$
         field private BBjInt taxcodeDev%
@@ -230,9 +232,17 @@ method_error:rem --- Method error trap/handler
                 rem --- GridRowDeleteStatus() does not return the correct status because the vector it's based on isn't built
 
                     if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
-                        read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
-
-                        if dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P" then
+                        rem --- Get Line Code from lineCodeMap! if it exists, otherwise add it to lineCodeMap!
+                        if #lineCodeMap!=null() then #lineCodeMap!=new HashMap()
+                        if #lineCodeMap!.containsKey(dtl_rec.line_code$) then
+                            linecode_rec$ = cast(BBjString, #lineCodeMap!.get(dtl_rec.line_code$))
+                        else
+                            dim linecode_rec$:#lineCodeTmpl$
+                            read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
+                            #lineCodeMap!.put(dtl_rec.line_code$,linecode_rec$)
+                        endif
+                        
+                        if cvs(linecode_rec.line_type$,2)<>"" and (dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P") then
                             if pos(linecode_rec.line_type$="SPN") then
                                 ttl_sales = ttl_sales + (dtl_rec.unit_price * dtl_rec.qty_shipped)
                             else
@@ -265,13 +275,13 @@ method_error:rem --- Method error trap/handler
             if #dtl_tmpl$ = "" then
                 seterr 0
                 x$=stbl("+THROWN_ERR","TRUE")   
-                throw #className$+": totalSales(): You must pass the detail template to use this method", 258
+                throw #className$+": totalCost(): You must pass the detail template to use this method", 258
             endif
 
             if #Inv_type$ = "" then
                 seterr 0
                 x$=stbl("+THROWN_ERR","TRUE")   
-                throw #className$+": totalSales(): You must setInv_type() (header invoice type) before you use this method", 259
+                throw #className$+": totalCost(): You must setInv_type() (header invoice type) before you use this method", 259
             endif
 
             if #lineCodeDev% = 0 then
@@ -292,9 +302,17 @@ method_error:rem --- Method error trap/handler
                     dtl_rec$ = str(pDtlVect!.getItem(i))
 
                     if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
-                        read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
-
-                        if dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P" then
+                        rem --- Get Line Code from lineCodeMap! if it exists, otherwise add it to lineCodeMap!
+                        if #lineCodeMap!=null() then #lineCodeMap!=new HashMap()
+                        if #lineCodeMap!.containsKey(dtl_rec.line_code$) then
+                            linecode_rec$ = cast(BBjString, #lineCodeMap!.get(dtl_rec.line_code$))
+                        else
+                            dim linecode_rec$:#lineCodeTmpl$
+                            read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
+                            #lineCodeMap!.put(dtl_rec.line_code$,linecode_rec$)
+                        endif
+                    
+                        if cvs(linecode_rec.line_type$,2)<>"" and (dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P") then
                             if pos(linecode_rec.line_type$="SPN") then
                                 ttl_cost = ttl_cost + (dtl_rec.unit_cost * dtl_rec.qty_shipped)
                             endif    
@@ -324,13 +342,13 @@ rem --- Return Taxable Amount from detail line vector
             if #dtl_tmpl$ = "" then
                 seterr 0
                 x$=stbl("+THROWN_ERR","TRUE")   
-                throw #className$+": totalSales(): You must pass the detail template to use this method", 258
+                throw #className$+": totalTaxable(): You must pass the detail template to use this method", 258
             endif
 
             if #Inv_type$ = "" then
                 seterr 0
                 x$=stbl("+THROWN_ERR","TRUE")   
-                throw #className$+": totalSales(): You must setInv_type() (header invoice type) before you use this method", 259
+                throw #className$+": totalTaxable(): You must setInv_type() (header invoice type) before you use this method", 259
             endif
 
             if #lineCodeDev% = 0 then
@@ -358,19 +376,35 @@ rem --- Return Taxable Amount from detail line vector
                     dtl_rec$ = str(pDtlVect!.getItem(i))
 
                     if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
-                        read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
-
-                        if pos(linecode_rec.line_type$ = "SP")=0 then
-                            if linecode_rec.taxable_flag$ = "Y" then
-                                ttl_taxable = ttl_taxable + dtl_rec.ext_price
-                            endif
+                        rem --- Get Line Code from lineCodeMap! if it exists, otherwise add it to lineCodeMap!
+                        if #lineCodeMap!=null() then #lineCodeMap!=new HashMap()
+                        if #lineCodeMap!.containsKey(dtl_rec.line_code$) then
+                            linecode_rec$ = cast(BBjString, #lineCodeMap!.get(dtl_rec.line_code$))
                         else
-                            if #itemMastDev% then
-                                find record(#itemMastDev%,key=#firm_id$+ dtl_rec.item_id$,dom=*endif)item_rec$
-                                if item_rec.taxable_flag$="Y" then
-									if linecode_rec.taxable_flag$ = "Y" then
-										ttl_taxable = ttl_taxable + dtl_rec.ext_price
-									endif
+                            dim linecode_rec$:#lineCodeTmpl$
+                            read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
+                            #lineCodeMap!.put(dtl_rec.line_code$,linecode_rec$)
+                        endif
+
+                        if cvs(linecode_rec.line_type$,2)="" then
+                            if pos(linecode_rec.line_type$ = "SP")=0 then
+                                if linecode_rec.taxable_flag$ = "Y" then
+                                    ttl_taxable = ttl_taxable + dtl_rec.ext_price
+                                endif
+                            else
+                                if linecode_rec.taxable_flag$ = "Y" and #itemMastDev% then
+                                    rem --- Get Item Master record from itemMastMap! if it exists, otherwise add it to itemMastMap!
+                                    if #itemMastMap!=null() then #itemMastMap!=new HashMap()
+                                    if #itemMastMap!.containsKey(dtl_rec.item_id$) then
+                                        item_rec$ = cast(BBjString, #itemMastMap!.get(dtl_rec.item_id$))
+                                    else
+                                        dim item_rec$:#itemMastTmpl$
+                                        read record (#itemMastDev%, key=#firm_id$+dtl_rec.item_id$, dom=*endif)item_rec$
+                                        #itemMastMap!.put(dtl_rec.item_id$,item_rec$)
+                                    endif
+                                    if item_rec.taxable_flag$="Y" then
+  										ttl_taxable = ttl_taxable + dtl_rec.ext_price
+                                    endif
                                 endif
                             endif
                         endif
@@ -389,6 +423,114 @@ method_error:rem --- Method error trap/handler
             x$=stbl("+THROWN_ERR","TRUE")   
             throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
 
+        methodend
+
+    rem --- Sum order totals for sales, cost and taxable amount from passed detail vector
+
+        method public BBjVector totalSalesCostTaxable(BBjVector pDtlVect!, Callpoint callpoint!)
+            seterr method_error
+
+            if #dtl_tmpl$ = "" then
+                seterr 0
+                x$=stbl("+THROWN_ERR","TRUE")   
+                throw #className$+": totalSales(): You must pass the detail template to use this method", 258
+            endif
+
+            if #Inv_type$ = "" then
+                seterr 0
+                x$=stbl("+THROWN_ERR","TRUE")   
+                throw #className$+": totalSales(): You must setInv_type() (header invoice type) before you use this method", 259
+            endif
+
+            if #lineCodeDev% = 0 then
+                data_name$ = "OPC_LINECODE"
+                #lineCodeDev%  = int(util.getDev(data_name$))
+                #lineCodeTmpl$ = util.getTmpl(data_name$)
+            endif
+
+            if #itemMastDev% = 0 then
+                data_name$ = "IVM_ITEMMAST"
+                #itemMastDev%  = int(util.getDev(data_name$))
+                #itemMastTmpl$ = util.getTmpl(data_name$)
+            endif
+
+            #getPrecision()
+            precision #precision%
+            
+            ttl_sales = 0
+            ttl_cost = 0
+            ttl_taxable = 0
+
+            dim dtl_rec$:#dtl_tmpl$
+            dim linecode_rec$:#lineCodeTmpl$
+            dim item_rec$:#itemMastTmpl$
+
+            if pDtlVect! <> null() and pDtlVect!.size() then
+                for i = 0 to pDtlVect!.size() - 1
+                    dtl_rec$ = str(pDtlVect!.getItem(i))
+
+                    if cvs(dtl_rec$, 2) <> "" and callpoint!.getGridRowDeleteStatus(i) <> "Y" then 
+                        rem --- Get Line Code from lineCodeMap! if it exists, otherwise add it to lineCodeMap!
+                        if #lineCodeMap!=null() then #lineCodeMap!=new HashMap()
+                        if #lineCodeMap!.containsKey(dtl_rec.line_code$) then
+                            linecode_rec$ = cast(BBjString, #lineCodeMap!.get(dtl_rec.line_code$))
+                        else
+                            dim linecode_rec$:#lineCodeTmpl$
+                            read record (#lineCodeDev%, key=#firm_id$+dtl_rec.line_code$, dom=*endif) linecode_rec$
+                            #lineCodeMap!.put(dtl_rec.line_code$,linecode_rec$)
+                        endif
+                        
+                        if cvs(linecode_rec.line_type$,2)<>"" and (dtl_rec.commit_flag$ = "Y" or #Inv_type$ = "P") then
+                            if pos(linecode_rec.line_type$="SPN") then
+                                ttl_sales = ttl_sales + (dtl_rec.unit_price * dtl_rec.qty_shipped)
+                                ttl_cost = ttl_cost + (dtl_rec.unit_cost * dtl_rec.qty_shipped)
+                            else
+                                if linecode_rec.line_type$ = "O" then 
+                                    ttl_sales = ttl_sales + dtl_rec.ext_price
+                                endif
+                            endif    
+
+
+                            if pos(linecode_rec.line_type$ = "SP")=0 then
+                                if linecode_rec.taxable_flag$ = "Y" then
+                                    ttl_taxable = ttl_taxable + dtl_rec.ext_price
+                                endif
+                            else
+                                if linecode_rec.taxable_flag$="Y" and #itemMastDev% then
+                                    rem --- Get Item Master record from itemMastMap! if it exists, otherwise add it to itemMastMap!
+                                    if #itemMastMap!=null() then #itemMastMap!=new HashMap()
+                                    if #itemMastMap!.containsKey(dtl_rec.item_id$) then
+                                        item_rec$ = cast(BBjString, #itemMastMap!.get(dtl_rec.item_id$))
+                                    else
+                                        dim item_rec$:#itemMastTmpl$
+                                        read record (#itemMastDev%, key=#firm_id$+dtl_rec.item_id$, dom=*endif)item_rec$
+                                        #itemMastMap!.put(dtl_rec.item_id$,item_rec$)
+                                    endif
+                                    if item_rec.taxable_flag$="Y" then
+                                        ttl_taxable = ttl_taxable + dtl_rec.ext_price
+                                    endif
+                                endif
+                            endif
+                        endif
+                    endif
+                next i
+            endif
+
+            totalsVect!=BBjAPI().makeVector()
+            totalsVect!.addItem(ttl_sales);    rem --- index 0 is total sales for the order
+            totalsVect!.addItem(ttl_cost);     rem --- index 0 is total cost for the order
+            totalsVect!.addItem(ttl_taxable);  rem --- index 0 is total taxable amount for the order
+
+            methodret totalsVect!
+            
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
     rem --- Total sales from set detail vector
@@ -480,10 +622,17 @@ method_error:rem --- Method error trap/handler
                 if orddet_rec.firm_id$     <> #firm_id$ then break
                 if orddet_rec.customer_id$ <> p_cust_id$ then break
                 if orddet_rec.order_no$    <> p_order_no$ then break
-                found = 0
 
-                if #START_BLOCK then
-                    find record (#lineCodeDev%, key=#firm_id$+orddet_rec.line_code$, dom=*endif) linecode_rec$
+                rem --- Get Line Code from lineCodeMap! if it exists, otherwise add it to lineCodeMap!
+                found = 0
+                if #lineCodeMap!=null() then #lineCodeMap!=new HashMap()
+                if #lineCodeMap!.containsKey(orddet_rec.line_code$) then
+                    linecode_rec$ = cast(BBjString, #lineCodeMap!.get(orddet_rec.line_code$))
+                    found = 1
+                else
+                    dim linecode_rec$:#lineCodeTmpl$
+                    read record (#lineCodeDev%, key=#firm_id$+orddet_rec.line_code$, dom=*endif) linecode_rec$
+                    #lineCodeMap!.put(orddet_rec.line_code$,linecode_rec$)
                     found = 1
                 endif
 
@@ -514,8 +663,15 @@ method_error:rem --- Method error trap/handler
 						endif
 					else
 						if #START_BLOCK then
-							find record (#itemMastDev%, key=#firm_id$+orddet_rec.item_id$, dom=*endif) itemmast_rec$
-
+                            rem --- Get Item Master record from itemMastMap! if it exists, otherwise add it to itemMastMap!
+                            if #itemMastMap!=null() then #itemMastMap!=new HashMap()
+                            if #itemMastMap!.containsKey(orddet_rec.item_id$) then
+                                itemmast_rec$ = cast(BBjString, #itemMastMap!.get(orddet_rec.item_id$))
+                            else
+                                dim itemmast_rec$:#itemMastTmpl$
+                                read record (#itemMastDev%, key=#firm_id$+orddet_rec.item_id$, dom=*endif)itemmast_rec$
+                                #itemMastMap!.put(orddet_rec.item_id$,itemmast_rec$)
+                            endif
 							if itemmast_rec.taxable_flag$ = "Y" then
 								if linecode_rec.taxable_flag$ = "Y" then 
 									orddet_rec.taxable_amt = orddet_rec.ext_price
@@ -1378,8 +1534,15 @@ method_error:rem --- Method error trap/handler
                 start_block = 1
 
                 if start_block then
-                    read record (#itemMastDev%, key=#firm_id$+p_item_id$, dom=*endif) itemMastRec$
-
+                    rem --- Get Item Master record from itemMastMap! if it exists, otherwise add it to itemMastMap!
+                    if #itemMastMap!=null() then #itemMastMap!=new HashMap()
+                    if #itemMastMap!.containsKey(p_item_id$) then
+                        itemMastRec$ = cast(BBjString, #itemMastMap!.get(p_item_id$))
+                    else
+                        dim itemMastRec$:#itemMastTmpl$
+                        read record (#itemMastDev%, key=#firm_id$+p_item_id$, dom=*endif)itemMastRec$
+                        #itemMastMap!.put(p_item_id$,itemMastRec$)
+                    endif
                     if itemMastRec.lotser_item$="Y" then
                         lotted% = 1
                     endif

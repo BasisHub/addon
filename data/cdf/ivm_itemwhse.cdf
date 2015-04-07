@@ -18,7 +18,7 @@ rem --- Get total on Open PO lines
 		if firm_id$<>podet_tpl.firm_id$ break
 		if whse$<>podet_tpl.warehouse_id$ break
 		if item$<>podet_tpl.item_id$ break
-		po_qty = po_qty + (podet_tpl.qty_ordered - podet_tpl.qty_received)
+		po_qty = po_qty + (podet_tpl.qty_ordered - podet_tpl.qty_received)*podet_tpl.conv_factor
 	wend
 
 	callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_PO",str(po_qty))

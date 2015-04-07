@@ -18,8 +18,8 @@ rem --- All Rights Reserved
     params! = Option!.getOptionMap()
 		
     ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
-    screen_width  = ScreenSize!.width - 75; rem keep it in the MDI w/ no scroll bars
-    screen_height = ScreenSize!.height - 75
+    screen_width  = ScreenSize!.width - 200; rem keep it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 100
 
 rem --- Retrieve the program path
 
@@ -61,6 +61,8 @@ rem --- Set Report Name & Subreport directory
     filename$ = reportDir$ + reportBaseName$ + ".jasper"
     masterBaseName$ = "StatementMaster"
     master_filename$ = reportDir$ + masterBaseName$+".jasper"
+    printBaseName$ = "StatementPrint"
+    print_filename$ = reportDir$ + printBaseName$+".jasper"
 
     declare BBJasperReport report!
     
@@ -100,13 +102,14 @@ rem --- Check for user authentication; create connection string in url$
 
 rem --- Open/Lock files
 
-    files=4,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="arm-01",ids$[1]="ARM_CUSTMAST"
     files$[2]="arm-02",ids$[2]="ARM_CUSTDET"
     files$[3]="art-01",ids$[3]="ART_INVHDR"
     files$[4]="art-11",ids$[4]="ART_INVDET"
-
+    files$[5]="arm_custrpt_ctl",ids$[5]="ARM_CUSTRPT_CTL"
+    
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
 
@@ -114,11 +117,13 @@ rem --- Open/Lock files
     arm02_dev=channels[2]
     art01_dev=channels[3]
     art11_dev=channels[4]
+    arm_custrpt_ctl=channels[5]
 
 rem --- Dimension string templates
 
     dim arm01a$:templates$[1],arm02a$:templates$[2]
     dim art01a$:templates$[3],art11a$:templates$[4]
+    dim arm_custrpt_ctl$:templates$[5]
 
 rem --- Assign form input values to local variables
 
@@ -157,7 +162,7 @@ rem --- Initializations
     keynum$="PRIMARY"
     begvalue$=begcust$
     endvalue$=endcust$
-    master_document=1
+
 
     if sequence$="A" then 
         keynum$="AO_ALTSEQ_CUST"
@@ -166,7 +171,14 @@ rem --- Initializations
     endif
 
     call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
-    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0    
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0
+    
+    alias$ = option!.getAlias()
+    rptctl_alias$ = alias$
+    master_document=1
+    print_document=1
+
+    emailFax! = BBjAPI().makeVector()    
 
 rem --- Determine 30 day aging period dates
 
@@ -256,35 +268,73 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
         rep_time$=date(0:"%hz:%mz %p")
         rep_time_stamp$=date(0:"%Hz%mz%sz")
 
-        rd_source_alias$=option!.getAlias()
-        rd_source_type$="O"
-        rd_doc_source$="E"
-        rd_doc_ext$="PDF"
-
         new_doc_id$=""
         new_doc_name$=""
         doc_name$="CustomerStatement_"+arm01a.customer_id$
         doc_keywords$="Stmt date: "+fndate$(stmt_date$)
 
-        rem --- Get Next Document Number and update Document Audit for individual pdf
+        rd_source_alias$=alias$
+        rd_source_type$="O"
+        rd_doc_source$="E"
+        rd_doc_ext$="PDF"
+        rd_source_id$="C"
+        rd_source_ref$=arm01a.customer_id$
+        rd_doc_keywords$=doc_keywords$
+
+    rem --- Get Next Document Number and update Document Audit for individual pdf
 
         call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",new_doc_id$,rd_table_chans$[all] 
         new_doc_name$=new_doc_id$+"_"+doc_name$+".pdf"        
         
         call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,rep_date_stamp$,rep_time_stamp$,rd_doc_source$,rd_doc_ext$,docdir$,
-:           rd_source_type$,rd_source_alias$,"C",arm01a.customer_id$,rd_table_chans$[all],"",new_doc_name$,doc_name$,doc_keywords$
+:           rd_source_type$,rd_source_alias$,rd_source_id$,rd_source_ref$,rd_table_chans$[all],"",new_doc_name$,doc_name$,doc_keywords$
 
-        rem --- Get Next Document Number and update Document Audit for master copy of pdf, if first time thru
+    rem --- Get Next Document Number and update Document Audit for JAS entry for Master doc, if first time thru
 
         if master_document
             rd_doc_ext$="JAS"
             rd_archive_action$="DOC_ID-NOREPRINT"
             rd_doc_id$=""
+            rd_source_id$="C"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
             gosub document_whse
             rd_archive_action$=""
             master_doc_id$=rd_doc_id$
             master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"
         endif
+
+    rem --- Get Next Document Number and update Document Audit for JAS entry for Print doc, if first time thru
+
+        if print_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            rd_source_id$="C"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
+            gosub document_whse
+            rd_archive_action$=""
+            print_doc_id$=rd_doc_id$
+            print_doc_name$=print_doc_id$+"_"+printBaseName$+".pdf"
+        endif
+
+    rem --- Read report control table for this customer/alias to see if customer wants print, email, or fax
+
+        add_to_print_report=1
+        dim arm_custrpt_ctl$:fattr(arm_custrpt_ctl$)
+        while 1
+            read record (arm_custrpt_ctl,key=firm_id$+arm01a.customer_id$+pad(rptctl_alias$,16),err=*break)arm_custrpt_ctl$
+            if arm_custrpt_ctl.print_yn$<>"Y" then add_to_print_report=0
+            if arm_custrpt_ctl.email_yn$="Y" or arm_custrpt_ctl.fax_yn$="Y"
+                emailFax!.add(rptctl_alias$)
+                emailFax!.add(arm01a.customer_id$)
+                emailFax!.add("C")
+                emailFax!.add(new_doc_id$)
+                emailFax!.add("pdf")
+            endif
+            break
+        wend
 
     rem --- Document Output Report Parameters
 
@@ -313,6 +363,12 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
             master_document=0
         endif
 
+        if print_document
+            print_report! = new BBJasperReport(print_filename$,url$)
+            print_report!.fill()
+            print_document=0
+        endif
+
         report! = new BBJasperReport(filename$,url$)
         report!.putParams(params!)
 
@@ -324,8 +380,7 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
         report!.exportToPDF(BBjAPI().FALSE, docdir$+new_doc_name$)
 
         master_report!.appendReport(report!)
-     
-        call stbl("+DIR_PGM")+"adc_rptcontrol.aon",option!.getAlias(),arm01a.customer_id$,"C",new_doc_id$,"pdf"
+        if add_to_print_report then print_report!.appendReport(report!)
     
         report!.destroy()
     
@@ -348,45 +403,68 @@ rem --- done
 
     if master_report!=null() then goto std_exit
 
-rem --- export the master doc as PDF
+rem --- bring up jasper viewers (Master doc and Print doc)
 
-    repTitle$=masterBaseName$
-    rd_doc_id$=master_doc_id$
-    
-    rem --- bring up master statement document in jasper viewer  
+    declare BBJasperViewerWindow masterViewerWindow!
+    declare BBJasperViewerWindow printViewerWindow!
+    declare BBjTopLevelWindow bbjWindowMaster!
+    declare BBjTopLevelWindow bbjWindowPrint!
 
-    rem --- get a pdf path from +DOC_DIR_PDF
-    rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
+rem --- get a pdf path from +DOC_DIR_PDF
+rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
     gosub doc_path
 
-    rem --- previous version auto exported to pdf regardless of user action in jasper viewer
-    rem --- so gosub-ing the export routine here to keep backward compatible
-    gosub OnSaveMenuButton
-    
-    declare BBJasperViewerWindow viewerWindow!
-    viewerWindow! = new BBJasperViewerWindow(master_report!,0,0,screen_width,screen_height,repTitle$,$00080093$)
+rem --- Master - contains ALL statements
 
-    viewerControl! = viewerWindow!.getViewerControl()
-    viewerControl!.setGoogleDefaultDocument(repTitle$)
-    viewerControl!.setDefaultSaveFolder(rd_doc_path$)
-    viewerControl!.setDefaultSaveFile(repTitle$)
+    repTitle$=masterBaseName$
+    rd_doc_name$=master_doc_name$
+    rd_doc_id$=master_doc_id$
+    
+    gosub OnMasterSaveMenuButton; rem --- always save to doc archive
+    
+    masterViewerWindow! = new BBJasperViewerWindow(master_report!,5,5,screen_width,screen_height,repTitle$,$00000093$)
+    masterViewerControl! = masterViewerWindow!.getViewerControl()
+    masterViewerControl!.setGoogleDefaultDocument(repTitle$)
+    masterViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+    masterViewerControl!.setDefaultSaveFile(repTitle$)
 
     rem --- set callbacks for when user presses save or email buttons in jasper viewer
     rem --- note: saveAs or saveAsGDoc not intercepted, just regular save
-    saveMenuButton! = viewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
-    saveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnSaveMenuButton")
+    masterSaveMenuButton! = masterViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+    masterSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnMasterSaveMenuButton")
+    masterEmailToolButton! = masterViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+    masterEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnMasterEmailToolButton")
 
-    emailToolButton! = viewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
-    emailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnEmailToolButton")
+    masterViewerWindow!.setReleaseOnClose(0)
+    masterViewerWindow!.show(0)
 
-    viewerWindow!.setReleaseOnClose(0)
-    viewerWindow!.show(0)
+    bbjWindowMaster!= masterViewerWindow!.getViewerWindow()
+    bbjWindowMaster!.setCallback(bbjWindowMaster!.ON_CLOSE,"close_win")
 
-    declare BBjTopLevelWindow bbjWindow!
-    bbjWindow!= viewerWindow!.getViewerWindow()
-    cancelled=1
-    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win",err=*next); cancelled=0
-    if cancelled then goto close_win
+rem --- Print - contains only those marked in rptctl file for print, or those not in rptctl file
+
+    repTitle$=printBaseName$
+    rd_doc_name$=print_doc_name$
+    rd_doc_id$=print_doc_id$
+
+    gosub OnPrintSaveMenuButton; rem --- always save to doc archive
+
+    printViewerWindow! = new BBJasperViewerWindow(print_report!,50,50,screen_width,screen_height,repTitle$,$00000093$)
+    printViewerControl! = printViewerWindow!.getViewerControl()
+    printViewerControl!.setGoogleDefaultDocument(repTitle$)
+    printViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+    printViewerControl!.setDefaultSaveFile(repTitle$)
+
+    printSaveMenuButton! = printViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+    printSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnPrintSaveMenuButton")
+    printEmailToolButton! = printViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+    printEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnPrintEmailToolButton")
+
+    printViewerWindow!.setReleaseOnClose(0)
+    printViewerWindow!.show(0)
+
+    bbjWindowPrint!= printViewerWindow!.getViewerWindow()
+    bbjWindowPrint!.setCallback(bbjWindowPrint!.ON_CLOSE,"close_print_win")
 
 rem --- Event Control
 
@@ -432,22 +510,27 @@ rem --- so it can save based on user's doc group and doc settings
 
     return
 
-OnSaveMenuButton:
+OnMasterSaveMenuButton:
 rem --- exportToPDF and record in doc warehouse
 
     if rd_doc_path$<>"" and repTitle$<>""
-        rd_doc_name$=repTitle$+".pdf"
         rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="C"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+        
         master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        
         gosub document_whse
     endif
     return    
 
-OnEmailToolButton:rem --- Add document to fax/email queue
+OnMasterEmailToolButton:rem --- Add document to fax/email queue
 rem --- force exportToPDF first, in case it hasn't already been saved
     
     rem --- force exportToPDF in case not already saved
-    gosub OnSaveMenuButton
+    gosub OnMasterSaveMenuButton
 
     if rd_doc_id$<>"" and rd_doc_ext$<>""
         call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
@@ -455,11 +538,52 @@ rem --- force exportToPDF first, in case it hasn't already been saved
 
     return
 
+OnPrintSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="C"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+        
+        print_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+
+        gosub document_whse
+    endif
+    return    
+
+OnPrintEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnPrintSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
 close_win:rem --- Viewer Window Closed
-    viewerWindow!.destroy()
-    rdForm!.destroy(err=*next)
+
+    if emailFax!.size()
+        msg_id$ = "CONF_RPTCTL"
+        gosub disp_message
+        if msg_opt$="Y" then call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue 
+    endif
+
+    masterViewerWindow!.destroy(err=*next)
+    printViewerWindow!.destroy(err=*next)
+
     if tcb(13) then exit
     release
+
+close_print_win: rem --- close the Print Copy; no updating, just close the print copy window
+
+    printViewerWindow!.destroy(err=*next)
+    
+    return
 
 adjustments: rem --- Accumulate any adjustments for the current invoice
 
@@ -550,9 +674,14 @@ std_error: rem --- Standard error handler (22Feb2013)
         endif
     endif
 
+    if err=0
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)
+    endif
+
     rd_err_text$=""
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

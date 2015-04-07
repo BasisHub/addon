@@ -134,7 +134,7 @@ rem --- get data
         wend
         data! = rs!.getEmptyRecordData()
         data!.setFieldValue("CATEGORY",start_brk_desc$)
-        data!.setFieldValue("TOTAL",str(abs(round(acct_total,2))))
+        data!.setFieldValue("TOTAL",cvs(str(abs(acct_total):"#########.00"),3))
         rs!.insert(data!)
         if cvs(end_brk_no$,2)="" then break
     wend

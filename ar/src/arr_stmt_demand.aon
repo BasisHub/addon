@@ -4,7 +4,6 @@ rem --- Program arr_stmt_demand.aon
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 rem --- Use statements and Declares
-rem --- jing link http://screencast.com/t/KmP4Pc3veClS
 
     setesc std_error
     seterr std_error
@@ -18,8 +17,8 @@ rem --- jing link http://screencast.com/t/KmP4Pc3veClS
     params! = Option!.getOptionMap()
 		
     ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
-    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
-    screen_height = ScreenSize!.height - 50
+    screen_width  = ScreenSize!.width - 200; rem keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 100
 
 rem --- Retrieve the program path
 
@@ -95,21 +94,18 @@ rem --- Check for user authentication; create connection string in url$
 
 rem --- Open/Lock files
 
-    files=2,begfile=1,endfile=files
+    files=1,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-
-    files$[1]="art-01",ids$[1]="ART_INVHDR"
-    files$[2]="art-11",ids$[2]="ART_INVDET"
+    files$[1]="arm_custrpt_ctl",ids$[1]="ARM_CUSTRPT_CTL"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
 
-    art01_dev=channels[1]
-    art11_dev=channels[2]
-    
+    arm_custrpt_ctl=channels[1]
+
 rem --- Dimension string templates
 
-    dim art01a$:templates$[1],art11a$:templates$[2]
+    dim arm_custrpt_ctl$:templates$[1]
 
 rem --- Assign form input values to local variables
 
@@ -121,12 +117,15 @@ rem --- Assign form input values to local variables
 
     minimum=num(minimum$)    
     period=num(age_period$,err=*next)
+    rptctl_alias$ = "ARR_STATEMENTS";rem using same rpt ctl record as regular statements, so you don't need to enter in every customer twice (once for regular, once for on-demand)
 
 rem --- Initializations
 
     artype$=fill(2)
     call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
     call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0
+    
+    emailFax! = BBjAPI().makeVector()
 
 rem --- Determine 30 day aging period dates
 
@@ -136,37 +135,6 @@ rem --- Determine 30 day aging period dates
         period_dates$=enddate$+period_dates$
     next x
 
-rem --- Position the Invoice Header (art-01) file for aging
-rem --- shouldn't need this in demand stmt - the sproc that creates the report will do the aging
-goto next_part
-escape
-    dim aging[5]
-    customer$=firm_id$+artype$+customer_id$
-    read (art01_dev,key=customer$,dom=*next)
-
-rem --- Read next Invoice Header record
-
-    while 1
-        art01_key$=key(art01_dev,end=*break)
-        if pos(customer$=art01_key$)<>1 break
-        read record (art01_dev) art01a$
-        if art01a.invoice_date$>stmt_date$ continue
-
-    rem --- Accumulate any adjustments made to this invoice
-
-        gosub adjustments
-        balance=art01a.invoice_amt+applied
-
-    rem --- Age this invoice
-
-        agingdate$=art01a.invoice_date$
-        if age_basis$<>"I" agingdate$=art01a.inv_due_date$
-        invagepd=pos(agingdate$>period_dates$,8); rem determine invoice aging period for proper accumulation
-        if invagepd=0 invagepd=5 else invagepd=int(invagepd/8)
-        aging[invagepd]=aging[invagepd]+balance        
-
-    wend   
-next_part:
 rem --- Make Document Archive Record and Get Document ID
 
     rep_date$=date(0:stbl("+DATE_MASK"))
@@ -185,6 +153,25 @@ rem --- Make Document Archive Record and Get Document ID
     doc_name$="DemandCustomerStatement_"+customer_id$
     doc_keywords$="Stmt date: "+fndate$(stmt_date$)
     repTitle$=rd_doc_id$+"_"+doc_name$
+    new_doc_name$=rd_doc_id$+"_"+doc_name$+".pdf"
+    new_doc_id$=rd_doc_id$
+
+rem --- Read report control table for this customer/alias to see if customer wants print, email, or fax
+
+    add_to_print_report=1
+    dim arm_custrpt_ctl$:fattr(arm_custrpt_ctl$)
+    while 1
+        read record (arm_custrpt_ctl,key=firm_id$+customer_id$+pad(rptctl_alias$,16),err=*break)arm_custrpt_ctl$
+        if arm_custrpt_ctl.print_yn$<>"Y" then add_to_print_report=0
+        if arm_custrpt_ctl.email_yn$="Y" or arm_custrpt_ctl.fax_yn$="Y"
+            emailFax!.add(rptctl_alias$)
+            emailFax!.add(customer_id$)
+            emailFax!.add("C")
+            emailFax!.add(new_doc_id$)
+            emailFax!.add("pdf")
+        endif
+        break
+    wend
     
 rem --- Document Output Report Parameters
 
@@ -220,13 +207,15 @@ rem --- Invoke jasper
     rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
     gosub doc_path
 
-    rem --- previous version auto exported to pdf regardless of user action in jasper viewer
-    rem --- so gosub-ing the export routine here to keep backward compatible
+    repTitle$=doc_name$
+    rd_doc_name$=new_doc_name$
+    rd_doc_id$=new_doc_id$
+
     gosub OnSaveMenuButton
 
-    if rpt_ctl$="Y" then call stbl("+DIR_PGM")+"adc_rptcontrol.aon",option!.getAlias(),customer_id$,"C",rd_doc_id$,"pdf"
-
     declare BBJasperViewerWindow viewerWindow!
+    declare BBjTopLevelWindow bbjWindow!
+    
     viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,repTitle$,$00080093$)
 
     viewerControl! = viewerWindow!.getViewerControl()
@@ -245,11 +234,8 @@ rem --- Invoke jasper
     viewerWindow!.setReleaseOnClose(0)
     viewerWindow!.show(0)
     
-    declare BBjTopLevelWindow bbjWindow!
     bbjWindow!= viewerWindow!.getViewerWindow()
-    cancelled=1
-    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win",err=*next); cancelled=0
-    if cancelled then goto close_win
+    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win")
 
 rem --- Event Control
 
@@ -299,8 +285,10 @@ OnSaveMenuButton:
 rem --- exportToPDF and record in doc warehouse
 
     if rd_doc_path$<>"" and repTitle$<>""
-        rd_doc_name$=repTitle$+".pdf"
         rd_doc_ext$="PDF"
+        rd_source_id$="C"
+        rd_source_ref$=customer_id$
+        rd_doc_keywords$=doc_keywords$
         report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
         gosub document_whse
     endif
@@ -319,8 +307,15 @@ rem --- force exportToPDF first, in case it hasn't already been saved
     return
 
 close_win:rem --- Viewer Window Closed
+
+    if emailFax!.size() and rpt_ctl$="Y"
+        msg_id$ = "CONF_RPTCTL"
+        gosub disp_message
+        if msg_opt$="Y" then call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue
+    endif
+    
     viewerWindow!.destroy()
-    rdForm!.destroy(err=*next)
+
     if tcb(13) then exit
     release
 	
@@ -335,26 +330,6 @@ connect_err:rem --- Connection Error
     endif
 
     release
-
-adjustments: rem --- Accumulate any adjustments for the current invoice
-
-rem --- Position Invoice Detail (art-11) file
-
-    art01_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
-    read (art11_dev,key=art01_key$,dom=*next)
-
-rem --- Read Invoice Detail (art-11) records
-
-    applied=0
-
-    while 1
-        k$=key(art11_dev,end=*break)
-        if pos(art01_key$=k$)<>1 break
-        read record (art11_dev) art11a$
-        if art11a.trans_date$ <= stmt_date$ then applied = applied+art11a.trans_amt+art11a.adjdisc_amt
-    wend
-
-    return
 
 rem --- Date/time handling functions
 
@@ -400,9 +375,14 @@ std_error: rem --- Standard error handler (22Feb2013)
         endif
     endif
 
+    if err=0
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)
+    endif
+
     rd_err_text$=""
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

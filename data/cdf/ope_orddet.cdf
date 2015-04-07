@@ -1099,31 +1099,36 @@ rem --- redisplay totals
 
 	callpoint!.setDevObject("details_changed","Y")
 [[OPE_ORDDET.WAREHOUSE_ID.AVAL]]
-print "Det:WAREHOUSE_ID.AVAL"; rem debug
-
 rem --- Check item/warehouse combination, Set Available
 
-	item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
 	wh$   = callpoint!.getUserInput()
-	warn  = 0
+
+	item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
+	if cvs(item$,2)="" then
+		warn = 0
+	else
+		warn = 1
+	endif
+	gosub check_item_whse
 
 rem --- Item probably isn't set yet, but we don't know for sure
 
-	gosub check_item_whse
 	if !user_tpl.item_wh_failed then gosub set_avail
 [[OPE_ORDDET.ITEM_ID.AVAL]]
-print "Det:ITEM_ID.AVAL"; rem debug
-
 rem --- Check item/warehouse combination and setup values
 
 	item$ = callpoint!.getUserInput()
-	wh$   = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
 
 	if item$<>user_tpl.prev_item$ then
 		gosub clear_all_numerics
 	endif
 
-	warn = 0
+	wh$   = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
+	if cvs(wh$,2)="" then
+		warn = 0
+	else
+		warn = 1
+	endif
 	gosub check_item_whse
 
 	if !user_tpl.item_wh_failed then 
@@ -1288,9 +1293,10 @@ rem ==========================================================================
 		ttl_ext_cost = 0
 		ttl_taxable = 0
 	else
-		ttl_ext_price = ordHelp!.totalSales( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
-		ttl_ext_cost = ordHelp!.totalCost( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
-		ttl_taxable = ordHelp!.totalTaxable( cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!) )
+		totalsVect!=ordHelp!.totalSalesCostTaxable(cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!))
+		ttl_ext_price=totalsVect!.getItem(0)
+		ttl_ext_cost=totalsVect!.getItem(1)
+		ttl_taxable=totalsVect!.getItem(2)
 	endif
 
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_ORDHDR.FREIGHT_AMT"))
