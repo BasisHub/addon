@@ -8,6 +8,7 @@ rem --- Addon dashboards
 	use ::dashboard/dashboard.bbj::DashboardWidgetFilter
 	use ::dashboard/dashboard.bbj::DashboardWidgetLink
 	use ::dashboard/dashboard.bbj::DashboardWindow
+	use ::dashboard/dashboard.bbj::DashboardWidgetClickEvent
 	use ::dashboard/widget.bbj::Widget
 	use ::dashboard/widget.bbj::ChartWidget
 	use ::dashboard/widget.bbj::ImageWidget
@@ -19,6 +20,10 @@ rem --- Addon dashboards
 	use ::dashboard/widget.bbj::AreaChartWidget	
 	use ::dashboard/widget.bbj::PieChartWidget
 	use ::dashboard/widget.bbj::JasperViewerWidget
+	use ::dashboard/widget.bbj::CategoryDataItem
+	use ::dashboard/widget.bbj::EmbeddedWidgetFactory
+	use ::dashboard/widget.bbj::EmbeddedWidget
+	use ::dashboard/widget.bbj::EmbeddedWidgetWindow
 	use ::reporting/bbjasper/bbjasper.bbj::BBJasperReport
 	use ::BBUtils.bbj::BBUtils
     use ::bbtranslator.bbj::BBTranslator
@@ -62,6 +67,7 @@ rem --- if BUI, need to call bas_process_beg
 rem --- initialization
 	
 	gosub get_sysinfo
+	
     if info(3,6)="5" then gosub get_translate_object
 	gosub get_masks	
 	gosub get_connectstring
@@ -197,6 +203,11 @@ rem ==============================================
 rem		incCmpWidget!.setChartColors("#00a4d9","#7fbe27",1.0,1.0); rem Colors for By Period
 rem		incCmpWidget!.setChartColors("#3cb6df,#4aca75,#91bd5d"); rem supplying three explicit colors due to issue in legend vs chart if range is used (CAH)
 		incCmpWidget!.setLabelsInBarChartColor("#000000")
+		
+		dim chartState$:"CHART_TYPE:C(25*),INCLUDE_TYPE:C(1*),YEAR:C(4*),PERIOD:C(2*)"
+		chartState.CHART_TYPE$="IncomeCompare", chartState.INCLUDE_TYPE$="A",chartState.YEAR$="", chartState.period$=""
+		incCmpWidget!.setUserData(chartState$)
+		incomeComparisonBarDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::OnIncCmpBarChartWidgetClick")
 		
 		rem Create Filters 
 		filterName$ = Translate!.getTranslation("AON_COMPARE")
@@ -996,14 +1007,18 @@ rem     The inner widget gives us access to the dataset so that we can provide n
 	include_type$=chr(asc(include_type$)+num(incCmpWidgetFilterCompareKey$));rem A,B,C,D,E,F
 	acct_type$="I"; rem "Income accounts only
 	do_coa_join$="N"; rem "Change to Y to JOIN w/Chart of Accts to filter by account grouping
-
+	
+	rem ' when changing filter values the chart reverts to the base chart
 	sql$="CALL GLCMPINC_BAR ('"+firm_id$+"', '"+include_type$+"', '"+acct_type$+"', '"+do_coa_join$+"', '"+masks$+"', '"+barista_wd$+"')"
+	dim chartState$:"CHART_TYPE:C(25*),INCLUDE_TYPE:C(1*),YEAR:C(4*),PERIOD:C(2*)"
+	chartState.CHART_TYPE$="IncomeCompare", chartState.INCLUDE_TYPE$ = include_type$,chartState.YEAR$ = ""; chartState.PERIOD$=""
 	
 	rem Clear out the old data from the inner widget
 	incCmpWidget!.clearDataSet()
 	
 	rem Refresh based on new sql
 	incCmpWidget!.setSQL(sql$)
+	incCmpWidget!.setUserData(chartState$)
     incCmpWidget!.refresh()
 	
 	exit
@@ -1115,7 +1130,168 @@ rem     The inner widget gives us access to the dataset so that we can provide n
     
     exit
 
+REM =============================================   
+REM Handle the click event for the Income Compare Bar Chart
+REM ============================================= 
+OnIncCmpBarChartWidgetClick:
+
+    declare DashboardWidgetClickEvent   dbWidgetClickEvent!
+    declare DashboardWidget             dbWidget!
+    declare BBjMouseUpEvent             click!
+    declare BBjVector                   data!
+    
+    rem Get the event and the object payload
+    event! = BBjAPI().getLastEvent()
+    dbWidgetClickEvent! = cast(DashboardWidgetClickEvent, event!.getObject())
+    
+    rem From the custom event we can get the dashboard widget and the click event
+    dbWidget! = cast(DashboardWidget, dbWidgetClickEvent!.getDashboardWidget())
+    click! = cast(BBjMouseUpEvent, dbWidgetClickEvent!.getBBjMouseUpEvent()) 
+
+    rem Get the chart widget and some of the widget properties
+    widget! = dbWidget!.getWidget()
+    widgetName$ = dbWidget!.getName()
+    widgetTitle$ = dbWidget!.getTitle()
+
+    rem Get information about the click event
+    button = click!.getMouseButton()
+    x = click!.getX()
+    y = click!.getY()  
+
+    dim chartState$:"CHART_TYPE:C(25*),INCLUDE_TYPE:C(1*),YEAR:C(4*),PERIOD:C(2*)"
+    chartState$ = widget!.getUserData()
+    
+    rem Reset the widget back to the original query on a right click
+    if (button = 3) then 
+	   rem --- params for calling SPROC
+	   gosub get_sysinfo
+	   gosub get_masks
+    	   acct_type$="I", do_coa_join$="N"
+    	   include_type$=chartState.INCLUDE_TYPE$, acct_type$="I", do_coa_join$="N"
+	   sql$="CALL GLCMPINC_BAR ('"+firm_id$+"', '"+include_type$+"', '"+acct_type$+"', '"+do_coa_join$+"', '"+masks$+"', '"+barista_wd$+"')"
+	   chartState.CHART_TYPE$="IncomeCompare", chartState.INCLUDE_TYPE$=include_type$,chartState.YEAR$="", chartState.period$=""
+	   widget!.setUserData(chartState$)
+	   widget!.setSQL(sql$)
+           widget!.refresh()
+           exit
+     endif
+
+    rem For a Left click, drilldown
+    if (button = 1) then 
+	    dataItem! = cast(CategoryDataItem, widget!.getChartDataItemFromPoint(x, y))
 	
+	    if (dataItem! <> null()) then
+	    
+    		rem Get the data from the chart
+    		rowKey$ = dataItem!.getRowKey()
+    		colKey$ = dataItem!.getColKey()
+
+	        rem Figure out what query they are currently viewing
+	        if chartState.CHART_TYPE$ = "IncomeCompare" then
+                	
+                	gosub get_sysinfo
+                	gosub get_masks
+				
+			year$ = rowKey$
+			if len(colKey$) > 2 then period$ = colKey$(1,2) else period$ = ""
+			
+	                rem Build an SQL query to return the accounts totals for the selected year and period
+	                sql$ = "CALL GLINCACCT_BAR ('"+firm_id$+"', '"+year$+"', '"+period$+"', '"+masks$+"', '"+barista_wd$+"')"
+	
+                	rem Change the font size for the domain axis and leave the other elements at their default size
+                	rem ' widget!.setChartFontSizes(0,0,0,0,8,0,0)
+                	rem ' widget!.setDomainLabelAngle(1)
+                	                	                
+                	rem Change the user data
+                	chartState.CHART_TYPE$="IncomeAccountsYearPeriod",chartState.YEAR$=year$,chartState.PERIOD$=period$
+                	widget!.setUserData(chartState$)
+                	
+                	rem Set the new query and refresh the chart
+			widget!.OnClearTip(null())
+			widget!.setSQL(sql$)
+			widget!.refresh() 
+		else
+	                if chartState.CHART_TYPE$ = "IncomeAccountsYearPeriod" then
+	                    rem We have information about the year, period, and account
+	                    rem rowKey = year and period
+	                    rem colKey = account
+	                    gosub get_sysinfo
+	                    gosub get_masks
+
+			    p=pos("-"=rowKey$)
+			    rem --- could an annul list or a list of a period
+			    if p then 
+			    	year$ = rowKey$(1,p-1)
+			    	period$ = rowKey$(p+1)
+			    else
+			    	year$ = rowKey$
+			    	period$ = ""
+			    endif
+
+			    account$ = colKey$
+			    while pos("-"=account$)
+			    	p = pos("-"=account$)
+			    	account$ = account$(1,p-1) + account$(p+1)
+			    wend
+			    
+			    rem --- get the account's description
+			    account_desc$=""
+			    files=1,begfile=1,endfile=files
+			    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+			    files$[1]="glm-01",ids$[1]="GLM_ACCT"
+			    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+			    if !status then
+			        glm01a_dev=channels[1]
+			        dim glm01a$:templates$[1]
+		                read record(glm01a_dev,key=firm_id$ + account$,dom=*next)glm01a$
+		                read record(glm01a_dev,err=*next)glm01a$
+		                if glm01a.firm_id$ = firm_id$ and pos(account$=glm01a.gl_account$)=1 then account_desc$ = glm01a.gl_acct_desc$
+			    endif			    
+			    
+			    rem Create an embedded grid widget with the accounts detail for the period
+			    name$ = "Transaction"
+			    if cvs(account_desc$,3) = "" then
+				    title$ = colKey$ + " Transactions"
+			    else
+			            title$ = colKey$ + " " + cvs(account_desc$,3)
+			    endif
+                            connectString$ = widget!.getConnectString()
+                            
+                            sql$ = "CALL GLACCTDET_GRD ('"+firm_id$+"', '"+year$+"', '"+period$+"', '"+account$+"', '"+masks$+"', '"+barista_wd$+"')"
+                            embeddedDBWidget! = EmbeddedWidgetFactory.createGridEmbeddedWidget(name$, title$, connectString$, sql$)
+ 	                    rem Set the grid's column widths
+ 	                    embeddedWidget! = embeddedDBWidget!.getWidget()
+                     	    embeddedWidget!.setColumnWidthPercentages("20,40,20,20")
+
+                            rem Set a custom font on the grid
+	                    rem ' if (info(3,6)="5") then fontName$ = "'Lucida Console',Monospace,Sans-serif" else fontName$ = "Monospaced"
+	                    rem ' font! = BBjAPI().getSysGui().makeFont(fontName$,13,0)
+	                    rem ' embeddedWidget!.setFont(font!)
+	                    rem ' embeddedWidget!.setRowHeight(23)
+
+			    rem Create an embedded widget window to display the grid in
+			    embeddedWidgetWindow! = new EmbeddedWidgetWindow(embeddedDBWidget!, 600, 230)
+			    embeddedWidgetWindow!.setTitle("WidgetWindow")
+			    embeddedWidgetWindow!.doModal()
+			    embeddedWidgetWindow!.destroy()
+			    widget!.OnClearTip(null())
+			    sql$ = ""
+		       endif
+		endif
+	    else
+	        rem They clicked on the chart, but not on a data entity so we'll show an instructional tip
+	        if (widget!.getUserData() = "IncomeCompare") then
+	                    msg$ = "Left click a period bar to see the sales break down by account." + $0a$ + "Right click to reset the chart."
+	                else
+	                    msg$ = "Left click an account bar to see the detail transactions." + $0a$ + "Right click to reset the chart."
+	                endif
+	                widget!.showTip(msg$)
+	        endif
+	    endif	
+    endif
+   
+exit
+
 	
 rem ==================================================================
 rem ===                      LINKS                                 ===
