@@ -1387,6 +1387,11 @@ rem --- Display Ship to information
 	order_no$     = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	gosub ship_to_info
 
+rem --- Set comm percent (if calling up a B/O, it will have been cleared);rem bug 8001 CAH
+
+	slsp$=callpoint!.getColumnData("OPE_INVHDR.SLSPSN_CODE")
+	gosub get_comm_percent
+
 rem --- Enable buttons
 
 	callpoint!.setOptionEnabled("PRNT", 1)
@@ -2651,6 +2656,7 @@ rem ==========================================================================
 	prev_sub_tot=num(callpoint!.getColumnData("<<DISPLAY>>.SUBTOTAL"))
 	prev_net_sales=num(callpoint!.getColumnData("<<DISPLAY>>.NET_SALES"))
 	ttl_ext_price = num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
+	ttl_ext_cost = num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_COST"))
 	tax_amt = num(callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT"))
 	sub_tot = ttl_ext_price - disc_amt
 	net_sales = sub_tot + tax_amt + freight_amt
