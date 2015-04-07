@@ -1,3 +1,9 @@
+[[ARE_CASHHDR.AR_CHECK_NO.AVAL]]
+rem --- temporary workaround to Barista bug not padding ar_check_no when nothing is entered for it
+	dim are01a$:fnget_tpl$("ARE_CASHHDR")
+	wk$=fattr(are01a$,"ar_check_no")
+	ar_check_no$=pad(callpoint!.getUserInput(),dec(wk$(10,2)))
+	callpoint!.setUserInput(ar_check_no$)
 [[ARE_CASHHDR.ARAR]]
 rem --- Enable/disable controls based on Cash Receipt code
 	wk_cash_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
@@ -134,6 +140,7 @@ tmp_cust_id$=callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")
 gosub get_customer_balance
 wk_cash_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
 gosub get_cash_rec_cd
+gosub able_controls
 Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0);rem --- force auto-select off for existing tran
 rem -- Form!.getControl(num(user_tpl.zbal_chkbox_id$)).setSelected(0);rem --- force zero-bal disp off for existing tran
 are_cashdet_dev=fnget_dev("ARE_CASHDET")
@@ -229,6 +236,8 @@ user_tpl.binp_pay_amt=0
 
 Form!.getControl(num(user_tpl.GLind_id$)).setText("")
 Form!.getControl(num(user_tpl.GLstar_id$)).setText("")
+
+callpoint!.setColumnEnabled("ARE_CASHHDR.PAYMENT_AMT",0)
 [[ARE_CASHHDR.ASIZ]]
 if UserObj!<>null()
 	gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))
@@ -488,6 +497,12 @@ return
 rem ==================================================================
  able_controls: rem --- Enable/disable controls based on Cash Receipt code
 rem ==================================================================
+	if user_tpl.cash_flag$="Y" then
+		callpoint!.setColumnEnabled("ARE_CASHHDR.PAYMENT_AMT",1)
+	else
+		callpoint!.setColumnEnabled("ARE_CASHHDR.PAYMENT_AMT",0)
+	endif
+
 	gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))
 	OA_chkbox!=Form!.getControl(num(user_tpl.OA_chkbox_id$))
 	zbal_chkbox!=Form!.getControl(num(user_tpl.zbal_chkbox_id$))
