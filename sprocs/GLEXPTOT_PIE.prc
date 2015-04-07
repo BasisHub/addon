@@ -109,9 +109,9 @@ rem --- get data
     end_brk_no$=""
     read (glm10a_dev,key=firm_id$+start_brk_no$,dom=*next)
     while 1
-        dim gm10a$:fattr(glm10a$)
+        dim glm10a$:fattr(glm10a$)
         readrecord(glm10a_dev,end=*next)glm10a$
-        if glm10a.firm_id$<>firm_id$ then dim gm10a$:fattr(glm10a$)
+        if glm10a.firm_id$<>firm_id$ then dim glm10a$:fattr(glm10a$)
         start_brk_no$=end_brk_no$
         start_brk_desc$=end_brk_desc$
         end_brk_no$=glm10a.acct_no_brk$

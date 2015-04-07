@@ -1,0 +1,154 @@
+rem adc_rptcontrol - set up fax and/or email queue rec for desired document/report
+rem Program adc_rptcontrol v8.0.0 30Jun2008
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
+rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- Add designated Addon documents to Barista doc processing queue
+
+rem --- incoming vector contains 5 items per document - should all be the same ref_tp since called from invoicing, statements, PO's, etc.
+rem --- vector built during document processing, and if user ok's the docs, THEN this program forwards specified ones to doc queue
+rem --- older program (adc_rptcontrol.aon) forwarded docs to queue at the same time the doc was created, so potential for incorrect/unreviewed docs to go into queue
+rem --- ALIAS_NAME: Alias name of report program (such as ARR_INVOICES...INPUT)
+rem --- REF_ID: ID number of customer or vendor (INPUT)
+rem --- REF_TP: V for vendor, C for customer (INPUT) 
+rem --- DOC_NO: Barista document number assigned to the document (INPUT)
+rem --- DOC_TP: document type (PDF,CSV,TXT,etc...INPUT)
+
+    seterr std_error
+    setesc std_error
+    enter emailFax!
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get Document Processing Queue Object
+
+    use ::sys/prog/bao_docqueue.bbj::DocumentQueue
+    docQueue! = new DocumentQueue()
+
+rem --- Open/Lock files
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    if emailFax!.getItem(2)="C"
+        files$[1]="arm_custrpt_ctl",ids$[1]="ARM_CUSTRPT_CTL"
+        alt_key$="AO_ALIAS_CUST"
+    else
+        files$[1]="apm_vendrpt_ctl",ids$[1]="APM_VENDRPT_CTL"
+        alt_key$="AO_ALIAS_VEND"
+    endif
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+
+    rptctl_dev=channels[1]
+
+    dim rptctl$:templates$[1]
+
+rem --- Combo of alias and id (vend or cust) will only be found in one file or the other
+
+    for email_fax=0 to emailFax!.size()-1 step 5
+    
+        alias_name$=emailFax!.getItem(email_fax)
+        ref_id$=emailFax!.getItem(email_fax+1)
+        ref_tp$=emailFax!.getItem(email_fax+2)
+        doc_no$=emailFax!.getItem(email_fax+3)
+        doc_tp$=emailFax!.getItem(email_fax+4)
+        
+        rpt_ky$=firm_id$+pad(alias_name$,16)+ref_id$
+        read record (rptctl_dev, key=rpt_ky$, knum=alt_key$, dom=done) rptctl$
+
+        if rptctl.fax_yn$="Y" then 
+            docQueue!.clear()
+            docQueue!.setFirmID(rptctl.firm_id$)
+            docQueue!.setDocumentID(doc_no$)
+            docQueue!.setDocumentExt(cvs(doc_tp$,4))
+            docQueue!.setProcessType("F");rem <F>ax
+            docQueue!.setStatus("A");rem <A>uto-detect.  Queue will switch it to "Ready" if all required data is present
+            docQueue!.setFaxNumbers(rptctl.fax_nos$)
+            docQueue!.setFaxFromCompany(rptctl.from_company$)
+            docQueue!.setFaxFromName(rptctl.from_name$)
+            fax_to_org$=iff(ref_tp$="C", rptctl.customer_name$, rptctl.vendor_name$)
+            docQueue!.setFaxToOrganization(fax_to_org$)
+            docQueue!.setFaxToName(rptctl.fax_to$)
+            docQueue!.setSubject(rptctl.fax_subject$)
+            docQueue!.setMessage(rptctl.fax_message$)
+            docQueue!.createProcess()
+            proc_key$=docQueue!.getFirmID()+docQueue!.getProcessID()
+            docQueue!.checkStatus(proc_key$)
+        endif
+
+        if rptctl.email_yn$="Y" then 
+            docQueue!.clear()
+            docQueue!.setFirmID(rptctl.firm_id$)
+            docQueue!.setDocumentID(doc_no$)
+            docQueue!.setDocumentExt(cvs(doc_tp$,4))
+            docQueue!.setProcessType("E")
+            docQueue!.setStatus("A");rem Auto-detect.  Queue will switch it to "Ready" if all required data is present
+            docQueue!.setEmailFrom(rptctl.email_from$)
+            docQueue!.setEmailReplyTo(rptctl.email_replyto$)
+            docQueue!.setEmailTo(rptctl.email_to$)
+            docQueue!.setEmailCC(rptctl.email_cc$)
+            docQueue!.setEmailBCC(rptctl.email_bcc$)
+            docQueue!.setSubject(rptctl.email_subject$)
+            docQueue!.setMessage(rptctl.email_message$)
+            docQueue!.createProcess()
+            proc_key$=docQueue!.getFirmID()+docQueue!.getProcessID()
+            docQueue!.checkStatus(proc_key$)
+        endif
+
+    next email_fax
+
+done: rem --- All done
+
+    close(rptctl_dev)
+
+    goto std_exit
+
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
+
+    end
