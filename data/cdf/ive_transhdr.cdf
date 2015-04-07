@@ -1,3 +1,11 @@
+[[IVE_TRANSHDR.APFE]]
+	gosub clear_display_fields
+[[IVE_TRANSHDR.ADEL]]
+	gosub clear_display_fields
+[[IVE_TRANSHDR.ADIS]]
+	gosub clear_display_fields
+[[IVE_TRANSHDR.AREC]]
+	gosub clear_display_fields
 [[IVE_TRANSHDR.BDEL]]
 rem -- uncommit any Issue, Commit, or *negative* Adjustment trans in dtl grid that aren't already deleted
 
@@ -125,6 +133,17 @@ rem --------------------------------------------------------------------------
 		util.disableGridColumn(Form!, 3)
 		print "G/L entry should be disabled"; rem debug
 	endif
+
+return
+
+rem ==========================================================================
+clear_display_fields: rem --- Clear the header display fields
+rem ==========================================================================
+
+	UserObj!.getItem(user_tpl.location_obj).setText("")
+	UserObj!.getItem(user_tpl.qoh_obj).setText("")
+	UserObj!.getItem(user_tpl.commit_obj).setText("")
+	UserObj!.getItem(user_tpl.avail_obj).setText("")
 
 return
 

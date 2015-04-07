@@ -304,6 +304,8 @@ rem --- Uncommit quantity
 print "after new record (AREC)"; rem debug
 
 	callpoint!.setDevObject("qty_ok","")
+
+	gosub clear_display_fields
 [[IVE_TRANSDET.AGCL]]
 rem --- set preset val for batch_no
 callpoint!.setTableColumnAttribute("IVE_TRANSDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
@@ -463,26 +465,24 @@ print "ivm07 commit: ",commit;rem debug
 		new_record = ( cvs(orig_whse$,3) = "" or cvs(orig_item$,3) = "" )
 
 		if new_record or orig_whse$ <> whse$ or orig_item$ <> item$ then
-
 			callpoint!.setColumnData("IVE_TRANSDET.UNIT_COST", ivm02a.unit_cost$)
 			unit_cost = num( ivm02a.unit_cost$ )
 			trans_qty = num( callpoint!.getColumnData("IVE_TRANSDET.TRANS_QTY") )
 			gosub calc_ext_cost
-
-			rem --- Set header display values (whse or L/S)
-
-			m9$     = user_tpl.m9$
-			qoh$    = str( qoh:m9$ )		
-			commit$ = str( commit:m9$ )
-			avail   = qoh - commit
-			avail$  = str( avail:m9$ )
-			
-			user_tpl.avail  = avail
-			user_tpl.commit = commit
-
-			gosub set_display_fields
-
 		endif
+
+		rem --- Set header display values (whse or L/S)
+
+		m9$     = user_tpl.m9$
+		qoh$    = str( qoh:m9$ )		
+		commit$ = str( commit:m9$ )
+		avail   = qoh - commit
+		avail$  = str( avail:m9$ )
+			
+		user_tpl.avail  = avail
+		user_tpl.commit = commit
+
+		gosub set_display_fields
 
 	endif
 
@@ -672,16 +672,18 @@ rem ==========================================================================
 	qty_commit!.setText( commit$ )
 	qty_avail!.setText( avail$ )
 
-	rem --- Sets the values for Barista internally
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.LOCATION", loc$)
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.QTY_ON_HAND", qoh$)
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.QTY_COMMIT", commit$)
-	callpoint!.setHeaderColumnData("<<DISPLAY>>.QTY_AVAIL", avail$)
-
-	callpoint!.setStatus("REFRESH")
-
 return
 
+rem ==========================================================================
+clear_display_fields: rem --- Clear the header display fields
+rem ==========================================================================
+
+	UserObj!.getItem(user_tpl.location_obj).setText("")
+	UserObj!.getItem(user_tpl.qoh_obj).setText("")
+	UserObj!.getItem(user_tpl.commit_obj).setText("")
+	UserObj!.getItem(user_tpl.avail_obj).setText("")
+
+return
 
 rem ==========================================================================
 ls_loc_cmt: rem --- Enable/disable comment and location fields based on whether L/S found

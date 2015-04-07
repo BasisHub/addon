@@ -478,7 +478,7 @@ if req_no$<>""
        		hdr_alt_key1$=poe_reqhdr.firm_id$+poe_reqhdr.vendor_id$+poe_reqhdr.req_no$
 		dim ivs_params$:fnget_tpl$("IVS_PARAMS")
 		ivs_params$=str(callpoint!.getDevObject("ivs_params_rec"))
-        		call stbl("+DIR_PGM")+"poc_deletepo.aon","R",files[all],sf_installed$,ivs_params$,hdr_pri_key$,hdr_alt_key1$,dtl_tpl$,status
+        		call stbl("+DIR_PGM")+"poc_deletepo.aon","R",files[all],sf_installed$,ivs_params$,hdr_pri_key$,hdr_alt_key1$,dtl_tpl$,table_chans$[all],status
 
 		callpoint!.setStatus("RECORD:["+firm_id$+po_no$+"]")
 

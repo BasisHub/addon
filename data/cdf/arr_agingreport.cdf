@@ -60,9 +60,10 @@ tmp_rpt_opt$=callpoint!.getUserInput()
 tmp_rpt_seq$=callpoint!.getColumnData("ARR_AGINGREPORT.REPORT_SEQUENCE")
 gosub set_selections
 [[ARR_AGINGREPORT.UPDATE_AGING.AVAL]]
-if callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")="N"
+
+if callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")="N" or num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))<>30
 	if callpoint!.getUserInput()="Y"
-		callpoint!.setMessage("FIXED_PERIODS")
+		callpoint!.setMessage("PER_30_REQUIRED")
 		callpoint!.setUserInput("N")
 		callpoint!.setStatus("REFRESH")
 	endif
@@ -79,6 +80,7 @@ else
 	if callpoint!.getColumnData("ARR_AGINGREPORT.UPDATE_AGING")="Y"
 		callpoint!.setMessage("FIXED_PERIODS")
 		callpoint!.setUserInput("Y")
+		callpoint!.setColumnData("ARR_AGINGREPORT.DAYS_IN_PER","30")
 		callpoint!.setStatus("REFRESH")
 	endif
 endif
@@ -91,11 +93,24 @@ days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
 start_date$=callpoint!.getColumnData("ARR_AGINGREPORT.REPORT_DATE")
 gosub calc_dates_fixed
 [[ARR_AGINGREPORT.DAYS_IN_PER.AVAL]]
-fixed_periods$=callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")
-days_in_per=num(callpoint!.getUserInput())
-start_date$=callpoint!.getColumnData("ARR_AGINGREPORT.REPORT_DATE")
-gosub calc_dates_fixed
-callpoint!.setStatus("REFRESH")
+rem --- recalc dates using new fixed number of days
+rem --- if updating customer record, MUST stay w/ 30 day periods
+
+	fixed_periods$=callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")
+	days_in_per=num(callpoint!.getUserInput())
+
+	if callpoint!.getColumnData("ARR_AGINGREPORT.UPDATE_AGING")="Y"
+		if days_in_per<>30
+			callpoint!.setMessage("PER_30_REQUIRED")
+			callpoint!.setUserInput("30")
+		endif
+	else
+		start_date$=callpoint!.getColumnData("ARR_AGINGREPORT.REPORT_DATE")
+		gosub calc_dates_fixed		
+	endif
+
+
+	callpoint!.setStatus("REFRESH")
 [[ARR_AGINGREPORT.REPORT_DATE.AVAL]]
 fixed_periods$=callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")
 days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))

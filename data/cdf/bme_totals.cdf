@@ -27,7 +27,7 @@ rem  ==============================================================
 		bill_no$=callpoint!.getDevObject("master_bill")
 		lot_size=callpoint!.getDevObject("lotsize")
 		ap$=callpoint!.getDevObject("ap_installed")
-		call "bmc_getcost.aon",bill_no$,lot_size,prod_date$,ap$,"N",1,
+		call "bmc_getcost.aon",table_chans$[all],bill_no$,lot_size,prod_date$,ap$,"N",1,
 :			mat_cost,lab_cost,oh_cost,sub_cost,lot_size,lot_size,"N",whse$,ea_status
 		tot_cost=mat_cost+lab_cost+oh_cost+sub_cost
 		callpoint!.setColumnData("BME_TOTALS.MAT_COST",str(mat_cost))

@@ -167,7 +167,7 @@ rem ========================================================
 		endif
 		opcode_dev=callpoint!.getDevObject("opcode_chan")
 		opcode_tpl$=callpoint!.getDevObject("opcode_tpl")
-		call "sfc_schdayfore.aon",wo_no$,f_date$,new_date$,sched_flag$,opcode_dev,status$,opcode_tpl$
+		call "sfc_schdayfore.aon",table_chans$[all],wo_no$,f_date$,new_date$,sched_flag$,opcode_dev,status$,opcode_tpl$
 
 		if status$(1,1)="1"
 			msg_id$="SF_SUB_CHANGED"
