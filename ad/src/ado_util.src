@@ -1202,6 +1202,89 @@ method_error:rem --- Method error trap/handler
             x$=stbl("+THROWN_ERR","TRUE")   
             throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
+
+        rem /**
+        rem  * Get device (Barista's channel) for a data table.
+        rem  *
+        rem  * Gets existing device (Barista's channel) for a data table, or opens a new one if necessary.
+        rem  * If table_alias$ isn't already open by Barista, it's opened on a new channel per prefix$ via.
+        rem  * bac_open_tables.bbj. prefix$ is used for a prefix on table_alias$ to create the rd_open_tables$[n]
+        rem  * for bac_open_tables.bbj. And, prefix$ is appended to "OTA" to create the rd_open_opts$ for bac_open_tables.bbj.
+        rem  * 
+        rem  * @param BBjString table_alias$
+        rem  * @param BBjString prefix$ -- Valid values: @, 0 thru 9, empty string or blank (one character)
+        rem  *
+        rem  * @return BBjInt channel
+        rem  */
+    
+        method public static BBjInt getDev(BBjString table_alias$, BBjString prefix$)
+            seterr method_error
+            declare BBjInt channel%
+            channel%=-1
+            table$=cvs(table_alias$,7)
+            pfx$=cvs(prefix$,3)
+            
+            rem --- Validate prefix$ string
+            if len(pfx$)>1 or (len(pfx$)=1 and pos(pfx$="@0123456789")=0) then
+                seterr 0
+                x$=stbl("+THROWN_ERR","TRUE")   
+                throw #className$+": getDev(): Invalid prefix$ character '"+pfx$+"'", 265
+            endif
+
+            rem --- See if Barista already has the table open
+            channel%=int(#getDev(pfx$+table$,err=*next))
+            if channel%=-1 then
+                err_num=err
+                if err_num=260 then
+                    seterr 0
+                    x$=stbl("+THROWN_ERR","TRUE")   
+                    throw #className$+": Need to call setTableChans() first", 260
+                endif
+                if err_num<>11 then
+                    seterr 0
+                    goto method_error
+                endif
+                
+                rem --- Barista doesn't have table open yet. So open it
+                rd_num_files=1
+                dim rd_open_tables$[1:rd_num_files],rd_open_opts$[1:rd_num_files],rd_open_chans$[1:rd_num_files],rd_open_tpls$[1:rd_num_files]
+                rd_open_tables$[1]=table$,rd_open_opts$[1]="OTA"+pfx$
+    
+                call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:                   rd_open_beg,
+:                   rd_open_end,
+:                   rd_open_tables$[all],
+:                   rd_open_opts$[all],
+:                   rd_open_chans$[all],
+:                   rd_open_tpls$[all],
+:                   rd_table_chans$[all],
+:                   rd_open_batch,
+:                   rd_open_status$
+
+                if rd_open_status$<>"" then
+                    seterr 0
+                    x$=stbl("+THROWN_ERR","TRUE")   
+                    throw #className$+": getDev(): Cannot open table '"+rd_open_tables$[1]+"'", 270
+                endif
+
+                rem --- Update table_chans$[all] array fields
+                #devs!.put(pfx$+table$, rd_open_chans$[1])
+                #tmpls!.put(pfx$+table$, rd_open_tpls$[1])
+                
+                channel%=num(rd_open_chans$[1])
+            endif
+            
+            methodret channel%
+           
+method_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
         
     rem --- Get a template from a data name
     

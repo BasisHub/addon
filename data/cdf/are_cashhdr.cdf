@@ -10,27 +10,30 @@ rem --- Enable/disable controls based on Cash Receipt code
 	gosub get_cash_rec_cd
 	gosub able_controls
 [[ARE_CASHHDR.AABO]]
-rem --- user has elected to not save changes -- remove any are_cashgl recs already added (don't want orphans)
+rem --- User has elected to not save changes. 
+rem --- For new records only, remove any are_cashgl recs already added (don't want orphans).
 
-key_pfx$=callpoint!.getColumnData("ARE_CASHHDR.FIRM_ID")+callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")+
-:	callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")+callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")+
-:	callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")+callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")+
-:	callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")+callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_02")
+if callpoint!.getRecordMode()="A" then
 
-rem --- read thru are-21's just written (if any) and remove them
-rem --- alternative might be to set "no_out" flag and just give a warning, then  ABORT, but
-rem --- while BEND has an ABORT, BREX doesn't, so if user wasn't closing, but just moving on, ABORT won't be seen
+	rem --- read thru are-21's just written (if any) and remove them
+	rem --- alternative might be to set "no_out" flag and just give a warning, then  ABORT, but
+	rem --- while BEND has an ABORT, BREX doesn't, so if user wasn't closing, but just moving on, ABORT won't be seen
 
-are_cashgl_dev=fnget_dev("ARE_CASHGL")
-dim are21a$:fnget_tpl$("ARE_CASHGL")
+	are_cashgl_dev=fnget_dev("ARE_CASHGL")
+	dim are21a$:fnget_tpl$("ARE_CASHGL")
 
-read(are_cashgl_dev,key=key_pfx$,dom=*next)
-while 1	
-	ky$=key(are_cashgl_dev,end=*break)
-	if pos(key_pfx$=ky$)<>1 then break
-	remove (are_cashgl_dev,key=ky$)	
-wend
-	
+	key_pfx$=callpoint!.getColumnData("ARE_CASHHDR.FIRM_ID")+callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")+callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")+
+:		callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")+callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")+
+:		callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")+callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_02")
+
+	read(are_cashgl_dev,key=key_pfx$,dom=*next)
+	while 1	
+		ky$=key(are_cashgl_dev,end=*break)
+		if pos(key_pfx$=ky$)<>1 then break
+		remove (are_cashgl_dev,key=ky$)	
+	wend
+endif	
 [[ARE_CASHHDR.BEND]]
 rem --- remove software lock on batch, if batching
 
@@ -128,7 +131,6 @@ if data_present$="Y"
 		break
 		case num(user_tpl.gridInvoice_id$)
 			gosub process_gridInvoice_event
-			callpoint!.setStatus("REFRESH-MODIFIED")
 		break
 	swend
 endif
@@ -1298,6 +1300,7 @@ rem ==================================================================
 				gosub invoice_chk_onoff
 				gridInvoice!.setSelectedColumn(1)
 				Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
+				callpoint!.setStatus("REFRESH-MODIFIED")
 			endif
 		break
 		case 12;rem --- grid_key_press (allow space-bar toggle of checkbox)
@@ -1307,6 +1310,7 @@ rem ==================================================================
 				gosub invoice_chk_onoff
 				gridInvoice!.setSelectedColumn(1)
 				Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)			
+				callpoint!.setStatus("REFRESH-MODIFIED")
 			endif
 		break
 		case 2;rem --- selected column
@@ -1316,6 +1320,7 @@ rem ==================================================================
 				gosub invoice_chk_onoff
 				gridInvoice!.setSelectedColumn(1)
 				Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
+				callpoint!.setStatus("REFRESH-MODIFIED")
 			endif
 		break
 		case default
