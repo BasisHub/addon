@@ -18,6 +18,11 @@ if ctl_ID=num(user_tpl.gridABCctlID$)
 	gridABC!=UserObj!.getItem(num(user_tpl.gridABCOfst$))
 	curr_row=dec(notice.row$)
 	curr_col=dec(notice.col$)
+	if callpoint!.isEditMode() then
+		gridABC!.setEditable(1)
+	else
+		gridABC!.setEditable(0)
+	endif
  
 	switch notice.code
  

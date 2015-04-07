@@ -347,7 +347,7 @@ rem --- Work order scheduled to be closed?
 
 			rem --- Clear close entries for serial/lot numbers for this work order
 			lotser$=callpoint!.getDevObject("lotser")
-			if pos(lotser$="LS")=0 then
+			if pos(lotser$="LS") then
 				wolotser_dev=fnget_dev("1SFE_WOLOTSER")
 				dim wolotser$:fnget_tpl$("1SFE_WOLOTSER")
 				read(wolotser_dev,key=firm_id$+wo_location$+wo_no$,dom=*next)closedwo$

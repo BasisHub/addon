@@ -130,6 +130,12 @@ if data_present$="Y"
 			endif
 		break
 		case num(user_tpl.gridInvoice_id$)
+			gridInvoice!=UserObj!.getItem(num(user_tpl.inv_grid$))                             
+			if callpoint!.isEditMode() then
+				gridInvoice!.setEditable(1)
+			else
+				gridInvoice!.setEditable(0)
+			endif
 			gosub process_gridInvoice_event
 		break
 	swend

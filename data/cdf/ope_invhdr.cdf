@@ -1015,7 +1015,7 @@ rem --- Enable / Disable buttons
 			endif
 		endif
 	endif
-
+	if !callpoint!.isEditMode() then callpoint!.setOptionEnabled("UINV",0)
 
 rem --- Set Backordered text field
 
@@ -1325,6 +1325,8 @@ rem --- Write/Remove manual ship to file
 		ordship_tpl$ = field(ordship_tpl$)
 		write record (ordship_dev) ordship_tpl$
 	endif
+
+	if !callpoint!.isEditMode() then callpoint!.setOptionEnabled("UINV",0)
 [[OPE_INVHDR.ADIS]]
 print "Hdr:ADIS"; rem debug
 
@@ -1399,7 +1401,7 @@ rem --- Enable buttons
 	callpoint!.setOptionEnabled("UINV",1)
 	gosub able_cash_sale
 
-	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "I" then
+	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "I" and callpoint!.isEditMode() then
 		callpoint!.setOptionEnabled("UINV",1)
 	else
 		callpoint!.setOptionEnabled("UINV",0)

@@ -99,7 +99,8 @@ rem --- Setup a templated string to pass information back and forth from form
 :				"EST_SHP_DATE:C(8)," +
 :				"STD_LIST_PRC:N(7*)," +
 :				"DISC_PERCENT:N(7*)," +
-:				"UNIT_PRICE:N(7*)"
+:				"UNIT_PRICE:N(7*)," +
+:				"isEditMode:N(1*)"
 	a! = BBjAPI().makeTemplatedString(tmpl$)
 
 	dim dflt_data$[7,1]
@@ -128,6 +129,7 @@ rem --- Setup a templated string to pass information back and forth from form
 	a!.setFieldValue("COMMIT_FLAG",  callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG"))
 	a!.setFieldValue("MAN_PRICE",    callpoint!.getColumnData("OPE_ORDDET.MAN_PRICE"))
 	a!.setFieldValue("PRINT_FLAG",   callpoint!.getColumnData("OPE_ORDDET.PICK_FLAG"))
+	a!.setFieldValue("isEditMode",   callpoint!.isEditMode())
 
 	callpoint!.setDevObject("additional_options", a!)
 
@@ -755,6 +757,7 @@ rem --- Is this item lot/serial?
 			callpoint!.setDevObject("dropship_line", user_tpl.line_dropship$)
 			callpoint!.setDevObject("invoice_type",  callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE"))
 			callpoint!.setDevObject("unit_cost",       callpoint!.getColumnData("OPE_ORDDET.UNIT_COST"))
+			callpoint!.setDevObject("isEditMode_SerialEntry", callpoint!.isEditMode())
 
 			grid!.focus()
 
@@ -767,11 +770,17 @@ rem --- Is this item lot/serial?
 			dflt_data$[3,1] = order$
 			lot_pfx$ = firm_id$+ar_type$+cust$+order$+int_seq$
 
+			if callpoint!.isEditMode() then
+				proc_mode$="MNT"
+			else
+				proc_mode$="MNT-LCK"
+			endif
+
 			print "---Launch OPE_ORDLSDET..."; rem debug
 			call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
 :				"OPE_ORDLSDET", 
 :				stbl("+USER_ID"), 
-:				"MNT", 
+:				proc_mode$, 
 :				lot_pfx$, 
 :				table_chans$[all], 
 :				dflt_data$[all]
@@ -1613,7 +1622,8 @@ rem ============================================================================
 	user_tpl.line_prod_type_pr$ = opc_linecode.prod_type_pr$
 
 
-	if pos(opc_linecode.line_type$="SP")>0 and num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))<>0
+	if pos(opc_linecode.line_type$="SP")>0 and num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))<>0 and
+:	callpoint!.isEditMode() then
 		callpoint!.setOptionEnabled("RCPR",1)
 	else
 		callpoint!.setOptionEnabled("RCPR",0)
@@ -1753,8 +1763,11 @@ rem ==========================================================================
 		warn  = 0
 		gosub check_item_whse
 
-		if !user_tpl.item_wh_failed and num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")) then
+		if !user_tpl.item_wh_failed and num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")) and
+:		callpoint!.isEditMode() then
 			callpoint!.setOptionEnabled("RCPR",1)
+		else
+			callpoint!.setOptionEnabled("RCPR",0)
 		endif
 	endif
 
@@ -1829,7 +1842,7 @@ rem ==========================================================================
 	endif
 	gosub disp_grid_totals
 	gosub check_if_tax
-	callpoint!.setStatus("MODIFIED;REFRESH")
+	if callpoint!.isEditMode() then callpoint!.setStatus("MODIFIED;REFRESH")
 
 	return
 

@@ -26,18 +26,29 @@ rem --- Disable fields, set globals
 	UserObj! = cast(BBjTemplatedString, callpoint!.getDevObject("additional_options"))
 	dim user_tpl$:"orig_price:n(7*), orig_list:n(7*)"
 
+	isEditMode = UserObj!.getFieldAsNumber("isEditMode")
 	user_tpl.orig_price = UserObj!.getFieldAsNumber("UNIT_PRICE")
 	user_tpl.orig_list  = UserObj!.getFieldAsNumber("STD_LIST_PRC")
 	line_type$          = UserObj!.getFieldAsString("LINE_TYPE")
 	invoice_type$       = UserObj!.getFieldAsString("INVOICE_TYPE")
 
-	if pos(line_type$ = "SPN") = 0 then 
-		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.STD_LIST_PRC", -1)
-		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.DISC_PERCENT",  -1)
-	endif
+	if isEditMode then
+		if pos(line_type$ = "SPN") = 0 then 
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.STD_LIST_PRC", -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.DISC_PERCENT",  -1)
+		endif
 
-	if invoice_type$ = "P" then
-		callpoint!.setColumnEnabled("OPE_ADDL_OPTS.COMMIT_FLAG",  -1)
+		if invoice_type$ = "P" then
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.COMMIT_FLAG",  -1)
+		endif
+	else
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.COMMIT_FLAG",  -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.DISC_PERCENT",  -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.EST_SHP_DATE", -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.MAN_PRICE", -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.NET_PRICE", -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.PRINTED", -1)
+			callpoint!.setColumnEnabled("OPE_ADDL_OPTS.STD_LIST_PRC", -1)
 	endif
 [[OPE_ADDL_OPTS.STD_LIST_PRC.AVAL]]
 rem --- Send back to caller

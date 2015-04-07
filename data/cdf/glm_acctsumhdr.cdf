@@ -67,6 +67,11 @@ rem analyze gui_event$ and notice$ to see which control's callback triggered the
 			gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
 			curr_row=dec(notice.row$)
 			curr_col=dec(notice.col$)
+			if callpoint!.isEditMode() then
+				gridActivity!.setEditable(1)
+			else
+				gridActivity!.setEditable(0)
+			endif
 
 			switch notice.code
 	
