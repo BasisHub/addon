@@ -266,7 +266,7 @@ rem --- Calculate Last Year
 
 rem --- Enable/Disable Summary Button
 summ_button:
-	callpoint!.setOptionEnabled("SUMM",1)
+	if callpoint!.isEditMode() then callpoint!.setOptionEnabled("SUMM",1)
 	if cvs(sic_code$,2)=""
 		callpoint!.setOptionEnabled("SUMM",0)
 	else

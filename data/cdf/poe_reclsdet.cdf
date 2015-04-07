@@ -117,7 +117,7 @@ rem ==========================================================================
 	else
 		rem --- Disable auto-assign option when don't need more than one
 		gosub get_lotser_tot
-		if num(callpoint!.getDevObject("ls_qty_received"))-total_lotser<=1 then
+		if num(callpoint!.getDevObject("ls_qty_received"))-total_lotser<=1 or !callpoint!.isEditMode() then
 			callpoint!.setOptionEnabled("AUTO",0)
 		else
 			callpoint!.setOptionEnabled("AUTO",1)

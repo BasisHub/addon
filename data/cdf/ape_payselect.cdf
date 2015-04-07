@@ -1,3 +1,24 @@
+[[APE_PAYSELECT.VENDOR_ID.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_vendor_id",callpoint!.getColumnData("APE_PAYSELECT.VENDOR_ID"))
+[[APE_PAYSELECT.DUE_DATE_OP.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_due_date_op",callpoint!.getColumnData("APE_PAYSELECT.DUE_DATE_OP"))
+[[APE_PAYSELECT.DUE_DATE_DT.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_due_date_dt",callpoint!.getColumnData("APE_PAYSELECT.DUE_DATE_DT"))
+[[APE_PAYSELECT.DISC_DATE_OP.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_disc_date_op",callpoint!.getColumnData("APE_PAYSELECT.DISC_DATE_OP"))
+[[APE_PAYSELECT.DISC_DATE_DT.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_disc_date_dt",callpoint!.getColumnData("APE_PAYSELECT.DISC_DATE_DT"))
+[[APE_PAYSELECT.AP_TYPE.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_ap_type",callpoint!.getColumnData("APE_PAYSELECT.AP_TYPE"))
+[[APE_PAYSELECT.PAYMENT_GRP.BINP]]
+rem --- Capture current value so will know in AVAL if it's changed
+	callpoint!.setDevObject("prev_payment_grp",callpoint!.getColumnData("APE_PAYSELECT.PAYMENT_GRP"))
 [[APE_PAYSELECT.BSHO]]
 rem --- Disable View Images option as needed
 

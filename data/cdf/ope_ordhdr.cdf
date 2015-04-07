@@ -1,3 +1,9 @@
+[[OPE_ORDHDR.BLST]]
+rem --- Set flag that Last Record has been selected
+	callpoint!.setDevObject("FirstLastRecord","LAST")
+[[OPE_ORDHDR.BFST]]
+rem --- Set flag that First Record has been selected
+	callpoint!.setDevObject("FirstLastRecord","FIRST")
 [[OPE_ORDHDR.BPRI]]
 rem --- Check for Order Total
 
@@ -252,6 +258,66 @@ rem --- Clear availability information
 
 	gosub init_msgs
 [[OPE_ORDHDR.ARAR]]
+rem --- If First/Last Record was used, did it return an Order?
+
+	if callpoint!.getDevObject("FirstLastRecord")<>null() and callpoint!.getDevObject("FirstLastRecord")<>"" then
+		whichRecord$=callpoint!.getDevObject("FirstLastRecord")
+		callpoint!.setDevObject("FirstLastRecord","")
+
+		if callpoint!.getColumnData("OPE_ORDHDR.ORDINV_FLAG")<>"O" or callpoint!.getColumnData("OPE_ORDHDR.INVOICE_TYPE")="V" then
+			ope01_dev = fnget_dev("OPE_ORDHDR")
+			dim ope01a$:fnget_tpl$("OPE_ORDHDR")
+			ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
+			next_key$=""
+
+			if whichRecord$="FIRST" then
+				rem --- Locate FIRST valid order to display
+				while 1
+					read record (ope01_dev, dir=0, end=*break) ope01a$
+					if ope01a.firm_id$+ope01a.ar_type$<>firm_id$+ar_type$ then break
+					if ope01a.invoice_type$ <> "V" and ope01a.ordinv_flag$ = "O" then
+						rem --- Have a keeper, stop looking
+						next_key$=key(ope01_dev)
+						break
+					else
+						rem --- Keep looking
+						read (ope01_dev, end=*endif)
+						continue
+					endif
+				wend
+			endif
+
+			if whichRecord$="LAST" then
+				rem --- Locate LAST valid order to display
+				while 1
+					p_key$ = keyp(ope01_dev, end=*break)
+					read record (ope01_dev, key=p_key$) ope01a$
+					if ope01a.firm_id$+ope01a.ar_type$<>firm_id$+ar_type$ then break
+					if ope01a.invoice_type$ <> "V" and ope01a.ordinv_flag$ = "O" then
+						rem --- Have a keeper, stop looking
+						next_key$=p_key$
+						break
+					else
+						rem --- Keep looking
+						read (ope01_dev, key=p_key$, dir=0)
+						continue
+					endif
+				wend
+			endif
+
+			rem --- Display next order
+			if next_key$<>"" then
+				callpoint!.setStatus("RECORD:["+next_key$+"]")
+				break
+			else
+				msg_id$ = "OP_NO_OPEN_ORDERS"
+				gosub disp_message
+				callpoint!.setStatus("ABORT-NEWREC")
+				break
+			endif
+		endif
+	endif
+
 rem --- Set data
 
 	user_tpl.order_date$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_DATE")
@@ -515,7 +581,7 @@ rem --- Show customer data
 
 rem --- Enable buttons
 
-	if cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"), 2) = "" then
+	if cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"), 2) = "" and callpoint!.isEditMode() then
 		callpoint!.setOptionEnabled("DINV",1)
 		callpoint!.setOptionEnabled("CINV",1)
 	endif
@@ -560,12 +626,16 @@ rem --- Is previous record an order and not void?
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
 
+	current_key$=callpoint!.getRecordKey()
+	read(ope01_dev,key=current_key$,dir=0,dom=*next)
+
+	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
 	hit_eof=0
 	while 1
 		p_key$ = keyp(ope01_dev, end=eof_pkey)
 		read record (ope01_dev, key=p_key$) ope01a$
 
-		if ope01a.firm_id$ = firm_id$ then 
+		if ope01a.firm_id$+ope01a.ar_type$ = firm_id$+ar_type$ then 
 			if ope01a.ordinv_flag$ = "O" and ope01a.invoice_type$ <> "V" then
 				rem --- Have a keeper, stop looking
 				break
@@ -578,12 +648,12 @@ rem --- Is previous record an order and not void?
 		rem --- End-of-firm
 
 eof_pkey: rem --- If end-of-file or end-of-firm, rewind to last record in this firm
-		read (ope01_dev, key=firm_id$+$ff$, dom=*next)
+		read (ope01_dev, key=firm_id$+ar_type$+$ff$, dom=*next)
 		hit_eof=hit_eof+1
 		if hit_eof>1 then
-			msg_id$ = "OP_ALL_WRONG_TYPE"
+			msg_id$ = "OP_NO_OPEN_ORDERS"
 			gosub disp_message
-			callpoint!.setStatus("ABORT")
+			callpoint!.setStatus("ABORT-NEWREC")
 			break
 		endif
 	wend
@@ -627,7 +697,16 @@ rem --- Enable buttons as appropriate
 			callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
+			callpoint!.setOptionEnabled("CRAT",1)
 		endif
+	endif
+
+	if !callpoint!.isEditMode() then
+		callpoint!.setOptionEnabled("CINV",0)
+		callpoint!.setOptionEnabled("DINV",0)
+		callpoint!.setOptionEnabled("CRAT",0)
+		callpoint!.setOptionEnabled("PRNT",0)
+		callpoint!.setOptionEnabled("RPRT",0)
 	endif
 
 rem --- Set Backordered text field
@@ -687,29 +766,25 @@ rem --- Is next record an order and not void?
 
 rem --- Position the file at the correct record
 
+	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
 	if callpoint!.getDevObject("new_rec")="Y"
-		start_key$=firm_id$+"  "
+		start_key$=firm_id$+ar_type$
 		cust_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
-		order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 		if cvs(cust_id$,2)<>""
 			start_key$=start_key$+cust_id$
+			order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 			if cvs(order_no$,2)<>""
 				start_key$=start_key$+order_no$
 			endif
 		endif
-
-		while 1
-			read record (ope01_dev,key=start_key$,dom=*break)
-			extract record (ope01_dev,key=start_key$)
-			break
-		wend
+		read record (ope01_dev,key=start_key$,dom=*next)
 	endif
 
 	hit_eof=0
 	while 1
 		read record (ope01_dev, dir=0, end=eof) ope01a$
 
-		if ope01a.firm_id$ = firm_id$ then
+		if ope01a.firm_id$+ope01a.ar_type$ = firm_id$+ar_type$ then
 			if ope01a.ordinv_flag$ = "O" and ope01a.invoice_type$ <> "V" then
 				rem --- Have a keeper, stop looking
 				break
@@ -722,12 +797,12 @@ rem --- Position the file at the correct record
 		rem --- End-of-firm
 
 eof: rem --- If end-of-file or end-of-firm, rewind to first record of the firm
-		read (ope01_dev, key=firm_id$, dom=*next)
+		read (ope01_dev, key=firm_id$+ar_type$, dom=*next)
 		hit_eof=hit_eof+1
 		if hit_eof>1 then
-			msg_id$ = "OP_ALL_WRONG_TYPE"
+			msg_id$ = "OP_NO_OPEN_ORDERS"
 			gosub disp_message
-			callpoint!.setStatus("ABORT")
+			callpoint!.setStatus("ABORT-NEWREC")
 			break
 		endif
 	wend
@@ -799,8 +874,10 @@ rem --- Set comm percent (if calling up a B/O, it will have been cleared);rem bu
 
 rem --- Enable buttons
 
-	callpoint!.setOptionEnabled("PRNT",1)
-	callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
+	if callpoint!.isEditMode() then
+		callpoint!.setOptionEnabled("PRNT",1)
+		callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
+	endif
 	callpoint!.setOptionEnabled("TTLS",1)
 
 rem --- Set all previous values
@@ -1580,6 +1657,14 @@ rem --- Write/Remove manual ship to file
 
 		ordship_tpl$ = field(ordship_tpl$)
 		write record (ordship_dev) ordship_tpl$
+	endif
+
+	if !callpoint!.isEditMode() then
+		callpoint!.setOptionEnabled("CINV",0)
+		callpoint!.setOptionEnabled("DINV",0)
+		callpoint!.setOptionEnabled("CRAT",0)
+		callpoint!.setOptionEnabled("PRNT",0)
+		callpoint!.setOptionEnabled("RPRT",0)
 	endif
 [[OPE_ORDHDR.<CUSTOM>]]
 rem ==========================================================================

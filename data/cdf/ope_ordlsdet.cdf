@@ -1,3 +1,16 @@
+[[OPE_ORDLSDET.AGDS]]
+rem --- Can't use qty_shipped from ope_invdet and ope_orddet. Must total it up here.
+	qty_shipped=0
+	dim ope_ordlsdet$:fnget_tpl$("OPE_ORDLSDET")
+	grid! = Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("OPE_ORDLSDET.QTY_SHIPPED","LABS")
+	qtyShipped_column=util.getGridColumnNumber(grid!,col_hdr$)
+	if grid!.getNumRows()>0 then
+		for row=0 to grid!.getNumRows()-1
+			qty_shipped=qty_shipped+num(grid!.getCellText(row,qtyShipped_column))
+		next row
+	endif
+	user_tpl.left_to_ord=num(callpoint!.getDevObject("ord_qty"))-qty_shipped
 [[OPE_ORDLSDET.AGRN]]
 rem --- keep track of starting qty for this line, so we can accurately check avail qty minus what's already been committed
 
@@ -422,7 +435,7 @@ rem --- Set a flag for non-inventoried items
 
 rem --- No Serial/lot lookup for non-invent items
 	
-	if user_tpl.non_inventory then callpoint!.setOptionEnabled("LLOK", 0)
+	if user_tpl.non_inventory or !callpoint!.isEditMode() then callpoint!.setOptionEnabled("LLOK", 0)
 
 rem --- Create a HashMap so that we know what's been committed during this session
 

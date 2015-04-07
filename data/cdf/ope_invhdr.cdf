@@ -1,3 +1,9 @@
+[[OPE_INVHDR.BLST]]
+rem --- Set flag that Last Record has been selected
+	callpoint!.setDevObject("FirstLastRecord","LAST")
+[[OPE_INVHDR.BFST]]
+rem --- Set flag that First Record has been selected
+	callpoint!.setDevObject("FirstLastRecord","FIRST")
 [[OPE_INVHDR.BPRI]]
 rem --- Check for Order Total on non-cash sales
 
@@ -388,7 +394,65 @@ rem --- Calculate Taxes
 	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
 	callpoint!.setStatus("REFRESH")
 [[OPE_INVHDR.ARAR]]
-print "Hdr:ARAR"; rem debug
+rem --- If First/Last Record was used, did it return an Invoice?
+
+	if callpoint!.getDevObject("FirstLastRecord")<>null() and callpoint!.getDevObject("FirstLastRecord")<>"" then
+		whichRecord$=callpoint!.getDevObject("FirstLastRecord")
+		callpoint!.setDevObject("FirstLastRecord","")
+
+		if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")<>"I" or callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE")<>"S" then
+			ope01_dev = fnget_dev("OPE_INVHDR")
+			dim ope01a$:fnget_tpl$("OPE_INVHDR")
+			ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
+			next_key$=""
+
+			if whichRecord$="FIRST" then
+				rem --- Locate FIRST valid invoice to display
+				while 1
+					read record (ope01_dev, dir=0, end=*break) ope01a$
+					if ope01a.firm_id$+ope01a.ar_type$<>firm_id$+ar_type$ then break
+					if ope01a.invoice_type$ = "S" and ope01a.ordinv_flag$ = "I" then
+						rem --- Have a keeper, stop looking
+						next_key$=key(ope01_dev)
+						break
+					else
+						rem --- Keep looking
+						read (ope01_dev, end=*endif)
+						continue
+					endif
+				wend
+			endif
+
+			if whichRecord$="LAST" then
+				rem --- Locate LAST valid invoice to display
+				while 1
+					p_key$ = keyp(ope01_dev, end=*break)
+					read record (ope01_dev, key=p_key$) ope01a$
+					if ope01a.firm_id$+ope01a.ar_type$<>firm_id$+ar_type$ then break
+					if ope01a.invoice_type$ = "S" and ope01a.ordinv_flag$ = "I" then
+						rem --- Have a keeper, stop looking
+						next_key$=p_key$
+						break
+					else
+						rem --- Keep looking
+						read (ope01_dev, key=p_key$, dir=0)
+						continue
+					endif
+				wend
+			endif
+
+			rem --- Display next invoice
+			if next_key$<>"" then
+				callpoint!.setStatus("RECORD:["+next_key$+"]")
+				break
+			else
+				msg_id$ = "OP_NO_OPEN_INVOICES"
+				gosub disp_message
+				callpoint!.setStatus("ABORT-NEWREC")
+				break
+			endif
+		endif
+	endif
 
 rem --- Check for void
 
@@ -422,8 +486,6 @@ rem --- Set data
 	callpoint!.setDevObject("new_rec","N")
 
 rem --- Set flags
-
-	user_tpl.user_entry$ = "N"; rem user entered an order (not navigated)
 
 	callpoint!.setDevObject("credit_status_done", "N")
 	callpoint!.setDevObject("credit_action_done", "N")
@@ -1015,7 +1077,14 @@ rem --- Enable / Disable buttons
 			endif
 		endif
 	endif
-	if !callpoint!.isEditMode() then callpoint!.setOptionEnabled("UINV",0)
+	if !callpoint!.isEditMode() then
+		callpoint!.setOptionEnabled("CASH",0)
+		callpoint!.setOptionEnabled("CINV",0)
+		callpoint!.setOptionEnabled("DINV",0)
+		callpoint!.setOptionEnabled("PRNT",0)
+		callpoint!.setOptionEnabled("RPRT",0)
+		callpoint!.setOptionEnabled("UINV",0)
+	endif
 
 rem --- Set Backordered text field
 
@@ -1154,19 +1223,22 @@ rem --- Remove committments for detail records by calling ATAMO
 		remove (creddate_dev, key=firm_id$+ord_date$+cust$+ord$, err=*next)	
 	endif
 [[OPE_INVHDR.BPRK]]
-
 rem --- Previous record must be an invoice
 
 	file_name$ = "OPE_INVHDR"
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
+	ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
+
+	current_key$=callpoint!.getRecordKey()
+	read(ope01_dev,key=current_key$,dir=0,dom=*next)
 
 	hit_eof=0
 	while 1
 		p_key$ = keyp(ope01_dev, end=eof_pkey)
 		read record (ope01_dev, key=p_key$) ope01a$
 
-		if ope01a.firm_id$ = firm_id$ then 
+		if ope01a.firm_id$+ope01a.ar_type$ = firm_id$+ar_type$ then 
 			if ope01a.invoice_type$ = "S" and ope01a.ordinv_flag$ = "I" then
 				rem --- Have a keeper, stop looking
 				break
@@ -1179,12 +1251,12 @@ rem --- Previous record must be an invoice
 		rem --- End-of-firm
 
 eof_pkey: rem --- If end-of-file or end-of-firm, rewind to last record in this firm
-		read (ope01_dev, key=firm_id$+$ff$, dom=*next)
+		read (ope01_dev, key=firm_id$+ar_type$+$ff$, dom=*next)
 		hit_eof=hit_eof+1
 		if hit_eof>1 then
-			msg_id$ = "OP_ALL_WRONG_TYPE"
+			msg_id$ = "OP_NO_OPEN_INVOICES"
 			gosub disp_message
-			callpoint!.setStatus("ABORT")
+			callpoint!.setStatus("ABORT-NEWREC")
 			break
 		endif
 	wend
@@ -1197,28 +1269,28 @@ rem --- Next record must be an invoice
 
 rem --- Position the file at the correct record
 
+	ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
 	if callpoint!.getDevObject("new_rec")="Y"
-		start_key$=firm_id$+"  "
+		start_key$=firm_id$+ar_type$
 		cust_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-		order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 		if cvs(cust_id$,2)<>""
 			start_key$=start_key$+cust_id$
+			order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 			if cvs(order_no$,2)<>""
 				start_key$=start_key$+order_no$
 			endif
 		endif
-
-		while 1
-			read record (ope01_dev,key=start_key$,dom=*break)
-			break
-		wend
+		read record (ope01_dev,key=start_key$,dom=*next)
+	else
+		current_key$=callpoint!.getRecordKey()
+		read(ope01_dev,key=current_key$,dom=*next)
 	endif
 
 	hit_eof=0
 	while 1
 		read record (ope01_dev, dir=0, end=eof) ope01a$
 
-		if ope01a.firm_id$ = firm_id$ then
+		if ope01a.firm_id$+ope01a.ar_type$ = firm_id$+ar_type$ then
 			if ope01a.invoice_type$ = "S" and ope01a.ordinv_flag$ = "I" then
 				rem --- Have a keeper, stop looking
 				break
@@ -1231,12 +1303,12 @@ rem --- Position the file at the correct record
 		rem --- End-of-firm
 
 eof: rem --- If end-of-file or end-of-firm, rewind to first record of the firm
-		read (ope01_dev, key=firm_id$, dom=*next)
+		read (ope01_dev, key=firm_id$+ar_type$, dom=*next)
 		hit_eof=hit_eof+1
 		if hit_eof>1 then
-			msg_id$ = "OP_ALL_WRONG_TYPE"
+			msg_id$ = "OP_NO_OPEN_ORDERS"
 			gosub disp_message
-			callpoint!.setStatus("ABORT")
+			callpoint!.setStatus("ABORT-NEWREC")
 			break
 		endif
 	wend
@@ -1326,7 +1398,14 @@ rem --- Write/Remove manual ship to file
 		write record (ordship_dev) ordship_tpl$
 	endif
 
-	if !callpoint!.isEditMode() then callpoint!.setOptionEnabled("UINV",0)
+	if !callpoint!.isEditMode() then
+		callpoint!.setOptionEnabled("CASH",0)
+		callpoint!.setOptionEnabled("CINV",0)
+		callpoint!.setOptionEnabled("DINV",0)
+		callpoint!.setOptionEnabled("PRNT",0)
+		callpoint!.setOptionEnabled("RPRT",0)
+		callpoint!.setOptionEnabled("UINV",0)
+	endif
 [[OPE_INVHDR.ADIS]]
 print "Hdr:ADIS"; rem debug
 
@@ -1359,7 +1438,6 @@ rem --- Check for order, force to an Invoice
 		gosub make_invoice
 		if locked then
 			user_tpl.do_end_of_form = 0
-			break; rem --- exit callpoint
 		endif
 	endif
 
@@ -1396,7 +1474,7 @@ rem --- Set comm percent (if calling up a B/O, it will have been cleared);rem bu
 
 rem --- Enable buttons
 
-	callpoint!.setOptionEnabled("PRNT", 1)
+	if callpoint!.isEditMode() then callpoint!.setOptionEnabled("PRNT", 1)
 	callpoint!.setOptionEnabled("TTLS",1)
 	callpoint!.setOptionEnabled("UINV",1)
 	gosub able_cash_sale
@@ -1448,7 +1526,6 @@ print "Hdr:ORDER_NO.AVAL"; rem debug
 rem --- Do we need to create a new order number?
 
 	new_seq$ = "N"
-	user_tpl.user_entry$ = "N"
 	order_no$ = callpoint!.getUserInput()
 
 	if cvs(order_no$, 2) = "" then 
@@ -1464,8 +1541,6 @@ rem --- Do we need to create a new order number?
 			callpoint!.setUserInput(order_no$)
 			new_seq$ = "Y"
 		endif
-	else
-		user_tpl.user_entry$ = "Y"
 	endif
 
 rem --- Does order exist?
@@ -1480,7 +1555,7 @@ rem --- Does order exist?
 	start_block = 1
 
 	if start_block then
-		extract record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$; rem Advisory Locking
+		read record (ope01_dev, key=firm_id$+ar_type$+cust_id$+order_no$, dom=*endif) ope01a$
 		found = 1
 	endif
 
@@ -1520,13 +1595,9 @@ rem --- Existing record
 	rem --- Check for order, force to an Invoice
 
 		if ope01a.invoice_type$ = "O" then
-
-			gosub make_invoice
-
-			if locked then
-				user_tpl.do_end_of_form = 0
-				break; rem --- exit callpoint
-			endif
+			rem --- Force order to invoice in ADIS
+			callpoint!.setStatus("RECORD:["+firm_id$+ar_type$+cust_id$+order_no$+"]")
+			break; rem --- exit callpoint
 		endif
 
 	rem --- Set Codes
@@ -1668,7 +1739,7 @@ rem --- Show customer data
 
 rem --- Enable Duplicate buttons, printer
 
-	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" then
+	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" and callpoint!.isEditMode() then
 		callpoint!.setOptionEnabled("DINV", 1)
 		callpoint!.setOptionEnabled("CINV", 1)
 	endif
@@ -2540,6 +2611,21 @@ rem ==========================================================================
 :		callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "O" 
 :	then
 
+		rem --- Can't create invoice if someone has the order extracted.
+		ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
+		customer_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+		order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+		lock_table$="OPE_INVHDR"
+		lock_record$=firm_id$+ar_type$+customer_id$+order_no$
+		lock_type$="C"
+		lock_disp$="M"
+		lock_status$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		if lock_status$="ERR_LOCKED"
+			locked = 1
+			return
+		endif
+
 	rem --- Set Invoice number
 
 		call stbl("+DIR_SYP")+"bas_sequences.bbj","INVOICE_NO",inv_no$,table_chans$[all]
@@ -2766,11 +2852,11 @@ able_cash_sale: rem --- Enable/Disable Cash Sale button
 rem ==========================================================================
 
 	idx=form!.getControl(num(stbl("+TAB_CTL"))).getSelectedIndex()
-	if user_tpl.cash_sale$="Y" and idx=2 then
+	if user_tpl.cash_sale$="Y" and idx=2 and callpoint!.isEditMode() then
 		rem --- enable Cash Sale button when on Totals tab
 		callpoint!.setOptionEnabled("CASH",1)
 	else
-		rem --- enable Cash Sale button when on Totals tab
+		rem --- disable Cash Sale button when not on Totals tab
 		callpoint!.setOptionEnabled("CASH",0)
 	endif
 
@@ -3041,7 +3127,6 @@ rem --- Setup user_tpl$
 :		"pgmdir:c(1*), " +
 :		"skip_whse:c(1), " +
 :		"warehouse_id:c(2), " +
-:		"user_entry:c(1), " +
 :		"cur_row:n(5), " +
 :		"skip_ln_code:c(1), " +
 :		"hist_ord:c(1), " +

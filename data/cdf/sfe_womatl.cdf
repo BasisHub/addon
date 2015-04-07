@@ -1097,7 +1097,7 @@ rem --- fill listbox for use with Op Sequence
 	my_grid!.setColumnHeaderCellText(ListColumn,"Op Ref")
 
 rem --- Disable WO_REF_NUM when locked or WO closed
-	if callpoint!.getDevObject("lock_ref_num")="Y" or callpoint!.getDevObject("wo_status")="C" then
+	if callpoint!.getDevObject("lock_ref_num")="Y" or callpoint!.getDevObject("wo_status")="C" or !callpoint!.isEditMode() then
 		opts$=callpoint!.getTableColumnAttribute("SFE_WOMATL.WO_REF_NUM","OPTS")
 		callpoint!.setTableColumnAttribute("SFE_WOMATL.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
 		callpoint!.setOptionEnabled("AUTO",0)

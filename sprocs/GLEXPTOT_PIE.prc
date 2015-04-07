@@ -132,10 +132,12 @@ rem --- get data
 :                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
 :                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13
         wend
-        data! = rs!.getEmptyRecordData()
-        data!.setFieldValue("CATEGORY",start_brk_desc$)
-        data!.setFieldValue("TOTAL",cvs(str(abs(acct_total):"#########.00"),3))
-        rs!.insert(data!)
+        if acct_total
+            data! = rs!.getEmptyRecordData()
+            data!.setFieldValue("CATEGORY",start_brk_desc$)
+            data!.setFieldValue("TOTAL",cvs(str(abs(acct_total):"#########.00"),3))
+            rs!.insert(data!)
+        endif
         if cvs(end_brk_no$,2)="" then break
     wend
     

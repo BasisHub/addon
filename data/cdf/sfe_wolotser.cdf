@@ -315,7 +315,7 @@ rem ==========================================================================
 	else
 		rem --- Disable auto-assign option when don't need more than one
 		close_qty_needed=num(callpoint!.getDevObject("cls_inp_qty"))-callpoint!.getDevObject("ls_sch_qty")
-		if close_qty_needed<=1 then
+		if close_qty_needed<=1 or !callpoint!.isEditMode() then
 			callpoint!.setOptionEnabled("AUTO",0)
 		else
 			callpoint!.setOptionEnabled("AUTO",1)
@@ -324,7 +324,7 @@ rem ==========================================================================
 		rem --- Disable auto-close option when not being used with sfe_woclose form 
 		rem --- or don't have more than one ready to close
 		ls_qty_not_closed=callpoint!.getDevObject("ls_sch_qty")-callpoint!.getDevObject("ls_close_qty")
-		if callpoint!.getDevObject("wolotser_action")<>"close" or ls_qty_not_closed<=1 then
+		if callpoint!.getDevObject("wolotser_action")<>"close" or ls_qty_not_closed<=1 or !callpoint!.isEditMode() then
 			callpoint!.setOptionEnabled("ACLS",0)
 		else
 			callpoint!.setOptionEnabled("ACLS",1)

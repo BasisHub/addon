@@ -334,7 +334,7 @@ able_invoice_detail_button: rem --- enable/disable Invoice Detail button
 :		callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
 	read (poe_invdet,key=invdet_key$,dom=*next)
 	k$=key(poe_invdet,end=*next)
-	if pos(invdet_key$=k$)=1
+	if pos(invdet_key$=k$)=1 and callpoint!.isEditMode() then
 		callpoint!.setOptionEnabled("INVB",1)
 	else
 		callpoint!.setOptionEnabled("INVB",0)

@@ -153,7 +153,13 @@ rem --- Lot/serial entry
 	dflt_data$[3,0] = "WOMATISD_SEQ_REF"
 	dflt_data$[3,1] = callpoint!.getColumnData("SFE_WOMATISD.INTERNAL_SEQ_NO")
 
-	call stbl("+DIR_SYP")+"bam_run_prog.bbj","SFE_WOLSISSU",stbl("+USER_ID"),"MNT",firm_loc_wo_isn$,table_chans$[all],"",dflt_data$[all]
+	if callpoint!.isEditMode() then
+		proc_mode$="MNT"
+	else
+		proc_mode$="MNT-LCK"
+	endif
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj","SFE_WOLSISSU",stbl("+USER_ID"),proc_mode$,firm_loc_wo_isn$,table_chans$[all],"",dflt_data$[all]
 
 	qty_issued=num(callpoint!.getDevObject("tot_ls_qty_issued"))
 	if qty_issued<>num(callpoint!.getColumnData("SFE_WOMATISD.QTY_ISSUED")) then
