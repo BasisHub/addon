@@ -86,7 +86,7 @@ rem --- Open/Lock files
 
     files=3,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="sam-03",ids$[1]="SAM_SALESPSN"
+    files$[1]="sam_salespsn_tot",ids$[1]="SAM_SALESPSN_TOT"
     files$[2]="arc_salecode",ids$[2]="ARC_SALECODE"
     files$[3]="gls_params",ids$[3]="GLS_PARAMS"
 
@@ -97,13 +97,13 @@ rem --- Open/Lock files
         throw "File open error.",1001
     endif
 
-    sam03a_dev=channels[1]
+    sam03tot_dev=channels[1]
     arm10f_dev=channels[2]
     glparams_dev=channels[3]
 
 rem --- Dimension string templates
 
-    dim sam03a$:templates$[1]
+    dim sam03tot$:templates$[1]
     dim arm10f$:templates$[2]
     dim glparams$:templates$[3]
     
@@ -123,24 +123,28 @@ rem --- periodSalesVect! holds salesperson's sales by period
     salesMap!=new java.util.TreeMap()
     slspsn_code$=""
     product_type$=""
-    read(sam03a_dev,key=firm_id$+year$,dom=*next)
+    read(sam03tot_dev,key=firm_id$+year$,dom=*next)
     while 1
-        readrecord(sam03a_dev,end=*break)sam03a$
-        if sam03a.firm_id$+sam03a.year$<>firm_id$+year$ then break
+        readrecord(sam03tot_dev,end=*break)sam03tot$
+        if sam03tot.firm_id$+sam03tot.year$<>firm_id$+year$ then break
+        if cvs(sam03tot.product_type$,2)<>"" then continue
 
-        if sam03a.slspsn_code$<>slspsn_code$ then gosub slspsn_break
+        if sam03tot.slspsn_code$<>slspsn_code$ then gosub slspsn_break
 
-        thisSales=sam03a.total_sales_01+sam03a.total_sales_02+sam03a.total_sales_03+sam03a.total_sales_04+
-:                 sam03a.total_sales_05+sam03a.total_sales_06+sam03a.total_sales_07+sam03a.total_sales_08+
-:                 sam03a.total_sales_09+sam03a.total_sales_10+sam03a.total_sales_11+sam03a.total_sales_12+
-:                 sam03a.total_sales_13
+        thisSales=sam03tot.total_sales_01+sam03tot.total_sales_02+sam03tot.total_sales_03+sam03tot.total_sales_04+
+:                 sam03tot.total_sales_05+sam03tot.total_sales_06+sam03tot.total_sales_07+sam03tot.total_sales_08+
+:                 sam03tot.total_sales_09+sam03tot.total_sales_10+sam03tot.total_sales_11+sam03tot.total_sales_12+
+:                 sam03tot.total_sales_13
         thisSales=round(thisSales,2)
         slspsnSales=slspsnSales+thisSales
         for period=1 to numGlPers
-            periodSales=nfield(sam03a$,"TOTAL_SALES_"+str(period:"00"))
+            periodSales=nfield(sam03tot$,"TOTAL_SALES_"+str(period:"00"))
             periodSales=periodSalesVect!.get(period-1)+periodSales
             periodSalesVect!.setItem(period-1,round(periodSales,2))
         next period
+        
+        rem --- Skip to next salesperson
+        read(sam03tot_dev,key=firm_id$+year$+sam03tot.slspsn_code$+$FF$,dom=*next)
     wend
     gosub slspsn_break
 
@@ -190,7 +194,7 @@ slspsn_break: rem --- Salesperson break
     endif
     
     rem --- Initialize for next salesperson
-    slspsn_code$=sam03a.slspsn_code$
+    slspsn_code$=sam03tot.slspsn_code$
     slspsnSales=0
     periodSalesVect!=BBjAPI().makeVector()
     for period=1 to numGlPers

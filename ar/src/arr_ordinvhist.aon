@@ -46,9 +46,9 @@ rem --- need to use ope files if user selected orders, or opt files if invoice h
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="ars_params",options$[1]="OPT",ids$[1]="ARS_PARAMS"
     files$[2]="ivm-01",options$[2]="OPT",ids$[2]="IVM_ITEMMAST"
-    files$[3]="ope-01",options$[3]="OPT",ids$[3]="OPE_ORDHDR";rem --- order/inv header (old are-03)
-    files$[4]="ope-11",options$[4]="OPT",ids$[4]="OPE_ORDDET";rem --- order/inv detail (old are-13)
-    files$[5]="ope-21",options$[4]="OPT",ids$[5]="OPE_ORDLSDET";rem --- lot/serial detail file (old are-23)
+    files$[3]="opt-01",options$[3]="OPT",ids$[3]="OPE_ORDHDR";rem --- order/inv header (old are-03)
+    files$[4]="opt-11",options$[4]="OPT",ids$[4]="OPE_ORDDET";rem --- order/inv detail (old are-13)
+    files$[5]="opt-21",options$[4]="OPT",ids$[5]="OPE_ORDLSDET";rem --- lot/serial detail file (old are-23)
     files$[6]="opm-02",options$[6]="OPT",ids$[6]="OPC_LINECODE"
     files$[7]="opt-01",options$[7]="OPT",ids$[7]="OPT_INVHDR";rem --- inv history hdr (old art-03)
     files$[8]="opt-11",options$[8]="OPT",ids$[8]="OPT_INVDET";rem --- inv history dtl (old art-13)
@@ -199,7 +199,11 @@ rem --- Init Header File
     selection$=""
     hdrkey$=firm_id$+"  "+cust_id$
     read_nxt$="Y"
-    read record (header_channel,key=hdrkey$+beg_ord_inv$,dom=*next)hdrrec$;read_nxt$="N"
+    if history$="Y" then
+        read record (header_channel,key=hdrkey$+beg_ord_inv$,knum="AO_CUST_INV",dom=*next)hdrrec$;read_nxt$="N"
+    else
+        read record (header_channel,key=hdrkey$+beg_ord_inv$,knum="PRIMARY",dom=*next)hdrrec$;read_nxt$="N"
+    endif
 
 next_header: rem --- Header Read
     if read_nxt$="Y"
@@ -207,7 +211,12 @@ next_header: rem --- Header Read
     endif
     read_nxt$="Y"
     if pos(firm_id$+"  "+cust_id$=hdrrec$)<>1 goto nomore
-    if history$="Y" and beg_ord_inv$<>"" and histinv1$="" histinv1$=hdrrec.ar_inv_no$
+    if history$="Y" then
+        if hdrrec.trans_status$<>"U" then goto next_header
+        if beg_ord_inv$<>"" and histinv1$="" then histinv1$=hdrrec.ar_inv_no$
+    else
+        if pos(hdrrec.trans_status$="ER")=0 then goto next_header
+    endif
 
 rem --- Type
 
@@ -247,15 +256,25 @@ rem --- Print Header
 rem --- Init Detail File
 
     first=1
-    dky$=hdrrec.firm_id$+hdrrec.ar_type$+hdrrec.customer_id$
-    if history$="Y" then let dky$=dky$+hdrrec.ar_inv_no$ else dky$=dky$+hdrrec.order_no$
-    read (detail_channel,key=dky$,dom=*next)
+    if history$="Y" then
+        dky$=hdrrec.firm_id$+hdrrec.ar_type$+hdrrec.customer_id$+hdrrec.ar_inv_no$
+        read (detail_channel,key=dky$,knum="AO_CUST_INV_LINE",dom=*next)
+    else
+        dky$=hdrrec.firm_id$+hdrrec.ar_type$+hdrrec.customer_id$+hdrrec.order_no$
+        read (detail_channel,key=dky$,knum="PRIMARY",dom=*next)
+    endif
 
 next_detail: rem --- Get Detail
 
     k$=key(detail_channel,end=print_totals)
     if pos(dky$=k$)<>1 goto print_totals
     read record (detail_channel) dtlrec$
+    if history$="Y" then
+        if dtlrec.trans_status$<>"U" then goto next_detail
+    else
+        if pos(dtlrec.trans_status$="ER")=0 then goto next_detail
+    endif
+
 rem --- Item Type
 
     dim y$(30); u0$="",u1$=""
@@ -277,11 +296,7 @@ make_dtl_line: rem --- Store Detail Line
         next wk
         found=1,l=l+1,first=0
     endif
-    if ord_inv$="O"
-        OutVect!.addItem(dtlrec.internal_seq_no$)
-    else
-        OutVect!.addItem(dtlrec.orddet_seq_ref$)    
-    endif
+    OutVect!.addItem(dtlrec.internal_seq_no$)
     OutVect!.addItem("")
     OutVect!.addItem(u0$)
     OutVect!.addItem(dtlrec.warehouse_id$)
@@ -323,16 +338,18 @@ make_dtl_line: rem --- Store Detail Line
 rem --- Print Serial/Lotted History
 
     if pos(lot_ser$="SL")=0 goto detail_loop
-    if ord_inv$="O"
-        lky$=dky$+dtlrec.internal_seq_no$
-    else
-        lky$=dky$+dtlrec.orddet_seq_ref$    
-    endif
+    lky$=dtlrec.firm_id$+dtlrec.ar_type$+dtlrec.customer_id$+dtlrec.order_no$+dtlrec.ar_inv_no$+dtlrec.internal_seq_no$    
     read (lot_channel,key=lky$,dom=*next)
+
 next_lot:
     r0$=key(lot_channel,end=detail_loop)
     if pos(lky$=r0$)<>1 goto detail_loop
     read record (lot_channel) lotrec$
+    if history$="Y" then
+        if lotrec.trans_status$<>"U" then goto next_lot
+    else
+        if pos(lotrec.trans_status$="ER")=0 then goto next_lot
+    endif
     if first
         for wk=0 to 9
             OutVect!.addItem(dtlhdg$[wk])

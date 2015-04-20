@@ -144,6 +144,9 @@ rem --- store lot/serialized flag in devObject for use later
 rem --- set flag in devObject to say we're not on a new record
 
 	callpoint!.setDevObject("new_rec","N")
+
+rem --- Store starting product_type so we'll know later if it was changed.
+	callpoint!.setDevObject("start_product_type",callpoint!.getColumnData("IVM_ITEMMAST.PRODUCT_TYPE"))
 [[<<DISPLAY>>.ITEM_DESC_SEG_3.AVAL]]
 rem --- Set this section back into desc, if modified
 
@@ -408,6 +411,31 @@ rem --- if this is a newly added record, launch warehouse/stocking, vendors, and
 :			table_chans$[all],
 :			"",
 :			dflt_data$[all]
+
+	else
+
+		rem --- If product_type changed, update ivm_itemwhse product_type.
+		if callpoint!.getColumnData("IVM_ITEMMAST.PRODUCT_TYPE")<>callpoint!.getDevObject("start_product_type") then
+			ivm_itemwhse_dev=fnget_dev("IVM_ITEMWHSE")
+			dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
+			rem --- Get current key and knum so they can be restored when done here.
+			start_key$=key(ivm_itemwhse_dev,end=*next)
+			start_knum=BBjAPI().getFileSystem().getFileInfo(ivm_itemwhse_dev).getCurrentKeyNumber()
+
+			rem --- Update ivm_itemwhse product_type with ivm_itemmast product_type
+			trip_key$=firm_id$+callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
+			read(ivm_itemwhse_dev,key=trip_key$,knum="AO_ITEM_WH",dom=*next)
+			while 1
+				ivm_itemwhse_key$=key(ivm_itemwhse_dev,end=*break)
+				if pos(trip_key$=ivm_itemwhse_key$)<>1 then break
+				extractrecord(ivm_itemwhse_dev)ivm_itemwhse$
+				ivm_itemwhse.product_type$=callpoint!.getColumnData("IVM_ITEMMAST.PRODUCT_TYPE")
+				writerecord(ivm_itemwhse_dev)ivm_itemwhse$
+			wend
+
+			rem --- Reset key and knum back to their starting value
+			read(ivm_itemwhse_dev,key=start_key$,knum=start_knum,dir=0,err=*next)
+		endif
 
 	endif
 [[IVM_ITEMMAST.BDEL]]
@@ -691,8 +719,8 @@ rem --- additional file opens, depending on which apps are installed, param valu
 	endif
 
 	if op$="Y" then 
-		more_files$=more_files$+"OPE_ORDHDR;OPE_ORDDET;OPE_ORDITEM;"
-		files=files+3
+		more_files$=more_files$+"OPE_ORDHDR;OPE_ORDDET;"
+		files=files+2
 	endif
 
 	if po$="Y" then 

@@ -167,11 +167,11 @@ rem --- get data
                 acct_total=glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
 :                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
 :                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13
-                acct_total=abs(round(acct_total,2))
+                acct_total=round(acct_total,2)
                 data! = rs!.getEmptyRecordData()
                 data!.setFieldValue("DESCRIPTION",glm01a.gl_acct_desc$)
                 data!.setFieldValue("YEAR",yearsVec!.getItem(i))
-                data!.setFieldValue("TOTAL",str(acct_total:gl_amt_mask$))
+                data!.setFieldValue("TOTAL",str(acct_total))
                 rs!.insert(data!)
             next i
         wend

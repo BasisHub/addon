@@ -155,17 +155,20 @@ rem --- Build begsegs[3] and endsegs[3]
 rem --- Run Report Overlay
 
     if action=12 
-        files=1,begfile=1,endfile=files
+        files=2,begfile=1,endfile=files
         dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
         files$[1]="sam-12",options$[1]="CL",ids$[1]="SAM_CUSTTERR"; rem Clear and Lock file for Advisory Locking
+        files$[2]="sam_custterr_tot",options$[2]="CL",ids$[2]="SAM_CUSTTERR_TOT"; rem Clear and Lock file for Advisory Locking
         call pgmdir$+"adc_fileopen.aon",action1,begfile,endfile,files$[all],options$[all],
 :           ids$[all],templates$[all],channels[all],batch,status
         if status goto std_exit
         sam12_dev=channels[1]
+        sam12tot_dev=channels[2]
 
     rem --- Dimension string templates
 
         dim sam12a$:templates$[1]
+        dim sam12tot$:templates$[2]
 
         gosub build_sam12
         sam00_dev=sam12_dev
@@ -216,22 +219,7 @@ rem --- Using Cross Reference File
 
 build_sam12: rem --- Build sam-12 Sales By Customer In Territory
 
-rem --- get correct template for sam-12
-
-    files=1,begfile=1,endfile=files
-    dim ids$[files],templates$[files]
-    ids$[1]="sam-12A:SAM_CUSTTERR"
-    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
-    if status goto std_exit
-    dim sam00a$:templates$[1]
-
-    sayear$=year$,priyear$=str(num(sayear$)-1:"0000"),sum_fldlen=0,t0$=""
-
-    for x=1 to segments
-        if literals$[x]<>"" sum_fldlen=sum_fldlen+fldlen[x]
-    next x
-
-    rem call pgmdir$+"adc_clearfile.aon",sam12_dev; rem Cleared and Locked file above for Advisory Locking
+    sayear$=year$,priyear$=str(num(sayear$)-1:"0000")
 
     if sam12_dev=0
         goto std_exit
@@ -284,14 +272,38 @@ endcopy:
 writerec: rem --- write record
 
     sam12a.territory$=arm02a.territory$
-    write record (sam12_dev,key=x0$,dom=*next) sam12a$
+    write record (sam12_dev,key=x0$) sam12a$
+    gosub build_sam12tot
 l6570: 
     goto l6450
 l6575: 
     if sayear$=priyear$ goto l6590
     let sayear$=priyear$
     goto l6440
-l6590: 
+l6590:
+    return
+
+build_sam12tot: rem --- Build sam_custterr_tot Total Sales By Customer In Territory
+
+    rem --- Total sam-12 numerics into sam_custterr_tot
+    dim sam12tot$:fattr(sam12tot$)
+    sam12tot.firm_id$=sam12a.firm_id$
+    sam12tot.year$=sam12a.year$
+    sam12tot.territory$=sam12a.territory$
+    sam12tot.customer_id$=sam12a.customer_id$
+    sam12tot.product_type$=sam12a.product_type$
+    sam12tot_key$=sam12tot.firm_id$+sam12tot.year$+sam12tot.territory$+sam12tot.customer_id$+sam12tot.product_type$
+    extract record (sam12tot_dev,key=sam12tot_key$,dom=*next) sam12tot$;rem Advisory Locking
+    for period=1 to 13
+        field sam12tot$, "qty_shipped_" + str(period:"00") = nfield(sam12tot$, "qty_shipped_" + str(period:"00")) + nfield(sam12a$, "qty_shipped_" + str(period:"00"))
+        field sam12tot$, "total_cost_" + str(period:"00") = nfield(sam12tot$, "total_cost_" + str(period:"00")) + nfield(sam12a$, "total_cost_" + str(period:"00"))
+        field sam12tot$, "total_sales_" + str(period:"00") = nfield(sam12tot$, "total_sales_" + str(period:"00")) + nfield(sam12a$, "total_sales_" + str(period:"00"))
+        field sam12tot$, "ord_qty_shipped_" + str(period:"00") = nfield(sam12tot$, "ord_qty_shipped_" + str(period:"00")) + nfield(sam12a$, "ord_qty_shipped_" + str(period:"00"))
+        field sam12tot$, "ord_total_cost_" + str(period:"00") = nfield(sam12tot$, "ord_total_cost_" + str(period:"00")) + nfield(sam12a$, "ord_total_cost_" + str(period:"00"))
+        field sam12tot$, "ord_total_sales_" + str(period:"00") = nfield(sam12tot$, "ord_total_sales_" + str(period:"00")) + nfield(sam12a$, "ord_total_sales_" + str(period:"00"))
+    next period
+    sam12tot$=field(sam12tot$)
+    write record (sam12tot_dev) sam12tot$
     return
 
 rem #include std_functions.src

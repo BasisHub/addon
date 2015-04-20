@@ -1,19 +1,3 @@
-[[ARM_CUSTPMTS.MTD_SALES.BDRL]]
-rem --- only allow this drilldown if OP is installed
-
-	gosub check_op
-[[ARM_CUSTPMTS.NMTD_SALES.BDRL]]
-rem --- only allow this drilldown if OP is installed
-
-	gosub check_op
-[[ARM_CUSTPMTS.PYR_SALES.BDRL]]
-rem --- only allow this drilldown if OP is installed
-
-	gosub check_op
-[[ARM_CUSTPMTS.YTD_SALES.BDRL]]
-rem --- only allow this drilldown if OP is installed
-
-	gosub check_op
 [[ARM_CUSTMAST.ASHO]]
 rem --- Create/embed dashboard to show aged balance
 
@@ -23,7 +7,7 @@ rem --- Create/embed dashboard to show aged balance
 	use ::dashboard/widget.bbj::EmbeddedWidgetControl
 	use ::dashboard/widget.bbj::BarChartWidget
 
-	ctl_name$="ARM_CUSTPMTS.AVG_DAYS"
+	ctl_name$="ARM_CUSTDET.AGING_FUTURE"
 	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
 	ctl1!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
@@ -32,6 +16,11 @@ rem --- Create/embed dashboard to show aged balance
 	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
 	ctl2!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
+	ctl_name$="ARM_CUSTPMTS.NMTD_SALES"
+	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
+	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
+	ctl3!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
 
 	childWin!=SysGUI!.getWindow(ctlContext).getControl(0)
 	save_ctx=SysGUI!.getContext()
@@ -46,6 +35,8 @@ rem --- Create either a pie chart or bar chart - the latter if any of the aging 
 	flat = 0
 	legend=0
 	numSlices=6
+	widgetX=ctl3!.getX()
+	widgetY=ctl1!.getY()
 	widgetHeight=ctl2!.getY()+ctl2!.getHeight()-ctl1!.getY()
 	widgetWidth=widgetHeight+widgetHeight*.5
 
@@ -60,7 +51,7 @@ rem --- Create either a pie chart or bar chart - the latter if any of the aging 
 	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_120_DAYS","120 days",1), 0)
 	agingPieWidget!.setFontScalingFactor(1.2)
 
-	agingPieWidgetControl! = new EmbeddedWidgetControl(agingDashboardPieWidget!,childWin!,ctl1!.getX()+ctl1!.getWidth()+50,ctl1!.getY(),widgetWidth,widgetHeight,$$)
+	agingPieWidgetControl! = new EmbeddedWidgetControl(agingDashboardPieWidget!,childWin!,widgetX,widgetY,widgetWidth,widgetHeight,$$)
 	agingPieWidgetControl!.setVisible(0)
 
 	rem --- bar
@@ -83,7 +74,7 @@ rem --- Create either a pie chart or bar chart - the latter if any of the aging 
 	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_90","90",1), "", 0)
 	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_120","120",1), "", 0)
 
-	agingBarWidgetControl! = new EmbeddedWidgetControl(agingDashboardBarWidget!,childWin!,ctl1!.getX()+ctl1!.getWidth()+50,ctl1!.getY(),widgetWidth,widgetHeight,$$)
+	agingBarWidgetControl! = new EmbeddedWidgetControl(agingDashboardBarWidget!,childWin!,widgetX,widgetY,widgetWidth,widgetHeight,$$)
 	agingBarWidgetControl!.setVisible(0)
 
 	callpoint!.setDevObject("dbPieWidget",agingDashboardPieWidget!)
@@ -200,25 +191,26 @@ rem  --- Check for Open AR Invoices
 	if pos(firm_id$+"  "+cust$=art01_key$)<>1 goto check_op_ord
 	delete_msg$=Translate!.getTranslation("AON_OPEN_INVOICES_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
 	goto done_checking	
+
 check_op_ord:
 	if user_tpl.op_installed$<>"Y" goto done_checking
-	num_files=2
+	num_files=1
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="OPE_INVHDR",open_opts$[1]="OTA"
-	open_tables$[2]="OPT_INVHDR",open_opts$[2]="OTA"
+	open_tables$[1]="OPT_INVHDR",open_opts$[1]="OTA"
 	gosub open_tables
-	ope01_dev=num(open_chans$[1])
-	opt01_dev=num(open_chans$[2])
-	read (ope01_dev,key=firm_id$+"  "+cust$,dom=*next)
-	ope01_key$=key(ope01_dev,end=check_op_inv)
-	if pos(firm_id$+"  "+cust$=ope01_key$)<>1 goto check_op_inv
-	delete_msg$=Translate!.getTranslation("AON_OPEN_ORDERS_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
-	goto done_checking	
-check_op_inv:
+	opt01_dev=num(open_chans$[1])
+	dim opt01_tpl$:open_tpls$[1]
+
 	read (opt01_dev,key=firm_id$+"  "+cust$,dom=*next)
 	opt01_key$=key(opt01_dev,end=done_checking)              
 	if pos(firm_id$+"  "+cust$=opt01_key$)<>1 goto done_checking
-	delete_msg$=Translate!.getTranslation("AON_HISTORICAL_INVOICES_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
+	readrecord(opt01_dev)opt01_tpl$
+	if opt01_tpl.trans_status$="U"
+		delete_msg$=Translate!.getTranslation("AON_HISTORICAL_INVOICES_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
+	else
+		delete_msg$=Translate!.getTranslation("AON_OPEN_ORDERS_EXIST_-_CUSTOMER_DELETION_NOT_ALLOWED")
+	endif
+
 done_checking:
 	if delete_msg$<>""
 		callpoint!.setMessage("NO_DELETE:"+delete_msg$)
@@ -426,19 +418,6 @@ rem --- Disable Option for Jobs if OP not installed or Job flag not set
 		call stbl("+DIR_SYP")+"bam_enable_pop.bbj",Form!,enable_str$,disable_str$
 	endif
 [[ARM_CUSTMAST.<CUSTOM>]]
-rem ===================================
-check_op:rem --- this drilldown can only run if OP installed
-rem ===================================
-
-	if user_tpl.op_installed$<>"Y"
-		msg_id$="AD_NO_OP"
-		dim msg_tokens$[1]
-		msg_opt$=""
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-	endif
-
-	return
 
 rem ===================================
 disable_ctls:rem --- disable selected control

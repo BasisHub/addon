@@ -8,6 +8,8 @@ rem Program ID: apr_vendinv_irpt.aon  <Dec 10, 2008>
     use ::bbjasper.bbj::BBJasperReport
     use ::bbjasper.bbj::BBJasperViewerWindow
     use ::bbjasper.bbj::BBJasperViewerControl
+
+    use ::ado_rptControl.src::ReportControl
     
     ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
     screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
@@ -247,7 +249,6 @@ rem --- Fill Report and Show
 rem --- Event Control
 
     process_events,err=*same
-
     release
 
 document_whse:rem --- Write record to Barista document warehouse (ads_documents)
@@ -312,8 +313,30 @@ rem --- force exportToPDF first, in case it hasn't already been saved
     return
 
 close_win:rem --- Viewer Window Closed
+rem --- see if this report is set up for report control (email/fax)
+rem --- next_overlay$ (and stbl("+AUTO_SEND")) will get set only if this report is defined for automated email/faxing
+      
+    if Option!<>null()
+        rpt_id$=Option!.getAlias()
+    else
+        rpt_id$=pgm(-2)
+        rpt_id$=rpt_id$(max(pos("/"="/"+rpt_id$,-1),pos("\"="\"+rpt_id$,-1)))
+        rpt_id$=rpt_id$(1,pos("."=rpt_id$+".")-1)
+        rpt_id$=cvs(rpt_id$,4)
+    endif
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    tmp$=reportControl!.getReportControl(rpt_id$)
+    next_overlay$=iff(tmp$<>"",tmp$,overlay$)
+    
+    auto_send$=stbl("+AUTO_SEND",err=*next)
+    if auto_send$<>"" then dummy$=stbl("+AUTO_SEND",auto_send$+rd_doc_id$+"^");rem add doc id ourselves for jaspers; DocOut adds it for DocOut reports
+
     viewerWindow!.destroy()
-    rdForm!.destroy(err=*next)   
+    rdForm!.destroy(err=*next)
+    
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next    
     if tcb(13) then exit
     release
 

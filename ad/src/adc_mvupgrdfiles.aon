@@ -6,7 +6,6 @@ rem --- Data File and User Props.
 rem --- 
 rem --- AddonSoftware Version 11.0
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
 rem ==========================================================================
 
 
@@ -17,6 +16,10 @@ rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
 rem --- STATUS       : Status code/0=No error (Returned)
 
     use java.io.File
+    use java.io.FileReader
+    use java.io.FileWriter
+    use java.util.HashMap
+    use java.util.Properties
     use java.util.Vector
     use ::bbtranslator.bbj::BBTranslator
     use ::ado_file.src::FileObject
@@ -47,8 +50,23 @@ rem --- Start progress meter
     if wait4ok% then meter_action$=meter_action$+"-OK"
     gosub disp_meter
     
-rem --- Open log file
-    location$ = fileLoc$
+rem --- Open log file in aon/logs directory, if possible
+    aonDir$=""
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+    xpos=pos("/aon/"=dataDir$,-1)
+    if xpos then
+        aonDir$=dataDir$(1,xpos+4)
+    endif
+    if aonDir$="" then
+        xpos=pos("/data/"=dataDir$,-1)
+        if xpos then
+            aonDir$=dataDir$(1,xpos)
+        else
+            aonDir$=dataDir$
+        endif
+    endif
+
+    location$ = aonDir$
     gosub open_log
 
 rem --- Currently this utility can only use the database used by this Barista/Addon instance.
@@ -64,6 +82,7 @@ rem --- Currently this utility can only use the database used by this Barista/Ad
 		dim msg_tokens$[1]
 		msg_tokens$[1]=dbName$
 		gosub disp_message
+		status=1
 		goto done
 	endif
     
@@ -146,6 +165,97 @@ rem --- Process each file in source dir
 			print(log_dev)meter_text$
 		next i
 	endif
+	
+rem --- Update conversion control file data/adx_conversionCtrl, and create conversion marker files as needed
+
+    convCtrlFileName$=aonDir$+"data/adx_conversionCtrl"
+    convCtrlFile!=new File(convCtrlFileName$,err=*next)
+    if convCtrlFile!.exists() then
+        rem --- Update conversion control file data/adx_conversionCtrl
+        fileReader!=new FileReader(convCtrlFile!)
+        convCtrl!=new Properties()
+        convCtrl!.load(fileReader!)
+        fileReader!.close()
+
+        convCtrl!.setProperty("data_source","OCJ")
+
+        fileWriter!=new FileWriter(convCtrlFile!)
+        convCtrl!.store(fileWriter!,"Addon Conversion Control File")
+        fileWriter!.close()
+        
+        print(log_dev)"Updated ",convCtrlFileName$
+
+        rem --- Are conversion needed for the start_version?
+        versionsVect!=BBjAPI().makeVector()
+        versionsVect!.addAll(java.util.Arrays.asList(convCtrl!.getProperty("conversion_versions").split(";")))
+    
+        rem --- start_version$ format must be 0000 to match version format in conversion_versions
+        version_mask$="00.00"
+        start_version$=str(num(convCtrl!.getProperty("start_version")):version_mask$)
+        xpos=pos("."=start_version$)
+        if xpos then
+            start_version$=start_version$(1,xpos-1)+start_version$(xpos+1)
+        endif
+
+        rem --- Verify version requires conversion
+        indexFirstConversion=-1
+        if versionsVect!.size() then
+            for i=0 to versionsVect!.size()-1
+                if start_version$<versionsVect!.getItem(i) then
+                    indexFirstConversion=i
+                    break
+                endif
+            next i
+        endif
+
+        rem --- Create conversion marker files for each version needing conversion
+        fileDependencies!=new HashMap()
+        if indexFirstConversion>=0 then
+            rem --- Get file dependencies for each version needing conversion
+            convCtrlKeys!=convCtrl!.stringPropertyNames()
+            for i=indexFirstConversion to versionsVect!.size()-1
+                version$=versionsVect!.getItem(i)
+                iter!=convCtrlKeys!.iterator()
+                while iter!.hasNext()
+                    key$=iter!.next()
+                    if pos(version$+"_"=key$)=1 then
+                        fileDependencies!.put(convCtrl!.getProperty(key$),version$)
+                    endif
+                wend
+            next i
+        endif
+        dataDir$=aonDir$+"data/"
+        requiredFiles!=BBjAPI().makeVector()
+        keyIter!=fileDependencies!.keySet().iterator()
+        while keyIter!.hasNext()
+            rem --- Create marker file for each dependency where all the files exist
+            create_marker=1
+            requiredFiles!.clear()
+            key!=keyIter!.next()
+            requiredFiles!.addAll(java.util.Arrays.asList(key!.split(";")))
+            version$=fileDependencies!.get(key!)
+            for i=0 to requiredFiles!.size()-1
+                file!=new File(fileLoc$+"/"+requiredFiles!.get(i))
+                if !file!.exists() then
+                    create_marker=0
+                    break
+                endif
+            next i
+            if create_marker then
+                markerFile!=new File(fileLoc$+"/v"+version$+"_"+requiredFiles!.get(0))
+                markerFile!.createNewFile()
+
+                print(log_dev)"Created conversion marker file: ",markerFile!.getAbsoluteFile()
+            endif
+        wend
+    else
+        rem --- Report can't find the required conversion control file data/adx_conversionCtrl
+        msg_id$="AD_FILE_MISSING"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=convCtrlFileName$
+        gosub disp_message
+        print(log_dev)"***** ERROR: Required file not found, "+convCtrlFileName$+" *****"
+   endif
     
 done: rem --- All done
     
@@ -187,9 +297,7 @@ disp_meter:rem --- Display Progress Meter
 open_log:rem --- Open log file
             
     rem --- create logs directory at location
-    filePath$ = location$ + "/logs"
-    gosub fix_path
-    logDir$ = filePath$
+    logDir$=FileObject.fixPath(location$ + "/logs", "/")
     FileObject.makeDirs(new File(logDir$))
 
     rem --- create and open log file
@@ -205,14 +313,6 @@ open_log:rem --- Open log file
 	print(log_dev)"New Database Name:          " + dbName$
 	print(log_dev)
 
-    return
-
-fix_path: rem --- Flip directory path separators
-    pos=pos("\"=filePath$)
-    while pos
-        filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
-        pos=pos("\"=filePath$)
-    wend
     return
 
 open_tables:rem -----<Open Tables

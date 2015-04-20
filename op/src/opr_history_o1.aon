@@ -104,38 +104,28 @@ rem --- Options
 
     precision num(ivs01a.precision$)
 
-rem --- Initial Read
-
-    read (opt01_dev,key=firm_id$+"  "+s0$,dom=*next)
-
-rem --- retrieve template for OPT_INVHDR record key
-
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPT_INVHDR","PRIMARY",opt01a_key_tpl$,table_chans$[all],status$
-    dim opt01a_key$:opt01a_key_tpl$
-
 rem --- retrieve template for OPT_INVDET record key
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPT_INVDET","PRIMARY",opt11a_key_tpl$,table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPT_INVDET","AO_STATUS",opt11a_key_tpl$,table_chans$[all],status$
     dim opt11a_key$:opt11a_key_tpl$
 
-rem --- retrieve template for OPT_INVLSDET record key
+rem --- Initial Read
 
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPT_INVLSDET","PRIMARY",opt21a_key_tpl$,table_chans$[all],status$
-    dim opt21a_key$:opt21a_key_tpl$
+    opt01_trip$=firm_id$+"U"+"  "+s0$
+    read (opt01_dev,key=opt01_trip$,knum="AO_STATUS",dom=*next)
 
 rem --- Main Loop Starts
 
     while more
-
         opt01a_key$=key(opt01_dev,end=done)
-        if pos(firm_id$=opt01a_key$)<>1 then break
+        if pos(firm_id$+"U"+"  "=opt01a_key$)<>1 then break
         
         total_recs=total_recs+1
         if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
         if status = 999 then goto std_exit
         
-        if s1$<>"" and opt01a_key.firm_id$+opt01a_key.ar_type$+opt01a_key.customer_id$>firm_id$+"  "+s1$ then break
-        read record (opt01_dev,key=opt01a_key$) opt01a$
+        read record (opt01_dev) opt01a$
+        if s1$<>"" and opt01a.customer_id$>s1$ then break
         if s2$<>"" and opt01a.invoice_date$<s2$ then continue
         if s3$<>"" and opt01a.invoice_date$>s3$ then continue
         if s4$<>"" and opt01a.slspsn_code$<>s4$ then continue
@@ -175,11 +165,11 @@ rem --- Main Loop Starts
                 opt11a.line_code$=l0$[i,1]
                 opt11a.man_price$=l0$[i,2]
                 opt11a.product_type$=l0$[i,3]
-                opt11a.reserved_str$=l0$[i,4]
+                rem opt11a.reserved_str$=l0$[i,4]
                 opt11a.warehouse_id$=l0$[i,5]
                 opt11a.item_id$=l0$[i,6]
                 opt11a.order_memo$=l0$[i,7]
-				opt11a.orddet_seq_ref$=l0$[i,8]
+				opt11a.internal_seq_no$=l0$[i,8]
 
                 opt11a.unit_cost=l0[i,0]
                 opt11a.unit_price=l0[i,1]
@@ -407,7 +397,7 @@ rem --- Total By Line Type
             find record (ivm01_dev,key=firm_id$+opt11a.item_id$,dom=label_one) ivm01a$
             if pos(" "<>desc$)=0 then let desc$=ivm01a.item_desc$
             opt11a.disc_percent=0
-            opt11a.disc_percent=num(opt11a.reserved_str$,err=*next)
+            rem opt11a.disc_percent=num(opt11a.reserved_str$,err=*next)
             opt11a.comm_percent=opt11a.disc_percent*opt11a.unit_price*opt11a.qty_shipped/100
             opt11a.ext_price=opt11a.unit_price*opt11a.qty_shipped-opt11a.comm_percent
         endif
@@ -555,19 +545,20 @@ total_freight: rem --- Sales Total Freight Ssles Tax/Invoice Total
 
 serialized_inventory: rem --- Serialized/Lotted Inventory
 
-    read (opt21_dev,key=opt11a.firm_id$+opt11a.ar_type$+opt11a.customer_id$+opt11a.ar_inv_no$+opt11a.orddet_seq_ref$,dom=*next)
+    opt21_trip$=opt11a_key$
+    read (opt21_dev,key=opt21_trip$,knum="AO_STATUS",dom=*next)
     
     while more
         opt21a_key$=key(opt21_dev,end=*break)
-        if opt21a_key.firm_id$+opt21a_key.ar_type$+opt21a_key.customer_id$+opt21a_key.ar_inv_no$+opt21a_key.orddet_seq_ref$<>opt11a.firm_id$+opt11a.ar_type$+opt11a.customer_id$+opt11a.ar_inv_no$+opt11a.orddet_seq_ref$ then break
-        read record (opt21_dev,key=opt21a_key$) opt21a$
+        if pos(opt21_trip$=opt21a_key$)<>1 then break
+        read record (opt21_dev) opt21a$
 
 	m2$=m2r$
 	if int(opt21a.qty_shipped)<>opt21a.qty_shipped then
 		m2$=m2s$
 	endif
 		
-        OutVect!.addItem(x2$+" "+opt21a_key.sequence_no$+" "+opt21a.lotser_no$)
+        OutVect!.addItem(x2$+" "+opt21a.sequence_no$+" "+opt21a.lotser_no$)
         OutVect!.addItem(str(opt21a.qty_ordered:m2$))
         OutVect!.addItem(str(opt21a.qty_ordered - opt21a.qty_shipped:m2$))
 		OutVect!.addItem(str(opt21a.qty_shipped:m2$))
@@ -633,34 +624,34 @@ selected_item: rem --- Check For Selected Item and Minimum GP%
 
     l2=0
     l$=""
-    read (opt11_dev,key=opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$+$ff$,dom=*next)
+    opt11_trip$=opt01a_key$
+    read (opt11_dev,key=opt01a_key$,knum="AO_STATUS",dom=*next)
     m=1
-    opt11a_key$=keyp(opt11_dev,end=no_invoice_detail_history)
-    if (opt11a_key.firm_id$+opt11a_key.ar_type$+opt11a_key.customer_id$+opt11a_key.ar_inv_no$)<>(opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$) then
+    opt11a_key$=key(opt11_dev,end=no_invoice_detail_history)
+    if pos(opt11_trip$=opt11a_key$)<>1 then
 		goto no_invoice_detail_history
 	endif
     
 rem    if pos((opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$)=opt11a_key$)=1 then 
 
-        m=num(opt11a_key.orddet_seq_ref$)
+        m=num(opt11a_key.internal_seq_no$)
         dim l0$[m,8],l0[m,7],l1[1]
-        read (opt11_dev,key=opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$,dom=*next)
 
         while more
             opt11a_key$=key(opt11_dev,end=*break)
-            if (opt11a_key.firm_id$+opt11a_key.ar_type$+opt11a_key.customer_id$+opt11a_key.ar_inv_no$)<>(opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$) then break
-            find record (opt11_dev,key=opt11a_key$) opt11a$
+            if pos(opt11_trip$=opt11a_key$)<>1 then break
+            read record (opt11_dev) opt11a$
             l2=l2+1
 
             l0$[l2,0]=opt11a_key$
             l0$[l2,1]=opt11a.line_code$
             l0$[l2,2]=opt11a.man_price$
             l0$[l2,3]=opt11a.product_type$
-            l0$[l2,4]=opt11a.reserved_str$
+            rem l0$[l2,4]=opt11a.reserved_str$
             l0$[l2,5]=opt11a.warehouse_id$
             l0$[l2,6]=opt11a.item_id$
             l0$[l2,7]=cvs(opt11a.order_memo$,2)
-			l0$[l2,8]=opt11a.orddet_seq_ref$
+			l0$[l2,8]=opt11a.internal_seq_no$
             l0[l2,0]=opt11a.unit_cost
             l0[l2,1]=opt11a.unit_price
             l0[l2,2]=opt11a.qty_ordered

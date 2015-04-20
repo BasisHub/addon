@@ -34,8 +34,8 @@ rem --- Open/Lock files
     files$[5]="ivc_prodcode",ids$[5]="IVC_PRODCODE"
     files$[6]="ivc_whsecode",ids$[6]="IVC_WHSECODE"
     files$[7]="ivs_params",ids$[7]="IVS_PARAMS"
-    files$[8]="ope-01",ids$[8]="OPE_ORDHDR"
-    files$[9]="ope-11",ids$[9]="OPE_ORDDET"
+    files$[8]="opt-01",ids$[8]="OPE_ORDHDR"
+    files$[9]="opt-11",ids$[9]="OPE_ORDDET"
     files$[10]="opm-02",ids$[10]="OPC_LINECODE"
     files$[11]="opw-02",ids$[11]="OPW_SCHEDULE"
 
@@ -133,19 +133,10 @@ rem --- Initialize Data
         h3$=h3$+" Orders Only"
     endif
 
-rem --- retrieve template for OPE_ORDHDR record key
-
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDHDR","PRIMARY",ope01a_key_tpl$,table_chans$[all],status$
-    dim ope01a_key$:ope01a_key_tpl$
-
-rem --- retrieve template for OPE_ORDDET record key
-
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","OPE_ORDDET","PRIMARY",ope11a_key_tpl$,table_chans$[all],status$
-    dim ope11a_key$:ope11a_key_tpl$
-
     call pgmdir$+"adc_clearfile.aon",opw02_dev
 
-    read (ope01_dev,key=firm_id$+"  ",dom=*next)
+    ope01_trip$=firm_id$+"E"+"  "
+    read (ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
     
     call stbl("+DIR_PGM")+"adc_progress.aon","NC","OPE_ORDDET","","","",0,ope11_dev,1,meter_num,status
     if status = 999 then goto std_exit
@@ -155,8 +146,8 @@ ord_read: rem --- Read Order Header Information
 
     dim a0$(200),e0$(52),e1$(64),e[17]
     ope01a_key$=key(ope01_dev,end=ending)
-    if ope01a_key.firm_id$<>firm_id$ then goto ending
-    read record (ope01_dev,key=ope01a_key$) ope01a$
+    if pos(ope01_trip$=ope01a_key$)<>1 then goto ending
+    read record (ope01_dev) ope01a$
 
     if ope01a.invoice_type$="V" then goto ord_read
     if ope01a.ordinv_flag$="I" then goto ord_read
@@ -175,18 +166,18 @@ rem --- Read Order Detail
     if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
     if status = 999 then goto std_exit
 
-    read (ope11_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+    ope11_trip$=ope01a_key$
+    read (ope11_dev,key=ope11_trip$,knum="AO_STATUS",dom=*next)
 
     while more
-
         ope11a_key$=key(ope11_dev,end=ord_read)
-        if ope11a_key.firm_id$+ope11a_key.ar_type$+ope11a_key.customer_id$+ope11a_key.order_no$<>ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ then goto ord_read
+        if pos(ope11_trip$=ope11a_key$)<>1 then goto ord_read
         
         total_recs=total_recs+1
         if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
         if status = 999 then goto std_exit
         
-        find record (ope11_dev,key=ope11a_key$) ope11a$
+        read record (ope11_dev) ope11a$
         find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$
         if pos(opm02a.line_type$="SNP")=0 then continue
         if p8$<>"" and ope11a.product_type$<>p8$ then continue

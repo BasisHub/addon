@@ -44,6 +44,7 @@ rem --- Get 'IN' SPROC parameters
 	ar_type$ =     sp!.getParameter("AR_TYPE")
 	customer_id$ = sp!.getParameter("CUSTOMER_ID")
 	order_no$ =    sp!.getParameter("ORDER_NO")
+    ar_inv_no$ =   sp!.getParameter("AR_INV_NO")
 	qty_mask$ =    sp!.getParameter("QTY_MASK")
 	amt_mask$ =    sp!.getParameter("AMT_MASK")
 	price_mask$ =  sp!.getParameter("PRICE_MASK")
@@ -72,7 +73,7 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]    
 
     files$[1]="ivm-01",      ids$[1]="IVM_ITEMMAST"
-    files$[2]="ope-11",      ids$[2]="OPE_INVDET"
+    files$[2]="opt-11",      ids$[2]="OPE_INVDET"
     files$[3]="opm-02",      ids$[3]="OPC_LINECODE"
 
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
@@ -95,7 +96,7 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 	
 rem --- Main
 
-    read (ope11_dev, key=firm_id$+ar_type$+customer_id$+order_no$, knum="AO_CUST_ORD_LINE", dom=*next)
+    read (ope11_dev, key=firm_id$+"E"+ar_type$+customer_id$+order_no$+ar_inv_no$, knum="AO_STAT_CUST_ORD", dom=*next)
 	
     rem --- Detail lines
 
@@ -123,6 +124,7 @@ rem --- Main
 			if ar_type$     <> ope11a.ar_type$     then break
             if customer_id$ <> ope11a.customer_id$ then break
             if order_no$    <> ope11a.order_no$    then break
+            if ar_inv_no$   <> ope11a.ar_inv_no$   then break
 
 			internal_seq_no$ = ope11a.internal_seq_no$
 			

@@ -1,3 +1,17 @@
+[[OPE_INVCASH.BWRI]]
+rem --- Initialize RTP modified fields for modified existing records
+	if callpoint!.getRecordMode()="C" then
+		rec_data.mod_user$=sysinfo.user_id$
+		rec_data.mod_date$=date(0:"%Yd%Mz%Dz")
+		rec_data.mod_time$=date(0:"%Hz%mz")
+	endif
+[[OPE_INVCASH.AREC]]
+rem --- Initialize RTP trans_status and created fields
+	rem --- TRANS_STATUS set to "E" via form Preset Value
+	callpoint!.setColumnData("OPE_INVCASH.CREATED_USER",sysinfo.user_id$)
+	callpoint!.setColumnData("OPE_INVCASH.CREATED_DATE",date(0:"%Yd%Mz%Dz"))
+	callpoint!.setColumnData("OPE_INVCASH.CREATED_TIME",date(0:"%Hz%mz"))
+	callpoint!.setColumnData("OPE_INVCASH.AUDIT_NUMBER","0")
 [[OPE_INVCASH.BWAR]]
 rem --- if a credit card transaction, perform mod10 check on pymt ID field and mask
 rem --- note: only for backward compatability; credit card # in its own field as of v12
@@ -229,13 +243,11 @@ rem --- Inits
 
 rem --- Open files
 
-	num_files = 4
+	num_files = 2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST", open_opts$[1]="OTA"
 	open_tables$[2]="ARC_CASHCODE", open_opts$[2]="OTA"
-	open_tables$[3]="OPE_ORDHDR",   open_opts$[3]="OTA"
-	open_tables$[4]="OPE_ORDDET",   open_opts$[4]="OTA"
 
 	gosub open_tables
 

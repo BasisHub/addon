@@ -11,6 +11,20 @@ rem --- Can't use qty_shipped from ope_invdet and ope_orddet. Must total it up h
 		next row
 	endif
 	user_tpl.left_to_ord=num(callpoint!.getDevObject("ord_qty"))-qty_shipped
+[[OPE_ORDLSDET.BWRI]]
+rem --- Initialize RTP modified fields for modified existing records
+	if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())<>"Y" then
+		callpoint!.setColumnData("OPE_ORDLSDET.MOD_USER", sysinfo.user_id$)
+		callpoint!.setColumnData("OPE_ORDLSDET.MOD_DATE", date(0:"%Yd%Mz%Dz"))
+		callpoint!.setColumnData("OPE_ORDLSDET.MOD_TIME", date(0:"%Hz%mz"))
+	endif
+[[OPE_ORDLSDET.AREC]]
+rem --- Initialize RTP trans_status and created fields
+	rem --- TRANS_STATUS set to "E" via form Preset Value
+	callpoint!.setColumnData("OPE_ORDLSDET.CREATED_USER",sysinfo.user_id$)
+	callpoint!.setColumnData("OPE_ORDLSDET.CREATED_DATE",date(0:"%Yd%Mz%Dz"))
+	callpoint!.setColumnData("OPE_ORDLSDET.CREATED_TIME",date(0:"%Hz%mz"))
+	callpoint!.setColumnData("OPE_ORDLSDET.AUDIT_NUMBER","0")
 [[OPE_ORDLSDET.AGRN]]
 rem --- keep track of starting qty for this line, so we can accurately check avail qty minus what's already been committed
 
@@ -403,17 +417,16 @@ rem --- Keep track of what's been committed this session
 
 	return
 [[OPE_ORDLSDET.BSHO]]
-print "BSHO"; rem debug
-
 rem --- Inits
 
+	use ::ado_util.src::util
 	use java.util.HashMap
 
 	declare HashMap committedNow!
 
 	dim user_tpl$:"non_inventory:u(1), left_to_ord:n(1*), prev_ord:n(1*)"
 	user_tpl.non_inventory = 0
-	user_tpl.left_to_ord = num(callpoint!.getDevObject("ord_qty"))-num(callpoint!.getDevObject("qty_shipped"))
+	user_tpl.left_to_ord = 0; rem --- get initialized in AGDS
 	user_tpl.prev_ord = 0
 
 rem --- Set Lot/Serial button up properly

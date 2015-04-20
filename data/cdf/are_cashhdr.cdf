@@ -33,7 +33,7 @@ if callpoint!.getRecordMode()="A" then
 		if pos(key_pfx$=ky$)<>1 then break
 		remove (are_cashgl_dev,key=ky$)	
 	wend
-endif	
+endif
 [[ARE_CASHHDR.BEND]]
 rem --- remove software lock on batch, if batching
 
@@ -51,7 +51,6 @@ rem --- Get Batch information
 
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("ARE_CASHHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-
 [[ARE_CASHHDR.PAYMENT_AMT.BINP]]
 rem --- store value in control prior to input so we'll know at AVAL if it changed
 user_tpl.binp_pay_amt=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))
@@ -143,7 +142,6 @@ endif
 [[ARE_CASHHDR.ADEL]]
 gosub delete_cashdet_cashbal
 [[ARE_CASHHDR.ADIS]]
-rem --- ADIS; existing are-01/11 tran
 tmp_cust_id$=callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")
 gosub get_customer_balance
 wk_cash_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
@@ -894,27 +892,15 @@ rem ---   once vectors are built, they're stored in UserObj!
 	while more_hdrs
 		read record(art_invhdr_dev,end=*break)art01a$
 		if art01a.firm_id$+art01a.ar_type$+art01a.customer_id$=inv_key$
-			inv_amt=num(art01a.invoice_amt$),orig_inv_amt=inv_amt
-			if user_tpl.disc_flag$="Y" and callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")<= pad(art01a.disc_date$,8) 
-				disc_amt=num(art01a.disc_allowed$)
+			orig_inv_amt=art01a.invoice_amt
+			inv_amt=art01a.invoice_bal
+			disc_taken=art01a.disc_taken
+			if inv_amt<>0 and user_tpl.disc_flag$="Y" and callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")<= pad(art01a.disc_date$,8) 
+				disc_amt=art01a.disc_allowed-disc_taken
+				if disc_amt<0 then disc_amt=0
 			else
 				disc_amt=0
 			endif
-			read(art_invdet_dev,key=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$,dom=*next)
-			more_dtl=1
-			while more_dtl
-				read record(art_invdet_dev,end=*break)art11a$
-				if art11a.firm_id$+art11a.ar_type$+art11a.customer_id$+art11a.ar_inv_no$=
-:					art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
-					if art11a.trans_type$<>" "
-						inv_amt=inv_amt+num(art11a.trans_amt$)+num(art11a.adjdisc_amt$)
-						disc_amt=disc_amt+num(art11a.adjdisc_amt$)
-					endif
-				else
-					more_dtl=0
-				endif
-			wend
-			if inv_amt=0 disc_amt=0
 			disp_applied=0
 			disp_disc_applied=0
 			disp_bal=inv_amt
@@ -1290,7 +1276,6 @@ rem ==================================================================
 			Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
 			UserObj!.setItem(num(user_tpl.pymt_dist$),pymt_dist$)
 			callpoint!.setStatus("REFRESH-MODIFIED")
-			
 		break
 		case 8;rem --- edit start
 			if dec(notice.col$)<>0

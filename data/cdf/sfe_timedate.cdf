@@ -20,8 +20,8 @@ rem --- Check entered hrs
 [[SFE_TIMEDATE.ADIS]]
 rem --- Init entered hrs
 	entered_hrs=0
-	timedet_dev=fnget_dev("SFE_TIMEDATEDET")
-	dim timedet$:fnget_tpl$("SFE_TIMEDATEDET")
+	timedet_dev=fnget_dev("@SFE_TIMEDATEDET")
+	dim timedet$:fnget_tpl$("@SFE_TIMEDATEDET")
 	trip_key$=firm_id$+callpoint!.getColumnData("SFE_TIMEDATE.TRANS_DATE")+callpoint!.getColumnData("SFE_TIMEDATE.EMPLOYEE_NO")
 	read(timedet_dev,key=trip_key$,dom=*next)
 	while 1
@@ -101,13 +101,14 @@ rem --- Get Batch information
 	callpoint!.setTableColumnAttribute("SFE_TIMEDATE.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 
 rem --- Open Files
-	num_files=5
+	num_files=6
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
 	open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA"
 	open_tables$[4]="SFE_WOOPRTN",open_opts$[4]="OTA"
 	open_tables$[5]="IVM_ITEMMAST",open_opts$[5]="OTA"
+	open_tables$[6]="SFE_TIMEDATEDET",open_opts$[6]="OTA@"
 
 	gosub open_tables
 

@@ -35,6 +35,8 @@ rem --- d[n]: Detail line array
     setesc std_error
     seterr std_error
 
+    use ::ado_rptControl.src::ReportControl
+
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -381,7 +383,7 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
               else
                   read record (arm02_dev,knum=keynum$,key=k$,dir=0) arm02a$
               endif
-              arm01_found=0
+                  arm01_found=0
               read record (arm01_dev,key=arm01_key$,dom=*next) arm01a$; arm01_found=1
               if !arm01_found then
                   read (arm02_dev)
@@ -524,14 +526,14 @@ rem --- line.
                    opt01a.ar_type$=art01a.ar_type$
                    opt01a.customer_id$=art01a.customer_id$
                    opt01a.ar_inv_no$=art01a.ar_inv_no$
-                   opt01a.sequence_000$=fill(len(opt01a.sequence_000$),"0")
-                   opt01a.order_no$=order$
-                   opt01a.customer_po_no$=po$
-                   k$=opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+
-:                     opt01a.ar_inv_no$; rem +opt01a.sequence_000$
-                   find record (opt01_dev,key=k$,dom=*proceed) opt01a$
-                   order$(1)=opt01a.order_no$
-                   po$(1)=opt01a.customer_po_no$
+                   job_no$=opt01a.job_no$
+                   k$=opt01a.firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$
+                   find record (opt01_dev,key=k$,knum="AO_CUST_INV",dom=*next) opt01a$
+                   if opt01a.trans_status$="U" then
+                       order$(1)=opt01a.order_no$
+                       po$(1)=opt01a.customer_po_no$
+                       job_no$=opt01a.job_no$
+                   endif
                 endif
 
                 rem --- Print detail line
@@ -600,7 +602,7 @@ rem --- line.
   
                 while jn$="Y"
                       dim opm09a$:fattr(opm09a$),job$(j)
-                      k$=opt01a.firm_id$+opt01a.customer_id$+opt01a.job_no$
+                      k$=opt01a.firm_id$+opt01a.customer_id$+job_no$
                       find record (opm09_dev,key=k$,dom=*break) opm09a$
                       job$(1)=Translate!.getTranslation("AON_JOB_")+opm09a.job_no$+" "+opm09a.customer_name$
                       rem if lines+1>maxlines gosub customer_heading
@@ -676,6 +678,9 @@ rem --- line.
               arm02a.aging_60=c[3]
               arm02a.aging_90=c[4]
               arm02a.aging_120=c[5]
+              arm02a.report_date$=agingdate$
+              arm02a.report_type$=basis$
+              arm02a.age_credits$=credits$
               arm02a$=field(arm02a$)
               write record (arm02_dev) arm02a$
           else
@@ -739,6 +744,24 @@ rem --- All done
     endif
 
 	out_action$="FORMAT"
+
+rem --- see if this report is set up for report control (email/fax)
+rem --- next_overlay$ (and stbl("+AUTO_SEND")) will get set only if this report is defined for automated email/faxing
+   
+    if Option!<>null()
+        rpt_id$=Option!.getAlias()
+    else
+        rpt_id$=pgm(-2)
+        rpt_id$=rpt_id$(max(pos("/"="/"+rpt_id$,-1),pos("\"="\"+rpt_id$,-1)))
+        rpt_id$=rpt_id$(1,pos("."=rpt_id$+".")-1)
+        rpt_id$=cvs(rpt_id$,4)
+    endif
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    tmp$=reportControl!.getReportControl(rpt_id$)
+    next_overlay$=iff(tmp$<>"",tmp$,overlay$)
+
 
     goto std_exit
 

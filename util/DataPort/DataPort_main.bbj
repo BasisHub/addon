@@ -17,7 +17,12 @@ rem
     seterr std_error
 
     use java.io.File
+    use java.io.FileReader
+    use java.io.FileWriter
+    use java.util.HashMap
+    use java.util.Properties
     use java.util.Vector
+    use ::ado_file.src::FileObject
 
 rem --- Dictionary file templates
 dim ddm01$:"data_name:c(12*),description:c(30),lstrev:c(6),data_type:c(1),reserved_str:c(68*),fld_length:n(3*),display_len:n(3*),reserved_num:n(1*)"
@@ -26,25 +31,24 @@ dim ddm04$:"file_name:c(6),record_id:c(1),layout_seq:c(3*),data_name:c(12),reser
 
 rem --- Open files and/or retrieve templates that may be needed for PO file conversion
 
-    num_files=7
+    num_files=6
     dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
     rd_open_tables$[1]="ADS_SEQUENCES",rd_open_opts$[1]="OTA"
     rd_open_tables$[2]="ARM_CUSTMAST",rd_open_opts$[2]="T"
     rd_open_tables$[3]="ARM_CUSTSHIP",rd_open_opts$[3]="T"
     rd_open_tables$[4]="OPE_ORDSHIP",rd_open_opts$[4]="T"
     rd_open_tables$[5]="OPT_INVSHIP",rd_open_opts$[5]="T"
-    rd_open_tables$[6]="OPE_ORDHDR",rd_open_opts$[6]="T"
-    rd_open_tables$[7]="OPT_INVHDR",rd_open_opts$[7]="T"
+    rd_open_tables$[6]="OPT_INVHDR",rd_open_opts$[6]="T"
     
     gosub open_tables
     
-    ads_sequences_dev=num(rd_open_chans$[1]),ads_sequences_tpl$=rd_open_tpls$[1]
+    ads_sequences_dev=num(rd_open_chans$[1])
+    dim ads_sequences$:rd_open_tpls$[1]
     arm_custmast_tpl$=rd_open_tpls$[2]
     arm_custship_tpl$=rd_open_tpls$[3]
     ope_ordship_tpl$=rd_open_tpls$[4]
     opt_invship_tpl$=rd_open_tpls$[5]
-    ope_ordhdr_tpl$=rd_open_tpls$[6]
-    opt_invhdr_tpl$=rd_open_tpls$[7]
+    opt_invhdr_tpl$=rd_open_tpls$[6]
     
 rem --- initialization
 
@@ -219,7 +223,7 @@ gosub disp_meter
 rem --- read file_alias into hash map
 
 file_alias! = new java.util.HashMap()
-dim file_alias$:"file_id:c(16*=124),alias:c(16*=)"
+dim file_alias$:"file_id:c(16*=124),alias:c(16*=124),comments:c(1*)"
 file_alias = unt
 open (file_alias)filedir$+"file_alias"
 while 1
@@ -239,7 +243,7 @@ close (file_alias)
 rem --- read file_xref into hash map
 
 file_xref! = new java.util.HashMap()
-dim file_xref$:"old_filename:c(16*=124),new_filename:c(16*=)"
+dim file_xref$:"old_filename:c(16*=124),new_filename:c(16*=124),comments:c(1*)"
 file_xref = unt
 open (file_xref)filedir$+"file_xref"
 while 1
@@ -398,6 +402,33 @@ rd_meter_proc_recs=rd_meter_total_recs
 rd_meter_action$="LST"
 gosub disp_meter
 
+rem --- Locate /config/adx_conversionCtrl.ini
+aonDir$=""
+dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+xpos=pos("/aon/"=dataDir$,-1)
+if xpos then
+    aonDir$=dataDir$(1,xpos+4)
+endif
+if aonDir$="" then
+    xpos=pos("/data/"=dataDir$,-1)
+    if xpos then
+        aonDir$=dataDir$(1,xpos)
+    else
+        aonDir$=dataDir$
+    endif
+endif
+convCtrlIniFileName$=aonDir$+"config/adx_conversionCtrl.ini"
+convCtrlIniFile!=new File(convCtrlIniFileName$,err=*next)
+if !convCtrlIniFile!.exists() then
+    rem --- Report can't find the required config/adx_conversionCtrl.ini initialization file
+    err_msg$="***** ERROR: Required file not found, "+convCtrlIniFileName$+" *****"
+    print(log_dev)err_msg$
+    print(err_dev)err_msg$
+    rd_meter_data$=err_msg$
+    rd_meter_action$="LST"
+    gosub disp_meter
+    goto done
+endif
 
 rd_meter_data$="Processing files . . ."
 rd_meter_total_recs=iff(vectPort!=null(),0,vectPort!.size())
@@ -1296,7 +1327,7 @@ rem --- Populate sequence record(s)
 
     if len(firms$)>0
         for firms=1 to len(firms$) step 2
-            dim ads_sequences$:ads_sequences_tpl$
+            dim ads_sequences$:fattr(ads_sequences$)
             ads_sequences.firm_id$=firms$(firms,2)
             ads_sequences.seq_id$=pad("INTERNAL_SEQ_NO",16)
             ads_sequences.description$="Internal Sequence Number"
@@ -1322,7 +1353,84 @@ rem --- Verify master file records exist for used translations
         gosub verify_translation_master
     endif
 
-rem --- Enable disabled triggers
+rem --- On successful complete, initialize conversion control file data/adx_conversionCtrl
+    fileReader!=new FileReader(convCtrlIniFile!)
+    convCtrl!=new Properties()
+    convCtrl!.load(fileReader!)
+    fileReader!.close()
+    
+    convCtrl!.setProperty("data_source","DataPort")
+    convCtrl!.setProperty("start_version",str(source_version:"00.00"))
+    
+    rem --- Get version of this Addon installation
+    num_files=1
+    dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
+    rd_open_tables$[1]="ADM_MODULES",rd_open_opts$[1]="OTA"
+    gosub open_tables
+    adm_modules_dev=num(rd_open_chans$[1]);dim adm_modules$:rd_open_tpls$[1]
+    readrecord(adm_modules_dev,key=pad("01007514AD",11),dom=*next)adm_modules$
+    end_version$=cvs(adm_modules.version_id$,3)
+    convCtrl!.setProperty("end_version",end_version$)
+    
+    rem --- Put initialized conversion control file in target data directory
+    convCtrlFilePath$=aonDir$+"data"
+    convCtrlFileName$=convCtrlFilePath$+"/adx_conversionCtrl"
+    convCtrlFile!=new File(convCtrlFileName$)
+    rem --- Create path/file if doesn't exist
+    if !convCtrlFile!.exists() then
+        convCtrlPath!=new File(convCtrlFilePath$)
+        if !convCtrlPath!.exists() then
+            convCtrlPath!.mkdirs()
+        endif
+        convCtrlFile!.createNewFile()
+    endif
+    fileWriter!=new FileWriter(convCtrlFile!)
+    convCtrl!.store(fileWriter!,"Addon Conversion Control File")
+    fileWriter!.close()
+    print(log_dev)"Initialized ",convCtrlFileName$
+
+rem --- On successful completion, create conversion marker files in target directory for all file dependency groups that were ported
+    fileDependencies!=new HashMap()
+    convCtrlKeys!=convCtrl!.stringPropertyNames()
+    versionsVect!=BBjAPI().makeVector()
+    versionsVect!.addAll(java.util.Arrays.asList(convCtrl!.getProperty("conversion_versions").split(";")))
+    for i=0 to versionsVect!.size()-1
+        version$=versionsVect!.getItem(i)
+        iter!=convCtrlKeys!.iterator()
+        while iter!.hasNext()
+            key$=iter!.next()
+            if pos(version$+"_"=key$)=1 then
+                fileDependencies!.put(convCtrl!.getProperty(key$),version$)
+            endif
+        wend
+    next i
+    requiredFiles!=BBjAPI().makeVector()
+    keyIter!=fileDependencies!.keySet().iterator()
+    while keyIter!.hasNext()
+        rem --- Create marker file for each dependency where all the files exist
+        create_marker=1
+        requiredFiles!.clear()
+        key!=keyIter!.next()
+        requiredFiles!.addAll(java.util.Arrays.asList(key!.split(";")))
+        version$=fileDependencies!.get(key!)
+        for i=0 to requiredFiles!.size()-1
+            file!=new File(destin_folder$+"/"+requiredFiles!.get(i))
+            if !file!.exists() then
+                create_marker=0
+                break
+            endif
+        next i
+        if create_marker then
+            markerFile!=new File(destin_folder$+"/v"+version$+"_"+requiredFiles!.get(0))
+            markerFile!.createNewFile()
+    
+            print(log_dev)"Created conversion marker file: ",markerFile!.getAbsoluteFile()
+        endif
+    wend
+    
+done: rem --- Done    
+
+    rem --- Enable disabled triggers
     if disabledTriggers!.size() then
         iter!=disabledTriggers!.iterator()
         while iter!.hasNext()
@@ -1334,8 +1442,6 @@ rem --- Enable disabled triggers
             print (log_dev)"Enabled triggers for: ",trigger$
         wend
     endif
-    
-rem --- Done    
 
     print (log_dev)$0a$+"DataPort completed"
     print (log_dev)"DataPort End Time: "+DATE(0:"%Mz/%Dz/%Y %hz:%mz:%sz")+" "
@@ -1748,7 +1854,7 @@ rem --- although flat file sequence_no could probably be modified to contain all
                     if sys01_3$(13,1)<>"Y" then continue
                 endif            
                 read (old_file,key=firms$(firms,2)+"N",dom=*continue)*,sequence_no[all]              
-                dim ads_sequences$:ads_sequences_tpl$
+                dim ads_sequences$:fattr(ads_sequences$)
                 ads_sequences.firm_id$=firms$(firms,2)
                 ads_sequences.seq_id$=pad(sequence_id$,16)                             
                 readrecord(ads_sequences_dev,key=ads_sequences.firm_id$+ads_sequences.seq_id$,dom=*continue)ads_sequences$
@@ -1881,39 +1987,28 @@ convert_po_files:
             close (arm_custship_dev)          
         else
             if num(cvs(old_rec.shipto_nbr$,3))=99
-                rem --- read ope31 or opt-01/31 for manual (99) shipto
-                ope_ordship_dev=unt
-                dim rec$:ope_ordship_tpl$
-                addr_file$="ope-31"
-                order_found=0
-                open (ope_ordship_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+                rem --- read opt-01/31 for manual (99) shipto
+                opt_invhdr_dev=unt
+                dim opt_invhdr$:opt_invhdr_tpl$
+                addr_file$="opt-01"
+                open (opt_invhdr_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
+                opt_invship_dev=unt
+                dim rec$:opt_invship_tpl$
+                addr_file$="opt-31"
+                open (opt_invship_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
                 while 1
-                    read record (ope_ordship_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$+po_hdr_rec.order_no$,dom=*break)rec$
+                    trip_key$=po_hdr_rec.firm_id$+opt_invhdr.ar_type$+po_hdr_rec.customer_id$+po_hdr_rec.order_no$
+                    read(opt_invhdr_dev,key=trip_key$,dom=*next)opt_invhdr$
+                    opt_invhdr_key$=key(opt_invhdr_dev,end=*break)
+                    if pos(trip_key$=opt_invhdr_key$)<>1 then break
+                    read record (opt_invhdr_dev)opt_invhdr$
+                    read record (opt_invship_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$+opt_invhdr.ar_inv_no$,knum="AO_CUST_INV",dom=*break)rec$
                     po_hdr_rec.ds_name$=rec.name$            
                     gosub fill_dropship_address
-                    order_found=1
                     break
                 wend
-                close (ope_ordship_dev)
-                if !order_found
-                    opt_invhdr_dev=unt
-                    dim opt_invhdr$:opt_invhdr_tpl$
-                    addr_file$="opt-01"
-                    open (opt_invhdr_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
-                    opt_invship_dev=unt
-                    dim rec$:opt_invship_tpl$
-                    addr_file$="opt-31"
-                    open (opt_invship_dev,err=addr_open_err)destin_folder$+"/"+addr_file$
-                    while 1
-                        read record (opt_invhdr_dev,key=po_hdr_rec.firm_id$+opt_invhdr.ar_type$+po_hdr_rec.customer_id$+po_hdr_rec.order_no$,knum="AO_CUST_ORD",dom=*break)opt_invhdr$
-                        read record (opt_invship_dev,key=po_hdr_rec.firm_id$+po_hdr_rec.customer_id$+opt_invhdr.ar_inv_no$,dom=*break)rec$
-                        po_hdr_rec.ds_name$=rec.name$            
-                        gosub fill_dropship_address
-                        break
-                    wend
-                    close (opt_invhdr_dev)
-                    close (opt_invship_dev)
-                endif                           
+                close (opt_invhdr_dev)
+                close (opt_invship_dev)
             else
                 rem --- invalid shipto
                 po_hdr_rec.addr_line_1$="Unknown address"

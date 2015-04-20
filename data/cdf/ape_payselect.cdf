@@ -322,27 +322,40 @@ rem --- Display calculated total payments
 	tot_payments=num(callpoint!.getDevObject("tot_payments"))
 	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 [[APE_PAYSELECT.DISC_DATE_DT.AVAL]]
-rem --- Set filters on grid
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_disc_date_dt") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.DUE_DATE_DT.AVAL]]
-rem --- Set filters on grid
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_due_date_dt") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.DISC_DATE_OP.AVAL]]
-rem --- Set filters on grid
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_disc_date_op") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.PAYMENT_GRP.AVAL]]
-rem --- Set filters on grid
-
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_payment_grp") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.DUE_DATE_OP.AVAL]]
-rem --- Set filters on grid
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_due_date_op") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.VENDOR_ID.AVAL]]
-rem --- Set filters on grid
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_vendor_id") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.AP_TYPE.AVAL]]
-rem --- Set filters on grid
-	gosub filter_recs
+rem --- Set filters on grid if value was changed
+	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_ap_type") then
+		gosub filter_recs
+	endif
 [[APE_PAYSELECT.<CUSTOM>]]
 rem ==========================================================================
 load_Invoice_Approval_Status: rem --- Set grid row background colors and selections
@@ -1074,7 +1087,7 @@ rem ==========================================================================
 fill_grid: rem --- Fill the grid with data in vectInvoices!
 rem ==========================================================================
 
-	SysGUI!.setRepaintEnabled(0)
+	rem SysGUI!.setRepaintEnabled(0) ... not availble in BUI
 	gridInvoices! = UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
 	minrows = num(user_tpl.gridInvoicesRows$)
 
@@ -1110,7 +1123,7 @@ rem ==========================================================================
 		gosub load_Invoice_Approval_Status
 	endif
 
-	SysGUI!.setRepaintEnabled(1)
+	rem SysGUI!.setRepaintEnabled(1) ... not availble in BUI
 
 	return
 
@@ -1232,7 +1245,7 @@ rem ==========================================================================
 	apt11_dev = fnget_dev("APT_INVOICEDET")
 	dim apt11a$:fnget_tpl$("APT_INVOICEDET")
 
-	SysGUI!.setRepaintEnabled(0)
+	rem SysGUI!.setRepaintEnabled(0) ... not availble in BUI
 
 	gridInvoices!       = UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
 	vectInvoices!       = UserObj!.getItem(num(user_tpl.vectInvoicesOfst$))
@@ -1367,7 +1380,7 @@ rem				endif
 
 	endif
 
-	SysGUI!.setRepaintEnabled(1)
+	rem SysGUI!.setRepaintEnabled(1) ... not availble in BUI
 
 	return
 
@@ -1535,7 +1548,7 @@ rem ==========================================================================
 	apt11_dev = fnget_dev("APT_INVOICEDET")
 	dim apt11a$:fnget_tpl$("APT_INVOICEDET")
 
-	SysGUI!.setRepaintEnabled(0)
+	rem SysGUI!.setRepaintEnabled(0) ... not availble in BUI
 
 	gridInvoices!       = UserObj!.getItem(num(user_tpl.gridInvoicesOfst$))
 	vectInvoices!       = UserObj!.getItem(num(user_tpl.vectInvoicesOfst$))
@@ -1692,7 +1705,7 @@ rem --- Calculate current value of selected invoices
 	callpoint!.setDevObject("tot_payments",str(tot_payments))
 	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 
-	SysGUI!.setRepaintEnabled(1)
+	rem SysGUI!.setRepaintEnabled(1) ... not availble in BUI
 
 	return
 

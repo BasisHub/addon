@@ -1,0 +1,886 @@
+rem --- Invoice Printing (Form)
+rem --- Program opc_hist_invoice.aon
+
+rem --- AddonSoftware
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- 12/2014 -----------------------
+rem --- opc_hist_invoice.aon is used to print Historical Invoice
+rem --- from Historical Invoice Inquiry form
+
+rem --- at some point (after RTP mods are complete and QA'd), this public and the three SPROCS/Jaspers
+rem --- should be consolidated with the non-hist counterparts
+
+rem --- There are three sprocs and three .jaspers for this enhancement:
+rem ---    - OP_HIST_INVOICE_HDR.prc / OPHistInvoiceHdr.jasper
+rem ---    - OP_HIST_INVOICE_DET.prc / OPHistInvoiceDet.jasper
+rem ---    - OP_HIST_INVOICE_DET_LOTSER.prc / OPHistInvoiceDet-LotSer.jasper
+rem -----------------------------------
+
+rem ----------------------------------------------------------------------------
+
+on_demand: rem --- Entry point for on-denamd invoices    
+
+goto all_done; rem --- currently only used for historical invoices
+    setesc std_error
+    seterr std_error
+    
+    enter cust_id$, order_no$, option!, table_chans$[all], status
+ 
+    custIds! = BBjAPI().makeVector()
+    orderNos! = BBjAPI().makeVector()
+
+    custIds!.addItem( cust_id$ )
+    orderNos!.addItem( order_no$ )   
+    
+    type = 1
+    kw_pfx$="Demand "
+    goto done_with_enter
+    
+batch_inv: rem --- Batch printing of invoices
+
+goto all_done; rem --- currently only used for historical invoices
+    setesc std_error
+    seterr std_error
+
+    enter custIds!, orderNos!, option!, table_chans$[all], status
+    
+    type = 2
+    kw_pfx$="Batch "
+    goto done_with_enter
+ 
+historical: rem --- Historical Invoice printing
+
+    setesc std_error
+    seterr std_error
+
+    enter cust_id$, order_no$, invoice_no$, option!, table_chans$[all], status
+ 
+    custIds! = BBjAPI().makeVector()
+    orderNos! = BBjAPI().makeVector()
+
+    custIds!.addItem( cust_id$ )
+    orderNos!.addItem( order_no$ )   
+    
+    type = 3
+    kw_pfx$="Historical "
+    goto done_with_enter
+    
+done_with_enter:
+
+rem --- Types of calls
+
+    on_demand  = 1
+    batch_inv  = 2
+    historical = 3
+    
+rem --- Use statements and Declares
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::bbjasper.bbj::BBJasperViewerControl
+
+	declare BBJasperReport BBjReport!
+	declare BBJasperViewerWindow BBjReportWindow! 
+    
+	params! = new java.util.HashMap()
+	master_params! = new java.util.HashMap()
+		
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 75; rem keep it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 75
+
+    use ::ado_rptControl.src::ReportControl	
+    use ::ado_func.src::func
+    use ::ado_pdf.src::PDFHelper
+    use ::sys/prog/bao_callpoint.bbj::Callpoint
+    use ::sys/prog/bao_option.bbj::Option
+    use ::sys/prog/bao_valid_card.bbj::CreditCard
+    
+    declare Callpoint callpoint!
+    declare Option option!
+    declare BBjVector custIds!
+    declare BBjVector orderNos!
+    declare CreditCard credCard!
+
+rem --- Retrieve the program path
+
+    pgmdir$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=""
+    sypdir$=stbl("+DIR_SYP",err=*next)
+
+rem --- Set document Directory
+
+    docdir$=""
+    docdir$=stbl("+DOC_DIR_PDF",err=*next)
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+	    
+rem --- Anything to print?
+
+    if custIds!.size() = 0 or orderNos!.size() = 0 then
+        goto all_done
+    endif
+
+rem --- Derive/set path and filename for logo to go on form
+    
+	logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+    logo_filename$=""
+    if logo_file$<>""
+        logo_chn=unt
+        open (logo_chn,err=*endif)logo_file$
+        logo_filename$=fid(logo_chn)(9)
+        close (logo_chn)
+    endif
+	
+    logofile$ = ""
+    start_block = 1
+    curr_path$=dsk("")+dir("")
+
+rem --- Set Report Name & Subreport directory
+
+    reportDir$ = stbl("+DIR_REPORTS",err=*next)   
+    temp = unt
+    open (temp)reportDir$
+    reportDir$ = fid(temp)(9)+"/"
+    close (temp)
+    reportBaseName$ = "OPHistInvoiceHdr"
+    filename$ = reportDir$ + reportBaseName$ + ".jasper"
+    masterBaseName$ = "OPHistInvoiceMaster"
+    master_filename$ = reportDir$ + masterBaseName$+".jasper"
+
+    declare BBJasperReport report!
+    
+rem --- Check for user authentication; create connection string in url$
+
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    dbtimeout$="&socket_timeout=5000"
+  
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
+
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
+	
+	dbname$ = stbl("+DBNAME")
+	dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+		if pos("jdbc:"=cvs(dbname$,8))=1 then			
+			url$=dbname$+url_user$+dbssl$+dbtimeout$
+		else
+			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+		endif
+    endif        
+
+rem --- Open Files    
+    
+	num_files=20
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+
+    open_tables$[1]="ARM_CUSTMAST",  open_opts$[1] = "OTA"
+    open_tables$[2]="ARM_CUSTDET",   open_opts$[2] = "OTA"
+    open_tables$[3]="ARM_CUSTSHIP",  open_opts$[3] = "OTA"
+    open_tables$[4]="ARC_TERMCODE",  open_opts$[4] = "OTA"
+    open_tables$[5]="ARC_CASHCODE",  open_opts$[5] = "OTA"
+    open_tables$[6]="ARC_SALECODE",  open_opts$[6] = "OTA"
+    open_tables$[7]="ARS_REPORT",    open_opts$[7] = "OTA"
+    open_tables$[8]="IVM_ITEMMAST",  open_opts$[8] = "OTA"
+    open_tables$[9]="IVS_PARAMS",    open_opts$[9] = "OTA"
+    open_tables$[10]="OPE_INVHDR",   open_opts$[10] = "OTA"
+    open_tables$[11]="OPE_PRNTLIST", open_opts$[11] = "OTA"
+    open_tables$[12]="OPE_INVDET",   open_opts$[12] = "OTA"
+    open_tables$[13]="OPE_ORDLSDET", open_opts$[13] = "OTA"
+    open_tables$[14]="OPE_ORDSHIP",  open_opts$[14] = "OTA"
+    open_tables$[15]="OPE_INVCASH",  open_opts$[15] = "OTA"
+    open_tables$[16]="OPC_LINECODE", open_opts$[16] = "OTA"
+    open_tables$[17]="OPC_MSG_HDR",  open_opts$[17] = "OTA"
+    open_tables$[18]="OPM_CUSTJOBS", open_opts$[18] = "OTA"
+    open_tables$[19]="OPC_MSG_DET",  open_opts$[19] = "OTA"
+    open_tables$[20]="ARS_PARAMS",   open_opts$[20] = "OTA"
+    
+    gosub open_tables
+    
+    arm01_dev      = num(open_chans$[1])
+    arm02_dev      = num(open_chans$[2])
+    arm03_dev      = num(open_chans$[3])
+    arm10_dev      = num(open_chans$[4])
+    arm10c_dev     = num(open_chans$[5])
+    arm10f_dev     = num(open_chans$[6])
+    ars_report_dev = num(open_chans$[7])
+    ivm01_dev      = num(open_chans$[8])
+    ivs01a_dev     = num(open_chans$[9])
+    ope01_dev      = num(open_chans$[10])
+    ope04_dev      = num(open_chans$[11])
+    ope11_dev      = num(open_chans$[12])
+    ope21_dev      = num(open_chans$[13])
+    ope31_dev      = num(open_chans$[14])
+    ope41_dev      = num(open_chans$[15])
+    opm02_dev      = num(open_chans$[16])
+    opm04_dev      = num(open_chans$[17])
+    opm09_dev      = num(open_chans$[18])
+    opm14_dev      = num(open_chans$[19])
+    ars01a_dev     = num(open_chans$[20])
+    
+    dim arm01a$:open_tpls$[1]
+    dim arm01a1$:open_tpls$[1]
+    dim arm02a$:open_tpls$[2]
+    dim arm03a$:open_tpls$[3]
+    dim arm10a$:open_tpls$[4]
+    dim arm10c$:open_tpls$[5]
+    dim arm10f$:open_tpls$[6]
+    dim ars01b$:open_tpls$[7]
+    dim ivm01a$:open_tpls$[8]
+    dim ivs01a$:open_tpls$[9]
+    dim ope01a$:open_tpls$[10]
+    dim ope04a$:open_tpls$[11]
+    dim ope11a$:open_tpls$[12]
+    dim ope21a$:open_tpls$[13]
+    dim ope31a$:open_tpls$[14]
+    dim ope41a$:open_tpls$[15]
+    dim opm02a$:open_tpls$[16]
+    dim opm04a$:open_tpls$[17]
+    dim opm09a$:open_tpls$[18]
+    dim opm14a$:open_tpls$[19]
+    dim ars01a$:open_tpls$[20]
+    
+rem --- Parameters (company addresses)
+
+    find record (ivs01a_dev, key=firm_id$+"IV00", err=std_missing_params) ivs01a$
+    find record (ars01a_dev, key=firm_id$+"AR00", err=std_missing_params) ars01a$
+    find record (ars_report_dev, key=firm_id$+"AR02", err=std_missing_params) ars01b$
+
+rem --- Company addresses (AR and Remit To)
+
+	max_remitAddr_lines = 4
+	remit_addrLine_len = 30
+	remit$=ars01b.remit_addr_1$+ars01b.remit_addr_2$+ars01b.remit_city$+ars01b.remit_state$+ars01b.remit_zip$
+    call pgmdir$+"adc_address.aon",remit$,24,3,9,remit_addrLine_len
+    remit$=ars01b.remit_name$+remit$
+
+	max_compAddr_lines = 4
+	comp_addrLine_len = 30
+	comp$=ars01b.addr_line_1$+ars01b.addr_line_2$+ars01b.city$+ars01b.state_code$+ars01b.zip_code$
+    call pgmdir$+"adc_address.aon",comp$,24,3,9,comp_addrLine_len
+    comp$=ars01b.name$+comp$
+
+rem --- Initialize Data
+
+    precision num(ivs01a.precision$)
+
+    call pgmdir$+"adc_getmask.aon","","AR","I","",cust_mask$,0,cust_size
+    call pgmdir$+"adc_getmask.aon","","AR","A","",amt_mask$,0,amt_mask_size
+    call pgmdir$+"adc_getmask.aon","","AR","U","",qty_mask$,0,qty_mask
+    call pgmdir$+"adc_getmask.aon","","IV","P","",price_mask$,0,price_mask 
+    
+    ext_mask$ = amt_mask$
+
+    call pgmdir$+"adc_sizemask.aon",price_mask$,price_mask,11,11
+    call pgmdir$+"adc_sizemask.aon",ext_mask$,ext_mask,12,12
+
+	rem --- Make the 'Patterns' used to mask in iReports from Addon masks
+	rem       examples:
+	rem          ##0.00;##0.00-   Includes negatives with minus at the end
+	rem          ##0.00;-##0.00   Includes negatives with minus at the front
+	rem          ##0.00;##0.00-   Positives only
+
+	qty_mask_pattern$=fngetPattern$(qty_mask$)
+	amt_mask_pattern$=fngetPattern$(amt_mask$)
+	ext_mask_pattern$=fngetPattern$(ext_mask$)
+
+	
+    func.setLen1( int(num(ivs01a.desc_len_01$)) )
+    func.setLen2( int(num(ivs01a.desc_len_02$)) )
+    func.setLen3( int(num(ivs01a.desc_len_03$)) )
+	   
+    nothing_printed = 1
+    
+    if type = on_demand or type = historical then
+        alias$ = option!.getAlias()
+        rptctl_alias$ = "OPR_INVOICE";rem --- use actual alias (i.e., OPE_INVHDR) when putting in doc archive so you know it was an on-demand invoice, but use OPR_INVOICE for report control so you don't need two report control records for each customer to handle on-demand vs. batch.        
+		master_document=0
+    else
+        alias$ = option!.getAlias()
+		master_document=1
+    endif
+
+    emailFax! = BBjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
+
+rem --- Assign form input values to local variables
+
+    if type = batch_inv then 
+		restart$ = option!.getOptionData("pick_check")
+		restart_customer$ = option!.getOptionData("customer_id")  
+        batch_adhoc_message$ = option!.getOptionData("pick_text")
+    else
+    	restart$ = ""
+		restart_customer$ = ""
+        batch_adhoc_message$ = option!.getOptionData("pick_text")
+        send_via_rpt_ctl$ = option!.getOptionData("pick_check")
+    endif
+
+rem --- Start progress meter 
+
+    call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",0,0,1,0,status
+    if status = 999 then goto all_done
+		
+rem --- Main Read
+
+    for next_item = 0 to custIds!.size() - 1
+
+        cust_id$ = str( custIds!.getItem(next_item) )
+        order_no$ = str( orderNos!.getItem(next_item) )
+
+        ope01_trip$=firm_id$+"U"+"  "+cust_id$+order_no$
+        read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
+        ope01_key$=key(ope01_dev,end=*continue)
+        if pos(ope01_trip$=ope01_key$)<>1 then continue
+        extract record (ope01_dev, key=ope01_key$, dom=*continue) ope01a$; rem Advisory Locking
+
+    rem --- if historical, is this the right invoice?
+        if type = historical
+            if ope01a.ar_inv_no$<>invoice_no$
+            read(ope01_dev)
+            continue
+        endif
+        
+	rem --- Is invoice Void?
+		if ope01a.invoice_type$ = "V" 
+			read(ope01_dev)
+			continue
+		endif
+
+    rem --- 
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+        if status = 999 then exitto all_done
+        
+    rem --- Total
+        
+        if type = batch_inv then
+            ope01a.print_status$ = "B"
+            ope01a.mod_user$=sysinfo.user_id$
+            ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope01a.mod_time$=date(0:"%Hz%mz")
+            ope01a$ = field(ope01a$)
+            write record (ope01_dev) ope01a$
+        endif
+        
+        nothing_printed = 0			
+
+    rem --- Make Document Archive Record and Get Document ID
+
+        rep_date$=date(0:stbl("+DATE_MASK"))
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+        rd_source_alias$=alias$
+        rd_source_type$="O"
+        rd_doc_source$="E"
+        rd_doc_ext$="PDF"
+        rd_source_id$="C"
+        rd_source_ref$=ope01a.customer_id$
+
+        new_doc_id$=""
+        new_doc_name$=""
+        doc_name$="OPHistInvoice_Cust"+ope01a.customer_id$+"_"+alias$
+        doc_keywords$=kw_pfx$+"Order: "+ope01a.order_no$+" Invoice: "+ope01a.ar_inv_no$
+
+    rem --- Get Next Document Number and update Document Audit for individual pdf
+
+        call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",new_doc_id$,rd_table_chans$[all] 
+        new_doc_name$=new_doc_id$+"_"+doc_name$+".pdf"        
+        
+        call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,rep_date_stamp$,rep_time_stamp$,rd_doc_source$,rd_doc_ext$,docdir$,
+:           rd_source_type$,rd_source_alias$,rd_source_id$,rd_source_ref$,rd_table_chans$[all],"",new_doc_name$,doc_name$,doc_keywords$
+
+    rem --- Get Next Document Number and update Document Audit for master copy of pdf, if first time thru
+
+        if master_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            gosub document_whse
+            rd_archive_action$=""
+            master_doc_id$=rd_doc_id$
+            master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"
+        endif
+
+    rem --- Use ReportControl object to see if customer wants print, email, or fax
+
+        add_to_print_report=1
+        if rpt_ctl$="YES"     
+            found=reportControl!.getRecipientInfo(rpt_id$,cust_id$,"")
+            if found         
+                if reportControl!.getPrintYN()<>"Y" then add_to_print_report=0
+                if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                    emailFax!.add(rpt_id$)
+                    emailFax!.add(cust_id$)
+                    emailFax!.add(new_doc_id$)
+                endif
+            endif
+        endif
+
+    rem --- Report parameters  (Master only processed once, followed by actual invoices)
+		if master_document
+			master_params!.put("RESTART",restart$)
+			master_params!.put("RESTART_CUSTOMER",restart_customer$)
+			master_params!.put("MESSAGE",batch_adhoc_message$)
+		endif
+
+		params!.put("FIRM_ID",ope01a.firm_id$)
+		params!.put("AR_TYPE",ope01a.ar_type$)
+		params!.put("CUSTOMER_ID",ope01a.customer_id$)
+		params!.put("ORDER_NO",ope01a.order_no$)
+        params!.put("AR_INV_NO",ope01a.ar_inv_no$)
+		params!.put("QTY_MASK",qty_mask$)
+		params!.put("QTY_MASK_PATTERN",qty_mask_pattern$)
+		params!.put("PRICE_MASK",price_mask$)
+		params!.put("AMT_MASK",amt_mask$)
+		params!.put("AMT_MASK_PATTERN",amt_mask_pattern$)        
+		params!.put("EXT_MASK",ext_mask$)
+		params!.put("EXT_MASK_PATTERN",ext_mask_pattern$)  
+		params!.put("CUST_MASK",cust_mask$)
+		params!.put("CUST_SIZE",str(cust_size))
+		params!.put("BARISTA_WD",dir(""))
+		params!.put("LOGO_FILE",logo_filename$)
+		params!.put("BATCH_MESSAGE",batch_adhoc_message$)
+		params!.put("IVS_LOTSER_FLAG",ivs01a.lotser_flag$)
+		
+		params!.put("AR_ADDRESS1",comp$((comp_addrLine_len*0)+1,comp_addrLine_len))
+		params!.put("AR_ADDRESS2",comp$((comp_addrLine_len*1)+1,comp_addrLine_len))
+		params!.put("AR_ADDRESS3",comp$((comp_addrLine_len*2)+1,comp_addrLine_len))
+		params!.put("AR_ADDRESS4",comp$((comp_addrLine_len*3)+1,comp_addrLine_len))
+
+        call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(ars01b.phone_no$,2),"",phone_mask$
+        tmpphone$=cvs(ars01b.phone_no$,2)
+        tmpphone$=str(tmpphone$:phone_mask$,err=*next)
+		params!.put("AR_PHONE_NO",tmpphone$)
+
+		params!.put("REMIT1",remit$((remit_addrLine_len*0)+1,remit_addrLine_len))
+		params!.put("REMIT2",remit$((remit_addrLine_len*1)+1,remit_addrLine_len))
+		params!.put("REMIT3",remit$((remit_addrLine_len*2)+1,remit_addrLine_len))
+		params!.put("REMIT4",remit$((remit_addrLine_len*3)+1,remit_addrLine_len))
+		
+        params!.put("TYPE",str(type))
+
+    rem --- invoke jasper
+        
+        if master_document
+            master_report! = new BBJasperReport(master_filename$,url$)
+            master_report!.putParams(master_params!)
+            master_report!.setLocale(locale$)
+            master_report!.fill()
+            master_document=0
+        endif
+
+        report! = new BBJasperReport(filename$,url$)
+        report!.putParams(params!)
+
+        locale$ = stbl("!LOCALE")
+        locale$ = stbl("+USER_LOCALE",err=*next)
+        report!.setLocale(locale$)
+     
+        report!.fill()
+        report!.exportToPDF(BBjAPI().FALSE, docdir$+new_doc_name$)
+
+        if type = batch_inv
+			master_report!.appendReport(report!)	
+			report!.destroy()
+		endif
+    rem --- Loop back for next Customer/Order
+
+    next next_item
+
+rem --- bring up jasper viewer (master doc for Batch Invoice; single invoice for On-Demand)
+
+    declare BBJasperViewerWindow viewerWindow!
+    
+    rem --- get a pdf path from +DOC_DIR_PDF
+    rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
+    gosub doc_path
+
+	if type = batch_inv
+        repTitle$=master_doc_id$+"_"+masterBaseName$
+        rd_doc_id$=master_doc_id$
+
+        rem --- previous version auto exported to pdf regardless of user action in jasper viewer
+        rem --- so gosub-ing the export routine here to keep backward compatible
+        gosub OnSaveMenuButton
+
+        viewerWindow! = new BBJasperViewerWindow(master_report!,0,0,screen_width,screen_height,repTitle$,$00080093$)
+	else
+	    repTitle$=new_doc_id$+"_"+doc_name$
+	    rd_doc_id$=new_doc_id$
+        rd_doc_keywords$=doc_keywords$
+        rep_title$=doc_name$
+	        
+	    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,repTitle$,$00080093$)	        
+	endif
+
+    viewerControl! = viewerWindow!.getViewerControl()
+    viewerControl!.setGoogleDefaultDocument(repTitle$)
+    viewerControl!.setDefaultSaveFolder(rd_doc_path$)
+    viewerControl!.setDefaultSaveFile(repTitle$)
+
+    rem --- set callbacks for when user presses save or email buttons in jasper viewer
+    rem --- note: saveAs or saveAsGDoc not intercepted, just regular save
+    saveMenuButton! = viewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+    saveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnSaveMenuButton")
+
+    emailToolButton! = viewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+    emailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnEmailToolButton")
+
+    viewerWindow!.setReleaseOnClose(0)
+    viewerWindow!.show(0)
+
+    declare BBjTopLevelWindow bbjWindow!
+    bbjWindow!= viewerWindow!.getViewerWindow()
+    cancelled=1
+    bbjWindow!.setCallback(bbjWindow!.ON_CLOSE,"close_win",err=*next); cancelled=0
+    if cancelled then goto close_win
+
+rem --- Event Control
+
+    process_events,err=*same
+
+    release
+
+document_whse:rem --- Write record to Barista document warehouse (ads_documents)
+rem --- rd_doc_name$ is the actual filename stored in rd_doc_path$
+rem --- rep_title$ is (usually) a less detailed name, with no extension, used as the doc description
+    call stbl("+DIR_SYP")+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       rd_archive_action$,
+:       rd_doc_name$,
+:       rep_title$,
+:       rd_doc_keywords$
+
+    return
+
+doc_path:rem --- Get Document Path
+rem --- forcing a pdf save to this location for release 13.03
+rem --- eventually, want to make the save functionality mimic (as closely as possible) Barista
+rem --- so it can save based on user's doc group and doc settings
+
+    if rd_doc_path$="" then
+        rd_tmp_dir$=stbl("+DOC_DIR_PDF",err=*endif)
+        rd_temp_wd$=dsk("")+dir("")
+        if pos(":"=rd_tmp_dir$) setdrive rd_tmp_dir$(1,pos(":"=rd_tmp_dir$)-1),err=*next
+        chdir rd_tmp_dir$,err=*next
+        rd_doc_path$=dsk("")+dir("")
+        if pos(":"=rd_temp_wd$) setdrive rd_temp_wd$(1,pos(":"=rd_temp_wd$)-1)
+        chdir rd_temp_wd$
+    endif
+
+    return
+
+OnSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_name$=repTitle$+".pdf"
+        rd_doc_ext$="PDF"
+        if type=batch_inv
+            master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        else
+            report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+            rep_title$=repTitle$
+        endif
+        gosub document_whse
+    endif
+    return    
+
+OnEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
+close_win:rem --- Viewer closed - do post-processing for batch vs single
+
+    if type=historical
+        if emailFax!.size() and send_via_rpt_ctl$="Y"
+            msg_id$ = "CONF_RPTCTL"
+            gosub disp_message
+            if msg_opt$="Y"
+                for email_fax=0 to emailFax!.size()-1 step 3
+                    reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+                next email_fax
+            endif
+        endif
+        goto all_done
+    endif
+    
+    msg_id$ = "OP_INVOICE_UPDATE"
+    gosub disp_message
+    if msg_opt$<>"Y" then goto all_done
+    
+    if type=batch_inv
+
+        call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Updating","",0,0,1,0,status
+        if status = 999 then goto all_done
+
+        read (ope04_dev,key=firm_id$+"I",dom=*next)
+
+        rem --- Update loop Batch Invoice
+
+        start_block = 1
+
+        while 1
+            read record (ope04_dev, end=*break) ope04a$
+            if ope04a.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"I" then break
+            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
+            if status = 999 then exitto all_done
+
+            if start_block then
+                ope01_trip$=firm_id$+"E"+"  "+ope04a.customer_id$+ope04a.order_no$
+                read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
+                ope01_key$=key(ope01_dev,end=*continue)
+                if pos(ope01_trip$=ope01_key$)=1 then
+                    extract record (ope01_dev,key=ope01_key$, dom=*endif) ope01a$
+                    if ope01a.print_status$="B" then gosub order_update
+                endif
+            endif
+        wend
+
+        if emailFax!.size()
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+    else
+		rem gosub open_cash_box... not implemented in Barista Addon
+		gosub order_update
+
+        if emailFax!.size() and send_via_rpt_ctl$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+	endif 
+
+all_done: rem --- Exit
+
+    read(ope01_dev,knum="AO_STATUS",end=*next); rem release extract, and reset knum in case on-demand printing
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+
+    reportControl!.destroy(err=*next)       
+    viewerWindow!.destroy()
+    rdForm!.destroy(err=*next)
+    if tcb(13) then exit
+    
+    release
+
+order_update: rem --- Update order's status
+
+    ope01a.print_status$ = "Y"
+    ope01a.lock_status$  = "N"
+    ope01a.mod_user$=sysinfo.user_id$
+    ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+    ope01a.mod_time$=date(0:"%Hz%mz")
+    ope01a$ = field(ope01a$)
+    write record (ope01_dev) ope01a$
+    if type = on_demand then callpoint!.setStatus("SETORIG")
+    
+    return
+	
+open_cash_box: rem --- Cash Box Open (legacy code - not implemented)
+
+    if r1$<>"" and cvs(r1$(17,2), 2) <> "" then 
+        cashbox_dev = unt
+        open (cashbox_dev, err=*endif) r1$(17,2)
+
+        for i=1 to pos(" "<>r1$(1,8),-1) step 2
+            if pos(" "<>r1$(i,2))=0 continue
+            if r1$(i,2)="1B" print (cashbox_dev)'es', else print (cashbox_dev)ath(r1$(i,2)),
+        next i
+
+        print (cashbox_dev)
+
+        for i=1 to num(r1$(29,4))
+            print (cashbox_dev)ath(r1$(21,pos(" "<>r1$(21,8),-1)))
+        next i
+
+        for i=1 to pos(" "<>r1$(9,8),-1) step 2
+            if pos(" "<>r1$(8+i,2))=0 continue
+            if r1$(8+i,2)="1B" print (cashbox_dev)'es', else print (cashbox_dev)ath(r1$(8+i,2)),
+        next i
+
+        print (cashbox_dev)
+        close (cashbox_dev,err=*next)
+    endif
+
+    return
+
+open_tables: rem --- Open Tables
+
+	call sypdir$+"bac_open_tables.bbj",
+:		open_beg,
+:		open_end,
+:		open_tables$[all],
+:		open_opts$[all],
+:		open_chans$[all],
+:		open_tpls$[all],
+:		table_chans$[all],
+:		open_batch,
+:		open_status$
+
+	if open_status$<>""
+		msg_id$="ENTRY_OPEN_ERROR"
+		dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+		gosub disp_message
+		goto std_exit
+	endif
+
+	return
+
+disp_message: rem --- Display Message Dialog
+
+	call sypdir$+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
+
+	return
+
+rem --- Functions
+
+    def fnline2y%(tmp0)=(tmp0*12)+12+top_of_detail+2
+
+
+rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
+	def fngetPattern$(q$)
+		q1$=q$
+		if len(q$)>0
+			if pos("-"=q$)
+				q1=pos("-"=q$)
+				if q1=len(q$)
+					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
+				else
+					q1$=q$(2,len(q$)-1)+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
+				endif
+			endif
+			if pos("CR"=q$)=len(q$)-1
+				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
+			endif
+			if q$(1,1)="(" and q$(len(q$),1)=")"
+				q1$=q$(2,len(q$)-2)+";"+q$
+			endif
+		endif
+		return q1$
+	fnend	
+	
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
+:       str(err),rd_err_text$,rd_err_act$
+std_missing_params_exit: 
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release: 
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+
+std_exit_no_report: 
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    release
+
+rem #endinclude std_end.src
+
+    end

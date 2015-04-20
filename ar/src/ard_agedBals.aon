@@ -1,0 +1,275 @@
+rem --- ard_agedBals.aon - age single customer's invoices and present in query grid
+rem --- firm, ar_type, and customer come in via rd_drill_pfx$
+rem --- rd_field_tvar$ contains table.field where user clicked drilldown button
+rem --- if hash retrieved from object table is null, do the aging (happens first time only)
+rem --- subsequent drilldowns will then just pull appropriate list of invoices from the hash depending on rd_field_tvar$ (i.e., no need to re-do the aging)
+rem --- currently used from Customer form's Future/Current/30/60/90/120 drilldowns (1/8/2015)
+
+    setesc std_error
+    seterr std_error
+
+    enter rd_gui_dev,rdWindow!,rd_field_tvar$,rd_ddm_drill_defs$,rd_drill_pfx$,rd_table_chans$[all]
+
+    ageBucket$=cvs(rd_field_tvar$,2)
+    objTable!=BBjAPI().getObjectTable()
+    agedBalHash!=objTable!.get(str(rd_drill_pfx$))
+    
+    if agedBalHash!=null() then gosub do_aging;rem --- age this customer's invoices into a hash and store in object table so it doesn't need to be repeated to look at other age buckets  
+  
+    invoiceVect!=agedBalHash!.get(ageBucket$)
+    firm_id$=agedBalHash!.get("FIRM_ID")
+    ar_type$=agedBalHash!.get("AR_TYPE")
+    customer_id$=agedBalHash!.get("CUSTOMER_ID")
+    
+    rem --- create filter_defs$[ ] from the aged invoices hashmap built in do_aging subroutine (i.e., where ar_inv_no IN ('inv1','inv2','inv3'))
+    rem --- then call the query program, filtering on these invoices
+
+    if invoiceVect!<>null() and invoiceVect!.size()
+        invoices$="IN ("
+        for x=0 to invoiceVect!.size()-1
+            if x=invoiceVect!.size()-1
+                invoices$=invoices$+"'"+invoiceVect!.get(x)+"')"
+            else
+                invoices$=invoices$+"'"+invoiceVect!.get(x)+"', "
+            endif
+        next x
+        
+        dim filter_defs$[4,2]
+        filter_defs$[1,0]="ART_INVHDR.FIRM_ID"
+        filter_defs$[1,1]="='"+firm_id$+"'"
+        filter_defs$[1,2]="LOCK"
+        filter_defs$[2,0]="ART_INVHDR.AR_TYPE"
+        filter_defs$[2,1]="='"+ar_type$+"'"
+        filter_defs$[2,2]="LOCK"
+        filter_defs$[3,0]="ART_INVHDR.CUSTOMER_ID"
+        filter_defs$[3,1]="='"+customer_id$+"'"
+        filter_defs$[3,2]="LOCK"        
+        filter_defs$[4,0]="ART_INVHDR.AR_INV_NO"
+        filter_defs$[4,1]=invoices$
+        filter_defs$[4,2]="LOCK"
+
+        call STBL("+DIR_SYP")+"bax_query.bbj",
+:			rd_gui_dev, 
+:			rdWindow!,
+:			"AR_AGEDBAL",
+:			"DEFAULT",
+:			rd_table_chans$[all],
+:			"",
+:			filter_defs$[all],"",rd_drill_pfx$
+
+    endif
+
+    goto exit_prog
+
+
+do_aging:rem --- do mini aging when using fut/cur/30/60/90/120 drilldowns
+rem --- executed the first time one of the drilldowns is clicked
+rem --- processes all invoices this customer and loads non-zero bal inv#'s into vectors by age
+
+	agedBalHash!=new java.util.HashMap()
+	ageFutVect!=BBjAPI().makeVector()
+	ageCurVect!=BBjAPI().makeVector()
+	age30Vect!=BBjAPI().makeVector()
+	age60Vect!=BBjAPI().makeVector()
+	age90Vect!=BBjAPI().makeVector()
+	age120Vect!=BBjAPI().makeVector()
+
+    num_files=2
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ART_INVHDR",open_opts$[1]="OTA@"
+    open_tables$[2]="ARM_CUSTDET",open_opts$[2]="OTA@"
+    
+    gosub open_tables
+        
+    art_invhdr=num(open_chans$[1])
+    dim art_invhdr$:open_tpls$[1]
+    arm_custdet=num(open_chans$[2])
+    dim arm_custdet$:open_tpls$[2]
+
+	trip_key$=rd_drill_pfx$
+    age_credits$=""
+    last_age_dt$=""
+    last_age_by$=""
+	maxperiods=5
+	dim begperiods$[maxperiods]
+
+	rem --- Position the Invoice Header (art-01) file for aging
+
+	read (art_invhdr,key=trip_key$,err=*next)
+
+	rem --- Read next Invoice Header record
+
+	while 1
+		read record (art_invhdr,end=*break) art_invhdr$
+		if pos(trip_key$=art_invhdr$)<>1 then break
+        if last_age_dt$=""
+            readrecord(arm_custdet,key=art_invhdr.firm_id$+art_invhdr.customer_id$+art_invhdr.ar_type$,err=*break)arm_custdet$
+           	age_credits$=arm_custdet.age_credits$
+            last_age_dt$=arm_custdet.report_date$
+            last_age_by$=arm_custdet.report_type$
+            if cvs(last_age_dt$,2)=""
+                msg_id$="AGE_INFO_NOT_AVAIL"
+                gosub disp_message
+                break
+            else
+                gosub calc_dates_fixed
+            endif
+        endif
+        
+		if art_invhdr.invoice_bal=0 then continue
+		if age_credits$<>"Y" and art_invhdr.invoice_amt<0 then continue
+
+		rem --- Assign the proper date for aging purposes
+
+		asof$=art_invhdr.invoice_date$
+		if last_age_by$="D" then asof$=art_invhdr.inv_due_date$
+
+		rem --- Age this invoice
+
+		notaged=1
+		period=maxperiods
+
+		for x=0 to maxperiods
+			if asof$>=begperiods$[x]
+				period=x
+				break
+			endif
+		next x
+
+		rem --- load invoice numbers into vectors according to period determined above
+
+		switch period
+			case 0
+				ageFutVect!.add(art_invhdr.ar_inv_no$)
+			break
+			case 1
+				ageCurVect!.add(art_invhdr.ar_inv_no$)
+			break
+			case 2
+				age30Vect!.add(art_invhdr.ar_inv_no$)
+			break
+			case 3
+				age60Vect!.add(art_invhdr.ar_inv_no$)
+			break
+			case 4
+				age90Vect!.add(art_invhdr.ar_inv_no$)
+			break
+			case 5
+				age120Vect!.add(art_invhdr.ar_inv_no$)
+			break
+			case default
+			break
+		swend
+
+	wend
+
+	rem --- store vectors in hashmap and put in devObject for use in drilldown program
+
+    agedBalHash!.put("FIRM_ID",arm_custdet.firm_id$)
+    agedBalHash!.put("AR_TYPE",arm_custdet.ar_type$)
+    agedBalHash!.put("CUSTOMER_ID",arm_custdet.customer_id$)
+	agedBalHash!.put("ARM_CUSTDET.AGING_FUTURE",ageFutVect!)
+	agedBalHash!.put("ARM_CUSTDET.AGING_CUR",ageCurVect!)
+	agedBalHash!.put("ARM_CUSTDET.AGING_30",age30Vect!)
+	agedBalHash!.put("ARM_CUSTDET.AGING_60",age60Vect!)
+	agedBalHash!.put("ARM_CUSTDET.AGING_90",age90Vect!)
+	agedBalHash!.put("ARM_CUSTDET.AGING_120",age120Vect!)
+
+	objTable!.put("agedBalDrills",agedBalHash!)
+
+    num_files=2
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="D"+"ART_INVHDR",open_opts$[1]="CX"
+    open_tables$[2]="D"+"ARM_CUSTDET",open_opts$[2]="CX"
+    
+    gosub open_tables;rem close files when leaving
+
+	return
+
+rem =================================================
+calc_dates_fixed:rem --- calc aging period dates for fut/cur/30/60/90/120 drilldowns
+rem =================================================
+
+	days_in_per=30
+	new_start$=""
+	start_date$=last_age_dt$
+
+	call "adc_daydates.aon",start_date$,new_start$,1
+
+	begperiods$[0]=new_start$
+	begperiods$[1]=date(jul(start_date$,"%Yd%Mz%Dz")-(days_in_per-1):"%Yd%Mz%Dz")
+	begperiods$[2]=date(jul(begperiods$[1],"%Yd%Mz%Dz")-(days_in_per):"%Yd%Mz%Dz")
+	begperiods$[3]=date(jul(begperiods$[2],"%Yd%Mz%Dz")-(days_in_per):"%Yd%Mz%Dz")
+	begperiods$[4]=date(jul(begperiods$[3],"%Yd%Mz%Dz")-(days_in_per):"%Yd%Mz%Dz")
+
+	return
+    
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=rd_table_chans$[num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3)),0]
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif    
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+exit_prog:rem --- Exit Program
+
+    exit
+                

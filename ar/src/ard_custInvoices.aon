@@ -1,0 +1,124 @@
+rem --- ard_custInvoices.aon
+rem --- launches either a query from which you can view archived Simple Invoices, or the OP Historical Invoice Inquiry
+rem --- depends on a) if OP is installed, and b) if the invoice number can be found in opt_invhdr
+rem --- IOW, even if OP is installed, you may still have generated a simple invoice in AR
+
+enter rd_gui_dev,rdWindow!,rd_field_tvar$,rd_ddm_drill_defs$,rd_drill_pfx$,rd_table_chans$[all]
+
+    dim info$[20]
+    call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
+	op$=info$[20]
+    found=0
+    
+    if op$="Y"
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="OPT_INVHDR",open_opts$[1]="OTA@"
+        
+        gosub open_tables
+        
+        opt_invhdr=num(open_chans$[1])
+        dim opt_invhdr$:open_tpls$[1]
+        readrecord(opt_invhdr,key=rd_drill_pfx$,knum="AO_CUST_INV",err=*next)opt_invhdr$;found=1
+        if opt_invhdr.trans_status$<>"U" then dim opt_invhdr$:fattr(opt_invhdr$);found=0;rem shouldn't happen - precautionary with new RTP mods
+        rem --- if this invoice is in opt_invhdr, run Hist Inv Inquiry
+        rem --- otherwise, launch query to view archived AR Simple Invoices
+
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="@"+"OPT_INVHDR",open_opts$[1]="CX"
+        gosub open_tables;rem close OPT_INVHDR
+    endif
+
+    if found=1
+        dim dflt_data$[2,1]
+        sel_key$=opt_invhdr.firm_id$+opt_invhdr.trans_status$+opt_invhdr.ar_type$+opt_invhdr.customer_id$+opt_invhdr.ar_inv_no$
+        call stbl("+DIR_SYP")+"bam_run_prog.bbj","OPT_INVHDR",stbl("+USER_ID"),"",sel_key$,rd_table_chans$[all],"",dflt_data$[all]
+    else
+        dim filter_defs$[1,2]
+        filter_defs$[1,0]="ADS_DOCUMENTS.DOC_KEYWORDS"
+        filter_defs$[1,1]="LIKE '%Invoice: "+rd_drill_pfx$(len(rd_drill_pfx$)-6,7)+"%'"
+        filter_defs$[1,2]="LOCK"
+        call STBL("+DIR_SYP")+"bax_query.bbj",rd_gui_dev, rdWindow!,"BAR_DOCUMENTS","DEFAULT",rd_table_chans$[all],sel_key$,filter_defs$[all]       
+    endif
+
+    goto exit_prog
+
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=rd_table_chans$[num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif    
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+exit_prog:rem --- Exit Program
+
+    if op$="Y"
+        rem - can't remember why this seemingly extra file close is here...I *think* it had to do w/ launching drilldown, then going into hist invoice, then doing a print... had err 0 along the way, or instances of opt_invhdr were stacking up?
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="OPT_INVHDR",open_opts$[1]="CX"
+        gosub open_tables;rem close OPT_INVHDR
+    endif
+
+    exit
+                

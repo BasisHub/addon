@@ -84,8 +84,8 @@ rem --- one or more ape-12 recs, then come back to main form and abort, which wo
 	dim gridrec$:dtlg_param$[1,3]
 	numrecs=recVect!.size()
 	ape12_dev=fnget_dev("APE_MANCHECKDIST")
-	ape22_dev=fnget_dev("APE_MANCHECKDET")
-	
+	ape22_dev=fnget_dev("@APE_MANCHECKDET")
+
 	if numrecs>0
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
@@ -102,27 +102,6 @@ rem --- one or more ape-12 recs, then come back to main form and abort, which wo
 			endif
 		next reccnt		
 	endif
-[[APE_MANCHECKHDR.AOPT-OCHK]]
-rem -- call inquiry program to view open check file; plug check#/vendor id if those fields are still blank on form
-key_pfx$=callpoint!.getColumnData("APE_MANCHECKHDR.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
-selected_key$=""
-call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:	gui_dev,
-:	Form!,
-:	"APT_CHECKHISTORY",
-:	"",
-:	table_chans$[all],
-:	key_pfx$,
-:	"PRIMARY",
-:	selected_key$
-if selected_key$<>""
-	if cvs(callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO"),3)="" and cvs(callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_DATE"),3)="" and
-:		cvs(callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID"),3)=""
-		callpoint!.setColumnData("APE_MANCHECKHDR.CHECK_NO",selected_key$(len(key_pfx$)+1,7))
-		callpoint!.setColumnData("APE_MANCHECKHDR.VENDOR_ID",selected_key$(len(key_pfx$)+8,6))
-		callpoint!.setStatus("REFRESH")
-	endif
-endif
 [[APE_MANCHECKHDR.<CUSTOM>]]
 disp_vendor_comments:
 	
@@ -269,28 +248,6 @@ if gl$="Y"
 		endif
 	endif
 endif
-[[APE_MANCHECKHDR.AOPT-VCMT]]
-key_pfx$=callpoint!.getColumnData("APE_MANCHECKHDR.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
-call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:	gui_dev,
-:	Form!,
-:	"APM_VENDCMTS",
-:	"VIEW",
-:	table_chans$[all],
-:	key_pfx$,
-:	"PRIMARY"
-[[APE_MANCHECKHDR.AOPT-AVEN]]
-user_id$=stbl("+USER_ID")
-dim dflt_data$[1,1]
-key_pfx$=callpoint!.getColumnData("APE_MANCHECKHDR.FIRM_ID")+callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
-call stbl("+DIR_SYP")+"bam_run_prog.bbj",
-:	"APM_VENDMAST",
-:	user_id$,
-:	"MNT",
-:	key_pfx$,
-:	table_chans$[all],
-:	"",
-:	dflt_data$[all]
 [[APE_MANCHECKHDR.BSHO]]
 rem --- Disable ap type control if param for multi-types is N
 
@@ -315,80 +272,95 @@ rem --- Disable button
 rem print 'show',; rem debug
 
 rem --- Open/Lock files
-files=30,begfile=1,endfile=14
-dim files$[files],options$[files],chans$[files],templates$[files]
-files$[1]="APE_MANCHECKHDR";rem --- "ape-02"
-files$[2]="APE_MANCHECKDIST";rem --- "ape-12"
-files$[3]="APE_MANCHECKDET";rem --- "ape-22"
-files$[4]="APM_VENDMAST";rem --- "apm-01"
-files$[5]="APM_VENDHIST";rem --- "apm-02"
-files$[6]="APT_INVOICEHDR";rem --- "apt-01"
-files$[7]="APT_INVOICEDET";rem --- "apt-11"
-files$[8]="APT_CHECKHISTORY";rem --- "apt-05
-files$[9]="APC_TYPECODE";rem --- "apm-10A"
-files$[10]="APM_VENDCMTS";rem --- "apm-09
-files$[11]="APS_PARAMS";rem --- "aps-01"
-files$[12]="GLS_PARAMS"
-files$[13]="APS_PAYAUTH"
-files$[14]="APT_INVIMAGE"
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
-options$[3]=options$[3]+"N"
-options$[13]="OTA@"
-options$[14]="OTA[1]"
-call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-if status$<>"" then
-	remove_process_bar:
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
-aps01_dev=num(chans$[11])
-gls01_dev=num(chans$[12])
-aps_payauth=num(chans$[13])
-dim aps01a$:templates$[11],gls01a$:templates$[12],aps_payauth$:templates$[13]
-user_tpl_str$="firm_id:c(2),glint:c(1),glyr:c(4),glper:c(2),glworkfile:c(16),"
-user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),"
-user_tpl_str$=user_tpl_str$+"misc_entry:c(1),post_closed:c(1),units_flag:c(1),"
-user_tpl_str$=user_tpl_str$+"existing_tran:c(1),open_check:c(1),existing_invoice:c(1),reuse_chk:c(1),"
-user_tpl_str$=user_tpl_str$+"dflt_ap_type:c(2),dflt_dist_cd:c(2),dflt_gl_account:c(10),"
-user_tpl_str$=user_tpl_str$+"tinv_vpos:c(1),tdisc_vpos:c(1),tret_vpos:c(1),tchk_vpos:c(1),"
-user_tpl_str$=user_tpl_str$+"ap_type_vpos:c(1),vendor_id_vpos:c(1),ape22_dev1:n(5)"
-dim user_tpl$:user_tpl_str$
-user_tpl.firm_id$=firm_id$
-user_tpl.ape22_dev1=num(chans$[3])
+	files=30,begfile=1,endfile=15
+	dim files$[files],options$[files],chans$[files],templates$[files]
+	files$[1]="APE_MANCHECKHDR";rem --- "ape-02
+	files$[2]="APE_MANCHECKDIST";rem --- "ape-12
+	files$[3]="APE_MANCHECKDET";rem --- "ape-22, channel stored in user_tpl$ and used in detail grid callpoints when reading by AO_VEND_INV key
+	files$[4]="APM_VENDMAST";rem --- "apm-01
+	files$[5]="APM_VENDHIST";rem --- "apm-02
+	files$[6]="APT_INVOICEHDR";rem --- "apt-01
+	files$[7]="APT_INVOICEDET";rem --- "apt-11
+	files$[8]="APT_CHECKHISTORY";rem --- "apt-05
+	files$[9]="APC_TYPECODE";rem --- "apm-10A
+	files$[10]="APM_VENDCMTS";rem --- "apm-09
+	files$[11]="APS_PARAMS";rem --- "aps-01
+	files$[12]="GLS_PARAMS"
+	files$[13]="APS_PAYAUTH"
+	files$[14]="APT_INVIMAGE"
+	files$[15]="APE_MANCHECKDET";rem --- "ape-22, used in AABO to compare grid against what's on disk
+
+	for wkx=begfile to endfile
+		options$[wkx]="OTA"
+	next wkx
+	options$[3]=options$[3]+"N"
+	options$[13]="OTA@"
+	options$[14]="OTA[1]"
+	options$[15]="OTA@"
+
+	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:		begfile,
+:		endfile,
+:		files$[all],
+:		options$[all],
+:		chans$[all],
+:		templates$[all],
+:		table_chans$[all],
+:		batch,
+:		status$
+	if status$<>"" then
+		remove_process_bar:
+		bbjAPI!=bbjAPI()
+		rdFuncSpace!=bbjAPI!.getGroupNamespace()
+		rdFuncSpace!.setValue("+build_task","OFF")
+		release
+	endif
+
+	aps01_dev=num(chans$[11])
+	gls01_dev=num(chans$[12])
+	aps_payauth=num(chans$[13])
+	dim aps01a$:templates$[11],gls01a$:templates$[12],aps_payauth$:templates$[13]
+
+	user_tpl_str$="firm_id:c(2),glint:c(1),glyr:c(4),glper:c(2),glworkfile:c(16),"
+	user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),"
+	user_tpl_str$=user_tpl_str$+"misc_entry:c(1),post_closed:c(1),units_flag:c(1),"
+	user_tpl_str$=user_tpl_str$+"existing_tran:c(1),open_check:c(1),existing_invoice:c(1),reuse_chk:c(1),"
+	user_tpl_str$=user_tpl_str$+"dflt_ap_type:c(2),dflt_dist_cd:c(2),dflt_gl_account:c(10),"
+	user_tpl_str$=user_tpl_str$+"tinv_vpos:c(1),tdisc_vpos:c(1),tret_vpos:c(1),tchk_vpos:c(1),"
+	user_tpl_str$=user_tpl_str$+"ap_type_vpos:c(1),vendor_id_vpos:c(1),ape22_dev1:n(5)"
+
+	dim user_tpl$:user_tpl_str$
+	user_tpl.firm_id$=firm_id$
+	user_tpl.ape22_dev1=num(chans$[3])
+
 rem --- set up UserObj! as vector
+
 	UserObj!=SysGUI!.makeVector()
 	
 	ctlContext=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_INV","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_INV","CTLI"))
 	tinv!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
 	ctlContext=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_DISC","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_DISC","CTLI"))
 	tdisc!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
 	ctlContext=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_RETEN","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_RETEN","CTLI"))
 	tret!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
 	ctlContext=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_CHECK","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("<<DISPLAY>>.DISP_TOT_CHECK","CTLI"))
 	tchk!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
 	ctlContext=num(callpoint!.getTableColumnAttribute("APE_MANCHECKHDR.AP_TYPE","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("APE_MANCHECKHDR.AP_TYPE","CTLI"))
 	ap_type!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
 	ctlContext=num(callpoint!.getTableColumnAttribute("APE_MANCHECKHDR.VENDOR_ID","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("APE_MANCHECKHDR.VENDOR_ID","CTLI"))
 	vendor_id!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
 	UserObj!.addItem(tinv!)
 	user_tpl.tinv_vpos$="0"
 	UserObj!.addItem(tdisc!)
@@ -401,67 +373,76 @@ rem --- set up UserObj! as vector
 	user_tpl.ap_type_vpos$="4"
 	UserObj!.addItem(vendor_id!)
 	user_tpl.vendor_id_vpos$="5"
+
 rem --- Additional File Opens
-gl$="N"
-status=0
-source$=pgm(-2)
-call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AP",glw11$,gl$,status
-if status<>0 goto std_exit
-user_tpl.glint$=gl$
-user_tpl.glworkfile$=glw11$
-if gl$="Y"
-   files=21,begfile=20,endfile=21
-   dim files$[files],options$[files],chans$[files],templates$[files]
-   files$[20]="GLM_ACCT",options$[20]="OTA";rem --- "glm-01"
-   files$[21]=glw11$,options$[21]="OTAS";rem --- s means no err if tmplt not found
-	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
-:	begfile,
-:	endfile,
-:	files$[all],
-:	options$[all],
-:	chans$[all],
-:	templates$[all],
-:	table_chans$[all],
-:	batch,
-:	status$
-if status$<>"" then
-	bbjAPI!=bbjAPI()
-	rdFuncSpace!=bbjAPI!.getGroupNamespace()
-	rdFuncSpace!.setValue("+build_task","OFF")
-	release
-endif
-endif
+
+	gl$="N"
+	status=0
+	source$=pgm(-2)
+	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AP",glw11$,gl$,status
+	if status<>0 goto std_exit
+	user_tpl.glint$=gl$
+	user_tpl.glworkfile$=glw11$
+
+	if gl$="Y"
+		files=21,begfile=20,endfile=21
+		dim files$[files],options$[files],chans$[files],templates$[files]
+		files$[20]="GLM_ACCT",options$[20]="OTA";rem --- "glm-01"
+		files$[21]=glw11$,options$[21]="OTAS";rem --- s means no err if tmplt not found
+
+		call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:			begfile,
+:			endfile,
+:			files$[all],
+:			options$[all],
+:			chans$[all],
+:			templates$[all],
+:			table_chans$[all],
+:			batch,
+:			status$
+		if status$<>"" then
+			bbjAPI!=bbjAPI()
+			rdFuncSpace!=bbjAPI!.getGroupNamespace()
+			rdFuncSpace!.setValue("+build_task","OFF")
+			release
+		endif
+	endif
+
 rem --- Retrieve parameter data
                
-aps01a_key$=firm_id$+"AP00"
-find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",amt_mask$,0,0
-user_tpl.amt_msk$=amt_mask$
-user_tpl.multi_types$=aps01a.multi_types$
-user_tpl.dflt_ap_type$=aps01a.ap_type$
-user_tpl.multi_dist$=aps01a.multi_dist$
-user_tpl.dflt_dist_cd$=aps01a.ap_dist_code$
-user_tpl.ret_flag$=aps01a.ret_flag$
-user_tpl.misc_entry$=aps01a.misc_entry$
-user_tpl.post_closed$=aps01a.post_closed$
-if user_tpl.multi_types$<>"Y"
-	apm10_dev=fnget_dev("APC_TYPECODE")
-	dim apm10a$:fnget_tpl$("APC_TYPECODE")
-	readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
-	if cvs(apm10a$,2)<>""
-		user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
+	aps01a_key$=firm_id$+"AP00"
+	find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",amt_mask$,0,0
+
+	user_tpl.amt_msk$=amt_mask$
+	user_tpl.multi_types$=aps01a.multi_types$
+	user_tpl.dflt_ap_type$=aps01a.ap_type$
+	user_tpl.multi_dist$=aps01a.multi_dist$
+	user_tpl.dflt_dist_cd$=aps01a.ap_dist_code$
+	user_tpl.ret_flag$=aps01a.ret_flag$
+	user_tpl.misc_entry$=aps01a.misc_entry$
+	user_tpl.post_closed$=aps01a.post_closed$
+
+	if user_tpl.multi_types$<>"Y"
+		apm10_dev=fnget_dev("APC_TYPECODE")
+		dim apm10a$:fnget_tpl$("APC_TYPECODE")
+		readrecord (apm10_dev,key=firm_id$+"A"+user_tpl.dflt_ap_type$,dom=*next)apm10a$
+		if cvs(apm10a$,2)<>""
+			user_tpl.dflt_dist_cd$=apm10a.ap_dist_code$
+		endif
 	endif
-endif
-gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-user_tpl.units_flag$=gls01a.units_flag$
-callpoint!.setDevObject("GLMisc",user_tpl.misc_entry$)
-callpoint!.setDevObject("GLUnits",user_tpl.units_flag$)
-callpoint!.setDevObject("gl_int",user_tpl.glint$)
-callpoint!.setDevObject("dist_amt","")
-callpoint!.setDevObject("dflt_gl","")
-callpoint!.setDevObject("dflt_dist","")
-callpoint!.setDevObject("tot_inv","")
+
+	gls01a_key$=firm_id$+"GL00"
+	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+	user_tpl.units_flag$=gls01a.units_flag$
+	callpoint!.setDevObject("GLMisc",user_tpl.misc_entry$)
+	callpoint!.setDevObject("GLUnits",user_tpl.units_flag$)
+	callpoint!.setDevObject("gl_int",user_tpl.glint$)
+	callpoint!.setDevObject("dist_amt","")
+	callpoint!.setDevObject("dflt_gl","")
+	callpoint!.setDevObject("dflt_dist","")
+	callpoint!.setDevObject("tot_inv","")
 
 rem --- Get Payment Authorization parameter record
 

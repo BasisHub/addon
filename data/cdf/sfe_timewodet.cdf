@@ -309,7 +309,7 @@ rem --- Initialize dev objects
 
 rem --- Initialize column data
 	callpoint!.setColumnData("SFE_TIMEWODET.START_TIME",str(callpoint!.getDevObject("prev_stoptime")),1)
-	callpoint!.setStatus("REFRESH");rem workaround for Barista issue 8153. See Addon 8154
+	callpoint!.setStatus("REFRESH")
 [[SFE_TIMEWODET.START_TIME.BINP]]
 rem --- Initialize new start_time
 	if cvs(callpoint!.getColumnData("SFE_TIMEWODET.START_TIME"),2)="" then
@@ -317,6 +317,7 @@ rem --- Initialize new start_time
 	endif
 [[SFE_TIMEWODET.EMPLOYEE_NO.AVAL]]
 rem --- Init for this employee
+
 	if callpoint!.getDevObject("pr")="Y" then
 		empcode_dev=callpoint!.getDevObject("empcode_dev")
 		dim empcode$:callpoint!.getDevObject("empcode_tpl")

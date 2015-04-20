@@ -1,0 +1,123 @@
+rem --- Rebuild AR Invoice Balance and Discount Taken
+rem --- Program arc_rebuildinvbal.aon
+
+rem --- AddonSoftware Version 15.00 - Sept2014
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
+rem --- status       : Status/0=No error (returned)
+
+    seterr std_error
+    setesc std_error
+    
+    enter theFirm$,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Get program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    files=2,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="art-01",ids$[1]="ART_INVHDR"
+    files$[2]="art-11",ids$[2]="ART_INVDET"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],
+:                           templates$[all],channels[all],batch,status
+    if status goto std_exit
+    art01_dev=channels[1]
+    art11_dev=channels[2]
+
+rem --- Dimension string templates
+
+    dim art01a$:templates$[1],art11a$:templates$[2]
+
+rem --- Total invoice balance for current firm
+    call pgmdir$+"adc_progress.aon","NC","","","","",0,art01_dev,1,meter_num,status
+    read(art01_dev,key=theFirm$,dom=*next)
+    while 1
+        art01_key$=key(art01_dev,end=*break)
+        if cvs(theFirm$,2)<>"" and  pos(theFirm$=art01_key$)<>1 then break
+        extractrecord(art01_dev)art01a$; rem Advisory Locking
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        invoice_bal=art01a.invoice_amt
+        disc_taken=0
+
+        rem --- Add all transactions for this invoice
+        art01_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
+        read(art11_dev,key=art01_key$,dom=*next)
+        while 1
+            art11_key$=key(art11_dev,end=*break)
+            if pos(art01_key$=art11_key$)<>1 then break
+            readrecord(art11_dev)art11a$
+            invoice_bal=invoice_bal+art11a.trans_amt+art11a.adjdisc_amt
+            disc_taken=disc_taken-art11a.adjdisc_amt
+        wend
+
+        art01a.invoice_bal=invoice_bal
+        art01a.disc_taken=disc_taken
+        art01a$=field(art01a$)
+        writerecord(art01_dev)art01a$
+    wend
+
+done: rem --- All done
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
+    goto std_exit
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src

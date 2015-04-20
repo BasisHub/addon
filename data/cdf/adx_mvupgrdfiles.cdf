@@ -1,3 +1,9 @@
+[[ADX_MVUPGRDFILES.ARAR]]
+rem --- Provide default Updated Files Location
+	callpoint!.setColumnData("ADX_MVUPGRDFILES.FILE_LOC",stbl("+DIR_DAT"),1)
+
+rem --- Provide default New Database Name
+	callpoint!.setColumnData("ADX_MVUPGRDFILES.DB_NAME",stbl("+DBNAME_API"),1)
 [[ADX_MVUPGRDFILES.DB_NAME.AVAL]]
 rem --- Validate database
 

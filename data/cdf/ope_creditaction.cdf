@@ -64,12 +64,22 @@ rem ==========================================================================
 		file_name$="OPE_ORDHDR"
 		ordhdr_dev = fnget_dev(file_name$)
 		dim ordhdr_rec$:fnget_tpl$(file_name$)
-		extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$) ordhdr_rec$; rem Advisory Locking
-		ordhdr_rec.credit_flag$  = "R"
-		ordhdr_rec.reprint_flag$ = "Y"
-		ordhdr_rec$ = field(ordhdr_rec$)
-		write record (ordhdr_dev) ordhdr_rec$
-		callpoint!.setStatus("SETORIG")
+		read(ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$,dom=*next)
+		while 1
+			ordhdr_key$=key(ordhdr_dev,end=*break)
+			if pos(firm_id$+"  "+cust_id$+order_no$=ordhdr_key$)<>1 then break
+			if pos(ordhdr_rec.trans_status$="ER") then
+				extract record (ordhdr_dev) ordhdr_rec$; rem Advisory Locking
+				ordhdr_rec.credit_flag$  = "R"
+				ordhdr_rec.reprint_flag$ = "Y"
+				ordhdr_rec$ = field(ordhdr_rec$)
+				write record (ordhdr_dev) ordhdr_rec$
+				callpoint!.setStatus("SETORIG")
+				break
+			else
+				read(ordhdr_dev)
+			endif
+		wend
 
 	rem --- Which print program to run?
 

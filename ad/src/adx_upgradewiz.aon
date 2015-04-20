@@ -4,14 +4,17 @@ rem --- Utility to automate Addon ugrade.
 rem --- 
 rem --- AddonSoftware Version 11.11
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
 rem ==========================================================================
 
     use java.io.File
+    use java.io.FileReader
+    use java.io.FileWriter
     use java.util.ArrayList
     use java.util.HashMap
+    use java.util.Properties
     use java.util.Vector
     use ::bbtranslator.bbj::BBTranslator
+    use ::adc_updatexmlfiles.aon::UpdateSyncXmlFiles
     use ::ado_file.src::FileObject
 
     setesc std_error
@@ -64,6 +67,16 @@ rem --- Start progress meter
 rem --- Open log file
     location$ = newAonDir$
     gosub open_log
+    
+rem --- Open File(s)
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
     
 rem --- Launch Create Sync File Backup utility in OLD barista
 rem --- Run bax_sync_backup.bbj program via bax_launch_task.bbj to bypass bar_login.bbj in the OLD barista
@@ -376,6 +389,66 @@ rem --- Run Install Application Wizard for applications being installed
 :	    +" -w"
         scall_result=scall(run_arg$+user_arg$,err=*next)
     wend
+
+rem --- On successful complete, initialize conversion control file data/adx_conversionCtrl
+
+    convCtrlIniFileName$=newAonDir$+"/config/adx_conversionCtrl.ini"
+    convCtrlIniFile!=new File(convCtrlIniFileName$,err=*next)
+    if convCtrlIniFile!.exists() then
+        fileReader!=new FileReader(convCtrlIniFile!)
+        convCtrl!=new Properties()
+        convCtrl!.load(fileReader!)
+        fileReader!.close()
+
+        convCtrl!.setProperty("addon_source",oldAonLoc$)
+        convCtrl!.setProperty("barista_source",oldBarLoc$)
+        convCtrl!.setProperty("data_source","AIUW")
+
+        rem --- Get version of this Addon installation
+        readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+        end_version$=cvs(adm_modules.version_id$,3)
+        convCtrl!.setProperty("end_version",end_version$)
+
+        rem --- Get version of source Addon installation from source data/sync/adm_modules~01007514ad.xml
+        start_version$=end_version$
+        utility! = new UpdateSyncXmlFiles(rdForm!,0)
+        oldVers! = utility!.getModuleVersion(new File(oldSyncLoc$))
+        if oldVers!.get("AD")<>null() then
+            start_version$=oldVers!.get("AD")
+        endif
+        convCtrl!.setProperty("start_version",start_version$)
+
+        rem --- Put initialized conversion control file in +DIR_DAT new target data directory
+        convCtrlFilePath$=newAonDir$+"/data"
+        if stblMap!.containsKey("+DIR_DAT") then
+            aList! = cast(ArrayList, stblMap!.get("+DIR_DAT"))
+            target$ = cast(BBjString, aList!.get(1))
+            convCtrlFilePath$=FileObject.fixPath(target$, "/")
+            FileObject.removeEndSlash(convCtrlFilePath$)
+        endif
+        convCtrlFileName$=convCtrlFilePath$+"/adx_conversionCtrl"
+        convCtrlFile!=new File(convCtrlFileName$)
+        rem --- Create path/file if doesn't exist
+        if !convCtrlFile!.exists() then
+            convCtrlPath!=new File(convCtrlFilePath$)
+            if !convCtrlPath!.exists() then
+                convCtrlPath!.mkdirs()
+            endif
+            convCtrlFile!.createNewFile()
+        endif
+        fileWriter!=new FileWriter(convCtrlFile!)
+        convCtrl!.store(fileWriter!,"Addon Conversion Control File")
+        fileWriter!.close()
+        
+        print(log_dev)"Initialized ",convCtrlFileName$
+    else
+        rem --- Report can't find the required config/adx_conversionCtrl.ini initialization file
+        msg_id$="AD_FILE_MISSING"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=convCtrlIniFileName$
+        gosub disp_message
+        print(log_dev)"***** ERROR: Required file not found, "+convCtrlIniFileName$+" *****"
+   endif
     
 done: rem --- All done
     
@@ -509,6 +582,35 @@ open_log:rem --- Open log file
         wend
     wend
     print(log_dev)
+
+    return
+    
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
     return
     

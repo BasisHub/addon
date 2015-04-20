@@ -261,7 +261,7 @@ endif
 
 rem --- Check to make sure record exists before uncommitting
 
-	trans_det=fnget_dev("IVE_TRANSDET")
+	trans_det=fnget_dev("@IVE_TRANSDET")
 	trans_no$=callpoint!.getColumnData("IVE_TRANSDET.IV_TRANS_NO")
 	trans_seq$=callpoint!.getColumnData("IVE_TRANSDET.SEQUENCE_NO")
 	found_rec=0

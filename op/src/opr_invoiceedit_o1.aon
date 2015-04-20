@@ -1,5 +1,5 @@
 rem --- Invoice Edit Report
-rem --- Program opr_jb v8.0.0 25Jan2008 (opr_jb)
+rem --- Program opr_invoiceedit_o1.aon v8.0.0 25Jan2008 (opr_jb)
 rem --- Created by c:\codeport_bbj\adx_codeport.bbj v1.1.5 (01/25/2008 03:03:47)
 
 rem --- AddonSoftware Version 8.0.0 - 01Jan2007
@@ -127,11 +127,8 @@ rem --- Print positions
 
 rem --- Retrieve templates
 
-    call sypdir$+"bac_key_template.bbj","OPE_ORDHDR","PRIMARY",ope01a_key_tpl$,table_chans$[all],status$
+    call sypdir$+"bac_key_template.bbj","OPE_ORDHDR","AO_STATUS",ope01a_key_tpl$,table_chans$[all],status$
     dim ope01a_key$:ope01a_key_tpl$
-
-    call sypdir$+"bac_key_template.bbj","OPE_ORDLSDET","PRIMARY",ope21a_key_tpl$,table_chans$[all],status$
-    dim ope21a_key$:ope21a_key_tpl$
 
 rem --- Background
 
@@ -140,7 +137,7 @@ rem --- Background
 
 rem --- Initial Read
 
-    read (ope01_dev,key=firm_id$+"  "+from_cust$,dom=*next)
+    read (ope01_dev,key=firm_id$+"E"+"  "+from_cust$,knum="AO_STATUS",dom=*next)
 
 rem --- Main Loop Starts
 
@@ -151,7 +148,7 @@ rem --- Main Loop Starts
         if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
         if status = 999 then goto std_exit
         
-        if pos(firm_id$+"  "=ope01a_key$)<>1 then break
+        if pos(firm_id$+"E"+"  "=ope01a_key$)<>1 then break
         if thru_cust$<>"" and ope01a_key.firm_id$+ope01a_key.ar_type$+ope01a_key.customer_id$>firm_id$+"  "+thru_cust$ then break
 		if from_ord$<>"" and ope01a_key.order_no$<from_ord$ then continue
         if thru_ord$<>"" and ope01a_key.order_no$>thru_ord$ then break
@@ -216,6 +213,7 @@ rem --- Check to see if record is in use in Invoice Entry
 :           then 
                 break
             endif
+            if ope11a.trans_status$<>"E" then continue
             
             desc$=ope11a.order_memo$
             start_block = 1
@@ -576,15 +574,16 @@ sales_total: rem --- Sales Total/Freight/Sales Tax/Invoice Total
 
 serialized_inventory: rem --- Serialized/Lotted Inventory
 
-    ls_start$ = firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
+    ls_start$ = firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+ope11a.internal_seq_no$
     read (ope21_dev, key=ls_start$, dom=*next)
 
     while more
         ope21a_key$=key(ope21_dev,end=*break)
-        if ope21a_key.firm_id$+ope21a_key.ar_type$+ope21a_key.customer_id$+ope21a_key.order_no$+ope21a_key.orddet_seq_ref$ <> ls_start$ then break
-        read record (ope21_dev,key=ope21a_key$) ope21a$
+        if pos(ls_start$=ope21a_key$)<>1 then break
+        read record (ope21_dev) ope21a$
+        if ope21a.trans_status$<>"E" then continue
         
-        OutVect!.addItem("  "+lot_ser$+" "+ope21a_key.sequence_no$+" "+ope21a.lotser_no$)
+        OutVect!.addItem("  "+lot_ser$+" "+ope21a.sequence_no$+" "+ope21a.lotser_no$)
         OutVect!.addItem(str(ope21a.qty_ordered:m2$)+$00$+"R")
 		OutVect!.addItem("")
         OutVect!.addItem(str(ope21a.qty_shipped:m2$)+$00$+"R")
@@ -708,12 +707,14 @@ average_item_cost: rem --- Get Average Of Serialized/Lotted Item Cost
 
     ser_qty=0
     ser_cost=0
-    start_ls$ = firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
+    start_ls$ = firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+ope11a.internal_seq_no$
     read (ope21_dev, key=start_ls$, dom=*next)
 
     while more
-        read record (ope21_dev, end=*break) ope21a$
-        if ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$ <> start_ls$ then break
+        ope21a_key$=key(ope21_dev,end=*break)
+        if pos(ls_start$=ope21a_key$)<>1 then break
+        read record (ope21_dev) ope21a$
+        if ope21a.trans_status$<>"E" then continue
         ser_cost=ser_cost+ope21a.qty_shipped*ope21a.unit_cost
         ser_qty=ser_qty+ope21a.qty_shipped
     wend

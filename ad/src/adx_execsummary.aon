@@ -236,11 +236,9 @@ rem --- Generate list of application files to be opened based on what's installe
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     if ap
         files$[1]="apt-01",ids$[1]="APT_INVOICEHDR"
-        files$[2]="apt-11",ids$[2]="APT_INVOICEDET"
     endif
     if ar
         files$[3]="art-01",ids$[3]="ART_INVHDR"
-        files$[4]="art-11",ids$[4]="ART_INVDET"
     endif
     if iv
         files$[5]="ivm-01",ids$[5]="IVM_ITEMMAST"
@@ -248,8 +246,8 @@ rem --- Generate list of application files to be opened based on what's installe
         files$[7]="ivt-04",ids$[7]="IVT_ITEMTRAN"
     endif
     if op
-        files$[8]="ope-01",ids$[8]="OPE_ORDHDR"
-        files$[9]="ope-11",ids$[9]="OPE_ORDDET"
+        files$[8]="opt-01",ids$[8]="OPE_ORDHDR"
+        files$[9]="opt-11",ids$[9]="OPE_ORDDET"
         files$[10]="opm-02",ids$[10]="OPC_LINECODE"
     endif
     if po
@@ -272,9 +270,7 @@ rem --- Open the required files and retrieve the templates
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
     apt01_dev=channels[1]
-    apt11_dev=channels[2]
     art01_dev=channels[3]
-    art11_dev=channels[4]
     ivm01_dev=channels[5]
     ivm02_dev=channels[6]
     ivt04_dev=channels[7]
@@ -295,14 +291,12 @@ rem --- Dimension application file string templates
 
     if ap
         dim apt01a$:templates$[1]
-        dim apt11a$:templates$[2]
         total_table=apt01_dev
         gosub add_to_total
     endif
 
     if ar
         dim art01a$:templates$[3]
-        dim art11a$:templates$[4]
         total_table=art01_dev
         gosub add_to_total
     endif
@@ -420,10 +414,10 @@ rem ---------------------------------------------------------------------
             if pos(firm_id$=k$)<>1 break
             gosub update_meter
             read record (ope01_dev) ope01a$
-            if ope01a.invoice_type$<>"S" continue
+            if ope01a.invoice_type$<>"S" or pos(ope01a.trans_status$="ER")=0 continue
             units=1
             order$=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+
-:                               ope01a.order_no$
+:                               ope01a.order_no$+ope01a.ar_inv_no$
 
             rem --- Position Sales Order Detail file (ope-11)
 
@@ -435,6 +429,7 @@ rem ---------------------------------------------------------------------
                 k$=key(ope11_dev,end=*break)
                 if pos(order$=k$)<>1 break
                 read record (ope11_dev) ope11a$
+                if pos(ope11a.trans_status$="ER")=0 then continue
 
                 rem --- Retrieve line type
 
@@ -626,23 +621,8 @@ rem ---------------------------------------------------------------------
             if pos(firm_id$=k$)<>1 break
             gosub update_meter
             read record (apt01_dev) apt01a$
-            total=apt01a.invoice_amt
+            total=apt01a.invoice_bal
             units=1
-            invoice$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$
-
-            rem --- Position Invoice Detail file (apt-11)
-
-            read (apt11_dev,key=invoice$,dom=*next)
-
-            rem --- Read next Invoice Detail (art-11) record
-            rem --- and accumulate invoice total
-
-            while 1
-                k$=key(apt11_dev,end=*break)
-                if pos(invoice$=k$)<>1 break
-                read record (apt11_dev) apt11a$
-                total=total+apt11a.trans_amt
-            wend
 
             rem --- Determine the estimated receipt date for this invoice
 
@@ -711,23 +691,8 @@ rem ---------------------------------------------------------------------
             if pos(firm_id$=k$)<>1 break
             gosub update_meter
             read record (art01_dev) art01a$
-            total=art01a.invoice_amt
+            total=art01a.invoice_bal
             units=1
-            invoice$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
-
-            rem --- Position Invoice Detail file (art-11)
-
-            read (art11_dev,key=invoice$,dom=*next)
-
-            rem --- Read next Invoice Detail (art-11) record
-            rem --- and accumulate invoice total
-
-            while 1
-                k$=key(art11_dev,end=*break)
-                if pos(invoice$=k$)<>1 break
-                read record (art11_dev) art11a$
-                total=total+art11a.trans_amt+art11a.adjdisc_amt
-            wend
 
             rem --- Determine the estimated receipt date for this invoice
 
@@ -1078,6 +1043,7 @@ rem ---------------------------------------------------------------------
                 if pos(firm_id$=k$)<>1 break
                 gosub update_meter
                 read record (opt01_dev) opt01a$
+                if opt01a.trans_status$<>"U" then continue
                 units=1
 
                 rem --- Determine the estimated date for this sale

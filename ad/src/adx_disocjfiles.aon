@@ -1,0 +1,118 @@
+rem ==========================================================================
+rem --- adx_disocjfiles.aon 
+rem --- Utility to move files created by the EM Update Wizard to their correct
+rem --- locations as specified by DD_TABLE_PATH and STBL, or the database's
+rem --- Data File and User Props.
+rem --- 
+rem --- AddonSoftware Version 15.00 - Sept2014
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+    use java.io.File
+    use java.io.FileReader
+    use java.util.Properties
+    use ::ado_file.src::FileObject
+
+    setesc std_error
+    seterr std_error
+
+rem --- Get program arguments
+
+    if argc>1
+        for curr_argv=1 to argc-1
+            temp_argv$=argv(curr_argv)
+            if pos("-u"=temp_argv$)=1 user_id$=temp_argv$(3);rem User ID
+        next curr_argv
+    endif
+
+    if user_id$=""
+        use ::sys/prog/bao_security.bbj::Security
+        user_id$=Security.getURLUser()
+        if cvs(user_id$,2)="" then user_id$=stbl("+USER_ID",err=*next)
+        if cvs(user_id$,2)="" then user_id$="ADMIN"
+    endif
+
+rem --- Initializations
+
+    err_msg$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    dir_syp$=stbl("+DIR_SYP")
+    
+    rem --- Set needed STBLs if missing
+    need_stbls=1
+    x$=stbl("+SYSINFO_TPL",err=*next); need_stbls=0
+    if need_stbls then call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    
+rem --- Locate aon/data directory, if possible
+
+    aonDir$=""
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+    xpos=pos("/aon/"=dataDir$,-1)
+    if xpos then
+        aonDir$=dataDir$(1,xpos+4)
+    endif
+    if aonDir$="" then
+        xpos=pos("/data/"=dataDir$,-1)
+        if xpos then
+            aonDir$=dataDir$(1,xpos)
+        else
+            aonDir$=dataDir$
+        endif
+    endif
+
+rem --- If conversion control file data/adx_conversionCtrl present and data_source=AIUW, launch Distribute EM Update Wizard Files form
+
+    convCtrlFileName$=aonDir$+"data/adx_conversionCtrl"
+    convCtrlFile!=new File(convCtrlFileName$,err=*next)
+    if convCtrlFile!.exists() then
+        fileReader!=new FileReader(convCtrlFile!)
+        convCtrl!=new Properties()
+        convCtrl!.load(fileReader!)
+        fileReader!.close()
+
+        if convCtrl!.getProperty("data_source")="AIUW" then
+            call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADX_MVUPGRDFILES",stbl("+USER_ID"),"","",table_chans$[all],""
+        endif
+    endif
+    
+done: rem --- All done
+
+    goto std_exit
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

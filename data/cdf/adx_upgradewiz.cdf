@@ -1134,6 +1134,12 @@ rem ==========================================================================
 		if(pos("STBL="=record$) = 1 or pos("SYSSTBL="=record$) = 1) then
 			xpos = pos(" "=record$)
 			stbl$ = record$(xpos+1, pos("="=record$(xpos+1))-1)
+			if stbl$="+DATAPORT_LOGS" or stbl$="+CODEPORT_LOGS" then
+				rem --- Standard Addon default directories that may not exist yet
+				aonDefaultPath=1
+			else
+				aonDefaultPath=0
+			endif
 			source_value$=cvs(record$(pos("="=record$,1,2)+1),3)
 			gosub source_target_value
 			stblRowVect!.addItem(appName$)
@@ -1144,6 +1150,7 @@ rem ==========================================================================
 
 		rem --- process SYSPFX/PREFIX lines
 		if(pos("PREFIX"=record$) = 1 or pos("SYSPFX"=record$) = 1) then
+			aonDefaultPath=0
 			source_value$=cvs(record$(pos("="=record$)+1),3)
 			gosub source_target_value
 			stblRowVect!.addItem(appName$)
@@ -1158,6 +1165,7 @@ rem ==========================================================================
 
 rem ==========================================================================
 source_target_value: rem -- Set default new target value based on new config location
+		rem      IN: aonDefaultPath  ---  true (1)/false (0), a standard Addon default directory that may not exist yet
 		rem      IN: newDir$
 		rem      IN: oldDir$
 		rem      IN: source_value$
@@ -1166,10 +1174,10 @@ rem ==========================================================================
 
 	target_value$=source_value$
 
-	rem --- If source holds a path, then need to initialize default new target value
+	rem --- If source holds a path (or is a default Addon path STBL), then need to initialize default new target value
 	declare File aFile!
 	aFile! = new File(source_value$)
-	if aFile!.exists() and newDir$<>"" and oldDir$<>"" then
+	if (aFile!.exists() and newDir$<>"" and oldDir$<>"") or (aonDefaultPath) then
 		record$=target_value$
 		search$=oldDir$
 		replace$=newDir$

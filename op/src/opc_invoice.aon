@@ -97,6 +97,7 @@ rem --- Use statements and Declares
 	
     use ::ado_func.src::func
     use ::ado_pdf.src::PDFHelper
+    use ::ado_rptControl.src::ReportControl
     use ::sys/prog/bao_callpoint.bbj::Callpoint
     use ::sys/prog/bao_option.bbj::Option
     use ::sys/prog/bao_valid_card.bbj::CreditCard
@@ -202,7 +203,7 @@ rem --- Check for user authentication; create connection string in url$
 
 rem --- Open Files    
     
-	num_files=21
+	num_files=20
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
     open_tables$[1]="ARM_CUSTMAST",  open_opts$[1] = "OTA"
@@ -225,7 +226,6 @@ rem --- Open Files
     open_tables$[18]="OPM_CUSTJOBS", open_opts$[18] = "OTA"
     open_tables$[19]="OPC_MSG_DET",  open_opts$[19] = "OTA"
     open_tables$[20]="ARS_PARAMS",   open_opts$[20] = "OTA"
-    open_tables$[21]="ARM_CUSTRPT_CTL",open_opts$[21] = "OTA"
     
     gosub open_tables
     
@@ -249,7 +249,6 @@ rem --- Open Files
     opm09_dev      = num(open_chans$[18])
     opm14_dev      = num(open_chans$[19])
     ars01a_dev     = num(open_chans$[20])
-    arm_custrpt_ctl = num(open_chans$[21])
     
     dim arm01a$:open_tpls$[1]
     dim arm01a1$:open_tpls$[1]
@@ -272,7 +271,6 @@ rem --- Open Files
     dim opm09a$:open_tpls$[18]
     dim opm14a$:open_tpls$[19]
     dim ars01a$:open_tpls$[20]
-    dim arm_custrpt_ctl$:open_tpls$[21]
     
 rem --- Parameters (company addresses)
 
@@ -327,7 +325,7 @@ rem --- Initialize Data
     
     if type = on_demand then
         alias$ = option!.getAlias()
-        rptctl_alias$ = "OPR_INVOICE";rem --- use actual alias (i.e., OPE_INVHDR) when putting in doc archive so you know it was an on-demand invoice, but use OPR_INVOICE for report control so you don't need two report control records for each customer to handle on-demand vs. batch.
+        rptctl_alias$ = "OPR_INVOICE";rem --- use actual alias (i.e., OPE_INVHDR) when putting in doc archive so you know it was an on-demand invoice, but use OPR_INVOICE for report control so you don't need two report control records for each customer to handle on-demand vs. batch.        
 		master_document=0
         print_document=0
     else
@@ -339,6 +337,14 @@ rem --- Initialize Data
 
     emailFax! = BBjAPI().makeVector()
 
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
+
 rem --- Assign form input values to local variables
 
     if type = batch_inv then 
@@ -347,9 +353,10 @@ rem --- Assign form input values to local variables
         batch_adhoc_message$ = option!.getOptionData("pick_text")
     else
 		restart$ = ""
-		restart_customer$ = ""        
+		restart_customer$ = ""
         batch_adhoc_message$ = option!.getOptionData("pick_text")
-        rpt_ctl$ = option!.getOptionData("pick_check")
+        send_via_rpt_ctl$ = option!.getOptionData("pick_check")
+
     endif
 
 rem --- Start progress meter 
@@ -364,7 +371,11 @@ rem --- Main Read
         cust_id$ = str( custIds!.getItem(next_item) )
         order_no$ = str( orderNos!.getItem(next_item) )
 
-        extract record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*continue) ope01a$; rem Advisory Locking
+        ope01_trip$=firm_id$+"E"+"  "+cust_id$+order_no$
+        read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
+        ope01_key$=key(ope01_dev,end=*continue)
+        if pos(ope01_trip$=ope01_key$)<>1 then continue
+        extract record (ope01_dev, key=ope01_key$, dom=*continue) ope01a$; rem Advisory Locking
 
 	rem --- Is invoice Void?
 		if ope01a.invoice_type$ = "V" 
@@ -380,11 +391,14 @@ rem --- Main Read
         
         if type = batch_inv then
             ope01a.print_status$ = "B"
+            ope01a.mod_user$=sysinfo.user_id$
+            ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope01a.mod_time$=date(0:"%Hz%mz")
             ope01a$ = field(ope01a$)
             write record (ope01_dev) ope01a$
         endif
         
-        nothing_printed = 0
+        nothing_printed = 0			
         add_to_print_report = 0
 
     rem --- Make Document Archive Record and Get Document ID
@@ -397,7 +411,7 @@ rem --- Main Read
         new_doc_id$=""
         new_doc_name$=""
         doc_name$="OPInvoice_Cust"+ope01a.customer_id$+"_"+alias$
-        doc_keywords$="Order: "+ope01a.order_no$
+        doc_keywords$="Order: "+ope01a.order_no$+" Invoice: "+ope01a.ar_inv_no$
 
         rd_source_alias$=alias$
         rd_source_type$="O"
@@ -406,6 +420,7 @@ rem --- Main Read
         rd_source_id$="C"
         rd_source_ref$=ope01a.customer_id$
         rd_doc_keywords$=doc_keywords$
+
 
     rem --- Get Next Document Number and update Document Audit for individual pdf
 
@@ -445,22 +460,20 @@ rem --- Main Read
             print_doc_name$=print_doc_id$+"_"+printBaseName$+".pdf"
         endif
 
-    rem --- Read report control table for this customer/alias to see if customer wants print, email, or fax
+    rem --- Use ReportControl object to see if customer wants print, email, or fax
 
         add_to_print_report=1
-        dim arm_custrpt_ctl$:fattr(arm_custrpt_ctl$)
-        while 1
-            read record (arm_custrpt_ctl,key=firm_id$+cust_id$+pad(rptctl_alias$,16),err=*break)arm_custrpt_ctl$
-            if arm_custrpt_ctl.print_yn$<>"Y" then add_to_print_report=0
-            if arm_custrpt_ctl.email_yn$="Y" or arm_custrpt_ctl.fax_yn$="Y"
-                emailFax!.add(rptctl_alias$)
-                emailFax!.add(cust_id$)
-                emailFax!.add("C")
-                emailFax!.add(new_doc_id$)
-                emailFax!.add("pdf")
+        if rpt_ctl$="YES"     
+            found=reportControl!.getRecipientInfo(rpt_id$,cust_id$,"")
+            if found         
+                if reportControl!.getPrintYN()<>"Y" then add_to_print_report=0
+                if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                    emailFax!.add(rpt_id$)
+                    emailFax!.add(cust_id$)
+                    emailFax!.add(new_doc_id$)
+                endif
             endif
-            break
-        wend
+        endif
 
     rem --- Report parameters  (Master/Print only processed once, followed by actual invoices)
 		if master_document
@@ -479,6 +492,7 @@ rem --- Main Read
 		params!.put("AR_TYPE",ope01a.ar_type$)
 		params!.put("CUSTOMER_ID",ope01a.customer_id$)
 		params!.put("ORDER_NO",ope01a.order_no$)
+        params!.put("AR_INV_NO",ope01a.ar_inv_no$)
 		params!.put("QTY_MASK",qty_mask$)
 		params!.put("QTY_MASK_PATTERN",qty_mask_pattern$)
 		params!.put("PRICE_MASK",price_mask$)
@@ -509,7 +523,7 @@ rem --- Main Read
 		params!.put("REMIT4",remit$((remit_addrLine_len*3)+1,remit_addrLine_len))
 		
     rem --- invoke jasper
-     
+        
         if master_document
             master_report! = new BBJasperReport(master_filename$,url$)
             master_report!.putParams(master_params!)
@@ -537,8 +551,9 @@ rem --- Main Read
         report!.exportToPDF(BBjAPI().FALSE, docdir$+new_doc_name$)
 
         if type = batch_inv
-			master_report!.appendReport(report!)
+			master_report!.appendReport(report!)	
             if add_to_print_report then print_report!.appendReport(report!)
+
 			report!.destroy()
 		endif
     rem --- Loop back for next Customer/Order
@@ -554,14 +569,15 @@ rem --- bring up jasper viewers (master doc and print doc for Batch Invoices; si
     declare BBjTopLevelWindow bbjWindowPrint!
     declare BBjTopLevelWindow bbjWindowDemand!
     
-rem --- get a pdf path from +DOC_DIR_PDF
-rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
+    rem --- get a pdf path from +DOC_DIR_PDF
+    rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
     gosub doc_path
 
 	if type = batch_inv
     rem --- master jasper - append ALL invoices
-        repTitle$=masterBaseName$;rem note to self ******* probably want to make repTitle$ and rd_doc_id$ unique too, i.e., masterRepTitle$, master_doc_id$, and use those values in the subroutine.
+        repTitle$=masterBaseName$
         rd_doc_name$=master_doc_name$
+
         rd_doc_id$=master_doc_id$
 
         gosub OnMasterSaveMenuButton; rem --- always save to doc archive
@@ -608,13 +624,13 @@ rem --- this will eventually be replaced with code to get output formats/types b
 
         bbjWindowPrint!= printViewerWindow!.getViewerWindow()
         bbjWindowPrint!.setCallback(bbjWindowPrint!.ON_CLOSE,"close_print_win")
-        
-	else
-    
-	    repTitle$=doc_name$
+
+    else
+
+        repTitle$=doc_name$
         rd_doc_name$=new_doc_name$
 	    rd_doc_id$=new_doc_id$
-        
+	        
         gosub OnDemandSaveMenuButton; rem --- always save to doc archive
 	        
 	    demandViewerWindow! = new BBJasperViewerWindow(report!,5,5,screen_width,screen_height,repTitle$,$00080093$)
@@ -625,16 +641,15 @@ rem --- this will eventually be replaced with code to get output formats/types b
 
         demandSaveMenuButton! = demandViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
         demandSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnDemandMasterSaveMenuButton")
-        
         demandEmailToolButton! = demandViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
         demandEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnDemandEmailToolButton")
 
         demandViewerWindow!.setReleaseOnClose(0)
         demandViewerWindow!.show(0)
-
+        
         bbjWindowDemand!= demandViewerWindow!.getViewerWindow()
         bbjWindowDemand!.setCallback(bbjWindowDemand!.ON_CLOSE,"close_win")
-    
+
 	endif
 
 rem --- Event Control
@@ -681,20 +696,23 @@ rem --- so it can save based on user's doc group and doc settings
     return
 
 OnMasterSaveMenuButton:
+
 rem --- exportToPDF and record in doc warehouse
 
     if rd_doc_path$<>"" and repTitle$<>""
+
         rd_doc_ext$="PDF"
         rep_title$=repTitle$
         rd_source_id$="C"
         rd_source_ref$=""
         rd_doc_keywords$=""
        
+
         master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
 
         gosub document_whse
     endif
-    return    
+    return     
 
 OnMasterEmailToolButton:rem --- Add document to fax/email queue
 rem --- force exportToPDF first, in case it hasn't already been saved
@@ -712,6 +730,8 @@ rem --- exportToPDF and record in doc warehouse
 
     if rd_doc_path$<>"" and repTitle$<>""
         rd_doc_ext$="PDF"
+
+
         rep_title$=repTitle$
         rd_source_id$="C"
         rd_source_ref$=""
@@ -756,6 +776,7 @@ rem --- force exportToPDF first, in case it hasn't already been saved
     rem --- force exportToPDF in case not already saved
     gosub OnDemandSaveMenuButton
 
+
     if rd_doc_id$<>"" and rd_doc_ext$<>""
         call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
     endif
@@ -763,14 +784,16 @@ rem --- force exportToPDF first, in case it hasn't already been saved
 
 close_win:rem --- Master or On-demand viewer closed - do post-processing for batch vs single
 
-    ok_to_close=1
-    if !print_win_closed
-        msg_id$ = "CONF_CLOSE_PRINT"
-        gosub disp_message
-        if msg_opt$<>"Y" then ok_to_close=0 
+    if type=batch_inv
+        ok_to_close=1
+        if !print_win_closed
+            msg_id$ = "CONF_CLOSE_PRINT"
+            gosub disp_message
+            if msg_opt$<>"Y" then ok_to_close=0 
+        endif
+        
+        if !ok_to_close then return
     endif
-    
-    if !ok_to_close then return
   
     msg_id$ = "OP_INVOICE_UPDATE"
     gosub disp_message
@@ -793,34 +816,47 @@ close_win:rem --- Master or On-demand viewer closed - do post-processing for bat
             if status = 999 then exitto all_done
 
             if start_block then
-                extract record (ope01_dev,key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
-                if ope01a.print_status$="B" then gosub order_update
+                ope01_trip$=firm_id$+"E"+"  "+ope04a.customer_id$+ope04a.order_no$
+                read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
+                ope01_key$=key(ope01_dev,end=*continue)
+                if pos(ope01_trip$=ope01_key$)=1 then
+                    extract record (ope01_dev,key=ope01_key$, dom=*endif) ope01a$
+                    if ope01a.print_status$="B" then gosub order_update
+                endif
             endif
         wend
-        
-        if emailFax!.size() then call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue 
+
+        if emailFax!.size()
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
 	else 
 		rem gosub open_cash_box... not implemented in Barista Addon
-		gosub order_update       
-        if emailFax!.size() and rpt_ctl$="Y"
-            call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue          
-        endif       
+		gosub order_update
+        
+        if emailFax!.size() and send_via_rpt_ctl$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
 		call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 					
-    endif 
-
+    endif    
+    
     if type = historical then
-        read (ope01_dev, key=firm_id$+"  "+ope01a.customer_id$, dom=*next)
+        rem read (ope01_dev, key=firm_id$+"  "+ope01a.customer_id$, dom=*next)
         read record (arm01_dev,key=firm_id$+ope01a.customer_id$) arm01a1$
         read record (arm02_dev,key=firm_id$+ope01a.customer_id$+"  ") arm02a$
     endif    
 
 all_done: rem --- Exit
 
-    read(ope01_dev,end=*next); rem release extract
+    read(ope01_dev,knum="AO_STATUS",end=*next); rem release extract, and reset knum in case on-demand printing
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-    
+
+    reportControl!.destroy(err=*next)    
     masterViewerWindow!.destroy(err=*next)
     printViewerWindow!.destroy(err=*next)
     demandViewerWindow!.destroy(err=*next)
@@ -840,9 +876,12 @@ order_update: rem --- Update order's status
 
     ope01a.print_status$ = "Y"
     ope01a.lock_status$  = "N"
+    ope01a.mod_user$=sysinfo.user_id$
+    ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+    ope01a.mod_time$=date(0:"%Hz%mz")
     ope01a$ = field(ope01a$)
     write record (ope01_dev) ope01a$
-    rem ??? if type = on_demand then callpoint!.setStatus("SETORIG")
+rem    if type = on_demand then callpoint!.setStatus("SETORIG")
     
     return
 	
@@ -911,6 +950,7 @@ rem --- Functions
 
     def fnline2y%(tmp0)=(tmp0*12)+12+top_of_detail+2
 
+
 rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
 	def fngetPattern$(q$)
 		q1$=q$
@@ -935,7 +975,7 @@ rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
 	
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (22Feb2013)
+std_error: rem --- Standard error handler (18Nov2014)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -946,10 +986,11 @@ std_error: rem --- Standard error handler (22Feb2013)
             return
         endif
     endif
-    
-    if err=0
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
         lock_byte=tcb(10)
-        lock_chan=tcb(12)
+        lock_chan=tcb(12)  
     endif
 
     rd_err_text$=""

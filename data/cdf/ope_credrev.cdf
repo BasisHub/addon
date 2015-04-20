@@ -310,7 +310,18 @@ rem ==========================================================================
 	while more
 		read record (ope03_dev, end=*break) ope03a$
 		if pos(firm_id$=ope03a$)<>1 then break
-		read record (ope01_dev, key=firm_id$+"  "+ope03a.customer_id$+ope03a.order_no$, dom=*continue) ope01a$
+
+		found_ope01_rec=0
+		read (ope01_dev, key=firm_id$+"  "+ope03a.customer_id$+ope03a.order_no$, dom=*next)
+		while 1
+			ope01_key$=key(ope01_dev,end=*break)
+			if pos(firm_id$+"  "+ope03a.customer_id$+ope03a.order_no$=ope01_key$)<>1 then break
+			read record (ope01_dev) ope01a$
+			if pos(ope01a.trans_status$="ER")=0 then continue
+			found_ope01_rec=1
+			break; rem --- new order can have at most just one new invoice, if any
+		wend
+		if !found_ope01_rec then continue
 
 		dim arm01a$:fattr(arm01a$)
 		read record (arm01_dev, key=firm_id$+ope01a.customer_id$, dom=*next) arm01a$

@@ -165,7 +165,7 @@ rem --- Open files
 	open_tables$[1]="IVS_PARAMS",   open_opts$[1]="OTA"
 	open_tables$[2]="GLS_PARAMS",   open_opts$[2]="OTA"
 	open_tables$[3]="IVC_TRANCODE", open_opts$[3]="OTA"
-	open_tables$[4]="IVE_TRANSDET", open_opts$[4]="OTA"
+	open_tables$[4]="IVE_TRANSDET", open_opts$[4]="OTA@"
 	open_tables$[5]="IVM_ITEMMAST", open_opts$[5]="OTA"
 	open_tables$[6]="IVM_ITEMWHSE", open_opts$[6]="OTA"
 	open_tables$[7]="IVM_LSMASTER", open_opts$[7]="OTA"

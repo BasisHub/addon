@@ -1,0 +1,117 @@
+rem --- adx_rptctl_setup - add miscellaneous DocOut reports to Barista Doc Queue based on Addon Report Control settings
+rem --- Currently only supports Report Control Recipient Type 'Other', and only emails a .pdf (not .txt, .csv, etc.)
+rem --- i.e., facilitates automatically sending DocOut reports to a party other than a customer or vendor, such as an accountant or a manager
+rem --- Processing Flow:
+rem ---     Report program uses ReportControl! object (based on option entry form or program name, if no OE form used) to see if Report Control has been defined. 
+rem ---     ReportControl! object sets (among other things) +AUTO_SEND global containing Report Control ID from adm_rptctl, and sets next_overlay$ to be this program
+rem ---     If another program (such as GL recap) is also to be run, report program needs to store that program name in overlay$
+rem ---     When report is done, bas_process_end.bbj calls DocOut (as usual) since OutVect! contains data
+rem ---     The DocOut program checks to see if +AUTO_SEND is null, and if not, appends Doc ID of the report just created
+rem ---     Once DocOut viewer is dismissed, bas_process_end.bbj will then run this program (next_overlay$)
+rem ---     This program prompts the user for confirmation to add the doc to the queue, then parses the +AUTO_SEND global and uses the ReportControl! object to create a Doc Queue object
+rem ---     If the overlay$ is glr_recap, this program resets the +AUTO_SEND global to be firm+rptID, so DocOut can re-append the docID for the GL recap
+rem ---     Otherwise, this program calls the destroy() method on the Report Control object (closes channels and clears +AUTO_SEND)
+rem ---     Finally, this program runs bas_process_end.bbj, which will manage the next_overlay$, if applicable
+
+    seterr std_error
+    setesc std_error
+
+rem --- Retrieve sysinfo data
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Init - retrieve +AUTO_SEND info
+
+    dim auto_send$:"firm_id:c(1*=94),rpt_id:C(1*=94),rpt_doc_id:c(1*=94)"
+    auto_send$=stbl("+AUTO_SEND",err=std_exit);rem should now have doc ID appended
+
+rem --- Locate doc in Barista docs table (ads_documents) to be sure a .pdf of the doc was saved
+rem --- i.e., if doc was viewed but not saved, won't have anything to add to the queue, so just exit quietly
+
+    doc_no$=auto_send.rpt_doc_id$
+    rpt_id$=reportControl!.getReportID()
+    saved_doc$=reportControl!.getSavedDoc(doc_no$)
+
+    if saved_doc$="" then goto std_exit
+
+rem --- Get user confirmation to put the doc in the Doc Queue
+
+    msg_id$="CONF_RPTCTL"
+    gosub disp_message
+    if msg_opt$<>"Y" or auto_send$="" then goto std_exit
+
+rem --- Main processing
+
+    recipient_tp$=reportControl!.getRecipientTp()
+    
+    switch pos(recipient_tp$="CVO")
+        case 1;rem C=customer - not yet implemented
+        break
+        case 2;rem V=vendor - not yet implemented
+        break
+        case 3;rem O=other
+            customer_id$=""
+            vendor_id$="" 
+        break
+    swend
+
+    reportControl!.addToDocQueue(rpt_id$,customer_id$,vendor_id$,doc_no$)
+
+    if pos("glr_recap"=overlay$)
+        auto_send$=auto_send$.firm_id$+"^"+auto_send.rpt_id$+"^"
+        dummy$=stbl("+AUTO_SEND",auto_send$)
+    else
+        reportControl!.destroy(err=*next)
+    endif
+
+
+    goto std_exit
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+
+std_exit: rem --- Standard program end
+
+    if overlay$<>"" then next_overlay$=overlay$
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

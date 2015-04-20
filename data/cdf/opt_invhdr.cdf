@@ -35,10 +35,10 @@ rem --- Open needed files
 
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
 	open_tables$[2]="ARM_CUSTSHIP",  open_opts$[2]="OTA"
-rem	open_tables$[3]="OPE_ORDSHIP",   open_opts$[3]="OTA"
+rem  open_tables$[3]="OPE_ORDSHIP",   open_opts$[3]="OTA"
 	open_tables$[4]="ARS_PARAMS",    open_opts$[4]="OTA"
 	open_tables$[5]="ARM_CUSTDET",   open_opts$[5]="OTA"
-rem	open_tables$[6]="OPE_INVCASH",   open_opts$[6]="OTA"
+rem  open_tables$[6]="OPE_INVCASH",   open_opts$[6]="OTA"
 	open_tables$[7]="ARS_CREDIT",    open_opts$[7]="OTA"
 	open_tables$[8]="OPC_LINECODE",  open_opts$[8]="OTA"
 	open_tables$[9]="GLS_PARAMS",    open_opts$[9]="OTA"
@@ -56,21 +56,21 @@ rem	open_tables$[6]="OPE_INVCASH",   open_opts$[6]="OTA"
 	open_tables$[22]="IVT_LSTRANS",  open_opts$[22]="OTA"
 	open_tables$[23]="OPT_INVHDR",   open_opts$[23]="OTA"
 	open_tables$[24]="OPT_INVDET",   open_opts$[24]="OTA"
-rem	open_tables$[25]="OPE_ORDDET",   open_opts$[25]="OTA"
+rem  open_tables$[25]="OPE_ORDDET",   open_opts$[25]="OTA"
 	open_tables$[26]="OPT_INVSHIP",  open_opts$[26]="OTA"
-	open_tables$[27]="OPE_CREDDATE", open_opts$[27]="OTA"
+rem  open_tables$[27]="OPE_CREDDATE", open_opts$[27]="OTA"
 	open_tables$[28]="IVC_WHSECODE", open_opts$[28]="OTA"
 	open_tables$[29]="IVS_PARAMS",   open_opts$[29]="OTA"
-	open_tables$[30]="OPE_ORDLSDET", open_opts$[30]="OTA"
+rem  open_tables$[30]="OPE_ORDLSDET", open_opts$[30]="OTA"
 	open_tables$[31]="IVM_ITEMPRIC", open_opts$[31]="OTA"
 	open_tables$[32]="IVC_PRICCODE", open_opts$[32]="OTA"
 	open_tables$[33]="ARM_CUSTCMTS", open_opts$[33]="OTA"
-	open_tables$[34]="OPE_PRNTLIST", open_opts$[34]="OTA"
+rem  open_tables$[34]="OPE_PRNTLIST", open_opts$[34]="OTA"
 	open_tables$[35]="OPM_POINTOFSALE", open_opts$[35]="OTA"
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
 	open_tables$[37]="OPC_DISCCODE", open_opts$[37]="OTA"
 	open_tables$[38]="OPC_TAXCODE",  open_opts$[38]="OTA"
-rem	open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
+rem  open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
 	
 gosub open_tables
 
@@ -291,10 +291,6 @@ rem --- Save the indices of the controls for the Avail Window, setup in AFMC
 	user_tpl.manual_price  = 9
 	user_tpl.ord_tot_obj   = 10; rem set here in BSHO
 
-rem --- Set variables for called forms (OPE_ORDLSDET)
-
-	callpoint!.setDevObject("lotser_flag",ivs01a.lotser_flag$)
-
 rem --- Set up Lot/Serial button (and others) properly
 
 	switch pos(ivs01a.lotser_flag$="LS")
@@ -309,11 +305,6 @@ rem --- Parse table_chans$[all] into an object
 
 	call pgmdir$+"adc_array.aon::str_array2object", table_chans$[all], tableChans!, status
 	util.setTableChans(tableChans!)
-
-rem --- get mask for display sequence number used in detail lines (needed when creating duplicate/credit)
-
-	call stbl("+DIR_PGM")+"adc_getmask.aon","LINE_NO","","","",line_no_mask$,0,0
-	callpoint!.setDevObject("line_no_mask",line_no_mask$)
 [[OPT_INVHDR.<CUSTOM>]]
 rem ==========================================================================
 display_customer: rem --- Get and display Bill To Information
@@ -375,16 +366,17 @@ rem ==========================================================================
 
 		invship_dev = fnget_dev("OPT_INVSHIP")
 		dim invship_tpl$:fnget_tpl$("OPT_INVSHIP")
-		read record (invship_dev, key=firm_id$+cust_id$+invoice_no$, dom=*endif) invship_tpl$
-
-		callpoint!.setColumnData("<<DISPLAY>>.SNAME",invship_tpl.name$)
-		callpoint!.setColumnData("<<DISPLAY>>.SADD1",invship_tpl.addr_line_1$)
-		callpoint!.setColumnData("<<DISPLAY>>.SADD2",invship_tpl.addr_line_2$)
-		callpoint!.setColumnData("<<DISPLAY>>.SADD3",invship_tpl.addr_line_3$)
-		callpoint!.setColumnData("<<DISPLAY>>.SADD4",invship_tpl.addr_line_4$)
-		callpoint!.setColumnData("<<DISPLAY>>.SCITY",invship_tpl.city$)
-		callpoint!.setColumnData("<<DISPLAY>>.SSTATE",invship_tpl.state_code$)
-		callpoint!.setColumnData("<<DISPLAY>>.SZIP",invship_tpl.zip_code$)
+		read record (invship_dev, key=firm_id$+cust_id$+order_no$+invoice_no$, dom=*endif) invship_tpl$
+		if invship_tpl.trans_status$="U" then
+			callpoint!.setColumnData("<<DISPLAY>>.SNAME",invship_tpl.name$)
+			callpoint!.setColumnData("<<DISPLAY>>.SADD1",invship_tpl.addr_line_1$)
+			callpoint!.setColumnData("<<DISPLAY>>.SADD2",invship_tpl.addr_line_2$)
+			callpoint!.setColumnData("<<DISPLAY>>.SADD3",invship_tpl.addr_line_3$)
+			callpoint!.setColumnData("<<DISPLAY>>.SADD4",invship_tpl.addr_line_4$)
+			callpoint!.setColumnData("<<DISPLAY>>.SCITY",invship_tpl.city$)
+			callpoint!.setColumnData("<<DISPLAY>>.SSTATE",invship_tpl.state_code$)
+			callpoint!.setColumnData("<<DISPLAY>>.SZIP",invship_tpl.zip_code$)
+		endif
 	endif
 
 	callpoint!.setStatus("REFRESH")
@@ -397,18 +389,40 @@ rem --- Display Ship to information
 	gosub display_customer
 
 	ship_to_type$ = callpoint!.getColumnData("OPT_INVHDR.SHIPTO_TYPE")
-	ship_to_no$   = callpoint!.getColumnData("OPT_INVHDR.SHIPTO_NO")
+	ship_to_no$    = callpoint!.getColumnData("OPT_INVHDR.SHIPTO_NO")
+	order_no$       = callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")
 	invoice_no$     = callpoint!.getColumnData("OPT_INVHDR.AR_INV_NO")
 	gosub ship_to_info
 
 rem --- Display invoice total
 
-	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT", callpoint!.getColumnData("OPT_INVHDR.TOTAL_SALES"))
+	net_sales=num(callpoint!.getColumnData("OPT_INVHDR.TOTAL_SALES"))-
+:			  num(callpoint!.getColumnData("OPT_INVHDR.DISCOUNT_AMT"))+
+:			  num(callpoint!.getColumnData("OPT_INVHDR.TAX_AMOUNT"))+
+:			  num(callpoint!.getColumnData("OPT_INVHDR.FREIGHT_AMT"))
+
+	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT",str(net_sales),1)
 [[OPT_INVHDR.AOPT-PRNT]]
-rem --- Print a counter Invoice
-
-	cust_id$  = callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")
-	order_no$ = callpoint!.getColumnData("OPT_INVHDR.AR_INV_NO")
-
-	call pgmdir$+"opc_invoicehist.aon", cust_id$, order_no$, callpoint!, table_chans$[all], status
-	if status = 999 then goto std_exit
+rem --- historical invoice
+ 
+	cp_cust_id$=callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")
+	cp_order_no$=callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")
+	cp_invoice_no$=callpoint!.getColumnData("OPT_INVHDR.AR_INV_NO")
+	user_id$=stbl("+USER_ID")
+ 
+	dim dflt_data$[3,1]
+	dflt_data$[1,0]="CUSTOMER_ID"
+	dflt_data$[1,1]=cp_cust_id$
+	dflt_data$[2,0]="ORDER_NO"
+	dflt_data$[2,1]=cp_order_no$
+	dflt_data$[3,0]="AR_INV_NO"
+	dflt_data$[3,1]=cp_invoice_no$
+ 
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:	                       "OPR_HIST_INV",
+:	                       user_id$,
+:	                       "",
+:	                       "",
+:	                       table_chans$[all],
+:	                       "",
+:	                       dflt_data$[all]

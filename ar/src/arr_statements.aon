@@ -13,6 +13,8 @@ rem --- All Rights Reserved
     use ::bbjasper.bbj::BBJasperViewerWindow
     use ::bbjasper.bbj::BBJasperViewerControl
 
+    use ::ado_rptControl.src::ReportControl
+
 	declare BBJasperReport BBjReport!
     
     params! = Option!.getOptionMap()
@@ -102,13 +104,12 @@ rem --- Check for user authentication; create connection string in url$
 
 rem --- Open/Lock files
 
-    files=5,begfile=1,endfile=files
+    files=4,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="arm-01",ids$[1]="ARM_CUSTMAST"
     files$[2]="arm-02",ids$[2]="ARM_CUSTDET"
     files$[3]="art-01",ids$[3]="ART_INVHDR"
     files$[4]="art-11",ids$[4]="ART_INVDET"
-    files$[5]="arm_custrpt_ctl",ids$[5]="ARM_CUSTRPT_CTL"
     
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -117,13 +118,11 @@ rem --- Open/Lock files
     arm02_dev=channels[2]
     art01_dev=channels[3]
     art11_dev=channels[4]
-    arm_custrpt_ctl=channels[5]
 
 rem --- Dimension string templates
 
     dim arm01a$:templates$[1],arm02a$:templates$[2]
     dim art01a$:templates$[3],art11a$:templates$[4]
-    dim arm_custrpt_ctl$:templates$[5]
 
 rem --- Assign form input values to local variables
 
@@ -178,7 +177,15 @@ rem --- Initializations
     master_document=1
     print_document=1
 
-    emailFax! = BBjAPI().makeVector()    
+    emailFax! = BBjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
 
 rem --- Determine 30 day aging period dates
 
@@ -319,22 +326,20 @@ rem --- Read next Customer Master (arm-01) and Detail (arm-02) record
             print_doc_name$=print_doc_id$+"_"+printBaseName$+".pdf"
         endif
 
-    rem --- Read report control table for this customer/alias to see if customer wants print, email, or fax
+    rem --- Use ReportControl object to see if customer wants print, email, or fax
 
         add_to_print_report=1
-        dim arm_custrpt_ctl$:fattr(arm_custrpt_ctl$)
-        while 1
-            read record (arm_custrpt_ctl,key=firm_id$+arm01a.customer_id$+pad(rptctl_alias$,16),err=*break)arm_custrpt_ctl$
-            if arm_custrpt_ctl.print_yn$<>"Y" then add_to_print_report=0
-            if arm_custrpt_ctl.email_yn$="Y" or arm_custrpt_ctl.fax_yn$="Y"
-                emailFax!.add(rptctl_alias$)
-                emailFax!.add(arm01a.customer_id$)
-                emailFax!.add("C")
-                emailFax!.add(new_doc_id$)
-                emailFax!.add("pdf")
+        if rpt_ctl$="YES"     
+            found=reportControl!.getRecipientInfo(rpt_id$,arm01a.customer_id$,"")
+            if found         
+                if reportControl!.getPrintYN()<>"Y" then add_to_print_report=0
+                if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                    emailFax!.add(rpt_id$)
+                    emailFax!.add(arm01a.customer_id$)
+                    emailFax!.add(new_doc_id$)
+                endif
             endif
-            break
-        wend
+        endif
 
     rem --- Document Output Report Parameters
 
@@ -579,9 +584,14 @@ close_win:rem --- Viewer Window Closed
     if emailFax!.size()
         msg_id$ = "CONF_RPTCTL"
         gosub disp_message
-        if msg_opt$="Y" then call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue 
-    endif
-
+        if msg_opt$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+    endif    
+    
+    reportControl!.destroy(err=*next)
     masterViewerWindow!.destroy(err=*next)
     printViewerWindow!.destroy(err=*next)
 

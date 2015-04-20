@@ -322,13 +322,15 @@ rem --- Main Read
 
 		if type = on_demand
             if no_col_data
-                extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$; rem Advisory Locking
+                dim ope01a$:fattr(ope01a$)
+                extract record (ordhdr_dev, key=firm_id$+"E"+"  "+cust_id$+order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=std_exit) ope01a$; rem Advisory Locking
             else
                 ope01a$ = util.copyFields(fattr(ope01a$), callpoint!)
             endif
 		else
 			if pos(cust_id$+order_no$=printed_orders$,len(cust_id$)+len(order_no$))=0 goto next_read
-			extract record (ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=std_exit) ope01a$; rem Advisory Locking
+            dim ope01a$:fattr(ope01a$)
+			extract record (ordhdr_dev, key=firm_id$+"E"+"  "+cust_id$+order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=std_exit) ope01a$; rem Advisory Locking
 		endif
 		
 rem --- Set Firm ID for Credit Review and Release orders
@@ -423,7 +425,7 @@ rem --- set number of lines to print
             shipto$ = ""
 
             if start_block then
-                find record (ordship_dev, key=firm_id$+ope01a.customer_id$+ope01a.order_no$, dom=*endif) ope31!
+                find record (ordship_dev, key=firm_id$+"E"+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS",dom=*endif) ope31!
                 c$ = func.formatAddress(ope31!, address, 7)
             endif
 
@@ -459,13 +461,14 @@ rem --- set number of lines to print
 
     rem --- Position Detail File
 
-        read (orddet_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,knum="AO_CUST_ORD_LINE",dom=*next)
+        orddet_trip$=ope01a.firm_id$+"E"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$
+        read (orddet_dev,key=orddet_trip$,knum="AO_STAT_CUST_ORD",dom=*next)
 		othwhse$=""
 
         while more
-
-		read record (orddet_dev, end=*break) ope11a$
-            if ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$ <> ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ then break
+            orddet_key$=key(orddet_dev,end=*break)
+            if pos(orddet_trip$=orddet_key$)<>1 then break
+		    read record (orddet_dev) ope11a$
 
         rem --- Type
 
@@ -510,13 +513,13 @@ rem --- set number of lines to print
 
             total_ls=0
 			line = line - 1;rem blank line was added after description in anticipation of going on to next item; if going on to lots, don't skip a line
-            ls_start$ = firm_id$+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
-            read (ordlsdet_dev, key=ls_start$, dom=*next)
-
+            ls_start$ = firm_id$+"E"+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+ope11a.internal_seq_no$
+            read (ordlsdet_dev, key=ls_start$, knum="AO_STATUS", dom=*next)
             while more
                 dim ope21a$:fattr(ope21a$)
-                read record (ordlsdet_dev, end=*break) ope21a$
-                if pos(ls_start$=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$)<>1 break
+                ordlset_key$=key(ordlsdet_dev,end=*break)
+                if pos(ls_start$=ordlset_key$)<>1 break
+                read record (ordlsdet_dev) ope21a$
 
                 if ope21a.qty_ordered then
                     lotser_no$ = ope21a.lotser_no$
@@ -557,6 +560,9 @@ rem --- set number of lines to print
 				ope01a.print_status$="B"
 			endif
 
+            ope01a.mod_user$=sysinfo.user_id$
+            ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope01a.mod_time$=date(0:"%Hz%mz")
 			ope01a$=field(ope01a$)
 			write record (ordhdr_dev) ope01a$	
 
@@ -604,6 +610,9 @@ rem			callpoint!.setColumnData("REPRINT_FLAG","Y")
 
         ope01a.lock_status$="N";rem --- really?  If on-demand, I'll be returning to OE w/ order up... shouldn't it be locked?
 
+        ope01a.mod_user$=sysinfo.user_id$
+        ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+        ope01a.mod_time$=date(0:"%Hz%mz")
 		ope01a$=field(ope01a$)
 		write record (ordhdr_dev) ope01a$
 
@@ -640,7 +649,8 @@ rem --- Clear Print Flags
 
 			if start_block then
 				if pos(ope04a.customer_id$+ope04a.order_no$=printed_orders$,len(ope04a.customer_id$)+len(ope04a.order_no$))=0 continue
-				extract record (ordhdr_dev, key=ope04a.firm_id$+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
+                dim ope01a$:fattr(ope01a$)
+				extract record (ordhdr_dev, key=ope04a.firm_id$+"E"+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif) ope01a$
 				if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") then continue
 
 				if ope01a.reprint_flag$="Y" then
@@ -648,7 +658,7 @@ rem --- Clear Print Flags
 					ope01a.lock_status$="N" 
 				else
 					if pos(ope01a.print_status$="B")=0 then continue
-					if pos(ope01a.lock_status$="YS12")<>0 then continue
+					if pos(ope01a.lock_status$="YS123")<>0 then continue
 					after$="YES"
 					gosub valid_lines
 					ope01a.lock_status$="N"
@@ -657,6 +667,9 @@ rem --- Clear Print Flags
 
 				if ope01a.print_status$<>"Y" then ope01a.print_status$="N"
 				if status <> 999 and type = on_demand ope01a.print_status$="Y"
+                ope01a.mod_user$=sysinfo.user_id$
+                ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+                ope01a.mod_time$=date(0:"%Hz%mz")
 				ope01a$=field(ope01a$)
 				write record (ordhdr_dev) ope01a$
 			endif
@@ -676,7 +689,8 @@ rem --- Clear Print Flags
 		
 all_done:
 
-    read(ordhdr_dev,end=*next); rem release extract
+    read(ordhdr_dev,knum="AO_STATUS",end=*next); rem release extract, and reset knum in case on-demand printing
+    read (orddet_dev,knum="AO_STAT_CUST_ORD",end=*next)
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 	goto std_exit
@@ -1041,11 +1055,12 @@ valid_lines: rem --- Look for valid lines here
 
     print$="NO"
     allprint$="YES" 
-    read (orddet_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,knum="PRIMARY",dom=*next)
-
+    orddet_trip$=ope01a.firm_id$+"E"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$
+    read (orddet_dev,key=orddet_trip$,knum="AO_STAT_CUST_ORD",dom=*next)
     while more
-        extract record (orddet_dev, end=*break) ope11a$; rem Advisory Locking
-        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ = ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 then read(orddet_dev); break
+        orddet_key$=key(orddet_dev,end=*break)
+        if pos(orddet_trip$=orddet_key$)<>1 then read(orddet_dev); break
+        extract record (orddet_dev) ope11a$; rem Advisory Locking
         found_linecode=0
         find record (linecode_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$; found_linecode=1
         if !found_linecode then
@@ -1067,6 +1082,9 @@ valid_lines: rem --- Look for valid lines here
 
         if after$="YES" then 
             ope11a.pick_flag$ = "Y"
+            ope11a.mod_user$=sysinfo.user_id$
+            ope11a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope11a.mod_time$=date(0:"%Hz%mz")
             ope11a$ = field(ope11a$)
             write record (orddet_dev) ope11a$
         else
@@ -1138,13 +1156,14 @@ comments: rem --- comments
 
 is_still_printed: rem --- Verify if Pick Ticket is still printed
 
-    read (orddet_dev, key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,knum="PRIMARY",dom=*next)
-
+    orddet_trip$=ope01a.firm_id$+"E"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$
+    read (orddet_dev,key=orddet_trip$,knum="AO_STAT_CUST_ORD",dom=*next)
     while more
         flag=0
-        read record (orddet_dev, end=*break) ope11a$
-        if pos(ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$ = ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$)<>1 then break
-
+        orddet_key$=key(orddet_dev,end=*break)
+        if pos(orddet_trip$=orddet_key$)<>1 then read(orddet_dev); break
+        read record (orddet_dev) ope11a$
+        
         if ope11a.pick_flag$="Y" then 
             flag=1
             break

@@ -313,16 +313,24 @@ dropship_shipto: rem --- get and display shipto from Sales Order if dropship ind
 	dim arm_custship$:fnget_tpl$("ARM_CUSTSHIP")
 	dim ope_ordship$:fnget_tpl$("OPE_ORDSHIP")
 
-	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*next)ope_ordhdr$
+	read(ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,knum="PRIMARY",dom=*next)
+	while 1
+		dim ope_ordhdr$:fattr(ope_ordhdr$)
+		ope_ordhdr_key$=key(ope_ordhdr_dev,end=*break)
+		if pos(firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$=ope_ordhdr_key$)<>1 then break
+		readrecord(ope_ordhdr_dev)ope_ordhdr$
+		if pos(ope_ordhdr.trans_status$="ER") then break; rem --- new order can have at most just one new invoice, if any
+	wend
+
 	shipto_no$=ope_ordhdr.shipto_no$
 	callpoint!.setColumnData("POE_REQHDR.SHIPTO_NO",shipto_no$)
 	if cvs(shipto_no$,3)=""
 		gosub shipto_cust
 	endif
 	if num(shipto_no$,err=*endif)=99
-		read record (ope_ordship_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$,dom=*next)ope_ordship$
+		read record (ope_ordship_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$+ope_ordhdr.ar_inv_no$,dom=*next)ope_ordship$
 		dim rec$:fattr(ope_ordship$)
-		rec$=ope_ordship$
+		if pos(ope_ordship.trans_status$="ER") then rec$=ope_ordship$
 		gosub fill_dropship_address
 		callpoint!.setColumnData("POE_REQHDR.DS_NAME",rec.name$)
 	endif
@@ -375,14 +383,25 @@ rem --- read thru selected sales order and build list of lines for which line co
 	order_list!=SysGUI!.makeVector()
 	callpoint!.setDevObject("ds_orders","N")
 
-	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*return)ope_ordhdr$
-
-	read (ope_orddet_dev,key=firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$,knum="PRIMARY",dom=*next)
-
+	found_ope_ordhdr=0
+	read(ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,knum="PRIMARY",dom=*next)
 	while 1
-		read record (ope_orddet_dev,end=*break)ope_orddet$
-		if ope_orddet.firm_id$+ope_orddet.ar_type$+ope_orddet.customer_id$+ope_orddet.order_no$<>
-:			ope_ordhdr.firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$ then break
+		ope_ordhdr_key$=key(ope_ordhdr_dev,end=*break)
+		if pos(firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$=ope_ordhdr_key$)<>1 then break
+		readrecord(ope_ordhdr_dev)ope_ordhdr$
+		if pos(ope_ordhdr.trans_status$="ER")=0 then continue
+		found_ope_ordhdr=1
+		break; rem --- new order can have at most just one new invoice, if any
+	wend
+	if !found_ope_ordhdr then return
+
+
+	read (ope_orddet_dev,key=ope_ordhdr_key$,knum="PRIMARY",dom=*next)
+	while 1
+		ope_orddet_key$=key(ope_orddet_dev,end=*break)
+		if pos(ope_ordhdr_key$=ope_orddet_key$)<>1 then break
+		read record (ope_orddet_dev)ope_orddet$
+		if pos(ope_orddet.trans_status$="ER")=0 then continue
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
 			if cvs(ope_orddet.item_id$,2)="" then
 				rem --- Non-stock item

@@ -181,23 +181,147 @@ rem --- make sure source directory exists, and contains legacy data dictionary f
 rem --- confirm ready to port selected files?
 
 	gridFiles!=callpoint!.getDevObject("gridFiles")
-	vectPort!=SysGUI!.makeVector()
 
 	if gridFiles!.getNumRows()=0 or (num(callpoint!.getDevObject("source_ok"))+num(callpoint!.getDevObject("target_ok"))<>2)
 		callpoint!.setStatus("ABORT")
 	else
+		source_version$=callpoint!.getColumnData("ADX_DATAPORT.ADDON_VERSION")
+		version_cvs = iff(source_version$="6",4,8)
+		selected_files!=new java.util.HashMap()
 		for curr_row=1 to gridFiles!.getNumRows()
 			if gridFiles!.getCellState(curr_row-1,0)=1 then
-				vectPort!.addItem(gridFiles!.getCellText(curr_row-1,1))
+				file_name$=cvs(gridFiles!.getCellText(curr_row-1,1),3+version_cvs)
+				selected_files!.put(file_name$,file_name$)
 			endif
 		next curr_row
 		msg_id$="AD_DATAPORT_CONF"
 		gosub disp_message
-		if msg_opt$="Y" and vectPort!.size()<>0
-			callpoint!.setDevObject("source_version",callpoint!.getColumnData("ADX_DATAPORT.ADDON_VERSION"))
+		if msg_opt$="Y" and selected_files!.size()<>0
+			callpoint!.setDevObject("source_version",source_version$)
 			callpoint!.setDevObject("source_folder",callpoint!.getColumnData("ADX_DATAPORT.SOURCE_DIR"))
 			callpoint!.setDevObject("destin_folder",callpoint!.getColumnData("ADX_DATAPORT.TARGET_DIR"))
-			callpoint!.setDevObject("vectPort",vectPort!)
+    
+			rem --- Locate aon/data directory, if possible
+			aonDir$=""
+			dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+			xpos=pos("/aon/"=dataDir$,-1)
+			if xpos then
+ 				aonDir$=dataDir$(1,xpos+4)
+			endif
+			if aonDir$="" then
+ 				xpos=pos("/data/"=dataDir$,-1)
+ 				if xpos then
+ 					aonDir$=dataDir$(1,xpos)
+ 				else
+ 					aonDir$=dataDir$
+ 				endif
+			endif
+
+			rem --- Auto-select all files in a config/adx_conversionCtrl.ini dependency group when any in the group is selected
+			convCtrlIniFileName$=aonDir$+"config/adx_conversionCtrl.ini"
+			convCtrlIniFile!=new File(convCtrlIniFileName$,err=*next)
+			if convCtrlIniFile!.exists() then
+				fileReader!=new FileReader(convCtrlIniFile!)
+				convCtrl!=new Properties()
+				convCtrl!.load(fileReader!)
+				fileReader!.close()
+
+				rem --- Build cross reference between current file names and old file names
+				file_xref!=new HashMap()
+				dim file_xref$:"old_filename:c(16*=124),new_filename:c(16*=124),comments:c(1*)"
+				file_xref=unt
+				open (file_xref)stbl("+DATAPORT_FILES")+"file_xref"
+				while 1
+					read (file_xref,end=*break)file_xref$
+					if len(file_xref$) then
+						if len(cvs(file_xref.old_filename$,3))=7
+							file_xref.old_filename$=cvs(file_xref.old_filename$(1,6),3)+file_xref.old_filename$(7,1)
+						endif
+						keyval$=cvs(file_xref.new_filename$,11)
+						dataval$=cvs(file_xref.old_filename$,11)
+						file_xref!.put(keyval$,dataval$)
+					endif
+				wend
+				close (file_xref)
+
+	 			rem --- Get file dependencies for ALL versions
+				fileDependencies!=new HashMap()
+				versionsVect!=BBjAPI().makeVector()
+				versionsVect!.addAll(java.util.Arrays.asList(convCtrl!.getProperty("conversion_versions").split(";")))
+				if versionsVect!.size() then
+					convCtrlKeys!=convCtrl!.stringPropertyNames()
+					for i=0 to versionsVect!.size()-1
+						version$=versionsVect!.getItem(i)
+						iter!=convCtrlKeys!.iterator()
+						while iter!.hasNext()
+							key$=iter!.next()
+							if pos(version$+"_"=key$)=1 then
+								file$=key$(pos("_"=key$)+1)
+								if !fileDependencies!.containsKey(file$) then
+									fileDependencies!.put(file$,convCtrl!.getProperty(key$))
+								else
+									rem --- Add new dependencies to existing dependencies for this file
+									filelist$=fileDependencies!.get(file$)
+									newFiles!=BBjAPI().makeVector()
+									newFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(key$).split(";")))
+									for j=0 to newFiles!.size()-1
+										nextFile$=newFiles!.getItem(j)
+										if pos(nextFile$=filelist$)=0 then
+											filelist$=filelist$+";"+nextFile$
+										endif
+									next j
+									fileDependencies!.put(file$,filelist$)
+								endif
+							endif
+						wend
+					next i
+				endif
+
+				rem --- Auto-select files in dependency groups when any in the group is selected
+				dependencyKeys!=fileDependencies!.keySet()
+				iter!=dependencyKeys!.iterator()
+				while iter!.hasNext()
+					newFiles!=BBjAPI().makeVector()
+					newFiles!.addAll(java.util.Arrays.asList(fileDependencies!.get(iter!.next()).split(";")))
+					rem --- Any in group selected?
+					group_file_selected=0
+					for j=0 to newFiles!.size()-1
+						file_name$=newFiles!.getItem(j)
+						if file_xref!.containsKey(file_name$) then
+							file_name$=file_xref!.get(file_name$)
+						endif
+						file_name$=cvs(file_name$,version_cvs)
+						if selected_files!.containsKey(file_name$) then
+							group_file_selected=1
+							break
+						endif
+					next j
+					rem --- Select entire dependency group?
+					if group_file_selected then
+						for j=0 to newFiles!.size()-1
+							file_name$=newFiles!.getItem(j)
+							if file_xref!.containsKey(file_name$) then
+								file_name$=file_xref!.get(file_name$)
+							endif
+							file_name$=cvs(file_name$,version_cvs)
+							if !selected_files!.containsKey(file_name$)
+								selected_files!.put(file_name$,file_name$)
+							endif
+						next j
+					endif
+				wend
+				vectPort!=SysGUI!.makeVector()
+				vectPort!.addAll(selected_files!.values())
+				callpoint!.setDevObject("vectPort",vectPort!)
+			else
+				rem --- Report can't find the required config/adx_conversionCtrl.ini initialization file
+				msg_id$="AD_FILE_MISSING"
+				dim msg_tokens$[1]
+				msg_tokens$[1]=convCtrlIniFileName$
+				gosub disp_message
+				callpoint!.setStatus("ABORT")
+				break
+			endif
 		else
 			callpoint!.setStatus("ABORT")
 		endif
@@ -393,12 +517,16 @@ attr_disp_col$=attr_col$[0,1]
 call stbl("+DIR_SYP")+"bam_grid_init.bbj",gui_dev,gridFiles!,"COLH-LINES-LIGHT-AUTO-MULTI-SIZEC-DATES-CHECKS",num_rows,
 :	attr_def_col_str$[all],attr_disp_col$,attr_col$[all]
 
-
 return
 [[ADX_DATAPORT.BSHO]]
 rem --- inits
 
+	use java.io.File
+	use java.io.FileReader
+	use java.util.HashMap
+	use java.util.Properties
 	use ::ado_util.src::util
+	use ::ado_file.src::FileObject
 
 rem --- disable Scan button until we have valid source dir
 

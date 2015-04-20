@@ -25,7 +25,14 @@ rem --- Clear Order Date
 
 	cust$=callpoint!.getColumnData("BME_ORDER.CUSTOMER_ID")
 	order$=callpoint!.getColumnData("BME_ORDER.ORDER_NO")
-	read record(ope01_dev,key=firm_id$+"  "+cust$+order$,dom=*next)ope01a$
+	read(ope01_dev,key=firm_id$+"  "+cust$+order$,knum="PRIMARY",dom=*next)
+	while 1
+		dim ope01a$:fattr(ope01a$)
+		ope01_key$=key(ope01_dev,end=*break)
+		if pos(firm_id$+"  "+cust$+order$=ope01_key$)<>1 then break
+		read record(ope01_dev)ope01a$
+		if pos(ope01a.trans_status$="ER") then break; rem --- new order can have at most just one new invoice, if any
+	wend
 
 	callpoint!.setColumnData("<<DISPLAY>>.ORDER_DATE",fndate$(ope01a.order_date$),1)
 [[BME_ORDER.ORDER_NO.AVAL]]
@@ -36,7 +43,14 @@ rem --- Check to make sure the order selected is an Order
 
 	cust$=callpoint!.getColumnData("BME_ORDER.CUSTOMER_ID")
 	order$=callpoint!.getUserInput()
-	read record(ope01_dev,key=firm_id$+"  "+cust$+order$)ope01a$
+	read(ope01_dev,key=firm_id$+"  "+cust$+order$,knum="PRIMARY",dom=*next)
+	while 1
+		dim ope01a$:fattr(ope01a$)
+		ope01_key$=key(ope01_dev,end=*break)
+		if pos(firm_id$+"  "+cust$+order$=ope01_key$)<>1 then break
+		read record(ope01_dev)ope01a$
+		if pos(ope01a.trans_status$="ER") then break; rem --- new order can have at most just one new invoice, if any
+	wend
 
 	if ope01a.ordinv_flag$<>"O"
 		msg_id$="OP_ORDER_TYPE"

@@ -38,6 +38,7 @@ firm_id$ =     sp!.getParameter("FIRM_ID")
 ar_type$ =     sp!.getParameter("AR_TYPE")
 customer_id$ = sp!.getParameter("CUSTOMER_ID")
 order_no$ =    sp!.getParameter("ORDER_NO")
+ar_inv_no$ =   sp!.getParameter("AR_INV_NO")
 cust_mask$ =   sp!.getParameter("CUST_MASK")
 cust_size = num(sp!.getParameter("CUST_SIZE"))
 barista_wd$ =  sp!.getParameter("BARISTA_WD")
@@ -106,10 +107,10 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     files$[5]="arc_cashcode", ids$[5]="ARC_CASHCODE"
     files$[6]="arc_salecode", ids$[6]="ARC_SALECODE"
     files$[7]="ivm-01",       ids$[7]="IVM_ITEMMAST"
-    files$[8]="ope-01",      ids$[8]="OPE_INVHDR"
+    files$[8]="opt-01",      ids$[8]="OPE_INVHDR"
     files$[9]="ope-04",      ids$[9]="OPE_PRNTLIST"	
-    files$[10]="ope-31",      ids$[10]="OPE_ORDSHIP"
-    files$[11]="ope-41",      ids$[11]="OPE_INVCASH"    
+    files$[10]="opt-31",      ids$[10]="OPE_ORDSHIP"
+    files$[11]="opt-41",      ids$[11]="OPE_INVCASH"    
     files$[12]="opm-04",      ids$[12]="OPC_MSG_HDR"
     files$[13]="opm-09",      ids$[13]="OPM_CUSTJOBS"
     files$[14]="opm-14",      ids$[14]="OPC_MSG_DET"
@@ -170,7 +171,6 @@ rem --- Initialize Data
 	cust_addrLine_len = 30	
 	dim c$(max_custAddr_lines * bill_custLine_len)
 	
-	ar_inv_no$ =    ""
 	invoice_date$ = ""
 	order_date$ =   ""
 	slspsn_code$ =  ""
@@ -191,11 +191,7 @@ rem --- Initialize Data
 	
 rem --- Main Read
 
-	find record (ope01_dev, key=firm_id$+ar_type$+customer_id$+order_no$, dom=all_done, end=all_done) ope01a$
-
-	if ope01a.firm_id$ <> firm_id$ then goto all_done
-	if ope01a.ar_type$ <> ar_type$ then goto all_done
-	if ope01a.customer_id$ <> customer_id$ then goto all_done
+    find record (ope01_dev, key=firm_id$+"E"+ar_type$+customer_id$+order_no$+ar_inv_no$, knum="AO_STATUS", dom=all_done) ope01a$
 	
 	ar_inv_no$ =    ope01a.ar_inv_no$
 	invoice_date$ = func.formatDate(ope01a.invoice_date$)
@@ -218,7 +214,7 @@ rem --- Main Read
 			arm10c.trans_type$ = "C"
 
 			if ope41_dev then
-				find record (ope41_dev, key=firm_id$+ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=*endif, err=*endif) ope41a$; rem z0$, z1$
+				find record (ope41_dev, key=firm_id$+"E"+ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif, err=*endif) ope41a$; rem z0$, z1$
 				find record (arm10c_dev, key=firm_id$+"C"+ope41a.cash_rec_cd$, dom=*next) arm10c$; rem y7$, y9$                
 			endif
 		endif
@@ -276,11 +272,9 @@ rem --- Main Read
             shipto$ = ""
 
             if start_block then
-                find record (ope31_dev, key=firm_id$+ope01a.customer_id$+ope01a.order_no$, dom=*endif) ope31!
+                find record (ope31_dev, key=firm_id$+"E"+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif) ope31!
                 c$ = func.formatAddress(ope31!, cust_addrLine_len, max_custAddr_lines)
             endif
-            
-            read (ope01_dev, key=firm_id$+ar_type$+ope01a.customer_id$+ope01a.order_no$, dom=*next)
         else
             if ope01a.shipto_type$ = "S" then
                 shipto$ = ""

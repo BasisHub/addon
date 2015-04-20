@@ -45,6 +45,7 @@ rem --- Get 'IN' SPROC parameters
 	ar_type$ =               sp!.getParameter("AR_TYPE")
 	customer_id$ =           sp!.getParameter("CUSTOMER_ID")
 	order_no$ =              sp!.getParameter("ORDER_NO")
+    ar_inv_no$ =             sp!.getParameter("AR_INV_NO")
 	ope11_internal_seq_no$ = sp!.getParameter("INTERNAL_SEQ_NO")
 	ope11_qty_shipped =  num(sp!.getParameter("OPE11_QTY_SHIPPED")); rem To conditionally print writein lines for missing Lot/Serial shipped qtys
 	qty_mask$ =              sp!.getParameter("QTY_MASK")
@@ -106,7 +107,7 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     files=1,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]    
 
-    files$[1]="ope-21",      ids$[1]="OPE_ORDLSDET"
+    files$[1]="opt-21",      ids$[1]="OPE_ORDLSDET"
 	
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
 
@@ -128,9 +129,11 @@ rem --- Get any associated Lots/SerialNumbers
 	sqlprep$=sqlprep$+"SELECT LOTSER_NO, QTY_SHIPPED"
 	sqlprep$=sqlprep$+" FROM ope_ordlsdet"
 	sqlprep$=sqlprep$+" WHERE firm_id="       +"'"+ firm_id$+"'"
+    sqlprep$=sqlprep$+"   AND trans_status="  +"'E'"
 	sqlprep$=sqlprep$+"   AND ar_type="       +"'"+ ar_type$+"'"
 	sqlprep$=sqlprep$+"   AND customer_id="   +"'"+ customer_id$+"'"
 	sqlprep$=sqlprep$+"   AND order_no="      +"'"+ order_no$+"'"
+    sqlprep$=sqlprep$+"   AND ar_inv_no="     +"'"+ ar_inv_no$+"'"
 	sqlprep$=sqlprep$+"   AND orddet_seq_ref="+"'"+ ope11_internal_seq_no$+"'"
 
 	sql_chan=sqlunt

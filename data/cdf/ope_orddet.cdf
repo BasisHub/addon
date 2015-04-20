@@ -247,7 +247,6 @@ rem --- Has a valid whse/item been entered?
 	endif
 [[OPE_ORDDET.QTY_ORDERED.AVEC]]
 rem --- Extend price now that grid vector has been updated, if the order quantity has changed
-
 if num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED")) <> user_tpl.prev_qty_ord then
 	qty_shipped = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
 	unit_price = num(callpoint!.getColumnData("OPE_ORDDET.UNIT_PRICE"))
@@ -393,7 +392,6 @@ rem --- Set values based on line type
 	file$ = "OPC_LINECODE"
 	dim linecode_rec$:fnget_tpl$(file$)
 	line_code$ = callpoint!.getColumnData("OPE_ORDDET.LINE_CODE")
-	print "---Line code: """, line_code$, """"; rem debug
 	find record(fnget_dev(file$), key=firm_id$+line_code$) linecode_rec$
 
 rem --- If line type is Memo, clear the extended price
@@ -432,6 +430,13 @@ rem --- Set product types for certain line types
 			endif
 		endif
 	endif
+
+rem --- Initialize RTP modified fields for modified existing records
+	if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())<>"Y" then
+		callpoint!.setColumnData("OPE_ORDDET.MOD_USER", sysinfo.user_id$)
+		callpoint!.setColumnData("OPE_ORDDET.MOD_DATE", date(0:"%Yd%Mz%Dz"))
+		callpoint!.setColumnData("OPE_ORDDET.MOD_TIME", date(0:"%Hz%mz"))
+	endif
 [[OPE_ORDDET.EXT_PRICE.AVAL]]
 rem --- Round 
 
@@ -456,6 +461,8 @@ rem --- Set Recalc Price button
 
 	gosub enable_repricing
 [[OPE_ORDDET.ITEM_ID.AVEC]]
+print "Det:ITEM_ID.AVEC"; rem debug
+
 rem --- Set buttons
 
 	gosub enable_repricing
@@ -740,6 +747,7 @@ rem --- Is this item lot/serial?
 		ar_type$ = "  "
 		cust$    = callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID")
 		order$   = callpoint!.getColumnData("OPE_ORDDET.ORDER_NO")
+		invoice$=callpoint!.getColumnData("OPE_ORDDET.AR_INV_NO")
 		int_seq$ = callpoint!.getColumnData("OPE_ORDDET.INTERNAL_SEQ_NO")
 
 		if cvs(cust$,2) <> "" then
@@ -761,14 +769,20 @@ rem --- Is this item lot/serial?
 
 			grid!.focus()
 
-			dim dflt_data$[3,1]
+			dim dflt_data$[6,1]
 			dflt_data$[1,0] = "AR_TYPE"
 			dflt_data$[1,1] = ar_type$
-			dflt_data$[2,0] = "CUSTOMER_ID"
-			dflt_data$[2,1] = cust$
-			dflt_data$[3,0] = "ORDER_NO"
-			dflt_data$[3,1] = order$
-			lot_pfx$ = firm_id$+ar_type$+cust$+order$+int_seq$
+			dflt_data$[2,0] = "TRANS_STATUS"
+			dflt_data$[2,1] = "E"
+			dflt_data$[3,0] = "CUSTOMER_ID"
+			dflt_data$[3,1] = cust$
+			dflt_data$[4,0] = "ORDER_NO"
+			dflt_data$[4,1] = order$
+			dflt_data$[5,0] = "AR_INV_NO"
+			dflt_data$[5,1] = invoice$
+			dflt_data$[6,0] = "ORDDET_SEQ_REF"
+			dflt_data$[6,1] = int_seq$
+			lot_pfx$ = firm_id$+"E"+ar_type$+cust$+order$+invoice$+int_seq$
 
 			if callpoint!.isEditMode() then
 				proc_mode$="MNT"
@@ -776,7 +790,6 @@ rem --- Is this item lot/serial?
 				proc_mode$="MNT-LCK"
 			endif
 
-			print "---Launch OPE_ORDLSDET..."; rem debug
 			call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
 :				"OPE_ORDLSDET", 
 :				stbl("+USER_ID"), 
@@ -784,7 +797,6 @@ rem --- Is this item lot/serial?
 :				lot_pfx$, 
 :				table_chans$[all], 
 :				dflt_data$[all]
-			print "---back for OPE_ORDLSDET"; rem debug
 
 		rem --- Updated qty shipped, backordered, extension
 
@@ -836,6 +848,13 @@ rem --- add and recommit Lot/Serial records (if any) and detail lines if not
 		gosub uncommit_iv
 	endif
 [[OPE_ORDDET.AREC]]
+rem --- Initialize RTP trans_status and created fields
+	rem --- TRANS_STATUS set to "E" via form Preset Value
+	callpoint!.setColumnData("OPE_ORDDET.CREATED_USER",sysinfo.user_id$)
+	callpoint!.setColumnData("OPE_ORDDET.CREATED_DATE",date(0:"%Yd%Mz%Dz"))
+	callpoint!.setColumnData("OPE_ORDDET.CREATED_TIME",date(0:"%Hz%mz"))
+	callpoint!.setColumnData("OPE_ORDDET.AUDIT_NUMBER","0")
+
 rem --- Backorder is zero and disabled on a new record
 
 	callpoint!.setColumnData("OPE_ORDDET.QTY_BACKORD", "0")
@@ -880,6 +899,14 @@ rem --- Buttons start disabled
 	callpoint!.setOptionEnabled("ADDL",0)
 	callpoint!.setStatus("REFRESH")
 [[OPE_ORDDET.BDEL]]
+rem --- Require modified rows be saved before deleting so can't uncommit quantity different from what was committed (bug 8087)
+	if callpoint!.getGridRowModifyStatus(num(callpoint!.getValidationRow()))="Y" then
+		msg_id$="OP_MODIFIED_DELETE"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
 rem --- remove and uncommit Lot/Serial records (if any) and detail lines if not
 
 	if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))<>"Y" and
@@ -1128,9 +1155,9 @@ rem --- Check item/warehouse combination, Set Available
 		callpoint!.setStatus("REFRESH")
 	endif
 
-	item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
-	if cvs(item$,2)="" then
-		warn = 0
+    item$ = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
+    if cvs(item$,2)="" then
+        warn = 0
 	else
 		rem --- Skip warning if already warned for this whse-item combination
 		if callpoint!.getDevObject("whse_item_warned")=wh$+":"+item$ then
@@ -1139,10 +1166,9 @@ rem --- Check item/warehouse combination, Set Available
 			warn = 1
 		endif
 	endif
-	gosub check_item_whse
+    gosub check_item_whse
 
 rem --- Item probably isn't set yet, but we don't know for sure
-
 	if !user_tpl.item_wh_failed then gosub set_avail
 [[OPE_ORDDET.ITEM_ID.AVAL]]
 rem --- Check item/warehouse combination and setup values
@@ -1155,7 +1181,7 @@ rem --- Check item/warehouse combination and setup values
 
 	wh$   = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
 	if cvs(wh$,2)="" then
-		warn = 0
+        		warn = 0
 	else
 		rem --- Skip warning if already warned for this whse-item combination
 		if callpoint!.getDevObject("whse_item_warned")=wh$+":"+item$ then
@@ -1555,6 +1581,7 @@ rem ==========================================================================
 	cust$    = callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID")
 	ar_type$ = callpoint!.getColumnData("OPE_ORDDET.AR_TYPE")
 	order$   = callpoint!.getColumnData("OPE_ORDDET.ORDER_NO")
+	invoice_no$= callpoint!.getColumnData("OPE_ORDDET.AR_INV_NO")
 	seq$     = callpoint!.getColumnData("OPE_ORDDET.INTERNAL_SEQ_NO")
 	wh$      = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
 	item$    = callpoint!.getColumnData("OPE_ORDDET.ITEM_ID")
@@ -1575,17 +1602,18 @@ rem ==========================================================================
 			endif
 		else
 			found_lot=0
-			read (ope_ordlsdet_dev, key=firm_id$+ar_type$+cust$+order$+seq$, dom=*next)
+			read (ope_ordlsdet_dev, key=firm_id$+ar_type$+cust$+order$+invoice_no$+seq$, dom=*next)
 
 			while 1
 				read record (ope_ordlsdet_dev, end=*break) ope_ordlsdet$
-				if pos(firm_id$+ar_type$+cust$+order$+seq$=ope_ordlsdet$)<>1 then break
+				if pos(firm_id$+ar_type$+cust$+order$+invoice_no$+seq$=ope_ordlsdet$)<>1 then break
+				if pos(ope_ordlsdet.trans_status$="ER")=0 then continue
 				items$[3] = ope_ordlsdet.lotser_no$
 				refs[0]   = ope_ordlsdet.qty_ordered
 				if line_ship_date$<=user_tpl.def_commit$
 					call stbl("+DIR_PGM")+"ivc_itemupdt.aon",action$,channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 				endif
-				remove (ope_ordlsdet_dev, key=firm_id$+ar_type$+cust$+order$+seq$+ope_ordlsdet.sequence_no$)
+				remove (ope_ordlsdet_dev, key=firm_id$+ar_type$+cust$+order$+invoice_no$+seq$+ope_ordlsdet.sequence_no$)
 				found_lot=1
 			wend
 
@@ -1696,7 +1724,7 @@ rem ===========================================================================
 			ivm02_dev = fnget_dev(file$)
 			dim ivm02a$:fnget_tpl$(file$)
 			user_tpl.item_wh_failed = 1
-
+			
 			if cvs(item$, 2) <> "" and cvs(wh$, 2) <> "" then
 				find record (ivm02_dev, key=firm_id$+wh$+item$, knum="PRIMARY", dom=*endif) ivm02a$
 				user_tpl.item_wh_failed = 0

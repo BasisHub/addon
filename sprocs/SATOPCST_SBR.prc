@@ -1,26 +1,22 @@
 rem ----------------------------------------------------------------------------
 rem Program: SATOPCST_SBR.prc  
-rem Description: Stored Procedure to build a resultset that aon_dashboard.bbj
+rem Description: Stored Procedure to build a resultset that adx_aondashboard.bbj
 rem              can use to populate the given dashboard widget
 rem 
-rem              Data returned is current year SA totals for top 5 customers
-rem              based on Sales stored in SA and is used by 
-rem              the "Top 5 Customers" Stacked Bar widget
+rem              Data returned is multiple year SA totals for customers
+rem              for TOP x customers based on Sales stored in SA and is used by 
+rem              the "Top Customers Over Multiple Years" stacked bar widget
 rem
-rem    ****  NOTE: Initial effort restricts the year to '2014' and the
-rem    ****        number of customers to 5.
+rem    ****  NOTE: Initial effort restricts the number of customers to 5.
 rem    ****        But code is written with conditionals for possible 
 rem    ****        future enhancements
 rem
-rem Author(s): C. Hawkins, C. Johnson
-rem Revised: 04.03.2014
-rem
-rem AddonSoftware
-rem Copyright BASIS International Ltd.
+rem AddonSoftware Version 15.00 - Apr2015
+rem Copyright BASIS International Ltd.  All Rights Reserved.
 rem ----------------------------------------------------------------------------
 
 GOTO SKIP_DEBUG
-Debug$= "C:\Dev_aon\aon\_SPROC-Debug\SATOPCST_SBR_DebugPRC.txt"	
+Debug$= "C:\Temp\SATOPCST_SBR_DebugPRC.txt"	
 string Debug$
 debugchan=unt
 open(debugchan)Debug$	
@@ -41,7 +37,8 @@ rem --- Get the IN parameters used by the procedure
 
 	max_bars=5; rem Max number of bars to show on widget
 		
-	year$ = sp!.getParameter("YEAR")
+    years_to_include=num(sp!.getParameter("INCLUDE_TYPE"))
+	current_year$ = sp!.getParameter("YEAR")
 	num_to_list = num(sp!.getParameter("NUM_TO_LIST")); rem Number of customers to list
 	if num_to_list=0 or num_to_list>max_bars
 		num_to_list=max_bars; rem default to Current Year Actual
@@ -49,7 +46,6 @@ rem --- Get the IN parameters used by the procedure
 	
 	firm_id$ =	sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
-    all_prod_types$ = sp!.getParameter("ALL_PROD_TYPES")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -62,17 +58,16 @@ rem --- Get Barista System Program directory
 	
 rem --- create the in memory recordset for return
 
-	dataTemplate$ = "PRODTYPE:C(25*),CUSTOMER:C(25*),TOTAL:N(7*)"
+	dataTemplate$ = "YEAR:C(4*),CUSTOMER:C(25*),TOTAL:N(7*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
+    files=2,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="sam-01",ids$[1]="SAM_CUSTOMER"
+    files$[1]="sam_customer_tot",ids$[1]="SAM_CUSTOMER_TOT"
     files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
-    files$[3]="ivc_prodcode",ids$[3]="IVC_PRODCODE"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status then
@@ -81,40 +76,54 @@ rem --- Open/Lock files
         throw "File open error.",1001
     endif
 
-    sam01a_dev=channels[1]
+    sam01tot_dev=channels[1]
     arm01a_dev=channels[2]
-    ivm10a_dev=channels[3]
 
 rem --- Dimension string templates
 
-    dim sam01a$:templates$[1]
+    dim sam01tot$:templates$[1]
     dim arm01a$:templates$[2]
-    dim ivm10a$:templates$[3]
     
-rem --- Get sales by customer and customer + product type
+rem --- Get sales by customer and customer + year
 rem --- salesMap! key=total sales for custom, holds custMap! (in case more than one customer with same total sales)
-rem --- customerMap! key=customer, holds prodTypeMap!
-rem --- prodTypeMap! key=product type, holds customer sales for product type
+rem --- customerMap! key=customer, holds yearMap!
+rem --- yearMap! key=year, holds customer sales for year
     salesMap!=new java.util.TreeMap()
-    customer_id$=""
-    product_type$=""
-    read(sam01a_dev,key=firm_id$+year$,dom=*next)
+    read(arm01a_dev,key=firm_id$,dom=*next)
     while 1
-        readrecord(sam01a_dev,end=*break)sam01a$
-        if sam01a.firm_id$+sam01a.year$<>firm_id$+year$ then break
-
-        if sam01a.customer_id$<>customer_id$ then gosub customer_break
-        if sam01a.product_type$<>product_type$ then gosub prodType_break
-
-        thisSales=sam01a.total_sales_01+sam01a.total_sales_02+sam01a.total_sales_03+sam01a.total_sales_04+
-:                 sam01a.total_sales_05+sam01a.total_sales_06+sam01a.total_sales_07+sam01a.total_sales_08+
-:                 sam01a.total_sales_09+sam01a.total_sales_10+sam01a.total_sales_11+sam01a.total_sales_12+
-:                 sam01a.total_sales_13
-        thisSales=round(thisSales,2)
-        custSales=custSales+thisSales
-        prodTypeSales=prodTypeSales+thisSales
+        readrecord(arm01a_dev,end=*break)arm01a$
+        if arm01a.firm_id$<>firm_id$ then break
+        customer_id$=arm01a.customer_id$
+        year$=str(num(current_year$)-years_to_include)
+        this_year$=""
+        gosub year_break
+        trip_key$=firm_id$+year$+customer_id$
+        read(sam01tot_dev,key=trip_key$,dom=*next)
+        while 1
+            readrecord(sam01tot_dev,end=*break)sam01tot$
+            if pos(trip_key$=sam01tot.firm_id$+sam01tot.year$+sam01tot.customer_id$)<>1 then
+                if year$=current_year$ then break
+                rem --- Do next year now
+                year$=str(num(year$)+1)
+                gosub year_break
+                trip_key$=firm_id$+year$+customer_id$
+                read(sam01tot_dev,key=trip_key$,dom=*continue)
+            endif
+            if cvs(sam01tot$.product_type$,2)<>"" then continue
+    
+            thisSales=sam01tot.total_sales_01+sam01tot.total_sales_02+sam01tot.total_sales_03+sam01tot.total_sales_04+
+:               sam01tot.total_sales_05+sam01tot.total_sales_06+sam01tot.total_sales_07+sam01tot.total_sales_08+
+:               sam01tot.total_sales_09+sam01tot.total_sales_10+sam01tot.total_sales_11+sam01tot.total_sales_12+
+:               sam01tot.total_sales_13
+            thisSales=round(thisSales,2)
+            custSales=custSales+thisSales
+            yearSales=yearSales+thisSales
+        
+            rem --- Skip to next customer
+            read(sam01tot_dev,key=firm_id$+year$+customer_id$+$FF$,dom=*next)
+        wend
+        gosub customer_break
     wend
-    gosub customer_break
 
 rem --- Build result set for top five customers by sales
     if salesMap!.size()>0 then
@@ -132,23 +141,17 @@ rem --- Build result set for top five customers by sales
                 dim arm01a$:fattr(arm01a$)
                 findrecord(arm01a_dev,key=firm_id$+customer_id$,dom=*next)arm01a$
                 
-                prodTypeMap!=customerMap!.get(customer_id$)
-                prodIter!=prodTypeMap!.keySet().iterator()
-                while prodIter!.hasNext()
-                    product_type$=prodIter!.next()
-                    prodTypeSales=prodTypeMap!.get(product_type$)
-                    dim ivm10a$:fattr(ivm10a$)                    
-                    if product_type$=fill(len(ivm10a.product_type$)," ") then
-                        rem --- Sales might be summarized by customer with no product type
-                        ivm10a.code_desc$=all_prod_types$
-                    else
-                        findrecord(ivm10a_dev,key=firm_id$+"A"+product_type$,dom=*next)ivm10a$
-                    endif
+                yearMap!=customerMap!.get(customer_id$)
+                yearIter!=yearMap!.keySet().iterator()
+                while yearIter!.hasNext()
+                    this_year$=yearIter!.next()
+                    yearSales=yearMap!.get(this_year$)
                 
+                    yearSales=round(yearSales/1000,0)
                     data! = rs!.getEmptyRecordData()
+                    data!.setFieldValue("YEAR",this_year$)
                     data!.setFieldValue("CUSTOMER",arm01a.customer_name$)
-                    data!.setFieldValue("PRODTYPE",ivm10a.code_desc$)
-                    data!.setFieldValue("TOTAL",str(prodTypeSales))
+                    data!.setFieldValue("TOTAL",str(yearSales))
                     rs!.insert(data!)
                 wend
             wend
@@ -162,33 +165,35 @@ rem --- Tell the stored procedure to return the result set.
     goto std_exit
 
 customer_break: rem --- Customer break
-    gosub prodType_break
+    gosub year_break
     if customer_id$<>"" then
         if salesMap!.containsKey(custSales) then
             customerMap!=salesMap!.get(custSales)
         else
             customerMap!=new java.util.HashMap()
         endif
-        customerMap!.put(customer_id$,prodTypeMap!)
+        customerMap!.put(customer_id$,yearMap!)
         salesMap!.put(custSales,customerMap!)
     endif
     
     rem --- Initialize for next customer
-    customer_id$=sam01a.customer_id$
+    customer_id$=sam01tot.customer_id$
     custSales=0
-    prodTypeMap!=new java.util.TreeMap()
-    product_type$=sam01a.product_type$
-    prodTypeSales=0
+    yearMap!=new java.util.TreeMap()
+    this_year$=sam01tot.year$
+    yearSales=0
     return
     
-prodType_break: rem --- Product type break
-    if product_type$<>"" then
-        prodTypeMap!.put(product_type$,prodTypeSales)
+year_break: rem --- Year break
+    if this_year$<>"" then
+        yearMap!.put(this_year$,yearSales)
+    else
+        yearMap!=new java.util.TreeMap()
     endif
 
-    rem --- Initialize for next product type
-    product_type$=sam01a.product_type$
-    prodTypeSales=0
+    rem --- Initialize first year
+    this_year$=year$
+    yearSales=0
     return
     
 rem --- Functions

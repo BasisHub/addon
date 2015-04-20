@@ -50,15 +50,27 @@ rem --- Delete the order
 	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 
 	readrecord(ivs_params_dev,key=firm_id$+"IV00")ivs01a$
-	extractrecord(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=no_delete)ope01a$; rem Advisory Locking
-	if ope01a.invoice_type$="I" then read(ope01_dev); goto no_delete
+
+	found_ope01_rec=0
+	read(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=*next)
+	while 1
+		ope01_key$=key(ope01_dev,end=*break)
+		if pos(firm_id$+ope01a.ar_type$+cust$+ord$=ope01_key$)<>1 then break
+		extractrecord(ope01_dev,dom=*next)ope01a$; rem Advisory Locking
+		if pos(ope01a.trans_status$="ER")=0 then continue
+		found_ope01_rec=1
+		break; rem --- new order can have at most just one new invoice, if any
+	wend
+	if !found_ope01_rec or ope01a.invoice_type$="I" then read(ope01_dev); goto no_delete
 
 	call "ivc_itemupdt.aon::init",channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 
-	read (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$,dom=*next)
+	read (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$+ope01a.ar_inv_no$,dom=*next)
 	while 1
-		readrecord(ope11_dev,end=*break)ope11a$
-		if pos(firm_id$+ope01a.ar_type$+cust$+ord$=ope11a$)<>1 break
+		ope11_key$=key(ope11_dev,end=*break)
+		if pos(ope11_key$=ope11a$)<>1 then break
+		readrecord(ope11_dev)ope11a$
+		if pos(ope11a.trans_status$="ER")=0 then continue
 		readrecord(opc_linecode_dev,key=firm_id$+ope11a.line_code$,dom=remove_line)opc_linecode$
 		if pos(opc_linecode.line_type$="SP")=0 goto remove_line
 		if ope01a.invoice_type$="P" goto remove_line
@@ -78,16 +90,16 @@ rem --- Uncommit Inventory
 			goto remove_line
 		else
 			found_lot=0
-			readrecord(ope_ordlsdet_dev,key=firm_id$+ope11a.ar_type$+cust$+
-:					ord$+ope11a.internal_seq_no$,dom=*next)
+			readrecord(ope_ordlsdet_dev,key=ope11_key$,dom=*next)
 			while 1
-				readrecord(ope_ordlsdet_dev,end=*break)ope_ordlsdet$
-				if pos(firm_id$+ope11a.ar_type$+cust$+ord$+ope11a.internal_seq_no$=ope_ordlsdet$)<>1 break
+				ope_ordlsdet_key$=key(ope_ordlsdet_dev,end=*break)
+				if pos(ope11_key$=ope_ordlsdet_key$)<>1 then break
+				readrecord(ope_ordlsdet_dev)ope_ordlsdet$
+				if pos(ope_ordlsdet.trans_status$="ER")=0 then continue
 				items$[3]=ope_ordlsdet.lotser_no$
 				refs[0]=ope_ordlsdet.qty_ordered
 				call "ivc_itemupdt.aon",action$,channels[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				remove (ope_ordlsdet_dev,key=ope_ordlsdet.firm_id$+ope_ordlsdet.ar_type$+cust$+
-:					ord$+ope_ordlsdet.internal_seq_no$+ope_ordlsdet.sequence_no$)
+				remove (ope_ordlsdet_dev,key=ope_ordlsdet_key$)
 				found_lot=1
 			wend
 			if found_lot=0
@@ -95,13 +107,13 @@ rem --- Uncommit Inventory
 			endif
 		endif
 remove_line:
-			remove (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$+ope11a.internal_seq_no$,dom=*next)
+			remove (ope11_dev,key=ope11_key$,dom=*next)
 		endif
 	wend
 
 rem	 --- Remove Header
-	remove(ope_ordship_dev,key=firm_id$+cust$+ord$,dom=*next)
-	remove(ope01_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$)
+	remove(ope_ordship_dev,key=firm_id$+cust$+ord$+ope01a.ar_inv_no$,dom=*next)
+	remove(ope01_dev,key=ope01_key$)
 	remove(ope_prntlist_dev,key=firm_id$+"O"+ope01a.ar_type$+cust$+ord$,dom=*next)
 
 del_followup:
@@ -183,17 +195,27 @@ rem --- Release an Order from Credit Hold
 	ope01_dev=fnget_dev("OPE_ORDHDR")
 	dim ope01a$:fnget_tpl$("OPE_ORDHDR")
 	arc_terms_dev=fnget_dev("ARC_TERMCODE")
+
+	read(ope01_dev,key=firm_id$+"  "+cust$+ord$,dom=*next)
 	while 1
-		extractrecord(ope01_dev,key=firm_id$+"  "+cust$+ord$,dom=*break)ope01a$; rem Advisory Locking
+		ope01_key$=key(ope01_dev,end=*break)
+		if pos(firm_id$+ope01a.ar_type$+cust$+ord$=ope01_key$)<>1 then break
+		extractrecord(ope01_dev,dom=*next)ope01a$; rem Advisory Locking
+		if pos(ope01a.trans_status$="ER")=0 then continue
+
 		rem --- allow change to Terms Code
 		callpoint!.setDevObject("terms",ope01a.terms_code$)
 		call stbl("+DIR_SYP")+"bam_run_prog.bbj","OPE_CREDTERMS",stbl("+USER_ID"),"MNT","",table_chans$[all]
 		ope01a.terms_code$=callpoint!.getDevObject("terms")
 		readrecord(arc_terms_dev,key=firm_id$+"A"+ope01a.terms_code$,dom=*next);goto good_code
 		read(ope01_dev)
-		continue
+		break; rem --- new order can have at most just one new invoice, if any
+
 good_code:
 		ope01a.credit_flag$="R"
+		ope01a.mod_user$=sysinfo.user_id$
+		ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+		ope01a.mod_time$=date(0:"%Hz%mz")
 		ope01a$=field(ope01a$)
 		writerecord(ope01_dev)ope01a$
 		break

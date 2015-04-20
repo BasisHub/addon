@@ -243,6 +243,7 @@ rem ---  loop thru gridVect! -- for each row that isn't marked deleted:
 rem --- 1. call atamo to reverse OO qty for each dtl row that isn't from the original PO and isn't a dropship
 rem --- 2. get rid of poe_linked (poe-08) records, if applicable (will only exist on a dropship)
 rem --- 3. remove lot/serial records [removal of work order stuff not yet implemented (need)]
+rem --- 4. if WO present, remove link in corresponding wo detail lines
 
 	poe_reclsdet_dev=fnget_dev("POE_RECLSDET")
 	poe_linked_dev=fnget_dev("POE_LINKED")
@@ -286,7 +287,36 @@ rem --- 3. remove lot/serial records [removal of work order stuff not yet implem
 					if pos(firm_id$+poe_recdet.receiver_no$+poe_recdet.internal_seq_no$=poe_reclsdet$)<>1 then break
 					remove (poe_reclsdet_dev,key=poe_reclsdet.firm_id$+poe_reclsdet.receiver_no$+poe_reclsdet.po_int_seq_ref$+poe_reclsdet.sequence_no$)
 				wend
-				
+
+				rem --- If WO present, remove link in corresponding wo detail lines
+				wo_no$=poe_recdet.wo_no$
+				wo_seq_ref$=poe_recdet.wk_ord_seq_ref$
+				if cvs(wo_no$,3)<>""
+					poc_linecode_dev=fnget_dev("POC_LINECODE")
+					dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+					po_line_code$=poe_recdet.po_line_code$
+					read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
+					if poc_linecode.line_type$="S"
+						sfe_womatl=fnget_dev("SFE_WOMATL")
+						dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+						find record (sfe_womatl,key=firm_id$+sfe_womatl.wo_location$+wo_no$+wo_seq_ref$,knum="AO_MAT_SEQ",dom=*endif)sfe_womatl$
+						sfe_womatl.po_no$=""
+						sfe_womatl.pur_ord_seq_ref$=""
+						sfe_womatl.po_status$=""
+						sfe_womatl$=field(sfe_womatl$)
+						write record (sfe_womatl)sfe_womatl$
+					endif
+					if poc_linecode.line_type$="N"
+						sfe_wosub=fnget_dev("SFE_WOSUBCNT")
+						dim sfe_wosub$:fnget_tpl$("SFE_WOSUBCNT")
+						find record (sfe_wosub,key=firm_id$+sfe_wosub.wo_location$+wo_no$+wo_seq_ref$,knum="AO_SUBCONT_SEQ",dom=*endif)sfe_wosub$
+						sfe_wosub.po_no$=""
+						sfe_wosub.pur_ord_seq_ref$=""
+						sfe_wosub.po_status$=""
+						sfe_wosub$=field(sfe_wosub$)
+						write record (sfe_wosub)sfe_wosub$
+					endif
+				endif		
 			endif
 		next x
 	endif
@@ -598,16 +628,24 @@ dropship_shipto: rem --- get and display shipto from Sales Order if dropship ind
 	dim arm_custship$:fnget_tpl$("ARM_CUSTSHIP")
 	dim ope_ordship$:fnget_tpl$("OPE_ORDSHIP")
 
-	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*next)ope_ordhdr$
+	read(ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,knum="PRIMARY",dom=*next)
+	while 1
+		dim ope_ordhdr$:fattr(ope_ordhdr$)
+		ope_ordhdr_key$=key(ope_ordhdr_dev,end=*break)
+		if pos(firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$=ope_ordhdr_key$)<>1 then break
+		readrecord(ope_ordhdr_dev)ope_ordhdr$
+		if pos(ope_ordhdr.trans_status$="ER") then break; rem --- new order can have at most just one new invoice, if any
+	wend
+
 	shipto_no$=ope_ordhdr.shipto_no$
 	callpoint!.setColumnData("POE_RECHDR.SHIPTO_NO",shipto_no$)
 	if cvs(shipto_no$,3)=""
 		gosub shipto_cust
 	endif
 	if num(shipto_no$,err=*endif)=99
-		read record (ope_ordship_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$,dom=*next)ope_ordship$
+		read record (ope_ordship_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$+ope_ordhdr.ar_inv_no$,dom=*next)ope_ordship$
 		dim rec$:fattr(ope_ordship$)
-		rec$=ope_ordship$
+		if pos(ope_ordship.trans_status$="ER") then rec$=ope_ordship$
 		gosub fill_dropship_address
 		callpoint!.setColumnData("POE_RECHDR.DS_NAME",rec.name$)
 	endif
@@ -660,14 +698,24 @@ rem --- read thru selected sales order and build list of lines for which line co
 	order_list!=SysGUI!.makeVector()
 	callpoint!.setDevObject("ds_orders","N")
 
-	read record (ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,dom=*return)ope_ordhdr$
-
-	read (ope_orddet_dev,key=firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$,knum="PRIMARY",dom=*next)
-
+	found_ope_ordhdr=0
+	read(ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,knum="PRIMARY",dom=*next)
 	while 1
-		read record (ope_orddet_dev,end=*break)ope_orddet$
-		if ope_orddet.firm_id$+ope_orddet.ar_type$+ope_orddet.customer_id$+ope_orddet.order_no$<>
-:			ope_ordhdr.firm_id$+ope_ordhdr.ar_type$+ope_ordhdr.customer_id$+ope_ordhdr.order_no$ then break
+		ope_ordhdr_key$=key(ope_ordhdr_dev,end=*break)
+		if pos(firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$=ope_ordhdr_key$)<>1 then break
+		readrecord(ope_ordhdr_dev)ope_ordhdr$
+		if pos(ope_ordhdr$="ER")=0 then continue
+		found_ope_ordhdr=1
+		break
+	wend
+	if !found_ope_ordhdr then return
+
+	read (ope_orddet_dev,key=ope_ordhdr_key$,knum="PRIMARY",dom=*next)
+	while 1
+		ope_orddet_key$=key(ope_orddet_dev,end=*break)
+		if pos(ope_ordhdr_key$=ope_orddet_key$)<>1 then break
+		read record (ope_orddet_dev)ope_orddet$
+		if pos(oope_orddet.trans_status$="ER")=0 then continue
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
 			if cvs(ope_orddet.item_id$,2)="" then
 				rem --- Non-stock item

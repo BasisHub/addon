@@ -1,0 +1,212 @@
+rem --- ado_rptControl.aon - Report Control Object
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- facilitates automatically adding Addon documents to Barista Doc Processing Queue
+
+rem --- Test
+escape
+    declare ReportControl rptControl!
+    rptControl!=new ReportControl()
+    
+    rem --- see if ARR_AGINGREPORT is subject to report control (+AUTO_SEND returned non-null)
+    next_overlay$=rptControl!.getReportControl("ARR_AGINGREPORT")
+    escape;rem print stbl("+AUTO_SEND") - should contain a value, and next_overlay$ should be "adx_rptctl_setup.aon"
+
+    rptControl!=new ReportControl()    
+    rem --- see if XYZ is subject to report control (+AUTO_SEND returned empty)
+    next_overlay$=rptControl!.getReportControl("XYZ")
+    escape;rem print stbl("+AUTO_SEND") - should be empty, so should next_overlay$
+    
+    release
+
+    use ::sys/prog/bao_docqueue.bbj::DocumentQueue
+
+class public ReportControl
+
+    field public BBjString FirmID$
+    field public BBjString ReportID$
+    field public BBjString NextOverlay$
+    field public BBjString EmailAccount$
+    field public BBjString RecipientTp$
+    field public BBjString LogoFile$
+    field public BBjString PrintYN$
+    field public BBjString EmailYN$
+    field public BBjString FaxYN$
+        
+    field public BBjString DocExtension$
+    field public BBjString SavedDoc$
+
+    field public BBjNumber AdmRptctlChan   
+    field public BBjNumber AdmRptctlRcpChan
+    field public BBjNumber AdsDocumentsChan
+    field public BBjInt RecipFound%
+    
+    field public BBjTemplatedString AdmRptctl!
+    field public BBjTemplatedString AdmRptctlRcp!
+    field public BBjTemplatedString AdsDocuments!
+    
+    
+
+    method public ReportControl()
+
+        #clear()
+
+    methodend
+
+    method public void clear()
+
+        #FirmID$ = ""
+        #FirmID$ = stbl("+FIRM_ID", err = *next)        
+        #NextOverlay$ = ""
+        dummy$=stbl("+AUTO_SEND","")
+
+    methodend
+
+    method private void openTables()
+
+        rd_num_files = 3
+        dim rd_tables$[1:rd_num_files], rd_opts$[1:rd_num_files], rd_chans$[1:rd_num_files], rd_tpls$[1:rd_num_files]
+        rd_tables$[1] = "ADM_RPTCTL", rd_opts$[1] = "OTA"
+        rd_tables$[2] = "ADM_RPTCTL_RCP", rd_opts$[2] = "OTA"
+        rd_tables$[3] = "ADS_DOCUMENTS", rd_opts$[3] = "OTA"
+
+        call stbl("+DIR_SYP")+"bac_open_tables.bbj", 0, 0, rd_tables$[all], rd_opts$[all], rd_chans$[all], rd_tpls$[all], rd_table_chans$[all], 0, rd_status$
+
+        #AdmRptctlChan = num(rd_chans$[1])
+        #AdmRptctl! = BBjAPI().makeTemplatedString(rd_tpls$[1])
+        #AdmRptctlRcpChan = num(rd_chans$[2])
+        #AdmRptctlRcp! = BBjAPI().makeTemplatedString(rd_tpls$[2])
+        #AdsDocumentsChan = num(rd_chans$[3])
+        #AdsDocuments! = BBjAPI().makeTemplatedString(rd_tpls$[3])
+
+        rem --- close other tables that were opened by call to bac_open_tables
+        for rd_curr_close = 1 to len(rd_table_chans$[0,0])/20
+            if pos(cvs(rd_table_chans$[0,0](rd_curr_close*20-19, 17),2)="ADM_RPTCTL;ADM_RPTCTL_RCP;ADS_DOCUMENTS") = 0 then
+                close(num(rd_table_chans$[0,0](rd_curr_close*20-2, 3)), err=*next)
+            endif
+        next rd_curr_close
+    
+    methodend
+
+    method public BBjString getReportControl(BBjString rpt_id$)
+    rem --- see if rpt_id$ exists in the Report Control table
+    rem --- if so, set the +AUTO_SEND global and return name of next_overlay program (used by DocOut)
+    
+        if #AdmRptctlChan=0 then #openTables()
+        #NextOverlay$=""
+        dim temp$:#AdmRptctl!.fattr()
+        temp.dd_table_alias$=rpt_id$;rem --- sees to it that it's padded to the proper length
+        while 1
+            readrecord (#AdmRptctlChan,key=#FirmID$+temp.dd_table_alias$,err=*break)#AdmRptctl!
+            #ReportID$=temp.dd_table_alias$
+            #EmailAccount$=#AdmRptctl!.getFieldAsString("EMAIL_ACCOUNT")
+            #RecipientTp$=#AdmRptctl!.getFieldAsString("RECIPIENT_TP")
+            #LogoFile$=#AdmRptctl!.getFieldAsString("LOGO_FILE")
+            dummy$=stbl("+AUTO_SEND",#FirmID$+"^"+temp.dd_table_alias$+"^")
+            #setNextOverlay()
+            break
+        wend
+    
+        methodret #NextOverlay$
+        
+    methodend
+
+    method public void setNextOverlay()
+
+        #NextOverlay$="adx_rptctl_setup.aon"
+
+    methodend
+
+    method public void addToDocQueue(BBjString rpt_id$,BBjString customer_id$,BBjString vendor_id$,BBjString doc_no$)
+    
+        found=#getRecipientInfo(rpt_id$,customer_id$,vendor_id$)
+        if found
+            if #FaxYN$="Y"
+                #sendFax(doc_no$)
+            endif
+            if #EmailYN$="Y"
+                #sendEmail(doc_no$)
+            endif
+        endif
+        
+    methodend
+    
+    method public BBjInt getRecipientInfo(BBjString rpt_id$,BBjString customer_id$,BBjString vendor_id$)
+    rem --- get Report Control Recipient record for given recipient
+    rem --- recipient type C will have customer but no vendor
+    rem --- recipient type V will have vendor but no customer
+    rem --- recipient type O will have neither
+
+        if #AdmRptctlRcpChan=0 then #openTables()
+        #AdmRptctlRcp! = BBjAPI().makeTemplatedString(#AdmRptctlRcp!.fattr())
+        dim temp$:#AdmRptctlRcp!.fattr()
+        temp.dd_table_alias$=rpt_id$;rem --- sees to it that it's padded to the proper length
+        temp.customer_id$=customer_id$
+        temp.vendor_id$=vendor_id$
+        
+        #RecipFound%=0
+        #PrintYN$="Y"
+        #EmailYN$="N"
+        #FaxYN$="N"
+        
+        while 1
+            readrecord (#AdmRptctlRcpChan,key=#FirmID$+rpt_id$+temp.customer_id$+temp.vendor_id$,err=*break)#AdmRptctlRcp!
+            #RecipFound%=1
+            #PrintYN$=#AdmRptctlRcp!.getFieldAsString("PRINT_YN")
+            #EmailYN$=#AdmRptctlRcp!.getFieldAsString("EMAIL_YN")
+            #FaxYN$=#AdmRptctlRcp!.getFieldAsString("FAX_YN")
+            break
+        wend
+        
+        methodret #RecipFound%
+
+    methodend
+
+    method public void sendEmail(BBjString doc_no$)
+    
+        docQueue! = new DocumentQueue()
+        docQueue!.clear()
+        docQueue!.setFirmID(#FirmID$)
+        docQueue!.setDocumentID(doc_no$)
+        docQueue!.setDocumentExt(cvs(#DocExtension$,4))
+        docQueue!.setProcessType("E")
+        docQueue!.setStatus("A");rem Auto-detect.  Queue will switch it to "Ready" if all required data is present
+        docQueue!.setEmailAccount(#AdmRptctl!.getFieldAsString("EMAIL_ACCOUNT"))
+        docQueue!.setEmailFrom(#AdmRptctlRcp!.getFieldAsString("EMAIL_FROM"))
+        docQueue!.setEmailReplyTo(#AdmRptctlRcp!.getFieldAsString("EMAIL_REPLYTO"))
+        docQueue!.setEmailTo(#AdmRptctlRcp!.getFieldAsString("EMAIL_TO"))
+        docQueue!.setEmailCC(#AdmRptctlRcp!.getFieldAsString("EMAIL_CC"))
+        docQueue!.setEmailBCC(#AdmRptctlRcp!.getFieldAsString("EMAIL_BCC"))
+        docQueue!.setSubject(#AdmRptctlRcp!.getFieldAsString("EMAIL_SUBJECT"))
+        docQueue!.setMessage(#AdmRptctlRcp!.getFieldAsString("EMAIL_MESSAGE"))
+        docQueue!.createProcess()
+        proc_key$=docQueue!.getFirmID()+docQueue!.getProcessID()
+        docQueue!.checkStatus(proc_key$)
+    
+    methodend
+
+    method public void destroy()
+    rem --- close files opened by object, set +AUTO_SEND global to ""
+
+        close (#AdmRptctlChan,err=*next)
+        close (#AdmRptctlRcpChan,err=*next)
+        close (#AdsDocumentsChan,err=*next)
+        dummy$=stbl("+AUTO_SEND","")
+
+    methodend
+
+    method public BBjString getSavedDoc(BBjString doc_id$)
+    rem --- make sure there is an entry in ads_documents for the doc_id$+.pdf that we want to email
+    rem --- if user viewed DocOut or Jasper but didn't save, then there's nothing to email/fax
+
+        if #AdsDocumentsChan=0 then #openTables()
+        #AdsDocuments! = BBjAPI().makeTemplatedString(#AdsDocuments!.fattr())
+        #SavedDoc$=""
+        found=0
+        findrecord (#AdsDocumentsChan,key=#FirmID$+doc_id$+"PDF",err=*next)#AdsDocuments!;found=1
+        if found then #SavedDoc$=#AdsDocuments!.getFieldAsString("DOC_NAME")
+    
+        methodret #SavedDoc$
+    
+    methodend
+    
+classend

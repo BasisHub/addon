@@ -1,9 +1,8 @@
 [[OPE_DUPEPO.AREC]]
 rem --- Display counter
 
-	counter$=callpoint!.getDevObject("found_dupe")
-	counter=len(counter$)/8
-	callpoint!.setColumnData("<<DISPLAY>>.NO_LINES",str(counter),1)
+	found_dupes!=callpoint!.getDevObject("found_dupe")
+	callpoint!.setColumnData("<<DISPLAY>>.NO_LINES",str(found_dupes!.size()),1)
 [[OPE_DUPEPO.AWIN]]
 rem --- Build and show form
 
@@ -13,7 +12,7 @@ rem --- Build and show form
 	vectOrders! = BBjAPI().makeVector()
 	nxt_ctlID = util.getNextControlID()
 
-	gridOrders! = Form!.addGrid(nxt_ctlID,5,140,800,300); rem --- ID, x, y, width, height
+	gridOrders! = Form!.addGrid(nxt_ctlID,5,40,800,300); rem --- ID, x, y, width, height
 
 	dim attr_def_col_str$[0,0]
 	attr_def_col_str$[0,0] = callpoint!.getColumnAttributeTypes()
@@ -69,54 +68,47 @@ rem --- Build and show form
 
 	opt_hdr=num(callpoint!.getDevObject("opt_invlookup"))
 	dim opt_hdr$:callpoint!.getDevObject("opt_invlookup_tpl")
-	ope_hdr=num(callpoint!.getDevObject("ope_polookup"))
-	dim ope_hdr$:callpoint!.getDevObject("ope_polookup_tpl")
 	cust$=callpoint!.getDevObject("customer")
-	ar_type$=ope_hdr.ar_type$
+	ar_type$=opt_hdr.ar_type$
 
-	counter$=callpoint!.getDevObject("found_dupe")
-	counter=len(counter$)/8
+	found_dupes!=callpoint!.getDevObject("found_dupe")
 
-	for x=1 to len(counter$) step 8
-		type$=counter$(x,1)
-		order$=counter$(x+1,7)
-		if type$="O"
-			read record (ope_hdr,key=firm_id$+ar_type$+cust$+order$,knum="PRIMARY") ope_hdr$
-			vectOrders!.addItem("Order")
-			status$=ope_hdr.invoice_type$
-			if status$="P"
-				status$="Quote"
-			else
-				if status$="S"
-					status$="Sale"
+	if found_dupes!.size()>0 then
+		for i=0 to found_dupes!.size()-1
+			dupeOP!=found_dupes!.getItem(i)
+			type$=dupeOP!.getItem(0)
+			order$=dupeOP!.getItem(1)
+			invoice$=dupeOP!.getItem(2)
+			read record (opt_hdr,key=firm_id$+ar_type$+cust$+order$+invoice$,knum="PRIMARY",dom=*continue) opt_hdr$
+			if type$="O"
+				vectOrders!.addItem("Order")
+				status$=opt_hdr.invoice_type$
+				if status$="P"
+					status$="Quote"
 				else
-					if status$="V"
-						status$="Void"
+					if status$="S"
+						status$="Sale"
+					else
+						if status$="V"
+							status$="Void"
+						endif
 					endif
 				endif
+				if opt_hdr.ordinv_flag$="I" status$="Invoice"
+				vectOrders!.addItem(status$)
+			else
+				vectOrders!.addItem("Historical")
+				vectOrders!.addItem("Invoice")
 			endif
-			if ope_hdr.ordinv_flag$="I" status$="Invoice"
-			vectOrders!.addItem(status$)
-			vectOrders!.addItem(ope_hdr.order_no$)
-			vectOrders!.addItem(ope_hdr.ar_inv_no$)
-			vectOrders!.addItem(fndate$(ope_hdr.order_date$))
-			vectOrders!.addItem(fndate$(ope_hdr.shipmnt_date$))
-			vectOrders!.addItem(fndate$(ope_hdr.invoice_date$))
-		else
-			read record (opt_hdr,key=firm_id$+ar_type$+cust$+order$,knum="PRIMARY") opt_hdr$
-			vectOrders!.addItem("Historical")
-			vectOrders!.addItem("Invoice")
 			vectOrders!.addItem(opt_hdr.order_no$)
 			vectOrders!.addItem(opt_hdr.ar_inv_no$)
 			vectOrders!.addItem(fndate$(opt_hdr.order_date$))
 			vectOrders!.addItem(fndate$(opt_hdr.shipmnt_date$))
 			vectOrders!.addItem(fndate$(opt_hdr.invoice_date$))
-		endif
-	next x
+		next i
+	endif
 
 rem --- Fill grid
-
-	SysGUI!.setRepaintEnabled(0)
 
 	numrow = vectOrders!.size() / gridOrders!.getNumColumns()
 	gridOrders!.clearMainGrid()
@@ -124,5 +116,3 @@ rem --- Fill grid
 	gridOrders!.setCellText(0,0,vectOrders!)
 
 	gridOrders!.resort()
-
-	SysGUI!.setRepaintEnabled(1)

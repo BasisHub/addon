@@ -13,6 +13,8 @@ rem --- All Rights Reserved
     use ::bbjasper.bbj::BBJasperViewerWindow
     use ::bbjasper.bbj::BBJasperViewerControl
 
+    use ::ado_rptControl.src::ReportControl
+
 	declare BBJasperReport BBjReport!
     
     params! = Option!.getOptionMap()
@@ -40,7 +42,7 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
 
 rem --- Derive/set path and filename for logo to go on form
-
+rem --- for V15, will be able to get logo from Company or ReportControl table(s)
     logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
     logo_filenm$=""
     if logo_file$<>""
@@ -102,21 +104,18 @@ rem --- Check for user authentication; create connection string in url$
 
 rem --- Open/Lock files
 
-    files=2,begfile=1,endfile=files
+    files=1,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="are-05",ids$[1]="ARE_INVHDR"
-    files$[2]="arm_custrpt_ctl",ids$[2]="ARM_CUSTRPT_CTL"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
 
     are05_dev=channels[1]
-    arm_custrpt_ctl=channels[2]
 
 rem --- Dimension string templates
 
     dim are05$:templates$[1]
-    dim arm_custrpt_ctl$:templates$[2]
 
 rem --- Assign form input values to local variables
 
@@ -134,6 +133,14 @@ rem --- Assign form input values to local variables
     call pgmdir$+"adc_getmask.aon","","GL","U","",m2$,0,m2
 
     emailFax! = BBjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
 
 rem --- Start progress meter and position header file
 
@@ -166,7 +173,7 @@ rem --- Read next Invoice Header (are-05) record
         new_doc_id$=""
         new_doc_name$=""
         doc_name$=reportBaseName$+"_"+are05.customer_id$
-        doc_keywords$="Invoice generated: "+fndate$(are05.inv_date$)
+        doc_keywords$="AR Invoice: "+are05.ar_inv_no$+", generated: "+fndate$(are05.inv_date$)
 
         rd_source_alias$=option!.getAlias()
         rd_source_type$="O"
@@ -176,7 +183,7 @@ rem --- Read next Invoice Header (are-05) record
         rd_source_ref$=are05.customer_id$
         rd_doc_keywords$=doc_keywords$
 
-        rem --- Get Next Document Number and update Document Audit for individual pdf
+    rem --- Get Next Document Number and update Document Audit for individual pdf
 
         call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",new_doc_id$,rd_table_chans$[all] 
         new_doc_name$=new_doc_id$+"_"+doc_name$+".pdf"        
@@ -184,11 +191,11 @@ rem --- Read next Invoice Header (are-05) record
         call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,rep_date_stamp$,rep_time_stamp$,rd_doc_source$,rd_doc_ext$,docdir$,
 :           rd_source_type$,rd_source_alias$,rd_source_id$,rd_source_ref$,rd_table_chans$[all],"",new_doc_name$,doc_name$,doc_keywords$
 
-        rem --- Get Next Document Number and update Document Audit for master copy of pdf, if first time thru
+    rem --- Get Next Document Number and update Document Audit for master copy of pdf, if first time thru
 
         if master_document
             rd_doc_ext$="JAS"
-            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_archive_action$="DOC_ID"
             rd_doc_id$=""
             rd_source_id$="C"
             rd_source_ref$=""
@@ -199,7 +206,7 @@ rem --- Read next Invoice Header (are-05) record
             master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"
         endif
 
-        rem --- Get Next Document Number and update Document Audit with JAS entry for print doc, if first time thru
+    rem --- Get Next Document Number and update Document Audit with JAS entry for print doc, if first time thru
 
         if print_document
             rd_doc_ext$="JAS"
@@ -214,22 +221,20 @@ rem --- Read next Invoice Header (are-05) record
             print_doc_name$=print_doc_id$+"_"+printBaseName$+".pdf"
         endif
 
-        rem --- Read report control table for this customer/alias to see if customer wants print, email, or fax
+    rem --- Use ReportControl object to see if customer wants print, email, or fax
 
         add_to_print_report=1
-        dim arm_custrpt_ctl$:fattr(arm_custrpt_ctl$)
-        while 1
-            read record (arm_custrpt_ctl,key=firm_id$+are05.customer_id$+pad(rptctl_alias$,16),err=*break)arm_custrpt_ctl$
-            if arm_custrpt_ctl.print_yn$<>"Y" then add_to_print_report=0
-            if arm_custrpt_ctl.email_yn$="Y" or arm_custrpt_ctl.fax_yn$="Y"
-                emailFax!.add(rptctl_alias$)
-                emailFax!.add(are05.customer_id$)
-                emailFax!.add("C")
-                emailFax!.add(new_doc_id$)
-                emailFax!.add("pdf")
+        if rpt_ctl$="YES"     
+            found=reportControl!.getRecipientInfo(rpt_id$,are05.customer_id$,"")
+            if found         
+                if reportControl!.getPrintYN()<>"Y" then add_to_print_report=0
+                if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                    emailFax!.add(rpt_id$)
+                    emailFax!.add(are05.customer_id$)
+                    emailFax!.add(new_doc_id$)
+                endif
             endif
-            break
-        wend
+        endif
 
     rem --- Document Output Report Parameters
 
@@ -486,9 +491,14 @@ close_win:rem --- Viewer Window Closed
     if emailFax!.size()
         msg_id$ = "CONF_RPTCTL"
         gosub disp_message
-        if msg_opt$="Y" then call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue 
+        if msg_opt$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
     endif    
     
+    reportControl!.destroy(err=*next)
     masterViewerWindow!.destroy(err=*next)
     printViewerWindow!.destroy(err=*next)
 

@@ -61,15 +61,15 @@ rem --- Open/Lock files
     files$[10]="ivs_params",  ids$[10]="IVS_PARAMS"
     files$[11]="ivw-04",      ids$[11]="IVW_LFDET"
     files$[12]="ivw-05",      ids$[12]="IVW_LFCOST"
-    files$[13]="ope-01",      ids$[13]="OPE_ORDHDR"
+    files$[13]="opt-01",      ids$[13]="OPE_ORDHDR"
     files$[14]="ope-04",      ids$[14]="OPE_PRNTLIST"
-    files$[15]="ope-11",      ids$[15]="OPE_ORDDET"
-    files$[16]="ope-21",      ids$[16]="OPE_ORDLSDET"
-    files$[17]="ope-41",      ids$[17]="OPE_INVCASH"
+    files$[15]="opt-11",      ids$[15]="OPE_ORDDET"
+    files$[16]="opt-21",      ids$[16]="OPE_ORDLSDET"
+    files$[17]="opt-41",      ids$[17]="OPE_INVCASH"
     files$[18]="opm-02",      ids$[18]="OPC_LINECODE"
     files$[19]="opm-06",      ids$[19]="OPC_TAXCODE"
     files$[20]="ops_mtdsales",ids$[20]="OPS_MTDSALES"
-rem files$[21]="opw-01",ids$[21]="OPW_INVREG"
+    files$[21]="opt-31",      ids$[21]="OPE_ORDSHIP"
     files$[22]="opw-11",      ids$[22]="OPW_TERRSUMM", options$[22]="CL"
     files$[23]="opw-21",      ids$[23]="OPW_LINESUMM", options$[23]="CL"
     files$[24]="opw-31",      ids$[24]="OPW_SALESUMM", options$[24]="CL"
@@ -103,6 +103,7 @@ rem files$[21]="opw-01",ids$[21]="OPW_INVREG"
     opm02_dev=channels[18]
     opm06_dev=channels[19]
     ops10_dev=channels[20]
+    ope31_dev=channels[21]
     opw11_dev=channels[22]
     opw21_dev=channels[23]
     opw31_dev=channels[24]
@@ -123,7 +124,7 @@ rem glw11a$:templates$[7],
 :       ivw05a$:templates$[12],ope01a$:templates$[13],ope04a$:templates$[14],
 :       ope11a$:templates$[15],ope21a$:templates$[16],ope41a$:templates$[17],
 :       opm02a$:templates$[18],opm06a$:templates$[19],ops10s$:templates$[20],
-:       opw11a$:templates$[22],opw21a$:templates$[23],
+:       ope31a$:templates$[21],opw11a$:templates$[22],opw21a$:templates$[23],
 :       opw31a$:templates$[24],opw41a$:templates$[25],sas01a$:templates$[26],
 :       glm03a$:templates$[27],arm10f$:templates$[28],arm10h$:templates$[29]
 
@@ -240,7 +241,6 @@ rem --- Initialize Data
     clock$=""
     when$=sysinfo.system_date$
     nothing_posted = 1
-    no_records_prev_posted = 1
     dim t[6],u[6]
 
     if seq$="" then
@@ -357,23 +357,39 @@ rem --- Check to see if record is in use in Invoice Entry
 		if lock_stat$="ERR_LOCKED"
 			continue
 		endif
-		
-        extract record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$, dom=*continue) ope01a$; rem Advisory Locking
+
+        extract record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$+read_tpl.ar_inv_no$, dom=*continue) ope01a$; rem Advisory Locking
         if ope01a.print_status$<>"Y" then read(ope01_dev); continue
-        
-        if pos(ope01a.lock_status$="12")<>0 then 
-            no_records_prev_posted = 0
-            read(ope01_dev)
-            continue
-        endif
+        if pos(ope01a.trans_status$="ER")=0 then read(ope01_dev); continue
 
         if ope01a.cash_sale$="Y" then
-            find record (ope41_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$, dom=*next) ope41a$
+            dim ope41a$:fattr(ope41a$)
+            find record (ope41_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$, dom=*next) ope41a$
+            if pos(ope41a.trans_status$="ER")=0 then dim ope41a$:fattr(ope41a$)
         endif
 
-        ope01a.lock_status$="S"
+        rem --- Don't change lock_status if re-running a failed update
+        if pos(ope01a.lock_status$="12")=0 then ope01a.lock_status$="S"
+        ope01a.trans_status$="R"     
+        ope01a.mod_user$=sysinfo.user_id$
+        ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+        ope01a.mod_time$=date(0:"%Hz%mz")
         ope01a$ = field(ope01a$)
         write record (ope01_dev) ope01a$
+
+        rem --- Set trans_status for OPE_ORDSHIP
+        dim ope31a$:fattr(ope31a$)
+        extract record (ope31_dev, key=firm_id$+read_tpl.customer_id$+read_tpl.order_no$+read_tpl.ar_inv_no$, dom=*next) ope31a$; rem Advisory Locking
+        if pos(ope31a.trans_status$="ER") then
+            ope31a.trans_status$="R"     
+            ope31a.mod_user$=sysinfo.user_id$
+            ope31a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope31a.mod_time$=date(0:"%Hz%mz")
+            ope31a$ = field(ope31a$)
+            write record (ope31_dev) ope31a$
+        else
+            read(ope31_dev)
+        endif
 
     rem --- Breaks
 
@@ -441,7 +457,7 @@ rem --- Check to see if record is in use in Invoice Entry
 
     rem --- Position Invoice Detail File
 
-        read (ope11_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+        read (ope11_dev,key=ope01a.firm_id$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,dom=*next)
 
     rem --- Detail
 
@@ -451,18 +467,22 @@ rem --- Check to see if record is in use in Invoice Entry
             if ope11a_key.firm_id$     <> ope01a.firm_id$     then break
             if ope11a_key.customer_id$ <> ope01a.customer_id$ then break
             if ope11a_key.order_no$    <> ope01a.order_no$    then break
+            if ope11a_key.ar_inv_no$    <> ope01a.ar_inv_no$   then break
             extract record (ope11_dev) ope11a$; rem Advisory Locking
+            if pos(ope11a.trans_status$="ER")=0 then read (ope11_dev); continue
             find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*next) opm02a$; rem y0$, y1$
 
             if opm02a.dropship$<>"Y" or ars01a.dropshp_cost$<>"Y" then
                 if pos(opm02a.line_type$="PS")>0 and ope11a.qty_shipped<>0 then 
                     gosub cal_cur_item_cost; rem "Go get current cost
-                else
-                    read (ope11_dev)
                 endif
-            else
-                read (ope11_dev)
             endif
+            ope11a.trans_status$="R"     
+            ope11a.mod_user$=sysinfo.user_id$
+            ope11a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope11a.mod_time$=date(0:"%Hz%mz")
+            ope11a$ = field(ope11a$)
+            write record (ope11_dev) ope11a$
 
             if ope11a.ext_price<0 then t[1]=t[1]+ope11a.ext_price
             if ope11a.ext_price>0 then t[0]=t[0]+ope11a.ext_price
@@ -562,7 +582,12 @@ rem --- Check to see if record is in use in Invoice Entry
         if t1<>0 then t=(t1-t[4])*100/t1
         if abs(t)>999 then t=sgn(t)*999.99
 
-        OutVect!.addItem(func.alphaMask(ope01a.customer_id$,m0$))
+        update_restart$=""
+        if pos(ope01a.lock_status$="12") then
+            update_restart$="   ***"+ope01a.lock_status$+"***"
+        endif
+
+        OutVect!.addItem(func.alphaMask(ope01a.customer_id$,m0$)+update_restart$)
         OutVect!.addItem(ope01a.order_no$)
         OutVect!.addItem(ope01a.ar_inv_no$)
         OutVect!.addItem(func.formatDate(ope01a.invoice_date$))
@@ -715,7 +740,7 @@ rem --- Check to see if record is in use in Invoice Entry
 
 rem --- Totals
 
-    if nothing_posted and no_records_prev_posted then
+    if nothing_posted then
         msg_id$ = "OP_NOTHING_POSTED"
         gosub disp_message
         goto std_exit
@@ -883,52 +908,52 @@ rem dim d2$(62),d[20],h[2]
 
     if !found then
         items$ = items$ + pad(ope11a.item_id$, 20)
-        return
-    endif
-
-    find record (ivm02_dev,key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$,dom=*next) ivm02a$
-    if ivm02a.unit_cost then icost=ivm02a.unit_cost
-    if lf$="Y" then gosub lifo_fifo
-
-    if ls$<>"Y" or ivm01a.lotser_item$<>"Y" then
-        ope11a.unit_cost=icost
     else
-        ls_start$ = firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$
-        read (ope21_dev, key=ls_start$, dom=*next)
-
-        while more
-            ope21a_key$=key(ope21_dev,end=*break)
-            if pos(ls_start$=ope21a_key$) <> 1 then break
-            extract record (ope21_dev) ope21a$; rem Advisory Locking
-
-            if ivm01a.inventoried$<>"Y" then 
-                ope21a.unit_cost=icost
-                ope21a$ = field(ope21a$)
-                write record (ope21_dev) ope21a$; rem "Reset cost if not inventoried
-            else
-                read (ope21_dev)
+        find record (ivm02_dev,key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$,dom=*next) ivm02a$
+        if ivm02a.unit_cost then icost=ivm02a.unit_cost
+        if lf$="Y" then gosub lifo_fifo
+    
+        if ls$<>"Y" or ivm01a.lotser_item$<>"Y" then
+            ope11a.unit_cost=icost
+        else
+            ls_start$ = firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+ope11a.internal_seq_no$
+            read (ope21_dev, key=ls_start$, dom=*next)
+    
+            while more
+                ope21a_key$=key(ope21_dev,end=*break)
+                if pos(ls_start$=ope21a_key$) <> 1 then break
+                extract record (ope21_dev) ope21a$; rem Advisory Locking
+                if pos(ope21a.trans_status$="ER")=0 then read (ope21_dev); continue
+    
+                if ivm01a.inventoried$<>"Y" then 
+                    ope21a.unit_cost=icost
+                    ope21a.trans_status$="R"     
+                    ope21a.mod_user$=sysinfo.user_id$
+                    ope21a.mod_date$=date(0:"%Yd%Mz%Dz")
+                    ope21a.mod_time$=date(0:"%Hz%mz")
+                    ope21a$ = field(ope21a$)
+                    write record (ope21_dev) ope21a$; rem "Reset cost if not inventoried
+                else
+                    read (ope21_dev)
+                endif
+    
+                total_shipped  = total_shipped  + ope21a.qty_shipped
+                total_ext_cost = total_ext_cost + ope21a.qty_shipped*ope21a.unit_cost
+            wend
+    
+            if total_shipped<>ope11a.qty_shipped then
+                items$ = items$ + pad(ope11a.item_id$, 20)
             endif
-
-            total_shipped  = total_shipped  + ope21a.qty_shipped
-            total_ext_cost = total_ext_cost + ope21a.qty_shipped*ope21a.unit_cost
-        wend
-
-        if total_shipped<>ope11a.qty_shipped then
-            items$ = items$ + pad(ope11a.item_id$, 20)
+    
+            if total_shipped then ope11a.unit_cost=total_ext_cost/total_shipped
         endif
-
-        if total_shipped then ope11a.unit_cost=total_ext_cost/total_shipped
     endif
-
-    ope11a$ = field(ope11a$)
-    write record (ope11_dev) ope11a$
 
     return
 
 rem --- Standard G/L Recap Routine
 
 glrecap: 
-print account$
 
     if gl$="Y" then
         call pgmdir$+"glc_glpost.aon",glm01_dev,glw11_dev,0,account$,gldate$,ref1$,ref2$,ref3$,memo$,amount,units,status

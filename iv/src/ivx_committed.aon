@@ -54,10 +54,9 @@ rem --- Open/Lock files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[2]="ivm-02",ids$[2]="IVM_ITEMWHSE",options$[2]="L"; rem Lock
     files$[3]="ivm-07",ids$[3]="IVM_LSMASTER",options$[3]="L"; rem Lock
-    files$[4]="ope-01",ids$[4]="OPE_ORDHDR"
-    files$[5]="ope-11",ids$[5]="OPE_ORDDET"
-    files$[6]="ope-21",ids$[6]="OPE_ORDLSDET"
-    files$[7]="ope-61",ids$[7]="OPE_ORDITEM"
+    files$[4]="opt-01",ids$[4]="OPE_ORDHDR"
+    files$[5]="opt-11",ids$[5]="OPE_ORDDET"
+    files$[6]="opt-21",ids$[6]="OPE_ORDLSDET"
     files$[8]="opm-02",ids$[8]="OPC_LINECODE"
     files$[9]="ivs_params",ids$[9]="IVS_PARAMS"
     files$[10]="ars_params",ids$[10]="ARS_PARAMS"
@@ -71,7 +70,6 @@ rem --- Open/Lock files
     ope01_dev=channels[4]
     ope11_dev=channels[5]
     ope21_dev=channels[6]
-    ope61_dev=channels[7]
     opm02_dev=channels[8]
     ivs01_dev=channels[9]
     ars01_dev=channels[10]
@@ -81,7 +79,7 @@ rem --- Open/Lock files
 rem --- Dimension string templates
 
     dim ivm02a$:templates$[2],ivm07a$:templates$[3],ope01a$:templates$[4],
-:       ope11a$:templates$[5],ope21a$:templates$[6],ope61a$:templates$[7],
+:       ope11a$:templates$[5],ope21a$:templates$[6],
 :       opm02a$:templates$[8],
 :       ivs01a$:templates$[9],ars01a$:templates$[10],sfs01a$:templates$[11]
 
@@ -199,9 +197,11 @@ rem --- Rebuild From ope-11 Committed
         while more
             read record (ope11_dev,end=*break)ope11a$
             if ope11a.firm_id$<>firm_id$ then break
+            if pos(ope11a.trans_status$="ER")=0 then continue
 			total_recs=total_recs+1
 			if mod(total_recs,milestone)=0 call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-            find record (ope01_dev,key=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$,dom=*continue) ope01a$; rem "Check header records for quotes
+            find record (ope01_dev,key=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$,dom=*continue) ope01a$; rem "Check header records for quotes
+            if pos(ope01a.trans_status$="ER")=0 then continue
             if ope01a.invoice_type$="P" then quote$="Y" else quote$="N"
             find record (opm02_dev,key=firm_id$+ope11a.line_code$,dom=*continue) opm02a$
             if pos(opm02a.line_type$="MNO")<>0 then continue
@@ -231,22 +231,23 @@ rem --- Rebuild From ope-21 Committed
         while more
             read record (ope21_dev,end=*break)ope21a$
             if ope21a.firm_id$<>firm_id$ then break
+            if pos(ope21a.trans_status$="ER")=0 then continue
 			total_recs=total_recs+1
 			if mod(total_recs,milestone)=0 call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
             rem --- make sure this ord lsdet rec has corres. ord det rec... if not, remove
-            if pos(ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+
-:               ope21a.orddet_seq_ref$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+
+            if pos(ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.ar_inv_no$+
+:               ope21a.orddet_seq_ref$=ope11a.firm_id$+ope11a.ar_type$+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+
 :               ope11a.internal_seq_no$)<>1 
                     found=0
-                    find record (ope11_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$,dom=*next) ope11a$;found=1
+                    find record (ope11_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.ar_inv_no$+ope21a.orddet_seq_ref$,dom=*next) ope11a$;found=1
                     if !found 
-                        remove (ope21_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$+ope21a.sequence_no$,dom=*continue)    
+                        remove (ope21_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.ar_inv_no$+ope21a.orddet_seq_ref$+ope21a.sequence_no$,dom=*continue)    
                     endif
             endif    
             found=0    
             read record (ivm07_dev,key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$+ope21a.lotser_no$,dom=*next) ivm07a$;found=1
             if !found
-                remove (ope21_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.orddet_seq_ref$+ope21a.sequence_no$,dom=*continue)    
+                remove (ope21_dev,key=ope21a.firm_id$+ope21a.ar_type$+ope21a.customer_id$+ope21a.order_no$+ope21a.ar_inv_no$+ope21a.orddet_seq_ref$+ope21a.sequence_no$,dom=*continue)    
             else
                 ivm07a.qty_commit=ivm07a.qty_commit+ope21a.qty_ordered
                 ivm07a$=field(ivm07a$)

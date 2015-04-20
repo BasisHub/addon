@@ -12,6 +12,8 @@ rem --- Use statements and Declares
     use ::bbjasper.bbj::BBJasperViewerWindow
     use ::bbjasper.bbj::BBJasperViewerControl
 
+    use ::ado_rptControl.src::ReportControl
+
 	declare BBJasperReport BBjReport!
     
     params! = Option!.getOptionMap()
@@ -92,28 +94,13 @@ rem --- Check for user authentication; create connection string in url$
 		endif
     endif
 
-rem --- Open/Lock files
-
-    files=1,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="arm_custrpt_ctl",ids$[1]="ARM_CUSTRPT_CTL"
-
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-
-    arm_custrpt_ctl=channels[1]
-
-rem --- Dimension string templates
-
-    dim arm_custrpt_ctl$:templates$[1]
-
 rem --- Assign form input values to local variables
 
     customer_id$  = option!.getOptionData("CUSTOMER_ID")
     stmt_date$    = option!.getOptionData("STATEMENT_DATE")
     message$      = option!.getOptionData("MESSAGE")
     age_basis$    = option!.getOptionData("REPORT_TYPE")   
-    rpt_ctl$      = option!.getOptionData("PICK_CHECK")
+    send_via_rpt_ctl$      = option!.getOptionData("PICK_CHECK")
 
     minimum=num(minimum$)    
     period=num(age_period$,err=*next)
@@ -126,6 +113,14 @@ rem --- Initializations
     call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A","",m1$,0,0
     
     emailFax! = BBjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
 
 rem --- Determine 30 day aging period dates
 
@@ -156,22 +151,20 @@ rem --- Make Document Archive Record and Get Document ID
     new_doc_name$=rd_doc_id$+"_"+doc_name$+".pdf"
     new_doc_id$=rd_doc_id$
 
-rem --- Read report control table for this customer/alias to see if customer wants print, email, or fax
+rem --- Use ReportControl object to see if customer wants print, email, or fax
 
-    add_to_print_report=1
-    dim arm_custrpt_ctl$:fattr(arm_custrpt_ctl$)
-    while 1
-        read record (arm_custrpt_ctl,key=firm_id$+customer_id$+pad(rptctl_alias$,16),err=*break)arm_custrpt_ctl$
-        if arm_custrpt_ctl.print_yn$<>"Y" then add_to_print_report=0
-        if arm_custrpt_ctl.email_yn$="Y" or arm_custrpt_ctl.fax_yn$="Y"
-            emailFax!.add(rptctl_alias$)
-            emailFax!.add(customer_id$)
-            emailFax!.add("C")
-            emailFax!.add(new_doc_id$)
-            emailFax!.add("pdf")
+        add_to_print_report=1
+        if rpt_ctl$="YES"     
+            found=reportControl!.getRecipientInfo(rpt_id$,customer_id$,"")
+            if found         
+                if reportControl!.getPrintYN()<>"Y" then add_to_print_report=0
+                if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                    emailFax!.add(rpt_id$)
+                    emailFax!.add(customer_id$)
+                    emailFax!.add(new_doc_id$)
+                endif
+            endif
         endif
-        break
-    wend
     
 rem --- Document Output Report Parameters
 
@@ -308,12 +301,17 @@ rem --- force exportToPDF first, in case it hasn't already been saved
 
 close_win:rem --- Viewer Window Closed
 
-    if emailFax!.size() and rpt_ctl$="Y"
+    if emailFax!.size() and send_via_rpt_ctl$="Y"
         msg_id$ = "CONF_RPTCTL"
         gosub disp_message
-        if msg_opt$="Y" then call stbl("+DIR_PGM")+"adc_rptcontrol_batch.aon",emailFax!;rem add email/fax invoices to doc queue
-    endif
+        if msg_opt$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+    endif    
     
+    reportControl!.destroy(err=*next)
     viewerWindow!.destroy()
 
     if tcb(13) then exit

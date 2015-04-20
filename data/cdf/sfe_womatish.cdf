@@ -56,10 +56,11 @@ rem --- Delete inventory issues and commitments. Must do this before sfe_womatis
 	dim sfe_womatdtl$:fnget_tpl$("SFE_WOMATDTL")
 
 	firm_loc_wo$=callpoint!.getDevObject("firm_loc_wo")
-	read(sfe_womatisd_dev,key=firm_loc_wo$,knum="AO_DISP_SEQ",dom=*next)
+	sfe_womatish_key$=callpoint!.getDevObject("sfe_womatish_key")
+	read(sfe_womatisd_dev,key=sfe_womatish_key$,knum="AO_DISP_SEQ",dom=*next)
 	while 1
 		sfe_womatisd_key$=key(sfe_womatisd_dev,end=*break)
-		if pos(firm_loc_wo$=sfe_womatisd_key$)<>1 then break
+		if pos(sfe_womatish_key$=sfe_womatisd_key$)<>1 then break
 		readrecord(sfe_womatisd_dev)sfe_womatisd$
 
 		rem --- Delete lot/serial commitments, but keep inventory commitments (for now)
@@ -263,10 +264,11 @@ rem --- New materials issues entry or no existing materials issues
 		if msg_opt$="Y" then
 
 			rem --- Pull complete
-			read(sfe_womatisd_dev,key=firm_loc_wo$,knum="AO_DISP_SEQ",dom=*next)
+			sfe_womatish_key$=callpoint!.getDevObject("sfe_womatish_key")
+			read(sfe_womatisd_dev,key=sfe_womatish_key$,knum="AO_DISP_SEQ",dom=*next)
 			while 1
 				sfe_womatisd_key$=key(sfe_womatisd_dev,end=*break)
-				if pos(firm_loc_wo$=sfe_womatisd_key$)<>1 then break
+				if pos(sfe_womatish_key$=sfe_womatisd_key$)<>1 then break
 				extractrecord(sfe_womatisd_dev)sfe_womatisd$
 
 				dim ivm_itemwhse$:ivm_itemwhse_tpl$
@@ -305,10 +307,11 @@ rem --- New materials issues entry or no existing materials issues
 
 				findrecord(sfe_womastr_dev,key=firm_id$+"  "+callpoint!.getColumnData("SFE_WOMATISH.WO_NO"))sfe_womastr$
 
-				read(sfe_womatisd_dev,key=firm_loc_wo$,knum="AO_DISP_SEQ",dom=*next)
+				sfe_womatish_key$=callpoint!.getDevObject("sfe_womatish_key")
+				read(sfe_womatisd_dev,key=sfe_womatish_key$,knum="AO_DISP_SEQ",dom=*next)
 				while 1
 					sfe_womatisd_key$=key(sfe_womatisd_dev,end=*break)
-					if pos(firm_loc_wo$=sfe_womatisd_key$)<>1 then break
+					if pos(sfe_womatish_key$=sfe_womatisd_key$)<>1 then break
 					extractrecord(sfe_womatisd_dev)sfe_womatisd$
 
 					dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")

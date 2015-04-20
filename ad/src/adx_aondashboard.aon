@@ -21,6 +21,7 @@ rem --- Addon dashboards
 	use ::dashboard/widget.bbj::PieChartWidget
 	use ::dashboard/widget.bbj::JasperViewerWidget
 	use ::dashboard/widget.bbj::CategoryDataItem
+    use ::dashboard/widget.bbj::KeyedValueDataItem
 	use ::dashboard/widget.bbj::EmbeddedWidgetFactory
 	use ::dashboard/widget.bbj::EmbeddedWidget
 	use ::dashboard/widget.bbj::EmbeddedWidgetWindow
@@ -74,8 +75,8 @@ rem --- initialization
 	gosub resolve_paths
 	gosub init_prog_meter
 	gosub get_installed_modules
-    
-    all_prod_types$ = Translate!.getTranslation("AON_ALL")+" "+Translate!.getTranslation("AON_PRODUCT_TYPE")
+
+    unspecified_prod_type$ = Translate!.getTranslation("AON_UNSPECIFIED")
 	
 rem --- create dashboard, tabs, widgets
 
@@ -121,6 +122,42 @@ rem ==============================================
 	acctDashboardCategory! = aonDashboard!.addDashboardCategory("Accounting",Translate!.getTranslation("AON_ACCOUNTING"))
 
 rem ==============================================
+rem --- create an AR company aging totals bar chart
+rem ==============================================
+    dashboard_menu_id$="ADD_ARAGINGTOT_BAR"
+    gosub get_security
+    if allow_widget$="Y" and installMap!.get("GL")="Y"
+        name$="ARAGINGTOT_BAR"
+        title$ = Translate!.getTranslation("AON_AR_CO_LAST_AGING_TOTALS")
+        previewText$=Translate!.getTranslation("AON_AR_CO_TOTALS_LAST_AGING")
+        previewImage$=preview_path$+"aragingtot_bar.png"
+        chartTitle$ = ""
+        domainTitle$ = ""
+        rangeTitle$ = ""
+        flat=0 
+        orientation=BarChartWidget.getORIENTATION_VERTICAL() 
+        legend=0
+        connectString$=aon_url$
+
+        rem --- params for calling SPROC
+        sql$="CALL ARAGINGTOT_BAR ('"+firm_id$+"', '"+masks$+"', '"+barista_wd$+"')"
+
+        agingTotalsBarDashboardWidget! = acctDashboardCategory!.addBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
+        agingTotalsWidget!=agingTotalsBarDashboardWidget!.getWidget()
+        agingTotalsWidget!.setFontScalingFactor(0.45)
+        agingTotalsWidget!.setChartRangeAxisToCurrency()
+        agingTotalsWidget!.setLabelsInBarChartColor("#000000")
+        
+        rem Widget click event             
+        dim chartState$:"CHART_TYPE:C(25*)"
+        chartState.chart_type$="ARLastAgingTotals_bar"
+        agingTotalsWidget!.setUserData(chartState$)
+        agingTotalsBarDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::OnARLastAgingTotalsChartWidgetClick")
+
+        gosub update_meter
+    endif
+    
+rem ==============================================
 rem --- create a yearly GL totals grid
 rem ==============================================
 
@@ -142,8 +179,15 @@ rem ==============================================
 
 		incomeGridDashboardWidget! = acctDashboardCategory!.addGridDashboardWidget(name$,title$,previewText$,previewImage$,connectString$,sql$)
 		gridWidget!=incomeGridDashboardWidget!.getWidget()
-		gridWidget!.setColumnAlignment(3,GridWidget.getHORIZONTAL_ALIGNMENT_RIGHT())
 		gridWidget!.setColumnAlignment(0,GridWidget.getHORIZONTAL_ALIGNMENT_LEFT())
+        gridWidget!.setColumnAlignment(2,GridWidget.getHORIZONTAL_ALIGNMENT_RIGHT())
+        gridWidget!.setColumnMask(2,fngetmask$("gl_amt_mask","$###,###,##0.00-",masks$))
+        gridWidget!.setColumnStyle(2,GridWidget.getCELL_STYLE_INPUTN())
+        colHeaderVec!=BBjAPI().makeVector()
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_DESCRIPTION"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_YEAR"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_TOTAL"))
+        gridWidget!.setColumnHeaderData(colHeaderVec!)
 
 		rem Create Filters 
 		filterName$ = Translate!.getTranslation("AON_INCOME_TOTALS_-_TIME_FRAME")
@@ -204,6 +248,7 @@ rem		incCmpWidget!.setChartColors("#00a4d9","#7fbe27",1.0,1.0); rem Colors for B
 rem		incCmpWidget!.setChartColors("#3cb6df,#4aca75,#91bd5d"); rem supplying three explicit colors due to issue in legend vs chart if range is used (CAH)
 		incCmpWidget!.setLabelsInBarChartColor("#000000")
 		
+        rem Widget click event             
 		dim chartState$:"CHART_TYPE:C(25*),INCLUDE_TYPE:C(1*),YEAR:C(4*),PERIOD:C(2*)"
 		chartState.CHART_TYPE$="IncomeCompare", chartState.INCLUDE_TYPE$="A",chartState.YEAR$="", chartState.period$=""
 		incCmpWidget!.setUserData(chartState$)
@@ -263,10 +308,16 @@ rem ==============================================
 		
 		bankacctBarChartDashboardWidget! = acctDashboardCategory!.addBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
 		acctWidget! = bankacctBarChartDashboardWidget!.getWidget()
-		acctWidget!.setDomainLabelAngle(1)
+		acctWidget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_DOWN_45())
         acctWidget!.setChartRangeAxisToCurrency()
 rem		acctWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
 rem		acctWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
+
+        rem Widget click event             
+        dim chartState$:"CHART_TYPE:C(25*)"
+        chartState.chart_type$="BankAccountBalances_bar"
+        acctWidget!.setUserData(chartState$)
+        bankacctBarChartDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::BankAccountBalancesChartWidgetClick")
 
 		gosub update_meter
 	endif
@@ -279,7 +330,7 @@ rem ==============================================
 	gosub get_security
 	if allow_widget$="Y" and installMap!.get("GL")="Y"
 		name$="GLBNKBAL_RNG"
-		title$ = Translate!.getTranslation("AON_BANK_BALANCES_RINGCHART")
+		title$ = Translate!.getTranslation("AON_BANK_ACCOUNT_BALANCES")
 		previewText$=Translate!.getTranslation("AON_BANK_ACCOUNT_BALANCES_DISPLAYED_IN_A_PIE_CHART")
 		previewImage$=preview_path$+"glbnkbal_rng.png"
 		chartTitle$ = ""
@@ -304,6 +355,12 @@ rem		ringChartWidget!.setChartColors(ringChartWidget!.getColorTheme(ChartWidget.
 	 
 		rem Ensure the labels aren't truncated by increasing the padding around the plot by 10%
 		ringChartWidget!.setPlotPadding(0.1)
+
+        rem Widget click event             
+        dim chartState$:"CHART_TYPE:C(25*)"
+        chartState.chart_type$="BankAccountBalances_ring"
+        ringChartWidget!.setUserData(chartState$)
+        bankacctRingChartDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::BankAccountBalancesChartWidgetClick")
 
 		rem Create Filters 
 		filterName$ = Translate!.getTranslation("AON_BANK_BALANCES_RINGCHART_-_TIMEFRAME")
@@ -360,6 +417,12 @@ rem		expPieWidget!.setCustomChartColors(chartColors!)
 		browseOnSelect = 0
 		link! = expPieChartDashboardWidget!.addLink(url$,text$,toolTip$,dockLocation,browseOnSelect)
 		link!.setCallback(DashboardWidgetLink.getON_LINK_SELECT(),pgm(-2) + "::OnGLEXPTOT_PIEAppLink")
+        
+        rem Widget click event             
+        dim chartState$:"CHART_TYPE:C(25*)"
+        chartState.chart_type$="YTDExpenseBreakdown_pie"
+        expPieWidget!.setUserData(chartState$)
+        expPieChartDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::YTDExpenseBreakdownChartWidgetClick")
 		
 		gosub update_meter
 	endif
@@ -394,7 +457,7 @@ rem =======================================
 		incExpAWidget! = incExpAAreaChartDashboardWidget!.getWidget()
 		
 		incExpAWidget!.setFontScalingFactor(0.45)
-		incExpAWidget!.setDomainLabelAngle(1)
+		incExpAWidget!.setDomainLabelAngle(LineChartWidget.getLABEL_POSITION_DOWN_45())
         incExpAWidget!.setChartRangeAxisToCurrency()
 
 		rem Create Filters 
@@ -469,7 +532,7 @@ rem ==============================================
 		topCustsBarChartDashboardWidget! = salesDashboardCategory!.addBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
 		topCustsWidget! = topCustsBarChartDashboardWidget!.getWidget()
 		topCustsWidget!.setFontScalingFactor(0.45)
-		topCustsWidget!.setDomainLabelAngle(1)
+		topCustsWidget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_DOWN_45())
         topCustsWidget!.setChartRangeAxisToCurrency()
 rem		topCustsWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
 rem		topCustsWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
@@ -486,9 +549,8 @@ rem ==============================================
 	gosub get_security
 	if allow_widget$="Y" and installMap!.get("SA")="Y"
 		name$ = "SATOPCST_SBR"
-		title$ = Translate!.getTranslation("AON_PRODUCTS_FOR_TOP_CUSTOMERS")
-		previewText$=Translate!.getTranslation("AON_TOP_5_CUSTOMERS_DISPLAYED_IN_A_STACKED_BAR_CHART")
-		previewImage$=preview_path$+"satopcst_sbr.png"
+        title$ = Translate!.getTranslation("AON_TOP_CUSTOMERS_MULTIYEAR")
+        previewText$=Translate!.getTranslation("AON_TOP_CUSTOMERS_MULTIYEAR_DISPLAYED_IN_A_STACKED_BAR_CHART")
 		chartTitle$ = ""
 		domainTitle$ = ""
 		rangeTitle$ = ""
@@ -498,20 +560,81 @@ rem ==============================================
 		connectString$=aon_url$
 		
 		rem --- params for calling SPROC
+        include_type$="1"
 		num_to_list$ = "5"; rem <<============= HARDCODED =========
 	
-		sql$="CALL SATOPCST_SBR ('"+firm_id$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"', '"+all_prod_types$+"')"
+		sql$="CALL SATOPCST_SBR ('"+firm_id$+"', '"+include_type$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"')"
 
-		topCustsSStackedBarChartDashboardWidget! = salesDashboardCategory!.addStackedBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
-		topCustsSWidget! = topCustsSStackedBarChartDashboardWidget!.getWidget()
-		topCustsSWidget!.setFontScalingFactor(0.45)
-		topCustsSWidget!.setDomainLabelAngle(1)
-        topCustsSWidget!.setChartRangeAxisToCurrency()
-rem		topCustsSWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
-rem		topCustsSWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
+		topCustsStackedBarChartDashboardWidget! = salesDashboardCategory!.addStackedBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
+		topCustsWidget! = topCustsStackedBarChartDashboardWidget!.getWidget()
+		
+		topCustsWidget!.setFontScalingFactor(0.45)
+		topCustsWidget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_DOWN_45())
+        topCustsWidget!.setLabelsInBarChartColor("#000000")
+        topCustsWidget!.setChartRangeAxisToCurrency()
+rem		topCustsWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
+rem		topCustsWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
+
+        rem Create Filters 
+        filterName$ = "SATOPCST_SBR_FILTER_TIMEFRAME"
+        filterHashMap! = new LinkedHashMap()
+        include_last$=Translate!.getTranslation("AON_INCLUDE")+" "+Translate!.getTranslation("AON_LAST")
+        aon_years$=Translate!.getTranslation("AON_YEARS") 
+        filterHashMap!.put("1",include_last$+" "+Translate!.getTranslation("AON_YEAR"))
+        filterHashMap!.put("2",include_last$+" 2 "+aon_years$)
+        filterHashMap!.put("3",include_last$+" 3 "+aon_years$)
+        filterHashMap!.put("4",include_last$+" 4 "+aon_years$)
+        filterHashMap!.put("5",include_last$+" 5 "+aon_years$)
+        toolTip$ = Translate!.getTranslation("AON_SELECT_TIME_FRAME")
+        dockLocation = DashboardWidget.getDOCK_LEFT()
+        filter! = topCustsStackedBarChartDashboardWidget!.addFilter(filterName$,filterHashMap!,toolTip$,dockLocation)
+        filter!.setCallback(DashboardWidgetFilter.getON_FILTER_SELECT(),pgm(-2) + "::OnSATOPCST_SBRFilterSelect")
 
 		gosub update_meter
 	endif	
+
+    
+rem ==============================================
+rem --- create SA Top Salesrep YTD Totals bar chart
+rem ==============================================
+
+    dashboard_menu_id$="ADD_SAREPTOT_BAR"
+    gosub get_security
+    if allow_widget$="Y" and installMap!.get("SA")="Y"
+        name$ = "SAREPTOT_BAR"
+        title$ = Translate!.getTranslation("AON_TOP_SALESREPS")
+        previewText$=Translate!.getTranslation("AON_TOP_SALESREPS_DISPLAYED_IN_A_BAR_CHART")
+        previewImage$=preview_path$+"sareptot_bar.png"
+        chartTitle$ = ""
+        domainTitle$ = ""
+        rangeTitle$ = Translate!.getTranslation("AON_$_IN_1000S")
+        flat=0 
+        orientation=BarChartWidget.getORIENTATION_VERTICAL() 
+        legend=0
+        connectString$=aon_url$
+        
+        rem --- params for calling SPROC
+        num_to_list$ = "5"; rem <<============= HARDCODED =========
+    
+        sql$="CALL SAREPTOT_BAR ('"+firm_id$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"')"
+
+        repsalesBarChartDashboardWidget! = salesDashboardCategory!.addBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
+        repsalesWidget! = repsalesBarChartDashboardWidget!.getWidget()
+        repsalesWidget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_DOWN_45())
+        repsalesWidget!.setFontScalingFactor(0.45)
+rem     repsalesWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
+rem     repsalesWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
+        repsalesWidget!.setLabelsInBarChartColor("#000000")
+        repsalesWidget!.setChartRangeAxisToCurrency()
+        
+        rem Widget click event             
+        dim chartState$:"CHART_TYPE:C(25*)"
+        chartState.chart_type$="TopSalesrepsYTD_bar"
+        repsalesWidget!.setUserData(chartState$)
+        repsalesBarChartDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::OnTopSalesrepsYTDChartWidgetClick")
+
+        gosub update_meter
+    endif       
 
 	
 rem ==============================================
@@ -522,37 +645,54 @@ rem ==============================================
 	gosub get_security
 	if allow_widget$="Y" and installMap!.get("SA")="Y"
 		name$ = "SATOPREP_SBR"
-		title$ = Translate!.getTranslation("AON_PRODUCTS_FOR_TOP_SALESREPS")
-		previewText$=Translate!.getTranslation("AON_PRODUCTS_FOR_TOP_SALESREPS_DISPLAYED_IN_A_STACKED_BAR_CHART")
+		title$ = Translate!.getTranslation("AON_TOP_SALESREPS_MULTIYEAR")
+		previewText$=Translate!.getTranslation("AON_TOP_SALESREPS_MULTIYEAR_DISPLAYED_IN_A_STACKED_BAR_CHART")
 		previewImage$=preview_path$+"satoprep_sbr.png"
 		chartTitle$ = ""
 		domainTitle$ = ""
-		rangeTitle$ = ""
+		rangeTitle$ = Translate!.getTranslation("AON_$_IN_1000S")
 		flat=0 
 		orientation=BarChartWidget.getORIENTATION_HORIZONTAL() 
 		legend=1
 		connectString$=aon_url$
 		
 		rem --- params for calling SPROC
+        include_type$="1"
 		num_to_list$ = "5"; rem <<============= HARDCODED =========
 	
-		sql$="CALL SATOPREP_SBR ('"+firm_id$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"', '"+all_prod_types$+"')"
+		sql$="CALL SATOPREP_SBR ('"+firm_id$+"', '"+include_type$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"')"
 
 		toprepSStackedBarChartDashboardWidget! = salesDashboardCategory!.addStackedBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
 		toprepWidget! = toprepSStackedBarChartDashboardWidget!.getWidget()
 		
-		toprepWidget!.setDomainLabelAngle(1)
+		toprepWidget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_DOWN_45())
 		toprepWidget!.setFontScalingFactor(0.45)
+        toprepWidget!.setLabelsInBarChartColor("#000000")
         toprepWidget!.setChartRangeAxisToCurrency()
 rem		toprepWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
 rem		toprepWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
+
+        rem Create Filters 
+        filterName$ = "SATOPREP_SBR_FILTER_TIMEFRAME"
+        filterHashMap! = new LinkedHashMap()
+        include_last$=Translate!.getTranslation("AON_INCLUDE")+" "+Translate!.getTranslation("AON_LAST")
+        aon_years$=Translate!.getTranslation("AON_YEARS") 
+        filterHashMap!.put("1",include_last$+" "+Translate!.getTranslation("AON_YEAR"))
+        filterHashMap!.put("2",include_last$+" 2 "+aon_years$)
+        filterHashMap!.put("3",include_last$+" 3 "+aon_years$)
+        filterHashMap!.put("4",include_last$+" 4 "+aon_years$)
+        filterHashMap!.put("5",include_last$+" 5 "+aon_years$)
+        toolTip$ = Translate!.getTranslation("AON_SELECT_TIME_FRAME")
+        dockLocation = DashboardWidget.getDOCK_LEFT()
+        filter! = toprepSStackedBarChartDashboardWidget!.addFilter(filterName$,filterHashMap!,toolTip$,dockLocation)
+        filter!.setCallback(DashboardWidgetFilter.getON_FILTER_SELECT(),pgm(-2) + "::OnSATOPREP_SBRFilterSelect")
 
 		gosub update_meter
 	endif	
 
 	
 rem ==============================================
-rem --- create SA Top Salesreps pie chart
+rem --- create SA Top Salesreps YTD Totals pie chart
 rem ==============================================
 
 	dashboard_menu_id$="ADD_SATOPREP_PIE"
@@ -580,47 +720,16 @@ rem ==============================================
 rem		toprepPWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
 rem		toprepPWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
 rem		toprepPWidget!.setLabelsInPieChartColor("#ffffff")
+        
+        rem Widget click event             
+        dim chartState$:"CHART_TYPE:C(25*)"
+        chartState.chart_type$="TopSalesrepsYTD_pie"
+        toprepPWidget!.setUserData(chartState$)
+        toprepPPieChartDashboardWidget!.setCallback(DashboardWidget.getON_WIDGET_CLICK(),pgm(-2) + "::OnTopSalesrepsYTDChartWidgetClick")
 	
 		gosub update_meter
 	endif		
 
-	
-rem ==============================================
-rem --- create SA Salesrep YTD Totals stacked bar chart
-rem ==============================================
-
-	dashboard_menu_id$="ADD_SAREPTOT_SBR"
-	gosub get_security
-	if allow_widget$="Y" and installMap!.get("SA")="Y"
-		name$ = "SAREPTOT_SBR"
-		title$ = Translate!.getTranslation("AON_PRODUCTS_FOR_SALESREPS")
-		previewText$=Translate!.getTranslation("AON_PRODUCTS_FOR_SALESREPS_DISPLAYED_IN_A_STACKED_BAR_CHART")
-		previewImage$=preview_path$+"sareptot_sbr.png"
-		chartTitle$ = ""
-		domainTitle$ = ""
-		rangeTitle$ = Translate!.getTranslation("AON_$_IN_1000S")
-		flat=0 
-		orientation=BarChartWidget.getORIENTATION_VERTICAL() 
-		legend=1
-		connectString$=aon_url$
-		
-		rem --- params for calling SPROC
-		num_to_list$ = "5"; rem <<============= HARDCODED =========
-	
-		sql$="CALL SAREPTOT_SBR ('"+firm_id$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"', '"+all_prod_types$+"')"
-	
-		repsalesSStackedBarChartDashboardWidget! = salesDashboardCategory!.addStackedBarChartDashboardWidget(name$,title$,previewText$,previewImage$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
-		repsalesWidget! = repsalesSStackedBarChartDashboardWidget!.getWidget()
-		
-		repsalesWidget!.setDomainLabelAngle(1)
-		repsalesWidget!.setFontScalingFactor(0.45)
-rem		repsalesWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
-rem		repsalesWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
-		repsalesWidget!.setLabelsInBarChartColor("#000000")
-        repsalesWidget!.setChartRangeAxisToCurrency()
-
-		gosub update_meter
-	endif		
 		
 rem =======================================
 rem --- create SA SA Top Salesrep line chart
@@ -651,7 +760,7 @@ rem GOTO TMPSKIP_SAREPS
 		topRepsLWidget! = topRepsLLineChartDashboardWidget!.getWidget()
 		
 		topRepsLWidget!.setFontScalingFactor(0.45)
-		topRepsLWidget!.setDomainLabelAngle(1)
+		topRepsLWidget!.setDomainLabelAngle(LineChartWidget.getLABEL_POSITION_DOWN_45())
         topRepsLWidget!.setChartRangeAxisToCurrency()
 rem		topRepsLWidget!.setChartColors("#71a5d4","#6fd37c",1.0,1.0)
 rem		topRepsLWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
@@ -660,7 +769,6 @@ rem		topRepsLWidget!.setChartRangeColors("#71a5d4","#6fd37c",1.0,1.0)
 
 	endif
 		
-
 		
 rem =======================================
 rem --- create SA SA Top Salesrep Stacked Area chart
@@ -691,7 +799,7 @@ rem =======================================
 		topRepsSAWidget! = topRepsSAAreaChartDashboardWidget!.getWidget()
 		
 		topRepsSAWidget!.setFontScalingFactor(0.45)
-		topRepsSAWidget!.setDomainLabelAngle(1)
+		topRepsSAWidget!.setDomainLabelAngle(LineChartWidget.getLABEL_POSITION_DOWN_45())
         topRepsSAWidget!.setChartRangeAxisToCurrency()
 		
 		gosub update_meter
@@ -726,7 +834,7 @@ rem --- Assign input values to local variables
         period$=periods!.getFieldValue("CURRENT_PER")
         year$=periods!.getFieldValue("CURRENT_YEAR")
 
-		switch num(period$)
+        switch num(period$)
 			case 1; ending$ = periods!.getFieldValue("PER_ENDING_01"); break
 			case 2; ending$ = periods!.getFieldValue("PER_ENDING_02"); break
 			case 3; ending$ = periods!.getFieldValue("PER_ENDING_03"); break
@@ -846,6 +954,17 @@ rem ==============================================
 		woSOgridWidget!=woSOGridDashboardWidget!.getWidget()
 		woSOgridWidget!.setColumnAlignment(3,GridWidget.getHORIZONTAL_ALIGNMENT_RIGHT())
 		woSOgridWidget!.setColumnAlignment(0,GridWidget.getHORIZONTAL_ALIGNMENT_LEFT())
+        woSOgridWidget!.setColumnWidthPercentages("14,9,15,14,10,14,9,15")
+        colHeaderVec!=BBjAPI().makeVector()
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_WORK_ORDER"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_WO_STATUS"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_EST")+" "+Translate!.getTranslation("AON_CMPLT"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_ITEM"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_QTY"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_SALES")+" "+Translate!.getTranslation("AON_ORDER"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_ORDER")+" "+Translate!.getTranslation("AON_STATUS"))
+        colHeaderVec!.addItem(Translate!.getTranslation("AON_EST")+" "+Translate!.getTranslation("AON_SHIP"))
+        woSOgridWidget!.setColumnHeaderData(colHeaderVec!)
 
 		rem Create Filters 
 		filterName$ = Translate!.getTranslation("AON_WO_STATUS")
@@ -856,7 +975,10 @@ rem ==============================================
 		filterHashMap!.put("D",Translate!.getTranslation("AON_OPEN_AND_PLANNED_WOS"))
 		filterHashMap!.put("E",Translate!.getTranslation("AON_PLANNED_AND_QUOTED_WOS"))
 		filterHashMap!.put("F",Translate!.getTranslation("AON_OPEN_AND_QUOTED_WOS"))
-		filterHashMap!.put("G",Translate!.getTranslation("AON_ALL_OPEN/PLANNED/QUOTED"))
+        filterHashMap!.put("G",Translate!.getTranslation("AON_ALL_EXCEPT_CLOSED_WOS"))
+        filterHashMap!.put("H",Translate!.getTranslation("AON_CLOSED_WOS_ONLY"))
+        filterHashMap!.put("I",Translate!.getTranslation("AON_OPEN_AND_CLOSED_WOS"))
+        filterHashMap!.put("J",Translate!.getTranslation("AON_ALL_OPEN/PLANNED/QUOTED/CLOSED"))
 
 		toolTip$ = Translate!.getTranslation("AON_SELECT_WO_STATUS")
 		dockLocation = DashboardWidget.getDOCK_LEFT()
@@ -1057,6 +1179,82 @@ rem     The inner widget gives us access to the dataset so that we can provide n
     incExpAWidget!.refresh()
 	
 	exit
+
+rem ==============================================   
+rem Handle filter select event for SATOPCST_SBR
+OnSATOPCST_SBRFilterSelect:
+rem ==============================================    
+rem The filter selection event for the Left filter on the Top Customers Over Multiple Years stacked bar graph
+rem Get the information from the filter event so we'll have our dashboard widget and the inner widget
+rem     The dashboard widget gives us access to the filters and links
+rem     The inner widget gives us access to the dataset so that we can provide new data
+
+    customEvent! = BBjAPI().getLastEvent()
+    filterSelectEvent! = customEvent!.getObject()
+    filterName$ = filterSelectEvent!.getFilterName()
+    
+    rem You can get the current filter value from the filter selection event
+    filterKey$ = filterSelectEvent!.getFilterKey()
+    filterValue$ = filterSelectEvent!.getFilterValue()
+    
+    rem Get the dashboard widget and inner widget
+    topCustsStackedBarChartDashboardWidget! = filterSelectEvent!.getDashboardWidget()
+    topCustsWidget! = topCustsStackedBarChartDashboardWidget!.getWidget()
+    
+    gosub get_masks
+    gosub get_sysinfo
+    include_type$=filterKey$
+    year$ = proc_date$(7,4)
+    num_to_list$ = "5"; rem <<============= HARDCODED =========
+
+    sql$="CALL SATOPCST_SBR ('"+firm_id$+"', '"+include_type$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"')"
+    
+    rem Clear out the old data from the inner widget
+    topCustsWidget!.clearDataSet()
+    
+    rem Refresh based on new sql
+    topCustsWidget!.setSQL(sql$)
+    topCustsWidget!.refresh()
+    
+    exit
+
+rem ==============================================   
+rem Handle filter select event for SATOPREP_SBR
+OnSATOPREP_SBRFilterSelect:
+rem ==============================================    
+rem The filter selection event for the Left filter on the Top Salesreps Over Multiple Years stacked bar graph
+rem Get the information from the filter event so we'll have our dashboard widget and the inner widget
+rem     The dashboard widget gives us access to the filters and links
+rem     The inner widget gives us access to the dataset so that we can provide new data
+
+    customEvent! = BBjAPI().getLastEvent()
+    filterSelectEvent! = customEvent!.getObject()
+    filterName$ = filterSelectEvent!.getFilterName()
+    
+    rem You can get the current filter value from the filter selection event
+    filterKey$ = filterSelectEvent!.getFilterKey()
+    filterValue$ = filterSelectEvent!.getFilterValue()
+    
+    rem Get the dashboard widget and inner widget
+    toprepSStackedBarChartDashboardWidget! = filterSelectEvent!.getDashboardWidget()
+    toprepWidget! = toprepSStackedBarChartDashboardWidget!.getWidget()
+    
+    gosub get_masks
+    gosub get_sysinfo
+    include_type$=filterKey$
+    year$ = proc_date$(7,4)
+    num_to_list$ = "5"; rem <<============= HARDCODED =========
+
+    sql$="CALL SATOPREP_SBR ('"+firm_id$+"', '"+include_type$+"', '"+year$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"')"
+    
+    rem Clear out the old data from the inner widget
+    toprepWidget!.clearDataSet()
+    
+    rem Refresh based on new sql
+    toprepWidget!.setSQL(sql$)
+    toprepWidget!.refresh()
+    
+    exit
 	
 rem ==============================================   
 rem Handle filter select event for "WOs linked to SOs" grid
@@ -1082,7 +1280,7 @@ rem     The inner widget gives us access to the dataset so that we can provide n
     rem Get the current filter values from the dashboard widget, as that way we have access to all of them
     filterLeft! = woSOGridDashboardWidget!.getDashboardWidgetFilterLeft()
 	woSOWidgetFilterCompareKey$ = filterLeft!.getKey()
-	wo_include_type$=woSOWidgetFilterCompareKey$;rem A-G
+	wo_include_type$=woSOWidgetFilterCompareKey$;rem A-J
 	
 	filterRight! = woSOGridDashboardWidget!.getDashboardWidgetFilterRight()
 	woSOWidgetFilterCompareKey$ = filterRight!.getKey();rem A-G
@@ -1100,34 +1298,95 @@ rem     The inner widget gives us access to the dataset so that we can provide n
 	
 	exit
 
-rem ==============================================   
-rem Handle filter select event for AR Drilldown Jasper widget
-OnSLSBYCST_JASFilterSelect:
-rem ==============================================    
-rem The filter selection event for the filters on the AR Drilldown Jasper widget
-rem Get the information from the filter event so we'll have our dashboard widget and the inner widget
-rem     The dashboard widget gives us access to the filters and links
-rem     The inner widget gives us access to the dataset so that we can provide new data
+    
+rem ==================================================================
+rem ===                      CLICK EVENTS                                 ===
+rem ==================================================================
 
-    customEvent! = BBjAPI().getLastEvent()
-    filterSelectEvent! = customEvent!.getObject()
-    filterName$ = filterSelectEvent!.getFilterName()
+REM =============================================   
+REM Handle the click event for the AR Company Aging Totals Bar Chart
+REM ============================================= 
+OnARLastAgingTotalsChartWidgetClick:
     
-    salesJasperViewerDashboardWidget! = filterSelectEvent!.getDashboardWidget()
-    salesJasperViewerWidget! = salesJasperViewerDashboardWidget!.getWidget()
-    report! = salesJasperViewerWidget!.getReport()
+    declare DashboardWidgetClickEvent   dbWidgetClickEvent!
+    declare DashboardWidget             dbWidget!
+    declare BBjMouseUpEvent             click!
+    declare BBjVector                   data!
     
-    filterLeft! = salesJasperViewerDashboardWidget!.getDashboardWidgetFilterLeft()
-    month$ = filterLeft!.getKey()
-    report!.putParam("MONTH",month$)
+    rem Get the event and the object payload
+    event! = BBjAPI().getLastEvent()
+    dbWidgetClickEvent! = cast(DashboardWidgetClickEvent, event!.getObject())
     
-    filterRight! = salesJasperViewerDashboardWidget!.getDashboardWidgetFilterRight()
-    year$ = filterRight!.getKey()
-    report!.putParam("YEAR",year$)
-    
-    salesJasperViewerWidget!.refresh()
-    
-    exit
+    rem From the custom event we can get the dashboard widget and the click event
+    dbWidget! = cast(DashboardWidget, dbWidgetClickEvent!.getDashboardWidget())
+    click! = cast(BBjMouseUpEvent, dbWidgetClickEvent!.getBBjMouseUpEvent()) 
+
+    rem Get the chart widget and some of the widget properties
+    widget! = dbWidget!.getWidget()
+    widgetName$ = dbWidget!.getName()
+    widgetTitle$ = dbWidget!.getTitle()
+
+    rem Get information about the click event
+    button = click!.getMouseButton()
+    x = click!.getX()
+    y = click!.getY()  
+                    
+    gosub get_sysinfo
+    gosub get_masks
+    gosub get_translate_object
+
+    dim chartState$:"CHART_TYPE:C(25*)"
+    chartState$ = widget!.getUserData()
+
+    rem For a Left click, drilldown
+    if (button = 1) then
+        dataItem! = cast(CategoryDataItem, widget!.getChartDataItemFromPoint(x, y))
+
+        if (dataItem! <> null()) then
+        
+            rem Get the data from the chart
+            rowKey$ = dataItem!.getRowKey()
+            colKey$ = dataItem!.getColKey()
+           
+            rem Build an SQL query to return customers with largest aging for selected aging period
+            aging_period$=pad(colKey$,10)
+            num_to_list$ = "5"; rem <<============= HARDCODED =========
+            sql$ = "CALL ARAGING_BAR ('"+firm_id$+"', '"+aging_period$+"', '"+num_to_list$+"', '"+masks$+"', '"+barista_wd$+"')"
+
+            rem Create an embedded bar chart widget with the agings for the customers
+            name$ = "ARAGING_BAR"
+            title$ = Translate!.getTranslation("AON_AR_LARGEST_AGING_CUSTOMERS")
+            previewText$=Translate!.getTranslation("AON_AR_LARGEST_LAST_AGING_CUSTOMERS")
+            chartTitle$ = ""
+            domainTitle$ = ""
+            rangeTitle$ = ""
+            flat=0 
+            orientation=BarChartWidget.getORIENTATION_VERTICAL() 
+            legend=1
+            connectString$ = widget!.getConnectString()
+                
+            embeddedBarChartWidget! = EmbeddedWidgetFactory.createBarChartEmbeddedWidget(name$,title$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend,connectString$,sql$)
+
+            agingWidget!=embeddedBarChartWidget!.getWidget()
+            agingWidget!.setFontScalingFactor(0.45)
+            agingWidget!.setChartRangeAxisToCurrency()
+            agingWidget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_DOWN_45())
+
+            rem Create an embedded widget window to display the grid in
+            embeddedWidgetWindow! = new EmbeddedWidgetWindow(embeddedBarChartWidget!, 500, 400)
+            embeddedWidgetWindow!.setTitle("WidgetWindow")
+            embeddedWidgetWindow!.doModal()
+            embeddedWidgetWindow!.destroy()
+            widget!.OnClearTip(null())
+            sql$ = ""
+        else
+            rem They clicked on the chart, but not on a data entity so we'll show an instructional tip
+            msg$=Translate!.getTranslation("AON_WIDGET_LEFT_CLICK_ARAGING")
+            widget!.showTip(msg$)
+        endif   
+    endif
+   
+exit
 
 REM =============================================   
 REM Handle the click event for the Income Compare Bar Chart
@@ -1176,9 +1435,9 @@ OnIncCmpBarChartWidgetClick:
      endif
 
     rem For a Left click, drilldown
-    if (button = 1) then 
-	    dataItem! = cast(CategoryDataItem, widget!.getChartDataItemFromPoint(x, y))
-	
+    if (button = 1) then
+        dataItem! = cast(CategoryDataItem, widget!.getChartDataItemFromPoint(x, y))
+
 	    if (dataItem! <> null()) then
 	    
     		rem Get the data from the chart
@@ -1238,7 +1497,7 @@ OnIncCmpBarChartWidgetClick:
 			    files=1,begfile=1,endfile=files
 			    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
 			    files$[1]="glm-01",ids$[1]="GLM_ACCT"
-			    call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+			    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
 			    if !status then
 			        glm01a_dev=channels[1]
 			        dim glm01a$:templates$[1]
@@ -1291,6 +1550,242 @@ OnIncCmpBarChartWidgetClick:
    
 exit
 
+REM =============================================   
+REM Handle the click event for the YTD Expense Breakdown charts
+REM ============================================= 
+YTDExpenseBreakdownChartWidgetClick:
+
+    declare DashboardWidgetClickEvent   dbWidgetClickEvent!
+    declare DashboardWidget             dbWidget!
+    declare BBjMouseUpEvent             click!
+
+    rem Get the event and the object payload
+    event! = BBjAPI().getLastEvent()
+    dbWidgetClickEvent! = cast(DashboardWidgetClickEvent, event!.getObject())
+    
+    rem From the custom event we can get the dashboard widget and the click event
+    dbWidget! = cast(DashboardWidget, dbWidgetClickEvent!.getDashboardWidget())
+    click! = cast(BBjMouseUpEvent, dbWidgetClickEvent!.getBBjMouseUpEvent()) 
+
+    rem Get the chart widget and some of the widget properties
+    widget! = dbWidget!.getWidget()
+    widgetName$ = dbWidget!.getName()
+    widgetTitle$ = dbWidget!.getTitle()
+
+    rem Get information about the click event
+    button = click!.getMouseButton()
+    x = click!.getX()
+    y = click!.getY()  
+
+    dim chartState$:"CHART_TYPE:C(25*)"
+    chartState$ = widget!.getUserData()
+
+    rem For a Left click, drilldown
+    if (button = 1) then 
+        dataItem! = cast(KeyedValueDataItem, widget!.getChartDataItemFromPoint(x, y))
+        if (dataItem! <> null()) then
+            rem Convert the sales value to a currency for the locale
+            currency! = java.text.NumberFormat.getCurrencyInstance()
+            value$ = str(currency!.format(dataItem!.getValue()))
+
+            rem --- Show custom tip
+            gosub get_masks 
+            msg$=cvs(dataItem!.getKey(),3)+" = "+value$
+            widget!.showTip(msg$)
+        endif   
+    endif
+   
+exit
+
+REM =============================================   
+REM Handle the click event for the Bank Account Balances charts
+REM ============================================= 
+BankAccountBalancesChartWidgetClick:
+
+    declare DashboardWidgetClickEvent   dbWidgetClickEvent!
+    declare DashboardWidget             dbWidget!
+    declare BBjMouseUpEvent             click!
+
+    rem Get the event and the object payload
+    event! = BBjAPI().getLastEvent()
+    dbWidgetClickEvent! = cast(DashboardWidgetClickEvent, event!.getObject())
+    
+    rem From the custom event we can get the dashboard widget and the click event
+    dbWidget! = cast(DashboardWidget, dbWidgetClickEvent!.getDashboardWidget())
+    click! = cast(BBjMouseUpEvent, dbWidgetClickEvent!.getBBjMouseUpEvent()) 
+
+    rem Get the chart widget and some of the widget properties
+    widget! = dbWidget!.getWidget()
+    widgetName$ = dbWidget!.getName()
+    widgetTitle$ = dbWidget!.getTitle()
+
+    rem Get information about the click event
+    button = click!.getMouseButton()
+    x = click!.getX()
+    y = click!.getY()  
+
+    dim chartState$:"CHART_TYPE:C(25*)"
+    chartState$ = widget!.getUserData()
+
+    rem For a Left click, drilldown
+    if (button = 1) then 
+        if pos("BankAccountBalances_bar"=chartState.chart_type$)=1 then
+            dataItem! = cast(CategoryDataItem, widget!.getChartDataItemFromPoint(x, y))
+        endif
+        if pos("BankAccountBalances_ring"=chartState.chart_type$)=1 then
+            dataItem! = cast(KeyedValueDataItem, widget!.getChartDataItemFromPoint(x, y))
+        endif
+        
+        gosub get_sysinfo
+        gosub get_translate_object
+    
+        if (dataItem! <> null()) then
+       
+            rem Get the data from the chart
+            if pos("BankAccountBalances_bar"=chartState.chart_type$)=1 then
+                gl_account$ = dataItem!.getColKey()
+            endif
+            if pos("BankAccountBalances_ring"=chartState.chart_type$)=1 then
+                gl_account$ = dataItem!.getKey()
+            endif
+
+            rem --- Remove non-numeric characters from GL account
+            tmp$=""
+            for i=1 to len(gl_account$)
+                tmp$=tmp$+str(num(gl_account$(i,1),err=*continue))
+            next i
+            gl_account$=tmp$
+            
+            rem --- Pad GL account to full element type size
+            account_desc$=""
+            files=1,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="glm-01",ids$[1]="GLM_ACCT"
+            call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+            if !status then
+                dim glm01a$:templates$[1]
+                wk$=fattr(glm01a$,"gl_account")
+                gl_accnt_size=dec(wk$(10,2))
+            else
+                gl_accnt_size=10
+            endif
+            gl_account$=pad(gl_account$,gl_accnt_size,"0")               
+
+            rem --- Launch Account Summary Activity form for this GL account
+            rdNSAdmin! = BBjAPI().getNamespace("adminobjects", "barista", 1)
+            rdAdmin! = rdNSAdmin!.getValue("+bar_admin_" + cvs(stbl("+USER_ID"), 11))
+            query_user$=rdAdmin!.getUser()
+            query_pass$=rdAdmin!.getPassword()
+            
+            myConfig! = BBjAPI().getConfig().getCurrentCommandLineObject()
+            myConfig!.setProgramName(stbl("+DIR_SYP")+"bax_launch_task.bbj")
+            key_prefix$=firm_id$+gl_account$
+            myConfig!.setProgramArgs("-yT"+" -u"+query_user$+" -p"+query_pass$+" -tGLM_ACCTSUMHDR"+" -k"+key_prefix$)
+            
+            tmp=BBjAPI().newBBjSession(myConfig!)
+        else
+            rem They clicked on the chart, but not on a data entity so we'll show an instructional tip
+            msg$=Translate!.getTranslation("AON_WIDGET_LEFT_CLICK_GLBNKBAL")
+            widget!.showTip(msg$)
+        endif   
+    endif
+   
+exit
+
+REM =============================================   
+REM Handle the click event for the Top Salesreps YTD charts
+REM ============================================= 
+OnTopSalesrepsYTDChartWidgetClick:
+
+    declare DashboardWidgetClickEvent   dbWidgetClickEvent!
+    declare DashboardWidget             dbWidget!
+    declare BBjMouseUpEvent             click!
+
+    rem Get the event and the object payload
+    event! = BBjAPI().getLastEvent()
+    dbWidgetClickEvent! = cast(DashboardWidgetClickEvent, event!.getObject())
+    
+    rem From the custom event we can get the dashboard widget and the click event
+    dbWidget! = cast(DashboardWidget, dbWidgetClickEvent!.getDashboardWidget())
+    click! = cast(BBjMouseUpEvent, dbWidgetClickEvent!.getBBjMouseUpEvent()) 
+
+    rem Get the chart widget and some of the widget properties
+    widget! = dbWidget!.getWidget()
+    widgetName$ = dbWidget!.getName()
+    widgetTitle$ = dbWidget!.getTitle()
+
+    rem Get information about the click event
+    button = click!.getMouseButton()
+    x = click!.getX()
+    y = click!.getY()  
+
+    dim chartState$:"CHART_TYPE:C(25*)"
+    chartState$ = widget!.getUserData()
+
+    rem For a Left click, drilldown
+    if (button = 1) then 
+        if pos("TopSalesrepsYTD_bar"=chartState.chart_type$)=1 then
+            dataItem! = cast(CategoryDataItem, widget!.getChartDataItemFromPoint(x, y))
+        endif
+        if pos("TopSalesrepsYTD_pie"=chartState.chart_type$)=1 then
+            dataItem! = cast(KeyedValueDataItem, widget!.getChartDataItemFromPoint(x, y))
+        endif
+        
+        gosub get_sysinfo
+        gosub get_translate_object
+    
+        if (dataItem! <> null()) then
+
+            rem Get the data from the chart
+            if pos("TopSalesrepsYTD_bar"=chartState.chart_type$)=1 then
+                slspsn_desc$ = dataItem!.getColKey()
+            endif
+            if pos("TopSalesrepsYTD_pie"=chartState.chart_type$)=1 then
+                slspsn_desc$ = dataItem!.getKey()
+            endif
+                
+            rem --- Setup SPROC
+            gosub get_masks
+            year$=proc_date$(7,4)
+            unspecified_prod_type$ = Translate!.getTranslation("AON_UNSPECIFIED")
+            sql$ = "CALL SATOPREPPROD_GRD ('"+firm_id$+"', '"+year$+"', '"+slspsn_desc$+"', '"+masks$+"', '"+barista_wd$+"', '"+unspecified_prod_type$+"')"
+                                                
+            rem Create an embedded grid widget with the product type sales for the salesperson
+            name$ = "SATOPREPPROD_GRD"
+            title$ = cvs(slspsn_desc$,2)+" "+Translate!.getTranslation("AON_SALES")+" "+
+:           Translate!.getTranslation("AON_BY_PRODUCT")+" "+Translate!.getTranslation("AON_TYPE")
+            connectString$ = widget!.getConnectString()
+                
+            embeddedDBWidget! = EmbeddedWidgetFactory.createGridEmbeddedWidget(name$, title$, connectString$, sql$)
+ 
+            rem Setup the grid's columns
+            embeddedWidget! = embeddedDBWidget!.getWidget()
+            embeddedWidget!.setColumnWidthPercentages("50,25,25")
+            embeddedWidget!.setColumnAlignment(0,GridWidget.getHORIZONTAL_ALIGNMENT_LEFT())
+            embeddedWidget!.setColumnAlignment(1,GridWidget.getHORIZONTAL_ALIGNMENT_RIGHT())
+            embeddedWidget!.setColumnAlignment(2,GridWidget.getHORIZONTAL_ALIGNMENT_RIGHT())
+            colHeaderVec!=BBjAPI().makeVector()
+            colHeaderVec!.addItem(Translate!.getTranslation("AON_PRODUCT_TYPE"))
+            colHeaderVec!.addItem(Translate!.getTranslation("AON_YTD_SALES"))
+            colHeaderVec!.addItem(Translate!.getTranslation("AON_PRIOR_YEAR")+" "+Translate!.getTranslation("AON_SALES"))
+            embeddedWidget!.setColumnHeaderData(colHeaderVec!)
+
+            rem Create an embedded widget window to display the grid in
+            embeddedWidgetWindow! = new EmbeddedWidgetWindow(embeddedDBWidget!, 400, 250)
+            embeddedWidgetWindow!.setTitle("WidgetWindow")
+            embeddedWidgetWindow!.doModal()
+            embeddedWidgetWindow!.destroy()
+            widget!.OnClearTip(null())
+            sql$ = ""
+        else
+            rem They clicked on the chart, but not on a data entity so we'll show an instructional tip
+            msg$=Translate!.getTranslation("AON_WIDGET_SATOPREPPROD_GRD_LEFT_CLICK")
+            widget!.showTip(msg$)
+        endif   
+    endif
+   
+exit
+
 	
 rem ==================================================================
 rem ===                      LINKS                                 ===
@@ -1323,6 +1818,35 @@ rem ==============================================
 rem ==================================================================
 rem ===                     JASPER                                 ===
 rem ==================================================================
+
+rem ==============================================   
+rem Handle filter select event for AR Drilldown Jasper widget
+OnSLSBYCST_JASFilterSelect:
+rem ==============================================    
+rem The filter selection event for the filters on the AR Drilldown Jasper widget
+rem Get the information from the filter event so we'll have our dashboard widget and the inner widget
+rem     The dashboard widget gives us access to the filters and links
+rem     The inner widget gives us access to the dataset so that we can provide new data
+
+    customEvent! = BBjAPI().getLastEvent()
+    filterSelectEvent! = customEvent!.getObject()
+    filterName$ = filterSelectEvent!.getFilterName()
+    
+    salesJasperViewerDashboardWidget! = filterSelectEvent!.getDashboardWidget()
+    salesJasperViewerWidget! = salesJasperViewerDashboardWidget!.getWidget()
+    report! = salesJasperViewerWidget!.getReport()
+    
+    filterLeft! = salesJasperViewerDashboardWidget!.getDashboardWidgetFilterLeft()
+    month$ = filterLeft!.getKey()
+    report!.putParam("MONTH",month$)
+    
+    filterRight! = salesJasperViewerDashboardWidget!.getDashboardWidgetFilterRight()
+    year$ = filterRight!.getKey()
+    report!.putParam("YEAR",year$)
+    
+    salesJasperViewerWidget!.refresh()
+    
+    exit
 
 rem ==============================================    
 OnSLSBYCST_JASFileSave:
@@ -1413,7 +1937,7 @@ rem ==============================================
 init_prog_meter:
 rem ============================================== 
 
-	num_recs=5;rem current count of widgets being built
+	num_recs=16;rem current count of widgets being built
 	progress! = bbjAPI().getGroupNamespace()
 	progress!.setValue("+process_task",task_id$+"^C^"+sysinfo.task_desc$+"^CNC^"+str(num_recs)+"^")
 	curr_rec=0
@@ -1656,6 +2180,23 @@ std_error: rem --- Standard error handler (18Nov2014)
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 
     release
+    
+rem --- Functions
+
+    def fngetmask$(q1$,q2$,q3$)
+        rem --- q1$=mask name, q2$=default mask if not found in mask string, q3$=mask string from parameters
+        q$=q2$
+        if len(q1$)=0 return q$
+        if q1$(len(q1$),1)<>"^" q1$=q1$+"^"
+        q=pos(q1$=q3$)
+        if q=0 return q$
+        q$=q3$(q)
+        q=pos("^"=q$)
+        q$=q$(q+1)
+        q=pos("|"=q$)
+        q$=q$(1,q-1)
+        return q$
+    fnend
 
 rem ==============================================
 std_exit: rem --- Standard program end

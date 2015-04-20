@@ -319,13 +319,18 @@ rem --- Main Read
         order_no$ = str( orderNos!.getItem(next_item) )
 
         extract record (ope01_dev, key=firm_id$+"  "+cust_id$+order_no$, dom=*continue) ope01a$; rem Advisory Locking
+        ope01_trip$=firm_id$+"E"+"  "+cust_id$+order_no$
+        read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
+        ope01_key$=key(ope01_dev,end=*continue)
+        if pos(ope01_trip$=ope01_key$)<>1 then continue
+        extract record (ope01_dev, key=ope01_key$, dom=*continue) ope01a$; rem Advisory Locking
 
         if ope01a.cash_sale$ = "Y" then
             arm10c.code_desc$  = "Invalid Receipt Code"
             arm10c.trans_type$ = "C"
 
             if ope41_dev then
-                find record (ope41_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$, dom=*endif, err=*endif) ope41a$; rem z0$, z1$
+                find record (ope41_dev, key=firm_id$+"E"+"  "+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_in_no$,knum="AO_STATUS", dom=*endif, err=*endif) ope41a$; rem z0$, z1$
                 find record (arm10c_dev, key=firm_id$+"C"+ope41a.cash_rec_cd$, dom=*next) arm10c$; rem y7$, y9$                
             endif
         endif
@@ -403,11 +408,10 @@ rem --- Main Read
             shipto$ = ""
 
             if start_block then
-                find record (ope31_dev, key=firm_id$+ope01a.customer_id$+ope01a.order_no$, dom=*endif) ope31!
+                find record (ope31_dev, key=firm_id$+"E"+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif) ope31!
                 c$ = func.formatAddress(ope31!, address, 7)
             endif
             
-            read (ope01_dev, key=firm_id$+"  "+ope01a.customer_id$+ope01a.order_no$, dom=*next)
         else
             if ope01a.shipto_type$ = "S" then
                 shipto$ = ""
@@ -458,6 +462,7 @@ rem --- Main Read
             if ope01a.firm_id$     <> ope11a.firm_id$     then break
             if ope01a.customer_id$ <> ope11a.customer_id$ then break
             if ope01a.order_no$    <> ope11a.order_no$    then break
+            if opt01a.trans_status$<>"E" then continue
 
         rem --- Type
 
@@ -494,7 +499,7 @@ rem --- Main Read
         rem --- Yes, Lot / Serial inits
 
             total_ls = 0
-            read (ope21_dev, key=firm_id$+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.internal_seq_no$, dom=*next)
+            read (ope21_dev, key=firm_id$+"E"+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+ope11a.internal_seq_no$, knum="AO_STATUS", dom=*next)
             
         rem --- Lot / Serial loop
 
@@ -537,6 +542,9 @@ rem --- Main Read
         
         if type = batch_inv then
             ope01a.print_status$ = "B"
+            ope01a.mod_user$=sysinfo.user_id$
+            ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope01a.mod_time$=date(0:"%Hz%mz")
             ope01a$ = field(ope01a$)
             write record (ope01_dev) ope01a$
         endif
@@ -591,21 +599,26 @@ rem --- Updates and final processing
             if status = 999 then exitto std_exit
 
             if start_block then
-                extract record (ope01_dev,key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
-                if ope01a.print_status$="B" then gosub order_update
+                ope01_trip$=firm_id$+"E"+"  "+ope04a.customer_id$+ope04a.order_no$
+                read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
+                ope01_key$=key(ope01_dev,end=*continue)
+                if pos(ope01_trip$=ope01_key$)=1 then
+                    extract record (ope01_dev,key=ope01_key$, dom=*endif) ope01a$
+                    if ope01a.print_status$="B" then gosub order_update
+                endif
             endif
         wend
     endif
     
     if type = historical then
-        read (ope01_dev, key=firm_id$+"  "+ope01a.customer_id$, dom=*next)
+        rem read (ope01_dev, key=firm_id$+"  "+ope01a.customer_id$, dom=*next)
         read record (arm01_dev,key=firm_id$+ope01a.customer_id$) arm01a1$
         read record (arm02_dev,key=firm_id$+ope01a.customer_id$+"  ") arm02a$
     endif    
 
 all_done: rem --- Exit
 
-    read(ope01_dev,end=*next); rem release extract
+    read(ope01_dev,knum="AO_STATUS",end=*next); rem release extract, and reset knum in case on-demand printing
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
     goto std_exit
@@ -642,6 +655,9 @@ order_update: rem --- Update order's status
 
     ope01a.print_status$ = "Y"
     ope01a.lock_status$  = "N"
+    ope01a.mod_user$=sysinfo.user_id$
+    ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+    ope01a.mod_time$=date(0:"%Hz%mz")
     ope01a$ = field(ope01a$)
     write record (ope01_dev) ope01a$
     if type = on_demand then callpoint!.setStatus("SETORIG")

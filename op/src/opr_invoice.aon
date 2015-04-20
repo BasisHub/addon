@@ -51,7 +51,7 @@ rem --- Open File(s)
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1] = "OPE_PRNTLIST", open_opts$[1] = "OTA"
-    open_tables$[2] = "OPE_ORDHDR",   open_opts$[2] = "OTA"
+    open_tables$[2] = "OPE_ORDHDR",   open_opts$[2] = "OTA[1]"
     
     gosub open_tables
     
@@ -93,11 +93,18 @@ rem --- Check to see if record is in use in Invoice Entry
 			continue
 		endif
 
-        if start_block then
-            bad_record = 1
-            extract record (ope01_dev, key=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*endif) ope01a$
+        bad_record = 1
+        ope01_trip$=firm_id$+"  "+ope04a.customer_id$+ope04a.order_no$
+        read(ope01_dev,key=ope01_trip$,knum="PRIMARY",dom=*next)
+        while 1
+            ope01_key$=key(ope01_dev,end=*break)
+            if pos(ope01_trip$=ope01_key$)<>1 then break
+            extract record (ope01_dev, key=ope01_key$) ope01a$
+            rem --- trans_status$="R" if sales register/update crashed 
+            if pos(ope01a.trans_status$="ER")=0 then read(ope01_dev); continue
             bad_record = 0
-        endif
+            break
+        wend
 
         if bad_record then
             remove (ope04_dev, key=firm_id$+"I"+"  "+ope04a.customer_id$+ope04a.order_no$, dom=*next)
@@ -109,7 +116,12 @@ rem --- Check to see if record is in use in Invoice Entry
         if ope01a.ordinv_flag$ = "I" then
             if ope01a.print_status$ = "Y" then continue
             if ope01a.print_status$<>"B" and ope01a.lock_status$="Y" then continue
+            rem --- trans_status$="R" if sales register/update crashed 
+            if ope01a.trans_status$="R" then continue
             ope01a.lock_status$ = "Y"
+            ope01a.mod_user$=sysinfo.user_id$
+            ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+            ope01a.mod_time$=date(0:"%Hz%mz")
             ope01a$ = field(ope01a$)
             write record (ope01_dev) ope01a$
         else

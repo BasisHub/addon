@@ -605,23 +605,21 @@ method_error:rem --- Method error trap/handler
             dim itemmast_rec$:#itemMastTmpl$
 
         rem --- Store old key information so it can be reset when done here.
-        rem --- Need to use PRIMARY key to read thru ope_orddet/ope_invdet to avoid possible infinite loop
-        rem --- if/when line sequence numbers are duplicated, re Barista bug 5949. 
 		
-            BBjFileSystem!=BBjAPI().getFileSystem();rem 5949
-            saved_key_name$=BBjFileSystem!.getFileInfo(#ordDetailDev%).getCurrentKeyName(); rem 5949
-            saved_key$="ZZ"; rem 5949, init key to EOF
-            saved_key$=key(#ordDetailDev%, end=*next); rem 5949
+            BBjFileSystem!=BBjAPI().getFileSystem()
+            saved_key_name$=BBjFileSystem!.getFileInfo(#ordDetailDev%).getCurrentKeyName()
+            saved_key$="ZZ"
+            saved_key$=key(#ordDetailDev%, end=*next)
 
         rem --- Begin loop
 
-            read (#ordDetailDev%, key=#firm_id$+"  "+p_cust_id$+p_order_no$, knum="PRIMARY", dom=*next);rem 5949 - added knum="PRIMARY"
+            trip_key$=#firm_id$+"E"+"  "+p_cust_id$+p_order_no$
+            read (#ordDetailDev%, key=trip_key$, knum="AO_STATUS", dom=*next)
 
             while more
-                extract record (#ordDetailDev%, end=*break) orddet_rec$; rem Advisory Locking
-                if orddet_rec.firm_id$     <> #firm_id$ then break
-                if orddet_rec.customer_id$ <> p_cust_id$ then break
-                if orddet_rec.order_no$    <> p_order_no$ then break
+                this_key$=key(#ordDetailDev%,end=*break)
+                if pos(trip_key$=this_key$)<>1 then break
+                extract record (#ordDetailDev%) orddet_rec$; rem Advisory Locking
 
                 rem --- Get Line Code from lineCodeMap! if it exists, otherwise add it to lineCodeMap!
                 found = 0
@@ -698,10 +696,8 @@ method_error:rem --- Method error trap/handler
             #extCost  = ext_cost 
 			
 		rem --- Reset original key sequence.
-        rem --- Need to use PRIMARY key to read thru ope_orddet/ope_invdet to avoid possible infinite loop
-        rem --- if/when line sequence numbers are duplicated, re Barista bug 5949. 
 		
-			read (#ordDetailDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next);rem 5949
+			read (#ordDetailDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next)
             methodret
             
 method_error:rem --- Method error trap/handler
@@ -715,8 +711,6 @@ method_error:rem --- Method error trap/handler
         methodend
 
     rem --- Order totals from disk records
-    rem --- Note: totalSalesDisk() does not extract the header record before updating the detail records.
-    rem --- NOte: That is the responsibility of the code using totalSalesDisk().
         method public void totalSalesDisk(BBjString p_cust_id$, BBjString p_order_no$)
             seterr method_error
 
@@ -735,13 +729,26 @@ method_error:rem --- Method error trap/handler
                     #ordHeaderTmpl$ = util.getTmpl("@"+data_name$,err=*endif)
                 endif
 
+                rem --- Store old key information so it can be reset when done here.
+                BBjFileSystem!=BBjAPI().getFileSystem()
+                saved_key_name$=BBjFileSystem!.getFileInfo(#ordHeaderDev%).getCurrentKeyName()
+                saved_key$="ZZ"
+                saved_key$=key(#ordHeaderDev%, end=*next)
+                
                 dim ordhdr_rec$:#ordHeaderTmpl$
                 found = 0
-
-                if #START_BLOCK then
-                    find record (#ordHeaderDev%, key=#firm_id$+"  "+p_cust_id$+p_order_no$, dom=*endif) ordhdr_rec$
+                trip_key$=#firm_id$+"E"+"  "+p_cust_id$+p_order_no$
+                read(#ordHeaderDev%,key=trip_key$,knum="AO_STATUS",dom=*next)
+                while 1
+                    this_key$=key(#ordHeaderDev%,end=*break)
+                    if pos(trip_key$=this_key$)<>1 then break
+                    find record (#ordHeaderDev%, key=this_key$) ordhdr_rec$
                     found = 1
-                endif
+                    break
+                wend
+            
+                rem --- Reset original key sequence.
+                read (#ordHeaderDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next)
 
                 if found then
                     #totalSalesDisk(p_cust_id$, p_order_no$, ordhdr_rec.invoice_type$)
@@ -809,17 +816,30 @@ method_error:rem --- Method error trap/handler
             more = 1
             dim ordlsdet_rec$:#lotSerialTmpl$
 
-            read (#lotSerialDev%, key=#firm_id$+"  "+p_cust_id$+p_order_no$+p_seq_no$, dom=*next)
+            rem --- Store old key information so it can be reset when done here.
+            BBjFileSystem!=BBjAPI().getFileSystem()
+            saved_key_name$=BBjFileSystem!.getFileInfo(#lotSerialDev%).getCurrentKeyName()
+            saved_key$="ZZ"
+            saved_key$=key(#lotSerialDev%, end=*next)
 
-            while more
-                read record (#lotSerialDev%, end=*break) ordlsdet_rec$
-                if ordlsdet_rec.firm_id$        <> #firm_id$   then break
-                if ordlsdet_rec.customer_id$    <> p_cust_id$  then break
-                if ordlsdet_rec.order_no$       <> p_order_no$ then break
-                if ordlsdet_rec.orddet_seq_ref$ <> p_seq_no$   then break
-
-                ttl_lot_serial = ttl_lot_serial + ordlsdet_rec.qty_ordered
-            wend
+            this_key1$=""
+            trip_key1$=#firm_id$+"E"+"  "+p_cust_id$+p_order_no$
+            read(#lotSerialDev%,key=trip_key1$,knum="AO_STATUS",dom=*next)
+            this_key1$=key(#lotSerialDev%,end=*next)
+            if pos(trip_key1$=this_key1$)=1 then
+                readrecord(#lotSerialDev%)ordlsdet_rec$
+                trip_key2$=trip_key1$+ordlsdet_rec.ar_inv_no$+p_seq_no$
+                read(#lotSerialDev%,key=trip_key2$,dom=*next)
+                while 1
+                    this_key2$=key(#lotSerialDev%,end=*next)
+                    if pos(trip_key2$=this_key2$)<>1 then break
+                    read record (#lotSerialDev%, end=*break) ordlsdet_rec$
+                    ttl_lot_serial = ttl_lot_serial + ordlsdet_rec.qty_ordered
+                wend
+            endif
+             
+            rem --- Reset original key sequence.
+            read (#lotSerialDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next)
 
             methodret ttl_lot_serial
             
@@ -1137,10 +1157,26 @@ method_error:rem --- Method error trap/handler
                     #ordHeaderTmpl$ = util.getTmpl("@"+data_name$,err=*endif)
                 endif
 
+                rem --- Store old key information so it can be reset when done here.
+                BBjFileSystem!=BBjAPI().getFileSystem()
+                saved_key_name$=BBjFileSystem!.getFileInfo(#ordHeaderDev%).getCurrentKeyName()
+                saved_key$="ZZ"
+                saved_key$=key(#ordHeaderDev%, end=*next)
+                
                 rem --- get current total sales amount
                 dim ord_head_rec$:#ordHeaderTmpl$
-                find record (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$+#Order_no$, dom=*endif) ord_head_rec$
-                orderTotalSales = ord_head_rec.total_sales 
+                trip_key$=#firm_id$+"E"+"  "+#Cust_id$+#Order_no$
+                read(#ordHeaderDev%,key=trip_key$,knum="AO_STATUS",dom=*next)
+                while 1
+                    this_key$=key(#ordHeaderDev%,end=*break)
+                    if pos(trip_key$=this_key$)<>1 then break
+                    find record (#ordHeaderDev%, key=this_key$)ord_head_rec$
+                    break
+                wend
+                    orderTotalSales = ord_head_rec.total_sales 
+            
+                rem --- Reset original key sequence.
+                read (#ordHeaderDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next)
             endif
 
             methodret orderTotalSales
@@ -1188,9 +1224,25 @@ method_error:rem --- Method error trap/handler
                     #termsCodeTmpl$ = util.getTmpl(data_name$)
                 endif
 
+                rem --- Store old key information so it can be reset when done here.
+                BBjFileSystem!=BBjAPI().getFileSystem()
+                saved_key_name$=BBjFileSystem!.getFileInfo(#ordHeaderDev%).getCurrentKeyName()
+                saved_key$="ZZ"
+                saved_key$=key(#ordHeaderDev%, end=*next)
+                
                 rem --- get order's terms code
                 dim ord_head_rec$:#ordHeaderTmpl$
-                find record (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$+#Order_no$, dom=*endif) ord_head_rec$
+                trip_key$=#firm_id$+"E"+"  "+#Cust_id$+#Order_no$
+                read(#ordHeaderDev%,key=trip_key$,knum="AO_STATUS",dom=*next)
+                while 1
+                    this_key$=key(#ordHeaderDev%,end=*break)
+                    if pos(trip_key$=this_key$)<>1 then break
+                    find record (#ordHeaderDev%, key=this_key$)ord_head_rec$
+                    break
+                wend
+            
+                rem --- Reset original key sequence.
+                read (#ordHeaderDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next)
 
                 rem --- get Credit Hold flag from terms code's record
                 dim terms_code_rec$:#termsCodeTmpl$
@@ -1369,6 +1421,7 @@ method_error:rem --- Method error trap/handler
         rem  */
         method public void totalOpenOrders()
             seterr method_error
+                
             rem --- for performance reasons, skip if open orders previously summed
             if #OverCreditLimit% = -1 or #ALWAYS_TOTAL_OPEN_ORDERS% then
                 #OpenOrderAmount = 0
@@ -1387,11 +1440,20 @@ method_error:rem --- Method error trap/handler
                     #ordHeaderTmpl$ = util.getTmpl("@"+data_name$,err=*endif)
                 endif
 
+                rem --- Store old key information so it can be reset when done here.
+                BBjFileSystem!=BBjAPI().getFileSystem()
+                saved_key_name$=BBjFileSystem!.getFileInfo(#ordHeaderDev%).getCurrentKeyName()
+                saved_key$="ZZ"
+                saved_key$=key(#ordHeaderDev%, end=*next)
+
                 rem --- total current open orders
                 dim ord_head_rec$:#ordHeaderTmpl$
-                read (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$, dom=*next)
+                trip_key$=#firm_id$+"E"+"  "+#Cust_id$
+                read (#ordHeaderDev%, key=trip_key$, knum="AO_STATUS", dom=*next)
                 while 1
-                    read record (#ordHeaderDev%, end=*break) ord_head_rec$
+                    this_key$=key(#ordHeaderDev%,end=*break)
+                    if pos(trip_key$=this_key$)<>1 then break
+                    read record (#ordHeaderDev%) ord_head_rec$
                     if ord_head_rec.firm_id$ <> #firm_id$ or ord_head_rec.customer_id$ <> #Cust_id$ then
                         break
                     endif
@@ -1409,10 +1471,10 @@ method_error:rem --- Method error trap/handler
                     endif
                 wend
             endif
-
-            rem --- reposition OPE_ORDHDR to this order 
-            if #Order_no$ <> "" then
-                read (#ordHeaderDev%, key=#firm_id$+"  "+#Cust_id$+#Order_no$, dom=*endif)
+            
+            rem --- Reset original key sequence.
+            if saved_key_name$<>"" then
+                read (#ordHeaderDev%,knum=saved_key_name$, key=saved_key$, dir=0, dom=*next)
             endif
             methodret
             

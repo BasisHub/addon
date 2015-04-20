@@ -1,10 +1,8 @@
-rem --- Rebuild Sales Anaylis From Invoice History (Rebuild Overlay)
-rem --- Program sax_histrebuild v8.0.0 10Dec2007 (sax_bb)
-rem --- Created by adx_codeport.bbx v1.1.5 (12/10/2007 10:06:05)
+rem --- Rebuild Sales Analysis From Invoice History
+rem --- Program sax_histrebuild.aon
 
-rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- AddonSoftware Version 15.00 - Apr2015
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
 
     setesc std_error
     seterr std_error
@@ -12,8 +10,15 @@ rem --- All Rights Reserved
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
-
+    
 rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
 
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
@@ -21,474 +26,34 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
-rem --- Open/Lock files
+rem --- Get form input values identifying which types of sales analysis to rebuild
 
-    files=21,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="sas_params",ids$[1]="SAS_PARAMS"
-    files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
-    files$[3]="arm-02",ids$[3]="ARM_CUSTDET"
-    files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
-    files$[5]="ivm-02",ids$[5]="IVM_ITEMWHSE"
-    files$[6]="gls_params",ids$[6]="GLS_PARAMS"
-    files$[7]="opm-02",ids$[7]="OPC_LINECODE"
-    files$[8]="opt-01",ids$[8]="OPT_INVHDR"
-    files$[9]="opt-11",ids$[9]="OPT_INVDET"
-    files$[10]="sam-01",ids$[10]="SAM_CUSTOMER"
-    files$[11]="sam-02",ids$[11]="SAM_TERRITRY"
-    files$[12]="sam-03",ids$[12]="SAM_SALESPSN"
-    files$[13]="sam-04",ids$[13]="SAM_CUSTTYPE"
-    files$[14]="sam-05",ids$[14]="SAM_CUSTSHIP"
-    files$[15]="sam-06",ids$[15]="SAM_CUSTSIC"
-    files$[16]="sam-07",ids$[16]="SAM_ITEM"
-    files$[17]="sam-08",ids$[17]="SAM_WAREHSE"
-    files$[18]="sam-09",ids$[18]="SAM_VENDOR"
-    files$[19]="sam-10",ids$[19]="SAM_DISTCODE"
-    files$[20]="sam-11",ids$[20]="SAM_NONSTOCK"
-    files$[21]="ivs_params",ids$[21]="IVS_PARAMS"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-    sas01_dev=channels[1]
-    arm01_dev=channels[2]
-    arm02_dev=channels[3]
-    ivm01_dev=channels[4]
-    ivm02_dev=channels[5]
-    gls01_dev=channels[6]
-    opm02_dev=channels[7]
-    opt01_dev=channels[8]
-    opt11_dev=channels[9]
-    sam01_dev=channels[10]
-    sam02_dev=channels[11]
-    sam03_dev=channels[12]
-    sam04_dev=channels[13]
-    sam05_dev=channels[14]
-    sam06_dev=channels[15]
-    sam07_dev=channels[16]
-    sam08_dev=channels[17]
-    sam09_dev=channels[18]
-    sam10_dev=channels[19]
-    sam11_dev=channels[20]
-    ivs01_dev=channels[21]
+    typeSA!=new java.util.HashMap()
+    typeSA!.put("BY_CUSTOMER",option!.getOptionData("BY_CUSTOMER")) 
+    typeSA!.put("BY_TERRITORY",option!.getOptionData("BY_TERRITORY"))
+    typeSA!.put("BY_SALESPSN",option!.getOptionData("BY_SALESPSN"))
+    typeSA!.put("BY_CUSTOMER_TYPE",option!.getOptionData("BY_CUSTOMER_TYPE"))
+    typeSA!.put("BY_SHIPTO",option!.getOptionData("BY_SHIPTO"))
+    typeSA!.put("BY_SIC_CODE",option!.getOptionData("BY_SIC_CODE"))
+    typeSA!.put("BY_PRODUCT",option!.getOptionData("BY_PRODUCT"))
+    typeSA!.put("BY_WHSE",option!.getOptionData("BY_WHSE"))
+    typeSA!.put("BY_VENDOR",option!.getOptionData("BY_VENDOR"))
+    typeSA!.put("BY_DIST_CODE",option!.getOptionData("BY_DIST_CODE"))
+    typeSA!.put("BY_NONSTOCK",option!.getOptionData("BY_NONSTOCK"))
 
-rem --- Dimension string templates
+rem --- Rebuild Sales Analysis for current firm
 
-    dim arm01a$:templates$[2],arm02a$:templates$[3],ivm01a$:templates$[4],
-:       ivm02a$:templates$[5],opm02a$:templates$[7],
-:       opt01a$:templates$[8],opt11a$:templates$[9],sam01a$:templates$[10],
-:       sam02a$:templates$[11],sam03a$:templates$[12],sam04a$:templates$[13],
-:       sam05a$:templates$[14],sam06a$:templates$[15],sam07a$:templates$[16],
-:       sam08a$:templates$[17],sam09a$:templates$[18],sam10a$:templates$[19],
-:       sam11a$:templates$[20],sas01a$:templates$[1],ivs01a$:templates$[21]
-
-rem --- Assign form input values to local variables
-
-    opt_cust$=option!.getOptionData("BY_CUSTOMER")
-    opt_terr$=option!.getOptionData("BY_TERRITORY")
-    opt_slspsn$=option!.getOptionData("BY_SALESPSN")
-    opt_custtype$=option!.getOptionData("BY_CUSTOMER_TYPE")
-    opt_shipto$=option!.getOptionData("BY_SHIPTO")
-    opt_sic$=option!.getOptionData("BY_SIC_CODE")
-    opt_prod$=option!.getOptionData("BY_PRODUCT")
-    opt_whse$=option!.getOptionData("BY_WHSE")
-    opt_vend$=option!.getOptionData("BY_VENDOR")
-    opt_distcode$=option!.getOptionData("BY_DIST_CODE")
-    opt_nonstock$=option!.getOptionData("BY_NONSTOCK")
-
-rem --- Retrieve parameter records
-
-    sas01a_key$=firm_id$+"SA00"
-    find record (sas01_dev,key=sas01a_key$,err=std_missing_params) sas01a$
-    find record (ivs01_dev,key=firm_id$+"IV00") ivs01a$
-    ivprecision=num(ivs01a.precision$)
-
-rem --- Initializations
-
-    precision ivprecision
-
-rem --- Clear out records from selected files for this firm
-
-    if opt_cust$="Y" call pgm_dir$+"adc_clearpartial.aon","",sam01_dev,firm_id$,status
-    if opt_terr$="Y" call pgmdir$+"adc_clearpartial.aon","",sam02_dev,firm_id$,status
-    if opt_slspsn$="Y" call pgmdir$+"adc_clearpartial.aon","",sam03_dev,firm_id$,status
-    if opt_custtype$="Y" call pgmdir$+"adc_clearpartial.aon","",sam04_dev,firm_id$,status
-    if opt_shipto$="Y" call pgmdir$+"adc_clearpartial.aon","",sam05_dev,firm_id$,status
-    if opt_sic$="Y" call pgmdir$+"adc_clearpartial.aon","",sam06_dev,firm_id$,status
-    if opt_prod$="Y" call pgmdir$+"adc_clearpartial.aon","",sam07_dev,firm_id$,status
-    if opt_whse$="Y" call pgmdir$+"adc_clearpartial.aon","",sam08_dev,firm_id$,status
-    if opt_vend$="Y" call pgmdir$+"adc_clearpartial.aon","",sam09_dev,firm_id$,status
-    if opt_distcode$="Y" call pgmdir$+"adc_clearpartial.aon","",sam10_dev,firm_id$,status
-    if opt_nonstock$="Y" call pgmdir$+"adc_clearpartial.aon","",sam11_dev,firm_id$,status
-
-rem --- Background
-
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,opt01_dev,1,meter_num,status
-
-rem --- Position File
-
-    read (opt01_dev,key=firm_id$,dom=*next)
-
-rem --- Main read
-    
-    while 1
-        read record (opt01_dev,end=*break) opt01a$
-        if pos(opt01a.firm_id$=firm_id$)<>1 break
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-
-rem --- Position Invoice History Detail File
-
-        read (opt11_dev,key=firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$,dom=*next)
-
-rem --- Read next line item
-
-        while 1
-            read record (opt11_dev,end=*break) opt11a$
-            if pos(firm_id$+opt11a.ar_type$+opt11a.customer_id$+opt11a.ar_inv_no$=
-:                  firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.ar_inv_no$)<>1 break
-
-rem --- Additional Reads
-
-            dim arm01$:fattr(arm01a$),arm02a$:fattr(arm02a$)
-            find record (arm01_dev,key=firm_id$+opt01a.customer_id$,dom=*next) arm01a$
-            find record (arm02_dev,key=firm_id$+opt01a.customer_id$+"  ",dom=*next) arm02a$
-
-rem --- Get Line Type
-
-            dim opm02a$:fattr(opm02a$)
-            find record (opm02_dev,key=firm_id$+opt11a.line_code$,dom=*next) opm02a$
-
-rem --- Update Sales Analysis
-
-            if pos(opm02a.line_type$="SNPO")=0 continue
-            if pos(opm02a.line_type$="NPO") and opm02a.prod_type_pr$="N" continue
-            dim ivm02a$:fattr(ivm01a$),ivm02a$:fattr(ivm02a$)
-            if opm02a.line_type$="N" ivm01a.sa_level$="P"
-            find record (ivm01_dev,key=firm_id$+opt11a.item_id$,dom=*next) ivm01a$
-            find record (ivm02_dev,key=firm_id$+opt11a.warehouse_id$+opt11a.item_id$,dom=*next) ivm02a$
-            if ivm01a.stock_level$="W" vendor$=ivm02a.vendor_id$ else vendor$=ivm01a.vendor_id$
-            call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,opt01a.invoice_date$,period$,year$
-            period=num(period$)
-
-rem --- Customer
-
-            if opt_cust$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0 goto territory
-            dim sam$:fattr(sam01a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.customer_id$=opt01a.customer_id$
-            if arm02a.sa_flag$<>"C" and sas01a.customer_lev$<>"C" 
-                sam.product_type$=opt11a.product_type$
-                if arm02a.sa_flag$="I" and sas01a.customer_lev$="I" 
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam01_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.customer_id$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-territory: rem --- Territory
-
-            if opt_terr$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto slspsn
-            dim sam$:fattr(sam02a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.territory$=opt01a.territory$
-            if ivm01a.sa_level$<>"N" and sas01a.terrcode_lev$<>"T" 
-                sam.product_type$=opt11a.product_type$
-                if ivm01a.sa_level$="I" and sas01a.terrcode_lev$="I" 
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam02_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.territory$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-slspsn: rem --- Salesperson
-
-            if opt_slspsn$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto custtype
-            dim sam$:fattr(sam03a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.slspsn_code$=opt01a.slspsn_code$
-            if ivm01a.sa_level$<>"N" and sas01a.salespsn_lev$<>"S"
-                sam.product_type$=opt11a.product_type$
-                if ivm01a.sa_level$="I" and sas01a.salespsn_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam03_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.slspsn_code$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-custtype: rem --- Customer Type
-
-            if opt_custtype$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0 then goto shipto
-            dim sam$:fattr(sam04a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.customer_type$=arm02a.customer_type$
-            if ivm01a.sa_level$<>"N" and sas01a.custtype_lev$<>"C"
-                sam.product_type$=opt11a.product_type$
-                if ivm01a.sa_level$="I" and sas01a.custtype_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam04_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.customer_type$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-shipto: rem --- Ship-To
-
-            if opt_shipto$<>"Y" or pos(arm02a.sa_flag$="PI")=0 or pos(ivm01a.sa_level$="PI")=0 goto sic
-            dim sam$:fattr(sam05a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.customer_id$=opt01a.customer_id$
-            if sas01a.shipto_lev$<>"C"
-                sam.shipto_no$=opt01a.shipto_no$
-                if ivm01a.sa_level$="I" and sas01a.shipto_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam05_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.customer_id$+sam.shipto_no$+sam.item_id$
-            gosub write_rec
-
-sic: rem --- Standard Industry Code
-
-            if opt_sic$<>"Y" or pos(ivm01a.sa_level$="PI")=0 or cvs(arm01a.sic_code$,2)="" goto prodtype
-            dim sam$:fattr(sam06a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.sic_code$=arm01a.sic_code$
-            if ivm01a.sa_level$<>"N" and sas01a.sic_code_lev$<>"C"
-                sam.product_type$=opt11a.product_type$               
-                if ivm01a.sa_level$="I" and sas01a.sic_code_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.sic_code$+sam.product_type$+sam.item_id$
-            sam_dev=sam06_dev
-            gosub write_rec
-
-prodtype: rem --- Product Type
-
-            if opt_prod$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto warehouse
-            dim sam$:fattr(sam07a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.product_type$=opt11a.product_type$
-            if ivm01a.sa_level$="I" and sas01a.product_lev$="I"
-                sam.item_id$=opt11a.item_id$
-            endif
-            sam_dev=sam07_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-warehouse: rem --- Warehouse
-
-            if opt_whse$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto stockvend
-            dim sam$:fattr(sam08a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.warehouse_id$=opt11a.warehouse_id$
-            if ivm01a.sa_level$<>"N" and sas01a.whse_lev$<>"W"
-                sam.product_type$=opt11a.product_type$
-                if ivm01a.sa_level$="I" and sas01a.whse_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif            
-            sam_dev=sam08_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.warehouse_id$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-stockvend: rem --- Stocking Vendor
-
-            if opt_vend$<>"Y" or pos(ivm01a.sa_level$="PI")=0 or cvs(vendor$,2)="" goto distcode
-            dim sam$:fattr(sam09a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.vendor_id$=vendor$
-            if ivm01a.sa_level$<>"N" and sas01a.vendor_lev$<>"V"
-                sam.product_type$=opt11a.product_type$
-                if ivm01a.sa_level$="I" and sas01a.vendor_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam09_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.vendor_id$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-distcode: rem --- Distribution Code
-
-            if opt_distcode$<>"Y" or pos(ivm01a.sa_level$="PI")=0 goto nonstock
-            dim sam$:fattr(sam10a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.ar_dist_code$=opt01a.ar_dist_code$
-            if ivm01a.sa_level$<>"N" and sas01a.distcode_lev$<>"D"
-                sam.product_type$=opt11a.product_type$
-                if ivm01a.sa_level$="I" and sas01a.distcode_lev$="I"
-                    sam.item_id$=opt11a.item_id$
-                endif
-            endif
-            sam_dev=sam10_dev
-            if len(sam.item_id$)=0
-            	q$=fattr(sam$,"item_id")
-            	sam.item_id$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.ar_dist_code$+sam.product_type$+sam.item_id$
-            gosub write_rec
-
-nonstock: rem --- Non-Stock
-
-            if opt_nonstock$<>"Y" or opm02a.line_type$<>"N" continue
-            dim sam$:fattr(sam11a$)
-            sam.firm_id$=firm_id$
-            sam.year$=year$
-            sam.product_type$=opt11a.product_type$
-            if sas01a.nonstock_lev$="N"
-                sam.nonstock_no$=opt11a.order_memo$
-            endif
-            sam_dev=sam11_dev
-            if len(sam.nonstock_no$)=0
-            	q$=fattr(sam$,"nonstock_no")
-            	sam.nonstock_no$=fill(dec(q$(10,2)))
-            endif
-            sam_key$=firm_id$+year$+sam.product_type$+sam.nonstock_no$
-            gosub write_rec
-
-rem --- Loop back for next line item
-
-        wend
-        
-rem --- Loop back for next invoice
-
-    wend
+    theFirm$=firm_id$
+    call pgmdir$+"sac_histrebuild.aon",theFirm$,typeSA!,status
 
 done: rem --- All done
 
     goto std_exit
 
-write_rec: rem --- write records
-
-    extract record (sam_dev,key=sam_key$,dom=*next) sam$;rem Advisory Locking
-    field sam$,"QTY_SHIPPED_"+str(period:"00")=nfield(sam$,"QTY_SHIPPED_"+str(period:"00"))+opt11a.qty_shipped
-    precision 2
-    field sam$,"TOTAL_COST_"+str(period:"00")=nfield(sam$,"TOTAL_COST_"+str(period:"00"))+opt11a.unit_cost*opt11a.qty_shipped
-    precision ivprecision
-    field sam$,"TOTAL_SALES_"+str(period:"00")=nfield(sam$,"TOTAL_SALES_"+str(period:"00"))+opt11a.ext_price
-    sam$=field(sam$)
-    write record (sam_dev) sam$
-    return
-
 disp_message: rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
     return
-	
-rem #include std_functions.src
-rem --- Standard AddonSoftware functions (01Mar2006)
-rem --- Functions used to retrieve form values
-
-    def fnstr_pos(q0$,q1$,q1)=int((pos(q0$=q1$,q1)+q1-1)/q1)
-    def fnget_rec_date$(q0$)=rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                            cvs(q0$,1+2+4),rd_rec_data$[0,0],40),0]
-    def fnget_fld_data$(q0$,q1$)=cvs(rd_rec_data$[fnstr_pos(cvs(q0$,1+2+4)+"."+
-:                                cvs(q1$,1+2+4),rd_rec_data$[0,0],40),0],2)
-    def fnget_table$(q0$)=rd_alias_id$
-
-rem --- Miscellaneous functions
-
-    def fncenter(q$,q)=int((q-len(q$))/2)
-
-rem --- Format inventory item description
-
-	def fnitem$(q$,q1,q2,q3)
-		q$=pad(q$,q1+q2+q3)
-		return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
-	fnend
-
-rem --- Date/time handling functions
-
-    def fnyy$(q$)=q$(3,2)
-    def fnclock$(q$)=date(0:"%hz:%mz %p")
-    def fntime$(q$)=date(0:"%Hz%mz")
-
-rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
-
-    def fnmask$(q1$,q2$)
-        if q2$="" q2$=fill(len(q1$),"0")
-        return str(-num(q1$,err=*next):q2$,err=*next)
-        q=1
-        q0=0
-        while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
-        wend
-        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
-        return str(q1$:q2$)
-    fnend
-
-rem --- fnbasename$: Strip path and optionally the suffix from a file name
-
-    def fnbasename$(q$,q0$)
-        q=max(pos("/"=q$,-1),pos(":"=q$,-1),pos(">"=q$,-1),pos("\"=q$,-1))
-        if q then q$=q$(q+1)
-        if q0$<>"" then q=mask(q$,q0$); if q q$=q$(1,q-1)
-    return q$
-
-rem --- fnglobal: Return numeric value of passed stbl variable
-
-    def fnglobal(q$,q1)
-        q1$=stbl(q$,err=*next),q1=num(q1$,err=*next)
-        return q1
-    fnend
-
-rem --- fnglobal$: Return string value of passed STBL variable
-
-    def fnglobal$(q$,q1$)
-        q1$=stbl(q$,err=*next)
-        return q1$
-    fnend
-
-rem #endinclude std_functions.src
 
 rem #include std_error.src
 
@@ -520,39 +85,13 @@ std_error: rem --- Standard error handler (18Nov2014)
 
 rem #endinclude std_error.src
 
-rem #include std_missing_params.src
-
-std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
-
-    rd_err_text$=""
-    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
-    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
-:                                   str(err),rd_err_text$,rd_err_act$
-std_missing_params_exit:
-    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
-    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
-    dim sysinfo$:sysinfo_template$
-    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
-    if cvs(sysinfo.user_id$,2)=master_user$ escape
-std_missing_params_release:
-    status=999
-    if pgm(-1)<>pgm(-2) exit
-    release
-
-rem #endinclude std_missing_params.src
-
 rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-    msg_id$="UPDATE_COMPLETE"
-    dim msg_tokens$[1]
-    msg_opt$=""
-    gosub disp_message
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
+
 rem #endinclude std_end.src
 
     end

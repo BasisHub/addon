@@ -1,18 +1,18 @@
 rem ==========================================================================
 rem --- adx_init_data.aon
-rem --- A completing Auto-Launch task that initializes and converts data 
+rem --- A non-completing Auto-Launch task that initializes and converts data 
 rem --- following an upgrade. 
 rem --- 
-rem --- AddonSoftware Version 12.00
+rem --- AddonSoftware Version 15.00
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
 rem ==========================================================================
 
+    use java.io.File
+    use java.io.FileReader
     use java.util.HashMap
-
-    declare HashMap installMap!
-    declare HashMap devMap!
-    declare HashMap tplMap!
+    use java.util.Properties
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
     
     setesc std_error
     seterr std_error
@@ -29,16 +29,16 @@ rem --- Get program arguments
     if user_id$=""
         use ::sys/prog/bao_security.bbj::Security
         user_id$=Security.getURLUser()
+        if cvs(user_id$,2)="" then user_id$=stbl("+USER_ID",err=*next)
+        if cvs(user_id$,2)="" then user_id$="ADMIN"
     endif
 
 rem --- Initializations
 
-    process_complete=0
-    modules$="ADAPARBMGLIVMPOPPOPRSASF"
+    close_mdi=0
+    err_msg$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
-    installMap!=new HashMap()
-    devMap!=new HashMap()
-    tplMap!=new HashMap()
+    dir_syp$=stbl("+DIR_SYP")
     
     rem --- Set needed STBLs if missing
     need_stbls=1
@@ -47,33 +47,172 @@ rem --- Initializations
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    firm_id$=sysinfo.firm_id$
     
-rem --- Open File(s)
+rem --- Locate aon/data directory, if possible
+
+    aonDir$=""
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+    xpos=pos("/aon/"=dataDir$,-1)
+    if xpos then
+        aonDir$=dataDir$(1,xpos+4)
+    endif
+    if aonDir$="" then
+        xpos=pos("/data/"=dataDir$,-1)
+        if xpos then
+            aonDir$=dataDir$(1,xpos)
+        else
+            aonDir$=dataDir$
+        endif
+    endif
+
+rem --- There's nothing to do if data/adx_conversionCtrl isn’t found, i.e. new install or all required conversions already completed.
+
+    convCtrlFile!=new File(aonDir$+"data/adx_conversionCtrl",err=*next)
+    if !convCtrlFile!.exists() then goto std_exit
+    fileReader!=new FileReader(convCtrlFile!)
+
+    convCtrl!=new Properties()
+    convCtrl!.load(fileReader!)
+    fileReader!.close()
+
+rem --- Are conversion needed for the start_version?
+
+    versionsVect!=BBjAPI().makeVector()
+    versionsVect!.addAll(java.util.Arrays.asList(convCtrl!.getProperty("conversion_versions").split(";")))
     
-    num_files=1
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="ADS_AUTOLAUNCH", open_opts$[1]="OTA"
+    rem --- start_version$ format must be 0000 to match version format in conversion_versions
+    version_mask$="00.00"
+    start_version$=str(num(convCtrl!.getProperty("start_version")):version_mask$)
+    xpos=pos("."=start_version$)
+    if xpos then
+        start_version$=start_version$(1,xpos-1)+start_version$(xpos+1)
+    endif
 
-    gosub open_tables
+    rem --- Verify version requires conversion
+    indexFirstConversion=-1
+    if versionsVect!.size() then
+        for i=0 to versionsVect!.size()-1
+            if start_version$<versionsVect!.getItem(i) then
+                indexFirstConversion=i
+                break
+            endif
+        next i
+    endif
+    if indexFirstConversion<0 then goto std_exit
+    
+rem --- Open log file in aon/logs directory, if possible
 
-    autolaunch_dev=num(open_chans$[1]);dim autolaunch_tpl$:open_tpls$[1]
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Creating a small invisible window to hold progress meter
+    sysGUI!=BBjAPI().getSysGui()
+    if BBjAPI().isInMDI() then
+        desktop_w=BBjAPI().getMDI().getClientWidth()
+        desktop_h=BBjAPI().getMDI().getClientHeight()
+    else
+        screenSize!=sysGUI!.getSystemMetrics().getScreenSize()
+        desktop_w=screenSize!.width
+        desktop_h=screenSize!.height
+    endif
+    rdForm!=sysGUI!.addWindow(int(desktop_w/2),int(desktop_h/2),1,1,"",$00000000$)
+    rdForm!.setTitleBarVisible(0)
+    rdForm!.setVisible(0)
+
+rem --- Start progress meter
+
+    if Translate!=null() then 
+        gosub get_translate_object
+        if status then
+            err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+            err_no$="12"
+        else
+            if Translate!=null() then
+                err_msg$="Cannot create BBTranslator object Translate!"
+                err_no$="999"
+            endif
+        endif
+        if err_msg$<>"" then
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+            print(log_dev)"***** Error: "+err_msg$+" *****"
+            gosub show_error_message
+            print(log_dev)"***** "+error_message$+" *****"
+            print(log_dev)
+            print(log_dev)"Initdata log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(log_dev)
+            goto close_barista_mdi
+        endif
+    endif
+    meter_title$=Translate!.getTranslation("AON_INIT_DATA","AddonSoftware Data Initialization")
+    meter_total_recs=4+versionsVect!.size()-indexFirstConversion
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter
     
 rem --- Determine which modules are installed
 
-    dim info$[20]
+    installMap!=new HashMap()
+    installed_modules$=""
+    modules$="ADAPARBMGLIVMPOPPOPRSASF"
     for i=1 to len(modules$) step 2
         mod$=modules$(i,2)
+        dim info$[20]
         call pgmdir$+"adc_application.aon",mod$,info$[all]
         installMap!.put(mod$,info$[20])
-        if info$[20]="Y" then process_complete=1
+        if info$[20]="Y" then installed_modules$=installed_modules$+mod$+","
     next i
+    if len(installed_modules$) then installed_modules$=installed_modules$(1,len(installed_modules$)-1)
 
-rem --- If nothing installed, then don't complete this auto-launch process
-    if !process_complete then goto done
+    rem --- Admin AD module must be installed
+    if installMap!.get("AD")<>"Y" then
+        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:       Translate!.getTranslation("AON_MISSING","Missing")+" AD "+
+:       Translate!.getTranslation("AON_MODULE","Module")+" *****"
+        goto done
+    endif
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_CHECKED_INSTALLED_MODULES","Checked installed modules")+": "+installed_modules$
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+rem --- Verify end_version=ADM_MODULES.VERSION_ID for AD
+
+    gosub get_AD_version
+    if status then
+        rem --- If going to get this error, it should have occurred starting the progress meter.
+        err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+        err_no$="12"
+        call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+        err_msg$="***** Error: "+err_msg$+" *****"
+        goto done
+    endif
+    if convCtrl!.getProperty("end_version")<>cvs(adm_modules.version_id$,2) then
+        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "
+        if convCtrl!.getProperty("data_source")="DataPort" then
+            err_msg$=err_msg$+"DataPort "
+        else
+            err_msg$=err_msg$+"Addon Upgrade Wizard "
+        endif
+        err_msg$=err_msg$+Translate!.getTranslation("AON_VERSION_USED","version used")+", "+convCtrl!.getProperty("end_version")+", "+
+:       Translate!.getTranslation("AON_DOES_NOT_MATCH_CURRENT_ADDON_VERSION","does not match current Addon verion")+" "+
+:        cvs(adm_modules.version_id$,2)+" *****"
+        goto done
+    endif
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_CHECKED_VERSIONS_USED","Checked Addon versions used")+": "+convCtrl!.getProperty("end_version")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
 
 rem --- Following an upgrade, user may launch Addon before "copying" the data.
-rem --- If required files aren't present, then don't complete this auto-launch process
+rem --- Can't do anything if required files aren't present.
+
     adm_rptctl=0,adm09=0,glm03=0,glm06=0
     test_dev=unt
     open(test_dev,err=*next)stbl("+ADDATA")+"adm_rptctl"; adm_rptctl=1
@@ -85,195 +224,221 @@ rem --- If required files aren't present, then don't complete this auto-launch p
     open(test_dev,err=*next)stbl("+GLDATA")+"glm-06"; glm06=1
     close(test_dev,err=*next)
     if !adm_rptctl or !adm09 or !glm03 or !glm06 then
-        process_complete=0
+        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:       Translate!.getTranslation("AON_DATA_FILES_MISSING","Addon data files are missing")+" *****"
         goto done
     endif
 
-rem --- For v12.00, adm_modules.post_gl was moved to *s_params.post_to_gl. Following an upgrade,
-rem --- *s_params.post_to_gl must be intialized with old adm_modules.post_gl when GL is installed.
-	if installMap!.get("GL")="Y" then gosub init_post_to_gl
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_CHECKED_REQUIRED_FILES","Checked for required Addon files")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+    
+rem --- Verify data_source
 
-rem --- for v12, if OP is installed, process Cash Sale entry and history files (ope-41, opt-41)
-rem --- if credit-card transaction type, encrypt credit card# and move it to new credit card field
-
-    if installMap!.get("OP")="Y" then gosub convert_credit_cards
-	
-done:rem --- Update AutoLaunch Status
-
-    if autolaunch_dev<>0 then
-        extractrecord(autolaunch_dev,key="INIT_DATA")autolaunch_tpl$; rem Advisory Locking
-        if process_complete then autolaunch_tpl.process_status$="C"
-        autolaunch_tpl.trans_date$=date(0:"%Yl%Mz%Dz")
-        autolaunch_tpl.trans_time$=date(0:"%Hz%mz%sz")
-        autolaunch_tpl$ = field(autolaunch_tpl$)
-        writerecord(autolaunch_dev)autolaunch_tpl$
+    if convCtrl!.getProperty("data_source")="DataPort" or convCtrl!.getProperty("data_source")="OCJ" then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_CHECKED_DATA_SOURCE","Checked data source used")+": "+convCtrl!.getProperty("data_source")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    else
+        if convCtrl!.getProperty("data_source")="AIUW" then
+            rem --- Haven't run Distribute EM Update Wizard Files task yet
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_DIST_UPDATE_WIZ_FILES","Distribute EM Update Wizard Files task was not run")+" *****"
+            goto done
+        else
+            rem --- Unknown data_source
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_CONVERSIONCTRL_UNKNOWN","adx_conversionCtrl from unknown data source")+": "+convCtrl!.getProperty("data_source")+" *****"
+            goto done
+        endif
     endif
 
-	goto std_exit
-
-rem --- For v12.00, adm_modules.post_gl was moved to *s_params.post_to_gl. Following an upgrade,
-rem --- *s_params.post_to_gl must be intialized with old adm_modules.post_gl when GL is installed.
-init_post_to_gl:
-
-    rem --- Open File(s)
-    j=1
-	num_files=j+len(modules$)/2
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
-    for i=1 to len(modules$) step 2
-        j=j+1
-        mod$=modules$(i,2)
-        rem --- Skip modules where *S_PARAMS table doesn't exist
-        if pos(mod$="ADMP",2) then continue
-        
-        open_tables$[j]=mod$+"S_PARAMS", open_opts$[j]="OTA"
-    next i
-
-	gosub open_tables
-
-    modules_dev=num(open_chans$[1]);dim modules_tpl$:open_tpls$[1]
-    j=1
-    for i=1 to len(modules$) step 2
-        j=j+1
-        mod$=modules$(i,2)
-
-        devMap!.put(mod$,num(open_chans$[j]))
-        tplMap!.put(mod$,open_tpls$[j])
-    next i
-
-    rem --- Verify modules_tpl still includes post_gl in case it was dropped
-    use_post_gl=0
-    if pos("post_gl"=cvs(open_tpls$[1],8)) then use_post_gl=1
-
-    rem --- As necessary, initialize *s_params.post_to_gl for all firms
-    for i=1 to len(modules$) step 2
-        mod$=modules$(i,2)
-        rem --- Skip module if *s_params not found
-        dev=devMap!.get(mod$)
-        if dev=0 then continue
-        rem --- Skip modules that don't post to GL
-        if pos(mod$="ADMPSA",2) then continue
-        rem --- Skip modules that don't have post_to_gl in *s_params template
-        if pos("post_to_gl"=cvs(tplMap!.get(mod$),8))=0 then continue
-
-        dim tpl$:tplMap!.get(mod$)
-        read(dev,key="",dom=*next)
-        while 1
-            key$=key(dev,end=*break)
-            extractrecord(dev)tpl$; rem Advisory Locking
-
-            if cvs(tpl.post_to_gl$,2)="" then
-                tpl.post_to_gl$="Y"
-
-                rem --- Override with pre-v12 adm_modules.post_gl if still available
-                if use_post_gl then
-                    modules_tpl.post_gl$=""
-                    extract record (modules_dev,key=stbl("+AON_APPCOMPANY",err=*next)+pad(mod$,3),dom=*endif)modules_tpl$; rem Advisory Locking
-                    if pos(modules_tpl.post_gl$="YN") then
-                        tpl.post_to_gl$=modules_tpl.post_gl$
-                        rem --- clear adm_modules.post_gl
-                        modules_tpl.post_gl$(1)=""
-                        write record (modules_dev)modules_tpl$
-                    else
-                        read(modules_dev,dom=*next)
-                    endif
-                endif
-
-                tpl$=field(tpl$)
-                writerecord(dev,key=key$)tpl$
-            else
-                read(dev)
-            endif
-        wend
-    next i
-
-    return
-
-rem --- for v12, if OP is installed, process Cash Sale entry and history files (ope-41, opt-41)
-rem --- if credit-card transaction type, encrypt credit card# and move it to new credit card field
-convert_credit_cards:
-
-    rem --- Open File(s)
-	num_files=3
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="OPE_INVCASH", open_opts$[1]="OTA"
-	open_tables$[2]="OPT_INVCASH", open_opts$[2]="OTA"
-    open_tables$[3]="ARC_CASHCODE", open_opts$[3]="OTA"
-
-	gosub open_tables
-
-    ope_invcash_dev=num(open_chans$[1]);dim ope_invcash$:open_tpls$[1]
-    opt_invcash_dev=num(open_chans$[2]);dim opt_invcash$:open_tpls$[2]
-    arc_cashcode_dev=num(open_chans$[3]);dim arc_cashcode$:open_tpls$[3]
-    
-    use ::sys/prog/bao_valid_card.bbj::CreditCard
-    declare CreditCard credCard!
-    credCard!=new CreditCard()
-    cc_config$="BAR_CREDIT_CARD"
-            
-rem --- Process credit card type records
-
-    proc_dev=ope_invcash_dev
-    dim proc_rec$:fattr(ope_invcash$)
-    gosub process_file
-    proc_dev=opt_invcash_dev
-    dim proc_rec$:fattr(opt_invcash$)
-    gosub process_file
-    
-    return
-
-process_file:
-rem --- process ope/opt-41    
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,proc_dev,1,meter_num,status
- 
-    while 1   
-        extractrecord (proc_dev,end=*break)proc_rec$; rem Advisory Locking
-        proc_key$=key(proc_dev)
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        readrecord(arc_cashcode_dev,key=firm_id$+"C"+proc_rec.cash_rec_cd$,dom=*next)arc_cashcode$
-        if arc_cashcode.trans_type$="P" and cvs(proc_rec.payment_id$,3)<>""
-            cc_status$=""
-            cc_card$=""
-            cc_card_raw$=cvs(proc_rec.payment_id$,3)
-            for x=1 to len(cc_card_raw$)
-                if cc_card_raw$(x,1)>="0" and cc_card_raw$(x,1)<="9"
-                    cc_card$=cc_card$+cc_card_raw$(x,1)
-                endif
-            next x           
-            if len(cc_card$)>4
-                gosub mod10_check              
-                if cc_status$=""
-                    proc_rec.credit_card_no$=credCard!.encryptCard(cc_card$,cc_config$)
-                    proc_rec.payment_id$="" 
-                    proc_rec$=field(proc_rec$)               
-                    writerecord(proc_dev)proc_rec$
-                endif
-            endif
+rem --- Process needed version conversion programs
+    for i=indexFirstConversion to versionsVect!.size()-1
+        this_version$=versionsVect!.getItem(i)
+        if convCtrl!.getProperty(this_version$)=null() then
+            this_conv_pgm$=""
+        else
+            this_conv_pgm$=convCtrl!.getProperty(this_version$)
         endif
-        read(proc_dev,key=proc_key$)
-    wend
+        if this_conv_pgm$="" then
+            rem --- Report missing conversion program, skip other conversions
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_CONV_PGM_NOT_SPECIFIED","Conversion program not specified for version")+": "+str(num(this_version$)/100:version_mask$)+" *****"
+            exitto done
+        endif
+        
+        rem --- CALL conversion program for this version
+        found_conv_pgm=0
+        call stbl("+DIR_PGM",err=*next)+this_conv_pgm$,err=*next,convCtrl!,installMap!,rdForm!,Translate!,conv_status; found_conv_pgm=1
+        if !found_conv_pgm then
+            rem --- Report conversion program not found, skip other conversions
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_CONV_PGM_NOT_FOUND","Conversion program not found")+": "+this_conv_pgm$+" *****"
+            exitto done
+        endif
+        if conv_status<>0 then
+            rem --- Report conversion program error, skip other conversions
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_SEE_CONV_PGM_LOG","See log for conversion program")+": "+this_conv_pgm$+" *****"
+            exitto done
+        endif
+
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_COMPLETED_CONV","Completed conversion for version")+": "+str(num(this_version$)/100:version_mask$)
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    next i
+	
+done: rem --- All done
+
+    rem --- Complete progress meter
+    completed_successfully=0
+    if err_msg$<>"" then
+        meter_text$=err_msg$
+    else
+        meter_text$=Translate!.getTranslation("AON_CONV_COMPLETED","Conversions completed successfully")
+        completed_successfully=1
+    endif
+    meter_proc_recs=meter_total_recs
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
     
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+
+    rem --- Destroy small invisible window that holds progress meter
+    rdForm!.destroy()
+
+    rem --- On successful completion of all conversion programs, delete data/adx_conversionCtrl
+    if completed_successfully then
+        convCtrlFile!.delete()
+        print(log_dev)Translate!.getTranslation("AON_DELETED_CONV_CTRL","Deleted conversion control file")+": "+convCtrlFile!.getAbsolutePath()
+    endif
+
+    rem --- Complete and close log file
+    if err_msg$<>"" then 
+        gosub show_error_message
+        print(log_dev)"***** "+error_message$+" *****"
+    endif
+    print(log_dev)
+    print(log_dev)"Initdata log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    rem --- Close Barista MDI if a verification test fails
+    if close_mdi then goto close_barista_mdi
+
+	goto std_exit
+	
+close_barista_mdi: rem --- Close Barista MDI
+
+    rdGroupSpace!=BBjAPI().getGroupNamespace()
+    rdGroupSpace!.setValue("+exit_mdi","FORCE_CLOSE")
+
+    goto std_exit
+    
+disp_meter: rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
 
     return
 
-mod10_check:
+open_log: rem --- Open log file
+           
+    rem --- create logs directory at location
+    logDir$=FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
 
-    cc_digits$ = ""
-    cc_curr_digit = 0
+    rem --- create and open log file
+    log$=logDir$+"/initdata_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".log"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+            
+    rem --- write log header info
+    print(log_dev)"Initdata log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
 
-    for cc_temp = len(cc_card$) to 1 step -1
-        cc_curr_digit = cc_curr_digit + 1
-        cc_no = num(cc_card$(cc_temp,1)) * iff(mod(cc_curr_digit,2)=0, 2, 1)
-        cc_digits$ = str(cc_no) + cc_digits$
-    next cc_temp
+    return
 
-    cc_total = 0
-    for cc_temp = 1 to len(cc_digits$)
-        cc_total = cc_total + num(cc_digits$(cc_temp, 1))
-    next cc_temp
+get_translate_object: rem --- Get BBTranslator object Translate!
 
-    if mod(cc_total, 10) <> 0 then cc_status$ = "INVALID"
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+        locale_path$=adm_modules.locale_path$
+        Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$); rem ,err=*endif
+    else
+        readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*endif)adm_modules$
+        if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+            locale_path$=adm_modules.locale_path$
+            Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$); rem ,err=*endif
+        endif
+    endif
+
+    return
+
+get_AD_version: rem --- Get ADM_MODULES.VERSION_ID for AD module
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+
+    return
+    
+show_error_message: rem --- Displays message that error should be fixed before continuing
+
+    error_message$="To avoid possible data corruption, the error condition should be corrected before using this Addon installation."
+    if Translate!<>null() then
+        error_message$=Translate!.getTranslation("AON_AVOID_POSSIBLE_DATA_CORRUPTION",error_message$)
+    endif
+    msg_id$="GENERIC_OK"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=error_message$
+    gosub disp_message
+    
+    close_mdi=1
 
     return
     
@@ -295,12 +460,12 @@ open_tables:rem -----<Open Tables
         dim msg_tokens$[1]
             msg_tokens$[1]=open_status$
         gosub disp_message
-        goto std_exit
+        status=-1
     endif
 
     return
 
-disp_message:rem --- Display Message Dialog
+disp_message: rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
