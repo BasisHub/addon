@@ -1,3 +1,13 @@
+[[GLR_TRANSHISTORY.GL_WILDCARD.AVAL]]
+rem --- Check length of wildcard against defined mask for GL Account
+	if callpoint!.getUserInput()<>""
+		call "adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
+		if len(callpoint!.getUserInput())>len(m0$)
+			msg_id$="GL_WILDCARD_LONG"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
 [[GLR_TRANSHISTORY.ASVA]]
 rem --- Check for Ending Period before Beginning Period
 	begper$=str(num(callpoint!.getColumnData("GLR_TRANSHISTORY.BEG_YEAR")):"0000")+

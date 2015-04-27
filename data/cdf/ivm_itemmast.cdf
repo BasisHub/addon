@@ -596,8 +596,6 @@ rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user
 
 rem --- init/parameters
 
-	disable_str$=""
-	enable_str$=""
 	dim info$[20]
 
 	ivs01a_key$=firm_id$+"IV00"
@@ -679,14 +677,12 @@ rem --- Set user labels and lengths for description segments
 rem --- Disable option menu items
 
 	callpoint!.setOptionEnabled("STOK",0); rem --- per bug 5774, disabled for now
-	if ap$<>"Y" disable_str$=disable_str$+"IVM_ITEMVEND;"; rem --- this is a detail window, give alias name
+	if ap$<>"Y" then callpoint!.setOptionEnabled("IVM_ITEMVEND",0)
 	if pos(ivs01a.lifofifo$="LF")=0 callpoint!.setOptionEnabled("LIFO",0)
 	if pos(ivs01a.lotser_flag$="LS")=0 callpoint!.setOptionEnabled("LTRN",0)
 	if op$<>"Y" callpoint!.setOptionEnabled("SORD",0)
 	if po$<>"Y" callpoint!.setOptionEnabled("PORD",0)
 	if bm$<>"Y" callpoint!.setOptionEnabled("BOMU",0)
-
-	if disable_str$<>"" call stbl("+DIR_SYP")+"bam_enable_pop.bbj",Form!,enable_str$,disable_str$
 
 rem --- additional file opens, depending on which apps are installed, param values, etc.
 

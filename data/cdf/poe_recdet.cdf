@@ -164,23 +164,22 @@ rem --- Is this item lot/serial?
 		receiver_no$   = callpoint!.getColumnData("POE_RECDET.RECEIVER_NO")
 		po_int_seq_ref$ = callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO")
 		po_no$=callpoint!.getColumnData("POE_RECDET.PO_NO")
-		unit_cost$=callpoint!.getColumnData("POE_RECDET.UNIT_COST")
+		unit_cost=num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))
 		qty_received=num(callpoint!.getColumnData("POE_RECDET.QTY_RECEIVED"))
+		conv_factor=num(callpoint!.getColumnData("POE_RECDET.CONV_FACTOR"))
 
 		grid!.focus()
-		dim dflt_data$[4,1]
+		dim dflt_data$[3,1]
 		dflt_data$[1,0] = "RECEIVER_NO"
 		dflt_data$[1,1] = receiver_no$
 		dflt_data$[2,0] = "PO_INT_SEQ_REF"
 		dflt_data$[2,1] = po_int_seq_ref$
 		dflt_data$[3,0]="PO_NO"
 		dflt_data$[3,1]=po_no$
-		dflt_data$[4,0]="UNIT_COST"
-		dflt_data$[4,1]=unit_cost$
 
 		callpoint!.setDevObject("ls_po_no",po_no$)
-		callpoint!.setDevObject("ls_unit_cost",unit_cost$)
-		callpoint!.setDevObject("ls_qty_received",qty_received)
+		callpoint!.setDevObject("ls_unit_cost",unit_cost/conv_factor)
+		callpoint!.setDevObject("ls_qty_received",qty_received*conv_factor)
 
 		lot_pfx$ = firm_id$+receiver_no$+po_int_seq_ref$
 
@@ -362,8 +361,9 @@ item_id$=callpoint!.getColumnData("POE_RECDET.ITEM_ID")
 receiver_no$=callpoint!.getColumnData("POE_RECDET.RECEIVER_NO")
 po_int_seq_ref$=callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO")
 po_no$=callpoint!.getColumnData("POE_RECDET.PO_NO")
-unit_cost$=callpoint!.getColumnData("POE_RECDET.UNIT_COST")
+unit_cost=num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))
 qty_received=num(callpoint!.getColumnData("POE_RECDET.QTY_RECEIVED"))
+conv_factor=num(callpoint!.getColumnData("POE_RECDET.CONV_FACTOR"))
 
 declare BBjStandardGrid grid!
 grid! = util.getGrid(Form!)
@@ -374,19 +374,17 @@ read record (ivm_itemmast_dev,key=firm_id$+item_id$,dom=*break)ivm_itemmast$
 
 if ivm_itemmast.lotser_item$="Y" and ivm_itemmast.inventoried$="Y"
 
-	dim dflt_data$[4,1]
+	dim dflt_data$[3,1]
 	dflt_data$[1,0] = "RECEIVER_NO"
 	dflt_data$[1,1] = receiver_no$
 	dflt_data$[2,0] = "PO_INT_SEQ_REF"
 	dflt_data$[2,1] = po_int_seq_ref$
 	dflt_data$[3,0]="PO_NO"
 	dflt_data$[3,1]=po_no$
-	dflt_data$[4,0]="UNIT_COST"
-	dflt_data$[4,1]=unit_cost$
 
 	callpoint!.setDevObject("ls_po_no",po_no$)
-	callpoint!.setDevObject("ls_unit_cost",unit_cost$)
-	callpoint!.setDevObject("ls_qty_received",qty_received)
+	callpoint!.setDevObject("ls_unit_cost",unit_cost/conv_factor)
+	callpoint!.setDevObject("ls_qty_received",qty_received*conv_factor)
 
 	lot_pfx$ = firm_id$+receiver_no$+po_int_seq_ref$
 

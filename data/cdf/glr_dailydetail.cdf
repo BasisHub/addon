@@ -1,4 +1,4 @@
-[[GLX_COPYCHART.GL_WILDCARD.AVAL]]
+[[GLR_DAILYDETAIL.GL_WILDCARD.AVAL]]
 rem --- Check length of wildcard against defined mask for GL Account
 	if callpoint!.getUserInput()<>""
 		call "adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
@@ -8,9 +8,3 @@ rem --- Check length of wildcard against defined mask for GL Account
 			callpoint!.setStatus("ABORT")
 		endif
 	endif
-[[GLX_COPYCHART.ASVA]]
-if callpoint!.getColumnData("GLX_COPYCHART.COMPANY_ID_FROM")=callpoint!.getColumnData("GLX_COPYCHART.COMPANY_ID_TO") then 
-	msg_id$="GL_FIRMS"
-	gosub disp_message
-	callpoint!.setStatus("ABORT")
-endif

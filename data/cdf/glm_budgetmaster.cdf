@@ -1,3 +1,13 @@
+[[GLM_BUDGETMASTER.GL_WILDCARD.AVAL]]
+rem --- Check length of wildcard against defined mask for GL Account
+	if callpoint!.getUserInput()<>""
+		call "adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
+		if len(callpoint!.getUserInput())>len(m0$)
+			msg_id$="GL_WILDCARD_LONG"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+		endif
+	endif
 [[GLM_BUDGETMASTER.ASHO]]
 num_files=2
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]

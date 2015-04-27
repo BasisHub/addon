@@ -281,9 +281,18 @@ rem --- Open tables
 	dim sfs_params$:open_tpls$[2]
 	read record (sfs_params,key=firm_id$+"SF00",dom=std_missing_params) sfs_params$
 
+	rem --- Get end date of previous SF period
 	gls_params=num(open_chans$[12])
-	call stbl("+DIR_PGM")+"adc_perioddates.aon",gls_params,num(sfs_params.current_per$),num(sfs_params.current_year$),beg_date$,end_date$,status
-	callpoint!.setDevObject("gl_end_date",end_date$)
+	dim gls_params$:open_tpls$[12]
+	sf_prevper=num(sfs_params.current_per$)-1
+	sf_prevper_year=num(sfs_params.current_year$)
+	if sf_prevper=0 then
+		read record (gls_params,key=firm_id$+"GL00",dom=std_missing_params) gls_params$
+		sf_prevper=num(gls_params.total_pers$)
+		sf_prevper_year=sf_prevper_year-1
+	endif
+	call stbl("+DIR_PGM")+"adc_perioddates.aon",gls_params,sf_prevper,sf_prevper_year,beg_date$,end_date$,status
+	callpoint!.setDevObject("sf_prevper_enddate",end_date$)
 
 	ivs_params=num(open_chans$[1])
 	dim ivs_params$:open_tpls$[1]
@@ -775,7 +784,7 @@ rem --- Work Order Transaction History report
 	dflt_data$[3,0]="CLOSED_DATE"
 	dflt_data$[3,1]=callpoint!.getColumnData("SFE_WOMASTR.CLOSED_DATE")
 	dflt_data$[4,0]="GL_END_DATE"
-	dflt_data$[4,1]=callpoint!.getDevObject("gl_end_date")
+	dflt_data$[4,1]=callpoint!.getDevObject("sf_prevper_enddate")
 	dflt_data$[5,0]="WO_LOCATION"
 	dflt_data$[5,1]=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
 

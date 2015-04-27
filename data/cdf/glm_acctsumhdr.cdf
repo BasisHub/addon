@@ -424,7 +424,7 @@ rem ---  parse thru gridActivity! and write back any budget recs to glm-02
 		amt_units$=rec_id$(2,1)
 		glm02a.record_id$=rec_id$(1,1)
 		glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$
-		extractrecord(glm02_dev,key=glm02_key$,dom=*next)x$; rem Advisory Locking
+		extractrecord(glm02_dev,key=glm02_key$,dom=*next)glm02a$; rem Advisory Locking
 
 			switch pos(amt_units$="AU")
 				case 1;rem amounts
@@ -435,10 +435,10 @@ rem ---  parse thru gridActivity! and write back any budget recs to glm-02
 				break
 
 				case 2; rem units
-					glm02a.begin_units$=vectGLSummary!.getCellText(0)
+					glm02a.begin_units$=vectGLSummary!.getItem(0)
 					for x=1 to cols
 						field glm02a$,"PERIOD_UNITS_"+str(x:"00")=vectGLSummary!.getItem(x)
-					next y
+					next x
 				break
 			swend
 
