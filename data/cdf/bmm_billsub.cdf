@@ -116,11 +116,16 @@ rem --- divisor:			input
 rem --- unit_cost:		input
 rem ===================================================================
 
-	net_qty=BmUtils.netSubQtyReq(qty_req,alt_factor,divisor)
+	old_prec = tcb(14)
+	precision callpoint!.getDevObject("this_precision")
+
+	net_qty=1*BmUtils.netSubQtyReq(qty_req,alt_factor,divisor)
 	total_cost=net_qty*unit_cost
 
 	callpoint!.setColumnData("<<DISPLAY>>.NET_QTY",str(net_qty))
 	callpoint!.setColumnData("<<DISPLAY>>.TOTAL_COST",str(total_cost))
+
+	precision old_prec
 
 	return
 

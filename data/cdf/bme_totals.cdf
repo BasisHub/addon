@@ -24,6 +24,9 @@ rem whse$ (in)
 rem  ==============================================================
 
 	if cvs(prod_date$,2)<>"" and cvs(whse$,2)<>""
+		old_prec = tcb(14)
+		precision callpoint!.getDevObject("this_precision")
+
 		bill_no$=callpoint!.getDevObject("master_bill")
 		lot_size=callpoint!.getDevObject("lotsize")
 		ap$=callpoint!.getDevObject("ap_installed")
@@ -36,6 +39,8 @@ rem  ==============================================================
 		callpoint!.setColumnData("BME_TOTALS.SUB_COST",str(sub_cost))
 		callpoint!.setColumnData("BME_TOTALS.TOT_COST",str(tot_cost))
 		callpoint!.setStatus("REFRESH")
+
+		precision old_prec
 	endif
 
 	return

@@ -31,22 +31,32 @@ rem --- Ensure Conversion Factor is greater than zero
 [[BMU_COMPREPLACE.AREC]]
 rem -- Default Rounding precision from BOM params	
 	
-	prec$=callpoint!.getDevObject("bm_param_prec")
+	prec$=str(callpoint!.getDevObject("this_precision"))
 	callpoint!.setColumnData("BMU_COMPREPLACE.BM_ROUND_PREC",prec$,1)
-
 [[BMU_COMPREPLACE.BSHO]]
 rem --- Open needed tables
 
-	num_files=2
+	num_files=3
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="BMS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="BMM_BILLMAST",open_opts$[2]="OTA"
+	open_tables$[3]="IVS_PARAMS",open_opts$[3]="OTA"
+
 	gosub open_tables
 	
 	bms01_dev=num(open_chans$[1])
 	dim bms01a$:open_tpls$[1]
+	ivs01_dev=num(open_chans$[3])
+	dim ivs01a$:open_tpls$[3]
 
 rem -- Get precision from BOM params for default Rounding Precision
 
 	read record (bms01_dev,key=firm_id$+"BM00")bms01a$
-	callpoint!.setDevObject("bm_param_prec",bms01a.bm_precision$)
+	callpoint!.setDevObject("bm_param_prec",str(bms01a.bm_precision))
+
+	read record (ivs01_dev,key=firm_id$+"BM00")ivs01a$
+	if num(ivs01a.precision$)>bms01a.bm_precision then
+		callpoint!.setDevObject("this_precision",num(ivs01a.precision$))
+	else
+		callpoint!.setDevObject("this_precision",bms01a.bm_precision)
+	endif

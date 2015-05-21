@@ -1,3 +1,5 @@
+[[BMM_BILLMAST.<CUSTOM>]]
+#include std_missing_params.src
 [[BMM_BILLMAST.AENA]]
 rem --- Disable Barista menu items
 	wctl$="31031"; rem --- Save-As menu item in barista.ini
@@ -206,7 +208,7 @@ rem --- Set DevObjects required
 	callpoint!.setDevObject("master_bill","")
 	callpoint!.setDevObject("lotsize",1)
 
-	num_files=7
+	num_files=8
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="BMM_BILLMAT",open_opts$[1]="OTA"
 	open_tables$[2]="BMM_BILLOPER",open_opts$[2]="OTA"
@@ -215,12 +217,26 @@ rem --- Set DevObjects required
 	open_tables$[5]="IVM_ITEMMAST",open_opts$[5]="OTA"
 	open_tables$[6]="IVS_PARAMS",open_opts$[6]="OTA"
 	open_tables$[7]="BMC_OPCODES",open_opts$[7]="OTA"
+	open_tables$[8]="BMS_PARAMS",open_opts$[8]="OTA"
+
 	gosub open_tables
+
+	ivs01_dev=num(open_chans$[6])
+	dim ivs01a$:open_tpls$[6]
+	bms01_dev=num(open_chans$[8])
+	dim bms01a$:open_tpls$[8]
 
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
 	callpoint!.setDevObject("ap_installed",info$[20])
 
-	ivs01_dev=num(open_chans$[6])
-	dim ivs01a$:open_tpls$[6]
-	read record (ivs01_dev,key=firm_id$+"IV00")ivs01a$
+	read record (ivs01_dev,key=firm_id$+"IV00",err=std_missing_params)ivs01a$
 	callpoint!.setDevObject("dflt_whse",ivs01a.warehouse_id$)
+	callpoint!.setDevObject("iv_precision",num(ivs01a.precision$))
+
+	read record (bms01_dev,key=firm_id$+"BM00")bms01a$
+	callpoint!.setDevObject("bm_precision",bms01a.bm_precision)
+	if num(ivs01a.precision$)>bms01a.bm_precision then
+		callpoint!.setDevObject("this_precision",num(ivs01a.precision$))
+	else
+		callpoint!.setDevObject("this_precision",bms01a.bm_precision)
+	endif

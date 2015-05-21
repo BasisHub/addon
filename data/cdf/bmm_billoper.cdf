@@ -160,6 +160,9 @@ rem --- setup:			input
 rem --- op_code:		input
 rem ===================================================================
 
+	old_prec = tcb(14)
+	precision callpoint!.getDevObject("this_precision")
+
 	bmm08=fnget_dev("BMC_OPCODES")
 	dim bmm08$:fnget_tpl$("BMC_OPCODES")
 	read record (bmm08,key=firm_id$+op_code$,dom=*next)bmm08$
@@ -168,7 +171,7 @@ rem ===================================================================
 
 	yield_pct=callpoint!.getDevObject("yield")
 	lot_size=callpoint!.getDevObject("lotsize")
-	direct_cost=BmUtils.directCost(hrs_pc,direct_rate,pc_hr,yield_pct,setup,lot_size)
+	direct_cost=1*BmUtils.directCost(hrs_pc,direct_rate,pc_hr,yield_pct,setup,lot_size)
 	oh_cost=direct_cost*oh_rate
 	if pc_hr=0 pc_hr=1
 	net_hrs=100*(hrs_pc/pc_hr)/yield_pct+setup/lot_size
@@ -178,6 +181,9 @@ rem ===================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.TOT_COST",str(direct_cost+oh_cost),1)
 	callpoint!.setColumnData("<<DISPLAY>>.QUEUE_TIME",bmm08.queue_time$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.NET_HRS",str(net_hrs),1)
+
+	precision old_prec
+
 	return
 
 rem ===================================================================

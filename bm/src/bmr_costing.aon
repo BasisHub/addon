@@ -1,30 +1,23 @@
 rem --- BOM Costing Report
+rem Program ID: bmr_costing.aon 
 
 rem --- AddonSoftware Version 11.11.0 - 02Sep2011
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
-
-    use ::bbjasper.bbj::BBJasperReport
-    use ::bbjasper.bbj::BBJasperViewerWindow
-    use ::bbjasper.bbj::BBJasperViewerControl
-    use ::java.util.HashMap::HashMap
-
-    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
-    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
-    screen_height = ScreenSize!.height - 50
 
     setesc std_error
     seterr std_error
 
-rem --- Use statements and Declares
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::bbjasper.bbj::BBJasperViewerControl
 
-    use ::ado_func.src::func
-    use ::ado_pdf.src::PDFHelper
-    use ::sys/prog/bao_callpoint.bbj::Callpoint
-    use ::sys/prog/bao_option.bbj::Option
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 50
+    
+rem --- Get HashMap of Values in Options Entry Form
 
-    declare Callpoint callpoint!
-    declare Option option!
+    params! = Option!.getOptionMap()
 
 rem --- Retrieve the program path
 
@@ -57,23 +50,8 @@ rem --- Assign form input values to local variables
 	whse$=Option!.getOptionData("WAREHOUSE_ID")
 
 rem --- Open Files    
-goto work_around
-	num_files=8
-	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
-	open_tables$[1]="BMM_BILLMAST",  open_opts$[1] = "OTA"
-	open_tables$[2]="BMM_BILLMAT",   open_opts$[2] = "OTA"
-	open_tables$[3]="BMM_BILLOPER",  open_opts$[3] = "OTA"
-	open_tables$[4]="BMM_BILLSUB",   open_opts$[4] = "OTA"
-	open_tables$[5]="BMC_OPCODES",   open_opts$[5] = "OTA"
-	open_tables$[6]="BMM_BILLCMTS",  open_opts$[6] = "OTA"
-	open_tables$[7]="IVM_ITEMMAST",  open_opts$[7] = "OTA"
-	open_tables$[8]="IVM_ITEMWHSE",  open_opts$[8] = "OTA"
-
-	gosub open_tables
-
-work_around:
-    files=8,begfile=1,endfile=files
+    files=10,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="bmm-01",ids$[1]="BMM_BILLMAST"
     files$[2]="bmm-02",ids$[2]="BMM_BILLMAT"
@@ -83,9 +61,81 @@ work_around:
 	files$[6]="bmm-09",ids$[6]="BMM_BILLCMTS"
 	files$[7]="ivm-01",ids$[7]="IVM_ITEMMAST"
 	files$[8]="ivm-02",ids$[8]="IVM_ITEMWHSE"
+    files$[9]="bms_params",ids$[9]="BMS_PARAMS"
+    files$[10]="ivs_params",ids$[10]="IVS_PARAMS"
+	
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :       ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
+
+    bms_params_dev=channels[9]
+    dim bms_params$:templates$[9]
+    ivs_params_dev=channels[10]
+    dim ivs_params$:templates$[10]
+
+rem --- Get needed BM and IV parameters
+
+    read record (bms_params_dev,key=firm_id$+"BM00") bms_params$
+    params!.put("BM_PRECISION",str(bms_params.bm_precision))
+
+    read record (ivs_params_dev,key=firm_id$+"IV00") ivs_params$
+    params!.put("IV_PRECISION",ivs_params.precision$)
+
+rem Create params for the report
+    params!.put("FIRM_ID",firm_id$)
+    params!.put("REPORT_NAME",sysinfo.task_desc$)
+    params!.put("FIRM_NAME",firm_name$)
+    params!.put("BARISTA_WD",dir(""))
+    params!.put("BILL_NO_1",from_bill$)
+    params!.put("BILL_NO_2",thru_bill$)
+    params!.put("WHSE",whse$)
+    params!.put("PROD_DATE",prod_date$)
+    if comments$="Y"
+        params!.put("COMMENT_YN","Y")
+    else
+        params!.put("COMMENT_YN","N")
+    endif
+    params!.put("ALL_DATES","N")
+
+rem --- Add masks to params!
+
+    mask$=""
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","C","",msk$,0,0
+    masks$=masks$+"bm_cost_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","H","",msk$,0,0
+    masks$=masks$+"bm_hour_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","M","",msk$,0,0
+    masks$=masks$+"bm_mFactor_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","R","",msk$,0,0
+    masks$=masks$+"bm_rate_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","U","",msk$,0,0
+    masks$=masks$+"bm_unit_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",msk$,0,0
+    masks$=masks$+"iv_cost_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","U","",msk$,0,0
+    masks$=masks$+"iv_units_mask^"+msk$+"|"
+    
+    params!.put("MASKS",masks$)
+
+rem --- Make Document Archive Record and Get ID
+
+    rep_date$=date(0:stbl("+DATE_MASK"))
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+    rd_source_alias$=rd_alias_id$
+    rd_source_type$="O"
+    rd_doc_source$="E"
+    rd_doc_ext$="JAS"
+    rd_archive_action$="DOC_ID-NOREPRINT"
+    gosub document_whse
+    rd_archive_action$=""
+
+rem --- Document Output Report Parameters
+
+    params!.put("DOC_NO",rd_doc_id$)
+    params!.put("DATE_REP",rep_date$+"  "+rep_time$)
 
 rem --- Set Report Name & Subreport directory
 
@@ -137,48 +187,14 @@ rem --- Check for user authentication
     endif
 
     report! = new BBJasperReport(filename$,url$,err=CONNECT_ERR)
+    report!.putParams(params!)
 
-rem Set Report Locale
+rem --- Set Report Locale
+
     locale$ = stbl("!LOCALE")
     locale$ = stbl("+USER_LOCALE",err=*next)
 
     report!.setLocale(locale$)
-
-rem --- Make Document Archive Record and Get ID
-
-    rep_date$=date(0:stbl("+DATE_MASK"))
-    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
-    rep_time$=date(0:"%hz:%mz %p")
-    rep_time_stamp$=date(0:"%Hz%mz%sz")
-
-    rd_source_alias$=rd_alias_id$
-    rd_source_type$="O"
-    rd_doc_source$="E"
-    rd_doc_ext$="JAS"
-    rd_archive_action$="DOC_ID-NOREPRINT"
-    gosub document_whse
-    rd_archive_action$=""
-
-rem Create params for the report
-    params! = new java.util.HashMap()
-    params!.put("FIRM_ID",firm_id$)
-    params!.put("REPORT_NAME",sysinfo.task_desc$)
-    params!.put("BILL_NO_1",from_bill$)
-    params!.put("BILL_NO_2",thru_bill$)
-	params!.put("FIRM_NAME",firm_name$)
-	params!.put("DOC_NO",rd_doc_id$)
-	params!.put("DATE_REP",rep_date$+"  "+rep_time$)
-	params!.put("WHSE",whse$)
-	params!.put("PROD_DATE",prod_date$)
-    if comments$="Y"
-        params!.put("COMMENT_YN","Y")
-    else
-        params!.put("COMMENT_YN","N")
-    endif
-	params!.put("ALL_DATES","N")
-	params!.put("BARISTA_WD",dir(""))
-
-    report!.putParams(params!)
 
 rem --- Fill Report and Show
 

@@ -2,14 +2,19 @@ rem ----------------------------------------------------------------------------
 rem Program: BOMCOSTING.prc
 rem Description: Stored Procedure to get the BOM Costing info into iReports
 rem
-rem Author(s): J. Brewer
-rem Revised: 08.25.2011
-rem
 rem AddonSoftware
-rem Copyright BASIS International Ltd.
+rem Copyright BASIS International Ltd.  All Rights Reserved.
 rem ----------------------------------------------------------------------------
 
-seterr sproc_error
+GOTO SKIP_DEBUG
+Debug$= "C:\temp\BOMCOSTING_DebugPRC.txt" 
+string Debug$
+DebugChan=unt
+open(DebugChan)Debug$   
+write(DebugChan)"Top of BOMCOSTING"
+SKIP_DEBUG:
+
+    seterr sproc_error
 
 rem --- Set of utility methods
 
@@ -77,44 +82,6 @@ rem --- Dimension string templates
 	dim bmm_billmat$:templates$[3]
 	dim ivm_itemmast$:templates$[4]
 
-goto no_bac_open
-rem --- Open Files    
-    num_files = 5
-    dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
-
-	open_tables$[1]="BMM_BILLMAST",  open_opts$[1] = "OTA"
-	open_tables$[2]="BMM_BILLMAST",  open_opts$[2] = "OTA[_2]"
-	open_tables$[3]="BMM_BILLMAT",   open_opts$[3] = "OTA"
-	open_tables$[4]="IVM_ITEMMAST",   open_opts$[4] = "OTA"
-	open_tables$[5]="IVM_ITEMWHSE",   open_opts$[5] = "OTA"
-
-call sypdir$+"bac_open_tables.bbj",
-:       open_beg,
-:		open_end,
-:		open_tables$[all],
-:		open_opts$[all],
-:		open_chans$[all],
-:		open_tpls$[all],
-:		table_chans$[all],
-:		open_batch,
-:		open_status$
-    if open_status$<>"" then
-        seterr 0
-        x$=stbl("+THROWN_ERR","TRUE")   
-        throw "File open error.",1001
-    endif
-
-	bmm_billmast_dev  = num(open_chans$[1])
-	bmm_billmast_dev1 = num(open_chans$[2])
-	bmm_billmat_dev   = num(open_chans$[3])
-	ivm_itemmast_dev  = num(open_chans$[4])
-	ivm_itemwhse_dev  = num(open_chans$[5])
-
-	dim bmm_billmast$:open_tpls$[1]
-	dim bmm_billmat$:open_tpls$[3]
-	dim ivm_itemmast$:open_tpls$[4]
-
-no_bac_open:
 rem --- Trip Read
 
 	extract record (bmm_billmast_dev, key=firm_id$+from_bill$, dom=*next)

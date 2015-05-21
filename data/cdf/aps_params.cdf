@@ -94,6 +94,12 @@ rem --- Disable fields based on params
 	callpoint!.setDevObject("gl_installed",gl_installed$)
 	if gl_installed$<>"Y" then callpoint!.setColumnEnabled("APS_PARAMS.POST_TO_GL",-1)
 
+	dim info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","PO",info$[all]
+	po_installed$=info$[20]
+	callpoint!.setDevObject("po_installed",po_installed$)
+	if po_installed$<>"Y" then callpoint!.setColumnEnabled("APS_PARAMS.USE_REPLEN",-1)
+
 rem --- ALL_AUTH_COLOR background color displays
 	ctl_name$="APS_PAYAUTH.ALL_AUTH_COLOR"
 	gosub make_color_display
@@ -270,22 +276,15 @@ rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user
 	endif
 
 rem --- Retrieve parameter data
-	dim info$[20]
-	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
-	gl$=info$[20]
-	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
-	ap$=info$[20],br$=info$[9]
+	gl_installed$=callpoint!.getDevObject("gl_installed")
+	po_installed$=callpoint!.getDevObject("po_installed")
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]
-	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_installed:c(1),"+
-:                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1)"
+	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_installed:c(1),iv_installed:c(1)"
 	user_tpl.app$="AP"
 	user_tpl.gl_pers$=gls01a.total_pers$
-	user_tpl.gl_installed$=gl$
-	user_tpl.ap_installed$=ap$
+	user_tpl.gl_installed$=gl_installed$
 	user_tpl.iv_installed$=iv$
-	user_tpl.bank_rec$=br$
-	gl_installed$=callpoint!.getDevObject("gl_installed")
 	rem --- set some defaults (that I can't do via arde) if param doesn't yet exist
 	aps01a_key$=firm_id$+"AP00"
 	find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
@@ -298,16 +297,21 @@ rem --- Retrieve parameter data
 :			callpoint!.getColumnData("APS_PARAMS.MAX_VENDOR_LEN"))
 		callpoint!.setColumnUndoData("APS_PARAMS.VENDOR_SIZE",
 :                     	callpoint!.getColumnData("APS_PARAMS.MAX_VENDOR_LEN"))
-		if ap$="Y" and gl$="Y" and br$="Y" 
+		if gl_installed$="Y" then
+			callpoint!.setColumnData("APS_PARAMS.POST_TO_GL","Y")
 			callpoint!.setColumnData("APS_PARAMS.BR_INTERFACE","Y")
-			callpoint!.setColumnUndoData("APS_PARAMS.BR_INTERFACE","Y")
 		endif
-		if gl_installed$="Y" then callpoint!.setColumnData("APS_PARAMS.POST_TO_GL","Y")
    		callpoint!.setStatus("MODIFIED-REFRESH")
 	else
 		rem --- Update post_to_gl if GL is uninstalled
 		if gl_installed$<>"Y" and callpoint!.getColumnData("APS_PARAMS.POST_TO_GL")="Y" then 
 			callpoint!.setColumnData("APS_PARAMS.POST_TO_GL","N",1)
+   			callpoint!.setStatus("MODIFIED")
+		endif
+
+		rem --- Update use_replen if PO is uninstalled
+		if po_installed$<>"Y" and callpoint!.getColumnData("APS_PARAMS.USE_REPLEN")="Y" then 
+			callpoint!.setColumnData("APS_PARAMS.USE_REPLEN","N",1)
    			callpoint!.setStatus("MODIFIED")
 		endif
 	endif

@@ -1,14 +1,9 @@
-rem --- Purchase Order Printing (Input Overlay) 
-rem --- Program por_ba v8.0.0 06Jul2007 (por_ba)
-rem --- Created by adx_codeport.bbx v1.1.5 (07/06/2007 02:01:54)
+rem --- Print Purchase Order
+rem --- Program por_poprint.aon
+rem --- Adapted from the original BBjForm-based version to use jasper
 
-rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- AddonSoftware
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
-rem --- All Rights Reserved
-
-    rem --- err= on enter because pgm is usually run from po print form, but can be called
-    rem --- on demand from w/in po entry
-    enter single_vendor_id$,single_po_no$,err=*next
 
     seterr end_instantiate
     use ::bbtranslator.bbj::BBTranslator
@@ -19,329 +14,252 @@ end_instantiate:
 
     seterr std_error
     setesc std_error
-    
-rem --- Use statements
 
-    use ::ado_func.src::func
-    use ::ado_pdf.src::PDFHelper
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::bbjasper.bbj::BBJasperViewerControl
+
     use ::sys/prog/bao_option.bbj::Option
+    use ::ado_rptControl.src::ReportControl
 
-    use java.awt.Font
-    use java.lang.Float
-    use javax.print.attribute.HashPrintRequestAttributeSet
-    use javax.print.attribute.standard.MediaPrintableArea
-    use javax.print.attribute.standard.MediaSizeName
-    use javax.print.attribute.standard.OrientationRequested    
+    declare BBJasperReport BBjReport!
+    
+    params! = new java.util.HashMap()
+        
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 200; rem keep it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 100
 
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
+    sypdir$=stbl("+DIR_SYP",err=*next)
 
-rem --- Set Print Path
+rem --- Set document Directory
 
     docdir$=stbl("+DOC_DIR_PDF",err=*next)
-
-rem --- Derive/set path and filename for logo to go on form
-
-    logofile$=""
-    while 1
-        curr_path$=dsk("")+dir("")
-        chdir stbl("+CUST_IMAGES",err=*break),err=*break
-        logofile$="file:"+dsk("")+dir("")+stbl("+FORM_LOGO",err=*break)
-        chdir curr_path$
-        break
-    wend
 
 rem --- Retrieve sysinfo data
 
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
+
+    milestone=5
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+
+rem --- Derive/set path and filename for logo to go on form
+    
+    logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+    logo_filename$=""
+    if logo_file$<>""
+        logo_chn=unt
+        open (logo_chn,err=*endif)logo_file$
+        logo_filename$=fid(logo_chn)(9)
+        close (logo_chn)
+    endif
+
+rem --- Set Report Name & Subreport directory
+
+    reportDir$ = stbl("+DIR_REPORTS",err=*next)   
+    temp = unt
+    open (temp)reportDir$
+    reportDir$ = fid(temp)(9)+"/"
+    close (temp)
+    reportBaseName$ = "PurchaseOrderHdr"
+    filename$ = reportDir$ + reportBaseName$ + ".jasper"
+    masterBaseName$ = "PurchaseOrderMaster"
+    master_filename$ = reportDir$ + masterBaseName$+".jasper"
+    printBaseName$ = "PurchaseOrderPrint"
+    print_filename$ = reportDir$ + printBaseName$+".jasper"    
+
+    declare BBJasperReport report!
+    
+rem --- Check for user authentication; create connection string in url$
+
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    dbtimeout$="&socket_timeout=5000"
+  
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
+
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
+    
+    dbname$ = stbl("+DBNAME")
+    dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+        if pos("jdbc:"=cvs(dbname$,8))=1 then           
+            url$=dbname$+url_user$+dbssl$+dbtimeout$
+        else
+            url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+        endif
+    endif        
 
 rem --- Open/Lock files
 
-    files=24,begfile=1,endfile=files
+    files=4,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[2]="apm-01",ids$[2]="APM_VENDMAST"
-    files$[3]="apm-05",ids$[3]="APM_VENDADDR"
-    files$[4]="apc_typecode",ids$[4]="APC_TYPECODE";rem "apm-10A"
-    files$[5]="arm-01",ids$[5]="ARM_CUSTMAST"
-    files$[6]="arm-03",ids$[6]="ARM_CUSTSHIP"
-    files$[7]="ivm-01",ids$[7]="IVM_ITEMMAST"
-    files$[8]="ivm-02",ids$[8]="IVM_ITEMWHSE"
-    files$[9]="ivm-05",ids$[9]="IVM_ITEMVEND"
-    files$[10]="ivc_prodcode",ids$[10]="IVC_PRODCODE";rem "ivm-10A"
-    files$[12]="poe-02",ids$[12]="POE_POHDR"
-    files$[13]="poe-12",ids$[13]="POE_PODET"
-    files$[14]="poe-22",ids$[14]="POE_POPRINT"
-    files$[15]="pom-02",ids$[15]="POC_LINECODE"
-    files$[16]="pom-04",ids$[16]="POC_MSGCODE"
-    files$[17]="pom-14",ids$[17]="POC_MSGLINE"
-    files$[18]="aps_params",ids$[18]="APS_PARAMS"
-    files$[19]="ars_params",ids$[19]="ARS_PARAMS"
-    files$[20]="ivs_params",ids$[20]="IVS_PARAMS"
-    files$[21]="pos_params",ids$[21]="POS_PARAMS"
-    files$[22]="apc_termscode",ids$[22]="APC_TERMSCODE"
-    files$[23]="ivc_whsecode",ids$[23]="IVC_WHSECODE"
-    files$[24]="aps_report",ids$[24]="APS_REPORT"
+
+    files$[1]="poe-22",ids$[1]="POE_POPRINT"
+    files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
+    files$[3]="pos_params",ids$[3]="POS_PARAMS"
+    files$[4]="aps_report",ids$[4]="APS_REPORT"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
-    apm01_dev=channels[2]
-    apm05_dev=channels[3]
-    apm10a_dev=channels[4]
-    arm01_dev=channels[5]
-    arm03_dev=channels[6]
-    ivm01_dev=channels[7]
-    ivm02_dev=channels[8]
-    ivm05_dev=channels[9]
-    ivm10a_dev=channels[10]
-    poe02_dev=channels[12]
-    poe12_dev=channels[13]
-    poe22_dev=channels[14]
-    pom02_dev=channels[15]
-    pom04_dev=channels[16]
-    pom14_dev=channels[17]
-    aps01a_dev=channels[18]
-    ars01a_dev=channels[19]
-    ivs01a_dev=channels[20]
-    pos01a_dev=channels[21]
-    apm10c_dev=channels[22]
-    ivm10c_dev=channels[23]; rem IVC_WHSECODE
-    aps_report_dev=channels[24]
+
+    poe_poprint=channels[1]
+    ivs_params=channels[2]
+    pos_params=channels[3]
+    aps_report=channels[4]
 
 rem --- Dimension string templates
 
-    dim apm01a$:templates$[2],apm05a$:templates$[3],apm10a$:templates$[4],arm01a$:templates$[5]
-    dim arm03a$:templates$[6],ivm01a$:templates$[7],ivm02a$:templates$[8],ivm05a$:templates$[9]
-    dim ivm10a$:templates$[10],poe02a$:templates$[12],poe12a$:templates$[13]
-    dim poe22a$:templates$[14],pom02a$:templates$[15],pom04a$:templates$[16],pom14a$:templates$[17]
-    dim aps01a$:templates$[18],ars01a$:templates$[19],ivs01a$:templates$[20],pos01a$:templates$[21]
-    dim apm10c$:templates$[22],ivm10c$:templates$[23],aps_report$:templates$[24]
+    dim poe_poprint$:templates$[1]
+    dim ivs_params$:templates$[2]
+    dim pos_params$:templates$[3]
+    dim aps_report$:templates$[4]
 
 rem --- Retrieve parameter records
 
-    aps01a_key$=firm_id$+"AP00"
-    find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-    ars01a_key$=firm_id$+"AR00"
-    find record (ars01a_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-    ivs01a_key$=firm_id$+"IV00"
-    find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
-    pos01a_key$=firm_id$+"PO00"
-    find record (pos01a_dev,key=pos01a_key$,err=std_missing_params) pos01a$
+    ivs_params_key$=firm_id$+"IV00"
+    find record (ivs_params,key=ivs_params_key$,err=std_missing_params) ivs_params$
+
+    pos_params_key$=firm_id$+"PO00"
+    find record (pos_params,key=pos_params_key$,err=std_missing_params) pos_params$
     
-    find record (aps_report_dev,key=firm_id$+"AP02",err=std_missing_params) aps_report$
-    co_addr$=aps_report.addr_line_1$+aps_report.addr_line_2$+aps_report.city$+aps_report.state_code$+aps_report.zip_code$    
-    call "adc_address.aon",co_addr$,24,3,9,35
+    find record (aps_report,key=firm_id$+"AP02",err=std_missing_params) aps_report$
 
-rem --- Parameters
+	comp_addrLine_len = 30
+    comp$=aps_report.addr_line_1$+aps_report.addr_line_2$+aps_report.city$+aps_report.state_code$+aps_report.zip_code$    
+    call "adc_address.aon",comp$,24,3,9,comp_addrLine_len
+    comp$=aps_report.name$+comp$
 
-    dim i[6],p[3]
-    n2$="PO"
-    ap$="N"
-    ar$="N"
-    sf$="N"
-    when$=sysinfo.system_date$
-    i[0]=ivs01a.item_id_len
-    i[1]=num(ivs01a.precision$)
-    i[2]=ivs01a.ls_no_len
-    i[3]=num(ivs01a.desc_len_01$)
-    i[4]=num(ivs01a.desc_len_02$)
-    i[5]=num(ivs01a.desc_len_03$)
-    i[6]=ivs01a.vendor_prd_len
-    call pgmdir$+"adc_application.aon","AR",info$[all]
-    ar$=info$[20]
-    if ar$="Y" call pgmdir$+"adc_application.aon","OP",info$[all]
-    op$=info$[20]
-
-rem --- Initializations
-
-    dim params[10],params$[10]
-    sequence$="N"
-    pomessage$=""
-    restart$="N"
-    vendor$=""
-    title$="P U R C H A S E   O R D E R"
-    label$=Translate!.getTranslation("AON_PURCHASE_ORDER")
-    type$="P"
-    let defaultmsg$=pos01a.po_msg_code$
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","POC_MSGCODE","PRIMARY",pom04a_key_tpl$,rd_table_chans$[all],status$
-    dim pom04a_key$:pom04a_key_tpl$
+    call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(aps_report.phone_no$,2),"",phone_mask$
+    comp_phone$=cvs(aps_report.phone_no$,2)
+    comp_phone$=str(comp_phone$:phone_mask$,err=*next)
 
 rem --- Assign form input values to local variables
 
-    declare Option option!
-
-    table$=fnget_table$("")
-    if cvs(table$,3)=""
-        vendor$=single_vendor_id$
-        req_no$=single_po_no$
-        alias_id$="POR_POPRINT"
+    sequence$="N"
+    pomessage$=""
+    restart$="N"
+    vendor_id$=""
+    restart_vendor_id$=""
+    single_vendor$=""
+    send_via_rpt_ctl$=""
+    alias$=option!.getAlias()
+    master_document=0
+    print_document=0
+ 
+    if pos("POR_POPRINT_DMD"=alias$)
+        single_vendor$="Y"
+        vendor_id$=option!.getOptionData("VENDOR_ID")
+        po_no$=option!.getOptionData("PO_NO")
+        pomessage$=option!.getOptionData("MESSAGE_TEXT")
+        send_via_rpt_ctl$=option!.getOptionData("RPT_CONTROL")
+        rptctl_alias$ = "POR_POPRINT";rem --- use actual alias (i.e., POR_POPRINT_DMD) when putting in doc archive so you know it was an on-demand PO, but use POR_POPRINT for report control so you don't need two report control records for each vendor to handle on-demand vs. batch.        
     else
         sequence$=option!.getOptionData("REPORT_TYPE")
         pomessage$=option!.getOptionData("MESSAGE_TEXT")
         restart$=option!.getOptionData("RESTART")
-        vendor$=option!.getOptionData("VENDOR_ID")
-        alias_id$=option!.getAlias()
+        restart_vendor_id$=option!.getOptionData("VENDOR_ID")
+        rptctl_alias$ = alias$
+        master_document=1
+        print_document=1
     endif
 
 rem --- Initializations
 
-    precision num(ivs01a.precision$)
-    dim heading$[1],buf$(width),bar$(width,"-")
-    dim a0$(15,"9"),a1$(160,"X"),a[8],y0$(4),y1$(32),h0$(5),h1$(32)
-    dim w0$(18,"9"),w1$(48,"X"),w2$(32),w3$(22,"X"),w4$(40,"X"),w[12]
-    dim l0$(7),l1$(40),c0$(8,"0"),c1$(30,"X"),z0$(32,"X"),x8$(25),x9$(20)
-    dim a$(140,"X"),n$(105,"X"),s$(105,"X")
-    nf$=Translate!.getTranslation("AON_(NOT_ON_FILE)")
-    shipflen=35
-    more=1
+    type$="P"
+    let defaultmsg$=pos_params.po_msg_code$   
+
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",m1$,0,m1
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","U","",m2$,0,m2
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",m3$,0,m3
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","I","",vend_mask$,0,vendlen
+
+    ext_mask$ = m1$
+
+    call pgmdir$+"adc_sizemask.aon",ext_mask$,ext_mask,12,12
+
+	rem --- Make the 'Patterns' used to mask in iReports from Addon masks
+	rem       examples:
+	rem          ##0.00;##0.00-   Includes negatives with minus at the end
+	rem          ##0.00;-##0.00   Includes negatives with minus at the front
+	rem          ##0.00;##0.00    Positives only
+
+	ext_mask_pattern$=fngetPattern$(ext_mask$)
+
+    emailFax! = BBjAPI().makeVector()
+    UpdateRecs!=bbjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
+
+rem --- Start progress meter and position header file
+
+    call pgmdir$+"adc_progress.aon","NC","POE_POPRINT","","","",0,poe_poprint,1,meter_num,status
+    if status = 999 then goto all_done
+
+rem --- Build SQL query to drive the report
+
+    if single_vendor$="Y"
     
-rem --- Init PDF printing 
+        sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no "
+        sql_prep$=sql_prep$+"FROM poe_poprint "
 
-    declare Font textfont!
-    declare Font boldfont!
-    declare Font italicfont!
-    declare Font largefont!
-    declare Font smallfont!
-    declare BBjAPI myAPI!
-    declare BBjColor white!
-    declare BBjColor black!
-    declare BBjColor light_gray!
+        where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND poe_poprint.vendor_id = '" +vendor_id$+ "' AND "
+        where_clause$=where_clause$+"poe_poprint.po_no = '"+po_no$+"' "
 
-    textfont!   = new Font("Times New Roman", Font.PLAIN, 10)
-    italicfont! = new Font("Times New Roman", Font.ITALIC, 10)
-    boldfont!   = new Font("Arial", Font.BOLD, 10)
-    largefont!  = new Font("Arial", Font.BOLD, 16)
-    smallfont!  = new Font("Times New Roman",Font.BOLD,8)
-
-    myAPI! = BBjAPI()
-    white! = myAPI!.makeColor("WHITE")
-    black! = myAPI!.makeColor("BLACK")
-    light_gray! = myAPI!.makeColor(224, 224, 224)
-
-rem --- Setup PDF printer and print area   
-
-    declare HashPrintRequestAttributeSet requestAttributes!
-    declare MediaPrintableArea a!
-    declare Float x!
-    declare Float y!
-    declare Float w!
-    declare Float h!
-
-    requestAttributes! = new HashPrintRequestAttributeSet()
-    requestAttributes!.add(MediaSizeName.NA_LETTER)
-    requestAttributes!.add(OrientationRequested.PORTRAIT)
-
-    units = MediaPrintableArea.INCH
-    x! = new Float(0.25).floatValue()
-    y! = new Float(0.25).floatValue()
-    w! = new Float(8.0).floatValue()
-    h! = new Float(10.5).floatValue()
-    a! = new MediaPrintableArea(x!,y!,w!,h!,units)
-
-    requestAttributes!.add(a!)
-
-rem --- Create PDF printer, set attributes, and create PDF helper object
-
-    declare BBjPrinter myBBjPrinter!
-    declare BBjForm docPrint!
-    declare PDFHelper pdf!
-    
-    myBBjPrinter!=myAPI!.getBBjPrinter(1,err=*next)
-    if myBBjPrinter!=null()
-        msg_id$="AD_NOPRINTER"
-        gosub disp_message
-        goto std_exit
-    endif
-    myBBjPrinter!.setAttributes(requestAttributes!)
-    docPrint! = myBBjPrinter!.getForm(0)
-    pdf! = new PDFHelper(textfont!)
-
-	UpdateRecs!=bbjAPI().makeVector()
-	
-rem --- ESCAPE IF PLAIN$="Y" THEN LET SHIPFLEN$="Y
-
-    t0$="" 
-    t1$=""
-    t2$=""
-    t3$=""
-    t4$=""
-    return_l9=l9
-    qtymaskmax=9,qtymaskmin=9,maxfooters=10,l9=29
-    dim footer$[maxfooters]
-    title=len(title$)
-    label=len(label$)
-    l=l9+1
-    first=1
-    page=0
-    seq_msk$="####0000"
-
-rem --- Resize masks
-
-	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","A","",m1$,0,m1
-	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","U","",m2$,0,m2
-	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",m3$,0,m3
-    call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","I","",vendomask$,0,vendlen
-
-rem --- Test pattern initializations
-
-rem    poe12a.unit_cost=9999.99
-rem    qty=999999
-rem    extension=999999.99
-rem    total=extension
-rem    poe12a.reqd_date$ = f0$(18,6)
-rem    poe12a.unit_measure$ = "EA"
-rem    poe02a.ord_date$ = f0$(18,6)
-rem    pom02a.line_type$ = "N"
-rem    poe12a.promise_date$ = poe02a.ord_date$ 
-rem    shipfrom$="99 "+fill(30,"X")
-
-rem --- Loop Starting
-
-    if single_vendor_id$<>""
-    
-        sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, poe_podet.internal_seq_no, "
-        sql_prep$=sql_prep$+"poe_podet.warehouse_id, apm_vendmast.alt_sequence "
-        sql_prep$=sql_prep$+"FROM poe_poprint, poe_podet, apm_vendmast "
-
-        where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND poe_poprint.vendor_id = '" +single_vendor_id$+ "' AND "
-        where_clause$=where_clause$+"poe_poprint.po_no = '"+single_po_no$+"' AND "
-        where_clause$=where_clause$+"poe_poprint.firm_id=poe_podet.firm_id AND poe_poprint.po_no=poe_podet.po_no AND "
-        where_clause$=where_clause$+"poe_poprint.firm_id=apm_vendmast.firm_id AND poe_poprint.vendor_id=apm_vendmast.vendor_id "
-
-        order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
-        
     else
-
-        sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, poe_podet.internal_seq_no, "
-        sql_prep$=sql_prep$+"poe_podet.warehouse_id, apm_vendmast.alt_sequence "
-        sql_prep$=sql_prep$+"FROM poe_poprint, poe_podet, apm_vendmast "
+   
+        sql_prep$="select poe_poprint.firm_id, poe_poprint.vendor_id, poe_poprint.po_no, "
+        sql_prep$=sql_prep$+"poe_pohdr.warehouse_id, apm_vendmast.alt_sequence "
+        sql_prep$=sql_prep$+"FROM poe_poprint, apm_vendmast, poe_pohdr "
 
 
         where_clause$="WHERE poe_poprint.firm_id = '"+firm_id$+"' AND "
-        where_clause$=where_clause$+"poe_poprint.firm_id=poe_podet.firm_id AND poe_poprint.po_no=poe_podet.po_no AND "
+        where_clause$=where_clause$+"poe_poprint.firm_id=poe_pohdr.firm_id AND poe_poprint.po_no=poe_pohdr.po_no AND "
         where_clause$=where_clause$+"poe_poprint.firm_id=apm_vendmast.firm_id AND poe_poprint.vendor_id=apm_vendmast.vendor_id "
 
         action=pos(sequence$="NRPAW")
-            vend_seq=1
-            req_seq=2
-            po_seq=3
-            alt_seq=4
-            whse_seq=5
+        vend_seq=1
+        req_seq=2
+        po_seq=3
+        alt_seq=4
+        whse_seq=5
 
         switch action
             case vend_seq
-                order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
+                order_by$="order by poe_poprint.vendor_id,poe_poprint.po_no"
                 break
              case req_seq
              case po_seq
-                order_by$="order by poe_poprint.po_no,poe_poprint.vendor_id,poe_podet.po_line_no"
+                order_by$="order by poe_poprint.po_no,poe_poprint.vendor_id"
                 break
              case alt_seq
-                order_by$="order by apm_vendmast.alt_sequence,poe_poprint.vendor_id,poe_poprint.po_no,poe_podet.po_line_no"
+                order_by$="order by apm_vendmast.alt_sequence,poe_poprint.vendor_id,poe_poprint.po_no"
                 break
              case whse_seq
                 order_by$="order by poe_podet.warehouse_id,poe_poprint.vendor_id,poe_poprint.po_no"
@@ -350,658 +268,290 @@ rem --- Loop Starting
                 more=0
                 continue
         swend
-        
     endif
 
     sql_prep$=sql_prep$ + where_clause$ + order_by$
     sql_chan=sqlunt
     sqlopen(sql_chan,err=*next)stbl("+DBNAME")
     sqlprep(sql_chan)sql_prep$
+
+rem --- Process SQL fetch results
+
     dim read_tpl$:sqltmpl(sql_chan)
     sqlexec(sql_chan)
 
-    while more
+    while 1
         read_tpl$=sqlfetch(sql_chan,err=*break)
-        recs=recs+1
         po_no$=read_tpl.po_no$
         vendor_id$=read_tpl.vendor_id$
-        whse_id$=read_tpl.warehouse_id$
-        internal_seq_no$=read_tpl.internal_seq_no$
 
-        if po_no$<>poe02a.po_no$ then
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+       
+        if restart$="Y" and restart_vendor_id$<>""
+            if vendor_id$<restart_vendor_id$ then continue
+        endif
+            
+        if single_vendor$<>"Y"
+            lock_unlock$="L"
+            lock_key$=firm_id$+po_no$
+            last_po_no$=po_no$
+            gosub lock_unlock_record
+            if rd_lock_status$<>"" then lock_key$=""; continue
+        endif
         
-            gosub print_total
-            if cvs(poe02a.po_no$,3)<>"" and lock_key$<>""
-                lock_unlock$="U"
-                gosub lock_unlock_record
+        UpdateRecs!.addItem(firm_id$+vendor_id$+po_no$)
+
+    rem --- Make Document Archive Record and Get Document ID
+        rep_date$=date(0:stbl("+DATE_MASK"))
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+        new_doc_id$=""
+        new_doc_name$=""
+        doc_name$="PO_"+po_no$+"_"+alias$
+        doc_keywords$="PO: "+po_no$+" Vendor: "+vendor_id$
+
+        rd_source_alias$=alias$
+        rd_source_type$="O"
+        rd_doc_source$="E"
+        rd_doc_ext$="PDF"
+        rd_source_id$="V"
+        rd_source_ref$=vendor_id$
+        rd_doc_keywords$=doc_keywords$
+    
+    rem --- Get Next Document Number and update Document Audit for individual pdf
+        call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",new_doc_id$,rd_table_chans$[all] 
+        new_doc_name$=new_doc_id$+"_"+doc_name$+".pdf"        
+        
+        call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,rep_date_stamp$,rep_time_stamp$,rd_doc_source$,rd_doc_ext$,docdir$,
+:           rd_source_type$,rd_source_alias$,rd_source_id$,rd_source_ref$,rd_table_chans$[all],"",new_doc_name$,doc_name$,doc_keywords$
+    
+    rem --- Get Next Document Number and update Document Audit with JAS entry for master doc, if first time thru
+        if master_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            rd_source_id$="V"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
+            gosub document_whse
+            rd_archive_action$=""
+            master_doc_id$=rd_doc_id$
+            master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"
+        endif
+    
+    rem --- Get Next Document Number and update Document Audit with JAS entry for print doc, if first time thru
+        if print_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            rd_source_id$="V"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
+            gosub document_whse
+            rd_archive_action$=""
+            print_doc_id$=rd_doc_id$
+            print_doc_name$=print_doc_id$+"_"+printBaseName$+".pdf"
+        endif
+   
+    rem --- Use ReportControl object to see if vendor wants print, email, or fax
+        add_to_print_report=1
+      
+        if rpt_ctl$="YES"     
+            found=reportControl!.getRecipientInfo(rpt_id$,"",vendor_id$)          
+            if found         
+                if reportControl!.getPrintYN()<>"Y" then add_to_print_report=0
+                if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                    emailFax!.add(rpt_id$)
+                    emailFax!.add(vendor_id$)
+                    emailFax!.add(new_doc_id$)
+                endif
             endif
-            page=0
-            l=l9+1            
-            read record (poe02_dev,key=firm_id$+po_no$,dom=*continue) poe02a$ 
-            if single_vendor_id$=""
-                lock_unlock$="L"
-                lock_key$=firm_id$+po_no$
-                gosub lock_unlock_record
-                if rd_lock_status$<>"" then lock_key$=""; continue
-            endif            
-            rem --- call bac_documents.bbj to get back document ID
-            new_doc_id$=""
-            pdf_doc$=""
-            call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,"","","I","PDF",docdir$,
-:              "pdf",alias_id$,"V",vendor_id$,rd_table_chans$[all],"DOC_ID"                            
-        else
-            if single_vendor_id$="" and lock_key$="" then continue
         endif
-        if vendor_id$<>t0$ then
-            gosub print_total
-            gosub vendor_break
-            page=0
-            l=l9+1
-        endif
-        if vendor_id$+poe02a.purch_addr$<>t1$ then
-            gosub print_total
-            gosub shipfrom_break
-            page=0
-            l=l9+1
-        endif
-        if poe02a.ap_terms_code$<>t2$ then gosub terms_break
-        gosub shipto_break;rem --- loads dropship or warehouse address into a$
+
+    rem --- Document Output Report Parameters
+
+        params!.put("DOC_NO",new_doc_id$)
+        params!.put("DATE_REP",rep_date$+"  "+rep_time$)
+
+    rem --- Other params
+
+        params!.put("BARISTA_WD",dir(""))
+        params!.put("LOGO_FILE",logo_filename$)
+        params!.put("FIRM_ID",firm_id$)
+        params!.put("PO_NO",po_no$)
+        params!.put("VENDOR_ID",vendor_id$)
+        params!.put("MESSAGE",pomessage$)
+        params!.put("QTY_MASK",m2$)
+        params!.put("COST_MASK",m3$)
+        params!.put("VEND_MASK",str(vend_mask$))
+		params!.put("EXT_MASK",ext_mask$)
+		params!.put("EXT_MASK_PATTERN",ext_mask_pattern$)
+        params!.put("DFLT_MSG",defaultmsg$)
+        params!.put("RESTART",restart$)
+        params!.put("RESTART_VEND",restart_vendor_id$)       
+        params!.put("AP_ADDRESS1",comp$((comp_addrLine_len*0)+1,comp_addrLine_len))
+		params!.put("AP_ADDRESS2",comp$((comp_addrLine_len*1)+1,comp_addrLine_len))
+		params!.put("AP_ADDRESS3",comp$((comp_addrLine_len*2)+1,comp_addrLine_len))
+		params!.put("AP_ADDRESS4",comp$((comp_addrLine_len*3)+1,comp_addrLine_len))
+        params!.put("AP_PHONE_NO",comp_phone$)
+        params!.put("IV_PRECISION",ivs_params.precision$)
+        params!.put("PRT_VDR_ITEM",pos_params.prt_vdr_item$)
+        params!.put("NOF_PROMPT",Translate!.getTranslation("AON_NOT_ON_FILE"))
+        params!.put("VEND_ITEM_PROMPT",Translate!.getTranslation("AON_YOUR_ITEM_NUMBER_"))
+        params!.put("PROMISE_PROMPT",Translate!.getTranslation("AON_PROMISED_BY_"))
+        params!.put("NOT_B4_PROMPT",Translate!.getTranslation("AON_NOT_BEFORE_"))
+        params!.put("SHIPFROM_PROMPT",Translate!.getTranslation("AON_SHIP_FROM:_"))
+        params!.put("BANDED_ROWS","Y");rem --- controls whether or not detail portion of report is striped
+
+    rem --- invoke jasper
+
+        locale$ = stbl("!LOCALE")
+        locale$ = stbl("+USER_LOCALE",err=*next)    
         
-        find record (poe12_dev,key=firm_id$ + po_no$ + internal_seq_no$,dom=*continue) poe12a$
-
-        if poe12a.po_line_code$ <> t4$ gosub line_code_break
-        
-
-rem --- Print detail
-
-        gosub calc_ext
-        total=total+extension
-        gosub print_detail_line
-
-rem --- Print any associated message
-
-        if cvs(poe12a.po_msg_code$,2)<>""
-
-            msg$ = pom04a_key.po_msg_code$
-            pom04a_key$ = firm_id$ + poe12a.po_msg_code$
-            find record (pom04_dev,key = pom04a_key$,dom=print_done) pom04a$
-            if pos(pom04a.message_type$ = "B" + type$) = 0 then goto print_done
-            read (pom14_dev,key=pom04a_key$,dom=*next)
-
-            while more
-
-                k$ = key(pom14_dev,end=*break)
-                if pos(pom04a_key$ = k$) <> 1 break
-                read record (pom14_dev) pom14a$
-                gen_text$ = pom14a.message_text$
-                gosub text_only
-
-            wend
-
+        if master_document
+            master_report! = new BBJasperReport(master_filename$,url$)
+            master_report!.putParams(params!)
+            master_report!.setLocale(locale$)
+            master_report!.fill()
+            master_document=0
         endif
 
-print_done: rem --- Done printing line message
+        if print_document
+            print_report! = new BBJasperReport(print_filename$,url$)
+            print_report!.putParams(params!)
+            print_report!.setLocale(locale$)
+            print_report!.fill()
+            print_document=0
+        endif
 
-        d$=""
+        report! = new BBJasperReport(filename$,url$)
+        report!.putParams(params!)
+        report!.setLocale(locale$)
+        report!.fill()
+        report!.exportToPDF(BBjAPI().FALSE, docdir$+new_doc_name$)        
+  
+        if single_vendor$<>"Y"
+            master_report!.appendReport(report!)
+            if add_to_print_report then print_report!.appendReport(report!)
+            report!.destroy()            
+            lock_key$=firm_id$+po_no$
+            lock_unlock$="U"
+            gosub lock_unlock_record
+        endif
+        
+    wend
+        
+done: rem --- All PO's printed
 
-    wend;   rem loop back for next result from sql fetch
-
-done: rem --- All requisitions printed
-
-rem --- All done
-
-    if UpdateRecs!.size() = null
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+ 
+    if UpdateRecs!.size()=0
         msg_id$="DOC_OUTPUT_NODATA"
         gosub disp_message
         goto std_exit
     endif
 
-    gosub print_total
-    if lock_key$<>""
-        lock_unlock$="U"
-        gosub lock_unlock_record
-    endif
+rem --- bring up jasper viewers (master doc and print doc for Batch Invoices; single doc for On-Demand)
 
-    docPrint!.preview()
-
-update: rem --- Update print file?
-
-    if single_vendor_id$=""
-		rem --- batch print
-        msg_id$="PO_UPDTPRT"
-        dim msg_tokens$[1]
-        msg_tokens$[1]=label$
-        gosub disp_message
-        if msg_opt$="Y"
-			for del_recs = 0 to UpdateRecs!.size() - 1
-				k$=UpdateRecs!.getItem(del_recs)
-                remove (poe22_dev,key=k$,dom=*next)
-			next del_recs
-        endif
-	else
-		rem --- on demand print
-		remove (poe22_dev,key=firm_id$+single_vendor_id$+single_po_no$,dom=*next)
-    endif
-
-all_done: rem --- All done
-
-    goto std_exit
-
-report_heading: rem --- Report Heading
-
-rem --- Create PDF physical file, if needed
-
-    declare BBjForm docPDF!
-
-    while pdf_doc$ = ""
-        prtr_dev = unt
-        pdf_doc$ = docdir$ + new_doc_id$ + ".pdf"
-        start_block = 1
-        
-        if start_block
-            open (prtr_dev,err=*endif)pdf_doc$
-            close (prtr_dev)
-            erase pdf_doc$
-        endif
-
-        docPDF! = myAPI!.getBBjPDFForm(pdf_doc$, requestAttributes!)
-    wend
-
-
-    page=page+1
+    declare BBJasperViewerWindow masterViewerWindow!
+    declare BBJasperViewerWindow printViewerWindow!
+    declare BBJasperViewerWindow demandViewerWindow!
+    declare BBjTopLevelWindow bbjWindowMaster!
+    declare BBjTopLevelWindow bbjWindowPrint!
+    declare BBjTopLevelWindow bbjWindowDemand!
     
-rem --- Create pages from both physical and display objects   
+    rem --- get a pdf path from +DOC_DIR_PDF
+    rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
+    gosub doc_path
 
-    declare BBjFormPage pagePDF!
-    declare BBjFormPage pagePrint!
-    
-    pagePDF!   = docPDF!.createPage()
-    pagePrint! = docPrint!.createPage(err=std_error)
-    
-    pdf!.setPage(pagePrint!)
-    
-    while 1
-    
-		UpdateRecs!.addItem(poe02a.firm_id$+poe02a.vendor_id$+poe02a.po_no$)
-		
-        rem --- Header
-        pdf!.setText(0,10,568,10,"PURCHASE ORDER",largefont!,pdf!.CENTER_JUSTIFY())
-        pdf!.setLogo(0,0,185,68,logofile$)
+	if single_vendor$<>"Y"
+    rem --- master jasper - contains ALL POs
+        repTitle$=masterBaseName$
+        rd_doc_name$=master_doc_name$
+
+        rd_doc_id$=master_doc_id$
+
+        gosub OnMasterSaveMenuButton; rem --- always save to doc archive
+
+        masterViewerWindow! = new BBJasperViewerWindow(master_report!,5,5,screen_width,screen_height,repTitle$,$00000093$)
+        masterViewerControl! = masterViewerWindow!.getViewerControl()
+        masterViewerControl!.setGoogleDefaultDocument(repTitle$)
+        masterViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+        masterViewerControl!.setDefaultSaveFile(repTitle$)
+
+        rem --- set callbacks for when user presses save or email buttons in jasper viewer
+        rem --- note: saveAs or saveAsGDoc not intercepted, just regular save
+        masterSaveMenuButton! = masterViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+        masterSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnMasterSaveMenuButton")
+        masterEmailToolButton! = masterViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+        masterEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnMasterEmailToolButton")
+
+        masterViewerWindow!.setReleaseOnClose(0)
+        masterViewerWindow!.show(0)
+
+        bbjWindowMaster!= masterViewerWindow!.getViewerWindow()
+        bbjWindowMaster!.setCallback(bbjWindowMaster!.ON_CLOSE,"close_win")
         
-        rem --- Company Address (from AP report param rec)
-        pdf!.setText(50,72,co_addr$(1,35))
-        pdf!.setText(50,84,co_addr$(36,35))
-        pdf!.setText(50,96,co_addr$(71,35))
-        pdf!.setText(50,108,co_addr$(106))
-              
-        rem --- Info Box         
-        pdf!.drawBox(424,30,146,96)
-        pdf!.drawHLine(424, 54,146)
-        pdf!.drawHLine(424, 78,146)
-        pdf!.drawHLine(424,102,146)
-        pdf!.setText(432, 36,54, 36,Translate!.getTranslation("AON_PAGE"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(432, 60,54, 36,Translate!.getTranslation("AON_DATE"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(432, 84,54, 36,Translate!.getTranslation("AON_VENDOR"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(432,108,54, 36,Translate!.getTranslation("AON_PO_NO"),boldfont!,pdf!.RIGHT_JUSTIFY())
+    rem --- print jasper - contains only those marked for hard copy (or not present in report control files)
+        repTitle$=printBaseName$
+        rd_doc_name$=print_doc_name$
+        rd_doc_id$=print_doc_id$
 
-        pdf!.drawVLine(490, 30,96)
-        pdf!.setText(496, 36,str(page))
-        pdf!.setText(496, 60,fndate$(poe02a.ord_date$))
-        pdf!.setText(496, 84,poe02a.vendor_id$)
-        pdf!.setText(496,108,poe02a.po_no$)
+        gosub OnPrintSaveMenuButton; rem --- always save to doc archive
 
-        rem --- Vendor Address
-        pdf!.drawBox(20,126,550,96)
-        pdf!.drawVLine(65,126,96)
-        pdf!.setText(20,132,40,132,Translate!.getTranslation("AON_VENDOR"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(70,132,apm01a.vendor_name$)
-        pdf!.setText(70,144,n$(1,35))
-        pdf!.setText(70,156,n$(36,35))
-        pdf!.setText(70,168,n$(71,35))    
-        pdf!.setText(70,180,n$(106,35))
+        printViewerWindow! = new BBJasperViewerWindow(print_report!,50,50,screen_width,screen_height,repTitle$,$00000093$)
+        printViewerControl! = printViewerWindow!.getViewerControl()
+        printViewerControl!.setGoogleDefaultDocument(repTitle$)
+        printViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+        printViewerControl!.setDefaultSaveFile(repTitle$)
 
-        rem --- Ship To Address
-        pdf!.drawVLine(285,126,96)
-        pdf!.drawVLine(335,126,96)
-        pdf!.setText(280,132,48,132,Translate!.getTranslation("AON_SHIP_TO"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(340,132,ship_to$)
-        pdf!.setText(340,144,a$(1,35))
-        pdf!.setText(340,156,a$(36,35))
-        pdf!.setText(340,168,a$(71,35))    
-        pdf!.setText(340,180,a$(106,35))
-        pdf!.setText(340,204,drop_ship$)
+        printSaveMenuButton! = printViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+        printSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnPrintSaveMenuButton")
+        printEmailToolButton! = printViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+        printEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnPrintEmailToolButton")
 
-        rem --- Terms
-        pdf!.drawBox(20,222,550,24)
-        pdf!.drawVLine(65,222,24)
-        pdf!.setText(20,228,40,228,Translate!.getTranslation("AON_TERMS"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(70,228,apm10c.code_desc$)
+        printViewerWindow!.setReleaseOnClose(0)
+        printViewerWindow!.show(0)
 
-        pdf!.drawVLine(195,222,24)
-        pdf!.drawVLine(260,222,24)
-        pdf!.setText(195,228,60,228,Translate!.getTranslation("AON_SHIP_VIA"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(265,228,poe02a.ap_ship_via$)
+        bbjWindowPrint!= printViewerWindow!.getViewerWindow()
+        bbjWindowPrint!.setCallback(bbjWindowPrint!.ON_CLOSE,"close_print_win")
 
-        pdf!.drawVLine(384,222,24)
-        pdf!.drawVLine(416,222,24)
-        pdf!.setText(384,228,25,228,"FOB",boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(421,228,poe02a.fob$)
-
-        rem --- Acknowledgement
-        pdf!.drawBox(20,246,550,24)
-        pdf!.drawVLine(195,246,24)
-        pdf!.setText(90,252,100,252,Translate!.getTranslation("AON_ACKNOWLEDGED_BY"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(200,252,poe02a.acknowledge$)
-
-        rem --- Freight Terms
-rem        pdf!.drawBox(246,246,138,24)
-        pdf!.drawVLine(330,246,24)
-		pdf!.drawVLine(416,246,24)
-        pdf!.setText(330,252,80,252,Translate!.getTranslation("AON_FREIGHT_TERMS"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(421,252,poe02a.po_frt_terms$)
-
-        rem --- Ribbon
-        pdf!.drawBox(20,270,550,24)
-        pdf!.drawBox(20,270,550,394)
-        pdf!.drawVLine(75,270,394)
-        pdf!.drawVLine(390,270,394)
-        pdf!.drawVLine(470,270,394)
-        pdf!.drawVLine(490,270,394)
-        pdf!.setText(15,276,55,276,Translate!.getTranslation("AON_QUANTITY"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(80,276,Translate!.getTranslation("AON_ITEM/DESCRIPTION"),boldfont!,page!)
-        pdf!.setText(335,276,Translate!.getTranslation("AON_DATE_REQ'D"),boldfont!,page!)
-        pdf!.setText(390,276,75,276,Translate!.getTranslation("AON_COST"),boldfont!,pdf!.RIGHT_JUSTIFY())
-        pdf!.setText(470,276,20,276,"UM",boldfont!,pdf!.CENTER_JUSTIFY())
-        pdf!.setText(490,276,75,276,Translate!.getTranslation("AON_EXTENSION"),boldfont!,pdf!.RIGHT_JUSTIFY())
-
-        lines=0
-
-        l=1
-    
-        rem --- Duplicate what was done on pagePrint!; if both pages have updated, we're done
-    
-        if pdf!.getPage() = pagePDF! then break
-        pdf!.setPage(pagePDF!)    
-    
-    wend
-
-    return
-
-print_detail_line: rem --- Print Detail Line
-
-    needed=2
-    if pos(pom02a.line_type$="SN") needed=3
-
-    if cvs(poe12a.promise_date$+poe12a.not_b4_date$,2)<>"" needed=needed+1
-
-    if l+needed>l9-2 gosub print_continued
-
-    gosub get_row
-
-    action=pos(pom02a.line_type$="SNVMO")
-    std_line=1
-    nonstock_line=2
-    vend_part_num=3
-    message_line=4
-    other_line=5
-
-        switch action
-        case std_line;   rem --- Print Standard Line
-
-            ivm01a_key$=firm_id$+poe12a.item_id$
-            ivm01a.item_desc$=nf$
-            ivm05a_key$=firm_id$+apm01a.vendor_id$+poe12a.item_id$
-            find record (ivm01_dev,key=ivm01a_key$,dom=*next) ivm01a$
-			dim ivm05a$:fattr(ivm05a$)
-            if pos01a.prt_vdr_item$="Y" find record (ivm05_dev,key=ivm05a_key$,dom=*next) ivm05a$
-            if cvs(ivm05a.vendor_item$,2)<>"" needed=needed+1
-            if l+needed>l9-2 gosub print_continued
-            
-            pdf!.setPage(pagePrint!)
-                
-            while 1
-
-                pdf!.setText(15,row,55,row,str(qty:m2$),pdf!.RIGHT_JUSTIFY())
-                pdf!.setText(80,row,poe12a.item_id$)
-                pdf!.setText(345,row,fndate$(poe12a.reqd_date$))
-                pdf!.setText(390,row,75,row,str(poe12a.unit_cost:m3$),pdf!.RIGHT_JUSTIFY())
-                pdf!.setText(470,row,20,row,poe12a.unit_measure$,pdf!.CENTER_JUSTIFY())
-                pdf!.setText(490,row,75,row,str(extension:m1$),pdf!.RIGHT_JUSTIFY())                
-                
-                if pdf!.getPage() = pagePDF! then break
-                pdf!.setPage(pagePDF!)
-            wend
-            l=l+1
-            
-            gen_text$=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
-            gosub text_only
-            if cvs(ivm05a.vendor_item$,2)<>""
-                gen_text$=Translate!.getTranslation("AON_YOUR_ITEM_NUMBER_")+ivm05a.vendor_item$
-                gosub text_only
-            endif
-            break
-
-        case nonstock_line; rem --- Print Non-Stock Line
-        
-            pdf!.setPage(pagePrint!)
-                
-            while 1        
-
-                pdf!.setText(15,row,55,row,str(qty:m2$),textfont!,pdf!.RIGHT_JUSTIFY())
-                pdf!.setText(80,row,poe12a.ns_item_id$)
-                pdf!.setText(345,row,fndate$(poe12a.reqd_date$))
-                pdf!.setText(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,pdf!.RIGHT_JUSTIFY())
-                pdf!.setText(470,row,20,row,poe12a.unit_measure$,textfont!,pdf!.CENTER_JUSTIFY())
-                pdf!.setText(490,row,75,row,str(extension:m1$),textfont!,pdf!.RIGHT_JUSTIFY())
-                
-                if pdf!.getPage() = pagePDF! then break
-                pdf!.setPage(pagePDF!)
-            wend                
-            l=l+1
-
-            gen_text$=poe12a.order_memo$
-            gosub text_only
-            break
-
-        case vend_part_num; rem --- Print Vendor Part Number, Message or Other Line
-        
-            pdf!.setPage(pagePrint!)
-                
-            while 1                
-
-                pdf!.setText(80,row,Translate!.getTranslation("AON_YOUR_ITEM_NUMBER_")+poe12a.order_memo$)
-                
-                if pdf!.getPage() = pagePDF! then break
-                pdf!.setPage(pagePDF!)
-            wend                
-            l=l+1
-                
-            break
-        case message_line; rem --- Print Message Line
-        
-            pdf!.setPage(pagePrint!)
-                
-            while 1                        
-
-                pdf!.setText(80,row,poe12a.order_memo$)
-                
-                if pdf!.getPage() = pagePDF! then break
-                pdf!.setPage(pagePDF!)
-            wend                
-            l=l+1
-                                
-            break
-
-        case other_line
-        
-            pdf!.setPage(pagePrint!)
-                
-            while 1                                
-
-                pdf!.setText(80,row,poe12a.order_memo$)
-                pdf!.setText(345,row,fndate$(poe12a.reqd_date$))            
-                pdf!.setText(390,row,75,row,str(poe12a.unit_cost:m3$),textfont!,pdf!.RIGHT_JUSTIFY())
-                pdf!.setText(490,row,75,row,str(extension:m1$),textfont!,pdf!.RIGHT_JUSTIFY())
-                
-                if pdf!.getPage() = pagePDF! then break
-                pdf!.setPage(pagePDF!)
-            wend                
-            l=l+1
-                
-            break
-
-        case default
-            return
-            break
-
-    swend
-
-date_promised: rem --- Date Promised or Not Before Date?
-
-    while more
-        if pos(pom02a.line_type$="VM") break
-        if cvs(poe12a.promise_date$,2)="" break else if cvs(poe12a.not_b4_date$,2)="" break
-        if cvs(poe12a.promise_date$,2)<>"" gen_text$=pad(Translate!.getTranslation("AON_PROMISED_BY_")+fndate$(poe12a.promise_date$),22)
-        if cvs(poe12a.not_b4_date$,2)<>"" gen_text$=gen_text$+Translate!.getTranslation("AON_NOT_BEFORE_")+fndate$(poe12a.not_b4_date$)
-        gosub text_only
-        break
-    wend
-
-    return
-
-text_only: rem --- Print text only
-
-    if l+1>l9-2 gosub print_continued
-    gosub get_row
-    
-    pdf!.setPage(pagePrint!)
-                
-    while 1
-
-        pdf!.setText(80,row,gen_text$)
-        
-        if pdf!.getPage() = pagePDF! then break
-        pdf!.setPage(pagePDF!)
-    wend
-    l=l+1
-        
-
-    return
-
-print_total: rem --- Total
-
-    if page
-
-        gosub print_tot
-
-        if l+footcnt+shipfrom > l9 then gosub print_continued
-        
-        if nomsg_flg = 0        
-
-            for dlx = 0 to footcnt
-                gen_text$=footer$[dlx]
-                gosub text_only
-            next dlx
-            
-        endif
-        
-        rem --- tack ship-from at end of PO, if used
-        if cvs(s$,3)<>""
-            gen_text$="";rem blank before
-            gosub text_only
-            gen_text$=Translate!.getTranslation("AON_SHIP_FROM:_")+shipfrom$
-            gosub text_only
-            for sx=1 to len(s$) step 35
-                gen_text$=s$(sx,35)
-                gosub text_only
-            next sx
-        endif
-        
-        pdf!.setPage(pagePrint!)
-            
-        while 1
-
-            pdf!.drawBox(440,664,130,24)
-            pdf!.drawVLine(505,664,24)
-            pdf!.setText(440,672,60,672,Translate!.getTranslation("AON_TOTAL"),boldfont!,pdf!.RIGHT_JUSTIFY())
-            pdf!.setText(505,672,60,672,str(total:m1$),textfont!,pdf!.RIGHT_JUSTIFY())
-
-            pdf!.setText(145,672,pomessage$)
-
-            pdf!.drawHLine(350,740,200)
-            pdf!.setText(350,745,200,745,Translate!.getTranslation("AON_PURCHASING_AGENT"),smallfont!,pdf!.CENTER_JUSTIFY())
-    
-            if pdf!.getPage() = pagePDF! then break
-            pdf!.setPage(pagePDF!)
-        wend
-        
-       docPDF!.print()
-       call stbl("+DIR_PGM")+"adc_rptcontrol.aon",alias_id$,vendor_id$,"V",new_doc_id$,"pdf"           
-
-    endif
-
-    first=0
-    total=0
-    
-    return
-
-print_continued: rem --- Continued
-
-    if page
-    
-        pdf!.setPage(pagePrint!)
-        
-        while 1
-            pdf!.setText(505,672,60,672,Translate!.getTranslation("AON_(CONTINUED)"),textfont!,pdf!.RIGHT_JUSTIFY())
-            if pdf!.getPage() = pagePDF! then break
-            pdf!.setPage(pagePDF!)
-        wend
-
-    endif
-    gosub report_heading
-    first=0
-    return
-
-skip_lines: rem --- Skip lines
-
-    return
-
-vendor_break: rem --- Vendor Break
-    dim apm01a_key$(8),apm01a$:fattr(apm01a$)
-    apm01a_key$(1)=poe02a.firm_id$+poe02a.vendor_id$
-    apm01a.vendor_name$=nf$
-    t0$=poe02a.vendor_id$
-    find record (apm01_dev,key=apm01a_key$,dom=*next) apm01a$
-    n$= apm01a.addr_line_1$ + apm01a.addr_line_2$ + apm01a.city$ + apm01a.state_code$ + apm01a.zip_code$
-
-    call "adc_address.aon",n$,24,3,9,35
-    return
-
-shipfrom_break: rem --- Ship-From Break
-
-    dim apm05a_key$(10),apm05a$:fattr(apm05a$),s$(140)
-    apm05a_key$=poe02a.firm_id$ + poe02a.vendor_id$ + poe02a.purch_addr$
-    t1$=poe02a.vendor_id$+poe02a.purch_addr$
-    shipfrom$=""
-    shipfrom=0
-    if cvs(poe02a.purch_addr$,2)="" then return
-    find record (apm05_dev,key=apm05a_key$,dom=*next) apm05a$
-
-    s$= apm05a.addr_line_1$ + apm05a.addr_line_2$ + apm05a.city$ + apm05a.state_code$ + apm05a.zip_code$
-    shipfrom$=apm05a.name$
-    shipfrom=4
-    call pgmdir$+"adc_address.aon",s$,24,3,9,35
-
-    return
-
-terms_break: rem --- Terms Break
-
-    dim z0$(32)
-    apm10c_key$=firm_id$+"C"+poe02a.ap_terms_code$+nf$
-    t2$=poe02a.ap_terms_code$
-    find record (apm10c_dev,key=apm10c_key$(1,5),dom=*next) apm10c$
-    return
-
-shipto_break: rem --- Ship-To Break
-
-    if poe02a.dropship$="Y"
-        drop_ship$="*** DROPSHIP ***"
-        ship_to$=poe02a.ds_name$
-        a$=poe02a.ds_addr_line_1$+poe02a.ds_addr_line_2$+poe02a.ds_addr_line_3$+poe02a.ds_city$+poe02a.ds_state_cd$+poe02a.ds_zip_code$
     else
-        drop_ship$=""
-        dim ivm10c$:fattr(ivm10c$)
-        ivm10c.firm_id$=firm_id$,ivm10c.record_id_c$="C",ivm10c.warehouse_id$=whse_id$,ivm10c.short_name$=nf$
-        t3$=whse_id$
-        if cvs(whse_id$,2)="" 
-            ivm10c.warehouse_id$=poe02a.warehouse_id$
-            t3$=poe02a.warehouse_id$; rem ESCAPE
-        endif
-        ivm10c_key$=firm_id$+"C"+ivm10c.warehouse_id$
-        find record (ivm10c_dev,key=ivm10c_key$,dom=*next) ivm10c$
 
-        ship_to$=ivm10c.short_name$
-        a$= ivm10c.addr_line_1$ + ivm10c.addr_line_2$ + ivm10c.addr_line_3$ + ivm10c.city$ + ivm10c.state_code$ + ivm10c.zip_code$
-    endif
+        repTitle$=doc_name$
+        rd_doc_name$=new_doc_name$
+	    rd_doc_id$=new_doc_id$
+	        
+        gosub OnDemandSaveMenuButton; rem --- always save to doc archive
+	        
+	    demandViewerWindow! = new BBJasperViewerWindow(report!,5,5,screen_width,screen_height,repTitle$,$00080093$)
+        demandViewerControl! = demandViewerWindow!.getViewerControl()
+        demandViewerControl!.setGoogleDefaultDocument(repTitle$)
+        demandViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+        demandViewerControl!.setDefaultSaveFile(repTitle$)
+
+        demandSaveMenuButton! = demandViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+        demandSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnDemandMasterSaveMenuButton")
+        demandEmailToolButton! = demandViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+        demandEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnDemandEmailToolButton")
+
+        demandViewerWindow!.setReleaseOnClose(0)
+        demandViewerWindow!.show(0)
+        
+        bbjWindowDemand!= demandViewerWindow!.getViewerWindow()
+        bbjWindowDemand!.setCallback(bbjWindowDemand!.ON_CLOSE,"close_win",err=*next)
+
+	endif
     
-    call "adc_address.aon",a$,24,4,9,35
 
-    return
+rem --- Event Control
 
-line_code_break: rem --- Line Code Break
+    process_events,err=*same
 
-    dim y0$(4),y1$(32)
-    pom02a_key$=firm_id$+poe12a.po_line_code$
-    t4$=poe12a.po_line_code$
-    find record (pom02_dev,key=pom02a_key$,dom=*next) pom02a$
-    return
+    release
 
-calc_ext: rem --- Calculate Extension
-
-    let qty=poe12a.qty_ordered
-    if type$="P" qty=poe12a.qty_ordered-poe12a.qty_received
-    if pom02a.line_type$="O" qty=1
-    precision 2
-    let extension=poe12a.unit_cost*qty
-    precision num(ivs01a.precision$)
-    return
-
-print_tot: rem --- Print total
-
-       msg$=defaultmsg$
-       if cvs(poe02a.po_msg_code$,2) <> "" then msg$ = poe02a.po_msg_code$
-       nomsg_flg=1
-
-       if cvs(msg$,2)<>""
-
-rem --- Load current message
-
-           dim footer$[maxfooters]
-           pom04a_key$ = firm_id$ + msg$
-           footcnt=0
-           if cvs(pomessage$,2)<>"" footcnt=2
-           find record (pom04_dev,key=pom04a_key$,dom=nomsg) pom04a$
-
-           nomsg_flg=0
-           if pos(pom04a.message_type$="B"+type$)<>0
-               read (pom14_dev,key=pom04a_key$,dom=*next)
-
-rem --- Load message lines
-               nomsg_flg=0
-               while more
-
-                   k$=key(pom14_dev,end=*break)
-                   if pos(pom04a_key$=k$)=1
-
-                       read record (pom14_dev) pom14a$
-                       if footcnt<maxfooters-2
-
-                           footcnt=footcnt+1
-                           footer$[footcnt]=pom14a.message_text$
-
-                       endif
-                   else
-                        break
-                   endif
-
-               wend
-
-            endif
-
-       endif
-
-nomsg: rem --- No message
-
-       if nomsg_flg=1
-           dim footer$[maxfooters]
-           footcnt=0
-       endif
-
-    return
-
-get_row: rem --- Return Current Row
-    row=int(286+l*12)
-    return
     
 lock_unlock_record:
 
@@ -1009,13 +559,194 @@ lock_unlock_record:
     call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_POHDR",lock_key$,lock_unlock$,"",rd_table_chan,rd_table_chans$[all],rd_lock_status$
 
     return
+
+document_whse:rem --- Write record to Barista document warehouse (ads_documents)
+    call stbl("+DIR_SYP")+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       rd_archive_action$,
+:       rd_doc_name$,
+:       rep_title$,
+:       rd_doc_keywords$
+
+    return
+
+doc_path:rem --- Get Document Path
+rem --- forcing a pdf save to this location for release 13.03
+rem --- eventually, want to make the save functionality mimic (as closely as possible) Barista
+rem --- so it can save based on user's doc group and doc settings
+
+    if rd_doc_path$="" then
+        rd_tmp_dir$=stbl("+DOC_DIR_PDF",err=*endif)
+        rd_temp_wd$=dsk("")+dir("")
+        if pos(":"=rd_tmp_dir$) setdrive rd_tmp_dir$(1,pos(":"=rd_tmp_dir$)-1),err=*next
+        chdir rd_tmp_dir$,err=*next
+        rd_doc_path$=dsk("")+dir("")
+        if pos(":"=rd_temp_wd$) setdrive rd_temp_wd$(1,pos(":"=rd_temp_wd$)-1)
+        chdir rd_temp_wd$
+    endif
+
+    return
+
+OnMasterSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="V"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+        
+        master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        
+        gosub document_whse
+    endif
+    return    
+
+OnMasterEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
     
+    rem --- force exportToPDF in case not already saved
+    gosub OnMasterSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+
+    return
+
+OnPrintSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="V"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+        
+        print_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+
+        gosub document_whse
+    endif
+    return    
+
+OnPrintEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnPrintSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
+OnDemandSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="V"
+        rd_source_ref$=vendor_id$
+        rd_doc_keywords$=doc_keywords$
+
+        report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        
+        gosub document_whse
+    endif
+    return    
+
+OnDemandEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnDemandSaveMenuButton
+
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
+close_win:rem --- Viewer Window Closed
+
+    if single_vendor$<>"Y"
+        ok_to_close=1
+        if !print_win_closed
+            msg_id$ = "CONF_CLOSE_PRINT"
+            gosub disp_message
+            if msg_opt$<>"Y" then ok_to_close=0 
+        endif
+        
+        if !ok_to_close then return
+    endif
+    
+rem --- remove from print file?
+    msg_id$="PO_UPDTPRT"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=Translate!.getTranslation("AON_PURCHASE_ORDER")
+    gosub disp_message
+    if msg_opt$<>"Y" then goto all_done
+
+    if single_vendor$<>"Y"
+        for del_recs = 0 to UpdateRecs!.size() - 1
+            k$=UpdateRecs!.getItem(del_recs)
+            remove (poe_poprint,key=k$,dom=*next)
+        next del_recs
+      
+        if emailFax!.size()
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),"",emailFax!.get(email_fax+1),emailFax!.get(email_fax+2))    
+            next email_fax
+        endif   
+   
+    else
+    rem --- on demand print
+ 
+        remove (poe_poprint,key=firm_id$+vendor_id$+po_no$,dom=*next)
+        if emailFax!.size() and send_via_rpt_ctl$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),"",emailFax!.get(email_fax+1),emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+    endif 
+    
+all_done:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
+    
+    reportControl!.destroy(err=*next)
+    masterViewerWindow!.destroy(err=*next)
+    printViewerWindow!.destroy(err=*next)
+    demandViewerWindow!.destroy(err=*next)
+
+    if tcb(13) then exit
+    
+    release
+
+close_print_win: rem --- close the Print Copy; no updating, just close the print copy window
+
+    printViewerWindow!.destroy(err=*next)
+    print_win_closed=1
+   
+    return
     
 disp_message:rem --- Display Message Dialog
 
     call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
     return
-
 
 rem #include std_functions.src
 rem --- Standard AddonSoftware functions (01Mar2006)
@@ -1062,6 +793,28 @@ rem --- fnglobal$: Return string value of passed STBL variable
         q1$=stbl(q$,err=*next)
         return q1$
     fnend
+
+rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
+	def fngetPattern$(q$)
+		q1$=q$
+		if len(q$)>0
+			if pos("-"=q$)
+				q1=pos("-"=q$)
+				if q1=len(q$)
+					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
+				else
+					q1$=q$(2,len(q$)-1)+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
+				endif
+			endif
+			if pos("CR"=q$)=len(q$)-1
+				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
+			endif
+			if q$(1,1)="(" and q$(len(q$),1)=")"
+				q1$=q$(2,len(q$)-2)+";"+q$
+			endif
+		endif
+		return q1$
+	fnend
 
 rem #include std_error.src
 
@@ -1116,11 +869,10 @@ rem #endinclude std_missing_params.src
 
 rem #include std_end.src
 
-std_exit: rem --- Standard program end (01Mar2006)
+std_exit: rem --- Modified standard program end
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,ignore_status
     
-    if single_vendor_id$<>"" then rd_called$="YES"
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 

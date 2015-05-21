@@ -1,6 +1,7 @@
 rem Bill of Material Detail Listing
-rem Proprietary Software. BASIS International Ltd.
-rem Program ID: bmr_BillDetail.aon  <May 3, 2011>
+rem Program ID: bmr_detail.aon 
+
+rem --- AddonSoftware Version 11.11.0 - 02Sep2011
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
     setesc std_error
@@ -30,7 +31,7 @@ rem --- Retrieve sysinfo data
 	
 rem --- Open files
 
-    num_files=9
+    num_files=10
     dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
     open_tables$[1]="IVS_PARAMS",     open_opts$[1]="OTA"
     open_tables$[2]="IVM_ITEMMAST",   open_opts$[2]="OTA[2_]"
@@ -41,11 +42,14 @@ rem --- Open files
     open_tables$[7]="BMM_BILLSUB",   open_opts$[7]="OTA[2_]"
     open_tables$[8]="APM_VENDMAST",   open_opts$[8]="OTA[2_]"
     open_tables$[9]="BMM_BILLCMTS",   open_opts$[9]="OTA[2_]"
+    open_tables$[10]="BMS_PARAMS",     open_opts$[10]="OTA"
 
     gosub open_tables
 
     ivs_params_dev=num(open_chans$[1])
     dim ivs_params$:open_tpls$[1]
+    bms_params_dev=num(open_chans$[10])
+    dim bms_params$:open_tpls$[10]
 
 rem --- Close files after ensuring they exist
 
@@ -62,10 +66,14 @@ rem --- Close files after ensuring they exist
 
     gosub open_tables
 
-rem --- Get default warehouse
+rem --- Get needed BM and IV parameters
+
+    read record (bms_params_dev,key=firm_id$+"BM00") bms_params$
+    params!.put("BM_PRECISION",str(bms_params.bm_precision))
 
 	read record (ivs_params_dev,key=firm_id$+"IV00") ivs_params$
 	params!.put("WHSE",ivs_params.warehouse_id$)
+    params!.put("IV_PRECISION",ivs_params.precision$)
 
 rem --- Set additional params
 
@@ -73,11 +81,12 @@ rem --- Set additional params
     params!.put("REPORT_NAME",sysinfo.task_desc$)
 	params!.put("FIRM_NAME",firm_name$)
     params!.put("BARISTA_WD",dir(""))
-	bill_from$=callpoint!.getDevObject("bill_from")
-	bill_thru$=callpoint!.getDevObject("bill_thru")
-	params!.put("BILL_NO_1",bill_from$)
-	params!.put("BILL_NO_2",bill_thru$)
-    if cvs(bill_thru$,2)="" then params!.put("BILL_NO_2","~~~~~~")    
+	params!.put("BILL_NO_1",callpoint!.getDevObject("bill_from"))
+    if cvs(callpoint!.getDevObject("bill_thru"),2)<>"" then
+        params!.put("BILL_NO_2",callpoint!.getDevObject("bill_thru"))
+    else
+        params!.put("BILL_NO_2","~~~~~~")
+    endif    
     if params!.get("INCLUDE_COMMENT")="Y"
         params!.put("COMMENT_YN","Y")
     else
@@ -88,6 +97,26 @@ rem --- Set additional params
 	else
 		params!.put("ALL_DATES","N")
 	endif
+
+rem --- Add masks to params!
+
+    mask$=""
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","C","",msk$,0,0
+    masks$=masks$+"bm_cost_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","H","",msk$,0,0
+    masks$=masks$+"bm_hour_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","M","",msk$,0,0
+    masks$=masks$+"bm_mFactor_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","R","",msk$,0,0
+    masks$=masks$+"bm_rate_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","BM","U","",msk$,0,0
+    masks$=masks$+"bm_unit_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","C","",msk$,0,0
+    masks$=masks$+"iv_cost_mask^"+msk$+"|"
+    call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","U","",msk$,0,0
+    masks$=masks$+"iv_units_mask^"+msk$+"|"
+    
+    params!.put("MASKS",masks$)
 
 rem --- Make Document Archive Record and Get ID
 

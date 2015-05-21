@@ -9,6 +9,10 @@ rem --- All Rights Reserved
         setesc std_error
         seterr std_error
 
+rem --- Set of utility methods
+
+        use ::bmo_BmUtils.aon::BmUtils
+
 rem --- Retrieve the program path
 
         pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -29,7 +33,6 @@ rem --- Init Data
         dim tmpcosts[3]
         tmatcost=0
         tdircost=0,tohcost=0,tsubcost=0
-        precision bms01a.bm_precision
 
 rem -- Column heading
 
@@ -71,6 +74,7 @@ rem --- Get Material Information
             endif
             read record (bmm01_dev2,key=firm_id$+ivm02a_key.item_id$,dom=*next) bmm01a2$
             
+            precision this_precision
             tmatcost=0
             tdircost=0,tohcost=0,tsubcost=0
             read (bmm02_dev,key=firm_id$+ivm02a_key.item_id$,dom=*next)
@@ -81,16 +85,13 @@ rem --- Get Material Information
                 if cvs(bmm02a.effect_date$,3)<>"" and bmm02a.effect_date$>pdate$ then continue
                 if cvs(bmm02a.obsolt_date$,3)<>"" and bmm02a.obsolt_date$<=pdate$ then continue            
                 find record (ivm02_dev,key=firm_id$+whse$+bmm02a.item_id$,dom=*continue) ivm02a$
-                tmatcost=tmatcost+ivm02a.unit_cost
-:				        *fnqty(bmm02a.qty_required,
-:							   bmm02a.alt_factor,
-:							   bmm02a.divisor,
-:							   bmm01a2.est_yield,
-:							   bmm02a.scrap_factor)
+                net_qty=1*BmUtils.netQuantityRequired(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a2.est_yield,bmm02a.scrap_factor)
+                tmatcost=tmatcost+ivm02a.unit_cost*net_qty
             wend
 
 get_op_info: rem --- Get Operation Information
 
+            precision this_precision
             read (bmm03_dev,key=firm_id$+ivm02a_key.item_id$,dom=*next)
 
             while more
@@ -102,16 +103,7 @@ get_op_info: rem --- Get Operation Information
 				bmm08a.direct_rate=0
                 read record (bmm08_dev,key=bmm03a.firm_id$+bmm03a.op_code$,dom=*next) bmm08a$
                 if bmm01a2.std_lot_size=0 then bmm01a2.std_lot_size=1
-                if bmm03a.pcs_per_hour<>0 then
-                    directcost=fnop1(bmm03a.hrs_per_pce,
-:									 bmm08a.direct_rate,
-:									 bmm03a.pcs_per_hour,
-:									 bmm01a2.est_yield,
-:									 bmm03a.setup_time,
-:									 bmm01a2.std_lot_size)
-                else
-                    directcost=0
-                endif
+                directcost=1*BmUtils.directCost(bmm03a.hrs_per_pce,bmm08a.direct_rate,bmm03a.pcs_per_hour,bmm01a2.est_yield,bmm03a.setup_time,bmm01a2.std_lot_size)
                 ohlabcost=directcost*bmm08a.ovhd_factor
                 tdircost=tdircost+directcost
                 tohcost=tohcost+ohlabcost
@@ -119,6 +111,7 @@ get_op_info: rem --- Get Operation Information
 
 get_sub_info: rem --- Get Subcontract Information
 
+            precision this_precision
             if ap$<>"N" then
                 read (bmm05_dev,key=firm_id$+ivm02a_key.item_id$,dom=*next)
                 while more
@@ -134,6 +127,7 @@ get_sub_info: rem --- Get Subcontract Information
 
 write_totals: rem --- Write Total Information
 
+            precision this_precision
 			savebmm01a2_est_yield=bmm01a2.est_yield; rem Save numerics in case they were changed
             savebmm01a2_std_lot_size=bmm01a2.std_lot_size; rem Save numerics in case they were changed
             
@@ -262,8 +256,6 @@ rem --- Functions used to retrieve form values
 rem --- Miscellaneous functions
 
     def fncenter(q$,q)=int((q-len(q$))/2)
-    def fnqty(q1,q2,q3,q4,q5)=10000*q1*q2/(q3*q4*(100-q5))
-    def fnop1(q1,q2,q3,q4,q5,q6)=100*(q1*q2/q3)/q4+q5*q2/q6
     def fnsub(q1,q2,q3)=q1*q2/q3
 
 rem --- Format inventory item description

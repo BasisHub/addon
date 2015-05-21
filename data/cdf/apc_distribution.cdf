@@ -57,14 +57,17 @@ rem --- init/parameters
 aps01a_key$=firm_id$+"AP00"
 find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
 
-dim info$[20]
-
-
-call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
-gl$=info$[9]
-
 if aps01a.ret_flag$<>"Y" 
     ctl_name$="APC_DISTRIBUTION.GL_RET_ACCT"
     ctl_stat$="I"
     gosub disable_fields
+endif
+
+dim info$[20]
+call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
+gl$=info$[9]
+if gl$<>"Y" then
+	callpoint!.setColumnEnabled("APC_DISTRIBUTION.GL_AP_ACCT",-1)
+	callpoint!.setColumnEnabled("APC_DISTRIBUTION.GL_CASH_ACCT",-1)
+	callpoint!.setColumnEnabled("APC_DISTRIBUTION.GL_DISC_ACCT",-1)
 endif

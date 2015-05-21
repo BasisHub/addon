@@ -57,7 +57,16 @@ rem --- PO changes must be saved before on-demand PO print
 
 		if cvs(vendor_id$,3)<>"" and cvs(po_no$,3)<>""
 			gosub queue_for_printing
-			call "por_poprint.aon",vendor_id$,po_no$	
+
+			dim dflt_data$[2,1]
+
+			dflt_data$[1,0]="PO_NO"
+			dflt_data$[1,1]=po_no$
+			dflt_data$[2,0]="VENDOR_ID"
+			dflt_data$[2,1]=vendor_id$
+
+			call stbl("+DIR_SYP")+"bam_run_prog.bbj","POR_POPRINT_DMD",stbl("+USER_ID"),"","",table_chans$[all],"",dflt_data$[all]
+
 		endif
 	endif
 [[POE_POHDR.AOPT-QPRT]]

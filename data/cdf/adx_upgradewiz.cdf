@@ -1142,6 +1142,22 @@ rem ==========================================================================
 			endif
 			source_value$=cvs(record$(pos("="=record$,1,2)+1),3)
 			gosub source_target_value
+
+			rem --- don't let target data directories be the same as source data directories
+			if target_value$=source_value$ and 
+:			(stbl$="+DIR_DAT" or (stbl$(1,1)="+" and pos("DATA"=stbl$,-1)=len(stbl$)-3)) then
+				target_value$=newDir$+"testdata/"
+				counter=0
+				while 1
+					rem --- find a target that doesn't exist
+					declare File aFile!
+					aFile! = new File(target_value$)
+					if !aFile!.exists() then break
+					counter=counter+1
+					target_value$=newDir$+"testdata"+str(counter)+"/"
+				wend
+			endif
+
 			stblRowVect!.addItem(appName$)
 			stblRowVect!.addItem(stbl$)
 			stblRowVect!.addItem(source_value$)

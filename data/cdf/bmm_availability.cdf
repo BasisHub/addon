@@ -138,7 +138,7 @@ rem ==========================================================================
 		dim ivm01$:fattr(ivm01$)
 		find record(ivm01_dev,key=firm_id$+bmm02.item_id$,dom=*next) ivm01$
 		avail=ivm02.qty_on_hand-ivm02.qty_commit
-		net_qty=BmUtils.netQuantityRequired(bmm02.qty_required,bmm02.alt_factor,bmm02.divisor,yield_pct,bmm02.scrap_factor)
+		net_qty=1*BmUtils.netQuantityRequired(bmm02.qty_required,bmm02.alt_factor,bmm02.divisor,yield_pct,bmm02.scrap_factor)
 		sub_bill$=""
 		read record(bmm01_dev,key=firm_id$+bmm02.item_id$,dom=*next);sub_bill$="*"
 
@@ -197,7 +197,7 @@ rem --- scrap_fact:		input
 rem ===================================================================
 
 	yield_pct=callpoint!.getDevObject("yield")
-	net_qty=BmUtils.netQuantityRequired(qty_req,alt_fact,divisor,yield_pct,scrap_fact)
+	net_qty=1*BmUtils.netQuantityRequired(qty_req,alt_fact,divisor,yield_pct,scrap_fact)
 
 	return
 [[BMM_AVAILABILITY.ASIZ]]

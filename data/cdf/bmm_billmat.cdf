@@ -244,9 +244,12 @@ rem --- divisor:			input
 rem --- scrap_fact:		input
 rem ===================================================================
 
+	old_prec = tcb(14)
+	precision callpoint!.getDevObject("this_precision")
+
 	if divisor=0 divisor=1
 	yield_pct=callpoint!.getDevObject("yield")
-	net_qty=BmUtils.netQuantityRequired(qty_req,alt_fact,divisor,yield_pct,scrap_fact)
+	net_qty=1*BmUtils.netQuantityRequired(1*qty_req,1*alt_fact,1*divisor,1*yield_pct,1*scrap_fact)
 	callpoint!.setColumnData("<<DISPLAY>>.NET_REQD",str(net_qty))
 	whse$=callpoint!.getDevObject("dflt_whse")
 	item$=callpoint!.getColumnData("BMM_BILLMAT.ITEM_ID")
@@ -255,6 +258,8 @@ rem ===================================================================
 	read record (ivm02_dev,key=firm_id$+whse$+item$,dom=*next) ivm02$
 	callpoint!.setColumnData("<<DISPLAY>>.UNIT_COST",ivm02.unit_cost$)
 	callpoint!.setColumnData("<<DISPLAY>>.TOTAL_COST",str(ivm02.unit_cost*net_qty))
+
+	precision old_prec
 
 	return
 
