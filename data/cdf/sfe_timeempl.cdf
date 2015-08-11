@@ -229,4 +229,7 @@ rem --- Additional file opens
 	callpoint!.setDevObject("opcode_tpl",open_tpls$[9])
 
 rem --- Validate employee_no with SFM_EMPLMAST instead of PRM_EMPLMAST when PR not installed
-	if pr$="Y" then callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")
+	if pr$="Y"
+		callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")
+		callpoint!.setTableColumnAttribute("SFE_TIMEEMPL.EMPLOYEE_NO","IDEF","PR_EMPLOYEES")		
+	endif

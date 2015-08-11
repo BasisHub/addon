@@ -172,21 +172,21 @@ rem --- Main
 
         case vend_part_num; rem --- Vendor Part Number
         
-            item_id_desc_msg$=vend_item_prompt$+poe_podet.order_memo$)
+            item_id_desc_msg$=vend_item_prompt$+poe_podet.order_memo$
             gosub add_to_recordset
                 
             break
 
         case message_line; rem --- Message Line
 
-            item_id_desc_msg$=poe_podet.order_memo$)
+            item_id_desc_msg$=poe_podet.order_memo$
             gosub add_to_recordset
                                 
             break
 
         case other_line; rem --- Other Line
         
-            item_id_desc_msg$=poe_podet.order_memo$)
+            item_id_desc_msg$=poe_podet.order_memo$
             reqd_date$=func.formatDate(poe_podet.reqd_date$)            
             unit_cost$=str(poe_podet.unit_cost:cost_mask$)
             extension$=str(extension:ext_mask$)
