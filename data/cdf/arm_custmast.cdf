@@ -301,6 +301,7 @@ rem --- Create/embed dashboard to show aged balance
 	use ::dashboard/widget.bbj::EmbeddedWidget
 	use ::dashboard/widget.bbj::EmbeddedWidgetControl
 	use ::dashboard/widget.bbj::BarChartWidget
+	use ::dashboard/widget.bbj::ChartWidget
 
 	ctl_name$="ARM_CUSTDET.AGING_FUTURE"
 	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
@@ -337,6 +338,8 @@ rem --- Create either a pie chart or bar chart - the latter if any of the aging 
 
 	agingDashboardPieWidget! = EmbeddedWidgetFactory.createPieChartEmbeddedWidget(name$,title$,chartTitle$,flat,legend,numSlices)
   	agingPieWidget! = agingDashboardPieWidget!.getWidget()
+	agingPieWidget!.setChartColorTheme(ChartWidget.getColorThemeColorful2())
+	agingPieWidget!.setLabelFormat("{0}: {1}", java.text.NumberFormat.getCurrencyInstance(), java.text.NumberFormat.getPercentInstance())
 	
 	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_FUTURE","Future",1), 0)
 	agingPieWidget!.setDataSetValue(Translate!.getTranslation("AON_CURRENT","Current",1), 0)
@@ -361,6 +364,8 @@ rem --- Create either a pie chart or bar chart - the latter if any of the aging 
 
 	agingDashboardBarWidget! = EmbeddedWidgetFactory.createBarChartEmbeddedWidget(name$,title$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend)
 	agingBarWidget! = agingDashboardBarWidget!.getWidget()
+	agingBarWidget!.setChartColorTheme(ChartWidget.getColorThemeColorful2())
+	agingBarWidget!.setChartRangeAxisToCurrency()
 
 	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_FUT","Fut",1), "",0)
 	agingBarWidget!.setDataSetValue(Translate!.getTranslation("AON_CUR","Cur",1), "", 0)

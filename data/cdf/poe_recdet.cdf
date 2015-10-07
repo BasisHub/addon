@@ -1,3 +1,6 @@
+[[POE_RECDET.BGDS]]
+rem --- Re-initialize receipt total amount before it's accumulated again for each detail row
+	callpoint!.setDevObject("total_amt","0")
 [[POE_RECDET.WO_NO.AVAL]]
 rem --- need to use custom query so we get back both po# and line#
 rem --- throw message to user and abort manual entry
@@ -474,6 +477,12 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		ok_to_write$="N"
 		focus_column$="POE_RECDET.PO_LINE_CODE"
 		translate$="AON_LINE_CODE"
+	else
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
+		read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
+		line_type$=poc_linecode.line_type$
 	endif
 
 	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" 
@@ -482,7 +491,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		translate$="AON_WAREHOUSE"
 	endif
 
-	if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="SD")<>0 
+	if ok_to_write$="Y" and pos(line_type$="SD")<>0 
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.ITEM_ID"),3)=""
 			ok_to_write$="N"
 			focus_column$="POE_RECDET.ITEM_ID"
@@ -505,7 +514,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="N" 
+	if ok_to_write$="Y" and line_type$="N" 
 		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_RECDET.UNIT_COST"
@@ -523,7 +532,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		endif
 	endif
 
-	if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="O" 
+	if ok_to_write$="Y" and line_type$="O" 
 		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))<0
 			ok_to_write$="N"
 			focus_column$="POE_RECDET.UNIT_COST"
@@ -545,7 +554,7 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 	endif
 
 	if ok_to_write$="Y" and callpoint!.getHeaderColumnData("POE_RECHDR.DROPSHIP")="Y" and callpoint!.getDevObject("OP_installed")="Y"
-		if ok_to_write$="Y" and pos(cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),3)="DSNO")<>0
+		if ok_to_write$="Y" and pos(line_type$="DSNO")<>0
 			if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.SO_INT_SEQ_REF"),3)="" 
 				ok_to_write$="N"
 				focus_column$="POE_RECDET.SO_INT_SEQ_REF"

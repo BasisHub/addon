@@ -1,3 +1,6 @@
+[[POE_PODET.BGDS]]
+rem --- Re-initialize PO total amount before it's accumulated again for each detail row
+	callpoint!.setDevObject("total_amt","0")
 [[POE_PODET.CONV_FACTOR.AVAL]]
 rem --- Recalc Unit Cost
 

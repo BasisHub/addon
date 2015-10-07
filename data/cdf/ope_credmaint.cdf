@@ -1,3 +1,6 @@
+[[OPE_CREDMAINT.ASVA]]
+rem --- Make sure this form is closed before the Credit Review and Release grid gets focus
+	callpoint!.setStatus("EXIT")
 [[OPE_CREDMAINT.ARER]]
 rem --- Set dates to CCYYMMDD
 	tick_date$=pad(callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE"),8)

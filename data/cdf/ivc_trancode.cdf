@@ -1,11 +1,14 @@
-[[IVC_TRANCODE.POST_GL.AVAL]]
-rem --- if setting post to gl flag to Y, set min length on GL acct field to 1
-
-if callpoint!.getUserInput()<>"Y"
-	callpoint!.setTableColumnAttribute("IVC_TRANCODE.GL_ADJ_ACCT","MINL","0")
-else
-	callpoint!.setTableColumnAttribute("IVC_TRANCODE.GL_ADJ_ACCT","MINL","1")
-endif
+[[IVC_TRANCODE.ADIS]]
+rem --- Check for Commitment type
+	if callpoint!.getColumnData("IVC_TRANCODE.TRANS_TYPE") = "C"
+		callpoint!.setColumnData("IVC_TRANCODE.POST_GL","N",1)
+		callpoint!.setColumnData("IVC_TRANCODE.GL_ADJ_ACCT","",1)
+		callpoint!.setColumnEnabled("IVC_TRANCODE.POST_GL",0)
+	else
+		if user_tpl.gl_installed$="Y" then callpoint!.setColumnEnabled("IVC_TRANCODE.POST_GL",1)
+	endif
+[[IVC_TRANCODE.AREC]]
+	if user_tpl.gl_installed$="Y" then callpoint!.setColumnEnabled("IVC_TRANCODE.POST_GL",1)
 [[IVC_TRANCODE.BDEL]]
 rem -- don't allow delete of trans code if it's in use in ive_transhdr
 
@@ -37,29 +40,15 @@ rem --- now close trans hdr file to avoid err 0 if someone tries to run register
 :                                 chans$[all],templates$[all],table_chans$[all],batch,status$
 
 
-[[IVC_TRANCODE.BREC]]
-rem --- re-enable Post to G/L flag (unless GL not installed)
-	if user_tpl.gl_installed$="Y"
-		ctl_name$="IVC_TRANCODE.POST_GL"
-		ctl_stat$=""
-		gosub disable_fields
-	endif
 [[IVC_TRANCODE.TRANS_TYPE.AVAL]]
 rem --- Check for Commitment type
-	if callpoint!.getUserInput() = "C"
-		callpoint!.setColumnData("IVC_TRANCODE.POST_GL","N")
-		callpoint!.setColumnData("IVC_TRANCODE.GL_ADJ_ACCT","")
-		ctl_name$="IVC_TRANCODE.POST_GL"
-		ctl_stat$="D"
-		gosub disable_fields
-		ctl_name$="IVC_TRANCODE.GL_ADJ_ACCT"
-		gosub disable_fields
+	if callpoint!.getColumnData("IVC_TRANCODE.TRANS_TYPE") = "C"
+		callpoint!.setColumnData("IVC_TRANCODE.POST_GL","N",1)
+		callpoint!.setColumnData("IVC_TRANCODE.GL_ADJ_ACCT","",1)
+		callpoint!.setColumnEnabled("IVC_TRANCODE.POST_GL",0)
+		callpoint!.setColumnEnabled("IVC_TRANCODE.GL_ADJ_ACCT",0)
 	else
-		if user_tpl.gl_installed$="Y"
-			ctl_name$="IVC_TRANCODE.POST_GL"
-			ctl_stat$=""
-			gosub disable_fields
-		endif
+		if user_tpl.gl_installed$="Y" then callpoint!.setColumnEnabled("IVC_TRANCODE.POST_GL",1)
 	endif
 [[IVC_TRANCODE.BWRI]]
 rem --- Check for blank Trans Type
@@ -77,17 +66,6 @@ rem --- Check for G/L Number if Post to G/L is up
 		endif
 	endif
 [[IVC_TRANCODE.<CUSTOM>]]
-disable_fields:
-rem --- used to disable/enable controls depending on parameter settings
-rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space to disable/enable
-	wctl$=str(num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI")):"00000")
-	wmap$=callpoint!.getAbleMap()
-	wpos=pos(wctl$=wmap$,8)
-	wmap$(wpos+6,1)=ctl_stat$
-	callpoint!.setAbleMap(wmap$)
-	callpoint!.setStatus("ABLEMAP-REFRESH")
-return
-
 #include std_missing_params.src
 [[IVC_TRANCODE.BSHO]]
 rem --- Open/Lock Files
@@ -119,10 +97,4 @@ rem --- check if GL is installed
 	gl$=info$[20];rem --- gl installed?
 	dim user_tpl$:"gl_installed:c(1)"
 	user_tpl.gl_installed$=gl$
-	if gl$<>"Y"
-		ctl_stat$="I"
-		ctl_name$="IVC_TRANCODE.POST_GL"
-		gosub disable_fields
-		ctl_name$="IVC_TRANCODE.GL_ADJ_ACCT"
-		gosub disable_fields	
-	endif
+	if gl$<>"Y" then callpoint!.setColumnEnabled("IVC_TRANCODE.POST_GL",-1)

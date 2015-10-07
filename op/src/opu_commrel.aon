@@ -258,31 +258,23 @@ rem --- Header loop
                 if status = 999 then goto std_exit
 
             Credit_Initialize: 
-
-                if credit$<>"1" goto Bad_Credit; rem Credit Not Okay
-                read record (arm10_dev, key=firm_id$+"A"+ope01a.terms_code$, dom=Update_Print) arm10a$
-                if arm10a.cred_hold$="Y" goto Bad_Credit
-
-            Update_Print: 
-                dim ope04a$:fattr(ope04a$)
-                ope04a.firm_id$     = firm_id$
-                ope04a.ordinv_flag$ = "O"
-                ope04a.ar_type$     = ope01a.ar_type$
-                ope04a.customer_id$ = ope01a.customer_id$
-                ope04a.order_no$    = ope01a.order_no$
-                ope04_key$=ope04a.firm_id$+ope04a.ordinv_flag$+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$
-                extract record (ope04_dev,key=ope04_key$,dom=*next)x$; rem Advisory Locking
-                ope04a$ = field(ope04a$)
-                write record (ope04_dev) ope04a$
-                goto Unlock_Order
-
-            Bad_Credit: 
-                ope01a.credit_flag$="C"
-                gosub Update_Credit
-            endif    
+                dim arm10a$:fattr(arm10a$)
+                read record (arm10_dev, key=firm_id$+"A"+ope01a.terms_code$, dom=*next) arm10a$
+                if arm10a.cred_hold$="Y" or credit$<>"1" then
+                    rem --- Bad credit
+                    ope01a.credit_flag$="C"
+                    gosub Update_Credit
+                else
+                    rem --- Update print file 
+                    gosub Update_Print
+                endif
+            else
+                    rem --- Update print file 
+                    gosub Update_Print
+            endif
         endif    
 
-    Unlock_Order: 
+        rem --- Unlock order 
         ope01a.lock_status$="N"
         write record (ope01_dev) ope01a$
         if t9$="END" then return
@@ -318,6 +310,21 @@ Taxable_Check: rem --- Check If Taxable
         endif
     endif
 
+    return
+
+Update_Print: rem --- Update Order/Invoice Print File
+
+    dim ope04a$:fattr(ope04a$)
+    ope04a.firm_id$     = firm_id$
+    ope04a.ordinv_flag$ = "O"
+    ope04a.ar_type$     = ope01a.ar_type$
+    ope04a.customer_id$ = ope01a.customer_id$
+    ope04a.order_no$    = ope01a.order_no$
+    ope04_key$=ope04a.firm_id$+ope04a.ordinv_flag$+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$
+    extract record (ope04_dev,key=ope04_key$,dom=*next)x$; rem Advisory Locking
+    ope04a$ = field(ope04a$)
+    write record (ope04_dev) ope04a$
+    
     return
 
 Update_Credit: rem --- Update Credit Manager Tickler File

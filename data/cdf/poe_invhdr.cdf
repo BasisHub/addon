@@ -191,6 +191,7 @@ endif
 rem --- also need final check of balance -- invoice amt - invsel amt - gl dist amt (invsel should already equal invdet)
 
 if callpoint!.getDevObject("deleted")<>"Y"
+	gosub disp_dist_bal
 	if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
 		msg_id$="PO_INV_NOT_DIST"
 		gosub disp_message
@@ -309,9 +310,9 @@ other=0
 dim x$:str(callpoint!.getDevObject("poe_invsel_key"))
 last$=""
 
+tot_dist=0
 ky$=firm_id$+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
 read (poe_invsel_dev,key=ky$,dom=*next)
-
 while 1
 	read record (poe_invsel_dev,end=*break)poe_invsel$
 	if pos(ky$=poe_invsel$)<>1 then break
@@ -329,9 +330,11 @@ while 1
 	poe_invsel.total_amount$=str(tot_invsel)
 	poe_invsel$=field(poe_invsel$)
 	write record (poe_invsel_dev)poe_invsel$
+	tot_dist=tot_dist+tot_invsel
 wend
 
 if other
+	tot_other=0
 	read (poe_invdet_dev,key=ky$,dom=*next)
 	while 1
 		read record (poe_invdet_dev,end=*break)poe_invdet$
@@ -350,8 +353,11 @@ if other
 	poe_invsel.total_amount$=str(tot_other)
 	poe_invsel$=field(poe_invsel$)
 	write record (poe_invsel_dev)poe_invsel$
+	tot_dist=tot_dist+tot_other
 endif
 
+callpoint!.setDevObject("tot_dist",str(tot_dist))
+callpoint!.getColumnData("POE_INVHDR.INVOICE_AMT",str(tot_dist),1)
 callpoint!.setStatus("RECORD:["+ky$+"]")
 [[POE_INVHDR.ARNF]]
 rem --- set defaults
