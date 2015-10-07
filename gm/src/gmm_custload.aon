@@ -1,0 +1,308 @@
+rem ==========================================================================
+rem --- gmm_custload.aon 
+rem --- Loads Addon customers into GoldMine's database
+rem --- Generates report/log showing customers being added to GoldMine database.
+rem --- 
+rem --- AddonSoftware Version 15.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve the program path
+
+    pgmdir$=stbl("+DIR_PGM")
+
+rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
+
+    sysinfo_template$=stbl("+SYSINFO_TPL")
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO")
+    firm_id$=sysinfo.firm_id$
+    
+rem --- Set rd_alias_id$, if needed, for DocOut Settings
+    
+    if rd_alias_id$=""
+        rd_alias_id$=pgm(-2)
+        rd_alias_id$=rd_alias_id$(max(pos("/"="/"+rd_alias_id$,-1),pos("\"="\"+rd_alias_id$,-1)))
+        rd_alias_id$=rd_alias_id$(1,pos("."=rd_alias_id$+".")-1)
+    endif    
+   	rd_alias_id$=cvs(rd_alias_id$,4)
+
+rem --- Run Report?
+
+    msg_id$="AON_RUN_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
+    if msg_opt$<>"Y" then goto std_exit_no_report
+
+rem --- Open/Lock files
+
+    num_files=3
+    dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+    open_tables$[1] ="GMS_PARAMS",    open_opts$[1] = "OTA"
+    open_tables$[2] ="GMQ_CUSTOMER",  open_opts$[2] = "OTA"
+    open_tables$[3] ="ARM_CUSTMAST",  open_opts$[3] = "OTA"
+    
+    gosub open_tables
+    
+    gmsParams_dev = num(open_chans$[1])
+    gmqCustomer_dev = num(open_chans$[2])
+    armCustmast_dev = num(open_chans$[3])
+    
+    dim gmsParams$:open_tpls$[1]
+    dim gmqCustomer$:open_tpls$[2]
+    dim armCustmast$:open_tpls$[3]
+
+rem --- GoldMine connection parameters must exist
+
+    findrecord(gmsParams_dev,key=firm_id$+"GM",err=std_missing_params)gmsParams$
+    if cvs(gmsParams.webservice_url$,2)="" or cvs(gmsParams.db_url$,2)="" then
+        msg_id$="GM_MISS_CONN_PARAM"
+        gosub disp_message
+        goto std_exit
+    endif
+    
+    use ::gmo_GmInterfaceClient.aon::GmInterfaceClient
+    declare GmInterfaceClient gmClient!
+    gmClient! = new GmInterfaceClient()
+    
+rem --- Get customer_id mask
+
+    call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+    
+rem --- Document initializations
+
+    OutVect!=bbjAPI().makeVector()
+
+    rep_date$=date(0:"%Mz/%Dz/%Yd")
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time$=date(0:"%hz:%mz %p")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rep_prog$=pgm(-2)
+
+rem --- Column headings
+
+    columns=3
+    dim columns$[columns,10]
+    columns$[0,0]=Translate!.getTranslation("AON_STATUS"),                               columns$[0,1]="C", columns$[0,2]="8"
+    columns$[1,0]=Translate!.getTranslation("DDM_ELEMENTS-FIRM_ID_ENTRY-DD_ATTR_LABL"),  columns$[1,1]="C", columns$[1,2]="8"
+    columns$[2,0]=Translate!.getTranslation("AON_CUST_NO"),                              columns$[2,1]="C", columns$[2,2]="8"
+    columns$[3,0]=Translate!.getTranslation("AON_CUSTOMER_NAME"),                        columns$[3,1]="C", columns$[3,2]="35"
+
+    call stbl("+DIR_PGM",err=*next)+"adc_docout_adj.aon",columns$[all]
+
+rem --- Report headings
+
+    headings=1
+    dim headings$[headings]
+    headings$[0]=sysinfo.firm_name$
+    headings$[1]=sysinfo.task_desc$ 
+
+rem --- Progress meter
+
+    call pgmdir$+"adc_progress.aon","NC","GMM_CUSTLOAD","","","",0,armCustmast_dev,1,meter_num,status
+    recs=0
+
+rem --- Read through arm_custmast record for this firm
+
+    read(armCustmast_dev,key=firm_id$,dom=*next)
+    while 1
+        armCustmast_key$=key(armCustmast_dev,end=*break)
+        if pos(firm_id$=armCustmast_key$)<>1 then break
+        readrecord(armCustmast_dev)armCustmast$
+
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+
+        rem --- Skip arm_custmast record if GoldMine contact found
+        if gmClient!.isGmContact(armCustmast.firm_id$,armCustmast.customer_id$,armCustmast.customer_name$,armCustmast.contact_name$) then
+            rem --- Skip customers/contancts already in GoldMine
+            status$="Skipped"
+        else
+            rem --- Queue up new customers/contacts to add to GoldMine database
+            status$="Queued"
+            
+            rem --- Write record to queue
+            dim gmqCustomer$:fattr(gmqCustomer$)
+            gmqCustomer.firm_id$ = armCustmast.firm_id$
+            gmqCustomer.customer_id$ = armCustmast.customer_id$
+            rem gmqCustomer.gm_accountno$
+            rem gmqCustomer.gm_recid$
+            gmqCustomer.customer_name$ = armCustmast.customer_name$
+            gmqCustomer.contact_name$ = armCustmast.contact_name$
+            gmqCustomer.phone_no$ = armCustmast.phone_no$
+            gmqCustomer.phone_exten$ = armCustmast.phone_exten$
+            gmqCustomer.fax_no$ = armCustmast.fax_no$
+            gmqCustomer.addr_line_1$ = armCustmast.addr_line_1$
+            gmqCustomer.addr_line_2$ = armCustmast.addr_line_2$
+            gmqCustomer.addr_line_3$ = armCustmast.addr_line_3$
+            gmqCustomer.city$ = armCustmast.city$
+            gmqCustomer.state_code$ = armCustmast.state_code$
+            gmqCustomer.zip_code$ = armCustmast.zip_code$
+            gmqCustomer.cntry_id$ = armCustmast.cntry_id$
+            gmqCustomer.country$ = armCustmast.country$
+            writerecord(gmqCustomer_dev)gmqCustomer$
+        endif
+
+rem --- Write customer to log
+
+        recs=recs+1
+        OutVect!.addItem(status$)
+        OutVect!.addItem(armCustmast.firm_id$)
+        OutVect!.addItem(fnmask$(armCustmast.customer_id$(1,customer_size),m0$))
+        OutVect!.addItem(armCustmast.customer_name$)
+    wend
+
+rem --- All done
+
+    if recs=0
+        msg_id$="DOC_OUTPUT_NODATA"
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+
+    rem --- Start scheduled GoldMine interface client, and close this instance
+    gmClient!.startClient()
+    gmClient!.close()
+
+    goto std_exit
+
+rem --- fnBlank : Create blank cells in OutVect!. No return value
+
+    def fnblank(q0)
+    for q1=1 to q0
+        OutVect!.addItem("")
+    next q1
+    return void
+    fnend
+
+rem --- Create a blank line.  'void' is simply a variable; it's there to remind you that this function takes no input
+
+    def fnblank_line(void)=fnblank(columns+1)
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+              q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+    
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
+
+    return
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+
+    return
+
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_missing_params.src
+
+std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
+
+    rd_err_text$=""
+    if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
+    pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:                                   str(err:"000"),rd_err_text$,rd_err_act$
+std_missing_params_exit:
+    master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=std_missing_params_release)
+    if cvs(sysinfo.user_id$,2)=master_user$ escape
+std_missing_params_release:
+    status=999
+    if pgm(-1)<>pgm(-2) exit
+    release
+
+rem #endinclude std_missing_params.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+std_exit_no_report:
+
+    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status    
+    OutVect!=null()
+    goto std_exit
+
+    end

@@ -1,0 +1,115 @@
+rem --- User's Authorized Firms Query filter program
+rem --- Program ID: adf_authfirms.aon
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- Run by Barista as part of the AD_AUTH_FIRMS query.
+rem --- For each row in the result set, this program determines if the user is authorized for the firm. SKIPs if not.
+rem --- GLS_PARAMS is opened on a new channel to avoid any knum/extract issues, or in case calling program didn't have it open.
+
+    setesc std_error
+    seterr std_error
+
+    enter query_tpl$,rec_tpl$,calc_tpl$,table_chans$[all],status$
+
+rem query_tpl$     - Query Status Template -- dim query_tpl$:"row:n(10*),disp_cols:c(1000*)"
+rem rec_tpl$       - Current row database columns
+rem calc_tpl$      - Current row calculated columns
+rem table_chans$[] - Barista opened channels array
+rem status$        - Returned status: "SKIP" = Skip current record
+
+rem --- Main process
+    status$=""
+    user_id$=stbl("+USER_ID",err=*next)
+
+    adm_userfirms_dev=fnget_dev("@"+"ADM_USERFIRMS")
+    if adm_userfirms_dev=0
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="ADM_USERFIRMS",open_opts$[1]="OTA@"
+                
+        gosub open_tables        
+
+        adm_userfirms_dev=num(open_chans$[1])
+    endif
+    dim adm_userfirms$:fnget_tpl$("@"+"ADM_USERFIRMS")
+
+    rem --- Is user authorized for this firm?
+    authorized$=""
+    read(adm_userfirms_dev,key=pad(user_id$,16),dom=*next)
+    while 1
+        readrecord(adm_userfirms_dev,end=*break)adm_userfirms$
+        if adm_userfirms.user_id$<>pad(user_id$,16) break
+        authorized$=authorized$+adm_userfirms.firm_id$+":"
+    wend
+    if authorized$<>"" and pos(rec_tpl.company_id$=authorized$)=0 then status$="SKIP"
+
+    goto exit_prog
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=table_chans$[num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif    
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+    
+exit_prog:rem --- Exit Program
+
+    exit

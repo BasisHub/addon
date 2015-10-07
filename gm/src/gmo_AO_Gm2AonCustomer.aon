@@ -1,0 +1,476 @@
+rem ==========================================================================
+rem --- gmo_AO_Gm2AonCustomer.aon 
+rem --- AO_Gm2AonCustomer class (Gm2AonCustomer superclass)
+rem --- Provides methods creating a new Addon customer from a GoldMine company,
+rem --- updating an existing Addon customer with data from a GoldMine contact,
+rem --- or linking an existing Addon customer to a GoldMine contact. 
+rem --- 
+rem --- AddonSoftware Version 15.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+    
+    use ::gmo_GmInterfaceClient.aon::GmInterfaceClient
+
+    use java.util.Properties
+
+    class public AO_Gm2AonCustomer
+        field protected BBjString arsCredit$
+        field protected BBjString arsCustdflt$
+        field protected BBjInt devArmCustdet%
+        field protected BBjInt devArmCustmast%
+        field protected BBjInt devGmxCustomer%
+        field protected Properties companyMap! = new Properties()
+        field protected BBjString firmId$
+        field protected GmInterfaceClient gmClient!
+        field protected BBjString tplArsCredit$
+        field protected BBjString tplArsCustdflt$
+        field protected BBjString tplArmCustdet$
+        field protected BBjString tplArmCustmast$
+        field protected BBjString tplGmxCustomer$
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjString aonFirm$
+        rem  */
+        method public AO_Gm2AonCustomer(BBjString aonFirm$)
+            seterr Gm2AonCustomer_error
+            #firmId$ = aonFirm$
+            #gmClient! = new GmInterfaceClient()
+
+            rem --- Open needed files          
+            num_files=5
+            dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+            open_tables$[1] ="GMX_CUSTOMER",  open_opts$[1] = "OTA[1]"
+            open_tables$[2] ="ARM_CUSTMAST",  open_opts$[2] = "OTA[1]"
+            open_tables$[3] ="ARM_CUSTDET",   open_opts$[3] = "OTA[1]"
+            open_tables$[4] ="ARS_CUSTDFLT",  open_opts$[4] = "OTA@"
+            open_tables$[5] ="ARS_CREDIT",    open_opts$[5]="OTA@"
+        
+            call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+        
+            if open_status$ = "" then
+                rem --- Hold on to channels and record templates
+                #devGmxCustomer% = num(open_chans$[1])
+                #devArmCustmast% = num(open_chans$[2])
+                #devArmCustdet% = num(open_chans$[3])
+                devArsCustdflt% = num(open_chans$[4])
+                devArsCredit% = num(open_chans$[5])
+                
+                #tplGmxCustomer$ = open_tpls$[1]
+                #tplArmCustmast$ = open_tpls$[2]
+                #tplArmCustdet$ = open_tpls$[3]
+                #tplArsCustdflt$ = open_tpls$[4]
+                #tplArsCredit$ = open_tpls$[5]
+
+                rem --- Get new customer defaults for this firm.
+                dim arsCustdflt$:#tplArsCustdflt$
+                find record (devArsCustdflt%,key=#firmId$+"D",err=*next)arsCustdflt$
+                if cvs(arsCustdflt.firm_id$,2) = "" then
+                    throw "["+pgm(-2)+"] Constructor: Missing New Customer Defaults record for firm "+#firmId$,-3
+                endif
+                #arsCustdflt$ = arsCustdflt$
+
+                rem --- Get customer credit management parameters for this firm.
+                dim arsCredit$:#tplArsCredit$
+                find record (devArsCredit%,key=#firmId$+"AR01",err=*next)arsCredit$                
+                if cvs(arsCredit.firm_id$,2) = "" then
+                    throw "["+pgm(-2)+"] Constructor: Missing Credit Management Parameters record for firm "+#firmId$,-4
+                endif
+                #arsCredit$ = arsCredit$
+                
+            else
+                rem --- Throw error
+                err_num=-1
+                err_num=num(open_status$,err=*next)
+                throw "["+pgm(-2)+"] Constructor failed to open files: "+open_status$,err_num
+            endif
+
+            methodret
+            
+Gm2AonCustomer_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Create a new Addon customer from a GoldMine company.
+        rem  *
+        rem  * @param Properties gmData!
+        rem  * @return BBjString aonCustomerId$
+        rem  */
+        method public BBjString addCustomer(Properties gmData!)
+            seterr addCustomer_error
+
+            rem --- Verify GoldMine accountno and recid where given
+            gmAccountno! = gmData!.getProperty("accountno")
+            if gmAccountno! = null() then
+                throw "["+pgm(-2)+"] addCustomer(): Missing GoldMine accountno",-2
+                methodret
+            endif
+            gmRecid! = gmData!.getProperty("recid")
+            if gmRecid! = null() then
+                throw "["+pgm(-2)+"] addCustomer(): Missing GoldMine recid",-2
+                methodret
+            endif
+
+            rem --- Map GoldMine data to Addon
+            dim armCustmast$:#tplArmCustmast$
+            armCustmast.firm_id$ = #firmId$
+            armCustmast.customer_id$ = #getCustomerId(cast(BBjString, gmData!.getProperty("company")))
+            gmCompany! = gmData!.getProperty("company")
+            if gmCompany! <> null() then
+                aonProps! = #gmClient!.mapToAddon("company",gmCompany!)
+                armCustmast.customer_name$=aonProps!.getProperty("value1")
+            endif
+            gmContact! = gmData!.getProperty("contact")
+            if gmContact! <> null() then
+                aonProps! = #gmClient!.mapToAddon("contact",gmContact!)
+                armCustmast.contact_name$=aonProps!.getProperty("value1")
+            endif
+            gmPhone1! = gmData!.getProperty("phone1")
+            if gmPhone1! <> null() then
+                aonProps! = #gmClient!.mapToAddon("phone1",gmPhone1!)
+                armCustmast.phone_no$=aonProps!.getProperty("value1")
+            endif
+            gmExt1! = gmData!.getProperty("ext1")
+            if gmExt1! <> null() then
+                aonProps! = #gmClient!.mapToAddon("ext1",gmExt1!)
+                armCustmast.phone_exten$=aonProps!.getProperty("value1")
+            endif
+            gmFax! = gmData!.getProperty("fax")
+            if gmFax! <> null() then
+                aonProps! = #gmClient!.mapToAddon("fax",gmFax!)
+                armCustmast.fax_no$=aonProps!.getProperty("value1")
+            endif
+            gmAddress1! = gmData!.getProperty("address1")
+            if gmAddress1! <> null() then
+                aonProps! = #gmClient!.mapToAddon("address1",gmAddress1!)
+                armCustmast.addr_line_1$=aonProps!.getProperty("value1")
+            endif
+            gmAddress2! = gmData!.getProperty("address2")
+            if gmAddress2! <> null() then
+                aonProps! = #gmClient!.mapToAddon("address2",gmAddress2!)
+                armCustmast.addr_line_2$=aonProps!.getProperty("value1")
+            endif
+            gmAddress3! = gmData!.getProperty("address3")
+            if gmAddress3! <> null() then
+                aonProps! = #gmClient!.mapToAddon("address3",gmAddress3!)
+                armCustmast.addr_line_3$=aonProps!.getProperty("value1")
+            endif
+            gmCity! = gmData!.getProperty("city")
+            if gmCity! <> null() then
+                aonProps! = #gmClient!.mapToAddon("city",gmCity!)
+                armCustmast.city$=aonProps!.getProperty("value1")
+            endif
+            gmState! = gmData!.getProperty("state")
+            if gmState! <> null() then
+                aonProps! = #gmClient!.mapToAddon("state",gmState!)
+                armCustmast.state_code$=aonProps!.getProperty("value1")
+            endif
+            gmZip! = gmData!.getProperty("zip")
+            if gmZip! <> null() then
+                aonProps! = #gmClient!.mapToAddon("zip",gmZip!)
+                armCustmast.zip_code$=aonProps!.getProperty("value1")
+            endif
+            gmCountry! = gmData!.getProperty("country")
+            if gmCountry! <> null() then
+                aonProps! = #gmClient!.mapToAddonCntryId(gmCountry!)
+                armCustmast.cntry_id$=aonProps!.getProperty("value1")
+                aonProps! = #gmClient!.mapToAddonCountry(gmCountry!)
+                armCustmast.country$=aonProps!.getProperty("value1")
+            endif
+            armCustmast.opened_date$=date(0:"%Yd%Mz%Dz")
+            armCustmast.retain_cust$="Y"
+            
+            dim arsCustdflt$:#tplArsCustdflt$
+            arsCustdflt$=#arsCustdflt$
+            armCustmast.ar_ship_via$=arsCustdflt.ar_ship_via$
+            armCustmast.fob$=arsCustdflt.fob$
+            armCustmast$=field(armCustmast$)
+            writerecord(#devArmCustmast%)armCustmast$
+
+            rem --- Initialize new customer defaults the same as in ARM_CUSTMAST AREC callpoint
+            dim arsCredit$:#tplArsCredit$
+            arsCredit$=#arsCredit$
+            dim armCustdet$:#tplArmCustdet$
+            armCustdet.firm_id$=armCustmast.firm_id$
+            armCustdet.customer_id$=armCustmast.customer_id$
+            armCustdet.ar_terms_code$=arsCustdflt.ar_terms_code$
+            armCustdet.ar_dist_code$=arsCustdflt.ar_dist_code$
+            armCustdet.slspsn_code$=arsCustdflt.slspsn_code$
+            armCustdet.disc_code$=arsCustdflt.disc_code$
+            armCustdet.territory$=arsCustdflt.territory$
+            armCustdet.tax_code$=arsCustdflt.tax_code$
+            if cvs(arsCustdflt.inv_hist_flg$,2)<>"" then
+                armCustdet.inv_hist_flg$=arsCustdflt.inv_hist_flg$
+            else
+                armCustdet.inv_hist_flg$="Y"
+            endif
+            if cvs(arsCustdflt.cred_hold$,2)<>"" then
+                    armCustdet.cred_hold$=arsCustdflt.cred_hold$
+            else
+                if arsCredit.sys_install$="Y" and arsCredit.hold_new$="Y" 
+                    armCustdet.cred_hold$="Y"
+                endif
+            endif
+            armCustdet.customer_type$=arsCustdflt.customer_type$
+            armCustdet.frt_terms$=arsCustdflt.frt_terms$
+            armCustdet.message_code$=arsCustdflt.message_code$
+            armCustdet.pricing_code$=arsCustdflt.pricing_code$
+            armCustdet.label_code$=arsCustdflt.label_code$
+            armCustdet.ar_cyclecode$=arsCustdflt.ar_cyclecode$
+            armCustdet.sa_flag$=arsCustdflt.sa_flag$
+            armCustdet.credit_limit=arsCustdflt.credit_limit
+            armCustdet.finance_chg$=arsCustdflt.finance_chg$
+            armCustdet.statements$=arsCustdflt.statements$
+            armCustdet$=field(armCustdet$)
+            writerecord(#devArmCustdet%)armCustdet$
+
+            rem --- Write Addon-GoldMine cross reference record
+            #linkCustomer(armCustmast.customer_id$,gmData!)
+            
+            methodret armCustmast.customer_id$
+            
+addCustomer_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Update an existing Addon customer with data from a GoldMine contact.
+        rem  *
+        rem  * @param BBjString aonCustomerId$
+        rem  * @param Properties gmData!
+        rem  */
+        method public void updateCustomer(BBjString aonCustomerId$,Properties gmData!)
+            seterr updateCustomer_error
+
+            rem --- Verify GoldMine accountno and recid where given
+            gmAccountno! = gmData!.getProperty("accountno")
+            if gmAccountno! = null() then
+                throw "["+pgm(-2)+"] linkCustomer(): Missing GoldMine accountno",-2
+                methodret
+            endif
+            gmRecid! = gmData!.getProperty("recid")
+            if gmRecid! = null() then
+                throw "["+pgm(-2)+"] linkCustomer(): Missing GoldMine recid",-2
+                methodret
+            endif
+            
+            rem --- Get existing Addon record
+            dim armCustmast$:#tplArmCustmast$
+            foundCustmast=0
+            extractrecord(#devArmCustmast%,key=#firmId$+aonCustomerId$,knum="PRIMARY",dom=*next)armCustmast$; foundCustmast=1
+
+            if foundCustmast then
+                rem --- Map non-blank GoldMine data to Addon
+                armCustmast.firm_id$ = #firmId$
+                armCustmast.customer_id$ = aonCustomerId$
+                gmCompany! = gmData!.getProperty("company")
+                if gmCompany! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("company",gmCompany!)
+                    customer_name$=aonProps!.getProperty("value1")
+                    if cvs(customer_name$,2)<>"" then armCustmast.customer_name$=customer_name$
+                endif
+                gmContact! = gmData!.getProperty("contact")
+                if gmContact! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("contact",gmContact!)
+                    contact_name$=aonProps!.getProperty("value1")
+                    if cvs(contact_name$,2)<>"" then armCustmast.contact_name$=contact_name$
+                endif
+                gmPhone1! = gmData!.getProperty("phone1")
+                if gmPhone1! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("phone1",gmPhone1!)
+                    phone_no$=aonProps!.getProperty("value1")
+                    if cvs(phone_no$,2)<>"" then armCustmast.phone_no$=phone_no$
+                endif
+                gmExt1! = gmData!.getProperty("ext1")
+                if gmExt1! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("ext1",gmExt1!)
+                    phone_exten$=aonProps!.getProperty("value1")
+                    if cvs(phone_exten$,2)<>"" then armCustmast.phone_exten$=phone_exten$
+                endif
+                gmFax! = gmData!.getProperty("fax")
+                if gmFax! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("fax",gmFax!)
+                    fax_no$=aonProps!.getProperty("value1")
+                    if cvs(fax_no$,2)<>"" then armCustmast.fax_no$=fax_no$
+                endif
+                gmAddress1! = gmData!.getProperty("address1")
+                if gmAddress1! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("address1",gmAddress1!)
+                    addr_line_1$=aonProps!.getProperty("value1")
+                    if cvs(addr_line_1$,2)<>"" then armCustmast.addr_line_1$=addr_line_1$
+                endif
+                gmAddress2! = gmData!.getProperty("address2")
+                if gmAddress2! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("address2",gmAddress2!)
+                    addr_line_2$=aonProps!.getProperty("value1")
+                    if cvs(addr_line_2$,2)<>"" then armCustmast.addr_line_2$=addr_line_2$
+                endif
+                gmAddress3! = gmData!.getProperty("address3")
+                if gmAddress3! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("address3",gmAddress3!)
+                    addr_line_3$=aonProps!.getProperty("value1")
+                    if cvs(addr_line_3$,2)<>"" then armCustmast.addr_line_3$=addr_line_3$
+                endif
+                gmCity! = gmData!.getProperty("city")
+                if gmCity! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("city",gmCity!)
+                    city$=aonProps!.getProperty("value1")
+                    if cvs(city$,2)<>"" then armCustmast.city$=city$
+                endif
+                gmState! = gmData!.getProperty("state")
+                if gmState! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("state",gmState!)
+                    state_code$=aonProps!.getProperty("value1")
+                    if cvs(state_code$,2)<>"" then armCustmast.state_code$=state_code$
+                endif
+                gmZip! = gmData!.getProperty("zip")
+                if gmZip! <> null() then
+                    aonProps! = #gmClient!.mapToAddon("zip",gmZip!)
+                    zip_code$=aonProps!.getProperty("value1")
+                    if cvs(zip_code$,2)<>"" then armCustmast.zip_code$=zip_code$
+                endif
+                gmCountry! = gmData!.getProperty("country")
+                if gmCountry! <> null() then
+                    aonProps! = #gmClient!.mapToAddonCntryId(gmCountry!)
+                    cntry_id$=aonProps!.getProperty("value1")
+                    if cvs(cntry_id$,2)<>"" then armCustmast.cntry_id$=cntry_id$
+                    aonProps! = #gmClient!.mapToAddonCountry(gmCountry!)
+                    country$=aonProps!.getProperty("value1")
+                    if cvs(country$,2)<>"" then armCustmast.country$=country$
+                endif
+                armCustmast$=field(armCustmast$)
+                writerecord(#devArmCustmast%)armCustmast$
+    
+                rem --- Write Addon-GoldMine cross reference record
+                #linkCustomer(armCustmast.customer_id$,gmData!)
+                
+                rem --- Do not remove cross reference for previous GoldMine accountno and recid
+            endif
+
+            methodret
+            
+updateCustomer_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Link an existing Addon customer to a GoldMine contact.
+        rem  *
+        rem  * @param BBjString aonCustomerId$
+        rem  * @param Properties gmData!
+        rem  */
+        method public void linkCustomer(BBjString aonCustomerId$,Properties gmData!)
+            seterr linkCustomer_error
+
+            rem --- Verify GoldMine accountno and recid where given
+            gmAccountno! = gmData!.getProperty("accountno")
+            if gmAccountno! = null() then
+                throw "["+pgm(-2)+"] linkCustomer(): Missing GoldMine accountno",-2
+                methodret
+            endif
+            gmRecid! = gmData!.getProperty("recid")
+            if gmRecid! = null() then
+                throw "["+pgm(-2)+"] linkCustomer(): Missing GoldMine recid",-2
+                methodret
+            endif
+
+            rem --- Write Addon-GoldMine cross reference record
+            dim gmxCustomer$:#tplGmxCustomer$
+            gmxCustomer.gm_accountno$=gmAccountno!
+            gmxCustomer.gm_recid$=gmRecid!
+            gmxCustomer.firm_id$=#firmId$
+            gmxCustomer.customer_id$=aonCustomerId$
+            gmxCustomer$=field(gmxCustomer$)
+            writerecord(#devGmxCustomer%)gmxCustomer$
+
+            methodret
+            
+linkCustomer_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Gets existing Addon Customer ID, or assigns a new one, for the GoldMine company.
+        rem  *
+        rem  * @param BBjString gmCompany$
+        rem  * @return Properties BBjString aonCustomerId$
+        rem  */
+        method protected BBjString getCustomerId(BBjString gmCompany$)
+            seterr getCustomerId_error
+
+            if #companyMap!.containsKey(gmCompany$) then
+                rem --- Get existing Addon customer ID
+                aonCustomerId$=companyMap!.getProperty(gmCompany$)
+            else
+                rem --- Get new Addon customer ID
+                call stbl("+DIR_SYP")+"bas_sequences.bbj","CUSTOMER_ID",aonCustomerId$,rd_table_chans$[all],"QUIET"
+    
+                rem --- Update companyMap!
+                #companyMap!.setProperty(gmCompany$,aonCustomerId$)
+            endif
+
+            methodret aonCustomerId$
+            
+getCustomerId_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+    classend
+    

@@ -1,3 +1,30 @@
+[[IVM_ITEMMAST.AOPT-ITAV]]
+rem --- Show availability this item
+
+	item_id$=callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
+
+	selected_key$ = ""
+	dim filter_defs$[1,2]
+	filter_defs$[0,0]="IVC_ITEMAVAIL.FIRM_ID"
+	filter_defs$[0,1]="='"+firm_id$+"'"
+	filter_defs$[0,2]="LOCK"
+	filter_defs$[1,0]="IVC_ITEMAVAIL.ITEM_ID"
+	filter_defs$[1,1]="='"+item_id$+"'"
+	filter_defs$[1,2]="LOCK"
+
+	dim search_defs$[3]
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		Form!,
+:		"IVC_ITEMAVAIL",
+:		"BUILD",
+:		table_chans$[all],
+:		selected_key$,
+:		filter_defs$[all],
+:		search_defs$[all],
+:		"",
+:		""
 [[IVM_ITEMMAST.AENA]]
 rem --- Disable Barista menu items
 	wctl$="31031"; rem --- Save-As menu item in barista.ini

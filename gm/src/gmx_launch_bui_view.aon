@@ -1,0 +1,536 @@
+rem ==========================================================================
+rem --- gmx_launch_bui_view.aon 
+rem --- Launches Addon BUI view requested via GoldMine+View tab.
+rem --- 
+rem --- AddonSoftware Version 15.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+    use ::gmo_Gm2AonCustomer.aon::Gm2AonCustomer
+    use ::sys/prog/bao_barista.bbj::Barista
+
+    use java.util.Properties
+
+    setesc std_error
+    seterr std_error
+
+rem --- Retrieve program paths
+    pgmdir$=stbl("+DIR_PGM")
+
+rem --- Get URL Decoder instance
+    decoder! = new java.net.URLDecoder()
+
+rem --- Get parameters passed in URL
+    action$ = cvs(decoder!.decode(clientenv("action",err=*next),"UTF-8"),4)
+    target$ = cvs(decoder!.decode(clientenv("target",err=*next),"UTF-8"),4)
+    gmUser$ = decoder!.decode(clientenv("user",err=*next),"UTF-8")
+    gmAccountno$ = decoder!.decode(clientenv("accountno",err=*next),"UTF-8")
+    gmRecid$ = decoder!.decode(clientenv("recid",err=*next),"UTF-8")
+    gmCompany$ = decoder!.decode(clientenv("company",err=*next),"UTF-8")
+    gmContact$ = decoder!.decode(clientenv("contact",err=*next),"UTF-8")
+    gmPhone1$ = decoder!.decode(clientenv("phone1",err=*next),"UTF-8")
+    gmExt1$ = decoder!.decode(clientenv("ext1",err=*next),"UTF-8")
+    gmFax$ = decoder!.decode(clientenv("fax",err=*next),"UTF-8")
+    gmAddress1$ = decoder!.decode(clientenv("address1",err=*next),"UTF-8")
+    gmAddress2$ = decoder!.decode(clientenv("address2",err=*next),"UTF-8")
+    gmAddress3$ = decoder!.decode(clientenv("address3",err=*next),"UTF-8")
+    gmCity$ = decoder!.decode(clientenv("city",err=*next),"UTF-8")
+    gmState$ = decoder!.decode(clientenv("state",err=*next),"UTF-8")
+    gmZip$ = decoder!.decode(clientenv("zip",err=*next),"UTF-8")
+    gmCountry$ = decoder!.decode(clientenv("country",err=*next),"UTF-8")
+
+    rem --- Put parameters into a Properties object
+    gmData!=new Properties()
+    gmData!.setProperty("accountno",gmAccountno$)
+    gmData!.setProperty("recid",gmRecid$)
+    gmData!.setProperty("company",gmCompany$)
+    gmData!.setProperty("contact",gmContact$)
+    gmData!.setProperty("phone1",gmPhone1$)
+    gmData!.setProperty("ext1",gmExt1$)
+    gmData!.setProperty("fax",gmFax$)
+    gmData!.setProperty("address1",gmAddress1$)
+    gmData!.setProperty("address2",gmAddress2$)
+    gmData!.setProperty("address3",gmAddress3$)
+    gmData!.setProperty("city",gmCity$)
+    gmData!.setProperty("state",gmState$)
+    gmData!.setProperty("zip",gmZip$)
+    gmData!.setProperty("country",gmCountry$)
+
+rem --- Other initializations
+    cookieExpireHrs = 12
+
+rem --- Verify modules are installed
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    adm_modules_dev=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    
+    rem --- Is GM installed?
+    module$="GM "
+    dim adm_modules$:fattr(adm_modules$)
+    readrecord(adm_modules_dev,key="01007514"+module$,dom=*next)adm_modules$
+    if adm_modules.sys_install$<>"Y" then
+        msg_id$="AD_MODULE_NOT_INSTAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=module$
+        gosub disp_message
+        goto std_exit
+    endif
+    
+    rem --- Is AR installed?
+    module$="AR "
+    dim adm_modules$:fattr(adm_modules$)
+    readrecord(adm_modules_dev,key="01007514"+module$,dom=*next)adm_modules$
+    if adm_modules.sys_install$<>"Y" then
+        msg_id$="AD_MODULE_NOT_INSTAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=module$
+        gosub disp_message
+        goto std_exit
+    endif
+    
+    rem --- Is IV installed?
+    module$="IV "
+    dim adm_modules$:fattr(adm_modules$)
+    readrecord(adm_modules_dev,key="01007514"+module$,dom=*next)adm_modules$
+    iv_installed$=adm_modules.sys_install$
+
+rem --- Open File(s)
+    num_files=7
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="GMX_CUSTOMER", open_opts$[1]="OTA"
+    open_tables$[2]="ARM_CUSTMAST", open_opts$[2]="OTA"
+    open_tables$[3]="ARS_PARAMS", open_opts$[3]="OTA"
+    open_tables$[4]="ADM_FIRMS", open_opts$[4]="OTA"
+    open_tables$[5]="ADM_USERFIRMS", open_opts$[5]="OTA"
+    open_tables$[6]="GMW_LINKCUSTOMER", open_opts$[6]="OTA"
+    if iv_installed$="Y" then
+        open_tables$[7]="IVM_ITEMMAST", open_opts$[7]="OTA"
+    endif
+
+    gosub open_tables
+
+    gmx_customer_dev=num(open_chans$[1]);dim gmx_customer$:open_tpls$[1]
+    arm_custmast_dev=num(open_chans$[2]);dim arm_custmast$:open_tpls$[2]
+    ars_params_dev=num(open_chans$[3]);dim ars_params$:open_tpls$[3]
+    adm_firms_dev=num(open_chans$[4]);dim adm_firms$:open_tpls$[4]
+    adm_userfirms_dev=num(open_chans$[5]);dim adm_userfirms$:open_tpls$[5]
+    gmw_linkcustomer_dev=num(open_chans$[6]);dim gmw_linkcustomer$:open_tpls$[6]
+    if iv_installed$="Y" then
+        ivm_itemmast_dev=num(open_chans$[7]);dim ivm_itemmast$:open_tpls$[7]
+    endif
+
+rem --- Get Addon-GoldMine cross reference if one exists
+    gmx_customer.gm_accountno$=gmAccountno$
+    gmx_customer.gm_recid$=gmRecid$
+    readrecord(gmx_customer_dev,key=gmx_customer.gm_accountno$+gmx_customer.gm_recid$,err=*next)gmx_customer$
+
+    if cvs(gmx_customer.firm_id$+gmx_customer.customer_id$,2)<>"" then
+        rem --- Have Addon-GoldMine cross reference. Verify Addon customer still exists.
+        readrecord(arm_custmast_dev,key=gmx_customer.firm_id$+gmx_customer.customer_id$,err=*next)arm_custmast$
+
+        if arm_custmast.firm_id$+arm_custmast.customer_id$=gmx_customer.firm_id$+gmx_customer.customer_id$ then
+            rem --- Addon customer exists
+            firm_id$=arm_custmast.firm_id$
+            customer_id$=arm_custmast.customer_id$
+
+            rem --- Login to Barista with firm
+            bar!=new Barista()
+            bar!.setCookieExpireHrs(cookieExpireHrs)
+            bar!.setFirmId(firm_id$)
+            bar!.setUserCredentials(gmUser$, "")
+            
+            rem --- Launch target via bax_launch_task.bbj
+            if action$="LAUNCH" then
+                bar!.setTaskType("T")
+                
+                rem --- Target is Customer Maintenance
+                if target$="ARM_CUSTMAST"
+                    bar!.setTableId("ARM_CUSTMAST")
+                    bar!.setKeyPrefix(firm_id$+customer_id$)
+                endif
+
+                rem --- Target is Item Maintenance
+                if target$="IVM_ITEMMAST"
+                    bar!.setTableId("IVM_ITEMMAST")
+
+                    rem --- Make sure IV is installed
+                    if iv_installed$<>"Y" then
+                        msg_id$="AD_MODULE_NOT_INSTAL"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]="IV"
+                        gosub disp_message
+                        goto std_exit
+                    endif
+                endif
+
+                rem --- Launch bax_launch_task.bbj
+                bar!.launch()
+            endif
+        else
+            rem --- Addon customer no longer exists. Remove broken link.
+            remove(gmx_customer_dev,key=gmx_customer.gm_accountno$+gmx_customer.gm_recid$,err=*next)
+            
+            rem --- Launch target via bax_launch_task.bbj
+            if action$="LAUNCH" then
+                bar!.setTaskType("T")
+                
+                rem --- Target is Customer Maintenance
+                if target$="ARM_CUSTMAST"
+                    bar!.setTableId("ARM_CUSTMAST")
+                    bar!.setKeyPrefix(firm_id$+customer_id$)
+
+                    rem --- Login to Barista without specifying firm
+                    bar!=new Barista()
+                    bar!.setCookieExpireHrs(cookieExpireHrs)
+                    bar!.setUserCredentials(gmUser$, "")
+
+                    rem --- Ask if they want to create a new Addon customer for the GoldMine company.
+                    msg_id$="GM_NEW_AON_4_GM_CO"
+                    gosub disp_message
+                    if msg_opt$<>"Y" then
+                        goto std_exit
+                    else
+                        rem --- Create new Addon customer with GoldMine data
+                        gosub add_aon_customer
+                    endif
+                else
+                    rem --- Not launching arm_custmast. Cross reference required to get correct firm.
+                    msg_id$="GM_LINK_REQUIRED"
+                    gosub disp_message
+                    goto std_exit
+                endif
+
+                rem --- Launch bax_launch_task.bbj
+                bar!.launch()
+            endif
+        endif
+    else
+        rem --- No Addon-GoldMine cross reference. Determine if Addon customer exists.
+        use ::gmo_GmInterfaceClient.aon::GmInterfaceClient
+        gmClient!=new GmInterfaceClient()
+        aonCustomers!=bbjAPI().makeVector()
+
+        rem --- Map gmCompany$ to customer_name$ 
+        aonProp!=gmClient!.mapToAddon("COMPANY",gmCompany$)
+        mappedAonCustomerName$=aonProp!.getProperty("value1")
+
+        rem --- Check all firms in arm_custmast for Addon customer names that match exactly the GoldMine company name.
+        read(ars_params_dev,key="",dom=*next)
+        while 1
+            readrecord(ars_params_dev,end=*break)ars_params$
+            read(arm_custmast_dev,key=ars_params.firm_id$+mappedAonCustomerName$,knum="AO_NAME_CUST",dom=*next)
+            while 1
+                armCustomer_key$=key(arm_custmast_dev,end=*break)
+                if pos(ars_params.firm_id$+mappedAonCustomerName$=armCustomer_key$)<>1 then break
+                readrecord(arm_custmast_dev)arm_custmast$
+                aonCustomers!.addItem(arm_custmast$)
+            wend
+        wend
+
+        if aonCustomers!.size()>0 then
+            rem --- No cross reference, but Addon customer exists
+            
+            rem --- Launch target via bax_launch_task.bbj
+            if action$="LAUNCH" then
+                
+                rem --- Target is Customer Maintenance
+                if target$="ARM_CUSTMAST"
+                    rem --- Login to Barista without specifying firm
+                    bar!=new Barista()
+                    bar!.setCookieExpireHrs(cookieExpireHrs)
+                    bar!.setUserCredentials(gmUser$, "")
+
+                    rem --- Can only work with firms user is authorized for
+                    authorized$=""
+                    user_id$=stbl("+USER_ID")
+                    read(adm_userfirms_dev,key=cvs(pad(user_id$,16),4),dom=*next)
+                    while 1
+                        readrecord(adm_userfirms_dev,end=*break)adm_userfirms$
+                        if adm_userfirms.user_id$<>cvs(pad(user_id$,16),4) break
+                        authorized$=authorized$+adm_userfirms.firm_id$+":"
+                    wend
+
+                    rem --- Remove from aonCustomers! firms user isn't authorized for
+                    if authorized$<>"" then
+                        notAuthorized$=""
+                        tempVect!=aonCustomers!.clone()
+                        aonCustomers!.clear()
+                        for i=0 to tempVect!.size()-1
+                            arm_custmast$=tempVect!.getItem(i)
+                            if pos(arm_custmast.firm_id$=authorized$) then
+                                aonCustomers!.addItem(arm_custmast$)
+                            else
+                                notAuthorized$=notAuthorized$+arm_custmast.firm_id$+":"
+                            endif
+                        next i
+
+                        rem --- Provide message if customer exists in firm user isn't authorized for
+                        if notAuthorized$<>"" then
+                            msg_id$="GM_CUST_NOT_AUTH"
+                            gosub disp_message
+                        endif
+                    endif
+
+                    rem --- Can only work with firms user is authorized for
+                    if aonCustomers!.size()=0 then
+                        goto std_exit
+                    else
+                        rem --- Ask if they want to link the GoldMine company to an existing Addon customer.
+                        msg_id$="GM_LINK_2_AON_CUST"
+                        gosub disp_message
+                        if msg_opt$<>"Y" then
+                            goto std_exit
+                        else
+                            rem --- Must clear current user from gmw_linkcustomer because can't use INITIFILE since gmw_linkcustomer might already be open.
+                            read(gmw_linkcustomer_dev,key=user_id$,dom=*next)
+                            while 1
+                                gmw_linkcustomer_key$=key(gmw_linkcustomer_dev,end=*break)
+                                if pos(user_id$=gmw_linkcustomer_key$)<>1 then break
+                                remove(gmw_linkcustomer_dev,key=gmw_linkcustomer_key$)
+                            wend
+
+                            rem --- Provide list of all Addon customer’s whose name matches exactly the GoldMine company name so the user can select the one they want.
+                            rem --- Build query work file with Addon customer names that match exactly the GoldMine company name.
+                            for i=0 to aonCustomers!.size()-1
+                                arm_custmast$=aonCustomers!.getItem(i)
+                                gmw_linkcustomer.user_id$=user_id$
+                                gmw_linkcustomer.company_id$=arm_custmast.firm_id$
+                                gmw_linkcustomer.customer_id$=arm_custmast.customer_id$
+                                gmw_linkcustomer.customer_name$=arm_custmast.customer_name$
+                                gmw_linkcustomer.contact_name$=arm_custmast.contact_name$
+                                gmw_linkcustomer.phone_no$=arm_custmast.phone_no$
+                                gmw_linkcustomer.phone_exten$=arm_custmast.phone_exten$
+                                gmw_linkcustomer.fax_no$=arm_custmast.fax_no$
+                                gmw_linkcustomer.addr_line_1$=arm_custmast.addr_line_1$
+                                gmw_linkcustomer.addr_line_2$=arm_custmast.addr_line_2$
+                                gmw_linkcustomer.addr_line_3$=arm_custmast.addr_line_3$
+                                gmw_linkcustomer.city$=arm_custmast.city$
+                                gmw_linkcustomer.state_code$=arm_custmast.state_code$
+                                gmw_linkcustomer.zip_code$=arm_custmast.zip_code$
+                                gmw_linkcustomer.country$=arm_custmast.country$
+                                writerecord(gmw_linkcustomer_dev)gmw_linkcustomer$
+                            next i
+
+                            rem --- Run AD_AUTH_FIRMS query
+                            bar!.setTaskType("Q")
+                            bar!.setQueryId("GM_LINKCUSTOMER")
+                            bar!.setNamespaceId("gmx_launch_bui_view"+gmUser$)
+                            bar!.launch()
+                            sel_key$=cast(BBjString,BBjAPI().getGroupNamespace().getValue("gmx_launch_bui_view"+gmUser$))
+                            if sel_key$="" or pos("CANCEL"=sel_key$) then goto std_exit
+                            if pos("^"=sel_key$) then sel_key$=sel_key$(1,pos("^"=sel_key$)-1)
+
+                            rem --- Addon customer is selected. Ask if they want to update Addon customer data with GoldMine company data.
+                            msg_id$="GM_UPDATE_AON_CUST"
+                            gosub disp_message
+                            switch pos(msg_opt$="YNC")
+                                case 1;rem --- Update and Link
+                                    rem --- Update Addon customer with GoldMine contact data
+                                    readrecord(gmw_linkcustomer_dev,key=sel_key$)gmw_linkcustomer$
+                                    gm2AonCustomer!=new Gm2AonCustomer(gmw_linkcustomer.company_id$)
+                                    gm2AonCustomer!.updateCustomer(gmw_linkcustomer.customer_id$,gmData!)
+
+                                    rem --- Login to Barista with selected firm
+                                    bar!=new Barista()
+                                    bar!.setCookieExpireHrs(cookieExpireHrs)
+                                    bar!.setFirmId(gmw_linkcustomer.company_id$)
+                                    bar!.setUserCredentials(gmUser$, "")
+                                    
+                                    rem --- Launch arm_custmast form in MNT maintenance mode
+                                    bar!.setTaskType("T")
+                                    bar!.setTableId("ARM_CUSTMAST")
+                                    bar!.setKeyPrefix(gmw_linkcustomer.company_id$+gmw_linkcustomer.customer_id$)
+                                break
+                                case 2;rem --- Link only
+                                    rem --- Write gmx_customer cross reference record.
+                                    readrecord(gmw_linkcustomer_dev,key=sel_key$)gmw_linkcustomer$
+                                    gm2AonCustomer!=new Gm2AonCustomer(gmw_linkcustomer.company_id$)
+                                    gm2AonCustomer!.linkCustomer(gmw_linkcustomer.customer_id$,gmData!)
+                                    
+                                    rem --- Login to Barista with selected firm
+                                    bar!=new Barista()
+                                    bar!.setCookieExpireHrs(cookieExpireHrs)
+                                    bar!.setFirmId(gmw_linkcustomer.company_id$)
+                                    bar!.setUserCredentials(gmUser$, "")
+                                    
+                                    rem --- Launch arm_custmast form in MNT maintenance mode
+                                    bar!.setTaskType("T")
+                                    bar!.setTableId("ARM_CUSTMAST")
+                                    bar!.setKeyPrefix(gmw_linkcustomer.company_id$+gmw_linkcustomer.customer_id$)
+                                break
+                                case 3;rem --- Cancel
+                                case default
+                                    goto std_exit
+                                break
+                            swend
+                        endif
+                    endif
+                else
+                    rem --- Not launching arm_custmast. Cross reference required to get correct firm.
+                    msg_id$="GM_LINK_REQUIRED"
+                    gosub disp_message
+                    goto std_exit
+                endif
+
+                rem --- Launch bax_launch_task.bbj
+                bar!.launch()
+            endif
+        else
+            rem --- No cross reference, and Addon customer does not exist
+
+            rem --- Login to Barista without specifying firm
+            bar!=new Barista()
+            bar!.setCookieExpireHrs(cookieExpireHrs)
+            bar!.setUserCredentials(gmUser$, "")
+            
+            rem --- Launch target via bax_launch_task.bbj
+            if action$="LAUNCH" then
+                
+                rem --- Target is Customer Maintenance
+                if target$="ARM_CUSTMAST"
+                    rem --- Ask if they want to create a new Addon customer for the GoldMine company.
+                    msg_id$="GM_NEW_AON_4_GM_CO"
+                    gosub disp_message
+                    if msg_opt$<>"Y" then
+                        goto std_exit
+                    else
+                        rem --- Create new Addon customer with GoldMine data
+                        gosub add_aon_customer
+                    endif
+                else
+                    rem --- Not launching arm_custmast. Cross reference required to get correct firm.
+                    msg_id$="GM_LINK_REQUIRED"
+                    gosub disp_message
+                    goto std_exit
+                endif
+
+                rem --- Launch bax_launch_task.bbj
+                bar!.launch()
+            endif
+        endif
+    endif
+
+rem --- All done
+
+    goto std_exit
+
+add_aon_customer: rem --- Create new Addon customer with GoldMine data
+
+    rem --- Determine which firm to create new customer in
+    firms=0
+    firm_id$=""
+    read(adm_firms_dev,key="",dom=*next)
+    while 1
+        readrecord(adm_firms_dev,end=*break)adm_firms$
+        firms=firms+1
+        if firms>1 then break
+        firm_id$=adm_firms.company_id$
+    wend
+
+    rem --- If more than one firm in adm_firms, must ask which firm to use
+    if firms>1 then
+        rem --- Run AD_AUTH_FIRMS query
+        bar!.setTaskType("Q")
+        bar!.setQueryId("AD_AUTH_FIRMS")
+        bar!.setNamespaceId("gmx_launch_bui_view"+gmUser$)
+        bar!.launch()
+        sel_key$=cast(BBjString,BBjAPI().getGroupNamespace().getValue("gmx_launch_bui_view"+gmUser$))
+        if sel_key$="" or pos("CANCEL"=sel_key$) then exitto std_exit
+        arm_custmast.firm_id$=sel_key$; rem --- trim off any unwanted chars
+        firm_id$=arm_custmast.firm_id$
+    endif
+
+    rem --- Create new Addon customer in selected firm using passed in parameters
+    gm2AonCustomer!=new Gm2AonCustomer(firm_id$)
+    customer_id$=gm2AonCustomer!.addCustomer(gmData!)
+
+    rem --- Login to Barista with selected firm
+    bar!=new Barista()
+    bar!.setCookieExpireHrs(cookieExpireHrs)
+    bar!.setFirmId(firm_id$)
+    bar!.setUserCredentials(gmUser$, "")
+
+    rem --- Launch arm_custmast form in MNT maintenance mode for the new customer (R3.1,D3.6).
+    bar!.setTaskType("T")
+    bar!.setTableId("ARM_CUSTMAST")
+    bar!.setKeyPrefix(firm_id$+customer_id$)
+
+    return
+    
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
+
+    return
+
+rem #include disp_message.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+
+    return
+
+rem #endinclude disp_message.src
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem --- #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    if status <> 999 then run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem --- #endinclude std_end.src
+
+    end
