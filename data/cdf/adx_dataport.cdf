@@ -202,19 +202,16 @@ rem --- confirm ready to port selected files?
 			callpoint!.setDevObject("destin_folder",callpoint!.getColumnData("ADX_DATAPORT.TARGET_DIR"))
     
 			rem --- Locate aon/data directory, if possible
+			num_files=1
+			dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+			open_tables$[1]="DDM_SYSTEMS",open_opts$[1]="OTA"
+			gosub open_tables
+			ddm_systems=num(open_chans$[1]);dim ddm_systems$:open_tpls$[1]
+    
 			aonDir$=""
-			dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
-			xpos=pos("/aon/"=dataDir$,-1)
-			if xpos then
- 				aonDir$=dataDir$(1,xpos+4)
-			endif
-			if aonDir$="" then
- 				xpos=pos("/data/"=dataDir$,-1)
- 				if xpos then
- 					aonDir$=dataDir$(1,xpos)
- 				else
- 					aonDir$=dataDir$
- 				endif
+			readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+			if cvs(ddm_systems.mount_dir$,2)<>"" then
+				aonDir$=ddm_systems.mount_dir$
 			endif
 
 			rem --- Auto-select all files in a config/adx_conversionCtrl.ini dependency group when any in the group is selected

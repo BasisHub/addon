@@ -37,6 +37,7 @@ rem --- Initializations
     err_msg$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
     dir_syp$=stbl("+DIR_SYP")
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
     
     rem --- Set needed STBLs if missing
     need_stbls=1
@@ -45,23 +46,6 @@ rem --- Initializations
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    
-rem --- Locate aon/data directory, if possible
-
-    aonDir$=""
-    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
-    xpos=pos("/aon/"=dataDir$,-1)
-    if xpos then
-        aonDir$=dataDir$(1,xpos+4)
-    endif
-    if aonDir$="" then
-        xpos=pos("/data/"=dataDir$,-1)
-        if xpos then
-            aonDir$=dataDir$(1,xpos)
-        else
-            aonDir$=dataDir$
-        endif
-    endif
 
 rem --- If conversion control file data/adx_conversionCtrl present and data_source=AIUW, launch Distribute EM Update Wizard Files form
 
@@ -76,11 +60,49 @@ rem --- If conversion control file data/adx_conversionCtrl present and data_sour
         if convCtrl!.getProperty("data_source")="AIUW" then
             call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADX_MVUPGRDFILES",stbl("+USER_ID"),"","",table_chans$[all],""
         endif
+
+        rem --- Remove 'INIT_DATA' auto-launch record with short keys
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="ADS_AUTOLAUNCH",   open_opts$[1]="OTA@"
+        gosub open_tables
+        ads_autolaunch_dev=num(open_chans$[1]); dim ads_autolaunch$:open_tpls$[1]
+
+        remove(ads_autolaunch_dev,key="INIT_DATA",dom=*next)
     endif
     
 done: rem --- All done
 
     goto std_exit
+   
+open_tables: rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
     
 rem #include std_error.src
 

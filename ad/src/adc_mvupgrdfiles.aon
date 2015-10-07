@@ -32,6 +32,7 @@ rem --- Initializations
     status=0
     dir_syp$=stbl("+DIR_SYP")
     sysGUI! = BBjAPI().getSysGui()
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
 		
 rem --- Size progress meter based on number of files to move
 	declare File source!
@@ -50,20 +51,23 @@ rem --- Start progress meter
     if wait4ok% then meter_action$=meter_action$+"-OK"
     gosub disp_meter
     
-rem --- Open log file in aon/logs directory, if possible
+rem --- Open File(s)
+    
+    num_files=2
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",open_opts$[1]="OTA"
+    open_tables$[2]="DDM_TABLES",open_opts$[2]="OTA"
+
+    gosub open_tables
+
+    ddm_systems=num(open_chans$[1]);dim ddm_systems$:open_tpls$[1]
+    ddm_tables=num(open_chans$[2]);dim ddm_tables$:open_tpls$[2]
+    
+rem --- Open log file in aon/logs directory
     aonDir$=""
-    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
-    xpos=pos("/aon/"=dataDir$,-1)
-    if xpos then
-        aonDir$=dataDir$(1,xpos+4)
-    endif
-    if aonDir$="" then
-        xpos=pos("/data/"=dataDir$,-1)
-        if xpos then
-            aonDir$=dataDir$(1,xpos)
-        else
-            aonDir$=dataDir$
-        endif
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
     endif
 
     location$ = aonDir$
@@ -85,16 +89,6 @@ rem --- Currently this utility can only use the database used by this Barista/Ad
 		status=1
 		goto done
 	endif
-    
-rem --- Open File(s)
-    
-    num_files=1
-    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-
-    gosub open_tables
-
-    ddm_tables=num(open_chans$[1]);dim ddm_tables$:open_tpls$[1]
 	
 rem --- Process each file in source dir
 	if fileVector!.size()>0 then
@@ -115,17 +109,17 @@ rem --- Process each file in source dir
 			if cvs(ddm_tables.dd_file_name$,3)<>fileName$ then
 				rem --- check for table name in ddm_tables
 				readrecord(ddm_tables,key=pad(cvs(fileName$,4),16," "),knum="PRIMARY",err=*next)ddm_tables$
-					rem --- skip if file and table name not found
-					if cvs(ddm_tables.dd_table_alias$,3)<>cvs(fileName$,4) then
-						rem --- Increment progress meter
-						meter_text$=fileName$+" -- table not found"
-						meter_proc_recs=meter_proc_recs+1
-						meter_action$="MTR-LST"
-						gosub disp_meter
-						print(log_dev)meter_text$
-						
-						continue
-					endif
+				rem --- skip if file and table name not found
+				if cvs(ddm_tables.dd_table_alias$,3)<>cvs(fileName$,4) then
+					rem --- Increment progress meter
+					meter_text$=fileName$+" -- table not found"
+					meter_proc_recs=meter_proc_recs+1
+					meter_action$="MTR-LST"
+					gosub disp_meter
+					print(log_dev)meter_text$
+					
+					continue
+				endif
 			endif
 			
 			rem --- move file to where it belongs, if not there already
@@ -234,7 +228,11 @@ rem --- Update conversion control file data/adx_conversionCtrl, and create conve
             requiredFiles!.addAll(java.util.Arrays.asList(key!.split(";")))
             version$=fileDependencies!.get(key!)
             for i=0 to requiredFiles!.size()-1
-                file!=new File(fileLoc$+"/"+requiredFiles!.get(i))
+                filename$=requiredFiles!.get(i)
+                rem --- Because of v15.00 key and field changes to opt-11, it should always fail in OCJ.
+                rem --- So don't require opt-11 for v15.00 conversion using OCJ.
+                if version$="1500" and filename$="opt-11" then continue 
+                file!=new File(fileLoc$+"/"+filename$)
                 if !file!.exists() then
                     create_marker=0
                     break

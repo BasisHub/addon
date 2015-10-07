@@ -36,9 +36,11 @@ rem --- Get program arguments
 rem --- Initializations
 
     close_mdi=0
+    no_close_mdi=0
     err_msg$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
     dir_syp$=stbl("+DIR_SYP")
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
     
     rem --- Set needed STBLs if missing
     need_stbls=1
@@ -47,23 +49,6 @@ rem --- Initializations
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
-    
-rem --- Locate aon/data directory, if possible
-
-    aonDir$=""
-    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
-    xpos=pos("/aon/"=dataDir$,-1)
-    if xpos then
-        aonDir$=dataDir$(1,xpos+4)
-    endif
-    if aonDir$="" then
-        xpos=pos("/data/"=dataDir$,-1)
-        if xpos then
-            aonDir$=dataDir$(1,xpos)
-        else
-            aonDir$=dataDir$
-        endif
-    endif
 
 rem --- There's nothing to do if data/adx_conversionCtrl isn’t found, i.e. new install or all required conversions already completed.
 
@@ -99,8 +84,20 @@ rem --- Are conversion needed for the start_version?
         next i
     endif
     if indexFirstConversion<0 then goto std_exit
+
+rem --- Open log file in aon/logs directory
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",open_opts$[1]="OTA"
+    gosub open_tables
+    ddm_systems=num(open_chans$[1]);dim ddm_systems$:open_tpls$[1]
     
-rem --- Open log file in aon/logs directory, if possible
+    aonDir$=""
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
+    endif
 
     location$ = aonDir$
     gosub open_log
@@ -209,6 +206,30 @@ rem --- Verify end_version=ADM_MODULES.VERSION_ID for AD
     meter_action$="MTR-LST"
     gosub disp_meter
     print(log_dev)meter_text$
+    
+rem --- Verify data_source
+
+    if convCtrl!.getProperty("data_source")="DataPort" or convCtrl!.getProperty("data_source")="OCJ" then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_CHECKED_DATA_SOURCE","Checked data source used")+": "+convCtrl!.getProperty("data_source")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    else
+        if convCtrl!.getProperty("data_source")="AIUW" then
+            rem --- Haven't run Distribute EM Update Wizard Files task yet
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_DIST_UPDATE_WIZ_FILES","Distribute EM Update Wizard Files task was not run")+" *****"
+            no_close_mdi=1
+            goto done
+        else
+            rem --- Unknown data_source
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:           Translate!.getTranslation("AON_CONVERSIONCTRL_UNKNOWN","adx_conversionCtrl from unknown data source")+": "+convCtrl!.getProperty("data_source")+" *****"
+            goto done
+        endif
+    endif
 
 rem --- Following an upgrade, user may launch Addon before "copying" the data.
 rem --- Can't do anything if required files aren't present.
@@ -235,29 +256,6 @@ rem --- Can't do anything if required files aren't present.
     meter_action$="MTR-LST"
     gosub disp_meter
     print(log_dev)meter_text$
-    
-rem --- Verify data_source
-
-    if convCtrl!.getProperty("data_source")="DataPort" or convCtrl!.getProperty("data_source")="OCJ" then
-        rem --- Increment progress meter
-        meter_text$=Translate!.getTranslation("AON_CHECKED_DATA_SOURCE","Checked data source used")+": "+convCtrl!.getProperty("data_source")
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
-    else
-        if convCtrl!.getProperty("data_source")="AIUW" then
-            rem --- Haven't run Distribute EM Update Wizard Files task yet
-            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:           Translate!.getTranslation("AON_DIST_UPDATE_WIZ_FILES","Distribute EM Update Wizard Files task was not run")+" *****"
-            goto done
-        else
-            rem --- Unknown data_source
-            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:           Translate!.getTranslation("AON_CONVERSIONCTRL_UNKNOWN","adx_conversionCtrl from unknown data source")+": "+convCtrl!.getProperty("data_source")+" *****"
-            goto done
-        endif
-    endif
 
 rem --- Process needed version conversion programs
     for i=indexFirstConversion to versionsVect!.size()-1
@@ -454,7 +452,7 @@ show_error_message: rem --- Displays message that error should be fixed before c
     msg_tokens$[1]=error_message$
     gosub disp_message
     
-    close_mdi=1
+    if !no_close_mdi then close_mdi=1
 
     return
     

@@ -12,6 +12,7 @@ rem --- Translate!  : Translator object translations
 rem --- CONV_STATUS : Status code/0=No error (Returned)
 
     use java.io.File
+    use java.util.Properties
     use ::ado_file.src::FileObject
     
     setesc std_error
@@ -24,26 +25,24 @@ rem --- Initializations
     conv_status=1
     dir_syp$=stbl("+DIR_SYP")
     pgmdir$=stbl("+DIR_PGM",err=*next)
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
 
     use ::dir_syp$+bao_option.bbj::Option        
 
     declare Option Option!
     
-rem --- Open log file in aon/logs directory, if possible
+rem --- Open log file in aon/logs directory
 
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",open_opts$[1]="OTA"
+    gosub open_tables
+    ddm_systems=num(open_chans$[1]);dim ddm_systems$:open_tpls$[1]
+    
     aonDir$=""
-    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
-    xpos=pos("/aon/"=dataDir$,-1)
-    if xpos then
-        aonDir$=dataDir$(1,xpos+4)
-    endif
-    if aonDir$="" then
-        xpos=pos("/data/"=dataDir$,-1)
-        if xpos then
-            aonDir$=dataDir$(1,xpos)
-        else
-            aonDir$=dataDir$
-        endif
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
     endif
 
     location$ = aonDir$
@@ -59,7 +58,7 @@ rem --- Start progress meter
     
 rem --- For version 15.00: - update drilldown definitions in ddm_drill_defs
 rem ---                    - consolidate vendor and customer report control into report control reciptients (adm_rptctl_rcp) file and update adm_rptctl with document type
-rem ---                    - remove old AONDEMONAG auto-launch tast (was renamed DEMONAG)
+rem ---                    - remove 'DEMONAG' auto-launch record with short keys
 
     this_module$="AD"
     if installMap!.get(this_module$)="Y" then 
@@ -78,7 +77,7 @@ rem ---                    - remove old AONDEMONAG auto-launch tast (was renamed
         open_tables$[3]="ADM_RPTCTL_RCP",   open_opts$[3]="OTA"
         open_tables$[4]="APM_VENDRPT_CTL",   open_opts$[4]="OTA"
         open_tables$[5]="ARM_CUSTRPT_CTL",   open_opts$[5]="OTA"
-        open_tables$[6]="ADS_AUTOLAUNCH",   open_opts$[6]="OTA"
+        open_tables$[6]="ADS_AUTOLAUNCH",   open_opts$[6]="OTA@"
         gosub open_tables
         ddm_drilldefs_dev=num(open_chans$[1])
         adm_rptctl_dev=num(open_chans$[2])
@@ -143,11 +142,8 @@ rem ---                    - remove old AONDEMONAG auto-launch tast (was renamed
             writerecord(adm_rptctl_dev)adm_rptctl$
         wend
 
-        rem --- Delete AONDEMONAG auto-launch tast
-        wk$=fattr(ads_autolaunch$,"PROCESS_ID")
-        dim process_id$(dec(wk$(10,2)))
-        process_id$(1)="AONDEMONAG"
-        remove(ads_autolaunch_dev,key=process_id$,dom=*next)
+        rem --- Remove 'DEMONAG' auto-launch record with short keys
+        remove(ads_autolaunch_dev,key="DEMONAG",dom=*next)
 
         rem --- Increment progress meter
         meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
@@ -180,7 +176,7 @@ rem --- For version 15.00, initialize invoice_bal and disc_taken in art_invhdr
 
         rem --- Does conversion marker file exist for initializeing invoice_bal in art_invhdr?
         conv_marker_name$="v1500_art-01"
-        conv_marker_file$=aonDir$+"data/"+conv_marker_name$
+        conv_marker_file$=dataDir$+conv_marker_name$
         convmarkerFile!=new File(conv_marker_file$)
         if convmarkerFile!.exists() then
             rem --- Verify required files are present
@@ -265,7 +261,7 @@ rem --- For version 15.00, initialize product_type in ivm_itemwhse
 
         rem --- Does conversion marker file exist for initializeing product_type in ivm_itemwhse?
         conv_marker_name$="v1500_ivm-01"
-        conv_marker_file$=aonDir$+"data/"+conv_marker_name$
+        conv_marker_file$=dataDir$+conv_marker_name$
         convmarkerFile!=new File(conv_marker_file$)
         if convmarkerFile!.exists() then
             rem --- Verify required files are present
@@ -369,7 +365,7 @@ rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) fi
 
         rem --- If data_source=OCJ and have v1500_ope-01 conversion marker file, verify can read old opt-11 for addon_source
         if convCtrl!.getProperty("data_source")="OCJ" then
-            conv_marker_file$=aonDir$+"data/v1500_ope-01"
+            conv_marker_file$=dataDir$+"v1500_ope-01"
             convmarkerFile!=new File(conv_marker_file$)
             if convmarkerFile!.exists() then
                 oldStbl$="+OPDATA"
@@ -401,7 +397,7 @@ rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) fi
         for marker=0 to convMarkers!.size()-1
             rem --- Does conversion marker file exist?
             conv_marker_name$=convMarkers!.get(marker)
-            conv_marker_file$=aonDir$+"data/"+conv_marker_name$
+            conv_marker_file$=dataDir$+conv_marker_name$
             convmarkerFile!=new File(conv_marker_file$)
             if convmarkerFile!.exists() then
                 rem --- Verify required files are present
@@ -409,9 +405,13 @@ rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) fi
                 requiredFiles!=BBjAPI().makeVector()
                 requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
                 for i=0 to requiredFiles!.size()-1
-                    file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
+                    filename$=requiredFiles!.get(i)
+                    rem --- Because of v15.00 key and field changes to opt-11, it should always fail in OCJ.
+                    rem --- So don't require opt-11 for v15.00 conversion using OCJ.
+                    if convCtrl!.getProperty("data_source")="OCJ" and filename$="opt-11" then continue 
+                    file!=new File(stbl("+"+this_module$+"DATA")+filename$)
                     if !file!.exists() then
-                        missingFiles!.addItem(requiredFiles!.get(i))
+                        missingFiles!.addItem(filename$)
                     endif
                 next i
                 if missingFiles!.size()=0 then
@@ -508,67 +508,67 @@ rem --- For version 15.00, data conversions for SA Real Time Processing (RTP) fi
 
         rem --- Identify types of Sales Analysis being used
         typeSA!=new java.util.HashMap()
-        saFile!=new File(aonDir$+"data/sam-01")
+        saFile!=new File(dataDir$+"sam-01")
         if saFile!.exists() then
             typeSA!.put("BY_CUSTOMER","Y") 
         else
             typeSA!.put("BY_CUSTOMER","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-02")
+        saFile!=new File(dataDir$+"sam-02")
         if saFile!.exists() then
             typeSA!.put("BY_TERRITORY","Y") 
         else
             typeSA!.put("BY_TERRITORY","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-03")
+        saFile!=new File(dataDir$+"sam-03")
         if saFile!.exists() then
             typeSA!.put("BY_SALESPSN","Y") 
         else
             typeSA!.put("BY_SALESPSN","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-04")
+        saFile!=new File(dataDir$+"sam-04")
         if saFile!.exists() then
             typeSA!.put("BY_CUSTOMER_TYPE","Y") 
         else
             typeSA!.put("BY_CUSTOMER_TYPE","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-05")
+        saFile!=new File(dataDir$+"sam-05")
         if saFile!.exists() then
             typeSA!.put("BY_SHIPTO","Y") 
         else
             typeSA!.put("BY_SHIPTO","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-06")
+        saFile!=new File(dataDir$+"sam-06")
         if saFile!.exists() then
             typeSA!.put("BY_SIC_CODE","Y") 
         else
             typeSA!.put("BY_SIC_CODE","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-07")
+        saFile!=new File(dataDir$+"sam-07")
         if saFile!.exists() then
             typeSA!.put("BY_PRODUCT","Y") 
         else
             typeSA!.put("BY_PRODUCT","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-08")
+        saFile!=new File(dataDir$+"sam-08")
         if saFile!.exists() then
             typeSA!.put("BY_WHSE","Y") 
         else
             typeSA!.put("BY_WHSE","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-09")
+        saFile!=new File(dataDir$+"sam-09")
         if saFile!.exists() then
             typeSA!.put("BY_VENDOR","Y") 
         else
             typeSA!.put("BY_VENDOR","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-10")
+        saFile!=new File(dataDir$+"sam-10")
         if saFile!.exists() then
             typeSA!.put("BY_DIST_CODE","Y") 
         else
             typeSA!.put("BY_DIST_CODE","") 
         endif
-        saFile!=new File(aonDir$+"data/sam-11")
+        saFile!=new File(dataDir$+"sam-11")
         if saFile!.exists() then
             typeSA!.put("BY_NONSTOCK","Y") 
         else
@@ -662,6 +662,7 @@ v1500_ivm02: rem --- Data initialization for product_type in ivm_itemwhse (ivm-0
 
 v1500_ope01: rem --- Data conversion for ope-01 (ope_ordhdr and ope_invhdr) and opt-01 (opt_invhdr)
 
+    invoiceMap!=new Properties()
     opt_table$="OPT_INVHDR"
     ope_table$="OPE_INVHDR"
     ope_file$="ope-01"
@@ -804,7 +805,7 @@ op_rtp_data_conv: rem --- OP Real Time Processing (RTP) data conversion
         opt_key$=key(opt_dev,end=*break)
         readrecord(opt_dev)opt_tpl$
         if opt_tpl.trans_status$=" " then
-            if opt_table$="OPT_INVHDR" and opt_tpl.lock_status="2" then opt_tpl.lock_status="3"
+            if opt_table$="OPT_INVHDR" and opt_tpl.lock_status$="2" then opt_tpl.lock_status$="3"
             opt_tpl.trans_status$="U"
             if add_order_number and cvs(opt_tpl.order_no$,2)="" then
                 rem --- Set ORDER_NO from OPT_INVHDR via knum=AO_CUST_INV
@@ -847,10 +848,11 @@ op_rtp_data_conv: rem --- OP Real Time Processing (RTP) data conversion
     endif
     read(ope_dev,key="",dom=*next)
     while 1
+        dim ope_tpl$:fattr(opt_tpl$)
         readrecord(ope_dev,end=*break)ope_tpl$
         if convCtrl!.getProperty("data_source")="OCJ" then
             rem --- Data upgraded via EM Update Wizard (OCJ)
-            rem --- New ope-* entry file has old ope-* entry file structure
+            rem --- New ope-* entry file has old ope-* entry file structure <<<=== this has changed, see Bug 8385
             dim opt_tpl$:fattr(opt_tpl$)
             call pgmdir$+"adc_copyfile.aon",ope_tpl$,opt_tpl$,status
             if status then break
@@ -860,6 +862,13 @@ op_rtp_data_conv: rem --- OP Real Time Processing (RTP) data conversion
             opt_tpl$=ope_tpl$
         endif
         if opt_tpl.trans_status$=" " then
+            if ope_table$="OPE_INVHDR" then
+                invoiceMap!.setProperty(opt_tpl.order_no$,opt_tpl.ar_inv_no$)
+            else
+                if cvs(opt_tpl.ar_inv_no$,2)="" and invoiceMap!.containsKey(opt_tpl.order_no$) then
+                    opt_tpl.ar_inv_no$=invoiceMap!.getProperty(opt_tpl.order_no$)
+                endif
+            endif
             opt_tpl.trans_status$="E"
             opt_tpl$=field(opt_tpl$)
             writerecord(opt_dev)opt_tpl$
