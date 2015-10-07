@@ -80,6 +80,12 @@ rem --- Derive/set path and filename for logo to go on form
         break
     wend
 
+rem --- See if batching
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")
+
 rem --- Open/Lock files
 
     files=6,begfile=1,endfile=files
@@ -202,18 +208,18 @@ rem --- Open the printer
 rem --- Start progress meter and position header file
 
     call pgmdir$+"adc_progress.aon","NC","ARE_INVHDR","","","",0,are05_dev,1,meter_num,status
-    k$=firm_id$
-    if restart$<>"N" k$=k$+invoice$(1,max(0,len(invoice$)-1)),invoice$=firm_id$+invoice$
-    read (are05_dev,key=k$,dom=*next)
+    k$=firm_id$+batch_no$
+    if restart$<>"N" k$=k$+invoice$
+    read (are05_dev,key=k$,knum="BATCH_KEY",dom=*next)
 
 rem --- Read next Invoice Header (are-05) record
 
     while moreheaders
 
         extract record (are05_dev,end=*break) are05a$; rem Advisory Locking
-        if are05a.firm_id$<>firm_id$ then read(are05_dev); break
+        if are05a.firm_id$<>firm_id$ or are05a.batch_no$<>batch_no$ then break
         recs=recs+1
-        if restart$<>"N" and are05a$(1,len(invoice$))<invoice$ then read(are05_dev); continue
+        if restart$<>"N" and are05a.ar_inv_no$<invoice$ then read(are05_dev); continue
         total_recs=total_recs+1
         if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
@@ -236,7 +242,7 @@ rem --- Read next Invoice Header (are-05) record
     printer: 
         docPDF!=BBjAPI().getBBjPDFForm(pdf_doc$,requestAttributes!)
 
-        invoice$=are05a.firm_id$+are05a.ar_inv_no$
+        invoice$=are05a.ar_inv_no$
         invoice_date$=func.formatDate(are05a.inv_date$)
         total=0
 
@@ -280,13 +286,13 @@ rem --- Read next Invoice Header (are-05) record
 
         rem --- Position the Invoice Detail (are-15) file
 
-            read (are15_dev,key=invoice$,dom=*next)
+            read (are15_dev,key=firm_id$+invoice$,dom=*next)
 
         rem --- Read the next Invoice Detail (are-15) record
 
             while moredetail
                 k$=key(are15_dev,end=*break)
-                if pos(invoice$=k$)<>1 break
+                if pos(firm_id$+invoice$=k$)<>1 break
                 read record (are15_dev) are15a$
                 total=total+are15a.ext_price
                 memo=are15a.units+are15a.ext_price=0
@@ -546,9 +552,21 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
 
 std_exit_no_report: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     release

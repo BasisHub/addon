@@ -102,6 +102,12 @@ rem --- Check for user authentication; create connection string in url$
 		endif
     endif        
 
+rem --- See if batching
+
+    call stbl("+DIR_PGM")+"adc_getbatch.aon","",pgm(-2),rd_table_chans$[all]
+    batch_no$=stbl("+BATCH_NO")
+    process_id$=stbl("+PROCESS_ID")
+
 rem --- Open/Lock files
 
     files=1,begfile=1,endfile=files
@@ -145,17 +151,18 @@ rem --- See if this document is set up in Addon Report Control
 rem --- Start progress meter and position header file
 
     call pgmdir$+"adc_progress.aon","NC","ARE_INVHDR","","","",0,are05_dev,1,meter_num,status
-    k$=firm_id$,restart_invoice$=invoice$
-    if restart$<>"N" k$=k$+invoice$(1,max(0,len(invoice$)-1)),invoice$=firm_id$+invoice$
-    read (are05_dev,key=k$,dom=*next)
+    k$=firm_id$+batch_no$,restart_invoice$=invoice$
+    if restart$<>"N" k$=k$+invoice$
+    read (are05_dev,key=k$,knum="BATCH_KEY",dom=*next)
+
 
 rem --- Read next Invoice Header (are-05) record
 
     while 1
 
         extract record (are05_dev,end=*break) are05$; rem Advisory Locking
-        if are05.firm_id$<>firm_id$ then read(are05_dev); break
-        if restart$<>"N" and are05$(1,len(invoice$))<invoice$ then read(are05_dev); continue
+        if are05.firm_id$<>firm_id$ or are05.batch_no$<>batch_no$ then break
+        if restart$<>"N" and are05.ar_inv_no$<invoice$ then read(are05_dev); continue
         total_recs=total_recs+1
         if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
@@ -174,6 +181,7 @@ rem --- Read next Invoice Header (are-05) record
         new_doc_name$=""
         doc_name$=reportBaseName$+"_"+are05.customer_id$
         doc_keywords$="AR Invoice: "+are05.ar_inv_no$+", generated: "+fndate$(are05.inv_date$)
+        if num(batch_no$)<>0 then doc_keywords$=doc_keywords$+", Batch: "+batch_no$
 
         rd_source_alias$=option!.getAlias()
         rd_source_type$="O"
@@ -265,6 +273,7 @@ rem --- Read next Invoice Header (are-05) record
         locale$ = stbl("+USER_LOCALE",err=*next)    
         
         if master_document
+            if num(batch_no$)<>0 then params!.put("MESSAGE","[Batch: "+batch_no$+"] "+message$)
             master_report! = new BBJasperReport(master_filename$,url$)
             master_report!.putParams(params!)
             master_report!.setLocale(locale$)
@@ -273,6 +282,7 @@ rem --- Read next Invoice Header (are-05) record
         endif
 
         if print_document
+            if num(batch_no$)<>0 then params!.put("MESSAGE","[Batch: "+batch_no$+"] "+message$)
             print_report! = new BBJasperReport(print_filename$,url$)
             print_report!.putParams(params!)
             print_report!.setLocale(locale$)
@@ -280,6 +290,7 @@ rem --- Read next Invoice Header (are-05) record
             print_document=0
         endif
 
+        params!.put("MESSAGE",message$)
         report! = new BBJasperReport(filename$,url$)
         report!.putParams(params!)
         report!.setLocale(locale$)
@@ -382,7 +393,7 @@ rem --- Event Control
 
     process_events,err=*same
 
-    release
+    goto std_exit
 
  document_whse:rem --- Write record to Barista document warehouse (ads_documents)
 
@@ -501,6 +512,12 @@ close_win:rem --- Viewer Window Closed
     reportControl!.destroy(err=*next)
     masterViewerWindow!.destroy(err=*next)
     printViewerWindow!.destroy(err=*next)
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
 
     if tcb(13) then exit
     release
@@ -621,10 +638,22 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
+
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
 
 std_exit_no_report: 
+
+    if num(batch_no$)<>0
+        unlock_key$=firm_id$+stbl("+PROCESS_ID")+stbl("+BATCH_NO")
+        lock_status$=""
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,rd_table_chans$[all],lock_status$
+    endif
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     release

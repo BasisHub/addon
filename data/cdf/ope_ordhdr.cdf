@@ -1537,25 +1537,18 @@ end_pointofsale:
 	user_tpl.skip_whse$    = pointofsale_rec.skip_whse$
 	user_tpl.warehouse_id$ = pointofsale_rec.warehouse_id$	
 [[OPE_ORDHDR.INVOICE_TYPE.AVAL]]
-rem --- Enable/disable expire date based on value
+rem --- Convert Quote?
 
 	inv_type$ = callpoint!.getUserInput()
-
-	if inv_type$ = "S" then
-		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", 0)
-	else
-		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", 1)
-	endif
-
-rem --- Convert Quote?
 
 	if rec_data.invoice_type$="S" then 
 		if inv_type$="P" then 
 			msg_id$="OP_NO_CONVERT"
 			gosub disp_message
-			callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE","S",1)
-			callpoint!.setStatus("REFRESH:OPE_ORDHDR.INVOICE_TYPE-ABORT")
-			callpoint!.setUserInput("S")
+			inv_type$="S"
+			callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE",inv_type$,1)
+			callpoint!.setStatus("ABORT")
+			callpoint!.setUserInput(inv_type$)
 		endif
 	else
 		if rec_data.invoice_type$="P" and inv_type$="S" then 
@@ -1647,8 +1640,22 @@ rem --- Convert Quote?
 
 				rem --- Reload detail grid with updated ope-11 (ope_orddet) records
 				callpoint!.setStatus("REFGRID")
+			else
+				rem --- Changed their mind about converting a quote
+				inv_type$="P"
+				callpoint!.setColumnData("OPE_ORDHDR.INVOICE_TYPE",inv_type$,1)
+				callpoint!.setStatus("ABORT")
+				callpoint!.setUserInput(inv_type$)
 			endif
 		endif
+	endif
+
+rem --- Enable/disable expire date based on value
+
+	if inv_type$ = "S" then
+		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", 0)
+	else
+		callpoint!.setColumnEnabled("OPE_ORDHDR.EXPIRE_DATE", 1)
 	endif
 
 rem --- Set type in OrderHelper object

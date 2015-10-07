@@ -565,41 +565,74 @@ method_error:rem --- Method error trap/handler
         rem /**
         rem  * Update ads_autolaunch XML file. 
         rem  *
-        rem  * Update <PROCESS_STATUS> tags in ads_autolaunch XML files 
-        rem  * to re-set status 'C' to status 'N'.
+        rem  * Update <PROCESS_STATUS> tags in ads_autolaunch XML files to re-set status 'C' to status 'N',
+        rem  * where ASC_COMP_ID=01007514 and ASC_PROD_ID=AD.
         rem  *
         rem  * @param BBjNumber sourceChan
         rem  * @param BBjNumber targetChan
         rem  */
         method private void updateAdsAutolaunchXmlFiles(BBjNumber sourceChan, BBjNumber targetChan)
             seterr method_error
+            startAscCompTag$ = "<ASC_COMP_ID>"
+            startAscProdTag$ = "<ASC_PROD_ID>"
             startProcStatusTag$ = "<PROCESS_STATUS>"
+            startAscCompTagLen = len(startAscCompTag$)
+            startAscProdTagLen = len(startAscProdTag$)
             startProcStatusTagLen = len(startProcStatusTag$)
+            endAscCompTag$ = "</ASC_COMP_ID>"
+            endAscProdTag$ = "</ASC_PROD_ID>"
             endProcStatusTag$ = "</PROCESS_STATUS>"
 
-            rem --- copy backup file back to xml file, making necessary updates
+            rem --- <ASC_PROD_ID> and <ASC_PROD_ID> tags probably come after <PROCESS_STATUS> tag, so get them first.
             while 1
                 read(sourceChan,end=*break)record$
 
-                rem --- process <PROCESS_STATUS> lines
-                if(pos(startProcStatusTag$=record$)) then
-
-                    rem --- get current status in <PROCESS_STATUS> lines
-                    status$ = record$(pos(startProcStatusTag$=record$) + startProcStatusTagLen)
-                    status$ = cvs(status$(1, pos(endProcStatusTag$=status$) - 1),3)
-                    rem --- re-set status 'C' to status 'N' in <PROCESS_STATUS> lines
-                    if status$="C" then
-                        #log("  <<< " + record$)
-                        line$ = record$(1,pos(startProcStatusTag$=record$) + startProcStatusTagLen - 1)
-                        line$ = line$ + "N"
-                        line$ = line$ + record$(pos(endProcStatusTag$=record$, -1))
-                        record$ = line$
-                        #log("  >>> " + record$)
-                    endif
+                rem --- process <ASC_COMP_ID> lines
+                if(pos(startAscCompTag$=record$)) then
+                    rem --- get current status in <ASC_COMP_ID> lines
+                    comp$ = record$(pos(startAscCompTag$=record$) + startAscCompTagLen)
+                    comp$ = cvs(comp$(1, pos(endAscCompTag$=status$) - 1),3)
                 endif
 
-                write(targetChan)record$
+                rem --- process <ASC_PROD_ID> lines
+                if(pos(startAscProdTag$=record$)) then
+                    rem --- get current status in <ASC_PROD_ID> lines
+                    prod$ = record$(pos(startAscProdTag$=record$) + startAscProdTagLen)
+                    prod$ = cvs(prod$(1, pos(endAscProdTag$=status$) - 1),3)
+                endif
             wend
+
+            rem --- skip if not an Addon ads_autolaunch XML file
+            if comp$="01007514" and pos(prod$+";"="ADB;DDB;SQL;EXM",4)=0 then
+                rem --- re-set file pointer to the beginning of the file
+                fid$=fid(sourceChan)
+                close(sourceChan)
+                open(sourceChan,isz=-1)fid$(9)
+
+                rem --- copy backup file back to xml file, making necessary updates
+                while 1
+                    read(sourceChan,end=*break)record$
+    
+                    rem --- process <PROCESS_STATUS> lines
+                    if(pos(startProcStatusTag$=record$)) then
+    
+                        rem --- get current status in <PROCESS_STATUS> lines
+                        status$ = record$(pos(startProcStatusTag$=record$) + startProcStatusTagLen)
+                        status$ = cvs(status$(1, pos(endProcStatusTag$=status$) - 1),3)
+                        rem --- re-set status 'C' to status 'N' in <PROCESS_STATUS> lines
+                        if status$="C" then
+                            #log("  <<< " + record$)
+                            line$ = record$(1,pos(startProcStatusTag$=record$) + startProcStatusTagLen - 1)
+                            line$ = line$ + "N"
+                            line$ = line$ + record$(pos(endProcStatusTag$=record$, -1))
+                            record$ = line$
+                            #log("  >>> " + record$)
+                        endif
+                    endif
+    
+                    write(targetChan)record$
+                wend
+            endif
             methodret
             
 method_error:rem --- Method error trap/handler
