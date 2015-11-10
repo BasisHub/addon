@@ -232,3 +232,6 @@ rem --- Item ID is disabled except for a new row, so can init entire new row her
 rem --- Item synonym processing
 
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::grid_entry"
+
+	rem --- Update Item ID with selected synonym
+	callpoint!.setColumnData("SFE_WOMATDTL.ITEM_ID",callpoint!.getUserInput(),1)

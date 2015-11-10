@@ -1,3 +1,31 @@
+[[POE_PODET.SO_INT_SEQ_REF.AVAL]]
+rem --- Dropship OP line type must be compatible with PO line type
+	so_int_seq_ref$=callpoint!.getUserInput()
+	if cvs(so_int_seq_ref$,2)="" then break
+
+	rem --- Get line type for op line
+	soLineType!=callpoint!.getDevObject("so_line_type")
+	op_line_type$=soLineType!.getProperty(so_int_seq_ref$)
+
+	rem --- Get PO line type
+	poc_linecode_dev=fnget_dev("POC_LINECODE")
+	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+	po_line_code$=callpoint!.getColumnData("POE_PODET.PO_LINE_CODE")
+	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
+	po_line_type$=poc_linecode.line_type$
+
+	rem --- Are OP and PO line types compatible?
+	if (op_line_type$="S" and po_line_type$<>"S") or (op_line_type$="N" and po_line_type$<>"N") or
+:		(op_line_type$="P" and pos(po_line_type$="SNV")=0) then
+		rem --- The line types are not compatible
+		msg_id$="PO_BAD_LINE_TYPES"
+		dim msg_tokens$[2]
+		msg_tokens$[1]=op_line_type$
+		msg_tokens$[2]=po_line_type$
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 [[POE_PODET.BGDS]]
 rem --- Re-initialize PO total amount before it's accumulated again for each detail row
 	callpoint!.setDevObject("total_amt","0")
@@ -561,8 +589,52 @@ if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
 
 curr_qty = num(callpoint!.getColumnData("POE_PODET.QTY_ORDERED")) * num(callpoint!.getColumnData("POE_PODET.CONV_FACTOR"))
 if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")<>"Y" then gosub update_iv_oo
+
+rem --- Update links to Work Orders
+	wo_no$=callpoint!.getColumnUndoData("POE_PODET.WO_NO")
+	if callpoint!.getDevObject("SF_installed")="Y" and cvs(wo_no$,2)<>"" then
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+		sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+
+		po_line_code$=callpoint!.getColumnUndoData("POE_PODET.PO_LINE_CODE")
+		find record (poc_linecode_dev,key=firm_id$+po_line_code$,dom=*endif) poc_linecode$
+		if pos(poc_linecode.line_type$="NS")<>0 then
+			old_wo$=""
+			old_woseq$=""
+			new_wo$=callpoint!.getColumnUndoData("POE_PODET.WO_NO")
+			new_woseq$=callpoint!.getColumnUndoData("POE_PODET.WK_ORD_SEQ_REF")
+			po_no$=callpoint!.getColumnUndoData("POE_PODET.PO_NO")
+			po_seq$=callpoint!.getColumnUndoData("POE_PODET.INTERNAL_SEQ_NO")
+			call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:				po_no$,po_seq$,"P",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+		endif
+	endif
 [[POE_PODET.ADEL]]
 gosub update_header_tots
+
+rem --- Update links to Work Orders
+	wo_no$=callpoint!.getColumnData("POE_PODET.WO_NO")
+	if callpoint!.getDevObject("SF_installed")="Y" and cvs(wo_no$,2)<>"" then
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+		sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+
+		po_line_code$=callpoint!.getColumnData("POE_PODET.PO_LINE_CODE")
+		find record (poc_linecode_dev,key=firm_id$+po_line_code$,dom=*endif) poc_linecode$
+		if pos(poc_linecode.line_type$="NS")<>0 then
+			old_wo$=wo_no$
+			old_woseq$=callpoint!.getColumnData("POE_PODET.WK_ORD_SEQ_REF")
+			new_wo$=""
+			new_woseq$=""
+			po_no$=callpoint!.getColumnData("POE_PODET.PO_NO")
+			po_seq$=callpoint!.getColumnData("POE_PODET.INTERNAL_SEQ_NO")
+			call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:				po_no$,po_seq$,"P",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+		endif
+	endif
 [[POE_PODET.ADGE]]
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid

@@ -7,7 +7,7 @@ rem --- Set default Start and Completion Date for Manual
 	if callpoint!.getColumnData("SFR_SCHEDWO.SCHED_FLAG")<>callpoint!.getUserInput() then
 		ivm_itemwhse=fnget_dev("IVM_ITEMWHSE")
 		dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
-		read record (ivm_itemwhse,key=firm_id$+callpoint!.getDevObject("default_wh")+
+		read record (ivm_itemwhse,key=firm_id$+callpoint!.getDevObject("warehouse_id")+
 :			callpoint!.getDevObject("item_id"),dom=*next)ivm_itemwhse$
 		new_date$=""
 		leadtime=ivm_itemwhse.lead_time

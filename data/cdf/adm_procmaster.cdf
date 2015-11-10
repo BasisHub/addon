@@ -21,7 +21,8 @@ rem --- launch inquiry of existing batches this process
 key_pfx$=firm_id$+callpoint!.getColumnData("ADM_PROCMASTER.PROCESS_ID")
 call stbl("+DIR_SYP")+"bam_inquiry.bbj",gui_dev,Form!,"ADM_PROCBATCHES","VIEW",table_chans$[all],key_pfx$
 [[ADM_PROCMASTER.ADIS]]
-rem --- look in adm_proctables file to see which tables are batched; make sure they're empty before allowing batching toggle
+rem --- look in adm_proctables file to see which tables are batched
+rem --- make sure they're empty for the current firm before allowing batching toggle
 
 adm_proctables_dev=fnget_dev("ADM_PROCTABLES")
 dim adm_proctables$:fnget_tpl$("ADM_PROCTABLES")
@@ -41,9 +42,14 @@ if callpoint!.getColumnData("ADM_PROCMASTER.ALLOW_BATCH")="Y" then
 		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 		open_tables$[1]=adm_proctables.dd_table_alias$,open_opts$[1]="OTA"
 		gosub open_tables
-		if num(open_chans$[1])
-			x$=fin(num(open_chans$[1]))
-			keys_used=keys_used+dec(x$(77,4))
+		file_dev=num(open_chans$[1])
+		if file_dev then
+			read(file_dev,key=firm_id$,dom=*next)
+			this_key$=key(file_dev,end=*endif)
+			if pos(firm_id$=this_key$)=1 then
+				keys_used=1
+				break
+			endif
 		endif
 	wend
 endif

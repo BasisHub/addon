@@ -132,6 +132,7 @@ else
 				write record (poe_reqdet_dev)poe_reqdet$
 			wend
 
+			rem --- Update links to Work Orders
 			if callpoint!.getDevObject("SF_installed")="Y"
 				sfe_womatl_dev=fnget_dev("SFE_WOMATL")
 				sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
@@ -150,6 +151,40 @@ else
 					new_wo$=old_wo$
 					new_woseq$=old_woseq$
 					call "poc_requpdate.aon",def_womatl_dev,sfe_wosubcnt_dev,req_no$,req_seq$,"R",line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+				wend
+			endif
+		else		
+			rem --- Requisition NOT retained
+
+			rem --- Update links to Work Orders
+			if callpoint!.getDevObject("SF_installed")="Y" then
+				po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
+				poe_podet_dev=fnget_dev("POE_PODET")
+				dim poe_podet$:fnget_tpl$("POE_PODET")
+				poc_linecode_dev=fnget_dev("POC_LINECODE")
+				dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+				sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+				sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+
+				read (poe_podet_dev,key=firm_id$+po_no$,dom=*next)
+				while 1
+					poe_podet_key$=key(poe_podet_dev,end=*break)
+            				if pos(firm_id$+po_no$=poe_podet_key$)<>1 then break
+					read record (poe_podet_dev) poe_podet$
+					if cvs(poe_podet.wo_no$,2)="" then continue
+
+					dim poc_linecode$:fattr(poc_linecode$)
+					find record (poc_linecode_dev,key=firm_id$+poe_podet.po_line_code$,dom=*continue) poc_linecode$
+					if pos(poc_linecode.line_type$="NS")<>0 then
+						old_wo$=poe_podet.wo_no$
+						old_woseq$=poe_podet.wk_ord_seq_ref$
+						new_wo$=""
+						new_woseq$=""
+						po_no$=poe_podet.po_no$
+						po_seq$=poe_podet.internal_seq_no$
+						call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:							po_no$,po_seq$,"P",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+					endif
 				wend
 			endif
 		endif
@@ -242,7 +277,8 @@ rem --- Update vendor info if vendor changed
 [[POE_POHDR.DROPSHIP.AVAL]]
 rem --- if turning off dropship flag, clear devObject items
 
-if callpoint!.getUserInput()="N"
+dropship$=callpoint!.getUserInput()
+if dropship$="N"
 	callpoint!.setDevObject("ds_orders","N")
 	callpoint!.setDevObject("so_ldat","")
 	callpoint!.setDevObject("so_lines_list","")
@@ -250,6 +286,7 @@ if callpoint!.getUserInput()="N"
 	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO","",1)
 endif
 
+callpoint!.setColumnData("POE_POHDR.DROPSHIP",dropship$,1)
 gosub enable_dropship_fields
 [[POE_POHDR.CUSTOMER_ID.AVAL]]
 rem --- if dropshipping, retrieve/display specified shipto address
@@ -340,6 +377,16 @@ if poe_invdet.firm_id$=firm_id$ and poe_invdet.vendor_id$=vendor_id$ and poe_inv
 	msg_id$="PO_INV_EXISTS"
 	gosub disp_message
 	callpoint!.setStatus("NEWREC")
+endif
+
+so_lines_used$=callpoint!.getDevObject("so_lines_used")
+if so_lines_used$="ALL" then
+	msg_id$="PO_ALL_SO_LINES_USED"
+	gosub disp_message
+endif
+if so_lines_used$="SOME" then
+	msg_id$="PO_SO_LINES_USED"
+	gosub disp_message
 endif
 [[POE_POHDR.AREC]]
 gosub  form_inits
@@ -550,6 +597,7 @@ rem print 'show';rem debug
 rem --- inits
 
 	use ::ado_util.src::util
+	use java.util.Properties
 
 rem --- Open Files
 	num_files=19
@@ -711,6 +759,7 @@ gosub form_inits
 rem ---	depending on whether or not drop-ship flag is selected and OE is installed...
 rem ---	if drop-ship is selected, load up sales order line#'s for the detail grid's so reference listbutton
 
+callpoint!.setDevObject("so_lines_used","")
 if callpoint!.getColumnData("POE_POHDR.DROPSHIP")="Y"
 
 	if callpoint!.getDevObject("OP_installed")="Y"
@@ -765,15 +814,17 @@ purch_addr_info: rem --- get and display Purchase Address Info
 	callpoint!.setColumnData("<<DISPLAY>>.PA_ZIP",apm05a.zip_code$,1)
 return
 
-whse_addr_info: rem --- get and display Warehouse Address Info
+whse_addr_info: rem --- get and display Warehouse Address Info when not a dropship
 	ivc_whsecode_dev=fnget_dev("IVC_WHSECODE")
 	dim ivc_whsecode$:fnget_tpl$("IVC_WHSECODE")
-	if pos("WAREHOUSE_ID.AVAL"=callpoint!.getCallpointEvent())<>0
-		warehouse_id$=callpoint!.getUserInput()
-	else
-		warehouse_id$=callpoint!.getColumnData("POE_POHDR.WAREHOUSE_ID")
+	if callpoint!.getColumnData("POE_POHDR.DROPSHIP")<>"Y" then
+		if pos("WAREHOUSE_ID.AVAL"=callpoint!.getCallpointEvent())<>0
+			warehouse_id$=callpoint!.getUserInput()
+		else
+			warehouse_id$=callpoint!.getColumnData("POE_POHDR.WAREHOUSE_ID")
+		endif
+		read record(ivc_whsecode_dev,key=firm_id$+"C"+warehouse_id$,dom=*next)ivc_whsecode$
 	endif
-	read record(ivc_whsecode_dev,key=firm_id$+"C"+warehouse_id$,dom=*next)ivc_whsecode$
 	callpoint!.setColumnData("<<DISPLAY>>.W_ADDR1",ivc_whsecode$.addr_line_1$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.W_ADDR2",ivc_whsecode$.addr_line_2$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.W_CITY",ivc_whsecode$.city$,1)
@@ -799,19 +850,23 @@ dropship_shipto: rem --- get and display shipto from Sales Order if dropship ind
 		read record (ope_ordhdr_dev)ope_ordhdr$
 		if pos(ope_ordhdr.trans_status$="ER") then break; rem --- new order can have at most just one new invoice, if any
 	wend
+	shipto_type$=ope_ordhdr.shipto_type$
 	shipto_no$=ope_ordhdr.shipto_no$
 	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO",shipto_no$,1)
-	if cvs(shipto_no$,3)=""
+	if shipto_type$="B" then
+		rem --- Bill-To
 		gosub shipto_cust
 	endif
-	if num(shipto_no$,err=*endif)=99
+	if shipto_type$="M" then
+		rem --- Manual
 		read record (ope_ordship_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$+ope_ordhdr.ar_inv_no$,dom=*next)ope_ordship$
 		dim rec$:fattr(ope_ordship$)
 		if pos(ope_ordship.trans_status$="ER") then rec$=ope_ordship$
 		gosub fill_dropship_address
 		callpoint!.setColumnData("POE_POHDR.DS_NAME",rec.name$,1)
 	endif
-	if num(shipto_no$,err=*endif)>0 and num(shipto_no$,err=*endif)<99
+	if shipto_type$="S" then
+		rem --- Ship-to
 		read record (arm_custship_dev,key=firm_id$+tmp_customer_id$+shipto_no$,dom=*next)arm_custship$
 		dim rec$:fattr(arm_custship$)
 		rec$=arm_custship$
@@ -848,15 +903,20 @@ rem --- read thru selected sales order and build list of lines for which line co
 	ope_ordhdr_dev=fnget_dev("OPE_ORDHDR")
 	ope_orddet_dev=fnget_dev("OPE_ORDDET")
 	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
+	opc_linecode_dev=fnget_dev("OPC_LINECODE")
+	poe_linked_dev=fnget_dev("POE_LINKED")
 
 	dim ope_ordhdr$:fnget_tpl$("OPE_ORDHDR")
 	dim ope_orddet$:fnget_tpl$("OPE_ORDDET")
 	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
+	dim opc_linecode$:fnget_tpl$("OPC_LINECODE")
+	dim poe_linked$:fnget_tpl$("POE_LINKED")
 
 	order_lines!=SysGUI!.makeVector()
 	order_items!=SysGUI!.makeVector()
 	order_list!=SysGUI!.makeVector()
 	callpoint!.setDevObject("ds_orders","N")
+	soLineType!=callpoint!.getDevObject("so_line_type")
 
 	found_ope_ordhdr=0
 	read(ope_ordhdr_dev,key=firm_id$+ope_ordhdr.ar_type$+tmp_customer_id$+tmp_order_no$,knum="PRIMARY",dom=*next)
@@ -870,6 +930,8 @@ rem --- read thru selected sales order and build list of lines for which line co
 	wend
 	if !found_ope_ordhdr then return
 
+	so_on_another_po=0
+	po_no$=callpoint!.getColumnData("POE_POHDR.PO_NO")
 	read (ope_orddet_dev,key=ope_ordhdr_key$,dom=*next)
 	while 1
 		ope_orddet_key$=key(ope_orddet_dev,end=*break)
@@ -877,6 +939,15 @@ rem --- read thru selected sales order and build list of lines for which line co
 		read record (ope_orddet_dev)ope_orddet$
 		if pos(ope_orddet.trans_status$="ER")=0 then continue
 		if pos(ope_orddet.line_code$=callpoint!.getDevObject("oe_ds_line_codes"))<>0
+			rem --- Check poe_linked to see if this SO detail line is on another PO
+			dim poe_linked$:fattr(poe_linked$)
+			readrecord(poe_linked_dev,key=firm_id$+tmp_customer_id$+tmp_order_no$+ope_orddet.internal_seq_no$,knum="AO_CUST_ORD",dom=*next)poe_linked$
+			if cvs(poe_linked.po_no$,2)<>"" and poe_linked.po_no$<>po_no$ then
+				rem --- Skip this SO detail line since it's already on another PO
+				so_on_another_po=1
+				continue
+			endif
+
 			if cvs(ope_orddet.item_id$,2)="" then
 				rem --- Non-stock item
 				order_lines!.addItem(ope_orddet.internal_seq_no$)
@@ -903,13 +974,25 @@ rem --- read thru selected sales order and build list of lines for which line co
 				order_items!.addItem(work_var$)
 				order_list!.addItem(Translate!.getTranslation("AON_ITEM:_")+work_var$+" "+cvs(ivm_itemmast.display_desc$,3))
 			endif
+
+			rem --- Get Line Type for this drop ship OP detail line
+			dim opc_linecode$:fattr(opc_linecode$)
+			read record (opc_linecode_dev,key=firm_id$+ope_orddet.line_code$,dom=*next)opc_linecode$
+			soLineType!.setProperty(ope_orddet.internal_seq_no$,opc_linecode.line_type$)
 		endif
 	wend
+	read(poe_linked_dev,key=firm_id$,knum="PRIMARY",dom=*next); rem --- Reset poe_linked key to PRIMARY
 
+	callpoint!.setDevObject("so_line_type",soLineType!)
 	if order_lines!.size()=0 
 		callpoint!.setDevObject("ds_orders","N")
 		callpoint!.setDevObject("so_ldat","")
 		callpoint!.setDevObject("so_lines_list","")
+		callpoint!.setDevObject("so_line_type",new Properties())
+
+		if so_on_another_po then
+			callpoint!.setDevObject("so_lines_used","ALL")
+		endif
 	else 
 		ldat$=""
 		for x=0 to order_lines!.size()-1
@@ -919,6 +1002,10 @@ rem --- read thru selected sales order and build list of lines for which line co
 		callpoint!.setDevObject("ds_orders","Y")		
 		callpoint!.setDevObject("so_ldat",ldat$)
 		callpoint!.setDevObject("so_lines_list",order_list!)
+
+		if so_on_another_po then
+			callpoint!.setDevObject("so_lines_used","SOME")
+		endif
 	endif	
 return
 
@@ -926,6 +1013,7 @@ return
 form_inits:
 rem --- setting up for new rec or nav to diff rec
 
+callpoint!.setDevObject("so_line_type",new Properties())
 callpoint!.setDevObject("ds_orders","")
 callpoint!.setDevObject("so_ldat","")
 callpoint!.setDevObject("so_lines_list","")
@@ -970,6 +1058,7 @@ else
 		callpoint!.setColumnEnabled("POE_POHDR.ORDER_NO",0)
 		callpoint!.setColumnEnabled("POE_POHDR.SHIPTO_NO",0)
 	endif
+	gosub whse_addr_info
 endif
 return
 

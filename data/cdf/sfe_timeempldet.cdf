@@ -32,8 +32,19 @@ rem --- Use this op_ref to initialize op_code and oper_seq_ref
 
 	gosub calc_header_hrs
 [[SFE_TIMEEMPLDET.AUDE]]
-
+rem --- Update hours
 	gosub calc_header_hrs
+
+rem --- Temporary workaround for Barista bug 8322 ... start
+	if callpoint!.getDevObject("time_clk_flg")<>"Y" then
+		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.START_TIME",-1)
+		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.STOP_TIME",-1)
+	endif
+	if callpoint!.getDevObject("pr")<>"Y" then
+		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.PAY_CODE",-1)
+		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.TITLE_CODE",-1)
+	endif
+rem --- Temporary workaround for Barista bug 8322 ... end
 [[SFE_TIMEEMPLDET.AGRE]]
 rem --- Display appropriate WO description
 	wo_no$=callpoint!.getColumnData("SFE_TIMEEMPLDET.WO_NO")
@@ -408,12 +419,12 @@ rem --- Display appropriate WO description
 [[SFE_TIMEEMPLDET.ADGE]]
 rem --- Disable fields
 	if callpoint!.getDevObject("time_clk_flg")<>"Y" then
-		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.START_TIME",0)
-		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.STOP_TIME",0)
+		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.START_TIME",-1)
+		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.STOP_TIME",-1)
 	endif
 	if callpoint!.getDevObject("pr")<>"Y" then
-		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.PAY_CODE",0)
-		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.TITLE_CODE",0)
+		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.PAY_CODE",-1)
+		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.TITLE_CODE",-1)
 	endif
 
 rem --- Initializations

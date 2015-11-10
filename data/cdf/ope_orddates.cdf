@@ -1,7 +1,6 @@
 [[OPE_ORDDATES.ASVA]]
 rem --- Set STBL
 	ignore$ = stbl("OPE_DEF_STATION",callpoint!.getColumnData("OPE_ORDDATES.DEF_STATION"))
-[[OPE_ORDDATES.DEF_STATION.AVAL]]
 
 [[OPE_ORDDATES.DEF_SHIP.AVAL]]
 rem --- Set STBL
@@ -31,20 +30,16 @@ rem --- Open File(s)
     
 rem --- Set this user's or param's default POS station
 
-	start_block = 1
 	no_user     = 1
-	
-	if start_block then
-		user$ = stbl("+USER_ID",err=*endif)
-		find record (userdefault_dev, key=firm_id$+pad(user$, 16), dom=*endif) userdefault_rec$
+	user$ = stbl("+USER_ID",err=*next)
+	find record (userdefault_dev, key=firm_id$+pad(user$, 16), dom=*next) userdefault_rec$
 
-		if cvs(userdefault_rec.default_station$, 2) <> "" then 
-			callpoint!.setTableColumnAttribute("OPE_ORDDATES.DEF_STATION", "DFLT", userdefault_rec.default_station$)
-			no_user = 0
-		endif
+	if cvs(userdefault_rec.default_station$, 2) <> "" then 
+		callpoint!.setTableColumnAttribute("OPE_ORDDATES.DEF_STATION", "DFLT", userdefault_rec.default_station$)
+		no_user = 0
 	endif
 
-	if start_block then
+	if no_user then
 		find record (params_dev, key=firm_id$+"AR00", dom=*endif) params_rec$
 
 		if cvs(params_rec.default_station$, 2) <> "" then

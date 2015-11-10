@@ -150,6 +150,7 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or
 endif
 [[POE_INVSEL.AGRE]]
 gosub receiver_already_selected
+if abort_receiver_already_selected then break
 
 rem --- enable/disable Invoice Detail button
 	gosub able_invoice_detail_button
@@ -168,6 +169,7 @@ gosub accum_receiver_tot; rem accumulate total for po/receiver# entered
 receiver_already_selected:
 rem --- given a po/receiver (or po w/ no receiver) see if it's already in gridvect
 
+abort_receiver_already_selected=0
 if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	curr_row=callpoint!.getValidationRow()
@@ -195,7 +197,8 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		msg_id$="PO_REC_SEL"
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
-		callpoint!.setFocus("POE_INVSEL.RECEIVER_NO")
+		callpoint!.setFocus(callpoint!.getValidationRow(),"POE_INVSEL.RECEIVER_NO",1)
+		abort_receiver_already_selected=1
 	endif
 endif
 

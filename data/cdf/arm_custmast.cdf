@@ -534,8 +534,11 @@ rem --- If GM installed, remove cross reference(s) to GoldMine
 [[ARM_CUSTMAST.CUSTOMER_NAME.AVAL]]
 rem --- Set Alternate Sequence for new customers
 	if user_tpl.new_cust$="Y"
-		callpoint!.setColumnData("ARM_CUSTMAST.ALT_SEQUENCE",callpoint!.getUserInput())
-		callpoint!.setStatus("REFRESH")
+		dim armCustmast$:fnget_tpl$("ARM_CUSTMAST")
+		wk$=fattr(armCustmast$,"ALT_SEQUENCE")
+		dim alt_sequence$(dec(wk$(10,2)))
+		alt_sequence$(1)=callpoint!.getUserInput()
+		callpoint!.setColumnData("ARM_CUSTMAST.ALT_SEQUENCE",alt_sequence$,1)
 	endif
 [[ARM_CUSTMAST.AREA]]
 rem --- Set New Customer flag

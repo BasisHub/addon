@@ -1,11 +1,3 @@
-[[ARS_CUSTDFLT.ADIS]]
-rem --- As needed, use obsolete unused customer_inv_his to initialize inv_hist_flg
-	if cvs(callpoint!.getColumnData("ARS_CUSTDFLT.INV_HIST_FLG"),2)="" and
-:	cvs(callpoint!.getColumnData("ARS_CUSTDFLT.CUSTOMER_INV_HIS"),2)<>"" then
-		customer_inv_his$=callpoint!.getColumnData("ARS_CUSTDFLT.CUSTOMER_INV_HIS")
-		callpoint!.setColumnData("ARS_CUSTDFLT.INV_HIST_FLG",customer_inv_his$,1)
-		callpoint!.setStatus("MODIFIED")
-	endif
 [[ARS_CUSTDFLT.AREC]]
 rem --- Initialize new record
 
@@ -15,6 +7,8 @@ rem --- Initialize new record
 	else
 		callpoint!.setColumnData("ARS_CUSTDFLT.CRED_HOLD","Y")
 	endif
+
+	callpoint!.setColumnData("ARS_CUSTDFLT.INV_HIST_FLG","Y")
 [[ARS_CUSTDFLT.BSHO]]
 rem --- Determine if optional modules are installed
 
@@ -30,12 +24,10 @@ rem --- Disable fields that require OP
 		callpoint!.setColumnEnabled("ARS_CUSTDFLT.MESSAGE_CODE",-1)
 		callpoint!.setColumnEnabled("ARS_CUSTDFLT.PRICING_CODE",-1)
 		callpoint!.setColumnEnabled("ARS_CUSTDFLT.SA_FLAG",-1)
-		callpoint!.setColumnEnabled("ARS_CUSTDFLT.INV_HIST_FLG",-1)
-	else
-		if callpoint!.getDevObject("inv_hist_flg")="N" then
-			callpoint!.setColumnEnabled("ARS_CUSTDFLT.INV_HIST_FLG",-1)
-		endif
 	endif
+
+	rem --- Detail invoice history is always retained now, so disable that check box.
+	callpoint!.setColumnEnabled("ARS_CUSTDFLT.INV_HIST_FLG",-1)
 
 rem --- Disable fields that require SA
 
@@ -73,7 +65,6 @@ rem --- Check to see if main AR param rec (firm/AR/00) exists; if not, tell user
 		gosub remove_process_bar
 		release
 	endif
-	callpoint!.setDevObject("inv_hist_flg",ars01a.inv_hist_flg$)
 
 rem --- Get Credit Management parameters
 

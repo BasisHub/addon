@@ -1,3 +1,42 @@
+[[SFE_WOMASTR.WAREHOUSE_ID.AVAL]]
+rem --- Is the warehouse being changed?
+	if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOMASTR.WAREHOUSE_ID") then
+		warehouse_id$=callpoint!.getUserInput()
+
+		rem --- Don't allow changing warehouse if there are existing material requirements
+		sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+		dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
+		loc$=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
+		wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+		read (sfe_womatl_dev,key=firm_id$+loc$+wo_no$,dom=*next)
+		sfe_womatl_key$=key(sfe_womatl_dev,end=*end)
+		if pos(firm_id$+loc$+wo_no$=sfe_womatl_key$)=1 then
+			msg_id$="SF_CANNOT_CHG_WHSE"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+
+		rem --- Reset warehouse_id dev object to this warehouse
+		callpoint!.setDevObject("warehouse_id",callpoint!.getUserInput())
+
+		rem --- Warehouse has changed, so see if they want to recalculate the default manual completion date.
+		if cvs(callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"),2)<>"" and callpoint!.getColumnData("SFE_WOMASTR.SCHED_FLAG")="M" then
+			msg_id$="SF_RECALC_COMP_DATE"
+			gosub disp_message
+			if msg_opt$="Y" then
+ 				ivm_itemwhse=fnget_dev("IVM_ITEMWHSE")
+				dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
+				read record (ivm_itemwhse,key=firm_id$+warehouse_id$+callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"),dom=*next)ivm_itemwhse$
+				new_date$=""
+				leadtime=ivm_itemwhse.lead_time
+				call stbl("+DIR_PGM")+"adc_daydates.aon",stbl("+SYSTEM_DATE"),new_date$,leadtime
+				if new_date$<>"N"
+					callpoint!.setColumnData("SFE_WOMASTR.ESTCMP_DATE",new_date$,1)
+				endif
+			endif
+		endif
+	endif
 [[SFE_WOMASTR.AENA]]
 rem --- Disable Barista menu items
 	wctl$="31031"; rem --- Save-As menu item in barista.ini
@@ -461,6 +500,7 @@ rem --- Set new record flag
 	callpoint!.setDevObject("wo_category",callpoint!.getColumnData("SFE_WOMASTR.WO_CATEGORY"))
 	callpoint!.setDevObject("wo_no",callpoint!.getColumnData("SFE_WOMASTR.WO_NO"))
 	callpoint!.setDevObject("wo_loc",callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION"))
+	callpoint!.setDevObject("warehouse_id",callpoint!.getColumnData("SFE_WOMASTR.WAREHOUSE_ID"))
 
 rem --- Disable/enable based on status of closed/open
 
@@ -974,7 +1014,7 @@ rem --- Set default Completion Date
 :		callpoint!.getColumnData("SFE_WOMASTR.SCHED_FLAG")="M"
 		ivm_itemwhse=fnget_dev("IVM_ITEMWHSE")
 		dim ivm_itemwhse$:fnget_tpl$("IVM_ITEMWHSE")
-		read record (ivm_itemwhse,key=firm_id$+callpoint!.getDevObject("default_wh")+
+		read record (ivm_itemwhse,key=firm_id$+callpoint!.getColumnData("SFE_WOMASTR.WAREHOUSE_ID")+
 :			callpoint!.getUserInput(),dom=*next)ivm_itemwhse$
 		new_date$=""
 		leadtime=ivm_itemwhse.lead_time
@@ -1349,6 +1389,7 @@ rem --- set defaults
 	callpoint!.setColumnData("SFE_WOMASTR.LOCK_REF_NUM","N")
 	callpoint!.setDevObject("lock_ref_num",callpoint!.getColumnData("SFE_WOMASTR.LOCK_REF_NUM"))
 	callpoint!.setColumnData("SFE_WOMASTR.WAREHOUSE_ID",str(callpoint!.getDevObject("default_wh")))
+	callpoint!.setDevObject("warehouse_id",str(callpoint!.getDevObject("default_wh")))
 	callpoint!.setColumnData("SFE_WOMASTR.OPENED_DATE",stbl("+SYSTEM_DATE"))
 	callpoint!.setColumnData("SFE_WOMASTR.ESTSTT_DATE",stbl("+SYSTEM_DATE"))
 	callpoint!.setDevObject("prod_qty","1")

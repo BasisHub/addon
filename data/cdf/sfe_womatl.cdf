@@ -941,7 +941,7 @@ rem --- Verify item is in the production warehouse
 	ivm02_dev=fnget_dev("IVM_ITEMWHSE")
 	dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
 	dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
-	whse_id$=callpoint!.getDevObject("default_wh")
+	whse_id$=callpoint!.getDevObject("warehouse_id")
 
 	read record(ivm01_dev,key=firm_id$+item_id$)ivm01a$
 	ivm02_found=0

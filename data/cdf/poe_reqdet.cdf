@@ -186,8 +186,54 @@ else
 endif 
 [[POE_REQDET.AUDE]]
 gosub update_header_tots
+
+rem --- Update links to Work Orders
+	SF_installed$=callpoint!.getDevObject("SF_installed")
+	wo_no$=callpoint!.getColumnUndoData("POE_REQDET.WO_NO")
+	if SF_installed$="Y" and cvs(wo_no$,2)<>"" then
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+		sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+
+		po_line_code$=callpoint!.getColumnUndoData("POE_REQDET.PO_LINE_CODE")
+		find record (poc_linecode_dev,key=firm_id$+po_line_code$,dom=*endif) poc_linecode$
+		if pos(poc_linecode.line_type$="NS")<>0  then
+			old_wo$=""
+			old_woseq$=""
+			new_wo$=wo_no$
+			new_woseq$=callpoint!.getColumnUndoData("POE_REQDET.WK_ORD_SEQ_REF")
+			req_no$=callpoint!.getColumnUndoData("POE_REQDET.REQ_NO")
+			req_seq$=callpoint!.getColumnUndoData("POE_REQDET.INTERNAL_SEQ_NO")
+			call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:				req_no$,req_seq$,"R",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+		endif
+	endif
 [[POE_REQDET.ADEL]]
 gosub update_header_tots
+
+rem --- Update links to Work Orders
+	SF_installed$=callpoint!.getDevObject("SF_installed")
+	wo_no$=callpoint!.getColumnData("POE_REQDET.WO_NO")
+	if SF_installed$="Y" and cvs(wo_no$,2)<>"" then
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+		sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+
+		po_line_code$=callpoint!.getColumnData("POE_REQDET.PO_LINE_CODE")
+		find record (poc_linecode_dev,key=firm_id$+po_line_code$,dom=*endif) poc_linecode$
+		if pos(poc_linecode.line_type$="NS")<>0  then
+			old_wo$=wo_no$
+			old_woseq$=callpoint!.getColumnData("POE_REQDET.WK_ORD_SEQ_REF")
+			new_wo$=""
+			new_woseq$=""
+			req_no$=callpoint!.getColumnData("POE_REQDET.REQ_NO")
+			req_seq$=callpoint!.getColumnData("POE_REQDET.INTERNAL_SEQ_NO")
+			call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:				req_no$,req_seq$,"R",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+		endif
+	endif
 [[POE_REQDET.AREC]]
 callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)

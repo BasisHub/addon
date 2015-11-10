@@ -644,11 +644,26 @@ rem --- Is previous record an order and not void?
 	ope01_dev = fnget_dev(file_name$)
 	dim ope01a$:fnget_tpl$(file_name$)
 
-	current_key$=callpoint!.getRecordKey()
-	read(ope01_dev,key=current_key$,dir=0,dom=*next)
+rem --- Position the file at the correct record
 
 	trans_status$=callpoint!.getColumnData("OPE_ORDHDR.TRANS_STATUS")
 	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
+	if callpoint!.getDevObject("new_rec")="Y"
+		start_key$=firm_id$+trans_status$+ar_type$
+		cust_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+		if cvs(cust_id$,2)<>""
+			start_key$=start_key$+cust_id$
+			order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
+			if cvs(order_no$,2)<>""
+				start_key$=start_key$+order_no$
+			endif
+		endif
+		read(ope01_dev,key=start_key$,dir=0,dom=*next)
+	else
+		current_key$=callpoint!.getRecordKey()
+		read(ope01_dev,key=current_key$,dir=0,dom=*next)
+	endif
+
 	hit_eof=0
 	while 1
 		p_key$ = keyp(ope01_dev, end=eof_pkey)
@@ -1575,6 +1590,8 @@ rem --- Convert Quote?
 
 				old_prec = tcb(14)
 				precision num(ivs01a.precision$)
+				total_sales=0
+				taxable_amt=0
 
 				trans_status$=callpoint!.getColumnData("OPE_ORDHDR.TRANS_STATUS")
 				ar_type$ = callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
@@ -1627,9 +1644,29 @@ rem --- Convert Quote?
 						gosub update_totals
 					endif
 
+					total_sales=total_sales+ope11a.ext_price
+					taxable_amt=taxable_amt+ope11a.taxable_amt
 					ope11a$=field(ope11a$)
 					write record (ope11_dev) ope11a$
 				wend
+
+				rem --- Recalculate discount and tax if the total sales amount has changed.
+				rem --- Otherwise leave the discount amount alone as it may have been entered manually.
+				if total_sales<>num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")) then
+					rem --- Recalculate discount for current total sales
+					disccode_dev = fnget_dev("OPC_DISCCODE")
+					dim disccode_rec$:fnget_tpl$("OPC_DISCCODE")
+					find record (disccode_dev, key=firm_id$+user_tpl.disc_code$, dom=*next) disccode_rec$
+					disc_amt = round(disccode_rec.disc_percent * total_sales / 100, 2)
+					callpoint!.setColumnData("OPE_ORDHDR.DISCOUNT_AMT",str(disc_amt))
+
+					rem --- Recalculate tax and update totals display
+					callpoint!.setColumnData("OPE_ORDHDR.TOTAL_SALES",str(total_sales))
+					callpoint!.setColumnData("OPE_ORDHDR.TAXABLE_AMT",str(taxable_amt))
+					freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
+					gosub calculate_tax
+					gosub disp_totals
+				endif
 
 				precision old_prec
 				rec_data.invoice_type$ = "S"

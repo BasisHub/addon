@@ -1,3 +1,36 @@
+[[POE_REQHDR.BDEL]]
+rem --- Update links to Work Orders
+	SF_installed$=callpoint!.getDevObject("SF_installed")
+	if SF_installed$="Y" then
+		req_no$=callpoint!.getColumnData("POE_REQHDR.REQ_NO")
+		poe_reqdet_dev=fnget_dev("POE_REQDET")
+		dim poe_reqdet$:fnget_tpl$("POE_REQDET")
+		poc_linecode_dev=fnget_dev("POC_LINECODE")
+		dim poc_linecode$:fnget_tpl$("POC_LINECODE")
+		sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+		sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+
+		read (poe_reqdet_dev,key=firm_id$+req_no$,dom=*next)
+		while 1
+			poe_reqdet_key$=key(poe_reqdet_dev,end=*break)
+            		if pos(firm_id$+req_no$=poe_reqdet_key$)<>1 then break
+			read record (poe_reqdet_dev) poe_reqdet$
+			if cvs(poe_reqdet.wo_no$,2)="" then continue
+
+			dim poc_linecode$:fattr(poc_linecode$)
+			find record (poc_linecode_dev,key=firm_id$+poe_reqdet.po_line_code$,dom=*continue) poc_linecode$
+			if pos(poc_linecode.line_type$="NS")<>0 then
+				old_wo$=poe_reqdet.wo_no$
+				old_woseq$=poe_reqdet.wk_ord_seq_ref$
+				new_wo$=""
+				new_woseq$=""
+				req_no$=poe_reqdet.req_no$
+				req_seq$=poe_reqdet.internal_seq_no$
+				call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
+:					req_no$,req_seq$,"R",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+			endif
+		wend
+	endif
 [[POE_REQHDR.SHIPTO_NO.AVAL]]
 rem --- if dropshipping, retrieve/display specified shipto address
 
@@ -58,7 +91,6 @@ rem --- also delete requisition print record
 
 poe_reqprint_dev=fnget_dev("POE_REQPRINT")
 remove (poe_reqprint_dev,key=firm_id$+callpoint!.getColumnData("POE_REQHDR.VENDOR_ID")+callpoint!.getColumnData("POE_REQHDR.REQ_NO"),dom=*next)
-
 [[POE_REQHDR.AWRI]]
 rem --- need to put out poe_reqprint record
 
@@ -519,7 +551,7 @@ rem --- inits
 	use ::ado_util.src::util
 
 rem --- Open Files
-	num_files=10
+	num_files=11
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
@@ -531,6 +563,7 @@ rem --- Open Files
 	open_tables$[8]="IVM_ITEMSYN",open_opts$[8]="OTA"
 	open_tables$[9]="POE_REQPRINT",open_opts$[9]="OTA"
 	open_tables$[10]="APM_VENDCMTS",open_opts$[10]="OTA"
+	open_tables$[11]="POE_REQDET",open_opts$[11]="OTA"
 
 	gosub open_tables
 	aps_params_dev=num(open_chans$[1]),aps_params_tpl$=open_tpls$[1]
