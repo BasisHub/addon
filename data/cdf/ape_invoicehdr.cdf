@@ -311,14 +311,15 @@ if gl$="Y"
 endif
 
 if status<=99
+	gosub calc_grid_tots
+	gosub disp_dist_bal
 	bal_amt=num(callpoint!.getColumnData("APE_INVOICEHDR.INVOICE_AMT"))-num(user_tpl.tot_dist$)
 	if bal_amt<>0
 		msg_id$="AP_NOT_DIST"
 		gosub disp_message
 		if msg_opt$="N"
-			gosub calc_grid_tots
-			gosub disp_dist_bal
-			callpoint!.setStatus("REFRESH-ABORT")
+			callpoint!.setStatus("REFRESH-ACTIVATE-ABORT")
+			break
 		endif
 	endif
 endif
@@ -337,6 +338,7 @@ if dont_write$="Y"
 	msg_id$="AP_INVOICEWRITE"
 	gosub disp_message
 	callpoint!.setStatus("ABORT")
+	break
 endif
 
 
@@ -522,7 +524,7 @@ rem ----------------------------------------------------------------------------
 	if numrecs>0
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
-			if cvs(gridrec$,3)<>"" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y"
+			if cvs(gridrec.gl_account$,3)<>"" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y"
 				tdist=tdist+num(gridrec.gl_post_amt$)
 			endif
 		next reccnt
@@ -531,12 +533,14 @@ rem ----------------------------------------------------------------------------
 return
 
 rem --------------------------------------------------------------------------------------------------------------
-disp_dist_bal:
+disp_dist_bal: rem --- get context and ID of display controls, and redisplay w/ amts from calc_grid_tots
 rem --------------------------------------------------------------------------------------------------------------
 	dist_bal=num(user_tpl.inv_amt$)-num(user_tpl.tot_dist$)
+	dist_bal!=UserObj!.getItem(num(user_tpl.dist_bal_ofst$))
+	dist_bal!.setValue(dist_bal)
 	callpoint!.setColumnData("<<DISPLAY>>.DIST_BAL",str(dist_bal))
-		 
 return
+
 rem #include fnget_control.src
 def fnget_control!(ctl_name$)
 ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))

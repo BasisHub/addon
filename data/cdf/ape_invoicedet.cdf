@@ -60,7 +60,7 @@ calc_grid_tots:
 	if numrecs>0
 		for reccnt=0 to numrecs-1
 			gridrec$=recVect!.getItem(reccnt)
-			if cvs(gridrec$,3)<> "" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y" 
+			if cvs(gridrec.gl_account$,3)<> "" and callpoint!.getGridRowDeleteStatus(reccnt)<>"Y" 
 				tdist=tdist+num(gridrec.gl_post_amt$)
 			endif
 		next reccnt

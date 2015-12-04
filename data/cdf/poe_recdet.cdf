@@ -1,3 +1,6 @@
+[[POE_RECDET.SO_INT_SEQ_REF.BINP]]
+rem --- Refresh display of ListButton selection
+	callpoint!.setColumnData("POE_RECDET.SO_INT_SEQ_REF",callpoint!.getColumnData("POE_RECDET.SO_INT_SEQ_REF"),1)
 [[POE_RECDET.BGDS]]
 rem --- Re-initialize receipt total amount before it's accumulated again for each detail row
 	callpoint!.setDevObject("total_amt","0")

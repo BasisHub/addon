@@ -1,3 +1,17 @@
+[[SAM_NONSTOCK.BPRK]]
+rem --- Use current selections for initiating previous record
+	year$=callpoint!.getColumnData("SAM_NONSTOCK.YEAR")
+	product_type$=callpoint!.getColumnData("SAM_NONSTOCK.PRODUCT_TYPE")
+	nonstock_no$=callpoint!.getColumnData("SAM_NONSTOCK.NONSTOCK_NO")
+	sam_dev=fnget_dev("SAM_NONSTOCK")
+	read(sam_dev,key=firm_id$+year$+product_type$+nonstock_no$,dir=0,dom=*next)
+[[SAM_NONSTOCK.BNEK]]
+rem --- Use current selections for initiating next record
+	year$=callpoint!.getColumnData("SAM_NONSTOCK.YEAR")
+	product_type$=callpoint!.getColumnData("SAM_NONSTOCK.PRODUCT_TYPE")
+	nonstock_no$=callpoint!.getColumnData("SAM_NONSTOCK.NONSTOCK_NO")
+	sam_dev=fnget_dev("SAM_NONSTOCK")
+	read(sam_dev,key=firm_id$+year$+product_type$+nonstock_no$,dom=*next)
 [[SAM_NONSTOCK.NONSTOCK_NO.AVAL]]
 rem --- Enable/Disable Summary button
 	prod_type$=callpoint!.getColumnData("SAM_NONSTOCK.PRODUCT_TYPE")
@@ -136,9 +150,10 @@ rem --- Enable key fields
 	callpoint!.setStatus("REFRESH")
 [[SAM_NONSTOCK.BSHO]]
 rem --- Check for parameter record
-	num_files=1
+	num_files=2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SAS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="SAM_NONSTOCK",open_opts$[2]="OTA@"
 	gosub open_tables
 	sas01_dev=num(open_chans$[1]),sas01a$=open_tpls$[1]
 
@@ -191,8 +206,8 @@ rem --- Calculate Last Year
 	prod$=callpoint!.getColumnData("SAM_NONSTOCK.PRODUCT_TYPE")
 	item$=callpoint!.getColumnData("SAM_NONSTOCK.NONSTOCK_NO")
 	ltrip_key$=firm_id$+lyear$+prod$+item$
-	sam_dev=fnget_dev("SAM_NONSTOCK")
-	dim sam_tpl$:fnget_tpl$("SAM_NONSTOCK")
+	sam_dev=fnget_dev("@SAM_NONSTOCK")
+	dim sam_tpl$:fnget_tpl$("@SAM_NONSTOCK")
 	dim qty[13],cost[13],sales[13]
 
 	while 1

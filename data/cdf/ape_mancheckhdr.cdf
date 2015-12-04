@@ -64,12 +64,16 @@ dont_write$=""
 
 if cvs(callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_DATE"),3)="" or
 :	cvs(callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO"),3)="" or
-:	cvs(callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID"),3)="" then dont_write$="Y"
+:	(cvs(callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID"),3)="" and callpoint!.getColumnData("APE_MANCHECKHDR.TRANS_TYPE")<>"V") then
+	dont_write$="Y"
+endif
 
-vend_hist$=""
-tmp_vendor_id$=callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
-gosub get_vendor_history
-if vend_hist$<>"Y" then dont_write$="Y"
+if cvs(callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID"),3)<>"" then
+	vend_hist$=""
+	tmp_vendor_id$=callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
+	gosub get_vendor_history
+	if vend_hist$<>"Y" then dont_write$="Y"
+endif
 
 if dont_write$="Y"
 	msg_id$="AP_MANCHKWRITE"

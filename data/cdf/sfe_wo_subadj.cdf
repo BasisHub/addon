@@ -149,12 +149,24 @@ rem --- New Tran Date
 				endif
 				tran_date$=temp_date$
 				if len(cvs(tran_date$,2))=0
-					tran_date$=gridSubs!.getCellText(curr_row,0)
-					input_value$=vectSubs!.getItem((curr_row*num(user_tpl.gridSubsCols$)))
+					tran_date$=gridSubs!.getCellText(curr_row,1)
+					input_value$=tran_date$(7,4)+tran_date$(1,2)+tran_date$(4,2); rem --- assumes mm/dd/yyyy format
 				endif
 
 				vectSubs!.setItem((curr_row*num(user_tpl.gridSubsCols$))+12,fndate$(input_value$))
 				gridSubs!.setCellText(curr_row,curr_col,fndate$(input_value$))
+
+				rem --- When GL installed, verify date is in an open period.
+				if callpoint!.getDevObject("post_gl")="Y" then
+					call stbl("+DIR_PGM")+"glc_datecheck.aon",input_value$,"Y",per$,yr$,status
+					if status>99 then 
+						gridSubs!.focus()
+						sysgui!.setContext(grid_ctx)
+						gridSubs!.accept(0)
+						gridSubs!.startEdit(curr_row,curr_col)
+						break
+					endif
+				endif
 			endif
 			gridSubs!.accept(1)
 			break

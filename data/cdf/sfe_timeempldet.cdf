@@ -39,6 +39,8 @@ rem --- Temporary workaround for Barista bug 8322 ... start
 	if callpoint!.getDevObject("time_clk_flg")<>"Y" then
 		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.START_TIME",-1)
 		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.STOP_TIME",-1)
+	else
+		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.HRS",-1)
 	endif
 	if callpoint!.getDevObject("pr")<>"Y" then
 		callpoint!.setColumnEnabled("SFE_TIMEEMPLDET.PAY_CODE",-1)
@@ -326,7 +328,9 @@ rem --- Initialize dev objects
 	callpoint!.setDevObject("previous_setup_time",0)
 
 rem --- Initialize column data
-	callpoint!.setColumnData("SFE_TIMEEMPLDET.START_TIME",str(callpoint!.getDevObject("prev_stoptime")),1)
+	if callpoint!.getDevObject("time_clk_flg")="Y" then
+		callpoint!.setColumnData("SFE_TIMEEMPLDET.START_TIME",str(callpoint!.getDevObject("prev_stoptime")),1)
+	endif
 	if callpoint!.getDevObject("pr")="Y" then
 		callpoint!.setColumnData("SFE_TIMEEMPLDET.TITLE_CODE",str(callpoint!.getDevObject("normal_title")),1)
 		callpoint!.setColumnData("SFE_TIMEEMPLDET.PAY_CODE",str(callpoint!.getDevObject("reg_pay_code")),1)
@@ -421,6 +425,8 @@ rem --- Disable fields
 	if callpoint!.getDevObject("time_clk_flg")<>"Y" then
 		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.START_TIME",-1)
 		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.STOP_TIME",-1)
+	else
+		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.HRS",-1)
 	endif
 	if callpoint!.getDevObject("pr")<>"Y" then
 		callpoint!.setColumnEnabled(-1,"SFE_TIMEEMPLDET.PAY_CODE",-1)

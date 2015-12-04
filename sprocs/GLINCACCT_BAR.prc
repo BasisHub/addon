@@ -150,7 +150,7 @@ rem --- get data
 					case 7; amount = glm02a.period_amt_07; break
 					case 8; amount = glm02a.period_amt_08; break
 					case 9; amount = glm02a.period_amt_09; break
-					case 10 amount = ;glm02a.period_amt_10; break
+					case 10; amount = ;glm02a.period_amt_10; break
 					case 11; amount = glm02a.period_amt_11; break
 					case 12; amount = glm02a.period_amt_12; break
 					case 13; amount = glm02a.period_amt_13; break

@@ -330,7 +330,18 @@ rem --- Validate old aon install location
 	if abort then break
 	
 rem --- Initializations when old aon install location changes
-	if cvs(old_aon_loc$,3)<>cvs(callpoint!.getDevObject("prev_old_aon_loc"),3) then
+	prev_old_aon_loc$=cvs(callpoint!.getDevObject("prev_old_aon_loc"),3)
+	prev_new_aon_loc$=cvs(callpoint!.getDevObject("prev_new_aon_loc"),3)
+	if cvs(old_aon_loc$,3)<>prev_old_aon_loc$ then
+		updateTargetPaths=1
+		if prev_new_aon_loc$<>"" and prev_old_aon_loc$<>"" then
+			msg_id$="AD_UPDT_TARGET_PATH"
+			gosub disp_message
+			if msg_opt$<>"Y"then
+				updateTargetPaths=0
+			endif
+		endif
+
 		rem --- Capture old aon location value so can tell later if it's been changed
 		callpoint!.setDevObject("prev_old_aon_loc",old_aon_loc$)
 
@@ -342,35 +353,37 @@ rem --- Initializations when old aon install location changes
 		bar_dir$=cvs(callpoint!.getColumnData("ADX_UPGRADEWIZ.OLD_BAR_LOC"),3)+"/barista"
 		gosub able_backup_sync_dir
 
-		rem --- Initialize aon directory from new aon location
-		filePath$=callpoint!.getDevObject("prev_new_aon_loc")
-		gosub fix_path
-		newDir$=filePath$+"/aon/"
+		if updateTargetPaths then
+			rem --- Initialize aon directory from new aon location
+			filePath$=prev_new_aon_loc$
+			gosub fix_path
+			newDir$=filePath$+"/aon/"
 
-		rem --- Use addon.syn file from old aon location
-		synFile$=old_aon_loc$+"/aon/config/addon.syn"
+			rem --- Use addon.syn file from old aon location
+			synFile$=old_aon_loc$+"/aon/config/addon.syn"
 		
-		rem --- Initialize STBL grid, i.e. set defaults for data STBLs
-		stblRowVect!=SysGUI!.makeVector()
-		gosub build_stbl_vector
-		callpoint!.setDevObject("oldSynRows",stblRowVect!)
-		if cvs(callpoint!.getDevObject("prev_new_aon_loc"),3)<>"" then
-			gosub init_stbl_grid
-			util.resizeWindow(Form!, SysGui!)
-			callpoint!.setStatus("REFRESH")
-		endif
+			rem --- Initialize STBL grid, i.e. set defaults for data STBLs
+			stblRowVect!=SysGUI!.makeVector()
+			gosub build_stbl_vector
+			callpoint!.setDevObject("oldSynRows",stblRowVect!)
+			if prev_new_aon_loc$<>"" then
+				gosub init_stbl_grid
+				util.resizeWindow(Form!, SysGui!)
+				callpoint!.setStatus("REFRESH")
+			endif
 		
-		rem --- Re-initialize app grid whenever old barista location changes
-		rem --- Must be done after stbl grid is initialized
-		if cvs(old_bar_loc$,3)<>cvs(callpoint!.getDevObject("prev_old_bar_loc"),3) then
-			callpoint!.setDevObject("prev_old_bar_loc",old_bar_loc$)
+			rem --- Re-initialize app grid whenever old barista location changes
+			rem --- Must be done after stbl grid is initialized
+			if cvs(old_bar_loc$,3)<>cvs(callpoint!.getDevObject("prev_old_bar_loc"),3) then
+				callpoint!.setDevObject("prev_old_bar_loc",old_bar_loc$)
 
-			rem --- Initialize app grid, i.e. set defaults for data apps
-			gosub create_app_vector
-			callpoint!.setDevObject("appRowVect",appRowVect!)
-			gosub fill_app_grid
-			util.resizeWindow(Form!, SysGui!)
-			callpoint!.setStatus("REFRESH")
+				rem --- Initialize app grid, i.e. set defaults for data apps
+				gosub create_app_vector
+				callpoint!.setDevObject("appRowVect",appRowVect!)
+				gosub fill_app_grid
+				util.resizeWindow(Form!, SysGui!)
+				callpoint!.setStatus("REFRESH")
+			endif
 		endif
 	endif
 [[ADX_UPGRADEWIZ.<CUSTOM>]]
@@ -791,12 +804,12 @@ rem ==========================================================================
 				childProps! = cast(HashMap, descendentVect!.get(i))
 				appRowVect!.addItem(cast(BBjString, childProps!.get("mount_sys_id"))); rem App
 				appRowVect!.addItem(cast(BBjString, childProps!.get("parent_sys_id"))); rem Parent
-				appRowVect!.addItem("y"); rem Install
 				if rootApp$="ADDON" then
-					appRowVect!.addItem("y"); rem Copy
+					appRowVect!.addItem("n"); rem Install
 				else
-					appRowVect!.addItem("n"); rem Copy
+					appRowVect!.addItem("y"); rem Install
 				endif
+				appRowVect!.addItem("n"); rem Copy
 				appRowVect!.addItem(cast(BBjString, childProps!.get("mount_dir"))); rem Source
 				if rootApp$="ADDON" then
 					sourceDir$=cast(BBjString, childProps!.get("mount_dir"))
@@ -1022,7 +1035,7 @@ fill_stbl_grid: rem --- Fill the STBL grid with data in stblRowVect!
 rem ==========================================================================
 merge_vect_rows: rem --- Merge new and old syn row vectors into a single vector of STBLs and PREFIXs
 		rem      IN: newSynRows!
-		rem          oldSynRows!
+		rem           oldSynRows!
 		rem     OUT: stblRowVect!
 rem ==========================================================================
 
@@ -1043,6 +1056,7 @@ rem ==========================================================================
 					if stbl$="+MDI_TITLE" then
 						stblRowVect!.setItem(j+3, callpoint!.getColumnData("ADX_UPGRADEWIZ.APP_DESC"))
 					endif
+					stblRowVect!.setItem(j+3,newSynRows!.getItem(i+3))
 					addLine=0
 					break
 				next j
@@ -1054,6 +1068,7 @@ rem ==========================================================================
 				addLine=1
 				for j=0 to stblRowVect!.size()-1 step numCols
 					if stblRowVect!.getItem(j+2)<>source$ then continue
+					stblRowVect!.setItem(j+3,newSynRows!.getItem(i+3))
 					addLine=0
 					break
 				next j
@@ -1143,7 +1158,7 @@ rem ==========================================================================
 			source_value$=cvs(record$(pos("="=record$,1,2)+1),3)
 			gosub source_target_value
 
-			rem --- don't let target data directories be the same as source data directories
+			rem --- don't let target data directories be the same as source data directories (i.e. a minor rev upgrade using same data dir)
 			if target_value$=source_value$ and 
 :			(stbl$="+DIR_DAT" or (stbl$(1,1)="+" and pos("DATA"=stbl$,-1)=len(stbl$)-3)) then
 				target_value$=newDir$+"testdata/"
@@ -1256,26 +1271,39 @@ rem --- Validate new aon install location
 	if abort then break
 
 rem --- Set defaults for data STBLs
-	if cvs(new_aon_loc$,3)<>cvs(callpoint!.getDevObject("prev_new_aon_loc"),3) then
+	prev_new_aon_loc$=cvs(callpoint!.getDevObject("prev_new_aon_loc"),3)
+	prev_old_aon_loc$=cvs(callpoint!.getDevObject("prev_old_aon_loc"),3)
+	if cvs(new_aon_loc$,3)<>prev_new_aon_loc$ then
+		updateTargetPaths=1
+		if prev_new_aon_loc$<>"" and prev_old_aon_loc$<>"" then
+			msg_id$="AD_UPDT_TARGET_PATH"
+			gosub disp_message
+			if msg_opt$<>"Y"then
+				updateTargetPaths=0
+			endif
+		endif
+
 		rem --- Capture new aon location value so can tell later if it's been changed
 		callpoint!.setDevObject("prev_new_aon_loc",new_aon_loc$)
 
-		rem --- Initialize aon directory from new aon location
-		filePath$=new_aon_loc$
-		gosub fix_path
-		newDir$=filePath$+"/aon/"
+		if updateTargetPaths then
+			rem --- Initialize aon directory from new aon location
+			filePath$=new_aon_loc$
+			gosub fix_path
+			newDir$=filePath$+"/aon/"
 
-		rem --- Use addon.syn file from BASIS product download location
-		bbjHome$ = System.getProperty("basis.BBjHome")
-		synFile$=bbjHome$+"/apps/aon/config/addon.syn"
+			rem --- Use addon.syn file from BASIS product download location
+			bbjHome$ = System.getProperty("basis.BBjHome")
+			synFile$=bbjHome$+"/apps/aon/config/addon.syn"
 		
-		rem --- Initialize STBL grid, i.e. set defaults for data STBLs
-		stblRowVect!=SysGUI!.makeVector()
-		gosub build_stbl_vector
-		callpoint!.setDevObject("newSynRows",stblRowVect!)
-		if cvs(callpoint!.getDevObject("prev_old_aon_loc"),3)<>"" then
-			gosub init_stbl_grid
-			util.resizeWindow(Form!, SysGui!)
-			callpoint!.setStatus("REFRESH")
+			rem --- Initialize STBL grid, i.e. set defaults for data STBLs
+			stblRowVect!=SysGUI!.makeVector()
+			gosub build_stbl_vector
+			callpoint!.setDevObject("newSynRows",stblRowVect!)
+			if prev_old_aon_loc$<>"" then
+				gosub init_stbl_grid
+				util.resizeWindow(Form!, SysGui!)
+				callpoint!.setStatus("REFRESH")
+			endif
 		endif
 	endif

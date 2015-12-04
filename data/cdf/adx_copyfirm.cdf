@@ -1,10 +1,31 @@
+[[ADX_COPYFIRM.UPDT_REC_COUNT.BINP]]
+rem --- get value of checkbox before input
+
+	callpoint!.setDevObject("updt_rec_count",callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT"))
+[[ADX_COPYFIRM.UPDT_REC_COUNT.AVAL]]
+rem --- get recs/firm when checked
+
+	updt_rec_count$=callpoint!.getDevObject("updt_rec_count")
+	if updt_rec_count$<>callpoint!.getUserInput()
+		updt_rec_count$=callpoint!.getUserInput()
+		firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)	
+		gosub set_firm_recs
+		callpoint!.setDevObject("updt_rec_count",updt_rec_count$)
+	endif
+	
+[[ADX_COPYFIRM.ASIZ]]
+rem --- resize grid
+
+	gridFiles!=callpoint!.getDevObject("gridFiles")
+	gridFiles!.setSize(Form!.getWidth()-(gridFiles!.getX()*2),Form!.getHeight()-(gridFiles!.getY()+40))
+	gridFiles!.setFitToGrid(1)
 [[ADX_COPYFIRM.ASVA]]
 rem --- Confirm ready to copy data
 	numSelected=0
 	vectFiles!=callpoint!.getDevObject("vectFiles")
 	if vectFiles!.size() > 0 then
 		numcols = num(user_tpl.gridFilesCols$)
-		for curr_row=1 to vectFiles!.size()/(numcols)-1
+		for curr_row=0 to vectFiles!.size()/(numcols)-1
 			if vectFiles!.getItem(curr_row*numcols)="Y"
 				numSelected=numSelected+1
 			endif
@@ -13,7 +34,7 @@ rem --- Confirm ready to copy data
 	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
 	to_firm$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
 
-	if numSelected then
+	if numSelected and cvs(from_firm$,2)<>"" and cvs(to_firm$,2)<>"" then
 		dim msg_tokens$[2]
 		msg_tokens$[1]=from_firm$
 		msg_tokens$[2]=to_firm$
@@ -31,6 +52,10 @@ rem --- Confirm ready to copy data
 	endif
 
 rem --- Copy selected data
+
+    	use ::ado_file.src::FileObject
+	use java.io.File
+
 	if numSelected then
 		rem --- Start progress meter
 		meter_title$=Form!.getTitle()
@@ -39,6 +64,25 @@ rem --- Copy selected data
 		meter_data$=""
 		meter_action$="WIN-LST-OK"
 		gosub disp_meter
+
+		rem --- create logs directory at new location
+		logpath$=stbl("+ADDATA")+"/logs"
+            	FileObject.makeDirs(new File(logpath$))
+
+            	rem --- create and open log file
+            	log$ = logpath$+"/copyfirmtofirm_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+		erase log$,err=*next
+		string log$
+            	log_dev=unt
+		open (log_dev)log$
+            
+		rem --- write log header info
+		print (log_dev)"Copyfirmtofirm log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+		print (log_dev)"Company ID: "+callpoint!.getColumnData("ADX_COPYFIRM.ASC_COMP_ID")
+		print (log_dev)"Product ID: "+callpoint!.getColumnData("ADX_COPYFIRM.ASC_PROD_ID")
+		print (log_dev)"From Firm ID: "+callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
+		print (log_dev)"To Firm ID: "+callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
+		print (log_dev)
 
 		rem --- Process selected files
 		numcols = num(user_tpl.gridFilesCols$)
@@ -61,8 +105,15 @@ rem --- Copy selected data
 				meter_action$="MTR-LST"
 				gosub disp_meter
 
+				rem --- Update log w/ file name and number of recs in file
+				table_fin$=xfin(from_table_dev)
+				tot_recs=dec(table_fin$(77,4))
+				print (log_dev)"File: "+vectFiles!.getItem(curr_row * numcols + 3)+"("+meter_data$+")"
+				print (log_dev)"Records in file: "+str(tot_recs)
+
 				rem --- Now copy the records
 				if pos("firm_id:c"=table_tpl$)>0
+					tot_recs_copied=0
 					read(from_table_dev,key=from_firm$,dom=*next)
 					while 1
 						dim rec_tpl$:table_tpl$
@@ -70,6 +121,7 @@ rem --- Copy selected data
 						if rec_tpl.firm_id$ <> from_firm$ break
 						rec_tpl.firm_id$ = to_firm$
 						writerecord (to_table_dev)rec_tpl$
+						tot_recs_copied=tot_recs_copied+1
 					wend
 					rem --- Close the from and to files
 					num_files=1
@@ -77,9 +129,14 @@ rem --- Copy selected data
 					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
 					open_opts$[1]="CX"
 					gosub open_tables
+					print (log_dev)"Records copied: "+str(tot_recs_copied)
+					print (log_dev)
 				endif
 			endif
 		next curr_row
+
+		print (log_dev)"Copyfirmtofirm log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+		close (log_dev)
 
 		rem --- Stop progress meter
 		meter_data$=""
@@ -91,10 +148,12 @@ rem --- Copy selected data
 rem --- Make sure 2 firms aren't the same
 	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
 	to_firm$=callpoint!.getUserInput()
-	gosub check_firms
-	if from_firm$=to_firm$
-		callpoint!.setStatus("ABORT")
-		break
+	if cvs(to_firm$,2)<>"" then 
+		gosub check_firms
+		if from_firm$=to_firm$
+			callpoint!.setStatus("ABORT")
+			break
+		endif
 	endif
 [[ADX_COPYFIRM.FIRM_ID_ENTRY.AVAL]]
 rem --- Set number of recs for firm selected
@@ -102,24 +161,35 @@ rem --- Set number of recs for firm selected
 rem --- Make sure 2 firms aren't the same
 	to_firm$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
 	from_firm$=callpoint!.getUserInput()
-	gosub check_firms
-	if from_firm$=to_firm$
-		callpoint!.setStatus("ABORT")
-		break
+	if cvs(to_firm$,2)<>"" then 
+		gosub check_firms
+		if from_firm$=to_firm$
+			callpoint!.setStatus("ABORT")
+			break
+		endif
 	endif
 
-	firm$=cvs(callpoint!.getUserInput(),3)
-	gosub set_firm_recs
+	updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT")
+	if updt_rec_count$="Y"
+		firm$=callpoint!.getUserInput()
+		gosub set_firm_recs
+	endif
 [[ADX_COPYFIRM.ASC_PROD_ID.AVAL]]
 rem --- Set Filter
 	gosub filter_recs
-	firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
-	gosub set_firm_recs
+	updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT")
+	if updt_rec_count$="Y"
+		firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
+		gosub set_firm_recs
+	endif
 [[ADX_COPYFIRM.ASC_COMP_ID.AVAL]]
 rem --- Set Filter
 	gosub filter_recs
-	firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
-	gosub set_firm_recs
+	updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT")
+	if updt_rec_count$="Y"
+		firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
+		gosub set_firm_recs
+	endif
 [[ADX_COPYFIRM.ACUS]]
 rem --- Process custom event
 rem --- Select/de-select checkboxes in grid
@@ -199,7 +269,6 @@ rem ==========================================================================
 	attr_inv_col$[6,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="50"
 	attr_inv_col$[6,fnstr_pos("DTYP",attr_def_col_str$[0,0],5)]="N"
 	attr_inv_col$[6,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]="##,###,##0"
-
 
 	for curr_attr=1 to def_inv_cols
 		attr_inv_col$[0,1] = attr_inv_col$[0,1] + 
@@ -299,7 +368,7 @@ rem --- fill with File information
 						vectFiles!.addItem(ddm_tables.asc_prod_id$);rem 2
 						vectFiles!.addItem(ddm_tables.dd_table_alias$); rem 3
 						vectFiles!.addItem(ddm_tables.dd_alias_desc$); rem 4
-						vectFiles!.addItem(str(tot_recs)); rem 5
+						vectFiles!.addItem(str(0));rem was (str(tot_recs)); rem 5
 
 						vectFilesMaster!.addItem("Y"); rem 0 - Filtered Y or N
 						vectFilesMaster!.addItem("Y"); rem 1 - Selected Y or N
@@ -307,7 +376,7 @@ rem --- fill with File information
 						vectFilesMaster!.addItem(ddm_tables.asc_prod_id$); rem 3
 						vectFilesMaster!.addItem(ddm_tables.dd_table_alias$); rem 4
 						vectFilesMaster!.addItem(ddm_tables.dd_alias_desc$); rem 5
-						vectFilesMaster!.addItem(str(tot_recs)); rem 6
+						vectFilesMaster!.addItem(str(0));rem was (str(tot_recs)); rem 6
 						rows=rows+1
 					else
 						dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -392,8 +461,6 @@ rem ==========================================================================
 		next curr_row
 	endif
 
-	gosub enable_button
-
 	SysGUI!.setRepaintEnabled(1)
 
 	return
@@ -455,33 +522,9 @@ rem ==========================================================================
 			endif
 		next x
 
-		gosub enable_button
-
 		callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 		callpoint!.setDevObject("vectFiles",vectFiles!)
 		gosub fill_grid
-	endif
-
-	return
-
-rem ==========================================================================
-enable_button:
-rem ==========================================================================
-	numcols = num(user_tpl.gridFilesCols$)
-	if vectFiles!.size() > 0 then
-		for curr_row=1 to vectFiles!.size()/(numcols)-1
-			if vectFiles!.getItem(curr_row*numcols)="Y"
-				any_checked$="Y"
-			endif
-		next curr_row
-	endif
-	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
-	to_firm$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
-
-	if any_checked$="Y" and from_firm$<>"" and from_firm$<>""
-		callpoint!.setOptionEnabled("CPYF",1)
-	else
-		callpoint!.setOptionEnabled("CPYF",0)
 	endif
 
 	return
@@ -530,14 +573,14 @@ rem ==========================================================================
 		next curr_row
 	endif
 
-	gosub enable_button
-
 	SysGUI!.setRepaintEnabled(1)
 
 	return
 
 rem ==========================================================================
 set_firm_recs:
+rem --- in: firm$
+rem --- in: updt_rec_count$
 rem ==========================================================================
 
 	SysGUI!.setRepaintEnabled(0)
@@ -546,10 +589,14 @@ rem ==========================================================================
 
 	TempRows! = vectFiles!
 	numcols   = num(user_tpl.gridFilesCols$)
+	ddm_table_dev=fnget_dev("DDM_TABLES")
+
+	call pgmdir$+"adc_progress.aon","NC","","Processing...","","",0,ddm_table_dev,1,meter_num,status
 
 	if TempRows!.size() > 0 then
 		for curr_row=0 to TempRows!.size()/(num(user_tpl.gridFilesCols$))-1
-			if cvs(firm$,2)<>""
+			call pgmdir$+"adc_progress.aon","S","","","","",0,curr_row,1,meter_num,status
+			if cvs(firm$,2)<>"" and updt_rec_count$="Y"
 				num_files=1
 				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 				open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3),open_opts$[1]="OTASN"
@@ -574,11 +621,14 @@ close_sql:
 				endif
 				open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3),open_opts$[1]="CX"
 				gosub open_tables
+			else
+				vectFiles!.setItem(curr_row * numcols + 5, str(0))
 			endif
 		next curr_row
 	endif
 
 	SysGUI!.setRepaintEnabled(1)
+	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
 
 	gosub fill_grid
 
@@ -648,7 +698,13 @@ rem --- Open/Lock files
 	nxt_ctlID = num(stbl("+CUSTOM_CTL",err=std_error))
 	ignore$ = stbl("+CUSTOM_CTL", str(nxt_ctlID+1))
 
-	gridFiles! = Form!.addGrid(nxt_ctlID,5,140,800,300); rem --- ID, x, y, width, height
+	tmpCtl!=callpoint!.getControl("UPDT_REC_COUNT")
+	tmp_y=tmpCtl!.getY()
+	tmp_h=tmpCtl!.getHeight()
+	wnd_w=Form!.getWidth()
+	wnd_h=Form!.getHeight()
+
+	gridFiles! = Form!.addGrid(nxt_ctlID,5,tmp_y+tmp_h+10,wnd_w-5,wnd_h-tmp_y-tmp_h-5); rem --- ID, x, y, width, height
 
 	user_tpl.gridFilesCtlID$ = str(nxt_ctlID)
 	user_tpl.gridFilesCols$ = "6"
@@ -671,6 +727,7 @@ rem --- Misc other init
 	gosub checkout_licenses
 	gosub create_reports_vector
 	gosub fill_grid
+	util.resizeWindow(Form!,SysGUI!)
 
 rem --- Set callbacks - processed in ACUS callpoint
 
@@ -679,3 +736,4 @@ rem --- Set callbacks - processed in ACUS callpoint
 	gridFiles!.setCallback(gridFiles!.ON_GRID_EDIT_STOP,"custom_event")
 
 	callpoint!.setOptionEnabled("CPYF",0)
+	callpoint!.setDevObject("updt_rec_count","N")

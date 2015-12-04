@@ -81,7 +81,6 @@ rem			Serial number count defaults to one
 			gosub display_record
 		endif
 	endif
-
 [[IVE_COUNT_ENTRY.ASVA]]
 print "ASVA"; rem debug
 
@@ -147,7 +146,8 @@ rem --- Get Whse/Item record
 	gosub check_item_whse
 
 	if failed then
-		rem callpoint!.setStatus("ABORT")
+		callpoint!.setStatus("ABORT")
+		break
 	else
 
 rem --- Is this item is the selected cycle?
@@ -157,7 +157,8 @@ rem --- Is this item is the selected cycle?
 		if !found then
 			msg_id$ = "IV_ITEM_NOT_IN_CYCLE"
 			gosub disp_message
-			rem callpoint!.setStatus("ABORT")
+			callpoint!.setStatus("ABORT")
+			break
 		else
 
 rem --- Get record if this isn't a lotted/serial item
@@ -187,16 +188,18 @@ rem --- Has cycle changed?
 	cycle$ = callpoint!.getUserInput()
 
 	if user_tpl.prev_cycle$ <> cycle$ then
-		print "trip read for new cycle..."; rem debug
 		read (fnget_dev("IVE_PHYSICAL"), key=firm_id$+whse$+cycle$, dom=*next)
 		gosub read_display
 		user_tpl.prev_cycle$ = cycle$
-		print "previous cycle code set: ", user_tpl.prev_cycle$; rem debug
 	endif
 
 rem --- Is cycle in the correct stage?
 	
 	gosub check_whse_cycle
+	if failed then
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 [[IVE_COUNT_ENTRY.<CUSTOM>]]
 rem ==========================================================================
 check_whse_cycle: rem --- Check the Physical Cycle code for the correct status
@@ -205,8 +208,6 @@ check_whse_cycle: rem --- Check the Physical Cycle code for the correct status
                   rem     OUT: physcode
                   rem          failed - true / false
 rem ==========================================================================
-
-print "in check_whse_cycle"; rem debug
 
 	failed = 0
 	file_name$ = "IVC_PHYSCODE"
@@ -217,19 +218,16 @@ print "in check_whse_cycle"; rem debug
 		if physcode.phys_inv_sts$ = "0" then
 			msg_id$ = "IV_PHYS_NOT_FROZEN"
 			gosub disp_message
-			rem callpoint!.setStatus("ABORT")
 			failed = 1
 		else
 			if physcode.phys_inv_sts$ = "1" then
 				msg_id$ = "IV_PHYS_NOT_PRINTED"
 				gosub disp_message
-				rem callpoint!.setStatus("ABORT")
 				failed = 1
 			else
 				if physcode.phys_inv_sts$ = "3" then	
 					msg_id$ = "IV_PHYS_ALREADY_REG"
 					gosub disp_message
-					rem callpoint!.setStatus("ABORT")
 					failed = 1
 				endif
 			endif
@@ -248,15 +246,11 @@ check_item_whse: rem --- Check that a warehouse record exists for this item
                  rem          enable lot/serial$ field
 rem ==========================================================================
 
-print "in check_item_whse"; rem debug
-
 	item_file$ = "IVM_ITEMMAST"
 	dim itemmast_rec$:fnget_tpl$(item_file$)
 	find record (fnget_dev(item_file$), key=firm_id$+item$) itemmast_rec$
 
 	user_tpl.this_item_lot_ser = (user_tpl.ls$ = "Y" and itemmast_rec.lotser_item$ = "Y" and itemmast_rec.inventoried$ = "Y")
-	rem callpoint!.setStatus( "ENABLE:" + str(user_tpl.this_item_lot_ser) )
-	print "user_tpl.this_item_lot_ser =", user_tpl.this_item_lot_ser; rem debug
 
 	if user_tpl.this_item_lot_ser then
 		callpoint!.setColumnEnabled("IVE_COUNT_ENTRY.LOTSER_NO", 1)

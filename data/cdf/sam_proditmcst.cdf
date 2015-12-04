@@ -1,3 +1,19 @@
+[[SAM_PRODITMCST.BPRK]]
+rem --- Use current selections for initiating previous record
+	year$=callpoint!.getColumnData("SAM_PRODITMCST.YEAR")
+	product_type$=callpoint!.getColumnData("SAM_PRODITMCST.PRODUCT_TYPE")
+	item_id$=callpoint!.getColumnData("SAM_PRODITMCST.ITEM_ID")
+	sam_dev=fnget_dev("SAM_PRODITMCST")
+	customer_id$=callpoint!.getColumnData("SAM_PRODITMCST.CUSTOMER_ID")
+	read(sam_dev,key=firm_id$+year$+product_type$+item_id$+customer_id$,dir=0,dom=*next)
+[[SAM_PRODITMCST.BNEK]]
+rem --- Use current selections for initiating next record
+	year$=callpoint!.getColumnData("SAM_PRODITMCST.YEAR")
+	product_type$=callpoint!.getColumnData("SAM_PRODITMCST.PRODUCT_TYPE")
+	item_id$=callpoint!.getColumnData("SAM_PRODITMCST.ITEM_ID")
+	sam_dev=fnget_dev("SAM_PRODITMCST")
+	customer_id$=callpoint!.getColumnData("SAM_PRODITMCST.CUSTOMER_ID")
+	read(sam_dev,key=firm_id$+year$+product_type$+item_id$+customer_id$,dom=*next)
 [[SAM_PRODITMCST.BOVE]]
 rem --- Restrict lookup to orders
 			
@@ -188,9 +204,10 @@ rem --- Enable key fields
 	callpoint!.setStatus("REFRESH")
 [[SAM_PRODITMCST.BSHO]]
 rem --- Check for parameter record
-	num_files=1
+	num_files=2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SAS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="SAM_PRODITMCST",open_opts$[2]="OTA@"
 	gosub open_tables
 	sas01_dev=num(open_chans$[1]),sas01a$=open_tpls$[1]
 
@@ -244,8 +261,8 @@ rem --- Calculate Last Year
 	prod$=callpoint!.getColumnData("SAM_PRODITMCST.PRODUCT_TYPE")
 	item$=callpoint!.getColumnData("SAM_PRODITMCST.ITEM_ID")
 	ltrip_key$=firm_id$+lyear$+prod$+item$+cust_no$
-	sam_dev=fnget_dev("SAM_PRODITMCST")
-	dim sam_tpl$:fnget_tpl$("SAM_PRODITMCST")
+	sam_dev=fnget_dev("@SAM_PRODITMCST")
+	dim sam_tpl$:fnget_tpl$("@SAM_PRODITMCST")
 	dim qty[13],cost[13],sales[13]
 
 	while 1

@@ -1,10 +1,30 @@
+[[ADX_CLEARFIRM.ASIZ]]
+rem --- resize grid
+
+	gridFiles!=callpoint!.getDevObject("gridFiles")
+	gridFiles!.setSize(Form!.getWidth()-(gridFiles!.getX()*2),Form!.getHeight()-(gridFiles!.getY()+40))
+	gridFiles!.setFitToGrid(1)
+[[ADX_CLEARFIRM.UPDT_REC_COUNT.AVAL]]
+rem --- get recs/firm when checked
+
+	updt_rec_count$=callpoint!.getDevObject("updt_rec_count")
+	if updt_rec_count$<>callpoint!.getUserInput()
+		updt_rec_count$=callpoint!.getUserInput()
+		firm$=cvs(callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY"),3)	
+		gosub set_firm_recs
+		callpoint!.setDevObject("updt_rec_count",updt_rec_count$)
+	endif
+[[ADX_CLEARFIRM.UPDT_REC_COUNT.BINP]]
+rem --- get value of checkbox before input
+
+	callpoint!.setDevObject("updt_rec_count",callpoint!.getColumnData("ADX_CLEARFIRM.UPDT_REC_COUNT"))
 [[ADX_CLEARFIRM.ASVA]]
 rem --- Confirm ready to clear firm's selected data
 	numSelected=0
 	vectFiles!=callpoint!.getDevObject("vectFiles")
 	if vectFiles!.size() > 0 then
 		numcols = num(user_tpl.gridFilesCols$)
-		for curr_row=1 to vectFiles!.size()/(numcols)-1
+		for curr_row=0 to vectFiles!.size()/(numcols)-1
 			if vectFiles!.getItem(curr_row*numcols)="Y"
 				numSelected=numSelected+1
 			endif
@@ -14,7 +34,7 @@ rem --- Confirm ready to clear firm's selected data
 
 	if numSelected then
 		dim msg_tokens$[1]
-		msg_tokens$[0]=firm$
+		msg_tokens$[0]=iff(cvs(firm$,2)="","ALL FIRMS",firm$)
 		msg_id$="AD_CLEAR_FIRM_FILES"
 		gosub disp_message
 		if msg_opt$<>"Y"then
@@ -29,6 +49,10 @@ rem --- Confirm ready to clear firm's selected data
 	endif
 
 rem --- Clear firms selected data
+
+	use ::ado_file.src::FileObject
+	use java.io.File
+
 	if numSelected then
 		rem --- Start progress meter
 		meter_title$=Form!.getTitle()
@@ -38,6 +62,23 @@ rem --- Clear firms selected data
 		meter_action$="WIN-LST-OK"
 		gosub disp_meter
 
+		rem --- create logs directory at new location
+		logpath$=stbl("+ADDATA")+"/logs"
+            	FileObject.makeDirs(new File(logpath$))
+
+            	rem --- create and open log file
+            	log$ = logpath$+"/clearfirm_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+		erase log$,err=*next
+		string log$
+            	log_dev=unt
+		open (log_dev)log$
+            
+		rem --- write log header info
+		print (log_dev)"Clearfirm log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+		print (log_dev)"Company ID: "+callpoint!.getColumnData("ADX_CLEARFIRM.ASC_COMP_ID")
+		print (log_dev)"Product ID: "+callpoint!.getColumnData("ADX_CLEARFIRM.ASC_PROD_ID")
+		print (log_dev)"From Firm ID: "+callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY")
+		print (log_dev)
 
 		rem --- Process selected files
 		numcols = num(user_tpl.gridFilesCols$)
@@ -56,20 +97,32 @@ rem --- Clear firms selected data
 				meter_action$="MTR-LST"
 				gosub disp_meter
 
+				rem --- Update log w/ file name and number of recs in file
+				table_fin$=xfin(table_dev)
+				tot_recs=dec(table_fin$(77,4))
+				print (log_dev)"File: "+vectFiles!.getItem(curr_row * numcols + 3)+"("+meter_data$+")"
+				print (log_dev)"Records in file: "+str(tot_recs)
+
 				rem --- Now clear the records
 				if cvs(firm$,2)=""
 					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
 					open_opts$[1]="CX"
 					gosub open_tables
 					call "adc_clearfile.aon",table_dev
+					print (log_dev)"Clearing all records"
 				else
+					xwk$=stbl("ADX_CLEARFIRM_RECS","0")
 					call "adc_clearpartial.aon","N",table_dev,firm$,status
+					print (log_dev)"Records cleared: "+stbl("ADX_CLEARFIRM_RECS")
 					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
 					open_opts$[1]="CX"
 					gosub open_tables
 				endif
 			endif
 		next curr_row
+
+		print (log_dev)"Clearfirm log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+		close (log_dev)
 
 		rem --- Stop progress meter
 		meter_data$=""
@@ -80,18 +133,30 @@ rem --- Clear firms selected data
 [[ADX_CLEARFIRM.FIRM_ID_ENTRY.AVAL]]
 rem --- Set number of recs for firm selected
 
-	firm$=cvs(callpoint!.getUserInput(),3)
-	gosub set_firm_recs
+	updt_rec_count$=callpoint!.getColumnData("ADX_CLEARFIRM.UPDT_REC_COUNT")
+	if updt_rec_count$="Y"
+		firm$=cvs(callpoint!.getUserInput(),3)
+		gosub set_firm_recs
+	endif
+
 [[ADX_CLEARFIRM.ASC_PROD_ID.AVAL]]
 rem --- Set Filter
 	gosub filter_recs
-	firm$=cvs(callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY"),3)
-	gosub set_firm_recs
+
+	updt_rec_count$=callpoint!.getColumnData("ADX_CLEARFIRM.UPDT_REC_COUNT")
+	if updt_rec_count$="Y"
+		firm$=cvs(callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY"),3)
+		gosub set_firm_recs
+	endif
 [[ADX_CLEARFIRM.ASC_COMP_ID.AVAL]]
 rem --- Set Filter
 	gosub filter_recs
-	firm$=cvs(callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY"),3)
-	gosub set_firm_recs
+
+	updt_rec_count$=callpoint!.getColumnData("ADX_CLEARFIRM.UPDT_REC_COUNT")
+	if updt_rec_count$="Y"
+		firm$=cvs(callpoint!.getColumnData("ADX_CLEARFIRM.FIRM_ID_ENTRY"),3)
+		gosub set_firm_recs
+	endif
 [[ADX_CLEARFIRM.ACUS]]
 rem --- Process custom event
 rem --- Select/de-select checkboxes in grid
@@ -517,10 +582,14 @@ rem ==========================================================================
 
 	TempRows! = vectFiles!
 	numcols   = num(user_tpl.gridFilesCols$)
+	ddm_table_dev=fnget_dev("DDM_TABLES")
+
+	call pgmdir$+"adc_progress.aon","NC","","Processing...","","",0,ddm_table_dev,1,meter_num,status
 
 	if TempRows!.size() > 0 then
 		for curr_row=0 to TempRows!.size()/(num(user_tpl.gridFilesCols$))-1
-			if cvs(firm$,2)=""
+			call pgmdir$+"adc_progress.aon","S","","","","",0,curr_row,1,meter_num,status
+			if cvs(firm$,2)="" or updt_rec_count$<>"Y"
 				vectFiles!.setItem(curr_row * numcols + 5, vectFiles!.getItem(curr_row * numcols + 6))
 			else
 				num_files=1
@@ -550,6 +619,7 @@ rem ==========================================================================
 	endif
 
 	SysGUI!.setRepaintEnabled(1)
+	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
 
 	gosub fill_grid
 
@@ -602,7 +672,13 @@ rem --- Open/Lock files
 	nxt_ctlID = num(stbl("+CUSTOM_CTL",err=std_error))
 	ignore$ = stbl("+CUSTOM_CTL", str(nxt_ctlID+1))
 
-	gridFiles! = Form!.addGrid(nxt_ctlID,5,140,800,300); rem --- ID, x, y, width, height
+	tmpCtl!=callpoint!.getControl("UPDT_REC_COUNT")
+	tmp_y=tmpCtl!.getY()
+	tmp_h=tmpCtl!.getHeight()
+	wnd_w=Form!.getWidth()
+	wnd_h=Form!.getHeight()
+
+	gridFiles! = Form!.addGrid(nxt_ctlID,5,tmp_y+tmp_h+10,wnd_w-5,wnd_h-tmp_y-tmp_h-5); rem --- ID, x, y, width, height
 
 	user_tpl.gridFilesCtlID$ = str(nxt_ctlID)
 	user_tpl.gridFilesCols$ = "7"
@@ -633,3 +709,4 @@ rem --- Set callbacks - processed in ACUS callpoint
 	gridFiles!.setCallback(gridFiles!.ON_GRID_EDIT_STOP,"custom_event")
 
 	callpoint!.setOptionEnabled("CLRF",0)
+	callpoint!.setDevObject("updt_rec_count","N")

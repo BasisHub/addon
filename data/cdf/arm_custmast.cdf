@@ -625,9 +625,12 @@ if cvs(ars10d.cred_hold$,2)<>"" then
 	callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD",ars10d.cred_hold$,1)
 	callpoint!.setColumnUndoData("ARM_CUSTDET.CRED_HOLD",ars10d.cred_hold$)
 else
-	if user_tpl.cm_installed$="Y" and user_tpl.dflt_cred_hold$="Y" 
-		callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD","Y",1)
-		callpoint!.setColumnUndoData("ARM_CUSTDET.CRED_HOLD","Y")
+	if user_tpl.cm_installed$="Y" then 
+		callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD",user_tpl.dflt_cred_hold$,1)
+		callpoint!.setColumnUndoData("ARM_CUSTDET.CRED_HOLD",user_tpl.dflt_cred_hold$)
+	else
+		callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD","N",1)
+		callpoint!.setColumnUndoData("ARM_CUSTDET.CRED_HOLD","N")
 	endif
 endif
 callpoint!.setColumnData("ARM_CUSTDET.CUSTOMER_TYPE",ars10d.customer_type$,1)

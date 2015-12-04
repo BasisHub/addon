@@ -5,7 +5,7 @@ rem --- Initialize new record
 		hold_new$=callpoint!.getDevObject("hold_new")
 		callpoint!.setColumnData("ARS_CUSTDFLT.CRED_HOLD",hold_new$)
 	else
-		callpoint!.setColumnData("ARS_CUSTDFLT.CRED_HOLD","Y")
+		callpoint!.setColumnData("ARS_CUSTDFLT.CRED_HOLD","N")
 	endif
 
 	callpoint!.setColumnData("ARS_CUSTDFLT.INV_HIST_FLG","Y")
@@ -39,6 +39,8 @@ rem --- Check Credit Management parameters
 
 	if callpoint!.getDevObject("cm_installed")="Y" then
 		callpoint!.setColumnEnabled("ARS_CUSTDFLT.CREDIT_LIMIT",-1)
+	else
+		callpoint!.setColumnEnabled("ARS_CUSTDFLT.CRED_HOLD",-1)
 	endif
 [[ARS_CUSTDFLT.AWIN]]
 rem --- Get AR parameters

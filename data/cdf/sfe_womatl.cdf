@@ -339,7 +339,6 @@ rem ==========================================================================
 				rem --- Always explode phantom bills
 				rem --- Disable so explode can't be cancelled
 				callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","Y",1)
-				callpoint!.setStatus("MODIFIED")
 				rem --- Add/remove to string of bills being exploded
 				checked$="Y"
 				gosub bills_to_explode
@@ -351,7 +350,6 @@ rem ==========================================================================
 					if callpoint!.getDevObject("new_item") or mark_pos then
 						rem --- For new bill, check explode
 						callpoint!.setColumnData("<<DISPLAY>>.EXPLODE_BILL","Y",1)
-						callpoint!.setStatus("MODIFIED")
 						rem --- Add/remove to string of bills being exploded
 						checked$="Y"
 						gosub bills_to_explode

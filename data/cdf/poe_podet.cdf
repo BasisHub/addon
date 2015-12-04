@@ -1,3 +1,6 @@
+[[POE_PODET.SO_INT_SEQ_REF.BINP]]
+rem --- Refresh display of ListButton selection
+	callpoint!.setColumnData("POE_PODET.SO_INT_SEQ_REF",callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF"),1)
 [[POE_PODET.SO_INT_SEQ_REF.AVAL]]
 rem --- Dropship OP line type must be compatible with PO line type
 	so_int_seq_ref$=callpoint!.getUserInput()

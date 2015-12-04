@@ -134,65 +134,6 @@ rem --- Dimension string templates
     sft23_tpls$=templates$[8]; dim sft23a$:sft23_tpls$; rem Save template for conditional use
     sft31_tpls$=templates$[9]; dim sft31a$:sft31_tpls$; rem Save template for conditional use
     sft33_tpls$=templates$[10]; dim sft33a$:sft33_tpls$; rem Save template for conditional use
-    
-goto no_bac_open
-rem --- Open Files via bac    (Change from adc to bac once Barista is enhanced)
-    num_files = 10
-    dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
-
-    open_tables$[1]="IVM_ITEMMAST", open_opts$[1] = "OTA"
-    open_tables$[2]="SFS_PARAMS",   open_opts$[2] = "OTA"
-    open_tables$[3]="IVS_PARAMS",   open_opts$[3] = "OTA"
-    open_tables$[4]="GLS_PARAMS",   open_opts$[4] = "OTA"   
-    open_tables$[5]="SFT_OPNOPRTR", open_opts$[5] = "OTA"; rem sft-01
-    open_tables$[6]="SFT_CLSOPRTR", open_opts$[6] = "OTA"; rem sft-03
-    open_tables$[7]="SFT_OPNMATTR", open_opts$[7] = "OTA"; rem sft-21
-    open_tables$[8]="SFT_CLSMATTR", open_opts$[8] = "OTA"; rem sft-23
-    open_tables$[9]="SFT_OPNSUBTR", open_opts$[9] = "OTA"; rem sft-31
-    open_tables$[10]="SFT_CLSSUBTR",open_opts$[10] = "OTA"; rem sft-33  
-    
-call sypdir$+"bac_open_tables.bbj",
-:       open_beg,
-:       open_end,
-:       open_tables$[all],
-:       open_opts$[all],
-:       open_chans$[all],
-:       open_tpls$[all],
-:       table_chans$[all],
-:       open_batch,
-:       open_status$
-    if open_status$<>"" then
-        seterr 0
-        x$=stbl("+THROWN_ERR","TRUE")   
-        throw "File open error.",1001
-    endif
-
-    ivm_itemmast_dev  = num(open_chans$[1])
-    sfs_params = num(open_chans$[2])
-    ivs_params = num(open_chans$[3])
-    gls_params = num(open_chans$[4])    
-    
-    sft01a_dev = num(open_chans$[5])
-    sft03a_dev = num(open_chans$[6])
-    sft21a_dev = num(open_chans$[7])
-    sft23a_dev = num(open_chans$[8])
-    sft31a_dev = num(open_chans$[9])
-    sft33a_dev = num(open_chans$[10])   
-    
-    rem --- templates
-    dim ivm_itemmast$:open_tpls$[1]
-    dim sfs_params$:open_tpls$[2]
-    dim ivs_params$:open_tpls$[3]
-    dim gls_params$:open_tpls$[4]   
-    
-    sft01_tpls$=open_tpls$[5]; dim sft01a$:sft01_tpls$; rem Save template for conditional use
-    sft03_tpls$=open_tpls$[6]; dim sft03a$:sft03_tpls$; rem Save template for conditional use
-    sft21_tpls$=open_tpls$[7]; dim sft21a$:sft21_tpls$; rem Save template for conditional use
-    sft23_tpls$=open_tpls$[8]; dim sft23a$:sft23_tpls$; rem Save template for conditional use
-    sft31_tpls$=open_tpls$[9]; dim sft31a$:sft31_tpls$; rem Save template for conditional use
-    sft33_tpls$=open_tpls$[10]; dim sft33a$:sft33_tpls$; rem Save template for conditional use  
-    
-no_bac_open:
 
 rem --- Retrieve parameter records
 rem       NOTE: Params are checked to exist in initial overlay
@@ -215,7 +156,6 @@ rem --- Parameters
 rem --- Additional File Opens
         
         gosub addl_opens_adc; rem Change from adc to bac once Barista's enhanced
-        rem gosub addl_opens_bac; rem Change from adc to bac once Barista's enhanced
 
 rem --- Build SQL statement
 
@@ -615,54 +555,6 @@ rem --- Conditionally open apm-01 for vendor name
         dim empcode$:templates$[2]
         if po$="Y" dim apm01a$:templates$[3]
     return
-    
-addl_opens_bac: 
-rem --- Conditionally open L/S files
-    if pos(ivs_params.lotser_flag$="LS") then
-        num_files=2
-        dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
-
-        open_tables$[1]="SFT_OPNLSTRN", open_opts$[1]="OTA"; rem sft-11
-        open_tables$[2]="SFT_CLSLSTRN", open_opts$[2]="OTA"; rem sft-12
-    
-        gosub open_tables
-
-        sft11a_dev = num(open_chans$[1])
-        sft12a_dev = num(open_chans$[2])
-        
-    rem --- Dimension L/S string templates          
-        sft11_tpls$=open_tpls$[1]; dim sft11a$:sft11_tpls$; rem Save template for conditional use
-        sft12_tpls$=open_tpls$[2]; dim sft12a$:sft12_tpls$; rem Save template for conditional use       
-    endif
-    
-rem --- Open either BM or SF OpCodes file and either PR or SF Employees file
-rem --- Conditionally open apm-01 for vendor name
-    num_files=3
-    dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
-
-    if bm$="Y" 
-        open_tables$[1]="BMC_OPCODES",  open_opts$[1]="OTA"; rem bmm-08
-    else
-        open_tables$[1]="SFC_OPRTNCOD", open_opts$[1]="OTA"; rem sfm-02
-    endif
-    if pr$="Y" 
-        open_tables$[1]="PRM_EMPLMAST", open_opts$[7]="OTA"; rem prm-01
-    else
-        open_tables$[2]="SFM_EMPLMAST", open_opts$[2]="OTA"; rem sfm-01
-    endif
-    if po$="Y" open_tables$[3]="APM_VENDMAST", open_opts$[3]="OTA"; rem apm-01
-    
-    gosub open_tables       
-
-    opcode_dev = num(open_chans$[1])
-    empcode_dev = num(open_chans$[2])
-    apm01a_dev = num(open_chans$[3])
-    
-    rem --- Dimension OpCode, EmpCode, and apm01a string templates      
-        dim opcode$:open_tpls$[1]   
-        dim empcode$:open_tpls$[2]
-        if po$="Y" dim apm01a$:open_tpls$[3]
-    return    
 
 lotserial_details: rem --- Lot/Serial Here
 rem --- Serial Numbers Here

@@ -439,9 +439,10 @@ rem --- put WO number and loc in DevObject
 [[SFE_WOMASTR.OPENED_DATE.AVAL]]
 rem --- need to see if date has been changed; if so, prompt to change in sfe-02/22/23 as well
 
+
 	prev_dt$=cvs(callpoint!.getColumnUndoData("SFE_WOMASTR.OPENED_DATE"),3)
 	new_dt$=callpoint!.getUserInput()
-	if prev_dt$<>"" and prev_dt$<>new_dt$
+	if prev_dt$<>"" and prev_dt$<>new_dt$ and callpoint!.getDevObject("new_rec")<>"Y" then
 		msg_id$="SF_CHANGE_DTS"
 		gosub disp_message
 

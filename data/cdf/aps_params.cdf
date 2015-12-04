@@ -1,3 +1,32 @@
+[[APS_PARAMS.MULTI_TYPES.AVAL]]
+rem --- Warn if Multiple AP Types is un-checked and there are already AP invoices in the system.
+	multiTypes$=callpoint!.getUserInput()
+	if multiTypes$="N" and callpoint!.getColumnData("APS_PARAMS.MULTI_TYPES")="Y" then
+		rem --- Check APE_INVOICEHDR and APT_INVOICEHDR for invoices for this firm
+		ape01_dev=fnget_dev("APE_INVOICEHDR")
+		apt01_dev=fnget_dev("APT_INVOICEHDR")
+		read(ape01_dev,key=firm_id$,dom=*next)
+		ape01_key$=key(ape01_dev,end=*next)
+		read(apt01_dev,key=firm_id$,dom=*next)
+		apt01_key$=key(apt01_dev,end=*next)
+		if pos(firm_id$=ape01_key$)=1 or pos(firm_id$=apt01_key$)=1 then
+			msg_id$="AP_CHG_MTYPE_PARAM"
+			gosub disp_message
+			if msg_opt$<>"O" then
+				callpoint!.setColumnData("APS_PARAMS.MULTI_TYPES","Y",1)
+				callpoint!.setColumnEnabled("APS_PARAMS.AP_TYPE", 0)
+				callpoint!.setStatus("ABORT")
+				break
+			endif
+		endif
+	endif
+
+rem --- Disable ap_type when using multiple AP types
+	if multiTypes$="Y" then
+		callpoint!.setColumnEnabled("APS_PARAMS.AP_TYPE", 0)
+	else
+		callpoint!.setColumnEnabled("APS_PARAMS.AP_TYPE",1)
+	endif
 [[APS_PARAMS.AREC]]
 rem --- Initialize new record
 	callpoint!.setColumnData("APS_PARAMS.CUR_1099_YR",callpoint!.getColumnData("APS_PARAMS.CURRENT_YEAR"),1)
@@ -86,6 +115,15 @@ rem --- Enable/Disable Payment Authorization
 	use_pay_auth=num(callpoint!.getUserInput())
 	gosub able_payauth
 [[APS_PARAMS.BSHO]]
+rem --- Open files
+
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="APE_INVOICEHDR",open_opts$[1]="OTA"
+	open_tables$[2]="APt_INVOICEHDR",open_opts$[2]="OTA"
+
+	gosub open_tables
+
 rem --- Disable fields based on params
 
 	dim info$[20]

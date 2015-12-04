@@ -1,15 +1,9 @@
 [[APE_PAYSELECT.VENDOR_ID.BINP]]
 rem --- Capture current value so will know in AVAL if it's changed
 	callpoint!.setDevObject("prev_vendor_id",callpoint!.getColumnData("APE_PAYSELECT.VENDOR_ID"))
-[[APE_PAYSELECT.DUE_DATE_OP.BINP]]
-rem --- Capture current value so will know in AVAL if it's changed
-	callpoint!.setDevObject("prev_due_date_op",callpoint!.getColumnData("APE_PAYSELECT.DUE_DATE_OP"))
 [[APE_PAYSELECT.DUE_DATE_DT.BINP]]
 rem --- Capture current value so will know in AVAL if it's changed
 	callpoint!.setDevObject("prev_due_date_dt",callpoint!.getColumnData("APE_PAYSELECT.DUE_DATE_DT"))
-[[APE_PAYSELECT.DISC_DATE_OP.BINP]]
-rem --- Capture current value so will know in AVAL if it's changed
-	callpoint!.setDevObject("prev_disc_date_op",callpoint!.getColumnData("APE_PAYSELECT.DISC_DATE_OP"))
 [[APE_PAYSELECT.DISC_DATE_DT.BINP]]
 rem --- Capture current value so will know in AVAL if it's changed
 	callpoint!.setDevObject("prev_disc_date_dt",callpoint!.getColumnData("APE_PAYSELECT.DISC_DATE_DT"))
@@ -333,8 +327,12 @@ rem --- Set filters on grid if value was changed
 	endif
 [[APE_PAYSELECT.DISC_DATE_OP.AVAL]]
 rem --- Set filters on grid if value was changed
-	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_disc_date_op") then
-		gosub filter_recs
+	disc_date_op$=callpoint!.getUserInput()
+	if disc_date_op$<>callpoint!.getColumnData("APE_PAYSELECT.DISC_DATE_OP") then
+		rem --- No need to filter if not doing All dates, and date hasn't been entered
+		if disc_date_op$="0" or cvs(callpoint!.getColumnData("APE_PAYSELECT.DISC_DATE_DT"),2)<>"" then
+			gosub filter_recs
+		endif
 	endif
 [[APE_PAYSELECT.PAYMENT_GRP.AVAL]]
 rem --- Set filters on grid if value was changed
@@ -343,8 +341,12 @@ rem --- Set filters on grid if value was changed
 	endif
 [[APE_PAYSELECT.DUE_DATE_OP.AVAL]]
 rem --- Set filters on grid if value was changed
-	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_due_date_op") then
-		gosub filter_recs
+	due_date_op$=callpoint!.getUserInput()
+	if due_date_op$<>callpoint!.getColumnData("APE_PAYSELECT.DUE_DATE_OP") then
+		rem --- No need to filter if not doing All dates, and date hasn't been entered
+		if due_date_op$="0" or cvs(callpoint!.getColumnData("APE_PAYSELECT.DUE_DATE_DT"),2)<>"" then
+			gosub filter_recs
+		endif
 	endif
 [[APE_PAYSELECT.VENDOR_ID.AVAL]]
 rem --- Set filters on grid if value was changed

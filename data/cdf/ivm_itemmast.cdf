@@ -153,11 +153,7 @@ rem --- Set previous value
 rem --- Set Description Segments
 
 	desc$ = pad(callpoint!.getColumnData("IVM_ITEMMAST.ITEM_DESC"), 90)
-	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_1", desc$(1, user_tpl.desc_len_01))
- 	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_2", desc$(1 + user_tpl.desc_len_01, user_tpl.desc_len_02))
-	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_3", desc$(1 + user_tpl.desc_len_01 + user_tpl.desc_len_02, user_tpl.desc_len_03))
-
-	callpoint!.setStatus("REFRESH")
+	gosub set_desc_segs
 
 rem --- Save old Bar Code and UPC Code for Synonym Maintenance
 
@@ -182,9 +178,10 @@ rem --- Set this section back into desc, if modified
 
 	if seg$ <> user_tpl.prev_desc_seg_3$ then
 		desc$(1 + user_tpl.desc_len_01 + user_tpl.desc_len_02, user_tpl.desc_len_03) = seg$
-		callpoint!.setColumnData("IVM_ITEMMAST.ITEM_DESC", desc$)
-		callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$))
-		callpoint!.setStatus("MODIFIED;REFRESH")
+		callpoint!.setColumnData("IVM_ITEMMAST.ITEM_DESC", desc$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.DESC_DISPLAY", func.displayDesc(desc$),1)
+		callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$),1)
+		callpoint!.setStatus("MODIFIED")
 	endif
 [[<<DISPLAY>>.ITEM_DESC_SEG_2.AVAL]]
 rem --- Set this section back into desc, if modified
@@ -194,9 +191,10 @@ rem --- Set this section back into desc, if modified
 
 	if seg$ <> user_tpl.prev_desc_seg_2$ then
 		desc$(1 + user_tpl.desc_len_01, user_tpl.desc_len_02) = seg$
-		callpoint!.setColumnData("IVM_ITEMMAST.ITEM_DESC", desc$)
-		callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$))
-		callpoint!.setStatus("MODIFIED;REFRESH")
+		callpoint!.setColumnData("IVM_ITEMMAST.ITEM_DESC", desc$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.DESC_DISPLAY", func.displayDesc(desc$),1)
+		callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$),1)
+		callpoint!.setStatus("MODIFIED")
 	endif
 [[<<DISPLAY>>.ITEM_DESC_SEG_1.AVAL]]
 rem --- Set this section back into desc, if modified
@@ -206,9 +204,10 @@ rem --- Set this section back into desc, if modified
 
 	if seg$ <> user_tpl.prev_desc_seg_1$ then
 		desc$(1, user_tpl.desc_len_01) = seg$
-		callpoint!.setColumnData("IVM_ITEMMAST.ITEM_DESC", desc$)
-		callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$))
-		callpoint!.setStatus("MODIFIED;REFRESH")
+		callpoint!.setColumnData("IVM_ITEMMAST.ITEM_DESC", desc$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.DESC_DISPLAY", func.displayDesc(desc$),1)
+		callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$),1)
+		callpoint!.setStatus("MODIFIED")
 	endif
 [[IVM_ITEMMAST.MSRP.AVAL]]
 if num(callpoint!.getUserInput())<0 then
@@ -544,14 +543,12 @@ callpoint!.setStatus("ABLEMAP-REFRESH")
 rem ==========================================================================
 set_desc_segs: rem --- Set the description segments
                rem      IN: desc$
-               rem     OUT: Display segments set
 rem ==========================================================================
 
-	desc$ = pad(desc$, 30)
-	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_1", desc$(1, user_tpl.desc_len_1))
-	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_2", desc$(user_tpl.desc_len_1 + 1, user_tpl.desc_len_2))
-	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_3", desc$(user_tpl.desc_len_1 + user_tpl.desc_len_2 + 1, user_tpl.desc_len_3))
-	callpoint!.setColumnData("IVM_ITEMMAST.DISPLAY_DESC", func.displayDesc(desc$, user_tpl.desc_len_1, user_tpl.desc_len_2, user_tpl.desc_len_3))
+	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_1", desc$(1, user_tpl.desc_len_01),1)
+ 	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_2", desc$(1 + user_tpl.desc_len_01, user_tpl.desc_len_02),1)
+	callpoint!.setColumnData("<<DISPLAY>>.ITEM_DESC_SEG_3", desc$(1 + user_tpl.desc_len_01 + user_tpl.desc_len_02, user_tpl.desc_len_03),1)
+	callpoint!.setColumnData("<<DISPLAY>>.DESC_DISPLAY", func.displayDesc(desc$, user_tpl.desc_len_01, user_tpl.desc_len_02, user_tpl.desc_len_03),1)
 
 return
 

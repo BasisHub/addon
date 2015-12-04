@@ -1892,10 +1892,17 @@ rem ==========================================================================
 
 		callpoint!.setColumnData("OPE_ORDHDR.SHIPTO_NO","")
 		if ship_to_type$<>callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE") then
-			rem --- Initialize for change
-			callpoint!.setColumnData("OPE_ORDHDR.SLSPSN_CODE",custdet.slspsn_code$)
-			callpoint!.setColumnData("OPE_ORDHDR.TERRITORY",custdet.territory$)
-			callpoint!.setColumnData("OPE_ORDHDR.TAX_CODE",custdet.tax_code$)
+			if custdet.slspsn_code$<>callpoint!.getColumnData("OPE_ORDHDR.SLSPSN_CODE") or
+:			custdet.territory$<>callpoint!.getColumnData("OPE_ORDHDR.TERRITORY") or
+:			custdet.tax_code$<>callpoint!.getColumnData("OPE_ORDHDR.TAX_CODE") then
+				msg_id$="OP_SHIPTO_CODE_CHGS"
+				gosub disp_message
+
+				rem --- Initialize for change
+				callpoint!.setColumnData("OPE_ORDHDR.SLSPSN_CODE",custdet.slspsn_code$)
+				callpoint!.setColumnData("OPE_ORDHDR.TERRITORY",custdet.territory$)
+				callpoint!.setColumnData("OPE_ORDHDR.TAX_CODE",custdet.tax_code$)
+			endif
 		endif
 
 		ordship_dev=fnget_dev("OPE_ORDSHIP")
