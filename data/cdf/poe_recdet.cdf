@@ -608,6 +608,7 @@ endif
 
 rem --- look at wo number; if different than it was when we entered the row, update and/or remove link in corresponding wo detail line
 
+if callpoint!.getDevObject("SF_installed")="Y" then
 	poc_linecode_dev=fnget_dev("POC_LINECODE")
 	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
 	po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
@@ -667,9 +668,10 @@ rem --- look at wo number; if different than it was when we entered the row, upd
 		endif
 	endif
 
-rem --- Re-set "start" values to current values
+	rem --- Re-set "start" values to current values
 	callpoint!.setDevObject("start_wo_no",callpoint!.getColumnData("POE_RECDET.WO_NO"))
 	callpoint!.setDevObject("start_wo_seq_ref",callpoint!.getColumnData("POE_RECDET.WK_ORD_SEQ_REF"))
+endif
 [[POE_RECDET.AGRN]]
 rem --- save current qty/price this row
 

@@ -9,12 +9,6 @@ rem --- Item synonym processing
 
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
 [[SFE_WOMATL.AGRN]]
-rem --- Set ROW_NUM
-	dim sfe_womatl$:fnget_tpl$("SFE_WOMATL")
-	wk$=fattr(sfe_womatl$,"material_seq")
-	new_row_num=1+callpoint!.getValidationRow()
-	callpoint!.setColumnData("<<DISPLAY>>.ROW_NUM",pad(str(new_row_num),dec(wk$(10,2)),"R","0"),1)
-
 rem --- Enable/disable explode field
 	gosub enable_explode
 [[SFE_WOMATL.AOPT-AUTO]]

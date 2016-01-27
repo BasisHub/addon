@@ -2190,7 +2190,6 @@ rem ==========================================================================
 	print_status$ = callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS")
 	ordinv_flag$  = callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")
 
-		 
 	if ordinv_flag$ = "O" then 
 		if print_status$ <> "Y" and !user_tpl.picklist_warned then 
 			user_tpl.picklist_warned = 1
@@ -2386,7 +2385,7 @@ rem ==========================================================================
 			ope01a.order_no$       = seq_id$
 			ope01a.ordinv_flag$    = "O"
 			ope01a.ord_taken_by$   = sysinfo.user_id$
-			ope01a.print_status$   = "N"
+			ope01a.print_status$   = "Y"
 			ope01a.reprint_flag$   = ""
 			ope01a.credit_flag$    = ""
 			ope01a.shipmnt_date$   = user_tpl.def_ship$

@@ -289,8 +289,8 @@ endif
 callpoint!.setColumnData("POE_POHDR.DROPSHIP",dropship$,1)
 gosub enable_dropship_fields
 [[POE_POHDR.CUSTOMER_ID.AVAL]]
-rem --- if dropshipping, retrieve/display specified shipto address
-
+if callpoint!.getUserInput()<>callpoint!.getColumnData("POE_POHDR.CUSTOMER_ID") then
+	rem --- if dropshipping, retrieve/display specified shipto address
 	callpoint!.setColumnData("POE_POHDR.ORDER_NO","",1)
 	callpoint!.setColumnData("POE_POHDR.SHIPTO_NO","",1)
 	callpoint!.setColumnData("POE_POHDR.DS_ADDR_LINE_1","",1)
@@ -304,6 +304,7 @@ rem --- if dropshipping, retrieve/display specified shipto address
 
 	tmp_customer_id$=callpoint!.getUserInput()
 	gosub shipto_cust;rem will refresh address w/ that from order once order# is entered
+endif
 [[POE_POHDR.ORDER_NO.AVAL]]
 rem --- if dropshipping, retrieve specified sales order and display shipto address
 

@@ -140,7 +140,7 @@ rem -- only allow if trans_type is manual (vs reversal/void)
 					print "---found rd_key$ (apt-01)..."; rem debug
 
 					if apt01a.selected_for_pay$="Y"
-						callpoint!.setMessage("AP_INV_IN_USE:Check")
+						callpoint!.setMessage("AP_INV_ON_CHK_REGSTR")
 						break
 					endif
 
@@ -367,7 +367,7 @@ rem --- Look for Open Invoice
 		print "---open invoice record found..."; rem debug
 
 		if apt01a.selected_for_pay$ = "Y" then
-			callpoint!.setMessage("AP_INV_IN_USE:Check")
+			callpoint!.setMessage("AP_INV_ON_CHK_REGSTR")
 			callpoint!.setStatus("ABORT-RECORD:["+ape02_key$+"]")
 			goto end_of_inv_aval
 		endif

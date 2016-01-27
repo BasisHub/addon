@@ -48,6 +48,10 @@ rem --- Get the IN parameters used by the procedure
 	from_type$ = sp!.getParameter("WO_TYPE_1")
 	thru_type$ = sp!.getParameter("WO_TYPE_2")
 	masks$ = sp!.getParameter("MASKS")
+    statusOpen$ = sp!.getParameter("STATUS_OPEN")
+    statusPlanned$ = sp!.getParameter("STATUS_PLANNED")
+    statusClosed$ = sp!.getParameter("STATUS_CLOSED")
+    statusQuoted$ = sp!.getParameter("STATUS_QUOTED")
 	
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -298,16 +302,16 @@ rem --- Trip Read
 		data!.setFieldValue("PRINT_COSTS",print_costs$)		
 			
 		if read_tpl.wo_status$="O"
-			stat$="**Open**"
+			stat$="**"+statusOpen$+"**"
 		else
 			if read_tpl.wo_status$="P"
-				stat$="*Planned*"
+				stat$="*"+statusPlanned$+"*"
 			else
 				if read_tpl.wo_status$="C"
-					stat$="*Closed*"
+					stat$="*"+statusClosed$+"*"
 				else
 					if read_tpl.wo_status$="Q"
-						stat$="*Quoted*"
+						stat$="*"+statusQuoted$+"*"
 					else				
 						stat$=""
 					endif

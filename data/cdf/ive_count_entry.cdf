@@ -1,3 +1,8 @@
+[[IVE_COUNT_ENTRY.ARER]]
+rem --- Display next record
+
+	gosub read_display
+	user_tpl.prev_cycle$ = physical_rec.pi_cyclecode$
 [[IVE_COUNT_ENTRY.ITEM_ID.AINV]]
 rem --- Item synonym processing
 
@@ -33,14 +38,6 @@ rem --- Serial number's count defaults to one
 	if user_tpl.this_item_lot_ser and user_tpl.lotser_flag$ = "S"
 		callpoint!.setTableColumnAttribute("IVE_COUNT_ENTRY.ACT_PHYS_CNT","DFLT","1")
 	endif
-[[IVE_COUNT_ENTRY.AREC]]
-print "AREC"; rem debug
-
-rem --- Display next record
-
-	gosub read_display
-	user_tpl.prev_cycle$ = physical_rec.pi_cyclecode$
-	print "previous cycle code set: ", user_tpl.prev_cycle$; rem debug
 [[IVE_COUNT_ENTRY.LOTSER_NO.AVAL]]
 print "LOTSER_NO:AVAL"; rem debug
 
@@ -315,17 +312,15 @@ rem ==========================================================================
 
 print "in display_record"; rem debug
 
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.WAREHOUSE_ID", physical_rec.warehouse_id$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.PI_CYCLECODE", physical_rec.pi_cyclecode$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.CUTOFF_DATE", physical_rec.cutoff_date$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.LOCATION", physical_rec.location$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.ITEM_ID", physical_rec.item_id$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.LOTSER_NO", physical_rec.lotser_no$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.FREEZE_QTY", str(physical_rec.freeze_qty))
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.COUNT_STRING", physical_rec.count_string$)
-	callpoint!.setColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT", str(physical_rec.act_phys_cnt))
-
-	callpoint!.setStatus("REFRESH")
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.WAREHOUSE_ID", physical_rec.warehouse_id$,1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.PI_CYCLECODE", physical_rec.pi_cyclecode$,1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.CUTOFF_DATE", physical_rec.cutoff_date$,1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.LOCATION", physical_rec.location$,1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.ITEM_ID", physical_rec.item_id$,1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.LOTSER_NO", physical_rec.lotser_no$,1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.FREEZE_QTY", str(physical_rec.freeze_qty),1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.ACT_PHYS_CNT", str(physical_rec.act_phys_cnt),1)
+	callpoint!.setColumnData("IVE_COUNT_ENTRY.COUNT_STRING", physical_rec.count_string$,1)
 
 	user_tpl.entered_flag$ = physical_rec.entered_flag$
 	user_tpl.lotser_item$  = physical_rec.lotser_item$
@@ -334,6 +329,7 @@ print "in display_record"; rem debug
 	rem count$ = physical_rec.count_string$
 	rem gosub parse_count
 
+	callpoint!.setFocus("IVE_COUNT_ENTRY.COUNT_STRING",0)
 	return
 
 

@@ -200,7 +200,7 @@ rem --- Validate entered lot/serial#
 	gosub valid_ls
 
 	if !(failed) then 
-		callpoint!.setColumnData("IVE_TRANSFER.UNIT_COST", str(ls_rec.unit_cost:user_tpl.cost_mask$))
+		callpoint!.setColumnData("IVE_TRANSFER.UNIT_COST", str(ls_rec.unit_cost))
 		qty = num( callpoint!.getColumnData("IVE_TRANSFER.TRANS_QTY") )
 		gosub display_ext
 	endif
@@ -248,7 +248,7 @@ rem		util.enableField(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 
 		rem --- Not lotted or serialized
 		callpoint!.setColumnData("IVE_TRANSFER.LOTSER_NO", "")
-		callpoint!.setColumnData("IVE_TRANSFER.UNIT_COST", str(ivm02a.unit_cost:user_tpl.cost_mask$))
+		callpoint!.setColumnData("IVE_TRANSFER.UNIT_COST", str(ivm02a.unit_cost))
 
 		qty = num( callpoint!.getColumnData("IVE_TRANSFER.TRANS_QTY") )
 		gosub display_ext

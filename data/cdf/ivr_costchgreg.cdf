@@ -1,3 +1,5 @@
+[[IVR_COSTCHGREG.<CUSTOM>]]
+#include std_missing_params.src
 [[IVR_COSTCHGREG.ASVA]]
 rem --- Close file so it can be locked in the register
 
@@ -28,8 +30,22 @@ call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[a
 
 rem --- Open file
 
-	num_files=1
+	num_files=2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVE_COSTCHG", open_opts$[1]="OTA"
+	open_tables$[2]="IVS_PARAMS",   open_opts$[2]="OTA"
 
 	gosub open_tables
+
+	ivs_params_dev = num(open_chans$[2])
+	dim ivs_params_rec$:open_tpls$[2]
+
+rem --- Get parameter records
+
+	find record(ivs_params_dev, key=firm_id$+"IV00", dom=std_missing_params) ivs_params_rec$
+
+	if ivs_params_rec.cost_method$ <> "S" then
+		callpoint!.setMessage("IV_NO_STD_COST")
+		callpoint!.setStatus("EXIT")
+		break
+	endif

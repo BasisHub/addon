@@ -37,6 +37,10 @@ rem --- Get the IN parameters used by the procedure
 	masks$ = sp!.getParameter("MASKS")
 	report_type$ = sp!.getParameter("REPORT_TYPE")
 	print_costs$ = sp!.getParameter("PRINT_COSTS")
+    statusReq$ = sp!.getParameter("STATUS_REQ")
+    statusPO$ = sp!.getParameter("STATUS_PO")
+    statusRcpt$ = sp!.getParameter("STATUS_RCPT")
+    statusNone$ = sp!.getParameter("STATUS_NONE")
 	
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -191,16 +195,16 @@ rem --- Trip Read
 		
 		switch pos(read_tpl.po_status$="RPC")
 			case 1
-				postatus$="Req"
+				postatus$=statusReq$
 			break
 			case 2
-				postatus$="PO"
+				postatus$=statusPO$
 			break
 			case 3
-				postatus$="Rcpt"
+				postatus$=statusRcpt$
 			break
 			case default
-				postatus$="None"			
+				postatus$=statusNone$			
 			break
 		swend
 		

@@ -143,8 +143,8 @@ if cvs(callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID"),3)<>""
 	endif			
 endif
 [[POE_REQHDR.CUSTOMER_ID.AVAL]]
-rem --- if dropshipping, retrieve specified sales order and display shipto address
-
+if callpoint!.getUserInput()<>callpoint!.getColumnData("POE_REQHDR.CUSTOMER_ID") then
+	rem --- if dropshipping, retrieve specified sales order and display shipto address
 	callpoint!.setColumnData("POE_REQHDR.ORDER_NO","")
 	callpoint!.setColumnData("POE_REQHDR.SHIPTO_NO","")
 	callpoint!.setColumnData("POE_REQHDR.DS_ADDR_LINE_1","")
@@ -160,6 +160,7 @@ rem --- if dropshipping, retrieve specified sales order and display shipto addre
 	gosub shipto_cust;rem will refresh address w/ that from order once order# is entered
 	
 	callpoint!.setStatus("REFRESH")
+endif
 	
 [[POE_REQHDR.DROPSHIP.AVAL]]
 rem --- if turning off dropship flag, clear devObject items
