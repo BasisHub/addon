@@ -242,3 +242,5 @@ rem --- Additional Init
 rem --- Item synonym processing
 
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
+
+	callpoint!.setFocus("BME_PRODUCT.ITEM_ID")

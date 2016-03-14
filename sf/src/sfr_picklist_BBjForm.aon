@@ -26,10 +26,6 @@ rem --- Retrieve sysinfo data
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
     firm_id$=sysinfo.firm_id$
 
-rem --- Set Barista Soft Lock on the work file (can't do traditional lock because file is used in SPROC process)
-
-    call stbl("+DIR_SYP")+"bac_lock_record.bbj","SFW_PICKLCTN","","L","M",0,rd_table_chans$[all],lock_status$
-    if lock_status$<>"" then goto std_exit
 
 rem --- Open/Lock files
 
@@ -53,7 +49,7 @@ rem --- Open/Lock files
 	files$[16]="sfw-13",ids$[16]="SFW_PICKLCTN"
 	files$[17]="sfe_wotrans",ids$[17]="SFE_WOTRANS"
 	files$[18]="sfe-02",ids$[18]="SFE_WOOPRTN"
-	options$[16]="C"
+	options$[16]="CL"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -86,6 +82,10 @@ rem --- Dimension string templates
 	dim sfe25a$:templates$[13],sfm10a$:templates$[14],sfs01a$:templates$[15]
 	dim sfw13a$:templates$[16],sfe02a$:templates$[18]
 
+rem --- Assign form input values to local variables
+
+    sort_seq$=option!.getOptionData("REPORT_SEQ")
+
 rem --- Retrieve parameter records
 
     ars01a_key$=firm_id$+"AR00"
@@ -103,27 +103,50 @@ rem --- Get correct Op Code Maintenance file open
 		bm$=info$[20]
 	endif
 
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	if bm$<>"Y"
+		open_tables$[1]="SFC_OPRTNCOD",open_opts$[1]="OTA"
+	else
+		open_tables$[1]="BMC_OPCODES",open_opts$[1]="OTA"
+	endif
+	gosub open_tables
+
+	op_code=num(open_chans$[1])
+	dim op_code$:open_tpls$[1]
+
 rem --- Parameters
 
-    ivs01_precision$=ivs01a.precision$
+    ivs01_precision=num(ivs01a.precision$)
 
 rem --- Initialize Data
 
+	headings=2
+    dim desclen[3]
+    l9=500
+    dim j0$(20,"0"),j$(80,"-"),j1$(10,"_"),x0$(30),y[13]
+
+	call pgmdir$+"adc_getmask.aon","","SF","A","",m1$,0,m1
 	call pgmdir$+"adc_getmask.aon","","SF","U","",m2$,0,m2
+	call pgmdir$+"adc_getmask.aon","","SF","R","",m3$,0,m3
 	call pgmdir$+"adc_getmask.aon","","AR","I","",cust_mask$,0,custmask
- 
+    desclen[1]=num(ivs01a.desc_len_01$)
+    desclen[2]=num(ivs01a.desc_len_02$)
+    desclen[3]=num(ivs01a.desc_len_03$)  
     more=1
 
 rem --- Retrieve key templates
 
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATL","PRIMARY",sfe22b_key_tpl$,rd_table_chans$[all],status$
     call stbl("+DIR_SYP")+"bac_key_template.bbj","SFE_WOMATDTL","PRIMARY",sfe23a_key_tpl$,rd_table_chans$[all],status$
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","SFW_PICKLCTN","PRIMARY",sfw13a_key_tpl$,rd_table_chans$[all],status$
 
 rem --- Run Overlay
 
-    gosub create_work_file
+    gosub creat_xref
     run pgmdir$+"sfr_picklist_o1.aon"
 
-create_work_file: rem --- Create Work File
+creat_xref: rem --- Create Cross Reference File
 
     dim sfe23a_key$:sfe23a_key_tpl$
 

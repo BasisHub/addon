@@ -1,3 +1,89 @@
+[[APE_MANCHECKHDR.CHECK_NO.AVAL]]
+rem --- Look in entry file for this check number.
+rem --- If found, use setStatus("RECORD") to call it up. (bug 8510)
+rem --- If not found, then look in check history.
+rem --- If found there, then offer to do reversal or re-use check number, depending on check type.
+rem --- (if open Computer or Manual check, can reverse; if already a Void or Reversal, offer to reuse check#)
+
+	batch_no$=callpoint!.getColumnData("APE_MANCHECKHDR.BATCH_NO")
+	ap_type$=callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
+	check_no$=callpoint!.getUserInput()
+	tmpky$=""
+
+	ape_mancheckhdr=fnget_dev("APE_MANCHECKHDR")
+
+	read (ape_mancheckhdr,key=firm_id$+batch_no$+ap_type$+check_no$,dom=*next)
+	tmpky$=key(ape_mancheckhdr,end=*next)
+	if pos(firm_id$+batch_no$+ap_type$+check_no$=tmpky$)=1
+		callpoint!.setStatus("RECORD:["+tmpky$+"]")
+		break
+	endif
+
+rem --- not found in entry file, so see if in open checks
+
+	if cvs(check_no$,3)<>""
+	rem --- above used to be if user_tpl.open_check$<>"Y" and cvs(check_no$,3)<>"" - disable the flag check so it always asks
+		apt05_dev = fnget_dev("APT_CHECKHISTORY")
+		dim apt05a$:fnget_tpl$("APT_CHECKHISTORY")
+
+		read (apt05_dev,key=firm_id$+ap_type$+check_no$+vendor_id$,dom=*next)
+		readrecord (apt05_dev,end=*next)apt05a$
+
+		if apt05a.firm_id$=firm_id$  and apt05a.ap_type$=ap_type$  and apt05a.check_no$=check_no$
+
+			user_tpl.open_check$="Y"; rem don't check again - disabled for bug 8510
+			vendor_id$=apt05a.vendor_id$
+
+			rem --- Reverse? (Check is Manual or Computer generated)
+
+			if pos(apt05a.trans_type$="CM") then
+				msg_id$="AP_REVERSE"
+				msg_opt$=""
+				gosub disp_message
+
+				if msg_opt$="Y"
+					callpoint!.setColumnData("APE_MANCHECKHDR.TRANS_TYPE","R")
+					callpoint!.setColumnUndoData("APE_MANCHECKHDR.TRANS_TYPE","R")
+					ctl_name$="APE_MANCHECKHDR.AP_TYPE"
+					ctl_stat$="D"
+					gosub disable_fields
+					ctl_name$="APE_MANCHECKHDR.CHECK_NO"
+					ctl_stat$="D"
+					gosub disable_fields
+					ctl_name$="APE_MANCHECKHDR.TRANS_TYPE"
+					ctl_stat$="D"
+					gosub disable_fields
+					ctl_name$="APE_MANCHECKHDR.VENDOR_ID"
+					gosub disable_fields
+					callpoint!.setColumnData("APE_MANCHECKHDR.CHECK_DATE",apt05a.check_date$)
+					callpoint!.setColumnData("APE_MANCHECKHDR.VENDOR_ID",vendor_id$)
+					tmp_vendor_id$=vendor_id$
+					gosub disp_vendor_comments
+					gosub disable_grid
+					callpoint!.setStatus("MODIFIED")
+				else
+					callpoint!.setStatus("ABORT")
+				endif
+			else
+				rem --- Recycle? (check is Void or Reversed)
+				
+				if pos(apt05a.trans_type$="VR") then
+
+					msg_id$="AP_OPEN_CHK"
+					msg_opt$=""
+					gosub disp_message
+
+					if msg_opt$="Y"
+						user_tpl.reuse_chk$="Y"
+						callpoint!.setColumnData("APE_MANCHECKHDR.TRANS_TYPE","M")
+						callpoint!.setStatus("REFRESH")
+					else
+						callpoint!.setStatus("ABORT")
+					endif
+				endif
+			endif
+		endif
+	endif
 [[APE_MANCHECKHDR.ADEL]]
 rem --- Verify all G/L Distribution records get deleted
 
@@ -453,92 +539,6 @@ rem --- Get Payment Authorization parameter record
 	readrecord(aps_payauth,key=firm_id$+"AP00",dom=*next)aps_payauth$
 	callpoint!.setDevObject("use_pay_auth",aps_payauth.use_pay_auth)
 	callpoint!.setDevObject("scan_docs_to",aps_payauth.scan_docs_to$)
-[[APE_MANCHECKHDR.ARNF]]
-rem --- Look in check history for this check number
-
-	trans_type$ = callpoint!.getColumnData("APE_MANCHECKHDR.TRANS_TYPE")
-	check_no$   = callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")
-	ap_type$    = callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
-	vendor_id$  = callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
-
-	if user_tpl.open_check$<>"Y" and trans_type$<>"R" and cvs(check_no$,3)<>"" then
-		apt05_dev = fnget_dev("APT_CHECKHISTORY")
-		dim apt05a$:fnget_tpl$("APT_CHECKHISTORY")
-
-		read (apt05_dev,key=firm_id$+ap_type$+check_no$+vendor_id$,dom=*next)
-		readrecord (apt05_dev,end=*next)apt05a$
-
-		if	apt05a.firm_id$   = firm_id$  and
-:			apt05a.ap_type$   = ap_type$  and
-:			apt05a.check_no$  = check_no$ and
-:			apt05a.vendor_id$ = vendor_id$
-:		then
-			user_tpl.open_check$="Y"; rem don't check again
-
-			rem --- Reverse? (Check is Manual or Computer generated)
-
-			if pos(apt05a.trans_type$="CM") then
-				msg_id$="AP_REVERSE"
-				msg_opt$=""
-				gosub disp_message
-
-				if msg_opt$="Y"
-					callpoint!.setColumnData("APE_MANCHECKHDR.TRANS_TYPE","R")
-					callpoint!.setColumnUndoData("APE_MANCHECKHDR.TRANS_TYPE","R")
-					ctl_name$="APE_MANCHECKHDR.AP_TYPE"
-					ctl_stat$="D"
-					gosub disable_fields
-					ctl_name$="APE_MANCHECKHDR.CHECK_NO"
-					ctl_stat$="D"
-					gosub disable_fields
-					ctl_name$="APE_MANCHECKHDR.TRANS_TYPE"
-					ctl_stat$="D"
-					gosub disable_fields
-					ctl_name$="APE_MANCHECKHDR.VENDOR_ID"
-					gosub disable_fields
-					callpoint!.setColumnData("APE_MANCHECKHDR.CHECK_DATE",apt05a.check_date$)
-					callpoint!.setColumnData("APE_MANCHECKHDR.VENDOR_ID",vendor_id$)
-					tmp_vendor_id$=vendor_id$
-					gosub disp_vendor_comments
-					gosub disable_grid
-					ape_mancheckhdr=fnget_dev("APE_MANCHECKHDR")
-					dim ape_checktpl$:fnget_tpl$("APE_MANCHECKHDR")
-					ape_checktpl.firm_id$=firm_id$
-					ape_checktpl.ap_type$=ap_type$
-					ape_checktpl.check_no$=check_no$
-					ape_checktpl.vendor_id$=vendor_id$
-					ape_checktpl.trans_type$="R"
-					ape_checktpl.check_date$=apt05a.check_date$
-					ape_checktpl.vendor_name$=apt05a.vendor_name$
-					ape_checktpl.batch_no$=callpoint!.getColumnData("APE_MANCHECKHDR.BATCH_NO")
-					ape_checktpl$=field(ape_checktpl$)
-rem					write record(ape_mancheckhdr) ape_checktpl$;rem Advisory Locking; no need to write this manually, let Barista do it, after which it'll extract it
-					callpoint!.setStatus("MODIFIED")
-				else
-					callpoint!.setStatus("ABORT")
-				endif
-
-			else
-
-				rem --- Recycle? (check is Void or Reversed)
-				
-				if pos(apt05a.trans_type$="VR") then
-
-					msg_id$="AP_OPEN_CHK"
-					msg_opt$=""
-					gosub disp_message
-
-					if msg_opt$="Y"
-						user_tpl.reuse_chk$="Y"
-						callpoint!.setColumnData("APE_MANCHECKHDR.TRANS_TYPE","M")
-						callpoint!.setStatus("REFRESH")
-					else
-						callpoint!.setStatus("ABORT")
-					endif
-				endif
-			endif
-		endif
-	endif
 [[APE_MANCHECKHDR.AREC]]
 print "Head: AREC (After New Record)"; rem debug
 print "open_check$ reset"; rem debug
