@@ -38,6 +38,10 @@ rem ==========================================================================
 			break
 		case 3
 			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", Translate!.getTranslation("AON_ORDER_WILL_BE_RELEASED"))
+			if callpoint!.getDevObject("cred_action_from_print_now")="Y"
+				callpoint!.setColumnData("OPE_CREDITACTION.PRINT_AFTER_REL","Y",1)
+				callpoint!.setDevObject("cred_action_from_print_now","")
+			endif
 			break
 		case 4
 			callpoint!.setColumnData("OPE_CREDITACTION.CREDIT_STATUS", Translate!.getTranslation("AON_ORDER_WILL_BE_DELETED"))
@@ -56,6 +60,7 @@ rem ==========================================================================
 	run_by$   = callpoint!.getDevObject("run_by")
 	cust_id$  = callpoint!.getDevObject("cust_id")
 	order_no$ = callpoint!.getDevObject("order_no")
+	pick_or_quote$ = callpoint!.getDevObject("pick_or_quote")
 
 	if cvs(cust_id$,2) <> "" and cvs(order_no$, 2) <> "" then
 
@@ -64,29 +69,46 @@ rem ==========================================================================
 		file_name$="OPE_ORDHDR"
 		ordhdr_dev = fnget_dev(file_name$)
 		dim ordhdr_rec$:fnget_tpl$(file_name$)
-		read(ordhdr_dev, key=firm_id$+"  "+cust_id$+order_no$,dom=*next)
+
+		read(ordhdr_dev, key=firm_id$+"E"+"  "+cust_id$+order_no$,knum="AO_STATUS",dom=*next)
 		while 1
 			ordhdr_key$=key(ordhdr_dev,end=*break)
-			if pos(firm_id$+"  "+cust_id$+order_no$=ordhdr_key$)<>1 then break
-			if pos(ordhdr_rec.trans_status$="ER") then
+			if pos(firm_id$+"E"+"  "+cust_id$+order_no$=ordhdr_key$)=1
 				extract record (ordhdr_dev) ordhdr_rec$; rem Advisory Locking
 				ordhdr_rec.credit_flag$  = "R"
 				ordhdr_rec.reprint_flag$ = "Y"
 				ordhdr_rec$ = field(ordhdr_rec$)
 				write record (ordhdr_dev) ordhdr_rec$
-				callpoint!.setStatus("SETORIG")
+				rem callpoint!.setStatus("SETORIG")
 				break
-			else
-				read(ordhdr_dev)
 			endif
 		wend
 
 	rem --- Which print program to run?
 
 		if run_by$ = "order" then
-			call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand_no_col_data", cust_id$, order_no$, callpoint!, table_chans$[all], status
-			if status = 999 then goto std_exit
+
+			user_id$=stbl("+USER_ID")
+		 
+			dim dflt_data$[3,1]
+			dflt_data$[1,0]="CUSTOMER_ID"
+			dflt_data$[1,1]=cust_id$
+			dflt_data$[2,0]="ORDER_NO"
+			dflt_data$[2,1]=order_no$
+			dflt_data$[3,0]="INVOICE_TYPE"
+			dflt_data$[3,1]=pick_or_quote$
+		 
+			call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:			                       "OPR_ODERPICKDMD",
+:			                       user_id$,
+:			                       "",
+:			                       "",
+:			                       table_chans$[all],
+:			                       "",
+:			                       dflt_data$[all]
+
 		else
+			rem --- should not be called by Invoice Entry, since Invoice Entry doesn't do the credit check per bug 4603
 			if run_by$ = "invoice" then
 				call stbl("+DIR_PGM")+"opc_invoice.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
 				if status = 999 then goto std_exit

@@ -6,12 +6,40 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
-on_demand: rem --- Entry point for on-demand picklist    
+rem --- Send in a list of customer IDs and order numbers to print.
+
+rem --- 1/2016 ------------------------
+rem --- Replaced BBjForm-based OP Pick List Print with Jasper-based
+rem --- BBjForm-based version of opc_picklist.aon > opc_picklist_BBjForm.aon
+
+rem --- Batch mode option entry form runs opr_picklist.aon
+rem --- On-demand option entry form w/in Order Entry or Credit Mgmt runs opr_pick_demand.aon
+rem --- Both opr_picklist.aon and opr_pick_demand.aon call opc_picklist.aon 
+
+rem --- There are three sprocs and three main .jaspers for this enhancement:
+rem ---    - OPPICKLIST_HDR.prc / OPPickListHdr.jasper
+rem ---    - OPPICKLIST_DET.prc / OPPickListDet.jasper
+rem ---    - OPPICKLIST_DET_LOTSER.prc / OPPickListDet-LotSer.jasper
+
+rem --- In addition, there is a Master jasper to contain everything in a batch run,
+rem ---   a PickPrint jasper to contain pick lists for hard copy (or manual email, if desired),
+rem ---   and a QuotePrint jasper to contain quotes for hard copy (i.e., if not going out via rpt ctl)
+
+rem ----------------------------------------------------------------------------
+rem --- Design IDEA is this: create Master doc containing everything in the batch run
+rem --- Create both a QuotePrint doc and a PickPrint doc
+rem --- For quotes, check to see if rpt control should be used
+rem --- For quotes, save individual pdf's, and append to master and/or QuotePrint as indicated by rpt control
+rem --- For pick lists, don't check rpt control and don't bother to save individual pdf's
+rem --- For pick lists, append to master and the PickPrint doc
+rem --- For On-demand, don't bother with Master, QuotePrint or PickPrint 
+
+on_demand: rem --- Entry point for on-demand picklist (whether via Order Entry or the Credit Action/Credit Manager)   
 
     setesc std_error
     seterr std_error
-    
-    enter cust_id$, order_no$, callpoint!, table_chans$[all], status
+ 
+    enter cust_id$, order_no$, option!, table_chans$[all], status
     
     custIds! = BBjAPI().makeVector()
     orderNos! = BBjAPI().makeVector()
@@ -22,23 +50,6 @@ on_demand: rem --- Entry point for on-demand picklist
     type = 1	
     goto done_with_enter
 
-on_demand_no_col_data: rem --- Entry point for on-demand picklist from Credit Management
-
-    setesc std_error
-    seterr std_error
-    
-    enter cust_id$, order_no$, callpoint!, table_chans$[all], status
-    
-    custIds! = BBjAPI().makeVector()
-    orderNos! = BBjAPI().makeVector()
-
-    custIds!.addItem( cust_id$ )
-    orderNos!.addItem( order_no$ )   
-    
-    type = 1
-	no_col_data = 1
-    goto done_with_enter
-
 batch_pick: rem --- Batch printing of orders
 
     setesc std_error
@@ -46,34 +57,43 @@ batch_pick: rem --- Batch printing of orders
 
     enter custIds!, orderNos!, option!, printed_orders$, table_chans$[all], status
     
-    type = 2	
-	
+    type = 2
+
 done_with_enter:
 
 rem --- Types of calls
 
     on_demand  = 1
     batch_pick  = 2
-	
+    
 rem --- Use statements and Declares
 
-	use ::ado_util.src::util
+    use ::bbjasper.bbj::BBJasperReport
+    use ::bbjasper.bbj::BBJasperViewerWindow
+    use ::bbjasper.bbj::BBJasperViewerControl
+
+	declare BBJasperReport BBjReport!
+	declare BBJasperViewerWindow BBjReportWindow! 
+    
+	params! = new java.util.HashMap()
+	master_params! = new java.util.HashMap()
+    pick_print_params! = new java.util.HashMap()
+    quote_print_params! = new java.util.HashMap()
+		
+    ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
+    screen_width  = ScreenSize!.width - 200; rem keep it in the MDI w/ no scroll bars
+    screen_height = ScreenSize!.height - 100
+	
     use ::ado_func.src::func
-    use ::ado_pdf.src::PDFHelper
+	use ::ado_util.src::util
+    use ::ado_rptControl.src::ReportControl
     use ::sys/prog/bao_callpoint.bbj::Callpoint
     use ::sys/prog/bao_option.bbj::Option
-
-    use java.awt.Font
-    use java.lang.Float
-    use javax.print.attribute.HashPrintRequestAttributeSet
-    use javax.print.attribute.standard.MediaPrintableArea
-    use javax.print.attribute.standard.MediaSizeName
-    use javax.print.attribute.standard.OrientationRequested
     
     declare Callpoint callpoint!
     declare Option option!
     declare BBjVector custIds!
-    declare BBjVector orderNos!	
+    declare BBjVector orderNos!
 
 rem --- Retrieve the program path
 
@@ -81,13 +101,7 @@ rem --- Retrieve the program path
     pgmdir$=stbl("+DIR_PGM",err=*next)
     sypdir$=""
     sypdir$=stbl("+DIR_SYP",err=*next)
-    
-rem --- Retrieve sysinfo data
 
-    dim sysinfo$:stbl("+SYSINFO_TPL")
-    sysinfo$=stbl("+SYSINFO")
-    firm_id$=sysinfo.firm_id$
-	
 rem --- Set document Directory
 
     docdir$=""
@@ -103,21 +117,72 @@ rem --- Anything to print?
 
     if custIds!.size() = 0 or orderNos!.size() = 0 then
 		status=998
-        goto nothing_printed
+        goto all_done
     endif
 
 rem --- Derive/set path and filename for logo to go on form
 
-    logofile$ = ""
-    start_block = 1
-    curr_path$=dsk("")+dir("")
-
-    if start_block then   
-        chdir stbl("+CUST_IMAGES",err=*endif),err=*endif
-        logofile$="file:"+dsk("")+dir("")+stbl("+FORM_LOGO",err=*endif)
+	logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+    logo_filename$=""
+    if logo_file$<>""
+        logo_chn=unt
+        open (logo_chn,err=*endif)logo_file$
+        logo_filename$=fid(logo_chn)(9)
+        close (logo_chn)
     endif
 
-    chdir curr_path$
+rem --- Set Report Name & Subreport directory
+
+    reportDir$ = stbl("+DIR_REPORTS",err=*next)   
+    temp = unt
+    open (temp)reportDir$
+    reportDir$ = fid(temp)(9)+"/"
+    close (temp)
+    reportBaseName$ = "OPPickListHdr"
+    filename$ = reportDir$ + reportBaseName$ + ".jasper"
+    masterBaseName$ = "OPPickListMaster"
+    master_filename$ = reportDir$ + masterBaseName$+".jasper"
+    pickPrintBaseName$ = "OPPickListPickPrint"
+    pick_print_filename$ = reportDir$ + pickPrintBaseName$+".jasper"
+    quotePrintBaseName$ = "OPPickListQuotePrint"
+    quote_print_filename$ = reportDir$ + quotePrintBaseName$+".jasper"    
+
+    declare BBJasperReport report!
+    
+rem --- Check for user authentication; create connection string in url$
+
+    dbserver$="localhost"
+    dbsqlport$=":2001"
+    dbtimeout$="&socket_timeout=5000"
+  
+    dbserver$=stbl("+DBSERVER",err=*next)
+    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
+    dbssl=num(stbl("+DBSSL",err=*next))
+    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+    
+    if dbssl
+        dbssl$="&ssl=true"
+    else
+        dbssl$="&ssl=false"
+    endif
+
+    url_user$="&user=guest"
+    if stbl("!DSUDDB",err=*endif)<>"" then
+        url_user$=""
+    endif
+	
+	dbname$ = stbl("+DBNAME")
+	dbname_api$ = stbl("+DBNAME_API")
+    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
+        url$ = dbname$
+    else
+		if pos("jdbc:"=cvs(dbname$,8))=1 then			
+			url$=dbname$+url_user$+dbssl$+dbtimeout$
+		else
+			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
+		endif
+    endif        
+
     
 rem --- Open all files
 
@@ -197,117 +262,90 @@ rem --- Get Parameters
     call pgmdir$+"adc_address.aon",remit$,24,3,9,30
     remit$=ars01b.remit_name$+remit$
 
+	comp_addrLine_len = 30
     comp$=ars01b.addr_line_1$+ars01b.addr_line_2$+ars01b.city$+ars01b.state_code$+ars01b.zip_code$
     call pgmdir$+"adc_address.aon",comp$,24,3,9,30
 	comp$=ars01b.name$+comp$
-	   
-rem --- Init PDF printing 
-
-    declare Font textfont!
-    declare Font boldfont!
-    declare Font italicfont!
-    declare Font largefont!
-    declare BBjColor white!
-    declare BBjColor black!
-    declare BBjColor light_gray!
-    declare Font smallfont!
-
-    textfont!   = new Font("Times New Roman", Font.PLAIN, 10)
-    italicfont! = new Font("Times New Roman", Font.ITALIC, 10)
-    boldfont!   = new Font("Arial", Font.BOLD, 10)
-    largefont!  = new Font("Arial", Font.BOLD, 14)
-    smallfont!  = new Font("Times New Roman", Font.PLAIN, 8)
-
-    white! = BBjAPI().makeColor("WHITE")
-    black! = BBjAPI().makeColor("BLACK")
-    light_gray! = BBjAPI().makeColor(224, 224, 224)
-
-rem --- Setup PDF printer and print area   
-
-    declare HashPrintRequestAttributeSet requestAttributes!
-    declare MediaPrintableArea a!
-    declare Float x!
-    declare Float y!
-    declare Float w!
-    declare Float h!
-
-    requestAttributes! = new HashPrintRequestAttributeSet()
-    requestAttributes!.add(MediaSizeName.NA_LETTER)
-    requestAttributes!.add(OrientationRequested.PORTRAIT)
-
-    units = MediaPrintableArea.INCH
-    x! = new Float(0.25).floatValue()
-    y! = new Float(0.25).floatValue()
-    w! = new Float(8.0).floatValue()
-    h! = new Float(10.5).floatValue()
-    a! = new MediaPrintableArea(x!,y!,w!,h!,units)
-
-    requestAttributes!.add(a!)
-
-rem --- Create PDF printer, set attributes, and create PDF helper object
-
-    declare BBjPrinter myBBjPrinter!
-    declare BBjForm docPrint!
-    declare PDFHelper pdf!
-
-    myBBjPrinter! = BBjAPI().getBBjPrinter(1,err=*next)
-    if myBBjPrinter!=null()
-		status=998
-        msg_id$="AD_NOPRINTER"
-        gosub disp_message
-        goto std_exit
-    endif
-    
-    myBBjPrinter!.setAttributes(requestAttributes!)
-    docPrint! = myBBjPrinter!.getForm(0)
-    pdf! = new PDFHelper(textfont!)
 	
-rem --- Inits
+rem --- Initialize Data
 
+    more=1
     precision num(params_rec.precision$)
 	
-	address = 30
-    more = 1
-    total = 0
-    start_block = 1
-	line = 0
-	
-    call pgmdir$+"adc_getmask.aon","","AR","I","",m0$,0,m0
-    call pgmdir$+"adc_getmask.aon","","IV","A","",m1$,0,m1
-    call pgmdir$+"adc_getmask.aon","","IV","U","",m2$,0,m2
-    call pgmdir$+"adc_getmask.aon","","IV","C","",m3$,0,m3
-    call pgmdir$+"adc_getmask.aon","","IV","P","",m4$,0,m4
-    m1=len(m1$)
-    m2=len(m2$)
-    m3=len(m3$)
-    m4=len(m4$)
- 
-    when$=sysinfo.system_date$
-    dim x4$(400)
+    call pgmdir$+"adc_getmask.aon","","AR","I","",cust_mask$,0,cust_size
+    call pgmdir$+"adc_getmask.aon","","AR","A","",amt_mask$,0,amt_mask_size
+    call pgmdir$+"adc_getmask.aon","","AR","U","",qty_mask$,0,qty_mask
+    call pgmdir$+"adc_getmask.aon","","IV","P","",price_mask$,0,price_mask 
     
+    ext_mask$ = amt_mask$
+
+    call pgmdir$+"adc_sizemask.aon",price_mask$,price_mask,11,11
+    call pgmdir$+"adc_sizemask.aon",ext_mask$,ext_mask,12,12
+
+	rem --- Make the 'Patterns' used to mask in iReports from Addon masks
+	rem       examples:
+	rem          ##0.00;##0.00-   Includes negatives with minus at the end
+	rem          ##0.00;-##0.00   Includes negatives with minus at the front
+	rem          ##0.00;##0.00-   Positives only
+
+	qty_mask_pattern$=fngetPattern$(qty_mask$)
+	amt_mask_pattern$=fngetPattern$(amt_mask$)
+	ext_mask_pattern$=fngetPattern$(ext_mask$)
+	
     func.setLen1( int(num(params_rec.desc_len_01$)) )
     func.setLen2( int(num(params_rec.desc_len_02$)) )
     func.setLen3( int(num(params_rec.desc_len_03$)) )
 	
     nothing_printed = 1
+    tot_picks = 0
+    tot_quotes = 0
     
     if type = on_demand then
-        alias$ = callpoint!.getAlias()
+        alias$ = option!.getAlias()
+        rptctl_alias$="OPR_ODERPICKLST";rem --- use actual alias$ (i.e., OPE_ORDHDR) when putting in doc archive so you know it was an on-demand or batch, but always use OPR_PICKLIST for report control so you don't need two report control records for each customer to handle on-demand vs. batch.        
+		restart$ = ""
+		restart_customer$ = ""
+        print_prices$=option!.getOptionData("PRINT_PRICES")
+        whse$=""
+        print_what$=""
+        send_via_rpt_ctl$ = option!.getOptionData("SEND_VIA_RPT_CTL")
+		master_document=0
+        pick_print_document=0
+        quote_print_document=0
     else
         alias$ = option!.getAlias()
+        rptctl_alias$ = alias$
+		restart$ = option!.getOptionData("RESTART")
+		restart_customer$ = option!.getOptionData("CUSTOMER_ID")       
 		print_prices$=option!.getOptionData("PRINT_PRICE")   
         whse$=option!.getOptionData("WAREHOUSE_ID")
+        print_what$=option!.getOptionData("PRINT_LIST");rem quotes, pick lists, or both
+		master_document=1
+        pick_print_document=1
+        quote_print_document=1
     endif
+
+    emailFax! = BBjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+rem --- Will only be using rpt ctl for quotes, not for pick lists
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")   
     	
 rem --- Is this company multi-warehouse?
     
-    mult_wh=0
+    mult_wh$="N"
+    start_block=1
     read (whsecode_dev, key=firm_id$+"C", dom=*next)
 	read (whsecode_dev)
 
     if start_block then
         read record (whsecode_dev, end=*endif) whsecode_rec$
-        if whsecode_rec.firm_id$ = firm_id$ and whsecode_rec.record_id_c$ = "C" then mult_wh=1
+        if whsecode_rec.firm_id$ = firm_id$ and whsecode_rec.record_id_c$ = "C" then mult_wh$="Y"
     endif
 
     call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Printing","",0,0,1,0,status
@@ -319,47 +357,27 @@ rem --- Main Read
     
         cust_id$ = str( custIds!.getItem(next_item) )
         order_no$ = str( orderNos!.getItem(next_item) )
-
-		if type = on_demand
-            if no_col_data
-                dim ope01a$:fattr(ope01a$)
-                extract record (ordhdr_dev, key=firm_id$+"E"+"  "+cust_id$+order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=std_exit) ope01a$; rem Advisory Locking
-            else
-                ope01a$ = util.copyFields(fattr(ope01a$), callpoint!)
-            endif
-		else
-			if pos(cust_id$+order_no$=printed_orders$,len(cust_id$)+len(order_no$))=0 goto next_read
-            dim ope01a$:fattr(ope01a$)
-			extract record (ordhdr_dev, key=firm_id$+"E"+"  "+cust_id$+order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=std_exit) ope01a$; rem Advisory Locking
-		endif
-		
-rem --- Set Firm ID for Credit Review and Release orders
-		if cvs(ope01a.firm_id$,3)=""
-			ope01a.firm_id$ = firm_id$
-		endif
-		
-        if type = on_demand then
-            msg_id$="OP_PRINTPRICES"
-            gosub disp_message
-            print_prices$=msg_opt$
-        endif
         
-rem --- set number of lines to print
-		if ope01a.invoice_type$="S" then
-			maxline = 32		
-		else
-			maxline = 26
-		endif
+        dim ope01a$:fattr(ope01a$)
+
+		if type <> on_demand
+            if pos(cust_id$+order_no$=printed_orders$,len(cust_id$)+len(order_no$))=0 then continue
+        endif
+
+        extract record (ordhdr_dev, key=firm_id$+"E"+"  "+cust_id$+order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=std_exit) ope01a$; rem Advisory Locking
 		
+rem --- Misc setup and qualification
+	
         if ope01a.print_status$="Y" and type = batch_pick then 
             gosub is_still_printed
         endif
 
-        if ope01a.reprint_flag$="Y" then  
+        if ope01a.reprint_flag$="Y" then
             reprint$ = ope01a.print_status$
             ope01a.print_status$ = "N"
         endif
 
+        pick_or_quote$=ope01a.invoice_type$;rem for param output
         if ope01a.print_status$="Y" and type = batch_pick then continue
         if ope01a.invoice_type$="V" then continue
         if credit_rec.sys_install$="Y" and ope01a.credit_flag$="C" and credit_rec.pick_hold$="N" then continue
@@ -368,190 +386,8 @@ rem --- set number of lines to print
 		if type = batch_pick then
 			gosub valid_lines
 			if print$="NO" then continue
-		endif	
-		
-    rem --- Get a barista document ID
-    
-        new_doc_id$ = ""
-        pdf_doc$    = ""
-        call sypdir$+"bac_documents.bbj", 
-:           new_doc_id$, 
-:           "", 
-:           "", 
-:           "I", 
-:           "PDF", 
-:           docdir$, 
-:           "pdf", 
-:           alias$, 
-:           "C", 
-:           ope01a.customer_id$, 
-:           table_chans$[all], 
-:           "DOC_ID"
+		endif
 
-    rem --- Heading (bill-to address)
-
-        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
-        if status = 999 then exitto std_exit
-        
-        declare BBjTemplatedString arm01!
-        declare BBjTemplatedString arm03!
-        declare BBjTemplatedString ope31!
-        
-        arm01! = BBjAPI().makeTemplatedString(fattr(arm01a1$))
-        ope31! = BBjAPI().makeTemplatedString(fattr(ope31a$))
-        arm03! = BBjAPI().makeTemplatedString(fattr(arm03a$))
-
-        dim b$(6*address)
-        found = 0
-        start_block = 1
-
-        if start_block then
-            read record (custmast_dev, key=firm_id$+ope01a.customer_id$, dom=*endif) arm01!
-            b$ = func.formatAddress(arm01!, address, 6)
-            b$ = pad(func.alphaMask(arm01!.getFieldAsString("CUSTOMER_ID"), m0$),address) + b$
-            found = 1
-        endif
-
-        if !found then
-            b$ = pad("Customer not found", address*7)
-        endif		
-
-    rem --- Ship-To
-    
-        c$ = b$
-        start_block = 1
-
-        if ope01a.shipto_type$ = "M" then 
-            shipto$ = ""
-
-            if start_block then
-                find record (ordship_dev, key=firm_id$+"E"+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS",dom=*endif) ope31!
-                c$ = func.formatAddress(ope31!, address, 7)
-            endif
-
-        else
-            if ope01a.shipto_type$ = "S" then
-                shipto$ = ""
-
-                if start_block then
-                    find record (custship_dev,key=firm_id$+ope01a.customer_id$+ope01a.shipto_no$, dom=*endif) arm03!
-                    c$ = func.formatAddress(arm03!, address, 7)
-                    shipto$ = ope01a.shipto_no$
-                endif
-            endif
-        endif
-
-    rem --- Terms
-
-        dim termcode_rec$:fattr(termcode_rec$)
-        termcode_rec.code_desc$ = "Not Found"
-        find record (termcode_dev,key=firm_id$+"A"+ope01a.terms_code$,dom=*next) termcode_rec$
-
-    rem --- Salesperson
-
-        salecode_rec.code_desc$ = "Not Found"
-        find record (salecode_dev,key=firm_id$+"F"+ope01a.slspsn_code$,dom=*next) salecode_rec$
-
-
-    rem --- Print Heading
-
-		page=0
-        gosub report_heading
-        total_sale=0
-
-    rem --- Position Detail File
-
-        orddet_trip$=ope01a.firm_id$+"E"+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$
-        read (orddet_dev,key=orddet_trip$,knum="AO_STAT_CUST_ORD",dom=*next)
-		othwhse$=""
-
-        while more
-            orddet_key$=key(orddet_dev,end=*break)
-            if pos(orddet_trip$=orddet_key$)<>1 then break
-		    read record (orddet_dev) ope11a$
-
-        rem --- Type
-
-            if start_block then
-                find record (linecode_dev,key=firm_id$+ope11a.line_code$,dom=*endif) opm02a$
-                
-                if pos(ope01a.invoice_type$="P")<>0 or ope11a.commit_flag$<>"N" and pos(ope11a.warehouse_id$=othwhse$)=0 then 
-                    othwhse$=othwhse$+ope11a.warehouse_id$
-                endif
-                
-                if whse$<>"" and ope11a.warehouse_id$<>whse$ then continue
-            endif
-
-            if pos(opm02a.line_type$="MNO")=0 then 
-               
-                ivm01a.item_desc$="**Not On File**"
-
-                if pos(opm02a.line_type$=" SRDP")<>0 then
-                    if start_block then
-                        find record (itemmast_dev,key=firm_id$+ope11a.item_id$,dom=*endif) ivm01a$
-                        gosub Compress_Description
-                    endif
-                   
-                    find record (itemwhse_dev,key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$,dom=*next) ivm02a$
-                endif
-            endif
-
-            if opm02a.line_type$<>"M" or pos(opm02a.message_type$=" BO")<>0 then 
-                gosub line_detail
-            endif
-
-            total_sale=total_sale+ope11a.ext_price
-
-		rem --- Any Serial/Lot #'s?
-
-			if ope01a.invoice_type$ = "P" then continue
-            if pos(params_rec.lotser_flag$="LS")=0 then continue
-            if pos(opm02a.line_type$=" SRDP")=0 then continue
-            if ivm01a.lotser_item$<>"Y" then continue
-
-        rem --- There are serial/lots
-
-            total_ls=0
-			line = line - 1;rem blank line was added after description in anticipation of going on to next item; if going on to lots, don't skip a line
-            ls_start$ = firm_id$+"E"+"  "+ope11a.customer_id$+ope11a.order_no$+ope11a.ar_inv_no$+ope11a.internal_seq_no$
-            read (ordlsdet_dev, key=ls_start$, knum="AO_STATUS", dom=*next)
-            while more
-                dim ope21a$:fattr(ope21a$)
-                ordlset_key$=key(ordlsdet_dev,end=*break)
-                if pos(ls_start$=ordlset_key$)<>1 break
-                read record (ordlsdet_dev) ope21a$
-
-                if ope21a.qty_ordered then
-                    lotser_no$ = ope21a.lotser_no$
-                    qty_shipped$ = str(ope21a.qty_shipped:m2$)
-                    gosub print_lotser_no
-                    total_ls = total_ls + ope21a.qty_shipped
-                endif
-            wend
-
-            if total_ls<ope11a.qty_ordered then
-                lotser_no$=""
-                qty_shipped$=""
-
-                if params_rec.lotser_flag$="L" then 
-                    y9=min(3,ope11a.qty_ordered-total_ls)
-                else
-                    y9=ope11a.qty_ordered-total_ls
-                endif
-
-                for y=1 to y9
-                    gosub print_lotser_no
-                next y
-            endif
-			
-			line = line + 1;rem add extra line after last lot
-
-        wend
-
-    rem --- Footer
-
-        gosub print_footer
-     
         if type = batch_pick then
 		
 			if ope01a.reprint_flag$="Y"
@@ -564,73 +400,550 @@ rem --- set number of lines to print
             ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
             ope01a.mod_time$=date(0:"%Hz%mz")
 			ope01a$=field(ope01a$)
-			write record (ordhdr_dev) ope01a$	
-
-        else
-
-			read (ordhdr_dev,end=*next); rem release extract
-
+			write record (ordhdr_dev) ope01a$     
         endif
+
+        nothing_printed = 0
+        add_to_pick_print_report = 0
+        add_to_quote_print_report = 0
+
+    rem --- Init Document Archive info
+
+        rep_date$=date(0:stbl("+DATE_MASK"))
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time$=date(0:"%hz:%mz %p")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+
+        new_doc_id$=""
+        new_doc_name$=""
+        doc_name$="OPPickQuote_Cust"+ope01a.customer_id$+"_"+alias$
+        doc_keywords$="Order: "+ope01a.order_no$
+
+        rd_source_alias$=alias$
+        rd_source_type$="O"
+        rd_doc_source$="E"
+        rd_doc_ext$="PDF"
+        rd_source_id$="C"
+        rd_source_ref$=ope01a.customer_id$
+        rd_doc_keywords$=doc_keywords$
+
+
+    rem --- Get Next Document Number and update Document Audit for individual pdf
+    rem --- Only add individual quotes to doc warehouse, not individual pick lists,
+    rem ---   because quotes may be subject to report control (email/faxing) to individual customers
+
+            call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",new_doc_id$,rd_table_chans$[all] 
+            new_doc_name$=new_doc_id$+"_"+doc_name$+".pdf"
+
+        if ope01a.invoice_type$="P"            
+            
+            call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,rep_date_stamp$,rep_time_stamp$,rd_doc_source$,rd_doc_ext$,docdir$,
+:           rd_source_type$,rd_source_alias$,rd_source_id$,rd_source_ref$,rd_table_chans$[all],"",new_doc_name$,doc_name$,doc_keywords$
+        endif
+
+    rem --- Get Next Document Number and update Document Audit with JAS entry for master doc, if first time thru
+
+        if master_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            rd_source_id$="C"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
+            gosub document_whse
+            rd_archive_action$=""
+            master_doc_id$=rd_doc_id$
+            master_doc_name$=master_doc_id$+"_"+masterBaseName$+".pdf"
+        endif
+
+    rem --- Get Next Document Number and update Document Audit with JAS entry for pick list print doc, if first time thru
+
+        if pick_print_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            rd_source_id$="C"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
+            gosub document_whse
+            rd_archive_action$=""
+            pick_print_doc_id$=rd_doc_id$
+            pick_print_doc_name$=pick_print_doc_id$+"_"+pickPrintBaseName$+".pdf"
+        endif
+
+    rem --- Get Next Document Number and update Document Audit with JAS entry for quote print doc, if first time thru
+
+        if quote_print_document
+            rd_doc_ext$="JAS"
+            rd_archive_action$="DOC_ID-NOREPRINT"
+            rd_doc_id$=""
+            rd_source_id$="C"
+            rd_source_ref$=""
+            rd_doc_keywords$=""
+            gosub document_whse
+            rd_archive_action$=""
+            quote_print_doc_id$=rd_doc_id$
+            quote_print_doc_name$=quote_print_doc_id$+"_"+quotePrintBaseName$+".pdf"
+        endif
+
+    rem --- For quotes, use ReportControl object to see if customer wants print, email, or fax
+
+        if ope01a.invoice_type$="P"
+            add_to_quote_print_report=1
+            add_to_pick_print_report=0
+            if rpt_ctl$="YES"     
+                found=reportControl!.getRecipientInfo(rpt_id$,cust_id$,"")
+                if found         
+                    if reportControl!.getPrintYN()<>"Y" then add_to_quote_print_report=0
+                    if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                        emailFax!.add(rpt_id$)
+                        emailFax!.add(cust_id$)
+                        emailFax!.add(new_doc_id$)
+                    endif
+                endif
+            endif
+        else
+            add_to_pick_print_report=1
+            add_to_quote_print_report=0
+        endif
+
+    rem --- Report parameters  (Master/Print only processed once, followed by actual invoices)
+		if master_document
+			master_params!.put("RESTART",restart$)
+			master_params!.put("RESTART_CUSTOMER",restart_customer$)
+			master_params!.put("PRINT_PRICES",print_prices$)
+            master_params!.put("SELECTED_WHSE",whse$)
+            master_params!.put("PICKLIST_TYPE",print_what$)
+		endif
+
+		if pick_print_document
+			pick_print_params!.put("RESTART",restart$)
+			pick_print_params!.put("RESTART_CUSTOMER",restart_customer$)
+			pick_print_params!.put("PRINT_PRICES",print_prices$)
+            pick_print_params!.put("SELECTED_WHSE",whse$)
+            pick_print_params!.put("PICKLIST_TYPE",print_what$)            
+		endif
+
+		if quote_print_document
+			quote_print_params!.put("RESTART",restart$)
+			quote_print_params!.put("RESTART_CUSTOMER",restart_customer$)
+			quote_print_params!.put("PRINT_PRICES",print_prices$)
+            quote_print_params!.put("SELECTED_WHSE",whse$)
+            quote_print_params!.put("PICKLIST_TYPE",print_what$)            
+		endif        
+
+		params!.put("FIRM_ID",ope01a.firm_id$)
+		params!.put("AR_TYPE",ope01a.ar_type$)
+		params!.put("CUSTOMER_ID",ope01a.customer_id$)
+		params!.put("ORDER_NO",ope01a.order_no$)
+        params!.put("AR_INV_NO",ope01a.ar_inv_no$)
+		params!.put("QTY_MASK",qty_mask$)
+		params!.put("QTY_MASK_PATTERN",qty_mask_pattern$)
+		params!.put("PRICE_MASK",price_mask$)
+		params!.put("AMT_MASK",amt_mask$)
+		params!.put("AMT_MASK_PATTERN",amt_mask_pattern$)        
+		params!.put("EXT_MASK",ext_mask$)
+		params!.put("EXT_MASK_PATTERN",ext_mask_pattern$)  
+		params!.put("CUST_MASK",cust_mask$)
+		params!.put("CUST_SIZE",str(cust_size))
+		params!.put("BARISTA_WD",dir(""))
+		params!.put("LOGO_FILE",logo_filename$)
+		params!.put("IVS_LOTSER_FLAG",params_rec.lotser_flag$)
+        params!.put("PICK_OR_QUOTE",pick_or_quote$)
+        params!.put("PRINT_PRICES",print_prices$)
+        params!.put("REPRINT",reprint$)
+        params!.put("SELECTED_WHSE",whse$)
+        params!.put("MULT_WH",mult_wh$)
 		
-        nothing_printed = 0		
+		params!.put("AR_ADDRESS1",comp$((comp_addrLine_len*0)+1,comp_addrLine_len))
+		params!.put("AR_ADDRESS2",comp$((comp_addrLine_len*1)+1,comp_addrLine_len))
+		params!.put("AR_ADDRESS3",comp$((comp_addrLine_len*2)+1,comp_addrLine_len))
+		params!.put("AR_ADDRESS4",comp$((comp_addrLine_len*3)+1,comp_addrLine_len))
 
-    rem --- End of picklist/quote
+        call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(ars01b.phone_no$,2),"",phone_mask$
+        tmpphone$=cvs(ars01b.phone_no$,2)
+        tmpphone$=str(tmpphone$:phone_mask$,err=*next)
+		params!.put("AR_PHONE_NO",tmpphone$)
 
-next_read:	
-	next next_item
+		params!.put("REMIT1",remit$((remit_addrLine_len*0)+1,remit_addrLine_len))
+		params!.put("REMIT2",remit$((remit_addrLine_len*1)+1,remit_addrLine_len))
+		params!.put("REMIT3",remit$((remit_addrLine_len*2)+1,remit_addrLine_len))
+		params!.put("REMIT4",remit$((remit_addrLine_len*3)+1,remit_addrLine_len))
 
-display: rem --- Display PDF
+    rem --- invoke jasper
+       
+        if master_document
+            master_report! = new BBJasperReport(master_filename$,url$)
+            master_report!.putParams(master_params!)
+            master_report!.setLocale(locale$)
+            master_report!.fill()
+            master_document=0
+        endif
 
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-    if status = 999 then goto std_exit
+        if pick_print_document
+            pick_print_report! = new BBJasperReport(pick_print_filename$,url$)
+            pick_print_report!.putParams(pick_print_params!)
+            pick_print_report!.setLocale(locale$)
+            pick_print_report!.fill()
+            pick_print_document=0
+        endif
 
-nothing_printed:    
-    
-    if nothing_printed then
-		status=998
-        docPrint!.cancel()
+        if quote_print_document
+            quote_print_report! = new BBJasperReport(quote_print_filename$,url$)
+            quote_print_report!.putParams(quote_print_params!)
+            quote_print_report!.setLocale(locale$)
+            quote_print_report!.fill()
+            quote_print_document=0
+        endif        
+
+        report! = new BBJasperReport(filename$,url$)
+        report!.putParams(params!)
+
+        locale$ = stbl("!LOCALE")
+        locale$ = stbl("+USER_LOCALE",err=*next)
+        report!.setLocale(locale$)
+     
+        report!.fill()
+        if ope01a.invoice_type$="P"
+            report!.exportToPDF(BBjAPI().FALSE, docdir$+new_doc_name$)
+        endif
+
+        if type = batch_pick
+			master_report!.appendReport(report!)	
+            if add_to_pick_print_report
+                pick_print_report!.appendReport(report!)
+                tot_picks=tot_picks+1
+            endif
+            
+            if add_to_quote_print_report
+                quote_print_report!.appendReport(report!)            
+                tot_quotes=tot_quotes+1
+            endif
+
+			report!.destroy()
+		endif
+    rem --- Loop back for next Customer/Order
+
+    next next_item
+
+    if nothing_printed then 
         msg_id$="DOC_OUTPUT_NODATA"
         gosub disp_message
         goto all_done
     endif
 
-    docPrint!.preview()
+rem --- bring up jasper viewers (master doc and print doc for Batch Invoices; single doc for On-Demand)
+
+    declare BBJasperViewerWindow masterViewerWindow!
+    declare BBJasperViewerWindow pickPrintViewerWindow!
+    declare BBJasperViewerWindow quotePrintViewerWindow!    
+    declare BBJasperViewerWindow demandViewerWindow!
+    declare BBjTopLevelWindow bbjWindowMaster!
+    declare BBjTopLevelWindow bbjWindowPickPrint!
+    declare BBjTopLevelWindow bbjWindowQuotePrint!    
+    declare BBjTopLevelWindow bbjWindowDemand!
+    
+    rem --- get a pdf path from +DOC_DIR_PDF
+    rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
+    gosub doc_path
+
+	if type = batch_pick
+    
+    rem --- master jasper - contains ALL pick lists and/or quotes
+        repTitle$=masterBaseName$
+        rd_doc_name$=master_doc_name$
+
+        rd_doc_id$=master_doc_id$
+
+        gosub OnMasterSaveMenuButton; rem --- force save to doc archive
+
+        masterViewerWindow! = new BBJasperViewerWindow(master_report!,5,5,screen_width,screen_height,repTitle$,$00000093$)
+        masterViewerControl! = masterViewerWindow!.getViewerControl()
+        masterViewerControl!.setGoogleDefaultDocument(repTitle$)
+        masterViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+        masterViewerControl!.setDefaultSaveFile(repTitle$)
+
+        rem --- set callbacks for when user presses save or email buttons in jasper viewer
+        rem --- note: saveAs or saveAsGDoc not intercepted, just regular save
+        masterSaveMenuButton! = masterViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+        masterSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnMasterSaveMenuButton")
+        masterEmailToolButton! = masterViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+        masterEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnMasterEmailToolButton")
+
+        masterViewerWindow!.setReleaseOnClose(0)
+        masterViewerWindow!.show(0)
+
+        bbjWindowMaster!= masterViewerWindow!.getViewerWindow()
+        bbjWindowMaster!.setCallback(bbjWindowMaster!.ON_CLOSE,"close_win")
+       
+    rem --- pick print jasper - contains only pick lists for hard copy and/or manual email (i.e., not via rpt ctl)
+    rem --- if there are only picks (no quotes), or only quotes (no picks), then skip pick print copy
+        if tot_picks and tot_quotes
+            repTitle$=pickPrintBaseName$
+            rd_doc_name$=pick_print_doc_name$
+            rd_doc_id$=pick_print_doc_id$
+
+            gosub OnPickPrintSaveMenuButton; rem --- force save to doc archive
+
+            pickPrintViewerWindow! = new BBJasperViewerWindow(pick_print_report!,50,50,screen_width,screen_height,repTitle$,$00000093$)
+            pickPrintViewerControl! = pickPrintViewerWindow!.getViewerControl()
+            pickPrintViewerControl!.setGoogleDefaultDocument(repTitle$)
+            pickPrintViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+            pickPrintViewerControl!.setDefaultSaveFile(repTitle$)
+
+            pickPrintSaveMenuButton! = pickPrintViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+            pickPrintSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnPickPrintSaveMenuButton")
+            pickPrintEmailToolButton! = pickPrintViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+            pickPrintEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnPickPrintEmailToolButton")
+
+            pickPrintViewerWindow!.setReleaseOnClose(0)
+            pickPrintViewerWindow!.show(0)
+
+            bbjWindowPickPrint!= pickPrintViewerWindow!.getViewerWindow()
+            bbjWindowPickPrint!.setCallback(bbjWindowPickPrint!.ON_CLOSE,"close_pick_print_win")
+        else
+            pick_print_win_closed=1;rem no pick print window; set the closed flag so master close routine won't think it's still up
+        endif
+        
+    rem --- quote print jasper - contains only quotes for hard copy
+    rem --- if no quotes, skip the quote print copy
+        if tot_quotes
+            repTitle$=quotePrintBaseName$
+            rd_doc_name$=quote_print_doc_name$
+            rd_doc_id$=quote_print_doc_id$
+
+            gosub OnQuotePrintSaveMenuButton; rem --- force save to doc archive
+
+            quotePrintViewerWindow! = new BBJasperViewerWindow(quote_print_report!,80,80,screen_width,screen_height,repTitle$,$00000093$)
+            quotePrintViewerControl! = quotePrintViewerWindow!.getViewerControl()
+            quotePrintViewerControl!.setGoogleDefaultDocument(repTitle$)
+            quotePrintViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+            quotePrintViewerControl!.setDefaultSaveFile(repTitle$)
+
+            quotePrintSaveMenuButton! = quotePrintViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+            quotePrintSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnQuotePrintSaveMenuButton")
+            quotePrintEmailToolButton! = quotePrintViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+            quotePrintEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnQuotePrintEmailToolButton")
+
+            quotePrintViewerWindow!.setReleaseOnClose(0)
+            quotePrintViewerWindow!.show(0)
+
+            bbjWindowQuotePrint!= quotePrintViewerWindow!.getViewerWindow()
+            bbjWindowQuotePrint!.setCallback(bbjWindowQuotePrint!.ON_CLOSE,"close_quote_print_win")
+        else
+            quote_print_win_closed=1;rem no quote print window; set the closed flag so master close routine won't think it's still up
+        endif
+    else
+
+        repTitle$=doc_name$
+        rd_doc_name$=new_doc_name$
+	    rd_doc_id$=new_doc_id$
+	        
+        gosub OnDemandSaveMenuButton; rem --- force save to doc archive
+	        
+	    demandViewerWindow! = new BBJasperViewerWindow(report!,5,5,screen_width,screen_height,repTitle$,$00080093$)
+        demandViewerControl! = demandViewerWindow!.getViewerControl()
+        demandViewerControl!.setGoogleDefaultDocument(repTitle$)
+        demandViewerControl!.setDefaultSaveFolder(rd_doc_path$)
+        demandViewerControl!.setDefaultSaveFile(repTitle$)
+
+        demandSaveMenuButton! = demandViewerControl!.getControl(BBJasperViewerControl.getSAVE_MENU_BUTTON_NAME())
+        demandSaveMenuButton!.setCallback(BBjMenuButton.ON_BUTTON_PUSH ,"OnDemandMasterSaveMenuButton")
+        demandEmailToolButton! = demandViewerControl!.getControl(BBJasperViewerControl.getEMAIL_TOOL_BUTTON_NAME())
+        demandEmailToolButton!.setCallback(BBjMenuButton.ON_TOOL_BUTTON_PUSH ,"OnDemandEmailToolButton")
+
+        demandViewerWindow!.setReleaseOnClose(0)
+        demandViewerWindow!.show(0)
+        
+        bbjWindowDemand!= demandViewerWindow!.getViewerWindow()
+        bbjWindowDemand!.setCallback(bbjWindowDemand!.ON_CLOSE,"close_win")
+
+	endif
+
+rem --- Event Control
+
+    process_events,err=*same
+
+    release
+
+document_whse:rem --- Write record to Barista document warehouse (ads_documents)
+    call stbl("+DIR_SYP")+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       rd_archive_action$,
+:       rd_doc_name$,
+:       rep_title$,
+:       rd_doc_keywords$
+
+    return
+
+doc_path:rem --- Get Document Path
+rem --- forcing a pdf save to this location for release 13.03
+rem --- eventually, want to make the save functionality mimic (as closely as possible) Barista
+rem --- so it can save based on user's doc group and doc settings
+
+    if rd_doc_path$="" then
+        rd_tmp_dir$=stbl("+DOC_DIR_PDF",err=*endif)
+        rd_temp_wd$=dsk("")+dir("")
+        if pos(":"=rd_tmp_dir$) setdrive rd_tmp_dir$(1,pos(":"=rd_tmp_dir$)-1),err=*next
+        chdir rd_tmp_dir$,err=*next
+        rd_doc_path$=dsk("")+dir("")
+        if pos(":"=rd_temp_wd$) setdrive rd_temp_wd$(1,pos(":"=rd_temp_wd$)-1)
+        chdir rd_temp_wd$
+    endif
+
+    return
+
+OnMasterSaveMenuButton:
+
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+
+        rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="C"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+       
+
+        master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+
+        gosub document_whse
+    endif
+    return     
+
+OnMasterEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnMasterSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
+OnPickPrintSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+
+
+        rep_title$=repTitle$
+        rd_source_id$="C"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+        
+        pick_print_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+
+        gosub document_whse
+    endif
+    return    
+
+OnPickPrintEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnPrintSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
+OnQuotePrintSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+
+
+        rep_title$=repTitle$
+        rd_source_id$="C"
+        rd_source_ref$=""
+        rd_doc_keywords$=""
+        
+        quote_print_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+
+        gosub document_whse
+    endif
+    return    
+
+OnQuotePrintEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnQuoteSaveMenuButton
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return    
+
+OnDemandSaveMenuButton:
+rem --- exportToPDF and record in doc warehouse
+
+    if rd_doc_path$<>"" and repTitle$<>""
+        rd_doc_ext$="PDF"
+        rep_title$=repTitle$
+        rd_source_id$="C"
+        rd_source_ref$=ope01a.customer_id$
+        rd_doc_keywords$=doc_keywords$
+
+        report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        
+        gosub document_whse
+    endif
+    return    
+
+OnDemandEmailToolButton:rem --- Add document to fax/email queue
+rem --- force exportToPDF first, in case it hasn't already been saved
+    
+    rem --- force exportToPDF in case not already saved
+    gosub OnDemandSaveMenuButton
+
+
+    if rd_doc_id$<>"" and rd_doc_ext$<>""
+        call stbl("+DIR_SYP")+"bac_faxemail_jasper.bbj",rd_doc_id$,rd_doc_ext$,rd_table_chans$[all]
+    endif
+    return
+
+close_win:rem --- Master or On-demand viewer closed - do post-processing for batch vs single
+
+    if type=batch_pick
+        ok_to_close=1
+        if !pick_print_win_closed or !quote_print_win_closed
+            msg_id$ = "CONF_CLOSE_PRINT"
+            gosub disp_message
+            if msg_opt$<>"Y" then ok_to_close=0 
+        endif
+        
+        if !ok_to_close then return
+    endif
 
 rem --- Updates and final processing
 
-    if type = on_demand 
+    msg_id$="AON_UPDT_PICK_QUERY"
+    dim msg_tokens$[1]
+    msg_tokens$[1]=sysinfo.task_desc$
+    gosub disp_message
 
-		after$="YES"
-		ope01a.print_status$="Y"
-rem		ope01a.reprint_flag$="Y"
-		if no_col_data = 0
-			callpoint!.setColumnData("PRINT_STATUS","Y")
-rem			callpoint!.setColumnData("REPRINT_FLAG","Y")
-		endif
-
-        ope01a.lock_status$="N";rem --- really?  If on-demand, I'll be returning to OE w/ order up... shouldn't it be locked?
-
-        ope01a.mod_user$=sysinfo.user_id$
-        ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
-        ope01a.mod_time$=date(0:"%Hz%mz")
-		ope01a$=field(ope01a$)
-		write record (ordhdr_dev) ope01a$
-
-        if ope01a.print_status$="Y"
-            remove (prntlist_dev,key=firm_id$+ope01a.ordinv_flag$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
-        endif 
-	endif
-
-	if type = batch_pick
-
-		msg_id$="AON_UPDT_PICK_QUERY"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=sysinfo.task_desc$
-		gosub disp_message
-
-		if msg_opt$<>"Y" then goto std_exit
-		call pgmdir$+"adc_progress.aon","N","","","","",0,prntlist_dev,1,meter_num,status
-		if status = 999 then goto std_exit
+    if msg_opt$<>"Y" then goto all_done
+    
+    if type=batch_pick
+        call pgmdir$+"adc_progress.aon","N","","","","",0,prntlist_dev,1,meter_num,status
+        if status = 999 then goto all_done
 		
 rem --- Position file for update    
     
@@ -651,7 +964,7 @@ rem --- Clear Print Flags
 				if pos(ope04a.customer_id$+ope04a.order_no$=printed_orders$,len(ope04a.customer_id$)+len(ope04a.order_no$))=0 continue
                 dim ope01a$:fattr(ope01a$)
 				extract record (ordhdr_dev, key=ope04a.firm_id$+"E"+ope04a.ar_type$+ope04a.customer_id$+ope04a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif) ope01a$
-				if (which_ones$="P" and ope01a.invoice_type$<>"S") or (which_ones$="Q" and ope01a.invoice_type$<>"P") then continue
+				if (print_what$="P" and ope01a.invoice_type$<>"S") or (print_what$="Q" and ope01a.invoice_type$<>"P") then continue
 
 				if ope01a.reprint_flag$="Y" then
 					ope01a.reprint_flag$=""
@@ -666,7 +979,6 @@ rem --- Clear Print Flags
 				endif
 
 				if ope01a.print_status$<>"Y" then ope01a.print_status$="N"
-				if status <> 999 and type = on_demand ope01a.print_status$="Y"
                 ope01a.mod_user$=sysinfo.user_id$
                 ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
                 ope01a.mod_time$=date(0:"%Hz%mz")
@@ -680,11 +992,34 @@ rem --- Clear Print Flags
 			
 		wend
 
-		msg_id$="UPDATE_COMPLETE"
-		dim msg_tokens$[1]
-		msg_opt$=""
-		gosub disp_message
-		
+        if emailFax!.size()
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+        
+    else 
+
+		after$="YES"
+		ope01a.print_status$="Y"
+        ope01a.lock_status$="N"
+
+        ope01a.mod_user$=sysinfo.user_id$
+        ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
+        ope01a.mod_time$=date(0:"%Hz%mz")
+		ope01a$=field(ope01a$)
+		write record (ordhdr_dev) ope01a$
+
+        if ope01a.print_status$="Y"
+            remove (prntlist_dev,key=firm_id$+ope01a.ordinv_flag$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$,dom=*next)
+        endif 
+        
+        if emailFax!.size() and send_via_rpt_ctl$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+        
 	endif
 		
 all_done:
@@ -693,363 +1028,30 @@ all_done:
     read (orddet_dev,knum="AO_STAT_CUST_ORD",end=*next)
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-	goto std_exit
+
+    reportControl!.destroy(err=*next)    
+    masterViewerWindow!.destroy(err=*next)
+    pickPrintViewerWindow!.destroy(err=*next)
+    quotePrintViewerWindow!.destroy(err=*next)
+    demandViewerWindow!.destroy(err=*next)
+
+    if tcb(13) then exit
+    
+    release
 	
-report_heading: rem --- Report Heading
+close_pick_print_win: rem --- close the Pick Print Copy window
 
-rem --- Create PDF physical file, if needed
-
-    declare BBjForm docPDF!
-
-    while pdf_doc$ = ""
-        prtr_dev = unt
-        pdf_doc$ = docdir$ + new_doc_id$ + "_PickingList_" + order_no$ + ".pdf"
-        start_block = 1
-
-        if start_block
-            open (prtr_dev,err=*endif)pdf_doc$
-            close (prtr_dev)
-            erase pdf_doc$
-        endif
-
-        docPDF! = BBjAPI().getBBjPDFForm(pdf_doc$, requestAttributes!)
-    wend
-
-    line = 0
-    page = page + 1
-
-rem --- Create pages from both physical and display objects   
-
-    declare BBjFormPage pagePDF!
-    declare BBjFormPage pagePrint!
-
-    pagePDF!   = docPDF!.createPage()
-    pagePrint! = docPrint!.createPage(err=invalid_printer)
-
-    pdf!.setPage(pagePrint!)
-
-    while 1
-	
-		if ope01a.invoice_type$="P"
-			hd_text$="Q U O T A T I O N"
-		else 
-			hd_text$="P I C K I N G   L I S T"
-		endif
-
-		if ope01a.reprint_flag$="Y"
-			z0$="*** R E P R I N T ***" 
-		else 
-			z0$=""
-		endif	
-
-        pdf!.setText(210,10,140,0,hd_text$,largefont!,pdf!.CENTER_JUSTIFY(),black!,white!)
-        pdf!.setText(210,40,140,0,z0$,largefont!,pdf!.CENTER_JUSTIFY())
-        pdf!.setLogo(0,0,185,68,logofile$)
-
-    rem --- Company Address
-
-        pdf!.setText(50,60,comp$(1,address))
-        pdf!.setText(50,72,comp$(31,address))
-        pdf!.setText(50,84,comp$(61,address))
-        pdf!.setText(50,96,comp$(91,address))
-
-    rem --- Bill To
-
-        pdf!.drawBox(0, 126, 55, 96, light_gray!, light_gray!); rem gray box
-        pdf!.setText(0, 132, 50, 0, "Customer", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-
-        pdf!.setText(60, 132, b$(1,address))
-        pdf!.setText(60, 144, b$(31,address))
-        pdf!.setText(60, 156, b$(61,address))
-        pdf!.setText(60, 168, b$(91,address))    
-        pdf!.setText(60, 180, b$(121,address))
-        pdf!.setText(60, 192, b$(151,address))
-        pdf!.setText(60, 204, b$(181,address))
-
-    rem --- Ship to
-
-        pdf!.drawBox(284, 126, 45, 96, light_gray!, light_gray!); rem gray box
-        pdf!.drawBox(0, 126, 568, 96); rem outer frame
-        pdf!.setText(284, 132, 40, 0, "Ship To", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-
-        pdf!.setText(334, 132, c$(1,address))
-        pdf!.setText(334, 144, c$(31,address))
-        pdf!.setText(334, 156, c$(61,address))
-        pdf!.setText(334, 168, c$(91,address))    
-        pdf!.setText(334, 180, c$(121,address))
-        pdf!.setText(334, 192, c$(151,address))
-        pdf!.setText(334, 204, c$(181,address))
-
-    rem --- Info Box
-
-        pdf!.drawBox(424, 24, 66, 60, light_gray!, light_gray!); rem gray box
-        pdf!.drawHLine(424, 42, 144)
-        pdf!.drawHLine(424, 62, 144)
-        pdf!.drawVLine(490, 24,  60)
-        pdf!.drawBox(424, 24, 144, 60); rem outer frame
-
-        pdf!.setText(432, 26, 54, 30, "Page",      boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(432, 46, 54, 54, "Order #",      boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(432, 66, 54, 78, "Order Date", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-
-        pdf!.setText(496, 26, str(page))
-        pdf!.setText(496, 46, ope01a.order_no$+" "+ope01a.backord_flag$)
-        pdf!.setText(496, 66, func.formatDate(ope01a.order_date$))
-               
-    rem --- Ribbon info
-
-        pdf!.drawBox(0, 234, 568, 14, light_gray!, light_gray!); rem gray bar    
-        pdf!.drawBox(0, 234, 568, 48); rem outer frame
-
-        pdf!.setText(2,     234+2, 132-72,  0, "Order Date", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        pdf!.setText(66+2,  234+2, 204-180, 0, "Sls",        boldfont!, pdf!.LEFT_JUSTIFY(),   light_gray!)
-        pdf!.setText(96,    234+2, 288-204, 0, "P/O Number", boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-
-        pdf!.setText(208,   234+2, 378-208, 0, "Ship Via/FOB",   boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        pdf!.setText(378,   234+2, 438-378, 0, "Ship Date",  boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        pdf!.setText(438+2, 234+2, 502-438, 0, "Terms",      boldfont!, pdf!.LEFT_JUSTIFY(), light_gray!)
-        pdf!.setText(502,   234+2, 568-500, 0, "PC",      boldfont!, pdf!.CENTER_JUSTIFY(), light_gray!)
-        
-        pdf!.setText(0,     234+16, 132-72,  0, func.formatDate(ope01a.order_date$),      pdf!.CENTER_JUSTIFY())
-        pdf!.setText(66+2,  234+16, 204-172, 0, ope01a.slspsn_code$,                      pdf!.LEFT_JUSTIFY())
-
-        pdf!.setText(66+2,  262+2,  288-100, 0, salecode_rec.code_desc$,                  pdf!.LEFT_JUSTIFY())
-        pdf!.setText(100,   234+16, 288-100, 0, ope01a.customer_po_no$,                   pdf!.LEFT_JUSTIFY())
-        pdf!.setText(208,   234+16, 378-208, 0, ope01a.ar_ship_via$,                      pdf!.CENTER_JUSTIFY())
-		pdf!.setText(208,   262+2,  378-208, 0, ope01a.fob$,                              pdf!.CENTER_JUSTIFY())
-        pdf!.setText(378,   234+16, 438-378, 0, func.formatDate(ope01a.shipmnt_date$),    pdf!.CENTER_JUSTIFY())
-        pdf!.setText(438+2,   234+16, 568-438, 0, ope01a.terms_code$,                       pdf!.LEFT_JUSTIFY())
-        pdf!.setText(438+2,   262+2,  568-438, 0, termcode_rec.code_desc$,                  pdf!.LEFT_JUSTIFY())
-		pdf!.setText(502,   234+16, 568-500, 0, ope01a.price_code$,                       pdf!.CENTER_JUSTIFY())
-
-        pdf!.drawVLine( 66, 234, 48)
-        pdf!.drawVLine( 98, 234, 28)
-        pdf!.drawHLine( 98, 262, 110)
-        pdf!.drawVLine(208, 234, 48)
-        pdf!.drawVLine(378, 234, 48)
-        pdf!.drawVLine(438, 234, 48)
-		pdf!.drawVLine(500, 234, 28)
-		pdf!.drawHLine(500, 262, 68)
-
-    rem --- Detail box and headings
-
-        pdf!.drawBox(0,   294, 568, 14, light_gray!, light_gray!); rem gray box
-        pdf!.drawBox(0,   294, 568, 420); rem outer frame
-
-        pdf!.setText(2,     294+2, 45-2, 0, "Order",       boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(45,    294+2, 45-2, 0, "Ship",        boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(90,    294+2, 45-2, 0, "B/O",         boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(135+2, 294+2, "Item# / Description",  boldfont!,                       light_gray!)
-        if mult_wh > 0 then pdf!.setText(375, 294+2, "WH", boldfont!,                       light_gray!)
-        pdf!.setText(402,   294+2, "Location",             boldfont!,                       light_gray!)
-		if print_prices$ = "Y" then pdf!.setText(450, 294+2, 65, 0, "Price", boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-        pdf!.setText(510,   294+2, 50, 0, "Carton",        boldfont!, pdf!.RIGHT_JUSTIFY(), light_gray!)
-
-        pdf!.drawVLine(45,  294, 420)
-        pdf!.drawVLine(90,  294, 420)
-        pdf!.drawVLine(135, 294, 420)
-        if mult_wh > 0 then pdf!.drawVLine(370, 294, 420)
-		pdf!.drawVLine(400, 294, 420)
-        if print_prices$ = "Y" then pdf!.drawVLine(465, 294, 420)
-		pdf!.drawVLine(520, 294, 420)
-
-    rem --- Duplicate what was done on pagePrint!; if both pages have updated, we're done
-
-        if pdf!.getPage() = pagePDF! then break
-        pdf!.setPage(pagePDF!)
-
-    wend    
-
-    return	
-	
-line_detail: rem --- Item Detail
-
-    if line+1 > maxline then gosub cont; rem Never split item ID and description
-
-    pdf!.setPage(pagePrint!)
-    lines_used = 2
-    this_y% = fnline2y%(line)
-
-    while 1
-
-        if pos(opm02a.line_type$="MO")=0 then
-            pdf!.setText(0,  this_y%, 45-2, 0, str(ope11a.qty_ordered), pdf!.RIGHT_JUSTIFY())
-			if ope11a.commit_flag$="N"          
-				pdf!.setText(45, this_y%, 45-2, 0, func.formatDate(ope11a.est_shp_date$), pdf!.RIGHT_JUSTIFY())
-			else 
-				pdf!.drawHLine(55, this_y%+12, 30)
-				pdf!.drawHLine(100, this_y%+12, 30)
-			endif
-			pdf!.drawHLine(530, this_y%+12, 30)			
-        endif
-
-        if pos(opm02a.line_type$="MNO") then
-            pdf!.setText(135+2, this_y%, ope11a.order_memo$)
-        endif
-
-        if pos(opm02a.line_type$=" SRDP") then 
-            pdf!.setText(135+9, this_y%, ope11a.item_id$)
-        endif
-
-		if ope01a.invoice_type$<>"P"
-			if pos(opm02a.line_type$=" SRDNP") and mult_wh > 0 then 
-				pdf!.setText(375, this_y%, ope11a.warehouse_id$)
-			endif
-			        
-			if opm02a.dropship$="Y"
-				pdf!.setText(400+2, this_y%, "*Dropship")				
-			else   
-				if pos(opm02a.line_type$=" SRDP")<>0
-					pdf!.setText(400+2, this_y%, ivm02a.location$)
-				endif
-			endif  
-		endif
-
-		if pos(opm02a.line_type$=" SRDNP") and print_prices$ = "Y" then 
-            pdf!.setText(452, this_y%, 65, 0, str(ope11a.ext_price:m1$), pdf!.RIGHT_JUSTIFY())
-        endif
-
-        if opm02a.line_type$="O" and print_prices$ = "Y" then 
-            pdf!.setText(452, this_y%, 65, 0, str(ope11a.ext_price:m1$), pdf!.RIGHT_JUSTIFY())
-       endif
-
-        if pos(opm02a.line_type$="SP") then
-            pdf!.setText(135+2, fnline2y%(line+1), ivm01a.item_desc$)
-            lines_used = 3
-        endif
-
-        if pdf!.getPage() = pagePDF! then break
-        pdf!.setPage(pagePDF!)
-
-    wend
-
-    line = line + lines_used
-
+    pickPrintViewerWindow!.destroy(err=*next)
+    pick_print_win_closed=1
+    
     return
 
-print_lotser_no: rem --- Serial #'s Here
-	
-    if line > maxline-1 then
-        gosub cont
-        if pos(opm02a.line_type$=" SP")<>0 then
-            pdf!.setText(135+2, fnline2y%(line), ope11a.item_id$+" (Continued)")
-            line = line + 1
-        endif
-    endif
-	
-    pdf!.setPage(pagePrint!)
-    this_y% = fnline2y%(line)
+close_quote_print_win: rem --- close the Pick Print Copy window
 
-	while 1
-
-		if params_rec.lotser_flag$<>"L" then
-			pdf!.setText(135+2, this_y%, "S/N: "+lotser_no$)			
-			if lotser_no$ = "" then pdf!.drawHLine(155, this_y%+12, 100)
-		else
-            wk$=fattr(ope21a$,"lotser_no")
-            len_lotser=dec(wk$(10,2))
-            if lotser_no$="" then lotser_no$=fill(len_lotser,"_")
-			if qty_shipped$="" then qty_shipped$ = fill(m2,"_")
-
-			pdf!.setText(135+2, this_y%, "Lot: "+lotser_no$+"   Shipped: "+qty_shipped$)
-		endif
-	
-	    if pdf!.getPage() = pagePDF! then break
-        pdf!.setPage(pagePDF!)
-
-	wend
-
-    line = line + 1
-
-    return	
-	
-print_footer: rem --- print total (if including prices), comments and carton/weight grid
-
-	if print_prices$ = "Y"
-	
-		if line+1 > maxline then gosub cont
-
-		pdf!.setPage(pagePrint!)
-		this_y% = fnline2y%(line)
-	
-		while 1
-	
-			pdf!.setText(435, this_y%, "Total:")
-			pdf!.setText(452, this_y%, 65, 0, str(total_sale:m1$), pdf!.RIGHT_JUSTIFY())
-			
-			if pdf!.getPage() = pagePDF! then break
-			pdf!.setPage(pagePDF!)
-	
-		wend
-		
-		line = line + 1
-		
-	endif
-	
-	if ope01a.invoice_type$="S"
-		bottom_margin = 570
-	else
-		bottom_margin = 640
-	endif
-	
-		if fnline2y%(line) > bottom_margin then gosub cont; rem --- keep comments and carton/weight grid on same page (maybe don't have to be, but looks better)
-	
-	pdf!.setPage(pagePrint!)
-	this_y% = fnline2y%(line)
-
-	while 1
-	
-		pdf!.drawBox(2, bottom_margin, 564, 712-bottom_margin, light_gray!, light_gray!)  
-	 
-		gosub comments
-		
-		if ope01a.invoice_type$ <> "P" 		
-			spacer$ = fill(20," ")
-			carton_hd$="Carton"+spacer$(1,18)
-			for x = 1 to 10
-				carton_hd$=carton_hd$+str(x)+spacer$
-			next x
-			carton_hd$=carton_hd$+"Total"	
-			
-			pdf!.setText(15, 640, carton_hd$, smallfont!, light_gray!)
-			pdf!.drawBox(50, 650, 500, 40, light_gray!, black!)
-			for x = 1 to 10
-				pdf!.drawVLine(50 + (x*45), 650, 40)
-			next x
-			pdf!.setText(15, 670, "Weight", smallfont!, light_gray!)
-			if mult_wh then gosub warehouse_message
-		endif
-		
-		if pdf!.getPage() = pagePDF! then break
-		pdf!.setPage(pagePDF!)
-
-	wend
-	
-	docPDF!.print()
-    call pgmdir$+"adc_rptcontrol.aon", alias$, ope01a.customer_id$, "C", new_doc_id$, "pdf"
-		
-    return
-	
-cont: rem --- Continued
-
-    pdf!.setPage(pagePrint!)
-
-    while 1
-
-        pdf!.setText(470, 690, 91, 0, "(Continued)", italicfont!, pdf!.RIGHT_JUSTIFY())
-
-        if pdf!.getPage() = pagePDF! then break
-        pdf!.setPage(pagePDF!)
-    wend
-
-    gosub report_heading
-
-    return	
-
-Compress_Description: rem --- Compress Description
-
-    ivm01a.item_desc$ = pad( func.displayDesc(ivm01a.item_desc$), 79-h0-32)
-    return
+    quotePrintViewerWindow!.destroy(err=*next)
+    quote_print_win_closed=1
+    
+    return    
 
 valid_lines: rem --- Look for valid lines here
 
@@ -1243,6 +1245,28 @@ rem #endinclude disp_message.src
 rem --- Functions
 
     def fnline2y%(tmp0)=(tmp0*12)+12+294+3
+
+rem --- fngetPattern$: Build iReports 'Pattern' from Addon Mask
+	def fngetPattern$(q$)
+		q1$=q$
+		if len(q$)>0
+			if pos("-"=q$)
+				q1=pos("-"=q$)
+				if q1=len(q$)
+					q1$=q$(1,len(q$)-1)+";"+q$; rem Has negatives with minus at the end =>> ##0.00;##0.00-
+				else
+					q1$=q$(2,len(q$)-1)+";"+q$; rem Has negatives with minus at the front =>> ##0.00;-##0.00
+				endif
+			endif
+			if pos("CR"=q$)=len(q$)-1
+				q1$=q$(1,pos("CR"=q$)-1)+";"+q$
+			endif
+			if q$(1,1)="(" and q$(len(q$),1)=")"
+				q1$=q$(2,len(q$)-2)+";"+q$
+			endif
+		endif
+		return q1$
+	fnend
 
 rem #include std_error.src
 

@@ -216,6 +216,7 @@ rem --- Calculate Taxes
 [[OPE_ORDHDR.AOPT-CRAT]]
 rem --- Do Credit Action
 
+	callpoint!.setDevObject("cred_action_from_print_now","")
 	gosub do_credit_action
 
 	if action$ <> "U" then
@@ -447,6 +448,7 @@ rem --- Credit action
 	rem --- Header record will exist if at least one detail line has been entered.
 	if GridVect!.getItem(0).size()>0 then
 		if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
+			callpoint!.setDevObject("cred_action_from_print_now","")
 			gosub do_credit_action
 		endif
 	endif
@@ -455,6 +457,14 @@ rem --- Must be in edit mode for this feature
 	if !callpoint!.isEditMode() then
 		msg_id$="AD_EDIT_MODE_REQUIRE"
 		gosub disp_message
+		break
+	endif
+
+rem --- Check to see if record has been modified (don't print until rec is saved)
+rem --- may eventually want formal message; this routine just checks mod flag and disables the button
+
+	if pos("M"=callpoint!.getRecordStatus())
+		callpoint!.setOptionEnabled("PRNT",0)
 		break
 	endif
 
@@ -478,6 +488,7 @@ rem --- Print a counter Picking Slip
 
 	rem --- Can't print until released from credit
 
+		callpoint!.setDevObject("cred_action_from_print_now","Y")
 		gosub do_credit_action
 
 		if pos(action$ = "XUS") or (pos(action$ = "RM") and str(callpoint!.getDevObject("document_printed")) <> "Y") then 
@@ -492,7 +503,7 @@ rem --- Print a counter Picking Slip
 			rem --- Released from credit and did print
 
 				user_tpl.do_end_of_form = 0
-				callpoint!.setStatus("NEWREC")
+				callpoint!.setStatus("RECORD:["+firm_id$+"E"+"  "+callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")+callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")+callpoint!.getColumnData("OPE_ORDHDR.AR_INV_NO")+"]")
 			else
 				print "---Not printing because there was no credit action"; rem debug
 			endif
@@ -722,21 +733,21 @@ rem --- Enable buttons as appropriate
 			callpoint!.setOptionEnabled("RPRT",0)
 			callpoint!.setOptionEnabled("PRNT",0)
 			callpoint!.setOptionEnabled("TTLS",0)
-            rem callpoint!.setOptionEnabled("CRAT",0); rem --- handled via opc_creditmsg.aon call below
+			rem callpoint!.setOptionEnabled("CRAT",0); rem --- handled via opc_creditmsg.aon call below
 		else
 			callpoint!.setOptionEnabled("DINV",0)
 			callpoint!.setOptionEnabled("CINV",0)
 			callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
-            rem callpoint!.setOptionEnabled("CRAT",1); rem --- handled via opc_creditmsg.aon call below
+			rem callpoint!.setOptionEnabled("CRAT",1); rem --- handled via opc_creditmsg.aon call below
 		endif
 	endif
 
 	if !callpoint!.isEditMode() then
 		callpoint!.setOptionEnabled("CINV",0)
 		callpoint!.setOptionEnabled("DINV",0)
-        rem callpoint!.setOptionEnabled("CRAT",0); rem --- handled via opc_creditmsg.aon call below
+		rem callpoint!.setOptionEnabled("CRAT",0); rem --- handled via opc_creditmsg.aon call below
 		callpoint!.setOptionEnabled("PRNT",0)
 		callpoint!.setOptionEnabled("RPRT",0)
 	endif
@@ -766,7 +777,7 @@ rem --- Set MODIFIED if totals were changed in the grid
 		endif
 	endif	
 [[OPE_ORDHDR.BPFX]]
-rem --- Disable buttons
+rem --- Disable header buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
 	callpoint!.setOptionEnabled("COMM",0)
@@ -2551,6 +2562,10 @@ rem ==========================================================================
 
 	print "in do_picklist..."; rem debug
 
+	ope_ordhdr=fnget_dev("OPE_ORDHDR")
+	read (ope_ordhdr);rem release extract so Pick List print can re-extract it
+
+	rem --- check if reprint
 	set_reprint_flag$=""
 	set_reprint_flag_old_value$=""
 	if callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "Y" then 
@@ -2559,23 +2574,31 @@ rem ==========================================================================
 		callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG", "Y")
 	endif
 
-	call user_tpl.pgmdir$+"opc_picklist.aon::on_demand", cust_id$, order_no$, callpoint!, table_chans$[all], status
-	if set_reprint_flag$<>""
-		callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG", set_reprint_flag_value$)
-	endif
-	if status = 999 then goto std_exit
+rem --- on demand pick list (or quote)
+ 
+	cp_cust_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+	cp_order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
+	cp_invoice_no$=callpoint!.getColumnData("OPE_ORDHDR.AR_INV_NO")
+	user_id$=stbl("+USER_ID")
+ 
+	dim dflt_data$[3,1]
+	dflt_data$[1,0]="CUSTOMER_ID"
+	dflt_data$[1,1]=cp_cust_id$
+	dflt_data$[2,0]="ORDER_NO"
+	dflt_data$[2,1]=cp_order_no$
+	dflt_data$[3,0]="INVOICE_TYPE"
+	dflt_data$[3,1]=callpoint!.getColumnData("OPE_ORDHDR.INVOICE_TYPE")
+ 
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:	                       "OPR_ODERPICKDMD",
+:	                       user_id$,
+:	                       "",
+:	                       "",
+:	                       table_chans$[all],
+:	                       "",
+:	                       dflt_data$[all]	
 
-	if status = 998 return
-
-	callpoint!.setDevObject("msg_printed","Y")
-	call user_tpl.pgmdir$+"opc_creditmsg.aon","H",callpoint!,UserObj!
-	msg_id$ = "OP_PICKLIST_DONE"
-	gosub disp_message
-
-	callpoint!.setStatus("SAVE")
-	callpoint!.setStatus("RECORD:"+firm_id$+"  "+cust_id$+order_no$)
-
-	print "out"; rem debug
+	callpoint!.setStatus("RECORD:["+firm_id$+"E"+"  "+cp_cust_id$+cp_order_no$+cp_invoice_no$+"]")
 
 	return
 

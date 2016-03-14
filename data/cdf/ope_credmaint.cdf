@@ -231,7 +231,26 @@ rem --- Print the order?
 	msg_id$="OP_ORDREL"
 	gosub disp_message
 	if msg_opt$="Y"
-		call stbl("+DIR_PGM")+"opc_picklist.aon::on_demand_no_col_data", cust$, ord$, callpoint!, table_chans$[all], status
+
+		user_id$=stbl("+USER_ID")
+	 
+		dim dflt_data$[3,1]
+		dflt_data$[1,0]="CUSTOMER_ID"
+		dflt_data$[1,1]=cust$
+		dflt_data$[2,0]="ORDER_NO"
+		dflt_data$[2,1]=ord$
+		dflt_data$[3,0]="INVOICE_TYPE"
+		dflt_data$[3,1]=ope01a.invoice_type$
+	 
+		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		                       "OPR_ODERPICKDMD",
+:		                       user_id$,
+:		                       "",
+:		                       "",
+:		                       table_chans$[all],
+:		                       "",
+:		                       dflt_data$[all]
+
 	endif
 	callpoint!.setStatus("EXIT")
 

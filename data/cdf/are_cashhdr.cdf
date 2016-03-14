@@ -386,9 +386,8 @@ UserObj!.addItem("");rem --- string for existing_dtl$;same format as pymt_dist$,
 rem --- set callbacks - processed in ACUS callpoint
 gridInvoice!.setCallback(gridInvoice!.ON_GRID_EDIT_START,"custom_event")
 gridInvoice!.setCallback(gridInvoice!.ON_GRID_EDIT_STOP,"custom_event")
-gridInvoice!.setCallback(gridInvoice!.ON_GRID_SELECT_ROW,"custom_event")
-gridInvoice!.setCallback(gridInvoice!.ON_GRID_SELECT_COLUMN,"custom_event")
 gridInvoice!.setCallback(gridInvoice!.ON_GRID_KEY_PRESS,"custom_event")
+gridInvoice!.setCallback(gridInvoice!.ON_GRID_MOUSE_UP,"custom_event")
 OA_chkbox!.setCallback(OA_chkbox!.ON_CHECK_OFF,"custom_event")
 OA_chkbox!.setCallback(OA_chkbox!.ON_CHECK_ON,"custom_event")
 zbal_chkbox!.setCallback(zbal_chkbox!.ON_CHECK_OFF,"custom_event")
@@ -1283,17 +1282,6 @@ rem ==================================================================
 				gridInvoice!.setCellStyle(clicked_row,0,SysGUI!.GRID_STYLE_CHECKED)
 			endif
 		break
-		case 19; rem --- select row
-			clicked_inv$=vectInvoice!.getItem(clicked_row*cols+1)
-			if gridInvoice!.getSelectedColumn()=0
-				inv_onoff=gridInvoice!.getCellState(clicked_row,0)
-				if inv_onoff=0 inv_onoff=1 else inv_onoff=0;rem --- toggle
-				gosub invoice_chk_onoff
-				gridInvoice!.setSelectedColumn(1)
-				Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
-				callpoint!.setStatus("REFRESH-MODIFIED")
-			endif
-		break
 		case 12;rem --- grid_key_press (allow space-bar toggle of checkbox)
 			if notice.wparam=32 
 				inv_onoff=gridInvoice!.getCellState(clicked_row,0)
@@ -1304,13 +1292,13 @@ rem ==================================================================
 				callpoint!.setStatus("REFRESH-MODIFIED")
 			endif
 		break
-		case 2;rem --- selected column
-			if gridInvoice!.getSelectedColumn()=0
+		case 14; rem --- grid_mouse_up
+			if notice.col=0 then
 				inv_onoff=gridInvoice!.getCellState(clicked_row,0)
 				if inv_onoff=0 inv_onoff=1 else inv_onoff=0;rem --- toggle
 				gosub invoice_chk_onoff
 				gridInvoice!.setSelectedColumn(1)
-				Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
+				Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)			
 				callpoint!.setStatus("REFRESH-MODIFIED")
 			endif
 		break
