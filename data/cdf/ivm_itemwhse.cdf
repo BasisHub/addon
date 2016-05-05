@@ -9,6 +9,8 @@ rem --- Get total on Open PO lines
 
 	podet_dev=fnget_dev("POE_PODET")
 	dim podet_tpl$:fnget_tpl$("POE_PODET")
+	pohdr_dev=fnget_dev("POE_POHDR")
+	dim pohdr_tpl$:fnget_tpl$("POE_POHDR")
 
 	whse$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
 	item$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
@@ -24,7 +26,36 @@ rem --- Get total on Open PO lines
 		if firm_id$<>podet_tpl.firm_id$ break
 		if whse$<>podet_tpl.warehouse_id$ break
 		if item$<>podet_tpl.item_id$ break
+
+		rem --- Skip if this is a drop ship item
+		findrecord(pohdr_dev,key=firm_id$+podet_tpl.po_no$,dom=*continue)pohdr_tpl$
+		if pohdr_tpl.dropship$="Y" then continue
+
 		po_qty = po_qty + (podet_tpl.qty_ordered - podet_tpl.qty_received)*podet_tpl.conv_factor
+	wend
+
+rem --- Include non-drop ship items added in PO Receipt Entry that aren't in the original PO
+	rechdr_dev=fnget_dev("POE_RECHDR")
+	dim rechdr_tpl$:fnget_tpl$("POE_RECHDR")
+	recdet_dev=fnget_dev("POE_RECDET")
+	dim recdet_tpl$:fnget_tpl$("POE_RECDET")
+	read (recdet_dev,key=firm_id$+item$,knum="ITEM_PO",dom=*next)
+	while 1
+		read record(recdet_dev,end=*break)recdet_tpl$
+		if firm_id$+item$<>recdet_tpl.firm_id$+recdet_tpl.item_id$ then break
+		if recdet_tpl.warehouse_id$<>whse$ then continue
+
+		rem --- Skip if this is a drop ship item
+		findrecord(rechdr_dev,key=firm_id$+recdet_tpl.receiver_no$,dom=*continue)rechdr_tpl$
+		if rechdr_tpl.dropship$="Y" then continue
+
+		rem --- Skip if this item was in the original PO
+		podet_exists=0
+		readrecord(podet_dev,key=firm_id$+recdet_tpl.po_no$+recdet_tpl.internal_seq_no$,knum="PRIMARY",dom=*next); podet_exists=1
+		if podet_exists then continue
+
+		rem --- Update po_qty for this warehouse and item
+		po_qty=po_qty+((recdet_tpl.qty_ordered-recdet_tpl.qty_prev_rec)*recdet_tpl.conv_factor)
 	wend
 
 	callpoint!.setColumnData("<<DISPLAY>>.ON_ORD_PO",str(po_qty))
@@ -204,7 +235,7 @@ if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and cvs(call
 [[IVM_ITEMWHSE.BSHO]]
 rem --- Open extra tables
 
-num_files=7
+num_files=10
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="POE_PODET",open_opts$[1]="OTA"
 open_tables$[2]="OPE_ORDDET",open_opts$[2]="OTA"
@@ -215,6 +246,9 @@ if callpoint!.getDevObject("wo_installed") = "Y"
 endif
 open_tables$[6]="OPE_ORDHDR",open_opts$[6]="OTA"
 open_tables$[7]="OPC_LINECODE",open_opts$[7]="OTA"
+open_tables$[8]="POE_RECHDR",open_opts$[8]="OTA"
+open_tables$[9]="POE_RECDET",open_opts$[9]="OTA"
+open_tables$[10]="POE_POHDR",open_opts$[10]="OTA"
 gosub open_tables
 
 rem --- Get IV params
