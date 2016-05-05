@@ -256,8 +256,11 @@ rem		util.enableField(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 		user_tpl.avail = ivm02a.qty_on_hand - ivm02a.qty_commit + user_tpl.prev_qty
 
 		if user_tpl.avail = 0 then
-			callpoint!.setMessage("IV_NO_AVAIL_ITEM")
-			callpoint!.setStatus("ABORT")
+            msg_id$ = "IV_NO_AVAIL_ITEM"
+            gosub disp_message
+            if pos("PASSVALID"=msg_opt$)=0 then
+                callpoint!.setStatus("ABORT")
+            endif
 		endif
 
 	endif

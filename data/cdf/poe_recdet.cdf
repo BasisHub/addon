@@ -275,7 +275,10 @@ endif
 
 rem --- Update inventory OO if not a dropship PO, and this is a new line (i.e., wasn't on PO)
 
-if callpoint!.getHeaderColumnData("POE_RECHDR.DROPSHIP")<>"Y" and cvs(callpoint!.getColumnData("POE_RECDET.PO_NO"),3)=""
+poe_podet_dev=fnget_dev("POE_PODET")
+podet_exists=0
+findrecord(poe_podet_dev,key=firm_id$+callpoint!.getColumnData("POE_RECDET.PO_NO")+callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO"),dom=*next); podet_exists=1
+if callpoint!.getHeaderColumnData("POE_RECHDR.DROPSHIP")<>"Y" and !podet_exists then
 
 	rem --- Get current and prior values
 
@@ -713,7 +716,10 @@ if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
 
 rem --- if this line is new (i.e., NOT from a PO) restore the OO
 
-if cvs(callpoint!.getColumnUndoData("POE_RECDET.PO_NO"),3)<>""
+poe_podet_dev=fnget_dev("POE_PODET")
+podet_exists=0
+findrecord(poe_podet_dev,key=firm_id$+callpoint!.getColumnData("POE_RECDET.PO_NO")+callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO"),dom=*next); podet_exists=1
+if !podet_exists then
 
 	curr_qty = (num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))-num(callpoint!.getColumnData("POE_RECDET.QTY_PREV_REC"))) * num(callpoint!.getColumnData("POE_RECDET.CONV_FACTOR"))
 	if curr_qty<>0 and callpoint!.getHeaderColumnData("POE_RECHDR.DROPSHIP")<>"Y" then gosub update_iv_oo
@@ -754,7 +760,10 @@ gosub update_header_tots
 
 rem --- if this line is new (i.e., NOT from a PO) reverse the OO quantity and remove the dropship link, if applicable
 
-if cvs(callpoint!.getColumnUndoData("POE_RECDET.PO_NO"),3)=""
+poe_podet_dev=fnget_dev("POE_PODET")
+podet_exists=0
+findrecord(poe_podet_dev,key=firm_id$+callpoint!.getColumnData("POE_RECDET.PO_NO")+callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO"),dom=*next); podet_exists=1
+if !podet_exists then
 
 	poe_linked_dev=fnget_dev("POE_LINKED")
 	remove (poe_linked_dev,key=firm_id$+callpoint!.getColumnData("POE_RECDET.PO_NO")+callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO"),dom=*next)
@@ -781,6 +790,7 @@ wend
 
 rem --- If WO present, remove link in corresponding wo detail lines
 rem --- Use start WO as WO may have been changed without saving before the delete.
+if callpoint!.getDevObject("SF_installed")="Y" then
 	wo_no_was$=callpoint!.getDevObject("start_wo_no")
 	wo_seq_ref_was$=callpoint!.getDevObject("start_wo_seq_ref")
 	if cvs(wo_no_was$,3)<>""
@@ -808,7 +818,8 @@ rem --- Use start WO as WO may have been changed without saving before the delet
 			sfe_wosub$=field(sfe_wosub$)
 			write record (sfe_wosub)sfe_wosub$
 		endif
-	endif		
+	endif
+endif		
 [[POE_RECDET.ADGE]]
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
@@ -842,6 +853,7 @@ endif
 [[POE_RECDET.AREC]]
 callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)
+callpoint!.setColumnData("POE_RECDET.PO_NO",callpoint!.getHeaderColumnData("POE_RECHDR.PO_NO"))
 
 rem callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.PO_LINE_CODE"); rem shouldn't need now that Barista bug 3999 fixed
 [[POE_RECDET.WAREHOUSE_ID.AVAL]]

@@ -50,11 +50,13 @@ rem --- Get user approval to proceed
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="ivm-02",ids$[1]="IVM_ITEMWHSE"
+    files$[1]="ivm-02",ids$[1]="IVM_ITEMWHSE",options$[1]="L"
     files$[2]="poe-12",ids$[2]="POE_PODET"
     files$[3]="ivs_params",ids$[3]="IVS_PARAMS"
+    files$[4]="poe-04",ids$[4]="POE_RECHDR"
+    files$[5]="poe-14",ids$[5]="POE_RECDET"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_update
@@ -62,10 +64,13 @@ rem --- Open/Lock files
     ivm02_dev=channels[1]
     poe12_dev=channels[2]
     ivs01a_dev=channels[3]
+    poe04_dev=channels[4]
+    poe14_dev=channels[5]
     
 rem --- Dimension string templates
 
     dim ivm02a$:templates$[1],poe12a$:templates$[2],ivs01a$:templates$[3]
+    dim poe04a$:templates$[4],poe14a$:templates$[5]
 
 rem --- Retrieve parameter records
 
@@ -108,7 +113,7 @@ rem --- Initializations
 rem --- Position warehouse file
 
         x$=Translate!.getTranslation("AON_CLEARING_CURRENT_ON-ORDER_QUANTITIES")
-        x=3+p[0]
+        rem x=3+p[0]
 		file_name$="IVM_ITEMWHSE"
         gosub Update_Screen
         read (ivm02_dev,key=firm_id$,dom=*next)
@@ -129,7 +134,7 @@ rem --- Purchase Orders
 
         if po$="Y" then
             x$=Translate!.getTranslation("AON_PURCHASE_ORDER_ON-ORDER_QUANTITIES")
-            x=3+p[0]
+            rem x=3+p[0]
 			file_name$="POE_PODET"
             gosub Update_Screen
             read (poe12_dev,key=firm_id$,knum="ITEM_PO",dom=*next)
@@ -138,23 +143,52 @@ rem --- Read next PO record; use knum=ITEM_PO, po's by item
             while more
                 read record(poe12_dev,end=*break)poe12a$
                 if pos(firm_id$=poe12a$)<>1 break
+                if cvs(poe12a.item_id$,3)="" then continue
 				total_recs=total_recs+1
 				if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","",poe12a.item_id$,0,poe12_dev,1,meter_num,status
-                if cvs(poe12a.item_id$,3)="" then continue
-                ivm02a_key$=ivm02a.firm_id$+poe12a.warehouse_id$+poe12a.item_id$
+                ivm02a_key$=firm_id$+poe12a.warehouse_id$+poe12a.item_id$
                 extract record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
                 ivm02a.qty_on_order=ivm02a.qty_on_order+((poe12a.qty_ordered-poe12a.qty_received)*poe12a.conv_factor)
                 ivm02a$=field(ivm02a$)
                 write record (ivm02_dev) ivm02a$
             wend
 			call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+
+            rem --- Include non-drop ship items added in PO Receipt Entry that aren't in the original PO
+            file_name$="POE_PODET"
+            gosub Update_Screen
+            read (poe14_dev,key=firm_id$,knum="ITEM_PO",dom=*next)
+            while 1
+                read record(poe14_dev,end=*break)poe14a$
+                if pos(firm_id$=poe14a$)<>1 break
+                if cvs(poe14a.item_id$,3)="" then continue
+                total_recs=total_recs+1
+                if mod(total_recs,milestone)=0 call pgmdir$+"adc_progress.aon","S","","","",poe14a.item_id$,0,poe14_dev,1,meter_num,status
+
+                rem --- Skip if this is a drop ship item
+                findrecord(poe04_dev,key=firm_id$+poe14a.receiver_no$,dom=*continue)poe04a$
+                if poe04a.dropship$="Y" then continue
+
+                rem --- Skip if this item was in the original PO
+                podet_exists=0
+                readrecord(poe12_dev,key=firm_id$+poe14a.po_no$+poe14a.internal_seq_no$,knum="PRIMARY",dom=*next); podet_exists=1
+                if podet_exists then continue
+
+                rem --- Update the qty_on_order for this warehouse and item
+                ivm02a_key$=firm_id$+poe14a.warehouse_id$+poe14a.item_id$
+                extract record (ivm02_dev,key=ivm02a_key$,dom=*continue) ivm02a$
+                ivm02a.qty_on_order=ivm02a.qty_on_order+((poe14a.qty_ordered-poe14a.qty_prev_rec)*poe14a.conv_factor)
+                ivm02a$=field(ivm02a$)
+                write record (ivm02_dev) ivm02a$
+            wend
+            call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
         endif
         
 rem --- Work Orders
 
         if sf$="Y" then
             x$=Translate!.getTranslation("AON_WORK_ORDER_ON-ORDER_QUANTITIES")
-            x=7
+            rem x=7
 			file_name$="SFE_WOMASTR"
             gosub Update_Screen
             read (sfe01_dev,key=firm_id$,dom=*next)

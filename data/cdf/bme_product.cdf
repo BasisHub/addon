@@ -66,8 +66,8 @@ rem --- Get Unit of Sale
 [[BME_PRODUCT.BWRI]]
 rem --- Validate Quantity
 
-	if num(callpoint!.getColumnData("BME_PRODUCT.QTY_ORDERED")) <= 0
-		msg_id$="IV_QTY_GT_ZERO"
+	if num(callpoint!.getColumnData("BME_PRODUCT.QTY_ORDERED")) = 0
+		msg_id$="IV_QTY_ZERO"
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif

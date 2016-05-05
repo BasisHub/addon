@@ -259,26 +259,29 @@ rem --- 4. if WO present, remove link in corresponding wo detail lines
 			if callpoint!.getGridRowDeleteStatus(x)<>"Y"
 				poe_recdet$=g!.getItem(x)				
 		
-				rem --- reverse OO qty 
-				if cvs(poe_recdet.po_no$,3)="" and callpoint!.getColumnData("POE_RECHDR.DROPSHIP")<>"Y" 
+                rem --- Reverse OO qty and remove dropship link if this line is new, (i.e. NOT from the PO)
+                poe_podet_dev=fnget_dev("POE_PODET")
+                podet_exists=0
+                findrecord(poe_podet_dev,key=firm_id$+poe_recdet.po_no$+poe_recdet.internal_seq_no$,dom=*next); podet_exists=1
+                if !podet_exists then
+                    rem --- Remove poe_linked
+                    remove (poe_linked_dev,key=firm_id$+poe_recdet.po_no$+poe_recdet.internal_seq_no$,dom=*next)
 
-					status = 999
-					call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs_params$,items$[all],refs$[all],refs[all],table_chans$[all],status
-					if status then goto std_exit
-		 
-					items$[0]=firm_id$
-		 			items$[1]=poe_recdet.warehouse_id$
-					items$[2]=poe_recdet.item_id$
-					refs[0]=-(poe_recdet.qty_ordered - poe_recdet.qty_prev_rec)*poe_recdet.conv_factor
-					action$="OO"
+                    rem --- Reverse OO qty if not a drop ship
+                    if callpoint!.getColumnData("POE_RECHDR.DROPSHIP")<>"Y" then
+                        status = 999
+                        call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",err=*next,chan[all],ivs_params$,items$[all],refs$[all],refs[all],table_chans$[all],status
+                        if status then goto std_exit
+         
+                        items$[0]=firm_id$
+                        items$[1]=poe_recdet.warehouse_id$
+                        items$[2]=poe_recdet.item_id$
+                        refs[0]=-(poe_recdet.qty_ordered - poe_recdet.qty_prev_rec)*poe_recdet.conv_factor
+                        action$="OO"
 
-					if refs[0]<>0 then call stbl("+DIR_PGM")+"ivc_itemupdt.aon",action$,chan[all],ivs_params$,items$[all],refs$[all],refs[all],table_chans$[all],status
-				endif
-
-				rem --- remove poe_linked
-				if cvs(poe_recdet.po_no$,3)=""
-					remove (poe_linked_dev,key=firm_id$+poe_recdet.po_no$+poe_recdet.internal_seq_no$,dom=*next)
-				endif
+                        if refs[0]<>0 then call stbl("+DIR_PGM")+"ivc_itemupdt.aon",action$,chan[all],ivs_params$,items$[all],refs$[all],refs[all],table_chans$[all],status
+                    endif
+                endif
 
 				rem --- remove lot/ser records				
 				read (poe_reclsdet_dev,key=firm_id$+poe_recdet.receiver_no$+poe_recdet.internal_seq_no$,dom=*next)
