@@ -8,7 +8,7 @@ rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
     rem --- err= on enter because pgm can be run batch mode from menu, but can also be called
     rem --- on demand from w/in requisition entry
-    enter single_vendor_id$,single_req_no$,err=*next
+    enter single_vendor_id$,single_req_no$,rd_table_chans$[all],err=*next
 
     seterr end_instantiate
     use ::bbtranslator.bbj::BBTranslator
@@ -31,6 +31,7 @@ end_instantiate:
 
     use ::sys/prog/bao_option.bbj::Option
     use ::ado_rptControl.src::ReportControl
+    use ::sys/prog/bao_utilities.bbj::BarUtils
 
     declare BBJasperReport BBjReport!
     
@@ -83,65 +84,29 @@ rem --- Set Report Name & directory
     master_filename$ = reportDir$ + masterBaseName$+".jasper"    
 
     declare BBJasperReport report!
+
+rem --- Open files
+
+	num_files=4
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="POE_REQPRINT",open_opts$[1]="OTA@"
+	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA@"
+    open_tables$[3]="POS_PARAMS",open_opts$[3]="OTA@"
+    open_tables$[4]="APS_REPORT",open_opts$[4]="OTA@"
     
-rem --- Check for user authentication; create connection string in url$
+    gosub open_tables
 
-    dbserver$="localhost"
-    dbsqlport$=":2001"
-    dbtimeout$="&socket_timeout=5000"
-  
-    dbserver$=stbl("+DBSERVER",err=*next)
-    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
-    dbssl=num(stbl("+DBSSL",err=*next))
-    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
-    
-    if dbssl
-        dbssl$="&ssl=true"
-    else
-        dbssl$="&ssl=false"
-    endif
-
-    url_user$="&user=guest"
-    if stbl("!DSUDDB",err=*endif)<>"" then
-        url_user$=""
-    endif
-    
-    dbname$ = stbl("+DBNAME")
-    dbname_api$ = stbl("+DBNAME_API")
-    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
-        url$ = dbname$
-    else
-        if pos("jdbc:"=cvs(dbname$,8))=1 then           
-            url$=dbname$+url_user$+dbssl$+dbtimeout$
-        else
-            url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
-        endif
-    endif        
-
-rem --- Open/Lock files
-
-    files=4,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-
-    files$[1]="poe-21",ids$[1]="POE_REQPRINT"
-    files$[2]="ivs_params",ids$[2]="IVS_PARAMS"
-    files$[3]="pos_params",ids$[3]="POS_PARAMS"
-    files$[4]="aps_report",ids$[4]="APS_REPORT"
-
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-
-    poe_reqprint=channels[1]
-    ivs_params=channels[2]
-    pos_params=channels[3]
-    aps_report=channels[4]
+    poe_reqprint=num(open_chans$[1])
+    ivs_params=num(open_chans$[2])
+    pos_params=num(open_chans$[3])
+    aps_report=num(open_chans$[4])
 
 rem --- Dimension string templates
 
-    dim poe_reqprint$:templates$[1]
-    dim ivs_params$:templates$[2]
-    dim pos_params$:templates$[3]
-    dim aps_report$:templates$[4]
+	dim poe_reqprint$:open_tpls$[1]
+	dim ivs_params$:open_tpls$[2]
+	dim pos_params$:open_tpls$[3]
+	dim aps_report$:open_tpls$[4]
 
 rem --- Retrieve parameter records
 
@@ -376,14 +341,14 @@ rem --- Process SQL fetch results
         locale$ = stbl("+USER_LOCALE",err=*next)
 
         if master_document
-            master_report! = new BBJasperReport(master_filename$,url$)
+            master_report! = BarUtils.getBBJasperReport(master_filename$)
             master_report!.putParams(params!)
             master_report!.setLocale(locale$)
             master_report!.fill()
             master_document=0
         endif
 
-        report! = new BBJasperReport(filename$,url$)
+        report! = BarUtils.getBBJasperReport(filename$)
         report!.putParams(params!)
         report!.setLocale(locale$)
         report!.fill()
@@ -612,14 +577,30 @@ all_done:
     
     masterViewerWindow!.destroy(err=*next)
     demandViewerWindow!.destroy(err=*next)
+    sqlclose(sql_chan,err=*next)
 
     if tcb(13) then exit
     
     release
+
+open_tables: rem --- Call open table routine	
+
+call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+
+if open_status$<>"" then
+	msg_id$="ENTRY_OPEN_ERROR"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=open_status$
+	call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+	status=912
+	goto std_exit
+endif
+
+return
     
 disp_message:rem --- Display Message Dialog
 
-    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
     return
 
 rem #include std_functions.src

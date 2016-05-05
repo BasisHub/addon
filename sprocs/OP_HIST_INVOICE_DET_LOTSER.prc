@@ -58,35 +58,6 @@ rem --- create the in memory recordset for return
 	dataTemplate$ = dataTemplate$ + "lotser_no:c(1*), qty_shipped_raw:c(1*)" 
 	
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
-
-	dbserver$=stbl("+DBSERVER",err=*next)
-	dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
-	dbssl=num(stbl("+DBSSL",err=*next))
-	dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
-
-	if dbssl
-		dbssl$="&ssl=true"
-	else
-		dbssl$="&ssl=false"
-	endif
-
-	url_user$="&user=guest"
-	if stbl("!DSUDDB",err=*endif)<>"" then
-		url_user$=""
-	endif
-
-	dbname$ = stbl("+DBNAME",err=*next)
-	dbname_api$ = stbl("+DBNAME_API",err=*next)
-	if pos("jdbc:apache"=cvs(dbname$,8))=1 then
-		url$ = dbname$
-	else
-		if pos("jdbc:"=cvs(dbname$,8))=1 then			
-			url$=dbname$+url_user$
-		else
-			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
-		endif
-	endif
-	mode$="mode=PROCEDURE"
 	
 rem --- Initializationas
 

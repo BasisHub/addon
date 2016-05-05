@@ -7,7 +7,16 @@ rem --- Update post_to_gl if GL is uninstalled
 [[ARS_PARAMS.AREC]]
 rem --- Init new record
 	callpoint!.setColumnData("ARS_PARAMS.INV_HIST_FLG","Y")
-	if user_tpl.gl_installed$="Y" then callpoint!.setColumnData("ARS_PARAMS.POST_TO_GL","Y")
+	if user_tpl.gl_installed$="Y" then
+		callpoint!.setColumnData("ARS_PARAMS.POST_TO_GL","Y")
+		callpoint!.setColumnData("ARS_PARAMS.BR_INTERFACE","Y")
+	else
+		callpoint!.setColumnData("ARS_PARAMS.POST_TO_GL","N")
+		callpoint!.setColumnData("ARS_PARAMS.BR_INTERFACE","N")
+
+		callpoint!.setColumnEnabled("ARS_PARAMS.POST_TO_GL",0)
+		callpoint!.setColumnEnabled("ARS_PARAMS.BR_INTERFACE",0)
+	endif
 [[ARS_PARAMS.BSHO]]
 num_files=1
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -36,18 +45,14 @@ rem --- Retrieve parameter data
 	dim info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
 	gl$=info$[20]
-	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
-	ap$=info$[20],br$=info$[9]
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]
 	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_curr_per:c(2),gl_curr_year:c(4),gl_installed:c(1),"+
-:                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1)"
+:                  "iv_installed:c(1)"
 	user_tpl.app$="AR"
 	user_tpl.gl_pers$=gls01a.total_pers$
 	user_tpl.gl_installed$=gl$
-	user_tpl.ap_installed$=ap$
 	user_tpl.iv_installed$=iv$
-	user_tpl.bank_rec$=br$
 	user_tpl.gl_curr_per$=gls01a.current_per$
 	user_tpl.gl_curr_year$=gls01a.current_year$
 
@@ -62,10 +67,6 @@ callpoint!.setColumnData("ARS_PARAMS.CUSTOMER_SIZE",
 :	callpoint!.getColumnData("ARS_PARAMS.MAX_CUSTOMER_LEN"))
 callpoint!.setColumnUndoData("ARS_PARAMS.CUSTOMER_SIZE",
 :                     callpoint!.getColumnData("ARS_PARAMS.MAX_CUSTOMER_LEN"))
-if ap$="Y" and gl$="Y" and br$="Y" 
-	callpoint!.setColumnData("ARS_PARAMS.BR_INTERFACE","Y")
-	callpoint!.setColumnUndoData("ARS_PARAMS.BR_INTERFACE","Y")
-endif
 callpoint!.setStatus("MODIFIED-REFRESH")
 [[ARS_PARAMS.AUTO_NO.AVAL]]
 rem --- check here and be sure seq #'s rec exists, if auto-number got checked
@@ -84,17 +85,6 @@ if callpoint!.getUserInput()="Y"
 		dim msg_tokens$[1]
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
-	endif
-endif
-[[ARS_PARAMS.BR_INTERFACE.AVAL]]
-if user_tpl.ap_installed$<>"Y" or user_tpl.gl_installed$<>"Y" or user_tpl.bank_rec$<>"Y"
-	if callpoint!.getUserInput()<>"N"
-		msg_id$="AR_BANKREC_ERR"
-		dim msg_tokens$[1]
-		msg_opt$=""
-		gosub disp_message
-		callpoint!.setUserInput("N")
-		callpoint!.setStatus("REFRESH")
 	endif
 endif
 [[ARS_PARAMS.CURRENT_PER.AVAL]]

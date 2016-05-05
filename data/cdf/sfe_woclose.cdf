@@ -601,7 +601,7 @@ rem ==========================================================================
 use ::sfo_SfUtils.aon::SfUtils
 
 rem --- Open Files
-	num_files=14
+	num_files=15
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="SFS_PARAMS",open_opts$[1]="OTA@"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA@"
@@ -617,6 +617,7 @@ rem --- Open Files
 	open_tables$[12]="IVM_ITEMWHSE",open_opts$[12]="OTA@"
 	open_tables$[13]="IVC_WHSECODE",open_opts$[13]="OTA@"
 	open_tables$[14]="SFE_WOMASTR",open_opts$[14]="OTA"
+	open_tables$[15]="SFE_WOLOTSER",open_opts$[15]="OTA[1]"
 
 	gosub open_tables
 

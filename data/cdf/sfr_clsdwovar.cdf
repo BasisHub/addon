@@ -1,17 +1,16 @@
 [[SFR_CLSDWOVAR.PERIOD.AVAL]]
 rem --- Show date range for entered period
 
-    gls01_dev=fnget_dev("GLS_PARAMS")
-    call stbl("+DIR_PGM")+"adc_perioddates.aon",gls01_dev,num(callpoint!.getUserInput()),
-:       num(callpoint!.getDevObject("current_year")),begdate$,enddate$,status
-    if status=0
-        begdate$=date(jul(begdate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
-        enddate$=date(jul(enddate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
-        callpoint!.setColumnData("<<DISPLAY>>.DATE_RANGE",begdate$+"  -  "+enddate$,1)
-    else
-        callpoint!.setColumnData("<<DISPLAY>>.DATE_RANGE","",1)
-    endif
-
+	gls01_dev=fnget_dev("GLS_PARAMS")
+	call stbl("+DIR_PGM")+"adc_perioddates.aon",gls01_dev,num(callpoint!.getUserInput()),
+:		num(callpoint!.getDevObject("current_year")),begdate$,enddate$,status
+	if status=0
+		begdate$=date(jul(begdate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
+		enddate$=date(jul(enddate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
+		callpoint!.setColumnData("<<DISPLAY>>.DATE_RANGE",begdate$+"  -  "+enddate$,1)
+	else
+		callpoint!.setColumnData("<<DISPLAY>>.DATE_RANGE","",1)
+	endif
 [[SFR_CLSDWOVAR.ARAR]]
 rem --- Default year and period
 	gls01_dev=fnget_dev("GLS_PARAMS")
@@ -23,14 +22,14 @@ rem --- Default year and period
 	readrecord(sfs01_dev,key=firm_id$+"SF00",dom=std_missing_params)sfs01a$
 	call stbl("+DIR_PGM")+"adc_perioddates.aon",gls01_dev,num(sfs01a.current_per$),
 :		num(sfs01a.current_year$),begdate$,enddate$,status
-    callpoint!.setColumnData("SFR_CLSDWOVAR.PERIOD",sfs01a.current_per$)
-    callpoint!.setColumnData("SFR_CLSDWOVAR.YEAR",sfs01a.current_year$)
-    callpoint!.setDevObject("current_year",sfs01a.current_year$)
-    if status=0
-        begdate$=date(jul(begdate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
-        enddate$=date(jul(enddate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
-        callpoint!.setColumnData("<<DISPLAY>>.DATE_RANGE",begdate$+"  -  "+enddate$)
-    endif
+	callpoint!.setColumnData("SFR_CLSDWOVAR.PERIOD",sfs01a.current_per$)
+	callpoint!.setColumnData("SFR_CLSDWOVAR.YEAR",sfs01a.current_year$)
+	callpoint!.setDevObject("current_year",sfs01a.current_year$)
+	if status=0
+		begdate$=date(jul(begdate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
+		enddate$=date(jul(enddate$,"%Yd%Mz%Dz"):stbl("+DATE_MASK"))
+		callpoint!.setColumnData("<<DISPLAY>>.DATE_RANGE",begdate$+"  -  "+enddate$)
+	endif
 
 rem --- Set min/max values for period
 	

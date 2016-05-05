@@ -103,7 +103,7 @@ rem --- setup field_ transactions
 			
 rem --- Find Original Transaction
 			k$=firm_id$+sfadja.wo_location$+sfadja.wo_no$+sfadja.trans_date$+sfadja.trans_seq$
-			extract record (wotran_dev,key=k$,dom=remove_record) sftran$
+			read record (wotran_dev,key=k$,dom=remove_record) sftran$
 
 rem --- Find Header(S)
 			find record (woe01_dev,key=sfadja.firm_id$+sfadja.wo_location$+sfadja.wo_no$) woe01a$
@@ -125,27 +125,61 @@ rem --- Find The Distribution
 			endif
 			remove (sfadj_dev,key=k$,dom=*next)
 
-rem --- Update The Transactions
+rem --- Update The Transactions (use deltas if WO number wasn't changed)
 
-			newwo$=""
-			if sfadja.wo_no$<>sfadja.new_wo_no$ or sfadja.trans_date$<>sfadja.new_trn_date$ then 
-				newwo$="Y"
-				remove (wotran_dev,key=k$)
-				sftran.wo_no$=sfadja.new_wo_no$
-				sftran.trans_date$=sfadja.new_trn_date$
-			endif
-			sftran.units=sfadja.new_units
-			sftran.unit_cost=field_a1+field_a2
-			sftran.ext_cost=(sftran.units+field_a3)*sftran.unit_cost
-			if record_id_flag=0 then 
-				sftran.direct_rate=field_a1
-				sftran.ovhd_rate=field_a2
-				sftran.complete_qty=field_a4
-				sftran.setup_time=field_a3
-			endif
-			if newwo$<>"Y" then 
-				write record (wotran_dev) sftran$
-			else
+            if sfadja.wo_no$=sfadja.new_wo_no$ then
+                rem --- Same WO, so use delta transaction for the adjustment
+                dim deltaTran$:fattr(sftran$)
+                deltaTran$=sftran$
+                deltaTran$.trans_date$=sfadja.new_trn_date$
+
+                rem --- Get next tran_seq
+                summaryRecord=0
+                seq_mask$=fill(len(deltaTran.trans_seq$),"0")
+                max_trans_seq=num(fill(len(deltaTran.trans_seq$),"9"))
+                deltaTran_trip$=firm_id$+deltaTran.wo_location$+deltaTran.wo_no$+deltaTran.trans_date$
+                read(wotran_dev,key=deltaTran_trip$+$FF$,dom=*next)
+                dim deltaTran_key$:fattr(wotran_key$)
+                deltaTran_key$=keyp(wotran_dev,end=*next)
+                if pos(deltaTran_trip$=deltaTran_key$)=1 then
+                    trans_seq=num(deltaTran_key.trans_seq$)
+                    if trans_seq<max_trans_seq then
+                        deltaTran.trans_seq$=str(trans_seq+1:seq_mask$)
+                    else
+                        deltaTran.trans_seq$=deltaTran_key.trans_seq$
+                        summaryRecord=1
+                    endif
+                else
+                    deltaTran.trans_seq$=str(1:seq_mask$)
+                endif
+
+                deltaTran.units=sfadja.new_units-sftran.units
+                if record_id_flag=0 then 
+                    deltaTran.unit_cost=(sfadja.new_dir_rate+sfadja.new_ovr_rate)-(sftran.direct_rate+sftran.ovhd_rate)
+                    deltaTran.ext_cost=(sfadja.new_units+sfadja.new_set_hrs)*(sfadja.new_dir_rate+sfadja.new_ovr_rate)-sftran.ext_cost
+                    deltaTran.direct_rate=sfadja.new_dir_rate-sftran.direct_rate
+                    deltaTran.ovhd_rate=sfadja.new_ovr_rate-sftran.ovhd_rate
+                    deltaTran.complete_qty=sfadja.new_qty_comp-sftran.complete_qty
+                    deltaTran.setup_time=sfadja.new_set_hrs-sftran.setup_time
+                else
+                    deltaTran.unit_cost=sfadja.new_unit_cst-sftran.unit_cost
+                    deltaTran.ext_cost=sfadja.new_units*sfadja.new_unit_cst-sftran.ext_cost
+                endif
+                write record (wotran_dev) deltaTran$
+            else
+                rem --- WO changed so use full transaction for the adjustment
+                remove (wotran_dev,key=k$)
+                sftran.wo_no$=sfadja.new_wo_no$
+                sftran.trans_date$=sfadja.new_trn_date$
+                sftran.units=sfadja.new_units
+                sftran.unit_cost=field_a1+field_a2
+                sftran.ext_cost=(sftran.units+field_a3)*sftran.unit_cost
+                if record_id_flag=0 then 
+                    sftran.direct_rate=field_a1
+                    sftran.ovhd_rate=field_a2
+                    sftran.complete_qty=field_a4
+                    sftran.setup_time=field_a3
+                endif
 
 rem --- Add transaction to wot-01 or wot-31
 				seq_mask$=fill(len(sftran.trans_seq$),"0")
@@ -217,6 +251,7 @@ rem --- Summary posting when no free records exist
 					write record (wotran_dev) sftran$
 				endif
 			endif
+			
 rem --- Update The Last Activity Date
 
 			if sfadja.wo_no$<>sfadja.new_wo_no$ or sfadja.trans_date$<>sfadja.new_trn_date$ then 

@@ -652,39 +652,6 @@ REM - Create the charts
     chartGroupBox!.setSize(groupBoxWidth, groupBoxHeight)
     progressBarGroupBox!.setSize(groupBoxWidth, groupBoxHeight)
 
-REM - Open a JDBC connection
-
-    rem ' ******************************************************
-    rem ' build the database URL
-    rem ' ******************************************************
-    dbserver$=stbl("+DBSERVER",err=*next)
-    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
-    dbssl=num(stbl("+DBSSL",err=*next))
-    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
-    
-    if dbssl
-        dbssl$="&ssl=true"
-    else
-        dbssl$="&ssl=false"
-    endif
-
-    url_user$="&user=guest"
-    if stbl("!DSUDDB",err=*endif)<>"" then
-        url_user$=""
-    endif
-	
-    dbname$ = stbl("+DBNAME")
-    dbname_api$ = stbl("+DBNAME_API")
-    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
-        url$ = dbname$
-    else
-	if pos("jdbc:"=cvs(dbname$,8))=1 then			
-            url$=dbname$+url_user$
-	else
-            url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
-	endif
-    endif
-
     rem --- If BUI, initialize Barista processes
     if info(3,6)="5" then
         use ::ado_util.src::util
@@ -708,9 +675,37 @@ REM - get the accounting periods
     sql$ = sql$ + "PER_ENDING_07, PER_ENDING_08, PER_ENDING_09, PER_ENDING_10, PER_ENDING_11, PER_ENDING_12, PER_ENDING_13 "
     sql$ = sql$ + "FROM GLS_PARAMS "
     sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "'"
+        
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
-    params! = BBjAPI().createSQLRecordSet(url$,"",sql$)
-    periods! = params!.getCurrentRecordData()
+    rs! = BBJAPI().createMemoryRecordSet("TOTAL_PERS:C(2),CURRENT_PER:C(2),CURRENT_YEAR:C(4),"+
+:   "PER_ENDING_01:C(4),PER_ENDING_02:C(4),PER_ENDING_03:C(4),PER_ENDING_04:C(4),PER_ENDING_05:C(4),PER_ENDING_06:C(4),"+
+:   "PER_ENDING_07:C(4),PER_ENDING_08:C(4),PER_ENDING_09:C(4),PER_ENDING_10:C(4),PER_ENDING_11:C(4),PER_ENDING_12:C(4),PER_ENDING_13:C(4)")
+    
+    read_tpl$ = sqlfetch(sql_chan,err=*break)
+    periods! = rs!.getEmptyRecordData()    
+    periods!.setFieldValue("TOTAL_PERS",read_tpl.total_pers$)
+    periods!.setFieldValue("CURRENT_PER",read_tpl.current_per$)
+    periods!.setFieldValue("CURRENT_YEAR",pad(read_tpl.current_year$,4))
+    periods!.setFieldValue("PER_ENDING_01",pad(read_tpl.per_ending_01$,4))
+    periods!.setFieldValue("PER_ENDING_02",pad(read_tpl.per_ending_02$,4))
+    periods!.setFieldValue("PER_ENDING_03",pad(read_tpl.per_ending_03$,4))
+    periods!.setFieldValue("PER_ENDING_04",pad(read_tpl.per_ending_04$,4))
+    periods!.setFieldValue("PER_ENDING_05",pad(read_tpl.per_ending_05$,4))
+    periods!.setFieldValue("PER_ENDING_06",pad(read_tpl.per_ending_06$,4))
+    periods!.setFieldValue("PER_ENDING_07",pad(read_tpl.per_ending_07$,4))
+    periods!.setFieldValue("PER_ENDING_08",pad(read_tpl.per_ending_08$,4))
+    periods!.setFieldValue("PER_ENDING_09",pad(read_tpl.per_ending_09$,4))
+    periods!.setFieldValue("PER_ENDING_10",pad(read_tpl.per_ending_10$,4))
+    periods!.setFieldValue("PER_ENDING_11",pad(read_tpl.per_ending_11$,4))
+    periods!.setFieldValue("PER_ENDING_12",pad(read_tpl.per_ending_12$,4))
+    periods!.setFieldValue("PER_ENDING_13",pad(read_tpl.per_ending_13$,4))
+    sqlclose(sql_chan)
+
     period = num(periods!.getFieldValue("CURRENT_PER"))
     totalPeriods = num(periods!.getFieldValue("TOTAL_PERS"))
     currentYear = num(periods!.getFieldValue("CURRENT_YEAR"))
@@ -1118,12 +1113,28 @@ REM - Monthly sales per SalesRep
     sql$ = sql$ + "WHERE T1.FIRM_ID = '" + firm_id$ + "' AND (T1.INVOICE_DATE BETWEEN '" + monthBeginDate$ + "' AND '" + monthEndDate$ + "') "
     sql$ = sql$ + "GROUP BY T1.SLSPSN_CODE, T2.CODE_DESC "
     sql$ = sql$ + "ORDER BY TOTAL DESC"
+        
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
-    rs! = BBjAPI().createSQLRecordSet(url$,"",sql$)
+    rs! = BBJAPI().createMemoryRecordSet("SLSPSN_CODE:C(3),SLSPSN_NAME:C(20),TOTAL:N(1*)")
+
+    while 1
+        read_tpl$ = sqlfetch(sql_chan,err=*break)
+        data! = rs!.getEmptyRecordData()    
+        data!.setFieldValue("SLSPSN_CODE",read_tpl$.slspsn_code$)
+        data!.setFieldValue("SLSPSN_NAME",read_tpl$.slspsn_name$)
+        data!.setFieldValue("TOTAL",str(read_tpl$.total))
+        rs!.insert(data!)
+    wend
+    sqlclose(sql_chan)
+
     progressBar!.setValue(1)
 
     seriesCount = rs!.getRecordCount()
-
     if seriesCount > 0 then
         rem ' re add the bar charts with the seriesCount
         barChart1!.destroy()
@@ -1138,6 +1149,7 @@ REM - Monthly sales per SalesRep
 
         counter = 0
 
+        rs!.first()
         while 1
              data! = rs!.getCurrentRecordData()
 
@@ -1180,14 +1192,30 @@ REM - Monthly sales per Customer type
     sql$ = sql$ + "INNER JOIN ARC_CUSTTYPE t3 on t2.FIRM_ID = t3.FIRM_ID and t3.RECORD_ID_L = 'L' and t2.CUSTOMER_TYPE = t3.CUSTOMER_TYPE "
     sql$ = sql$ + "WHERE t1.FIRM_ID = '" + firm_id$ + "' and (t1.INVOICE_DATE BETWEEN '" + monthBeginDate$ + "' AND '" + monthEndDate$ + "') "
     sql$ = sql$ + "GROUP BY t2.CUSTOMER_TYPE, t3.CODE_DESC ORDER BY TOTAL DESC"
+        
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
+    rs! = BBJAPI().createMemoryRecordSet("CUSTOMER_TYPE:C(3),CUST_TYPE_DESC:C(20),TOTAL:N(1*)")
+
+    while 1
+        read_tpl$ = sqlfetch(sql_chan,err=*break)
+        data! = rs!.getEmptyRecordData()    
+        data!.setFieldValue("CUSTOMER_TYPE",read_tpl$.customer_type$)
+        data!.setFieldValue("CUST_TYPE_DESC",read_tpl$.cust_type_desc$)
+        data!.setFieldValue("TOTAL",str(read_tpl$.total))
+        rs!.insert(data!)
+    wend
+    sqlclose(sql_chan)
     
     counter = 0
 
-    rs! = BBjAPI().createSQLRecordSet(url$,"",sql$)
     progressBar!.setValue(2)
 
     seriesCount = rs!.getRecordCount()
- 
     if seriesCount > 0 then
         rem ' re add the bar charts with the seriesCount
         barChart2!.destroy()
@@ -1200,6 +1228,7 @@ REM - Monthly sales per Customer type
         control! = window!.getControl(visibleControlID)
         control!.setVisible(1)
    
+        rs!.first()
         while 1
              rem ' t$ = sqlfetch(chan,err=*BREAK)
              data! = rs!.getCurrentRecordData()         
@@ -1238,11 +1267,28 @@ REM - Sales Year To Date
     sql$ = "SELECT SUBSTRING(INVOICE_DATE, 5, 2) as MONTH, SUM(TOTAL_SALES) AS TOTAL FROM OPT_INVHDR "
     sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "' and (INVOICE_DATE BETWEEN '" + yearStartDate$ + "' AND '" + monthEndDate$ + "') "
     sql$ = sql$ + "GROUP BY SUBSTRING(INVOICE_DATE, 5, 2) ORDER BY MONTH"
+        
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
+
+    rs! = BBJAPI().createMemoryRecordSet("MONTH:C(2),TOTAL:N(1*)")
+
+    while 1
+        read_tpl$ = sqlfetch(sql_chan,err=*break)
+        data! = rs!.getEmptyRecordData()    
+        data!.setFieldValue("MONTH",read_tpl$.month$)
+        data!.setFieldValue("TOTAL",str(read_tpl$.total))
+        rs!.insert(data!)
+    wend
+    sqlclose(sql_chan)
     
-    rs! = BBjAPI().createSQLRecordSet(url$,"",sql$)
     progressBar!.setValue(3)
 
     if !(rs!.isEmpty()) then
+        rs!.first()
         while 1
             data! = rs!.getCurrentRecordData()
             rem ' t$ = sqlfetch(chan,err=*BREAK)

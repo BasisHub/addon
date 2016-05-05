@@ -9,7 +9,7 @@ rem --- Check if code is used as a default code
 	dim ars_rec$:open_tpls$[1]
 
 	find record(ars_custdflt_dev,key=firm_id$+"D",dom=*next)ars_rec$
-    if ars_rec.frt_terms$ = callpoint!.getColumnData("OPM_FRTTERMS.FRT_TERMS") then
+	if ars_rec.frt_terms$ = callpoint!.getColumnData("OPM_FRTTERMS.FRT_TERMS") then
 		callpoint!.setMessage("OP_FRT_TERMS_IN_DFLT")
 		callpoint!.setStatus("ABORT")
 	endif

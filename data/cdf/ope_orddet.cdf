@@ -1239,7 +1239,7 @@ rem --- Recalc quantities and extended price
 
 	boqty  = num(callpoint!.getUserInput())
 	ordqty = num(callpoint!.getColumnData("OPE_ORDDET.QTY_ORDERED"))
-    qtyshipped = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
+	qtyshipped = num(callpoint!.getColumnData("OPE_ORDDET.QTY_SHIPPED"))
 
 	qty_shipped = ordqty - boqty
 

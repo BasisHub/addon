@@ -27,6 +27,8 @@ rem --- USE and Declares
 	use ::bbjasper.bbj::BBJasperViewerWindow
 	use ::bbjasper.bbj::BBJasperViewerControl
 
+    use ::sys/prog/bao_utilities.bbj::BarUtils
+
     ScreenSize!   = bbjAPI().getSysGui().getSystemMetrics().getScreenSize()
     screen_width  = ScreenSize!.width - 50; rem -50 keeps it in the MDI w/ no scroll bars
     screen_height = ScreenSize!.height - 50
@@ -38,7 +40,6 @@ rem --- USE and Declares
 	declare BBJasperViewerWindow BBjReportWindow!
 
 	declare BBjRecordSet params!
-	declare BBjRecordData periods!
 
 rem --- Retrieve sysinfo data
 
@@ -49,6 +50,17 @@ rem --- Retrieve sysinfo data
     proc_date$=date(jul(num(sysinfo.system_date$(1,4)),num(sysinfo.system_date$(5,2)),num(sysinfo.system_date$(7,2))):stbl("+DATE_MASK"))
     firm_id$=sysinfo.firm_id$
     firm_name$=sysinfo.firm_name$
+
+rem --- Open GL parameters file
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"  
+    
+    call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    gls01_dev=channels[1]
+    dim gls01a$:templates$[1]
 
 rem --- Common information
 
@@ -62,57 +74,18 @@ rem --- Common information
     
 	barista_wd$=dsk("")+dir("")
 
-	rem ' build the database URL
-	dbserver$="localhost"
-	dbsqlport$=":2001"
-	rem dbtimeout$="&socket_timeout=5000"
-
-	dbserver$=stbl("+DBSERVER",err=*next)
-	dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
-	dbssl=num(stbl("+DBSSL",err=*next))
-	rem dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT",err=*next)
-
-	if dbssl
-		dbssl$="&ssl=true"
-	else
-		dbssl$="&ssl=false"
-	endif
-
-	url_user$="&user=guest"
-	if stbl("!DSUDDB",err=*endif)<>"" then
-		url_user$=""
-	endif
-
-	dbname$ = stbl("+DBNAME")
-	dbname_api$ = stbl("+DBNAME_API")
-	if pos("jdbc:apache"=cvs(dbname$,8))=1 then
-		url$ = dbname$
-	else
-		if pos("jdbc:"=cvs(dbname$,8))=1 then			
-			url$=dbname$+url_user$+dbssl$
-		else
-			url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$
-		endif
-	endif
-
 	rem ' get the customer id mask
 	call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",custIdMask$,0,custIdLen
 	custIdMaskLen = len(custIdMask$)
 
 rem --- get the accounting periods
-	sql$ = "SELECT TOTAL_PERS, CURRENT_PER, CURRENT_YEAR, "
-	sql$ = sql$ + "PER_ENDING_01, PER_ENDING_02, PER_ENDING_03, PER_ENDING_04, PER_ENDING_05, PER_ENDING_06, "
-	sql$ = sql$ + "PER_ENDING_07, PER_ENDING_08, PER_ENDING_09, PER_ENDING_10, PER_ENDING_11, PER_ENDING_12, PER_ENDING_13 "
-	sql$ = sql$ + "FROM GLS_PARAMS "
-	sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "'"
 
-	params! = BBjAPI().createSQLRecordSet(url$,"",sql$)
-	periods! = params!.getCurrentRecordData()
+    readrecord(gls01_dev,key=firm_id$+"GL00",dom=*next)gls01a$
 
 rem --- Assign input values to local variables
 
-    period$=Option!.getOptionData("PICK_GL_PER")
-    year$=Option!.getOptionData("PICK_YEAR")
+    period$=gls01a.current_per$
+    year$=gls01a.current_year$
     
 rem --- Make Document Archive Record and Get ID
  
@@ -130,25 +103,24 @@ rem --- Make Document Archive Record and Get ID
     rd_archive_action$=""
 
 rem - establish the month 
-
-    period = num(period$)
     
-    firstPerEnding$ = periods!.getFieldValue("PER_ENDING_01")
+    firstPerEnding$ = gls01a.per_ending_01$
     
-    switch period
-    	case 1; ending$ = periods!.getFieldValue("PER_ENDING_01"); break
-    	case 2; ending$ = periods!.getFieldValue("PER_ENDING_02"); break
-    	case 3; ending$ = periods!.getFieldValue("PER_ENDING_03"); break
-    	case 4; ending$ = periods!.getFieldValue("PER_ENDING_04"); break
-    	case 5; ending$ = periods!.getFieldValue("PER_ENDING_05"); break
-    	case 6; ending$ = periods!.getFieldValue("PER_ENDING_06"); break
-    	case 7; ending$ = periods!.getFieldValue("PER_ENDING_07"); break
-    	case 8; ending$ = periods!.getFieldValue("PER_ENDING_08"); break
-    	case 9; ending$ = periods!.getFieldValue("PER_ENDING_09"); break
-    	case 10; ending$ = periods!.getFieldValue("PER_ENDING_10"); break
-    	case 11; ending$ = periods!.getFieldValue("PER_ENDING_11"); break
-    	case 12; ending$ = periods!.getFieldValue("PER_ENDING_12"); break
-    	case 13; ending$ = periods!.getFieldValue("PER_ENDING_13"); break
+    switch num(period$)
+        case 1; ending$ = gls01a.per_ending_01$; break
+        case 2; ending$ = gls01a.per_ending_02$; break
+        case 3; ending$ = gls01a.per_ending_03$; break
+        case 4; ending$ = gls01a.per_ending_04$; break
+        case 5; ending$ = gls01a.per_ending_05$; break
+        case 6; ending$ = gls01a.per_ending_06$; break
+        case 7; ending$ = gls01a.per_ending_07$; break
+        case 8; ending$ = gls01a.per_ending_08$; break
+        case 9; ending$ = gls01a.per_ending_09$; break
+        case 10; ending$ = gls01a.per_ending_10$; break
+        case 11; ending$ = gls01a.per_ending_11$; break
+        case 12; ending$ = gls01a.per_ending_12$; break
+        case 13; ending$ = gls01a.per_ending_13$; break
+        default; ending$ = "    "; break
     swend
   
     month$ = ending$(1,2)
@@ -159,7 +131,7 @@ rem --- start SalesByCustType report
 	repTitle!=sysinfo.task_desc$
     repTitle$=repTitle!.replace(" ","_")
 
-	BBjReport! = new BBJasperReport(reportName$, url$)
+	BBjReport! = BarUtils.getBBJasperReport(reportName$)
 	
 	BBjReport!.putParam("FIRM_ID",firm_id$)
 	BBjReport!.putParam("FIRM_NAME",firm_name$)

@@ -1,3 +1,10 @@
+[[OPE_INVCASH.ADEL]]
+rem --- Set devObjects to tell ope_invhdr there aren't any ope_invcash transactions for this invoice.
+	callpoint!.setDevObject("print_invoice", "N")
+	callpoint!.setDevObject("cash_code_type","")
+
+rem --- There is only one ope_invcash recprd per invoice, so exit form after record deleted.
+	callpoint!.setStatus("EXIT")
 [[OPE_INVCASH.BWRI]]
 rem --- Initialize RTP modified fields for modified existing records
 	if callpoint!.getRecordMode()="C" then
@@ -38,6 +45,8 @@ rem --- but used to be stored in pymt ID field
 		endif
 	endif
 [[OPE_INVCASH.<CUSTOM>]]
+#include std_missing_params.src
+
 rem ==============================================
 rem -- mod10_check; see if payment ID field contains valid cc# format
 rem -- incoming cc_card$ is the ope_invcash.payment_id field
@@ -159,26 +168,31 @@ rem --- Expiration date can't by more than today
 print "OPE_INVCASH.CASH_REC_CD:AVAL"; rem debug
 
 rem --- Validate cash receipt code
-
-	start_block = 1
-	found       = 0
-
 	code$ = callpoint!.getUserInput()
 	file_name$ = "ARC_CASHCODE"
 	dim cashcode_rec$:fnget_tpl$(file_name$)
-
-	if start_block then
-		find record (fnget_dev(file_name$), key=firm_id$+"C"+code$, dom=*endif) cashcode_rec$
+	found = 0
+	find record (fnget_dev(file_name$), key=firm_id$+"C"+code$, dom=*endif) cashcode_rec$; found = 1
+	if found then
+		if pos(cashcode_rec.trans_type$="$CP")=0 then
+			callpoint!.setStatus("ABORT")
+			break; rem --- exit callpoint
+		endif
 		callpoint!.setDevObject("cash_code_type",cashcode_rec.trans_type$)
-		found = 1
-	endif
 
-	if !found then
-		callpoint!.setStatus("ABORT")
-		break; rem --- exit callpoint
-	endif
-
-	if pos(cashcode_rec.trans_type$="$CP")=0 then
+		rem --- If using Bank Rec, verify the Cash Receipts Code’s GL Cash Account is set up in GLM_BANKMASTER (glm-05)
+		if callpoint!.getDevObject("br_interface")="Y" then
+			glm05_dev=fnget_dev("@GLM_BANKMASTER")
+			dim glm05a$:fnget_tpl$("@GLM_BANKMASTER")
+			findrecord(glm05_dev,key=firm_id$+cashcode_rec.gl_cash_acct$,dom=*next)glm05a$
+			if cvs(glm05a.gl_account$,2)="" then
+				msg_id$="AR_NOT_BNKREC_CASHCD"
+				gosub disp_message
+				callpoint!.setStatus("ABORT")
+				break
+			endif
+		endif
+	else
 		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
@@ -243,11 +257,29 @@ rem --- Inits
 
 rem --- Open files
 
-	num_files = 2
+	num_files = 3
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST", open_opts$[1]="OTA"
 	open_tables$[2]="ARC_CASHCODE", open_opts$[2]="OTA"
+	open_tables$[3]="ARS_PARAMS", open_opts$[3]="OTA@"
+
+	gosub open_tables
+
+	ars01_dev=num(open_chans$[3])
+	dim ars01a$:open_tpls$[3]
+
+rem --- Retrieve AR parameter data
+
+	ars01a_key$=firm_id$+"AR00"
+	find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
+	callpoint!.setDevObject("br_interface",ars01a.br_interface$)
+
+rem --- Additional/optional opens
+
+	num_files = 1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLM_BANKMASTER", open_opts$[1]="OTA@"
 
 	gosub open_tables
 

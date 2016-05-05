@@ -686,10 +686,12 @@ rem --- Do we need to print an invoice first?
 		gosub do_invoice
 	endif
 
-rem --- Now start a new record
+rem --- Start a new record after a cash sale
 
-	user_tpl.do_end_of_form = 0
-	callpoint!.setStatus("NEWREC")
+	if callpoint!.getDevObject("cash_code_type")<>"" then
+		user_tpl.do_end_of_form = 0
+		callpoint!.setStatus("NEWREC")
+	endif
 [[OPE_INVHDR.AOPT-RPRT]]
 rem --- Check for printing in next batch and set
 
@@ -744,6 +746,15 @@ rem --- Set type in OrderHelper object
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	ordHelp!.setInv_type(callpoint!.getUserInput())
 [[OPE_INVHDR.AOPT-PRNT]]
+rem --- Check to see if record has been modified (don't print until rec is saved)
+
+	if pos("M"=callpoint!.getRecordStatus())
+		callpoint!.setOptionEnabled("PRNT",0)
+		msg_id$="AD_SAVE_BEFORE_PRINT"
+		gosub disp_message
+		break
+	endif
+
 rem --- Must be in edit mode for this feature
 	if !callpoint!.isEditMode() then
 		msg_id$="AD_EDIT_MODE_REQUIRE"
@@ -933,6 +944,13 @@ rem --- Has customer and order number been entered?
 		callpoint!.setStatus("ABORT")
 		break
 	endif
+
+rem --- Redisplay Ship-To information in case answered YES to OP_REPRINT_INVOICE in ADIS
+
+	ship_to_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
+	ship_to_no$   = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_NO")
+	order_no$     = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	gosub ship_to_info
 
 rem --- Check for Order Total on non-cash sales
 
@@ -1486,7 +1504,7 @@ rem --- Restrict lookup to open orders and open invoices
 	call stbl("+DIR_SYP")+"bax_query.bbj",
 :		gui_dev,
 :		Form!,
-:		"OP_ENTRY",
+:		"OP_ENTRY_1",
 :		"",
 :		table_chans$[all],
 :		selected_keys$,
@@ -1520,6 +1538,7 @@ rem --- Write/Remove manual ship to file
 		ordship_tpl.firm_id$     = firm_id$
 		ordship_tpl.customer_id$ = cust_id$
 		ordship_tpl.order_no$    = order_no$
+		ordship_tpl.ar_inv_no$ = invoice_no$
 		ordship_tpl.name$        = callpoint!.getColumnData("<<DISPLAY>>.SNAME")
 		ordship_tpl.addr_line_1$ = callpoint!.getColumnData("<<DISPLAY>>.SADD1")
 		ordship_tpl.addr_line_2$ = callpoint!.getColumnData("<<DISPLAY>>.SADD2")
@@ -1529,6 +1548,19 @@ rem --- Write/Remove manual ship to file
 		ordship_tpl.state_code$  = callpoint!.getColumnData("<<DISPLAY>>.SSTATE")
 		ordship_tpl.zip_code$    = callpoint!.getColumnData("<<DISPLAY>>.SZIP")
 		ordship_tpl.cntry_id$    = callpoint!.getColumnData("<<DISPLAY>>.SCNTRY_ID")
+
+		ordship_tpl.created_user$   = sysinfo.user_id$
+		ordship_tpl.created_date$   = date(0:"%Yd%Mz%Dz")
+		ordship_tpl.created_time$   = date(0:"%Hz%mz")
+		ordship_tpl.mod_user$   = ""
+		ordship_tpl.mod_date$   = ""
+		ordship_tpl.mod_time$   = ""
+		ordship_tpl.trans_status$   = "E"
+		ordship_tpl.arc_user$   = ""
+		ordship_tpl.arc_date$   = ""
+		ordship_tpl.arc_time$   = ""
+		ordship_tpl.batch_no$   = ""
+		ordship_tpl.audit_number   = 0
 
 		ordship_tpl$ = field(ordship_tpl$)
 		write record (ordship_dev) ordship_tpl$
@@ -2962,7 +2994,13 @@ rem ==========================================================================
 :		"",
 :		dflt_data$[all]
 
-	callpoint!.setColumnData("OPE_INVHDR.CASH_SALE", "Y")
+rem --- Update CASH_SALE flag
+
+	if (user_tpl.cash_sale$="Y" or user_tpl.cash_cust$<>cust_id$) and callpoint!.getDevObject("cash_code_type")="" then
+		callpoint!.setColumnData("OPE_INVHDR.CASH_SALE", "")
+	else
+		callpoint!.setColumnData("OPE_INVHDR.CASH_SALE", "Y")
+	endif
 
 rem --- Write flag to disk
 

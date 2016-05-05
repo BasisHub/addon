@@ -13,6 +13,8 @@ rem --- All Rights Reserved
 
 rem --- Use statements
 
+    use java.util.HashMap
+    use java.util.TreeMap
     use ::ado_func.src::func
     use ::sys/prog/bao_valid_card.bbj::CreditCard
 
@@ -74,18 +76,27 @@ rem --- Inits
 
     if ars01a.cash_sale$<>"N" then
 
-        dim columns$[8,10]
-        columns = 8
+        if br$="Y" then
+            columns=9
+            datecodeMap!=new HashMap()
+            depositMap!=new TreeMap()
+        else
+            columns=8
+        endif
+        dim columns$[columns,10]
 
-        columns$[0,0]="Cust.No & Name", columns$[0,1]="C", columns$[0,2]="25"
-        columns$[1,0]="Invoice.No",     columns$[1,1]="C", columns$[1,2]="8"
-        columns$[2,0]="Invoice Date",   columns$[2,1]="C", columns$[2,2]="10"
-        columns$[3,0]="Pay Type",       columns$[3,1]="C", columns$[3,2]="8"
-        columns$[4,0]="Number",         columns$[4,1]="C", columns$[4,2]="15"
-        columns$[5,0]="Exp",            columns$[5,1]="C", columns$[5,2]="8"
-        columns$[6,0]="Amount",         columns$[6,1]="N", columns$[6,2]=str(m1), columns$[6,3]=m1$, columns$[6,10]="T"
-        columns$[7,0]="Memo",           columns$[7,1]="C", columns$[7,2]="8"
-        columns$[8,0]="Amount",         columns$[8,1]="N", columns$[8,2]=str(m1), columns$[8,3]=m1$, columns$[8,10]="T"
+        columns$[0,0]=Translate!.getTranslation("AON_CUSTOMER"),columns$[0,1]="C", columns$[0,2]="25"
+        columns$[1,0]=Translate!.getTranslation("AON_INV_NO"),columns$[1,1]="C", columns$[1,2]="8"
+        columns$[2,0]=Translate!.getTranslation("AON_INV_DATE"),columns$[2,1]="C", columns$[2,2]="10"
+        columns$[3,0]=Translate!.getTranslation("AON_REC_CD"),columns$[3,1]="C", columns$[3,2]="6"
+        columns$[4,0]=Translate!.getTranslation("AON_CREDIT_CARD_NO"),columns$[4,1]="C", columns$[4,2]="15"
+        columns$[5,0]=Translate!.getTranslation("DDM_ELEMENTS-EXPIRE_DATE-DD_ATTR_LABS"),columns$[5,1]="C", columns$[5,2]="10"
+        columns$[6,0]=Translate!.getTranslation("AON_CREDIT_AMT"),columns$[6,1]="N", columns$[6,2]=str(m1), columns$[6,3]=m1$, columns$[6,10]="T"
+        columns$[7,0]=Translate!.getTranslation("AON_CHECK_NO"),columns$[7,1]="C", columns$[7,2]="8"
+        columns$[8,0]=Translate!.getTranslation("AON_PAYMENT"),columns$[8,1]="N", columns$[8,2]=str(m1), columns$[8,3]=m1$, columns$[8,10]="T"
+        if br$="Y" then
+            columns$[9,0]=Translate!.getTranslation("AON_DEPOSIT"),columns$[9,1]="C",columns$[9,2]="9"
+        endif
 
         call stbl("+DIR_PGM",err=*next)+"adc_docout_adj.aon",columns$[all]
 
@@ -117,6 +128,14 @@ rem --- Inits
             opw41a.customer_id$  = ope41a.customer_id$
             opw41a.order_no$     = ope41a.order_no$
             write record (opw41_dev) opw41a$
+
+            rem --- If didn't update previous register, the opt_invcash record will already have a deposit assigned.
+            rem --- If opt_invcash deposit already exists, remove it and the art_deposit record.
+            rem --- They may have changed the original invoice_date or cash_rec_cd.
+            if cvs(ope41a.deposit_id$,2)<>"" then
+                remove(deposit_dev,key=firm_id$+ope41a.deposit_id$,dom=*next)
+                ope41a.deposit_id$=""
+            endif
         wend
 
     rem --- Print
@@ -144,10 +163,68 @@ rem --- Inits
             endif
 
             extractrecord (ope41_dev,key=opw41a_key.firm_id$+opw41a_key.ar_type$+opw41a_key.customer_id$+opw41a_key.order_no$+opw41a_key.ar_inv_no$,knum="PRIMARY",dom=*continue) ope41a$
+            
+        rem --- Get Deposit when using Bank Rec, and update the total deposit amount for that Deposit
+            deposit_id$=""
+            if br$="Y" then
+                rem --- Use the same DEPOSIT_ID for all cash sales with the same INVOICE_DATE and CASH_REC_CD
+                if datecodeMap!.containsKey(ope41a.invoice_date$+ope41a.cash_rec_cd$) then
+                    rem --- Update total deposit amount for this depoist
+                    deposit_id$=datecodeMap!.get(ope41a.invoice_date$+ope41a.cash_rec_cd$)
+                    totalPayments=depositMap!.get(deposit_id$)+ope41a.invoice_amt
+                    depositMap!.put(deposit_id$,totalPayments)
+
+                    rem --- Update art_deposit tot_deposit_amt
+                    extractrecord(deposit_dev,key=firm_id$+deposit_id$,dom=*endif)deposit_tpl$
+                    deposit_tpl.tot_deposit_amt=totalPayments
+                    deposit_tpl$=field(deposit_tpl$)
+                    writerecord(deposit_dev)deposit_tpl$
+                else
+                    rem --- Get a new deposit
+                    while 1
+                        call stbl("+DIR_SYP")+"bas_sequences.bbj","DEPOSIT_ID",deposit_id$,rd_table_chans$[all],"QUIET"
+
+                        rem --- Don't allow using manually entered deposits from glt_bankother
+                        dim glt15a$:fattr(glt15a$)
+                        readrecord(glt15_dev,key=firm_id$+deposit_id$,knum="AO_TRANS_NO",dom=*next)glt15a$
+                        if glt15a.trans_no$=deposit_id$ and glt15a.trans_type$="D" then continue
+
+                        rem --- Prevent re-using an existing deposit_id
+                        find(deposit_dev,key=firm_id$+deposit_id$,dom=*break)
+                    wend
+
+                    rem --- Update total deposit amount for this depoist
+                    totalPayments=ope41a.invoice_amt
+                    depositMap!.put(deposit_id$,totalPayments)
+                    datecodeMap!.put(ope41a.invoice_date$+ope41a.cash_rec_cd$,deposit_id$)
+
+                    rem --- Write new art_deposit record
+                    dim deposit_tpl$:fattr(deposit_tpl$)
+                    deposit_tpl.firm_id$=firm_id$
+                    deposit_tpl.deposit_id$=deposit_id$
+                    deposit_tpl.deposit_date$=ope41a.invoice_date$
+                    deposit_tpl.description$="Sales Register: "+ope41a.invoice_date$+"-"+ope41a.cash_rec_cd$
+                    deposit_tpl.cash_rec_cd$=ope41a.cash_rec_cd$
+                    deposit_tpl.created_user$=sysinfo.user_id$
+                    deposit_tpl.created_date$=date(0:"%Yd%Mz%Dz")
+                    deposit_tpl.created_time$=date(0:"%Hz%mz")
+                    deposit_tpl.trans_status$="R"
+                    deposit_tpl.batch_no$=batch_no$
+                    if gl_adt_no then deposit_tpl.audit_number=gl_adt_no
+                    deposit_tpl.tot_deposit_amt=totalPayments
+                    deposit_tpl$=field(deposit_tpl$)
+                    writerecord(deposit_dev)deposit_tpl$
+                endif
+            endif
+
+        rem --- Update opt_invcash
+            ope41a.deposit_id$=deposit_id$
             ope41a.trans_status$="R"     
             ope41a.mod_user$=sysinfo.user_id$
             ope41a.mod_date$=date(0:"%Yd%Mz%Dz")
             ope41a.mod_time$=date(0:"%Hz%mz")
+            ope41a.batch_no$=batch_no$
+            if gl_adt_no then ope41a.audit_number=gl_adt_no
             ope41a$ = field(ope41a$)
             write record (ope41_dev) ope41a$
 
@@ -197,10 +274,11 @@ rem --- Inits
 					OutVect!.addItem(str(ope41a.invoice_amt))
 				else
 					xwk = fnblank(3)
-					OutVect!.addItem(ope41a.payment_id$)
+					OutVect!.addItem("")
 					OutVect!.addItem(str(ope41a.invoice_amt))
 				endif
             endif
+            if br$="Y" then OutVect!.addItem(ope41a.deposit_id$)
 
             l=l+1
 
@@ -223,12 +301,70 @@ rem --- Inits
         next i
 
     endif
+
+rem --- When using Bank Rec, don't allow update if a Deposit’s TOT_DEPOSIT_AMT is not equal to
+rem --- the sum of the PAYMENT_AMTs for all the cash receipts in the Deposit.
+    if br$="Y" then
+        rem --- Headings for deposit summary info
+        xwk=fnblank(columns+1); rem --- blank line
+        xwk=fnblank(columns+1); rem --- blank line
+        xwk=fnblank(5)
+        OutVect!.addItem(Translate!.getTranslation("AON_DEPOSIT")+$00$+"B")
+        OutVect!.addItem(Translate!.getTranslation("AON_DEPOSIT_AMT")+$00$+"B")
+        xwk=fnblank(1)
+        OutVect!.addItem(Translate!.getTranslation("AON_PAYMENTS")+$00$+"B")
+        xwk=fnblank(1)
+
+        rem --- Report deposit summary info, and check for out of balance deposits
+        deposit_errors=0
+        iter!=depositMap!.keySet().iterator()
+        while iter!.hasNext()
+            deposit_id$=iter!.next()
+            totalPayments=depositMap!.get(deposit_id$)
+            extractrecord(deposit_dev,key=firm_id$+deposit_id$,dom=*continue)deposit_tpl$
+
+            if deposit_tpl.tot_deposit_amt=totalPayments then
+                xwk=fnblank(5)
+            else
+                deposit_errors=deposit_errors+1
+                
+                xwk=fnblank(4)
+                OutVect!.addItem("***** "+Translate!.getTranslation("AON_ERROR")+" *****")
+            endif
+            OutVect!.addItem(deposit_id$)
+            OutVect!.addItem(str(deposit_tpl.tot_deposit_amt))
+            xwk=fnblank(1)
+            OutVect!.addItem(str(totalPayments))
+            if deposit_tpl.tot_deposit_amt=totalPayments then
+                xwk=fnblank(1)
+            else
+                OutVect!.addItem("*** "+Translate!.getTranslation("AON_ERROR")+" ***")
+            endif
+            
+            grand_total_deposits=grand_total_deposits+deposit_tpl.tot_deposit_amt
+            grand_total_payments=grand_total_payments+totalPayments
+        wend
+
+        rem --- Report deposit summary info, and check for out of balance deposits
+        xwk=fnblank(6)
+        OutVect!.addItem(fill(m1,"-"))
+        xwk=fnblank(1)
+        OutVect!.addItem(fill(m1,"-"))
+        xwk=fnblank(1)
+        
+        xwk=fnblank(5)
+        OutVect!.addItem(Translate!.getTranslation("AON_TOTALS"))
+        OutVect!.addItem(str(grand_total_deposits))
+        xwk=fnblank(1)
+        OutVect!.addItem(str(grand_total_payments))
+        xwk=fnblank(1)
+    endif
     
 rem --- Next overlay    
 
     update$       = pgmdir$+"opr_salesregister_o2.aon"
     overlay$      = update$
-    out_action$   = "PRT-PDF"
+    out_action$   = "PRT-PDF-FORMAT"
     next_overlay$ = overlay$
     goto std_exit
 
@@ -237,24 +373,25 @@ date_break: rem --- Date Break
     if t0$<>"" then  
 
         if i=1 then 
-            x$="Total All Cash Receipts"
+            x$=Translate!.getTranslation("AON_TOTAL_ALL_CASH_RECEIPTS")
         else
-            x$="Total For "+func.formatDate(t0$)
+            x$=Translate!.getTranslation("AON_TOTAL_FOR")+" "+func.formatDate(t0$)
         endif
 
-        xwk = fnblank(9)
+        xwk = fnblank(columns+1)
         TotVect!.addItem(str(OutVect!.size()/(columns+1))) 
         OutVect!.addItem(x$)
-        xwk = fnblank(3)
-        OutVect!.addItem("Credit Cards:")
-        xwk = fnblank(1)
+        xwk = fnblank(4)
+        OutVect!.addItem(Translate!.getTranslation("AON_CREDIT_CARDS")+":")
         OutVect!.addItem(str(r[2,i]))
-        OutVect!.addItem("Cash:")
+        OutVect!.addItem(Translate!.getTranslation("AON_CASH")+":")
         OutVect!.addItem(str(r[0,i]))
-        TotVect!.addItem(str(OutVect!.size()/(columns+1)))
+        if br$="Y" then OutVect!.addItem("")
+        
         xwk = fnblank(7)
-        OutVect!.addItem("Checks:")
+        OutVect!.addItem(Translate!.getTranslation("AON_CHECKS")+":")
         OutVect!.addItem(str(r[1,i]))
+        if br$="Y" then OutVect!.addItem("")
         l=l+4
     endif
 

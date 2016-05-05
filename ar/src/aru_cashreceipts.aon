@@ -20,7 +20,24 @@ rem --- Get user approval to update
     x$=stbl("+SYSINFO")                                                            
     msg_tokens$[1]=x.task_desc$
     gosub disp_message
-    if msg_opt$<>"Y" then goto std_exit_no_update
+    if msg_opt$<>"Y" then
+        rem --- If using Bank Rec, re-set deposit trans_status=E when not running the update.
+        if br then
+            iter!=depositMap!.keySet().iterator()
+            while iter!.hasNext()
+                deposit_id$=iter!.next()
+                extractrecord(deposit_dev,key=firm_id$+deposit_id$,dom=*continue)deposit_tpl$
+                rem --- Set deposit trans_status=E
+                deposit_tpl.trans_status$="E"     
+                deposit_tpl.mod_user$=sysinfo.user_id$
+                deposit_tpl.mod_date$=date(0:"%Yd%Mz%Dz")
+                deposit_tpl.mod_time$=date(0:"%Hz%mz")
+                deposit_tpl$ = field(deposit_tpl$)
+                writerecord(deposit_dev)deposit_tpl$
+            wend
+        endif
+        goto std_exit_no_update
+    endif
 
 rem --- Start progress meter and position header file
 
@@ -78,6 +95,8 @@ rem --- Read next Cash Receipts Header (are-01) record
 :            art06a.ar_check_no$+art06a.reserved_key_02$
           extract record (art06_dev,key=k$,dom=*next) art06a$; rem Advisory Locking
           art06a.payment_amt=art06a.payment_amt+are01a.payment_amt
+          art06a.deposit_id$=are01a.deposit_id$
+          art06a.batch_no$=are01a.batch_no$
           art06a$=field(art06a$)
           write record (art06_dev) art06a$
 
@@ -94,15 +113,24 @@ rem --- Read next Cash Receipts Header (are-01) record
                 k$=arm10c.firm_id$+arm10c.record_id_c$+arm10c.cash_rec_cd$ 
                 find record (arc_cashcode_dev,key=k$,dom=*next) arm10c$
 
+                rem --- Retrieve Bank Deposit record
+                dim deposit_tpl$:fattr(deposit_tpl$)
+                findrecord(deposit_dev,key=firm_id$+are01a.deposit_id$,dom=*next)deposit_tpl$
+
                 rem --- Post this Bank Reconciliation (glt-15) record
 
                 dim glt15a$:fattr(glt15a$)
                 glt15a.firm_id$=firm_id$
                 glt15a.gl_account$=arm10c.gl_cash_acct$
-                glt15a.trans_no$="C"+are01a.receipt_date$(3,6)
+                glt15a.trans_no$=are01a.deposit_id$
                 glt15a.trans_type$="D"
                 glt15a.posted_code$="O"
-                glt15a.description$=Translate!.getTranslation("AON_CASH_RECEIPTS_REGISTER")
+                if cvs(deposit_tpl.description$,2)<>"" then
+                    glt15a.description$=deposit_tpl.description$
+                else
+                    glt15a.description$=Translate!.getTranslation("AON_CASH_RECEIPTS_REGISTER")
+                endif
+                glt15a.cash_rec_cd$=deposit_tpl.cash_rec_cd$
                 glt15a.trns_date$=are01a.receipt_date$
                 glt15a$=field(glt15a$)
                 k$=glt15a.firm_id$+glt15a.gl_account$+glt15a.trans_no$
@@ -395,6 +423,21 @@ rem --- All done
        call pgmdir$+"glc_update.aon",glm01_dev,glt04_dev,glw11_dev,status
        call pgmdir$+"glc_ctlupdate.aon",status
        call pgmdir$+"glc_ctldelete.aon",status
+    endif
+    rem --- If using Bank Rec, set deposit trans_status=U
+    if br then
+        iter!=depositMap!.keySet().iterator()
+        while iter!.hasNext()
+            deposit_id$=iter!.next()
+            extractrecord(deposit_dev,key=firm_id$+deposit_id$,dom=*continue)deposit_tpl$
+            rem --- Set deposit trans_status=U
+            deposit_tpl.trans_status$="U"     
+            deposit_tpl.mod_user$=sysinfo.user_id$
+            deposit_tpl.mod_date$=date(0:"%Yd%Mz%Dz")
+            deposit_tpl.mod_time$=date(0:"%Hz%mz")
+            deposit_tpl$ = field(deposit_tpl$)
+            writerecord(deposit_dev)deposit_tpl$
+        wend
     endif
     call pgmdir$+"adc_batchdelete.aon",status
     goto std_exit

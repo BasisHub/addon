@@ -533,7 +533,7 @@ rem --- Post Original Dates
 			wow06a.net_adjust=wow06a.net_adjust-wot01a.ext_cost
 		endif
 		if wow08a.record_id$="S"
-			wow06a.unit_cost=wow06a.unit_cost-wot31a.unit_cost
+			wow06a.unit_cost=wow06a.unit_cost-wot31a.unit_cost*wot31a.units
 			wow06a.net_adjust=wow06a.net_adjust-wot31a.ext_cost
 		endif
 		if woe01a.wo_type$<>woe01b.wo_type$ or trans_date$=new_trans_date$
@@ -569,72 +569,37 @@ rem --- Generate G/L Summary
 		wom10a2$=wom10a$
 		find record (wom10_dev,key=firm_id$+"A"+woe01b.wo_type$,dom=l1460) wom10a2$
 
-rem --- Back Out The Distribution
-
-		account$=wom10a.gl_wip_acct$
-		gldate$=trans_date$
-		if wow08a.record_id$="O"
-			amount=-wot01a.ext_cost
-		else
-			amount=-wot31a.ext_cost
-		endif
-		units=0
-		ref1$=Translate!.getTranslation("AON_WO_")+wow08a.wo_no$
-		ref2$=Translate!.getTranslation("AON_SEQ_")+wow08a.trans_seq$
-		ref3$=fndate$(new_trans_date$)
-		memo$=cm$
-		gosub glrecap
-		on pos(wow08a.record_id$="OS")-1 goto old_labor,old_subs
-
-old_labor: rem --- Labor
-
-		account$=wom10a.gl_dir_lab$
-		amount=(wot01a.units+wot01a.setup_time)*wot01a.direct_rate
-		memo$=lm$
-		gosub glrecap
-		account$=wom10a.gl_ovh_lab$
-		amount=(wot01a.units+wot01a.setup_time)*wot01a.ovhd_rate
-		gosub glrecap
-		goto add_back
-
-old_subs: rem --- Subcontracts
-
-		account$=wom10a.gl_pur_acct$
-		amount=wot31a.ext_cost
-		memo$=sm$
-		gosub glrecap
-
-add_back: rem --- Add It Back In With New Information
+delta_wip: rem --- WIP delta cost
 
 		account$=wom10a2.gl_wip_acct$
 		gldate$=new_trans_date$
 		if wow08a.record_id$="O"
-			amount=round((woe12a.new_units+woe12a.new_set_hrs)*woe12a.new_dir_rate,2)+round((woe12a.new_units+woe12a.new_set_hrs)*woe12a.new_ovr_rate,2)
+			amount=round((woe12a.new_units+woe12a.new_set_hrs)*woe12a.new_dir_rate,2)+round((woe12a.new_units+woe12a.new_set_hrs)*woe12a.new_ovr_rate,2)-wot01a.ext_cost
 		else
-			amount=round(woe42a.new_units*woe42a.new_unit_cst,2)
+			amount=round(woe42a.new_units*woe42a.new_unit_cst,2)-wot31a.ext_cost
 		endif
 		ref1$=Translate!.getTranslation("AON_WO_")+woe01b.wo_no$
 		ref2$=Translate!.getTranslation("AON_SEQ_")+wow08a.trans_seq$
 		ref3$=fndate$(trans_date$)
 		memo$=cm$
 		gosub glrecap
-		on pos(wow08a.record_id$="OS")-1 goto new_labor,new_subs
+		on pos(wow08a.record_id$="OS")-1 goto delta_labor,delta_subs
 
-new_labor: rem --- Labor
+delta_labor: rem --- Labor delta cost
 
 		account$=wom10a2.gl_dir_lab$
-		amount=((-woe12a.new_units)-woe12a.new_set_hrs)*woe12a.new_dir_rate
+		amount=((-woe12a.new_units)-woe12a.new_set_hrs)*woe12a.new_dir_rate+(wot01a.units+wot01a.setup_time)*wot01a.direct_rate
 		memo$=lm$
 		gosub glrecap
 		account$=wom10a2.gl_ovh_lab$
-		amount=((-woe12a.new_units)-woe12a.new_set_hrs)*woe12a.new_ovr_rate
+		amount=((-woe12a.new_units)-woe12a.new_set_hrs)*woe12a.new_ovr_rate+(wot01a.units+wot01a.setup_time)*wot01a.ovhd_rate
 		gosub glrecap
 		continue
 
-new_subs: rem --- Subcontracts
+delta_subs: rem --- Subcontracts delta cost
 
 		account$=wom10a2.gl_pur_acct$
-		amount=(-woe42a.new_units)*woe42a.new_unit_cst
+		amount=(-woe42a.new_units)*woe42a.new_unit_cst+wot31a.ext_cost
 		memo$=sm$
 		gosub glrecap
 
@@ -695,7 +660,7 @@ open_tables:rem --- Open Tables
     
 disp_message:rem --- Display Message Dialog
 
-    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
 
     return
 

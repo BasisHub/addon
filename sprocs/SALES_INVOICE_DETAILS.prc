@@ -21,51 +21,37 @@ customer_nbr$=sp!.getParameter("CUSTOMER_NBR")
 inv_nbr$ = sp!.getParameter("AR_INV_NBR")
 barista_wd$=sp!.getParameter("BARISTA_WD")
 
-sv_wd$=dir("")
-chdir barista_wd$
-
 rem ' set up the sql query
 sql$ = "SELECT SUBSTRING(t1.INTERNAL_SEQ_NO, 10, 3) as line_number, t1.line_code, t1.item_id as item_number, t1.order_memo, t1.qty_shipped, t1.unit_price, t1.ext_price "
 sql$ = sql$ + "FROM OPT_INVDET t1 " 
 sql$ = sql$ + "WHERE firm_id = '" + firm_id$ + "' AND ar_type = '  ' AND CUSTOMER_ID = '" + customer_nbr$ + "' AND AR_INV_NO = '" + inv_nbr$ + "' "
 sql$ = sql$ + "ORDER BY t1.INTERNAL_SEQ_NO"
 
-rem ' build the database url
-dbserver$="localhost"
-dbsqlport$=":2001"
-dbtimeout$="&socket_timeout=5000"
+chan = sqlunt
+sqlopen(chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
+sqlprep(chan)sql$
+dim irec$:sqltmpl(chan)
+sqlexec(chan)
 
-dbserver$=stbl("+DBSERVER",err=*next)
-dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
-dbssl=num(stbl("+DBSSL",err=*next))
-dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
+rs! = BBJAPI().createMemoryRecordSet("LINE_NUMBER:C(3),LINE_CODE:C(1),ITEM_NUMBER:C(20),ORDER_MEMO:C(40),QTY_SHIPPED:N(1*),UNIT_PRICE:N(1*),EXT_PRICE:N(1*)")
 
-if dbssl
-	dbssl$="&ssl=true"
-else
-	dbssl$="&ssl=false"
-endif
+while 1
+    irec$ = sqlfetch(chan,err=*break)
+    data! = rs!.getEmptyRecordData()    
+    data!.setFieldValue("LINE_NUMBER",irec.line_number$)
+    data!.setFieldValue("LINE_CODE",irec.line_code$)
+    data!.setFieldValue("ITEM_NUMBER",irec.item_number$)
+    data!.setFieldValue("ORDER_MEMO",irec.order_memo$)
+    data!.setFieldValue("QTY_SHIPPED",str(irec.qty_shipped))
+    data!.setFieldValue("UNIT_PRICE",str(irec.unit_price))
+    data!.setFieldValue("EXT_PRICE",str(irec.ext_price))
+    rs!.insert(data!)
+wend
 
-url_user$="&user=guest"
-if stbl("!DSUDDB",err=*endif)<>"" then
-	url_user$=""
-endif
-
-dbname$ = stbl("+DBNAME")
-dbname_api$ = stbl("+DBNAME_API")
-if pos("jdbc:apache"=cvs(dbname$,8))=1 then
-	url$ = dbname$
-else
-	if pos("jdbc:"=cvs(dbname$,8))=1 then			
-		url$=dbname$+url_user$
-	else
-		url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
-	endif
-endif
-mode$="mode=PROCEDURE"
-
-rs! = BBJAPI().createSQLRecordSet(url$,mode$,sql$)
-
+rem ' Close the sql channel and set the stored procedure's result set to the record set that 
+rem ' was created and populated in the code above
+done:
+sqlclose (chan)
 sp!.setRecordSet(rs!)
 
 end

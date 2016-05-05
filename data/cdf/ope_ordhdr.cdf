@@ -453,18 +453,19 @@ rem --- Credit action
 		endif
 	endif
 [[OPE_ORDHDR.AOPT-PRNT]]
-rem --- Must be in edit mode for this feature
-	if !callpoint!.isEditMode() then
-		msg_id$="AD_EDIT_MODE_REQUIRE"
+rem --- Check to see if record has been modified (don't print until rec is saved)
+
+	if pos("M"=callpoint!.getRecordStatus())
+		callpoint!.setOptionEnabled("PRNT",0)
+		msg_id$="AD_SAVE_BEFORE_PRINT"
 		gosub disp_message
 		break
 	endif
 
-rem --- Check to see if record has been modified (don't print until rec is saved)
-rem --- may eventually want formal message; this routine just checks mod flag and disables the button
-
-	if pos("M"=callpoint!.getRecordStatus())
-		callpoint!.setOptionEnabled("PRNT",0)
+rem --- Must be in edit mode for this feature
+	if !callpoint!.isEditMode() then
+		msg_id$="AD_EDIT_MODE_REQUIRE"
+		gosub disp_message
 		break
 	endif
 
@@ -993,7 +994,7 @@ rem --- Restrict lookup to open orders and open invoices
 	call stbl("+DIR_SYP")+"bax_query.bbj",
 :		gui_dev,
 :		Form!,
-:		"OP_ENTRY",
+:		"OP_ENTRY_1",
 :		"",
 :		table_chans$[all],
 :		selected_keys$,

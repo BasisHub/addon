@@ -153,6 +153,8 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 	
 rem --- Initialize Data
 
+    dim table_chans$[512,6]
+
 	max_stdMsg_lines = 10
 	stdMsg_len = 40
 	rem dim stdMessage$(max_stdMsg_lines * stdMsg_len)
@@ -249,7 +251,7 @@ rem --- Main Read
 
         if start_block then
             read record (arm01_dev, key=firm_id$+ope01a.customer_id$, dom=*endif) arm01!
-            b$ = func.formatAddress(arm01!, bill_addrLine_len, max_billAddr_lines-1)
+            b$ = func.formatAddress(table_chans$[all], arm01!, bill_addrLine_len, max_billAddr_lines-1)
             b$ = pad(func.alphaMask(arm01!.getFieldAsString("CUSTOMER_ID"), cust_mask$), bill_addrLine_len) + b$
             found = 1
         endif
@@ -268,7 +270,7 @@ rem --- Main Read
 
             if start_block then
                 find record (ope31_dev, key=firm_id$+"U"+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif) ope31!
-                c$ = func.formatAddress(ope31!, cust_addrLine_len, max_custAddr_lines)
+                c$ = func.formatAddress(table_chans$[all], ope31!, cust_addrLine_len, max_custAddr_lines)
            endif
 
            
@@ -278,7 +280,7 @@ rem --- Main Read
 
                     if start_block then
                         find record (arm03_dev,key=firm_id$+ope01a.customer_id$+ope01a.shipto_no$, dom=*endif) arm03!
-                        c$ = func.formatAddress(arm03!, cust_addrLine_len, max_custAddr_lines)
+                        c$ = func.formatAddress(table_chans$[all], arm03!, cust_addrLine_len, max_custAddr_lines)
                         shipto$ = ope01a.shipto_no$
                     endif
             endif

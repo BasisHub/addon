@@ -230,7 +230,7 @@ disp_cust_addr:
 	read record (arm_custmast_dev, key=cust_key$, err=std_error) arm01a$
 	addr! = BBjAPI().makeTemplatedString( fnget_tpl$("ARM_CUSTMAST") )
 	addr!.setString(arm01a$)
-	addr$ = func.formatAddress(addr!, 30, 7)
+	addr$ = func.formatAddress(table_chans$[all], addr!, 30, 7)
 
 	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR1",addr$(31,30))
 	callpoint!.setColumnData("<<DISPLAY>>.CUST_ADDR2",addr$(61,30))

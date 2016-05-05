@@ -15,3 +15,7 @@ rem --- See if this document/recipient is set up in Addon Report Control
 	else
 		callpoint!.setColumnEnabled("OPR_INV_DEMAND.PICK_CHECK",0)
 	endif
+
+	rem --- destroying here to make sure it doesn't keep opening files
+	rem --- gets instantiated again in opc_invoice since that program needs to handle both on-demand and batch
+	reportControl!.destroy()

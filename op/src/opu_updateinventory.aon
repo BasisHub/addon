@@ -616,18 +616,42 @@ ar_open_invoice_detail: rem --- AR Open Invoice Detail
 
         rem --- Bank Reconciliation
         rem --- moved outside of above while/wend to fix bug 8486. CAH
-        
+
             if br$="Y" and ope01a.cash_sale$="Y"
+                rem --- Retrieve Bank Deposit record
+                dim deposit_tpl$:fattr(deposit_tpl$)
+                deposit_found=0
+                extractrecord(deposit_dev,key=firm_id$+ope41a.deposit_id$,dom=*next)deposit_tpl$; deposit_found=1
+                if deposit_found then
+                    trans_no$=deposit_tpl.deposit_id$
+                    description$=deposit_tpl.description$
+                    cash_rec_cd$=deposit_tpl.cash_rec_cd$
+
+                    deposit_tpl.trans_status$="U"     
+                    deposit_tpl.mod_user$=sysinfo.user_id$
+                    deposit_tpl.mod_date$=date(0:"%Yd%Mz%Dz")
+                    deposit_tpl.mod_time$=date(0:"%Hz%mz")
+                    deposit_tpl$ = field(deposit_tpl$)
+                    write record (deposit_dev)deposit_tpl$
+                else
+                    trans_no$=pad(ope01a.invoice_date$,8)(3,6)+"S"
+                    description$="Sales Register Update"
+                    cash_rec_cd$=""
+                    
+                    read(deposit_dev); rem --- release extract
+                endif
+
                 glt15a.firm_id$=firm_id$
                 glt15a.gl_account$=z6$(11,10)
-                glt15a.trans_no$=pad(ope01a.invoice_date$,8)(3,6)+"S"
+                glt15a.trans_no$=trans_no$
                 glt15a.trans_amt=0
                 extract record (glt15_dev,key=glt15a.firm_id$+glt15a.gl_account$+glt15a.trans_no$,dom=*next) glt15a$; rem Advisory Locking
 
                 glt15a.trans_type$="D"
                 glt15a.posted_code$="O"
                 glt15a.trns_date$=ope01a.invoice_date$
-                glt15a.description$="Sales Register Update"
+                glt15a.description$=description$
+                glt15a.cash_rec_cd$=cash_rec_cd$
                 glt15a.trans_amt=glt15a.trans_amt+total_ext+ope01a.tax_amount+ope01a.freight_amt-ope01a.discount_amt
                 glt15a$ = field(glt15a$)
                 write record (glt15_dev) glt15a$
@@ -771,7 +795,7 @@ ar_open_invoice_detail: rem --- AR Open Invoice Detail
             rem --- Write Manual Ship-To History
             if ih$="Y" and inv_hist_flg$="Y" then
                 extract record (ope31_dev,key=ope01a.firm_id$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,dom=*endif) ope31a$; rem Advisory Locking
-                if ope31_found and ope31a.trans_status$="R" then
+                if ope31a.trans_status$="R" then
                     ope31a.trans_status$="U"     
                     ope31a.mod_user$=sysinfo.user_id$
                     ope31a.mod_date$=date(0:"%Yd%Mz%Dz")
@@ -833,22 +857,9 @@ ar_open_invoice_detail: rem --- AR Open Invoice Detail
 
         rem --- Copy Invoice Cash Receipts to History
         if ope01a.cash_sale$="Y" then
-            extract record (ope41_dev,key=ope01_key$,dom=*endif) ope41a$; rem Advisory Locking
+            ope41_found=0
+            extract record (ope41_dev,key=ope01_key$,dom=*endif) ope41a$; ope41_found=1; rem Advisory Locking
             if ope41_found and ope41a.trans_status$="R" then
-                ope41a.firm_id$=ope41a.firm_id$
-                ope41a.ar_type$=ope41a.ar_type$
-                ope41a.customer_id$=ope41a.customer_id$
-                ope41a.ar_inv_no$=ope41a.ar_inv_no$
-                ope41a.cash_rec_cd$=ope41a.cash_rec_cd$
-                ope41a.ar_check_no$=ope41a.ar_check_no$
-                ope41a.payment_id$=ope41a.payment_id$
-                ope41a.order_no$=ope41a.order_no$
-                ope41a.invoice_date$=ope41a.invoice_date$
-                ope41a.expire_date$=ope41a.expire_date$
-                ope41a.customer_name$=ope41a.customer_name$
-                ope41a.invoice_amt$=ope41a.invoice_amt$
-                ope41a.tendered_amt$=ope41a.tendered_amt$           
-                ope41a.credit_card_no$=ope41a.credit_card_no$
                 ope41a.trans_status$="U"     
                 ope41a.mod_user$=sysinfo.user_id$
                 ope41a.mod_date$=date(0:"%Yd%Mz%Dz")

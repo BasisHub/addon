@@ -19,7 +19,8 @@ if ctl_ID=num(user_tpl.gridABCctlID$)
 	curr_row=dec(notice.row$)
 	curr_col=dec(notice.col$)
 	if callpoint!.isEditMode() then
-		gridABC!.setEditable(1)
+		gridABC!.setColumnEditable(1,1);rem enable column 1
+		gridABC!.setColumnEditable(2,1);rem enable column 2
 	else
 		gridABC!.setEditable(0)
 	endif

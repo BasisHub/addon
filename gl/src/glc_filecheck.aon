@@ -8,12 +8,13 @@ rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
-rem --- FIRM_ID$: Firm for which year is being closed (Input)
-rem --- STATUS  : 0=No error (Returned)
+rem --- FIRM_ID$            : Firm for which year is being closed (Input)
+rem --- RD_TABLE_CHANS$[ALL]: Barista's rd_table_chans$[all]
+rem --- STATUS              : 0=No error (Returned)
 
     seterr std_error
     setesc std_exit
-    enter firm_id$,status
+    enter firm_id$,rd_table_chans$[all],status
 
 rem --- Get Translator Object
 
@@ -38,32 +39,28 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="gle-01"
-    files$[2]="gle-03"
-    files$[3]="glt-04"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],
-:                           templates$[all],channels[all],batch,status
-    if status goto std_exit
-    gle01_dev=channels[1]
-    gle03_dev=channels[2]
-    glt04_dev=channels[3]
+    num_files=3
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="GLE_JRNLHDR",open_opts$[1]="OTA"
+    open_tables$[2]="GLE_ALLOCHDR",open_opts$[2]="OTA"
+    open_tables$[3]="GLE_DAILYDETAIL",open_opts$[3]="OTA"
+    
+    gosub open_tables
 
 rem --- Initializations
 
-    dim descriptions$[files],message$[1]
+    dim descriptions$[num_files],message$[1]
     descriptions$[1]=Translate!.getTranslation("AON_JOURNAL_ENTRY")
     descriptions$[2]=Translate!.getTranslation("AON_ACCOUNT_ALLOCATION")
     descriptions$[3]=Translate!.getTranslation("AON_DAILY_DETAIL")
 
 rem --- Check files to make sure they're empty and not in use
 
-    for x=1 to files
+    for x=1 to num_files
 
         rem --- Is file empty?
 
-        k$=key(channels[x],end=lock_file)
+        k$=key(num(open_chans$[x]),end=lock_file)
         if pos(firm_id$=k$)=1
            status=1
            message$[0]=descriptions$[x]+Translate!.getTranslation("AON__REGISTER_AND_UPDATE_MUST_BE_RUN.")
@@ -72,7 +69,8 @@ rem --- Check files to make sure they're empty and not in use
  
         lock_file: rem --- Is file in use?
 
-        lock (channels[x],err=file_in_use)
+        lock (num(open_chans$[x]),err=file_in_use)
+        unlock (num(open_chans$[x]),err=*next)
         continue
 
         file_in_use: rem --- File can't be locked
@@ -89,6 +87,35 @@ rem --- All Done
 
     if status call pgmdir$+"adc_stdmessage.aon",2,message$[all],0,0,0,v$,v3
     goto std_exit
+
+open_tables: rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
 
 rem #include std_error.src
 

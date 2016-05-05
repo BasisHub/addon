@@ -15,3 +15,6 @@ rem --- See if this document/recipient is set up in Addon Report Control
 	else
 		callpoint!.setColumnEnabled("POR_POPRINT_DMD.RPT_CONTROL",0)
 	endif
+
+	rem --- destroy to close files so they don't get opened repeatedly with each iteration
+	reportControl!.destroy()

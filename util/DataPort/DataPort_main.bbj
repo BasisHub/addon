@@ -31,7 +31,7 @@ dim ddm04$:"file_name:c(6),record_id:c(1),layout_seq:c(3*),data_name:c(12),reser
 
 rem --- Open files and/or retrieve templates that may be needed for PO file conversion
 
-    num_files=7
+    num_files=8
     dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
     rd_open_tables$[1]="ADS_SEQUENCES",rd_open_opts$[1]="OTA"
     rd_open_tables$[2]="ARM_CUSTMAST",rd_open_opts$[2]="T"
@@ -40,17 +40,18 @@ rem --- Open files and/or retrieve templates that may be needed for PO file conv
     rd_open_tables$[5]="OPT_INVSHIP",rd_open_opts$[5]="T"
     rd_open_tables$[6]="OPT_INVHDR",rd_open_opts$[6]="T"
     rd_open_tables$[7]="DDM_SYSTEMS",rd_open_opts$[7]="OTA"
+    rd_open_tables$[8]="DDM_ELEMENTS",rd_open_opts$[8]="OTA"
     
     gosub open_tables
     
-    ads_sequences_dev=num(rd_open_chans$[1])
-    dim ads_sequences$:rd_open_tpls$[1]
+    ads_sequences_dev=num(rd_open_chans$[1]);dim ads_sequences$:rd_open_tpls$[1]
     arm_custmast_tpl$=rd_open_tpls$[2]
     arm_custship_tpl$=rd_open_tpls$[3]
     ope_ordship_tpl$=rd_open_tpls$[4]
     opt_invship_tpl$=rd_open_tpls$[5]
     opt_invhdr_tpl$=rd_open_tpls$[6]
     ddm_systems=num(rd_open_chans$[7]);dim ddm_systems$:rd_open_tpls$[7]
+    ddm_elements=num(rd_open_chans$[8]);dim ddm_elements$:rd_open_tpls$[8]
     
 rem --- initialization
 
@@ -836,6 +837,7 @@ rem --- Retrieve value$ if applicable
 
         if new_fieldlist.name$[field]=$$ then continue
         value$=field(old_rec$,old_fieldlist.name$[field],err=*continue)
+
 rem --- Populate new internal sequence from old display sequence
 
         keyval$ = table_alias$+"."+new_fieldlist.name$[field]
@@ -1021,6 +1023,15 @@ rem --- if this field.value is listed in flat file "field_translations" then tra
             used_translations!.put(new_fieldlist.name$[field],firmSet!)
         endif
 
+        rem --- Check value of new field for quotes if part of primary key or file verified field
+        redim ddm_elements$
+        readrecord(ddm_elements,key=pad(new_fieldlist.name$[field],16))ddm_elements$
+        if pos($0a$+new_fieldlist.name$[field]+$0a$=$0a$+key_temp$+$0a$)>0 or cvs(ddm_elements.dd_attr_dtab$,2)<>"" then
+            if pos($22$=value$) then
+                print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" contains a quote that can cause problems." 
+            endif
+        endif
+
 rem --- date formatting
 
         attr$=fattr(old_rec$,old_fieldlist.name$[field])
@@ -1118,6 +1129,13 @@ rem --- Initialize NS_ITEM_ID in POE_REQDET, POE_PODET, POE_QADET, POE_RECDET, a
         else
             new_rec.ns_item_id$(1)=""
         endif
+    endif
+
+rem --- In ARE_INVOICEDET, ARE_RECURRINGDET and ART_INVOICEDET, convert 2-char SEQUENCE_NUM to 3-char zero filled SEQUENCE_NO.
+    
+    if pos(cvs(datafile$,8)="ape-11;ape-13;apt-11",7) then
+        wk$=fattr(new_rec$,"sequence_no")
+        new_rec.sequence_no$=pad(cvs(new_rec.sequence_no$,3), dec(wk$(10,2)), "R", "0")
     endif
 
 rem --- Initialize BMM_BILLOPER.WO_OP_REF and SFE_WOOPRTN.WO_OP_REF

@@ -226,11 +226,6 @@ rem --- Is this item lot/serial?
 		rem --- Return focus to where we were (Detail line grid)
 		sysgui!.setContext(grid_ctx)
 	endif
-[[POE_RECDET.QTY_ORDERED.BINP]]
-if callpoint!.getDevObject("line_type")="O"  
-	callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_RECDET.QTY_ORDERED",0)
-	callpoint!.setFocus("POE_RECDET.UNIT_COST")
-endif
 [[POE_RECDET.QTY_RECEIVED.AVAL]]
 gosub update_header_tots
 callpoint!.setDevObject("qty_this_row",num(callpoint!.getUserInput()))
@@ -694,12 +689,7 @@ rem print "cost this row: ",callpoint!.getDevObject("cost_this_row")
 item_id$=callpoint!.getColumnData("POE_RECDET.ITEM_ID")
 gosub enable_serial
 
-	poc_linecode_dev=fnget_dev("POC_LINECODE")
-	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
-	po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
-	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
-	line_type$=poc_linecode.line_type$
-	gosub enable_by_line_type
+	gosub update_line_type_info
 
 rem --- save current po status flag, po/req# and line#
 
@@ -711,8 +701,8 @@ gosub update_header_tots
 callpoint!.setDevObject("cost_this_row",num(callpoint!.getUserInput()))
 [[POE_RECDET.AUDE]]
 gosub update_header_tots
-po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
-if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
+
+gosub update_line_type_info
 
 rem --- if this line is new (i.e., NOT from a PO) restore the OO
 
@@ -818,8 +808,8 @@ if callpoint!.getDevObject("SF_installed")="Y" then
 			sfe_wosub$=field(sfe_wosub$)
 			write record (sfe_wosub)sfe_wosub$
 		endif
-	endif
-endif		
+	endif		
+endif
 [[POE_RECDET.ADGE]]
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
@@ -868,20 +858,11 @@ gosub validate_whse_item
 [[POE_RECDET.AGDR]]
 rem --- After Grid Display Row
 
-po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
-if cvs(po_line_code$,2)<>"" then  gosub update_line_type_info
-
 total_amt=num(callpoint!.getDevObject("total_amt"))
 total_amt=total_amt+round(num(callpoint!.getColumnData("POE_RECDET.QTY_RECEIVED"))*num(callpoint!.getColumnData("POE_RECDET.UNIT_COST")),2)
 callpoint!.setDevObject("total_amt",str(total_amt))
 
-
-	poc_linecode_dev=fnget_dev("POC_LINECODE")
-	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
-	po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
-	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
-	line_type$=poc_linecode.line_type$
-	gosub enable_by_line_type
+gosub update_line_type_info
 [[POE_RECDET.PO_LINE_CODE.AVAL]]
 rem --- Line Code - After Validataion
 rem print 'show',;rem debug
@@ -893,8 +874,6 @@ rem print "new status:",callpoint!.getGridRowNewStatus(num(callpoint!.getValidat
 rem print "modify status:",callpoint!.getGridRowModifyStatus(num(callpoint!.getValidationRow()))
 
 rem I think if line type changes on existing row, need to uncommit whatever's on this line (assuming old line code was a stock type)
-
-gosub update_line_type_info
 
 if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),2) then
 rem if cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" or cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE"),2) then
@@ -920,7 +899,7 @@ rem if cvs(callpoint!.getColumnData("POE_RECDET.WAREHOUSE_ID"),3)="" or cvs(call
 
 endif
 
-	gosub enable_by_line_type
+gosub update_line_type_info
 
 if line_type$="M" and cvs(callpoint!.getColumnData("POE_RECDET.ORDER_MEMO"),2)=""
 	callpoint!.setColumnData("POE_RECDET.ORDER_MEMO"," ")
@@ -936,14 +915,6 @@ endif
 
 item_id$=callpoint!.getUserInput()
 gosub enable_serial
-
-
-	poc_linecode_dev=fnget_dev("POC_LINECODE")
-	dim poc_linecode$:fnget_tpl$("POC_LINECODE")
-	po_line_code$=callpoint!.getColumnData("POE_RECDET.PO_LINE_CODE")
-	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
-	line_type$=poc_linecode.line_type$
-	gosub enable_by_line_type
 [[POE_RECDET.<CUSTOM>]]
 update_line_type_info:
 
@@ -958,6 +929,7 @@ update_line_type_info:
 	line_type$=poc_linecode.line_type$
 	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 	callpoint!.setDevObject("line_type",poc_linecode.line_type$)
+	gosub enable_by_line_type
 
 return
 
@@ -1104,6 +1076,54 @@ rem line_type$ : input
 rem ==========================================================================
 
 	this_row=callpoint!.getValidationRow()
+
+	poe_podet_dev=fnget_dev("POE_PODET")
+	podet_exists=0
+	findrecord(poe_podet_dev,key=firm_id$+callpoint!.getColumnData("POE_RECDET.PO_NO")+callpoint!.getColumnData("POE_RECDET.INTERNAL_SEQ_NO"),dom=*next); podet_exists=1
+
+	if podet_exists then
+		rem --- Disable fields from an existing PO
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.PO_LINE_CODE",0)
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.WAREHOUSE_ID",0)
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.ITEM_ID",0)
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.NS_ITEM_ID",0)
+		if line_type$="V" then callpoint!.setColumnEnabled(this_row,"POE_RECDET.ORDER_MEMO",0)
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.UNIT_MEASURE",0)
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.CONV_FACTOR",0)
+		callpoint!.setColumnEnabled(this_row,"POE_RECDET.QTY_ORDERED",0)
+	else
+		rem --- Enable fields not on an existing PO
+		if pos(line_type$="SNOV") then
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.WAREHOUSE_ID",1)
+		else
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.WAREHOUSE_ID",0)
+		endif
+		if pos(line_type$="N") then
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.NS_ITEM_ID",1)
+		else
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.NS_ITEM_ID",0)
+		endif
+		if pos(line_type$="S") then
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.ITEM_ID",1)
+		else
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.ITEM_ID",0)
+		endif
+		if pos(line_type$="MNOV") then
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.ORDER_MEMO",1)
+		else
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.ORDER_MEMO",0)
+		endif
+		if pos(line_type$="SNV") then
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.UNIT_MEASURE",1)
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.CONV_FACTOR",1)
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.QTY_ORDERED",1)
+		else
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.UNIT_MEASURE",0)
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.CONV_FACTOR",0)
+			callpoint!.setColumnEnabled(this_row,"POE_RECDET.QTY_ORDERED",0)
+		endif
+	endif
+
 	if callpoint!.getDevObject("SF_installed")="Y"
 		if line_type$="N"
 			callpoint!.setColumnEnabled(this_row,"POE_RECDET.WO_NO",1)

@@ -6,7 +6,6 @@ REM ========================================================================
     setesc std_error
     seterr std_error
 
-
 REM ========================================================================
 REM USE and Declares
 REM ========================================================================
@@ -45,9 +44,6 @@ REM ========================================================================
     declare BBjServerEvent e!
     declare BBjChildWindow AreaChartWindow! 
     declare BBjChildWindow DialChartWindow! 
-    
-    declare BBjRecordSet glParams!
-    declare BBjRecordData periods!
     
     declare BBjRecordSet rs!
     declare BBjRecordData data!
@@ -109,39 +105,6 @@ REM ========================================================================
     
     rem ' addImageList
     sysgui!.addImageList(1,44,imageMgr!.loadImageFromFile(imageshome$ + imageslist$))
-    
-    rem ' set the database URL
-    dbserver$="localhost"
-    dbsqlport$=":2001"
-    dbtimeout$="&socket_timeout=5000"
-  
-    dbserver$=stbl("+DBSERVER",err=*next)
-    dbsqlport$=":"+stbl("+DBSQLPORT",err=*next)
-    dbssl=num(stbl("+DBSSL",err=*next))
-    dbtimeout$="&socket_timeout="+stbl("+DBTIMEOUT")
-    
-    if dbssl
-        dbssl$="&ssl=true"
-    else
-        dbssl$="&ssl=false"
-    endif
-
-    url_user$="&user=guest"
-    if stbl("!DSUDDB",err=*endif)<>"" then
-        url_user$=""
-    endif
-	
-    dbname$ = stbl("+DBNAME")
-    dbname_api$ = stbl("+DBNAME_API")
-    if pos("jdbc:apache"=cvs(dbname$,8))=1 then
-        url$ = dbname$
-    else
-	if pos("jdbc:"=cvs(dbname$,8))=1 then			
-		url$=dbname$+url_user$+dbssl$+dbtimeout$
-	else
-		url$ = "jdbc:basis:"+dbserver$+dbsqlport$+"?database="+dbname_api$+url_user$+dbssl$+dbtimeout$
-	endif
-    endif
 
     rem --- If BUI, initialize Barista processes
     if info(3,6)="5" then
@@ -156,17 +119,23 @@ REM ========================================================================
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
     firm_name$=sysinfo.firm_name$
+
+    rem --- Open GL parameters file
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="gls_params",ids$[1]="GLS_PARAMS"  
     
-    rem ' set start and end date
-    sql$ = "SELECT TOTAL_PERS, CURRENT_PER, CURRENT_YEAR, "
-    sql$ = sql$ + "PER_ENDING_01, PER_ENDING_02, PER_ENDING_03, PER_ENDING_04, PER_ENDING_05, PER_ENDING_06, "
-    sql$ = sql$ + "PER_ENDING_07, PER_ENDING_08, PER_ENDING_09, PER_ENDING_10, PER_ENDING_11, PER_ENDING_12, PER_ENDING_13 "
-    sql$ = sql$ + "FROM GLS_PARAMS "
-    sql$ = sql$ + "WHERE FIRM_ID = '" + firm_id$ + "'"
+    call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
     
-    glParams! = BBjAPI().createSQLRecordSet(url$,"",sql$)
-    periods! = glParams!.getCurrentRecordData()
-    period = num(periods!.getFieldValue("CURRENT_PER"))
+    gls01_dev=channels[1]
+    dim gls01a$:templates$[1]
+
+    rem --- get the accounting periods
+
+    readrecord(gls01_dev,key=firm_id$+"GL00",dom=*next)gls01a$
+    
+    period = num(gls01a.current_per$)
 
     gosub set_up_period
  
@@ -453,8 +422,24 @@ REM ========================================================================
     sql$ = sql$ + "WHERE T1.FIRM_ID = '" + firm_id$ + "' AND (T1.INVOICE_DATE BETWEEN '" + inputDStart$ + "' AND '" + inputDFinish$ + "') "
     sql$ = sql$ + "GROUP BY T1.SLSPSN_CODE, T2.CODE_DESC "
     sql$ = sql$ + "ORDER BY TOTAL_SALES DESC"
+        
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
-    rs! = BBjAPI().createSQLRecordSet(url$,"",sql$)
+    rs! = BBJAPI().createMemoryRecordSet("SLSPSN_CODE:C(3),SLSPSN_NAME:C(20),TOTAL_SALES:N(1*)")
+
+    while 1
+        read_tpl$ = sqlfetch(sql_chan,err=*break)
+        data! = rs!.getEmptyRecordData()    
+        data!.setFieldValue("SLSPSN_CODE",read_tpl$.slspsn_code$)
+        data!.setFieldValue("SLSPSN_NAME",read_tpl$.slspsn_name$)
+        data!.setFieldValue("TOTAL_SALES",str(read_tpl$.total_sales))
+        rs!.insert(data!)
+    wend
+    sqlclose(sql_chan)
 
     rem ' create a new treemap to hold the saleman
     salesperson! = new TreeMap()
@@ -464,6 +449,7 @@ REM ========================================================================
     counter = 0
     
     if !(rs!.isEmpty()) then
+        rs!.first()
 	    while 1
 
 		data! = rs!.getCurrentRecordData()
@@ -506,17 +492,33 @@ REM ========================================================================
 	sql$ = sql$ + "FROM OPT_INVHDR T1 "
 	sql$ = sql$ + "WHERE T1.FIRM_ID = '" + firm_id$ + "' AND (T1.INVOICE_DATE BETWEEN '" + inputDStart$ + "' AND '" + inputDFinish$ + "') AND T1.SLSPSN_CODE = '" + salespersonCode!.get(salesperson$+"_code") + "' "
 	sql$ = sql$ + "GROUP BY T1.INVOICE_DATE "
+        
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql$
+    dim read_tpl$:sqltmpl(sql_chan)
+    sqlexec(sql_chan)
 
-    	rs! = BBjAPI().createSQLRecordSet(url$,"",sql$)
+    rs! = BBJAPI().createMemoryRecordSet("INVDATE:C(8),TOTAL_SALES:N(1*)")
+
+    while 1
+        read_tpl$ = sqlfetch(sql_chan,err=*break)
+        data! = rs!.getEmptyRecordData()    
+        data!.setFieldValue("INVDATE",read_tpl$.invdate$)
+        data!.setFieldValue("TOTAL_SALES",str(read_tpl$.total_sales))
+        rs!.insert(data!)
+    wend
+    sqlclose(sql_chan)
 
         rem ' Iterate over the result set of daily sales for the specified salesperson
+        rs!.first()
         while 1
 
-	    data! = rs!.getCurrentRecordData()
+            data! = rs!.getCurrentRecordData()
         
             rem ' Get the HashMap associated with the date.  If one doesn't exist yet, then create it
             invDate$ = data!.getFieldValue("INVDATE")
-	    if salesData!.containsKey(invDate$)
+            if salesData!.containsKey(invDate$)
                 salespersonData! = cast(HashMap, salesData!.get(invDate$))
             else
                 salespersonData! = new HashMap()
@@ -527,7 +529,7 @@ REM ========================================================================
             salesData!.put(invDate$, salespersonData!)
             salespersonTotalSales = salespersonTotalSales + num(data!.getFieldValue("TOTAL_SALES"))
                         
-	    rs!.next(err=*break)
+            rs!.next(err=*break)
 	    
         wend
     	rs!.close()
@@ -1017,33 +1019,34 @@ REM ========================================================================
     return
 
 SET_UP_PERIOD:
-    numPeriods = num(periods!.getFieldValue("TOTAL_PERS"))
-    curYear = num(periods!.getFieldValue("CURRENT_YEAR"))
-    curPeriod = num(periods!.getFieldValue("CURRENT_PER"))
+    numPeriods = num(gls01a.total_pers$)
+    curYear = num(gls01a.current_year$)
+    curPeriod = num(gls01a.current_per$)
     
-    firstPerEnding$ = periods!.getFieldValue("PER_ENDING_01")
-    
+    firstPerEnding$ = gls01a.per_ending_01$
+
     switch period
-    	case 1 
-    		ending$ = periods!.getFieldValue("PER_ENDING_01")
-    		if numPeriods = 12 then
-    		    starting$ = periods!.getFieldValue("PER_ENDING_12")
-    		else
-    		    starting$ = periods!.getFieldValue("PER_ENDING_13")
-    		fi
-    		break
-    	case 2; ending$ = periods!.getFieldValue("PER_ENDING_02"); starting$ = periods!.getFieldValue("PER_ENDING_01"); break
-    	case 3; ending$ = periods!.getFieldValue("PER_ENDING_03"); starting$ = periods!.getFieldValue("PER_ENDING_02"); break
-    	case 4; ending$ = periods!.getFieldValue("PER_ENDING_04"); starting$ = periods!.getFieldValue("PER_ENDING_03"); break
-    	case 5; ending$ = periods!.getFieldValue("PER_ENDING_05"); starting$ = periods!.getFieldValue("PER_ENDING_04"); break
-    	case 6; ending$ = periods!.getFieldValue("PER_ENDING_06"); starting$ = periods!.getFieldValue("PER_ENDING_05"); break
-    	case 7; ending$ = periods!.getFieldValue("PER_ENDING_07"); starting$ = periods!.getFieldValue("PER_ENDING_06"); break
-    	case 8; ending$ = periods!.getFieldValue("PER_ENDING_08"); starting$ = periods!.getFieldValue("PER_ENDING_07"); break
-    	case 9; ending$ = periods!.getFieldValue("PER_ENDING_09"); starting$ = periods!.getFieldValue("PER_ENDING_08"); break
-    	case 10; ending$ = periods!.getFieldValue("PER_ENDING_10"); starting$ = periods!.getFieldValue("PER_ENDING_09"); break
-    	case 11; ending$ = periods!.getFieldValue("PER_ENDING_11"); starting$ = periods!.getFieldValue("PER_ENDING_10"); break
-    	case 12; ending$ = periods!.getFieldValue("PER_ENDING_12"); starting$ = periods!.getFieldValue("PER_ENDING_11"); break
-    	case 13; ending$ = periods!.getFieldValue("PER_ENDING_13"); starting$ = periods!.getFieldValue("PER_ENDING_12"); break
+        case 1 
+            ending$ = gls01a.per_ending_01$
+            if numPeriods = 12 then
+                starting$ = gls01a.per_ending_12$
+            else
+                starting$ = gls01a.per_ending_13$
+            fi
+            break
+        case 2; ending$ = gls01a.per_ending_02$; starting$ = gls01a.per_ending_01$; break
+        case 3; ending$ = gls01a.per_ending_03$; starting$ = gls01a.per_ending_02$; break
+        case 4; ending$ = gls01a.per_ending_04$; starting$ = gls01a.per_ending_03$; break
+        case 5; ending$ = gls01a.per_ending_05$; starting$ = gls01a.per_ending_04$; break
+        case 6; ending$ = gls01a.per_ending_06$; starting$ = gls01a.per_ending_05$; break
+        case 7; ending$ = gls01a.per_ending_07$; starting$ = gls01a.per_ending_06$; break
+        case 8; ending$ = gls01a.per_ending_08$; starting$ = gls01a.per_ending_07$; break
+        case 9; ending$ = gls01a.per_ending_09$; starting$ = gls01a.per_ending_08$; break
+        case 10; ending$ = gls01a.per_ending_10$; starting$ = gls01a.per_ending_09$; break
+        case 11; ending$ = gls01a.per_ending_11$; starting$ = gls01a.per_ending_10$; break
+        case 12; ending$ = gls01a.per_ending_12$; starting$ = gls01a.per_ending_11$; break
+        case 13; ending$ = gls01a.per_ending_13$; starting$ = gls01a.per_ending_12$; break
+        default; ending$ = "    "; starting$ = "    "; break
     swend
   
     startMonth = num(starting$(1,2))    
