@@ -26,6 +26,16 @@ rem --- Declare Java classes used
 
 	use java.io.File
 	use ::ado_file.src::FileObject
+
+rem --- Open/Lock files
+
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADM_MODULES",open_opts$[1]="OTA"
+
+	gosub open_tables
+
+
 [[ADX_INSTALLWIZ.<CUSTOM>]]
 validate_new_db_name: rem --- Validate new database name
 
@@ -34,10 +44,21 @@ validate_new_db_name: rem --- Validate new database name
 	rem --- Barista uses all upper case db names
 	db_name$=cvs(db_name$,4)
 
-	rem --- Don't allow database if it's already in Enterprise Manager
+	rem --- Don't allow database if it's already in Enterprise Manager, unless installing PRB Payroll for the first time
 	call stbl("+DIR_SYP")+"bac_em_login.bbj",SysGUI!,Form!,rdAdmin!,rd_status$
 	if rd_status$="ADMIN" then
 		db! = rdAdmin!.getDatabase(db_name$,err=dbNotFound)
+
+		rem --- Okay to use this db if PRB Payroll is being installed, and it does not exist yet at new install location.
+		dim adm_modules$:fnget_tpl$("ADM_MODULES")
+		find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules
+		if adm_modules.sys_install$="Y" then
+			prbabsDir_exists=0
+			testChan=unt
+			open(testChan,err=*next)new_loc$ + "/prbabs/data"; prbabsDir_exists=1
+			close(testChan,err=*next)
+			if !prbabsDir_exists then goto dbNotFound
+		endif
 
 		rem --- This db already exists, so don't allow it
 		msg_id$="AD_DB_EXISTS"
@@ -99,15 +120,31 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 		return
 	endif
 
-	rem --- Cannot be currently used by Addon
+	rem --- Cannot be currently used by Addon and PRB Payroll
 
+	aonDir_exists=0
+	prbabsDir_exists=0
 	testChan=unt
-	open(testChan, err=*return)new_loc$ + "/aon/data"; rem --- successful return here
-	close(testChan)
+	open(testChan,err=*next)new_loc$ + "/aon/data"; aonDir_exists=1
+	close(testChan,err=*next)
+	testChan=unt
+	open(testChan,err=*next)new_loc$ + "/prbabs/data"; prbabsDir_exists=1
+	close(testChan,err=*next)
+	if !aonDir_exists and !prbabsDir_exists then return
 
 	rem --- Location is used by Addon
 	msg_id$="AD_INSTALL_LOC_USED"
 	gosub disp_message
+
+	rem --- If PRB Payroll is being installed, and location is not currently used by PRB Payroll, 
+	rem --- ask if they want to install PRB Payroll there too. 
+	dim adm_modules$:fnget_tpl$("ADM_MODULES")
+	find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules
+	if adm_modules.sys_install$="Y" and !prbabsDir_exists then
+		msg_id$="AD_INSTALL_PR_HERE"
+		gosub disp_message
+		if msg_opt$="Y" then return
+	endif
 
 	callpoint!.setColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC", new_loc$)
 	callpoint!.setFocus("ADX_INSTALLWIZ.NEW_INSTALL_LOC")
@@ -176,6 +213,7 @@ rem -- Validate new firm ID with demo data
 	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
 	gosub validate_firm_id
 	if abort then break
+
 [[ADX_INSTALLWIZ.NEW_INSTALL_LOC.AVAL]]
 rem --- Validate directory for aon new install location
 

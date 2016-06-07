@@ -84,7 +84,6 @@ rem --- Remaining initializations
     more=1
     action=0
     message$=""
-    app_comp$=stbl("+AON_APPCOMPANY")
 
     while more
 
@@ -99,39 +98,54 @@ rem --- Remaining initializations
         gl$=info$[20]
         if gl$<>"Y" break
 
+    rem --- Which application parameter record do we need to retrieve to
+    rem --- get the current period and year?
+
+        module$=cvs(module_id$,4)
+        if module_id$="BM" module$="IV"
+        if module_id$="PO" module$="IV"
+        if module_id$="OP" module$="AR"
+        if module_id$="PRB" module$="PR"
+
     rem --- Open files
 
         files=10,begfile=1,endfile=files
         dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
         files$[1]="gls_params",ids$[1]=files$[1]
-        files$[2]="aps_params",ids$[2]=files$[2]
-        files$[3]="ars_params",ids$[3]=files$[3]
-        files$[4]="gls_suspense",ids$[4]=files$[4]
-        files$[5]="ivs_params",ids$[5]=files$[5]
-        files$[6]="prs_params",ids$[6]=files$[6]
-        files$[7]="sfs_params",ids$[7]="SFS_PARAMS"
-        files$[8]="adm-19",ids$[8]="ADM_PROCDETAIL"
-        files$[9]="glm-03",ids$[9]="GLC_JOURNALCODE"
-        files$[10]="glm-06",ids$[10]="ADM_AUDITCONTROL"
+        files$[2]="gls_suspense",ids$[2]=files$[2]
+        files$[3]="glm-03",ids$[3]="GLC_JOURNALCODE"
+        files$[4]="glm-06",ids$[4]="ADM_AUDITCONTROL"
+        files$[5]="adm-19",ids$[5]="ADM_PROCDETAIL"
+        if module$="AP" then files$[6]="aps_params",ids$[6]=files$[6]
+        if module$="AR" then files$[7]="ars_params",ids$[7]=files$[7]
+        if module$="IV" then files$[8]="ivs_params",ids$[8]=files$[8]
+        if module$="PR" then files$[9]="prs_params",ids$[9]=files$[9]
+        if module$="SF" then files$[10]="sfs_params",ids$[10]=files$[10]
+        
         call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :           ids$[all],templates$[all],channels[all],batch,status
         if status break
+        
         gls01_dev=channels[1]
-        aps01_dev=channels[2]
-        ars01_dev=channels[3]
-        gls01d_dev=channels[4]
-        ivs01_dev=channels[5]
-        prs01_dev=channels[6]
-        sfs01_dev=channels[7]
-        adm19_dev=channels[8]
-        glm03_dev=channels[9]
-        glm06_dev=channels[10]
+        gls01d_dev=channels[2]
+        glm03_dev=channels[3]
+        glm06_dev=channels[4]
+        adm19_dev=channels[5]
+        aps01_dev=channels[6]
+        ars01_dev=channels[7]
+        ivs01_dev=channels[8]
+        prs01_dev=channels[9]
+        sfs01_dev=channels[10]
 
     rem --- Dimension string templates
 
-        dim gls01a$:templates$[1],aps01a$:templates$[2],ars01a$:templates$[3],gls01d$:templates$[4]
-        dim ivs01a$:templates$[5],prs01a$:templates$[6],sfs01a$:templates$[7]
-        dim adm19a$:templates$[8],glm03a$:templates$[9],glm06a$:templates$[10]
+        dim gls01a$:templates$[1],gls01d$:templates$[2],glm03a$:templates$[3],glm06a$:templates$[4]
+        dim adm19a$:templates$[5]
+        if module$="AP" then dim aps01a$:templates$[6]
+        if module$="AR" then dim ars01a$:templates$[7]
+        if module$="IV" then dim ivs01a$:templates$[8]
+        if module$="PR" then dim prs01a$:templates$[9]
+        if module$="SF" then dim sfs01a$:templates$[10]
 
         num_files=1
         dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -151,19 +165,22 @@ rem --- Remaining initializations
         k$=firm_id$+"GL03"
         find record (gls01d_dev,key=k$,err=*next) gls01d$
 
-    rem --- Which application parameter record do we need to retrieve to
-    rem --- get the current period and year?
+    rem --- Retrieve application (adm-04) record for the calling module
 
-        module$=cvs(module_id$,4)
-        if module_id$="BM" module$="IV"
-        if module_id$="PO" module$="IV"
-        if module_id$="OP" module$="AR"
-
-    rem --- Retrieve application (adm-04) record for the calling application
-
-        adm04_key$=app_comp$+pad(application$,3)
-        message$=Translate!.getTranslation("AON_MISSING_APPLICATION_RECORD_FOR_")+adm04_key$+"."
-        find record (adm04_dev,key=adm04_key$,dom=*break) adm04a$
+        message$=Translate!.getTranslation("AON_MISSING_APPLICATION_RECORD_FOR_")+module$+"."
+        find record (adm04_dev,key=stbl("+AON_APPCOMPANY")+pad(module$,3),dom=*next) adm04a$
+        if adm04a.asc_prod_id$<>pad(module$,3) then
+            rem --- Look for product in other companies besides Addon
+            prod_id$=pad(module$,3)
+            read(adm04_dev,key="",dom=*next)
+            while 1
+                redim adm04a$
+                readrecord(adm04_dev,end=*break)adm04a$
+                if adm04a.asc_prod_id$=prod_id$ then break
+                if module$="PR" and adm04a.asc_prod_id$="PRB" then break
+            wend
+        endif
+        if cvs(adm04a.asc_comp_id$,2)="" then goto break
 
     rem --- Retrieve the current period and year for the calling application
 
@@ -596,6 +613,9 @@ std_exit: rem --- Exit program
     close (aps01_dev,err=*next)
     close (ars01_dev,err=*next)
     close (gls01d_dev,err=*next)
+    close (ivs01_dev,err=*next)
+    close (prs01_dev,err=*next)
+    close (sfs01_dev,err=*next)
     close (adm19_dev,err=*next)
     close (glm03_dev,err=*next)
     close (glm06_dev,err=*next)

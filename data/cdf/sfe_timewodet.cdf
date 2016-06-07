@@ -351,10 +351,17 @@ rem --- Set precision
 rem --- set preset val for batch_no
 	callpoint!.setTableColumnAttribute("SFE_TIMEWODET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 
-
-rem --- Validate employee_no with SFM_EMPLMAST instead of PRM_EMPLMAST when PR not installed
+rem --- When PR is installed
 	if callpoint!.getDevObject("pr")="Y"
+		rem --- Validate employee_no with PRM_EMPLMAST instead of SFM_EMPLMAST
 		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")
 		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","IDEF","PR_EMPLOYEES")
-	endif
 
+		rem --- Validate pay_code with PRC_PAYCODE
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DTAB","PRC_PAYCODE")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DKNM","[+FIRM_ID]+""A""+@")
+
+		rem --- Validate title_code with PRC_TITLCODE
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DTAB","PRC_TITLCODE")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DKNM","[+FIRM_ID]+""F""+@")
+	endif
