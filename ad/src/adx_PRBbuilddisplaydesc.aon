@@ -1,0 +1,111 @@
+rem ==========================================================================
+rem --- adx_PRBbuilddisplaydesc.aon 
+rem --- Stub program to launch PRB Payroll's "Update PR Display Description" utility.
+rem --- 
+rem --- AddonSoftware Version 16.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+    setesc std_error
+    seterr std_error
+
+rem --- Open/Lock files
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES",open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    adm_modules_dev=num(open_chans$[1])
+    dim adm_modules$:open_tpls$[1]
+
+rem --- Don't allow running PRB utility if PRB isn't installed
+
+    findrecord(adm_modules_dev,key="01004419"+"PRB",dom=*next)adm_modules$
+    if adm_modules.sys_install$<>"Y" then
+        msg_id$="AD_MODULE_NOT_INSTAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]="PRB Payroll"
+        gosub disp_message
+        goto done
+    endif
+
+rem --- Launch PRB Payroll's "Update PR Display Description" utility
+
+    run stbl("PRBABS_PROG")+"prx_builddisplaydesc.aon"
+    
+done: rem --- All done
+
+    goto std_exit
+    
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
+
+    return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

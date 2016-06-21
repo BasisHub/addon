@@ -35,7 +35,6 @@ rem --- Open/Lock files
 
 	gosub open_tables
 
-
 [[ADX_INSTALLWIZ.<CUSTOM>]]
 validate_new_db_name: rem --- Validate new database name
 
@@ -51,7 +50,7 @@ validate_new_db_name: rem --- Validate new database name
 
 		rem --- Okay to use this db if PRB Payroll is being installed, and it does not exist yet at new install location.
 		dim adm_modules$:fnget_tpl$("ADM_MODULES")
-		find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules
+		find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules$
 		if adm_modules.sys_install$="Y" then
 			prbabsDir_exists=0
 			testChan=unt
@@ -139,7 +138,7 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 	rem --- If PRB Payroll is being installed, and location is not currently used by PRB Payroll, 
 	rem --- ask if they want to install PRB Payroll there too. 
 	dim adm_modules$:fnget_tpl$("ADM_MODULES")
-	find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules
+	find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules$
 	if adm_modules.sys_install$="Y" and !prbabsDir_exists then
 		msg_id$="AD_INSTALL_PR_HERE"
 		gosub disp_message
@@ -213,11 +212,10 @@ rem -- Validate new firm ID with demo data
 	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
 	gosub validate_firm_id
 	if abort then break
-
 [[ADX_INSTALLWIZ.NEW_INSTALL_LOC.AVAL]]
 rem --- Validate directory for aon new install location
 
-	new_loc$ = callpoint!.getUserInput()
+	new_loc$=(new File(callpoint!.getUserInput())).getCanonicalPath()
 	gosub validate_aon_dir
 	callpoint!.setUserInput(new_loc$)
 	if abort then break

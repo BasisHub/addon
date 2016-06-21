@@ -688,7 +688,6 @@ rem --- Set header total amounts
 		ordHelp!.totalSalesDisk(cust_id$, order_no$, inv_type$)
 		
 		callpoint!.setHeaderColumnData( "OPE_INVHDR.TOTAL_SALES", str(ordHelp!.getExtPrice()) )
-		callpoint!.setHeaderColumnData( "OPE_INVHDR.TAXABLE_AMT", str(ordHelp!.getTaxable()) )
 		callpoint!.setHeaderColumnData( "OPE_INVHDR.TOTAL_COST",  str(ordHelp!.getExtCost()) )
 
 		callpoint!.setStatus("REFRESH;SETORIG")
@@ -1304,6 +1303,7 @@ rem	frghtamt!.setValue(freight_amt)
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.SUBTOTAL", str(sub_tot))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.NET_SALES", str(net_sales))
 	callpoint!.setHeaderColumnData("OPE_INVHDR.TAX_AMOUNT",str(ttl_tax))
+	callpoint!.setHeaderColumnData("OPE_INVHDR.TAXABLE_AMT",str(ttl_taxable))
 	callpoint!.setHeaderColumnData("OPE_INVHDR.FREIGHT_AMT",str(freight_amt))
 	callpoint!.setHeaderColumnData("<<DISPLAY>>.ORDER_TOT", str(net_sales))
 
@@ -1366,16 +1366,19 @@ rem ==========================================================================
 	if ordHelp!.getInv_type() = "" then
 		ttl_ext_price = 0
 		ttl_ext_cost = 0
-		ttl_taxable = 0
+		ttl_taxable_sales = 0
 	else
 		totalsVect!=ordHelp!.totalSalesCostTaxable(cast(BBjVector, GridVect!.getItem(0)), cast(Callpoint, callpoint!))
 		ttl_ext_price=totalsVect!.getItem(0)
 		ttl_ext_cost=totalsVect!.getItem(1)
-		ttl_taxable=totalsVect!.getItem(2)
+		ttl_taxable_sales=totalsVect!.getItem(2)
 	endif
 
 	freight_amt = num(callpoint!.getHeaderColumnData("OPE_INVHDR.FREIGHT_AMT"))
-	ttl_tax = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable, ttl_ext_price)
+	taxAndTaxableVect! = ordHelp!.calculateTax(disc_amt, freight_amt, ttl_taxable_sales, ttl_ext_price)
+
+	ttl_tax = taxAndTaxableVect!.getItem(0)
+	ttl_taxable = taxAndTaxableVect!.getItem(1)
 
 	return
 

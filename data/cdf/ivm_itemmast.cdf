@@ -89,47 +89,30 @@ rem --- Is item code blank?
 		callpoint!.setFocus("IVM_ITEMMAST.ITEM_DESC")
 	endif
 [[IVM_ITEMMAST.LOTSER_ITEM.AVAL]]
-rem --- Can't change flag is there is QOH
-
-	break; rem *** DISABLED ***
-
-	prev_flag$ = callpoint!.getColumnDiskData("IVM_ITEMMAST.LOTSER_ITEM")
-	this_flag$ = callpoint!.getUserInput()
-
-	rem debug
-	print "Lot/Serial..."
-	print " disk: ", prev_flag$
-	print "input: ", this_flag$
-
-	if this_flag$ <> prev_flag$ then
-		gosub check_qoh
-
-		if qoh then
-			msg_id$ = "IV_CANT_CHANGE_CODE"
-			gosub disp_message
-			callpoint!.setStatus("ABORT")
-		endif
+rem --- Disable inventoried if not lotted/serialized
+	if callpoint!.getUserInput()<>"Y" then
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.INVENTORIED",0)
+	else
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.INVENTORIED",1)
 	endif
 [[IVM_ITEMMAST.INVENTORIED.AVAL]]
-rem --- Can't change flag is there is QOH
+rem --- Can't change Inventoried flag if there is QOH, and disable lotted/serialized flag if inventoried=Y
 
-	break; rem *** DISABLED ***
-
-	prev_flag$ = callpoint!.getColumnDiskData("IVM_ITEMMAST.INVENTORIED")
-	this_flag$ = callpoint!.getUserInput()
-
-	rem debug
-	print "Inventoried..."
-	print " disk: ", prev_flag$
-	print "input: ", this_flag$
-
-	if this_flag$ <> prev_flag$ then
+	prev_inv_flag$=callpoint!.getColumnData("IVM_ITEMMAST.INVENTORIED")
+	this_inv_flag$ = callpoint!.getUserInput()
+	if this_inv_flag$ <> prev_inv_flag$ then
 		gosub check_qoh
-
 		if qoh then
 			msg_id$ = "IV_CANT_CHANGE_CODE"
 			gosub disp_message
 			callpoint!.setStatus("ABORT")
+			callpoint!.setColumnData("IVM_ITEMMAST.INVENTORIED",prev_inv_flag$,1)
+		else
+			if this_inv_flag$="Y" then
+				callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",0)
+			else
+				callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",1)
+			endif
 		endif
 	endif
 [[IVM_ITEMMAST.ARNF]]
@@ -170,6 +153,20 @@ rem --- set flag in devObject to say we're not on a new record
 
 rem --- Store starting product_type so we'll know later if it was changed.
 	callpoint!.setDevObject("start_product_type",callpoint!.getColumnData("IVM_ITEMMAST.PRODUCT_TYPE"))
+
+rem --- Disable inventoried if not lotted/serialized
+	if callpoint!.getColumnData("IVM_ITEMMAST.LOTSER_ITEM")<>"Y" then
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.INVENTORIED",0)
+	else
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.INVENTORIED",1)
+	endif
+
+rem --- Disable lotted/serialized flag if inventoried=Y
+	if callpoint!.getColumnData("IVM_ITEMMAST.INVENTORIED")="Y" then
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",0)
+	else
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",1)
+	endif
 [[<<DISPLAY>>.ITEM_DESC_SEG_3.AVAL]]
 rem --- Set this section back into desc, if modified
 

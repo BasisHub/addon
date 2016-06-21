@@ -467,10 +467,16 @@ rem --- Calculate Taxes
 
 	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
-	tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,
-:										num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+	taxable_sales = ordHelp!.getTaxableSales()
+	taxAndTaxableVect! = ordHelp!.calculateTax(discount_amt, freight_amt,
+:										taxable_sales,
 :										num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
+
+	tax_amount = taxAndTaxableVect!.getItem(0)
+	taxable_amt = taxAndTaxableVect!.getItem(1)
+
 	callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
+	callpoint!.setColumnData("OPE_INVHDR.TAXABLE_AMT",str(taxable_amt))
 	callpoint!.setStatus("REFRESH")
 [[OPE_INVHDR.ARAR]]
 rem --- If First/Last Record was used, did it return an Invoice?
@@ -873,10 +879,14 @@ rem --- Calculate taxes and write it back
 
 	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	taxable_sales = ordHelp!.getTaxableSales()
 	gosub get_disk_rec
-	ordhdr_rec.tax_amount = ordHelp!.calculateTax(discount_amt, freight_amt,
-:												num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+	taxAndTaxableVect! = ordHelp!.calculateTax(discount_amt, freight_amt,
+:												taxable_sales,
 :												num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
+
+	ordhdr_rec.tax_amount = taxAndTaxableVect!.getItem(0)
+	ordhdr_rec.taxable_amt = taxAndTaxableVect!.getItem(1)
 	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
 	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
@@ -1572,6 +1582,14 @@ rem --- Write/Remove manual ship to file
 		callpoint!.setOptionEnabled("DINV",0)
 		callpoint!.setOptionEnabled("RPRT",0)
 	endif
+
+rem --- Update devObjects with current values written to file
+	callpoint!.setDevObject("discount_amt",num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT")))
+	callpoint!.setDevObject("freight_amt",num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT")))
+	callpoint!.setDevObject("tax_amount",num(callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT")))
+	callpoint!.setDevObject("taxable_amt",num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")))
+	callpoint!.setDevObject("total_cost",num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_COST")))
+	callpoint!.setDevObject("total_sales",num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 [[OPE_INVHDR.ADIS]]
 rem --- Check locked status
 
@@ -2966,6 +2984,9 @@ rem ==========================================================================
 	callpoint!.setDevObject("tax_amount",   callpoint!.getColumnData("OPE_INVHDR.TAX_AMOUNT"))
 	callpoint!.setDevObject("freight_amt",  callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
 	callpoint!.setDevObject("discount_amt", callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
+	rem --- Init devObjects set by OPE_INVCASH in case user doesn't have access to that form
+	callpoint!.setDevObject("print_invoice", "N")
+	callpoint!.setDevObject("cash_code_type","")
 
 	trans_status$=callpoint!.getColumnData("OPE_INVHDR.TRANS_STATUS")
 	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
@@ -3099,11 +3120,16 @@ rem ==========================================================================
 	if cvs(callpoint!.getColumnData("OPE_INVHDR.TAX_CODE"),2) <> ""
 		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 		ordHelp!.setTaxCode(callpoint!.getColumnData("OPE_INVHDR.TAX_CODE"))
-		tax_amount = ordHelp!.calculateTax(disc_amt, freight_amt,
-:											num(callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT")),
+		taxable_sales = ordHelp!.getTaxableSales()
+		taxAndTaxableVect! = ordHelp!.calculateTax(disc_amt, freight_amt,
+:											taxable_sales,
 :											num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 
+		tax_amount = taxAndTaxableVect!.getItem(0)
+		taxable_amt = taxAndTaxableVect!.getItem(1)
+
 		callpoint!.setColumnData("OPE_INVHDR.TAX_AMOUNT",str(tax_amount))
+		callpoint!.setColumnData("OPE_INVHDR.TAXABLE_AMT",str(taxable_amt))
 		callpoint!.setStatus("REFRESH")
 	endif
 	return

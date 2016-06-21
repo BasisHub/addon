@@ -57,7 +57,7 @@ rem --- Main processing
 	gosub update_barista_installs
 
 done: rem --- All done
-    
+   
     rem --- Stop progress meter
     meter_text$=""
     meter_proc_recs=meter_total_recs
@@ -409,8 +409,9 @@ rem --- also reset mount path in ddm_systems (mounted systems) for new database
 
 reset_auto_sync:
 rem --- reset auto-launch record for the auto-sync process
+rem --- also now resets for new Payroll module's license agreement/disclaimer
 
-	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC' OR PROCESS_ID='BUILDSPROC'"
+	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC' OR PROCESS_ID='BUILDSPROC' OR PROCESS_ID='01PAYDISC'"
 	sql_chan=sqlunt
 	sqlopen(sql_chan,err=*next)dbName$
     sqlprep(sql_chan)sql_prep$
@@ -442,7 +443,7 @@ rem --- Update XML Configuration File barista_installs.xml
     rd_temp_tag$=$09$+"<RECORD id="+$22$+cvs(dbName$,136)+$22$+">"
 
     rd_xml_chan=unt
-    open (rd_xml_chan,err=*return)rd_install_file$
+    open (rd_xml_chan,err=create_installs)rd_install_file$
         rd_xml_chan_fin$=fin(rd_xml_chan)
         read record(rd_xml_chan,siz=dec($00$+rd_xml_chan_fin$(1,4)))rd_xml_data$
     close (rd_xml_chan)
@@ -484,31 +485,64 @@ rem --- Update XML Configuration File barista_installs.xml
 
 	return
 
+create_installs:rem --- Create Installations File
+
+    rd_xml_dir$=dsk("")+dir("")
+
+    rd_xml_data$=
+:       "<?xml version='1.0' encoding='UTF-8' ?>"+rd_line_sep$+
+:       "<INSTALLATIONS>"+rd_line_sep$+
+:       $09$+"<RECORD id="+$22$+"barista"+$22$+">"+rd_line_sep$+
+:       $0909$+"<ID id="+$22$+"barista"+$22$+">BARISTA</ID>"+rd_line_sep$+
+:       $0909$+"<DESCRIPTION id="+$22$+"barista"+$22$+">Barista Application Framework</DESCRIPTION>"+rd_line_sep$+
+:       $0909$+"<LOCATION id="+$22$+"barista"+$22$+">"+rd_xml_dir$+"</LOCATION>"+rd_line_sep$+
+:       $0909$+"<VERSION id="+$22$+"barista"+$22$+">"+rd_version_id$+"."+stbl("+BUILD_ID")+"</VERSION>"+rd_line_sep$+
+:       $0909$+"<DATE_CREATED id="+$22$+"barista"+$22$+">"+date(0:"%Yd%Mz%Dz%Hz%mz%sz")+"</DATE_CREATED>"+rd_line_sep$+
+:       $0909$+"<PROPERTIES id="+$22$+"barista"+$22$+">-tT0 -q"+rd_base_cpnm$+" -WD"+$22$+rd_xml_dir$+$22$+" -c"+$22$+rd_xml_dir$+"sys/config/enu/barista.cfg"+$22$+" "+$22$+rd_xml_dir$+"sys/prog/bar_login.bbj"+$22$+"</PROPERTIES>"+rd_line_sep$+
+:       $09$+"</RECORD>"+rd_line_sep$+
+:       "</INSTALLATIONS>"
+
+    string rd_install_file$
+
+    rd_xml_chan=unt
+    open (rd_xml_chan)rd_install_file$
+    write record(rd_xml_chan)rd_xml_data$
+    close(rd_xml_chan)
+
+    retry
+
 create_sscp:
 rem --- Create new session specific classpath (SSCP) in Enterprise Manager
     
     sscpName$=cvs(dbName$,8)
-    needAddonprop=1
     needBaristaprop=1
+    needAddonprop=1
+    needPrbabsprop=1
     paths!=BBjAPI().makeVector()
     env!=BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getEnvironment()
     paths!=env!.getClasspath(BBjAPI().getConfig().getCurrentCommandLineObject().getOriginalClasspathName(),err=*next)
     if paths!.size()>0 then
         for i=0 to paths!.size()-1
-            if pos("addonprop.jar"=paths!.getItem(i)) then
-                rem --- Update path to addonprop.jar
-                paths!.setItem(i,newAonLoc$+"/apps/aon/prop/addonprop.jar")
-                needAddonprop=0
-            endif
             if pos("baristaprop.jar"=paths!.getItem(i)) then
                 rem --- Update path to baristaprop.jar
                 paths!.setItem(i,newAonLoc$+"/barista/sys/prop/baristaprop.jar")
                 needBaristaprop=0
             endif
+            if pos("addonprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to addonprop.jar
+                paths!.setItem(i,newAonLoc$+"/apps/aon/prop/addonprop.jar")
+                needAddonprop=0
+            endif
+            if pos("prbabsprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to prbabsprop.jar
+                paths!.setItem(i,newAonLoc$+"/apps/prbabs/prop/prbabsprop.jar")
+                needPrbabsprop=0
+            endif
         next i
     endif
     if needBaristaprop then paths!.addItem(newAonLoc$+"/barista/sys/prop/baristaprop.jar")
     if needAddonprop then paths!.addItem(newAonLoc$+"/apps/aon/prop/addonprop.jar")
+    if needPrbabsprop then paths!.addItem(newAonLoc$+"/apps/prbabs/prop/prbabsprop.jar")
     env!.setClasspath(sscpName$, paths!)
 
 	return

@@ -1,3 +1,11 @@
+[[IVM_ITEMWHSE.AENA]]
+rem --- Disable Barista menu items
+	wctl$="31031"; rem --- Save-As menu item in barista.ini
+	wmap$=callpoint!.getAbleMap()
+	wpos=pos(wctl$=wmap$,8)
+	wmap$(wpos+6,1)="X"
+	callpoint!.setAbleMap(wmap$)
+	callpoint!.setStatus("ABLEMAP")
 [[IVM_ITEMWHSE.AREC]]
 rem --- Initialize product_type with ivm_itemmast product_type
 	itemmast_dev=fnget_dev("IVM_ITEMMAST")

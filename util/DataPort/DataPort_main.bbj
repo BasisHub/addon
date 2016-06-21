@@ -31,7 +31,7 @@ dim ddm04$:"file_name:c(6),record_id:c(1),layout_seq:c(3*),data_name:c(12),reser
 
 rem --- Open files and/or retrieve templates that may be needed for PO file conversion
 
-    num_files=9
+    num_files=10
     dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
     rd_open_tables$[1]="ADS_SEQUENCES",rd_open_opts$[1]="OTA"
     rd_open_tables$[2]="ARM_CUSTMAST",rd_open_opts$[2]="T"
@@ -42,6 +42,7 @@ rem --- Open files and/or retrieve templates that may be needed for PO file conv
     rd_open_tables$[7]="DDM_SYSTEMS",rd_open_opts$[7]="OTA"
     rd_open_tables$[8]="DDM_ELEMENTS",rd_open_opts$[8]="OTA"
     rd_open_tables$[9]="ADM_MODULES",rd_open_opts$[9]="OTA"
+    rd_open_tables$[10]="DDM_TABLE_COLS",rd_open_opts$[10]="OTA"
     
     gosub open_tables
     
@@ -54,6 +55,7 @@ rem --- Open files and/or retrieve templates that may be needed for PO file conv
     ddm_systems=num(rd_open_chans$[7]);dim ddm_systems$:rd_open_tpls$[7]
     ddm_elements=num(rd_open_chans$[8]);dim ddm_elements$:rd_open_tpls$[8]
     adm_modules_dev=num(rd_open_chans$[9]);dim adm_modules$:rd_open_tpls$[9]
+    ddm_table_cols=num(rd_open_chans$[10]);dim ddm_table_cols$:rd_open_tpls$[10]
     
 rem --- initialization
 
@@ -155,6 +157,7 @@ rem --- Get current Customer and Vendor number sizes
 
 	custSizeMap! = new java.util.HashMap()
 	vendSizeMap! = new java.util.HashMap()
+    prYearMap! = new java.util.HashMap()
 	dim key$(6)
     sys01_dev=unt
     open (sys01_dev)source_folder$+"/"+cvs("sys-01",version_cvs)
@@ -175,7 +178,15 @@ rem --- Get current Customer and Vendor number sizes
 				read(sys01_dev)*,*,p2$(1)
 				vendSizeMap!.put(firm$,num(p2$(1,2)))
 				break
-			case default
+			case rec$ = "PR00"
+			    rem --- Payroll current year
+			    dim p4$(4)
+                read(sys01_dev)*,*,*,*,p4$(1)
+                value$=p4$(3,2)
+                gosub fix_yymmdd_date
+                prYearMap!.put(firm$,value$)
+			    break
+    		case default
 				read(sys01_dev)
 				break
 		swend
@@ -725,7 +736,8 @@ end_ddm04:
     next
 
     rem ' Data record ID does not match dictionary record ID.
-    if pos(cvs(datafile$,8)="woe-12;woe-22;woe-32;woe-42;wom-03;wot-01;wot-03;wot-11;wot-12;wot-21;wot-23;wot-31;wot-33;",7) then 
+    if pos(cvs(datafile$,8)="pre-21;pre-31;pre-41;pre-51;prt-11;prt-21;prt-31;",7)
+:   or pos(cvs(datafile$,8)="woe-12;woe-22;woe-32;woe-42;wom-03;wot-01;wot-03;wot-11;wot-12;wot-21;wot-23;wot-31;wot-33;",7) then 
         record_id_field$=""
     endif
     
@@ -772,6 +784,12 @@ end_ddm04:
     lock (old_file)
     print "   Copying data from  "+ddm03.file_name$+ddm03.record_id$
     print(log_dev)"   Copying data from    "+ddm03.file_name$+ddm03.record_id$
+
+    rem --- Source PRM-10 W records require special handling to build PRC_W2BOX
+    if file_id$="PRC_W2BOX" then
+          gosub split_prm10w_recs
+          goto next_file
+    endif
 
 next_rec:
     readrecord(old_file,end=eof)old_rec$
@@ -998,6 +1016,12 @@ rem --- Check value of new field for blanks if part of primary key
                             if cvs(new_datafile$,2)="bme-01" and cvs(new_fieldlist.name$[field],2)="BM_REFERENCE" goto no_msg
                             if cvs(new_datafile$,2)="glt-06" and cvs(new_fieldlist.name$[field],2)="GL_ADT_NO" goto no_msg
                             if cvs(new_datafile$,2)="ope-03" and cvs(new_fieldlist.name$[field],2)="ORDER_NO" goto no_msg
+                            if cvs(new_datafile$,2)="pre-01" and cvs(new_fieldlist.name$[field],2)="CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="pre-11" and cvs(new_fieldlist.name$[field],2)="CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="pre-21" and cvs(new_fieldlist.name$[field],2)="CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="pre-31" and cvs(new_fieldlist.name$[field],2)="CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="pre-41" and cvs(new_fieldlist.name$[field],2)="CHECK_NO" goto no_msg
+                            if cvs(new_datafile$,2)="pre-51" and cvs(new_fieldlist.name$[field],2)="CHECK_NO" goto no_msg
                             if pos("sam-"=cvs(new_datafile$,2))=1 and cvs(new_fieldlist.name$[field],2)="ITEM_ID" goto no_msg
                         blank_fields$=blank_fields$+new_fieldlist.name$[field]+$0a$
                         print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" has a blank value and no translation specified." 
@@ -1027,7 +1051,11 @@ rem --- if this field.value is listed in flat file "field_translations" then tra
 
         rem --- Check value of new field for quotes if part of primary key or file verified field
         redim ddm_elements$
-        readrecord(ddm_elements,key=pad(new_fieldlist.name$[field],16))ddm_elements$
+        readrecord(ddm_elements,key=pad(new_fieldlist.name$[field],16),dom=*next)ddm_elements$
+        if cvs(ddm_elements.dd_data_name$,2)="" then
+            readrecord(ddm_table_cols,key=pad(new_fieldlist.name$[field],16)+pad(cvs(new_datafile$,4),16),knum="DBVAR_NAME",dom=*endif)ddm_table_cols$
+            readrecord(ddm_elements,key=pad(ddm_table_cols.dd_data_name$,16),dom=*next)ddm_elements$
+        endif
         if pos($0a$+new_fieldlist.name$[field]+$0a$=$0a$+key_temp$+$0a$)>0 or cvs(ddm_elements.dd_attr_dtab$,2)<>"" then
             if pos($22$=value$) then
                 print (err_dev) "field "+new_fieldlist.name$[field]+" in file "+new_datafile$+" contains a quote that can cause problems." 
@@ -1161,6 +1189,25 @@ rem --- Initialize BMM_BILLMSUB.WO_REF_NUM and  SFE_WOSUBCNT.WO_REF_NUM
         new_rec.wo_ref_num$=pad(new_rec.subcont_seq$, dec(wk$(10,2)), "R")
     endif
 
+rem ---  "PRM-01 - Employee Inactive - License Count"
+    if cvs(new_datafile$,2)="prm-01" and cvs(new_rec.term_date$,3)>"" then
+         new_rec.empl_inactive$="Y"
+    endif
+
+rem --- "prt-02 and prt-03 have new sequence number in new file only"
+    if pos(";"+cvs(new_datafile$,11)+";"=";prt-02;prt-03;pre-02;pre-11;pre-21;pre-31;pre-41;pre-51;")>0 then
+        dflt_seq_key$="INTERNAL_SEQ_NO"
+        call stbl("+DIR_SYP")+"bas_sequences.bbj",dflt_seq_key$,new_seq$,table_chans$[all]
+        new_rec.internal_seq_no$=new_seq$
+    endif
+
+rem --- If new_field_defaults not set for Payroll year, use Current Year from source Payroll parameters.
+        if pos(";"+cvs(new_datafile$,11)+";"=";prc_taxcode;prc_contcode;prc_taxtable;prc_w2box;prt-01;prt-05;prt-11;prt-21;prt-31;")>0 and cvs(default_pr_year$,2)="" then
+            if prYearMap!.containsKey(thisFirm$) then
+                new_rec.year$=prYearMap!.get(thisFirm$)
+            endif
+        endif
+
     new_rec$=field(new_rec$)
 
 write_record:
@@ -1205,6 +1252,10 @@ duplicate_record:
     goto next_rec
 
 eof:
+    rem --- Payroll Daily Entry new Header file
+    if cvs(new_datafile$,11)="pre-02" then
+        gosub header_pre02_recs
+    endif
 
     rem --- Initialize glm-08 (GLM_BUDGETMASTER.REVISION_SRC)
     if cvs(datafile$,8)="glm-08" then
@@ -1589,7 +1640,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
                 if pos(a0$(3,2)="IVWO",2)=0
                     dim ads_masks$:fattr(ads_masks$)
                     ads_masks.firm_id$=a0$(1,2)
-                    if pad(a0$(3,2),3)="PR" then
+                    if a0$(3,2)="PR" then
                         ads_masks.asc_comp_id$=pr_comp_id$
                         ads_masks.asc_prod_id$=pr_prod_id$
                     else
@@ -1619,7 +1670,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
     
                 dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
-                if pad(a0$(3,2),3)="PR" then
+                if a0$(3,2)="PR" then
                     ads_masks.asc_comp_id$=pr_comp_id$
                     ads_masks.asc_prod_id$=pr_prod_id$
                 else
@@ -1636,7 +1687,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
     
                 dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
-                if pad(a0$(3,2),3)="PR" then
+                if a0$(3,2)="PR" then
                     ads_masks.asc_comp_id$=pr_comp_id$
                     ads_masks.asc_prod_id$=pr_prod_id$
                 else
@@ -1653,7 +1704,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
     
                 dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
-                if pad(a0$(3,2),3)="PR" then
+                if a0$(3,2)="PR" then
                     ads_masks.asc_comp_id$=pr_comp_id$
                     ads_masks.asc_prod_id$=pr_prod_id$
                 else
@@ -1702,7 +1753,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
             else
                 dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
-                if pad(a0$(3,2),3)="PR" then
+                if a0$(3,2)="PR" then
                     ads_masks.asc_comp_id$=pr_comp_id$
                     ads_masks.asc_prod_id$=pr_prod_id$
                 else
@@ -1719,7 +1770,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
     
                 dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
-                if pad(a0$(3,2),3)="PR" then
+                if a0$(3,2)="PR" then
                     ads_masks.asc_comp_id$=pr_comp_id$
                     ads_masks.asc_prod_id$=pr_prod_id$
                 else
@@ -1736,7 +1787,7 @@ make_masks: rem --- Port masks from SYS-01 to Barista's ads_masks
     
                 dim ads_masks$:fattr(ads_masks$)
                 ads_masks.firm_id$=a0$(1,2)
-                if pad(a0$(3,2),3)="PR" then
+                if a0$(3,2)="PR" then
                     ads_masks.asc_comp_id$=pr_comp_id$
                     ads_masks.asc_prod_id$=pr_prod_id$
                 else
@@ -2204,10 +2255,10 @@ check_for_definition:
        endif
     endif
 
-    rem --- see if this table has any new fields (i.e., that weren't in v6)
+    rem --- see if this table has any new fields (i.e., that weren't in v6 (or Payroll))
     rem --- if so, set default value based on new_field_defaults flat file
     rem --- new_rec$ only dim'd once/file, so setting the values once here should carry into every record
-    if source_version=6
+    if source_version=6 or pos(";"+cvs(new_datafile$,11)+";"=";prc_taxcode;prc_contcode;prc_taxtable;prc_w2box;prt-01;prt-05;prt-11;prt-21;prt-31;")>0 then
         new_rec_fields!=new_field_defaults!.keySet().iterator()
         while new_rec_fields!.hasNext()
             new_rec_field$ = str(new_rec_fields!.next())
@@ -2217,6 +2268,11 @@ check_for_definition:
                 field new_rec$,new_rec_fieldname$=new_rec_value$
             endif
         wend
+    
+        rem --- If new_field_defaults not set for Payroll year, will need to use Current Year from source Payroll parameters.
+        if pos(";"+cvs(new_datafile$,11)+";"=";prc_taxcode;prc_contcode;prc_taxtable;prc_w2box;prt-01;prt-05;prt-11;prt-21;prt-31;")>0 then
+            default_pr_year$=new_rec.year$
+        endif
     endif
 return
 
@@ -3080,6 +3136,189 @@ verify_translation_master: rem --- Verify master file records exist for used tra
         
         rem --- Close master file
         close(master_chan)
+    wend
+    return
+    
+split_prm10w_recs: rem --- Split old w2Box Detail File into separate files
+    prc_w2box_trgt=new_file;rem "Header Table"
+    prc_w2box_tpl$=fattr(new_rec$)
+
+    rem --- Create and open new files in target directory
+    table_alias$="PRC_W2BOX_CONT",new_datafile$="prc_w2box_cont",file_id$=new_datafile$
+    erase destin_folder$+"/"+new_datafile$,err=*next
+    gosub check_for_definition
+    prc_w2box_cont_trgt=new_file
+    findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=*next)ddm_table_tpls$
+    prc_w2box_cont_tpl$=ddm_table_tpls.template$
+
+    rem --- Create and open new files in target directory
+    table_alias$="PRC_W2BOX_DDCT",new_datafile$="prc_w2box_ddct",file_id$=new_datafile$
+    erase destin_folder$+"/"+new_datafile$,err=*next
+    gosub check_for_definition
+    prc_w2box_ddct_trgt=new_file
+    findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=*next)ddm_table_tpls$
+    prc_w2box_ddct_tpl$=ddm_table_tpls.template$
+
+    rem --- Create and open new files in target directory
+    table_alias$="PRC_W2BOX_EARN",new_datafile$="prc_w2box_earn",file_id$=new_datafile$
+    erase destin_folder$+"/"+new_datafile$,err=*next
+    gosub check_for_definition
+    prc_w2box_earn_trgt=new_file
+    findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=*next)ddm_table_tpls$
+    prc_w2box_earn_tpl$=ddm_table_tpls.template$
+
+    rem --- Create and open new files in target directory
+    table_alias$="PRC_W2BOX_TAX",new_datafile$="prc_w2box_tax",file_id$=new_datafile$
+    erase destin_folder$+"/"+new_datafile$,err=*next
+    gosub check_for_definition
+    prc_w2box_tax_trgt=new_file
+    findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=*next)ddm_table_tpls$
+    prc_w2box_tax_tpl$=ddm_table_tpls.template$
+
+    while 1
+        readrecord(old_file,end=*break)old_rec$
+        if field(old_rec$,record_id_field$,err=*continue)<>"W" then continue
+        if pos(old_rec.firm_id$=firms$,2)=0 then continue
+
+        dim  prc_w2box$:prc_w2box_tpl$
+        field_name$="FIRM_ID"
+        field prc_w2box$,field_name$=field(old_rec$,field_name$)
+
+        field_name$="RECORD_ID_W"
+        field prc_w2box$,field_name$=field(old_rec$,field_name$)
+
+        rem --- If new_field_defaults not set for Payroll year, use Current Year from source Payroll parameters.
+        if cvs(new_rec.year$,2)="" then
+            if prYearMap!.containsKey(old_rec.firm_id$) then
+                w2year$=prYearMap!.get(old_rec.firm_id$)
+            endif
+        else
+            w2year$=new_rec.year$
+        endif
+
+        field prc_w2box$,"year"=w2year$
+
+        field_name$="W2_BOX_ID"
+        field prc_w2box$,field_name$=field(old_rec$,field_name$)
+
+        rem "Box Renumbers after 2012"
+        box_num=0 
+        box_num=num(prc_w2box.w2_box_id$,err=*next)
+        if box_num > 9 then
+            prc_w2box.w2_box_id$=str(box_num-1:"00")
+        endif
+
+        field_name$="W2_BXLN_ID"
+        field prc_w2box$,field_name$=field(old_rec$,field_name$)
+
+        field_name$="W2_STATE_ID"
+        field prc_w2box$,field_name$=field(old_rec$,field_name$)
+
+        field prc_w2box$,"W2_LOCAL_ID"=field(old_rec$,"W2_LOC_CODE")
+        prc_w2box$=field(prc_w2box$)
+        writerecord(prc_w2box_trgt)prc_w2box$
+
+        for x=1 to 10
+            datatype$=cvs(field(old_rec$,"w2_code_type_"+str(x:"00")),2)
+        
+            switch (BBjAPI().TRUE)
+                case datatype$ = "A"
+                    rem "Earnings"
+                    dim prc_w2box_earn$:prc_w2box_earn_tpl$
+                    prc_w2box_earn.firm_id$=prc_w2box.firm_id$
+                    prc_w2box_earn.record_id_w$=prc_w2box.record_id_w$
+                    prc_w2box_earn.year$=prc_w2box.year$
+                    prc_w2box_earn.w2_box_id$=prc_w2box.w2_box_id$
+                    prc_w2box_earn.w2_bxln_id$=prc_w2box.w2_bxln_id$
+                    prc_w2box_earn.w2_state_id$=prc_w2box.w2_state_id$
+                    prc_w2box_earn.w2_local_id$=prc_w2box.w2_local_id$
+                    prc_w2box_earn.pay_code$=field(old_rec$,"w2_code_id_"+str(x:"00"))
+                    prc_w2box_earn.operator$=field(old_rec$,"w2_code_oper_"+str(x:"00"))
+                    prc_w2box_earn.multiplier=nfield(old_rec$,"w2_code_mult_"+str(x:"00"))
+                    prc_w2box_earn$=field(prc_w2box_earn$)
+                    writerecord(prc_w2box_earn_trgt)prc_w2box_earn$
+                    break
+                case datatype$ = "B"
+                    rem "Deductions"
+                    dim prc_w2box_ddct$:prc_w2box_ddct_tpl$
+                    prc_w2box_ddct.firm_id$=prc_w2box.firm_id$
+                    prc_w2box_ddct.record_id_w$=prc_w2box.record_id_w$
+                    prc_w2box_ddct.year$=prc_w2box.year$
+                    prc_w2box_ddct.w2_box_id$=prc_w2box.w2_box_id$
+                    prc_w2box_ddct.w2_bxln_id$=prc_w2box.w2_bxln_id$
+                    prc_w2box_ddct.w2_state_id$=prc_w2box.w2_state_id$
+                    prc_w2box_ddct.w2_local_id$=prc_w2box.w2_local_id$
+
+                    prc_w2box_ddct.deduct_code$=field(old_rec$,"w2_code_id_"+str(x:"00"))
+                    prc_w2box_ddct.operator$=field(old_rec$,"w2_code_oper_"+str(x:"00"))
+                    prc_w2box_ddct.multiplier=nfield(old_rec$,"w2_code_mult_"+str(x:"00"))
+                    prc_w2box_ddct$=field(prc_w2box_ddct$)
+                    writerecord(prc_w2box_ddct_trgt)prc_w2box_ddct$
+                    break
+                case datatype$ = "C"
+                    rem "Contributions"
+                    dim prc_w2box_cont$:prc_w2box_cont_tpl$
+                    prc_w2box_cont.year$=prc_w2box.year$
+                    prc_w2box_cont.w2_box_id$=prc_w2box.w2_box_id$
+                    prc_w2box_cont.w2_bxln_id$=prc_w2box.w2_bxln_id$
+                    prc_w2box_cont.w2_state_id$=prc_w2box.w2_state_id$
+                    prc_w2box_cont.w2_local_id$=prc_w2box.w2_local_id$
+
+                    prc_w2box_cont.contrib_code$=field(old_rec$,"w2_code_id_"+str(x:"00"))
+                    prc_w2box_cont.operator$=field(old_rec$,"w2_code_oper_"+str(x:"00"))
+                    prc_w2box_cont.multiplier=nfield(old_rec$,"w2_code_mult_"+str(x:"00"))
+                    temp_flag$="GBA"
+                    prc_w2box_cont.src_column$=temp_flag$(nfield(old_rec$,"w2_amt_type_"+str(x:"00")),1)
+                    prc_w2box_cont$=field(prc_w2box_cont$)
+                    writerecord(prc_w2box_cont_trgt)prc_w2box_cont$
+                    break
+                case datatype$ = "D"
+                    rem "Taxes"
+                    dim prc_w2box_tax$:prc_w2box_tax_tpl$
+                    prc_w2box_tax.firm_id$=prc_w2box.firm_id$
+                    prc_w2box_tax.record_id_w$=prc_w2box.record_id_w$
+                    prc_w2box_tax.year$=prc_w2box.year$
+                    prc_w2box_tax.w2_box_id$=prc_w2box.w2_box_id$
+                    prc_w2box_tax.w2_bxln_id$=prc_w2box.w2_bxln_id$
+                    prc_w2box_tax.w2_state_id$=prc_w2box.w2_state_id$
+                    prc_w2box_tax.w2_local_id$=prc_w2box.w2_local_id$
+
+                    prc_w2box_tax.tax_code$=field(old_rec$,"w2_code_id_"+str(x:"00"))
+                    prc_w2box_tax.operator$=field(old_rec$,"w2_code_oper_"+str(x:"00"))
+                    prc_w2box_tax.multiplier=nfield(old_rec$,"w2_code_mult_"+str(x:"00"))
+                    temp_flag$="GTA"
+                    prc_w2box_tax.src_column$=temp_flag$(nfield(old_rec$,"w2_amt_type_"+str(x:"00")),1)
+                    prc_w2box_tax$=field(prc_w2box_tax$)
+                    writerecord(prc_w2box_tax_trgt)prc_w2box_tax$
+                    break
+            swend
+        next x
+    wend
+    return
+
+header_pre02_recs: rem --- Create Header for pre02_recs"
+    pre_02_trgt=new_file;rem "Header Table"
+    pre_02_tpl$=fattr(new_rec$)
+
+    rem --- Create and open new Header files in target directory
+    table_alias$="PRE_DAYTIME_HDR",new_datafile$="pre_daytime_hdr",file_id$=new_datafile$
+    erase destin_folder$+"/"+new_datafile$,err=*next
+    gosub check_for_definition
+    pre_02hdr_trgt=new_file
+    findrecord(ddm_table_tpls,key=pad(table_alias$,16),dom=*next)ddm_table_tpls$
+    pre_02hdr_tpl$=ddm_table_tpls.template$
+
+    read(pre_02_trgt,key="",dom=*next)
+    dim pre02$:pre_02_tpl$
+    while 1
+       readrecord(pre_02_trgt,end=*break)pre02$
+       dim pre_02hdr$:pre_02hdr_tpl$
+       pre_02hdr.firm_id$=pre02.firm_id$
+       pre_02hdr.batch_no$=pre02.batch_no$
+       pre_02hdr.employee_no$=pre02.employee_no$
+       pre_02hdr.pay_period$="W"
+       pre_02hdr$=field(pre_02hdr$)
+       writerecord(pre_02hdr_trgt)pre_02hdr$
     wend
     return
     

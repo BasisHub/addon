@@ -572,7 +572,7 @@ method_error:rem --- Method error trap/handler
         rem  * Update ads_autolaunch XML file. 
         rem  *
         rem  * Update <PROCESS_STATUS> tags in ads_autolaunch XML files to re-set status 'C' to status 'N',
-        rem  * where ASC_COMP_ID=01007514 and ASC_PROD_ID=AD.
+        rem  * where (ASC_COMP_ID=01007514 and ASC_PROD_ID<>ADB;DDB;SQL;EXM;) or (ASC_COMP_ID=01004419 and ASC_PROD_ID=PRB).
         rem  *
         rem  * @param BBjNumber sourceChan
         rem  * @param BBjNumber targetChan
@@ -610,26 +610,27 @@ method_error:rem --- Method error trap/handler
                 endif
             wend
 
-            rem --- skip if not an Addon ads_autolaunch XML file
-            if comp$="01007514" and pos(prod$+";"="ADB;DDB;SQL;EXM",4)=0 then
-                rem --- re-set file pointer to the beginning of the file
-                fid$=fid(sourceChan)
-                close(sourceChan)
-                open(sourceChan,isz=-1)fid$(9)
+            rem --- re-set file pointer to the beginning of the file
+            fid$=fid(sourceChan)
+            close(sourceChan)
+            open(sourceChan,isz=-1)fid$(9)
 
-                rem --- copy backup file back to xml file, making necessary updates
-                while 1
-                    read(sourceChan,end=*break)record$
-    
-                    rem --- process <PROCESS_STATUS> lines
-                    startProcStatusTag = pos(startProcStatusTag$=cvs(record$,4))
-                    if startProcStatusTag then
-    
-                        rem --- get current status in <PROCESS_STATUS> lines
-                        status$ = record$(startProcStatusTag + startProcStatusTagLen)
-                        status$ = cvs(status$(1, pos(endProcStatusTag$=cvs(status$,4)) - 1),3)
-                        rem --- re-set status 'C' to status 'N' in <PROCESS_STATUS> lines
-                        if status$="C" then
+            rem --- copy backup file back to xml file, making necessary updates
+            while 1
+                read(sourceChan,end=*break)record$
+
+                rem --- process <PROCESS_STATUS> lines
+                startProcStatusTag = pos(startProcStatusTag$=cvs(record$,4))
+                if startProcStatusTag then
+
+                    rem --- get current status in <PROCESS_STATUS> lines
+                    status$ = record$(startProcStatusTag + startProcStatusTagLen)
+                    status$ = cvs(status$(1, pos(endProcStatusTag$=cvs(status$,4)) - 1),3)
+                    rem --- re-set status 'C' to status 'N' in <PROCESS_STATUS> lines
+                    if status$="C" then
+                    rem --- skip if not an Addon ads_autolaunch XML file
+                    if (comp$="01007514" and pos(prod$+";"="ADB;DDB;SQL;EXM;",4)=0)
+:                   or (comp$="01004419" and pos(prod$+";"="PRB;",4)) then
                             #log("  <<< " + record$)
                             line$ = record$(1,startProcStatusTag + startProcStatusTagLen - 1)
                             line$ = line$ + "N"
@@ -638,10 +639,10 @@ method_error:rem --- Method error trap/handler
                             #log("  >>> " + record$)
                         endif
                     endif
-    
-                    write(targetChan)record$
-                wend
-            endif
+                endif
+
+                write(targetChan)record$
+            wend
             methodret
             
 method_error:rem --- Method error trap/handler

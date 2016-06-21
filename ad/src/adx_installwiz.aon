@@ -18,14 +18,15 @@ rem --- Initializations
     pgmdir$=stbl("+DIR_PGM",err=*next)
     dir_syp$=stbl("+DIR_SYP")
     sysGUI! = BBjAPI().getSysGui()
+    mountedSys!=BBjAPI().makeVector()
+    synFile!=BBjAPI().makeVector()
+    oldLocation!=BBjAPI().makeVector()
 
 rem --- Get user inputs
 
     dbName$=Option!.getOptionData("DB_NAME")
     appDesc$=Option!.getOptionData("APP_DESC")
     newAonLoc$=Option!.getOptionData("NEW_INSTALL_LOC")
-    newAonDir$=newAonLoc$ + "/aon"
-    newBarDir$=newAonLoc$ + "/barista"
     newFirm$=Option!.getOptionData("NEW_FIRM_ID")
     installType$=Option!.getOptionData("INSTALL_TYPE")
     help%=int(num(Option!.getOptionData("APP_HELP")))
@@ -37,11 +38,52 @@ rem --- that program copies pre-sync'd barista and addon, plus examples and/or d
 rem --- it will copy demo data as well; used for demo/training
 
 	if installType$="Q" then run stbl("+DIR_PGM")+"adx_quickcopywiz.aon"
+
+    rem --- Flip directory path separators for bbjHome
+    filepath$=java.lang.System.getProperty("basis.BBjHome")
+    gosub fix_path
+    bbjHome$=filepath$
 	
-	rem --- Flip directory path separators for newAonDir
-	filePath$=newAonDir$
+	rem --- Flip directory path separators for newAonLoc
+	filePath$=newAonLoc$
 	gosub fix_path
-	newAonDir$=filePath$
+	newAonLoc$=filePath$
+    
+    rem --- Set directory for newBarDir
+    newBarDir$=newAonLoc$ + "/barista"
+
+rem --- Open/Lock files
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES",open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    adm_modules_dev=num(open_chans$[1])
+    dim adm_modules$:open_tpls$[1]
+
+rem --- Is Addon being installed, or is it already installed?
+    install_aon=1
+    testChan=unt
+    open(testChan,err=*next)newAonLoc$ + "/aon/data"; install_aon=0
+    close(testChan,err=*next)
+    if install_aon then
+        mountedSys!.add(newAonLoc$+"/aon")
+        synFile!.add(newAonLoc$+"/aon/config/addon.syn")
+        oldLocation!.add(bbjHome$+"/apps/aon")
+    endif
+
+rem --- Is PRB Payroll being installed?
+    findrecord(adm_modules_dev,key="01004419"+"PRB",dom=*next)adm_modules$
+    if adm_modules.sys_install$="Y" then
+        install_prbabs=0
+        mountedSys!.add(newAonLoc$+"/prbabs")
+        synFile!.add(newAonLoc$+"/prbabs/config/prbabs.syn")
+        oldLocation!.add(bbjHome$+"/apps/prbabs")
+    else
+        install_prbabs=0
+    endif
     
 rem --- Start progress meter
     meter_title$=Translate!.getTranslation("AON_INSTALL_WIZ")
@@ -53,10 +95,10 @@ rem --- Start progress meter
     gosub disp_meter
 
 rem --- Open log file
-    location$ = newAonDir$
+    location$ = newAonLoc$
     gosub open_log
     
-rem --- Recursively copy oldLocation to newAonDir
+rem --- Recursively copy oldLocation to newAonLoc
 
     rem --- Increment progress meter
     meter_text$=Translate!.getTranslation("AON_COPY_AON")
@@ -65,12 +107,9 @@ rem --- Recursively copy oldLocation to newAonDir
     gosub disp_meter
     print(log_dev)meter_text$
 
-	rem --- Set oldLocation to aon directory under the current download directory
-    sep$ = File.separator
-    bbjHome$=java.lang.System.getProperty("basis.BBjHome")
-    oldLocation$ = bbjHome$ + sep$ + "apps" + sep$ + "aon"
-
-    call pgmdir$+"adc_copyaon.aon",oldLocation$,newAonDir$,copyData%,help%,rdForm!,0,status
+    for syscnt=0 to mountedSys!.size()-1
+        call pgmdir$+"adc_copyaon.aon",oldLocation!.getItem(syscnt),mountedSys!.getItem(syscnt),copyData%,help%,rdForm!,0,status
+    next syscnt
     
 rem --- Update new addon.syn file
 
@@ -81,129 +120,73 @@ rem --- Update new addon.syn file
     gosub disp_meter
     print(log_dev)meter_text$
 
-	rem --- Set updateSynFile to addon.syn at the new install location
-    updateSynFile$=newAonDir$+"/config/addon.syn"
-
-	rem --- Set upgrade off
+    rem --- Set upgrade off
     upgrade%=0
     oldSynFile$=""
 
-    rem --- Get old aon path from SYSDIR/DIR line
-    oldAonDir$=""
-	synDev=unt, more=0
-	open(synDev,isz=-1,err=*next)updateSynFile$; more=1
-	while more
-		read(synDev,end=*break)record$
-        
-		rem --- process SYSDIR/DIR lines
-		if(pos("DIR="=record$) = 1 or pos("SYSDIR="=record$) = 1) then
-            xpos = pos("="=record$)
-            oldAonDir$ = cvs(record$(xpos+1),3)
-            break
-		endif
- 	wend
-	close(synDev)
-   
-	rem --- Build stblMap HashMap of SYSSTBL/STBL data paths, keyed by STBL
-	rem --- Build pfxList ArrayList of SYSPFX/PREFIX data paths
-	search$=oldAonDir$
-    replace$=newAonDir$+"/"
-    use java.util.HashMap
-    declare HashMap stblMap!
-	stblMap!=new HashMap()
-    use java.util.ArrayList
-    declare ArrayList pfxList!
-	pfxList!=new ArrayList()
-	synDev=unt, more=0
-	open(synDev,isz=-1,err=*next)updateSynFile$; more=1
-	while more
-		read(synDev,end=*break)record$
-
-		key$ = record$(1, pos("="=record$) - 1)
-		switch (BBjAPI().TRUE)
-			case key$ = "STBL"
-			case key$ = "SYSSTBL"
-				xpos=pos(" "=record$)
-				stbl$=record$(xpos+1, pos("="=record$(xpos+1))-1)
-				record$=cvs(record$(pos("="=record$,1,2)+1),3)
-				aList!=new ArrayList()
-				aList!.add(record$)
-                if cvs(stbl$,3)="+MDI_TITLE" then
-                    rem --- Set +MDI_TITLE to appDesc$
-                    record$=appDesc$
-                else
-                    rem --- Do search and replace to update aon path
-                    gosub search_replace
-                endif
-				aList!.add(record$)
-				stblMap!.put(stbl$, aList!)
-				break
-			case key$ = "PREFIX"
-			case key$ = "SYSPFX"
-				record$=cvs(record$(pos("="=record$)+1),3)
-				aList!=new ArrayList()
-				aList!.add(record$)
-				gosub search_replace
-				aList!.add(record$)
-				pfxList!.add(aList!)
-				break
-			case default
-				rem --- other lines ... skip
-				break
-		swend
-	wend
-	close(synDev)
-
-    call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
+    for syscnt=0 to mountedSys!.size()-1
+        newAppDir$=mountedSys!.getItem(syscnt)
+        updateSynFile$=synFile!.getItem(syscnt)
+        gosub update_addon_syn
+    next syscnt
     
-rem --- Add new application to Barista Installation Manager
-rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of its terminating release
-
-    rem --- Increment progress meter
-    meter_text$=Translate!.getTranslation("AON_BIM_CREATE")
-    meter_proc_recs=meter_proc_recs+1
-    meter_action$="MTR-LST"
-    gosub disp_meter
-    print(log_dev)meter_text$
-
-    rem --- Create new session specific classpath (SSCP) in Enterprise Manager
+rem --- Create new session specific classpath (SSCP) in Enterprise Manager
     sscpName$=cvs(dbName$,8)
-    needAddonprop=1
     needBaristaprop=1
+    needAddonprop=1
+    needPrbabsprop=1
     paths!=BBjAPI().makeVector()
     env!=BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getEnvironment()
     paths!=env!.getClasspath(BBjAPI().getConfig().getCurrentCommandLineObject().getOriginalClasspathName(),err=*next)
     if paths!.size()>0 then
         for i=0 to paths!.size()-1
-            if pos("addonprop.jar"=paths!.getItem(i)) then
+            if pos("baristaprop.jar"=paths!.getItem(i)) and install_aon then
+                rem --- Update path to baristaprop.jar
+                paths!.setItem(i,newAonLoc$+"/barista/sys/prop/baristaprop.jar")
+                needBaristaprop=0
+            endif
+            if pos("addonprop.jar"=paths!.getItem(i)) and install_aon then
                 rem --- Update path to addonprop.jar
                 paths!.setItem(i,newAonLoc$+"/aon/prop/addonprop.jar")
                 needAddonprop=0
             endif
-            if pos("baristaprop.jar"=paths!.getItem(i)) then
-                rem --- Update path to baristaprop.jar
-                paths!.setItem(i,newAonLoc$+"/barista/sys/prop/baristaprop.jar")
-                needBaristaprop=0
+            if pos("prbabsprop.jar"=paths!.getItem(i)) and install_prbabs then
+                rem --- Update path to prbabsprop.jar
+                paths!.setItem(i,newAonLoc$+"/prbabs/prop/prbabsprop.jar")
+                needPrbabsprop=0
             endif
         next i
     endif
     if needBaristaprop then paths!.addItem(newAonLoc$+"/barista/sys/prop/baristaprop.jar")
     if needAddonprop then paths!.addItem(newAonLoc$+"/aon/prop/addonprop.jar")
+    if needPrbabsprop then paths!.addItem(newAonLoc$+"/prbabs/prop/prbabsprop.jar")
     env!.setClasspath(sscpName$, paths!)
+    
+rem --- Add new application to Barista Installation Manager
+rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of its terminating release
 
-    rem --- Launch bai_install_manager.bbj
-	bar_dir$=dir("")
-	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
-	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
-:	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
-:	+" "+$22$+bar_dir$+"/sys/prog/bai_install_manager.bbj"+$22$
-	user_arg$=" - "
-:	+" -u"+rdAdmin!.getUser()
-:	+" -id"+dbName$
-:	+" -desc"+$22$+appDesc$+$22$
-:	+" -loc"+$22$+newAonLoc$+$22$
-:   +" -cp"+$22$+sscpName$+$22$
-	scall_result=scall(run_arg$+user_arg$,err=*next)
+    if install_aon then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_BIM_CREATE")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    
+        rem --- Launch bai_install_manager.bbj if installing Addon
+    	bar_dir$=dir("")
+    	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
+    	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
+:       +" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
+:       +" "+$22$+bar_dir$+"/sys/prog/bai_install_manager.bbj"+$22$
+	    user_arg$=" - "
+:       +" -u"+rdAdmin!.getUser()
+:       +" -id"+dbName$
+:       +" -desc"+$22$+appDesc$+$22$
+:       +" -loc"+$22$+newAonLoc$+$22$
+:       +" -cp"+$22$+sscpName$+$22$
+	    scall_result=scall(run_arg$+user_arg$,err=*next)
+	endif
     
 rem --- Update new sync XML files
 rem --- BIM clears barista/settings dir, so must do this step after BIMing and before auto-sync
@@ -215,15 +198,32 @@ rem --- BIM clears barista/settings dir, so must do this step after BIMing and b
     gosub disp_meter
     print(log_dev)meter_text$
 
-	rem --- Set newSyncLoc to sync directory at the new install location
-    newSyncLoc$=newAonDir$+"/data/sync"
-
 	rem --- Set upgrade off
     upgrade%=0
     oldSyncLoc$=""
     syncBackupDir$=""
 
-    call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+    for syscnt=0 to mountedSys!.size()-1
+        newSyncLoc$=mountedSys!.getItem(syscnt)+"/data/sync"
+        call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+    next syscnt
+
+rem --- Setup new firm before auto-sync so new firm's masks and sequences will get sync'd in
+
+    if cvs(newFirm$,2)<>"" then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_SETUP_FIRM")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        for syscnt=0 to mountedSys!.size()-1
+            oldLocation$=oldLocation!.getItem(syscnt)
+            newDataDir$=mountedSys!.getItem(syscnt)+"/data"
+            call pgmdir$+"adc_firmsetup.aon::oldLocation",oldLocation$,newDataDir$,newFirm$,copyData%,rdForm!,0,status
+        next syscnt
+    endif
 
 rem --- Launch auto-sync in new barista for the new addon.syn
 rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to bypass bar_login.bbj in the new barista
@@ -239,29 +239,19 @@ rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to b
 	bar_dir$=newBarDir$
 	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
 	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
-:	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
-:	+" "+$22$+bar_dir$+"/sys/prog/bax_launch_task.bbj"+$22$
-	user_arg$=" - "
-:	+" -u"+rdAdmin!.getUser()
-:	+" -p"+rdAdmin!.getPassword()
-:	+" -t"+"DDM_TABLES"
-:	+" -y"+"A"
-:	+" -a" +"bax_dd_synch_auto.bbj"+$22$+" - "+" -f"+"../aon/config/addon.syn"+" -b"+$22$
-:	+" -w"
-	scall_result=scall(run_arg$+user_arg$,err=*next)
+:   +" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
+:   +" "+$22$+bar_dir$+"/sys/prog/bax_launch_task.bbj"+$22$
 
-rem --- Setup new firm
-
-    if cvs(newFirm$,2)<>"" then
-        rem --- Increment progress meter
-        meter_text$=Translate!.getTranslation("AON_SETUP_FIRM")
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
-
-        call pgmdir$+"adc_firmsetup.aon",newAonDir$+"/data",newFirm$,copyData%,rdForm!,0,status
-    endif
+    for syscnt=0 to mountedSys!.size()-1
+        user_arg$=" - "
+:       +" -u"+rdAdmin!.getUser()
+:       +" -p"+rdAdmin!.getPassword()
+:       +" -t"+"DDM_TABLES"
+:       +" -y"+"A"
+:       +" -a" +"bax_dd_synch_auto.bbj"+$22$+" - "+" -f"+synFile!.getItem(syscnt)+" -b"+$22$
+:       +" -w"
+	    scall_result=scall(run_arg$+user_arg$,err=*next)
+    next syscnt
     
 done: rem --- All done
     
@@ -275,6 +265,82 @@ done: rem --- All done
     close(log_dev)
 
     goto std_exit
+
+update_addon_syn:
+rem --- Update new addon.syn file
+
+    rem --- Get old aon path from SYSDIR/DIR line
+    oldAonDir$=""
+    synDev=unt, more=0
+    open(synDev,isz=-1,err=*next)updateSynFile$; more=1
+    while more
+        read(synDev,end=*break)record$
+        
+        rem --- process SYSDIR/DIR lines
+        if(pos("DIR="=record$) = 1 or pos("SYSDIR="=record$) = 1) then
+            xpos = pos("="=record$)
+            oldAonDir$ = cvs(record$(xpos+1),3)
+            break
+        endif
+    wend
+    close(synDev)
+   
+    rem --- Build stblMap HashMap of SYSSTBL/STBL data paths, keyed by STBL
+    rem --- Build pfxList ArrayList of SYSPFX/PREFIX data paths
+    filePath$=oldAonDir$
+    gosub fix_path
+    oldAonDir$=filePath$
+    search$=oldAonDir$
+    replace$=newAppDir$+"/"
+    use java.util.HashMap
+    declare HashMap stblMap!
+    stblMap!=new HashMap()
+    use java.util.ArrayList
+    declare ArrayList pfxList!
+    pfxList!=new ArrayList()
+    synDev=unt, more=0
+    open(synDev,isz=-1,err=*next)updateSynFile$; more=1
+    while more
+        read(synDev,end=*break)record$
+
+        key$ = record$(1, pos("="=record$) - 1)
+        switch (BBjAPI().TRUE)
+            case key$ = "STBL"
+            case key$ = "SYSSTBL"
+                xpos=pos(" "=record$)
+                stbl$=record$(xpos+1, pos("="=record$(xpos+1))-1)
+                record$=cvs(record$(pos("="=record$,1,2)+1),3)
+                aList!=new ArrayList()
+                aList!.add(record$)
+                if cvs(stbl$,3)="+MDI_TITLE" then
+                    rem --- Set +MDI_TITLE to appDesc$
+                    record$=appDesc$
+                else
+                    rem --- Do search and replace to update aon path
+                    gosub search_replace
+                endif
+                aList!.add(record$)
+                stblMap!.put(stbl$, aList!)
+                break
+            case key$ = "PREFIX"
+            case key$ = "SYSPFX"
+                record$=cvs(record$(pos("="=record$)+1),3)
+                aList!=new ArrayList()
+                aList!.add(record$)
+                gosub search_replace
+                aList!.add(record$)
+                pfxList!.add(aList!)
+                break
+            case default
+                rem --- other lines ... skip
+                break
+        swend
+    wend
+    close(synDev)
+
+    call pgmdir$+"adc_updatesynfile.aon",updateSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
+    
+    return
 
 fix_path: rem --- Flip directory path separators
 
@@ -335,7 +401,7 @@ open_log:rem --- Open log file
     print(log_dev)
     print(log_dev)"New Database Name: " + dbName$
     print(log_dev)"New Description: " + appDesc$
-    print(log_dev)"New aon Location: " + newAonDir$
+    print(log_dev)"New aon Location: " + newAonLoc$
     print(log_dev)"New Firm ID: " + newFirm$
     if copyData% then
         print(log_dev)"Install demo data."
@@ -348,6 +414,36 @@ open_log:rem --- Open log file
         print(log_dev)"Do not install Addon help file."
     endif
     print(log_dev)
+
+    return
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,rd_table_chans$[all]
 
     return
     

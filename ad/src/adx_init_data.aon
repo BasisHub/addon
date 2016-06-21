@@ -42,6 +42,7 @@ rem --- Initializations
     pgmdir$=stbl("+DIR_PGM",err=*next)
     dir_syp$=stbl("+DIR_SYP")
     dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+    rebuild_FTI$=""
     
     rem --- Make sure needed STBLs are set
     call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
@@ -52,7 +53,11 @@ rem --- Initializations
 rem --- There's nothing to do if data/adx_conversionCtrl isn’t found, i.e. new install or all required conversions already completed.
 
     convCtrlFile!=new File(dataDir$+"adx_conversionCtrl",err=*next)
-    if !convCtrlFile!.exists() then goto std_exit
+    if !convCtrlFile!.exists()
+        goto std_exit
+    else
+        rebuild_FTI$="YES"
+    endif
     fileReader!=new FileReader(convCtrlFile!)
 
     convCtrl!=new Properties()
@@ -82,7 +87,6 @@ rem --- Are conversion needed for the start_version?
             endif
         next i
     endif
-    if indexFirstConversion<0 then goto std_exit
 
 rem --- Open log file in aon/logs directory
 
@@ -145,6 +149,17 @@ rem --- Start progress meter
     meter_text$=""
     meter_action$="WIN-LST-OK"
     gosub disp_meter
+
+rem --- if no conversions detected, update log and done
+
+    if indexFirstConversion<0
+        meter_text$=Translate!.getTranslation("AON_NO_CONVERSIONS_NEEDED","No conversions needed.")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$        
+        goto done
+    endif
     
 rem --- Determine which modules are installed
 
@@ -309,6 +324,18 @@ done: rem --- All done
     meter_action$="MTR-LST"
     gosub disp_meter
     print(log_dev)meter_text$
+
+    rem --- before exiting, launch utility to rebuild any Full Text Indexes in silent mode
+
+    if rebuild_FTI$="YES"
+        rd_run_arg$="bbj "+stbl("+DIR_SYP")+"bam_dd_export_FTI.bbj - -auto"
+        rd_scall_result=scall(rd_run_arg$,err=*next)
+        meter_text$=Translate!.getTranslation("AON_FULL_TEXT_INDEX","Full Text Indexes (re)created.")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
     
     rem --- Stop progress meter
     meter_text$=""
