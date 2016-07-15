@@ -2462,6 +2462,9 @@ rem ==========================================================================
 			extractrecord(ope01_dev,key=ope01_key$)ope01a$; rem Advisory Locking
 			callpoint!.setStatus("SETORIG")
 
+			order_no$=ope01a.order_no$
+			gosub add_to_batch_print
+
 			user_tpl.price_code$   = ope01a.price_code$
 			user_tpl.pricing_code$ = ope01a.pricing_code$
 			user_tpl.order_date$   = ope01a.order_date$

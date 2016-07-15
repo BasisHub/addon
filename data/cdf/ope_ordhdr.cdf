@@ -1781,6 +1781,14 @@ rem --- Write/Remove manual ship to file
 		callpoint!.setOptionEnabled("DINV",0)
 		callpoint!.setOptionEnabled("CRAT",0)
 	endif
+
+rem --- Update devObjects with current values written to file
+	callpoint!.setDevObject("discount_amt",num(callpoint!.getColumnData("OPE_ORDHDR.DISCOUNT_AMT")))
+	callpoint!.setDevObject("freight_amt",num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT")))
+	callpoint!.setDevObject("tax_amount",num(callpoint!.getColumnData("OPE_ORDHDR.TAX_AMOUNT")))
+	callpoint!.setDevObject("taxable_amt",num(callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT")))
+	callpoint!.setDevObject("total_cost",num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST")))
+	callpoint!.setDevObject("total_sales",num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")))
 [[OPE_ORDHDR.<CUSTOM>]]
 rem ==========================================================================
 display_customer: rem --- Get and display Bill To Information
@@ -2141,6 +2149,9 @@ rem ==========================================================================
 			ope01_key$=ope01a.firm_id$+ope01a.trans_status$+ope01a.ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$
 			extractrecord(ope01_dev,key=ope01_key$)ope01a$; rem Advisory Locking
 			callpoint!.setStatus("SETORIG")
+
+			order_no$=ope01a.order_no$ 
+			gosub add_to_batch_print
 
 			user_tpl.price_code$   = ope01a.price_code$
 			user_tpl.pricing_code$ = ope01a.pricing_code$

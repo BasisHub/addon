@@ -101,7 +101,7 @@ rem --- Total detail lines
 	ordHelp!.totalSalesDisk(cust_id$, order_no$)
 	
 	user_tpl.ext_price = ordHelp!.getExtPrice()
-	user_tpl.taxable   = ordHelp!.getTaxable()
+	user_tpl.taxable   = ordHelp!.getTaxableSales()
 	user_tpl.ext_cost  = ordHelp!.getExtCost()
 
 rem --- Set Invoice Amount
