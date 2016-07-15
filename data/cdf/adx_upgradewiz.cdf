@@ -300,10 +300,22 @@ rem --- Validate old barista install location
 	endif
 
 
-rem --- Initialize old Barista admin_backup as needed
+	rem --- Initialize old Barista admin_backup as needed
 	if cvs(callpoint!.getColumnData("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR"),3)="" then
 		bar_dir$=old_bar_loc$+"/barista"
 		gosub able_backup_sync_dir
+	endif
+
+rem --- Check if PRB Payroll should be installed
+
+	gosub check_payroll_install
+
+	rem --- Remove PRBABS if PRB Payroll isn't being installed
+	if !callpoint!.getDevObject("install_prbabs") then
+		appName$="PRBABS"
+		gosub remove_app_stbl_vector
+		rem --- if PRBABS was removed, then need to re-initialize the stbl grid
+		gosub init_stbl_grid
 	endif
 [[ADX_UPGRADEWIZ.BSHO]]
 rem --- Declare Java classes used
@@ -321,6 +333,14 @@ rem --- Initialize location values so can tell later if they have changed
 	callpoint!.setDevObject("prev_new_aon_loc","")
 	callpoint!.setDevObject("prev_old_aon_loc","")
 	callpoint!.setDevObject("prev_old_bar_loc","")
+
+rem --- Open/Lock files
+
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADM_MODULES",open_opts$[1]="OTA"
+
+	gosub open_tables
 [[ADX_UPGRADEWIZ.OLD_AON_LOC.AVAL]]
 rem --- Validate old aon install location
 
@@ -353,20 +373,33 @@ rem --- Initializations when old aon install location changes
 		bar_dir$=cvs(callpoint!.getColumnData("ADX_UPGRADEWIZ.OLD_BAR_LOC"),3)+"/barista"
 		gosub able_backup_sync_dir
 
+		rem --- Check if PRB Payroll should be installed
+		gosub check_payroll_install
+
 		if updateTargetPaths then
-			rem --- Initialize aon directory from new aon location
+			rem --- Initialize aon prbabs directories from new aon location
 			filePath$=prev_new_aon_loc$
 			gosub fix_path
-			newDir$=filePath$+"/aon/"
+			aonNewDir$=filePath$+"/aon/"
+			prbabsNewDir$=filePath$+"/prbabs/"
 
-			rem --- Use addon.syn file from old aon location
-			synFile$=old_aon_loc$+"/aon/config/addon.syn"
-		
-			rem --- Initialize STBL grid, i.e. set defaults for data STBLs
+			rem --- Use addon.syn and prbabs.syn files from old aon location
+			aonSynFile$=old_aon_loc$+"/aon/config/addon.syn"
+			prbabsSynFile$=old_aon_loc$+"/prbabs/config/prbabs.syn"
+
+			rem --- Initialize STBL grid for ADDON and PRBABS, i.e. set defaults for data STBLs
 			stblRowVect!=SysGUI!.makeVector()
+			newDir$=aonNewDir$
+			synFile$=aonSynFile$
 			gosub build_stbl_vector
+			if callpoint!.getDevObject("install_prbabs") then
+				rem --- If installing PRB Payroll, handle prbabs.syn globals in bottom grid
+				newDir$=prbabsNewDir$
+				synFile$=prbabsSynFile$
+				gosub build_stbl_vector
+			endif
 			callpoint!.setDevObject("oldSynRows",stblRowVect!)
-			if prev_new_aon_loc$<>"" then
+			if prev_new_aon_loc$<>"" or !callpoint!.getDevObject("install_prbabs") then
 				gosub init_stbl_grid
 				util.resizeWindow(Form!, SysGui!)
 				callpoint!.setStatus("REFRESH")
@@ -783,9 +816,9 @@ rem ==========================================================================
 	while rootIter!.hasNext()
 		rootProps!=cast(HashMap, rootIter!.next())
 
-		rem --- Add root app row unless ADDON
+		rem --- Add root app row unless ADDON or PRBABS
 		rootApp$=cast(BBjString, rootProps!.get("mount_sys_id"))
-		if rootApp$<>"ADDON" then
+		if pos(":"+rootApp$+":"=":ADDON:PRBABS:")=0 then
 			appRowVect!.addItem(rootApp$); rem App
 			appRowVect!.addItem(""); rem Parent
 			appRowVect!.addItem("y"); rem Install
@@ -804,14 +837,14 @@ rem ==========================================================================
 				childProps! = cast(HashMap, descendentVect!.get(i))
 				appRowVect!.addItem(cast(BBjString, childProps!.get("mount_sys_id"))); rem App
 				appRowVect!.addItem(cast(BBjString, childProps!.get("parent_sys_id"))); rem Parent
-				if rootApp$="ADDON" then
+				if pos(":"+rootApp$+":"=":ADDON:PRBABS:") then
 					appRowVect!.addItem("n"); rem Install
 				else
 					appRowVect!.addItem("y"); rem Install
 				endif
 				appRowVect!.addItem("n"); rem Copy
 				appRowVect!.addItem(cast(BBjString, childProps!.get("mount_dir"))); rem Source
-				if rootApp$="ADDON" then
+				if pos(":"+rootApp$+":"=":ADDON:PRBABS:") then
 					sourceDir$=cast(BBjString, childProps!.get("mount_dir"))
 					gosub build_target_dir
 					appRowVect!.addItem(targetDir$); rem Target
@@ -1008,11 +1041,16 @@ format_stbl_grid: rem --- Format STBL grid
 
 	return
 
-init_stbl_grid: rem --- Initialize the STBL grid with data in stblRowVect! for only ADDON
+init_stbl_grid: rem --- Initialize the STBL grid with data in stblRowVect! for only ADDON and PRBABS
 
 	newSynRows!=callpoint!.getDevObject("newSynRows")
 	oldSynRows!=callpoint!.getDevObject("oldSynRows")
 	gosub merge_vect_rows
+	if !callpoint!.getDevObject("install_prbabs") then
+		rem --- If not installing PRB Payroll, remove PRBABS from stblRowVect! (Must do this afer merge_vect_rows.)
+		appName$="PRBABS"
+		gosub remove_app_stbl_vector
+	endif
 	callpoint!.setDevObject("stblRowVect",stblRowVect!)
 	gosub fill_stbl_grid
 
@@ -1039,6 +1077,7 @@ merge_vect_rows: rem --- Merge new and old syn row vectors into a single vector 
 		rem     OUT: stblRowVect!
 rem ==========================================================================
 
+	if oldSynRows!=null() then return
 	stblRowVect!=oldSynRows!
 	if newSynRows!.size()>0
 		numCols=num(callpoint!.getDevObject("stbl_grid_def_cols"))
@@ -1149,7 +1188,7 @@ rem ==========================================================================
 		if(pos("STBL="=record$) = 1 or pos("SYSSTBL="=record$) = 1) then
 			xpos = pos(" "=record$)
 			stbl$ = record$(xpos+1, pos("="=record$(xpos+1))-1)
-			if stbl$="+DATAPORT_LOGS" or stbl$="+CODEPORT_LOGS" then
+			if pos(":"+stbl$+":"=":+DATAPORT_LOGS:+CODEPORT_LOGS:") then
 				rem --- Standard Addon default directories that may not exist yet
 				aonDefaultPath=1
 			else
@@ -1257,11 +1296,53 @@ fix_path: rem --- Flip directory path separators
 search_replace: rem --- Search record$ for search$, and replace with replace$
 	rem --- Assumes only one occurrence of search$ per line so don't have 
 	rem --- to deal with situation where pos(search$=replace$)>0
+
 	pos = pos(search$=record$)
 	if(pos) then
 		record$ = record$(1, pos - 1) + replace$ + record$(pos + len(search$))
 	endif
-    return
+
+	return
+
+check_payroll_install: rem --- Check if PRB Payroll should be installed
+	rem --- Do NOT install PRB Payroll if either
+	rem --- (1) PRB Payroll is NOT installed in <BBjHome> (where this wiz should be executed from),
+	rem --- or (2) hybrid Payroll IS installed at the old location (cannot check without valid old_bar_loc).
+
+	adm_modules_dev=fnget_dev("ADM_MODULES")
+	dim adm_modules$:fnget_tpl$("ADM_MODULES")
+	findrecord(adm_modules_dev,key="01004419"+"PRB",dom=*next)adm_modules$
+	install_prbabs=0
+	hybridPR_installed=0
+	if adm_modules.sys_install$="Y" then
+		install_prbabs=1
+
+		rem --- Don't install PRB Payroll if hybrid Payroll installed at old location
+		old_bar_loc$=callpoint!.getColumnData("ADX_UPGRADEWIZ.OLD_BAR_LOC")
+		if cvs(old_bar_loc$,2)<>"" then
+			rem --- Must have valid old_bar_loc to check for hybrid PR install at old location
+			old_ddmtabletpls_dev=unt
+			open(old_ddmtabletpls_dev,err=*endif)old_bar_loc$+"/barista/sys/data/ddm_table_tpls.dat"
+			dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+			findrecord(old_ddmtabletpls_dev,key=pad("ADM_MODULES",16),dom=*endif)ddm_table_tpls$
+			close(old_ddmtabletpls_dev,err=*next)
+
+			old_admmodules_dev=unt
+			open(old_admmodules_dev,err=*endif)old_bar_loc$+"/barista/sys/data/adm_modules.dat"
+			dim old_adm_modules$:ddm_table_tpls.template$
+			findrecord(old_admmodules_dev,key="01007514"+"PR ",err=*next)old_adm_modules$
+			close(old_admmodules_dev,err=*next)
+			if old_adm_modules.sys_install$="Y" then
+				rem --- Hybrid Payroll installed at old location, so don't install PRB Payroll
+				install_prbabs=0
+				hybridPR_installed=1
+			endif
+		endif
+	endif
+	callpoint!.setDevObject("install_prbabs",install_prbabs)
+	callpoint!.setDevObject("hybridPR_installed",hybridPR_installed)
+
+	return
 [[ADX_UPGRADEWIZ.NEW_AON_LOC.AVAL]]
 rem --- Validate new aon install location
 
@@ -1269,6 +1350,10 @@ rem --- Validate new aon install location
 	gosub validate_new_aon_loc
 	callpoint!.setUserInput(new_aon_loc$)
 	if abort then break
+
+rem --- Check if PRB Payroll should be installed
+
+	gosub check_payroll_install
 
 rem --- Set defaults for data STBLs
 	prev_new_aon_loc$=cvs(callpoint!.getDevObject("prev_new_aon_loc"),3)
@@ -1287,20 +1372,30 @@ rem --- Set defaults for data STBLs
 		callpoint!.setDevObject("prev_new_aon_loc",new_aon_loc$)
 
 		if updateTargetPaths then
-			rem --- Initialize aon directory from new aon location
+			rem --- Initialize aon and prbabs directories from new aon location
 			filePath$=new_aon_loc$
 			gosub fix_path
-			newDir$=filePath$+"/aon/"
+			aonNewDir$=filePath$+"/aon/"
+			prbabsNewDir$=filePath$+"/prbabs/"
 
-			rem --- Use addon.syn file from BASIS product download location
+			rem --- Use addon.syn and prbabs.syn files from BASIS product download location
 			bbjHome$ = System.getProperty("basis.BBjHome")
-			synFile$=bbjHome$+"/apps/aon/config/addon.syn"
-		
-			rem --- Initialize STBL grid, i.e. set defaults for data STBLs
+			aonSynFile$=bbjHome$+"/apps/aon/config/addon.syn"
+			prbabsSynFile$=bbjHome$+"/apps/prbabs/config/prbabs.syn"
+
+			rem --- Initialize STBL grid for ADDON and PRBABS, i.e. set defaults for data STBLs
 			stblRowVect!=SysGUI!.makeVector()
+			newDir$=aonNewDir$
+			synFile$=aonSynFile$
 			gosub build_stbl_vector
+			if callpoint!.getDevObject("install_prbabs") then
+			rem --- If installing PRB Payroll, handle prbabs.syn globals in bottom grid
+				newDir$=prbabsNewDir$
+				synFile$=prbabsSynFile$
+				gosub build_stbl_vector
+			endif
 			callpoint!.setDevObject("newSynRows",stblRowVect!)
-			if prev_old_aon_loc$<>"" then
+			if prev_old_aon_loc$<>"" or !callpoint!.getDevObject("install_prbabs") then
 				gosub init_stbl_grid
 				util.resizeWindow(Form!, SysGui!)
 				callpoint!.setStatus("REFRESH")

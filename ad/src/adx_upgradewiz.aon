@@ -36,6 +36,8 @@ rem --- Get user inputs
     oldBarLoc$=Option!.getOptionData("OLD_BAR_LOC")
     syncBackupDir$=Option!.getOptionData("SYNC_BACKUP_DIR")
     doSyncBackup%=cast(BBjInt, callpoint!.getDevObject("do_sync_backup"))
+    installPrbabs%=cast(BBjInt, callpoint!.getDevObject("install_prbabs"))
+    hybridPrInstalled%=cast(BBjInt, callpoint!.getDevObject("hybridPR_installed"))
     declare Vector appVect!
     appVect!=cast(Vector, callpoint!.getDevObject("appVect"))
     declare HashMap appStblMap!
@@ -53,6 +55,19 @@ rem --- Get user inputs
     newBarDir$=newAonLoc$ + "/barista"
     oldAonDir$=oldAonLoc$ + "/aon"
     oldBarDir$=oldBarLoc$ + "/barista"
+
+rem --- Is PRB Payroll being installed in addition to Addon?
+    appName!=BBjAPI().makeVector()
+    newAonDir!=BBjAPI().makeVector()
+    oldAonDir!=BBjAPI().makeVector()
+    appName!.add("ADDON")
+    newAonDir!.add(newAonLoc$+"/aon")
+    oldAonDir!.add(oldAonLoc$+"/aon")
+    if installPrbabs% then
+        appName!.add("PRBABS")
+        newAonDir!.add(newAonLoc$+"/prbabs")
+        oldAonDir!.add(oldAonLoc$+"/prbabs")
+    endif
     
 rem --- Start progress meter
     meter_title$=Translate!.getTranslation("AON_UPDATE_WIZ")
@@ -116,14 +131,19 @@ rem --- Recursively copy oldLocation to newAonDir
 	rem --- Set oldLocation to aon directory under the current download directory
     sep$ = java.io.File.separator
     bbjHome$=java.lang.System.getProperty("basis.BBjHome")
-    oldLocation$ = bbjHome$ + sep$ + "apps" + sep$ + "aon"
+    bbjHomeLocation!=BBjAPI().makeVector()
+    bbjHomeLocation!.add(bbjHome$ + sep$ + "apps" + sep$ + "aon")
+    if installPrbabs% then bbjHomeLocation!.add(bbjHome$ + sep$ + "apps" + sep$ + "prbabs")
 
 	rem --- Do not copy data or help file
 	copyData%=0
 	help%=0
 	
     rem --- Launch adc_copyaon.aon
-    call pgmdir$+"adc_copyaon.aon",oldLocation$,newAonDir$,copyData%,help%,rdForm!,0,status
+    for syscnt=0 to appName!.size()-1
+        oldLocation$=bbjHomeLocation!.getItem(syscnt)
+        call pgmdir$+"adc_copyaon.aon",bbjHomeLocation!.getItem(syscnt),newAonDir!.getItem(syscnt),copyData%,help%,rdForm!,0,status
+    next syscnt
     
 rem --- Update new addon.syn file
 
@@ -134,20 +154,22 @@ rem --- Update new addon.syn file
     gosub disp_meter
     print(log_dev)meter_text$
 
-	rem --- Set newSynFile to addon.syn at the new aon location
-    newSynFile$=newAonDir$+"/config/addon.syn"
-
-	rem --- Setup for upgrade
-    upgrade%=1
-    oldSynFile$=oldAonDir$+"/config/addon.syn"
-
-    rem --- Build stblMap! and pfxList! for adc_updatesynfile.aon
-    app$="ADDON"
-    gosub build_stblMap_pfxList
-
-    rem --- Launch adc_updatesynfile.aon
-    call pgmdir$+"adc_updatesynfile.aon",newSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
-
+    for syscnt=0 to appName!.size()-1
+    	rem --- Set newSynFile to addon.syn at the new aon location
+        newSynFile$=newAonDir!.getItem(syscnt)+"/config/"+cvs(appName!.getItem(syscnt),8)+".syn"
+    
+    	rem --- Setup for upgrade
+        upgrade%=1
+        oldSynFile$=oldAonDir!.getItem(syscnt)+"/config/"+cvs(appName!.getItem(syscnt),8)+".syn"
+    
+        rem --- Build stblMap! and pfxList! for adc_updatesynfile.aon
+        app$=appName!.getItem(syscnt)
+        gosub build_stblMap_pfxList
+    
+        rem --- Launch adc_updatesynfile.aon
+        call pgmdir$+"adc_updatesynfile.aon",newSynFile$,oldSynFile$,upgrade%,stblMap!,pfxList!,rdForm!,0,status
+    next syscnt
+    
 rem --- Add new application to Barista Installation Manager
 rem --- Run BIM bai_install_manager.bbj program via synchronous system call because of its terminating release
 
@@ -160,27 +182,34 @@ rem --- Run BIM bai_install_manager.bbj program via synchronous system call beca
 
     rem --- Create new session specific classpath (SSCP) in Enterprise Manager
     sscpName$=cvs(dbName$,8)
-    needAddonprop=1
     needBaristaprop=1
+    needAddonprop=1
+    needPrbabsprop=1
     paths!=BBjAPI().makeVector()
     env!=BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getEnvironment()
     paths!=env!.getClasspath(BBjAPI().getConfig().getCurrentCommandLineObject().getOriginalClasspathName(),err=*next)
     if paths!.size()>0 then
         for i=0 to paths!.size()-1
-            if pos("addonprop.jar"=paths!.getItem(i)) then
-                rem --- Update path to addonprop.jar
-                paths!.setItem(i,newAonLoc$+"/aon/prop/addonprop.jar")
-                needAddonprop=0
-            endif
             if pos("baristaprop.jar"=paths!.getItem(i)) then
                 rem --- Update path to baristaprop.jar
                 paths!.setItem(i,newAonLoc$+"/barista/sys/prop/baristaprop.jar")
                 needBaristaprop=0
             endif
+            if pos("addonprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to addonprop.jar
+                paths!.setItem(i,newAonLoc$+"/aon/prop/addonprop.jar")
+                needAddonprop=0
+            endif
+            if pos("prbabsprop.jar"=paths!.getItem(i)) then
+                rem --- Update path to prbabsprop.jar
+                paths!.setItem(i,newAonLoc$+"/prbabs/prop/prbabsprop.jar")
+                needPrbabsprop=0
+            endif
         next i
     endif
     if needBaristaprop then paths!.addItem(newAonLoc$+"/barista/sys/prop/baristaprop.jar")
     if needAddonprop then paths!.addItem(newAonLoc$+"/aon/prop/addonprop.jar")
+    if needPrbabsprop then paths!.addItem(newAonLoc$+"/prbabs/prop/prbabsprop.jar")
     env!.setClasspath(sscpName$, paths!)
 
     rem --- Launch bai_install_manager.bbj
@@ -207,15 +236,32 @@ rem --- BIM clears barista/settings dir, so must do this step after BIMing and b
     gosub disp_meter
     print(log_dev)meter_text$
 
-	rem --- Set newSyncLoc to sync directory at the new aon location
-    newSyncLoc$=newAonDir$+"/data/sync"
+    for syscnt=0 to appName!.size()-1
+    	rem --- Set newSyncLoc to sync directory at the new aon location
+        newSyncLoc$=newAonDir!.getItem(syscnt)+"/data/sync"
+    
+    	rem --- Setup for upgrade
+        upgrade%=1
+        oldSyncLoc$=oldAonDir!.getItem(syscnt)+"/data/sync"
+    
+        rem --- Launch adc_updatexmlfiles.aon
+        call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+    next syscnt
 
-	rem --- Setup for upgrade
-    upgrade%=1
-    oldSyncLoc$=oldAonDir$+"/data/sync"
-
-    rem --- Launch adc_updatexmlfiles.aon
-    call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
+rem --- Unless hybrid Payroll is being used, remove old un-used Addon PR stuff from sync file backup.
+    if !hybridPrInstalled% then
+        newSyncDir! = new File(newAonDir!.getItem(0)+"/data/sync")
+        if newSyncDir!.exists()
+            fileVector! = new Vector(java.util.Arrays.asList(newSyncDir!.list(new PayrollMasks())))
+            if(fileVector!.size()>0) then
+                for i=0 to fileVector!.size()-1
+                    rem --- skip if it's not a XML file
+                    adsMaskFile! = new File(newSyncDir!, cast(BBjString, fileVector!.get(i)))
+                    adsMaskFile!.delete()
+                next i
+            endif
+        endif
+    endif
 
 rem --- Use old modified menus instead of new standard menus.
 rem --- Temporary "fix" until Barista enhancement 5658 can be implemented to preserve customizations
@@ -228,39 +274,37 @@ rem --- to standard menus, thus no logging or progress meter.
         gosub disp_meter
         print(log_dev)meter_text$
 
-        declare File oldMenuFile!
-        declare File newMenuFile!
-        declare File newMenuDir!
         availableLangs$="deuenuespfraitanldsve"
-        for i=1 to len(availableLangs$)-1 step 3
-            lang$=availableLangs$(i,3)
-            
-            rem --- If oldMenuFile exists, overwrite newMenuFile with it 
-            oldMenuFile! = new File(oldAonDir$+"/config/"+lang$+"/addon.men")
-            if oldMenuFile!.exists()
-            
-                rem --- Create new directories as necessary for newMenuFile
-                newMenuDir! = new File(newAonDir$+"/config/"+lang$)
-                FileObject.makeDirs(newMenuDir!)
-
-                rem --- Rename newMenuFile as a backup before overwriting it
-                newMenuFile! = new File(newMenuDir!.getPath()+"/addon.men")
-                rename newMenuFile!.getPath() to newMenuDir!.getPath()+"/addon.men.bak", err=*next
+        for syscnt=0 to appName!.size()-1
+            for i=1 to len(availableLangs$)-1 step 3
+                lang$=availableLangs$(i,3)
                 
-                rem --- Copy oldMenuFile to newMenuFile
-                sourceChan=unt
-                open(sourceChan,isz=-1,err=*endif)oldMenuFile!.getPath()
-                targetChan=unt
-                open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")newMenuFile!.getPath()
-                while 1
-                    readrecord(sourceChan,siz=BLOCKSIZE,end=*break)record$
-                    writerecord(targetChan)record$
-                wend
-                close(sourceChan)
-                close(targetChan)
-            endif
+                rem --- If oldMenuFile exists, overwrite newMenuFile with it
+                oldMenuFile! = new File(oldAonDir!.getItem(syscnt)+"/config/"+lang$+"/"+cvs(appName!.getItem(syscnt),8)+".men")
+                if oldMenuFile!.exists()
+                
+                    rem --- Create new directories as necessary for newMenuFile
+                    newMenuDir! = new File(newAonDir!.getItem(syscnt)+"/config/"+lang$)
+                    FileObject.makeDirs(newMenuDir!)
     
-        next i
+                    rem --- Rename newMenuFile as a backup before overwriting it
+                    newMenuFile! = new File(newMenuDir!.getPath()+"/"+cvs(appName!.getItem(syscnt),8)+".men")
+                    rename newMenuFile!.getPath() to newMenuDir!.getPath()+"/"+cvs(appName!.getItem(syscnt),8)+".men.bak", err=*next
+                    
+                    rem --- Copy oldMenuFile to newMenuFile
+                    sourceChan=unt
+                    open(sourceChan,isz=-1,err=*endif)oldMenuFile!.getPath()
+                    targetChan=unt
+                    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")newMenuFile!.getPath()
+                    while 1
+                        readrecord(sourceChan,siz=BLOCKSIZE,end=*break)record$
+                        writerecord(targetChan)record$
+                    wend
+                    close(sourceChan)
+                    close(targetChan)
+                endif
+            next i
+        next syscnt
     endif
 
 rem --- Launch auto-sync in new barista for the new addon.syn
@@ -279,14 +323,18 @@ rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to b
 	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
 :	+" -c"+$22$+bar_dir$+"/sys/config/enu/barista.cfg"+$22$
 :	+" "+$22$+bar_dir$+"/sys/prog/bax_launch_task.bbj"+$22$
-	user_arg$=" - "
-:	+" -u"+rdAdmin!.getUser()
-:	+" -p"+rdAdmin!.getPassword()
-:	+" -t"+"DDM_TABLES"
-:	+" -y"+"A"
-:	+" -a" +"bax_dd_synch_auto.bbj"+$22$+" - "+" -f"+"../aon/config/addon.syn"+" -b"+$22$
-:	+" -w"
-	scall_result=scall(run_arg$+user_arg$,err=*next)
+
+    for syscnt=0 to appName!.size()-1
+        newSynFile$=newAonDir!.getItem(syscnt)+"/config/"+cvs(appName!.getItem(syscnt),8)+".syn"
+        user_arg$=" - "
+:       +" -u"+rdAdmin!.getUser()
+:       +" -p"+rdAdmin!.getPassword()
+:       +" -t"+"DDM_TABLES"
+:       +" -y"+"A"
+:       +" -a" +"bax_dd_synch_auto.bbj"+$22$+" - "+" -f"+newSynFile$+" -b"+$22$
+:       +" -w"
+	    scall_result=scall(run_arg$+user_arg$,err=*next)
+    next syscnt
 
 rem --- Run Copy Application utility for applications being copied
 
@@ -700,6 +748,22 @@ method_error:rem --- Method error trap/handler
             if pos("RETRY"=rd_err_act$)<>0 retry
             x$=stbl("+THROWN_ERR","TRUE")   
             throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+        
+    classend
+    
+rem /**
+rem  * FilenameFilter Class to filter ads_masks~..01007541pr.*\.xml files.
+rem  */
+
+    class public PayrollMasks implements java.io.FilenameFilter
+
+        method public boolean accept(File dir!, String file!)
+            if file!.matches("ads_masks~..01007541pr.*\.xml")
+                methodret Boolean.valueOf("true")
+            else
+                methodret Boolean.valueOf("false")
+            endif
         methodend
         
     classend
