@@ -699,13 +699,14 @@ rem --- Do we need to print an invoice first?
 
 	if callpoint!.getDevObject( "print_invoice" ) = "Y" then
 		gosub do_invoice
+		callpoint!.setStatus("ACTIVATE")
 	endif
 
 rem --- Start a new record after a cash sale
 
 	if callpoint!.getDevObject("cash_code_type")<>"" then
 		user_tpl.do_end_of_form = 0
-		callpoint!.setStatus("NEWREC")
+		callpoint!.setStatus("NEWREC-ACTIVATE")
 	endif
 [[OPE_INVHDR.AOPT-RPRT]]
 rem --- Check for printing in next batch and set
@@ -800,7 +801,7 @@ rem --- Print a counter Invoice
 		gosub do_invoice
 		user_tpl.do_end_of_form = 0
 		callpoint!.clearStatus()
-		callpoint!.setStatus("NEWREC")
+		callpoint!.setStatus("NEWREC-ACTIVATE")
 	else
 
 	rem --- Can't print until released from credit
@@ -817,7 +818,7 @@ rem --- Print a counter Invoice
 			gosub do_invoice
 			user_tpl.do_end_of_form = 0
 			callpoint!.clearStatus()
-			callpoint!.setStatus("NEWREC")
+			callpoint!.setStatus("NEWREC-ACTIVATE")
 		else
 			if action$ = "R" and callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "Y" then 
 
