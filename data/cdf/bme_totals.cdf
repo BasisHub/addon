@@ -29,9 +29,15 @@ rem  ==============================================================
 
 		bill_no$=callpoint!.getDevObject("master_bill")
 		lot_size=callpoint!.getDevObject("lotsize")
+		setup_div=lot_size
+		sub_qty=lot_size
 		ap$=callpoint!.getDevObject("ap_installed")
+		rem --- NOTE: LIFO/FIFO flag is hard coded to "N".
+		rem --- NOTE: If LIFO/FIFO is going to be used, need to lock and clear IVW_LFCOST (ivw-05) and IVW_LFDET (ivw-04).
 		call "bmc_getcost.aon",table_chans$[all],bill_no$,lot_size,prod_date$,ap$,"N",1,
-:			mat_cost,lab_cost,oh_cost,sub_cost,lot_size,lot_size,"N",whse$,ea_status
+:			mat_cost,lab_cost,oh_cost,sub_cost,setup_div,sub_qty,"N",whse$,ea_status
+
+
 		tot_cost=mat_cost+lab_cost+oh_cost+sub_cost
 		callpoint!.setColumnData("BME_TOTALS.MAT_COST",str(mat_cost))
 		callpoint!.setColumnData("BME_TOTALS.DIR_COST",str(lab_cost))

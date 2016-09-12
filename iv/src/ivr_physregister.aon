@@ -90,8 +90,9 @@ rem --- Parameter record
 
     find record (ivs_params_dev, key=firm_id$+"IV00", dom=std_missing_params) ivs_params_rec$	
     if pos(ivs_params_rec.lotser_flag$ = "LS") then ls$="Y" else ls$ = "N"
+    lf$=ivs_params_rec.lifofifo$
 
-rem --- Open Lot/serial file if necessary
+rem --- Additional/optional opens
 
     if ls$ = "Y" then 
         open_beg = 1
@@ -100,6 +101,34 @@ rem --- Open Lot/serial file if necessary
         gosub open_tables
         lsmaster_dev = num(open_chans$[1])
         dim lsmaster_rec$:open_tpls$[1]
+    endif
+
+    if pos(lf$="LF") then
+        open_beg = 1
+        open_end = 3
+        open_tables$[1]="IVM_ITEMWHSE", open_opts$[1]="OTA"
+        open_tables$[2]="IVM_ITEMTIER", open_opts$[2]="OTA"
+        open_tables$[3]="IVW_LFDET", open_opts$[3]="OTAL"
+        gosub open_tables
+
+        ivm02_dev=num(open_chans$[1])
+        ivm04_dev=num(open_chans$[2])
+        ivw04_dev=num(open_chans$[3])
+        dim ivm02a$:open_tpls$[1]
+        dim ivm04a$:open_tpls$[2]
+        dim ivw04a$:open_tpls$[3]
+        
+        rem --- Clear IVW_LFDET (ivw-04)
+        call pgmdir$+"adc_clearfile.aon",ivw04_dev
+        
+        rem --- Init LIFO/FIFO files and templates
+        dim lf_chans[4],lf_tmpls$[4]
+        lf_chans[1]=ivm02_dev
+        lf_chans[2]=ivm04_dev
+        lf_chans[3]=ivw04_dev
+        lf_tmpls$[1]=fattr(ivm02a$)
+        lf_tmpls$[2]=fattr(ivm04a$)
+        lf_tmpls$[3]=fattr(ivw04a$)
     endif
 
 rem --- Parameters
@@ -112,13 +141,12 @@ rem --- Parameters
     p[4]=num(ivs_params_rec.desc_len_02$)
     p[5]=num(ivs_params_rec.desc_len_03$)
     dw=p[3]+p[4]+p[5]
-    lf$=ivs_params_rec.lifofifo$
 
 rem --- Initializations
 
     precision p[1]
 
-    dim o[10],item[6],cycle[6],report[6],lf_chans[2],lf_tmpls$[2]
+    dim o[10],item[6],cycle[6],report[6]
     width=132
     done=0
     if ls$="Y" then lsh$=Translate!.getTranslation("AON_LOT/SERIAL_NUMBER") else lsh$=""
@@ -444,6 +472,7 @@ item_break: rem --- Item Break
             lf_cost  = 0
             if lf_qnty < 0 then lf_act$=lf$+"I" else lf_act$=lf$+"R"
             call pgmdir$+"ivc_lifofifo.aon",lf_act$,lf_type$,lf_date$,lf_chans[all],lf_tmpls$[all],lf_item$[all],p[1],abs(lf_qnty),cost,lf_cost,status
+            if status then exitto std_exit
             if lf_qnty < 0 and lf_cost <> 0 then cost=lf_cost
         endif
     endif

@@ -6,7 +6,8 @@ rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 rem --- 12/2014 -----------------------
 rem --- opc_hist_invoice.aon is used to print Historical Invoice
-rem --- from Historical Invoice Inquiry form
+rem --- from Historical Invoice Inquiry form. It no longer does on-demand invoices (on_demand) and 
+rem --- batch printing of invoices(batch_inv).
 
 rem --- at some point (after RTP mods are complete and QA'd), this public and the three SPROCS/Jaspers
 rem --- should be consolidated with the non-hist counterparts
@@ -16,38 +17,6 @@ rem ---    - OP_HIST_INVOICE_HDR.prc / OPHistInvoiceHdr.jasper
 rem ---    - OP_HIST_INVOICE_DET.prc / OPHistInvoiceDet.jasper
 rem ---    - OP_HIST_INVOICE_DET_LOTSER.prc / OPHistInvoiceDet-LotSer.jasper
 rem -----------------------------------
-
-rem ----------------------------------------------------------------------------
-
-on_demand: rem --- Entry point for on-denamd invoices    
-
-goto all_done; rem --- currently only used for historical invoices
-    setesc std_error
-    seterr std_error
-    
-    enter cust_id$, order_no$, option!, table_chans$[all], status
- 
-    custIds! = BBjAPI().makeVector()
-    orderNos! = BBjAPI().makeVector()
-
-    custIds!.addItem( cust_id$ )
-    orderNos!.addItem( order_no$ )   
-    
-    type = 1
-    kw_pfx$="Demand "
-    goto done_with_enter
-    
-batch_inv: rem --- Batch printing of invoices
-
-goto all_done; rem --- currently only used for historical invoices
-    setesc std_error
-    seterr std_error
-
-    enter custIds!, orderNos!, option!, table_chans$[all], status
-    
-    type = 2
-    kw_pfx$="Batch "
-    goto done_with_enter
  
 historical: rem --- Historical Invoice printing
 
@@ -284,7 +253,7 @@ rem --- Initialize Data
 	   
     nothing_printed = 1
     
-    if type = on_demand or type = historical then
+    if type = historical then
         alias$ = option!.getAlias()
         rptctl_alias$ = "OPR_INVOICE";rem --- use actual alias (i.e., OPE_INVHDR) when putting in doc archive so you know it was an on-demand invoice, but use OPR_INVOICE for report control so you don't need two report control records for each customer to handle on-demand vs. batch.        
 		master_document=0
@@ -305,16 +274,10 @@ rem --- See if this document is set up in Addon Report Control
 
 rem --- Assign form input values to local variables
 
-    if type = batch_inv then 
-		restart$ = option!.getOptionData("pick_check")
-		restart_customer$ = option!.getOptionData("customer_id")  
-        batch_adhoc_message$ = option!.getOptionData("pick_text")
-    else
-    	restart$ = ""
-		restart_customer$ = ""
-        batch_adhoc_message$ = option!.getOptionData("pick_text")
-        send_via_rpt_ctl$ = option!.getOptionData("pick_check")
-    endif
+	restart$ = ""
+	restart_customer$ = ""
+    batch_adhoc_message$ = option!.getOptionData("pick_text")
+    send_via_rpt_ctl$ = option!.getOptionData("pick_check")
 
 rem --- Start progress meter 
 
@@ -333,18 +296,16 @@ rem --- Main Read
         read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dir=0,dom=*next)
         ope01_key$=key(ope01_dev,end=*continue)
         if pos(ope01_trip$=ope01_key$)<>1 then continue
-        extract record (ope01_dev, key=ope01_key$, dom=*continue) ope01a$; rem Advisory Locking
+        read record (ope01_dev, key=ope01_key$, dom=*continue) ope01a$
 
     rem --- if historical, is this the right invoice?
         if type = historical
             if ope01a.ar_inv_no$<>invoice_no$
-            read(ope01_dev)
             continue
         endif
         
 	rem --- Is invoice Void?
 		if ope01a.invoice_type$ = "V" 
-			read(ope01_dev)
 			continue
 		endif
 
@@ -353,15 +314,6 @@ rem --- Main Read
         if status = 999 then exitto all_done
         
     rem --- Total
-        
-        if type = batch_inv then
-            ope01a.print_status$ = "B"
-            ope01a.mod_user$=sysinfo.user_id$
-            ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
-            ope01a.mod_time$=date(0:"%Hz%mz")
-            ope01a$ = field(ope01a$)
-            write record (ope01_dev) ope01a$
-        endif
         
         nothing_printed = 0			
 
@@ -481,11 +433,6 @@ rem --- Main Read
      
         report!.fill()
         report!.exportToPDF(BBjAPI().FALSE, docdir$+new_doc_name$)
-
-        if type = batch_inv
-			master_report!.appendReport(report!)	
-			report!.destroy()
-		endif
     rem --- Loop back for next Customer/Order
 
     next next_item
@@ -498,23 +445,12 @@ rem --- bring up jasper viewer (master doc for Batch Invoice; single invoice for
     rem --- this will eventually be replaced with code to get output formats/types based on doc group and/or print settings
     gosub doc_path
 
-	if type = batch_inv
-        repTitle$=master_doc_id$+"_"+masterBaseName$
-        rd_doc_id$=master_doc_id$
-
-        rem --- previous version auto exported to pdf regardless of user action in jasper viewer
-        rem --- so gosub-ing the export routine here to keep backward compatible
-        gosub OnSaveMenuButton
-
-        viewerWindow! = new BBJasperViewerWindow(master_report!,0,0,screen_width,screen_height,repTitle$,$00080093$)
-	else
-	    repTitle$=new_doc_id$+"_"+doc_name$
-	    rd_doc_id$=new_doc_id$
-        rd_doc_keywords$=doc_keywords$
-        rep_title$=doc_name$
-	        
-	    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,repTitle$,$00080093$)	        
-	endif
+    repTitle$=new_doc_id$+"_"+doc_name$
+    rd_doc_id$=new_doc_id$
+    rd_doc_keywords$=doc_keywords$
+    rep_title$=doc_name$
+        
+    viewerWindow! = new BBJasperViewerWindow(report!,0,0,screen_width,screen_height,repTitle$,$00080093$)	        
 
     viewerControl! = viewerWindow!.getViewerControl()
     viewerControl!.setGoogleDefaultDocument(repTitle$)
@@ -590,12 +526,8 @@ rem --- exportToPDF and record in doc warehouse
     if rd_doc_path$<>"" and repTitle$<>""
         rd_doc_name$=repTitle$+".pdf"
         rd_doc_ext$="PDF"
-        if type=batch_inv
-            master_report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
-        else
-            report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
-            rep_title$=repTitle$
-        endif
+        report!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+        rep_title$=repTitle$
         gosub document_whse
     endif
     return    
@@ -629,54 +561,14 @@ close_win:rem --- Viewer closed - do post-processing for batch vs single
     msg_id$ = "OP_INVOICE_UPDATE"
     gosub disp_message
     if msg_opt$<>"Y" then goto all_done
-    
-    if type=batch_inv
 
-        call pgmdir$+"adc_progress.aon","N",sysinfo.task_desc$,"","Updating","",0,0,1,0,status
-        if status = 999 then goto all_done
-
-        read (ope04_dev,key=firm_id$+"I",dom=*next)
-
-        rem --- Update loop Batch Invoice
-
-        start_block = 1
-
-        while 1
-            read record (ope04_dev, end=*break) ope04a$
-            if ope04a.firm_id$<>firm_id$ or ope04a.ordinv_flag$<>"I" then break
-            call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,0,status
-            if status = 999 then exitto all_done
-
-            if start_block then
-                ope01_trip$=firm_id$+"E"+"  "+ope04a.customer_id$+ope04a.order_no$
-                read(ope01_dev,key=ope01_trip$,knum="AO_STATUS",dom=*next)
-                ope01_key$=key(ope01_dev,end=*continue)
-                if pos(ope01_trip$=ope01_key$)=1 then
-                    extract record (ope01_dev,key=ope01_key$, dom=*endif) ope01a$
-                    if ope01a.print_status$="B" then gosub order_update
-                endif
-            endif
-        wend
-
-        if emailFax!.size()
-            for email_fax=0 to emailFax!.size()-1 step 3
-                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
-            next email_fax
-        endif
-    else
-		rem gosub open_cash_box... not implemented in Barista Addon
-		gosub order_update
-
-        if emailFax!.size() and send_via_rpt_ctl$="Y"
-            for email_fax=0 to emailFax!.size()-1 step 3
-                reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
-            next email_fax
-        endif
-	endif 
+    if emailFax!.size() and send_via_rpt_ctl$="Y"
+        for email_fax=0 to emailFax!.size()-1 step 3
+            reportControl!.addToDocQueue(emailFax!.get(email_fax),emailFax!.get(email_fax+1),"",emailFax!.get(email_fax+2))    
+        next email_fax
+    endif
 
 all_done: rem --- Exit
-
-    read(ope01_dev,knum="AO_STATUS",end=*next); rem release extract, and reset knum in case on-demand printing
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
 
@@ -686,19 +578,6 @@ all_done: rem --- Exit
     if tcb(13) then exit
     
     release
-
-order_update: rem --- Update order's status
-
-    ope01a.print_status$ = "Y"
-    ope01a.lock_status$  = "N"
-    ope01a.mod_user$=sysinfo.user_id$
-    ope01a.mod_date$=date(0:"%Yd%Mz%Dz")
-    ope01a.mod_time$=date(0:"%Hz%mz")
-    ope01a$ = field(ope01a$)
-    write record (ope01_dev) ope01a$
-    if type = on_demand then callpoint!.setStatus("SETORIG")
-    
-    return
 	
 open_cash_box: rem --- Cash Box Open (legacy code - not implemented)
 

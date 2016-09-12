@@ -1,3 +1,6 @@
+[[APR_CHECKS.ADIS]]
+rem --- Clear Check Number when using previously saved selections.
+	callpoint!.setColumnData("APR_CHECKS.CHECK_NO","",1)
 [[APR_CHECKS.BEND]]
 rem --- Make sure softlock is cleared when exiting/aborting
 	adxlocks_dev=fnget_dev("ADX_LOCKS")

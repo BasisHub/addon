@@ -1102,22 +1102,6 @@ rem --- Set user template info
 
 	user_tpl.order_date$=callpoint!.getUserInput()
 [[OPE_INVHDR.ADEL]]
-rem --- Remove invoice from ope-04 and rewrite as order (void)
-
-	ope_prntlist_dev=fnget_dev("OPE_PRNTLIST")
-	dim ope_prntlist$:fnget_tpl$("OPE_PRNTLIST")
-	remove (ope_prntlist_dev,key=firm_id$+"O"+"  "+
-:		callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")+
-:		callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),dom=*next)
-	ope_prntlist.firm_id$=firm_id$
-	ope_prntlist.ordinv_flag$="I"
-	ope_prntlist.customer_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	ope_prntlist.order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
-	ope_prntlist_key$=ope_prntlist.firm_id$+ope_prntlist.ordinv_flag$+ope_prntlist.ar_type$+ope_prntlist.customer_id$+ope_prntlist.order_no$
-	extractrecord(ope_prntlist_dev,key=ope_prntlist_key$,dom=*next)x$; rem Advisory Lockint
-	ope_prntlist$=field(ope_prntlist$)
-	write record (ope_prntlist_dev)ope_prntlist$
-
 rem --- Set flag
 
 	user_tpl.record_deleted = 1
@@ -1296,12 +1280,10 @@ rem --- Retain Order is No
 	callpoint!.setColumnData("OPE_INVHDR.INVOICE_TYPE","V")
 	prntlist_rec.firm_id$     = firm_id$
 	prntlist_rec.ordinv_flag$ = "I"
-	prntlist_rec.customer_id$ = cust_id$
-	prntlist_rec.order_no$    = order_no$
+	prntlist_rec.customer_id$ = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	prntlist_rec.order_no$    = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	prntlist_key$=prntlist_rec.firm_id$+prntlist_rec.ordinv_flag$+prntlist_rec.ar_type$+prntlist_rec.customer_id$+prntlist_rec.order_no$
-	extractrecord(prntlist_dev,key=prntlist_key$,dom=*next)x$; rem Advisory Locking
-	prntlist_rec$ = field(prntlist_rec$)
-	write record (prntlist_dev) prntlist_rec$
+	remove(prntlist_dev,key=prntlist_key$,dom=*next)
 
 	callpoint!.setStatus("SAVE-NEWREC-REFRESH")
 

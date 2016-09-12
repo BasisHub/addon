@@ -47,7 +47,7 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=32,begfile=1,endfile=files
+    files=34,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="arm-01",       ids$[1]="ARM_CUSTMAST"
     files$[2]="arc_cashcode", ids$[2]="ARC_CASHCODE"
@@ -59,8 +59,8 @@ rem --- Open/Lock files
     files$[8]="ivm-02",       ids$[8]="IVM_ITEMWHSE"
     files$[9]="ivm-04",       ids$[9]="IVM_ITEMTIER"
     files$[10]="ivs_params",  ids$[10]="IVS_PARAMS"
-    files$[11]="ivw-04",      ids$[11]="IVW_LFDET"
-    files$[12]="ivw-05",      ids$[12]="IVW_LFCOST"
+    rem files$[11]="ivw-04",      ids$[11]="IVW_LFDET"
+    rem files$[12]="ivw-05",      ids$[12]="IVW_LFCOST"
     files$[13]="opt-01",      ids$[13]="OPE_ORDHDR"
     files$[14]="ope-04",      ids$[14]="OPE_PRNTLIST"
     files$[15]="opt-11",      ids$[15]="OPE_ORDDET"
@@ -93,8 +93,8 @@ rem --- Open/Lock files
     ivm02_dev=channels[8]
     ivm04_dev=channels[9]
     ivs01a_dev=channels[10]
-    ivw04_dev=channels[11]
-    ivw05_dev=channels[12]
+    rem ivw04_dev=channels[11]
+    rem ivw05_dev=channels[12]
     ope01_dev=channels[13]
     ope04_dev=channels[14]
     ope11_dev=channels[15]
@@ -120,8 +120,8 @@ rem glw11a$:templates$[7],
     dim arm01a$:templates$[1],arm10c$:templates$[2],arm10d$:templates$[3],arm10d0$:templates$[3],
 :       ars01a$:templates$[4],glm01a$:templates$[5],gls01a$:templates$[6],
 :       ivm01a$:templates$[7],ivm02a$:templates$[8],
-:       ivm04a$:templates$[9],ivs01a$:templates$[10],ivw04a$:templates$[11],
-:       ivw05a$:templates$[12],ope01a$:templates$[13],ope04a$:templates$[14],
+:       ivm04a$:templates$[9],ivs01a$:templates$[10],
+:       ope01a$:templates$[13],ope04a$:templates$[14],
 :       ope11a$:templates$[15],ope21a$:templates$[16],ope41a$:templates$[17],
 :       opm02a$:templates$[18],opm06a$:templates$[19],ops10s$:templates$[20],
 :       ope31a$:templates$[21],opw11a$:templates$[22],opw21a$:templates$[23],
@@ -249,6 +249,27 @@ rem --- Additional/optional opens
         dim glt15a$:templates$[32]
     endif
 
+    if lf$="Y" then
+        files$[33]="ivw-04", ids$[33]="IVW_LFDET",  options$[33]="CL"
+        files$[34]="ivw-05", ids$[34]="IVW_LFCOST"
+        call pgmdir$+"adc_fileopen.aon",action,33,34,files$[all],options$[all],
+:           ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit
+
+        ivw04_dev=channels[33]
+        ivw05_dev=channels[34]
+        dim ivw04a$:templates$[33]
+        dim ivw05a$:templates$[34]
+        
+        rem --- Init LIFO/FIFO files and templates
+        dim lf_channels[4],lf_tmpls$[4]
+        lf_channels[1]=ivm02_dev
+        lf_channels[2]=ivm04_dev
+        lf_channels[3]=ivw04_dev
+        lf_tmpls$[1]=fattr(ivm02a$)
+        lf_tmpls$[2]=fattr(ivm04a$)
+        lf_tmpls$[3]=fattr(ivw04a$)
+    endif
 
 rem --- Initialize Data
 
@@ -258,7 +279,7 @@ rem --- Initialize Data
     headings=3
     width=132
     page=0
-    dim headings$[headings],lf_channels[10]
+    dim headings$[headings]
     headings$[0]=n1$
     headings$[1]=n3$
     clock$=""
@@ -382,8 +403,8 @@ rem --- Check to see if record is in use in Invoice Entry
 		endif
 
         extract record (ope01_dev, key=firm_id$+"  "+read_tpl.customer_id$+read_tpl.order_no$+read_tpl.ar_inv_no$, dom=*continue) ope01a$; rem Advisory Locking
-        if ope01a.print_status$<>"Y" then read(ope01_dev); continue
-        if pos(ope01a.trans_status$="ER")=0 then read(ope01_dev); continue
+        if ope01a.print_status$<>"Y" then read(ope01_dev,end=*continue); continue
+        if pos(ope01a.trans_status$="ER")=0 then read(ope01_dev,end=*continue); continue
 
         if ope01a.cash_sale$="Y" then
             dim ope41a$:fattr(ope41a$)
@@ -415,7 +436,7 @@ rem --- Check to see if record is in use in Invoice Entry
             ope31a$ = field(ope31a$)
             write record (ope31_dev) ope31a$
         else
-            read(ope31_dev)
+            read(ope31_dev,end=*next); rem release extract
         endif
 
     rem --- Breaks
@@ -898,7 +919,7 @@ rem --- Inquiry On Tier Cost For Returned Items
     if ope11a.qty_shipped<0 then
         lf_action$(2,1)="R"
         call pgmdir$+"ivc_lifofifo.aon",lf_action$,"I",lf_date$,lf_channels[all],lf_tmpls$[all],lf_item$[all],i[2],abs(ope11a.qty_shipped),cost,ret_cost,status
-        if status = 999 then exitto std_exit
+        if status then exitto std_exit
         if ret_cost<>0 then cost=ret_cost
     endif
 

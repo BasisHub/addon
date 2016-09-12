@@ -2,6 +2,7 @@
 rem --- Item synonym processing
 
 	call stbl("+DIR_PGM")+"ivc_itemsyn.aon::option_entry"
+	callpoint!.setStatus("ACTIVATE")
 [[IVM_ITEMPRIC.BWRI]]
 rem --- make sure each qty > previous one
 ok$="Y"
