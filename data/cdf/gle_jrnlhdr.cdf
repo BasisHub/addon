@@ -1,22 +1,7 @@
-[[GLE_JRNLHDR.APFE]]
-rem --- Validate dates
-if user_tpl.glint$="Y"
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.TRANS_DATE"),"Y",period$,year$,status
-	if status>100  then
-		callpoint!.setFocus("GLE_JRNLHDR.TRANS_DATE")
-		callpoint!.setStatus("ABORT-ACTIVATE")
-		break
-	else
-		if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>""
-			call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),"Y",period$,year$,status
-			if status>100 then 
-				callpoint!.setFocus("GLE_JRNLHDR.REVERSE_DATE")
-				callpoint!.setStatus("ABORT-ACTIVATE")
-				break
-			endif
-		endif
-	endif
-endif
+[[GLE_JRNLHDR.BREA]]
+rem --- Initialize date check devObjects
+	callpoint!.setDevObject("trans_date_checked",0)
+	callpoint!.setDevObject("reserve_date_checked",0)
 [[GLE_JRNLHDR.ADIS]]
 rem --- calc and display totals (debits/credits, etc.)
 gosub calc_grid_tots
@@ -39,6 +24,26 @@ rem --- Get Batch information
 call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]
 callpoint!.setTableColumnAttribute("GLE_JRNLHDR.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
 [[GLE_JRNLHDR.BWRI]]
+rem --- Validate dates if they haven't been validated yet
+if user_tpl.glint$="Y"
+	if !callpoint!.getDevObject("trans_date_checked") then
+		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.TRANS_DATE"),"Y",period$,year$,status
+		if status>100  then
+			callpoint!.setFocus("GLE_JRNLHDR.TRANS_DATE")
+			callpoint!.setStatus("ABORT-ACTIVATE")
+			break
+		endif
+	endif
+	if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>"" and !callpoint!.getDevObject("reverse_date_checked") then
+		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),"Y",period$,year$,status
+		if status>100 then 
+			callpoint!.setFocus("GLE_JRNLHDR.REVERSE_DATE")
+			callpoint!.setStatus("ABORT-ACTIVATE")
+			break
+		endif
+	endif
+endif
+
 rem --- see if in balance
 bal=num(user_tpl.tot_bal$)
 if bal<>0
@@ -53,17 +58,25 @@ if bal<>0
 endif
 [[GLE_JRNLHDR.REVERSE_DATE.AVAL]]
 rem --- perform date validation
-if user_tpl.glint$="Y"
-	if cvs(callpoint!.getUserInput(),3)<>""
+if user_tpl.glint$="Y" and cvs(callpoint!.getUserInput(),3)<>""
+rem --- Skip validation if date checked before and it has not changed.
+	if !callpoint!.getDevObject("reverse_date_checked") or 
+:	callpoint!.getUserInput()<>callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE") then
+		callpoint!.setDevObject("reverse_date_checked",1)
 		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getUserInput(),"Y",period$,year$,status
+		if status>100 callpoint!.setStatus("ABORT")
 	endif
-	if status>100 callpoint!.setStatus("ABORT")
 endif
 [[GLE_JRNLHDR.TRANS_DATE.AVAL]]
 rem --- perform date validation
 if user_tpl.glint$="Y"
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getUserInput(),"Y",period$,year$,status
-	if status>100 callpoint!.setStatus("ABORT")
+rem --- Skip validation if date checked before and it has not changed.
+	if !callpoint!.getDevObject("trans_date_checked") or 
+:	callpoint!.getUserInput()<>callpoint!.getColumnData("GLE_JRNLHDR.TRANS_DATE") then
+		callpoint!.setDevObject("trans_date_checked",1)
+		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getUserInput(),"Y",period$,year$,status
+		if status>100 callpoint!.setStatus("ABORT")
+	endif
 endif
 [[GLE_JRNLHDR.JOURNAL_ID.AVAL]]
 rem --- read glm03 -- make sure PERMIT_JE is "Y",

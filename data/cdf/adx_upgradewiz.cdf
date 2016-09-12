@@ -275,14 +275,14 @@ rem --- Capture stbl grid in data structur for backend programs
 [[ADX_UPGRADEWIZ.SYNC_BACKUP_DIR.AVAL]]
 rem --- Validate sync backup directory
 
-	sync_backup_dir$ = callpoint!.getUserInput()
+	sync_backup_dir$=(new File(callpoint!.getUserInput())).getCanonicalPath()
 	gosub validate_sync_backup_dir
 	callpoint!.setUserInput(sync_backup_dir$)
 	if abort then break
 [[ADX_UPGRADEWIZ.OLD_BAR_LOC.AVAL]]
 rem --- Validate old barista install location
 
-	old_bar_loc$ = callpoint!.getUserInput()
+	old_bar_loc$=(new File(callpoint!.getUserInput())).getCanonicalPath()
 	gosub validate_old_bar_loc
 	callpoint!.setUserInput(old_bar_loc$)
 	if abort then break
@@ -344,7 +344,7 @@ rem --- Open/Lock files
 [[ADX_UPGRADEWIZ.OLD_AON_LOC.AVAL]]
 rem --- Validate old aon install location
 
-	old_aon_loc$ = callpoint!.getUserInput()
+	old_aon_loc$=(new File(callpoint!.getUserInput())).getCanonicalPath()
 	gosub validate_old_aon_loc
 	callpoint!.setUserInput(old_aon_loc$)
 	if abort then break
@@ -1346,7 +1346,7 @@ check_payroll_install: rem --- Check if PRB Payroll should be installed
 [[ADX_UPGRADEWIZ.NEW_AON_LOC.AVAL]]
 rem --- Validate new aon install location
 
-	new_aon_loc$ = callpoint!.getUserInput()
+	new_aon_loc$=(new File(callpoint!.getUserInput())).getCanonicalPath()
 	gosub validate_new_aon_loc
 	callpoint!.setUserInput(new_aon_loc$)
 	if abort then break

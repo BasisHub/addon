@@ -973,6 +973,13 @@ rem --- Capture current totals so we can tell later if they were changed in the 
 	callpoint!.setDevObject("taxable_amt",callpoint!.getColumnData("OPE_ORDHDR.TAXABLE_AMT"))
 	callpoint!.setDevObject("total_cost",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST"))
 	callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES"))
+
+rem --- Fix bad records with missing ordinv_flag
+
+	if cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDINV_FLAG"),2)="" then
+		callpoint!.setColumnData("OPE_ORDHDR.ORDINV_FLAG","O")
+		callpoint!.setStatus("SAVE")
+	endif
 [[OPE_ORDHDR.BOVE]]
 rem --- Restrict lookup to open orders and open invoices
 

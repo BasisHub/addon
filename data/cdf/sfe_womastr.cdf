@@ -530,8 +530,13 @@ rem --- Disable/enable based on status of closed/open
 		if callpoint!.getDevObject("ar")="Y"
 			callpoint!.setColumnEnabled("SFE_WOMASTR.CUSTOMER_ID",1)
 		endif
-		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",1)
-		callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",1)
+		if callpoint!.getDevObject("wo_category")="N" then
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",1)
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",1)
+		else
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",0)
+			callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",0)
+		endif
 		if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")="O" then
 			rem --- Can't change after WO is released
 			callpoint!.setColumnEnabled("SFE_WOMASTR.WAREHOUSE_ID",0)
@@ -579,8 +584,6 @@ rem -- Disable Lot/Serial button if no LS
 rem --- Always disable these fields for an existing record
 
 	callpoint!.setColumnEnabled("SFE_WOMASTR.ITEM_ID",0)
-	callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_01",0)
-	callpoint!.setColumnEnabled("SFE_WOMASTR.DESCRIPTION_02",0)
 
 rem --- disable Copy function if closed or not an N category
 

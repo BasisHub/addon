@@ -263,6 +263,15 @@ rem --- Now we've been on the Totals tab
 rem --- Enable/Disable Cash Sale button
 	gosub able_cash_sale
 [[OPE_INVHDR.AOPT-UINV]]
+rem --- Check to see if record has been modified (don't undo until rec is saved)
+
+	if pos("M"=callpoint!.getRecordStatus())
+		callpoint!.setOptionEnabled("UINV",0)
+		msg_id$="AD_SAVE_BEFORE_UNDO"
+		gosub disp_message
+		break
+	endif
+
 rem --- Must be in edit mode for this feature
 	if !callpoint!.isEditMode() then
 		msg_id$="AD_EDIT_MODE_REQUIRE"
@@ -1615,7 +1624,7 @@ rem --- Check Print flag
 
 rem --- Check for order, force to an Invoice
 
-	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "O" then
+	if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") <> "I" then
 		gosub make_invoice
 		if locked then
 			user_tpl.do_end_of_form = 0
@@ -1784,7 +1793,7 @@ rem --- Existing record
 
 	rem --- Check for order, force to an Invoice
 
-		if ope01a.ordinv_flag$ = "O" then
+		if ope01a.ordinv_flag$ <> "I" then
 			rem --- Force order to invoice in ADIS
 			inv_no$=callpoint!.getColumnData("OPE_INVHDR.AR_INV_NO")
 			callpoint!.setStatus("RECORD:["+firm_id$+trans_status$+ar_type$+cust_id$+order_no$+inv_no$+"]")
@@ -2860,7 +2869,7 @@ rem ==========================================================================
 	customer_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
 	order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 	if !locked and cvs(customer_id$,2)<>"" and cvs(order_no$,2)<>"" and 
-:		callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") = "O" then
+:		callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG") <> "I" then
 
 		rem --- Can't create invoice if someone has the order extracted.
 		status$=callpoint!.getColumnData("OPE_INVHDR.TRANS_STATUS")
