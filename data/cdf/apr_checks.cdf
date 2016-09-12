@@ -1,3 +1,10 @@
+[[APR_CHECKS.BEND]]
+rem --- Make sure softlock is cleared when exiting/aborting
+	adxlocks_dev=fnget_dev("ADX_LOCKS")
+	dim adxlocks$:fnget_tpl$("ADX_LOCKS")
+	menu_option_id$=pad(callpoint!.getTableAttribute("ALID"),len(adxlocks.menu_option_id$))
+
+	remove (adxlocks_dev,key=firm_id$+menu_option_id$,dom=*next)
 [[APR_CHECKS.PICK_CHECK.AVAL]]
 if callpoint!.getUserInput()="Y"
 	if callpoint!.getDevObject("multi_types")<>"Y"
