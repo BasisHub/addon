@@ -7,6 +7,17 @@ WINDOW 1000 "License Agreement" 40 40 700 400
 BEGIN
     NAME "AddonEULA"
     RADIOGROUP 1201, 1202
+    KEYBOARDNAVIGATION
+    
+    BUTTON 1, "OK", 520, 355, 75, 25
+    BEGIN
+        NAME "btn_OK"
+    END
+
+    BUTTON 2, "Cancel", 600, 355, 75, 25
+    BEGIN
+        NAME "btn_cancel"
+    END
 
     HTMLVIEW 1101,"", 25, 25, 650, 300
     BEGIN

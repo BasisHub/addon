@@ -743,6 +743,10 @@ rem --- clear availability
 	callpoint!.setDevObject("initial_rec_data$",rec_data$)
 
 	gosub init_msgs
+
+rem --- Set flag
+
+	user_tpl.record_deleted = 0
 [[OPE_INVHDR.INVOICE_TYPE.AVAL]]
 print "Hdr:INVOICE_TYPE.AVAL"; rem debug
 
@@ -1671,6 +1675,7 @@ rem --- Set other codes
 	user_tpl.order_date$   = callpoint!.getColumnData("OPE_INVHDR.ORDER_DATE")
 	user_tpl.disc_code$    = callpoint!.getColumnData("OPE_INVHDR.DISC_CODE")
 	user_tpl.new_order     = 0
+	user_tpl.record_deleted = 0
 
 rem --- Set OrderHelper object fields
 
@@ -2132,7 +2137,7 @@ rem ==========================================================================
 
 	while more
 		read record (arm05_dev, end=*break) arm05a$
-		if arm05a.firm_id$+arm05a.customer_id$ <> firm_id$+cust$ then break
+		if arm05a.firm_id$+arm05a.customer_id$ <> firm_id$+cust_id$ then break
 		cmt_text$ = cmt_text$ + cvs(arm05a.std_comments$,3) + $0A$
 	wend
 

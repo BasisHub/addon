@@ -1,7 +1,7 @@
 [[IVC_ITEMLOOKUP.ASIZ]]
 rem --- Maintain minimum Form size
 	minFormWidth=950
-	minFormHeight=350
+	minFormHeight=420
 	formWidth=Form!.getWidth()
 	formHeight=Form!.getHeight()
 	if formWidth<minFormWidth or formHeight<minFormHeight then
@@ -32,7 +32,7 @@ rem --- Resize item info window
 
 rem --- Resize item group box
 	grpBox!=infoWin!.getControl(15999)
-	grpBox!.setSize(w.w-10,w.h-10)
+	grpBox!.setSize(w.w-10,w.h-5)
 [[IVC_ITEMLOOKUP.ASVA]]
 rem --- set find_item only if OK is clicked
 
@@ -149,7 +149,7 @@ rem ---  Set up grid
 
 	dims_tmpl$ = "x:u(2),y:u(2),w:u(2),h:u(2)"
 	dim g$:dims_tmpl$
-	g.x = 10, g.y = 65, g.w = 610, g.h = 230
+	g.x = 10, g.y = 65, g.w = 610, g.h = 300
 	callpoint!.setDevObject("dims_tmpl", dims_tmpl$)
 	callpoint!.setDevObject("grid_dims", g$)
 
@@ -207,14 +207,14 @@ rem ---  Set up grid
 rem --- Create Item Information window			
 		
 	dim w$:dims_tmpl$
-	w.x = 625, w.y = 55, w.w = 320, w.h = 230
+	w.x = 625, w.y = 55, w.w = 330, w.h = 300
 	callpoint!.setDevObject("child_window_dims", w$)
 
 	cxt=SysGUI!.getAvailableContext()
 	infoWin!=form!.addChildWindow(15000, w.x, w.y, w.w, w.h, "", $00000800$, cxt)
 	SysGUI!.setContext(cxt)
 
-	infoWin!.addGroupBox(15999,5,5,w.w-10,w.h-10,Translate!.getTranslation("AON_INVENTORY_DETAIL"),$$)
+	infoWin!.addGroupBox(15999,5,5,w.w-10,w.h-5,Translate!.getTranslation("AON_INVENTORY_DETAIL"),$$)
 	
 	infoWin!.addStaticText(15001,10,25,75,15,Translate!.getTranslation("AON_PRODUCT_TYPE:"),$8000$)
 	infoWin!.addStaticText(15005,10,45,75,15,"",$8000$)
@@ -265,6 +265,11 @@ rem --- Create Item Information window
 
 	callpoint!.setDevObject("on_order",str(15112))
 	infoWin!.addStaticText(15112,90,185,75,15,"",$0000$)
+
+	dflt_img$=stbl("+DIR_IMG",err=*next)+"about_blank.png"
+	callpoint!.setDevObject("dflt_image",dflt_img$)
+	callpoint!.setDevObject("item_pic",str(15113))
+	infoWin!.addImageCtrl(15113,150,130,150,150,dflt_img$)
 
 	callpoint!.setDevObject("infoWin",infoWin!)			
 
@@ -468,6 +473,26 @@ rem --- get/display Inventory Detail info
 	w!.setText(str(available))
 	w!=infoWin!.getControl( num( callpoint!.getDevObject("on_order") ) )	
 	w!.setText(str(on_order))
+
+	image$=ivm_itemmast.image_path$
+	dflt_img$=callpoint!.getDevObject("dflt_image",err=*next)
+		if pos("["=image$)<>0
+		temp_spos=pos("["=image$)+1
+		temp_epos=pos("]"=image$)
+		temp_global$=image$(temp_spos,temp_epos-temp_spos)
+		temp_val$=$22$+stbl(temp_global$,err=*next)+$22$
+		if temp_epos=len(image$)
+			image$=image$(1,temp_spos-2)+temp_val$
+		else
+			image$=image$(1,temp_spos-2)+temp_val$+image$(temp_epos+1)
+		endif
+				call stbl("+DIR_SYP")+"bac_seval.bbj::str_eval",image$,temp_val_out$
+		image$=temp_val_out$
+	endif
+	if cvs(image$,3)="" then image$=dflt_img$
+	w!=infoWin!.getControl(num(callpoint!.getDevObject("item_pic")))
+	wImage!=SysGUI!.getImageManager().loadImageFromFile(image$,err=*next)
+	w!.setImage(wImage!,err=*next)
 
 return
 

@@ -272,6 +272,10 @@ rem --- Clear availability information
 	callpoint!.setDevObject("initial_rec_data$",rec_data$)
 
 	gosub init_msgs
+
+rem --- Set flags
+
+	user_tpl.record_deleted = 0
 [[OPE_ORDHDR.ARAR]]
 rem --- If First/Last Record was used, did it return an Order?
 
@@ -950,6 +954,7 @@ rem --- Set codes	and flags
 	user_tpl.order_date$   = callpoint!.getColumnData("OPE_ORDHDR.ORDER_DATE")
 	user_tpl.disc_code$    = callpoint!.getColumnData("OPE_ORDHDR.DISC_CODE")
 	user_tpl.new_order     = 0
+	user_tpl.record_deleted = 0
 
 rem --- Set OrderHelper object fields
 

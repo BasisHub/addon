@@ -67,10 +67,39 @@ rem analyze gui_event$ and notice$ to see which control's callback triggered the
 			gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
 			curr_row=dec(notice.row$)
 			curr_col=dec(notice.col$)
-			if callpoint!.isEditMode() then
-				gridActivity!.setEditable(1)
-			else
-				gridActivity!.setEditable(0)
+
+			rem --- Update grid if Edit mode has changed
+			if user_tpl.curr_editMode$<>str(callpoint!.isEditMode()) then
+				user_tpl.curr_editMode$=str(callpoint!.isEditMode())
+
+				if callpoint!.isEditMode() then
+					rem --- Only Budget rows are editable
+					cols!=UserObj!.getItem(num(user_tpl.cols_ofst$))
+					codes!=UserObj!.getItem(num(user_tpl.codes_ofst$))
+					tps!=UserObj!.getItem(num(user_tpl.tps_ofst$))
+
+					num_cols=cols!.size()
+					num_codes=codes!.size()
+					for x=0 to num_cols-1
+						x1=0
+						while x1<num_codes-1
+							wcd$=codes!.getItem(x1)
+							if cols!.getItem(x)=wcd$(1,1) and tps!.getItem(x)=wcd$(2,1)
+								if pos(wcd$(1,1)="024",1) then
+									gridActivity!.setRowEditable(x,0)
+									gridActivity!.setCellEditable(x,0,1)
+								else
+									gridActivity!.setRowEditable(x,1)
+								endif
+								break
+							else
+								x1=x1+1
+							endif
+						wend
+					next x
+				else
+					gridActivity!.setEditable(0)
+				endif
 			endif
 
 			switch notice.code
@@ -222,7 +251,8 @@ rem ---  set up grid
 rem ---  store desired data (mostly offsets of items in UserObj) in user_tpl
 
 	tpl_str$="pers:c(5),pers_ofst:c(5),codes_ofst:c(5),codeList_ofst:c(5),grid_ctlID:c(5),grid_ofst:c(5),"+
-:			"cols_ofst:c(5),tps_ofst:c(5),amt_mask:c(15),sv_record_tp:c(30*),vectActivity_ofst:c(5)"
+:			"cols_ofst:c(5),tps_ofst:c(5),amt_mask:c(15),sv_record_tp:c(30*),vectActivity_ofst:c(5),"+
+:			"curr_editMode:c(1)"
 
 	dim user_tpl$:tpl_str$
 
@@ -236,6 +266,7 @@ rem ---  store desired data (mostly offsets of items in UserObj) in user_tpl
 	user_tpl.tps_ofst$="5"
 	user_tpl.vectActivity_ofst$="6"
 	user_tpl.amt_mask$=m1$
+	user_tpl.curr_editMode$=""
 
 rem ---  store desired vectors/objects in UserObj!
 

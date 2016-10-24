@@ -1,3 +1,15 @@
+[[ARM_CUSTDET.AR_TERMS_CODE.AVAL]]
+rem --- look up terms code, arm10A...if cred_hold is Y for this terms code,
+rem --- and cm$ is Y, set arm_custdet.cred_hold to Y as well
+if user_tpl.cm_installed$="Y"
+	ar_terms_code$=callpoint!.getUserInput()
+	arc_termcode_dev=fnget_dev("ARC_TERMCODE")
+	dim arc_termcode$:fnget_tpl$("ARC_TERMCODE")
+	read record (arc_termcode_dev,key=firm_id$+"A"+ar_terms_code$,dom=*break)arc_termcode$
+	if arc_termcode.cred_hold$="Y"
+		callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD","Y",1)
+	endif
+endif
 [[ARM_CUSTMAST.AOPT-INVC]]
 rem --- Show invoices
 

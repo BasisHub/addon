@@ -46,7 +46,7 @@ rem --- create the in memory recordset for return
 	dataTemplate$ = dataTemplate$ + "price_raw:c(1*), price_masked:c(1*), "
 	dataTemplate$ = dataTemplate$ + "location:c(1*),internal_seq_no:c(1*), "
 	dataTemplate$ = dataTemplate$ + "item_is_ls:c(1), linetype_allows_ls:c(1), carton:c(1*), "
-    dataTemplate$ = dataTemplate$ + "whse_message:c(1*), whse_msg_sfx:c(1*)"
+    dataTemplate$ = dataTemplate$ + "whse_message:c(1*), whse_msg_sfx:c(1*), ship_qty_raw:c(1*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 	
@@ -108,6 +108,7 @@ rem --- Main
 			item_is_ls$ =         "N"
             whse_message$ =       ""
             whse_msg_sfx$ =       ""
+            ship_qty_raw$ =       ""
 			
             read record (ope11_dev, end=*break) ope11a$
 
@@ -152,6 +153,7 @@ line_detail: rem --- Item Detail
 
 			if pos(opm02a.line_type$="MO")=0 then
 				order_qty_masked$= str(ope11a.qty_ordered:qty_mask$)
+                ship_qty_raw$= str(ope11a.qty_ordered)
 				if ope11a.commit_flag$="N"
                     ship_qty$=func.formatDate(ope11a.est_shp_date$)
                 else
@@ -210,6 +212,7 @@ line_detail: rem --- Item Detail
 			data!.setFieldValue("LINETYPE_ALLOWS_LS",linetype_allows_ls$)
             data!.setFieldValue("WHSE_MESSAGE",whse_message$)
             data!.setFieldValue("WHSE_MSG_SFX",whse_msg_sfx$)
+            data!.setFieldValue("SHIP_QTY_RAW", ship_qty_raw$)
 
 			rs!.insert(data!)		
 
@@ -264,6 +267,7 @@ rem --- return a final row that's empty except for the whse_message$, which will
     data!.setFieldValue("LINETYPE_ALLOWS_LS","")
     data!.setFieldValue("WHSE_MESSAGE",whse_message$);rem whse_message$ contains key to prop file and gets translated back in main report using str() function
     data!.setFieldValue("WHSE_MSG_SFX",whse_msg_sfx$)
+    data!.setFieldValue("SHIP_QTY_RAW", "")
     
 	rs!.insert(data!)    
 

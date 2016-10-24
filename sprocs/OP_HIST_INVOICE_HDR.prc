@@ -165,7 +165,7 @@ rem --- Initialize Data
 	
 	max_custAddr_lines = 7
 	cust_addrLine_len = 30	
-	dim c$(max_custAddr_lines * bill_custLine_len)
+	dim c$(max_custAddr_lines * cust_addrLine_len)
 	
 
 	invoice_date$ = ""

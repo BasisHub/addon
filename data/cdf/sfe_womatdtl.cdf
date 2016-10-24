@@ -70,8 +70,8 @@ rem --- Initialize inventory item update
 	call stbl("+DIR_PGM")+"ivc_itemupdt.aon::init",chan[all],ivs01a$,items$[all],refs$[all],refs[all],table_chans$[all],status
 
 rem  --- Update committed quantity
-	items$[1]=sfe_womatdtl.warehouse_id$
-	items$[2]=sfe_womatdtl.item_id$
+	items$[1]=callpoint!.getColumnData("SFE_WOMATDTL.WAREHOUSE_ID")
+	items$[2]=callpoint!.getColumnData("SFE_WOMATDTL.ITEM_ID")
 	if qty_ordered>start_qty_ordered then
 		refs[0]=qty_ordered-start_qty_ordered
 		action$="CO"

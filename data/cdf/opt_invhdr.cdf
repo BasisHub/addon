@@ -208,7 +208,6 @@ rem --- Setup user_tpl$
 :		"prev_sales_total:n(15), " +
 :		"prev_unitprice:n(15), " +
 :		"detail_modified:u(1), " +
-:		"record_deleted:u(1), " +
 :		"item_wh_failed:u(1), " +
 :		"do_end_of_form:u(1), " +
 :		"picklist_warned:u(1)"
@@ -235,7 +234,6 @@ rem --- Setup user_tpl$
 	user_tpl.pgmdir$           = stbl("+DIR_PGM",err=*next)
 	user_tpl.cur_row           = -1
 	user_tpl.detail_modified   = 0
-	user_tpl.record_deleted    = 0
 	user_tpl.item_wh_failed    = 1
 	user_tpl.do_end_of_form    = 1
 	user_tpl.picklist_warned   = 0
