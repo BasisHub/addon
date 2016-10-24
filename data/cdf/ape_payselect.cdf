@@ -890,32 +890,27 @@ rem ==========================================================================
 build_bui_url: rem --- Build a url to launch Barista Application Framework in BUI
 rem ==========================================================================
 
-	httpEnabled!=System.getProperty("com.basis.jetty.enableHttp")
-	if (httpEnabled! = null() or httpEnabled!.equals("true"))
-		protocol$="http"
-		port$ =  System.getProperty("com.basis.jetty.port")
-		if port$="" then port$="8888"
+	rem --- Check if web server is running in SSL
+	sslEnabled!=System.getProperty("com.basis.jetty.enableSSL")
+	
+	if (sslEnabled! = null() or sslEnabled!.equals("true"))
+	     protocol$="https"
+	     port$ = System.getProperty("com.basis.jetty.sslPort")
+	     if port$="" then port$="8443"
 	else
-		rem --- Check if web server is running in SSL
-		sslEnabled!=System.getProperty("com.basis.jetty.enableSSL")
-		if (sslEnabled! = null() or sslEnabled!.equals("true"))
-	    		protocol$="https"
-	    		port$ = System.getProperty("com.basis.jetty.sslPort")
-	    		if port$="" then port$="8443"
-		else
-	    		rem --- default to http/8888 if no properties are set
-	    		protocol$="http"
-	    		port$="8888"
-		endif  
-	endif
-
+	     rem --- default to http/8888 if no properties are set
+	     protocol$="http"
+	     port$="8888"
+	endif 
+	
+	
 	host$ = System.getProperty("com.basis.jetty.host")
 	if host$="" then host$ = info(3,4)
-
+	
 	bui_name$="BaristaApplicationFramework"
-
+	
 	buiurl$ = protocol$ + "://" + host$ + ":" + port$ + "/apps/" + bui_name$ + "?locale=" + stbl("+USER_LOCALE")
-
+	
 	return
 
 rem ==========================================================================
