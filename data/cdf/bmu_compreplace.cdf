@@ -1,3 +1,5 @@
+[[BMU_COMPREPLACE.<CUSTOM>]]
+#include std_missing_params.src
 [[BMU_COMPREPLACE.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 
@@ -51,10 +53,10 @@ rem --- Open needed tables
 
 rem -- Get precision from BOM params for default Rounding Precision
 
-	read record (bms01_dev,key=firm_id$+"BM00")bms01a$
+	read record (bms01_dev,key=firm_id$+"BM00",dom=std_missing_params)bms01a$
 	callpoint!.setDevObject("bm_param_prec",str(bms01a.bm_precision))
 
-	read record (ivs01_dev,key=firm_id$+"BM00")ivs01a$
+	read record (ivs01_dev,key=firm_id$+"IV00",dom=std_missing_params)ivs01a$
 	if num(ivs01a.precision$)>bms01a.bm_precision then
 		callpoint!.setDevObject("this_precision",num(ivs01a.precision$))
 	else
