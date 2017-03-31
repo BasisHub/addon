@@ -85,21 +85,21 @@ rem --- Remove Paid Transactions
 				if glt15a.trns_date$>st_date$ continue
 				remove (glt15_dev,key=glt15a.firm_id$+glt15a.gl_account$+glt15a.trans_no$,dom=*next)
 			wend
-		endif
-		callpoint!.setColumnData("GLM_BANKMASTER.PRI_END_DATE",callpoint!.getColumnData("GLM_BANKMASTER.CURSTM_DATE"))
-		callpoint!.setColumnData("GLM_BANKMASTER.CURSTM_DATE","")
-		callpoint!.setColumnData("GLM_BANKMASTER.PRI_END_AMT",callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT"))
-		callpoint!.setColumnData("GLM_BANKMASTER.CUR_STMT_AMT","0")
-		callpoint!.setColumnData("GLM_BANKMASTER.BOOK_BALANCE","0")
-		rec_data.pri_end_date$=callpoint!.getColumnData("GLM_BANKMASTER.PRI_END_DATE")
-		rec_data.curstm_date$=callpoint!.getColumnData("GLM_BANKMASTER.CURSTM_DATE")
-		rec_data.pri_end_amt$=callpoint!.getColumnData("GLM_BANKMASTER.PRI_END_AMT")
-		rec_data.cur_stmt_amt$=callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT")
-		rec_data.book_balance$=callpoint!.getColumnData("GLM_BANKMASTER.BOOK_BALANCE")
-		writerecord(fnget_dev("GLM_BANKMASTER"))rec_data$
-		glm05_key$=rec_data.firm_id$+rec_data.gl_account$
-		extractrecord(fnget_dev("GLM_BANKMASTER"),key=glm05_key$)x$; rem Advisory Locking
 
+			callpoint!.setColumnData("GLM_BANKMASTER.PRI_END_DATE",callpoint!.getColumnData("GLM_BANKMASTER.CURSTM_DATE"))
+			callpoint!.setColumnData("GLM_BANKMASTER.CURSTM_DATE","")
+			callpoint!.setColumnData("GLM_BANKMASTER.PRI_END_AMT",callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT"))
+			callpoint!.setColumnData("GLM_BANKMASTER.CUR_STMT_AMT","0")
+			callpoint!.setColumnData("GLM_BANKMASTER.BOOK_BALANCE","0")
+			rec_data.pri_end_date$=callpoint!.getColumnData("GLM_BANKMASTER.PRI_END_DATE")
+			rec_data.curstm_date$=callpoint!.getColumnData("GLM_BANKMASTER.CURSTM_DATE")
+			rec_data.pri_end_amt$=callpoint!.getColumnData("GLM_BANKMASTER.PRI_END_AMT")
+			rec_data.cur_stmt_amt$=callpoint!.getColumnData("GLM_BANKMASTER.CUR_STMT_AMT")
+			rec_data.book_balance$=callpoint!.getColumnData("GLM_BANKMASTER.BOOK_BALANCE")
+			writerecord(fnget_dev("GLM_BANKMASTER"))rec_data$
+			glm05_key$=rec_data.firm_id$+rec_data.gl_account$
+			extractrecord(fnget_dev("GLM_BANKMASTER"),key=glm05_key$)x$; rem Advisory Locking
+		endif
 	endif
 [[GLM_BANKMASTER.CUR_STMT_AMT.AVAL]]
 rem " --- Recalc Summary Info
@@ -184,6 +184,7 @@ rem ====================================================
 	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",pgm(-2),"GL","","",status
 	if status release
 	call stbl("+DIR_PGM")+"glc_datecheck.aon",stmtdate$,"Y",stmtperiod$,stmtyear$,status
+	if status>100 then return
 	stmtperiod=num(stmtperiod$)
 	stmtperiod$=str(stmtperiod:"00")
 	stmtyear=num(stmtyear$)
@@ -288,7 +289,10 @@ rem --- Find G/L Record"
 	gls01_dev=user_tpl.gls01_dev
 	readrecord(gls01_dev,key=firm_id$+"GL00")gls01a$
 	gosub check_date
-	if status exit
+	if status>100 then
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 
 	r0$=firm_id$+callpoint!.getColumnData("GLM_BANKMASTER.GL_ACCOUNT"),s0$=""
 	if stmtyear=priorgl s0$=r0$+"2"; rem "Use prior year actual
@@ -328,7 +332,7 @@ rem --- Back out transactions for period after statement date"
 
 rem --- All Done"
 	callpoint!.setColumnData("GLM_BANKMASTER.BOOK_BALANCE",str(total_amt),1)
-	callpoint!.setStatus("MODIFIED")
+	callpoint!.setStatus("SAVE")
 
 rem " --- Recalc Summary Info
 

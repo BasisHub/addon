@@ -1,0 +1,171 @@
+rem --- Work Order By Vendor Query filter program
+rem --- Program ID: sff_wobyvend.aon
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- Run by Barista as part of the SF_WOBYVEND query.
+rem --- For each row in the result set, this program runs to get WO data from sfe_womatl for stock items
+rem --- or from sfe_wosubcnt for non-stock items.
+
+    setesc std_error
+    seterr std_error
+
+    enter inq_mode$,rec_tpl$,calc_tpl$,table_chans$[all],status$
+
+rem inq_mode$      - not used until recently - current use not yet documented
+rem rec_tpl$       - Current row database columns
+rem calc_tpl$      - Current row calculated columns
+rem table_chans$[] - Barista opened channels array
+rem status$        - Returned status: "SKIP" = Skip current record
+
+rem --- Initialize data
+    status$=""
+
+rem --- Open tables
+    ivm_itemmast_dev=fnget_dev("@"+"IVM_ITEMMAST")
+    poc_linecode_dev=fnget_dev("@"+"POC_LINECODE")
+    sfe_womastr_dev=fnget_dev("@"+"SFE_WOMASTR")
+    sfe_wosubcnt_dev=fnget_dev("@"+"SFE_WOSUBCNT")
+
+    if ivm_itemmast_dev=0 or po_linecode_dev=0 or sfe_womastr_dev=0 or sfe_wosubcnt_dev=0 then
+        rem --- PO installed? SF installed? Both already require IV.
+        call dir_pgm$+"adc_application.aon","IV",info$[all]
+        iv$=info$[20]
+        call dir_pgm$+"adc_application.aon","SF",info$[all]
+        sf$=info$[20]
+        if iv$<>"Y" or sf$<>"Y" then
+            status$="SKIP"
+            goto exit_prog
+        endif
+
+        num_files=4
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="IVM_ITEMMAST",open_opts$[1]="OTA@"
+        open_tables$[2]="POC_LINECODE",open_opts$[2]="OTA@"
+        open_tables$[3]="SFE_WOMASTR",open_opts$[3]="OTA@"
+        open_tables$[4]="SFE_WOSUBCNT",open_opts$[4]="OTA@"
+                
+        gosub open_tables        
+
+        ivm_itemmast_dev=fnget_dev("@"+"IVM_ITEMMAST")
+        poc_linecode_dev=fnget_dev("@"+"POC_LINECODE")
+        sfe_womastr_dev=fnget_dev("@"+"SFE_WOMASTR")
+        sfe_wosubcnt_dev=fnget_dev("@"+"SFE_WOSUBCNT")
+    endif
+
+    dim ivm_itemmast$:fnget_tpl$("@"+"IVM_ITEMMAST")
+    dim poc_linecode$:fnget_tpl$("@"+"POC_LINECODE")
+    dim sfe_womastr$:fnget_tpl$("@"+"SFE_WOMASTR")
+    dim sfe_wosubcnt$:fnget_tpl$("@"+"SFE_WOSUBCNT")
+
+rem --- PO line code's line type must be Standard (S) or Non-Stock (N)
+    findrecord(poc_linecode_dev,key=rec_tpl.firm_id$+rec_tpl.po_line_code$,dom=*next)poc_linecode$
+    switch (BBjAPI().TRUE)
+        case poc_linecode.line_type$="N"
+            rem --- Non-Stock PO line type
+            findrecord(sfe_wosubcnt_dev,key=rec_tpl.firm_id$+"  "+rec_tpl.wo_no$+rec_tpl.wk_ord_seq_ref$,knum="AO_SUBCONT_SEQ",dom=*next)sfe_wosubcnt$
+            rec_tpl.require_date$=sfe_wosubcnt.require_date$
+            rec_tpl.mat_sub$="Sub"
+            break
+        case poc_linecode.line_type$="S"
+            rem --- Standard PO line type
+            findrecord(ivm_itemmast_dev,key=rec_tpl.firm_id$+rec_tpl.item_id$,knum="PRIMARY",dom=*next)ivm_itemmast$
+            rec_tpl.item_desc$=ivm_itemmast.item_desc$
+            rec_tpl.mat_sub$="Mat"
+            break
+        case default
+            status$="SKIP"
+            goto exit_prog
+            break
+    swend
+
+rem --- Get status for this work order
+    findrecord(sfe_womastr_dev,key=rec_tpl.firm_id$+"  "+rec_tpl.wo_no$,knum="PRIMARY",dom=*next)sfe_womastr$
+    switch (BBjAPI().TRUE)
+        case sfe_womastr.wo_status$="C"
+            rec_tpl.wo_status$="Cls"
+            break
+        case sfe_womastr.wo_status$="O"
+            rec_tpl.wo_status$="Opn"
+            break
+        case sfe_womastr.wo_status$="P"
+            rec_tpl.wo_status$="Pln"
+            break
+        case sfe_womastr.wo_status$="Q"
+            rec_tpl.wo_status$="Quo"
+            break
+        case default
+            rec_tpl.wo_status$=""
+            break
+    swend
+
+rem --- Done
+    goto exit_prog
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=table_chans$[num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif    
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+    
+exit_prog:rem --- Exit Program
+
+    exit

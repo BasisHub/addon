@@ -492,6 +492,9 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		translate$="AON_WAREHOUSE"
 	endif
 
+	qty_ordered=num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))
+	qty_received=num(callpoint!.getColumnData("POE_RECDET.QTY_RECEIVED"))
+	qty_prev_rec=num(callpoint!.getColumnData("POE_RECDET.QTY_PREV_REC"))
 	if ok_to_write$="Y" and pos(line_type$="SD")<>0 
 		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.ITEM_ID"),3)=""
 			ok_to_write$="N"
@@ -503,10 +506,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			focus_column$="POE_RECDET.CONV_FACTOR"
 			translate$="AON_CONVERSION_FACTOR"
 		endif
-		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))<=0
+		if ok_to_write$="Y" and qty_ordered=0 or (qty_ordered>0 and qty_received<0)
 			ok_to_write$="N"
-			focus_column$="POE_RECDET.QTY_ORDERED"
-			translate$="AON_QUANTITY_ORDERED"
+			focus_column$="POE_RECDET.QTY_RECEIVED"
+			translate$="AON_QUANTITY_RECEIVED"
 		endif
 		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_RECDET.UNIT_COST"))<0
 			ok_to_write$="N"
@@ -521,15 +524,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			focus_column$="POE_RECDET.UNIT_COST"
 			translate$="AON_UNIT_COST"
 		endif
-		if ok_to_write$="Y" and num(callpoint!.getColumnData("POE_RECDET.QTY_ORDERED"))<=0
+		if ok_to_write$="Y" and qty_ordered=0 or (qty_ordered>0 and qty_received<0)
 			ok_to_write$="N"
-			focus_column$="POE_RECDET.QTY_ORDERED"
-			translate$="AON_QUANTITY_ORDERED"
-		endif
-		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.REQD_DATE"),3)="" 	
-			ok_to_write$="N"
-			focus_column$="POE_RECDET.REQD_DATE"
-			translate$="AON_DATE_REQUIRED"
+			focus_column$="POE_RECDET.QTY_RECEIVED"
+			translate$="AON_QUANTITY_RECEIVED"
 		endif
 	endif
 
@@ -538,11 +536,6 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 			ok_to_write$="N"
 			focus_column$="POE_RECDET.UNIT_COST"
 			translate$="AON_UNIT_COST"
-		endif
-		if ok_to_write$="Y" and cvs(callpoint!.getColumnData("POE_RECDET.REQD_DATE"),3)="" 	
-			ok_to_write$="N"
-			focus_column$="POE_RECDET.REQD_DATE"
-			translate$="AON_DATE_REQUIRED"
 		endif
 	endif
 
@@ -670,6 +663,14 @@ if callpoint!.getDevObject("SF_installed")="Y" then
 	callpoint!.setDevObject("start_wo_no",callpoint!.getColumnData("POE_RECDET.WO_NO"))
 	callpoint!.setDevObject("start_wo_seq_ref",callpoint!.getColumnData("POE_RECDET.WK_ORD_SEQ_REF"))
 endif
+
+rem --- if received > ordered - previously received, warn, but not fatal
+
+	if qty_received > qty_ordered - qty_prev_rec
+		callpoint!.setMessage("PO_REC_QTY_WARN")
+	endif
+
+
 [[POE_RECDET.AGRN]]
 rem --- save current qty/price this row
 

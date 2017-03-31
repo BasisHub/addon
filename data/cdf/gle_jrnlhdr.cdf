@@ -1,3 +1,13 @@
+[[GLE_JRNLHDR.ARAR]]
+rem --- Initialize dev object for this record
+	if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>"" then
+		callpoint!.setDevObject("reverse_date_checked",1)
+	else
+		callpoint!.setDevObject("reverse_date_checked",0)
+	endif
+[[GLE_JRNLHDR.ARER]]
+rem --- Initializations for new record
+	callpoint!.setDevObject("reverse_date_checked",0)
 [[GLE_JRNLHDR.BREA]]
 rem --- Initialize date check devObjects
 	callpoint!.setDevObject("trans_date_checked",0)
@@ -35,6 +45,7 @@ if user_tpl.glint$="Y"
 		endif
 	endif
 	if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>"" and !callpoint!.getDevObject("reverse_date_checked") then
+		callpoint!.setDevObject("reverse_date_checked",1)
 		call stbl("+DIR_PGM")+"glc_datecheck.aon",callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),"Y",period$,year$,status
 		if status>100 then 
 			callpoint!.setFocus("GLE_JRNLHDR.REVERSE_DATE")
