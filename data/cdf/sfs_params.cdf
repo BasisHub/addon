@@ -1,3 +1,14 @@
+[[SFS_PARAMS.ASVA]]
+rem --- Clear OPS_PARAMS.OP_CREATE_WO and OPS_PARAMS.OP_CREATE_WO_TYP when SF not interfacing with OP (AR)
+	if callpoint!.getColumnData("SFS_PARAMS.AR_INTERFACE")<>"Y" then
+		opsParams_dev=fnget_dev("OPS_PARAMS")
+		dim opsParams$:fnget_tpl$("OPS_PARAMS")
+		extractrecord(opsParams_dev,key=firm_id$+"AR00",dom=*endif)opsParams$
+		opsParams.op_create_wo$=""
+		opsParams.op_create_wo_typ$=""
+		opsParams$=field(opsParams$)
+		writerecord(opsParams_dev)opsParams$
+	endif
 [[SFS_PARAMS.CURRENT_YEAR.AVAL]]
 rem --- Verify calendar exists for entered SF fiscal year
 	year$=callpoint!.getUserInput()
@@ -85,7 +96,7 @@ rem ==========================================================
 		callpoint!.setColumnData("SFS_PARAMS.BM_INTERFACE","N",1)
 		callpoint!.setColumnEnabled("SFS_PARAMS.BM_INTERFACE",0)
 	endif
-	if callpoint!.getDevObject("ar")<>"Y"
+	if callpoint!.getDevObject("op")<>"Y"
 		callpoint!.setColumnData("SFS_PARAMS.AR_INTERFACE","N",1)
 		callpoint!.setColumnEnabled("SFS_PARAMS.AR_INTERFACE",0)
 	endif
@@ -180,8 +191,8 @@ rem --- Retrieve parameter data
 	dim info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
 	callpoint!.setDevObject("bm",info$[20])
-	call stbl("+DIR_PGM")+"adc_application.aon","AR",info$[all]
-	callpoint!.setDevObject("ar",info$[20])
+	call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
+	callpoint!.setDevObject("op",info$[20])
 	call stbl("+DIR_PGM")+"adc_application.aon","AP",info$[all]
 	callpoint!.setDevObject("br",info$[9])
 	call stbl("+DIR_PGM")+"adc_application.aon","PO",info$[all]
@@ -194,3 +205,11 @@ rem --- Retrieve parameter data
 	callpoint!.setDevObject("gl_installed",gl_installed$)
 
 	if gl_installed$<>"Y" then callpoint!.setColumnEnabled("SFS_PARAMS.POST_TO_GL",-1)
+
+	if callpoint!.getDevObject("op")="Y" then
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="OPS_PARAMS",open_opts$[1]="OTA"
+
+		gosub open_tables
+	endif

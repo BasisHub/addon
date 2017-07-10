@@ -89,7 +89,7 @@ rem --- Delete the order
 	read (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$+ope01a.ar_inv_no$,dom=*next)
 	while 1
 		ope11_key$=key(ope11_dev,end=*break)
-		if pos(ope11_key$=ope11a$)<>1 then break
+		if pos(firm_id$+ope01a.ar_type$+cust$+ord$+ope01a.ar_inv_no$=ope11_key$)<>1 then break
 		readrecord(ope11_dev)ope11a$
 		if pos(ope11a.trans_status$="ER")=0 then continue
 		readrecord(opc_linecode_dev,key=firm_id$+ope11a.line_code$,dom=remove_line)opc_linecode$
@@ -244,23 +244,51 @@ good_code:
 
 	gosub remove_tickler
 
+rem --- Do NOT allow printing the Picking List if there are possible SO-WO links
+
+	allow_print=1
+	op_create_wo$=callpoint!.getDevObject("op_create_wo")
+	if op_create_wo$="A" then
+		gridRowVect! = BBjAPI().makeVector()
+		ope11_dev=fnget_dev("OPE_ORDDET")
+		dim ope11a$:fnget_tpl$("OPE_ORDDET")
+		read (ope11_dev,key=firm_id$+ope01a.ar_type$+cust$+ord$+ope01a.ar_inv_no$,dom=*next)
+		while 1
+			ope11_key$=key(ope11_dev,end=*break)
+			if pos(firm_id$+ope01a.ar_type$+cust$+ord$+ope01a.ar_inv_no$=ope11_key$)<>1 then break
+			readrecord(ope11_dev)ope11a$
+			if pos(ope11a.trans_status$="ER")=0 then continue
+			gridRowVect!.addItem(ope11a$)
+		wend
+		soCreateWO!=new SalesOrderCreateWO(firm_id$,cust$,ord$)
+		soCreateWO!.initIsnWOMap(gridRowVect!)
+		if soCreateWO!.woCount() then
+			allow_print=0
+			ope_prntlist_dev=fnget_dev("OPE_PRNTLIST")
+			remove(ope_prntlist_dev,key=firm_id$+"O"+ope01a.ar_type$+cust$+ord$,dom=*next)
+			msg_id$="OP_USE_OE_4_PICKLIST"
+			gosub disp_message
+		endif
+	endif
+
 rem --- Print the order?
 
-	msg_id$="OP_ORDREL"
-	gosub disp_message
-	if msg_opt$="Y"
+	if allow_print then
+		msg_id$="OP_ORDREL"
+		gosub disp_message
+		if msg_opt$="Y"
 
-		user_id$=stbl("+USER_ID")
+			user_id$=stbl("+USER_ID")
 	 
-		dim dflt_data$[3,1]
-		dflt_data$[1,0]="CUSTOMER_ID"
-		dflt_data$[1,1]=cust$
-		dflt_data$[2,0]="ORDER_NO"
-		dflt_data$[2,1]=ord$
-		dflt_data$[3,0]="INVOICE_TYPE"
-		dflt_data$[3,1]=ope01a.invoice_type$
+			dim dflt_data$[3,1]
+			dflt_data$[1,0]="CUSTOMER_ID"
+			dflt_data$[1,1]=cust$
+			dflt_data$[2,0]="ORDER_NO"
+			dflt_data$[2,1]=ord$
+			dflt_data$[3,0]="INVOICE_TYPE"
+			dflt_data$[3,1]=ope01a.invoice_type$
 	 
-		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+			call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		                       "OPR_ODERPICKDMD",
 :		                       user_id$,
 :		                       "",
@@ -269,6 +297,7 @@ rem --- Print the order?
 :		                       "",
 :		                       dflt_data$[all]
 
+		endif
 	endif
 	callpoint!.setStatus("EXIT")
 
@@ -277,8 +306,12 @@ no_rel:
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPE_CREDMAINT.BSHO]]
+rem --- Init
+
+	use ::opo_SalesOrderCreateWO.aon::SalesOrderCreateWO
+
 rem --- Open tables
-	num_files=12
+	num_files=13
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="ARM_CUSTCMTS",open_opts$[1]="OTA"
 	open_tables$[2]="OPE_ORDHDR",open_opts$[2]="OTA"
@@ -292,7 +325,17 @@ rem --- Open tables
 	open_tables$[10]="OPE_ORDSHIP",open_opts$[10]="OTA"
 	open_tables$[11]="OPE_PRNTLIST",open_opts$[11]="OTA"
 	open_tables$[12]="IVM_ITEMMAST",open_opts$[12]="OTA"
+	open_tables$[13]="OPS_PARAMS",open_opts$[13]="OTA"
+
 	gosub open_tables
+
+	ops_params_dev = num(open_chans$[13])
+	dim ops_params$:open_tpls$[13]
+
+ rem --- Get needed OP params
+
+	readrecord(ops_params_dev,key=firm_id$+"AR00")ops_params$
+	callpoint!.setDevObject("op_create_wo",ops_params.op_create_wo$)
 [[OPE_CREDMAINT.<CUSTOM>]]
 #include std_functions.src
 disp_cust_comments:

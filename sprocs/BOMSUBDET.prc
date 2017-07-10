@@ -121,7 +121,7 @@ rem --- Build result set
             rem --- Send data row for non-Memos
             net_qty=0
             if read_tpl.divisor<>0 then
-                net_qty=read_tpl.qty_required*read_tpl.alt_factor/read_tpl.divisor
+                net_qty=1*BmUtils.netSubQtyReq(read_tpl.qty_required,read_tpl.alt_factor,read_tpl.divisor)
             endif
 
             data!.setFieldValue("VENDOR_ID",read_tpl.vendor_id$)
@@ -134,9 +134,9 @@ rem --- Build result set
             data!.setFieldValue("LEAD_TIME",str(read_tpl.lead_time))
             data!.setFieldValue("UNIT_MEASURE",read_tpl.unit_measure$)
             data!.setFieldValue("OP_INT_SEQ_REF",read_tpl.op_int_seq_ref$)
-            data!.setFieldValue("SUB_COST",str(read_tpl.unit_cost*read_tpl.qty_required:iv_cost_mask$))
+            data!.setFieldValue("SUB_COST",str(read_tpl.unit_cost*net_qty:iv_cost_mask$))
             data!.setFieldValue("NET_QTY",str(net_qty:iv_units_mask$))
-            data!.setFieldValue("TOT_SUB_COST",str(read_tpl.unit_cost*read_tpl.qty_required))
+            data!.setFieldValue("TOT_SUB_COST",str(read_tpl.unit_cost*net_qty))
         endif
         rs!.insert(data!)           
     wend

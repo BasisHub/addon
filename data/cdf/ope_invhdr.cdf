@@ -1426,10 +1426,10 @@ rem --- Position the file at the correct record
 			start_key$=start_key$+cust_id$
 			order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
 			if cvs(order_no$,2)<>""
-				start_key$=start_key$+order_no$
+				start_key$=start_key$+order_no$+callpoint!.getColumnData("OPE_INVHDR.AR_INV_NO")
 			endif
 		endif
-		read record (ope01_dev,key=start_key$,dom=*next)
+		read (ope01_dev,key=start_key$,dom=*next)
 	else
 		current_key$=callpoint!.getRecordKey()
 		read(ope01_dev,key=current_key$,dom=*next)

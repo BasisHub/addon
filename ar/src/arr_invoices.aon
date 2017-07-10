@@ -14,6 +14,7 @@ rem --- All Rights Reserved
     use ::bbjasper.bbj::BBJasperViewerControl
 
     use ::ado_rptControl.src::ReportControl
+    use ::ado_func.src::func
     use ::sys/prog/bao_utilities.bbj::BarUtils
 
 	declare BBJasperReport BBjReport!
@@ -42,15 +43,15 @@ rem --- Retrieve sysinfo data
     milestone=50
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
 
-rem --- Derive/set path and filename for logo to go on form
-rem --- for V15, will be able to get logo from Company or ReportControl table(s)
-    logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
-    logo_filenm$=""
-    if logo_file$<>""
-        logo_chn=unt
-        open (logo_chn,err=*endif)logo_file$
-        logo_filenm$=fid(logo_chn)(9)
-        close (logo_chn)
+rem --- Get logo to go on form; start w/ company logo, fall back to default logo from config if no company logo specified
+
+    logo_filename$=""
+    logo_filename$=func.getCompanyLogo()
+    if logo_filename$=""
+        logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+        if logo_file$<>""
+            logo_filename$=BBjAPI().getFileSystem().resolvePath(logo_file$,err=*next)
+        endif
     endif
 
 rem --- Set Report Name & Subreport directory
@@ -114,6 +115,8 @@ rem --- See if this document is set up in Addon Report Control
     rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
     rpt_ctl$=iff(rpt_ctl$="","NO","YES")
     rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
+    rpt_logo_file$=iff(rpt_ctl$="YES",reportControl!.getLogoFile(),"")
+    logo_filename$=iff(rpt_logo_file$="",logo_filename$,rpt_logo_file$);rem doc-specific logo supersedes default or company logo
 
 rem --- Start progress meter and position header file
 
@@ -219,7 +222,7 @@ rem --- Read next Invoice Header (are-05) record
     rem --- Other params
 
         params!.put("BARISTA_WD",dir(""))
-        params!.put("LOGO_FILE",logo_filenm$)
+        if logo_filename$<>"" then params!.put("LOGO_FILE",logo_filename$)
         params!.put("FIRM_ID",firm_id$)
         params!.put("AR_INV_NO",are05.ar_inv_no$)
         params!.put("CUSTOMER_ID",are05.customer_id$)

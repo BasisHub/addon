@@ -31,6 +31,7 @@ end_instantiate:
 
     use ::sys/prog/bao_option.bbj::Option
     use ::ado_rptControl.src::ReportControl
+    use ::ado_func.src::func
     use ::sys/prog/bao_utilities.bbj::BarUtils
 
     declare BBJasperReport BBjReport!
@@ -60,15 +61,15 @@ rem --- Retrieve sysinfo data
     milestone=5
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)
 
-rem --- Derive/set path and filename for logo to go on form
-    
-    logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+rem --- Get logo to go on form; start w/ company logo, fall back to default logo from config if no company logo specified
+
     logo_filename$=""
-    if logo_file$<>""
-        logo_chn=unt
-        open (logo_chn,err=*endif)logo_file$
-        logo_filename$=fid(logo_chn)(9)
-        close (logo_chn)
+    logo_filename$=func.getCompanyLogo()
+    if logo_filename$=""
+        logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+        if logo_file$<>""
+            logo_filename$=BBjAPI().getFileSystem().resolvePath(logo_file$,err=*next)
+        endif
     endif
 
 rem --- Set Report Name & directory
@@ -142,12 +143,15 @@ rem --- Assign form input values to local variables
         vendor_id$=single_vendor_id$
         req_no$=single_req_no$
         alias$="POE_REQPRINT_DMD"
+        rptctl_alias$ = "POR_REQPRINT";rem --- use actual alias (i.e., POR_REQPRINT_DMD) when putting in doc archive so you know it was an on-demand req, but use POR_REQPRINT for report control so you don't need two report control records for each vendor to handle on-demand vs. batch.        
+
     else
         sequence$=option!.getOptionData("REPORT_TYPE")
         pomessage$=option!.getOptionData("MESSAGE_TEXT")
         restart$=option!.getOptionData("RESTART")
         restart_vendor_id$=option!.getOptionData("VENDOR_ID")
         alias$=option!.getAlias()
+        rptctl_alias$ = alias$
         master_document=1
     endif
 
@@ -175,6 +179,16 @@ rem --- Initializations
 
     emailFax! = BBjAPI().makeVector()
     UpdateRecs!=bbjAPI().makeVector()
+
+rem --- See if this document is set up in Addon Report Control
+
+    reportControl!=new ReportControl()
+    reportControl!.setDocExtension("pdf")
+    rpt_ctl$=reportControl!.getReportControl(rptctl_alias$)
+    rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+    rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
+    rpt_logo_file$=iff(rpt_ctl$="YES",reportControl!.getLogoFile(),"")
+    logo_filename$=iff(rpt_logo_file$="",logo_filename$,rpt_logo_file$);rem doc-specific logo supersedes default or company logo
 
 rem --- Start progress meter and position header file
 
@@ -308,7 +322,7 @@ rem --- Process SQL fetch results
     rem --- Other params
 
         params!.put("BARISTA_WD",dir(""))
-        params!.put("LOGO_FILE",logo_filename$)
+        if logo_filename$<>"" then params!.put("LOGO_FILE",logo_filename$)
         params!.put("FIRM_ID",firm_id$)
         params!.put("REQ_NO",req_no$)
         params!.put("VENDOR_ID",vendor_id$)

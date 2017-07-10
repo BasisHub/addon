@@ -154,6 +154,22 @@ rem --- WO Detail Report (Hard Copy)
 :		"",
 :		dflt_data$[all]
 [[SFE_WOMASTR.BDEL]]
+rem --- Warn if this WO is linked to a Sales Order
+
+	if cvs(callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID"),2)<>"" and 
+:	cvs(callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"),2)<>"" and 
+:	cvs(callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"),2)<>"" then
+		msg_id$="SF_DELETE_LINKED_WO"
+		dim msg_tokens$[2]
+		msg_tokens$[1]=callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
+		msg_tokens$[2]=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+		gosub disp_message
+		if msg_opt$<>"Y" then
+			callpoint!.setStatus("ACTIVATE-ABORT")
+			break
+		endif
+	endif
+
 rem --- cascade delete will take care of removing:
 rem ---   requirements (sfe_wooprtn/sfe-02, sfe_womatl/sfe-22, sfe_wosubcnt/sfe-32)
 rem ---   comments (sfe_wocomnt/sfe-07)
@@ -381,14 +397,29 @@ rem --- Open tables
 	callpoint!.setDevObject("opcode_chan",num(open_chans$[1]))
 	callpoint!.setDevObject("opcode_tpl",open_tpls$[1])
 
+	op_create_wo$=""
+	op_create_wo_typ$=""
 	if op$="Y"
 		call stbl("+DIR_PGM")+"adc_application.aon","AR",info$[all]
 		ar$=info$[20]
 		call stbl("+DIR_PGM")+"adc_application.aon","OP",info$[all]
 		op$=info$[20]
+
+		num_files=1
+		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+		open_tables$[1]="OPS_PARAMS",open_opts$[1]="OTA"
+		gosub open_tables
+		opsParams_dev=num(open_chans$[1])
+		dim opsParams$:open_tpls$[1]
+
+		readrecord(opsParams_dev,key=firm_id$+"AR00",dom=*next)opsParams$
+		op_create_wo$=opsParams.op_create_wo$
+		op_create_wo_typ$=opsParams.op_create_wo_typ$
 	endif
 	callpoint!.setDevObject("ar",ar$)
 	callpoint!.setDevObject("op",op$)
+	callpoint!.setDevObject("op_create_wo",op_create_wo$)
+	callpoint!.setDevObject("op_create_wo_typ",op_create_wo_typ$)
 
 	if po$="Y"
 		call stbl("+DIR_PGM")+"adc_application.aon","PO",info$[all]
@@ -593,6 +624,76 @@ rem --- disable Copy function if closed or not an N category
 	else
 		callpoint!.setOptionEnabled("COPY",1)
 	endif
+
+rem --- As necessary, explode Bills for Sales Order auto-generated WOs
+
+	if callpoint!.getDevObject("bm")="Y" and callpoint!.getDevObject("op")="Y" and callpoint!.getDevObject("op_create_wo")="A" then
+		rem --- BM and OP are installed, and OP is creating planned WOs
+		if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")="P" and
+:		callpoint!.getColumnData("SFE_WOMASTR.WO_TYPE")=callpoint!.getDevObject("op_create_wo_typ") then
+			rem --- This is a planned WO of the type created by OP
+			if cvs(callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID"),2)<>"" and cvs(callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"),2)<>"" and
+:			cvs(callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"),2)<>"" then
+				rem --- This WO is linked to a Sales Order
+				bmm_billmast=fnget_dev("BMM_BILLMAST")
+				dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
+				bill_no$=callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID")
+				readrecord(bmm_billmast,key=firm_id$+bill_no$,dom=*next)bmm_billmast$
+				if bmm_billmast.bill_no$=bill_no$ and bmm_billmast.phantom_bill$<>"Y" then
+					rem --- This WO is for a Bill, and the Bill is not a phantom
+					record_found=0
+					wo_location$=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
+					wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+					sfe_womastr_key$=firm_id$+wo_location$+wo_no$
+
+					sfe_womatl_dev=fnget_dev("SFE_WOMATL")
+					read(sfe_womatl_dev,key=sfe_womastr_key$,dom=*next)
+					this_key$=key(sfe_womatl_dev,end=*next)
+					if pos(sfe_womastr_key$=this_key$)=1 then record_found=1
+
+					if !record_found then
+						sfe_wooprtn_dev=fnget_dev("SFE_WOOPRTN")
+						read(sfe_wooprtn_dev,key=sfe_womastr_key$,dom=*next)
+						this_key$=key(sfe_wooprtn_dev,end=*next)
+						if pos(sfe_womastr_key$=this_key$)=1 then record_found=1
+					endif
+
+					if !record_found then
+						sfe_wosubcnt_dev=fnget_dev("SFE_WOSUBCNT")
+						read(sfe_wosubcnt_dev,key=sfe_womastr_key$,dom=*next)
+						this_key$=key(sfe_wosubcnt_dev,end=*next)
+						if pos(sfe_womastr_key$=this_key$)=1 then record_found=1
+					endif
+
+					if !record_found then
+						rem --- Bill hasn't been exploded yet for this WO
+						callpoint!.setDevObject("new_rec","Y")
+
+						key_pfx$=sfe_womastr_key$
+						dim dflt_data$[3,1]
+						dflt_data$[1,0]="FIRM_ID"
+						dflt_data$[1,1]=firm_id$
+						dflt_data$[2,0]="WO_LOCATION"
+						dflt_data$[2,1]=wo_location$
+						dflt_data$[3,0]="WO_NO"
+						dflt_data$[3,1]=wo_no$
+
+						call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:							"SFE_WOMATL",
+:							stbl("+USER_ID"),
+:							"MNT",
+:							key_pfx$,
+:							table_chans$[all],
+:							"",
+:							dflt_data$[all]
+
+						callpoint!.setDevObject("new_rec","N")
+					endif
+				endif
+			endif
+		endif
+	endif
+
 
 rem --- See if any transactions exist - disable WO Type if so
 

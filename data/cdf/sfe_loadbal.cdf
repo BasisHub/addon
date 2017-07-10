@@ -20,7 +20,7 @@ rem --- Default Op Code to first in the file
 	dim opcode$:callpoint!.getDevObject("opcode_tpl")
 
 	read (opcode_dev,key=firm_id$,dom=*next)
-	read record (opcode_dev,dom=*next) opcode$
+	read record (opcode_dev,dom=*next,end=*break) opcode$
 	if firm_id$=opcode.firm_id$
 		callpoint!.setColumnData("SFE_LOADBAL.OP_CODE",opcode.op_code$,1)
 	endif

@@ -40,6 +40,33 @@ rem --- Initializations
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
 
+rem --- The FISCAL_CAL auto-launch task was renamed WARNFISCAL so that it executes after the INIT_DATA task (see Bug 9081).
+rem --- Need to remove the old FISCAL_CAL record that might still be in ads_autolaunch.
+ 
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADS_AUTOLAUNCH",   open_opts$[1]="OTA@"
+    gosub open_tables
+    ads_autolaunch_dev=num(open_chans$[1]); dim ads_autolaunch$:open_tpls$[1]
+
+    wk$=fattr(ads_autolaunch$,"PROCESS_ID")
+    process_id$=pad("FISCAL_CAL",dec(wk$(10,2)))
+        
+    extractrecord(ads_autolaunch_dev,key=process_id$,dom=*next)ads_autolaunch$
+    if ads_autolaunch.process_id$=process_id$ then
+        if ads_autolaunch.process_status$="C" then
+            rem --- Remove Completed old FISCAL_CAL task
+            rem --- Can't remove in FISCAL_CAL task because causes error 11 in Barista's bax_auto_launch.bbj
+            remove(ads_autolaunch_dev,key=process_id$,dom=*next)
+        else
+            rem --- Set old FISCAL_CAL task as Completed, then exit this task
+            ads_autolaunch.process_status$="C"
+            ads_autolaunch$ = field(ads_autolaunch$)
+            writerecord(ads_autolaunch_dev)ads_autolaunch$
+            goto done
+        endif
+    endif
+
 rem --- Get BBTranslator object Translate!
 
     if Translate!=null() then 
