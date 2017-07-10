@@ -1,3 +1,24 @@
+[[SFE_WOMASTR.SLS_ORD_SEQ_REF.AVAL]]
+	rem --- Warn if changing link info for a linked WO
+	sls_ord_seq_ref$=callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF")
+	if num(sls_ord_seq_ref$)>0 and callpoint!.getUserInput()<>sls_ord_seq_ref$ then
+		msg_id$="SF_CHANGE_SO_LINK"
+		dim msg_tokens$[2]
+		msg_tokens$[1]=callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
+		msg_tokens$[2]=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+		gosub disp_message
+		if msg_opt$<>"Y" then
+			callpoint!.setColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF",sls_ord_seq_ref$,1)
+			callpoint!.setStatus("ACTIVATE-ABORT")
+			break
+		endif
+
+		rem --- Add WO comment with the changed SO link info plus audit info.
+		wo_comment$ =Translate!.getTranslation("AON_SALES_ORDER")+" "+Translate!.getTranslation("AON_DETAIL")+" "
+		wo_comment$ =wo_comment$+Translate!.getTranslation("AON_LINE")+" "+Translate!.getTranslation("AON_LINK_CHANGED_FROM")+" "
+		wo_comment$ =wo_comment$+sls_ord_seq_ref$+" " +Translate!.getTranslation("AON_TO")+" " +callpoint!.getUserInput()
+		gosub add_wo_comment
+	endif
 [[SFE_WOMASTR.WAREHOUSE_ID.AVAL]]
 rem --- Is the warehouse being changed?
 	if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOMASTR.WAREHOUSE_ID") then
@@ -158,7 +179,7 @@ rem --- Warn if this WO is linked to a Sales Order
 
 	if cvs(callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID"),2)<>"" and 
 :	cvs(callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"),2)<>"" and 
-:	cvs(callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"),2)<>"" then
+:	num(callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"))>0 then
 		msg_id$="SF_DELETE_LINKED_WO"
 		dim msg_tokens$[2]
 		msg_tokens$[1]=callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
@@ -293,16 +314,19 @@ rem --- prior to deleting a work order, need to check for open transactions; if 
 rem --- The type of code seen below is often done in BSHO, but the code at the end that changes the prompt for the Bill/Item control
 rem --- won't work there (too late).
 
+rem --- Initializations
+
+	use ::opo_SalesOrderCreateWO.aon::SalesOrderCreateWO
+
 rem --- Set new record flag
 
 	callpoint!.setDevObject("new_rec","Y")
 	callpoint!.setDevObject("mark_to_explode",""); rem --- this needs to be initialized for sfe_womatl form here
 	callpoint!.setDevObject("explode_bills","N")
 
-
 rem --- Open tables
 
-	num_files=25
+	num_files=26
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="SFS_PARAMS",open_opts$[2]="OTA"
@@ -329,6 +353,7 @@ rem --- Open tables
 	open_tables$[23]="SFE_WOMATISD",open_opts$[23]="OTA"
 	open_tables$[24]="SFE_WOLSISSU",open_opts$[24]="OTA"
 	open_tables$[25]="SFE_WOLOTSER",open_opts$[25]="OTA"
+	open_tables$[26]="SFE_WOMASTR",open_opts$[26]="OTA@"
 
 	gosub open_tables
 
@@ -633,7 +658,7 @@ rem --- As necessary, explode Bills for Sales Order auto-generated WOs
 :		callpoint!.getColumnData("SFE_WOMASTR.WO_TYPE")=callpoint!.getDevObject("op_create_wo_typ") then
 			rem --- This is a planned WO of the type created by OP
 			if cvs(callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID"),2)<>"" and cvs(callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"),2)<>"" and
-:			cvs(callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"),2)<>"" then
+:			num(callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"))>0 then
 				rem --- This WO is linked to a Sales Order
 				bmm_billmast=fnget_dev("BMM_BILLMAST")
 				dim bmm_billmast$:fnget_tpl$("BMM_BILLMAST")
@@ -987,6 +1012,10 @@ rem --- Schedule the Work Order
 	callpoint!.setDevObject("wo_location",callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION"))
 	callpoint!.setDevObject("order_no",callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"))
 	callpoint!.setDevObject("item_id",callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"))
+	callpoint!.setDevObject("customer_id",callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID"))
+	callpoint!.setDevObject("order_no",callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"))
+	callpoint!.setDevObject("sls_ord_seq_ref",callpoint!.getColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF"))
+	callpoint!.setDevObject("prev_estcmp_date",callpoint!.getColumnData("SFE_WOMASTR.ESTCMP_DATE"))
 
 	sched_flag$=callpoint!.getColumnData("SFE_WOMASTR.SCHED_FLAG")
 	eststt_date$=callpoint!.getColumnData("SFE_WOMASTR.ESTSTT_DATE")
@@ -1024,7 +1053,28 @@ rem --- Schedule the Work Order
 [[SFE_WOMASTR.ORDER_NO.AVAL]]
 rem --- Validate Open Sales Order
 
-	if cvs(callpoint!.getUserInput(),2)<>cvs(callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"),2)
+	rem --- Warn if changing link info for a linked WO
+	order_no$=callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
+	if cvs(order_no$,2)<>"" and callpoint!.getUserInput()<>order_no$ then
+		msg_id$="SF_CHANGE_SO_LINK"
+		dim msg_tokens$[2]
+		msg_tokens$[1]=order_no$
+		msg_tokens$[2]=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+		gosub disp_message
+		if msg_opt$<>"Y" then
+			callpoint!.setColumnData("SFE_WOMASTR.ORDER_NO",order_no$,1)
+			callpoint!.setStatus("ACTIVATE-ABORT")
+			break
+		endif
+
+		rem --- Add WO comment with the changed SO link info plus audit info.
+		wo_comment$ =Translate!.getTranslation("AON_SALES_ORDER")+" "+Translate!.getTranslation("AON_ORDER")+" "
+		wo_comment$ =wo_comment$+Translate!.getTranslation("AON_LINK_CHANGED_FROM")+" "
+		wo_comment$ =wo_comment$+order_no$+" " +Translate!.getTranslation("AON_TO")+" " +callpoint!.getUserInput()
+		gosub add_wo_comment
+	endif
+
+	if cvs(callpoint!.getUserInput(),2)<>cvs(order_no$,2)
 		callpoint!.setColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF","",1)
 	endif
 
@@ -1058,6 +1108,27 @@ rem --- Validate Open Sales Order
 rem --- Disable Order info if Customer not entered
 
 	if callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS")<>"C"
+		rem --- Warn if changing link info for a linked WO
+		customer_id$=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+		if cvs(customer_id$,2)<>"" and callpoint!.getUserInput()<>customer_id$ then
+			msg_id$="SF_CHANGE_SO_LINK"
+			dim msg_tokens$[2]
+			msg_tokens$[1]=callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
+			msg_tokens$[2]=customer_id$
+			gosub disp_message
+			if msg_opt$<>"Y" then
+				callpoint!.setColumnData("SFE_WOMASTR.CUSTOMER_ID",customer_id$,1)
+				callpoint!.setStatus("ACTIVATE-ABORT")
+				break
+			endif
+
+		rem --- Add WO comment with the changed SO link info plus audit info.
+		wo_comment$ =Translate!.getTranslation("AON_SALES_ORDER")+" "+Translate!.getTranslation("AON_CUSTOMER")+" "
+		wo_comment$ =wo_comment$+Translate!.getTranslation("AON_LINK_CHANGED_FROM")+" "
+		wo_comment$ =wo_comment$+customer_id$+" " +Translate!.getTranslation("AON_TO")+" " +callpoint!.getUserInput()
+		gosub add_wo_comment
+		endif
+
 		if cvs(callpoint!.getUserInput(),3)=""
 			callpoint!.setColumnEnabled("SFE_WOMASTR.ORDER_NO",0)
 			callpoint!.setColumnEnabled("SFE_WOMASTR.SLS_ORD_SEQ_REF",0)
@@ -1068,7 +1139,7 @@ rem --- Disable Order info if Customer not entered
 			callpoint!.setColumnEnabled("SFE_WOMASTR.SLS_ORD_SEQ_REF",1)
 		endif
 
-		if callpoint!.getUserInput()<>callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+		if callpoint!.getUserInput()<>customer_id$ then
 			callpoint!.setColumnData("SFE_WOMASTR.ORDER_NO","",1)
 			callpoint!.setColumnData("SFE_WOMASTR.SLS_ORD_SEQ_REF","",1)
 		endif
@@ -1393,13 +1464,11 @@ rem --- enable Release/Commit
 	endif
 [[SFE_WOMASTR.<CUSTOM>]]
 rem =========================================================
-build_ord_line:
+build_ord_line: rem --- Build Sequence list button
 rem 	cust$		input
 rem	order$		input
 rem	validate_ord$	input
 rem =========================================================
-
-rem --- Build Sequence list button
 
 	wo_cat$=callpoint!.getColumnData("SFE_WOMASTR.WO_CATEGORY")
 
@@ -1411,6 +1480,7 @@ rem --- Build Sequence list button
 	dim opc_linecode$:fnget_tpl$("OPC_LINECODE")
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
 	dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
+	sfe01_dev=fnget_dev("@SFE_WOMASTR")
 
 	ops_lines!=SysGUI!.makeVector()
 	ops_items!=SysGUI!.makeVector()
@@ -1441,13 +1511,25 @@ rem --- Build Sequence list button
 				ope11_key$=key(ope11_dev,end=*break)
 				if pos(ope_ordhdr_key$=ope11_key$)<>1 break
 				read record (ope11_dev) ope11a$
+				rem --- Verify there is an existing Sales Order detail line with TRANS_STATUS=E for the new link.
 				if pos(ope11a.trans_status$="ER")=0 then continue
+
+				rem --- Skip existing SO-WO links except to this WO
+				sfe01_key$=""
+				read(sfe01_dev,key=firm_id$+cust$+order$+ope11a.internal_seq_no$,knum="AO_CST_ORD_LINE",dom=*next)
+				sfe01_key$=key(sfe01_dev,end=*next)
+				if pos(firm_id$+cust$+order$+ope11a.internal_seq_no$=sfe01_key$)<>1 then continue
+				wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+				if sfe01_key$(len(sfe01_key$)-len(wo_no$)+1)<>wo_no$ then continue
+
 				dim opc_linecode$:fattr(opc_linecode$)
 				read record (opc_linecode,key=firm_id$+ope11a.line_code$,dom=*next)opc_linecode$
 				if wo_cat$="R" continue
 				if wo_cat$="I" and pos(opc_linecode.line_type$="SP")=0 continue
 				if wo_cat$="N" and pos(opc_linecode.line_type$="N")=0 continue
 				if wo_cat$="I"
+					rem --- If the WO Category is Inventoried (I), then verify the WO and SO items are the same.
+					if ope11a.item_id$<>callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID") then continue
 					dim ivm01a$:fattr(ivm01a$)
 					read record (ivm01_dev,key=firm_id$+ope11a.item_id$,dom=*next)ivm01a$
 					ops_lines!.addItem(ope11a.internal_seq_no$)
@@ -1487,6 +1569,21 @@ rem --- Build Sequence list button
 	ctlSeqRef!.insertItems(0,ops_list!)
 	callpoint!.setTableColumnAttribute("SFE_WOMASTR.SLS_ORD_SEQ_REF","LDAT",ldat$)
 	callpoint!.setStatus("REFRESH")
+
+	return
+
+rem =========================================================
+add_wo_comment: rem --- Add comment to next SFE_WOCMNT record(s)
+rem 	wo_comment$		input
+rem =========================================================
+
+	customer_id$=callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID")
+	order_no$=callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO")
+	wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
+	soCreateWO!=new SalesOrderCreateWO(firm_id$,customer_id$,order_no$)
+	soCreateWO!.addWOCmnt(wo_no$,wo_comment$)
+	soCreateWO!.close()
+	soCreateWO!=null()
 
 	return
 

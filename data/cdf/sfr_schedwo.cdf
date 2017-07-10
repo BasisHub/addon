@@ -36,6 +36,9 @@ rem --- Set default Start and Completion Date for Manual
 		endif
 	endif
 [[SFR_SCHEDWO.BSHO]]
+rem --- Initializations
+	use ::opo_SalesOrderCreateWO.aon::SalesOrderCreateWO
+
 rem --- set default DevObjects
 	callpoint!.setDevObject("start_date","")
 	callpoint!.setDevObject("comp_date","")
@@ -169,10 +172,6 @@ rem ========================================================
 		opcode_tpl$=callpoint!.getDevObject("opcode_tpl")
 		call "sfc_schdayfore.aon",table_chans$[all],wo_no$,f_date$,new_date$,sched_flag$,opcode_dev,status$,opcode_tpl$
 
-		if status$(1,1)="1"
-			msg_id$="SF_SUB_CHANGED"
-			gosub disp_message
-		endif
 		if status$(2,1)<>"0"
 			if status$(2,1)="1"
 				msg_id$="SF_UNSCHED_DATE"
@@ -188,11 +187,63 @@ rem ========================================================
 			endif
 		else
 			if sched_flag$="F"
+				rem --- If the Estimated Completion Date is changed, and the WO is linked to a Sales Order, 
+				rem --- warn if the new date is after the linked SO detail line ship date.
+				prev_estcmp_date$=callpoint!.getDevObject("prev_estcmp_date")
+				if new_date$<>prev_estcmp_date$ then
+					customer_id$=callpoint!.getDevObject("customer_id")
+					order_no$=callpoint!.getDevObject("order_no")
+					sls_ord_seq_ref$=callpoint!.getDevObject("sls_ord_seq_ref")
+					if soCreateWO!=null() then
+						soCreateWO!=new SalesOrderCreateWO(firm_id$,customer_id$,order_no$)
+					endif
+
+					dim opeOrdDetRec$:soCreateWO!.gettplOpeOrdDet()
+					opeOrdDetRec$=soCreateWO!.getSODetailRow(sls_ord_seq_ref$)
+					if num(sls_ord_seq_ref$)>0 and new_date$>opeOrdDetRec.est_shp_date$ then
+						msg_id$="SF_EST_COMP_DATE_Q"
+						dim msg_tokens$[5]
+						msg_tokens$[1]=order_no$
+						msg_tokens$[2]=customer_id$
+						msg_tokens$[3]=fndate$(new_date$)
+						msg_tokens$[4]=fndate$(opeOrdDetRec.est_shp_date$)
+						msg_tokens$[5]=fndate$(prev_estcmp_date$)
+						gosub disp_message
+						if msg_opt$<>"Y" then
+							status$(2,1)="6"
+						else
+							rem --- Add WO comment with the changed estimated completion date info plus audit info.
+							wo_comment$ =Translate!.getTranslation("AON_EST")+" "+Translate!.getTranslation("AON_COMP")+" "
+							wo_comment$ =wo_comment$+Translate!.getTranslation("AON_DATE")+" "+fndate$(new_date$)+" "
+							wo_comment$ =wo_comment$+Translate!.getTranslation("AON_CHANGED_TO")+" "+Translate!.getTranslation("AON_AFTER")+" "
+							wo_comment$ =wo_comment$+Translate!.getTranslation("AON_LINKED")+" "+Translate!.getTranslation("AON_SALES_ORDER")+" "
+							wo_comment$ =wo_comment$+Translate!.getTranslation("AON_SHIP_DATE")+" "+fndate$(opeOrdDetRec.est_shp_date$)
+							soCreateWO!.addWOCmnt(wo_no$,wo_comment$)
+						endif
+					endif
+					soCreateWO!.close()
+					soCreateWO!=null()
+				endif
 				callpoint!.setColumnData("SFR_SCHEDWO.ESTCMP_DATE",new_date$,1)
 			else
 				callpoint!.setColumnData("SFR_SCHEDWO.ESTSTT_DATE",new_date$,1)
+			endif
+			if status$(1,1)="1" and status$(2,1)="0" then
+				msg_id$="SF_SUB_CHANGED"
+				gosub disp_message
 			endif
 		endif
 	endif
 
 	return
+
+rem #include fndate.src
+
+	def fndate$(q$)
+		q1$=""
+		q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+		if q1$="" q1$=q$
+		return q1$
+	fnend
+
+rem #endinclude fndate.src

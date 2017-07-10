@@ -36,6 +36,7 @@ rem --- Get 'IN' SPROC parameters
     print_prices$ =  sp!.getParameter("PRINT_PRICES")
     mult_wh$ =       sp!.getParameter("MULT_WH")
 	barista_wd$ =    sp!.getParameter("BARISTA_WD")
+    woInfo_1abels$ = sp!.getParameter("WO_INFO_LABELS")
 
 	chdir barista_wd$
 
@@ -46,22 +47,36 @@ rem --- create the in memory recordset for return
 	dataTemplate$ = dataTemplate$ + "price_raw:c(1*), price_masked:c(1*), "
 	dataTemplate$ = dataTemplate$ + "location:c(1*),internal_seq_no:c(1*), "
 	dataTemplate$ = dataTemplate$ + "item_is_ls:c(1), linetype_allows_ls:c(1), carton:c(1*), "
-    dataTemplate$ = dataTemplate$ + "whse_message:c(1*), whse_msg_sfx:c(1*), ship_qty_raw:c(1*)"
+    dataTemplate$ = dataTemplate$ + "whse_message:c(1*), whse_msg_sfx:c(1*), ship_qty_raw:c(1*), "
+    dataTemplate$ = dataTemplate$ + "wo_info1:c(1*), wo_info2:c(1*)"
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 	
-rem --- Initializationas
+rem --- Initializations
+    sf$="N"
+    if cvs(woInfo_1abels$,3)<>"" then sf$="Y"
+
+    dim woInfoLabel$[5]
+    index=1
+    xpos=pos(";"=woInfo_1abels$)
+    while xpos
+        woInfoLabel$[index]=woInfo_1abels$(1,xpos-1)
+        index=index+1
+        woInfo_1abels$=woInfo_1abels$(xpos+1)
+        xpos=pos(";"=woInfo_1abels$)
+    wend
 	
 rem --- Open Files    
 rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 
-    files=4,begfile=1,endfile=files
+    files=iff(sf$="Y",5,4),begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]    
 
     files$[1]="ivm-01",      ids$[1]="IVM_ITEMMAST"
     files$[2]="opt-11",      ids$[2]="OPE_INVDET"
     files$[3]="opm-02",      ids$[3]="OPC_LINECODE"
     files$[4]="ivm-02",      ids$[4]="IVM_ITEMWHSE"
+    if sf$="Y" then files$[5]="sfe-01",ids$[5]="SFE_WOMASTR"
 
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
 
@@ -82,6 +97,11 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     dim ope11a$:templates$[2]
     dim opm02a$:templates$[3]
     dim ivm02a$:templates$[4]
+    
+    if sf$="Y" then
+        sfe01_dev=channels[5]
+        dim sfe01a$:templates$[5]
+    endif
 
 rem --- Main
 
@@ -109,7 +129,9 @@ rem --- Main
             whse_message$ =       ""
             whse_msg_sfx$ =       ""
             ship_qty_raw$ =       ""
-			
+            wo_info1$ =           ""
+            wo_info2$ =           ""
+            			
             read record (ope11_dev, end=*break) ope11a$
 
             if firm_id$     <> ope11a.firm_id$     then break
@@ -196,6 +218,16 @@ line_detail: rem --- Item Detail
 				item_desc$= item_description$
 			endif
 
+            if sf$="Y" then
+                redim sfe01a$
+                read(sfe01_dev,key=firm_id$+customer_id$+order_no$+ope11a.internal_seq_no$,knum="AO_CST_ORD_LINE",dom=*next)
+                readrecord(sfe01_dev,end=*endif)sfe01a$
+                if sfe01a.firm_id$+sfe01a.customer_id$+sfe01a.order_no$+sfe01a.sls_ord_seq_ref$=firm_id$+customer_id$+order_no$+ope11a.internal_seq_no$ then
+                    wo_info1$ = woInfoLabel$[1]+": "+sfe01a.wo_no$+"   "+woInfoLabel$[2]+": "+sfe01a.wo_status$+"   "+woInfoLabel$[3]+": "+cvs(str(sfe01a.sch_prod_qty:qty_mask$),3)
+                    wo_info2$ = woInfoLabel$[4]+": "+fndate$(sfe01a.eststt_date$)+"   "+woInfoLabel$[5]+": "+fndate$(sfe01a.estcmp_date$)
+                endif
+            endif
+
 			data! = rs!.getEmptyRecordData()
 			data!.setFieldValue("ORDER_QTY_MASKED", order_qty_masked$)
 			data!.setFieldValue("SHIP_QTY", ship_qty$)
@@ -213,6 +245,8 @@ line_detail: rem --- Item Detail
             data!.setFieldValue("WHSE_MESSAGE",whse_message$)
             data!.setFieldValue("WHSE_MSG_SFX",whse_msg_sfx$)
             data!.setFieldValue("SHIP_QTY_RAW", ship_qty_raw$)
+            data!.setFieldValue("WO_INFO1", wo_info1$)
+            data!.setFieldValue("WO_INFO2", wo_info2$)
 
 			rs!.insert(data!)		
 
@@ -268,6 +302,8 @@ rem --- return a final row that's empty except for the whse_message$, which will
     data!.setFieldValue("WHSE_MESSAGE",whse_message$);rem whse_message$ contains key to prop file and gets translated back in main report using str() function
     data!.setFieldValue("WHSE_MSG_SFX",whse_msg_sfx$)
     data!.setFieldValue("SHIP_QTY_RAW", "")
+    data!.setFieldValue("WO_INFO1", "")
+    data!.setFieldValue("WO_INFO2", "")
     
 	rs!.insert(data!)    
 
@@ -276,6 +312,15 @@ rem --- Tell the stored procedure to return the result set.
 	sp!.setRecordSet(rs!)
 
 	goto std_exit
+
+rem --- Functions
+
+    def fndate$(q$)
+        q1$=""
+        q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
+        if q1$="" q1$=q$
+        return q1$
+    fnend
 
 	
 sproc_error:rem --- SPROC error trap/handler

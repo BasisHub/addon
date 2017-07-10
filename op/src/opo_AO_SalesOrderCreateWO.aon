@@ -59,8 +59,8 @@ rem --- Use statements and declares
                     rem  woVect! index = 10 (WO_ESTCMPDATE): WO estimated completion date when linked WO exists
                     rem  woVect! index = 11 (WO_TYPE): WO Type when linked WO exists
                     rem  woVect! index = 12 (WARNINGS): Warnings
-        field protected BBjString maskIvU$
-        field protected BBjString maskSfU$
+        field public BBjString maskIvU$
+        field public BBjString maskSfU$
         field protected BBjString orderNo$
         field protected BBjString tplAdsMasks$
         field protected BBjString tplBmcOpCodes$
@@ -69,7 +69,7 @@ rem --- Use statements and declares
         field protected BBjString tplIvmItemMast$
         field protected BBjString tplIvmItemWhse$
         field protected BBjString tplIvsParams$
-        field protected BBjString tplOpeOrdDet$
+        field public BBjString tplOpeOrdDet$
         field protected BBjString tplOpsParams$
         field protected BBjString tplSfcWOTypeCd$
         field protected BBjString tplSfeWOComnt$
@@ -286,7 +286,7 @@ addSODetailLine_error:rem --- Method error trap/handler
         rem  * @param BBjString wo_no$
         rem  * @param BBjString cmnt$
         rem  */
-        method protected void addWOCmnt(BBjString wo_no$, BBjString cmnt$)
+        method public void addWOCmnt(BBjString wo_no$, BBjString cmnt$)
             seterr addWOCmnt_error
 
             rem --- Get audit info for this comment
@@ -536,6 +536,7 @@ adjustQtyShipped_2_error:rem --- Method error trap/handler
                     oldQtyShipped=woVect!.getItem(#SOLINE_SHIPQTY)
                     startAvailable=(ivmItemWhseRec.qty_on_hand+oldQtyShipped)-qty_committed
                     qtyNeeded=newQtyShipped-(startAvailable+qtyOnOrder)
+                    qtyNeeded=qtyNeeded-#otherPlannedQty(whsId$,itemId$,wo_no$)
                     if qtyNeeded<0 then qtyNeeded=0
 
                     rem --- Warn if the quantity needed for the new ship quantity is greater than linked Work Order's scheduled production quantity. 
@@ -548,9 +549,6 @@ adjustQtyShipped_2_error:rem --- Method error trap/handler
                         sfeWomatlKey$=key(#devSfeWOMatl,end=*next)
                         if pos(sfeWomastrKey$=sfeWomatlKey$)=1 then
                             rem --- Material requirements alreay exist
-rem wgh ... 9036 ... stopped here
-rem ... The quantity needed %1 for the new ship quantity %2 is greater than linked WO %3 scheduled production quantity %4.
-rem ... Linked Work Order %3 has existing material requirements, so its scheduled production quantity %4 cannot be changed.
                             msg_id$="OP_MAT_REQS_EXIST"
                             dim msg_tokens$[4]
                             msg_tokens$[1]=cvs(str(qtyNeeded:#maskIvU$),3)
@@ -781,6 +779,7 @@ calculateSchProdQty_2_error:rem --- Method error trap/handler
             oldQtyShipped=woVect!.getItem(#SOLINE_SHIPQTY)
             startAvailable=(ivmItemWhseRec.qty_on_hand+oldQtyShipped)-qty_committed
             qtyNeeded=qtyShipped-(startAvailable+qtyOnOrder)
+            qtyNeeded=qtyNeeded-#otherPlannedQty(whsId$,itemId$,wo_no$)
             if qtyNeeded<0 then qtyNeeded=0
 
             rem --- Return the largest quantity
@@ -1080,7 +1079,7 @@ createWOs_error:rem --- Method error trap/handler
         rem  * 
         rem  * @return BBjString rowData$
         rem  */
-        method protected BBjString getSODetailRow(BBjString isn$)
+        method public BBjString getSODetailRow(BBjString isn$)
             seterr getSODetailRow_error
             dim rowData$:#tplOpeOrdDet$
 
@@ -1227,6 +1226,7 @@ getWOVect_error:rem --- Method error trap/handler
                     endif
                     startAvailable=ivmItemWhseRec.qty_on_hand-qty_committed
                     qtyNeeded=qtyShipped-(startAvailable+ivmItemWhseRec.qty_on_order)
+                    qtyNeeded=qtyNeeded-#otherPlannedQty(whsId$,itemId$,woVect!.getItem(#WO_NO))
 
                     rem --- Warn if sch_prod_qty isn’t enough
                     warning$=""
@@ -1284,6 +1284,49 @@ initIsnWOMap_error:rem --- Method error trap/handler
             methodret !#isnWOMap!.equals(#isnWOMap_initial!)
             
 isChanged_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Sums the scheduled production quantity for a given warehouse + item for PLANNED Work Orders
+        rem  * linked to Sales Orders EXCEPT THE GIVEN WORK ORDER.
+        rem  * 
+        rem  * @param BBjString whsId$
+        rem  * @param BBjString itemId$
+        rem  * @param BBjString woNo$
+        rem  * 
+        rem  * @return BBjNumber plannedQty
+        rem  */
+        method protected BBjNumber otherPlannedQty(BBjString whsId$, BBjString itemId$, BBjString woNo$)
+            seterr otherPlannedQty_error
+            plannedQty=0
+
+            dim sfeWOMastrRec$:#tplSfeWOMastr$
+            read(#devSfeWOMastr,key=#firmId$+whsId$+itemId$,knum="AO_WH_ITM_LOC_WO",dom=*next)
+            while 1
+                key$=key(#devSfeWOMastr,end=*break)
+                if pos(#firmId$+whsId$+itemId$=key$)<>1 then break
+                readrecord(#devSfeWOMastr)sfeWOMastrRec$
+                if sfeWOMastrRec.wo_status$<>"P" then continue
+                rem --- Don't count WOs not linked to a Sals Order because quantity has not been committed in inventory.
+                if cvs(sfeWOMastrRec.customer_id$+sfeWOMastrRec.order_no$,2)="" and num(sfeWOMastrRec.sls_ord_seq_ref$)=0 then continue
+                plannedQty=plannedQty+sfeWOMastrRec.sch_prod_qty
+            wend
+
+            methodret plannedQty
+            
+otherPlannedQty_error:rem --- Method error trap/handler
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             if err_num=252 then
