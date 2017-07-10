@@ -94,7 +94,6 @@ rem --- Open files with adc (Change from adc to bac once Barista is enhanced)
     files$[1]="ivm-01",    ids$[1]="IVM_ITEMMAST"
     files$[2]="sfs_params",ids$[2]="SFS_PARAMS"
     files$[3]="ivs_params",ids$[3]="IVS_PARAMS" 
-    files$[4]="gls_params",ids$[4]="GLS_PARAMS"     
     files$[5]="sft-01",    ids$[5]="SFT_OPNOPRTR"
     files$[6]="sft-03",    ids$[6]="SFT_CLSOPRTR"
     files$[7]="sft-21",    ids$[7]="SFT_OPNMATTR"
@@ -113,7 +112,6 @@ rem --- Open files with adc (Change from adc to bac once Barista is enhanced)
     ivm_itemmast_dev=channels[1]
     sfs_params=channels[2]
     ivs_params=channels[3]  
-    gls_params=channels[4]
     
     sft01a_dev=channels[5]
     sft03a_dev=channels[6]
@@ -127,7 +125,6 @@ rem --- Dimension string templates
     dim ivm_itemmast$:templates$[1]
     dim sfs_params$:templates$[2]
     dim ivs_params$:templates$[3]
-    dim gls_params$:templates$[4]   
     sft01_tpls$=templates$[5]; dim sft01a$:sft01_tpls$; rem Save template for conditional use
     sft03_tpls$=templates$[6]; dim sft03a$:sft03_tpls$; rem Save template for conditional use
     sft21_tpls$=templates$[7]; dim sft21a$:sft21_tpls$; rem Save template for conditional use
@@ -137,8 +134,6 @@ rem --- Dimension string templates
 
 rem --- Retrieve parameter records
 rem       NOTE: Params are checked to exist in initial overlay
-        gls_params_key$=firm_id$+"GL00"
-        find record (gls_params,key=gls_params_key$) gls_params$
     
         sfs_params_key$=firm_id$+"SF00"
         find record (sfs_params,key=sfs_params_key$) sfs_params$

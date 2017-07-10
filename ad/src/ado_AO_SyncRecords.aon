@@ -1,0 +1,409 @@
+rem ==========================================================================
+rem --- ado_SyncRecords.aon 
+rem --- AO_SyncRecords class (SyncRecords superclass)
+rem --- Superclass used to synchronize specified sync/*.xml files.
+rem --- 
+rem --- AddonSoftware Version 17.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+rem /**
+rem  * This class provides a utility that, given a list of sync/*.xml files:
+rem  * (1) removes the corresponding record from the corresponding table/file,
+rem  * (2) inserts a new record in the corresponding table/file using the data in the matching file
+rem  * in Addon's standard aon/data/sync directory, and
+rem  * (3) make backup sync file for removed record.
+rem  *    ***** NOTE: Currently (v17) does not handle multiple record XML files. *****
+rem  */
+
+    use java.io.File
+    use java.util.Properties
+    use java.util.Vector
+
+    use ::ado_file.src::FileObject
+
+    class public AO_SyncRecords
+        field protected BBjString aonDir$
+        field protected BBjNumber BLOCKSIZE = 2^20
+        field protected BBjString className$ = "SyncRecords"
+        field protected BBjString syncDir$
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjString aonDir$
+        rem  */
+        method public AO_SyncRecords(BBjString dir$)
+            seterr SyncRecords_error
+
+            rem --- Flip directory path separators
+            dir$=FileObject.fixPath(dir$, "/")
+            
+            rem --- Validate is a directory
+            dir!=new File(dir$)
+            if !dir!.isDirectory() then
+                seterr 0   
+                x$=stbl("+THROWN_ERR","TRUE")   
+                throw #className$+": Invalid directory: "+dir$,300
+            endif
+
+            rem --- Remove trailing path separator
+            if dir$(len(dir$),1)="/" then dir$=dir$(1,len(dir$)-1)
+
+            rem --- Validate data/sync directory location
+            syncDir$=dir$+"/data/sync"
+            syncDir!=new File(syncDir$)
+            if !syncDir!.isDirectory() then
+                seterr 0   
+                x$=stbl("+THROWN_ERR","TRUE")
+                throw #className$+": Missing required directory: "+syncDir$,301
+            endif
+
+            rem --- Initialize paths
+            #aonDir$=dir$
+            #syncDir$=syncDir$
+            
+            methodret
+            
+SyncRecords_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Filters out of the given vector sync files for records we do not want to remove/overwrite.
+        rem  * For example, user data in ads_sequences~*.xml and ads_masks~*.xml must be preserved.
+        rem  *    ***** NOTE: Currently (v17) does not handle multiple record XML files. *****
+        rem  *    ***** NOTE: This currently (v17) only affects adm_rolealias~[all].xml. *****
+        rem  *
+        rem  * @param BBjVector syncFiles!
+        rem  * 
+        rem  * @return BBjVector tempVect!
+        rem  */
+        method protected BBjVector filterRecords(BBjVector syncFiles!)
+            seterr filterRecords_error
+
+            tempVect!=BBjAPI().makeVector()
+            if syncFiles!.size() then
+                for i=0 to syncFiles!.size()-1
+                    file$=syncFiles!.getItem(i)
+                    
+                    rem --- File must have .xml suffix
+                    if len(file$)<5 then continue
+                    if file$(len(file$)-3)<>".xml" then continue
+                    
+                    rem --- Cannot be a multiple record xml file.
+                    if pos("~["=file$) then continue
+                    
+                    rem --- Skip ads_sequences~*.xml files
+                    if pos("ads_sequences~"=file$) then continue
+
+                    rem --- Skip ads_masks~*.xml files
+                    if pos("ads_masks~"=file$) then continue
+
+                    tempVect!.addItem(file$)
+                next i
+            endif
+
+            methodret tempVect!
+            
+filterRecords_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Inserts new records for given sync files into tables.
+        rem  *
+        rem  * @param BBjVector syncFiles!
+        rem  */
+        method protected void insertRecords(BBjVector syncFiles!)
+            seterr insertRecords_error
+            
+            rem --- Create temporay directory for files being sync'd in
+            adminBackupDir$=#aonDir$+"/data/admin_backup"
+            syncTmpDir$=#syncDir$+"/tmp"
+            mkdir syncTmpDir$,err=*next
+
+            rem --- Copy sync files to temporary directory
+            if syncFiles!.size() then
+                for i=0 to syncFiles!.size()-1
+                    file$=syncFiles!.getItem(i)
+                    if pos("~{"=file$) then continue; rem --- Record have already been removed, so skip "delete" sync files here
+
+                    sourceChan=unt
+                    open(sourceChan,isz=-1,err=*continue)#syncDir$+"/"+file$
+                    targetChan=unt
+                    open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")syncTmpDir$+"/"+file$
+                    while 1
+                        readrecord(sourceChan,siz=#BLOCKSIZE,end=*break)record$
+                        writerecord(targetChan)record$
+                    wend
+                    close(sourceChan)
+                    close(targetChan)
+                next i
+            endif
+
+            rem --- Tables must already be open and in table_chans$[all] for bax_xmlrec_imp.bbj
+            if syncFiles!.size() then
+                rd_num_files=1
+                dim rd_open_tables$[1:rd_num_files],rd_open_opts$[1:rd_num_files],rd_open_chans$[1:rd_num_files],rd_open_tpls$[1:rd_num_files]
+                for i=0 to syncFiles!.size()-1
+                    file$=syncFiles!.getItem(i)
+                    
+                    rem --- Parse fields in xml sync file
+                    fieldsProp!=#parseSyncFile(file$)
+                    if fieldsProp!.size()=0 then continue
+                    
+                    rem --- Open table
+                    table_alias$=fieldsProp!.getProperty("BARISTA_RECORD_TABLE")
+                    rd_open_tables$[1]=table_alias$,rd_open_opts$[1]="OTA"
+                    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:                       rd_open_beg,
+:                       rd_open_end,
+:                       rd_open_tables$[all],
+:                       rd_open_opts$[all],
+:                       rd_open_chans$[all],
+:                       rd_open_tpls$[all],
+:                       rd_table_chans$[all],
+:                       rd_open_batch,
+:                       rd_open_status$
+                    if rd_open_status$<>"" then
+                        seterr 0
+                        x$=stbl("+THROWN_ERR","TRUE")   
+                        throw #className$+": getDev(): Cannot open table: "+table_alias$,302
+                    endif
+                next i
+            endif
+            
+            rem --- Insert records from sync files in temporary directory
+            imp_path$=syncTmpDir$+"/"
+            call stbl("+DIR_SYP")+"bax_xmlrec_imp.bbj","SYNC",imp_path$,rd_table_chans$[all],status$
+            if status$<>"" then continue
+
+            rem --- Remove temporary sync files and directory
+            if syncFiles!.size() then
+                for i=0 to syncFiles!.size()-1
+                    file$=syncFiles!.getItem(i)
+                    
+                    erase syncTmpDir$+"/"+file$,err=*next
+                next i
+            endif
+            rmdir syncTmpDir$,err=*next
+            methodret
+            
+insertRecords_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Parse fields in xml sync file.
+        rem  *
+        rem  * @param BBjString xmlFile$
+        rem  * 
+        rem  * @return Properties fieldsProp!
+        rem  */
+        method protected Properties parseSyncFile(BBjString xmlFile$)
+            seterr parseSyncFile_error
+            fieldsProp!= new Properties()
+
+            exists=0
+            sourceChan=unt
+            open(sourceChan,isz=-1,err=*next)#syncDir$+"/"+xmlFile$; exists=1
+            if exists then
+                while 1
+                    read(sourceChan,end=*break)record$
+                    if record$="" or pos("<"=record$,1,0)<2 or pos("</"=record$)=0 or (pos("<<<"=record$)+pos(">>>"=record$))<>0 then continue
+                
+                    propStart=pos("<"=record$)+1
+                    propEnd=pos(">"=record$(propStart))-1
+                    tempProp$=record$(propStart,propEnd)
+                    prop$=tempProp$(1,pos(" "=tempProp$+" ")-1)
+                    
+                    valueStart=pos(">"=record$)+1
+                    valueEnd=pos("</"=record$(valueStart))-1
+                    value$=record$(valueStart,valueEnd)
+                    
+                    fieldsProp!.put(cvs(prop$,4),value$)
+                wend
+                close(sourceChan)
+            endif
+
+            methodret fieldsProp!
+            
+parseSyncFile_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Removes table records for given sync files, and saves copy of sync file for removed records.
+        rem  *
+        rem  * @param BBjVector syncFiles!
+        rem  */
+        method protected void removeRecords(BBjVector syncFiles!)
+            seterr removeRecords_error
+
+            rem --- Create backup directories as necessary
+            adminBackupDir$=#aonDir$+"/data/admin_backup"
+            tmpDir$=adminBackupDir$+"/tmp_bak"
+            bakDir$=adminBackupDir$+"/bak"
+            mkdir adminBackupDir$,err=*next
+            mkdir tmpDir$,err=*next
+            mkdir bakDir$,err=*next
+
+            if syncFiles!.size() then
+                for i=0 to syncFiles!.size()-1
+                    file$=syncFiles!.getItem(i)
+                    
+                    rem --- Parse fields in xml sync file
+                    fieldsProp!=#parseSyncFile(file$)
+                    if fieldsProp!.size()=0 then continue
+                    
+                    rem --- Get key fields for this table
+                    curr_key$=""
+                    table_alias$=fieldsProp!.getProperty("BARISTA_RECORD_TABLE")
+                    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"",key_template$,rd_table_chans$[all],status$
+                    if status$<>"" then continue
+                    dim keyTmpl$:key_template$
+                    keyFields$=fattr(keyTmpl$,"")
+                    nextPos=pos($0A$=keyFields$)
+                    while nextPos
+                        thisField$=keyFields$(1,nextPos-1)
+                        curr_key$=curr_key$+fieldsProp!.getProperty(thisField$)
+                        
+                        keyFields$=keyFields$(nextPos+1)
+                        nextPos=pos($0A$=keyFields$)
+                    wend
+
+                    rem --- Backup this sync record
+                    exp_path$=tmpDir$+"/"
+                    call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj",table_alias$,curr_key$,exp_path$,table_chans$[all],"",status$
+                    if status$<>"" then continue
+
+                    rem --- Remove record
+                    table_dev=num(table_chans$[0,0](pos(pad(table_alias$,17)=table_chans$[0,0],20)+17,3))
+                    remove(table_dev,key=curr_key$,dom=*next)
+                next i
+            endif
+
+            rem --- Rename backed up sync files and move them to admin_bakup/bak directory
+            tmpDir!=new File(tmpDir$)
+            tmpfileVector!=new Vector(java.util.Arrays.asList(tmpDir!.list()))
+            if(tmpfileVector!.size()>0) then
+                testChan=unt
+                for i=0 to tmpfileVector!.size()-1
+                    tmpName$=cast(BBjString,tmpfileVector!.get(i))
+                    tmpFile!=new File(tmpDir!,tmpName$)
+                                    
+                    rem --- Find unique name for the backup file
+                    bakFile$=bakDir$+"/"+tmpName$+".bak1"
+                    j=1
+                    while 1
+                        open(testChan,err=*break)bakFile$
+                        close(testChan)
+                        j=j+1
+                        bakFile$=bakDir$+"/"+tmpName$+".bak"+str(j)
+                    wend
+                    
+                    rem --- Move the temp file to the backup file
+                    rename tmpFile!.getPath() to bakFile$, err=*next
+                next i
+            endif
+            rmdir tmpDir$,err=*next
+
+            methodret
+            
+removeRecords_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Removes table records for given sync files (and saves copy of sync file for removed records), and
+        rem  * inserts new records.
+        rem  *    ***** NOTE: Currently (v17) does not handle multiple record XML files. *****
+        rem  *
+        rem  * @param BBjVector syncFiles!
+        rem  */
+        method public void updateRecords(BBjVector syncFiles!)
+            seterr updateRecords_error
+
+            rem --- Filter records
+            filteredFiles!=#filterRecords(syncFiles!)
+
+            rem --- Remove records
+            #removeRecords(filteredFiles!)
+
+            rem --- Insert records
+            #insertRecords(filteredFiles!)
+
+            methodret
+            
+updateRecords_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+	
+classend

@@ -1,3 +1,6 @@
+[[SFR_WODETRPT.BILL_NO.BINQ]]
+	whse$=callpoint!.getColumnData("SFR_WODETRPT.WAREHOUSE_ID")
+        callpoint!.setDevObject("whse",whse$)
 [[SFR_WODETRPT.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 
@@ -15,11 +18,6 @@ rem --- Validate against BOM_BILLMAST
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[SFR_WODETRPT.BFMC]]
-rem --- Set Custom Query for BOM Item Number
-
-	callpoint!.setTableColumnAttribute("SFR_WODETRPT.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("SFR_WODETRPT.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[SFR_WODETRPT.<CUSTOM>]]
 #include std_missing_params.src
 [[SFR_WODETRPT.REPORT_SEQ.AVAL]]

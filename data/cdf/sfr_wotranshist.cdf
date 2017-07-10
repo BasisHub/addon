@@ -15,11 +15,6 @@ rem --- Validate against BOM_BILLMAST
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[SFR_WOTRANSHIST.BFMC]]
-rem --- Set Custom Query for BOM Item Number
-
-	callpoint!.setTableColumnAttribute("SFR_WOTRANSHIST.BILL_NO_1","IDEF","BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("SFR_WOTRANSHIST.BILL_NO_2","IDEF","BOM_LOOKUP")
 [[SFR_WOTRANSHIST.REPORT_SEQ.AVAL]]
 rem ---- If By Bill and a whse hasn't been entered, default whse
 

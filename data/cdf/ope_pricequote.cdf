@@ -44,6 +44,7 @@ if cvs(callpoint!.getColumnData("OPE_PRICEQUOTE.ITEM_ID"),2) <>"" then
 :		""
 endif
 [[OPE_PRICEQUOTE.<CUSTOM>]]
+#include std_functions.src
 rem --- Build Pricing records
 build_arrays:
 	if cvs(cust_id$,2)="" or cvs(wh$,2)="" or cvs(item$,2)=""
@@ -138,6 +139,22 @@ determine_price:
 	endif
 return
 [[OPE_PRICEQUOTE.ITEM_ID.AVAL]]
+rem "Inventory Inactive Feature"
+item_id$=callpoint!.getUserInput()
+ivm01_dev=fnget_dev("IVM_ITEMMAST")
+ivm01_tpl$=fnget_tpl$("IVM_ITEMMAST")
+dim ivm01a$:ivm01_tpl$
+ivm01a_key$=firm_id$+item_id$
+find record (ivm01_dev,key=ivm01a_key$,err=*break)ivm01a$
+if ivm01a.item_inactive$="Y" then
+   msg_id$="IV_ITEM_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=cvs(ivm01a.item_id$,2)
+   msg_tokens$[2]=cvs(ivm01a.display_desc$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE")
+endif
+
 rem --- Validate Warehouse for this Item
 
 ivm01_dev=fnget_dev("IVM_ITEMMAST")
@@ -172,6 +189,23 @@ else
 	callpoint!.setStatus("REFRESH")
 endif
 [[OPE_PRICEQUOTE.CUSTOMER_ID.AVAL]]
+rem "Customer Inactive Feature"
+customer_id$=callpoint!.getUserInput()
+arm01_dev=fnget_dev("ARM_CUSTMAST")
+arm01_tpl$=fnget_tpl$("ARM_CUSTMAST")
+dim arm01a$:arm01_tpl$
+arm01a_key$=firm_id$+customer_id$
+find record (arm01_dev,key=arm01a_key$,err=*break) arm01a$
+if arm01a.cust_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+   msg_id$="AR_CUST_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(arm01a.customer_id$(1,customer_size),m0$)
+   msg_tokens$[2]=cvs(arm01a.customer_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE")
+endif
+
 arm01_dev=fnget_dev("ARM_CUSTMAST")
 dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
 arm02_dev=fnget_dev("ARM_CUSTDET")

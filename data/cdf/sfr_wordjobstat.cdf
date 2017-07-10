@@ -15,11 +15,6 @@ rem --- Validate against BOM_BILLMAST
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[SFR_WORDJOBSTAT.BFMC]]
-rem --- Set Custom Query for BOM Item Number
-
-	callpoint!.setTableColumnAttribute("SFR_WORDJOBSTAT.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("SFR_WORDJOBSTAT.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[SFR_WORDJOBSTAT.BSHO]]
 rem --- will open and read shop floor param to see if BOM and/or OP are installed
 rem --- then will build list for the report sequence listbutton accordingly

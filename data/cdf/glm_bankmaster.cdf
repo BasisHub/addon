@@ -1,3 +1,20 @@
+[[GLM_BANKMASTER.GL_ACCOUNT.AVAL]]
+rem "GL INACTIVE FEATURE"
+   glm01_dev=fnget_dev("GLM_ACCT")
+   glm01_tpl$=fnget_tpl$("GLM_ACCT")
+   dim glm01a$:glm01_tpl$
+   glacctinput$=callpoint!.getUserInput()
+   glm01a_key$=firm_id$+glacctinput$
+   find record (glm01_dev,key=glm01a_key$,err=*break) glm01a$
+   if glm01a.acct_inactive$="Y" then
+      call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,gl_size
+      msg_id$="GL_ACCT_INACTIVE"
+      dim msg_tokens$[2]
+      msg_tokens$[1]=fnmask$(glm01a.gl_account$(1,gl_size),m0$)
+      msg_tokens$[2]=cvs(glm01a.gl_acct_desc$,2)
+      gosub disp_message
+      callpoint!.setStatus("ACTIVATE")
+   endif
 [[GLM_BANKMASTER.AOPT-POST]]
 rem --- Check Statement Date and Amount
 
@@ -176,6 +193,7 @@ rem - Set up disabled controls
 	dctl$[6]="<<DISPLAY>>.NO_TRANS"
 	gosub disable_ctls
 [[GLM_BANKMASTER.<CUSTOM>]]
+#include std_functions.src
 rem ====================================================
 check_date: rem --- Check Statement Ending Date
 rem ====================================================
@@ -280,6 +298,12 @@ rem --- Validate Current Statement Date
 		break
 	endif
 
+rem --- Initialize displayColumns! object
+	if displayColumns!=null() then
+		use ::glo_DisplayColumns.aon::DisplayColumns
+		displayColumns!=new DisplayColumns(firm_id$)
+	endif
+
 rem --- Find G/L Record"
 	dim glm02a$:user_tpl.glm02_tpl$
 	dim glt06a$:user_tpl.glt06_tpl$
@@ -295,9 +319,9 @@ rem --- Find G/L Record"
 	endif
 
 	r0$=firm_id$+callpoint!.getColumnData("GLM_BANKMASTER.GL_ACCOUNT"),s0$=""
-	if stmtyear=priorgl s0$=r0$+"2"; rem "Use prior year actual
-	if stmtyear=currentgl s0$=r0$+"0"; rem "Use current year actual
-	if stmtyear=nextgl s0$=r0$+"4"; rem "Use next year actual
+	if stmtyear=priorgl s0$=r0$+displayColumns!.getYear("2"); rem "Use prior year actual
+	if stmtyear=currentgl s0$=r0$+displayColumns!.getYear("0"); rem "Use current year actual
+	if stmtyear=nextgl s0$=r0$+displayColumns!.getYear("4"); rem "Use next year actual
 	if s0$="" 
 		msg_id$="INVALID_DATE"
 		dim msg_tokens$[1]

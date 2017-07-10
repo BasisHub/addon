@@ -1,8 +1,18 @@
+[[SFE_LOADBAL.BSHO]]
+rem --- create the widget
+
+
+	use ::ado_util.src::util
+	gosub create_widget
+	util.resizeWindow(Form!, SysGui!)
 [[SFE_LOADBAL.ASIZ]]
 rem --- resize the chart control
 
-	bc_loadbal!=callpoint!.getDevObject("bc_loadbal")
-	if bc_loadbal!<>null() bc_loadbal!.setSize(form!.getWidth()-20, form!.getHeight()-100)
+	LBWidgetControl!=callpoint!.getDevObject("barWidgetControl")
+	if LBWidgetControl!<>null()
+		yctl!=callpoint!.getControl("SFE_LOADBAL.CHK_QUOTED")
+		LBWidgetControl!.setSize(form!.getWidth()-20, (form!.getHeight()-yctl!.getY()-yctl!.getHeight()-10))
+	endif
 [[SFE_LOADBAL.ARAR]]
 rem --- Default Op Code to first in the file
 
@@ -14,6 +24,17 @@ rem --- Default Op Code to first in the file
 	if firm_id$=opcode.firm_id$
 		callpoint!.setColumnData("SFE_LOADBAL.OP_CODE",opcode.op_code$,1)
 	endif
+
+rem --- call graphing routine
+
+		wo_open$=callpoint!.getColumnData("SFE_LOADBAL.CHK_OPENED")
+		wo_planned$=callpoint!.getColumnData("SFE_LOADBAL.CHK_PLANNED")
+		wo_quoted$=callpoint!.getColumnData("SFE_LOADBAL.CHK_QUOTED")
+		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
+		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
+		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
+
+		if cvs(op_code$,3)<>"" and cvs(beg_date$,3)<>"" and cvs(num_days$,3)<>"" then gosub set_widget_data
 [[SFE_LOADBAL.BFMC]]
 rem --- open files/init
 
@@ -58,22 +79,6 @@ rem --- open files/init
 
 	callpoint!.setDevObject("opcode_chan",num(open_chans$[1]))
 	callpoint!.setDevObject("opcode_tpl",open_tpls$[1])
-[[SFE_LOADBAL.ZOOM_LEVEL.AVAL]]
-rem --- call graphing routine
-
-	if callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL")<>callpoint!.getUserInput()
-
-		wo_open$=callpoint!.getColumnData("SFE_LOADBAL.CHK_OPENED")
-		wo_planned$=callpoint!.getColumnData("SFE_LOADBAL.CHK_PLANNED")
-		wo_quoted$=callpoint!.getColumnData("SFE_LOADBAL.CHK_QUOTED")
-		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
-		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
-		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getUserInput())
-
-		gosub create_chart
-	
-	endif
 [[SFE_LOADBAL.CHK_QUOTED.AVAL]]
 rem --- call graphing routine
 
@@ -85,9 +90,8 @@ rem --- call graphing routine
 		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
 		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
 		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		gosub create_chart
+		gosub set_widget_data
 	
 	endif
 [[SFE_LOADBAL.CHK_PLANNED.AVAL]]
@@ -101,9 +105,8 @@ rem --- call graphing routine
 		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
 		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
 		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		gosub create_chart
+		gosub set_widget_data
 
 	endif
 [[SFE_LOADBAL.CHK_OPENED.AVAL]]
@@ -116,9 +119,8 @@ rem --- call graphing routine
 		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
 		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
 		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		gosub create_chart
+		gosub set_widget_data
 
 	endif
 [[SFE_LOADBAL.BEG_WO_DATE.AVAL]]
@@ -141,9 +143,8 @@ rem --- validate this date is in calendar
 		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
 		beg_date$=callpoint!.getUserInput()
 		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		gosub create_chart
+		gosub set_widget_data
 	
 	endif
 
@@ -157,9 +158,8 @@ rem --- call graphing routine
 		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
 		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
 		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		if cvs(op_code$,3)<>"" and cvs(beg_date$,3)<>"" and cvs(num_days$,3)<>"" then gosub create_chart
+		if cvs(op_code$,3)<>"" and cvs(beg_date$,3)<>"" and cvs(num_days$,3)<>"" then gosub set_widget_data
 [[SFE_LOADBAL.DAYS_IN_MTH.AVAL]]
 rem --- call graphing routine
 
@@ -171,9 +171,8 @@ rem --- call graphing routine
 		op_code$=callpoint!.getColumnData("SFE_LOADBAL.OP_CODE")
 		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
 		num_days$=callpoint!.getUserInput()
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		gosub create_chart
+		gosub set_widget_data
 	
 	endif
 [[SFE_LOADBAL.OP_CODE.AVAL]]
@@ -200,20 +199,73 @@ rem --- call graphing routine
 		op_code$=callpoint!.getUserInput()
 		beg_date$=callpoint!.getColumnData("SFE_LOADBAL.BEG_WO_DATE")
 		num_days$=callpoint!.getColumnData("SFE_LOADBAL.DAYS_IN_MTH")
-		zoom=num(callpoint!.getColumnData("SFE_LOADBAL.ZOOM_LEVEL"))
 
-		gosub create_chart
+		gosub set_widget_data
 	
 	endif
 [[SFE_LOADBAL.<CUSTOM>]]
 use java.util.GregorianCalendar
 
+rem ========================================================
+create_widget:rem --- create bar chart widget to show scheduled v available hours
+rem ========================================================
+
+	use ::dashboard/dashboard.bbj::DashboardWidget
+	use ::dashboard/dashboard.bbj::DashboardWidgetFilter
+	use ::dashboard/widget.bbj::EmbeddedWidgetFactory
+	use ::dashboard/widget.bbj::EmbeddedWidget
+	use ::dashboard/widget.bbj::EmbeddedWidgetControl
+	use ::dashboard/widget.bbj::LineChartWidget
+	use ::dashboard/widget.bbj::BarChartWidget
+	use ::dashboard/widget.bbj::StackedBarChartWidget
+	use ::dashboard/widget.bbj::ChartWidget
+	use java.util.LinkedHashMap
+
+	ctl_name$="SFE_LOADBAL.CHK_QUOTED"
+	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
+	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
+	ctl1!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
+	ctl_name$="SFE_LOADBAL.BEG_WO_DATE"
+	ctlContext=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLC"))
+	ctlID=num(callpoint!.getTableColumnAttribute(ctl_name$,"CTLI"))
+	ctl2!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+
+	widgetX=10
+	widgetY=ctl1!.getY()+ctl1!.getHeight()+10
+	widgetWidth=form!.getWidth()-20
+	widgetHeight=widgetWidth/2
+
+	widgetName$ = "LoadBal"
+	title$ = "Scheduled vs Available Hours"
+	chartTitle$ = ""
+	domainTitle$ = ""
+	rangeTitle$ = "Hours"
+	flat=0
+	orientation=BarChartWidget.getORIENTATION_VERTICAL() 
+	legend=1
+
+	LBWidget! = EmbeddedWidgetFactory.createBarChartEmbeddedWidget(widgetName$,title$,chartTitle$,domainTitle$,rangeTitle$,flat,orientation,legend)
+	widget! = LBWidget!.getWidget()
+
+	widget!.setFontScalingFactor(0.75)
+	widget!.setDomainLabelAngle(BarChartWidget.getLABEL_POSITION_UP_45())
+	widget!.clearDataSet()
+
+	LBWidgetcontrol! = new EmbeddedWidgetControl(LBWidget!,Form!,widgetX,widgetY,widgetWidth,widgetHeight,$$)
+	LBWidgetControl!.setVisible(1)
+
+	callpoint!.setDevObject("barWidget",LBWidget!)
+	callpoint!.setDevObject("barWidgetControl",LBWidgetControl!)
+
+return
+
 rem ==============================================================
-create_chart:
+set_widget_data:
 rem --- construct chart w/ category names (i.e., days of month), bar chart title, and avail/sched hours
 rem --- called from each control's AVAL to provide immediate results
 rem --- incoming:
-rem ---		wo_opened$, wo_planned$, wo_quoted$, op_code$, beg_date$, num_days$, zoom
+rem ---		wo_opened$, wo_planned$, wo_quoted$, op_code$, beg_date$, num_days$
 rem ==============================================================
 	wo_stats$=""
 	if wo_open$="Y" then wo_stats$="O"
@@ -250,7 +302,8 @@ rem ==============================================================
 		dt_pfx$=""
 
 		for categories_ctr=0 to numCategories-1
-			day_disp$=iff(new_month,wdisp$+" "+str(dt),dt_pfx$+str(dt))	
+			rem day_disp$=iff(new_month,wdisp$+" "+str(dt),dt_pfx$+str(dt))
+			day_disp$=wdisp$+" "+str(dt)
 			daysVect!.addItem(day_disp$)
 			if new_month=1
 				dim sfm_opcalndr$:fattr(sfm_opcalndr$)
@@ -267,14 +320,10 @@ rem ==============================================================
 					sched_hrs=sched_hrs+sfe_woschdl.setup_time+sfe_woschdl.runtime_hrs
 				endif
 			wend
-			avail_hrs=num(field(sfm_opcalndr$,"HRS_PER_DAY_"+str(dt:"00")))/zoom
+			avail_hrs=num(field(sfm_opcalndr$,"HRS_PER_DAY_"+str(dt:"00")))
 			availHrsVect!.addItem(avail_hrs)
-			if zoom=1
-				rem --- see if sched > avail only when zoom isn't turned on
-				schedHrsVect!.addItem(sched_hrs)
-			else
-				schedHrsVect!.addItem(num(iff(sched_hrs>avail_hrs,avail_hrs,sched_hrs)))
-			endif
+			schedHrsVect!.addItem(sched_hrs)
+
 			dt=dt+1
 			if dt>days
 				mo=mo+1
@@ -287,33 +336,25 @@ rem ==============================================================
 				dt=1
 				new_month=1
 				wdisp$=date(jul(yr,mo,1):"%Ms")
-				if dt_pfx$="" then dt_pfx$="." else dt_pfx$=".."
+				rem if dt_pfx$="" then dt_pfx$="." else dt_pfx$=".."
 			endif
 		next categories_ctr
 
-		gosub show_chart
+		LBWidget!=callpoint!.getDevObject("barWidget")
+		widget!=LBWidget!.getWidget()
+		widget!.clearDataSet()
+
+		for categories_ctr=0 to numCategories-1
+			widget!.setDataSetValue("Available",daysVect!.getItem(categories_ctr),availHrsVect!.getItem(categories_ctr))
+			widget!.setDataSetValue("Scheduled",daysVect!.getItem(categories_ctr),schedHrsVect!.getItem(categories_ctr))
+		next categories_ctr
+
+		widget!.refresh()
+
+		LBWidgetControl!=callpoint!.getDevObject("barWidgetControl")
+		LBWidgetControl!.setVisible(1)
 
 	endif
-
-	return
-
-rem ========================================================
-show_chart:
-rem --- (re)display bar chart based on data gathered in create_chart routine
-rem --- incoming: daysVect!, availHrsVect!, schedHrsVect!
-rem ========================================================
-
-	bc_loadbal!=callpoint!.getDevObject("bc_loadbal")
-	bc_loadbal!.clearData()
-	bc_loadbal!.setSeriesName(0,"Available Hours")
-	bc_loadbal!.setSeriesName(1,"Scheduled Hours")
-
-	for categories_ctr=0 to numCategories-1
-		bc_loadbal!.setCategoryName(categories_ctr,daysVect!.getItem(categories_ctr))
-		bc_loadbal!.setBarValue(0,categories_ctr,availHrsVect!.getItem(categories_ctr))
-		bc_loadbal!.setBarValue(1,categories_ctr,schedHrsVect!.getItem(categories_ctr))
-
-	next categories_ctr
 
 	return
 
@@ -339,15 +380,3 @@ rem ========================================================
 	return
 
 #include std_missing_params.src
-[[SFE_LOADBAL.BSHO]]
-rem --- add bar chart to form
-
-	use ::ado_util.src::util
-
-	ctl_id=num(stbl("+CUSTOM_CTL"))
-
-	bc_loadbal! = form!.addBarChart(ctl_id, 10, 100, form!.getWidth()-20, max(form!.getHeight()-100,250), "Days", "Hours", 2,99,1, 1, 0)
-	callpoint!.setDevObject("bc_loadbal",bc_loadbal!)
-
-	util.resizeWindow(Form!, SysGui!)
-	

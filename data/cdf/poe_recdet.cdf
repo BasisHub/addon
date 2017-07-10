@@ -858,7 +858,6 @@ endif
 gosub validate_whse_item
 [[POE_RECDET.AGDR]]
 rem --- After Grid Display Row
-
 total_amt=num(callpoint!.getDevObject("total_amt"))
 total_amt=total_amt+round(num(callpoint!.getColumnData("POE_RECDET.QTY_RECEIVED"))*num(callpoint!.getColumnData("POE_RECDET.UNIT_COST")),2)
 callpoint!.setDevObject("total_amt",str(total_amt))
@@ -908,6 +907,21 @@ if line_type$="M" and cvs(callpoint!.getColumnData("POE_RECDET.ORDER_MEMO"),2)="
 endif
 [[POE_RECDET.ITEM_ID.AVAL]]
 rem --- Item ID - After Column Validataion
+rem "Inventory Inactive Feature"
+item_id$=callpoint!.getUserInput()
+ivm01_dev=fnget_dev("IVM_ITEMMAST")
+ivm01_tpl$=fnget_tpl$("IVM_ITEMMAST")
+dim ivm01a$:ivm01_tpl$
+ivm01a_key$=firm_id$+item_id$
+find record (ivm01_dev,key=ivm01a_key$,err=*break)ivm01a$
+if ivm01a.item_inactive$="Y" then
+   msg_id$="IV_ITEM_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=cvs(ivm01a.item_id$,2)
+   msg_tokens$[2]=cvs(ivm01a.display_desc$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE")
+endif
 
 gosub validate_whse_item
 if pos("ABORT"=callpoint!.getStatus())<>0

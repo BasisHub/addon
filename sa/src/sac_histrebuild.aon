@@ -79,7 +79,6 @@ rem --- Open/Lock files
     arm02_dev=channels[3]
     ivm01_dev=channels[4]
     ivm02_dev=channels[5]
-    gls01_dev=channels[6]
     opm02_dev=channels[7]
     opt01_dev=channels[8]
     opt11_dev=channels[9]
@@ -149,7 +148,7 @@ rem --- Main read
         read record (opt01_dev,end=*break) opt01a$
         if cvs(theFirm$,2)<>"" and opt01a.firm_id$<>theFirm$ break
         if firm_id$<>opt01a.firm_id$ then gosub init_firm
-        if opt01a.invoice_type$<>"S" then continue
+        if skip_firm or opt01a.invoice_type$<>"S" then continue
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
 
 rem --- Position Invoice History Detail File
@@ -184,10 +183,11 @@ rem --- Update Sales Analysis
             find record (ivm02_dev,key=firm_id$+opt11a.warehouse_id$+opt11a.item_id$,dom=*next) ivm02a$
             if ivm01a.stock_level$="W" vendor$=ivm02a.vendor_id$ else vendor$=ivm01a.vendor_id$
             if opt11a.trans_status$="U" then
-                call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,opt01a.invoice_date$,period$,year$
+                call pgmdir$+"adc_fiscalperyr.aon",firm_id$,opt01a.invoice_date$,period$,year$,table_chans$[all],status
             else
-                call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,opt01a.shipmnt_date$,period$,year$
+                call pgmdir$+"adc_fiscalperyr.aon",firm_id$,opt01a.shipmnt_date$,period$,year$,table_chans$[all],status
             endif
+            if status goto std_exit
             period=num(period$)
 
 rem --- Customer
@@ -602,11 +602,13 @@ done: rem --- All done
 init_firm: rem --- Firm specific initializations
 
     firm_id$=opt01a.firm_id$
+    skip_firm=1
 
     rem --- Retrieve parameter records for this firm
     sas01a_key$=firm_id$+"SA00"
-    find record (sas01_dev,key=sas01a_key$,err=std_missing_params) sas01a$
-    find record (ivs01_dev,key=firm_id$+"IV00",err=std_missing_params) ivs01a$
+    find record (sas01_dev,key=sas01a_key$,err=*return) sas01a$
+    skip_firm=0
+    find record (ivs01_dev,key=firm_id$+"IV00",err=std_missing_params) ivs01a$; rem --- OP requires IV
     ivprecision=num(ivs01a.precision$)
     precision ivprecision
 

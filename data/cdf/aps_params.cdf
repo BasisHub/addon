@@ -1,3 +1,36 @@
+[[APS_PARAMS.CURRENT_YEAR.AVAL]]
+rem --- Verify calendar exists for entered AP fiscal year
+	year$=callpoint!.getUserInput()
+	if cvs(year$,2)<>"" and year$<>callpoint!.getColumnData("APS_PARAMS.CURRENT_YEAR") then
+		gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+		dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+		readrecord(gls_calendar_dev,key=firm_id$+year$,dom=*next)gls_calendar$
+		if cvs(gls_calendar.year$,2)="" then
+			msg_id$="AD_NO_FISCAL_CAL"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=year$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+		callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+	endif
+[[APS_PARAMS.CURRENT_PER.AVAL]]
+rem --- Verify haven't exceeded calendar total periods for current AP fiscal year
+	period$=callpoint!.getUserInput()
+	if cvs(period$,2)<>"" and period$<>callpoint!.getColumnData("APS_PARAMS.CURRENT_PER") then
+		period=num(period$)
+		total_pers=num(callpoint!.getDevObject("total_pers"))
+		if period<1 or period>total_pers then
+			msg_id$="AD_BAD_FISCAL_PERIOD"
+			dim msg_tokens$[2]
+			msg_tokens$[1]=str(total_pers)
+			msg_tokens$[2]=callpoint!.getColumnData("APS_PARAMS.CURRENT_YEAR")
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
 [[APS_PARAMS.MULTI_TYPES.AVAL]]
 rem --- Warn if Multiple AP Types is un-checked and there are already AP invoices in the system.
 	multiTypes$=callpoint!.getUserInput()
@@ -117,10 +150,11 @@ rem --- Enable/Disable Payment Authorization
 [[APS_PARAMS.BSHO]]
 rem --- Open files
 
-	num_files=2
+	num_files=3
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APE_INVOICEHDR",open_opts$[1]="OTA"
-	open_tables$[2]="APt_INVOICEHDR",open_opts$[2]="OTA"
+	open_tables$[2]="APT_INVOICEHDR",open_opts$[2]="OTA"
+	open_tables$[3]="GLS_CALENDAR",open_opts$[3]="OTA"
 
 	gosub open_tables
 
@@ -316,13 +350,6 @@ rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user
 rem --- Retrieve parameter data
 	gl_installed$=callpoint!.getDevObject("gl_installed")
 	po_installed$=callpoint!.getDevObject("po_installed")
-	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
-	iv$=info$[20]
-	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_installed:c(1),iv_installed:c(1)"
-	user_tpl.app$="AP"
-	user_tpl.gl_pers$=gls01a.total_pers$
-	user_tpl.gl_installed$=gl_installed$
-	user_tpl.iv_installed$=iv$
 	rem --- set some defaults (that I can't do via arde) if param doesn't yet exist
 	aps01a_key$=firm_id$+"AP00"
 	find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
@@ -357,3 +384,10 @@ rem --- Retrieve parameter data
 rem --- Enable/Disable Payment Authorization
 	use_pay_auth=num(callpoint!.getColumnData("APS_PAYAUTH.USE_PAY_AUTH"))
 	gosub able_payauth
+
+rem --- Set maximum number of periods allowed for this fiscal year
+	gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+	dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+	current_year$=callpoint!.getColumnData("APS_PARAMS.CURRENT_YEAR")
+	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
+	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)

@@ -1,0 +1,663 @@
+rem ==========================================================================
+rem --- glo_AO_DisplayColumns.aon 
+rem --- AO_DisplayColumns class (DisplayColumns superclass)
+rem --- GL superclass that provides GL Display Columns previously provided in
+rem --- glm_recordtypes (glm-18) file.
+rem --- 
+rem --- AddonSoftware Version 17.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+rem /**
+rem  * This class provides GL Display Columns, previously provided in glm_recordtypes
+rem  * (glm-18) file, that are used for selecting Record Codes and Budget Codes in the
+rem  * GL Default Display Columns paramters task.
+rem  */
+
+    use ::bbtranslator.bbj::BBTranslator
+    use java.util.HashMap
+    use java.util.TreeMap
+
+    class public AO_DisplayColumns
+        field protected BBjString currentFiscalYear$
+        field protected TreeMap displayColumns!
+        field protected BBjString firmID$
+        field protected BBjString glYearClosed$
+        field protected BBTranslator Translate!
+        field protected BBjString useBudgets$
+        field protected BBjString useUnits$
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjString firmId$
+        rem  */
+        method public AO_DisplayColumns(BBjString firmID$)
+            seterr DisplayColumns_error
+
+            rem --- Open gls_params
+            filename$ = "gls_params"
+            devGlsParams = unt
+            open(devGlsParams)stbl("+GLDATA")+filename$
+
+            rem --- Get record template for gls_params
+            tplsChan = unt
+            open(tplsChan)stbl("+DIR_BRD")+"ddm_table_tpls.dat"
+            read(tplsChan,key=cvs(pad(filename$,16," "),4),dom=*next)*,*,table_tpl$
+            tplGlsParams$ = table_tpl$
+            dim gls_params$:tplGlsParams$
+            
+            rem --- Get gls_params GL00 record for firmId$
+            readrecord(devGlsParams,key=firmID$+"GL00")gls_params$
+            
+            rem --- Initialize field variables
+            #currentFiscalYear$ = gls_params.current_year$
+            #glYearClosed$ = gls_params.gl_yr_closed$
+            #firmID$ = firmID$
+            #useBudgets$ = gls_params.budget_flag$
+            #useUnits$ = gls_params.units_flag$
+
+            rem --- Get Translate! object
+            rdTransSpaceKey$=stbl("+PROPS_NAME")+"_"+stbl("+USER_LOCALE")+"_BBTranslator"
+            #Translate!=cast(BBTranslator,BBjAPI().getGroupNamespace().getValue(rdTransSpaceKey$,err=*next))
+            if #Translate!=null()
+                #Translate!=BBTranslator.getInstance(stbl("+PROPS_NAME"),stbl("+USER_LOCALE"),null(),stbl("+PROPS_PATH"))
+                BBjAPI().getGroupNamespace().setValue(rdTransSpaceKey$,#Translate!)
+            endif
+            
+            rem --- Initialize displayColumns! TreeMap
+            #initDisplayColumns()
+
+            rem --- Close files
+            close(tplsChan,err=*next)
+            close(devGlsParams,err=*next)
+
+            methodret
+            
+DisplayColumns_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * When using a budget display column we might have a planning budget (5-char BUD_MN_COLS/BUDGET_CODE)
+        rem  * instead of an actual budget (1-char RECORD_ID). This method strips possible blanks before the “::”
+        rem  * in the given displayColumnsKey$, and adds the “::” if it’s missing, so the results are in the correct
+        rem  * form for the defined displayColumns! keys.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString fixedKey$
+        rem  */
+        method protected BBjString fixDisplayColumnsKey(BBjString displayColumnsKey$)
+            seterr fixDisplayColumnsKey_error
+            
+            xPos=pos("::"=displayColumnsKey$)
+            if xPos=0 then
+                code$=cvs(displayColumnsKey$,2)
+                if len(code$)=1 and pos(code$="012345") then
+                    fixedKey$=code$+"::A"
+                else
+                    fixedKey$=displayColumnsKey$+"::A"
+                endif
+            else 
+                code$=cvs(displayColumnsKey$(1,xPos-1),2)
+                if len(code$)=1 and pos(code$="012345") then
+                    fixedKey$=code$+displayColumnsKey$(xPos)
+                else
+                    fixedKey$=displayColumnsKey$(1,xPos-1)+displayColumnsKey$(xPos)
+                endif
+            endif
+
+            methodret fixedKey$
+            
+fixDisplayColumnsKey_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the value of ACTBUD for the given displayColumns! key. Returns and empty string
+        rem  * if displayColumns! doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString actbud$
+        rem  */
+        method public BBjString getActBud(BBjString displayColumnsKey$)
+            seterr getActBud_error
+            actbud$=""
+            
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                field!=cast(HashMap,#displayColumns!.get(key$))
+                actbud$=field!.get("ACTBUD")
+            endif
+
+            methodret actbud$
+            
+getActBud_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the value of AMT_OR_UNITS for the given displayColumns! key. Returns and empty string
+        rem  * if displayColumns! doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString amtOrUnits$
+        rem  */
+        method public BBjString getAmtOrUnits(BBjString displayColumnsKey$)
+            seterr getAmtOrUnits_error
+            amtOrUnits$=""
+            
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                field!=cast(HashMap,#displayColumns!.get(key$))
+                amtOrUnits$=field!.get("AMT_OR_UNITS")
+            endif
+
+            methodret amtOrUnits$
+            
+getAmtOrUnits_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Builds a TreeMap with the same structure as the displayColumns! TreeMap using
+        rem  * data from glm_budgetmaster (glm-08).
+        rem  *
+        rem  * @return TreeMap budgetMaster!
+        rem  */
+        method public TreeMap getBudgetMaster()
+            seterr getBudgetMaster_error
+            budgetMaster! = new TreeMap()
+
+            rem --- Open glm_budgetmaster (glm-08)
+            filename$ = "glm-08"
+            glm08Dev = unt
+            open(glm08Dev)stbl("+GLDATA")+filename$
+            filename$ = "glm_budgetmaster"
+
+            rem --- Get record template for glm_budgetmaster (glm-08)
+            tplsChan = unt
+            open(tplsChan)stbl("+DIR_BRD")+"ddm_table_tpls.dat"
+            read(tplsChan,key=cvs(pad(filename$,16," "),4),dom=*next)*,*,table_tpl$
+            tplGlsParams$ = table_tpl$
+            dim glm08$:tplGlsParams$
+
+            rem --- Load all the planned budgets for the current firm.
+            read(glm08Dev,key=#firmID$,dom=*next)
+            while 1
+                glm08Key$=key(glm08Dev,end=*break)
+                if pos(#firmID$=glm08Key$)<>1 then break
+                readrecord(glm08Dev)glm08$
+
+                field! = new HashMap()
+                field!.put("RECORD_ID",glm08.budget_code$)
+                field!.put("ACTBUD","P"); rem --- P for Planned
+                field!.put("AMT_OR_UNITS",glm08.amt_or_units$)
+                field!.put("DESCRIPTION",glm08.description$)
+                field!.put("REV_TITLE",glm08.rev_title$)
+                key$=glm08.revision_src$(1,len(glm08.revision_src$)-1)
+                switch (BBjAPI().TRUE)
+                    case cvs(key$,2) = "0"
+                    case cvs(key$,2) = "1"
+                        year_inc=0
+                        break
+                    case cvs(key$,2) = "2"
+                    case cvs(key$,2) = "3"
+                        year_inc=-1
+                        break
+                    case cvs(key$,2) = "4"
+                    case cvs(key$,2) = "5"
+                        year_inc=1
+                        break
+                    case default
+                        rem --- unknown
+                        year_inc=0
+                        break
+                swend
+                field!.put("YEAR_INC",year_inc)
+
+                #displayColumns!.put(glm08.budget_code$+"::"+glm08.amt_or_units$,field!)
+            wend
+
+            rem --- Close files
+            close(tplsChan,err=*next)
+            close(glm08Dev,err=*next)
+
+            methodret budgetMaster!
+            
+getBudgetMaster_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the value of DESCRIPTION for the given displayColumns! key. Returns and empty string
+        rem  * if displayColumns! doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString description$
+        rem  */
+        method public BBjString getDescription(BBjString displayColumnsKey$)
+            seterr getDescription_error
+            description$=""
+            
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                field!=cast(HashMap,#displayColumns!.get(key$))
+                description$=field!.get("DESCRIPTION")
+            endif
+
+            methodret description$
+            
+getDescription_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the value of RECORD_ID for the given displayColumns! key. Returns and empty string
+        rem  * if displayColumns! doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString recordId$
+        rem  */
+        method public BBjString getRecordId(BBjString displayColumnsKey$)
+            seterr getRecordId_error
+            recordId$=""
+            
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                field!=cast(HashMap,#displayColumns!.get(key$))
+                recordId$=field!.get("RECORD_ID")
+            endif
+
+            methodret recordId$
+            
+getRecordId_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the value of REV_TITLE for the given displayColumns! key. Returns and empty string
+        rem  * if displayColumns! doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString revTitle$
+        rem  */
+        method public BBjString getRevTitle(BBjString displayColumnsKey$)
+            seterr getRevTitle_error
+            revTitle$=""
+            
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                field!=cast(HashMap,#displayColumns!.get(key$))
+                revTitle$=field!.get("REV_TITLE")
+            endif
+
+            methodret revTitle$
+            
+getRevTitle_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Builds string of display columns that is used for creating Barista list buttons via table column
+        rem  * attribute LDAT.
+        rem  *
+        rem  * @return BBjString buttonList$
+        rem  */
+            method public BBjString getStringButtonList()
+            seterr getStringButtonList_error
+            buttonList$=""
+
+            iter!=#displayColumns!.keySet().iterator()
+            while iter!.hasNext()
+                fields! = cast(HashMap,#displayColumns!.get(iter!.next()))
+                rev_title$ = fields!.get("REV_TITLE")
+                actbud$ = fields!.get("ACTBUD")
+                if actbud$="B" and #useBudgets$="N" then continue
+                amt_or_units$ = fields!.get("AMT_OR_UNITS")
+                if amt_or_units$="U" and #useUnits$="N" then continue
+                record_id$ = fields!.get("RECORD_ID")
+                buttonList$ = buttonList$+pad(rev_title$,20)+"~"+record_id$+amt_or_units$+";"
+            wend
+
+            methodret buttonList$
+            
+getStringButtonList_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Builds vector of display columns that is used for creating list buttons.
+        rem  *
+        rem  * @return BBjVector buttonList!
+        rem  */
+            method public BBjVector getVectorButtonList()
+            seterr getVectorButtonList_error
+            buttonList!=bbjAPI().makeVector()
+
+            iter!=#displayColumns!.keySet().iterator()
+            while iter!.hasNext()
+                fields! = cast(HashMap,#displayColumns!.get(iter!.next()))
+                rev_title$ = fields!.get("REV_TITLE")
+                actbud$ = fields!.get("ACTBUD")
+                if actbud$="B" and #useBudgets$="N" then continue
+                amt_or_units$ = fields!.get("AMT_OR_UNITS")
+                if amt_or_units$="U" and #useUnits$="N" then continue
+                record_id$ = fields!.get("RECORD_ID")
+                buttonList!.addItem(cvs(rev_title$,2)+" ("+record_id$+amt_or_units$+")")
+            wend
+
+            methodret buttonList!
+            
+getVectorButtonList_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the fiscal year (YYYY) the given displayColumns! key is for. Returns an empty string
+        rem  * if displayColumns! doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjString year$
+        rem  */
+        method public BBjString getYear(BBjString displayColumnsKey$)
+            seterr getYear_error
+            year$=""
+
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                year = num(#currentFiscalYear$) + #getYearInc(key$)
+                if #glYearClosed$<>"Y" then year = year - 1
+                year$ = str(year)
+            endif
+
+            methodret year$
+            
+getYear_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Returns the number of years the current fiscal year must be incremented/decremented 
+        rem  * to get the year (YYYY) for the given displayColumns! key. Returns zero if displayColumns!
+        rem  * doesn't contain the key.
+        rem  *
+        rem  * @param BBjString displayColumnsKey$
+        rem  *
+        rem  * @return BBjNumber delta
+        rem  */
+        method public BBjNumber getYearInc(BBjString displayColumnsKey$)
+            seterr getYearInc_error
+            delta=0
+        
+            key$=#fixDisplayColumnsKey(displayColumnsKey$)
+            if #displayColumns!.containsKey(key$) then
+                field!=cast(HashMap,#displayColumns!.get(key$))
+                delta=field!.get("YEAR_INC")
+            endif
+
+            methodret delta
+            
+getYearInc_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Initializes a TreeMap of HashMaps that hold information for the display columns.
+        rem  * 
+        rem  * The displayColumns! TreeMap is keyed by glm_recordtypes (glm-18) keys (RECORD_ID+’::’+AMT_OR_UNITS),
+        rem  * and holds fields! HashMaps that are keyed by glm_recordtypes (glm-18) field names (RECORD_ID, ACTBUD,
+        rem  * AMT_OR_UNITS, DESCRIPTION, REV_TITLE, and a new field YEAR_INC).
+        rem  */
+        method protected void initDisplayColumns()
+            seterr initDisplayColumns_error
+            #displayColumns! = new TreeMap()
+
+            rem --- Get translations 
+            actual$=#Translate!.getTranslation("AON_ACTUAL")
+            budget$=cvs(#Translate!.getTranslation("AON_BUDGET_"),2)
+            amt$=#Translate!.getTranslation("AON_AMT")
+            amounts$=#Translate!.getTranslation("AON_AMOUNTS")
+            unit$=#Translate!.getTranslation("AON_UNIT")
+            units$=#Translate!.getTranslation("AON_UNITS")
+            cur$=#Translate!.getTranslation("AON_CUR")
+            current$=#Translate!.getTranslation("AON_CURRENT")
+            pri$=#Translate!.getTranslation("AON_PRI")
+            prior$=#Translate!.getTranslation("AON_PRIOR")
+            nxt$=#Translate!.getTranslation("AON_NXT")
+            next$=#Translate!.getTranslation("AON_NEXT")
+            year$=#Translate!.getTranslation("AON_YEAR")
+            
+            field! = new HashMap()
+            field!.put("RECORD_ID","0"); field!.put("ACTBUD","A"); field!.put("AMT_OR_UNITS","A")
+            field!.put("DESCRIPTION",current$+" "+year$+" "+actual$+" "+amounts$); field!.put("REV_TITLE",cur$+" "+actual$+" "+amt$)
+            field!.put("YEAR_INC",0)
+            #displayColumns!.put("0::A",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","0"); field!.put("ACTBUD","A"); field!.put("AMT_OR_UNITS","U")
+            field!.put("DESCRIPTION",current$+" "+year$+" "+actual$+" "+units$); field!.put("REV_TITLE",cur$+" "+actual$+" "+unit$)
+            field!.put("YEAR_INC",0)
+            #displayColumns!.put("0::U",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","1"); field!.put("ACTBUD","B"); field!.put("AMT_OR_UNITS","A")
+            field!.put("DESCRIPTION",current$+" "+year$+" "+budget$+" "+amounts$); field!.put("REV_TITLE",cur$+" "+budget$+" "+amt$)
+            field!.put("YEAR_INC",0)
+            #displayColumns!.put("1::A",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","1"); field!.put("ACTBUD","B"); field!.put("AMT_OR_UNITS","U")
+            field!.put("DESCRIPTION",current$+" "+year$+" "+budget$+" "+units$); field!.put("REV_TITLE",cur$+" "+budget$+" "+unit$)
+            field!.put("YEAR_INC",0)
+            #displayColumns!.put("1::U",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","2"); field!.put("ACTBUD","A"); field!.put("AMT_OR_UNITS","A")
+            field!.put("DESCRIPTION",prior$+" "+year$+" "+actual$+" "+amounts$); field!.put("REV_TITLE",pri$+" "+actual$+" "+amt$)
+            field!.put("YEAR_INC",-1)
+            #displayColumns!.put("2::A",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","2"); field!.put("ACTBUD","A"); field!.put("AMT_OR_UNITS","U")
+            field!.put("DESCRIPTION",prior$+" "+year$+" "+actual$+" "+units$); field!.put("REV_TITLE",pri$+" "+actual$+" "+unit$)
+            field!.put("YEAR_INC",-1)
+            #displayColumns!.put("2::U",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","3"); field!.put("ACTBUD","B"); field!.put("AMT_OR_UNITS","A")
+            field!.put("DESCRIPTION",prior$+" "+year$+" "+budget$+" "+amounts$); field!.put("REV_TITLE",pri$+" "+budget$+" "+amt$)
+            field!.put("YEAR_INC",-1)
+            #displayColumns!.put("3::A",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","3"); field!.put("ACTBUD","B"); field!.put("AMT_OR_UNITS","U")
+            field!.put("DESCRIPTION",prior$+" "+year$+" "+budget$+" "+units$); field!.put("REV_TITLE",pri$+" "+budget$+" "+unit$)
+            field!.put("YEAR_INC",-1)
+            #displayColumns!.put("3::U",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","4"); field!.put("ACTBUD","A"); field!.put("AMT_OR_UNITS","A")
+            field!.put("DESCRIPTION",next$+" "+year$+" "+actual$+" "+amounts$); field!.put("REV_TITLE",nxt$+" "+actual$+" "+amt$)
+            field!.put("YEAR_INC",1)
+            #displayColumns!.put("4::A",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","4"); field!.put("ACTBUD","A"); field!.put("AMT_OR_UNITS","U")
+            field!.put("DESCRIPTION",next$+" "+year$+" "+actual$+" "+units$); field!.put("REV_TITLE",nxt$+" "+actual$+" "+unit$)
+            field!.put("YEAR_INC",1)
+            #displayColumns!.put("4::U",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","5"); field!.put("ACTBUD","B"); field!.put("AMT_OR_UNITS","A")
+            field!.put("DESCRIPTION",next$+" "+year$+" "+budget$+" "+amounts$); field!.put("REV_TITLE",nxt$+" "+budget$+" "+amt$)
+            field!.put("YEAR_INC",1)
+            #displayColumns!.put("5::A",field!)
+
+            field! = new HashMap()
+            field!.put("RECORD_ID","5"); field!.put("ACTBUD","B"); field!.put("AMT_OR_UNITS","U")
+            field!.put("DESCRIPTION",next$+" "+year$+" "+budget$+" "+units$); field!.put("REV_TITLE",nxt$+" "+budget$+" "+unit$)
+            field!.put("YEAR_INC",1)
+            #displayColumns!.put("5::U",field!)
+
+            rem --- Add budget records from glm-08/glm18
+            budgetMaster!=#getBudgetMaster()
+            #displayColumns!.putAll(budgetMaster!)
+
+            methodret
+            
+initDisplayColumns_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+	
+classend

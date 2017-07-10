@@ -60,6 +60,11 @@ rem --- Get the IN parameters used by the procedure
 	firm_id$ = sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
+    props_name$ = sp!.getParameter("PROPS_NAME")
+    props_path$ = sp!.getParameter("PROPS_PATH")
+    user_locale$ = sp!.getParameter("USER_LOCALE")
+    sysinfo_tpl$ = sp!.getParameter("SYSINFO_TPL")
+    sysinfo$ = sp!.getParameter("SYSINFO")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -69,6 +74,20 @@ rem --- Get Barista System Program directory
 	sypdir$=""
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Get AlignFiscalCalendar and DisplayColumns objects
+
+    brddir$=stbl("+DIR_BRD",err=*next)
+    x$=stbl("+DIR_BRD",barista_wd$+brddir$)
+    x$=stbl("+PROPS_NAME",props_name$)
+    x$=stbl("+PROPS_PATH",props_path$)
+    x$=stbl("+USER_LOCALE",user_locale$)
+    x$=stbl("+SYSINFO_TPL",sysinfo_tpl$)
+    x$=stbl("+SYSINFO",sysinfo$)
+    use ::glo_AlignFiscalCalendar.aon::AlignFiscalCalendar
+    alignCalendar!=new AlignFiscalCalendar(firm_id$)
+    use ::glo_DisplayColumns.aon::DisplayColumns
+    displayColumns!=new DisplayColumns(firm_id$)
 	
 rem --- create the in memory recordset for return
 
@@ -78,11 +97,12 @@ rem --- create the in memory recordset for return
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
+    files=4,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="glm-01",ids$[1]="GLM_ACCT"
     files$[2]="glm-02",ids$[2]="GLM_ACCTSUMMARY"
     files$[3]="gls_params",ids$[3]="GLS_PARAMS"
+    files$[4]="gls_calendar",ids$[4]="GLS_CALENDAR"
    
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status then
@@ -94,24 +114,34 @@ rem --- Open/Lock files
     glm01a_dev=channels[1]
     glm02a_dev=channels[2]
     gls01a_dev=channels[3]
+    gls_calendar_dev=channels[4]
    
 rem --- Dimension string templates
 
     dim glm01a$:templates$[1]
     dim glm02a$:templates$[2]
     dim gls01a$:templates$[3]
+    dim gls_calendar$:templates$[4]
 
 rem --- get data
 
     readrecord(gls01a_dev,key=firm_id$+"GL00",dom=*next)gls01a$
+    readrecord(gls_calendar_dev,key=firm_id$+gls01a.current_year$,dom=*next)gls_calendar$
 
     idsVec! = BBjAPI().makeVector()
     yearsVec! = BBjAPI().makeVector()
 
     rem --- Prior Year (Actual)
+    alignPeriods$="N"
     if pos(include_type$="ABEF")
         idsVec!.addItem("2")
-        yearsVec!.addItem(str(num(gls01a.current_year$)-1))
+        priorYear$=str(num(gls01a.current_year$)-1:"0000")
+        yearsVec!.addItem(priorYear$)
+        align_prior=alignCalendar!.canAlignCalendar(priorYear$)
+        if align_prior then 
+            priorTripKey$=alignCalendar!.alignCalendar(priorYear$)
+            alignPeriods$="Y"
+        endif
     endif   
 
     rem --- Current Year (Actual)
@@ -123,9 +153,30 @@ rem --- get data
     rem --- Next Year (Actual)
     if pos(include_type$="CDEF")
         idsVec!.addItem("4")
-        yearsVec!.addItem(str(num(gls01a.current_year$)+1))
+        nextYear$=str(num(gls01a.current_year$)+1:"0000")
+        yearsVec!.addItem(nextYear$)
+        align_next=alignCalendar!.canAlignCalendar(nextYear$)
+        if align_next then 
+            nextTripKey$=alignCalendar!.alignCalendar(nextYear$)
+            alignPeriods$="Y"
         endif
     endif   
+
+    rem --- Check tripKey$ in case of error
+    if priorTripKey$<>"" or nextTripKey$<>"" then
+        files=1,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]="glw_acctsummary",ids$[1]="GLW_ACCTSUMMARY"
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                           ids$[all],templates$[all],channels[all],batch,status
+        if status then
+            seterr 0
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "File open error.",1001
+        endif
+        glwAcctSummary_dev=channels[1]
+        dim glwAcctSummary$:templates$[1]
+    endif
 
     if idsVec!.size()>0 then
         rem --- Get accounts
@@ -142,16 +193,31 @@ rem --- get data
             rem --- Add up tatal for each GL record ID
             for i=0 to idsVec!.size()-1
                 rem --- Add up total for all GL accounts of specified account type
-                dim totals[1+num(gls01a.total_pers$)]
+                dim totals[1+num(gls_calendar.total_pers$)]
                 for j=0 to acctsVec!.size()-1
                     dim glm02a$:fattr(glm02a$)
-                    readrecord(glm02a_dev,key=firm_id$+acctsVec!.getItem(j)+idsVec!.getItem(i),dom=*next)glm02a$
+                    readrecord(glm02a_dev,key=firm_id$+acctsVec!.getItem(j)+displayColumns!.getYear(idsVec!.getItem(i)),dom=*next)glm02a$
+                    if alignPeriods$="Y" then
+                        tripKey$=""
+                        if idsVec!.getItem(i)="2" and priorTripKey$<>"" then tripKey$=priorTripKey$
+                        if idsVec!.getItem(i)="4" and nextTripKey$<>"" then tripKey$=nextTripKey$
+                        if tripKey$<>""
+                            redim glwAcctSummary$
+                            readrecord(glwAcctSummary_dev,key=tripKey$+acctsVec!.getItem(j),dom=*next)glwAcctSummary$
+                            redim glm02a$
+                            glm02a.begin_amt=glwAcctSummary.begin_amt
+                            for per=1 to num(gls_calendar.total_pers$)
+                                per_num$=str(per:"00")
+                                field glm02a$,"PERIOD_AMT_"+per_num$ = nfield(glwAcctSummary$,"PERIOD_AMT_"+per_num$)
+                            next per
+                        endif
+                    endif
                     if pos(include_type$="BDF")
                         totals[0]=totals[0]+glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
 :                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
 :                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13
                     else
-                        for per=1 to num(gls01a.total_pers$)
+                        for per=1 to num(gls_calendar.total_pers$)
                             per_num$=str(per:"00")
                             totals[per]=totals[per]+nfield(glm02a$,"PERIOD_AMT_"+per_num$)
                         next per
@@ -164,11 +230,11 @@ rem --- get data
                     data!.setFieldValue("TOTAL",str(abs(round(totals[0]/1000,2))))
                     rs!.insert(data!)
                 else
-                    for per=1 to num(gls01a.total_pers$)
+                    for per=1 to num(gls_calendar.total_pers$)
                         per_num$=str(per:"00")
                         data! = rs!.getEmptyRecordData()
                         data!.setFieldValue("YEAR",yearsVec!.getItem(i))
-                        data!.setFieldValue("PERIOD",per_num$+"-"+field(gls01a$,"ABBR_NAME_"+per_num$))
+                        data!.setFieldValue("PERIOD",per_num$+"-"+field(gls_calendar$,"ABBR_NAME_"+per_num$))
                         data!.setFieldValue("TOTAL",str(abs(round(totals[per]/1000,2))))
                         rs!.insert(data!)
                     next per

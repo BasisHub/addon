@@ -103,8 +103,7 @@ rem --- Disable triggers found in data directories
     rd_user$=stbl("+USER_ID",err=*next)
     rd_password$="admin123"
     rdNSGroup!=BBjAPI().getGroupNamespace()
-    rdNSAdmin!=BBjAPI().getNamespace("adminobjects","barista",1)
-    rdAdmin!=rdNSAdmin!.getValue("+bar_admin_"+cvs(rd_user$,11),err=*next)
+    rdAdmin!=rdNSGroup!.getValue("+bar_admin_"+cvs(rd_user$,11),err=*next)
     if rdAdmin!<>null() then
         rd_user$=rdAdmin!.getUser()
         rd_password$=rdAdmin!.getPassword()
@@ -506,6 +505,9 @@ next_file:
     if cvs(datafile$,8)="sys-01" then
        normalize_sys01=1
        do_make_masks=1
+       
+       use java.util.GregorianCalendar
+       Calendar! = new GregorianCalendar()
     endif; rem ' sys-01
 
     rem --- Does this file contain sequence numbers that need to be processed separately later?
@@ -614,6 +616,16 @@ next_ddm03:
         dim ars_custdflt_rec$:fattr(new_rec$)
         rem --- Reset ARS_PARAMS to file_xref! HashMap for ARS-01A key
         file_xref!.put("ARS-01A","ARS_PARAMS")
+    endif
+    rem --- Open/create GLS_CALENDAR and GLS_PARAMS for GLS-01A record
+    if ddm03.file_name$="GLS-01" and ddm03.record_id$="A" then
+        rem --- Add GLS_CALENDAR to file_xref! HashMap for GLS-01A key
+        file_xref!.put("GLS-01A","GLS_CALENDAR")
+        gosub get_new_template
+        gls_calendar_dev=new_file
+        dim gls_calendar_rec$:fattr(new_rec$)
+        rem --- Reset GLS_PARAMS to file_xref! HashMap for GLS-01A key
+        file_xref!.put("GLS-01A","GLS_PARAMS")
     endif
     rem --- Open/create opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) for version 6 ARM-10G records
     if source_version=6 and ddm03.file_name$="ARM-10" and ddm03.record_id$="G" then
@@ -839,6 +851,10 @@ next_rec:
     if copy_sys01 and file_normalization$(1,4)="AR00" then
         rem --- Write ARS_CUSTDFLT for ARS-01A records
         gosub write_ars_custdflt_recs
+    endif
+    if copy_sys01 and file_normalization$(1,4)="GL00" then
+        rem --- Write GLS_CALENDAR for GLS-01A records
+        gosub write_gls_calendar_recs
     endif
 
     if source_version=6 and datafile$="ARM-10" and record_id_field$="RECORD_ID_G" then
@@ -1527,6 +1543,7 @@ write_opc_msg_recs: rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) r
     rec=5
     if old_rec.record_id$="1" then
         rec=0
+        redim opm04_rec$
         opm04_rec.firm_id$=old_rec.firm_id$
         translate_value!=field_translations!.get("MESSAGE_CODE."+cvs(old_rec.message_code$,3))
         if translate_value!<>null() then old_rec.message_code$=str(translate_value!)
@@ -1539,6 +1556,7 @@ write_opc_msg_recs: rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) r
     rem --- Write opm-14(OPC_MSG_DET) records
     write_opm14_recs=0
     for i=5 to 1 step -1
+        redim opm14_rec$
         opm14_rec.firm_id$=old_rec.firm_id$
         translate_value!=field_translations!.get("MESSAGE_CODE."+cvs(old_rec.message_code$,3))
         if translate_value!<>null() then old_rec.message_code$=str(translate_value!)
@@ -1558,6 +1576,7 @@ write_opc_msg_recs: rem --- Write opm-04 (OPC_MSG_HDR) and opm-14(OPC_MSG_DET) r
 write_ars_custdflt_recs: rem --- Write ARS_CUSTDFLT for ARS-01A records
 
     rem --- Init ARS_CUSTDFLT record
+    redim ars_custdflt_rec$
     ars_custdflt_rec.firm_id$=old_rec.firm_id$
     ars_custdflt_rec.record_id_d$="D"
     ars_custdflt_rec.disc_code$=old_rec.disc_code$
@@ -1586,6 +1605,73 @@ write_ars_custdflt_recs: rem --- Write ARS_CUSTDFLT for ARS-01A records
     rem --- Write ARS_CUSTDFLT record
     ars_custdflt_rec$=field(ars_custdflt_rec$)
     writerecord(ars_custdflt_dev)ars_custdflt_rec$
+
+    return
+
+write_gls_calendar_recs: rem --- Write GLS_CALENDAR for GLS-01A records
+
+    rem --- Init GLS_CALENDAR record
+    redim gls_calendar_rec$
+    gls_calendar_rec.firm_id$=old_rec.firm_id$
+    rem --- Convert 2-char YY to 4-char YYYY
+    value$=old_rec.current_year$
+    gosub fix_yymmdd_date
+    gls_calendar_rec.year$=value$
+    gls_calendar_rec.total_pers$=old_rec.total_pers$
+    gls_calendar_rec.cal_start_date$=""
+    total_pers=num(gls_calendar_rec.total_pers$)
+    for i=1 to total_pers
+        period_name$="period_name_"+str(i:"00")
+        field gls_calendar_rec$,period_name$=field(old_rec$,period_name$)
+    next i
+    for i=1 to total_pers
+        abbr_name$="abbr_name_"+str(i:"00")
+        field gls_calendar_rec$,abbr_name$=field(old_rec$,abbr_name$)
+    next i
+    for i=1 to total_pers
+        rem --- Convert packed MD to unpacked MMDD 
+        per_ending$="per_ending_"+str(i:"00")
+        value$=field(old_rec$,per_ending$)
+        if len(cvs(value$,3)) then
+            value$=str(asc(value$)-32:"00")+str(mod(asc(value$(2))-32,100):"00")
+        else
+            value$=pad("",4)
+        endif
+        field gls_calendar_rec$,per_ending$=value$
+    next i
+    for i=1 to total_pers
+        locked_flag$="locked_flag_"+str(i:"00")
+        field gls_calendar_rec$,locked_flag$=field(old_rec$,locked_flag$)
+    next i
+    for i=1 to total_pers
+        rem --- Convert packed YMD to unpacked YYYYMMDD
+        locked_date$="locked_date_"+str(i:"00")
+        value$=field(old_rec$,locked_date$)
+        if len(cvs(value$,3)) then
+            value$=str(asc(value$)-32+1900+add_year)+str(asc(value$(2))-32:"00")+str(mod(asc(value$(3))-32,100):"00")
+        else
+            value$=pad("",8)
+        endif
+        field gls_calendar_rec$,locked_date$=value$
+    next i
+
+    rem --- Calculate calendar start date based on last date of last period.
+    calendar_year=num(gls_calendar_rec.year$)-1
+    begdate$=field(gls_calendar_rec$,"per_ending_"+str(total_pers:"00"))
+    if begdate$(1,4)<gls_calendar_rec.per_ending_01$ then calendar_year=calendar_year+1
+    dd$=begdate$(3,2)
+    rem --- Adjust last day of February for leap year
+    if begdate$(1,2)="02" then
+        if begdate$(3,2)="29" and !Calendar!.isLeapYear(calendar_year) then begdate$(3,2)="28"
+        if begdate$(3,2)="28" and Calendar!.isLeapYear(calendar_year) then begdate$(3,2)="29"
+    endif
+    julian=jul(calendar_year,num(begdate$(1,2)),num(begdate$(3,2)))+1
+    begdate$=date(julian:"%Yl%Mz%Dz")
+    gls_calendar_rec.cal_start_date$=begdate$(5)
+
+    rem --- Write GLS_CALENDAR record
+    gls_calendar_rec$=field(gls_calendar_rec$)
+    writerecord(gls_calendar_dev)gls_calendar_rec$
 
     return
 

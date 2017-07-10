@@ -1,3 +1,20 @@
+[[SFS_PARAMS.CURRENT_YEAR.AVAL]]
+rem --- Verify calendar exists for entered SF fiscal year
+	year$=callpoint!.getUserInput()
+	if cvs(year$,2)<>"" and year$<>callpoint!.getColumnData("SFS_PARAMS.CURRENT_YEAR") then
+		gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+		dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+		readrecord(gls_calendar_dev,key=firm_id$+year$,dom=*next)gls_calendar$
+		if cvs(gls_calendar.year$,2)="" then
+			msg_id$="AD_NO_FISCAL_CAL"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=year$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+		callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+	endif
 [[SFS_PARAMS.PR_INTERFACE.AVAL]]
 rem --- If Interface is turned on, enable Std/Act flag
 
@@ -21,12 +38,40 @@ rem --- Enable/disable fields
 
 	gosub able_fields
 [[SFS_PARAMS.ARAR]]
-rem --- Update post_to_gl if GL is uninstalled
+rem --- Retrieve parameter data
 	gl_installed$=callpoint!.getDevObject("gl_installed")
-	if gl_installed$<>"Y" and callpoint!.getColumnData("SFS_PARAMS.POST_TO_GL")="Y" then
-		callpoint!.setColumnData("SFS_PARAMS.POST_TO_GL","N",1)
-		callpoint!.setStatus("MODIFIED")
+	sfs01_dev=fnget_dev("SFS_PARAMS")
+	dim sfs01a$:fnget_tpl$("SFS_PARAMS")
+	sfs01a_key$=firm_id$+"SF00"
+	find record (sfs01_dev,key=sfs01a_key$,err=*next) sfs01a$
+	if cvs(sfs01a.current_per$,2)=""
+		gls01_dev=fnget_dev("GLS_PARAMS")
+		dim gls01a$:fnget_tpl$("GLS_PARAMS")
+		gls01a_key$=firm_id$+"GL00"
+		find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$
+
+		callpoint!.setColumnData("SFS_PARAMS.CURRENT_PER",gls01a.current_per$)
+		callpoint!.setColumnUndoData("SFS_PARAMS.CURRENT_PER",gls01a.current_per$)
+		callpoint!.setColumnData("SFS_PARAMS.CURRENT_YEAR",gls01a.current_year$)
+		callpoint!.setColumnUndoData("SFS_PARAMS.CURRENT_YEAR",gls01a.current_year$)
+		if gl_installed$="Y" then
+			callpoint!.setColumnData("SFS_PARAMS.POST_TO_GL","Y")
+		endif
+   		callpoint!.setStatus("MODIFIED-REFRESH")
+	else
+		rem --- Update post_to_gl if GL is uninstalled
+		if gl_installed$<>"Y" and callpoint!.getColumnData("SFS_PARAMS.POST_TO_GL")="Y" then 
+			callpoint!.setColumnData("SFS_PARAMS.POST_TO_GL","N",1)
+   			callpoint!.setStatus("MODIFIED")
+		endif
 	endif
+
+rem --- Set maximum number of periods allowed for this fiscal year
+	gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+	dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+	current_year$=callpoint!.getColumnData("SFS_PARAMS.CURRENT_YEAR")
+	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
+	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
 [[SFS_PARAMS.ARER]]
 rem --- Set defaults
 
@@ -102,53 +147,35 @@ rem --- Set default if Time Sheet Entry set to
 		callpoint!.setColumnData("SFS_PARAMS.TIME_CLK_FLG","N",1)
 	endif
 [[SFS_PARAMS.CURRENT_PER.AVAL]]
-rem --- Validate Period is valid
-
-	gl_pers=num(callpoint!.getDevObject("gl_pers"))
-	if num(callpoint!.getUserInput())<1 or num(callpoint!.getUserInput())>gl_pers
-		msg_id$="AR_INVALID_PER"
-		dim msg_tokens$[1]
-		msg_tokens$[1]=str(gl_pers)
-		msg_opt$=""
-		gosub disp_message
-		callpoint!.setUserInput(callpoint!.getColumnUndoData("SFS_PARAMS.CURRENT_PER"))
-		callpoint!.setStatus("REFRESH-ABORT")
+rem --- Verify haven't exceeded calendar total periods for current AP fiscal year
+	period$=callpoint!.getUserInput()
+	if cvs(period$,2)<>"" and period$<>callpoint!.getColumnData("SFS_PARAMS.CURRENT_PER") then
+		period=num(period$)
+		total_pers=num(callpoint!.getDevObject("total_pers"))
+		if period<1 or period>total_pers then
+			msg_id$="AD_BAD_FISCAL_PERIOD"
+			dim msg_tokens$[2]
+			msg_tokens$[1]=str(total_pers)
+			msg_tokens$[2]=callpoint!.getColumnData("SFS_PARAMS.CURRENT_YEAR")
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
 	endif
 [[SFS_PARAMS.BSHO]]
 rem --- Open files
 
-	num_files=4
+	num_files=5
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="SFE_TIMEDATE",open_opts$[2]="OTA"
 	open_tables$[3]="SFE_TIMEEMPL",open_opts$[3]="OTA"
 	open_tables$[4]="SFE_TIMEWO",open_opts$[4]="OTA"
+	open_tables$[5]="GLS_CALENDAR",open_opts$[5]="OTA"
+
 	gosub open_tables
-	gls01_dev=num(open_chans$[1])
-
-rem --- Dimension string templates
-	dim gls01a$:open_tpls$[1]
-
-rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user to set it up first
-	gls01a_key$=firm_id$+"GL00"
-	find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$  
-	if cvs(gls01a.current_per$,2)=""
-		msg_id$="GL_PARAM_ERR"
-		dim msg_tokens$[1]
-		msg_opt$=""
-		gosub disp_message
-		rem - remove process bar
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-		release
-	endif
 
 rem --- Retrieve parameter data
-
-	callpoint!.setDevObject("gl_pers",gls01a.total_pers$)
-	callpoint!.setDevObject("gl_curr_per",gls01a.current_per$)
-	callpoint!.setDevObject("gl_curr_year",gls01a.current_year$)
 
 	dim info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]

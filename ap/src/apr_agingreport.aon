@@ -46,7 +46,7 @@ rem --- Open/Lock files
     files$[6]="apt-11",ids$[6]="APT_INVOICEDET"
     files$[7]="apw-02",ids$[7]="APW_INVOICENAME"
     options$[7]="C"
-    files$[8]="gls_params",ids$[8]="GLS_PARAMS";rem "gls-01
+    files$[8]="gls_calendar",ids$[8]="GLS_CALENDAR"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -56,13 +56,13 @@ rem --- Open/Lock files
     apt01_dev=channels[5]
     apt11_dev=channels[6]
     apw02_dev=channels[7]
-    gls01_dev=channels[8]
+    gls_calendar_dev=channels[8]
 
 rem --- Dimension string templates
 
     dim apm01a$:templates$[2],apm10a$:templates$[4],
 :       apt01a$:templates$[5],apt11a$:templates$[6],apw02a$:templates$[7],
-:       aps01a$:templates$[1],gls01a$:templates$[8]
+:       aps01a$:templates$[1],gls_calendar$:templates$[8]
 
 rem --- Assign form input values to local variables
 
@@ -94,8 +94,14 @@ rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    find record (gls_calendar_dev,key=firm_id$+aps01a.current_year$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=aps01a.current_year$
+        gosub disp_message
+        goto std_exit
+    endif
     call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
     call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",m1$,0,0
     multitypes=aps01a.multi_types$="Y"
@@ -104,10 +110,10 @@ rem --- Retrieve parameter records
     m0=len(m0$)
     m1=len(m1$)
     periodend$=""
-    maxperiods=num(gls01a.total_pers$)
+    maxperiods=num(gls_calendar.total_pers$)
     
     for x=1 to maxperiods
-        periodend$=periodend$+field(gls01a$,"per_ending_"+str(x:"00"))
+        periodend$=periodend$+field(gls_calendar$,"per_ending_"+str(x:"00"))
     next x
 
 rem --- Initializations
@@ -191,7 +197,8 @@ rem --- Determine period beginning and ending dates based on the aging method se
             rem --- Get current period beginning and ending dates
 
             if agingdate$(5,2)<periodend$(1,2) year=year-1
-            call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begperiod$,endperiod$,status
+            call pgmdir$+"adc_perioddates.aon",period,year,begperiod$,endperiod$,table_chans$[all],status
+            if status then goto std_exit
             begdates$=begperiod$
             enddates$=endperiod$
 
@@ -208,7 +215,8 @@ rem --- Determine period beginning and ending dates based on the aging method se
                    year=base_yr-1
                 endif
                 
-                call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begperiod$,endperiod$,status
+                call pgmdir$+"adc_perioddates.aon",period,year,begperiod$,endperiod$,table_chans$[all],status
+                if status then goto std_exit
                 begdates$=begdates$+begperiod$
                 enddates$=enddates$+endperiod$
             next x
@@ -773,6 +781,11 @@ rem --- fnBlank : Create blank cells in OutVect!. No return value
         next q1
         return q1
     fnend
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
 
 rem #include std_error.src
 

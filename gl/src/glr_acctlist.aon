@@ -8,6 +8,9 @@ rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
+rem --- Portions Copyright 2016 by Assorted Business Services Inc.
+rem ---  All Rights Reserved.
+
     setesc std_error
     seterr std_error
 
@@ -29,35 +32,32 @@ rem --- Open/Lock files
 
     files=3,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
     files$[3]="glm-10",ids$[3]="GLM_ACCTBREAKS"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],                           templates$[all],channels[all],batch,status
     if status goto std_exit
-    gls01_dev=channels[1]
     glm01_dev=channels[2]
     glm10_dev=channels[3]
 
 rem --- Dimension string templates
 
-    dim gls01a$:templates$[1],glm01a$:templates$[2]
+    dim glm01a$:templates$[2]
 
 rem --- Parameters
 
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    rem m0$=gls01a.acct_output$ -- getting mask from Barista masks file instead
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     break$=""
     desc$=""
     call pgmdir$+"glc_regroup.aon",glm10_dev,firm_id$,break$,desc$
-    headings=2
+    headings=3
 
 rem --- Assign input values to local variables
 
     begacct$=cvs(Option!.getOptionData("GL_ACCOUNT_1"),2)
     endacct$=cvs(Option!.getOptionData("GL_ACCOUNT_2"),2)
     wildcard$=Option!.getOptionData("GL_WILDCARD")
+    rem "GL INACTIVE FEATURE"
+    inactive$=Option!.getOptionData("ACCT_INACTIVE")
 
   rem --- Document initializations
 
@@ -93,6 +93,7 @@ rem --- Account range heading
     x$=x$+Translate!.getTranslation("AON__THROUGH_"),y$=""
     if endacct$="" y$=Translate!.getTranslation("AON_LAST"),x$=x$+y$+Translate!.getTranslation("AON__ACCOUNT")      else y$=fnmask$(endacct$(1,m0),m0$),x$=x$+Translate!.getTranslation("AON_ACCOUNT_")+y$
     headings$[2]=x$
+    headings$[3]=Translate!.getTranslation("AON_EXCLUDE_INACTIVE")+Translate!.getTranslation("AON_GENERAL_LEDGER_ACCOUNTS")+" = "+inactive$
 
 rem --- Document columns
 
@@ -121,6 +122,10 @@ rem --- Top Of Loop
           if endacct$<>"" if glm01a.gl_account$>endacct$ break
           gosub wildcard
           if status continue
+		  
+          rem "GL INACTIVE FEATURE"
+	  if inactive$="Y" and glm01a.acct_inactive$="Y" then Continue
+		  
           total_recs=total_recs+1
           if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           number=number+1

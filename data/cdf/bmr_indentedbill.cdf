@@ -16,10 +16,7 @@ rem --- Validate against BOM_BILLMAST
 		callpoint!.setStatus("ABORT")
 	endif
 [[BMR_INDENTEDBILL.BFMC]]
-rem --- Set Custom Query for BOM Item Number
 
-	callpoint!.setTableColumnAttribute("BMR_INDENTEDBILL.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("BMR_INDENTEDBILL.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[BMR_INDENTEDBILL.AREC]]
 rem --- Set default Warehouse
 

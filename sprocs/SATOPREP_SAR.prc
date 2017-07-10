@@ -88,7 +88,7 @@ rem --- Open/Lock files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="sam_salespsn_tot",ids$[1]="SAM_SALESPSN_TOT"
     files$[2]="arc_salecode",ids$[2]="ARC_SALECODE"
-    files$[3]="gls_params",ids$[3]="GLS_PARAMS"
+    files$[3]="gls_calendar",ids$[3]="GLS_CALENDAR"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status then
@@ -99,20 +99,20 @@ rem --- Open/Lock files
 
     sam03tot_dev=channels[1]
     arm10f_dev=channels[2]
-    glparams_dev=channels[3]
+    gls_calendar_dev=channels[3]
 
 rem --- Dimension string templates
 
     dim sam03tot$:templates$[1]
     dim arm10f$:templates$[2]
-    dim glparams$:templates$[3]
+    dim gls_calendar$:templates$[3]
     
 rem --- Get number of GL periods and period name abbreviations
     periodAbbr!=BBjAPI().makeVector()
-    readrecord(glparams_dev,key=firm_id$+"GL00",dom=*next)glparams$
-    numGlPers=num(glparams.total_pers$)
+    readrecord(gls_calendar_dev,key=firm_id$+year$,dom=*next)gls_calendar$
+    numGlPers=num(gls_calendar.total_pers$)
     for period=1 to numGlPers
-        abbrname$=field(glparams$,"ABBR_NAME_"+str(period:"00"))
+        abbrname$=field(gls_calendar$,"ABBR_NAME_"+str(period:"00"))
         periodAbbr!.addItem(abbrname$)
     next period
     

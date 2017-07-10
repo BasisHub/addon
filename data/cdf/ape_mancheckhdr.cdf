@@ -1,3 +1,39 @@
+[[APE_MANCHECKHDR.VENDOR_ID.BINQ]]
+rem --- Set filter_defs$[] to only show vendors of given AP Type
+
+ap_type$=callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")
+
+dim filter_defs$[2,2]
+filter_defs$[0,0]="APM_VENDMAST.FIRM_ID"
+filter_defs$[0,1]="='"+firm_id$+"'"
+filter_defs$[0,2]="LOCK"
+
+filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
+filter_defs$[1,1]="='"+ap_type$+"'"
+filter_defs$[1,2]="LOCK"
+
+
+call STBL("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev, 
+:		form!,
+:		"AP_VEND_LK",
+:		"DEFAULT",
+:		table_chans$[all],
+:		sel_key$,
+:		filter_defs$[all]
+
+if sel_key$<>""
+	call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:		"APM_VENDMAST",
+:		"PRIMARY",
+:		apm_vend_key$,
+:		table_chans$[all],
+:		status$
+	dim apm_vend_key$:apm_vend_key$
+	apm_vend_key$=sel_key$
+	callpoint!.setColumnData("APE_MANCHECKHDR.VENDOR_ID",apm_vend_key.vendor_id$,1)
+endif	
+callpoint!.setStatus("ACTIVATE-ABORT")
 [[APE_MANCHECKHDR.CHECK_NO.AVAL]]
 rem --- Look in entry file for this check number.
 rem --- If found, use setStatus("RECORD") to call it up. (bug 8510)
@@ -285,9 +321,25 @@ get_vendor_history:
 return
 
 #include std_missing_params.src
+#include std_functions.src
 [[APE_MANCHECKHDR.VENDOR_ID.AVAL]]
 	print "Head: VENDOR_ID.AVAL (After Column Validation)"; rem debug
-
+	rem "VENDOR INACTIVE - FEATURE"
+	vendor_id$ = callpoint!.getUserInput()
+	apm01_dev=fnget_dev("APM_VENDMAST")
+	apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+	dim apm01a$:apm01_tpl$
+	apm01a_key$=firm_id$+vendor_id$
+	find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+	if apm01a.vend_inactive$="Y" then
+	   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+	   msg_id$="AP_VEND_INACTIVE"
+	   dim msg_tokens$[2]
+	   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+	   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+	   gosub disp_message
+	   callpoint!.setStatus("ACTIVATE")
+	endif
 	tmp_vendor_id$=callpoint!.getUserInput()			
 	gosub disp_vendor_comments
 	gosub get_vendor_history
@@ -502,6 +554,7 @@ rem --- Retrieve parameter data
                
 	aps01a_key$=firm_id$+"AP00"
 	find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+	callpoint!.setDevObject("multi_types",aps01a.multi_types$)
 
 	call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",amt_mask$,0,0
 

@@ -1,3 +1,24 @@
+[[OPT_INVHDR.AR_INV_NO.AVAL]]
+rem --- If missing, set the customer for this invoice.
+	if cvs(callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID"),3)="" then
+		opt_invhdr_dev = fnget_dev("OPT_INVHDR")
+		dim opt_invhdr$:fnget_tpl$("OPT_INVHDR")
+		ar_inv_no$=callpoint!.getUserInput()
+
+		rem --- Find customer for this historical invioce
+		customer_id$=""
+		read(opt_invhdr_dev,key=firm_id$+"  "+ar_inv_no$,knum="AO_INV_CUST",dom=*next)
+		while 1
+			readrecord(opt_invhdr_dev,end=*break)opt_invhdr$
+			if opt_invhdr.firm_id$+opt_invhdr.ar_type$+opt_invhdr.ar_inv_no$<>firm_id$+"  "+ar_inv_no$ then break
+			if opt_invhdr.trans_status$<>"U" then continue
+			callpoint!.setColumnData("OPT_INVHDR.CUSTOMER_ID",opt_invhdr.customer_id$,1)
+			break
+		wend
+
+		rem --- Reset index back to AO_STAT_CUST_INV.
+		read(opt_invhdr_dev,key=firm_id$,knum="AO_STAT_CUST_INV",dom=*next)
+	endif
 [[OPT_INVHDR.AOPT-COMM]]
 rem --- Display Comments form
 
@@ -30,19 +51,15 @@ rem --- Inits
 [[OPT_INVHDR.BSHO]]
 rem --- Open needed files
 
-	num_files=39
+	num_files=38
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
 	open_tables$[2]="ARM_CUSTSHIP",  open_opts$[2]="OTA"
-rem  open_tables$[3]="OPE_ORDSHIP",   open_opts$[3]="OTA"
 	open_tables$[4]="ARS_PARAMS",    open_opts$[4]="OTA"
 	open_tables$[5]="ARM_CUSTDET",   open_opts$[5]="OTA"
-rem  open_tables$[6]="OPE_INVCASH",   open_opts$[6]="OTA"
 	open_tables$[7]="ARS_CREDIT",    open_opts$[7]="OTA"
 	open_tables$[8]="OPC_LINECODE",  open_opts$[8]="OTA"
-	open_tables$[9]="GLS_PARAMS",    open_opts$[9]="OTA"
-	open_tables$[10]="GLS_PARAMS",   open_opts$[10]="OTA"
 	open_tables$[11]="IVM_LSMASTER", open_opts$[11]="OTA"
 	open_tables$[12]="IVX_LSCUST",   open_opts$[12]="OTA"
 	open_tables$[13]="IVM_ITEMMAST", open_opts$[13]="OTA"
@@ -56,21 +73,16 @@ rem  open_tables$[6]="OPE_INVCASH",   open_opts$[6]="OTA"
 	open_tables$[22]="IVT_LSTRANS",  open_opts$[22]="OTA"
 	open_tables$[23]="OPT_INVHDR",   open_opts$[23]="OTA"
 	open_tables$[24]="OPT_INVDET",   open_opts$[24]="OTA"
-rem  open_tables$[25]="OPE_ORDDET",   open_opts$[25]="OTA"
 	open_tables$[26]="OPT_INVSHIP",  open_opts$[26]="OTA"
-rem  open_tables$[27]="OPE_CREDDATE", open_opts$[27]="OTA"
 	open_tables$[28]="IVC_WHSECODE", open_opts$[28]="OTA"
 	open_tables$[29]="IVS_PARAMS",   open_opts$[29]="OTA"
-rem  open_tables$[30]="OPE_ORDLSDET", open_opts$[30]="OTA"
 	open_tables$[31]="IVM_ITEMPRIC", open_opts$[31]="OTA"
 	open_tables$[32]="IVC_PRICCODE", open_opts$[32]="OTA"
 	open_tables$[33]="ARM_CUSTCMTS", open_opts$[33]="OTA"
-rem  open_tables$[34]="OPE_PRNTLIST", open_opts$[34]="OTA"
 	open_tables$[35]="OPM_POINTOFSALE", open_opts$[35]="OTA"
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
 	open_tables$[37]="OPC_DISCCODE", open_opts$[37]="OTA"
 	open_tables$[38]="OPC_TAXCODE",  open_opts$[38]="OTA"
-rem  open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
 	
 gosub open_tables
 

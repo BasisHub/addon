@@ -1,9 +1,33 @@
+[[ARS_PARAMS.CURRENT_YEAR.AVAL]]
+rem --- Verify calendar exists for entered AR fiscal year
+	year$=callpoint!.getUserInput()
+	if cvs(year$,2)<>"" and year$<>callpoint!.getColumnData("ARS_PARAMS.CURRENT_YEAR") then
+		gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+		dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+		readrecord(gls_calendar_dev,key=firm_id$+year$,dom=*next)gls_calendar$
+		if cvs(gls_calendar.year$,2)="" then
+			msg_id$="AD_NO_FISCAL_CAL"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=year$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+		callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+	endif
 [[ARS_PARAMS.ARAR]]
 rem --- Update post_to_gl if GL is uninstalled
 	if user_tpl.gl_installed$<>"Y" and callpoint!.getColumnData("ARS_PARAMS.POST_TO_GL")="Y" then
 		callpoint!.setColumnData("ARS_PARAMS.POST_TO_GL","N",1)
 		callpoint!.setStatus("MODIFIED")
 	endif
+
+rem --- Set maximum number of periods allowed for this fiscal year
+	gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+	dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+	current_year$=callpoint!.getColumnData("ARS_PARAMS.CURRENT_YEAR")
+	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
+	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
 [[ARS_PARAMS.AREC]]
 rem --- Init new record
 	callpoint!.setColumnData("ARS_PARAMS.INV_HIST_FLG","Y")
@@ -18,9 +42,10 @@ rem --- Init new record
 		callpoint!.setColumnEnabled("ARS_PARAMS.BR_INTERFACE",0)
 	endif
 [[ARS_PARAMS.BSHO]]
-num_files=1
+num_files=2
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
+open_tables$[2]="GLS_CALENDAR",open_opts$[2]="OTA"
 gosub open_tables
 gls01_dev=num(open_chans$[1])
 rem --- Dimension string templates
@@ -47,10 +72,9 @@ rem --- Retrieve parameter data
 	gl$=info$[20]
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]
-	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_curr_per:c(2),gl_curr_year:c(4),gl_installed:c(1),"+
+	dim user_tpl$:"app:c(2),gl_curr_per:c(2),gl_curr_year:c(4),gl_installed:c(1),"+
 :                  "iv_installed:c(1)"
 	user_tpl.app$="AR"
-	user_tpl.gl_pers$=gls01a.total_pers$
 	user_tpl.gl_installed$=gl$
 	user_tpl.iv_installed$=iv$
 	user_tpl.gl_curr_per$=gls01a.current_per$
@@ -68,6 +92,13 @@ callpoint!.setColumnData("ARS_PARAMS.CUSTOMER_SIZE",
 callpoint!.setColumnUndoData("ARS_PARAMS.CUSTOMER_SIZE",
 :                     callpoint!.getColumnData("ARS_PARAMS.MAX_CUSTOMER_LEN"))
 callpoint!.setStatus("MODIFIED-REFRESH")
+
+rem --- Set maximum number of periods allowed for this fiscal year
+	gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+	dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+	current_year$=callpoint!.getColumnData("ARS_PARAMS.CURRENT_YEAR")
+	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
+	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
 [[ARS_PARAMS.AUTO_NO.AVAL]]
 rem --- check here and be sure seq #'s rec exists, if auto-number got checked
 if callpoint!.getUserInput()="Y"
@@ -88,15 +119,21 @@ if callpoint!.getUserInput()="Y"
 	endif
 endif
 [[ARS_PARAMS.CURRENT_PER.AVAL]]
-if num(callpoint!.getUserInput())<1 or num(callpoint!.getUserInput())>num(user_tpl.gl_pers$)
-	msg_id$="AR_INVALID_PER"
-	dim msg_tokens$[1];msg_tokens$[1]=user_tpl.gl_pers$
-	msg_opt$=""
-	gosub disp_message
-	callpoint!.setUserInput(
-:                           callpoint!.getColumnUndoData("ARS_PARAMS.CURRENT_PER"))
-	callpoint!.setStatus("REFRESH-ABORT")
-endif
+rem --- Verify haven't exceeded calendar total periods for current AR fiscal year
+	period$=callpoint!.getUserInput()
+	if cvs(period$,2)<>"" and period$<>callpoint!.getColumnData("ARS_PARAMS.CURRENT_PER") then
+		period=num(period$)
+		total_pers=num(callpoint!.getDevObject("total_pers"))
+		if period<1 or period>total_pers then
+			msg_id$="AD_BAD_FISCAL_PERIOD"
+			dim msg_tokens$[2]
+			msg_tokens$[1]=str(total_pers)
+			msg_tokens$[2]=callpoint!.getColumnData("ARS_PARAMS.CURRENT_YEAR")
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
 [[ARS_PARAMS.CUSTOMER_INPUT.AVAL]]
 wkdata$=callpoint!.getUserInput()
 gosub format_cust_outmask

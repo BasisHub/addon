@@ -1,3 +1,25 @@
+[[ARC_DISTCODE.GL_SLS_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_PURC_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_PPV_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_INV_ADJ.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_INV_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_FRGT_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_DISC_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_COGS_ADJ.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_COGS_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_CASH_ACCT.AVAL]]
+gosub gl_inactive
+[[ARC_DISTCODE.GL_AR_ACCT.AVAL]]
+gosub gl_inactive
 [[ARC_DISTCODE.BDEL]]
 rem --- Check if code is used as a default code
 
@@ -34,6 +56,27 @@ if info$[20] = "N"
 	gosub disable_fields
 endif
 [[ARC_DISTCODE.<CUSTOM>]]
+#include std_functions.src
+
+gl_inactive:
+rem "GL INACTIVE FEATURE"
+   glm01_dev=fnget_dev("GLM_ACCT")
+   glm01_tpl$=fnget_tpl$("GLM_ACCT")
+   dim glm01a$:glm01_tpl$
+   glacctinput$=callpoint!.getUserInput()
+   glm01a_key$=firm_id$+glacctinput$
+   find record (glm01_dev,key=glm01a_key$,err=*return) glm01a$
+   if glm01a.acct_inactive$="Y" then
+      call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,gl_size
+      msg_id$="GL_ACCT_INACTIVE"
+      dim msg_tokens$[2]
+      msg_tokens$[1]=fnmask$(glm01a.gl_account$(1,gl_size),m0$)
+      msg_tokens$[2]=cvs(glm01a.gl_acct_desc$,2)
+      gosub disp_message
+      callpoint!.setStatus("ACTIVATE-ABORT")
+   endif
+return
+
 disable_fields:
 rem --- used to disable/enable controls depending on parameter settings
 rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space to disable/enable

@@ -44,6 +44,9 @@ rem --- Get the IN parameters used by the procedure
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
 	gl_acct_mask$=fngetmask$("gl_acct_mask","000-000",masks$)
+    props_name$ = sp!.getParameter("PROPS_NAME")
+    props_path$ = sp!.getParameter("PROPS_PATH")
+    user_locale$ = sp!.getParameter("USER_LOCALE")
 		
 	rem ' we are working with Income accounts
 	acct_type$ = "I"
@@ -56,6 +59,16 @@ rem --- Get Barista System Program directory
 	sypdir$=""
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Get DisplayColumns object
+
+    brddir$=stbl("+DIR_BRD",err=*next)
+    x$=stbl("+DIR_BRD",barista_wd$+brddir$)
+    x$=stbl("+PROPS_NAME",props_name$)
+    x$=stbl("+PROPS_PATH",props_path$)
+    x$=stbl("+USER_LOCALE",user_locale$)
+    use ::glo_DisplayColumns.aon::DisplayColumns
+    displayColumns!=new DisplayColumns(firm_id$)
 	
 rem --- create the in memory recordset for return
 
@@ -130,7 +143,7 @@ rem --- get data
 	            rem --- get each accounts dollar amount
 	            for j=0 to acctsVec!.size()-1
 	                    dim glm02a$:fattr(glm02a$)
-	                    readrecord(glm02a_dev,key=firm_id$+acctsVec!.getItem(j)+record_id$,dom=*next)glm02a$
+	                    readrecord(glm02a_dev,key=firm_id$+acctsVec!.getItem(j)+displayColumns!.getYear(record_id$),dom=*next)glm02a$
 	                    
 	                    rem ' either have a full year or a period
 	                    if period$ = "" then

@@ -1,3 +1,39 @@
+[[APE_PAYSELECT.VENDOR_ID.BINQ]]
+rem --- Set filter_defs$[] to only show vendors of given AP Type
+
+ap_type$=callpoint!.getColumnData("APE_PAYSELECT.AP_TYPE")
+
+dim filter_defs$[2,2]
+filter_defs$[0,0]="APM_VENDMAST.FIRM_ID"
+filter_defs$[0,1]="='"+firm_id$+"'"
+filter_defs$[0,2]="LOCK"
+
+filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
+filter_defs$[1,1]="='"+ap_type$+"'"
+filter_defs$[1,2]="LOCK"
+
+
+call STBL("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev, 
+:		form!,
+:		"AP_VEND_LK",
+:		"DEFAULT",
+:		table_chans$[all],
+:		sel_key$,
+:		filter_defs$[all]
+
+if sel_key$<>""
+	call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:		"APM_VENDMAST",
+:		"PRIMARY",
+:		apm_vend_key$,
+:		table_chans$[all],
+:		status$
+	dim apm_vend_key$:apm_vend_key$
+	apm_vend_key$=sel_key$
+	callpoint!.setColumnData("APE_PAYSELECT.VENDOR_ID",apm_vend_key.vendor_id$,1)
+endif	
+callpoint!.setStatus("ACTIVATE-ABORT")
 [[APE_PAYSELECT.VENDOR_ID.BINP]]
 rem --- Capture current value so will know in AVAL if it's changed
 	callpoint!.setDevObject("prev_vendor_id",callpoint!.getColumnData("APE_PAYSELECT.VENDOR_ID"))
@@ -37,7 +73,7 @@ rem --- Display the images associated with the selected invoices in the grid.
 		break
 	endif
 
-rem --- Displaye invoice images in the browser
+rem --- Display invoice images in the browser
 	invimage_dev=fnget_dev("@APT_INVIMAGE")
 	dim invimage$:fnget_tpl$("@APT_INVIMAGE")
 	image_count =0
@@ -118,7 +154,7 @@ rem --- Approve the invoice selected in the grid
 	endif
 
 	if rowsSelected!.size() =  0 then
-		msg_id$="GENERIC_OK"
+		msg_id$="GENERIC_WARN"
 		dim msg_tokens$[1]
 		msg_tokens$[1]=Translate!.getTranslation("AON_MUST_SELECT_INVOICE_ROW")
 		gosub disp_message
@@ -349,6 +385,24 @@ rem --- Set filters on grid if value was changed
 		endif
 	endif
 [[APE_PAYSELECT.VENDOR_ID.AVAL]]
+rem "VENDOR INACTIVE - FEATURE"
+vendor_id$ = callpoint!.getUserInput()
+apm01_dev=fnget_dev("APM_VENDMAST")
+apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+dim apm01a$:apm01_tpl$
+apm01a_key$=firm_id$+vendor_id$
+find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+if apm01a.vend_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+   msg_id$="AP_VEND_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE")
+   goto std_exit
+endif
+
 rem --- Set filters on grid if value was changed
 	if callpoint!.getUserInput()<>callpoint!.getDevObject("prev_vendor_id") then
 		gosub filter_recs
@@ -849,7 +903,7 @@ rem ==========================================================================
 	if usertype$ = "R" and not_reviewed<>0 then
 		rem --- Report it and go, all invoices must be reviewed prior to emailing the approvers
 		msg$ = msg$ + Translate!.getTranslation("AON_INV_AWAITING_REVIEW")
-		msg_id$="GENERIC_OK"
+		msg_id$="GENERIC_WARN"
 		dim msg_tokens$[1]
 		msg_tokens$[1]=msg$
 		gosub disp_message
@@ -1275,10 +1329,16 @@ rem				endif
 :					vend$+
 :					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
 
-				if apt01a.hold_flag$="Y" then
-					msg_id$="AP_INV_HOLD"
-					gosub disp_message
-					break
+				if apt01a.hold_flag$="Y"
+					if TempRows!.size()>1 then
+						msg_id$="AP_INV_SEL_HOLD"
+						gosub disp_message
+						break
+					else
+						msg_id$="AP_INV_RMVHOLD"
+						gosub disp_message
+						if msg_opt$<>"Y" then break
+					endif
 				endif
 				
 				read record(apt11_dev, key=firm_id$+apt01a.ap_type$+apt01a.vendor_id$+apt01a.ap_inv_no$, dom=*next)
@@ -1558,12 +1618,15 @@ rem ==========================================================================
 	vect_size = num(vectInvoicesMaster!.size())
 	rows = 0
 	tot_payments=0
+	hold_count=0
 
-	for x=1 to vect_size step user_tpl.MasterCols
-		if vectInvoicesMaster!.getItem(x-1)="Y"
-			rows=rows+1
-		endif
-	next x
+	if vectInvoicesMaster!.size() > 0 then
+		for x=1 to vect_size step user_tpl.MasterCols
+			if vectInvoicesMaster!.getItem(x-1)="Y"
+				rows=rows+1
+			endif
+		next x
+	endif
 
 	if rows > 0 then
 		for curr_row=1 to rows
@@ -1588,8 +1651,7 @@ rem				endif
 :					gridInvoices!.getCellText(row_no,5), dom=*next) apt01a$
 
 				if apt01a.hold_flag$="Y" then
-					msg_id$="AP_INV_HOLD"
-					gosub disp_message
+					hold_count=hold_count+1
 					continue
 				endif
 
@@ -1605,7 +1667,7 @@ rem				endif
 					apt01a.invoice_amt = apt01a.invoice_amt + apt11a.trans_amt
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 				wend
-                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
+                			if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 
 				gridInvoices!.setCellState(row_no,0,1)
 
@@ -1637,7 +1699,7 @@ rem				endif
 :					str(payment_amt)
 :				)
 
-		rem --- Checked -> not checked
+				rem --- Checked -> not checked
 
 			else
 				rem --- re-initialize
@@ -1660,7 +1722,7 @@ rem				endif
 					apt01a.discount_amt = apt01a.discount_amt + apt11a.trans_disc
 					apt01a.retention = apt01a.retention + apt11a.trans_ret
 				wend
-                if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
+                			if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 				inv_amt = apt01a.invoice_amt
 				disc_amt = apt01a.discount_amt
 				ret_amt = apt01a.retention
@@ -1691,18 +1753,23 @@ rem				endif
 	endif
 rem --- Calculate current value of selected invoices
 	tot_payments=0
-	if vectInvoicesMaster!.size() > 0
-	for x=1 to vect_size step user_tpl.MasterCols
-		if vectInvoicesMaster!.getItem(x)="Y"
-			tot_payments=tot_payments+num(vectInvoicesMaster!.getItem(x+12))
-		endif
-	next x
+	if vectInvoicesMaster!.size() > 0 then
+		for x=1 to vect_size step user_tpl.MasterCols
+			if vectInvoicesMaster!.getItem(x)="Y"
+				tot_payments=tot_payments+num(vectInvoicesMaster!.getItem(x+12))
+			endif
+		next x
 	endif
 
 	callpoint!.setDevObject("tot_payments",str(tot_payments))
 	callpoint!.setColumnData("<<DISPLAY>>.TOT_PAYMENTS",str(tot_payments),1)
 
 	rem SysGUI!.setRepaintEnabled(1) ... not availble in BUI
+
+	if hold_count
+		msg_id$="AP_INV_SEL_HOLD"
+		gosub disp_message
+	endif
 
 	return
 
@@ -1828,6 +1895,7 @@ rem --- Set Discount and Payment Amount in InvoiceMaster vector
 
 rem ==========================================================================
 #include std_missing_params.src
+#include std_functions.src
 rem ==========================================================================
 [[APE_PAYSELECT.ASVA]]
 rem --- Update apt-01 (remove/write) based on what's checked in the grid
@@ -2161,11 +2229,11 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 
 	switch notice.code
 		case 12; rem --- grid_key_press
-			if notice.wparam=32 gosub switch_value
+			if notice.wparam=32 then gosub switch_value
 			break
 
 		case 14; rem --- grid_mouse_up
-			if notice.col=0 gosub switch_value
+			if notice.col=0 then gosub switch_value
 			break
 
 		case 7; rem --- edit stop
@@ -2224,12 +2292,14 @@ rem						endif
 :							vend$+
 :							gridInvoices!.getCellText(curr_row,5), dom=*next) apt01a$
 
-						if apt01a.hold_flag$="Y" then 
-							gridInvoices!.setCellText(curr_row,11,str(0))
-							gridInvoices!.setCellText(curr_row,12,str(0))
-							msg_id$="AP_INV_HOLD"
+						if apt01a.hold_flag$="Y" 
+							msg_id$="AP_INV_RMVHOLD"
 							gosub disp_message
-							break
+							if msg_opt$<>"Y"
+								gridInvoices!.setCellText(curr_row,11,str(0))
+								gridInvoices!.setCellText(curr_row,12,str(0))
+								break
+							endif
 						endif
 
 						gridInvoices!.setCellState(curr_row,0,1)
@@ -2291,12 +2361,14 @@ rem						endif
 :							vend$+
 :							gridInvoices!.getCellText(curr_row,5), dom=*next) apt01a$
 
-						if apt01a.hold_flag$="Y" then 
-							gridInvoices!.setCellText(curr_row,11,str(0))
-							gridInvoices!.setCellText(curr_row,12,str(0))
-							msg_id$="AP_INV_HOLD"
+						if apt01a.hold_flag$="Y" 
+							msg_id$="AP_INV_RMVHOLD"
 							gosub disp_message
-							break
+							if msg_opt$<>"Y"
+								gridInvoices!.setCellText(curr_row,11,str(0))
+								gridInvoices!.setCellText(curr_row,12,str(0))
+								break
+							endif
 						endif
 
 						gridInvoices!.setCellState(curr_row,0,1)
@@ -2425,12 +2497,14 @@ rem						endif
 :							vend$+
 :							gridInvoices!.getCellText(curr_row,5), dom=*next) apt01a$
 
-						if apt01a.hold_flag$="Y" then 
-							gridInvoices!.setCellText(curr_row,11,str(0))
-							gridInvoices!.setCellText(curr_row,12,str(0))
-							msg_id$="AP_INV_HOLD"
+						if apt01a.hold_flag$="Y" 
+							msg_id$="AP_INV_RMVHOLD"
 							gosub disp_message
-							break
+							if msg_opt$<>"Y"
+								gridInvoices!.setCellText(curr_row,11,str(0))
+								gridInvoices!.setCellText(curr_row,12,str(0))
+								break
+							endif
 						endif
 
 						gridInvoices!.setCellState(curr_row,0,1)

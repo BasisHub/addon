@@ -1,3 +1,6 @@
+[[SFR_WOVARREP.BILL_NO.BINQ]]
+	whse$=callpoint!.getColumnData("SFR_WOVARREP.WAREHOUSE_ID")
+        callpoint!.setDevObject("whse",whse$)
 [[SFR_WOVARREP.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 
@@ -15,11 +18,7 @@ rem --- Validate against BOM_BILLMAST
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[SFR_WOVARREP.BFMC]]
-rem --- Set Custom Query for BOM Item Number
 
-	callpoint!.setTableColumnAttribute("SFR_WOVARREP.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("SFR_WOVARREP.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[SFR_WOVARREP.ASVA]]
 rem --- Ensure that at least one status option (Open/Closed) is checked
 

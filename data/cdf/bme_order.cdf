@@ -1,3 +1,24 @@
+[[BME_ORDER.<CUSTOM>]]
+#include std_functions.src
+[[BME_ORDER.CUSTOMER_ID.AVAL]]
+rem "Customer Inactive Feature"
+customer_id$=callpoint!.getUserInput()
+arm01_dev=fnget_dev("ARM_CUSTMAST")
+arm01_tpl$=fnget_tpl$("ARM_CUSTMAST")
+dim arm01a$:arm01_tpl$
+arm01a_key$=firm_id$+customer_id$
+find record (arm01_dev,key=arm01a_key$,err=*break) arm01a$
+if arm01a.cust_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+   msg_id$="AR_CUST_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(arm01a.customer_id$(1,customer_size),m0$)
+   msg_tokens$[2]=cvs(arm01a.customer_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 [[BME_ORDER.BEND]]
 rem --- remove software lock on batch, if batching
 

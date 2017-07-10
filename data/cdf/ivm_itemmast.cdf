@@ -1,3 +1,28 @@
+[[IVM_ITEMMAST.AOPT-SHST]]
+rem --- Launch item sales analysis form
+	user_id$=stbl("+USER_ID")
+	year$=sysinfo.system_date$(1,4)
+	product_type$=callpoint!.getColumnData("IVM_ITEMMAST.PRODUCT_TYPE")
+	item_id$=callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
+	sam_item_key$=firm_id$+year$+product_type$+item_id$
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"SAM_ITEM",
+:		user_id$,
+:		"EXP-INQ",
+:		sam_item_key$,
+:		table_chans$[all]
+[[IVM_ITEMMAST.GL_PUR_ACCT.AVAL]]
+gosub gl_active
+[[IVM_ITEMMAST.GL_PPV_ACCT.AVAL]]
+gosub gl_active
+[[IVM_ITEMMAST.GL_INV_ADJ.AVAL]]
+gosub gl_active
+[[IVM_ITEMMAST.GL_INV_ACCT.AVAL]]
+gosub gl_active
+[[IVM_ITEMMAST.GL_COGS_ADJ.AVAL]]
+gosub gl_active
+[[IVM_ITEMMAST.GL_COGS_ACCT.AVAL]]
+gosub gl_active
 [[IVM_ITEMMAST.AOPT-ITAV]]
 rem --- Show availability this item
 
@@ -537,6 +562,27 @@ if num(callpoint!.getUserInput())<0 or num(callpoint!.getUserInput())>9999.99 ca
 [[IVM_ITEMMAST.ASHO]]
 callpoint!.setStatus("ABLEMAP-REFRESH")
 [[IVM_ITEMMAST.<CUSTOM>]]
+#include std_functions.src
+
+gl_active:
+rem "GL INACTIVE FEATURE"
+   glm01_dev=fnget_dev("GLM_ACCT")
+   glm01_tpl$=fnget_tpl$("GLM_ACCT")
+   dim glm01a$:glm01_tpl$
+   glacctinput$=callpoint!.getUserInput()
+   glm01a_key$=firm_id$+glacctinput$
+   find record (glm01_dev,key=glm01a_key$,err=*return) glm01a$
+   if glm01a.acct_inactive$="Y" then
+      call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,gl_size
+      msg_id$="GL_ACCT_INACTIVE"
+      dim msg_tokens$[2]
+      msg_tokens$[1]=fnmask$(glm01a.gl_account$(1,gl_size),m0$)
+      msg_tokens$[2]=cvs(glm01a.gl_acct_desc$,2)
+      gosub disp_message
+      callpoint!.setStatus("ACTIVATE-ABORT")
+   endif
+return
+
 rem ==========================================================================
 set_desc_segs: rem --- Set the description segments
                rem      IN: desc$

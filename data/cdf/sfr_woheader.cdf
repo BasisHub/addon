@@ -1,8 +1,9 @@
+[[SFR_WOHEADER.BILL_NO.BINQ]]
+	whse$=callpoint!.getColumnData("SFR_WOHEADER.WAREHOUSE_ID")
+        callpoint!.setDevObject("whse",whse$)
 [[SFR_WOHEADER.BFMC]]
 rem --- Set Custom Query for BOM Item Number
 
-	callpoint!.setTableColumnAttribute("SFR_WOHEADER.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("SFR_WOHEADER.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[SFR_WOHEADER.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 

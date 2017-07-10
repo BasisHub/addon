@@ -27,12 +27,13 @@ rem --- Retrieve sysinfo data
     
 rem --- Open/Lock files
 
-    files=4,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
     files$[3]="glm-03",ids$[3]="GLC_JOURNALCODE"
     files$[4]="glt-04",ids$[4]="GLE_DAILYDETAIL",options$[4]="L"
+    files$[5]="gls_calendar",ids$[5]="GLS_CALENDAR"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -40,10 +41,12 @@ rem --- Open/Lock files
     glm01_dev=channels[2]
     glm03_dev=channels[3]
     glt04_dev=channels[4]
+    gls_calendar_dev=channels[5]
 
 rem --- Dimension string templates
 
     dim gls01a$:templates$[1],glm01a$:templates$[2],glm03a$:templates$[3],glt04a$:templates$[4]
+    dim gls_calendar$:templates$[5]
 
 rem --- Assign input values to local variables
 
@@ -63,7 +66,15 @@ rem --- Retrieve parameter records
 
     gls01a_key$=sysinfo.firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    total_periods=num(gls01a.total_pers$)
+    find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=gls01a.current_year$
+        gosub disp_message
+        goto std_exit
+    endif
+    total_periods=num(gls_calendar.total_pers$)
     period=num(gls01a.current_per$)
     year=num(gls01a.current_year$)
     call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","I","",m0$,0,acctlen
@@ -284,7 +295,7 @@ rem --- Detail line by audit number
 
             m$=""
             m=num(glt04a.posting_per$,err=*proceed)
-            if m then m$=field(gls01a$,"abbr_name_"+str(m:"00"))
+            if m then m$=field(gls_calendar$,"abbr_name_"+str(m:"00"))
 
             OutVect!.addItem(fnmask$(glt04a.gl_account$(1,acctlen),m0$))
             OutVect!.addItem(description$)
@@ -493,7 +504,7 @@ new_audit: rem --- New audit number
     dim at[2]
     t2$=glt04a.gl_adt_no$+glt04a.posting_year$+glt04a.posting_per$
     period=num(glt04a.posting_per$)
-    period_name$=field(gls01a$,"abbr_name_"+str(period:"00"))
+    period_name$=field(gls_calendar$,"abbr_name_"+str(period:"00"))
     x$=cvs(t2$(1,7),2)
     if x$="" x$="NONE"
     h2$=Translate!.getTranslation("AON_AUDIT_NUMBER_")+x$+Translate!.getTranslation("AON__-_PERIOD_")+t2$(12,2)+" ("+period_name$+" "+t2$(8,4)+")"

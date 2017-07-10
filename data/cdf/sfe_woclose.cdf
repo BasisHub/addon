@@ -666,15 +666,11 @@ rem --- Additional file opens
 	if pos(lotser$="LS") then
 		open_tables$[3]="IVM_LSMASTER",open_opts$[3]="OTA@"
 	endif
-	if gl$="Y" then
-		open_tables$[4]="GLS_PARAMS",open_opts$[4]="OTA@"
-	endif
 
 	gosub open_tables
 
 	if gl$="Y" then
 		rem --- Get GL period start date for current SF period
-		gls_params_dev=num(open_chans$[4])
-		call stbl("+DIR_PGM")+"adc_perioddates.aon",gls_params_dev,num(sfs_params.current_per$),num(sfs_params.current_year$),beg_date$,end_date$,status
-		callpoint!.setDevObject("gl_beg_date",beg_date$)
+		call stbl("+DIR_PGM")+"adc_perioddates.aon",num(sfs_params.current_per$),num(sfs_params.current_year$),beg_date$,end_date$,table_chans$[all],status
+		if status=0 then callpoint!.setDevObject("gl_beg_date",beg_date$)
 	endif

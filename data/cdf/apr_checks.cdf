@@ -1,3 +1,72 @@
+[[APR_CHECKS.ARER]]
+rem --- Use default check form order if available
+	default_form_order$=callpoint!.getDevObject("default_form_order")
+	if cvs(default_form_order$,2)<>"" then
+		formorderListButton!=callpoint!.getControl("APR_CHECKS.FORM_ORDER")
+		formorderVector!=formorderListButton!.getAllItems()
+		for i=0 to formorderVector!.size()-1
+			if pos(default_form_order$=formorderVector!.getItem(i)) then
+				formorderListButton!.selectIndex(i)
+				break
+			endif
+		next i
+	endif
+[[APR_CHECKS.AREC]]
+
+[[APR_CHECKS.VENDOR_ID.AVAL]]
+rem "VENDOR INACTIVE - FEATURE"
+vendor_id$ = callpoint!.getUserInput()
+apm01_dev=fnget_dev("APM_VENDMAST")
+apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+dim apm01a$:apm01_tpl$
+apm01a_key$=firm_id$+vendor_id$
+find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+if apm01a.vend_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+   msg_id$="AP_VEND_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE")
+endif
+
+[[APR_CHECKS.VENDOR_ID.BINQ]]
+rem --- Set filter_defs$[] to only show vendors of given AP Type
+
+ap_type$=callpoint!.getColumnData("APR_CHECKS.AP_TYPE")
+
+dim filter_defs$[2,2]
+filter_defs$[0,0]="APM_VENDMAST.FIRM_ID"
+filter_defs$[0,1]="='"+firm_id$+"'"
+filter_defs$[0,2]="LOCK"
+
+filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
+filter_defs$[1,1]="='"+ap_type$+"'"
+filter_defs$[1,2]="LOCK"
+
+
+call STBL("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev, 
+:		form!,
+:		"AP_VEND_LK",
+:		"DEFAULT",
+:		table_chans$[all],
+:		sel_key$,
+:		filter_defs$[all]
+
+if sel_key$<>""
+	call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:		"APM_VENDMAST",
+:		"PRIMARY",
+:		apm_vend_key$,
+:		table_chans$[all],
+:		status$
+	dim apm_vend_key$:apm_vend_key$
+	apm_vend_key$=sel_key$
+	callpoint!.setColumnData("APR_CHECKS.VENDOR_ID",apm_vend_key.vendor_id$,1)
+endif	
+callpoint!.setStatus("ACTIVATE-ABORT")
 [[APR_CHECKS.ADIS]]
 rem --- Clear Check Number when using previously saved selections.
 	callpoint!.setColumnData("APR_CHECKS.CHECK_NO","",1)
@@ -38,6 +107,7 @@ rem --- Get parameters
 	aps01_key$=firm_id$+"AP00"
 	readrecord(aps01_dev,key=aps01_key$,dom=std_missing_params)aps01a$
 	callpoint!.setDevObject("multi_types",aps01a.multi_types$)
+	callpoint!.setDevObject("default_form_order",aps01a.form_order$)
 	if aps01a.multi_types$ <> "Y" then
 		ctl_name$="APR_CHECKS.AP_TYPE"
 		ctl_stat$="I"
@@ -76,6 +146,7 @@ rem --- send in control to toggle (format "ALIAS.CONTROL_NAME"), and D or space 
 	callpoint!.setStatus("ABLEMAP-REFRESH")
 return
 #include std_missing_params.src
+#include std_functions.src
 [[APR_CHECKS.ASVA]]
 rem --- Validate Check Number
 if num(callpoint!.getColumnData("APR_CHECKS.CHECK_NO")) = 0 then

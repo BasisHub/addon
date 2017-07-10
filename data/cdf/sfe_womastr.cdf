@@ -299,7 +299,7 @@ rem --- Open tables
 	open_tables$[9]="OPE_ORDDET",open_opts$[9]="OTA"
 	open_tables$[10]="IVM_ITEMMAST",open_opts$[10]="OTA"
 	open_tables$[11]="OPC_LINECODE",open_opts$[11]="OTA"
-	open_tables$[12]="GLS_PARAMS",open_opts$[12]="OTA"
+	open_tables$[12]="GLS_CALENDAR",open_opts$[12]="OTA"
 	open_tables$[13]="SFT_CLSMATTR",open_opts$[13]="OTA"
 	open_tables$[14]="SFT_CLSOPRTR",open_opts$[14]="OTA"
 	open_tables$[15]="SFT_CLSSUBTR",open_opts$[15]="OTA"
@@ -321,17 +321,17 @@ rem --- Open tables
 	read record (sfs_params,key=firm_id$+"SF00",dom=std_missing_params) sfs_params$
 
 	rem --- Get end date of previous SF period
-	gls_params=num(open_chans$[12])
-	dim gls_params$:open_tpls$[12]
+	gls_calendar=num(open_chans$[12])
+	dim gls_calendar$:open_tpls$[12]
 	sf_prevper=num(sfs_params.current_per$)-1
 	sf_prevper_year=num(sfs_params.current_year$)
 	if sf_prevper=0 then
-		read record (gls_params,key=firm_id$+"GL00",dom=std_missing_params) gls_params$
-		sf_prevper=num(gls_params.total_pers$)
+		read record (gls_calendar,key=firm_id$+sfs_params.current_year$,dom=std_missing_params) gls_calendar$
+		sf_prevper=num(gls_calendar.total_pers$)
 		sf_prevper_year=sf_prevper_year-1
 	endif
-	call stbl("+DIR_PGM")+"adc_perioddates.aon",gls_params,sf_prevper,sf_prevper_year,beg_date$,end_date$,status
-	callpoint!.setDevObject("sf_prevper_enddate",end_date$)
+	call stbl("+DIR_PGM")+"adc_perioddates.aon",sf_prevper,sf_prevper_year,beg_date$,end_date$,table_chans$[all],status
+	if status=0 then callpoint!.setDevObject("sf_prevper_enddate",end_date$)
 
 	ivs_params=num(open_chans$[1])
 	dim ivs_params$:open_tpls$[1]
@@ -426,7 +426,7 @@ rem --- alter control label and prompt for Bill No vs. Item ID depending on whet
 	if bm$="Y"
 		lbl_ctl!.setText(Translate!.getTranslation("AON_BILL_NUMBER:","Bill Number:",1))
 		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID","PROM",Translate!.getTranslation("AON_ENTER_BILL_NUMBER","Enter a valid Bill of Materials number",1))
-		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID", "IDEF", "BOM_LOOKUP")
+		rem callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID", "IDEF", "BOM_LOOKUP")
 	else
 		lbl_ctl!.setText(Translate!.getTranslation("AON_INVENTORY_ITEM_ID:","Inventory Item ID:",1))
 		callpoint!.setTableColumnAttribute("SFE_WOMASTR.ITEM_ID","PROM",Translate!.getTranslation("AON_ENTER_INVENTORY_ITEM_ID","Enter a valid Inventory Item ID",1))
@@ -973,6 +973,23 @@ rem --- Disable Order info if Customer not entered
 		endif
 	endif
 [[SFE_WOMASTR.ITEM_ID.AVAL]]
+rem "Inventory Inactive Feature"
+item_id$=callpoint!.getUserInput()
+ivm01_dev=fnget_dev("IVM_ITEMMAST")
+ivm01_tpl$=fnget_tpl$("IVM_ITEMMAST")
+dim ivm01a$:ivm01_tpl$
+ivm01a_key$=firm_id$+item_id$
+find record (ivm01_dev,key=ivm01a_key$,err=*break)ivm01a$
+if ivm01a.item_inactive$="Y" then
+   msg_id$="IV_ITEM_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=cvs(ivm01a.item_id$,2)
+   msg_tokens$[2]=cvs(ivm01a.display_desc$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 rem --- Set default values if item_id changed
 	if callpoint!.getUserInput()=callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID") then break
 

@@ -17,11 +17,6 @@ rem --- Validate against BOM_BILLMAST
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[BMU_COMPREPLACE.BFMC]]
-rem --- Set Custom Query for BOM Item Number
-
-	callpoint!.setTableColumnAttribute("BMU_COMPREPLACE.BILL_NO_1","IDEF","BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("BMU_COMPREPLACE.BILL_NO_2","IDEF","BOM_LOOKUP")
 [[BMU_COMPREPLACE.BILL_CONV_FACT.AVAL]]
 rem --- Ensure Conversion Factor is greater than zero
 

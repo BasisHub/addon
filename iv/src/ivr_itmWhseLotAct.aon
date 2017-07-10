@@ -21,11 +21,7 @@ rem --- when closed, is killing the lot master, so not sure why rd_called$ isn't
 
 rem --- Enter Arguments
 
-	enter
-:       iv_item_id$,
-:		iv_whse_id$,
-:       iv_lot_id$,
-:		rd_table_chans$[all]
+	enter iv_item_id$,iv_whse_id$,iv_lot_id$,table_chans$[all]
 
 rem --- Get Translator Object
 
@@ -53,26 +49,26 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-	files=2,begfile=1,endfile=files
-    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-	files$[1]="ivm-17",ids$[1]="IVM_LSACT"
-    files$[2]="gls_params",ids$[2]="GLS_PARAMS"
-
-    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
-:                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
-
-    ivm17_dev=channels[1]
-    gls01_dev=channels[2]
-
-rem --- Dimension string templates
-
-    dim ivm17a$:templates$[1],gls01a$:templates$[2]
+    num_files=3
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="GLS_CALENDAR",open_opts$[1]="OTA@"
+    open_tables$[2]="GLS_CALENDAR",open_opts$[2]="OTA@"
+    open_tables$[3]="IVM_LSACT",open_opts$[3]="OTA@"
+    
+    gosub open_tables
+    
+    gls01_dev=num(open_chans$[1])
+    gls_calendar_dev=num(open_chans$[2])
+    ivm17_dev=num(open_chans$[3])
+    dim gls01a$:open_tpls$[1]
+    dim gls_calendar$:open_tpls$[2]
+    dim ivm17a$:open_tpls$[3]
 
 rem --- Retrieve G/L parameters
 
     read record (gls01_dev,key=firm_id$+"GL00",dom=std_missing_params) gls01a$
-    tot_pers=num(gls01a.total_pers$)
+    read record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,dom=std_missing_params) gls_calendar$
+    tot_pers=num(gls_calendar.total_pers$)
 
 rem --- Assign form input values to local variables
    
@@ -273,6 +269,35 @@ rem --- Create blank line in OutVect! (no return value wanted or needed)
     fnend
 
 rem #endinclude std_functions.src
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
 
 rem #include std_error.src
 
@@ -330,9 +355,7 @@ rem #include std_end.src
 
 std_exit: rem --- Standard program end (01Mar2006)
 
-    close(ivm17_dev)
-    close(gls01_dev)
-    call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
+   call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     rd_called$="YES";rem --- see to it that only doc_out window closes
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
 

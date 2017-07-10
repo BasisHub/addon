@@ -1,25 +1,23 @@
 rem adc - Determine Period End Dates (Public/Called)
-rem Program adc_perioddates v8.0.0 13Apr2006 (syc_pa)
-rem Created by adx_progconv.bbx v1.0.0 (04/13/2006 10:16:04)
+rem Program adc_perioddates (syc_pa)
 
-rem  +-----------------------------------------+
-rem  | AddonSoftware Version 8.0.0 - 01Oct2006 |
-rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
-rem  |          All Rights Reserved            |
-rem  +-----------------------------------------+
+rem --- AddonSoftware Version 17.00
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --------------------------------------------------------------------------------
 
-rem --- GLS01_DEV : Channel that ads-01 is open on (Input)
 rem --- PERIOD    : Current fiscal period (Input)
 rem --- YEAR      : Current fiscal year (Input)
 rem --- BEGDATE$  : Period beginning date in YYYYMMDD format (Returned)
 rem --- ENDDATE$  : Period ending date in YYYYMMDD format (Returned)
+rem --- TABLE_CHANS$[]: Barista opened channels array
 rem --- STATUS    : Zero=No Error/Not Zero=Error (Returned)
 
 use java.util.GregorianCalendar
 
     setesc std_error
     seterr std_error
-    enter gls01_dev,period,year,begdate$,enddate$,status
+    
+    enter period,year,begdate$,enddate$,table_chans$[all],status
 
 rem --- Retrieve the program path
 
@@ -32,32 +30,44 @@ rem --- Retrieve sysinfo data
     sysinfo$=stbl("+SYSINFO",err=*next)
     firm_id$=sysinfo.firm_id$
 
-rem --- Retrieve miscellaneous templates
-
-    files=1,begfile=1,endfile=files
-    dim ids$[files],templates$[files]
-    ids$[1]="gls-01:GLS_PARAMS"
-    call pgmdir$+"adc_template.aon",begfile,endfile,ids$[all],templates$[all],status
-    if status goto std_exit
-
-rem --- Dimension miscellaneous string templates
-
-    dim gls01a$:templates$[1]
     Calendar! = new GregorianCalendar()
+
+rem --- Open/Lock files
+
+    num_files=2
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA@"
+    open_tables$[2]="GLS_CALENDAR",open_opts$[2]="OTA@"
+    
+    gosub open_tables
+    
+    gls01_dev=num(open_chans$[1])
+    gls_calendar_dev=num(open_chans$[2])
+    dim gls01a$:open_tpls$[1]
+    dim gls_calendar$:open_tpls$[2]
 
 rem --- Retrieve parameter records
 
     status=0
     gls01a_key$=firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    total_periods=num(gls01a.total_pers$)
+    readrecord(gls_calendar_dev,key=firm_id$+str(year),err=*next)gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=str(year)
+        gosub disp_message
+        status=1
+        goto std_exit
+    endif
+    total_periods=num(gls_calendar.total_pers$)
 
 rem --- Determine End Of Period
 
     if period>total_periods period=total_periods
-    enddate$=field(gls01a$,"per_ending_"+str(period:"00"))
+    enddate$=field(gls_calendar$,"per_ending_"+str(period:"00"))
     calendar_year=year
-    if enddate$(1,2)<gls01a.per_ending_01$(1,2) calendar_year=calendar_year+1
+    if enddate$<gls_calendar.per_ending_01$ then calendar_year=calendar_year+1
     enddate$=str(calendar_year:"0000")+enddate$
     if len(enddate$)>7 then
         yyyy$=enddate$(1,4)
@@ -72,9 +82,19 @@ rem --- Determine End Of Period
 
 rem --- Determine Start Of Period
 
-    if period>1 begdate$=field(gls01a$,"per_ending_"+str(period-1:"00")),calendar_year=year
-:          else begdate$=field(gls01a$,"per_ending_"+str(total_periods:"00")),calendar_year=year-1
-    if begdate$(1,4)<gls01a.per_ending_01$ calendar_year=calendar_year+1
+    if period=1 then
+        rem --- Get calendar start date and subtract one day from it
+        begdate$=field(gls_calendar$,"cal_start_date")
+        julian=jul(calendar_year,num(begdate$(1,2)),num(begdate$(3,2)))-1
+        prior_yr_end$=date(julian:"%Yl%Mz%Dz")
+        calendar_year=num(prior_yr_end$(1,4))
+        begdate$=prior_yr_end$(5)
+    else
+        rem --- Get ending date of previous period
+        begdate$=field(gls_calendar$,"per_ending_"+str(period-1:"00"))
+        calendar_year=year
+        if begdate$<gls_calendar.per_ending_01$ then calendar_year=calendar_year+1
+    endif
     if len(begdate$)>3 then
         mm$=begdate$(1,2)
         dd$=begdate$(3,2)
@@ -91,6 +111,35 @@ rem --- Done
 
     status=0
     goto std_exit
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
 
 rem #include std_error.src
 

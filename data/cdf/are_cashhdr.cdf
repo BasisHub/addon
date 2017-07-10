@@ -534,7 +534,7 @@ endif
 [[ARE_CASHHDR.AWIN]]
 rem --- Open/Lock files
 use ::ado_util.src::util
-files=30,begfile=1,endfile=11
+files=30,begfile=1,endfile=10
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="ARE_CASHHDR";rem --- "are-01"
 files$[2]="ARE_CASHDET";rem --- "are-11"
@@ -546,7 +546,6 @@ files$[7]="ARM_CUSTMAST";rem --- "arm-01"
 files$[8]="ARM_CUSTDET";rem --- "arm-02
 files$[9]="ARC_CASHCODE";rem --- "arm-10C"
 files$[10]="ARS_PARAMS";rem --- "ars-01"
-files$[11]="GLS_PARAMS";rem --- gls-01"
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
 next wkx
@@ -560,10 +559,9 @@ if status$<>"" then
 	release
 endif
 ars01_dev=num(chans$[10])
-gls01_dev=num(chans$[11])
 
 rem --- Dimension miscellaneous string templates
-dim ars01a$:templates$[10],gls01a$:templates$[11]
+dim ars01a$:templates$[10]
 user_tpl_str$="firm_id:c(2),glint:c(1),glyr:c(4),glper:c(2),glworkfile:c(16),"
 user_tpl_str$=user_tpl_str$+"cash_flag:c(1),disc_flag:c(1),arglboth:c(1),amt_msk:c(15),existing_chk:c(1),"
 user_tpl_str$=user_tpl_str$+"OA_chkbox_id:c(5),zbal_chkbox_id:c(5),asel_chkbox_id:c(5),"
@@ -582,9 +580,6 @@ find record (ars01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
 callpoint!.setDevObject("br_interface",ars01a.br_interface$)
 call stbl("+DIR_PGM")+"adc_getmask.aon","","AR","A",imsk$,omsk$,ilen,olen
 user_tpl.amt_msk$=imsk$
-
-gls01a_key$=firm_id$+"GL00"
-find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 
 rem --- Additional File Opens
 gl$="N"
@@ -726,6 +721,23 @@ rem --- Enable/disable controls based on Cash Receipt code
 	gosub able_controls
 [[ARE_CASHHDR.CUSTOMER_ID.AVAL]]
 tmp_cust_id$=callpoint!.getUserInput()
+rem "Customer Inactive Feature"
+arm01_dev=fnget_dev("ARM_CUSTMAST")
+arm01_tpl$=fnget_tpl$("ARM_CUSTMAST")
+dim arm01a$:arm01_tpl$
+arm01a_key$=firm_id$+tmp_cust_id$
+find record (arm01_dev,key=arm01a_key$,err=*break) arm01a$
+if arm01a.cust_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+   msg_id$="AR_CUST_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(arm01a.customer_id$(1,customer_size),m0$)
+   msg_tokens$[2]=cvs(arm01a.customer_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 gosub get_customer_balance
 callpoint!.setStatus("REFRESH")
 [[ARE_CASHHDR.PAYMENT_AMT.AVAL]]
@@ -758,6 +770,7 @@ if gl$="Y"
 	endif
 endif
 [[ARE_CASHHDR.<CUSTOM>]]
+#include std_functions.src
 rem ==================================================================
 disable_key_fields:
 rem ==================================================================

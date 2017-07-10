@@ -1,3 +1,20 @@
+[[GLR_BUDGETUPDATE.GL_ACCOUNT.AVAL]]
+rem "GL INACTIVE FEATURE"
+   glm01_dev=fnget_dev("GLM_ACCT")
+   glm01_tpl$=fnget_tpl$("GLM_ACCT")
+   dim glm01a$:glm01_tpl$
+   glacctinput$=callpoint!.getUserInput()
+   glm01a_key$=firm_id$+glacctinput$
+   find record (glm01_dev,key=glm01a_key$,err=*break) glm01a$
+   if glm01a.acct_inactive$="Y" then
+      call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,gl_size
+      msg_id$="GL_ACCT_INACTIVE"
+      dim msg_tokens$[2]
+      msg_tokens$[1]=fnmask$(glm01a.gl_account$(1,gl_size),m0$)
+      msg_tokens$[2]=cvs(glm01a.gl_acct_desc$,2)
+      gosub disp_message
+      callpoint!.setStatus("ACTIVATE")
+   endif
 [[GLR_BUDGETUPDATE.GL_WILDCARD.AVAL]]
 rem --- Check length of wildcard against defined mask for GL Account
 	if callpoint!.getUserInput()<>""
@@ -9,6 +26,7 @@ rem --- Check length of wildcard against defined mask for GL Account
 		endif
 	endif
 [[GLR_BUDGETUPDATE.<CUSTOM>]]
+#include std_functions.src
 ctl_toggle:
 	for x=0 to ctls_to_toggle!.size()-1
 		ctl_name$=ctls_to_toggle!.getItem(x)
@@ -32,9 +50,9 @@ return
 glm08_dev=fnget_dev("GLM_BUDGETMASTER")
 dim glm08a$:fnget_tpl$("GLM_BUDGETMASTER")
 glm08a.firm_id$=firm_id$
-budget_code$=callpoint!.getUserInput()
-glm08a.budget_code$=budget_code$(1,1)
-glm08a.amt_or_units$=budget_code$(2,1)
+budget_revs$=callpoint!.getUserInput()
+glm08a.budget_code$=budget_revs$(1,len(budget_revs$)-1)
+glm08a.amt_or_units$=budget_revs$(len(budget_revs$))
 read record (glm08_dev,key=glm08a.firm_id$+glm08a.budget_code$+glm08a.amt_or_units$,dom=*next)glm08a$
 callpoint!.setColumnData("GLR_BUDGETUPDATE.GL_ACCOUNT_1",glm08a.gl_account_01$)
 callpoint!.setColumnData("GLR_BUDGETUPDATE.GL_ACCOUNT_2",glm08a.gl_account_02$)

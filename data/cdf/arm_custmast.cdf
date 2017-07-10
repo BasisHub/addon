@@ -1,12 +1,31 @@
-[[ARM_CUSTMAST.BEND]]
-rem --- set widget-related devObjects to null
-rem --- needed in case more than one instance of cust form is up
-rem --- ADIS tests if null() in order to know if aging widgets should be re-created
+[[ARM_CUSTMAST.AOPT-PRIC]]
+rem --- Launch Price Quote Inquiry form
+	dim dflt_data$[2,1]
+	dflt_data$[1,0]="FIRM_ID"
+	dflt_data$[1,1]=firm_id$
+	dflt_data$[2,0]="CUSTOMER_ID"
+	dflt_data$[2,1]=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
 
-	callpoint!.setDevObject("dbPieWidget",null())
-	callpoint!.setDevObject("dbPieWidgetControl",null())
-	callpoint!.setDevObject("dbBarWidget",null())
-	callpoint!.setDevObject("dbBarWidgetControl",null())
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"OPE_PRICEQUOTE",
+:		stbl("+USER_ID"),
+:		"MNT",
+:		"",
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+[[ARM_CUSTMAST.AOPT-SHST]]
+rem --- Launch customer sales analysis form
+	user_id$=stbl("+USER_ID")
+	year$=sysinfo.system_date$(1,4)
+	customer_id$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+	key_pfx$=firm_id$+year$+customer_id$
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"SAM_CUSTOMER",
+:		user_id$,
+:		"",
+:		key_pfx$,
+:		table_chans$[all]
 [[ARM_CUSTDET.AR_TERMS_CODE.AVAL]]
 rem --- look up terms code, arm10A...if cred_hold is Y for this terms code,
 rem --- and cm$ is Y, set arm_custdet.cred_hold to Y as well
@@ -315,20 +334,20 @@ rem --- If GM installed, update GoldMine database as necessary
 		gmClient!.close()
 	endif
 [[ARM_CUSTMAST.ASHO]]
-rem --- Create/embed dashboard to show aged balance
+rem --- Create/embed widgets to show aged balance
 
 	gosub create_widgets
 [[ARM_CUSTMAST.ADIS]]
 rem --- retrieve dashboard pie or bar chart widget and refresh for current customer/balances
 rem --- pie if all balances >=0, bar if any negatives, hide if all bals are 0
 
-	rem --- test to see if the aging widgets need to be re-created
+	rem --- test to see if widgets need to be re-created
 	rem --- possible they've been destroyed if cust form was launched again from here (via Expresso or an option entry hyperlink)
 
 	agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
 	agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
 
-	if agingPieWidgetControl!=null() or agingBarWidgetControl!=null()
+	if agingPieWidgetControl!.isDestroyed() or agingBarWidgetControl!.isDestroyed()
 		gosub create_widgets
 	endif
 
@@ -353,8 +372,8 @@ rem --- pie if all balances >=0, bar if any negatives, hide if all bals are 0
 		agingBarWidget!.refresh()
 
 		agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
+		agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")	
 		agingPieWidgetControl!.setVisible(0)
-		agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
 		agingBarWidgetControl!.setVisible(1)
 
 	else
@@ -370,8 +389,8 @@ rem --- pie if all balances >=0, bar if any negatives, hide if all bals are 0
 		agingPieWidget!.refresh()
 
 		agingPieWidgetControl!=callpoint!.getDevObject("dbPieWidgetControl")
+		agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")	
 		agingPieWidgetControl!.setVisible(1)
-		agingBarWidgetControl!=callpoint!.getDevObject("dbBarWidgetControl")
 		agingBarWidgetControl!.setVisible(0)
 
 	endif
@@ -487,6 +506,7 @@ rem --- Validate Customer Number
 	if num(callpoint!.getUserInput(),err=*next)=0 callpoint!.setStatus("ABORT")
 [[ARM_CUSTMAST.AOPT-IDTL]]
 rem Invoice Dtl Inquiry
+
 cp_cust_id$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
 user_id$=stbl("+USER_ID")
 dim dflt_data$[2,1]
@@ -623,7 +643,6 @@ rem --- Open/Lock files
 	num_files=7
 
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
 	open_tables$[3]="ARS_CUSTDFLT",open_opts$[3]="OTA"
 	open_tables$[4]="ARS_CREDIT",open_opts$[4]="OTA"
@@ -632,7 +651,6 @@ rem --- Open/Lock files
 	open_tables$[7]="ART_INVDET",open_opts$[7]="OTA"
 	gosub open_tables
 
-	gls01_dev=num(open_chans$[1])
 	ars01_dev=num(open_chans$[2])
 	ars10_dev=num(open_chans$[3])
 	ars01c_dev=num(open_chans$[4])
@@ -640,7 +658,7 @@ rem --- Open/Lock files
 
 rem --- Dimension miscellaneous string templates
 
-	dim gls01a$:open_tpls$[1],ars01a$:open_tpls$[2],ars10d$:open_tpls$[3],ars01c$:open_tpls$[4]
+	dim ars01a$:open_tpls$[2],ars10d$:open_tpls$[3],ars01c$:open_tpls$[4]
 	dim arm02_tpl$:open_tpls$[5]
 
 rem --- Retrieve parameter data
@@ -651,8 +669,6 @@ rem --- Retrieve parameter data
 	find record (ars01c_dev,key=ars01c_key$,err=std_missing_params) ars01c$                
 	cm$=ars01c.sys_install$
 	dflt_cred_hold$=ars01c.hold_new$
-	gls01a_key$=firm_id$+"GL00"
-	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$ 
 	find record (ars10_dev,key=firm_id$+"D",err=std_missing_params) ars10d$
 	call stbl("+DIR_PGM")+"adc_application.aon","GL",info$[all]
 	gl$=info$[20]
@@ -772,10 +788,10 @@ rem --- Create either a pie chart or bar chart - the latter if any of the aging 
 	flat = 0
 	legend=0
 	numSlices=6
-	widgetX=ctl3!.getX()
 	widgetY=ctl1!.getY()
 	widgetHeight=ctl2!.getY()+ctl2!.getHeight()-ctl1!.getY()
-	widgetWidth=widgetHeight+widgetHeight*.5
+	widgetWidth=widgetHeight+widgetHeight*.75
+	widgetX=ctl3!.getX()+ctl3!.getWidth()-widgetWidth
 
 	agingDashboardPieWidget! = EmbeddedWidgetFactory.createPieChartEmbeddedWidget(name$,title$,chartTitle$,flat,legend,numSlices)
   	agingPieWidget! = agingDashboardPieWidget!.getWidget()

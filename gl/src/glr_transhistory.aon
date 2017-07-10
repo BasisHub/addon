@@ -28,13 +28,14 @@ rem --- Retrieve sysinfo data
     
 rem --- Open/Lock files
 
-    files=5,begfile=1,endfile=files
+    files=6,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
     files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
     files$[4]="glm-03",ids$[4]="GLC_JOURNALCODE"
     files$[5]="glt-06",ids$[5]="GLT_TRANSDETAIL"
+    files$[6]="gls_calendar",ids$[6]="GLS_CALENDAR"
     call stbl("+DIR_PGM")+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -43,13 +44,17 @@ rem --- Open/Lock files
     glm02_dev=channels[3]
     glm03_dev=channels[4]
     glt06_dev=channels[5]
+    gls_calendar_dev=channels[6]
 
 rem --- Dimension string templates
 
     dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3],glm03a$:templates$[4],glt06a$:templates$[5]
+    dim gls_calendar$:templates$[6]
 
 rem --- Assign input values to local variables
 
+    audit_no$=Option!.getOptionData("GL_ADT_NO")
+    trns_date$=Option!.getOptionData("TRNS_DATE")
     begper$=Option!.getOptionData("BEG_GL_PER")
     begyear$=Option!.getOptionData("BEG_YEAR")
     endper$=Option!.getOptionData("END_GL_PER")
@@ -61,6 +66,8 @@ rem --- Assign input values to local variables
     detail$=Option!.getOptionData("PICK_LISTBUTTON")
     export_format$=Option!.getOptionData("EXPORT_FORMAT")
     rd_alias_id$=Option!.getAlias()    
+    rem "GL INACTIVE FEATURE"
+    inactive$=Option!.getOptionData("ACCT_INACTIVE")
     if export_format$="Y"
         if len(rd_alias_id$)>15 rd_alias_id$=rd_alias_id$(1,15)
         rd_alias_id$=rd_alias_id$+"X"
@@ -73,13 +80,31 @@ rem --- Retrieve parameter records
 
     gls01a_key$=firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    dim begCalendar$:fattr(gls_calendar$)
+    find record (gls_calendar_dev,key=firm_id$+begyear$,err=*next) begCalendar$
+    if audit_no$="" and trns_date$="" and cvs(begCalendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=begyear$
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+    dim endCalendar$:fattr(gls_calendar$)
+    find record (gls_calendar_dev,key=firm_id$+endyear$,err=*next) endCalendar$
+    if audit_no$="" and trns_date$="" and cvs(endCalendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=endyear$
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+    
     units_flag$=gls01a.units_flag$
-    total_pers=num(gls01a.total_pers$)
+    total_pers=num(gls_calendar.total_pers$)
     call "adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     call "adc_getmask.aon","","GL","A","",m1$,0,m1
     call "adc_getmask.aon","","GL","U","",m2$,0,m2
     mp=13
-    headings=4
     inquiry$=cvs(inquiry$,2)
     if inquiry$<>"" then headings=3
 
@@ -111,8 +136,7 @@ rem --- Give unique rd_alias_id$ for summary and detail reports so columns can b
 
 rem --- Initializations
 
-    dim headings$[headings],stars$(m2,"*")
-    dim as[(mp+1)*3],us[(mp+1)*3],o[10],at[2],et[2],pt[2],jt[2],rt[2],n[2]
+    dim stars$(m2,"*")
     when$=sysinfo.system_date$
     l1=0
     nothing_to_print=1
@@ -124,9 +148,17 @@ rem --- Initializations
     h0$=""
     h1$=""
     last$=""
+    bb$=Translate!.getTranslation("AON_BEGINNING_BALANCE")
     starting$=begyear$+begper$
     ending$=endyear$+endper$
-    bb$=Translate!.getTranslation("AON_BEGINNING_BALANCE")
+    begper=num(begper$)-1
+    endper=num(endper$)
+    begyear=num(begyear$)
+    endyear=num(endyear$)
+    numYears=endyear-begyear+1
+    begindex=0
+    endindex=(mp+1)*(numYears-1)
+    dim as[(mp+1)*numYears],us[(mp+1)*numYears],o[10],at[2],et[2],pt[2],jt[2],rt[2],n[2]
 
 rem --- Document columns
 
@@ -169,61 +201,55 @@ rem --- Document columns
 
 rem --- Initialize report headings
 
+    if audit_no$="" then
+        headings=5
+        dim headings$[headings]
+        if cvs(begacct$,2)="" x$=Translate!.getTranslation("AON_FIRST_ACCOUNT")
+:                    else x$=Translate!.getTranslation("AON_ACCOUNT_")+fnmask$(begacct$(1,m0),m0$)
+        if cvs(endacct$,2)="" y$=Translate!.getTranslation("AON_LAST_ACCOUNT")
+:                    else y$=Translate!.getTranslation("AON_ACCOUNT_")+fnmask$(endacct$(1,m0),m0$)
+        x$=Translate!.getTranslation("AON_FROM_")+x$+Translate!.getTranslation("AON__THROUGH_")+y$
+        if cvs(wildcard$,2)<>"" then x$=x$+Translate!.getTranslation("AON__(WILDCARD_")+$22$+cvs(wildcard$,2)+$22$+")"
+        headings$[2]=x$
+        x$="",y$=""
+        x$=field(begCalendar$,"period_name_"+begper$,err=*next)
+        y$=field(endCalendar$,"period_name_"+endper$,err=*next)
+        if x$<>"" and y$<>""
+            headings$[3]=Translate!.getTranslation("AON_FROM_")+cvs(x$,2)+Translate!.getTranslation("AON__(PERIOD_")+begper$+") "+begyear$+Translate!.getTranslation("AON__THROUGH_")+
+:           cvs(y$,2)+Translate!.getTranslation("AON__(PERIOD_")+endper$+") "+endyear$
+        else
+            rem --- Report for specific transaction date
+            headings$[3]=Translate!.getTranslation("AON_TRANSACTION_DATE")+": "+fndate$(trns_date$)
+        endif
+        if detail$="D" x$=Translate!.getTranslation("AON_DETAIL") else x$=Translate!.getTranslation("AON_SUMMARY")
+        if cvs(journal$,2)="" y$=Translate!.getTranslation("AON_ALL_JOURNALS") 
+:       else y$=Translate!.getTranslation("AON_JOURNAL_ID_")+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
+        headings$[4]=x$+Translate!.getTranslation("AON__REPORT_FOR_")+y$
+        headings$[5]=Translate!.getTranslation("AON_EXCLUDE_INACTIVE")+Translate!.getTranslation("AON_GENERAL_LEDGER_ACCOUNTS")+" = "+inactive$
+    else
+        headings=3
+        dim headings$[headings]
+        headings$[3]=Translate!.getTranslation("AON_AUDIT_NUMBER")+": "+audit_no$
+    endif
     headings$[0]=cvs(sysinfo.firm_name$,2)
     headings$[1]=cvs(sysinfo.task_desc$,2)
-    if cvs(begacct$,2)="" x$=Translate!.getTranslation("AON_FIRST_ACCOUNT")
-:                    else x$=Translate!.getTranslation("AON_ACCOUNT_")+fnmask$(begacct$(1,m0),m0$)
-    if cvs(endacct$,2)="" y$=Translate!.getTranslation("AON_LAST_ACCOUNT")
-:                    else y$=Translate!.getTranslation("AON_ACCOUNT_")+fnmask$(endacct$(1,m0),m0$)
-    x$=Translate!.getTranslation("AON_FROM_")+x$+Translate!.getTranslation("AON__THROUGH_")+y$
-    if cvs(wildcard$,2)<>"" then x$=x$+Translate!.getTranslation("AON__(WILDCARD_")+$22$+cvs(wildcard$,2)+$22$+")"
-    headings$[2]=x$
-    x$="",y$=""
-    x$=field(gls01a$,"period_name_"+begper$,err=*next)
-    y$=field(gls01a$,"period_name_"+endper$,err=*next)
-    if x$<>"" and y$<>""
-        headings$[3]=Translate!.getTranslation("AON_FROM_")+cvs(x$,2)+Translate!.getTranslation("AON__(PERIOD_")+begper$+") "+begyear$+Translate!.getTranslation("AON__THROUGH_")+
-:           cvs(y$,2)+Translate!.getTranslation("AON__(PERIOD_")+endper$+") "+endyear$
-        if detail$="D" x$=Translate!.getTranslation("AON_DETAIL") else x$=Translate!.getTranslation("AON_SUMMARY")
-        if cvs(journal$,2)="" y$=Translate!.getTranslation("AON_ALL_JOURNALS") 
-:           else y$=Translate!.getTranslation("AON_JOURNAL_ID_")+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
-        headings$[4]=x$+Translate!.getTranslation("AON__REPORT_FOR_")+y$
-    else
-        if detail$="D" x$=Translate!.getTranslation("AON_DETAIL") else x$=Translate!.getTranslation("AON_SUMMARY")
-        if cvs(journal$,2)="" y$=Translate!.getTranslation("AON_ALL_JOURNALS") 
-:           else y$=Translate!.getTranslation("AON_JOURNAL_ID_")+glm03a.journal_id$+" "+cvs(glm03a.code_desc$,2)
-        headings$[3]=x$+Translate!.getTranslation("AON__REPORT_FOR_")+y$
-    endif
-
-rem --- Determine which years for GL summary (glm-02) records
-
-    year1=num(gls01a.current_year$)-1
-    if gls01a.gl_yr_closed$<>"Y" then year1=year1-1
-    begper=0
-    endper=total_pers
-    year2=year1+1
-    year3=year2+1    
-    begyear=num(begyear$)
-    endyear=num(endyear$)
-    begper=num(begper$)-1
-    endper=num(endper$)
-    records$="204"
-    records=len(records$)
-    begoffset=0
-    endoffset=0
-    if begyear=year2 begoffset=1
-    if begyear=year3 begoffset=2
-    if endyear=year2 endoffset=1
-    if endyear=year3 endoffset=2
-    begindex=mp*begoffset+begoffset
-    endindex=mp*endoffset+endoffset
 
 rem --- Start progress meter
 
     call stbl("+DIR_PGM")+"adc_progress.aon","NC","GLT_TRANSDETAIL","","","",0,glt06_dev,1,meter_num,status
     glt06_key$=firm_id$
-    if cvs(begacct$,2)<>"" then glt06_key$=glt06_key$+begacct$
-    read (glt06_dev,key=glt06_key$,dom=*next)
+    if audit_no$="" and trns_date$="" then
+        if cvs(begacct$,2)<>"" then glt06_key$=glt06_key$+begacct$
+        read (glt06_dev,key=glt06_key$,knum="PRIMARY",dom=*next)
+    else
+        if audit_no$<>"" then
+            glt06_key$=glt06_key$+audit_no$
+            read (glt06_dev,key=glt06_key$,knum="BY_AUDIT_NO",dom=*next)
+        else
+            glt06_key$=glt06_key$+trns_date$
+            read (glt06_dev,key=glt06_key$,knum="BY_TRANS_DATE",dom=*next)
+        endif
+    endif
 
 rem --- Read next transaction history (glt-06) record
 
@@ -234,10 +260,18 @@ rem --- Read next transaction history (glt-06) record
           total_recs=total_recs+1
           if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
           transdate$=glt06a.posting_year$+glt06a.posting_per$
-          if endacct$<>"" if glt06a.gl_account$>endacct$ break
-          if transdate$<starting$ continue
-          if transdate$>ending$ continue
-          if journal$<>"" if glt06a.journal_id$<>journal$ continue
+          if audit_no$="" and trns_date$="" then
+            if endacct$<>"" if glt06a.gl_account$>endacct$ break
+            if transdate$<starting$ continue
+            if transdate$>ending$ continue
+            if journal$<>"" if glt06a.journal_id$<>journal$ continue
+          else
+            if audit_no$<>"" then
+                if glt06a.gl_adt_no$<>audit_no$ then break
+            else
+                if glt06a.trns_date$<>trns_date$ then break
+            endif
+          endif
 
           gosub wildcard
           if status continue
@@ -247,6 +281,10 @@ rem --- Read next transaction history (glt-06) record
           rem --- Level breaks?
 
           if glt06a.gl_account$<>t0$ gosub account_break
+
+          rem "GL INACTIVE FEATURE"
+          if gl_inactive_acct$>"" and glt06a.gl_account$=gl_inactive_acct$ then continue
+
           if transdate$<>t1$ gosub period_break
           if detail$="S" if glt06a.trns_date$+glt06a.journal_id$<>t2$ gosub journal_break
 
@@ -444,6 +482,8 @@ account_break: rem --- Account number break
     else
         total$=Translate!.getTranslation("AON_TOTAL_FOR_ACCOUNT_")+fnmask$(glm01a.gl_account$(1,m0),m0$)
     endif
+    if audit_no$<>"" then total$=Translate!.getTranslation("AON_AUDIT_NUMBER")+" "+total$
+    if trns_date$<>"" then total$=fndate$(trns_date$)+" "+total$
     debits=at[0]
     credits=at[1]
     units=at[2]
@@ -467,12 +507,12 @@ rem --- Print warning if calculated balance doesn't match transaction total
     units=et[2]-units
     if debits<0 credits=debits,debits=0
     total$=Translate!.getTranslation("AON_WARNING:_TRANSACTION_TOTAL_DIFFERS_FROM_SUMMARY_ACTIVITY_BY")
-    gosub print_totals
+    if audit_no$="" and trns_date$="" then gosub print_totals
 
 new_account: rem --- New account
 
     if done return
-    dim as[(mp+1)*3],us[(mp+1)*3],at[2],et[2]
+    dim as[(mp+1)*numYears],us[(mp+1)*numYears],at[2],et[2]
     t0$=glt06a.gl_account$
     glm01a.firm_id$=firm_id$
     glm01a.gl_account$=glt06a.gl_account$
@@ -485,12 +525,16 @@ new_account: rem --- New account
     export_acct$=acct$
     export_desc$=glm01a.gl_acct_desc$
 
+    rem "GL INACTIVE FEATURE"
+    gl_inactive_acct$=""
+    if inactive$="Y" and glm01a.acct_inactive$="Y" then gl_inactive_acct$=glm01a.gl_account$,t0$=""
+
 rem --- Load summary activity for account
 
-    for x=1 to records
+        for x=0 to numYears-1
         dim a[mp],u[mp]
-        y=(x-1)*mp+(x-1)*1
-        glm02_key$=glm01a.firm_id$+glm01a.gl_account$+records$(x,1)
+        y=(mp+1)*x
+        glm02_key$=glm01a.firm_id$+glm01a.gl_account$+str(begyear+x:"0000")
         find record (glm02_dev,key=glm02_key$,dom=*continue) glm02a$
         call stbl("+DIR_PGM")+"glc_summary.aon","R",glm02a$,a[all],u[all],status
         for p=0 to mp
@@ -526,17 +570,26 @@ period_break: rem --- Period break
     if t1$="" goto new_period
     if detail$="D" and l1<1 goto period_balance
     gosub journal_break
-    x$=field(gls01a$,"abbr_name_"+str(num(t1$(5,2)):"00"))
     y$=t1$(1,4)
+    find record (gls_calendar_dev,key=firm_id$+y$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=y$
+        gosub disp_message
+        goto std_exit_no_report
+    endif
+    x$=field(gls_calendar$,"abbr_name_"+str(num(t1$(5,2)):"00"))
     if export_format$="Y"
         total$=Translate!.getTranslation("AON_TOTAL")
     else
         total$=Translate!.getTranslation("AON_TOTAL_FOR_")+x$+" "+y$
     endif
+    if audit_no$<>"" then total$=Translate!.getTranslation("AON_AUDIT_NUMBER")+" "+total$
     debits=pt[0]
     credits=pt[1]
     units=pt[2]
-    gosub print_totals
+    if trns_date$="" then gosub print_totals
 
 period_balance: rem --- Print ending balance for period
 
@@ -550,16 +603,28 @@ period_balance: rem --- Print ending balance for period
     credits=0
     units=et[2]
     if endbal<0 credits=endbal,debits=0
-    gosub print_totals
+    if audit_no$="" and trns_date$="" then gosub print_totals
 
 new_period: rem --- New period
 
     if done return
     dim pt[2]
+    y$=glt06a.posting_year$
     m$=glt06a.posting_per$
     period=num(m$)
-    x$=field(gls01a$,"abbr_name_"+str(period:"00"))
-    y$=glt06a.posting_year$
+
+    rem --- Reset beginning balance for Period 1 if not an Asset/Liability/Capital account
+    if period=1 and pos(glm01a.gl_acct_type$="ALC")=0 then
+       rem --- Reset beginning balance to zero
+       credits=0
+       debits=0
+       endbal=0
+       units=0
+       dim et[2],n[2]
+    endif
+
+    find record (gls_calendar_dev,key=firm_id$+y$,err=*next) gls_calendar$
+    x$=field(gls_calendar$,"abbr_name_"+str(period:"00"))
     t1$=y$+m$
     h1$=x$+" "+y$
     l1=0
@@ -771,6 +836,7 @@ std_exit: rem --- Standard program end (01Mar2006)
     close (glm02_dev,err=*next)
     close (glm03_dev,err=*next)
     close (glt06_dev,err=*next)
+    close (gls_calendar_dev,err=*next)
     
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release

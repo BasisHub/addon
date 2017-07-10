@@ -1,8 +1,3 @@
-[[BMR_DTLEXCEPT.BFMC]]
-rem --- Set Custom Query for BOM Item Number
-
-	callpoint!.setTableColumnAttribute("BMR_DTLEXCEPT.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("BMR_DTLEXCEPT.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[BMR_DTLEXCEPT.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 

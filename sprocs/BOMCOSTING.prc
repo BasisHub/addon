@@ -8,6 +8,7 @@ rem ----------------------------------------------------------------------------
 
 GOTO SKIP_DEBUG
 Debug$= "C:\temp\BOMCOSTING_DebugPRC.txt" 
+erase Debug$,err=*next
 string Debug$
 DebugChan=unt
 open(DebugChan)Debug$   
@@ -39,6 +40,8 @@ rem --- Get the IN parameters used by the procedure
 	whse$ = sp!.getParameter("WHSE")
 	all_dates$ = sp!.getParameter("ALL_DATES")
 	prod_date$ = sp!.getParameter("PROD_DATE")
+    rem "Item Inactive Feature"
+    inactive$  = sp!.getParameter("OPTION_ACTIVE")
 
 	sv_wd$=dir("")
 	chdir barista_wd$
@@ -92,6 +95,13 @@ rem --- Trip Read
 		if cvs(thru_bill$,2)<>""
 			if cvs(bmm_billmast.bill_no$,2)>cvs(thru_bill$,2) break
 		endif
+                rem -- Check for inactive item
+                if inactive$="Y" then
+	           dim ivm_itemmast$:fattr(ivm_itemmast$)
+                   ivm_itemmast_key$=bmm_billmast.firm_id$+bmm_billmast.bill_no$
+                   find record (ivm_itemmast_dev,key=ivm_itemmast_key$,dom=*next)ivm_itemmast$
+                   if ivm_itemmast.item_inactive$="Y" then continue
+                 endif
 		find (ivm_itemwhse_dev,key=firm_id$+whse$+bmm_billmast.bill_no$,dom=*continue)
 
 		sub_assmbly$=bmm_billmast.bill_no$
@@ -115,6 +125,14 @@ rem --- Now find all sub-bills within the main bill
 :				 cvs(bmm_billmat.obsolt_date$,2)<>"") and
 :				 prod_date$ < bmm_billmat.obsolt_date$) or
 :				all_dates$ = "Y"
+
+                rem -- Check for inactive item
+                if inactive$="Y" then
+	           dim ivm_itemmast$:fattr(ivm_itemmast$)
+                   ivm_itemmast_key$=bmm_billmat.firm_id$+bmm_billmat.item_id$
+                   find record (ivm_itemmast_dev,key=ivm_itemmast_key$,dom=*next)ivm_itemmast$
+                   if ivm_itemmast.item_inactive$="Y" then continue
+                endif
 				find (bmm_billmast_dev1,key=firm_id$+bmm_billmat.item_id$,dom=*continue)
 				find (ivm_itemwhse_dev,key=firm_id$+whse$+bmm_billmat.item_id$,dom=*continue)
 				bill_numbers$=bill_numbers$+"*"+bmm_billmat.item_id$

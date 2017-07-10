@@ -147,12 +147,15 @@ rem --- Remaining initializations
         if module$="PR" then dim prs01a$:templates$[9]
         if module$="SF" then dim sfs01a$:templates$[10]
 
-        num_files=1
+        num_files=2
         dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
         open_tables$[1]="ADM_MODULES",open_opts$[1]="OTA"
+        open_tables$[2]="GLS_CALENDAR",open_opts$[2]="OTA"
         gosub open_tables
         adm04_dev=num(open_chans$[1]),adm04a_tpl$=open_tpls$[1]
         dim adm04a$:adm04a_tpl$
+        gls_calendar_dev=num(open_chans$[2])
+        dim gls_calendar$:open_tpls$[2]
 
     rem --- Retrieve GL parameter records
 
@@ -164,6 +167,20 @@ rem --- Remaining initializations
     rem message$=Translate!.getTranslation("AON_THE_GL_SUSPENSE_ACCOUNT_RECORD_IS_MISSING_FOR_THIS_FIRM.")
         k$=firm_id$+"GL03"
         find record (gls01d_dev,key=k$,err=*next) gls01d$
+
+        message$=Translate!.getTranslation("ADS_MESSAGES-GL_CALENDAR_MISSING-MSG_TEXT")
+        endyear=num(gls01a.current_year$)
+        begyear=endyear-2
+        if gls01a.gl_yr_closed$="Y" 
+            begyear=endyear-1
+            endyear=endyear+1
+        endif
+        dim pri_calendar$:fattr(gls_calendar$)
+        find record (gls_calendar_dev,key=firm_id$+str(begyear),err=*break) pri_calendar$
+        dim cur_calendar$:fattr(gls_calendar$)
+        find record (gls_calendar_dev,key=firm_id$+str(begyear+1),err=*break) cur_calendar$
+        dim nxt_calendar$:fattr(gls_calendar$)
+        find record (gls_calendar_dev,key=firm_id$+str(endyear),err=*break) nxt_calendar$
 
     rem --- Retrieve application (adm-04) record for the calling module
 
@@ -289,12 +306,14 @@ rem --- or returned.
     rem --- values from the parameter records
 
         glcontrol.firm_id$=firm_id$
-        glcontrol.system_id$=adm04_key$
+        glcontrol.system_id$=stbl("+AON_APPCOMPANY")+pad(module$,3)
         glcontrol.post_gl$="Y"
         glcontrol.current_per$=sysperiod$
         glcontrol.current_year$=sysyear$
         glcontrol.update_flag$="N"
-        glcontrol.total_pers$=gls01a.total_pers$
+        glcontrol.pri_total_pers$=pri_calendar.total_pers$
+        glcontrol.cur_total_pers$=cur_calendar.total_pers$
+        glcontrol.nxt_total_pers$=nxt_calendar.total_pers$
         glcontrol.gl_period$=gls01a.current_per$
         glcontrol.gl_year$=gls01a.current_year$
         call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",glm0$,0,acct_length
@@ -305,19 +324,11 @@ rem --- or returned.
         glcontrol.retain_det$=gls01a.retain_det$
         glcontrol.gl_yr_closed$=gls01a.gl_yr_closed$
         glcontrol.gl_post_code$=gls01a.gl_post_code$
-        glcontrol.locked_flag_01$=gls01a.locked_flag_01$
-        glcontrol.locked_flag_02$=gls01a.locked_flag_02$
-        glcontrol.locked_flag_03$=gls01a.locked_flag_03$
-        glcontrol.locked_flag_04$=gls01a.locked_flag_04$
-        glcontrol.locked_flag_05$=gls01a.locked_flag_05$
-        glcontrol.locked_flag_06$=gls01a.locked_flag_06$
-        glcontrol.locked_flag_07$=gls01a.locked_flag_07$
-        glcontrol.locked_flag_08$=gls01a.locked_flag_08$
-        glcontrol.locked_flag_09$=gls01a.locked_flag_09$
-        glcontrol.locked_flag_10$=gls01a.locked_flag_10$
-        glcontrol.locked_flag_11$=gls01a.locked_flag_11$
-        glcontrol.locked_flag_12$=gls01a.locked_flag_12$
-        glcontrol.locked_flag_13$=gls01a.locked_flag_13$
+        for per=1 to 13
+            field glcontrol$,"PRI_LOCKED_FLAG_"+str(per:"00")=field(pri_calendar$,"LOCKED_FLAG_"+str(per:"00"))
+            field glcontrol$,"CUR_LOCKED_FLAG_"+str(per:"00")=field(cur_calendar$,"LOCKED_FLAG_"+str(per:"00"))
+            field glcontrol$,"NXT_LOCKED_FLAG_"+str(per:"00")=field(nxt_calendar$,"LOCKED_FLAG_"+str(per:"00"))
+        next per
         glcontrol.process_id$=process_id$
         glcontrol.program_name$=program_name$
         glcontrol.use_suspense$=gls01d.use_suspense$
@@ -388,7 +399,7 @@ rem --- or returned.
     rem --- in that three year range. The first step is to calculate what 
     rem --- that three year date range is based on the current GL fiscal year.
 
-        total_periods=num(glcontrol.total_pers$)
+        total_periods=13
         endyear=num(glcontrol.gl_year$)
         begyear=endyear-2
 
@@ -404,18 +415,29 @@ rem --- or returned.
     rem --- same fiscal year (prior, current and next)
 
         dim dates$[total_periods,6]
-        index=1
-
-        for year=begyear to endyear
+        for index=1 to 5 step 2
+            switch index
+                case 1; rem --- prior
+                        year=begyear
+                        total_periods=num(pri_calendar.total_pers$)
+                    break
+                case 3; rem --- current
+                        year=begyear+1
+                        total_periods=num(cur_calendar.total_pers$)
+                    break
+                case 5; rem --- next
+                        year=endyear
+                        total_periods=num(nxt_calendar.total_pers$)
+                    break
+            swend
             for period=1 to total_periods
-                call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
+                call pgmdir$+"adc_perioddates.aon",period,year,begdate$,enddate$,table_chans$[all],status
                 if status=0 
                     dates$[period,index]=begdate$
                     dates$[period,index+1]=enddate$
                 endif
             next period
-            index=index+2
-        next year
+        next index
 
     rem --- Store the period beginning and ending dates for all three 
     rem --- fiscal years in +GLCONTROL
@@ -435,8 +457,7 @@ rem --- or returned.
 
         period=num(glcontrol.current_per$)
         year=num(glcontrol.current_year$)
-        call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
-
+        call pgmdir$+"adc_perioddates.aon",period,year,begdate$,enddate$,table_chans$[all],status
         if status=0 
             glcontrol.app_per_beg$=begdate$
             glcontrol.app_per_end$=enddate$
@@ -444,8 +465,7 @@ rem --- or returned.
 
         period=num(glcontrol.gl_period$)
         year=num(glcontrol.gl_year$)
-        call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
-
+        call pgmdir$+"adc_perioddates.aon",period,year,begdate$,enddate$,table_chans$[all],status
         if status=0 
             glcontrol.gl_per_beg$=begdate$
             glcontrol.gl_per_end$=enddate$

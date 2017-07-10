@@ -41,7 +41,7 @@ rem --- Open/Lock files
     files$[3]="apt-01",ids$[3]="APT_INVOICEHDR"
     files$[4]="apt-02",ids$[4]="APT_INVOICEDIST"
     files$[5]="apt-11",ids$[5]="APT_INVOICEDET"
-    files$[6]="gls_params",ids$[6]="GLS_PARAMS"
+    files$[6]="gls_calendar",ids$[6]="GLS_CALENDAR"
     options$[2]="L",options$[3]="L",options$[5]="L"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :       ids$[all],templates$[all],channels[all],batch,status
@@ -51,23 +51,29 @@ rem --- Open/Lock files
     apt01_dev=channels[3]
     apt02_dev=channels[4]
     apt11_dev=channels[5]
-    gls01_dev=channels[6]
+    gls_calendar_dev=channels[6]
 
 rem --- Dimension string templates
 
     dim aps01a$:templates$[1],apm02a$:templates$[2],apt01a$:templates$[3],
-:       apt02a$:templates$[4],apt11a$:templates$[5],gls01a$:templates$[6]
+:       apt02a$:templates$[4],apt11a$:templates$[5],gls_calendar$:templates$[6]
 
 rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    find record (gls_calendar_dev,key=firm_id$+aps01a.current_year$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=aps01a.current_year$
+        gosub disp_message
+        goto std_exit_no_update
+    endif
     current_period=num(aps01a.current_per$)
     current_year=num(aps01a.current_year$)
-    call pgmdir$+"adc_perioddates.aon",gls01_dev,current_period,current_year,begdate$,
-:       enddate$,status
+    call pgmdir$+"adc_perioddates.aon",current_period,current_year,begdate$,enddate$,table_chans$[all],status
+    if status goto std_exit_no_update
     p9$=enddate$
 
 initializations: rem --- Initializations
@@ -147,7 +153,7 @@ rem --- Invoice Read
 roll_totals: rem --- Roll Over Totals at Fiscal Year-End
 
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
-    if p9<>num(gls01a.total_pers$) goto done
+    if p9<>num(gls_calendar.total_pers$) goto done
     read record (apm02_dev,key=firm_id$,dom=*next) apm02a$
     call pgmdir$+"adc_progress.aon","NC","","","","",0,apm02_dev,1,meter_num,status
 
@@ -177,7 +183,7 @@ done: rem --- Increment Period
     if p9<=num(aps01a.current_per$) 
         extract record (aps01_dev,key=firm_id$+"AP00",dom=*next) aps01a$
         aps01a.current_per$=str(num(aps01a.current_per$)+1:"00")
-        if num(aps01a.current_per$)>num(gls01a.total_pers$) 
+        if num(aps01a.current_per$)>num(gls_calendar.total_pers$) 
             aps01a.current_per$="01"
             aps01a.current_year$=str(num(aps01a.current_year$)+1:"0000")
         endif

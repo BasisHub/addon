@@ -47,17 +47,9 @@ rem --- Get the IN parameters used by the procedure
 	firm_id$ = sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
-    
-    rem --- Current Year Actual 
-    
-    if pos(include_type$="A")
-        gl_record_id$="0"
-    endif
-    
-    rem --- Prior Year Actual 
-    if pos(include_type$="C")
-        gl_record_id$="2"
-    endif   
+    props_name$ = sp!.getParameter("PROPS_NAME")
+    props_path$ = sp!.getParameter("PROPS_PATH")
+    user_locale$ = sp!.getParameter("USER_LOCALE")
         
 rem --- dirs	
 	sv_wd$=dir("")
@@ -67,6 +59,27 @@ rem --- Get Barista System Program directory
 	sypdir$=""
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Get DisplayColumns object
+
+    brddir$=stbl("+DIR_BRD",err=*next)
+    x$=stbl("+DIR_BRD",barista_wd$+brddir$)
+    x$=stbl("+PROPS_NAME",props_name$)
+    x$=stbl("+PROPS_PATH",props_path$)
+    x$=stbl("+USER_LOCALE",user_locale$)
+    use ::glo_DisplayColumns.aon::DisplayColumns
+    displayColumns!=new DisplayColumns(firm_id$)
+    
+rem --- Current Year Actual 
+    
+    if pos(include_type$="A")
+        gl_year$=displayColumns!.getYear("0")
+    endif
+    
+rem --- Prior Year Actual 
+    if pos(include_type$="C")
+        gl_year$=displayColumns!.getYear("2")
+    endif   
 	
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -116,7 +129,7 @@ rem --- get data
         if glm05a.firm_id$<>firm_id$ then break
     
         acct_total=0
-        readrecord(glm02a_dev,key=firm_id$+glm05a.gl_account$+gl_record_id$,dom=*continue)glm02a$
+        readrecord(glm02a_dev,key=firm_id$+glm05a.gl_account$+gl_year$,dom=*continue)glm02a$
         acct_total=glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
 :                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
 :                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13

@@ -1,3 +1,20 @@
+[[IVS_PARAMS.CURRENT_YEAR.AVAL]]
+rem --- Verify calendar exists for entered IV fiscal year
+	year$=callpoint!.getUserInput()
+	if cvs(year$,2)<>"" and year$<>callpoint!.getColumnData("IVS_PARAMS.CURRENT_YEAR") then
+		gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+		dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+		readrecord(gls_calendar_dev,key=firm_id$+year$,dom=*next)gls_calendar$
+		if cvs(gls_calendar.year$,2)="" then
+			msg_id$="AD_NO_FISCAL_CAL"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=year$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+		callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+	endif
 [[IVS_PARAMS.ASVA]]
 rem --- Validate Description Lengths
 
@@ -33,15 +50,20 @@ rem --- Init new record
 	gl_installed$=callpoint!.getDevObject("gl_installed")
 	if gl_installed$="Y" then callpoint!.setColumnData("IVS_PARAMS.POST_TO_GL","Y")
 [[IVS_PARAMS.CURRENT_PER.AVAL]]
-rem --- Validate period is valid
-	cur_per=num(callpoint!.getUserInput())
-	dim gls01a$:user_tpl.gls01_tpl$
-	readrecord(user_tpl.gls01_dev,key=firm_id$+"GL00")gls01a$
-	if cur_per>num(gls01a.total_pers$)
-		msg_id$="INVALID_PERIOD"
-		dim msg_tokens$[1]
-		gosub disp_message
-		callpoint!.setStatus("ABORT-REFRESH")
+rem --- Verify haven't exceeded calendar total periods for current IV fiscal year
+	period$=callpoint!.getUserInput()
+	if cvs(period$,2)<>"" and period$<>callpoint!.getColumnData("IVS_PARAMS.CURRENT_PER") then
+		period=num(period$)
+		total_pers=num(callpoint!.getDevObject("total_pers"))
+		if period<1 or period>total_pers then
+			msg_id$="AD_BAD_FISCAL_PERIOD"
+			dim msg_tokens$[2]
+			msg_tokens$[1]=str(total_pers)
+			msg_tokens$[2]=callpoint!.getColumnData("IVS_PARAMS.CURRENT_YEAR")
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
 	endif
 [[IVS_PARAMS.COST_METHOD.AVAL]]
 rem --- Display message if costing method has changed
@@ -56,27 +78,17 @@ rem --- Display message if costing method has changed
 	endif
 [[IVS_PARAMS.BSHO]]
 rem --- Open/Lock files
-			
-	num_files=1
-	dim files$[num_files],options$[num_files],ids$[num_files],templates$[num_files],channels[num_files]
-	files$[1]="gls_params",ids$[1]="GLS_PARAMS",options$[1]="OTA"
-	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,1,num_files,files$[all],options$[all],
-:                              ids$[all],templates$[all],channels[all],batch,status
-	if status then
-		remove_process_bar:
-		bbjAPI!=bbjAPI()
-		rdFuncSpace!=bbjAPI!.getGroupNamespace()
-		rdFuncSpace!.setValue("+build_task","OFF")
-	 	release
-	endif
 
-	gls01_dev=channels[1]
+	num_files=2
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
+	open_tables$[2]="GLS_CALENDAR",open_opts$[2]="OTA"
+
+	gosub open_tables
 
 rem --- Setup user template
 
-	dim user_tpl$:"old_cost_method:c(1),gls01_dev:n(4),gls01_tpl:c(2048)"
-	user_tpl.gls01_dev=gls01_dev
-	user_tpl.gls01_tpl$=templates$[1]
+	dim user_tpl$:"old_cost_method:c(1)"
 
 rem --- init/parameters
 
@@ -93,9 +105,36 @@ rem --- Set old costing method
 		user_tpl.old_cost_method$=callpoint!.getColumnData("IVS_PARAMS.COST_METHOD")
 	endif
 
-rem --- Update post_to_gl if GL is uninstalled
+rem --- Retrieve parameter data
 	gl_installed$=callpoint!.getDevObject("gl_installed")
-	if gl_installed$<>"Y" and callpoint!.getColumnData("IVS_PARAMS.POST_TO_GL")="Y" then
-		callpoint!.setColumnData("IVS_PARAMS.POST_TO_GL","N",1)
-		callpoint!.setStatus("MODIFIED")
+	ivs01_dev=fnget_dev("IVS_PARAMS")
+	dim ivs01a$:fnget_tpl$("IVS_PARAMS")
+	ivs01a_key$=firm_id$+"IV00"
+	find record (ivs01_dev,key=ivs01a_key$,err=*next) ivs01a$
+	if cvs(ivs01a.current_per$,2)=""
+		gls01_dev=fnget_dev("GLS_PARAMS")
+		dim gls01a$:fnget_tpl$("GLS_PARAMS")
+		gls01a_key$=firm_id$+"GL00"
+		find record (gls01_dev,key=gls01a_key$,err=*next) gls01a$
+		callpoint!.setColumnData("IVS_PARAMS.CURRENT_PER",gls01a.current_per$)
+		callpoint!.setColumnUndoData("IVS_PARAMS.CURRENT_PER",gls01a.current_per$)
+		callpoint!.setColumnData("IVS_PARAMS.CURRENT_YEAR",gls01a.current_year$)
+		callpoint!.setColumnUndoData("IVS_PARAMS.CURRENT_YEAR",gls01a.current_year$)
+		if gl_installed$="Y" then
+			callpoint!.setColumnData("IVS_PARAMS.POST_TO_GL","Y")
+		endif
+   		callpoint!.setStatus("MODIFIED-REFRESH")
+	else
+		rem --- Update post_to_gl if GL is uninstalled
+		if gl_installed$<>"Y" and callpoint!.getColumnData("IVS_PARAMS.POST_TO_GL")="Y" then 
+			callpoint!.setColumnData("IVS_PARAMS.POST_TO_GL","N",1)
+   			callpoint!.setStatus("MODIFIED")
+		endif
 	endif
+
+rem --- Set maximum number of periods allowed for this fiscal year
+	gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+	dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+	current_year$=callpoint!.getColumnData("IVS_PARAMS.CURRENT_YEAR")
+	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
+	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)

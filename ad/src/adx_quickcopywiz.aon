@@ -355,8 +355,54 @@ rem --- update the barista.cfg files w/ new dbName$
 		if pos(tmp_file$(len(tmp_file$),1)="\/")=0 then continue
 		rd_curr_cfg$=cfg_dir$+"/"+tmp_file$+"barista.cfg"
 		call stbl("+DIR_SYP")+"bam_config.bbj",rd_curr_cfg$,"CFG","WRITE",rd_cfg_data$[all]
+        gosub reset_barista_cfgs_prefix
 	wend
 	return
+
+reset_barista_cfgs_prefix:
+rem --- strip non-BBjHome dirs from prefix to re-initialize it; auto-sync on first launch will rebuild it with application dirs
+
+    rd_config_chan=unt
+    open(rd_config_chan,err=*continue)rd_curr_cfg$
+    rd_config_chan_fin$=fin(rd_config_chan)
+    rd_config_file_size=dec($00$+rd_config_chan_fin$(1,4))
+    read record(rd_config_chan,siz=rd_config_file_size)rd_config_data$
+    close (rd_config_chan)
+            
+    rd_start_pos=pos("PREFIX "=cvs(rd_config_data$,4))
+    rd_end_pos=pos(" ">rd_config_data$(rd_start_pos))
+
+    rd_tmp_text!=rd_config_data$(rd_start_pos,rd_end_pos-1)
+    rd_tmp_text!=rd_tmp_text!.replace("\","/")
+    rd_prefix_text$=rd_tmp_text!
+
+    rem --- Locate first path in PREFIX that is NOT in basis.BBjHome
+    rd_dir_bbj!=java.lang.System.getProperty("basis.BBjHome").replace("\","/")
+    rd_prefix_text$=rd_prefix_text$+" "
+    rd_temp_pfx$=rd_prefix_text$(8); rem --- Don't include beginning "PREFIX "
+    rd_pfx_pos=1
+    while rd_pfx_pos
+        if pos($22$+rd_dir_bbj!=rd_temp_pfx$(rd_pfx_pos))<>1 then break
+        rem --- This path is in basis.BBjHome
+        rd_pfx_pos=rd_pfx_pos+pos($22$+" "=rd_temp_pfx$(rd_pfx_pos))+1
+    wend
+
+    rd_temp_pfx$="PREFIX "+rd_temp_pfx$(1,rd_pfx_pos-1)
+    rd_config_data$=rd_config_data$(1,rd_start_pos-1)+rd_temp_pfx$+rd_config_data$(rd_start_pos+rd_end_pos-1);rem test w/ -1
+
+    rd_temp_file_id$=cfg_dir$+"/"+tmp_file$+"~"+str(int(tim*100000):"0000000")+".tmp"
+    rename rd_curr_cfg$,rd_temp_file_id$
+    erase rd_curr_cfg$,err=*next
+    string rd_curr_cfg$
+
+    rd_config_chan=unt
+    open (rd_config_chan)rd_curr_cfg$
+    write record(rd_config_chan)rd_config_data$
+    close(rd_config_chan)
+
+    erase rd_temp_file_id$
+
+    return
 
 attach_db:
 rem --- attach to new database and set some properties
@@ -411,7 +457,7 @@ reset_auto_sync:
 rem --- reset auto-launch record for the auto-sync process
 rem --- also now resets for new Payroll module's license agreement/disclaimer
 
-	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC' OR PROCESS_ID='BUILDSPROC' OR PROCESS_ID='01PAYDISC'"
+	sql_prep$="UPDATE ADS_AUTOLAUNCH SET PROCESS_STATUS='N',TRANS_DATE='',TRANS_TIME='' WHERE PROCESS_ID='50AUTOSYNC' OR PROCESS_ID='BUILDSPROC'"
 	sql_chan=sqlunt
 	sqlopen(sql_chan,err=*next)dbName$
     sqlprep(sql_chan)sql_prep$

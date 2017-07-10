@@ -1,3 +1,36 @@
+[[SAR_ITEM.CURRENT_YEAR.AVAL]]
+rem --- Verify calendar exists for entered SA fiscal year
+	year$=callpoint!.getUserInput()
+	if cvs(year$,2)<>"" and year$<>callpoint!.getColumnData("SAR_ITEM.CURRENT_YEAR") then
+		gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+		dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+		readrecord(gls_calendar_dev,key=firm_id$+year$,dom=*next)gls_calendar$
+		if cvs(gls_calendar.year$,2)="" then
+			msg_id$="AD_NO_FISCAL_CAL"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=year$
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+		callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+	endif
+[[SAR_ITEM.CURRENT_PER.AVAL]]
+rem --- Verify haven't exceeded calendar total periods for entered SA fiscal year
+	period$=callpoint!.getUserInput()
+	if cvs(period$,2)<>"" and period$<>callpoint!.getColumnData("SAR_ITEM.CURRENT_PER") then
+		period=num(period$)
+		total_pers=num(callpoint!.getDevObject("total_pers"))
+		if period<1 or period>total_pers then
+			msg_id$="AD_BAD_FISCAL_PERIOD"
+			dim msg_tokens$[2]
+			msg_tokens$[1]=str(total_pers)
+			msg_tokens$[2]=callpoint!.getColumnData("SAR_ITEM.CURRENT_YEAR")
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
 [[SAR_ITEM.ITEM_ID.AINV]]
 rem --- Item synonym processing
 
@@ -43,10 +76,11 @@ else
 endif
 callpoint!.setStatus("REFRESH")
 [[SAR_ITEM.ARAR]]
-num_files=2
+num_files=3
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="ARS_PARAMS",open_opts$[1]="OTA"
 open_tables$[2]="SAS_PARAMS",open_opts$[2]="OTA"
+open_tables$[3]="GLS_CALENDAR",open_opts$[3]="OTA"
 gosub open_tables
 ars_params_chn=num(open_chans$[1]),ars_params_tpl$=open_tpls$[1]
 sas_params_chn=num(open_chans$[2]),sas_params_tpl$=open_tpls$[2]
@@ -71,6 +105,13 @@ callpoint!.setStatus("REFRESH")
 dim user_tpl$:"sa_levels:c(2),high_level:c(1)"
 user_tpl.sa_levels$="PI"
 user_tpl.high_level$=sas_params.product_lev$
+
+rem --- Set maximum number of periods allowed for this fiscal year
+	gls_calendar_dev=fnget_dev("GLS_CALENDAR")
+	dim gls_calendar$:fnget_tpl$("GLS_CALENDAR")
+	current_year$=callpoint!.getColumnData("SAR_ITEM.CURRENT_YEAR")
+	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
+	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
 [[SAR_ITEM.BSHO]]
 	sas01_dev=fnget_dev("SAS_PARAMS")
 	sas01a$=fnget_tpl$("SAS_PARAMS")

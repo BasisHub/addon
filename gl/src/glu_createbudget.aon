@@ -8,6 +8,8 @@ rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
+    use ::glo_DisplayColumns.aon::DisplayColumns
+
     setesc std_error
     seterr std_error
 
@@ -24,23 +26,29 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=4,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[1]="glm_acctbudget",ids$[1]="GLM_ACCTBUDGET"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
-    files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
+    files$[3]="glm_budgetplans",ids$[3]="GLM_BUDGETPLANS"
     files$[4]="glm-08",ids$[4]="GLM_BUDGETMASTER"
+    files$[5]="glm-02",ids$[5]="GLM_ACCTSUMMARY"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
-    gls01_dev=channels[1]
+    glm_acctbudget_dev=channels[1]
     glm01_dev=channels[2]
-    glm02_dev=channels[3]
+    glm_budgetplans_dev=channels[3]
     glm08_dev=channels[4]
+    glm_acctsummary_dev=channels[5]
 
 rem --- Dimension string templates
 
-    dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3],glm08a$:templates$[4]
+    dim glm_acctbudget$:templates$[1]
+    dim glm01a$:templates$[2]
+    dim glm_budgetplans$:templates$[3]
+    dim glm08a$:templates$[4]
+    dim glm_acctsummary$:templates$[5]
 
 rem --- Assign input values to local variables
 
@@ -52,22 +60,20 @@ rem --- Assign input values to local variables
         rem --- from Create Budget Revisions menu item
         budget_revs$=option!.getOptionData("BUDGET_REVS")
     endif
-    budget_code$=budget_revs$(1,1)
-    type$=budget_revs$(2,1)
+    budget_code$=budget_revs$(1,len(budget_revs$)-1)
+    type$=budget_revs$(len(budget_revs$))
 
 rem --- Retrieve parameter and budget revision records
 
-    gls01a_key$=firm_id$+"GL00"
     glm08a_key$=firm_id$+budget_code$+type$   
-    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     find record (glm08_dev,key=glm08a_key$,err=std_exit) glm08a$
     mp=13
-	total_pers=num(gls01a.total_pers$)
     
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0        
 
 rem --- Initializations
 
+    displayColumns!=new DisplayColumns(firm_id$)
     factor=10^pos(glm08a.rounding$="D-HT")/10
     wildcard$=cvs(glm08a.gl_wildcard$,2)
     k$=firm_id$+glm08a.gl_account_01$
@@ -94,17 +100,34 @@ rem --- Get next account master
           if status continue
   
 
-          rem --- Retrieve source glm-02 record
+          rem --- Retrieve source record
 
           dim a[mp],u[mp]
-          glm02_key$=glm01a.firm_id$+glm01a.gl_account$+glm08a.revision_src$(1,1)
-          find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
-          call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+          source$=glm08a.revision_src$
+          source$=source$(1,pos(" "<>source$,-1)-1)
+
+        if displayColumns!.getActBud(source$)="P" then
+            redim glm_budgetplans$
+            glm_budgetplans_key$=glm01a.firm_id$+glm01a.gl_account$+source$
+            find record (glm_budgetplans_dev,key=glm_budgetplans_key$,dom=*next)glm_budgetplans$
+            call pgmdir$+"glc_summary.aon","R",glm_budgetplans$,a[all],u[all],status
+        else
+            if displayColumns!.getActBud(source$)="A" then
+                glm02_dev=glm_acctsummary_dev
+                dim glm02$:fattr(glm_acctsummary$)
+            else
+                glm02_dev=glm_acctbudget_dev
+                dim glm02$:fattr(glm_acctbudget$)
+            endif
+            glm02_key$=glm01a.firm_id$+glm01a.gl_account$+displayColumns!.getYear(source$)
+            find record (glm02_dev,key=glm02_key$,dom=*next)glm02$
+            call pgmdir$+"glc_summary.aon","R",glm02$,a[all],u[all],status
+        endif
 
           rem --- Amounts or Units?
 
           dim b[mp]
-          for x=0 to total_pers
+          for x=0 to mp
               if type$="A" b[x]=a[x] 
               if type$="U" b[x]=u[x]
               if factor b[x]=factor*int((b[x]/factor)+(.5*sgn(b[x])))
@@ -112,7 +135,7 @@ rem --- Get next account master
 
           rem --- Generate budget number
 
-          for x=0 to total_pers
+          for x=0 to mp
               if glm08a.amt_or_pct$="A" b[x]=b[x]+glm08a.amtpct_val
               if glm08a.amt_or_pct$="P" b[x]=b[x]+((b[x]*glm08a.amtpct_val)/100)
           next x
@@ -120,23 +143,23 @@ rem --- Get next account master
           rem --- Retrieve current budget summary record
 
           dim a[mp],u[mp]
-          glm02a.firm_id$=glm01a.firm_id$
-          glm02a.gl_account$=glm01a.gl_account$
-          glm02a.record_id$=glm08a.budget_code$
-          extract record (glm02_dev,key=glm02a.firm_id$+glm02a.gl_account$+
-:           glm02a.record_id$,dom=update_budget) glm02a$; rem Advisory Locking
-          if glm08a.overwrite$<>"Y" then read(glm02_dev); continue
+          glm_budgetplans.firm_id$=glm01a.firm_id$
+          glm_budgetplans.gl_account$=glm01a.gl_account$
+          glm_budgetplans.budget_code$=budget_code$
+          extract record (glm_budgetplans_dev,key=glm_budgetplans.firm_id$+glm_budgetplans.gl_account$+
+:           glm_budgetplans.budget_code$,dom=update_budget) glm_budgetplans$; rem Advisory Locking
+          if glm08a.overwrite$<>"Y" then read(glm_budgetplans_dev); continue
 
           update_budget: rem --- Update/create summary record for this account/budget revision
 
-          call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
-          for x=0 to total_pers
+          call pgmdir$+"glc_summary.aon","R",glm_budgetplans$,a[all],u[all],status
+          for x=0 to mp
               if type$="A" a[x]=b[x]
               if type$="U" u[x]=b[x]
           next x
-          call pgmdir$+"glc_summary.aon","U",glm02a$,a[all],u[all],status
-          glm02a$=field(glm02a$)
-          write record (glm02_dev) glm02a$
+          call pgmdir$+"glc_summary.aon","U",glm_budgetplans$,a[all],u[all],status
+          glm_budgetplans$=field(glm_budgetplans$)
+          write record (glm_budgetplans_dev) glm_budgetplans$
 
           rem --- Loop back for next account master record
 

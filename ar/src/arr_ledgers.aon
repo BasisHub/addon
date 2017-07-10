@@ -64,6 +64,8 @@ rem --- Assign form input values to local variables
         begcustomer$=option!.getOptionData("customer_id_1")
         endcustomer$=option!.getOptionData("customer_id_2")
         thrudate$=option!.getOptionData("report_date")
+        rem "CUSTOMER INACTIVE FEATURE"
+        inactive$=Option!.getOptionData("CUST_INACTIVE")
 
 rem --- Retrieve parameter records
 
@@ -101,6 +103,7 @@ rem --- Initializations
         headings$[1]=sysinfo.task_desc$
         headings$[2]=x$
         headings$[3]=Translate!.getTranslation("AON_INCLUDES_TRANSACTIONS_THROUGH_")+fndate$(thrudate$)
+        headings$[4]=Translate!.getTranslation("AON_EXCLUDE_INACTIVE")+Translate!.getTranslation("AON_CUSTOMERS")+" = "+inactive$
 
 rem column heading
             dim columns$[8,10]
@@ -148,6 +151,10 @@ rem --- Read next Customer Master (arm-01) record
           if pos(firm_id$=arm01_key$)<>1 break
           read record (arm01_dev,key=arm01_key$) arm01a$
           if endcustomer$<>"" if arm01a.customer_id$>endcustomer$ break
+
+          rem -- Check for inactive customer
+          if inactive$="Y" and arm01a.cust_inactive$="Y" then continue
+
           total_recs=total_recs+1
           if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
@@ -184,8 +191,8 @@ rem --- Read next Customer Master (arm-01) record
 
                 printed=1
                 custinv=custinv+art01a.invoice_amt
-                custdis=custdis+art01a.disc_allowed
                 applied=0
+                disc=0
                 detail=0
                 art01_key$=art01a.firm_id$+art01a.ar_type$+art01a.customer_id$+art01a.ar_inv_no$
                 read (art11_dev,key=art01_key$,dom=*next)
@@ -210,6 +217,7 @@ rem --- Read next Customer Master (arm-01) record
                       OutVect!.addItem(str(art11a.adjdisc_amt))
                       lines=lines+1
                       applied=applied+art11a.trans_amt
+                      disc=disc+art11a.adjdisc_amt
                       custapp=custapp+art11a.trans_amt
                       custdis=custdis+art11a.adjdisc_amt
                 wend
@@ -217,7 +225,7 @@ rem --- Read next Customer Master (arm-01) record
                 rem --- Print invoice total and loop back for next invoice header
 
                 if detail=0 continue
-                balance=art01a.invoice_amt+applied
+                balance=art01a.invoice_amt+applied+disc
                 xwk=fnblank(4)
                 OutVect!.addItem(Translate!.getTranslation("AON_TOTAL"))
                 xwk=fnblank(2)
@@ -230,7 +238,7 @@ rem --- Read next Customer Master (arm-01) record
           rem --- Print customer total and loop back for next Customer Master
 
           if printed=0 continue
-          balance=custinv+custapp
+          balance=custinv+custapp+custdis
 
           TotVect!.addItem(str(OutVect!.size()/(columns+1)))
           xwk=fnblank(4)
@@ -253,7 +261,7 @@ rem --- All done
         goto std_exit_no_report
     endif
 
-    balance=reportinv+reportapp
+    balance=reportinv+reportapp+reportdis
     xwk=fnblank(9)
     TotVect!.addItem(str(OutVect!.size()/(columns+1)))
     xwk=fnblank(4)

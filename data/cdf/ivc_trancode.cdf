@@ -1,3 +1,20 @@
+[[IVC_TRANCODE.GL_ADJ_ACCT.AVAL]]
+rem "GL INACTIVE FEATURE"
+   glm01_dev=fnget_dev("GLM_ACCT")
+   glm01_tpl$=fnget_tpl$("GLM_ACCT")
+   dim glm01a$:glm01_tpl$
+   glacctinput$=callpoint!.getUserInput()
+   glm01a_key$=firm_id$+glacctinput$
+   find record (glm01_dev,key=glm01a_key$,err=*break) glm01a$
+   if glm01a.acct_inactive$="Y" then
+      call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,gl_size
+      msg_id$="GL_ACCT_INACTIVE"
+      dim msg_tokens$[2]
+      msg_tokens$[1]=fnmask$(glm01a.gl_account$(1,gl_size),m0$)
+      msg_tokens$[2]=cvs(glm01a.gl_acct_desc$,2)
+      gosub disp_message
+      callpoint!.setStatus("ACTIVATE-ABORT")
+   endif
 [[IVC_TRANCODE.ADIS]]
 rem --- Check for Commitment type
 	if callpoint!.getColumnData("IVC_TRANCODE.TRANS_TYPE") = "C"
@@ -66,6 +83,7 @@ rem --- Check for G/L Number if Post to G/L is up
 		endif
 	endif
 [[IVC_TRANCODE.<CUSTOM>]]
+#include std_functions.src
 #include std_missing_params.src
 [[IVC_TRANCODE.BSHO]]
 rem --- Open/Lock Files

@@ -237,6 +237,23 @@ gosub purch_addr_info
 [[POE_REQHDR.VENDOR_ID.AVAL]]
 rem --- Update vendor info if vendor changed
 	vendor_id$=callpoint!.getUserInput()
+rem "VENDOR INACTIVE - FEATURE"
+apm01_dev=fnget_dev("APM_VENDMAST")
+apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+dim apm01a$:apm01_tpl$
+apm01a_key$=firm_id$+vendor_id$
+find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+if apm01a.vend_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+   msg_id$="AP_VEND_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 	if vendor_id$<>callpoint!.getColumnData("POE_REQHDR.VENDOR_ID") then
 		gosub vendor_info
 		gosub disp_vendor_comments
@@ -271,6 +288,7 @@ rem --- Update vendor info if vendor changed
 		callpoint!.setColumnData("POE_REQHDR.AP_TERMS_CODE",apm02a.ap_terms_code$)
 	endif
 [[POE_REQHDR.<CUSTOM>]]
+#include std_functions.src
 vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")
 	dim apm01a$:fnget_tpl$("APM_VENDMAST")

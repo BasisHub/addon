@@ -1,6 +1,6 @@
 [[APE_RECURRINGHDR.BTBL]]
 rem --- Open/Lock files
-files=7,begfile=1,endfile=7
+files=8,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="APT_INVOICEDIST";rem --- "apt-02"
 files$[2]="APM_VENDCMTS";rem --- "apm-09
@@ -9,6 +9,7 @@ files$[4]="APM_VENDHIST";rem --- "apm-02"
 files$[5]="APS_PARAMS";rem --- "ads-01"
 files$[6]="GLS_PARAMS";rem --- "gls-01"
 files$[7]="APC_TYPECODE";rem --- "apm-10A"
+files$[8]="GLS_CALENDAR"
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
 next wkx
@@ -31,7 +32,8 @@ if status$<>"" then
 endif
 aps01_dev=num(chans$[5])
 gls01_dev=num(chans$[6])
-dim aps01a$:templates$[5],gls01a$:templates$[6]
+gls_calendar_dev=num(chans$[8])
+dim aps01a$:templates$[5],gls01a$:templates$[6],gls_calendar$:templates$[8]
 user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),glworkfile:c(16),"
 user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),units_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"misc_entry:c(1),inv_in_ape03:c(1),inv_in_apt02:c(1),"
@@ -85,10 +87,19 @@ user_tpl.ret_flag$=aps01a.ret_flag$
 user_tpl.misc_entry$=aps01a.misc_entry$
 gls01a_key$=firm_id$+"GL00"
 find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
+if cvs(gls_calendar.firm_id$,2)="" then
+	msg_id$="AD_NO_FISCAL_CAL"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=gls01a.current_year$
+	gosub disp_message
+	callpoint!.setStatus("EXIT")
+	break
+endif
 user_tpl.units_flag$=gls01a.units_flag$
 user_tpl.glyr$=gls01a.current_year$
 user_tpl.glper$=gls01a.current_per$
-user_tpl.gl_tot_pers$=gls01a.total_pers$
+user_tpl.gl_tot_pers$=gls_calendar.total_pers$
 
 rem --- if not using multi AP types, disable access to AP Type and get default distribution code
 

@@ -163,7 +163,6 @@ rem --- Open files
 	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVS_PARAMS",   open_opts$[1]="OTA"
-	open_tables$[2]="GLS_PARAMS",   open_opts$[2]="OTA"
 	open_tables$[3]="IVC_TRANCODE", open_opts$[3]="OTA"
 	open_tables$[4]="IVE_TRANSDET", open_opts$[4]="OTA@"
 	open_tables$[5]="IVM_ITEMMAST", open_opts$[5]="OTA"
@@ -173,9 +172,7 @@ rem --- Open files
 	gosub open_tables
 
 	ivs01_dev=num(open_chans$[1])
-	gls01_dev=num(open_chans$[2])
 	dim ivs01a$:open_tpls$[1]
-	dim gls01a$:open_tpls$[2]
 
 rem --- Setup user template and object
 
@@ -217,7 +214,6 @@ rem --- Setup for display fields on header
 rem --- Get parameter records
 
 	find record (ivs01_dev ,key=firm_id$+"IV00", dom=std_missing_params) ivs01a$
-	find record (gls01_dev, key=firm_id$+"GL00", err=set_iv_params) gls01a$
 
 	set_iv_params:
 	user_tpl.multi_whse$ = ivs01a.multi_whse$

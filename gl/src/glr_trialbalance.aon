@@ -25,14 +25,21 @@ rem --- Retrieve sysinfo data
     milestone=50
     milestone=num(stbl("+MILESTONE",err=*next),err=*next)    
 
+rem --- Assign input values to local variables
+
+    begper$=Option!.getOptionData("PICK_GL_PER")
+    begyear$=Option!.getOptionData("PICK_YEAR")
+    include_zero$=Option!.getOptionData("INCLUDE_ZERO")
+
 rem --- Open/Lock files
 
-    files=4,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
     files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY"
     files$[4]="glm-10",ids$[4]="GLM_ACCTBREAKS"
+    files$[5]="gls_calendar",ids$[5]="GLS_CALENDAR"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -40,15 +47,26 @@ rem --- Open/Lock files
     glm01_dev=channels[2]
     glm02_dev=channels[3]
     glm10_dev=channels[4]
+    gls_calendar_dev=channels[5]
 
 rem --- Dimension string templates
 
     dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3]
+    dim gls_calendar$:templates$[5]
 
 rem --- Retrieve parameter records
 
     gls01a_key$=sysinfo.firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    find record (gls_calendar_dev,key=firm_id$+begyear$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=begyear$
+        gosub disp_message
+        goto std_exit
+    endif
+
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,0
     m1=len(m1$)
@@ -57,12 +75,6 @@ rem --- Retrieve parameter records
     break$=""
     desc$=""
     call pgmdir$+"glc_regroup.aon",glm10_dev,sysinfo.firm_id$,break$,desc$
-
-rem --- Assign input values to local variables
-
-    begper$=Option!.getOptionData("PICK_GL_PER")
-    begyear$=Option!.getOptionData("PICK_YEAR")
-	include_zero$=Option!.getOptionData("INCLUDE_ZERO")
 
 rem --- Document initializations
 
@@ -96,10 +108,11 @@ rem --- Initializations
     h5$=pad(Translate!.getTranslation("AON__ENDING_BALANCE_"),x,"C","-")
     period=num(begper$)
     year=num(begyear$)
-    call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
+    call pgmdir$+"adc_perioddates.aon",period,year,begdate$,enddate$,table_chans$[all],status
+    if status goto std_exit
     headings$[0]=cvs(sysinfo.firm_name$,2)
     headings$[1]=cvs(sysinfo.task_desc$,2)
-    headings$[2]=Translate!.getTranslation("AON_FOR_") + cvs(field(gls01a$,"period_name_"+str(period:"00")),2) + " " + begyear$ + Translate!.getTranslation("AON__(PERIOD_") + str(period:"00") + ")"
+    headings$[2]=Translate!.getTranslation("AON_FOR_") + cvs(field(gls_calendar$,"period_name_"+str(period:"00")),2) + " " + begyear$ + Translate!.getTranslation("AON__(PERIOD_") + str(period:"00") + ")"
     headings$[3]=fndate$(begdate$)+Translate!.getTranslation("AON__THROUGH_")+fndate$(enddate$)
 
 rem --- Print positions
@@ -114,18 +127,6 @@ rem --- Print positions
     if o[1]<2 o[1]=2,o[2]=o[1]+p+1
     w=o[3]-o[2]
     if w>35 w=35
-
-rem --- Which glm-02 record?
-    
-    if gls01a.gl_yr_closed$ <> "Y" then 
-        if year=glyear record$="4"
-        if year=glyear-1 record$="0"
-        if year=glyear-2 record$="2"
-    else
-        if year=glyear record$="0"
-        if year=glyear-1 record$="2"
-        if year=glyear+1 record$="4"
-    endif
 
 rem --- Document columns
 
@@ -162,7 +163,7 @@ rem --- Read next glm-01 record
           rem --- Read glm-02 record
 
           action$="R"
-          glm02_key$=firm_id$+glm01a.gl_account$+record$
+          glm02_key$=firm_id$+glm01a.gl_account$+begyear$
 
           find record (glm02_dev,key=glm02_key$,dom=*continue)glm02a$
           call pgmdir$+"glc_summary.aon",action$,glm02a$,a[all],u[all],status
@@ -361,6 +362,11 @@ rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
         if len(q1$)>len(q2$)-q0 let q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)
     fnend
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
 
 rem #include std_missing_params.src
 

@@ -32,7 +32,7 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=5,begfile=1,endfile=files
+    files=6,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
@@ -40,6 +40,7 @@ rem --- Open/Lock files
     files$[4]="glm-10",ids$[4]="GLM_ACCTBREAKS"
     files$[5]="glw-02",ids$[5]="GLW_FINSORT"
     options$[5]="LC"
+    files$[6]="gls_calendar",ids$[6]="GLS_CALENDAR"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -47,22 +48,37 @@ rem --- Open/Lock files
     glm01_dev=channels[2]
     glm02_dev=channels[3]
     glm10_dev=channels[4]
-    glw02_dev=channels[endfile]
+    glw02_dev=channels[5]
+    gls_calendar_dev=channels[6]
 
 rem --- Dimension string templates
 
     dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3]
-    dim glw02a$:templates$[5]
+    dim glw02a$:templates$[5],gls_calendar$:templates$[6]
+
+rem --- Assign input values to local variables
+
+    begper$=Option!.getOptionData("PICK_GL_PER")
+    begyear$=Option!.getOptionData("PICK_YEAR")
+    include$=Option!.getOptionData("YN_PROMPT")
+    alignPeriods$=Option!.getOptionData("ALIGN_PERIODS")
 
 rem --- Retrieve parameter records
 
     gls01a_key$=firm_id$+"GL00"   
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    rem m0$=gls01a.acct_output$ -- using mask from Barista system masks file
+    find record (gls_calendar_dev,key=firm_id$+begyear$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=begyear$
+        gosub disp_message
+        goto std_exit
+    endif
+
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0
     call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
     glyear=num(gls01a.current_year$)
-    headings=3
     break$=""
     desc$=""
     call pgmdir$+"glc_regroup.aon",glm10_dev,firm_id$,break$,desc$
@@ -73,6 +89,32 @@ rem --- Assign input values to local variables
     begper$=Option!.getOptionData("PICK_GL_PER")
     begyear$=Option!.getOptionData("PICK_YEAR")
     include$=Option!.getOptionData("YN_PROMPT")
+    alignPeriods$=Option!.getOptionData("ALIGN_PERIODS")
+
+rem --- If aligning fiscal periods, need to update GLW_ACCTSUMMARY using
+rem --- transactions from GLT_TRANSDETAIL for the selected fiscal year.
+    if alignPeriods$="Y" then
+        use ::glo_AlignFiscalCalendar.aon::AlignFiscalCalendar
+        alignCalendar!=new AlignFiscalCalendar(firm_id$)
+        tripKey$=alignCalendar!.alignCalendar(begyear$)
+        rem --- Check tripKey$ in case of error
+        if tripKey$<>"" then
+            files=1,begfile=1,endfile=files
+            dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+            files$[1]="glw_acctsummary",ids$[1]="GLW_ACCTSUMMARY"
+            call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+            if status goto std_exit
+            glwAcctSummary_dev=channels[1]
+            dim glwAcctSummary$:templates$[1]
+        else
+            msg_id$="GL_CANNOT_ALIGN_PERS"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=begyear$
+            gosub disp_message
+            alignPeriods$="N"
+        endif
+    endif
 
 rem --- Document initializations
 
@@ -86,6 +128,7 @@ rem --- Document initializations
 
 rem --- Initializations
 
+    headings=4
     dim j1$(m1,"-"),j2$(m1,"-"),headings$[headings],a[13],t[3],s[10],o[1]
     action$="R"
     more=1
@@ -108,23 +151,25 @@ rem --- Initializations
     if bs$="Y" j1$="",width=o[1]-1
     mtdhdr=o[0]+m1-len(mtdhdr$)
     ytdhdr=o[1]+m1-len(ytdhdr$)
-    call pgmdir$+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
     headings$[0]=cvs(sysinfo.firm_name$,2)
     headings$[1]=cvs(sysinfo.task_desc$,2)
-    headings$[2]=Translate!.getTranslation("AON_FOR_")+cvs(field(gls01a$,"period_name_"+str(period:"00")),2)+" "+begyear$+Translate!.getTranslation("AON__(PERIOD_")+
-:                str(period:"00")+")"
-    headings$[3]=fndate$(begdate$)+Translate!.getTranslation("AON__THROUGH_")+fndate$(enddate$)
-
-rem --- Which glm-02 record?
-    
-    if gls01a.gl_yr_closed$ <> "Y" then 
-        if year=glyear record$="4"
-        if year=glyear-1 record$="0"
-        if year=glyear-2 record$="2"
+    headings$[2]=Translate!.getTranslation("AON_FOR_")+cvs(field(gls_calendar$,"period_name_"+str(period:"00")),2)+" "+begyear$+Translate!.getTranslation("AON__(PERIOD_")+
+:       str(period:"00")+")"
+    if alignPeriods$="Y" then
+        call pgmdir$+"adc_perioddates.aon",period,glyear,begdate$,enddate$,table_chans$[all],status
+        if status goto std_exit
+        delta=num(begdate$(1,4))-glyear
+        begdate$=str(num(begyear$)+delta:"0000")+begdate$(5)
+        delta=num(enddate$(1,4))-glyear
+        enddate$=str(num(begyear$)+delta:"0000")+enddate$(5)
+        headings$[3]=Translate!.getTranslation("AON_ALIGNED_WITH","Aligned With")+" "+str(glyear:"0000")+" "+
+:           Translate!.getTranslation("AON_PERIOD")+" "+str(period:"00")
+        headings$[4]=fndate$(begdate$)+Translate!.getTranslation("AON__THROUGH_")+fndate$(enddate$)
     else
-        if year=glyear record$="0"
-        if year=glyear-1 record$="2"
-        if year=glyear+1 record$="4"
+        call pgmdir$+"adc_perioddates.aon",period,year,begdate$,enddate$,table_chans$[all],status
+        if status goto std_exit
+        headings$[3]=fndate$(begdate$)+Translate!.getTranslation("AON__THROUGH_")+fndate$(enddate$)
+        headings$[4]=""
     endif
 
 rem --- Document columns
@@ -204,10 +249,17 @@ rem --- Read next sort record
 
           dim a[13],u[13]
           glm01_key$=glw02a.firm_id$+glw02a.gl_account$
-          glm02_key$=glm01_key$+record$
           find record (glm01_dev,key=glm01_key$,dom=*continue)glm01a$
-          find record (glm02_dev,key=glm02_key$,dom=level_break)glm02a$
-          call pgmdir$+"glc_summary.aon",action$,glm02a$,a[all],u[all],status
+          if alignPeriods$="Y" then
+              rem --- Align fiscal periods
+              glwAcctSummary_key$=glm01_key$+begyear$+gls01a.current_year$
+              findrecord(glwAcctSummary_dev,key=glwAcctSummary_key$,dom=level_break,knum="BY_ACCOUNT_YEAR")glwAcctSummary$
+              call pgmdir$+"glc_summary.aon",action$,glwAcctSummary$,a[all],u[all],status
+          else
+              glm02_key$=glm01_key$+begyear$
+              find record (glm02_dev,key=glm02_key$,dom=level_break)glm02a$
+              call pgmdir$+"glc_summary.aon",action$,glm02a$,a[all],u[all],status
+          endif
 
 level_break: rem --- Account Break?
 
@@ -425,6 +477,11 @@ rem --- fnglobal$: Return string value of passed STBL variable
         globalstr_exit:
         return q1$
     fnend
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
 
 rem #include std_missing_params.src
 

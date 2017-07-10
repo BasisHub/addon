@@ -21,6 +21,8 @@ rem --- Errors (entry processing will be stopped)
 rem --- status = 101: The date is not in the prior, current or next GL year
 rem --- status = 102: The date falls into a locked GL period
 rem --- status = 103: The date falls into a closed fiscal year
+rem --- status = 104: This status no longer used ... This GL account does not exist
+rem --- status = 105: The date falls into the prior fiscal year
 
     setesc std_exit
     seterr std_error
@@ -61,7 +63,6 @@ rem --- Parameters
     dim glcontrol$:glcontrol_tpl$
     glcontrol$=stbl("+GLCONTROL",err=std_exit)
     mp=13
-    total_pers=num(glcontrol.total_pers$)
 
 rem --- Initializations
 
@@ -80,6 +81,9 @@ rem --- Initializations
     next_apperiod=apperiod+1
     next_apyear=apyear
 
+    total_pers=num(glcontrol.cur_total_pers$)
+    if apyear$<glyear$ then total_pers=num(glcontrol.pri_total_pers$)
+    if apyear$>glyear$ then total_pers=num(glcontrol.nxt_total_pers$)
     if next_apperiod>total_pers 
         next_apperiod=1
         next_apyear=apyear+1
@@ -100,13 +104,22 @@ rem --- Is this date same as the last one verified?
 
 rem --- Initialize locked period flags based on fiscal calendar
 
-    locked$(1,mp)="YYYYYYYYYYYYY"
     p=0
-    y=mp*2
-
-    for x=mp+1 to y
+    for x=1 to mp
         p=p+1
-        locked$(x,1)=field(glcontrol$,"locked_flag_"+str(p:"00"))
+        locked$(x,1)=field(glcontrol$,"pri_locked_flag_"+str(p:"00"))
+    next x
+    
+    p=0
+    for x=mp+1 to mp*2
+        p=p+1
+        locked$(x,1)=field(glcontrol$,"cur_locked_flag_"+str(p:"00"))
+    next x
+
+    p=0
+    for x=(mp*2)+1 to mp*3
+        p=p+1
+        locked$(x,1)=field(glcontrol$,"nxt_locked_flag_"+str(p:"00"))
     next x
 
     year1=glyear-1
@@ -116,21 +129,13 @@ rem --- Initialize locked period flags based on fiscal calendar
     year1=glyear-2
     year2=glyear-1
     year3=glyear
-    locked$(mp+1,mp)=locked$(1,mp)
-    p=0
-    y=mp*3
-
-    for x=(mp*2)+1 to y
-        p=p+1
-        locked$(x,1)=field(glcontrol$,"locked_flag_"+str(p:"00"))
-    next x
 
 determine_period: rem --- Determine which period/year that date falls into
 
     period=0
     year=year1
 
-    for m=1 to total_pers
+    for m=1 to num(glcontrol.pri_total_pers$)
         begdate$=field(glcontrol$,"pri_per_beg_"+str(m:"00"))
         enddate$=field(glcontrol$,"pri_per_end_"+str(m:"00"))
         if yyyymmdd$<begdate$ or yyyymmdd$>enddate$ continue
@@ -141,7 +146,7 @@ determine_period: rem --- Determine which period/year that date falls into
     if period goto range_check
     year=year2
 
-    for m=1 to total_pers
+    for m=1 to num(glcontrol.cur_total_pers$)
         begdate$=field(glcontrol$,"cur_per_beg_"+str(m:"00"))
         enddate$=field(glcontrol$,"cur_per_end_"+str(m:"00"))
         if yyyymmdd$<begdate$ or yyyymmdd$>enddate$ continue
@@ -152,7 +157,7 @@ determine_period: rem --- Determine which period/year that date falls into
     if period goto range_check
     year=year3
 
-    for m=1 to total_pers
+    for m=1 to num(glcontrol.nxt_total_pers$)
         begdate$=field(glcontrol$,"nxt_per_beg_"+str(m:"00"))
         enddate$=field(glcontrol$,"nxt_per_end_"+str(m:"00"))
         if yyyymmdd$<begdate$ or yyyymmdd$>enddate$ continue
@@ -286,13 +291,13 @@ rem     case 104 --- used in glc_datewarn.aon for "AON_THIS_GL_ACCOUNT_DOES_NOT_
 rem     break
         case 105
             part2$=part2$+Translate!.getTranslation("AON_FALLS_INTO_THE_PRIOR_FISCAL_YEAR")+"."
-        break
+            break
     swend
 
     message$[0]=part1$+$0A$+part2$
     dim msg_tokens$[1]
     msg_tokens$[1]=part1$+$0a$+part2$
-    call stbl("+DIR_SYP")+"bac_message.bbj","GENERIC_OK",msg_tokens$[all],msg_opt$,table_chans$[all]
+    call stbl("+DIR_SYP")+"bac_message.bbj","GENERIC_WARN",msg_tokens$[all],msg_opt$,table_chans$[all]
 rem    call pgmdir$+"adc_stdmessage.aon",2,message$[all],0,0,0,v$,v3
 
 done: rem --- All done

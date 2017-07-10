@@ -139,6 +139,23 @@ if cvs(callpoint!.getUserInput(),3)<>""
 endif
 [[POE_RECHDR.VENDOR_ID.AVAL]]
 vendor_id$=callpoint!.getUserInput()
+rem "VENDOR INACTIVE - FEATURE"
+apm01_dev=fnget_dev("APM_VENDMAST")
+apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+dim apm01a$:apm01_tpl$
+apm01a_key$=firm_id$+vendor_id$
+find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+if apm01a.vend_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+   msg_id$="AP_VEND_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 gosub vendor_info
 gosub disp_vendor_comments
 
@@ -557,6 +574,7 @@ if callpoint!.getColumnData("POE_RECHDR.DROPSHIP")="Y"
 	endif
 endif
 [[POE_RECHDR.<CUSTOM>]]
+#include std_functions.src
 vendor_info: rem --- get and display Vendor Information
 	apm01_dev=fnget_dev("APM_VENDMAST")
 	dim apm01a$:fnget_tpl$("APM_VENDMAST")

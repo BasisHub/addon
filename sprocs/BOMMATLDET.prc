@@ -8,6 +8,7 @@ rem ----------------------------------------------------------------------------
 
 GOTO SKIP_DEBUG
 Debug$= "C:\temp\BOMMATLDET_DebugPRC.txt" 
+erase debug$,err=*next
 string Debug$
 DebugChan=unt
 open(DebugChan)Debug$   
@@ -41,13 +42,14 @@ rem --- Get the IN parameters used by the procedure
     iv_precision$ = sp!.getParameter("IV_PRECISION")
     barista_wd$ = sp!.getParameter("BARISTA_WD")
     masks$ = sp!.getParameter("MASKS")
+    inactive$ = sp!.getParameter("OPTION_ACTIVE")
 
     if num(iv_precision$)>num(bm_precision$) then
         this_precision=num(iv_precision$)
     else
         this_precision=num(bm_precision$)
     endif
-    
+
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
     if len(masks$)>0
@@ -58,6 +60,7 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
     
     sv_wd$=dir("")
     chdir barista_wd$
+
 
 rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
@@ -98,6 +101,9 @@ rem --- Build SQL statement
     sql_prep$=sql_prep$+"LEFT OUTER JOIN ivm_itemwhse"+$0a$
     sql_prep$=sql_prep$+"ON bmm_billmat.firm_id = ivm_itemwhse.firm_id AND ivm_itemwhse.warehouse_id = '"+whse$+"' AND ivm_itemwhse.item_id = bmm_billmat.item_id"+$0a$
     sql_prep$=sql_prep$+"WHERE firm_id = '"+firm_id$+"' AND bill_no = '"+bill_no$+"' "+$0a$
+    if inactive$ = "Y" then
+      sql_prep$=sql_prep$+" AND ivm_itemmast.item_inactive <> 'Y' " 
+    endif
     sql_prep$=sql_prep$+"GROUP BY bmm_billmat.firm_id, bmm_billmat.bill_no, bmm_billmat.material_seq, bmm_billmat.item_id, "+$0a$
     sql_prep$=sql_prep$+"  line_type, unit_measure, ext_comments, effect_date, obsolt_date, qty_required, alt_factor, divisor, "+$0a$
     sql_prep$=sql_prep$+"  scrap_factor, itemdesc, unitcost, op_int_seq_ref"+$0a$

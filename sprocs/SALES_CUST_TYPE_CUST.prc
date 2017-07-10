@@ -18,14 +18,11 @@ sp! = BBjAPI().getFileSystem().getStoredProcedureData()
 rem ' Get the IN and IN/OUT parameters used by the procedure
 firm_id$=sp!.getParameter("FIRM_ID")
 cust_type$=sp!.getParameter("CUST_TYPE")
-month$ = sp!.getParameter("MONTH")
-year$ = sp!.getParameter("YEAR")
+beg_dt$ = sp!.getParameter("BEGDATE")
+end_dt$ = sp!.getParameter("ENDDATE")
 custIdMask$=sp!.getParameter("CUST_ID_MASK")
 custIdLen=num(sp!.getParameter("CUST_ID_LEN"))
 barista_wd$=sp!.getParameter("BARISTA_WD")
-
-beg_dt$ = year$+month$+"01"
-end_dt$ = year$+month$+"31"
 
 sv_wd$=dir("")
 chdir barista_wd$
@@ -38,7 +35,6 @@ sql$ = "SELECT SUM(t1.total_sales) AS total_sales, t1.customer_id, t3.customer_n
 sql$ = sql$ + "INNER JOIN ARM_CUSTDET t2 ON t1.firm_id = t2.firm_id AND t1.customer_id = t2.customer_id "
 sql$ = sql$ + "INNER JOIN ARM_CUSTMAST t3 on t2.firm_id = t3.firm_id AND t2.customer_id = t3.customer_id "
 sql$ = sql$ + "WHERE t1.trans_status='U' AND t1.firm_id = '" + firm_id$ + "' AND t1.ar_type = '  ' AND t2.customer_type = '" + cust_type$ + "' AND t1.INVOICE_DATE >= '" + beg_dt$ + "' and t1.INVOICE_DATE <= '" +end_dt$ + "' "
-rem this takes way longer...sql$ = sql$ + "WHERE t1.firm_id = '" + firm_id$ + "' AND t2.customer_type = '" + cust_type$ + "' AND SUBSTRING(t1.INVOICE_DATE, 5, 2) = '" + month$ + "' and SUBSTRING(t1.INVOICE_DATE, 1, 4) = '" + year$ + "' "
 sql$ = sql$ + "GROUP BY t1.customer_id, t3.customer_name, t3.contact_name "
 sql$ = sql$ + "ORDER BY total_sales DESC "
 

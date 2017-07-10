@@ -57,6 +57,9 @@ rem --- Get the IN parameters used by the procedure
 	firm_id$ = sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	masks$ = sp!.getParameter("MASKS")
+    props_name$ = sp!.getParameter("PROPS_NAME")
+    props_path$ = sp!.getParameter("PROPS_PATH")
+    user_locale$ = sp!.getParameter("USER_LOCALE")
 
 rem --- dirs	
 	sv_wd$=dir("")
@@ -66,6 +69,16 @@ rem --- Get Barista System Program directory
 	sypdir$=""
 	sypdir$=stbl("+DIR_SYP",err=*next)
 	pgmdir$=stbl("+DIR_PGM",err=*next)
+
+rem --- Get DisplayColumns object
+
+    brddir$=stbl("+DIR_BRD",err=*next)
+    x$=stbl("+DIR_BRD",barista_wd$+brddir$)
+    x$=stbl("+PROPS_NAME",props_name$)
+    x$=stbl("+PROPS_PATH",props_path$)
+    x$=stbl("+USER_LOCALE",user_locale$)
+    use ::glo_DisplayColumns.aon::DisplayColumns
+    displayColumns!=new DisplayColumns(firm_id$)
 	
 rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 
@@ -91,7 +104,7 @@ rem --- Open/Lock files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="glm-01",ids$[1]="GLM_ACCT"
     files$[2]="glm-02",ids$[2]="GLM_ACCTSUMMARY"
-    files$[3]="gls_params",ids$[3]="GLS_PARAMS"
+    files$[3]="glm_acctbudget",ids$[3]="GLM_ACCTBUDGET"
    
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
     if status then
@@ -101,56 +114,61 @@ rem --- Open/Lock files
     endif
 
     glm01a_dev=channels[1]
-    glm02a_dev=channels[2]
-    gls01a_dev=channels[3]
+    glm_acctsummary_dev=channels[2]
+    glm_acctbudget_dev=channels[3]
    
 rem --- Dimension string templates
 
     dim glm01a$:templates$[1]
     dim glm02a$:templates$[2]
-    dim gls01a$:templates$[3]
+    dim glm_acctbudget$:templates$[3]
 
 rem --- get data
 
-    readrecord(gls01a_dev,key=firm_id$+"GL00",dom=*next)gls01a$
-
     idsVec! = BBjAPI().makeVector()
     yearsVec! = BBjAPI().makeVector()
+    actbudVec! = BBjAPI().makeVector()
 
     rem --- Prior Year Actual / All Actual / All / Curr&Prior Actual
     if pos(include_type$="CGIJ")
         idsVec!.addItem("2")
-        yearsVec!.addItem(str(num(gls01a.current_year$)-1))
+        yearsVec!.addItem(displayColumns!.getYear("2"))
+        actbudVec!.addItem(displayColumns!.getActBud("2"))
     endif   
 
     rem --- Prior Year Budget / All Budget / All / Curr&Prior Budget
     if pos(include_type$="DHIK")
         idsVec!.addItem("3")
-        yearsVec!.addItem(str(num(gls01a.current_year$)-1))
+        yearsVec!.addItem(displayColumns!.getYear("3"))
+        actbudVec!.addItem(displayColumns!.getActBud("3"))
     endif   
 
     rem --- Current Year Actual / All Actual / All / Curr&Prior Actual
     if pos(include_type$="AGIJ")
         idsVec!.addItem("0")
-        yearsVec!.addItem(gls01a.current_year$)
+        yearsVec!.addItem(displayColumns!.getYear("0"))
+        actbudVec!.addItem(displayColumns!.getActBud("0"))
     endif
 
     rem --- Current Year Budget / All Budget / All / Curr&Prior Budget
     if pos(include_type$="BHIK")
         idsVec!.addItem("1")
-        yearsVec!.addItem(gls01a.current_year$)
+        yearsVec!.addItem(displayColumns!.getYear("1"))
+        actbudVec!.addItem(displayColumns!.getActBud("1"))
     endif   
     
     rem --- Next Year Actual / All Actual / All
     if pos(include_type$="EGI")
         idsVec!.addItem("4")
-        yearsVec!.addItem(str(num(gls01a.current_year$)+1))
+        yearsVec!.addItem(displayColumns!.getYear("4"))
+        actbudVec!.addItem(displayColumns!.getActBud("4"))
     endif
 
     rem --- Next Year Budget / All Budget / All
     if pos(include_type$="FHI")
         idsVec!.addItem("5")
-        yearsVec!.addItem(str(num(gls01a.current_year$)+1))
+        yearsVec!.addItem(displayColumns!.getYear("5"))
+        actbudVec!.addItem(displayColumns!.getActBud("5"))
     endif   
 
     if idsVec!.size()>0 then
@@ -163,7 +181,12 @@ rem --- get data
             for i=0 to idsVec!.size()-1
                 acct_total=0
                 dim glm02a$:fattr(glm02a$)
-                readrecord(glm02a_dev,key=firm_id$+glm01a.gl_account$+idsVec!.getItem(i),dom=*next)glm02a$
+                if actbudVec!.getItem(i)="A" then
+                    glm02a_dev=glm_acctsummary_dev
+                else
+                    glm02a_dev=glm_acctbudget_dev
+                endif
+                readrecord(glm02a_dev,key=firm_id$+glm01a.gl_account$+yearsVec!.getItem(i),dom=*next)glm02a$
                 acct_total=glm02a.begin_amt +glm02a.period_amt_01 +glm02a.period_amt_02 +glm02a.period_amt_03 +glm02a.period_amt_04 
 :                       +glm02a.period_amt_05 +glm02a.period_amt_06+glm02a.period_amt_07 +glm02a.period_amt_08 +glm02a.period_amt_09
 :                       +glm02a.period_amt_10 +glm02a.period_amt_11 +glm02a.period_amt_12 +glm02a.period_amt_13

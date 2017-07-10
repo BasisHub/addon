@@ -92,7 +92,7 @@ rem --- Open/Lock files
 
 	dir_pgm$=stbl("+DIR_PGM",err=*next)
 	sys_pgm$=stbl("+DIR_SYP",err=*next)
-	files=21,begfile=1,endfile=11
+	files=21,begfile=1,endfile=10
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="ARS_PARAMS";rem --- "ARS_PARAMS"..."ads-01"
 	files$[2]="ARE_INVHDR";rem --- "are-05"
@@ -104,7 +104,6 @@ rem --- Open/Lock files
 	files$[8]="ARS_MTDCASH";rem --- "ars-10",ids$[7]="C"
 	files$[9]="ART_INVHDR";rem --- "art-01"
 	files$[10]="ART_INVDET";rem --- "art-11"
-	files$[11]="GLS_PARAMS"
 	rem --- are-15 used to get open on 2 channels, but looks like it won't be necessary in v8.CAH
 	rem --- files$[11]="ARE_INVDET";rem --- "are-15" -- open on 2 channels
 	for wkx=begfile to endfile
@@ -121,7 +120,6 @@ rem --- Open/Lock files
 		release
 	endif
 	ads01_dev=num(chans$[1])
-	gls01_dev=num(chans$[11])
 rem --- set up UserObj! as vector
 	UserObj!=SysGUI!.makeVector()
 	
@@ -134,7 +132,7 @@ rem --- set up UserObj! as vector
 	UserObj!.addItem(tqty!)
 	UserObj!.addItem(tamt!)
 rem --- Dimension miscellaneous string templates
-	dim ars01a$:templates$[1],gls01a$:templates$[11]
+	dim ars01a$:templates$[1]
 	dim user_tpl$:"firm_id:c(2),glint:C(1),glyr:C(4),glper:C(2),totqty:C(15),totamt:C(15)";rem --- used to pass 'stuff' to/from cpt
 	user_tpl.firm_id$=firm_id$
 
@@ -157,8 +155,6 @@ rem --- Additional init
 rem --- Retrieve parameter data - not keeping any of it here, just make sure params exist
 	ars01a_key$=firm_id$+"AR00"
 	find record (ads01_dev,key=ars01a_key$,err=std_missing_params) ars01a$
-	gls01a_key$=firm_id$+"GL00"
-	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$ 
 rem --- Disable display only columns
 	dim dctl$[8]
 	dctl$[1]="<<DISPLAY>>.CUST_ADDR1"
@@ -171,6 +167,24 @@ rem --- Disable display only columns
 	dctl$[8]="<<DISPLAY>>.TOT_AMT"
 	gosub disable_ctls
 [[ARE_INVHDR.CUSTOMER_ID.AVAL]]
+rem "Customer Inactive Feature"
+customer_id$=callpoint!.getUserInput()
+arm01_dev=fnget_dev("ARM_CUSTMAST")
+arm01_tpl$=fnget_tpl$("ARM_CUSTMAST")
+dim arm01a$:arm01_tpl$
+arm01a_key$=firm_id$+customer_id$
+find record (arm01_dev,key=arm01a_key$,err=*break) arm01a$
+if arm01a.cust_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+   msg_id$="AR_CUST_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(arm01a.customer_id$(1,customer_size),m0$)
+   msg_tokens$[2]=cvs(arm01a.customer_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 if cvs(callpoint!.getUserInput(),2)<>"" and callpoint!.getUserInput()<>
 :							callpoint!.getColumnUndoData("ARE_INVHDR.CUSTOMER_ID")
 		rem --- force current and original cust ID same, so we skip this routine on later validation sweep
@@ -207,6 +221,7 @@ if gl$="Y"
 	endif
 endif
 [[ARE_INVHDR.<CUSTOM>]]
+#include std_functions.src
 calc_grid_tots:
         recVect!=GridVect!.getItem(0)
         dim gridrec$:dtlg_param$[1,3]

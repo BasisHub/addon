@@ -15,11 +15,7 @@ rem --- Validate against BOM_BILLMAST
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 	endif
-[[BMU_IVCOSTING.BFMC]]
-rem --- Set Custom Query for BOM Item Number
 
-	callpoint!.setTableColumnAttribute("BMU_IVCOSTING.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("BMU_IVCOSTING.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[BMU_IVCOSTING.ASVA]]
 rem --- Warning to run IV Valuation Report and the IV Costing Report
 

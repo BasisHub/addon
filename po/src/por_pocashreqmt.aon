@@ -35,7 +35,7 @@ rem --- Open/Lock files
     files$[6]="poe-12",ids$[6]="POE_PODET"
     files$[7]="pom-02",ids$[7]="POC_LINECODE"
     files$[8]="aps_params",ids$[8]="APS_PARAMS"
-    files$[9]="gls_params",ids$[9]="GLS_PARAMS"
+    files$[9]="gls_calendar",ids$[9]="GLS_CALENDAR"
     files$[10]="ivs_params",ids$[10]="IVS_PARAMS"
     files$[11]="pos_params",ids$[11]="POS_PARAMS"
 
@@ -50,7 +50,7 @@ rem --- Open/Lock files
     poe12_dev=channels[6]
     pom02a_dev=channels[7]
     aps01a_dev=channels[8]
-    gls01a_dev=channels[9]
+    gls_calendar_dev=channels[9]
     ivs01a_dev=channels[10]
     pos01a_dev=channels[11]
 
@@ -58,7 +58,7 @@ rem --- Dimension string templates
 
     dim apm01a$:templates$[2],apm10c$:templates$[3],ivm10a$:templates$[4],
 :       poe02a$:templates$[5],poe12a$:templates$[6],pom02a$:templates$[7],
-:       aps01a$:templates$[8],gls01a$:templates$[9],ivs01a$:templates$[10],
+:       aps01a$:templates$[8],gls_calendar$:templates$[9],ivs01a$:templates$[10],
 :       pos01a$:templates$[11]
 
 rem --- Assign form input values to local variables
@@ -68,17 +68,48 @@ rem --- Assign form input values to local variables
     num_days=num(option!.getOptionData("pick_integer"))
     whse$=option!.getOptionData("warehouse_id")
     summordet$=option!.getOptionData("report_summ_det")
+    from_jul=jul(num(datefrom$(1,4)),num(datefrom$(5,2)),num(datefrom$(7,2)))
+    fiscal_year$=datefrom$(1,4)
 
 rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01a_dev,key=aps01a_key$,err=std_missing_params) aps01a$
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     ivs01a_key$=firm_id$+"IV00"
     find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
     pos01a_key$=firm_id$+"PO00"
     find record (pos01a_dev,key=pos01a_key$,err=std_missing_params) pos01a$
+
+get_calendar: rem --- Get calendar for the fiscal year
+
+    find record (gls_calendar_dev,key=firm_id$+fiscal_year$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=fiscal_year$
+        gosub disp_message
+        goto std_exit
+    endif
+    periods=num(gls_calendar.total_pers$)
+
+rem --- Make sure we used the fiscal calendar for the correct year.
+
+    start_date$=gls_calendar.year$+gls_calendar.cal_start_date$
+    start_jul=jul(num(start_date$(1,4)),num(start_date$(5,2)),num(start_date$(7,2)))
+    if from_jul<start_jul then
+        fiscal_year$=str(num(fiscal_year$)-1)
+        goto get_calendar
+    endif
+
+    end_year$=gls_calendar.year$
+    end_mmdd$=field(gls_calendar$,"per_ending_"+str(periods:"00"))
+    if end_mmdd$<gls_calendar.cal_start_date$ then end_year$=str(num(end_year$)+1)
+    end_date$=end_year$+end_mmdd$
+    end_jul=jul(num(end_date$(1,4)),num(end_date$(5,2)),num(end_date$(7,2)))
+    if from_jul>end_jul then
+        fiscal_year$=str(num(fiscal_year$)+1)
+        goto get_calendar
+    endif
 
 rem --- masks
 
@@ -163,6 +194,11 @@ rem --- fnglobal$: Return string value of passed STBL variable
     fnend
 
 rem #endinclude std_functions.src
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
 
 rem #include std_error.src
 

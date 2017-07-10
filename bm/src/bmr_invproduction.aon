@@ -55,11 +55,11 @@ rem --- set rd_alias_id$
 
 rem --- Prepare for call to bmc_explodephantoms.aon
 
-	dim template$[16]
+	dim template$[17]
 	
 rem --- Open/Lock files
 
-	num_files=11
+	num_files=12
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="BME_PRODUCT",open_opts$[1]="OTA"
 	open_tables$[2]="BMM_BILLMAST",open_opts$[2]="OTA"
@@ -72,6 +72,7 @@ rem --- Open/Lock files
 	open_tables$[9]="IVC_WHSECODE",open_opts$[9]="OTA"
 	open_tables$[10]="IVS_PARAMS",open_opts$[10]="OTA"
 	open_tables$[11]="GLS_PARAMS",open_opts$[11]="OTA"
+    open_tables$[12]="GLS_CALENDAR",open_opts$[12]="OTA"
 
 	if num(batch_no$)=0 open_opts$[1]=open_opts$[1]+"L";rem lock if not batching
 	
@@ -88,13 +89,14 @@ rem --- Open/Lock files
 	ivm10c_dev=num(open_chans$[9])
 	ivs01a_dev=num(open_chans$[10])
 	gls01a_dev=num(open_chans$[11])
+    gls_calendar_dev=num(open_chans$[12])
 
 rem --- Dimension string templates
 
 	dim bme01a$:open_tpls$[1],bmm01a$:open_tpls$[2],bmm02a$:open_tpls$[3]
 	dim bmm03a$:open_tpls$[4],bmm08a$:open_tpls$[5],bms01a$:open_tpls$[6]
 	dim ivm01a$:open_tpls$[7],ivm02a$:open_tpls$[8],ivm10c$:open_tpls$[9]
-	dim ivs01a$:open_tpls$[10],gls01a$:open_tpls$[11]
+	dim ivs01a$:open_tpls$[10],gls01a$:open_tpls$[11],gls_calendar$:open_tpls$[12]
 
 	template$[0]=open_tpls$[2]; rem bmm01a
 	template$[1]=open_tpls$[4]; rem bmm03a
@@ -105,6 +107,7 @@ rem --- Dimension string templates
 	template$[7]=open_tpls$[6]; rem bms01a
 	template$[15]=open_tpls$[3]; rem bmm02a
 	template$[16]=open_tpls$[11]; rem gls01a
+    template$[17]=open_tpls$[12]; rem gls_calendar
 
 rem --- Is General Ledger installed and being used?
  
@@ -150,6 +153,14 @@ rem --- Retrieve parameter records
 	find record (ivs01a_dev,key=ivs01a_key$,err=std_missing_params) ivs01a$
 	gls01a_key$=firm_id$+"GL00"
 	find record (gls01a_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+    find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=gls01a.current_year$
+        gosub disp_message
+        goto std_exit_no_update
+    endif
 
 rem --- Parameters
 
@@ -189,7 +200,7 @@ initial:
 	lf$="N"
 	if pos(ivs01a.lifofifo$="LF")>0 then lf$="Y"
 
-	g[0]=num(gls01a.total_pers$)
+	g[0]=num(gls_calendar.total_pers$)
 	g[1]=num(gls01a.current_per$)
 	g[2]=num(gls01a.current_year$)
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
@@ -773,7 +784,7 @@ reference: rem --- Reference Total
 
 explodephantoms: rem --- Explode Phantoms
 
-        dim channel[16],info$[20],info[20]
+        dim channel[17],info$[20],info[20]
         channel[0]=bmm01_dev
         channel[1]=bmm03_dev,channel[2]=bmm05_dev
         channel[3]=bmm08_dev
@@ -785,6 +796,7 @@ explodephantoms: rem --- Explode Phantoms
         channel[12]=ivm04_dev,channel[13]=ivw04_dev,channel[14]=ivw05_dev
         channel[15]=bmm02_dev
 		channel[16]=gls01a_dev
+		channel[17]=gls_calendar_dev
         info$[0]=bmm02a.item_id$,info$[1]=ref1$,info$[2]=ref2$,info$[3]=ap$,info$[4]=ar_dist$
         info$[5]=o2$,info$[6]=bme01a.warehouse_id$,info$[7]=bme01a.prod_date$,info$[8]=bme01a.update_flag$
         info$[9]=gl$,info$[10]=t1$,info$[11]=ivacct$

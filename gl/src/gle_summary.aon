@@ -38,15 +38,18 @@ rem --- Retrieve parameter records
 
     gls01a_key$=firm_id$+"GL00"
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
-    headings=2
     
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0        
 
 rem --- Assign input values to local variables
 
+    dim id$[3]
     begacct$=Option!.getOptionData("GL_ACCOUNT_1")
     endacct$=Option!.getOptionData("GL_ACCOUNT_2")
     wildcard$=Option!.getOptionData("GL_WILDCARD")
+    alignPeriods$=Option!.getOptionData("ALIGN_PERIODS")
+    rem "GL INACTIVE FEATURE"
+    inactive$=Option!.getOptionData("ACCT_INACTIVE")
     id1$=pad(option!.getOptionData("<<DISPLAY>>.RECORD_CD_1"),2)
     id2$=pad(option!.getOptionData("<<DISPLAY>>.RECORD_CD_2"),2)
     id3$=pad(option!.getOptionData("<<DISPLAY>>.RECORD_CD_3"),2)
@@ -56,11 +59,22 @@ rem --- Assign input values to local variables
     au3$=id3$(2,1),id3$=id3$(1,1)
     au4$=id4$(2,1),id4$=id4$(1,1)
 
-    id$=cvs(id1$,2)+cvs(id2$,2)+cvs(id3$,2)+cvs(id4$,2)
-    au$=cvs(au1$,2)+cvs(au2$,2)+cvs(au3$,2)+cvs(au4$,2)
+    dim id$[3]
+    i=0
+    id$=":"
+    au$=""    
+    for x=1 to 4
+        record_cd$=option!.getOptionData("<<DISPLAY>>.RECORD_CD_"+str(x))
+        if cvs(record_cd$,2)="" then continue
+        id$[i]=record_cd$(1,len(record_cd$)-1)
+        id$=id$+id$[i]+":"
+        au$=au$+record_cd$(len(record_cd$))
+        i=i+1
+    next x    
 
 rem --- Initializations
 
+    headings=4
     dim headings$[headings]
     update$=""
 
@@ -75,20 +89,24 @@ rem --- Initialize report headings
     x$=Translate!.getTranslation("AON_FROM_")+x$+Translate!.getTranslation("AON__THROUGH_")+y$
     if cvs(wildcard$,2)<>"" then x$=x$+Translate!.getTranslation("AON__(WILDCARD_")+$22$+cvs(wildcard$,2)+$22$+")"
     headings$[2]=x$
+    headings$[3]=Translate!.getTranslation("AON_EXCLUDE_INACTIVE")+Translate!.getTranslation("AON_GENERAL_LEDGER_ACCOUNTS")+" = "+inactive$
+    if alignPeriods$="Y" then
+        headings$[4]=Translate!.getTranslation("AON_ACTUALS")+" "+Translate!.getTranslation("AON_ALIGNED_WITH","Aligned With")+" "+gls01a.current_year$
+    else
+        headings$[4]=""
+    endif
 
 rem --- If no record id's or types were specified, use parameter defaults
 
-    if cvs(id$,2)=""
+    if cvs(id$,2)=":"
        for x=1 to 4
-           id$=id$+field(gls01a$,"acct_mn_cols_"+str(x:"00"))
-       next x
-       id$=cvs(id$,2)
-    endif
-    if cvs(au$,2)=""
-       for x=1 to 4
+            cols$=field(gls01a$,"acct_mn_cols_"+str(x:"00"))
+            if cvs(cols$,2)="" then continue
+            id$[i]=cols$
+            id$=id$+id$[i]+":"
            au$=au$+field(gls01a$,"acct_mn_type_"+str(x:"00"))
+            i=i+1
        next x
-       au$=cvs(au$,2)
     endif
 
 rem --- Run report overlay

@@ -31,30 +31,41 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=1,begfile=1,endfile=files
+    files=2,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gls_params",ids$[1]="GLS_PARAMS"
+    files$[2]="gls_calendar",ids$[2]="GLS_CALENDAR"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
-    if status goto std_exit
+    if status goto std_exit_no_update
     gls01_dev=channels[1]
+    gls_calendar_dev=channels[2]
 
 rem " --- Set templates
 
     dim gls01a$:templates$[1]
+    dim gls_calendar$:templates$[2]
 
 rem --- Retrieve parameter records
 
     gls01a_key$=firm_id$+"GL00"
     extract record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$; rem Advisory Locking
+    extract record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$; rem Advisory Locking
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=gls01a.current_year$
+        gosub disp_message
+        goto std_exit_no_update
+    endif
     current_period=num(gls01a.current_per$)
     current_year=num(gls01a.current_year$)
-    call pgmdir$+"adc_perioddates.aon",gls01_dev,current_period,current_year,begdate$,
-:                                      enddate$,status
+    call pgmdir$+"adc_perioddates.aon",current_period,current_year,begdate$,enddate$,table_chans$[all],status
+    if status goto std_exit_no_update
 
 rem --- Parameters
 
-    total_pers=num(gls01a.total_pers$)
+    total_pers=num(gls_calendar.total_pers$)
     mp=13
 
 rem --- Assign input values to local variables
@@ -66,7 +77,7 @@ rem --- Assign input values to local variables
 
 rem --- Initializations
 
-    period_name$=cvs(field(gls01a$,"period_name_"+str(period:"00")),2)
+    period_name$=cvs(field(gls_calendar$,"period_name_"+str(period:"00")),2)
 
 rem --- All transaction files empty?
 
@@ -85,28 +96,46 @@ rem --- Confirm that this user REALLY wants to close the fiscal period
 
 rem --- Close period
 
-    field gls01a$,"locked_flag_"+str(period:"00")="Y"
-    field gls01a$,"locked_date_"+str(period:"00")=sysinfo.system_date$
+    field gls_calendar$,"locked_flag_"+str(period:"00")="Y"
+    field gls_calendar$,"locked_date_"+str(period:"00")=sysinfo.system_date$
     if period=total_pers goto close_last_period
     if period=period period=period+1
-                     gls01a.current_per$=str(period:"00")
+        gls01a.current_per$=str(period:"00")
     endif
     goto update_calendar
 
 close_last_period: rem --- Closing last period of year
 
-    for x=1 to mp    
-        field gls01a$,"locked_flag_"+str(x:"00")="N"
-        field gls01a$,"locked_date_"+str(x:"00")=""
-    next x
     gls01a.gl_yr_closed$="N"
     gls01a.current_per$="01"
     year=year+1
     gls01a.current_year$=str(year:"0000")
 
+    rem --- Add calendar for new Next fiscal year
+    if gls01a.create_next_cal then
+        rem --- Save updated calendar for previous Current fiscal year
+        write record (gls_calendar_dev)gls_calendar$
+        
+        rem --- Initialize new calendar for new Next fiscal year based on calendar for new Current fiscal year.
+        readrecord(gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next)gls_calendar$
+        if cvs(gls_calendar.firm_id$,2)="" then
+            msg_id$="AD_NO_FISCAL_CAL"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=gls01a.current_year$
+            gosub disp_message
+            goto std_exit_no_update
+        endif
+        gls_calendar.year$=str(num(gls01a.current_year$)+1)
+        for x=1 to num(gls_calendar.total_pers$)    
+            field gls_calendar$,"locked_flag_"+str(x:"00")="N"
+            field gls_calendar$,"locked_date_"+str(x:"00")=""
+        next x
+    endif
+
 update_calendar: rem --- Update fiscal calendar
 
     write record (gls01_dev)gls01a$
+    write record (gls_calendar_dev)gls_calendar$
 
 rem --- All done
 

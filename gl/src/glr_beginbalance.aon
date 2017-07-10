@@ -27,6 +27,8 @@ rem --- UPDATE$ : Y=Year End Update (user prompted for permission to close year)
 rem ---         : N=Update Beginning Balances (user prompted for approval to
 rem ---         :   produce the register).
 
+    use ::glo_DisplayColumns.aon::DisplayColumns
+
     setesc std_error
     seterr std_error
 
@@ -71,7 +73,7 @@ rem --- set rd_alias_id$, if needed, for DocOut Settings
 
 rem --- Open/Lock files
 
-    files=6,begfile=1,endfile=files
+    files=7,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-01",ids$[2]="GLM_ACCT"
@@ -79,6 +81,7 @@ rem --- Open/Lock files
     files$[4]="glw-03",ids$[4]="GLW_BEGBAL"
     files$[5]="gls_earnings",ids$[5]="GLS_EARNINGS"
     files$[6]="glt-04",ids$[6]="GLE_DAILYDETAIL"
+    files$[7]="gls_calendar",ids$[7]="GLS_CALENDAR"
     options$[4]="LC"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -89,11 +92,12 @@ rem --- Open/Lock files
     glw03_dev=channels[4]
     gls_earnings_dev=channels[5]
     glt04_dev=channels[6]
+    gls_calendar_dev=channels[7]
 
 rem --- Dimension string templates
 
     dim gls01a$:templates$[1],glm01a$:templates$[2],glm02a$:templates$[3]
-    dim glw03a$:templates$[4],gls01b$:templates$[5]
+    dim glw03a$:templates$[4],gls01b$:templates$[5],gls_calendar$:templates$[7]
 
 rem --- Retrieve parameter records
 
@@ -102,14 +106,26 @@ rem --- Retrieve parameter records
 
     find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     find record (gls_earnings_dev,key=gls01b_key$,err=std_missing_params) gls01b$
+    find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
+    if cvs(gls_calendar.firm_id$,2)="" then
+        msg_id$="AD_NO_FISCAL_CAL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=gls01a.current_year$
+        gosub disp_message
+        goto std_exit
+    endif
 
     if gls01a.gl_yr_closed$="Y"
         msg_id$="FISCAL_CLOSED"
         dim msg_tokens$[1]
         msg_tokens$[1]=str(num(gls01a.current_year$)-1:"0000")
         gosub disp_message
-        goto std_exit_no_print
+        if pos("PASSVALID"=msg_opt$)=0
+            goto std_exit_no_print
+        endif
     endif
+
+    displayColumns!=new DisplayColumns(firm_id$)
 
 rem --- Check Daily Detail file
 
@@ -127,7 +143,7 @@ rem --- Parameters
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,acctlen
     call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","A","",m1$,0,m1
     call stbl("+DIR_PGM")+"adc_getmask.aon","","GL","U","",m2$,0,m2
-    total_pers=num(gls01a.total_pers$)
+    total_pers=num(gls_calendar.total_pers$)
     period=num(gls01a.current_per$)
     year=num(gls01a.current_year$)
     if len(gls01b.gl_account$)>10 then gls01b.gl_account$=gls01b.gl_account$(1,10)
@@ -196,7 +212,7 @@ rem --- Read next account master
 
           rem --- Retrieve account summary record
 
-          glm02_key$=firm_id$+glm01a.gl_account$+record$
+          glm02_key$=firm_id$+glm01a.gl_account$+displayColumns!.getYear(record$)
           find record (glm02_dev,key=glm02_key$,dom=*continue)glm02a$
           call pgmdir$+"glc_summary.aon",action$,glm02a$,a[all],u[all],status
 

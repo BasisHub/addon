@@ -585,6 +585,23 @@ rem --- Initialize RTP modified fields for modified existing records
 	endif
 [[OPE_ORDHDR.CUSTOMER_ID.AVAL]]
 	cust_id$ = callpoint!.getUserInput()
+
+	rem "Customer Inactive Feature"
+	arm01_dev=fnget_dev("ARM_CUSTMAST")
+	arm01_tpl$=fnget_tpl$("ARM_CUSTMAST")
+	dim arm01a$:arm01_tpl$
+	arm01a_key$=firm_id$+cust_id$
+	find record (arm01_dev,key=arm01a_key$,err=*break) arm01a$
+	if arm01a.cust_inactive$="Y" then
+		call stbl("+DIR_PGM")+"adc_getmask.aon","CUSTOMER_ID","","","",m0$,0,customer_size
+		msg_id$="AR_CUST_INACTIVE"
+		dim msg_tokens$[2]
+	   	msg_tokens$[1]=fnmask$(arm01a.customer_id$(1,customer_size),m0$)
+		msg_tokens$[2]=cvs(arm01a.customer_name$,2)
+		gosub disp_message
+		callpoint!.setStatus("ACTIVATE")
+	endif
+
 	gosub display_customer
 
 	custdet_dev = fnget_dev("ARM_CUSTDET")
@@ -1802,6 +1819,8 @@ rem --- Update devObjects with current values written to file
 	callpoint!.setDevObject("total_cost",num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_COST")))
 	callpoint!.setDevObject("total_sales",num(callpoint!.getColumnData("OPE_ORDHDR.TOTAL_SALES")))
 [[OPE_ORDHDR.<CUSTOM>]]
+#include std_functions.src
+
 rem ==========================================================================
 display_customer: rem --- Get and display Bill To Information
                   rem      IN: cust_id$
@@ -1847,6 +1866,9 @@ rem ==========================================================================
 	callpoint!.setColumnData("<<DISPLAY>>.AGING_FUTURE", custdet_tpl.aging_future$)
 	callpoint!.setColumnData("<<DISPLAY>>.TOT_AGING",    user_tpl.balance$)
 
+	rem --- also display cust type
+	callpoint!.setColumnData("<<DISPLAY>>.CUST_TP",   custdet_tpl.customer_type$)
+
 	user_tpl.credit_limit = custdet_tpl.credit_limit
 
 	return
@@ -1861,7 +1883,9 @@ rem ==========================================================================
 	read record (arm02_dev,key=firm_id$+cust_id$+"  ",dom=*next) arm02a$
 
 	if arm02a.cred_hold$<>"E"
-		if user_tpl.credit_limit<>0 and !user_tpl.credit_limit_warned and user_tpl.balance>=user_tpl.credit_limit then
+		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
+		creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()
+		if user_tpl.credit_limit<>0 and !user_tpl.credit_limit_warned and num(callpoint!.getColumnData("<<DISPLAY>>.NET_SALES")) > creditRemaining then
    			if user_tpl.credit_installed$ <> "Y" then
 			      	msg_id$ = "OP_OVER_CREDIT_LIMIT"
 				dim msg_tokens$[1]
@@ -2819,8 +2843,6 @@ rem --- Open needed files
 	open_tables$[6]="OPE_INVCASH",   open_opts$[6]="OTA"
 	open_tables$[7]="ARS_CREDIT",    open_opts$[7]="OTA"
 	open_tables$[8]="OPC_LINECODE",  open_opts$[8]="OTA"
-	open_tables$[9]="GLS_PARAMS",    open_opts$[9]="OTA"
-	open_tables$[10]="GLS_PARAMS",   open_opts$[10]="OTA"
 	open_tables$[11]="IVM_LSMASTER", open_opts$[11]="OTA"
 	open_tables$[12]="IVX_LSCUST",   open_opts$[12]="OTA"
 	open_tables$[13]="IVM_ITEMMAST", open_opts$[13]="OTA"
@@ -2962,7 +2984,6 @@ rem --- Save display control objects
 	UserObj!.addItem( util.getControl(callpoint!, "<<DISPLAY>>.BACKORDERED") )
 	UserObj!.addItem( util.getControl(callpoint!, "<<DISPLAY>>.CREDIT_HOLD") )
 
-	callpoint!.setDevObject("credit_hold_control", util.getControl(callpoint!, "<<DISPLAY>>.CREDIT_HOLD")); rem used in opc_creditcheck
 	callpoint!.setDevObject("backordered_control", util.getControl(callpoint!, "<<DISPLAY>>.BACKORDERED")); rem used in opc_creditcheck
 
 rem --- Setup user_tpl$

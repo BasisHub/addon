@@ -22,10 +22,10 @@ rem -- get current fiscal year
 
 num_files=1
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-open_tables$[1]="GLS_CALENDAR",open_opts$[1]="OTA"
+open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
 gosub open_tables
-cal_dev=num(open_chans$[1])
-dim cal_rec$:open_tpls$[1]
+gls_params_dev=num(open_chans$[1])
+dim gls_params$:open_tpls$[1]
 
-find record(cal_dev,key=firm_id$+"GL00",err=std_missing_params)cal_rec$
-callpoint!.setDevObject("cur_fiscal_yr",cal_rec.current_year$)
+find record(gls_params_dev,key=firm_id$+"GL00",err=std_missing_params)gls_params$
+callpoint!.setDevObject("cur_fiscal_yr",gls_params.current_year$)

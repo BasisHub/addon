@@ -26,11 +26,38 @@ rem --- Retrieve sysinfo data
     dim sysinfo$:sysinfo_template$
     sysinfo$=fnglobal$("+SYSINFO","")
 
+rem --- Open/Lock files
+
+    files=1,begfile=1,endfile=files
+    dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+    files$[1]="adm_userdefaults",ids$[1]="ADM_USERDEFAULTS"
+
+    call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+    if status goto std_exit
+    
+    adm_userdefaults=channels[1]
+
+rem --- Dimension string templates
+
+    dim adm_userdefaults$:templates$[1]
+
+rem --- Get default printer from adm_userdefaults in case nothing is set in sysinfo
+
+    readrecord(adm_userdefaults,key=sysinfo.firm_id$+sysinfo.user_id$,err=*next)adm_userdefaults$
+
 rem --- Open printer specified in SYSINFO (current user selection)
 
+    status=1
     printer_dev=unt
     printer$=cvs(sysinfo.printer_id$,2)
-    open (printer_dev) printer$
+    if cvs(printer$,3)="" then printer$=adm_userdefaults.default_printer$
+    open (printer_dev,err=*next) printer$; status=0
+    
+    if status
+        msg_id$="AD_NOPRINTER"
+        gosub disp_message
+    endif
 
 done: rem --- All done
 
@@ -45,6 +72,16 @@ rem --- fnglobal$: Return string value of passed STBL variable
         globalstr_exit:
         return q1$
     fnend
+
+disp_message: rem --- Display Message Dialog
+
+	call stbl("+DIR_SYP")+"bac_message.bbj",
+:		msg_id$,
+:		msg_tokens$[all],
+:		msg_opt$,
+:		table_chans$[all]
+
+	return
 
 rem #include std_error.src
 
@@ -79,6 +116,8 @@ rem #endinclude std_error.src
 rem #include std_exit.src
 
 std_exit: rem --- Standard called program exit (01Mar2006)
+
+    close (adm_userdefaults,err=*next)
 
     exit
 rem #endinclude std_exit.src

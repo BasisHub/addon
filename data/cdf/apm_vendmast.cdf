@@ -171,7 +171,7 @@ endif
 [[APM_VENDMAST.BSHO]]
 rem --- Open/Lock files
 
-	files=8,begfile=1,endfile=files
+	files=9,begfile=1,endfile=files
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="APE_INVOICEHDR";rem --- ape-01
 	files$[2]="APT_INVOICEHDR";rem --- apt-01
@@ -181,6 +181,7 @@ rem --- Open/Lock files
 	files$[6]="IVS_PARAMS";rem --- ivs-01
 	files$[7]="APC_TYPECODE"
 	files$[8]="APE_INVOICEDET"
+	files$[9]="GLS_CALENDAR"
 
 	for wkx=begfile to endfile
 		options$[wkx]="OTA"
@@ -199,10 +200,11 @@ rem --- Open/Lock files
 	aps01_dev=num(chans$[4])	
 	gls01_dev=num(chans$[5])
 	ivs01_dev=num(chans$[6])
+	gls_calendar_dev=num(chans$[9])
 
 rem --- Dimension miscellaneous string templates
 	dim aps01a$:templates$[4],gls01a$:templates$[5],ivs01c$:templates$[6]
-	dim ape11a$:templates$[8]
+	dim ape11a$:templates$[8],gls_calendar$:templates$[9]
 
 rem --- Retrieve parameter data
 	dim info$[20]
@@ -210,6 +212,15 @@ rem --- Retrieve parameter data
 	find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$ 
 	gls01a_key$=firm_id$+"GL00"
 	find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$ 
+	find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$ 
+	if cvs(gls_calendar.firm_id$,2)="" then
+		msg_id$="AD_NO_FISCAL_CAL"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=gls01a.current_year$
+		gosub disp_message
+		callpoint!.setStatus("EXIT")
+		break
+	endif
 	call stbl("+DIR_PGM")+"adc_application.aon","IV",info$[all]
 	iv$=info$[20]
 	if iv$<>"Y" aps01a.use_replen$="N"
@@ -233,7 +244,7 @@ rem --- Retrieve parameter data
 	user_tpl.multi_dist$=aps01a.multi_dist$
 	user_tpl.ret_flag$=aps01a.ret_flag$
 	user_tpl.use_replen$=aps01a.use_replen$
-	user_tpl.gl_total_pers$=gls01a.total_pers$
+	user_tpl.gl_total_pers$=gls_calendar.total_pers$
 	user_tpl.gl_current_per$=gls01a.current_per$
 	user_tpl.gl_current_year$=gls01a.current_year$
 	user_tpl.gl_max_len$=str(max(10,len(ape11a.gl_account$)):"00")

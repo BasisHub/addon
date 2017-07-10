@@ -4,7 +4,6 @@ rem --- Update post_to_gl if GL is uninstalled
 		callpoint!.setColumnData("OPS_PARAMS.POST_TO_GL","N",1)
 		callpoint!.setStatus("MODIFIED")
 	endif
-
 [[OPS_PARAMS.ADIS]]
 
 rem --- Default Line Code is required when Line Code Entry is skipped
@@ -104,11 +103,10 @@ rem --- Retrieve parameter/application data
 	gl_post$=info$[9]
 	if gl$<>"Y" gl_post$="N"
 
-	dim user_tpl$:"app:c(2),gl_pers:c(2),gl_installed:c(1),gl_post:c(1),"+
+	dim user_tpl$:"app:c(2),gl_installed:c(1),gl_post:c(1),"+
 :                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1)"
 
 	user_tpl.app$="AR"
-	user_tpl.gl_pers$=gls01a.total_pers$
 	user_tpl.gl_installed$=gl$
 	user_tpl.ap_installed$=ap$
 	user_tpl.iv_installed$=iv$

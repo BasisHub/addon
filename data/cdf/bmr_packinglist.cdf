@@ -1,8 +1,5 @@
 [[BMR_PACKINGLIST.BFMC]]
-rem --- Set Custom Query for BOM Item Number
 
-	callpoint!.setTableColumnAttribute("BMR_PACKINGLIST.BILL_NO_1", "IDEF", "BOM_LOOKUP")
-	callpoint!.setTableColumnAttribute("BMR_PACKINGLIST.BILL_NO_2", "IDEF", "BOM_LOOKUP")
 [[BMR_PACKINGLIST.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 

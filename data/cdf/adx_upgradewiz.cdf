@@ -104,6 +104,23 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 				rem --- Capture changes to STBL target
 				if e!.getColumn()=3 then
 					rem --- Update stblRowVect! for modified target
+					if cvs(stblGrid!.getCellText(e!.getRow(),0),3)="ADDON" then
+						rem --- This row is for the ADDON application
+						stbl$=pad(cvs(stblGrid!.getCellText(e!.getRow(),1),3),7)
+						if stbl$(1,1)="+" and stbl$(4)="DATA" then
+							rem --- This is an Addon +??DATA STBL
+							if cvs(stblGrid!.getCellText(e!.getRow(),2),3)=cvs(stblGrid!.getCellText(e!.getRow(),3),3) then
+								rem --- Warn paths are the same and ask if that's correct
+								msg_id$="AD_SAME_DATA_PATH"
+								gosub disp_message
+								if msg_opt$<>"Y"then
+									rem --- Not correct, restore previous value
+									previousText$=stblRowVect!.getItem(index+3)
+									stblGrid!.setCellText(e!.getRow(),3,previousText$)
+								endif
+							endif
+						endif
+					endif
 					stblRowVect!.removeItem(index+3)
 					stblRowVect!.insertItem(index+3, cvs(stblGrid!.getCellText(e!.getRow(),3),3)); rem Target
 				endif

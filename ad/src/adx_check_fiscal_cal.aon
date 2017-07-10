@@ -1,0 +1,165 @@
+rem ==========================================================================
+rem --- adx_check_fiscal_cal.aon
+rem --- A non-completing Auto-Launch task that warns when required fiscal
+rem --- calendars are missing.
+rem --- 
+rem --- AddonSoftware Version 17.00
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+    use ::bbtranslator.bbj::BBTranslator
+
+    setesc std_error
+    seterr std_error
+
+rem --- Get program arguments
+
+    if argc>1
+        for curr_argv=1 to argc-1
+            temp_argv$=argv(curr_argv)
+            if pos("-u"=temp_argv$)=1 user_id$=temp_argv$(3);rem User ID
+        next curr_argv
+    endif
+
+    if user_id$=""
+        use ::sys/prog/bao_security.bbj::Security
+        user_id$=Security.getURLUser()
+        if cvs(user_id$,2)="" then user_id$=stbl("+USER_ID",err=*next)
+        if cvs(user_id$,2)="" then user_id$="ADMIN"
+    endif
+
+rem --- Initializations
+
+    err_msg$=""
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    dir_syp$=stbl("+DIR_SYP")
+    
+    rem --- Make sure needed STBLs are set
+    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+
+rem --- Get BBTranslator object Translate!
+
+    if Translate!=null() then 
+        gosub get_translate_object
+        if status then
+            err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+            err_no$="12"
+        else
+            if Translate!=null() then
+                err_msg$="Cannot create BBTranslator object Translate!"
+                err_no$="999"
+            endif
+        endif
+        if err_msg$<>"" then
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+            goto done
+        endif
+    endif
+
+rem --- Check For Required Fiscal Calendars
+
+    theFirm$=""; rem --- Check all firms
+    call stbl("+DIR_PGM")+"glc_checkfiscalcalendars.aon",theFirm$,Translate!,status
+	
+done: rem --- Done
+
+	goto std_exit
+	
+get_translate_object: rem --- Get BBTranslator object Translate!
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+    if adm_modules.locale_resource$="" or adm_modules.locale_path$=""
+        readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*next)adm_modules$
+    endif
+    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+        locale_path$=adm_modules.locale_path$
+        rdTransSpaceKey$=adm_modules.locale_resource$+"_"+stbl("+USER_LOCALE")+"_BBTranslator"
+        Translate!=cast(BBTranslator,BBjAPI().getGroupNamespace().getValue(rdTransSpaceKey$,err=*next))
+        if Translate!=null()
+            Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$)
+            BBjAPI().getGroupNamespace().setValue(rdTransSpaceKey$,Translate!)
+        endif
+    endif
+
+    return
+    
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        status=-1
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

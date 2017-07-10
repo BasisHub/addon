@@ -105,13 +105,14 @@ rem          ##0.00;##0.00-   Positives only
 
 rem --- Open files with adc
 
-    files=5,begfile=1,endfile=files
+    files=6,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="ivm-01",ids$[1]="IVM_ITEMMAST"
 	files$[2]="sfm-10",ids$[2]="SFC_WOTYPECD"
 	files$[3]="arm-01",ids$[3]="ARM_CUSTMAST"
 	files$[4]="ivs_params",ids$[4]="IVS_PARAMS"
 	files$[5]="sfs_params",ids$[5]="SFS_PARAMS"
+    files$[6]="opt-11",ids$[6]="OPT_INVDET"
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -125,6 +126,7 @@ rem --- Open files with adc
 	arm_custmast=channels[3]
 	ivs_params=channels[4]
 	sfs_params=channels[5]
+    opt_invdet=channels[6]
 	
 rem --- Dimension string templates
 
@@ -133,6 +135,7 @@ rem --- Dimension string templates
 	dim arm_custmast$:templates$[3]
 	dim ivs_params$:templates$[4]
 	dim sfs_params$:templates$[5]
+    dim opt_invdet$:templates$[6]
 	
 goto no_bac_open
 rem --- Open Files    
@@ -325,7 +328,8 @@ rem --- Trip Read
 			read record (arm_custmast,key=firm_id$+read_tpl.customer_id$,dom=*next) arm_custmast$
 			data!.setFieldValue("CUSTOMER_ID","Customer: "+fnmask$(read_tpl.customer_id$,cust_mask$)+" "+arm_custmast.customer_name$)
 			if num(read_tpl.order_no$)<>0
-				data!.setFieldValue("SLS_ORDER_NO","Sales Order: "+read_tpl.order_no$+"-"+read_tpl.sls_ord_seq_ref$)
+                readrecord (opt_invdet,key=firm_id$+opt_invdet.ar_type$+read_tpl.customer_id$+read_tpl.order_no$+opt_invdet.ar_inv_no$+read_tpl.sls_ord_seq_ref$,dom=*next)opt_invdet$
+                data!.setFieldValue("SLS_ORDER_NO","Sales Order: "+read_tpl.order_no$+"-"+opt_invdet.line_no$)
 			endif
 		endif
 		data!.setFieldValue("WAREHOUSE_ID",read_tpl.warehouse_id$)

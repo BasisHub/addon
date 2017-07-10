@@ -89,6 +89,8 @@ rem --- Check for activity
 
 rem --- Check glm-02 for activity
 
+	displayColumns!=callpoint!.getDevObject("displayColumns")
+	current_prior_next$=displayColumns!.getYear("0")+":"+displayColumns!.getYear("2")+":"+displayColumns!.getYear("4")
 	glm02_dev=fnget_dev("GLM_ACCTSUMMARY")
 	dim glm02a$:fnget_tpl$("GLM_ACCTSUMMARY")
 	this_acct$=callpoint!.getColumnData("GLM_ACCT.GL_ACCOUNT")
@@ -96,7 +98,7 @@ rem --- Check glm-02 for activity
 	while 1
 		readrecord (glm02_dev,end=*break)glm02a$
 		if pos(firm_id$+this_acct$=glm02a.firm_id$+glm02a.gl_account$)<>1 break
-		if pos(glm02a.record_id$="024")=0 continue
+		if pos(glm02a.year$=current_prior_next$)=0 continue
 		for x=1 to mp
 			if nfield(glm02a$,"period_amt_"+str(x:"00"))<>0 okay$="N"
 			if nfield(glm02a$,"period_units_"+str(x:"00"))<>0 okay$="N"
@@ -375,9 +377,11 @@ rem --- Display MTD and YTD
 	dim glm02$:fnget_tpl$("GLM_ACCTSUMMARY")
 	acct_no$=callpoint!.getColumnData("GLM_ACCT.GL_ACCOUNT")
 	rec_id$=callpoint!.getDevObject("rec_id")
+	displayColumns!=callpoint!.getDevObject("displayColumns")
+	year$=displayColumns!.getYear(rec_id$)
 	cur_per=num(callpoint!.getDevObject("cur_per"))
 
-	read record (glm02_dev,key=firm_id$+acct_no$+rec_id$,dom=*next) glm02$
+	read record (glm02_dev,key=firm_id$+acct_no$+year$,dom=*next) glm02$
 	cur_amt=nfield(glm02$,"period_amt_"+str(cur_per:"00"))
 	ytd_amt=0
 	for x=1 to cur_per
@@ -392,12 +396,19 @@ rem --- Display MTD and YTD
 
 #include std_missing_params.src
 [[GLM_ACCT.BSHO]]
+rem --- Initialize displayColumns! object
+
+	use ::glo_DisplayColumns.aon::DisplayColumns
+	displayColumns!=new DisplayColumns(firm_id$)
+	callpoint!.setDevObject("displayColumns",displayColumns!)
+
 rem --- Open/Lock files
 
-files=2,begfile=1,endfile=files
+files=3,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="GLS_PARAMS",options$[1]="OTA"
 files$[2]="GLM_ACCTSUMMARY",options$[2]="OTA"
+files$[3]="GLS_CALENDAR",options$[3]="OTA"
 
 call dir_pgm$+"bac_open_tables.bbj",begfile,endfile,files$[all],options$[all],
 :                                 chans$[all],templates$[all],table_chans$[all],batch,status$
@@ -411,13 +422,24 @@ if status$<>"" then
 endif
 
 gls01_dev=num(chans$[1])
+gls_calendar_dev=num(chans$[3])
 dim gls01a$:templates$[1]
+dim gls_calendar$:templates$[3]
 
 
 rem --- init/parameters
 
 gls01a_key$=firm_id$+"GL00"
 find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
+if cvs(gls_calendar.firm_id$,2)="" then
+	msg_id$="AD_NO_FISCAL_CAL"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=gls01a.current_year$
+	gosub disp_message
+	callpoint!.setStatus("EXIT")
+	break
+endif
 
 	glyear=num(gls01a.current_year$)
 	if gls01a.gl_yr_closed$ <> "Y" then 
@@ -430,7 +452,7 @@ find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
 	callpoint!.setDevObject("cur_year",gls01a.current_year$)
 	x$=stbl("+YEAR",gls01a.current_year$)
 	x$=stbl("+PER",gls01a.current_per$)
-	callpoint!.setDevObject("tot_pers",gls01a.total_pers$)
+	callpoint!.setDevObject("tot_pers",gls_calendar.total_pers$)
 	callpoint!.setDevObject("gl_yr_closed",gls01a.gl_yr_closed$)
 	callpoint!.setDevObject("gls_cur_yr",gls01a.current_year$)
 	callpoint!.setDevObject("gls_cur_per",gls01a.current_per$)

@@ -24,28 +24,20 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
+    files=2,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
-    files$[1]="gls_params",ids$[1]="GLS_PARAMS"
     files$[2]="glm-08",ids$[2]="GLM_BUDGETMASTER"
-    files$[3]="glm-18",ids$[3]="GLM_RECORDTYPES"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
-    gls01_dev=channels[1]
     glm08_dev=channels[2]
-    glm18_dev=channels[3]
 
 rem --- Dimension string templates
 
-    dim gls01a$:templates$[1]
     dim glm08a$:templates$[2]
-    dim glm18a$:templates$[3]
 
 rem --- Retrieve parameter records
 
-    gls01a_key$=firm_id$+"GL00"
-    find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
     headings=3
     
     call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,m0    
@@ -53,8 +45,8 @@ rem --- Retrieve parameter records
 rem --- Assign input values to local variables
 
     budget_code$=option!.getOptionData("BUDGET_REVS")
-    id$=budget_code$(1,1)
-    au$=budget_code$(2,1)
+    this_id$=budget_code$(1,len(budget_code$)-1)
+    au$=budget_code$(len(budget_code$))
     begacct$=option!.getOptionData("GL_ACCOUNT_1")
     endacct$=option!.getOptionData("GL_ACCOUNT_2")
     wildcard$=option!.getOptionData("GL_WILDCARD")
@@ -65,8 +57,8 @@ rem --- If no record id or type was specified, use first on file for this firm
 
     read (glm08_dev,key=firm_id$,dom=*next)
     k$=key(glm08_dev,end=std_exit)
-    if id$="" id$=k$(3,1)
-    if au$="" au$=k$(4,1)
+    if this_id$="" this_id$=k$(3,5)
+    if au$="" au$=k$(8,1)
 
 rem --- Initializations
 
@@ -75,7 +67,10 @@ rem --- Initializations
 
 rem --- Retrieve budget title
 
-    call pgmdir$+"glc_suminfo.aon",glm08_dev,glm18_dev,firm_id$,id$,au$,description$,x$,status
+    use ::glo_DisplayColumns.aon::DisplayColumns
+    displayColumns!=new DisplayColumns(firm_id$)
+    description$=displayColumns!.getDescription(this_id$+"::"+au$)
+    x$=displayColumns!.getRevTitle(this_id$+"::"+au$)
 
 rem --- Initialize report headings
 
@@ -88,16 +83,17 @@ rem --- Initialize report headings
     x$=Translate!.getTranslation("AON_FROM_")+x$+Translate!.getTranslation("AON__THROUGH_")+y$
     if cvs(wildcard$,2)<>"" then x$=x$+Translate!.getTranslation("AON__(WILDCARD_")+$22$+cvs(wildcard$,2)+$22$+")"
     headings$[2]=x$
-    x$=Translate!.getTranslation("AON_BUDGET_")+$22$+id$+$22$+" "+cvs(description$,2)
+    x$=Translate!.getTranslation("AON_BUDGET_")+$22$+this_id$+$22$+" "+cvs(description$,2)
     if au$="A" y$=Translate!.getTranslation("AON_(AMOUNTS)")
 :         else y$=Translate!.getTranslation("AON_(UNITS)")
     headings$[3]=x$+" "+y$
 
 rem --- Run report overlay
 
-    close (gls01_dev,err=*next)
     close (glm08_dev,err=*next)
-    close (glm18_dev,err=*next)
+    
+    dim id$[3]
+    id$[0]=this_id$
     run pgmdir$+"glr_summary.aon"
 
 rem --- Functions

@@ -18,12 +18,9 @@ sp! = BBjAPI().getFileSystem().getStoredProcedureData()
 rem ' Get the IN and IN/OUT parameters used by the procedure
 firm_id$=sp!.getParameter("FIRM_ID")
 customer_nbr$=sp!.getParameter("CUSTOMER_NBR")
-month$ = sp!.getParameter("MONTH")
-year$ = sp!.getParameter("YEAR")
+beg_dt$ = sp!.getParameter("BEGDATE")
+end_dt$ = sp!.getParameter("ENDDATE")
 barista_wd$=sp!.getParameter("BARISTA_WD")
-
-beg_dt$ = year$+month$+"01"
-end_dt$ = year$+month$+"31"
 
 sv_wd$=dir("")
 chdir barista_wd$

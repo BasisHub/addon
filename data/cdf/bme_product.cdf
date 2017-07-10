@@ -11,38 +11,9 @@ rem --- remove software lock on batch, if batching
 		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 	endif
 [[BME_PRODUCT.ITEM_ID.BINQ]]
-rem --- Do custom query
+	whse$=callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")
+        callpoint!.setDevObject("whse",whse$)
 
-	query_id$="BOM_ITEMS"
-	query_mode$="DEFAULT"
-	dim filter_defs$[2,2]
-	filter_defs$[1,0] = "IVM_ITEMWHSE.FIRM_ID"
-	filter_defs$[1,1] = "='"+firm_id$+"'"
-	filter_defs$[1,2] = "DEFAULT"
-	filter_defs$[2,0] = "IVM_ITEMWHSE.WAREHOUSE_ID"
-	filter_defs$[2,1] = "='"+callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")+"'"
-	filter_defs$[2,2] = "DEFAULT"
-
-	call stbl("+DIR_SYP")+"bax_query.bbj",
-:		gui_dev,
-:		form!,
-:		query_id$,
-:		query_mode$,
-:		table_chans$[all],
-:		sel_key$,filter_defs$[all]
-
-	if sel_key$<>""
-		call stbl("+DIR_SYP")+"bac_key_template.bbj",
-:			"IVM_ITEMWHSE",
-:			"PRIMARY",
-:			ivm_whse_key$,
-:			table_chans$[all],
-:			status$
-		dim ivm_whse_key$:ivm_whse_key$
-		ivm_whse_key$=sel_key$
-		callpoint!.setColumnData("BME_PRODUCT.ITEM_ID",ivm_whse_key.item_id$,1)
-	endif
-	callpoint!.setStatus("ACTIVATE-ABORT")
 [[BME_PRODUCT.BTBL]]
 rem --- Get Batch information
 
@@ -170,6 +141,22 @@ rem --- make sure accting date is in an appropriate GL period
 	endif
 [[BME_PRODUCT.ITEM_ID.AVAL]]
 rem --- Validate Item/Whse
+rem "Inventory Inactive Feature"
+item_id$=callpoint!.getUserInput()
+ivm01_dev=fnget_dev("IVM_ITEMMAST")
+ivm01_tpl$=fnget_tpl$("IVM_ITEMMAST")
+dim ivm01a$:ivm01_tpl$
+ivm01a_key$=firm_id$+item_id$
+find record (ivm01_dev,key=ivm01a_key$,err=*break)ivm01a$
+if ivm01a.item_inactive$="Y" then
+   msg_id$="IV_ITEM_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=cvs(ivm01a.item_id$,2)
+   msg_tokens$[2]=cvs(ivm01a.display_desc$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
 
 	item$=callpoint!.getUserInput()
 	wh$=callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")

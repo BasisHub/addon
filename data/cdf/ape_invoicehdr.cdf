@@ -41,41 +41,43 @@ rem --- Select invoice image and upload
 
 	call "apc_imageupload.aon", channels[all],templates$[all],ap_type$,vendor_id$,ap_inv_no$,man_check$,scan_docs_to$,status
 [[APE_INVOICEHDR.VENDOR_ID.BINQ]]
-rem --- Call custom query to only select vendors with selected AP Type
+rem --- Set filter_defs$[] to only show vendors of given AP Type
 
-	ap_type$=callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE")
-	if cvs(ap_type$,2)<>""
-		myapi! = BBjAPI()
-		myNS! = myapi!.getNamespace("ap_type","query",1)
-		myNS!.setValue("ap_type",ap_type$)
+ap_type$=callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE")
 
-		dim filter_defs$[1,2]
-		filter_defs$[1,0]="APM_VENDMAST.FIRM_ID"
-		filter_defs$[1,1]="='"+firm_id$+"'"
-		filter_defs$[1,2]="LOCK"
+dim filter_defs$[2,2]
+filter_defs$[0,0]="APM_VENDMAST.FIRM_ID"
+filter_defs$[0,1]="='"+firm_id$+"'"
+filter_defs$[0,2]="LOCK"
 
-		call STBL("+DIR_SYP")+"bax_query.bbj",
-:			gui_dev, 
-:			form!,
-:			"AP_INV_VEND",
-:			"DEFAULT",
-:			table_chans$[all],
-:			sel_key$,
-:			filter_defs$[all]
+filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
+filter_defs$[1,1]="='"+ap_type$+"'"
+filter_defs$[1,2]="LOCK"
 
-		if sel_key$<>""
-			call stbl("+DIR_SYP")+"bac_key_template.bbj",
-:				"APM_VENDMAST",
-:				"PRIMARY",
-:				apm_vend_key$,
-:				table_chans$[all],
-:				status$
-			dim apm_vend_key$:apm_vend_key$
-			apm_vend_key$=sel_key$
-			callpoint!.setColumnData("APE_INVOICEHDR.VENDOR_ID",apm_vend_key.vendor_id$,1)
-		endif
-		callpoint!.setStatus("ACTIVATE-ABORT")
-	endif
+
+call STBL("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev, 
+:		form!,
+:		"AP_VEND_LK",
+:		"DEFAULT",
+:		table_chans$[all],
+:		sel_key$,
+:		filter_defs$[all]
+
+if sel_key$<>""
+	call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:		"APM_VENDMAST",
+:		"PRIMARY",
+:		apm_vend_key$,
+:		table_chans$[all],
+:		status$
+	dim apm_vend_key$:apm_vend_key$
+	apm_vend_key$=sel_key$
+	callpoint!.setColumnData("APE_INVOICEHDR.VENDOR_ID",apm_vend_key.vendor_id$,1)
+endif	
+callpoint!.setStatus("ACTIVATE-ABORT")
+
+
 [[APE_INVOICEHDR.AWIN]]
 rem --- setup utility
 
@@ -377,11 +379,29 @@ rem "check vend hist file to be sure this vendor/ap type ok and to set some defa
 vendor_id$ = callpoint!.getUserInput()
 gosub disp_vendor_comments
 gosub get_vendor_history
+rem "VENDOR INACTIVE - FEATURE"
+apm01_dev=fnget_dev("APM_VENDMAST")
+apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+dim apm01a$:apm01_tpl$
+apm01a_key$=firm_id$+vendor_id$
+find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+if apm01a.vend_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+   msg_id$="AP_VEND_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 if vend_hist$="" and user_tpl.multi_types$="Y"
 	msg_id$="AP_VEND_BAD_APTYPE"
 	gosub disp_message
 	callpoint!.setStatus("CLEAR;NEWREC;ABORT")
 endif
+
 [[APE_INVOICEHDR.ACCTING_DATE.AVAL]]
 rem make sure accting date is in an appropriate GL period
 gl$=user_tpl.glint$
@@ -438,6 +458,7 @@ gosub calc_grid_tots
 gosub disp_dist_bal
 callpoint!.setStatus("REFRESH")
 [[APE_INVOICEHDR.<CUSTOM>]]
+#include std_functions.src
 rem --------------------------------------------------------------------------------------------------------------
 disable_fields:
 rem --------------------------------------------------------------------------------------------------------------
@@ -552,7 +573,7 @@ rem #endinclude fnget_control.src
 #include std_missing_params.src
 [[APE_INVOICEHDR.BSHO]]
 rem --- Open/Lock files
-files=11,begfile=1,endfile=files
+files=12,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="APT_INVOICEHDR";rem --- "apt-01"
 files$[2]="APT_INVOICEDET";rem --- "apt-11"
@@ -565,6 +586,7 @@ files$[8]="APE_CHECKS"
 files$[9]="APE_MANCHECKDET"
 files$[10]="APS_PAYAUTH"
 files$[11]="APT_INVIMAGE"
+files$[12]="GLS_CALENDAR"
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
 next wkx
@@ -589,7 +611,8 @@ if status$<>"" then
 endif
 aps01_dev=num(chans$[6])
 gls01_dev=num(chans$[7])
-dim aps01a$:templates$[6],gls01a$:templates$[7]
+gls_calendar_dev=num(chans$[12])
+dim aps01a$:templates$[6],gls01a$:templates$[7],gls_calendar$:templates$[12]
 user_tpl_str$="glint:c(1),glyr:c(4),glper:c(2),gl_tot_pers:c(2),"
 user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),units_flag:c(1),"
 user_tpl_str$=user_tpl_str$+"misc_entry:c(1),inv_in_ape01:c(1),inv_in_apt01:c(1),"
@@ -620,7 +643,10 @@ gl$="N"
 status=0
 source$=pgm(-2)
 call stbl("+DIR_PGM")+"glc_ctlcreate.aon",err=*next,source$,"AP",glw11$,gl$,status
-if status<>0 goto std_exit
+if status<>0 then
+	callpoint!.setStatus("EXIT")
+	break
+endif
 user_tpl.glint$=gl$
 
 rem --- Retrieve parameter data
@@ -635,10 +661,19 @@ user_tpl.ret_flag$=aps01a.ret_flag$
 user_tpl.misc_entry$=aps01a.misc_entry$
 gls01a_key$=firm_id$+"GL00"
 find record (gls01_dev,key=gls01a_key$,err=std_missing_params) gls01a$
+find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
+if cvs(gls_calendar.firm_id$,2)="" then
+	msg_id$="AD_NO_FISCAL_CAL"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=gls01a.current_year$
+	gosub disp_message
+	callpoint!.setStatus("EXIT")
+	break
+endif
 user_tpl.units_flag$=gls01a.units_flag$
 user_tpl.glyr$=gls01a.current_year$
 user_tpl.glper$=gls01a.current_per$
-user_tpl.gl_tot_pers$=gls01a.total_pers$
+user_tpl.gl_tot_pers$=gls_calendar.total_pers$
 rem --- may need to disable some ctls based on params
 if user_tpl.multi_types$="N" 
 	user_tpl.dflt_ap_type$=aps01a.ap_type$

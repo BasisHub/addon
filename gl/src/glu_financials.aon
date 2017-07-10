@@ -28,32 +28,11 @@ rem --- Parameters
 
 rem --- Initializations
 
+    glm_acctsummary_dev=glm02_dev
     dim a[mp],u[mp],d[mt],y[mt]
     cpn$="CPN"
     pqy$="PQY"
-    records$=""
-    more=1
-    moredetail=1
-    morepercent=1
-    moreamounts=1
     total_recs=0
-    
-    closed=1
-    notclosed=0
-    status=gls01a.gl_yr_closed$="Y"
-    curr_year=num(gls01a.current_year$)
-    switch status
-           case notclosed
-                if year=curr_year records$="4501"
-                if year=curr_year-1 records$="0123"
-                if year=curr_year-2 records$="23"
-           break
-           case closed
-                if year=curr_year records$="0123"
-                if year=curr_year-1 records$="23"
-                if year=curr_year+1 records$="4501"
-           break
-    swend
 
 rem --- Dimension matrices for financial reports
 
@@ -89,7 +68,7 @@ rem --- Position GL Account Master (glm-01)
 
 rem --- Read next GL Account Master (glm-01) record
 
-    while more
+    while 1
           k$=key(glm01_dev,end=*break)
           if firm_id$<>"99" 
 :            if pos(firm_id$=k$)<>1 break
@@ -99,22 +78,39 @@ rem --- Read next GL Account Master (glm-01) record
           if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
           rem --- Read GL Summary Activity (glm-02) records, load x[record_type, amt_units, period]
+          rem --- r=0: begyear$ actuals
+          rem --- r=1: begyear$ budget
+          rem --- r=2: previous year actuals
+          rem --- r=3: previous year budget
 
           dim x[mx,my,mp]
-          for r=1 to len(records$)
-              if gls01a.budget_flag$<>"Y" 
-:                if pos(records$(r,1)="135") continue
+          for r=0 to 3
+              if gls01a.budget_flag$<>"Y" and (r=1 or r=3) then continue
               dim a[mp],u[mp]
               redim glm02a$
               glm02a.firm_id$=glm01a.firm_id$
               glm02a.gl_account$=glm01a.gl_account$
-              glm02a.record_id$=records$(r,1)
-              glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.record_id$
+              if r=0 or r=1 then
+                  rem --- begyear
+                  this_year$=begyear$
+              else
+                  rem --- previous year
+                  this_year$=str(num(begyear$)-1)
+              endif
+              glm02a.year$=this_year$
+              glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.year$
+              if r=0 or r=2 then
+                  rem --- actuals
+                  glm02_dev=glm_acctsummary_dev
+              else
+                  rem --- budget
+                  glm02_dev=glm_acctbudget_dev
+              endif
               find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
               call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
               for x=0 to mp
-                  x[r-1,0,x]=a[x]
-                  x[r-1,1,x]=u[x]
+                  x[r,0,x]=a[x]
+                  x[r,1,x]=u[x]
               next x
           next r
 
@@ -189,7 +185,7 @@ rem --- Read next GL Account Master (glm-01) record
           glm01_key$=glm01a.firm_id$+glm01a.gl_account$
           if firm_id$="99" read (glm21_dev,key=glm01_key$,dom=*next) 
 :                     else read (glm11_dev,key=glm01_key$,dom=*next)
-          while moredetail
+          while 1
                 if firm_id$="99" k$=key(glm21_dev,end=*break) 
 :                           else k$=key(glm11_dev,end=*break)
                 if pos(glm01_key$=k$)<>1 break
@@ -249,7 +245,7 @@ rem --- Read next GL Account Master (glm-01) record
                 gle07a.total_no$=glm22a.input_percnt$
                 k$=gle07a.firm_id$+gle07a.tot_type_cde$+gle07a.total_no$
                 read (gle07_dev,key=k$,dom=*next)
-                while morepercent
+                while 1
                       gle07_key$=key(gle07_dev,end=*break)
                       if pos(k$=gle07_key$)<>1 break
                       read record (gle07_dev,key=gle07_key$) gle07a$
@@ -344,7 +340,7 @@ rem --- Retrieve Financial Report Amounts (gle-06) for this report and line
     dim s[mx,my,mz],y[mt]
     k$=glm22a.firm_id$+glm22a.gl_rpt_no$+glm22a.gl_rpt_line$
     read (gle06_dev,key=k$,dom=*next)
-    while moreamounts
+    while 1
           gle06_key$=key(gle06_dev,end=*break)
           if pos(k$=gle06_key$)<>1 break
           read record (gle06_dev) gle06a$

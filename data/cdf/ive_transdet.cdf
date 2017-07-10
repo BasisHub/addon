@@ -1,3 +1,20 @@
+[[IVE_TRANSDET.GL_ACCOUNT.AVAL]]
+rem "GL INACTIVE FEATURE"
+   glm01_dev=fnget_dev("GLM_ACCT")
+   glm01_tpl$=fnget_tpl$("GLM_ACCT")
+   dim glm01a$:glm01_tpl$
+   glacctinput$=callpoint!.getUserInput()
+   glm01a_key$=firm_id$+glacctinput$
+   find record (glm01_dev,key=glm01a_key$,err=*break) glm01a$
+   if glm01a.acct_inactive$="Y" then
+      call stbl("+DIR_PGM")+"adc_getmask.aon","GL_ACCOUNT","","","",m0$,0,gl_size
+      msg_id$="GL_ACCT_INACTIVE"
+      dim msg_tokens$[2]
+      msg_tokens$[1]=fnmask$(glm01a.gl_account$(1,gl_size),m0$)
+      msg_tokens$[2]=cvs(glm01a.gl_acct_desc$,2)
+      gosub disp_message
+      callpoint!.setStatus("ACTIVATE-ABORT")
+   endif
 [[IVE_TRANSDET.ADGE]]
 rem --- Setup for whether to test at end of line
 
@@ -337,6 +354,7 @@ rem --- Calculate and display extended cost
 	trans_qty = num( callpoint!.getColumnData("IVE_TRANSDET.TRANS_QTY") )
 	gosub calc_ext_cost
 [[IVE_TRANSDET.<CUSTOM>]]
+#include std_functions.src
 rem ==========================================================================
 calc_ext_cost: rem --- Calculate and display extended cost
                rem ---  IN: unit_cost
@@ -977,6 +995,23 @@ rem --- Commit inventory
 	endif
 [[IVE_TRANSDET.ITEM_ID.AVAL]]
 print "in ITEM_ID After Column Validation (AVAL)"; rem debug
+
+rem "Inventory Inactive Feature"
+item_id$=callpoint!.getUserInput()
+ivm01_dev=fnget_dev("IVM_ITEMMAST")
+ivm01_tpl$=fnget_tpl$("IVM_ITEMMAST")
+dim ivm01a$:ivm01_tpl$
+ivm01a_key$=firm_id$+item_id$
+find record (ivm01_dev,key=ivm01a_key$,err=*break)ivm01a$
+if ivm01a.item_inactive$="Y" then
+   msg_id$="IV_ITEM_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=cvs(ivm01a.item_id$,2)
+   msg_tokens$[2]=cvs(ivm01a.display_desc$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE")
+   goto std_exit
+endif
 
 rem --- Set and display default values
 

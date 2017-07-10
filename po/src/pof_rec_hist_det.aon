@@ -1,0 +1,137 @@
+rem --- PO Receipt History Detail Query filter program
+rem --- Program ID: pof_rec_hist_det.aon
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- Run by Barista as part of the PO_REC_HIST_DET query.
+rem --- For each row in the result set, this program runs to update the row with the appropriate data.
+
+    setesc std_error
+    seterr std_error
+
+    enter inq_mode$,rec_tpl$,calc_tpl$,table_chans$[all],status$
+
+rem inq_mode$      - not used until recently - current use not yet documented
+rem rec_tpl$       - Current row database columns
+rem calc_tpl$      - Current row calculated columns
+rem table_chans$[] - Barista opened channels array
+rem status$        - Returned status: "SKIP" = Skip current record
+
+rem --- Initialize data
+    status$=""
+
+rem --- Open tables
+    ivs_params_dev=fnget_dev("@"+"IVS_PARAMS")
+    ivm_itemmast_dev=fnget_dev("@"+"IVM_ITEMMAST")
+
+    if ivs_params_dev=0 or ivm_itemmast_dev=0 then
+        num_files=2
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="IVS_PARAMS",open_opts$[1]="OTA@"
+        open_tables$[2]="IVM_ITEMMAST",open_opts$[2]="OTA@"
+                
+        gosub open_tables        
+
+        ivs_params_dev=fnget_dev("@"+"IVS_PARAMS")
+        ivm_itemmast_dev=fnget_dev("@"+"IVM_ITEMMAST")
+    endif
+
+    dim ivs_params$:fnget_tpl$("@"+"IVS_PARAMS")
+    dim ivm_itemmast$:fnget_tpl$("@"+"IVM_ITEMMAST")
+
+rem --- Get the Item Description
+    findrecord(ivm_itemmast_dev,key=rec_tpl.firm_id$+rec_tpl.item_id$,dom=*next)ivm_itemmast$
+    if cvs(ivm_itemmast.firm_id$,2)<>"" then
+        dim p[5]
+        findrecord(ivs_params_dev,key=rec_tpl.firm_id$+"IV00",dom=*next)ivs_params$
+        if cvs(ivs_params.firm_id$,2)<>"" then
+            p[0]=ivs_params.item_id_len
+            p[1]=num(ivs_params.precision$)
+            p[3]=num(ivs_params.desc_len_01$)
+            p[4]=num(ivs_params.desc_len_02$)
+            p[5]=num(ivs_params.desc_len_03$)
+    
+            rec_tpl.order_memo$=fnitem$(ivm_itemmast.item_desc$,p[3],p[4],p[5])
+        else
+            rec_tpl.order_memo$=ivm_itemmast.item_desc$
+        endif
+    endif
+
+rem --- Done
+    goto exit_prog
+
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=table_chans$[num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3)),0]
+    def fnqty(q1,q2,q3,q4,q5)=10000*q1*q2/(q3*q4*(100-q5))
+
+rem --- Format inventory item description
+
+    def fnitem$(q$,q1,q2,q3)
+        q$=pad(q$,q1+q2+q3)
+        return cvs(q$(1,q1)+" "+q$(q1+1,q2)+" "+q$(q1+q2+1,q3),32)
+    fnend
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (22Feb2013)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif    
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+    
+exit_prog:rem --- Exit Program
+
+    exit

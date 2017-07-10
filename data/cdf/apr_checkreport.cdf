@@ -6,10 +6,9 @@ pgmdir$=stbl("+DIR_PGM")
 
 rem --- Open/Lock files
 
-	files=2,begfile=1,endfile=files
+	files=1,begfile=1,endfile=files
 	dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
 	files$[1]="aps_params",ids$[1]="APS_PARAMS"
-	files$[2]="gls_params",ids$[2]="GLS_PARAMS"
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
 	if status then
@@ -21,7 +20,6 @@ rem --- Open/Lock files
 	endif
 	
 	aps01_dev=channels[1]
-	gls01_dev=channels[2]
 
 rem --- Dimension string templates
 
@@ -34,12 +32,8 @@ rem --- Retrieve parameter data
 	period=num(aps01a.current_per$)
 	year=num(aps01a.current_year$)
 
-	call stbl("+DIR_PGM")+"adc_perioddates.aon",gls01_dev,period,year,begdate$,enddate$,status
-	callpoint!.setColumnData("APR_CHECKREPORT.CHECK_DATE_1",begdate$,1)
-	callpoint!.setColumnData("APR_CHECKREPORT.CHECK_DATE_2",enddate$,1)
-
-rem	tot_per$=func.getNumPeriods()
-rem	callpoint!.setTableColumnAttribute("APR_CHECKREPORT.PERIOD","MINV","01")
-rem	callpoint!.setTableColumnAttribute("APR_CHECKREPORT.PERIOD","MAXV",tot_per$)
-
-rem	callpoint!.setStatus("REFRESH")
+	call stbl("+DIR_PGM")+"adc_perioddates.aon",period,year,begdate$,enddate$,table_chans$[all],status
+	if status=0 then
+		callpoint!.setColumnData("APR_CHECKREPORT.CHECK_DATE_1",begdate$,1)
+		callpoint!.setColumnData("APR_CHECKREPORT.CHECK_DATE_2",enddate$,1)
+	endif

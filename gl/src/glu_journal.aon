@@ -28,21 +28,40 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=1,begfile=1,endfile=files
+    files=5,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="glt-04",ids$[1]="GLE_DAILYDETAIL"
+    files$[2]="aps_params",ids$[2]="APS_PARAMS";rem "aps-01 for Bank Recon Flag"
+    files$[3]="glm-05",ids$[3]="GLM_BANKMASTER";rem "glm-05 for Bank-GL Accts"
+    files$[4]="glt-15",ids$[4]="GLT_BANKOTHER"
+    files$[5]="ars_params",ids$[5]="ARS_PARAMS";rem --- also check AR Params for Bank Recon Flag
 
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_update
 
     glt04_dev=channels[1]
+    aps01_dev=channels[2]
+    glm05_dev=channels[3]
+    glt15_dev=channels[4]
+    ars01_dev=channels[5]
  
 rem --- Retrieve templates
 
     glcontrol_template$=stbl("+GLCONTROL_TPL",err=*next)
     dim glcontrol$:glcontrol_template$
+    dim aps01a$:templates$[2],glm05a$:templates$[3],glt15a$:templates$[4],ars01a$:templates$[5]
 
+	
+rem --- Retrieve parameter records	
+	aps01a_key$=firm_id$+"AP00"
+	find record (aps01_dev,key=aps01a_key$,err=*next) aps01a$
+
+	ars01a_key$=firm_id$+"AR00"
+	find record (ars01_dev,key=ars01a_key$,err=*next) ars01a$
+    
+    if aps01a.br_interface$="Y" or ars01a.br_interface$="Y" then bankrec=1
+	
 rem --- Parameters
 
     dim info$[20]
@@ -54,6 +73,19 @@ rem --- Initializations
     more=1
     last$=""
     action$="N"
+	
+rem --- Build List of GL Codes that have Bank Reconciliation Enabled
+    bank_gl_codes$=""
+    if bankrec then
+      read (glm05_dev,key=firm_id$,dom=*next)
+      while 1
+        readrecord(glm05_dev,end=*break)glm05a$
+        if firm_id$<>glm05a.firm_id$ then
+           break
+        endif
+        bank_gl_codes$=bank_gl_codes$+glm05a.gl_account$
+      wend
+    endif	
 
 rem --- Options
 
@@ -83,7 +115,8 @@ rem --- Read through the work file and post the records to the daily detail file
 
           rem --- Set Journal ID in +GLCONTROL
 
-          if gle01a.journal_id$<>last$ last$=gle01a.journal_id$
+          if gle01a.journal_id$<>last$ 
+               last$=gle01a.journal_id$
                glm03_key$=firm_id$+gle01a.journal_id$
                find record (glm03_dev,key=glm03_key$,dom=*next)glm03a$
                glcontrol$=stbl("+GLCONTROL",err=*next)
@@ -117,6 +150,10 @@ rem --- Read through the work file and post the records to the daily detail file
               call pgmdir$+"glc_glpost.aon",glm01_dev,glt04_dev,notused,gle11a.gl_account$,gle01a.trans_date$,
 :               gle01a.je_trans_id$,gle11a.line_no$,ref3$,
 :               gle11a.gl_post_memo$,post_amt,gle11a.units,status
+	        if bankrec then
+                  trans_date$=gle01a.trans_date$
+                  gosub bank_rec
+                endif
 
               rem --- Reversal?
 
@@ -128,6 +165,10 @@ rem --- Read through the work file and post the records to the daily detail file
 :                   gle01a.je_trans_id$,gle11a.line_no$,
 :                   ref3$,gle11a.gl_post_memo$,
 :                   post_amt,gle11a.units,status
+	            if bankrec then
+                       trans_date$=gle01a.reverse_date$
+                       gosub bank_rec
+                    endif
               endif
               remove(gle11_dev,key=k1$)
           wend
@@ -151,6 +192,25 @@ rem --- All done
     call pgmdir$+"glc_ctldelete.aon",status
     call pgmdir$+"adc_batchdelete.aon",status
     goto std_exit
+
+bank_rec:
+    if pos(gle11a.gl_account$=bank_gl_codes$,10) then
+        redim glt15a$
+        glt15a.firm_id$=firm_id$
+        glt15a.gl_account$=gle11a.gl_account$
+        glt15a.trans_type$="A"
+        glt15a.posted_code$="O"
+        glt15a.cash_rec_cd$=""
+        glt15a.trns_date$=trans_date$
+        glt15a.trans_amt=post_amt
+        glt15a.trans_no$=str(jul(num(trans_date$(1,4)),num(trans_date$(5,2)),num(trans_date$(7,2))):"0000000")
+        glt15a.description$=gle11a.gl_post_memo$
+        seq_write:
+        glt15a.trans_no$=str(num(glt15a.trans_no$)+1)
+        glt15a$=field(glt15a$)
+        writerecord(glt15_dev,dom=seq_write)glt15a$
+    endif
+return
 
 disp_message:rem --- Display Message Dialog
 

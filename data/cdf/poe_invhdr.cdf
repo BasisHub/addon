@@ -24,7 +24,7 @@ rem -- setting a delete flag so we know in BREX not to bother checking if out of
 callpoint!.setDevObject("deleted","Y")
 [[POE_INVHDR.BTBL]]
 rem --- Open/Lock files
-files=16,begfile=1,endfile=files
+files=17,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 
 files$[1]="APM_VENDCMTS";rem --- "apm-09
@@ -43,6 +43,7 @@ files$[13]="IVM_ITEMMAST";rem --- "ivm-01"
 files$[14]="POC_LINECODE";rem --- "pom-02"
 files$[15]="APC_TERMSCODE"
 files$[16]="APC_TYPECODE"
+files$[17]="GLS_CALENDAR"
 
 for wkx=begfile to endfile
 	options$[wkx]="OTA"
@@ -70,9 +71,10 @@ aps01_dev=num(chans$[4])
 gls01_dev=num(chans$[5])
 pos01_dev=num(chans$[6])
 ivs01_dev=num(chans$[7])
+gls_calendar_dev=num(chans$[17])
 
 dim aps01a$:templates$[4],gls01a$:templates$[5],pos01a$:templates$[6],ivs01a$:templates$[7]
-
+dim gls_calendar$:templates$[17]
 
 rem --- Additional File Opens
 gl$="N"
@@ -143,11 +145,12 @@ rem --- check to see if main GL param rec (firm/GL/00) exists; if not, tell user
 		gosub remove_process_bar
 		release
 	endif
+	find record (gls_calendar_dev,key=firm_id$+gls01a.current_year$,err=*next) gls_calendar$
 
 	callpoint!.setDevObject("units_flag",gls01a.units_flag$)
 	callpoint!.setDevObject("gl_year",gls01a.current_year$)
 	callpoint!.setDevObject("gl_per",gls01a.current_per$)
-	callpoint!.setDevObject("gl_tot_pers",gls01a.total_pers$)
+	callpoint!.setDevObject("gl_tot_pers",gls_calendar.total_pers$)
 
 call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_INVSEL","PRIMARY",poe_invsel_key_tpl$,table_chans$[all],status$
 callpoint!.setDevObject("poe_invsel_key",poe_invsel_key_tpl$)
@@ -549,6 +552,7 @@ return get_control!
 fnend
 rem #endinclude fnget_control.src
 #include std_missing_params.src
+#include std_functions.src
 [[POE_INVHDR.INVOICE_AMT.AVAL]]
 callpoint!.setColumnData("POE_INVHDR.NET_INV_AMT", callpoint!.getUserInput())
 callpoint!.setDevObject("inv_amt",callpoint!.getUserInput())
@@ -605,7 +609,25 @@ if gl$="Y"
 	endif
 endif
 [[POE_INVHDR.VENDOR_ID.AVAL]]
+
+rem "VENDOR INACTIVE - FEATURE"
 vendor_id$ = callpoint!.getUserInput()
+apm01_dev=fnget_dev("APM_VENDMAST")
+apm01_tpl$=fnget_tpl$("APM_VENDMAST")
+dim apm01a$:apm01_tpl$
+apm01a_key$=firm_id$+vendor_id$
+find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+if apm01a.vend_inactive$="Y" then
+   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+   msg_id$="AP_VEND_INACTIVE"
+   dim msg_tokens$[2]
+   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+   gosub disp_message
+   callpoint!.setStatus("ACTIVATE-ABORT")
+   goto std_exit
+endif
+
 ap_type$=callpoint!.getColumnData("POE_INVHDR.AP_TYPE")
 
 gosub vendor_info

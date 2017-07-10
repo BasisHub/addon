@@ -35,7 +35,7 @@ rem --- Initializations
 
     precision p[1]
 
-    dim headings$[8],total[6],channels[20],items$[2]
+    dim headings$[10],total[6],channels[20],items$[2]
     headings$[0]=sysinfo.firm_name$
     when$=sysinfo.system_date$
     x$=func.formatDate(when$)
@@ -88,17 +88,18 @@ rem --- Background
 rem --- Report headings
 
     gosub init_headings
-    call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01a_dev,when$,period$,year$
+    call pgmdir$+"adc_fiscalperyr.aon",firm_id$,when$,period$,year$,table_chans$[all],status
     base$=period$+year$
 
 rem --- Position files
 
     sql_prep$=""
-    sql_prep$=sql_prep$+"SELECT ivm_itemwhse.item_id, ivm_itemwhse.warehouse_id, ivm_itemmast.product_type,"
-    sql_prep$=sql_prep$+"       ivm_itemwhse.buyer_code,ivm_itemwhse.vendor_id "
+    sql_prep$=sql_prep$+"SELECT ivm_itemwhse.item_id, ivm_itemwhse.warehouse_id, ivm_itemmast.product_type, ivm_itemmast.item_inactive, "
+    sql_prep$=sql_prep$+"       ivm_itemwhse.buyer_code,ivm_itemwhse.vendor_id, apm_vendmast.vend_inactive "
     sql_prep$=sql_prep$+"  FROM ivm_itemwhse INNER JOIN ivm_itemmast "
     sql_prep$=sql_prep$+"    ON ivm_itemwhse.item_id=ivm_itemmast.item_id AND "
-    sql_prep$=sql_prep$+"       ivm_itemwhse.firm_id=ivm_itemmast.firm_id "
+    sql_prep$=sql_prep$+"       ivm_itemwhse.firm_id=ivm_itemmast.firm_id LEFT JOIN apm_vendmast "
+    sql_prep$=sql_prep$+"    ON ivm_itemwhse.firm_id=apm_vendmast.firm_id AND ivm_itemwhse.vendor_id=apm_vendmast.vendor_id"
     where_clause$ =     " WHERE ivm_itemwhse.firm_id = '"+firm_id$+"' AND "
     if begbuyer$<>"" where_clause$=where_clause$+"ivm_itemwhse.buyer_code >= '"+begbuyer$+"' AND "
     if endbuyer$<>"" where_clause$=where_clause$+"ivm_itemwhse.buyer_code <= '"+endbuyer$+"' AND "
@@ -109,8 +110,10 @@ rem --- Position files
     if begprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type >= '"+begprod$+"' AND "
     if endprod$<>"" where_clause$=where_clause$+"ivm_itemmast.product_type <= '"+endprod$+"' AND "
     if begitem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id >= '"+begitem$+"' AND "
-    if enditem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id <= '"+enditem$+"' AND"
-    if type$<>"" where_clause$=where_clause$+"ivm_itemmast.item_type = '"+type$+"'"
+    if enditem$<>"" where_clause$=where_clause$+"ivm_itemwhse.item_id <= '"+enditem$+"' AND "
+    if type$<>"" where_clause$=where_clause$+"ivm_itemmast.item_type = '"+type$+"' AND "
+    if inactive$="Y" where_clause$=where_clause$+"apm_vendmast.vend_inactive <> 'Y' AND "
+    if inactive_item$="Y" where_clause$=where_clause$+"ivm_itemmast.item_inactive <> 'Y'"
 
     where_clause$=cvs(where_clause$,2)
     if where_clause$(len(where_clause$)-2,3)="AND" where_clause$=where_clause$(1,len(where_clause$)-3)
@@ -210,13 +213,20 @@ rem --- Get next vendor/item record
 			if endvendor$<>"" if ivm05a.vendor_id$>endvendor$ break
             vendor$=ivm05a.vendor_id$
             item$=ivm05a.item_id$
+            redim apm01a$
+            redim ivm01a$
+            read record (apm01a_dev,key=firm_id$+vendor$,dom=*next)apm01a$
+            read record (ivm01a_dev,key=firm_id$+item$,dom=*next)ivm01a$
             lastdate$=""
             lastcost$=""
             venditem$=""
             if begitem$<>"" if item$<begitem$ continue
             if enditem$<>"" if item$>enditem$ continue
+            if inactive$="Y" if apm01a.vend_inactive$="Y" then continue
+            if inactive_item$="Y" if ivm01a.item_inactive$="Y" then continue
 
-            call pgmdir$+"adc_progress.aon","S","","","",func.alphaMask(ivm05a.vendor_id$,m0$)+" "+item$(1,p[0]),0,0,1,meter_num,status
+            total_recs=total_recs+1
+            if mod(total_recs,milestone)=0 then call pgmdir$+"adc_progress.aon","S","","","",func.alphaMask(ivm05a.vendor_id$,m0$)+" "+item$(1,p[0]),0,0,1,meter_num,status
 
             if cvs(ivm05a.vendor_item$,2)<>"" venditem$=Translate!.getTranslation("AON_VENDOR_ITEM_")+ivm05a.vendor_item$
             if cvs(ivm05a.last_po_date$,2)<>"" then lastdate$=func.formatDate(ivm05a.last_po_date$)
@@ -346,6 +356,8 @@ init_headings: rem --- Initialize HEADINGS$
     if endvendor$="" headings$[7]=headings$[7]+Translate!.getTranslation("AON__--_TO_VENDOR:_LAST") else headings$[7]=headings$[7]+Translate!.getTranslation("AON__--_TO_VENDOR:_")+endvendor$
     if begprod$="" headings$[8]=Translate!.getTranslation("AON_FROM_PRODUCT:_FIRST") else headings$[8]=Translate!.getTranslation("AON_FROM_PRODUCT:_")+begprod$                
     if endprod$="" headings$[8]=headings$[8]+Translate!.getTranslation("AON__--_TO_PRODUCT:_LAST") else headings$[8]=headings$[8]+Translate!.getTranslation("AON__--_TO_PRODUCT:_")+endprod$
+    headings$[9]=Translate!.getTranslation("AON_EXCLUDE_INACTIVE")+Translate!.getTranslation("AON_VENDORS")+" = "+inactive$
+    headings$[10]=Translate!.getTranslation("AON_EXCLUDE_INACTIVE")+Translate!.getTranslation("AON_ITEMS")+" = "+inactive_item$
     return
 
 buyer_break: rem --- Buyer break
