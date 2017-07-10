@@ -1,3 +1,29 @@
+[[OPS_PARAMS.OP_CREATE_WO_TYP.AVAL]]
+rem --- Verify WO Category of entered WO Type is Inventory Item
+
+	wo_type$=callpoint!.getUserInput()
+	wotypecd_dev=fnget_dev("SFC_WOTYPECD")
+	dim wotypecd$:fnget_tpl$("SFC_WOTYPECD")
+	findrecord(wotypecd_dev,key=firm_id$+"A"+wo_type$,dom=*next)wotypecd$
+	if wotypecd.wo_category$<>"I" then
+		msg_id$="AD_BAD_WO_CATEGORY"
+		dim msg_tokens$[1]
+		msg_tokens$[1]="Inventory Item"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+[[OPS_PARAMS.OP_CREATE_WO.AVAL]]
+rem --- Disable and clear OP_CREATE_WO_TYP if not creating Work Orders
+
+	op_create_wo$=callpoint!.getUserInput()
+	if cvs(op_create_wo$,2)<>cvs(callpoint!.getColumnData("OPS_PARAMS.OP_CREATE_WO"),2) then
+		if cvs(op_create_wo$,2)="" then
+			callpoint!.setColumnData("OPS_PARAMS.OP_CREATE_WO_TYP","",1)
+			callpoint!.setColumnEnabled("OPS_PARAMS.OP_CREATE_WO_TYP",0)
+		else
+			callpoint!.setColumnEnabled("OPS_PARAMS.OP_CREATE_WO_TYP",1)
+		endif
+	endif
 [[OPS_PARAMS.ARAR]]
 rem --- Update post_to_gl if GL is uninstalled
 	if user_tpl.gl_installed$<>"Y" and callpoint!.getColumnData("OPS_PARAMS.POST_TO_GL")="Y" then
@@ -13,6 +39,20 @@ if callpoint!.getColumnData("OPS_PARAMS.SKIP_LN_CODE")="Y"
 else
 	callpoint!.setTableColumnAttribute("OPS_PARAMS.LINE_CODE","MINL","0")
 endif
+
+rem --- Reset OP_CREATE_WO and OP_CREATE_WO_TYP if no longer able to create WOs
+
+	if user_tpl.sf_interface$<>"Y" and callpoint!.getColumnData("OPS_PARAMS.OP_CREATE_WO")<>"" then
+		callpoint!.setColumnData("OPS_PARAMS.OP_CREATE_WO","",1)
+		callpoint!.setColumnData("OPS_PARAMS.OP_CREATE_WO_TYP","",1)
+		callpoint!.setStatus("SAVE")
+	endif
+
+rem --- Disable OP_CREATE_WO_TYP if not creating Work Orders
+
+	if cvs(callpoint!.getColumnData("OPS_PARAMS.OP_CREATE_WO"),2)="" then
+		callpoint!.setColumnEnabled("OPS_PARAMS.OP_CREATE_WO_TYP",0)
+	endif
 [[OPS_PARAMS.SKIP_LN_CODE.AVAL]]
 rem --- Default Line Code is required when Line Code Entry is skipped
 
@@ -47,12 +87,27 @@ rem --- Inits
 
 	use ::ado_util.src::util
 
+rem --- Are Bill Of Materials and Shop Floor installed?
+
+	bm_sf$="N"
+	dim info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","BM",info$[all]
+	bm$=info$[20]
+	call stbl("+DIR_PGM")+"adc_application.aon","SF",info$[all]
+	sf$=info$[20]
+	if bm$="Y" and sf$="Y" then bm_sf$="Y"
+
 rem --- Open files
 
 	num_files=2
+	if bm_sf$="Y" then num_files=4
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="GLS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
+	if bm_sf$="Y" then
+		open_tables$[3]="SFS_PARAMS",open_opts$[3]="OTA"
+		open_tables$[4]="SFC_WOTYPECD",open_opts$[4]="OTA"
+	endif
 
 	gosub open_tables
 
@@ -90,6 +145,18 @@ rem --- Check to see if main GL param rec (firm/GL/00) exists; if not, tell user
 		release
 	endif
 
+rem --- Check if SF is interfacing with OP
+
+rem wgh ... 9036 ... Temporarily disable ER 9036 changes until code complete.
+bm_sf$="N"
+	sf_interface$="N"
+	if bm_sf$="Y" then
+		sfs01_dev=num(open_chans$[3])
+		dim sfs01a$:open_tpls$[3]
+		findrecord(sfs01_dev,key=firm_id$+"SF00",dom=*endif)sfs01a$
+		sf_interface$=sfs01a.ar_interface$
+	endif
+
 rem --- Retrieve parameter/application data
 
 	dim info$[20]
@@ -104,7 +171,7 @@ rem --- Retrieve parameter/application data
 	if gl$<>"Y" gl_post$="N"
 
 	dim user_tpl$:"app:c(2),gl_installed:c(1),gl_post:c(1),"+
-:                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1)"
+:                  "ap_installed:c(1),iv_installed:c(1),bank_rec:c(1),sf_interface:c(1)"
 
 	user_tpl.app$="AR"
 	user_tpl.gl_installed$=gl$
@@ -112,8 +179,13 @@ rem --- Retrieve parameter/application data
 	user_tpl.iv_installed$=iv$
 	user_tpl.bank_rec$=br$
 	user_tpl.gl_post$=gl_post$
+	user_tpl.sf_interface$=sf_interface$
 
 	if user_tpl.gl_installed$<>"Y" then callpoint!.setColumnEnabled("OPS_PARAMS.POST_TO_GL",-1)
+	if user_tpl.sf_interface$<>"Y" then
+		callpoint!.setColumnEnabled("OPS_PARAMS.OP_CREATE_WO",-1)
+		callpoint!.setColumnEnabled("OPS_PARAMS.OP_CREATE_WO_TYP",-1)
+	endif
 
 rem --- Resize window
 

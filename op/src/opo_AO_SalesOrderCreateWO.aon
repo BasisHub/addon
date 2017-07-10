@@ -1,0 +1,514 @@
+rem ==========================================================================
+rem --- opo_AO_SalesOrderCreateWO.aon 
+rem --- AO_SalesOrderCreateWO class (SalesOrderCreateWO superclass)
+rem --- OP superclass that creates planned Work Orders for items (BOMs) ordered
+rem --- in Order Entry.
+rem --- 
+rem --- AddonSoftware Version 17.0
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem ==========================================================================
+
+rem /**
+rem  * This class creates planned Work Orders for items (BOMs) ordered
+rem  * in Order Entry.
+rem  */
+
+rem --- Use statements and declares
+
+    use ::ado_func.src::func
+    use java.util.ArrayList
+    use java.util.HashMap
+    use java.util.TreeMap
+
+    class public AO_SalesOrderCreateWO
+        field protected BBjString customerId$
+        field protected BBjNumber devBmcOpCodes = -1
+        field protected BBjNumber devBmmBillCmts = -1
+        field protected BBjNumber devBmmBillMast = -1
+        field protected BBjNumber devBmmBillMat = -1
+        field protected BBjNumber devBmmBillOper = -1
+        field protected BBjNumber devBmmBillSub = -1
+        field protected BBjNumber devIvmItemMast = -1
+        field protected BBjNumber devIvmItemWhse = -1
+        field protected BBjNumber devSfeWOCmnt = -1
+        field protected BBjNumber devSfeWOMastr = -1
+        field protected BBjNumber devSfeWOMatl = -1
+        field protected BBjNumber devSfeWOOprtn = -1
+        field protected BBjNumber devSfeWOSubcnt = -1
+        field protected BBjString firmId$
+        field protected HashMap isnWOMap! = new HashMap()
+            rem  isnWOMap! structure
+                rem  Key = SO detail line ISN
+                rem  Value = woVect! BBjVector
+                    rem  woVect! index = 0 (ASKED): Has operater been asked?
+                        rem  0 = false, operator has NOT been asked
+                        rem  1 = true, operator has been asked
+                    rem  woVect! index = 1 (CREATE_WO): Create WO?
+                        rem  0 = false, do NOT create WO
+                        rem  1 = true, do create WO
+                    rem  woVect! index = 2 (SOLINE_NO): SO detail line number (not ISN)
+                    rem  woVect! index = 3 (SOLINE_ITEM): SO detail line item
+                    rem  woVect! index = 4 (SOLINE_ITEMDESC): SO detail line item description
+                    rem  woVect! index = 5 (SOLINE_WHSE): SO detail line warehouse ID
+                    rem  woVect! index = 6 (SOLINE_SHIPQTY): SO detail line ship quantity
+                    rem  woVect! index = 7 (SOLINE_SHIPDATE): SO detail line ship date
+                    rem  woVect! index = 8 (WO_NO): WO number when linked WO exists
+                    rem  woVect! index = 9 (WO_SCHPRODQTY): WO scheduled production quantity when linked WO exists
+                    rem  woVect! index = 10 (WO_ESTCMPDATE): WO estimated completion date when linked WO exists
+                    rem  woVect! index = 11 (WARNINGS): Warnings
+        field protected BBjString orderNo$
+        field protected BBjString tplBmcOpCodes$
+        field protected BBjString tplBmmBillCmts$
+        field protected BBjString tplBmmBillMast$
+        field protected BBjString tplBmmBillMat$
+        field protected BBjString tplBmmBillOper$
+        field protected BBjString tplBmmBillSub$
+        field protected BBjString tplIvmItemMast$
+        field protected BBjString tplIvmItemWhse$
+        field protected BBjString tplOpeOrdDet$
+        field protected BBjString tplSfeWOCmnt$
+        field protected BBjString tplSfeWOMastr$
+        field protected BBjString tplSfeWOMatl$
+        field protected BBjString tplSfeWOOprtn$
+        field protected BBjString tplSfeWOSubcnt$
+        field protected BBjString userId$
+        field protected BBjString woCategory$
+        field protected BBjString woType$
+
+        rem --- Constants for woVect! indexes
+        field public static BBjNumber ASKED = 0
+        field public static BBjNumber CREATE_WO = 1
+        field public static BBjNumber SOLINE_NO = 2
+        field public static BBjNumber SOLINE_ITEM = 3
+        field public static BBjNumber SOLINE_ITEMDESC = 4
+        field public static BBjNumber SOLINE_WHSE = 5
+        field public static BBjNumber SOLINE_SHIPQTY = 6
+        field public static BBjNumber SOLINE_SHIPDATE = 7
+        field public static BBjNumber WO_NO = 8
+        field public static BBjNumber WO_SCHPRODQTY = 9
+        field public static BBjNumber WO_ESTCMPDATE = 10
+        field public static BBjNumber WARNINGS = 11
+
+        rem /**
+        rem  * Constructor.
+        rem  *
+        rem  * @param BBjString firmId$
+        rem  * @param BBjString customerId$
+        rem  * @param BBjString orderNo$
+        rem  */
+        method public AO_SalesOrderCreateWO(BBjString firmID$, BBjString customerId$, BBjString orderNo$)
+            seterr AO_SalesOrderCreateWO_error
+
+            rem --- Initialize field variables
+            #firmId$ = firmId$
+            #customerId$ = customerId$
+            #orderNo$ = orderNo$
+
+            rem --- Open needed files          
+            num_files=10
+            dim open_tables$[1:num_files], open_opts$[1:num_files], open_chans$[1:num_files], open_tpls$[1:num_files]
+            open_tables$[1] ="BMC_OPCODES",   open_opts$[1] = "OTA@"
+            open_tables$[2] ="BMM_BILLMAST",  open_opts$[2] = "OTA@"
+            open_tables$[3] ="IVM_ITEMMAST",  open_opts$[3] = "OTA@"
+            open_tables$[4] ="IVM_ITEMWHSE",  open_opts$[4] = "OTA@"
+            open_tables$[5] ="IVS_PARAMS",    open_opts$[5] = "OTA@"
+            open_tables$[6] ="OPE_ORDDET",    open_opts$[6] = "OTA@"
+            open_tables$[7] ="OPS_PARAMS",    open_opts$[7] = "OTA@"
+            open_tables$[8] ="SFE_WOCOMNT",   open_opts$[8] = "OTA[1]"
+            open_tables$[9] ="SFE_WOMASTR",   open_opts$[9] = "OTA[1]"
+            open_tables$[10] ="SFC_WOTYPECD", open_opts$[10] = "OTA@"
+        
+            call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+        
+            if open_status$ = "" then
+                rem --- Hold on to channels and record templates
+                #devBmcOpCodes = num(open_chans$[1])
+                #devBmmBillMast = num(open_chans$[2])
+                #devIvmItemMast = num(open_chans$[3])
+                #devIvmItemWhse = num(open_chans$[4])
+                devIvsParams = num(open_chans$[5])
+                devOpeOrdDet = num(open_chans$[6])
+                devOpsParams = num(open_chans$[7])
+                #devSfeWOCmnt = num(open_chans$[8])
+                #devSfeWOMastr = num(open_chans$[9])
+                devSfcWOTypeCd = num(open_chans$[10])
+
+                #tplBmcOpCodes$ = open_tpls$[1]
+                #tplBmmBillMast$ = open_tpls$[2]
+                #tplIvmItemMast$ = open_tpls$[3]
+                #tplIvmItemWhse$ = open_tpls$[4]
+                tplIvsParams$= open_tpls$[5]
+                #tplOpeOrdDet$ = open_tpls$[6]
+                tplOpsParams$ = open_tpls$[7]
+                #tplSfeWOCmnt$ = open_tpls$[8]
+                #tplSfeWOMastr$ = open_tpls$[9]
+                tplSfcWOTypeCd$ = open_tpls$[10]
+            else
+                rem --- Throw error
+                err_num=err
+                err_num=num(open_status$,err=*next)
+                seterr 0
+                throw "["+pgm(-2)+"] Constructor failed to open files: "+open_status$,err_num
+            endif
+
+            rem --- Get User ID
+            userId$ ="?????"
+            userId$ = stbl("+USER_ID",err=*next)
+            #userId$ = userId$
+
+            rem --- Get needed IV params
+            dim ivsParamsRec$:tplIvsParams$
+            readrecord(devIvsParams,key=firmId$+"IV00")ivsParamsRec$
+            func.setLen1(num(ivsParamsRec.desc_len_01$))
+            func.setLen2(num(ivsParamsRec.desc_len_02$))
+            func.setLen3(num(ivsParamsRec.desc_len_03$))
+
+            rem --- Get needed OP params
+            dim opsParamsRec$:tplOpsParams$
+            readrecord(devOpsParams,key=firmId$+"AR00")opsParamsRec$
+            #woType$ = opsParamsRec.op_create_wo_typ$
+            dim sfcWOTypeCdRec$:tplSfcWOTypeCd$
+            readrecord(devSfcWOTypeCd,key=firmId$+"A"+#woType$,dom=*next)sfcWOTypeCdRec$
+            #woCategory$ = sfcWOTypeCdRec.wo_category$
+
+            rem --- Close files
+            close(devIvsParams,err=*next)
+            close(devOpsParams,err=*next)
+            close(devSfcWOTypeCd,err=*next)
+
+            methodret
+            
+AO_SalesOrderCreateWO_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Creates a new woVect! BBjVector for the given SO detail line and adds it to the isnWOMap! HashMap
+        rem  * if its not already in isnWOMap!. Returns the new or existing woVect!.
+        rem  * 
+        rem  * @param BBjString rowData$
+        rem  * @param BBjString item_description$
+        rem  *
+        rem  * @return BBjVector woVect!
+        rem  */
+        method public BBjVector addSODetailLine(BBjString rowData$, BBjString item_description$)
+            seterr addSODetailLine_error
+
+            rem --- Return existing rowVect! for given SO detail line, or create a new one.
+            if #isnWOMap!.containsKey(rowData.internal_seq_no$) then
+                rem --- Return existing rowVect!
+                woVect!=#isnWOMap!.get(rowData.internal_seq_no$)
+            else
+                rem --- Create a new rowVect! for given SO detail line
+                woVect! = BBjAPI().makeVector()
+                woVect!.addItem(0);                     rem --- index 0: false, operator has NOT been asked 
+                woVect!.addItem(0);                     rem --- index 1: false, do NOT create WO
+                woVect!.addItem(rowData.line_no$);      rem --- index 2
+                woVect!.addItem(rowData.item_id$);      rem --- index 3
+                woVect!.addItem(item_description$);     rem --- index 4
+                woVect!.addItem(rowData.warehouse_id$); rem --- index 5
+                woVect!.addItem(rowData.qty_shipped);   rem --- index 6
+                woVect!.addItem(rowData.est_shp_date$); rem --- index 7
+                woVect!.addItem("");                    rem --- index 8
+                woVect!.addItem("");                    rem --- index 9
+                woVect!.addItem("");                    rem --- index 10
+                woVect!.addItem("");                    rem --- index 11
+
+                rem --- Add new woVect! to isnWOMap! HashMap
+                #isnWOMap!.put(rowData.internal_seq_no$,woVect!)
+            endif
+
+            methodret woVect!
+            
+addSODetailLine_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Determines whether or not the given SO detail line is a valid candidate for creating a Work Order.
+        rem  * Returns the item description for valid candidates. Otherwise returns blank (empty) string.
+        rem  * Note: Do NOT use this method if the SO is a Quote.
+        rem  * Note: Do NOT use this method if the SO is on Credit Hold.
+        rem  * 
+        rem  * @param BBjString rowData$
+        rem  *
+        rem  * @return BBjString itemDescription$
+        rem  */
+        method public BBjString canCreateWO(BBjString rowData$)
+            seterr canCreateWO_error
+            valid=1
+
+            rem --- Sales Order detail line shipped quantity must be positive.
+            if rowData.qty_shipped<0 then valid=0 
+
+            rem --- Sales Order detail line item must be a Bill of Materials, and NOT a Phantom Bill
+            if valid then
+                dim bmmBillMastRec$:#tplBmmBillMast$
+                readrecord(#devBmmBillMast,key=#firmId$+rowData.item_id$,dom=*next)bmmBillMastRec$
+                if bmmBillMastRec.firm_id$+bmmBillMastRec.bill_no$<>#firmId$+rowData.item_id$ then valid=0
+                if bmmBillMastRec.phantom_bill$="Y" then valid=0
+            endif
+
+            rem --- Sales Oder detail line item must be an active item, and must NOT be a superseded item.
+            if valid then
+                dim ivmItemMastRec$:#tplIvmItemMast$
+                readrecord( #devIvmItemMast,key=#firmId$+rowData.item_id$,dom=*next)ivmItemMastRec$
+                if ivmItemMastRec.firm_id$+ivmItemMastRec.item_id$<>#firmId$+rowData.item_id$ then valid=0
+                if ivmItemMastRec.item_inactive$="Y" then valid=0
+                if ivmItemMastRec.alt_sup_flag$="S" then valid=0
+            endif
+            
+            rem --- Sales Order detail line shipped quantity must be positive and greater than the quantity available + on order.
+            if valid then
+                dim ivmItemWhseRec$:#tplIvmItemWhse$
+                readrecord(#devIvmItemWhse,key=#firmId$+rowData.warehouse_id$+rowData.item_id$,dom=*next)ivmItemWhseRec$
+                if ivmItemWhseRec.firm_id$+ivmItemWhseRec.warehouse_id$+ivmItemWhseRec.item_id$<>#firmId$+rowData.warehouse_id$+rowData.item_id$ then valid=0
+                rem --- Note: shipped quantity is already included in ivmItemWhseRec.qty_commit
+                if (ivmItemWhseRec.qty_on_hand - ivmItemWhseRec.qty_commit) + ivmItemWhseRec.qty_on_order > 0 then valid=0
+            endif
+            
+            if valid then
+                rem --- Valid candidate for creating a WO, return formatted item description.
+                itemDescription$=func.displayDesc(ivmItemMastRec.item_desc$)
+            else
+                rem --- NOT a valid candidate for creating a WO, return a blank/empty BBjString
+                itemDescription$=""
+            endif
+
+            methodret itemDescription$
+            
+canCreateWO_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Initializes isnWOMap! HashMap with Sale Order detail lines that are candidates for creating Work Orders, and
+        rem  * includes information on Work Orders that have already been created, i.e. linked to one of the Sales Order detail
+        rem  * lines.
+        rem  * Note: Do NOT use this method if the SO is a Quote.
+        rem  * Note: Do NOT use this method if the SO is on Credit Hold.
+        rem  * 
+        rem  * @param BBjVector gridRowVect!
+        rem  */
+        method public void initIsnWOMap(BBjVector gridRowVect!)
+            seterr initIsnWOMap_error
+
+            dim rowData$:#tplOpeOrdDet$
+            iter!=gridRowVect!.iterator()
+            while iter!.hasNext()
+                rowData$=iter!.next()
+                itemDescription$=#canCreateWO(rowData$)
+                if itemDescription$="" then continue
+                woVect! = #addSODetailLine(rowData$, itemDescription$)
+
+                rem --- Add Work Order info to woVect! if there are existing linked WO
+                dim sfeWOMastrRec$:#tplSfeWOMastr$
+                read(#devSfeWOMastr,key=#firmId$+#customerId$+#orderNo$+rowData.internal_seq_no$,knum="AO_CST_ORD_LINE",dom=*next)
+                readrecord(#devSfeWOMastr,end=*next)sfeWOMastrRec$
+                if sfeWOMastrRec.firm_id$+sfeWOMastrRec.customer_id$+sfeWOMastrRec.order_no$+sfeWOMastrRec.sls_ord_seq_ref$ = 
+:               #firmId$+#customerId$+#orderNo$+rowData.internal_seq_no$ then
+                    woVect!.setItem(#CREATE_WO,1); rem --- true, do create WO
+                    woVect!.setItem(#WO_NO,sfeWOMastrRec.wo_no$)
+                    woVect!.setItem(#WO_SCHPRODQTY,sfeWOMastrRec.sch_prod_qty)
+                    woVect!.setItem(#WO_ESTCMPDATE,sfeWOMastrRec.estcmp_date$)
+                    rem --- Warn if sch_prod_qty isn’t enough
+                    warning$=""
+                    if sfeWOMastrRec.sch_prod_qty<woVect!.getItem(#SOLINE_SHIPQTY) then
+                        warning$="Sch prod qty is short. "
+                    endif 
+                    rem --- Warn if estcmp_date$ isn’t soon enough
+                    if sfeWOMastrRec.estcmp_date$>woVect!.getItem(#SOLINE_SHIPDATE) then
+                        warning$=warning$+"Sch prod date is late. "
+                    endif
+                    woVect!.setItem(#WARNINGS,  warning$)
+                endif
+            wend
+
+            methodret
+            
+initIsnWOMap_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Updates CREATE_WO in all woVect! in isnWOMap! to either true (create WO) or false (do NOT create WO)
+        rem  * based on the input value (1=true, 0=false).
+        rem  * 
+        rem  * @param boolean true_false
+        rem  */
+        method public void setCreateWO(BBjNumber true_false)
+            seterr setCreateWO_error
+
+            mapKeys!=#isnWOMap!.keySet()
+            iter!=mapKeys!.iterator()
+            while iter!.hasNext()
+                isn$=iter!.next()
+                woVect! = #isnWOMap!.get(isn$)
+                woVect!.setItem(#CREATE_WO, true_false)
+            wend
+
+            methodret
+            
+setCreateWO_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Updates SOLINE_NO in all woVect! in isnWOMap! with the CURRENT Sales Order detail grid line numbers.
+        rem  * This is needed to sort the woVect!'s in isnWOMap! in the same order as the Sales Order detail grid rows. 
+        rem  * 
+        rem  * @param BBjVector gridRowVect!
+        rem  */
+        method public void updateLineNo(BBjVector gridRowVect!)
+            seterr updateLineNo_error
+            dim rowData$:#tplOpeOrdDet$
+
+            rem --- Loop thru gridRowVect! to get current line_no for updating isn’s woVect!
+            iter!=gridRowVect!.iterator()
+            while iter!.hasNext()
+                rowData$=iter!.next()
+                if #isnWOMap!.containsKey(rowData.internal_seq_no$) then
+                    woVect! = #isnWOMap!.get(rowData.internal_seq_no$)
+                    woVect!.setItem(#SOLINE_NO, rowData.line_no$)
+                endif
+            wend
+
+            methodret
+            
+updateLineNo_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Provides the number of existing and potential Work Order links for this Sales Order.
+        rem  * 
+        rem  * @return BBjNumber Number of existing and potential WO links for this SO
+        rem  */
+        method public BBjNumber woCount()
+            seterr woCount_error
+
+            methodret #isnWOMap!.size()
+            
+woCount_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Close all open channels and connections.
+        rem  */
+        method public void close()
+            seterr close_error
+
+            if #devBmcOpCodes > 0 then close(#devBmcOpCodes,err=*next)
+            if #devBmmBillMast > 0 then close(#devBmmBillMast,err=*next)
+            if #devIvmItemMast > 0 then close(#devIvmItemMast,err=*next)
+            if #devIvmItemWhse > 0 then close(#devIvmItemWhse,err=*next)
+            if #devSfeWOCmnt > 0 then close(#devSfeWOCmnt,err=*next)
+            if #devSfeWOMastr > 0 then close(#devSfeWOMastr,err=*next)
+
+            methodret
+            
+close_error:rem --- Method error trap/handler
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Cleanup on object's destruction and garbage collection.
+        rem  */
+        method protected void finalize()
+
+            rem --- Close all open channels and connections
+            #close()
+
+            methodret
+        methodend
+	
+classend
