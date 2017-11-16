@@ -42,33 +42,36 @@ rem --- Don't do close stuff when SAVE comes from callpoint!.setStatus("SAVE")
 	endif
 
 rem --- If the WO is being closed complete, and is linked to a Sales Order, warn if the total Close Quantity
-rem --- is less than the Scheduled Production Quantity that it may not be enough for the SO Ship Quantity.
+rem --- is less than the quantity needed for the Sales Order ship quantity.
 	if callpoint!.getColumnData("SFE_WOCLOSE.COMPLETE_FLG")="Y" and num(callpoint!.getColumnData("SFE_WOCLOSE.SLS_ORD_SEQ_REF"))>0 then
+		customer_id$=callpoint!.getColumnData("SFE_WOCLOSE.CUSTOMER_ID")
+		order_no$=callpoint!.getColumnData("SFE_WOCLOSE.ORDER_NO")
+		sls_ord_seq_ref$=callpoint!.getColumnData("SFE_WOCLOSE.SLS_ORD_SEQ_REF")
+		soCreateWO!=new SalesOrderCreateWO(firm_id$,customer_id$,order_no$)
+
+		dim opeOrdDetRec$:soCreateWO!.gettplOpeOrdDet()
+		opeOrdDetRec$=soCreateWO!.getSODetailRow(sls_ord_seq_ref$)
+		tempWoVect!=soCreateWO!.addSODetailLine(opeOrdDetRec$, "temporary item description")
+		rem --- WO's sch prod qty is included in the qty on order, so need to back it out when calculating the qty needed.
+		sch_prod_qty=num(callpoint!.getColumnData("SFE_WOCLOSE.SCH_PROD_QTY"))
+		qtyNeeded=soCreateWO!.calculateQtyNeeded(tempWoVect!,opeOrdDetRec.qty_shipped,sch_prod_qty,sls_ord_seq_ref$,1)
+
 		qty_cls_todt=num(callpoint!.getColumnData("SFE_WOCLOSE.QTY_CLS_TODT"))
 		cls_inp_qty=num(callpoint!.getColumnData("SFE_WOCLOSE.CLS_INP_QTY"))
-		sch_prod_qty=num(callpoint!.getColumnData("SFE_WOCLOSE.SCH_PROD_QTY"))
 		total_cls_qty=qty_cls_todt+cls_inp_qty
-		if sch_prod_qty>total_cls_qty then
-			customer_id$=callpoint!.getColumnData("SFE_WOCLOSE.CUSTOMER_ID")
-			order_no$=callpoint!.getColumnData("SFE_WOCLOSE.ORDER_NO")
-			if soCreateWO!=null() then
-				soCreateWO!=new SalesOrderCreateWO(firm_id$,customer_id$,order_no$)
-			endif
-
+		if qtyNeeded>total_cls_qty then
 			maskIvU$=soCreateWO!.getmaskIvU()
 			maskSfU$=soCreateWO!.getmaskSfU()
-			dim opeOrdDetRec$:soCreateWO!.gettplOpeOrdDet()
-			opeOrdDetRec$=soCreateWO!.getSODetailRow(callpoint!.getColumnData("SFE_WOCLOSE.SLS_ORD_SEQ_REF"))
+			qty_needed$=cvs(str(qtyNeeded:maskIvU$),3)
 			so_qty_shipped$=cvs(str(opeOrdDetRec.qty_shipped:maskIvU$),3)
 			total_cls_qty$=cvs(str(total_cls_qty:maskSfU$),3)
-			sch_prod_qty$=cvs(str(num(callpoint!.getColumnData("SFE_WOCLOSE.SCH_PROD_QTY")):maskSfU$),3)
 
 			msg_id$="SF_CLOSE_COMPLETE_Q"
 			dim msg_tokens$[5]
 			msg_tokens$[1]=order_no$
 			msg_tokens$[2]=customer_id$
 			msg_tokens$[3]=total_cls_qty$
-			msg_tokens$[4]=sch_prod_qty$
+			msg_tokens$[4]=qty_needed$
 			msg_tokens$[5]=so_qty_shipped$
 			gosub disp_message
 			if msg_opt$<>"Y" then
@@ -79,14 +82,13 @@ rem --- is less than the Scheduled Production Quantity that it may not be enough
 				wo_comment$ =Translate!.getTranslation("AON_CLOSED2")+" "+Translate!.getTranslation("AON_COMPLETE")+" "
 				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_QTY")+" "+total_cls_qty$+" "
 				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_IS_LESS_THAN")+" "
-				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_SCH")+" "
-				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_PROD")+" "
-				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_QTY")+" "+sch_prod_qty$
+				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_SALES_ORDER")+" "
+				wo_comment$ =wo_comment$+Translate!.getTranslation("AON_QTY_NEEDED")+" "+qty_needed$
 				soCreateWO!.addWOCmnt(callpoint!.getColumnData("SFE_WOCLOSE.WO_NO"),wo_comment$)
 			endif
-			soCreateWO!.close()
-			soCreateWO!=null()
 		endif
+		soCreateWO!.close()
+		soCreateWO!=null()
 	endif
 
 rem --- Write sfe_closedwo record

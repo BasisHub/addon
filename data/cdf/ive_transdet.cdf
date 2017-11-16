@@ -378,11 +378,9 @@ get_whse_item: rem --- Get warehouse and item records and display
                rem          fields disable/enabled
 rem ==========================================================================
 
-	print "in get_whse_item: item$ = """, item$, """, whse$: """, whse$, """"; rem debug
-
 	rem --- Are both columns set?
 
-	if item$ <> "" and whse$ <> "" then
+	if cvs(item$,2) <> "" and cvs(whse$,2) <> "" then
 
 		rem --- Get records
 

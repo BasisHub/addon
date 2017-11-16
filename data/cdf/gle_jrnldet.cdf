@@ -45,18 +45,18 @@ gosub disp_totals
 [[GLE_JRNLDET.DEBIT_AMT.AVAL]]
 rem set credit amt to zero (since entering debit), then recalc/display hdr disp columns
                     
-if num(callpoint!.getUserInput())<>0 callpoint!.setColumnData("GLE_JRNLDET.CREDIT_AMT",str(0))
+if num(callpoint!.getUserInput())<>0 callpoint!.setColumnData("GLE_JRNLDET.CREDIT_AMT",str(0),1)
 
-callpoint!.setStatus("MODIFIED-REFRESH")
+callpoint!.setStatus("MODIFIED")
 [[GLE_JRNLDET.DEBIT_AMT.AVEC]]
 gosub calc_grid_tots
 gosub disp_totals
 [[GLE_JRNLDET.CREDIT_AMT.AVAL]]
 rem set debit amt to zero (since entering credit), then recalc/display hdr disp columns
                     
-if num(callpoint!.getUserInput())<>0 callpoint!.setColumnData("GLE_JRNLDET.DEBIT_AMT",str(0))
+if num(callpoint!.getUserInput())<>0 callpoint!.setColumnData("GLE_JRNLDET.DEBIT_AMT",str(0),1)
 
-callpoint!.setStatus("MODIFIED-REFRESH")
+callpoint!.setStatus("MODIFIED")
 [[GLE_JRNLDET.CREDIT_AMT.AVEC]]
 gosub calc_grid_tots
 gosub disp_totals

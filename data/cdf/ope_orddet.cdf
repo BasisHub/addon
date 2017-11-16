@@ -756,8 +756,8 @@ rem --- Set header total amounts
 
 	use ::ado_order.src::OrderHelper
 
-	cust_id$  = callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID")
-	order_no$ = callpoint!.getColumnData("OPE_ORDDET.ORDER_NO")
+	cust_id$  = cvs(callpoint!.getColumnData("OPE_ORDDET.CUSTOMER_ID"),3)
+	order_no$ = cvs(callpoint!.getColumnData("OPE_ORDDET.ORDER_NO"),3)
 	inv_type$ = callpoint!.getHeaderColumnData("OPE_ORDHDR.INVOICE_TYPE")
 
 	if cust_id$<>"" and order_no$<>"" then

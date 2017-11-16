@@ -549,6 +549,7 @@ rem --- Launch ope_createwos form to create selected work orders
 
 				dim dflt_data$[2,1]
 				dflt_data$[1,0] = "CUSTOMER_ID"
+				dflt_data$[1,1] = customer_id$
 				dflt_data$[2,0] = "ORDER_NO"
 				dflt_data$[2,1] = order_no$
 				key_pfx$=firm_id$+customer_id$+order_no$
@@ -564,22 +565,11 @@ rem --- Launch ope_createwos form to create selected work orders
 
 				rem --- Make sure focus returns to this form
 				callpoint!.setStatus("ACTIVATE")
-
-				rem --- Handle Cancel and new warnings from ope_createwos form
-				if callpoint!.getDevObject("createWOs_status")="Cancel" or soCreateWO!.getWarn() then
-					rem --- Barista always goes to the next record at this point in BREX. Cannot stay where we are now via ABORT.
-					rem --- Using short key for RECORD so when Barista goes to the next record it will end up on this current record.
-					callpoint!.setStatus("RECORD:["+firm_id$+"E"+"  "+callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")+callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")+"]")
-
-					rem --- A new soCreateWO! instance will be created, so need to close files in this one.
-					soCreateWO!.close()
-					break
-				endif
 			endif
-
-			rem --- Close files that may be open in soCreateWO! instance
-			soCreateWO!.close()
 		endif
+
+		rem --- Close files that may be open in soCreateWO! instance
+		soCreateWO!.close()
 	endif
 	callpoint!.setDevObject("force_wolink_grid",0)
 [[OPE_ORDHDR.AOPT-PRNT]]
@@ -1141,6 +1131,9 @@ rem --- Create soCreateWO! instance if needed
 
 	op_create_wo$=callpoint!.getDevObject("op_create_wo")
 	if op_create_wo$="A" then
+		rem --- Clean up previous instance as necessary
+		if soCreateWO!<>null() then soCreateWO!.close()
+
 		customer_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 		order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 		soCreateWO!=new SalesOrderCreateWO(firm_id$,customer_id$,order_no$)
@@ -1495,6 +1488,9 @@ rem --- Do we need to create a new order number?
 			rem --- Create soCreateWO! instance if needed
 			op_create_wo$=callpoint!.getDevObject("op_create_wo")
 			if op_create_wo$="A" then
+				rem --- Clean up previous instance as necessary
+				if soCreateWO!<>null() then soCreateWO!.close()
+
 				customer_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 				soCreateWO!=new SalesOrderCreateWO(firm_id$,customer_id$,order_no$)
 				callpoint!.setDevObject("soCreateWO",soCreateWO!)

@@ -142,7 +142,7 @@ GmInterfaceClient_error:rem --- Method error trap/handler
                 log$ = logDir$+"/GmInterfaceClient_pushes.log"
                 string log$,err=*next
                 log_dev = unt
-                open(log_dev,err=*next)log$
+                open(log_dev,err=*endif)log$
                 #devPushLog% = int(log_dev)
                 
                 rem --- Locate end of push log file so new messages are appended
@@ -218,10 +218,10 @@ launchClient_error:rem --- Method error trap/handler
                         rem --- Skip firm_id
                         rem --- Skip customer_id
                         if cvs(gmqCustomerTpl.gm_accountno$,2) <> "" then
-                            aonData!.setProperty("GM_ACCOUNTNO",gmqCustomerTpl.gm_accountno$)
+                            aonData!.setProperty("ACCOUNTNO",gmqCustomerTpl.gm_accountno$);rem CAH
                         endif
                         if cvs(gmqCustomerTpl.gm_recid$,2) <> "" then
-                            aonData!.setProperty("GM_RECID",gmqCustomerTpl.gm_recid$)
+                            aonData!.setProperty("RECID",gmqCustomerTpl.gm_recid$);rem CAH
                         endif
                         if cvs(gmqCustomerTpl.customer_name$,2) <> "" then
                             gmProps! = #mapToGoldMine("customer_name",gmqCustomerTpl.customer_name$)
@@ -608,8 +608,9 @@ buildXMLRequest_error:rem --- Method error trap/handler
             gms_params$ = #gmsParams!.getProperty(firmId$)
 
             rem --- Create PostMethod for request
-            restUrl$ = cvs(gms_params.webservice_url$,2)+"/?XML="+URLEncoder.encode(xmlRequest$,"UTF-8")
+            restUrl$ = cvs(gms_params.webservice_url$,2)
             method! = new PostMethod(restUrl$)
+            method!.addParameter("XML",xmlRequest$)
 
             rem --- Have HttpClient to execute the PostMethod
             client! = new HttpClient()
@@ -1256,7 +1257,7 @@ getCountryCodes_error:rem --- Method error trap/handler
 
             rem --- Check if GMX_CUSTOMER has record(s) for the Addon firm_id and customer_id
             #openGmxCustomer()
-            read(#devGmxCustomer%,key=aonFirmId$+aonCustomerId$,knum="BY_ADDON",dom=*next)
+            read(#devGmxCustomer%,key=aonFirmId$+aonCustomerId$,dir=0,knum="BY_ADDON",dom=*next)
             gmxCustomerKey$ = key(#devGmxCustomer%,end=*next)
             if pos(aonFirmId$+aonCustomerId$=gmxCustomerKey$)=1 then status$="TRUE"
 
@@ -1379,7 +1380,7 @@ getGmContactInfo_error:rem --- Method error trap/handler
         rem  */
         method public void startClient()
             seterr startClient_error
-            
+
             rem --- Get Barista's BBjAdminBase object for current user
             barAdmin! = BBjAPI().getGroupNamespace().getValue("+bar_admin_"+cvs(stbl("+USER_ID"),11),err=*next)
             if barAdmin!<>null() then
@@ -1426,11 +1427,18 @@ startClient_error:rem --- Method error trap/handler
             seterr close_error
 
             #terminateGmSessions()
+            rem --- Note that even though tables were opened using bac_open_tables.bbj, rd_table_chans$[all] is NOT being shared/passed.
             if #devSQL% >= 0 then sqlclose(#devSQL%,err=*next)
             if #devGmqCustomer% >= 0 then close(#devGmqCustomer%,err=*next)
             if #devGmxCustomer% >= 0 then close(#devGmxCustomer%,err=*next)
             if #devErrLog% >= 0 then close(#devErrLog%,err=*next)
             if #devPushLog% >= 0 then close(#devPushLog%,err=*next)
+
+            #devSQL% = -1
+            #devGmqCustomer% = -1
+            #devGmxCustomer% = -1
+            #devErrLog% = -1
+            #devPushLog% = -1
 
             methodret
             
@@ -1553,6 +1561,7 @@ openGmqCustomer_error:rem --- Method error trap/handler
         rem  * @return BBjInt openChannel%
         rem  */
         method protected BBjInt openGmxCustomer()
+            def fnget_dev1(tmp0$)=num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3))
             seterr openGmxCustomer_error
             openChannel% = #devGmxCustomer%
 
@@ -1562,13 +1571,34 @@ openGmqCustomer_error:rem --- Method error trap/handler
                 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
                 open_tables$[1]="GMX_CUSTOMER",open_opts$[1]="OTA[1]"
 
+                rem --- Note that rd_table_chans$[all] is NOT being shared/passed.
                 call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+                table_tpl$=open_tpls$[1]
 
                 if open_status$ = "" then
-                    rem --- Hold on to channel and record template for gmx_customer
-                    openChannel% = num(open_chans$[1])
-                    #devGmxCustomer% = num(open_chans$[1])
-                    #tplGmxCustomer$ = open_tpls$[1]
+                    rem --- Close gmx_customer opened/created by Barista because we can NOT share the same channel between multiple instances of GmInterfaceClient.
+                    open_tables$[1]="GMX_CUSTOMER",open_opts$[1]="C[1]"
+                    call stbl("+DIR_SYP")+"bac_open_tables.bbj",open_beg,open_end,open_tables$[all],open_opts$[all],open_chans$[all],open_tpls$[all],rd_table_chans$[all],open_batch,open_status$
+
+                    rem --- Make sure ddm_tables and ddm_table_tpls get closed
+                    devDdmTables=fnget_dev1("DDM_TABLES")
+                    devDdmTableTpls=fnget_dev1("DDM_TABLE_TPLS")
+                    if devDdmTables >= 0 then close(devDdmTables,err=*next)
+                    if devDdmTableTpls >= 0 then close(devDdmTableTpls,err=*next)
+
+                    rem --- Open gmx_customer on a unique channel so closing it does NOT close it for other instances of GmInterfaceClient.
+                    filename$ = "gmx_customer"
+                    fileChan = unt
+                    success = 0
+                    open(fileChan,err=*next)stbl("+GMDATA")+filename$; success = 1
+                    if success then
+                        rem --- Hold on to channel and record template for gmx_customer
+                        openChannel% = fileChan
+                        #devGmxCustomer% = openChannel%
+                        #tplGmxCustomer$ = table_tpl$
+                    else
+                        #logError("openGmxCustomer(): Failed to get gmx_customer","Error "+str(err)+": "+errmes(-1))
+                    endif
                 else
                     rem --- Log error
                     #logError("openGmxCustomer(): Failed to open gmx_customer",open_status$)

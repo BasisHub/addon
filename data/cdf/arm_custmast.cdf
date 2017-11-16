@@ -1,3 +1,12 @@
+[[ARM_CUSTMAST.BEND]]
+rem --- call the close() method for the gmClient! object on the way out
+
+	if user_tpl.gm_installed$="Y" then
+		gmClient!=callpoint!.getDevObject("gmClient")
+		gmClient!.close()
+	endif
+
+		
 [[ARM_CUSTMAST.AOPT-PRIC]]
 rem --- Launch Price Quote Inquiry form
 	dim dflt_data$[2,1]
@@ -201,7 +210,7 @@ rem --- If GM installed, update GoldMine database as necessary
 			rem --- Do NOT update existing un-imported GoldMine contact(s)
 			gmxCustomer_dev=fnget_dev("GMX_CUSTOMER")
 			dim gmxCustomer$:fnget_tpl$("GMX_CUSTOMER")
-			read(gmxCustomer_dev,key=firm_id$+customer_id$,knum="BY_ADDON",dom=*next)
+			read(gmxCustomer_dev,key=firm_id$+customer_id$,knum="BY_ADDON",dir=0,dom=*next)
 			while 1
 				gmxCustomer_key$=key(gmxCustomer_dev,end=*break)
 				if pos(firm_id$+customer_id$=gmxCustomer_key$)<>1 then break
@@ -329,9 +338,6 @@ rem --- If GM installed, update GoldMine database as necessary
 			wend
 		endif
 
-		rem --- Start scheduled GoldMine interface client, and close this instance
-		gmClient!.startClient()
-		gmClient!.close()
 	endif
 [[ARM_CUSTMAST.ASHO]]
 rem --- Create/embed widgets to show aged balance

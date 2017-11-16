@@ -1,3 +1,19 @@
+[[GMS_PARAMS.BEND]]
+rem --- close the gmClient
+
+	gmClient!=callpoint!.getDevObject("gmClient")
+	gmClient!.close()
+
+[[GMS_PARAMS.ARNF]]
+rem --- if no param rec yet exists, initialize w/ just firm and 'GM'
+
+	gms_params_dev=fnget_dev("GMS_PARAMS")
+	rec_data.firm_id$=firm_id$
+	rec_data.gm$="GM"
+
+	writerecord(gms_params_dev)rec_data$
+
+	callpoint!.setStatus("RECORD")
 [[GMS_PARAMS.GM_MASTER_USER.AVAL]]
 rem --- Must test connection if connection configuration changed
 	if callpoint!.getUserInput()<>callpoint!.getColumnData("GMS_PARAMS.GM_MASTER_USER") then
@@ -66,7 +82,6 @@ rem --- Test web service
 		xmlRequest$ = gmClient!.buildXMLRequest("LoadAPI", aonData!, firm_id$)
 		xmlResponse$ = gmClient!.postRequest(xmlRequest$, firm_id$)
 		props!=gmClient!.parseXMLResponse(xmlResponse$, firm_id$)
-		gmClient!.close()
 
 		rem --- Check status of LoadAPI method
 		if props!.containsKey("statusCode") and cvs(props!.getProperty("statusCode"),3)<>"1" then
@@ -133,14 +148,12 @@ rem --- Must test DB connection before saving any changes to the DB connection c
 	if callpoint!.getDevObject("testDbConn")="yes" then
 		msg_id$="GM_TEST_DB_CONN"
 		gosub disp_message
-		callpoint!.setStatus("ABORT")
 	endif
 
 rem --- Must test web service connection before saving any changes to the web service connection configuration
 	if callpoint!.getDevObject("testWebService")="yes" then
 		msg_id$="GM_TEST_WS_CONN"
 		gosub disp_message
-		callpoint!.setStatus("ABORT")
 	endif
 [[GMS_PARAMS.AOPT-TCON]]
 rem --- Test database connection
