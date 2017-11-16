@@ -523,6 +523,8 @@ rem --- Initialize fields for Bank Rec deposit.
 
 		rem --- Capture currently saved payment_amt so can adjust tot_receipts_amt if payment_amt is changed
 		callpoint!.setDevObject("saved_payment_amt",0)
+	else
+		callpoint!.setDevObject("deposit_id",callpoint!.getColumnData("ARE_CASHHDR.DEPOSIT_ID"))
 	endif
 [[ARE_CASHHDR.ASIZ]]
 if UserObj!<>null()

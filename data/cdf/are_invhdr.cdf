@@ -204,7 +204,7 @@ if cvs(callpoint!.getUserInput(),2)<>"" and callpoint!.getUserInput()<>
 				callpoint!.setColumnUndoData("ARE_INVHDR.SIM_INV_TYPE","A")
 				callpoint!.setStatus("MODIFIED-REFRESH")
 			else
-				callpoint!.setStatus("CLEAR-NEW")
+				callpoint!.setStatus("CLEAR-NEWREC")
 			endif
 		endif                            
 endif

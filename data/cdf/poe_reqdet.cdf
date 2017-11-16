@@ -573,7 +573,7 @@ status=0
 
 call stbl("+DIR_PGM")+"poc_itemvend.aon","R","R",vendor_id$,ord_date$,item_id$,conv_factor,unit_cost,req_qty,callpoint!.getDevObject("iv_prec"),status
 
-callpoint!.setColumnData("POE_REQDET.UNIT_COST",str(unit_cost))
+callpoint!.setColumnData("POE_REQDET.UNIT_COST",str(unit_cost),1)
 
 gosub update_header_tots
 callpoint!.setDevObject("qty_this_row",num(callpoint!.getUserInput()))

@@ -653,7 +653,7 @@ rem --- On launch initialize form with calendar for current fiscal year
 		gls_params$=callpoint!.getDevObject("gls_params")
 		readrecord(gls_calendar_dev,key=firm_id$+gls_params.current_year$,dom=*next)gls_calendar$
 		if cvs(gls_calendar.year$,2)<>"" then
-			callpoint!.setStatus("NEWRECORD:["+firm_id$+gls_calendar.year$+"]")
+			callpoint!.setStatus("RECORD:["+firm_id$+gls_calendar.year$+"]")
 		else
 			rem --- Default to a calendar year for the very first calendar entered, which is for the current fiscal year.
 			callpoint!.setColumnData("GLS_CALENDAR.YEAR",gls_params.current_year$)
