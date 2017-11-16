@@ -165,7 +165,11 @@ rem --- Approve the invoice selected in the grid
 	rem --- Confirm approval
 	invCount = rowsSelected!.size() 
 	if apm_approvers.prelim_approval then
-		msg_id$="AP_INV_PAY_REVWD"
+		if apm_approvers.check_signer then
+			msg_id$="AP_INV_PAY_REVW_APPV"
+		else
+			msg_id$="AP_INV_PAY_REVWD"
+		endif
 	else
 		msg_id$="AP_INV_PAY_APPVD"
 	endif
@@ -231,6 +235,11 @@ rem --- Approve the invoice selected in the grid
 			gridInvoices!.setRowBackColor(curr_row, reviewedColor!)
 			continue
 		endif	
+
+		rem --- Reviewed by this user that is also an approver. Reviewer cannot also approve.
+		if reviewed and (cvs(reviewer$,3)=cvs(user$,3) or cvs(reviewer$,3)="") then
+			continue
+		endif
 
 		rem --- Not approved, and user is not an approver
 		if !approved and !apm_approvers.check_signer then
@@ -495,6 +504,7 @@ rem ==========================================================================
 	approved=0
 	sequence_num = -1
 	approved_by$ = ""
+	reviewer$ = ""
 
 	rem --- Check the table first
 	read record(apt_invapproval, key=firm_id$ + vendor_id$ + ap_inv_no$,dom=*next)apt_invapproval$
@@ -505,6 +515,7 @@ rem ==========================================================================
 		sequence_num = num(apt_invapproval.sequence_num$)
 		if apt_invapproval.approval_type$ = "R" then
 			reviewed=1
+			reviewer$=apt_invapproval.user_id$
 			approval_list$ = approval_list$ + Translate!.getTranslation("AON_REVIEWED_BY") + ": " + cvs(apt_invapproval.user_id$,3) + " "
 			approval_list$ = approval_list$ + cvs(apt_invapproval.name$,3) + " "
 			ts$ = cvs(apt_invapproval.appv_timestamp$,3)
@@ -644,17 +655,18 @@ rem ==========================================================================
 	if !callpoint!.getDevObject("use_pay_auth")  then return
 
 	user$=sysinfo.user_id$
+	usertype$=""
 	if apm_approvers.prelim_approval then
 		rem --- Reviewer
 		usertype$ = "R"
-	else
-		if apm_approvers.check_signer then
-			rem --- Approver
-			usertype$ = "A"
-		else
-			rem --- Not reviewer or approver
-			return
-		endif
+	endif
+	if apm_approvers.check_signer then
+		rem --- Approver
+		usertype$ = usertype$+"A"
+	endif
+	if usertype$="" then
+		rem --- Not reviewer or approver
+		return
 	endif
 
 	newRowsSelected! = BBjAPI().makeVector()
@@ -667,23 +679,28 @@ rem ==========================================================================
 		vendorTotalsMap!=callpoint!.getDevObject("vendorTotalsMap")
 		thisVendor_total = cast(BBjNumber, vendorTotalsMap!.get(vendor_id$))
 		gosub get_approval_status
-				
-		if !reviewed and usertype$ = "R" then
+
+		if !reviewed and pos("R"=usertype$) then
 			newRowsSelected!.add(row)
 			continue
 		endif
 
-		if reviewed and !approved and usertype$ = "A" then
+		if reviewed and cvs(reviewer$,3)=cvs(user$,3)  then
+			rem --- Reviewer cannot also be the approver
+			continue
+		endif
+
+		if reviewed and !approved and pos("A"=usertype$) then
 			newRowsSelected!.add(row)
 			continue
 		endif
 
-		if reviewed and approved > 1 and usertype$ = "A" then
+		if reviewed and approved > 1 and pos("A"=usertype$) then
 			rem --- Already has two approvals
 			continue
 		endif				
 
-		if reviewed and approved = 1 and usertype$ = "A" then
+		if reviewed and approved = 1 and pos("A"=usertype$) then
 			rem --- One approval in. Is it by this user
 			if user$ = approved_by$ then
 				rem --- Already approved by this approver
@@ -728,6 +745,7 @@ rem ==========================================================================
 	rem --- Verify current user is a reviewer or approver
 	found=0
 	user$=sysinfo.user_id$
+	usertype$=""
 	read record(apm_approvers,key=firm_id$ + user$,dom=*next)apm_approvers$; found=1
 	if !found then
 		rem --- Not reviewer or approver
@@ -736,14 +754,14 @@ rem ==========================================================================
 	if apm_approvers.prelim_approval then
 		rem --- Reviewer
 		usertype$ = "R"
-	else
-		if apm_approvers.check_signer then
-			rem --- Approver
-			usertype$ = "A"
-		else
-			rem --- Not reviewer or approver
-			return
-		endif
+	endif
+	if apm_approvers.check_signer then
+		rem --- Approver
+		usertype$ = usertype$+"A"
+	endif
+	if usertype$="" then
+		rem --- Not reviewer or approver
+		return
 	endif
 
 	rem --- Set the from, cc, bcc and replyto email addresses
@@ -770,7 +788,7 @@ rem ==========================================================================
 		if cvs(adm_user.email_address$,2)<>"" then
 			if apm_approvers.check_signer then
 				rem --- Approver
-				if usertype$ = "R" then
+				if pos("R"=usertype$) then
 					if len(to$) then to$ = to$ + ", "
 					to$ = to$ + adm_user.email_address$
 				else
@@ -780,7 +798,7 @@ rem ==========================================================================
 			else
 				if apm_approvers.prelim_approval then
 					rem --- Reviewer
-					if usertype$ = "A" then
+					if pos("A"=usertype$) then
 						if len(to$) then to$ = to$ + ", "
 						to$ = to$ + ", " + adm_user.email_address$
 					endif
@@ -795,21 +813,21 @@ rem ==========================================================================
 	if cvs(to$,2)="" then to$=from$
 
 	subject$ = Translate!.getTranslation("AON_INVOICES")
-	if usertype$ = "R" then 
-		subject$ = subject$+" "+Translate!.getTranslation("AON_AWAITING_APPROVAL")
-	else
+	if pos("A"=usertype$) then 
 		subject$ = subject$+" "+Translate!.getTranslation("AON_APPROVAL_STATUS")
+	else
+		subject$ = subject$+" "+Translate!.getTranslation("AON_AWAITING_APPROVAL")
 	endif
 
 	msgHtml$ = "<html><body>" + $0A$
-	if usertype$="R" then
-		msgText$ = Translate!.getTranslation("AON_AP_INV_WAITING_APPROVAL")
-		msgHtml$ = msgHtml$ + msgText$+" "
-		msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_AP_REVIEW_INVOICES:")+" <br><br>" + $0A$ 
-	else
+	if pos("A"=usertype$) then
 		msgText$ = Translate!.getTranslation("AON_APPROVER")+" " + cvs(user$,3) + " "+Translate!.getTranslation("AON_EXITED_PAY_SELECTION")
 		msgHtml$ = msgHtml$ + msgText$+" <br><br>" + $0A$
 		msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_STATUS_OF_AP_INVOICES:")+" <br><br>" + $0A$
+	else
+		msgText$ = Translate!.getTranslation("AON_AP_INV_WAITING_APPROVAL")
+		msgHtml$ = msgHtml$ + msgText$+" "
+		msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_AP_REVIEW_INVOICES:")+" <br><br>" + $0A$ 
 	endif
 	msgText$=msgText$+" "+Translate!.getTranslation("AON_SEE_ATTACHMENT")+"."
 	
@@ -882,15 +900,15 @@ rem ==========================================================================
 		endif
 	next row
 
-	if usertype$="R" then
-		rem --- User is the reviewer
-		msgHtml$ = msgHtml$ + "<table border=1>" + reviewed_but_not_approved$ + partially_approved$ + "</table>" + $0A$
-	else
+	if pos("A"=usertype$) then
 		rem --- User is an approver
 		if len(not_reviewed$) <> 0 then msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_INV_NOT_REVIEWED:")+" <br>" + $0A$ + "<table border=1>" + not_reviewed$ + "</table><br>" +$0A$
 		if len(reviewed_but_not_approved$) <> 0 then msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_INV_REVIEWED_NO_APPROVALS:")+" <br>" + $0A$ + "<table border=1>" + reviewed_but_not_approved$ + "</table><br>" + $0A$
 		if len(partially_approved$) <> 0 then msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_INV_REVIEWED_REQUIRE_ANOTHER_APPROVAL:")+" <br>" + $0A$ + "<table border=1>" + partially_approved$ + "</table><br>" + $0A$
 		if len(approved_invoices$) <> 0 then msgHtml$ = msgHtml$ + Translate!.getTranslation("AON_INV_APPROVED_READY_FOR_PAYMENT:")+" <br>" + $0A$ + "<table border=1>" + approved_invoices$ + "</table><br>" + $0A$
+	else
+		rem --- User is the reviewer
+		msgHtml$ = msgHtml$ + "<table border=1>" + reviewed_but_not_approved$ + partially_approved$ + "</table>" + $0A$
 	endif	
 	gosub build_bui_url
 	msgHtml$ = msgHtml$ + "<br><a href=" + chr(34) + buiurl$ +chr(34) + ">"+Translate!.getTranslation("AON_LAUNCH_BARISTA_IN_BROWSER")+"</a><br>"
@@ -900,7 +918,8 @@ rem ==========================================================================
 	msg$ = msg$ +Translate!.getTranslation("AON_INV_REVIEWED_APPROVAL_NOT_COMPLETE:")+" " + str(reviewed_but_not_approved + partially_approved) + $0A$
 	msg$ = msg$ +Translate!.getTranslation("AON_INV_APPROVED_READY")+": " + str(approved_invoices) + $0A$ + $0A$
 
-	if usertype$ = "R" and not_reviewed<>0 then
+	if pos("A"=usertype$)=0 and not_reviewed<>0 then
+		rem --- Reviewer only, not an approver.
 		rem --- Report it and go, all invoices must be reviewed prior to emailing the approvers
 		msg$ = msg$ + Translate!.getTranslation("AON_INV_AWAITING_REVIEW")
 		msg_id$="GENERIC_WARN"
@@ -908,7 +927,8 @@ rem ==========================================================================
 		msg_tokens$[1]=msg$
 		gosub disp_message
 	else
-		if usertype$ = "R" and not_reviewed = 0 and reviewed_but_not_approved = 0 and partially_approved = 0 then
+		if pos("A"=usertype$)=0 and not_reviewed = 0 and reviewed_but_not_approved = 0 and partially_approved = 0 then
+			rem --- Reviewer only, not an approver.
 			rem --- Report it and go, all invoices have been approved
 			msg$ = msg$ + Translate!.getTranslation("AON_INV_APPROVED_READY_FOR_PAYMENT")
 			msg_id$="GENERIC_OK"
@@ -916,7 +936,8 @@ rem ==========================================================================
 			msg_tokens$[1]=msg$
 			gosub disp_message
 		else
-			if usertype$ = "R" then
+			if pos("A"=usertype$)=0 then
+				rem --- Reviewer only, not an approver.
 				if callpoint!.getDevObject("send_email")  then
 					rem ---- give them a choice
 					msg_id$="AP_PAYAUTH_EMAIL"
@@ -930,7 +951,7 @@ rem ==========================================================================
 					gosub queue_email
 				endif
 			else
-				rem --- usertype$="A" and approver, send the email
+				rem --- pos("A"=usertype$)>0 an approver, send the email
 				if callpoint!.getDevObject("send_email")  then
 					gosub queue_email
 				endif

@@ -1,18 +1,18 @@
 rem --- Rebuild Sales Analysis From Invoice History (Rebuild Overlay)
-rem --- Program sac_histrebuild v8.0.0 10Dec2007 (sax_bb)
-rem --- Created by adx_codeport.bbx v1.1.5 (12/10/2007 10:06:05)
+rem --- Program sac_histrebuild_v15.aon v17.00 26Apr2017
 
-rem --- AddonSoftware Version 8.0.0 - 01Jan2007
+rem --- AddonSoftware Version 17.00 - 26Apr2017
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
-rem --- typeSA!      : Hashmap object identifying which types of sales analysis to rebuild
+rem --- convCtrl!   : adx_conversionCtrl conversion control properties object
+rem --- typeSA!      : Hashmap object identifying which types of sales analysis to rebuild (input)
 rem --- status       : Status/0=No error (returned)
 
     seterr std_error
     setesc std_error
     
-    enter theFirm$,typeSA!,status
+    enter theFirm$,convCtrl!,typeSA!,status
 
 rem --- Initializations
 
@@ -79,7 +79,7 @@ rem --- Open/Lock files
     arm02_dev=channels[3]
     ivm01_dev=channels[4]
     ivm02_dev=channels[5]
-    gls01_dev=channels[6]
+    glsParams_dev=channels[6]
     opm02_dev=channels[7]
     opt01_dev=channels[8]
     opt11_dev=channels[9]
@@ -110,7 +110,7 @@ rem --- Open/Lock files
 rem --- Dimension string templates
 
     dim arm01a$:templates$[2],arm02a$:templates$[3],ivm01a$:templates$[4],
-:       ivm02a$:templates$[5],opm02a$:templates$[7],
+:       ivm02a$:templates$[5],glsParams$:templates$[6],opm02a$:templates$[7],
 :       opt01a$:templates$[8],opt11a$:templates$[9],sam01a$:templates$[10],
 :       sam02a$:templates$[11],sam03a$:templates$[12],sam04a$:templates$[13],
 :       sam05a$:templates$[14],sam06a$:templates$[15],sam07a$:templates$[16],
@@ -134,6 +134,69 @@ rem --- Get types of sales analysis to rebuild
     opt_vend$=typeSA!.get("BY_VENDOR")
     opt_distcode$=typeSA!.get("BY_DIST_CODE")
     opt_nonstock$=typeSA!.get("BY_NONSTOCK")
+
+rem --- Get correct gls_params channel and template for this upgrade
+
+    v17=1
+    tmp$=field(glsParams$,"total_pers",err=*next); v17=0
+    if v17 then
+        rem --- Upgrading to v17 or later, so total_pers and per_ending_xx no longer in gls_params and not
+        rem --- added to gls_calendar yet during this upgrade. Must get from old installation's gls_params.
+
+        oldStbl$="+GLDATA"
+        oldFile$="gls_params"
+        gosub get_path_to_old_file
+        old_glsParams$=oldPathToFile$
+        open_success=0
+        old_glsParams_dev=unt
+        open(old_glsParams_dev,err=*next)old_glsParams$; open_success=1
+        if open_success then
+            rem --- Get record template for old source GLS_PARAMS file
+            ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+            open_success=0
+            ddm_table_tpls=unt
+            open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+            if open_success then
+                dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                tpl_found=0
+                findrecord(ddm_table_tpls,key=pad(cvs(oldFile$,4),16),dom=*next)ddm_table_tpls$;tpl_found=1
+                if tpl_found then
+                    dim old_glsParams_tpl$:ddm_table_tpls.template$
+                else
+                    rem --- Required template missing
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
+                    msg_id$="GENERIC_WARN"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=err_msg$
+                    gosub disp_message
+                    goto done
+                endif
+
+                rem --- Get total_pers and per_ending_xx from old installation's gls_params
+                dim gls01a$:fattr(old_glsParams_tpl$)
+                gls01_dev=old_glsParams_dev
+            else
+                rem --- Required file missing
+                msg_id$="AD_FILE_MISSING"
+                dim msg_tokens$[1]
+                msg_tokens$[1]=ddm_table_tpls$
+                gosub disp_message
+                goto done
+            endif
+        else
+            rem --- Required file missing
+            msg_id$="AD_FILE_MISSING"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=old_glsParams$
+            gosub disp_message
+            goto done
+        endif
+    else
+        rem --- Upgrading to v15 or v15, so total_pers and per_ending_xx are in existing gls_params
+        dim gls01a$:fattr(glsParams$)
+        gls01_dev=glsParams_dev
+    endif
 
 rem --- Background
 
@@ -184,9 +247,9 @@ rem --- Update Sales Analysis
             find record (ivm02_dev,key=firm_id$+opt11a.warehouse_id$+opt11a.item_id$,dom=*next) ivm02a$
             if ivm01a.stock_level$="W" vendor$=ivm02a.vendor_id$ else vendor$=ivm01a.vendor_id$
             if opt11a.trans_status$="U" then
-                call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,opt01a.invoice_date$,period$,year$
+                call pgmdir$+"adc_fiscalperyr_v15.aon",periodEndDates$[all],opt01a.invoice_date$,period$,year$
             else
-                call pgmdir$+"adc_fiscalperyr.aon",firm_id$,gls01_dev,opt01a.shipmnt_date$,period$,year$
+                call pgmdir$+"adc_fiscalperyr_v15.aon",periodEndDates$[all],opt01a.shipmnt_date$,period$,year$
             endif
             period=num(period$)
 
@@ -599,16 +662,49 @@ done: rem --- All done
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,0,status
     goto std_exit
 
-init_firm: rem --- Firm specific initializations
+get_path_to_old_file: rem --- Locate data directory in old Addon installation
+    rem --- IN: oldStbl$ - STBL in old addon.syn that points to the data directory where the old file is located
+    rem --- IN: oldFile$ - name of old file to get path for
+    rem --- OUT: oldPathToFile$ - full path to requested file, including the file name
+    oldPathToFile$=oldFile$
 
+    rem --- Open old aon/config/addon.syn
+    open_success=0
+    old_addonsyn_dev=unt
+    open(old_addonsyn_dev,isz=-1,err=*next)convCtrl!.getProperty("addon_source")+"/aon/config/addon.syn"; open_success=1
+    if !open_success then return
+
+    rem --- Get specified data directory from old addon.syn
+    key$="=SET "+oldStbl$+"="
+    while 1
+        read(old_addonsyn_dev,end=*break)record$
+        if(pos(key$=record$)) then
+            xpos=pos(key$=record$)
+            oldPathToFile$=record$(xpos+len(key$))+oldFile$
+            break
+        endif
+    wend
+    close(old_addonsyn_dev)
+
+    return
+
+init_firm: rem --- Firm specific initializations
     firm_id$=opt01a.firm_id$
 
     rem --- Retrieve parameter records for this firm
     sas01a_key$=firm_id$+"SA00"
     find record (sas01_dev,key=sas01a_key$,err=std_missing_params) sas01a$
     find record (ivs01_dev,key=firm_id$+"IV00",err=std_missing_params) ivs01a$
+    find record (gls01_dev,key=firm_id$+"GL00",err=std_missing_params) gls01a$
     ivprecision=num(ivs01a.precision$)
     precision ivprecision
+
+    rem --- Put this firm's fiscal calendar period end dates in a string array
+    totalPers=num(gls01a.total_pers$)
+    dim periodEndDates$[totalPers]
+    for per=1 to totalPers
+        periodEndDates$[per]=field(gls01a$,"per_ending_"+str(per:"00"))
+    next per
 
     rem --- Clear out records from selected files for this firm
     if opt_cust$="Y" then

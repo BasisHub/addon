@@ -1,33 +1,3 @@
-[[APM_APPROVERS.PRELIM_APPROVAL.AVAL]]
-rem --- Currently same individual cannot be both check_signer and prelim_approval
-	if num(callpoint!.getUserInput()) then
-		callpoint!.setColumnData("APM_APPROVERS.CHECK_SIGNER","0",1)
-		callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",0)
-	else
-		callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",1)
-	endif
-[[APM_APPROVERS.CHECK_SIGNER.AVAL]]
-rem --- Currently same individual cannot be both check_signer and prelim_approval
-	if num(callpoint!.getUserInput()) then
-		callpoint!.setColumnData("APM_APPROVERS.PRELIM_APPROVAL","0",1)
-		callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",0)
-	else
-		callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",1)
-	endif
-[[APM_APPROVERS.ADIS]]
-rem --- Currently same individual cannot be both check_signer and prelim_approval
-	if num(callpoint!.getColumnData("APM_APPROVERS.PRELIM_APPROVAL")) then
-		callpoint!.setColumnData("APM_APPROVERS.CHECK_SIGNER","0",1)
-		callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",0)
-	else
-		callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",1)
-	endif
-	if num(callpoint!.getColumnData("APM_APPROVERS.CHECK_SIGNER")) then
-		callpoint!.setColumnData("APM_APPROVERS.PRELIM_APPROVAL","0",1)
-		callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",0)
-	else
-		callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",1)
-	endif
 [[APM_APPROVERS.BSHO]]
 rem --- Open/Lock files
 

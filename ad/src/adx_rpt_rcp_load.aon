@@ -1,0 +1,326 @@
+rem --- Utility For Importing Report Control Recipients
+rem --- Program adx_rpt_rcp_load.aon
+
+rem --- AddonSoftware Version 17.10 - Nov2017
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+    use ::ado_file.src::FileObject
+    use java.io.File
+
+    setesc std_error
+    seterr std_error
+
+rem --- Initializations
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    dir_syp$=stbl("+DIR_SYP")
+    sysGUI! = BBjAPI().getSysGui()
+
+rem --- Retrieve sysinfo data
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Get user inputs
+    recipient_1$=Option!.getOptionData("RECIPIENT_1")
+    recipient_2$=Option!.getOptionData("RECIPIENT_2")
+    email_yn$=Option!.getOptionData("EMAIL_YN")
+    fax_yn$=Option!.getOptionData("FAX_YN")
+    print_yn$=Option!.getOptionData("PRINT_YN")
+    dd_table_alias$=callpoint!.getDevObject("dd_table_alias")
+    recipient_tp$=callpoint!.getDevObject("recipient_tp")
+    
+rem --- Open File(s)
+    num_files=5
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    if recipient_tp$="C" then
+        recipient_tbl$="ARM_CUSTMAST"
+        emailfax_tbl$="ARM_EMAILFAX"
+    else
+        recipient_tbl$="APM_VENDMAST"
+        emailfax_tbl$="APM_EMAILFAX"
+    endif
+    open_tables$[1]=recipient_tbl$, open_opts$[1]="@OTA"
+    open_tables$[2]=emailfax_tbl$, open_opts$[2]="@OTA"
+    open_tables$[3]="ADM_RPTCTL_RCP", open_opts$[3]="OTA[1]"
+    open_tables$[4]="ADM_RPTCTL", open_opts$[4]="@OTA"
+    open_tables$[5]="ADM_EMAIL_ACCT", open_opts$[5]="@OTA"
+
+    gosub open_tables
+
+    recipient_dev=num(open_chans$[1]);dim recipient$:open_tpls$[1]
+    emailfax_dev=num(open_chans$[2]);dim emailfax$:open_tpls$[2]
+    admRptCtlRcp_dev=num(open_chans$[3]);dim admRptCtlRcp$:open_tpls$[3]
+    admRptCtl_dev=num(open_chans$[4]);dim admRptCtl$:open_tpls$[4]
+    admEmailAcct_dev=num(open_chans$[5]);dim admEmailAcct$:open_tpls$[5]
+
+rem --- Get recipient record count for progress meter
+    sql_prep$=""
+    sql_prep$=sql_prep$+"SELECT count(*) "
+    sql_prep$=sql_prep$+"FROM "+recipient_tbl$+" "
+    sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' "
+    if recipient_1$<>"" then
+        if recipient_tp$="C" then
+            sql_prep$=sql_prep$+"AND customer_id>='"+recipient_1$+"' "
+        else
+            sql_prep$=sql_prep$+"AND vendor_id>='"+recipient_1$+"' "
+        endif
+    endif
+    if recipient_2$<>"" then
+        if recipient_tp$="C" then
+            sql_prep$=sql_prep$+"AND customer_id<='"+recipient_2$+"' "
+        else
+            sql_prep$=sql_prep$+"AND vendor_id<='"+recipient_2$+"' "
+        endif
+    endif
+    sql_chan=sqlunt
+    sqlopen(sql_chan)stbl("+DBNAME")
+    sqlprep(sql_chan)sql_prep$
+    sqlexec(sql_chan)
+    read_tpl$=sqlfetch(sql_chan) 
+    recCount$=read_tpl$
+
+rem --- Creating a small invisible window to hold progress meter
+    sysGUI!=BBjAPI().getSysGui()
+    if BBjAPI().isInMDI() then
+        desktop_w=BBjAPI().getMDI().getClientWidth()
+        desktop_h=BBjAPI().getMDI().getClientHeight()
+    else
+        screenSize!=sysGUI!.getSystemMetrics().getScreenSize()
+        desktop_w=screenSize!.width
+        desktop_h=screenSize!.height
+    endif
+    rdForm!=sysGUI!.addWindow(sysGui!.getAvailableContext(),int(desktop_w/2),int(desktop_h/2),1,1,"",$00000000$)
+    rdForm!.setTitleBarVisible(0)
+    rdForm!.setVisible(0)
+    
+rem --- Start progress meter
+    meter_title$=Translate!.getTranslation("AON_IMPORT","Import")+" "+Translate!.getTranslation("AON_RECIPIENTS","Recipients")
+    meter_total_recs=num(recCount$)
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter
+
+rem --- Open log file
+    aonLib$=stbl("+ADDON_LIB",err=*next)
+    aonDir$=aonLib$(1, pos("/lib/"=aonLib$)-1)
+    location$ = aonDir$
+    gosub open_log
+
+    rem --- Get adm_rptctl and adm_email_acct records for this Report Alias
+    admRptCtl_found=0
+    readrecord(admRptCtl_dev,key=firm_id$+dd_table_alias$,dom=*next)admRptCtl$; admRptCtl_found=1
+    if !admRptCtl_found then
+        meter_text$=Translate!.getTranslation("AON_NOT_FOUND")+": ADM_RPTCTL.DD_TABLE_ALIAS="+dd_table_alias$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+        
+        goto done
+    endif
+    readrecord(admEmailAcct_dev,key=firm_id$+admRptCtl.email_account$,dom=*next)admEmailAcct$
+
+
+rem --- Loop thru recipient file (apm_vendmast or arm_custmast) and update adm_rptctl_rcp
+    read(recipient_dev,key=firm_id$+recipient_1$,dir=0,dom=*next)
+    while 1
+        readrecord(recipient_dev,end=*break)recipient$
+        if recipient.firm_id$<>firm_id$ then break
+        if recipient_tp$="C" then
+            thisRecipient$=recipient.customer_id$
+        else
+            thisRecipient$=recipient.vendor_id$
+        endif
+        if recipient_2$<>"" and thisRecipient$>recipient_2$ then break
+        
+        rem --- Skip existing recipients in adm_reptctl_rcp
+        redim admRptCtlRcp$
+        admRptCtlRcp.firm_id$=firm_id$
+        admRptCtlRcp.dd_table_alias$=dd_table_alias$
+        if recipient_tp$="C" then
+            admRptCtlRcp.customer_id$=thisRecipient$
+        else
+            admRptCtlRcp.vendor_id$=thisRecipient$
+        endif
+        admRptCtlRcp_key$=admRptCtlRcp.firm_id$+admRptCtlRcp.dd_table_alias$+admRptCtlRcp.customer_id$+admRptCtlRcp.vendor_id$
+        admRptCtlRcp_found=0
+        readrecord(admRptCtlRcp_dev,key=admRptCtlRcp_key$,dom=*next)admRptCtlRcp$; admRptCtlRcp_found=1
+        if admRptCtlRcp_found then
+            rem --- Skip this recipient
+            meter_text$=Translate!.getTranslation("AON_SKIPPED")+": "+admRptCtlRcp_key$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+            
+            continue
+        endif
+
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_ADDED")+": "+admRptCtlRcp_key$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        rem --- Get recipient's default email and fax info
+        redim emailfax$
+        readrecord(emailfax_dev,key=firm_id$+thisRecipient$,dom=*next)emailfax$
+
+        rem --- Update adm_rptctl_rcp for this recipient
+        admRptCtlRcp.recipient_tp$=recipient_tp$
+        admRptCtlRcp.print_yn$=print_yn$
+        if fax_yn$="Y" then
+            admRptCtlRcp.fax_yn$=fax_yn$
+            admRptCtlRcp.fax_subject$=admRptCtl.dflt_subject$
+            admRptCtlRcp.fax_message$=admRptCtl.dflt_message$
+            admRptCtlRcp.fax_to$=emailfax.fax_to$
+            admRptCtlRcp.fax_nos$=emailfax.fax_nos$
+        endif
+        if email_yn$="Y" then
+            admRptCtlRcp.email_yn$=email_yn$
+            admRptCtlRcp.email_subject$=admRptCtl.dflt_subject$
+            admRptCtlRcp.email_message$=admRptCtl.dflt_message$
+            admRptCtlRcp.email_from$=admEmailAcct.email_from$
+            admRptCtlRcp.email_replyto$=admEmailAcct.email_replyto$
+            admRptCtlRcp.email_to$=emailfax.email_to$
+            admRptCtlRcp.email_cc$=emailfax.email_cc$
+            admRptCtlRcp.email_bcc$=emailfax.email_bcc$
+        endif
+        writerecord(admRptCtlRcp_dev,dom=*next)admRptCtlRcp$
+    wend
+    
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+    print(log_dev)
+    
+    rem --- Close log and exit
+    print(log_dev)"adxRptRcpLoad log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+    
+disp_meter:rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call dir_syp$+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+open_log:rem --- Open log file
+            
+    rem --- create logs directory at location
+    logDir$ = FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$ = logDir$+"/adxRptRcpLoad_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+    
+    rem --- write log header info
+    print(log_dev)"adxRptRcpLoad log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+    print(log_dev)"Beginning Recipient: " + iff(recipient_2$="","First",recipient_1$)
+    print(log_dev)"Ending Recipient: " + iff(recipient_2$="","Last",recipient_2$)
+    print(log_dev)"Email: " + iff(email_yn$="","N",email_yn$)
+    print(log_dev)"Fax: " + iff(fax_yn$="","N",fax_yn$)
+    print(log_dev)"Include in Print Copy: " + iff(print_yn$="","N",print_yn$)
+    print(log_dev)
+
+    return
+    
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
+
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+    
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+    
+    end

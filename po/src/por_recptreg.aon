@@ -50,6 +50,9 @@ rem --- Document initializations
     rep_time$=date(0:"%hz:%mz %p")
     rep_time_stamp$=date(0:"%Hz%mz%sz")
     
+    lockKeys!=bbjAPI().makeVector()
+    lockKeys!.addItem("POE_RECHDR")
+    
 rem --- each receipt on separate page?
 
     msg_id$="PO_RECREG_BRK"
@@ -83,11 +86,6 @@ rem --- Open/Lock files
     files$[18]="pow-09",ids$[18]="POW_RECBYORD",options$[18]="C"
     files$[31]="gls_calendar",ids$[31]="GLS_CALENDAR"
 
-	if num(batch_no$)=0 
-		options$[9]="L"
-		options$[10]="L"
-	endif
-
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
@@ -120,6 +118,14 @@ rem --- Dimension string templates
 :       pos01a$:templates$[13],pow03a$:templates$[14],pow04a$:templates$[15],
 :       pow05a$:templates$[16],pow08a$:templates$[17],pow09a$:templates$[18],
 :       gls_calendar$:templates$[31]
+
+rem --- Get template for poe_rechdr primary key
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_RECDET","PRIMARY",poe04_primary_tpl$,rd_table_chans$[all],status$
+    dim poe04_primary_key$:poe04_primary_tpl$
+
+rem --- Get template for poe_rechdr batch key
+    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_RECHDR","BATCH_KEY",poe04_batch_tpl$,rd_table_chans$[all],status$
+    dim poe04_batch_key$:poe04_batch_tpl$
 
 rem --- Retrieve parameter records
 
@@ -236,8 +242,6 @@ rem --- Initializations
     lotser=0
     errors=0
     dif$=""
-
-    call stbl("+DIR_SYP")+"bac_key_template.bbj","POE_RECDET","PRIMARY",lsdiff_tpl$,rd_table_chans$[all],status$
 
 rem --- Headings and print positions
 
@@ -374,6 +378,21 @@ rem --- Position file
         read record (poe04_dev) poe04a$
 		if poe04a.batch_no$<>batch_no$ continue
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+
+rem --- Skip if open in PO Receitp Entry
+
+        redim poe04_batch_key$
+        poe04_batch_key.firm_id$=poe04a.firm_id$
+        poe04_batch_key.batch_no$=poe04a.batch_no$
+        poe04_batch_key.receiver_no$=poe04a.receiver_no$
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_RECHDR",poe04_batch_key$,"C","",0,table_chans$[all],lock_stat$
+        if lock_stat$="ERR_LOCKED" then continue
+
+rem --- Soft lock record so it cannot be opened in PO Receipt Entry before update is completed,
+rem --- and keep list of these soft locked records to be processed in the update.
+
+        call stbl("+DIR_SYP")+"bac_lock_record.bbj","POE_RECHDR",poe04_batch_key$,"L","",0,table_chans$[all],lock_stat$
+        lockKeys!.addItem(poe04_batch_key$)
 
 rem --- Header fields
 
@@ -627,7 +646,7 @@ l3000: rem --- Generate GL Recap Postings
             if cvs(sfe01a$,3)<>"" then tpls$[5]=fattr(sfe01a$)
             if cvs(sfm10a$,3)<>"" then tpls$[6]=fattr(sfm10a$)
             call pgmdir$+"poc_recglpost.aon",glfiles[all],w$[all],w[all],glparams$[all],glparams[all],tpls$[all],status
-            if status goto std_exit
+            if status goto remove_locks_and_exit
             if gl_posting=0 then gl_posting=glparams[20]; rem " --- Set GL Posting Status for the last report overlay.  glparams[20] is set to 1 in poc_recglpost.aon if a GL posting is written"
 
 l3500: rem --- Write sort records
@@ -738,7 +757,7 @@ rem --- Any missing lot/serial numbers?
 
 rem --- Print list of lines with lot/serial number differences
     for x=1 to lotser
-        dim k$:lsdiff_tpl$,apm01a$:fattr(apm01a$)
+        dim k$:poe04_primary_tpl$,apm01a$:fattr(apm01a$)
         let k$=dif$[x]
         dim poe04a$:fattr(poe04a$)
         dim poe14a$:fattr(poe14a$)
@@ -764,19 +783,19 @@ rem --- Print list of lines with lot/serial number differences
         OutVect!.addItem(str(dif:m2$)+$00$+"R")
         xvf=fnblank(1)
 
-rem --- Retrieve inventory item for S lines
-dim pom02a$:fattr(pom02a$)
-find record (pom02_dev,key=firm_id$+poe14a.po_line_code$,dom=*next) pom02a$
-if pom02a.line_type$="S"
-    find record (ivm01_dev,key=firm_id$+poe14a.item_id$,dom=*endif) ivm01a$
-    description$(1)=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
-
-    xvk=fnblank(3)
-    OutVect!.addItem(description$)
-    xvk=fnblank(9)
-
-    recs=recs+1
-endif
+        rem --- Retrieve inventory item for S lines
+        dim pom02a$:fattr(pom02a$)
+        find record (pom02_dev,key=firm_id$+poe14a.po_line_code$,dom=*next) pom02a$
+        if pom02a.line_type$="S"
+            find record (ivm01_dev,key=firm_id$+poe14a.item_id$,dom=*endif) ivm01a$
+            description$(1)=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
+        
+            xvk=fnblank(3)
+            OutVect!.addItem(description$)
+            xvk=fnblank(9)
+        
+            recs=recs+1
+        endif
 
         recs=recs+1
         let l=l+1
@@ -1070,6 +1089,14 @@ std_exit_no_update:
 :         "ADM_PROCBATCHES",unlock_key$,"X","",rd_table_chan,
 :         rd_table_chans$[all],lock_status$
     endif
+
+remove_locks_and_exit: rem --- Remove soft locks and exit
+    if lockKeys! <> null() and lockKeys!.size() > 1 then
+        for lck=1 to lockKeys!.size()-1
+            lckk$=cast(BBjString, lockKeys!.getItem(lck))
+            call stbl("+DIR_SYP")+"bac_lock_record.bbj",lockKeys!.getItem(0),lckk$,"U","",0,table_chans$[all],lock_stat$
+        next lck
+    endif
  
 rem #include std_end.src
 
@@ -1080,4 +1107,5 @@ std_exit: rem --- Standard program end (01Mar2006)
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
     end

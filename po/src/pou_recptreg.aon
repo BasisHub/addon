@@ -192,263 +192,264 @@ rem --- Position file
     call pgmdir$+"adc_progress.aon","NC","","","","",0,poe04_dev,1,meter_num,status
     exit_ctl=1
 
-l1000: rem --- Read next receipt header
-    
-	read (poe04_dev,key=firm_id$+batch_no$,knum="BATCH_KEY",dom=*next)
-    read record (poe04_dev,end=done) poe04a$
-    if pos(firm_id$=poe04a$)<>1 goto done
-	if poe04a.batch_no$<>batch_no$ goto done
-    call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-    if poe04a.firm_id$+poe04a.vendor_id$=apm01a.firm_id$+apm01a.vendor_id$ then goto l1100
-    dim apm01a$:fattr(apm01a$)
-    apm01a.firm_id$=poe04a.firm_id$
-    apm01a.vendor_id$=poe04a.vendor_id$
-    find record (apm01_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
+rem --- Loop thru all soft locked poe-04 keys
+    if lockKeys!.size()<2 goto done
+    for poe04_i=1 to lockKeys!.size()-1
+        poe04_k$=cast(BBjString, lockKeys!.getItem(poe04_i))
+        readrecord(poe04_dev,key=poe04_k$,knum="BATCH_KEY",dom=*continue,end=*break)poe04a$
+        call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
+        
+        if poe04a.firm_id$+poe04a.vendor_id$=apm01a.firm_id$+apm01a.vendor_id$ then goto l1100
+        dim apm01a$:fattr(apm01a$)
+        apm01a.firm_id$=poe04a.firm_id$
+        apm01a.vendor_id$=poe04a.vendor_id$
+        find record (apm01_dev,key=apm01a.firm_id$+apm01a.vendor_id$,dom=*next) apm01a$
 
 l1100: rem --- Initializations for current receipt
 
-    x1$=poe04a.ord_date$
-    x2$=poe04a.recpt_date$
-    received$=x2$
-    when$=x2$
-    leadtime=0
-    call pgmdir$+"adc_daydates.aon",x1$,x2$,leadtime
-    leadtime=max(0,leadtime)
-    read (poe14_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
+        x1$=poe04a.ord_date$
+        x2$=poe04a.recpt_date$
+        received$=x2$
+        when$=x2$
+        leadtime=0
+        call pgmdir$+"adc_daydates.aon",x1$,x2$,leadtime
+        leadtime=max(0,leadtime)
+        read (poe14_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
 
 l1200: rem --- Read next receipt detail
 
-    deleted=0
-    k$=key(poe14_dev,end=l3500)
-    if pos(poe04a.firm_id$+poe04a.receiver_no$=k$)<>1 goto l3500
-    read record (poe14_dev) poe14a$
-
-    onorder=poe14a.qty_ordered-(poe14a.qty_prev_rec+poe14a.qty_received)
-    if poe14a.conv_factor=0 then poe14a.conv_factor=1
+        deleted=0
+        k$=key(poe14_dev,end=l3500)
+        if pos(poe04a.firm_id$+poe04a.receiver_no$=k$)<>1 goto l3500
+        read record (poe14_dev) poe14a$
+    
+        onorder=poe14a.qty_ordered-(poe14a.qty_prev_rec+poe14a.qty_received)
+        if poe14a.conv_factor=0 then poe14a.conv_factor=1
 
 rem --- Determine line type
 
-    if firm_id$+poe14a.po_line_code$=pom02a.firm_id$+pom02a.po_line_code$ then goto l1350
-    dim pom02a$:fattr(pom02a$)
-    pom02a.firm_id$=firm_id$
-    pom02a.po_line_code$=poe14a.po_line_code$
-    find record (pom02_dev,key=pom02a.firm_id$+pom02a.po_line_code$,dom=l3000) pom02a$
+        if firm_id$+poe14a.po_line_code$=pom02a.firm_id$+pom02a.po_line_code$ then goto l1350
+        dim pom02a$:fattr(pom02a$)
+        pom02a.firm_id$=firm_id$
+        pom02a.po_line_code$=poe14a.po_line_code$
+        find record (pom02_dev,key=pom02a.firm_id$+pom02a.po_line_code$,dom=l3000) pom02a$
 
 l1350: rem --- Branch based on line type
 
-    if pos(pom02a.line_type$="MOV") goto l2900
-    if pom02a.line_type$="N" goto l1700
+        if pos(pom02a.line_type$="MOV") goto l2900
+        if pom02a.line_type$="N" goto l1700
 
 rem --- Retrieve inventory item
 
-    dim c0$(22),c1$(60),c2$(64),c6$(6*g[4]),c[12],d0$(24),d1$(64),d[20]
-    dim ivm01a$:fattr(ivm01a$)
-    dim ivm02a$:fattr(ivm02a$)
-    ivm01a.firm_id$=firm_id$
-    ivm01a.item_id$=poe14a.item_id$
-    ivm02a.firm_id$=firm_id$
-    ivm02a.warehouse_id$=poe14a.warehouse_id$
-    ivm02a.item_id$=poe14a.item_id$
-    code$=""
-    description$=""
-    find record (ivm01_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=l3000) ivm01a$
-    find record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,knum="PRIMARY",dom=l3000) ivm02a$
-    buyer$=ivm01a.buyer_code$
-    stocking$=ivm01a.vendor_id$
-    code$=ivm02a.ar_dist_code$
-    description$=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
-    if ivm01a.stock_level$="W" buyer$=ivm02a.buyer_code$,stocking$=ivm02a.vendor_id$
+        dim c0$(22),c1$(60),c2$(64),c6$(6*g[4]),c[12],d0$(24),d1$(64),d[20]
+        dim ivm01a$:fattr(ivm01a$)
+        dim ivm02a$:fattr(ivm02a$)
+        ivm01a.firm_id$=firm_id$
+        ivm01a.item_id$=poe14a.item_id$
+        ivm02a.firm_id$=firm_id$
+        ivm02a.warehouse_id$=poe14a.warehouse_id$
+        ivm02a.item_id$=poe14a.item_id$
+        code$=""
+        description$=""
+        find record (ivm01_dev,key=ivm01a.firm_id$+ivm01a.item_id$,dom=l3000) ivm01a$
+        find record (ivm02_dev,key=ivm02a.firm_id$+ivm02a.warehouse_id$+ivm02a.item_id$,knum="PRIMARY",dom=l3000) ivm02a$
+        buyer$=ivm01a.buyer_code$
+        stocking$=ivm01a.vendor_id$
+        code$=ivm02a.ar_dist_code$
+        description$=fnitem$(ivm01a.item_desc$,i[3],i[4],i[5])
+        if ivm01a.stock_level$="W" buyer$=ivm02a.buyer_code$,stocking$=ivm02a.vendor_id$
 
 l1700: rem --- Calculate extension and branch based on line type
 
-    precision 2
-    po_extension=poe14a.unit_cost*poe14a.qty_received
-    iv_extension=0
-    if pom02a.line_type$="S" iv_extension=ivm02a.unit_cost*poe14a.qty_received*poe14a.conv_factor
-    precision i[1]
-    on pos(pom02a.line_type$="SN") goto l3000,l1800,l2300
+        precision 2
+        po_extension=poe14a.unit_cost*poe14a.qty_received
+        iv_extension=0
+        if pom02a.line_type$="S" iv_extension=ivm02a.unit_cost*poe14a.qty_received*poe14a.conv_factor
+        precision i[1]
+        on pos(pom02a.line_type$="SN") goto l3000,l1800,l2300
 
 l1800: rem --- Update Inventory
 
-    lineqty=poe14a.qty_received*poe14a.conv_factor
-    linecost=poe14a.unit_cost/poe14a.conv_factor
-    qty=lineqty
-    cost=linecost
-    if ls$="Y" if ivm01a.lotser_item$+ivm01a.inventoried$="YY" goto l1850
-    if qty<>0 gosub l6100
-    goto l2200
+        lineqty=poe14a.qty_received*poe14a.conv_factor
+        linecost=poe14a.unit_cost/poe14a.conv_factor
+        qty=lineqty
+        cost=linecost
+        if ls$="Y" if ivm01a.lotser_item$+ivm01a.inventoried$="YY" goto l1850
+        if qty<>0 gosub l6100
+        goto l2200
 
 l1850: rem --- Position lot/serial file
 
-    dim u0$(28),u1$(20),u[1]
-    read (poe24_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
+        dim u0$(28),u1$(20),u[1]
+        read (poe24_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
 
 l1900: rem --- Update Lotted/Serialized Inventory
 
-    read record (poe24_dev,end=l2000) poe24a$
-    if pos(poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$=poe24a$)<>1 goto l2000
-    item$[3]=poe24a.lotser_no$
-    qty=poe24a.qty_received
-    cost=poe24a.unit_cost
-    if qty<>0 gosub l6100
-    goto l1900
+        read record (poe24_dev,end=l2000) poe24a$
+        if pos(poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$=poe24a$)<>1 goto l2000
+        item$[3]=poe24a.lotser_no$
+        qty=poe24a.qty_received
+        cost=poe24a.unit_cost
+        if qty<>0 gosub l6100
+        goto l1900
 
 l2000: rem --- Done with lot/serial number entries
 
-    item$[3]=""
-    qty=0
-    cost=linecost
-    gosub l6100
-    qty=lineqty
-    cost=linecost
+        item$[3]=""
+        qty=0
+        cost=linecost
+        gosub l6100
+        qty=lineqty
+        cost=linecost
 
 l2200: rem --- Update Replenishment
 
-    if pom02a.dropship$="Y" goto l2900
-    if replenishment$<>"Y" goto l2300
-    if poe04a.vendor_id$<>stocking$ goto l2300
-    dim u0$(11),u1$(32),u[11]
-    dim apm06a$:fattr(apm06a$)
-    apm06a.firm_id$=firm_id$
-    apm06a.vendor_id$=poe04a.vendor_id$
-    apm06a.buyer_code$=buyer$
-    find record (apm06_dev,key=apm06a.firm_id$+apm06a.vendor_id$+apm06a.buyer_code$,dom=*next) apm06a$
-    if received$>yearend$
-        apm06a.nyr_rec_amt=apm06a.nyr_rec_amt+po_extension
-        apm06a.nyr_rec_lbs=apm06a.nyr_rec_lbs+(qty*ivm01a.weight)
-        apm06a.nyr_rec_unit=apm06a.nyr_rec_unit+qty
-    else
-        apm06a.ytd_rec_amt=apm06a.ytd_rec_amt+po_extension
-        apm06a.ytd_rec_lbs=apm06a.ytd_rec_lbs+(qty*ivm01a.weight)
-        apm06a.ytd_rec_unts=apm06a.ytd_rec_unts+qty   
-    endif
-    if received$>cvs(apm06a.lstrec_date$,2) apm06a.lstrec_date$=received$
-    write record (apm06_dev,key=apm06a.firm_id$+apm06a.vendor_id$+apm06a.buyer_code$) apm06a$
+        if pom02a.dropship$="Y" goto l2900
+        if replenishment$<>"Y" goto l2300
+        if poe04a.vendor_id$<>stocking$ goto l2300
+        dim u0$(11),u1$(32),u[11]
+        dim apm06a$:fattr(apm06a$)
+        apm06a.firm_id$=firm_id$
+        apm06a.vendor_id$=poe04a.vendor_id$
+        apm06a.buyer_code$=buyer$
+        find record (apm06_dev,key=apm06a.firm_id$+apm06a.vendor_id$+apm06a.buyer_code$,dom=*next) apm06a$
+        if received$>yearend$
+            apm06a.nyr_rec_amt=apm06a.nyr_rec_amt+po_extension
+            apm06a.nyr_rec_lbs=apm06a.nyr_rec_lbs+(qty*ivm01a.weight)
+            apm06a.nyr_rec_unit=apm06a.nyr_rec_unit+qty
+        else
+            apm06a.ytd_rec_amt=apm06a.ytd_rec_amt+po_extension
+            apm06a.ytd_rec_lbs=apm06a.ytd_rec_lbs+(qty*ivm01a.weight)
+            apm06a.ytd_rec_unts=apm06a.ytd_rec_unts+qty   
+        endif
+        if received$>cvs(apm06a.lstrec_date$,2) apm06a.lstrec_date$=received$
+        write record (apm06_dev,key=apm06a.firm_id$+apm06a.vendor_id$+apm06a.buyer_code$) apm06a$
 
 l2300: rem --- Update Work Orders
 
-    if sf$<>"Y" goto l2900
-    if cvs(poe14a.wo_no$,2)="" goto l2900
-    if poe04a.rec_complete$<>"Y" and poe14a.qty_received=0 goto l2900
-    if pom02a.line_type$="S" if ivm02a.special_order$<>"Y" goto l2900
-	dim sfe01a$:fattr(sfe01a$)
-    find record (sfe01_dev,key=firm_id$+sfe01a.wo_location$+poe14a.wo_no$,dom=l2900) sfe01a$
-    if cvs(sfe01a.lstact_date$,2)="" sfe01a.lstact_date$=received$
-    if received$>sfe01a.lstact_date$ sfe01a.lstact_date$=received$
-	sfe01a$=field(sfe01a$)
-    write record (sfe01_dev) sfe01a$
+        if sf$<>"Y" goto l2900
+        if cvs(poe14a.wo_no$,2)="" goto l2900
+        if poe04a.rec_complete$<>"Y" and poe14a.qty_received=0 goto l2900
+        if pom02a.line_type$="S" if ivm02a.special_order$<>"Y" goto l2900
+    	dim sfe01a$:fattr(sfe01a$)
+        find record (sfe01_dev,key=firm_id$+sfe01a.wo_location$+poe14a.wo_no$,dom=l2900) sfe01a$
+        if cvs(sfe01a.lstact_date$,2)="" sfe01a.lstact_date$=received$
+        if received$>sfe01a.lstact_date$ sfe01a.lstact_date$=received$
+    	sfe01a$=field(sfe01a$)
+        write record (sfe01_dev) sfe01a$
 
 rem --- Update link to WO subcontract line/Generate transaction detail
 
-    old_wo$=poe14a.wo_no$
-	old_woseq$=poe14a.wk_ord_seq_ref$
-	new_wo$=old_wo$
-	new_woseq$=old_woseq$
-	po_no$=poe14a.po_no$
-	po_seq$=poe14a.internal_seq_no$
-	call stbl("+DIR_PGM")+"poc_requpdate.aon",sfe22_dev,sfe32_dev,
-:		po_no$,po_seq$,"C",pom02a.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
-    if pom02a.line_type$="S" goto l2900
-	dim sft31a$:fattr(sft31a$)
-	sft31a.firm_id$=firm_id$
-	sft31a.wo_location$=sfe01a.wo_location$
-	sft31a.wo_no$=sfe01a.wo_no$
-	sft31a.trans_date$=received$
-    channel=sft31_dev
-    gosub l6000
-    if status goto l2900
-	sft31a.subcont_seq_ref$=poe14a.wk_ord_seq_ref$
-	sft31a.vendor_id$=poe04a.vendor_id$
-	sft31a.po_no$=poe14a.po_no$
-	sft31a.pur_ord_seq_ref$=poe14a.internal_seq_no$
-	sft31a.desc$=poe14a.order_memo$
-    sft31a.units=poe14a.qty_received*poe14a.conv_factor
-    sft31a.unit_cost=poe14a.unit_cost/poe14a.conv_factor
-    sft31a.ext_cost=po_extension
-    write record (sft31_dev) sft31a$
+        old_wo$=poe14a.wo_no$
+    	old_woseq$=poe14a.wk_ord_seq_ref$
+    	new_wo$=old_wo$
+    	new_woseq$=old_woseq$
+    	po_no$=poe14a.po_no$
+    	po_seq$=poe14a.internal_seq_no$
+    	call stbl("+DIR_PGM")+"poc_requpdate.aon",sfe22_dev,sfe32_dev,
+:		 po_no$,po_seq$,"C",pom02a.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
+        if pom02a.line_type$="S" goto l2900
+    	dim sft31a$:fattr(sft31a$)
+    	sft31a.firm_id$=firm_id$
+    	sft31a.wo_location$=sfe01a.wo_location$
+    	sft31a.wo_no$=sfe01a.wo_no$
+    	sft31a.trans_date$=received$
+        channel=sft31_dev
+        gosub l6000
+        if status goto l2900
+    	sft31a.subcont_seq_ref$=poe14a.wk_ord_seq_ref$
+    	sft31a.vendor_id$=poe04a.vendor_id$
+    	sft31a.po_no$=poe14a.po_no$
+    	sft31a.pur_ord_seq_ref$=poe14a.internal_seq_no$
+    	sft31a.desc$=poe14a.order_memo$
+        sft31a.units=poe14a.qty_received*poe14a.conv_factor
+        sft31a.unit_cost=poe14a.unit_cost/poe14a.conv_factor
+        sft31a.ext_cost=po_extension
+        write record (sft31_dev) sft31a$
 
 l2900: rem --- Update Receipt History & X-refs
 rem --- note: poe-14 contains 12-char sales order line ref, pot-14 contains (old) 3-char sales order line#
 rem --- need to decide if we just skip putting line# in pot-14; if we can't, we need to add it, or change
 rem --- current line# to the 12-char one, which in turn has dataport implications
 
-    if pom02a.line_type$="M" and pos01a.m_line_hist$<>"Y" goto l3000; rem "Don't retain message lines in history
-    if pom02a.line_type$="V" and pos01a.v_line_hist$<>"Y" goto l3000; rem "Don't retain vendor part lines in history
-    dim pot14a$:fattr(pot14a$)
-    call stbl("+DIR_PGM")+"adc_copyfile.aon",poe14a$,pot14a$,status 
-    pot14a.po_int_seq_ref$=poe14a.internal_seq_no$
-    pot14a$=field(pot14a$)
-    write record (pot14_dev,key=pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$) pot14a$
+        if pom02a.line_type$="M" and pos01a.m_line_hist$<>"Y" goto l3000; rem "Don't retain message lines in history
+        if pom02a.line_type$="V" and pos01a.v_line_hist$<>"Y" goto l3000; rem "Don't retain vendor part lines in history
+        dim pot14a$:fattr(pot14a$)
+        call stbl("+DIR_PGM")+"adc_copyfile.aon",poe14a$,pot14a$,status 
+        pot14a.po_int_seq_ref$=poe14a.internal_seq_no$
+        pot14a$=field(pot14a$)
+        write record (pot14_dev,key=pot14a.firm_id$+pot14a.po_no$+pot14a.receiver_no$) pot14a$
 
 l3000: rem --- Remove receipt detail
 
-    deleted=1
-    remove (poe14_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
+        deleted=1
+        remove (poe14_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
 
 rem --- Remove Receipt Lot/Serial Detail
 
-    read (poe24_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
+        read (poe24_dev,key=poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$,dom=*next)
 l3120:
-    k$=key(poe24_dev,end=l3200)
-    if pos(poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$=k$)<>1 goto l3200
-    remove (poe24_dev,key=k$)
+        k$=key(poe24_dev,end=l3200)
+        if pos(poe14a.firm_id$+poe14a.receiver_no$+poe14a.internal_seq_no$=k$)<>1 goto l3200
+        remove (poe24_dev,key=k$)
 
-    goto l3120
+        goto l3120
 
 l3200: rem --- Update PO detail
 
-    dim poe12a$:fattr(poe12a$)
-    poe12a.firm_id$=firm_id$
-    poe12a.po_no$=poe14a.po_no$
-    poe12a.internal_seq_no$=poe14a.internal_seq_no$
-    if pos(pom02a.line_type$="SNO") if onorder<=0 goto l3300
-    if poe04a.rec_complete$="Y" goto l3300
-    if pos(pom02a.line_type$="MV") if deleted goto l3300
-    find record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=l3400) poe12a$
-    poe12a.qty_received=poe12a.qty_received+poe14a.qty_received
-    write record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$) poe12a$
-    goto l3400
+        dim poe12a$:fattr(poe12a$)
+        poe12a.firm_id$=firm_id$
+        poe12a.po_no$=poe14a.po_no$
+        poe12a.internal_seq_no$=poe14a.internal_seq_no$
+        if pos(pom02a.line_type$="SNO") if onorder<=0 goto l3300
+        if poe04a.rec_complete$="Y" goto l3300
+        if pos(pom02a.line_type$="MV") if deleted goto l3300
+        find record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=l3400) poe12a$
+        poe12a.qty_received=poe12a.qty_received+poe14a.qty_received
+        write record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$) poe12a$
+        goto l3400
 
 l3300: rem --- Remove PO detail
 
-    if pom02a.line_type$<>"S" goto l3350
-    find record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=l3400) poe12a$
-    qty=-(poe12a.qty_ordered*poe12a.conv_factor-(poe14a.qty_prev_rec+poe14a.qty_received)*poe14a.conv_factor)
-    action$="OO"
-    if qty<>0 gosub l6200
-l3350: remove (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=*next)
+        if pom02a.line_type$<>"S" goto l3350
+        find record (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=l3400) poe12a$
+        qty=-(poe12a.qty_ordered*poe12a.conv_factor-(poe14a.qty_prev_rec+poe14a.qty_received)*poe14a.conv_factor)
+        action$="OO"
+        if qty<>0 gosub l6200
+l3350: 
+        remove (poe12_dev,key=poe12a.firm_id$+poe12a.po_no$+poe12a.internal_seq_no$,dom=*next)
 
 l3400: rem --- Loop back for next detail
 
-    goto l1200
+        goto l1200
 
 l3500: rem --- Done with detail lines - Remove receipt header
 
-    dim pot04a$:fattr(pot04a$)
-    call stbl("+DIR_PGM")+"adc_copyfile.aon",poe04a$,pot04a$,status      
-    write record (pot04_dev,key=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$) pot04a$
-	remove (poe04_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
+        dim pot04a$:fattr(pot04a$)
+        call stbl("+DIR_PGM")+"adc_copyfile.aon",poe04a$,pot04a$,status      
+        write record (pot04_dev,key=pot04a.firm_id$+pot04a.po_no$+pot04a.receiver_no$) pot04a$
+    	remove (poe04_dev,key=poe04a.firm_id$+poe04a.receiver_no$,dom=*next)
 
 rem --- Done with details - Update PO Header
 
-    dim poe02a$:fattr(poe02a$)
-    poe02a.firm_id$=firm_id$
-    poe02a.po_no$=poe04a.po_no$
-    gosub l6300
-    if lines then poe04a.rec_complete$="N"
-    if poe04a.rec_complete$="Y" or lines=0 goto l3700
-    find record (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=l3900) poe02a$
-    poe02a.recpt_date$=poe04a.recpt_date$
-    write record (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$) poe02a$
-    goto l3900
+        dim poe02a$:fattr(poe02a$)
+        poe02a.firm_id$=firm_id$
+        poe02a.po_no$=poe04a.po_no$
+        gosub l6300
+        if lines then poe04a.rec_complete$="N"
+        if poe04a.rec_complete$="Y" or lines=0 goto l3700
+        find record (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=l3900) poe02a$
+        poe02a.recpt_date$=poe04a.recpt_date$
+        write record (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$) poe02a$
+        goto l3900
 
 l3700: rem --- Received complete - Delete PO
 
-remove (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=*next)
+        remove (poe02_dev,key=poe02a.firm_id$+poe02a.po_no$,dom=*next)
 
 l3900: rem --- Loop back for next header
 
-    goto l1000
+    next poe04_i
 
 done: rem --- All done
 
@@ -678,9 +679,19 @@ std_exit_no_update:
 :		   rd_table_chan,rd_table_chans$[all],lock_status$
 	endif
 
+    gosub remove_locks_and_exit
     call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
     run stbl("+DIR_SYP")+"bas_process_end.bbj",err=*next
     release
 rem #endinclude std_end.src
+
+remove_locks_and_exit: rem --- Remove soft locks and exit
+    if lockKeys! <> null() and lockKeys!.size() > 1 then
+        for lck=1 to lockKeys!.size()-1
+            lckk$=cast(BBjString, lockKeys!.getItem(lck))
+            call stbl("+DIR_SYP")+"bac_lock_record.bbj",lockKeys!.getItem(0),lckk$,"U","",0,table_chans$[all],lock_stat$
+        next lck
+    endif
+    return
 
     end
