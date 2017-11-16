@@ -51,10 +51,7 @@ datatemplate$ = datatemplate$ + "ship_addr_line4:C(30),ship_addr_line5:C(30),shi
 datatemplate$ = datatemplate$ + "ship_addr_line7:C(30),"
 dataTemplate$ = dataTemplate$ + "salesrep_code:C(3),salesrep_desc:C(20),cust_po_num:C(20),ship_via:C(10),"
 dataTemplate$ = dataTemplate$ + "fob:C(15),ship_date:C(10),terms_code:C(3),terms_desc:C(20),"
-datatemplate$ = datatemplate$ + "inv_message_line1:C(40),inv_message_line2:C(40),inv_message_line3:C(40),"
-datatemplate$ = datatemplate$ + "inv_message_line4:C(40),inv_message_line5:C(40),inv_message_line6:C(40),"
-datatemplate$ = datatemplate$ + "inv_message_line7:C(40),inv_message_line8:C(40),inv_message_line9:C(40),"
-datatemplate$ = datatemplate$ + "inv_message_line10:C(40), paid_desc:C(20), paid_text1:C(40), paid_text2:C(40),"
+datatemplate$ = datatemplate$ + "inv_std_message:C(1024*=1), paid_desc:C(20), paid_text1:C(40), paid_text2:C(40),"
 dataTemplate$ = dataTemplate$ + "discount_amt_raw:C(1*),tax_amt_raw:C(1*),freight_amt_raw:C(1*)"
 
 rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
@@ -91,7 +88,7 @@ rem --- Init
 rem --- Open Files    
 rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 
-    files=14,begfile=1,endfile=files
+    files=13,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]    
 
     files$[1]="arm-01",       ids$[1]="ARM_CUSTMAST"
@@ -105,9 +102,8 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     files$[9]="ope-04",       ids$[9]="OPE_PRNTLIST"	
     files$[10]="opt-31",      ids$[10]="OPE_ORDSHIP"
     files$[11]="opt-41",      ids$[11]="OPE_INVCASH"    
-    files$[12]="opm-04",      ids$[12]="OPC_MSG_HDR"
-    files$[13]="opm-09",      ids$[13]="OPM_CUSTJOBS"
-    files$[14]="opm-14",      ids$[14]="OPC_MSG_DET"
+    files$[12]="opm-09",      ids$[12]="OPM_CUSTJOBS"
+    files$[13]="opc_message",      ids$[13]="OPC_MESSAGE"
 
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
 
@@ -130,9 +126,8 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     ope04_dev = channels[9]
     ope31_dev = channels[10]
     ope41_dev = channels[11]
-    opm04_dev = channels[12]
-    opm09_dev = channels[13]
-    opm14_dev = channels[14]
+    opm09_dev = channels[12]
+    opc_message = channels[13]
     
 	
     dim arm01a$:templates$[1]
@@ -147,9 +142,8 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     dim ope04a$:templates$[9]	
     dim ope31a$:templates$[10]
     dim ope41a$:templates$[11]
-    dim opm04a$:templates$[12]
-    dim opm09a$:templates$[13]
-    dim opm14a$:templates$[14]
+    dim opm09a$:templates$[12]
+    dim opc_message$:templates$[13]
 	
 rem --- Initialize Data
 
@@ -211,8 +205,8 @@ rem --- Main Read
 			arm10c.trans_type$ = "C"
 
 			if ope41_dev then
-				find record (ope41_dev, key=firm_id$+ar_type$+ope01a.customer_id$+opt01a.ar_inv_no$, dom=*endif, err=*endif) ope41a$; rem z0$, z1$
-				find record (arm10c_dev, key=firm_id$+"C"+opt41a.cash_rec_cd$, dom=*next) arm10c$; rem y7$, y9$                
+				find record (ope41_dev, key=firm_id$+"U"+ar_type$+ope01a.customer_id$+ope01a.order_no$+ope01a.ar_inv_no$,knum="AO_STATUS", dom=*endif, err=*endif) ope41a$; rem z0$, z1$
+				find record (arm10c_dev, key=firm_id$+"C"+ope41a.cash_rec_cd$, dom=*next) arm10c$; rem y7$, y9$                
 			endif
 		endif
 		
@@ -363,16 +357,7 @@ rem --- Format addresses to be bottom justified
 		data!.setFieldValue("TERMS_CODE", terms_code$)
 		data!.setFieldValue("TERMS_DESC", terms_desc$)
 
-		data!.setFieldValue("INV_MESSAGE_LINE1", stdMessage$((stdMsg_len*0)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE2", stdMessage$((stdMsg_len*1)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE3", stdMessage$((stdMsg_len*2)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE4", stdMessage$((stdMsg_len*3)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE5", stdMessage$((stdMsg_len*4)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE6", stdMessage$((stdMsg_len*5)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE7", stdMessage$((stdMsg_len*6)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE8", stdMessage$((stdMsg_len*7)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE9", stdMessage$((stdMsg_len*8)+1,stdMsg_len))
-		data!.setFieldValue("INV_MESSAGE_LINE10",stdMessage$((stdMsg_len*9)+1,stdMsg_len))
+		data!.setFieldValue("INV_STD_MESSAGE", opc_message.memo_1024$)
 		
 		data!.setFieldValue("PAID_DESC", paid_desc$)
 		data!.setFieldValue("PAID_TEXT1", paid_text1$)
@@ -403,27 +388,9 @@ format_address: rem --- Reformat address to bottom justify
 	return
 
 get_stdMessage: rem --- Get Standard Message lines
-	
-	rem --- stdMessage$ is a string of standard message details
 
-    status=11
-    start_block = 1
-    rem dim stdMessage$(max_stdMsg_lines * stdMsg_len)
+    find record (opc_message, key=firm_id$+ope01a.message_code$, dom=*endif)opc_message$
 
-    if start_block then
-        find record (opm04_dev, key=firm_id$+ope01a.message_code$, dom=*endif) opm04a$; rem mh0$
-        status=0
-        read (opm14_dev, key=firm_id$+ope01a.message_code$, dom=*next)
-
-        while 1
-            read record (opm14_dev, end=*break) opm14a$; rem md0$, md1$
-            if opm14a.firm_id$<>firm_id$ or opm14a.message_code$<>ope01a.message_code$ then break
-            stdMessage$ = stdMessage$ + pad(opm14a.message_text$, stdMsg_len)
-        wend
-    endif
-
-    stdMessage$ = pad(stdMessage$, (max_stdMsg_lines * stdMsg_len))
-	
     return
 
 rem --- Functions

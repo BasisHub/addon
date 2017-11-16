@@ -1,0 +1,384 @@
+rem --- BM Initialize Data File Changes Implemented During Minor Releases of v17
+rem --- Program bmc_v17initMinorRev.aon
+
+rem --- AddonSoftware Version 17.10 - Sep2017
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
+rem --- rdForm!      : Window object to hold progress meter (input)
+rem --- status       : Status/0=No error (returned)
+
+    use java.io.File
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    seterr std_error
+    setesc std_error
+    
+    enter theFirm$,rdForm!,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Get program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    num_files=6
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",      open_opts$[1]="OTA"
+    open_tables$[2]="BMM_BILLMAT",     open_opts$[2]="OTA"
+    open_tables$[3]="BMM_BILLOPER",     open_opts$[3]="OTA"
+    open_tables$[4]="BMM_BILLSUB",     open_opts$[4]="OTA"
+    open_tables$[5]="BMM_BILLMAST",     open_opts$[5]="OTA"
+    open_tables$[6]="BMM_BILLCMTS",     open_opts$[6]="OTA"
+
+    gosub open_tables
+
+    ddm_systems=num(open_chans$[1]);     dim ddm_systems$:open_tpls$[1]
+    bmmBillMat_dev=num(open_chans$[2]);  dim bmmBillMat$:open_tpls$[2]
+    bmmBillOper_dev=num(open_chans$[3]); dim bmmBillOper$:open_tpls$[3]
+    bmmBillSub_dev=num(open_chans$[4]);  dim bmmBillSub$:open_tpls$[4]
+    bmmBillMast_dev=num(open_chans$[5]); dim bmmBillMast$:open_tpls$[5]
+
+rem --- Table definition for BMM_BILLCMTS (bmm-09) may be deleted in v19 (see Addon Bug 9127). So it may not
+rem --- exist when upgrading from before v17 to after v18, and adc_v1700conversion.aon executes bmc_v17initMinorRev.aon.
+
+    bmmBillCmts_dev=num(open_chans$[6])
+    if bmmBillCmts_dev dim bmmBillCmts$:open_tpls$[6]
+    
+rem --- Open log file in aon/logs directory
+    
+    aonDir$=""
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
+    endif
+
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Verify have BBTranslator object Translate!
+
+    if Translate!=null() then 
+        gosub get_translate_object
+        if status then
+            err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+            err_no$="12"
+        else
+            if Translate!=null() then
+                err_msg$="Cannot create BBTranslator object Translate!"
+                err_no$="999"
+            endif
+        endif
+        if err_msg$<>"" then
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+            print(log_dev)"***** Error: "+err_msg$+" *****"
+            print(log_dev)
+            print(log_dev)"Initdata log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(log_dev)
+            
+            msg_id$="GENERIC_WARN"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=err_msg$
+            gosub disp_message
+            
+            status=num(err_no$)
+            goto std_exit
+        endif
+    endif
+
+rem --- As necessary, creating a small invisible window to hold progress meter
+
+    if rdForm!=null() then
+        sysGUI!=BBjAPI().getSysGui()
+        if BBjAPI().isInMDI() then
+            desktop_w=BBjAPI().getMDI().getClientWidth()
+            desktop_h=BBjAPI().getMDI().getClientHeight()
+        else
+            screenSize!=sysGUI!.getSystemMetrics().getScreenSize()
+            desktop_w=screenSize!.width
+            desktop_h=screenSize!.height
+        endif
+        rdForm!=sysGUI!.addWindow(int(desktop_w/2),int(desktop_h/2),1,1,"",$00000000$)
+        rdForm!.setTitleBarVisible(0)
+        rdForm!.setVisible(0)
+    endif
+    
+rem --- Start progress meter
+
+    meter_title$="bmc_v17initMinorRev.aon"
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST"
+    gosub disp_meter
+
+rem --- Initialize new MEMO_1024 field in selected files
+
+    rem --- Identify files to initialize MEMO_1024 in
+    selectedFiles!=new java.util.TreeMap()
+    
+rem    fileVec!=BBjAPI().makeVector()
+rem    fileVec!.addItem(bmmBillMat_dev)
+rem    fileVec!.addItem(fattr(bmmBillMat$))
+rem    selectedFiles!.put("BMM_BILLMAT",fileVec!)
+    
+rem    fileVec!=BBjAPI().makeVector()
+rem    fileVec!.addItem(bmmBillOper_dev)
+rem    fileVec!.addItem(fattr(bmmBillOper$))
+rem    selectedFiles!.put("BMM_BILLOPER,fileVec!)
+    
+    fileVec!=BBjAPI().makeVector()
+    fileVec!.addItem(bmmBillSub_dev)
+    fileVec!.addItem(fattr(bmmBillSub$))
+    selectedFiles!.put("BMM_BILLSUB",fileVec!)
+
+    filesIter!=selectedFiles!.keySet().iterator()
+    while filesIter!.hasNext()
+        thisFile$=filesIter!.next()
+        fileVec!=selectedFiles!.get(thisFile$)
+        thisChan=fileVec!.getItem(0)
+        dim thisTpl$:fileVec!.getItem(1)
+        currentFirm$=""
+
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+thisFile$+".MEMO_1024"
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+
+        rem --- Populate new MEMO_1024 field with old EXT_COMMENTS field
+        read(thisChan,key=theFirm$,dom=*next)
+        while 1
+            this_key$=key(thisChan,end=*break)
+            if cvs(theFirm$,2)<>"" and pos(theFirm$=this_key$)<>1 then break
+            extractrecord(thisChan)thisTpl$; rem Advisory Locking
+            if thisTpl.firm_id$<>currentFirm$ then
+                rem --- Log next firm processed
+                print(log_dev)"    "+thisFile$+".FIRM_ID = "+thisTpl.firm_id$
+                currentFirm$=thisTpl.firm_id$
+            endif
+            if cvs(thisTpl.ext_comments$,2)<>"" and cvs(thisTpl.memo_1024$,2)="" then
+                thisTpl.memo_1024$=cvs(thisTpl.ext_comments$,2)
+                writerecord(thisChan)thisTpl$
+            else
+                read(thisChan)
+            endif
+        wend
+    wend
+
+rem --- Initialize BMM_BILLMAST new MEMO_1024 field
+
+    rem --- As of v17.10, DataPort handles initializing BMM_BILLMAST.MEMO_1024 from BMM_BILLCMTS (bmm-09).
+    rem --- And, BMM_BILLCMTS (bmm-09) may not exist when upgrading via DataPort.
+    if bmmBillCmts_dev then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+"BMM_BILLMAST.MEMO_1024"
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+    
+        rem --- Build new BMM_BILLMAST.MEMO_1024 field from BMM_BILLCMTS (bmm-09) table
+        currentFirm$=""
+        currentBill$=""
+        memo$=""
+        read(bmmBillCmts_dev,key=theFirm$,dom=*next)
+        while 1
+            bmmBillCmts_key$=key(bmmBillCmts_dev,end=*break)
+            if cvs(theFirm$,2)<>"" and pos(theFirm$=bmmBillCmts_key$)<>1 then break
+            readrecord(bmmBillCmts_dev)bmmBillCmts$
+            if bmmBillCmts.firm_id$+bmmBillCmts.bill_no$<>currentFirm$+currentBill$ then
+                gosub writeBmmBillMastMemo1024
+                memo$=""
+                currentBill$=bmmBillCmts.bill_no$
+                if bmmBillCmts.firm_id$<>currentFirm$ then
+                    rem --- Log next firm processed
+                    print(log_dev)"    BMM_BILLCMTS.FIRM_ID = "+bmmBillCmts.firm_id$
+                    currentFirm$=bmmBillCmts.firm_id$
+                endif
+            endif
+            memo$=memo$+cvs(bmmBillCmts.std_comments$,2)+$0A$
+        wend
+        gosub writeBmmBillMastMemo1024
+    endif
+
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_action$="LST-END"
+    gosub disp_meter
+
+    rem --- Complete and close log file
+    print(log_dev)
+    print(log_dev)"v17initMinorRevBM log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+writeBmmBillMastMemo1024: rem --- Write BMM_BILLMAST new MEMO_1024 field
+
+    extractrecord(bmmBillMast_dev,key=currentFirm$+currentBill$,dom=*return)bmmBillMast$
+    bmmBillMast.memo_1024$=memo$
+    bmmBillMast$=field(bmmBillMast$)
+    writerecord(bmmBillMast_dev)bmmBillMast$
+
+    return
+
+open_log: rem --- Open log file
+           
+    rem --- create logs directory at location
+    logDir$=FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$=logDir$+"/v17initMinorRevBM_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".log"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+            
+    rem --- write log header info
+    print(log_dev)"v17initMinorRevBM log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+
+    return
+
+get_translate_object: rem --- Get BBTranslator object Translate!
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+    if adm_modules.locale_resource$="" or adm_modules.locale_path$=""
+        readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*next)adm_modules$
+    endif
+    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+        locale_path$=adm_modules.locale_path$
+        rdTransSpaceKey$=adm_modules.locale_resource$+"_"+stbl("+USER_LOCALE")+"_BBTranslator"
+        Translate!=cast(BBTranslator,BBjAPI().getGroupNamespace().getValue(rdTransSpaceKey$,err=*next))
+        if Translate!=null()
+            Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$)
+            BBjAPI().getGroupNamespace().setValue(rdTransSpaceKey$,Translate!)
+        endif
+    endif
+
+    return
+    
+disp_meter: rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+    sysGUI!=BBjAPI().getSysGui()
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src

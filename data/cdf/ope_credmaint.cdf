@@ -313,7 +313,7 @@ rem --- Init
 rem --- Open tables
 	num_files=13
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-	open_tables$[1]="ARM_CUSTCMTS",open_opts$[1]="OTA"
+	open_tables$[1]="ARM_CUSTMAST",open_opts$[1]="OTA"
 	open_tables$[2]="OPE_ORDHDR",open_opts$[2]="OTA"
 	open_tables$[3]="ARC_TERMCODE",open_opts$[3]="OTA"
 	open_tables$[4]="OPE_CREDDATE",open_opts$[4]="OTA"
@@ -341,21 +341,10 @@ rem --- Open tables
 disp_cust_comments:
 	
 rem --- You must pass in cust_id$ because we don't know whether it's verified or not
-	cmt_text$=""
-	arm05_dev=fnget_dev("ARM_CUSTCMTS")
-	dim arm05a$:fnget_tpl$("ARM_CUSTCMTS")
-	arm05_key$=firm_id$+cust_id$
-	more=1
-	read(arm05_dev,key=arm05_key$,dom=*next)
-	while more
-		readrecord(arm05_dev,end=*break)arm05a$
-		 
-		if arm05a.firm_id$ = firm_id$ and arm05a.customer_id$ = cust_id$ then
-			cmt_text$ = cmt_text$ + cvs(arm05a.std_comments$,3)+$0A$
-		endif				
-	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	arm01_dev=fnget_dev("ARM_CUSTMAST")
+	dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
+	readrecord(arm01_dev,key=firm_id$+cust_id$,dom=*next)arm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments",arm01a.memo_1024$,1)
 return
 
 update_tickler: rem --- Modify Tickler date

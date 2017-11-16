@@ -8,6 +8,8 @@ rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
 rem  |          All Rights Reserved            |
 rem  +-----------------------------------------+
 
+    use ::ado_func.src::func
+
     setesc std_error
     seterr std_error
 
@@ -34,21 +36,19 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=3,begfile=1,endfile=files
+    files=2,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="aps_params",ids$[1]="APS_PARAMS";rem "aps-01
     files$[2]="apm-01",ids$[2]="APM_VENDMAST"
-    files$[3]="apm-09",ids$[3]="APM_VENDCMTS"
     call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit
     aps01_dev=channels[1]
     apm01_dev=channels[2]
-    apm09_dev=channels[3]
 
 rem --- Dimension string templates
 
-    dim apm01a$:templates$[2],apm09a$:templates$[3],aps01a$:templates$[1]
+    dim aps01a$:templates$[1],apm01a$:templates$[2]
 
 rem --- Assign form input values to local variables
 
@@ -76,8 +76,6 @@ rem --- Initializations
     total=0
     recs=0
     maxlines=59
-    moreheaders=1
-    moredetail=1
     lines=maxlines+1
     when$=sysinfo.system_date$
     clock$=""
@@ -117,56 +115,39 @@ rem --- Start progress meter and position Vendor Master file
 
 rem --- Read next Vendor Master (apm-01) record
 
-    while moreheaders
-          apm01_key$=key(apm01_dev,end=*break)
-          if pos(firm_id$=apm01_key$)<>1 break
-          read record (apm01_dev,key=apm01_key$) apm01a$
-          if endvendor$<>"" if apm01a.vendor_id$>endvendor$ break
+    while 1
+        apm01_key$=key(apm01_dev,end=*break)
+        if pos(firm_id$=apm01_key$)<>1 break
+        read record (apm01_dev,key=apm01_key$) apm01a$
+        if endvendor$<>"" if apm01a.vendor_id$>endvendor$ break
           
-          if vend_type$="P" and apm01a.temp_vend$="Y" then continue
-          if vend_type$="T" and apm01a.temp_vend$<>"Y" then continue
-          rem "VENDOR INACTIVE FEATURE"
-          if inactive$="Y" and apm01a.vend_inactive$="Y" then continue
+        if vend_type$="P" and apm01a.temp_vend$="Y" then continue
+        if vend_type$="T" and apm01a.temp_vend$<>"Y" then continue
+        if inactive$="Y" and apm01a.vend_inactive$="Y" then continue
+        if cvs(apm01a.memo_1024$,2)="" then continue
           
-          total_recs=total_recs+1
-          if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
+        total_recs=total_recs+1
+        if mod(total_recs,milestone)=0 then call stbl("+DIR_PGM")+"adc_progress.aon","S","","","","",0,0,milestone,meter_num,status
 
-          rem --- Initializations for this vendor
+        rem --- Initializations for this vendor
+        dim continued$(width)
+        call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.phone_no$,2),"",phone_mask$
+        phone$=cvs(apm01a.phone_no$,2)
+        phone$=str(phone$:phone_mask$,err=*next)
 
-          dim continued$(width)
-          first=1
-          call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(apm01a.phone_no$,2),"",phone_mask$
-          phone$=cvs(apm01a.phone_no$,2)
-          phone$=str(phone$:phone_mask$,err=*next)
+        rem --- Print the vendor info
+        gosub print_vendor
 
-          rem --- Position Vendor Comments (apm-09) file
-
-          read (apm09_dev,key=apm01_key$,dom=*next)
-
-          rem --- Read next Vendor Comments (apm-09) record
-
-          while moredetail
-                k$=key(apm09_dev,end=*break)
-                if pos(apm01_key$=k$)<>1 break
-                read record (apm09_dev,key=k$) apm09a$
-
-                rem --- If this is the first comment print the vendor info
-
-                if first gosub print_vendor
-
-                rem --- Print the comment line
-
+        rem --- Print the comment lines
+        lineVect!=func.splitMultiLineField(apm01a.memo_1024$,50+20+10)
+        if lineVect!.size() then
+            for i=0 to lineVect!.size()-1
                 OutVect!.addItem("")
-                OutVect!.addItem(apm09a.std_comments$)
+                OutVect!.addItem(lineVect!.getItem(i))
                 xwk=fnblank(2)
                 recs=recs+1
-                
-                rem --- Loop back for next comment
-
-          wend
-
-          rem --- Loop back for next record
-
+            next i
+        endif
     wend
 
 rem --- All done
@@ -183,7 +164,6 @@ rem --- All done
     OutVect!.addItem(x$+Translate!.getTranslation("AON__VENDOR(S)_LISTED"))
     xwk=fnblank(2)
     goto std_exit
-
 
 print_vendor: rem --- Print vendor information
 

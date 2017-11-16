@@ -61,16 +61,15 @@ rem --- Initializationas
 rem --- Open Files    
 rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 
-    files=7,begfile=1,endfile=files
+    files=6,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]    
 
     files$[1]="poe-12",ids$[1]="POE_PODET"
-    files$[2]="pom-04",ids$[2]="POC_MSGCODE"
-    files$[3]="pom-14",ids$[3]="POC_MSGLINE"
-    files$[4]="pom-02",ids$[4]="POC_LINECODE"
-    files$[5]="ivm-01",ids$[5]="IVM_ITEMMAST"
-    files$[6]="ivm-05",ids$[6]="IVM_ITEMVEND"
-    files$[7]="apm-05",ids$[7]="APM_VENDADDR"
+    files$[2]="poc_message",ids$[2]="POC_MESSAGE"
+    files$[3]="pom-02",ids$[3]="POC_LINECODE"
+    files$[4]="ivm-01",ids$[4]="IVM_ITEMMAST"
+    files$[5]="ivm-05",ids$[5]="IVM_ITEMVEND"
+    files$[6]="apm-05",ids$[6]="APM_VENDADDR"
 
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
 
@@ -83,24 +82,22 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 	files_opened = files; rem used in loop to close files
 
     poe_podet=channels[1]
-    poc_msgcode=channels[2]
-    poc_msgline=channels[3]
-    poc_linecode=channels[4]
-    ivm_itemmast=channels[5]
-    ivm_itemvend=channels[6]
-    apm_vendaddr=channels[7]
+    poc_message=channels[2]
+    poc_linecode=channels[3]
+    ivm_itemmast=channels[4]
+    ivm_itemvend=channels[5]
+    apm_vendaddr=channels[6]
     
     dim poe_podet$:templates$[1]
-    dim poc_msgcode$:templates$[2]
-    dim poc_msgline$:templates$[3]
-    dim poc_linecode$:templates$[4]
-    dim ivm_itemmast$:templates$[5]
-    dim ivm_itemvend$:templates$[6]
-    dim apm_vendaddr$:templates$[7]
+    dim poc_message$:templates$[2]
+    dim poc_linecode$:templates$[3]
+    dim ivm_itemmast$:templates$[4]
+    dim ivm_itemvend$:templates$[5]
+    dim apm_vendaddr$:templates$[6]
 	
 rem --- Main
 
-    read (poe_podet,key=firm_id$+po_no$,dom=*next)
+    read (poe_podet,key=firm_id$+po_no$,knum="DISPLAY_KEY",dom=*next)
     precision num(iv_precision$)
     total=0
     
@@ -139,19 +136,21 @@ rem --- Main
 			unit_cost$=str(poe_podet.unit_cost:cost_mask$)
 			unit_measure$=poe_podet.unit_measure$
 			extension$=str(extension:ext_mask$)
-            gosub add_to_recordset
             
-            item_id_desc_msg$=func.displayDesc(ivm_itemmast.item_desc$)
-            gosub add_to_recordset
+            item_id_desc_msg$=cvs(ivm_itemmast.item_id$,3)+" "+func.displayDesc(ivm_itemmast.item_desc$)
 
             if prt_vdr_item$="Y"
                 dim ivm_itemvend$:fattr(ivm_itemvend$)
                 find record (ivm_itemvend,key=firm_id$+vendor_id$+ivm_itemmast.item_id$,dom=*next) ivm_itemvend$
                 if cvs(ivm_itemvend.vendor_item$,3)<>""
-                    item_id_desc_msg$=vend_item_prompt$+ivm_itemvend.vendor_item$
-                    gosub add_to_recordset
+                    item_id_desc_msg$=item_id_desc_msg$+$0A$+vend_item_prompt$+ivm_itemvend.vendor_item$
                 endif
             endif
+
+            if cvs(poe_podet.memo_1024$,3)<>""
+                item_id_desc_msg$=item_id_desc_msg$+$0A$+poe_podet.memo_1024$
+            endif
+            gosub add_to_recordset
 
             break
 
@@ -163,30 +162,29 @@ rem --- Main
 			unit_cost$=str(poe_podet.unit_cost:cost_mask$)
 			unit_measure$=poe_podet.unit_measure$
 			extension$=str(extension:ext_mask$)
-            gosub add_to_recordset
 
-            item_id_desc_msg$=poe_podet.order_memo$
+            item_id_desc_msg$=poe_podet.memo_1024$
             gosub add_to_recordset
             
             break
 
         case vend_part_num; rem --- Vendor Part Number
         
-            item_id_desc_msg$=vend_item_prompt$+poe_podet.order_memo$
+            item_id_desc_msg$=vend_item_prompt$+poe_podet.memo_1024$
             gosub add_to_recordset
                 
             break
 
         case message_line; rem --- Message Line
 
-            item_id_desc_msg$=poe_podet.order_memo$
+            item_id_desc_msg$=poe_podet.memo_1024$
             gosub add_to_recordset
                                 
             break
 
         case other_line; rem --- Other Line
         
-            item_id_desc_msg$=poe_podet.order_memo$
+            item_id_desc_msg$=poe_podet.memo_1024$
             reqd_date$=func.formatDate(poe_podet.reqd_date$)            
             unit_cost$=str(poe_podet.unit_cost:cost_mask$)
             extension$=str(extension:ext_mask$)
@@ -271,6 +269,10 @@ add_to_recordset:
 
     total$=str(total:ext_mask$)
 
+    if len(item_id_desc_msg$)
+        if item_id_desc_msg$(len(item_id_desc_msg$),1)=$0A$ then item_id_desc_msg$=item_id_desc_msg$(1,len(item_id_desc_msg$)-1)
+    endif
+
     data! = rs!.getEmptyRecordData()
     data!.setFieldValue("QTY_ORDERED",qty_ordered$)
     data!.setFieldValue("ITEM_ID_DESC_MSG",item_id_desc_msg$)
@@ -293,19 +295,10 @@ add_to_recordset:
 
 process_messages:rem --- Header or Detail level message codes
 
-    find record (poc_msgcode,key=firm_id$+msg_cd$,dom=*return) poc_msgcode$
-    rem --- if type isn't Both or POs, skip it (other types R=requisition, N=none)
-    if pos(poc_msgcode.message_type$ = "BP")<>0
-        read (poc_msgline,key=poc_msgcode.firm_id$+poc_msgcode.po_msg_code$,dom=*next)
-
-        while 1
-            read record (poc_msgline,end=*break) poc_msgline$         
-            if pos(poc_msgcode.firm_id$+poc_msgcode.po_msg_code$=poc_msgline$)<>1 then break
-            item_id_desc_msg$ = poc_msgline.message_text$
-            gosub add_to_recordset
-        wend
-
-    endif
+    find record (poc_message,key=firm_id$+msg_cd$,dom=*return) poc_message$
+    rem --- if type isn't Both or Purchase Order, skip it (other types R=Reqs, N=neither)
+    if pos(poc_message.message_type$ = "BP")<>0 then item_id_desc_msg$=poc_message.memo_1024$
+    gosub add_to_recordset
     
     return
 	

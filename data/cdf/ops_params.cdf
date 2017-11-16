@@ -147,8 +147,6 @@ rem --- Check to see if main GL param rec (firm/GL/00) exists; if not, tell user
 
 rem --- Check if SF is interfacing with OP
 
-rem wgh ... 9036 ... Temporarily disable ER 9036 changes until code complete.
-bm_sf$="N"
 	sf_interface$="N"
 	if bm_sf$="Y" then
 		sfs01_dev=num(open_chans$[3])

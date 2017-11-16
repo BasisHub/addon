@@ -85,7 +85,7 @@ rem --- Get masks
 rem --- Build SQL statement
 
     sql_prep$=""
-    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, subcont_seq, line_type, unit_measure, vendor_id, ext_comments, "+$0a$
+    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, subcont_seq, line_type, unit_measure, vendor_id, memo_1024, "+$0a$
     sql_prep$=sql_prep$+"  effect_date, obsolt_date, op_int_seq_ref, qty_required, alt_factor, unit_cost, divisor, "+$0a$
     sql_prep$=sql_prep$+"  lead_time, apm_vendmast.vendor_name as vendname"+$0a$
     sql_prep$=sql_prep$+"FROM bmm_billsub"+$0a$
@@ -116,7 +116,7 @@ rem --- Build result set
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))
         if read_tpl.line_type$="M"
             Rem --- Send data row for Memos
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.ext_comments$)
+            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
         else
             rem --- Send data row for non-Memos
             net_qty=0
@@ -130,7 +130,7 @@ rem --- Build result set
             data!.setFieldValue("QTY_REQUIRED",str(read_tpl.qty_required:iv_units_mask$))
             data!.setFieldValue("ALT_FACTOR",str(read_tpl.alt_factor:bm_mFactor_mask$))
             data!.setFieldValue("UNIT_COST",str(read_tpl.unit_cost:iv_cost_mask$))
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.ext_comments$)
+            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
             data!.setFieldValue("LEAD_TIME",str(read_tpl.lead_time))
             data!.setFieldValue("UNIT_MEASURE",read_tpl.unit_measure$)
             data!.setFieldValue("OP_INT_SEQ_REF",read_tpl.op_int_seq_ref$)

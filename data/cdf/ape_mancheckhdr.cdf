@@ -230,27 +230,10 @@ rem --- one or more ape-12 recs, then come back to main form and abort, which wo
 	endif
 [[APE_MANCHECKHDR.<CUSTOM>]]
 disp_vendor_comments:
-	
-	cmt_text$=""
-	apm09_dev=fnget_dev("APM_VENDCMTS")
-	dim apm09a$:fnget_tpl$("APM_VENDCMTS")
-	apm09_key$=firm_id$+tmp_vendor_id$
-	more=1
-	read(apm09_dev,key=apm09_key$,dom=*next)
-
-	while more
-		readrecord(apm09_dev,end=*break)apm09a$
-
-		if apm09a.firm_id$ <> firm_id$ or apm09a.vendor_id$<>tmp_vendor_id$ then 
-			break
-		endif
-
-		cmt_text$=cmt_text$+cvs(apm09a.std_comments$,3)+$0A$
-	wend
-
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
-
+	apm01_dev=fnget_dev("APM_VENDMAST")
+	dim apm01a$:fnget_tpl$("APM_VENDMAST")
+	readrecord(apm01_dev,key=firm_id$+tmp_vendor_id$,dom=*next)apm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments",apm01a.memo_1024$,1)
 return
 
 disable_grid:
@@ -416,29 +399,21 @@ rem print 'show',; rem debug
 rem --- Open/Lock files
 	files=30,begfile=1,endfile=15
 	dim files$[files],options$[files],chans$[files],templates$[files]
-	files$[1]="APE_MANCHECKHDR";rem --- "ape-02
-	files$[2]="APE_MANCHECKDIST";rem --- "ape-12
-	files$[3]="APE_MANCHECKDET";rem --- "ape-22, channel stored in user_tpl$ and used in detail grid callpoints when reading by AO_VEND_INV key
-	files$[4]="APM_VENDMAST";rem --- "apm-01
-	files$[5]="APM_VENDHIST";rem --- "apm-02
-	files$[6]="APT_INVOICEHDR";rem --- "apt-01
-	files$[7]="APT_INVOICEDET";rem --- "apt-11
-	files$[8]="APT_CHECKHISTORY";rem --- "apt-05
-	files$[9]="APC_TYPECODE";rem --- "apm-10A
-	files$[10]="APM_VENDCMTS";rem --- "apm-09
-	files$[11]="APS_PARAMS";rem --- "aps-01
-	files$[12]="GLS_PARAMS"
-	files$[13]="APS_PAYAUTH"
-	files$[14]="APT_INVIMAGE"
-	files$[15]="APE_MANCHECKDET";rem --- "ape-22, used in AABO to compare grid against what's on disk
-
-	for wkx=begfile to endfile
-		options$[wkx]="OTA"
-	next wkx
-	options$[3]=options$[3]+"N"
-	options$[13]="OTA@"
-	options$[14]="OTA[1]"
-	options$[15]="OTA@"
+	files$[1]="APE_MANCHECKHDR",options$[1]="OTA"
+	files$[2]="APE_MANCHECKDIST",options$[2]="OTA"
+	files$[3]="APE_MANCHECKDET",options$[3]="OTAN";rem --- "ape-22, channel stored in user_tpl$ and used in detail grid callpoints when reading by AO_VEND_INV key
+	files$[4]="APM_VENDMAST",options$[4]="OTA"
+	files$[5]="APM_VENDHIST",options$[5]="OTA"
+	files$[6]="APT_INVOICEHDR",options$[6]="OTA"
+	files$[7]="APT_INVOICEDET",options$[7]="OTA"
+	files$[8]="APT_CHECKHISTORY",options$[8]="OTA"
+	files$[9]="APC_TYPECODE",options$[9]="OTA"
+	rem files$[10]="",options$[10]=""
+	files$[11]="APS_PARAMS",options$[11]="OTA"
+	files$[12]="GLS_PARAMS",options$[12]="OTA"
+	files$[13]="APS_PAYAUTH",options$[13]="OTA@"
+	files$[14]="APT_INVIMAGE",options$[14]="OTA[1]"
+	files$[15]="APE_MANCHECKDET",options$[15]="OTA@";rem --- "ape-22, used in AABO to compare grid against what's on disk
 
 	call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :		begfile,

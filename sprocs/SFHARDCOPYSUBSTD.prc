@@ -167,7 +167,7 @@ rem --- Build SQL statement
 	sql_prep$=sql_prep$+"     , s.total_units "+$0a$
 	sql_prep$=sql_prep$+"     , s.total_cost "+$0a$
 	sql_prep$=sql_prep$+"     , s.line_type "+$0a$
-	sql_prep$=sql_prep$+"     , s.ext_comments "+$0a$
+	sql_prep$=sql_prep$+"     , s.memo_1024 "+$0a$
 	sql_prep$=sql_prep$+"     , o.wo_op_ref "+$0a$
 	sql_prep$=sql_prep$+"  FROM sfe_wosubcnt s"+$0a$
 	sql_prep$=sql_prep$+"LEFT JOIN sfe_wooprtn o "+$0a$	
@@ -221,7 +221,7 @@ rem --- Trip Read
 		endif
 		
 		if read_tpl.line_type$<>"S"
-			data!.setFieldValue("COMMENT",read_tpl.ext_comments$)
+			data!.setFieldValue("COMMENT",read_tpl.memo_1024$)
 		else
  			data!.setFieldValue("REF_NO",read_tpl.wo_ref_num$)
 			data!.setFieldValue("VENDOR",fnmask$(read_tpl.vendor_id$,vendor_mask$))
@@ -285,7 +285,7 @@ rem --- Subroutines
 	send_test_pattern: 
 	
 		if read_tpl.line_type$<>"S"
-			data!.setFieldValue("COMMENT",FILL(LEN(read_tpl.ext_comments$)-1,"W")+"x")
+			data!.setFieldValue("COMMENT",FILL(180-1,"W")+"x")
 		else
  			data!.setFieldValue("REF_NO","WXWXWX")
 			data!.setFieldValue("VENDOR","XWXWXW")

@@ -1,0 +1,439 @@
+rem --- OP Initialize Data File Changes Implemented During Minor Releases of v17
+rem --- Program opc_v17initMinorRev.aon
+
+rem --- AddonSoftware Version 17.10 - Jul2017
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
+rem --- rdForm!      : Window object to hold progress meter (input)
+rem --- status       : Status/0=No error (returned)
+
+    use java.io.File
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    seterr std_error
+    setesc std_error
+    
+    enter theFirm$,rdForm!,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Get program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    num_files=8
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",      open_opts$[1]="OTA"
+    open_tables$[2]="OPC_LINECODE",     open_opts$[2]="OTA"
+    open_tables$[3]="OPC_MESSAGE",      open_opts$[3]="OTA"
+    open_tables$[4]="OPE_ORDCOMMENTS",  open_opts$[4]="OTA"
+    open_tables$[5]="OPT_INVDET",       open_opts$[5]="OTA"
+    open_tables$[6]="OPT_INVHDR",       open_opts$[6]="OTA"
+    open_tables$[7]="OPC_MSG_HDR",      open_opts$[7]="OTAS"
+    open_tables$[8]="OPC_MSG_DET",      open_opts$[8]="OTAS"
+
+    gosub open_tables
+
+    ddm_systems=num(open_chans$[1]); dim ddm_systems$:open_tpls$[1]
+    opcLineCode_dev=num(open_chans$[2]); dim opcLineCode$:open_tpls$[2]
+    opcMessage_dev=num(open_chans$[3]); dim opcMessage$:open_tpls$[3]
+    opeOrdComments_dev=num(open_chans$[4]); dim opeOrdComments$:open_tpls$[4]
+    optInvDet_dev=num(open_chans$[5]); dim optInvDet$:open_tpls$[5]
+    optInvHdr_dev=num(open_chans$[6]); dim optInvHdr$:open_tpls$[6]
+
+rem --- Table definitions for OPC_MSG_HDR and OPC_MSG_DET may be deleted in v19 (see Addon Bug 9127). So they may not
+rem --- exist when upgrading from before v17 to after v18 and adc_v1700conversion.aon executes opc_v17initMinorRev.aon.
+
+    opcMsgHdr_dev=num(open_chans$[7])
+    if opcMsgHdr_dev dim opcMsgHdr$:open_tpls$[7]
+    opcMsgDet_dev=num(open_chans$[8])
+    if opcMsgDet_dev dim opcMsgDet$:open_tpls$[8]
+    
+rem --- Open log file in aon/logs directory
+    
+    aonDir$=""
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
+    endif
+
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Verify have BBTranslator object Translate!
+
+    if Translate!=null() then 
+        gosub get_translate_object
+        if status then
+            err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+            err_no$="12"
+        else
+            if Translate!=null() then
+                err_msg$="Cannot create BBTranslator object Translate!"
+                err_no$="999"
+            endif
+        endif
+        if err_msg$<>"" then
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+            print(log_dev)"***** Error: "+err_msg$+" *****"
+            print(log_dev)
+            print(log_dev)"Initdata log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(log_dev)
+            
+            msg_id$="GENERIC_WARN"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=err_msg$
+            gosub disp_message
+            
+            status=num(err_no$)
+            goto std_exit
+        endif
+    endif
+
+rem --- As necessary, creating a small invisible window to hold progress meter
+
+    if rdForm!=null() then
+        sysGUI!=BBjAPI().getSysGui()
+        if BBjAPI().isInMDI() then
+            desktop_w=BBjAPI().getMDI().getClientWidth()
+            desktop_h=BBjAPI().getMDI().getClientHeight()
+        else
+            screenSize!=sysGUI!.getSystemMetrics().getScreenSize()
+            desktop_w=screenSize!.width
+            desktop_h=screenSize!.height
+        endif
+        rdForm!=sysGUI!.addWindow(int(desktop_w/2),int(desktop_h/2),1,1,"",$00000000$)
+        rdForm!.setTitleBarVisible(0)
+        rdForm!.setVisible(0)
+    endif
+    
+rem --- Start progress meter
+
+    meter_title$="opc_v17initMinorRev.aon"
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST"
+    gosub disp_meter
+
+rem --- Initialize OPT_INVHDR new MEMO_1024 field
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+"OPT_INVHDR.MEMO_1024"
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+    
+    rem --- Populate OPT_INVHDR new MEMO_1024 field from OPE_ORDCOMMENTS records
+    currentFirm$=""
+    currentCustomerOrder$=""
+    memo$=""
+    read(opeOrdComments_dev,key=theFirm$,dom=*next)
+    while 1
+        opeOrdComments_key$=key(opeOrdComments_dev,end=*break)
+        if cvs(theFirm$,2)<>"" and pos(theFirm$=opeOrdComments_key$)<>1 then break
+        if pos(currentCustomerOrder$=opeOrdComments_key$)<>1 then
+            if currentCustomerOrder$<>"" then gosub writeOptInvHdrMemo1024
+            currentCustomerOrder$=opeOrdComments.firm_id$+opeOrdComments.ar_type$+opeOrdComments.customer_id$+opeOrdComments.order_no$
+            memo$=cvs(opeOrdComments.comment$,2)+$0A$
+        endif
+        readrecord(opeOrdComments_dev)opeOrdComments$
+        if opeOrdComments.firm_id$<>currentFirm$ then
+            rem --- Log next firm processed
+            print(log_dev)"    OPE_ORDCOMMENTS.FIRM_ID = "+opeOrdComments.firm_id$
+            currentFirm$=opeOrdComments.firm_id$
+        endif
+        memo$=memo$+cvs(opeOrdComments.comment$,2)+$0A$
+    wend
+    if currentCustomerOrder$<>"" then gosub writeOptInvHdrMemo1024
+
+rem --- Initialize OPT_INVDET new MEMO_1024 field
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+"OPT_INVDET.MEMO_1024"
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)meter_text$
+
+    rem --- Populate OPT_INVDET new MEMO_1024 field with old ORDER_MEMO field
+    currentFirm$=""
+    read(optInvDet_dev,key=theFirm$,dom=*next)
+    while 1
+        optInvDet_key$=key(optInvDet_dev,end=*break)
+        if cvs(theFirm$,2)<>"" and pos(theFirm$=optInvDet_key$)<>1 then break
+        extractrecord(optInvDet_dev)optInvDet$; rem Advisory Locking
+        if optInvDet.firm_id$<>currentFirm$ then
+            rem --- Log next firm processed
+            print(log_dev)"    OPT_INVDET.FIRM_ID = "+optInvDet.firm_id$
+            currentFirm$=optInvDet.firm_id$
+        endif
+        if cvs(optInvDet.order_memo$,2)<>"" and cvs(optInvDet.memo_1024$,2)="" then
+            optInvDet.memo_1024$=cvs(optInvDet.order_memo$,2)
+            writerecord(optInvDet_dev)optInvDet$
+        else
+            read(optInvDet_dev)
+        endif
+    wend
+
+rem --- Initialize blank OPC_LINECODE MESSAGE_TYPE fields
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+"OPC_LINECODE.MESSAGE_TYPE"
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)meter_text$
+
+    rem --- Set blank OPC_LINECODE MESSAGE_TYPE fields to 'B'
+    currentFirm$=""
+    read(opcLineCode_dev,key=theFirm$,dom=*next)
+    while 1
+        opcLineCode_key$=key(opcLineCode_dev,end=*break)
+        if cvs(theFirm$,2)<>"" and pos(theFirm$=opcLineCode_key$)<>1 then break
+        extractrecord(opcLineCode_dev)opcLineCode$; rem Advisory Locking
+        if opcLineCode.firm_id$<>currentFirm$ then
+            rem --- Log next firm processed
+            print(log_dev)"    OPC_LINECODE.FIRM_ID = "+opcLineCode.firm_id$
+            currentFirm$=opcLineCode.firm_id$
+        endif
+        if opcLineCode.message_type$=" " then
+            opcLineCode.message_type$="B"
+            writerecord(opcLineCode_dev)opcLineCode$
+        else
+            read(opcLineCode_dev)
+        endif
+    wend
+
+rem --- Initialize new OPC_MESSAGE table
+
+    rem --- As of v17.10, DataPort handles initializing OPC_MESSAGE from OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14).
+    rem --- And, OPC_MSG_HDR and OPC_MSG_DET may not exist when upgrading via DataPort.
+    if opcMsgHdr_dev then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+"OPC_MESSAGE"
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+    
+        rem --- Build new OPC_MESSAGE table from OPC_MSG_HDR and OPC_MSG_DET tables
+        currentFirm$=""
+        read(opcMsgHdr_dev,key=theFirm$,dom=*next)
+        while 1
+            opcMsgHdr_key$=key(opcMsgHdr_dev,end=*break)
+            if cvs(theFirm$,2)<>"" and pos(theFirm$=opcMsgHdr_key$)<>1 then break
+            readrecord(opcMsgHdr_dev)opcMsgHdr$
+            if opcMsgHdr.firm_id$<>currentFirm$ then
+                rem --- Log next firm processed
+                print(log_dev)"    OPC_MSG_HDR.FIRM_ID = "+opcMsgHdr.firm_id$
+                currentFirm$=opcMsgHdr.firm_id$
+            endif
+            readrecord(opcMessage_dev,key=opcMsgHdr_key$,dom=*next); continue; rem --- Do NOT overwrite existing OPC_MESSAGE records
+            memo$=""
+            read(opcMsgDet_dev,key=opcMsgHdr_key$,dom=*next)
+            while 1
+                readrecord(opcMsgDet_dev,end=*break)opcMsgDet$
+                if pos(opcMsgDet.firm_id$+opcMsgDet.message_code$=opcMsgHdr_key$)<>1 then break
+                memo$=memo$+cvs(opcMsgDet.message_text$,2)+$0A$
+            wend
+            redim opcMessage$
+            opcMessage.firm_id$=opcMsgHdr.firm_id$
+            opcMessage.message_code$=opcMsgHdr.message_code$
+            opcMessage.code_desc$=opcMsgHdr.code_desc$
+            opcMessage.code_inactive$=opcMsgHdr.code_inactive$
+            opcMessage.memo_1024$=memo$
+            writerecord(opcMessage_dev)opcMessage$
+        wend
+    endif
+
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_action$="LST-END"
+    gosub disp_meter
+
+    rem --- Complete and close log file
+    print(log_dev)
+    print(log_dev)"v17initMinorRevOP log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+writeOptInvHdrMemo1024: rem --- Write OPT_INVHDR new MEMO_1024 field
+
+    read(optInvHdr_dev,key=currentCustomerOrder$,dom=*next)
+    while 1
+        optInvHdr_key$=key(optInvHdr_dev,end=*break)
+        if pos(currentCustomerOrder$=optInvHdr_key$)<>1 then break
+        extractrecord(optInvHdr_dev)optInvHdr$; rem Advisory Locking
+        if cvs(optInvHdr.memo_1024$,2)="" then
+            optInvHdr.memo_1024$=memo$
+            writerecord(optInvHdr_dev)optInvHdr$
+        else
+            read(optInvHdr_dev)
+        endif
+    wend
+
+    return
+
+open_log: rem --- Open log file
+           
+    rem --- create logs directory at location
+    logDir$=FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$=logDir$+"/v17initMinorRevOP_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".log"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+            
+    rem --- write log header info
+    print(log_dev)"v17initMinorRevOP log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+
+    return
+
+get_translate_object: rem --- Get BBTranslator object Translate!
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+    if adm_modules.locale_resource$="" or adm_modules.locale_path$=""
+        readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*next)adm_modules$
+    endif
+    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+        locale_path$=adm_modules.locale_path$
+        rdTransSpaceKey$=adm_modules.locale_resource$+"_"+stbl("+USER_LOCALE")+"_BBTranslator"
+        Translate!=cast(BBTranslator,BBjAPI().getGroupNamespace().getValue(rdTransSpaceKey$,err=*next))
+        if Translate!=null()
+            Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$)
+            BBjAPI().getGroupNamespace().setValue(rdTransSpaceKey$,Translate!)
+        endif
+    endif
+
+    return
+    
+disp_meter: rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+    sysGUI!=BBjAPI().getSysGui()
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src

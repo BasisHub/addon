@@ -131,29 +131,6 @@ rem --- Check for duplicate PO numbers
 :				dflt_data$[all]
 		endif
 	endif
-[[OPE_INVHDR.AOPT-COMM]]
-rem --- Display Comments form
-
-	ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
-	cust$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	order$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
-
-	dim dflt_data$[3,1]
-	dflt_data$[1,0] = "AR_TYPE"
-	dflt_data$[1,1] = ar_type$
-	dflt_data$[2,0] = "CUSTOMER_ID"
-	dflt_data$[2,1] = cust$
-	dflt_data$[3,0] = "ORDER_NO"
-	dflt_data$[3,1] = order$
-	comment_pfx$=firm_id$+ar_type$+cust$+order$
-
-	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
-:		"OPE_ORDCOMMENTS", 
-:		stbl("+USER_ID"), 
-:		"MNT", 
-:		comment_pfx$,
-:		table_chans$[all], 
-:		dflt_data$[all]
 [[OPE_INVHDR.TAX_AMOUNT.BINP]]
 rem --- Enable/Disable Cash Sale button
 	gosub able_cash_sale
@@ -590,7 +567,6 @@ rem --- Set flags
 	callpoint!.setOptionEnabled("RPRT",0)
 	callpoint!.setOptionEnabled("PRNT",0)
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 
 rem --- Clear order helper object
@@ -1174,7 +1150,6 @@ print "Hdr:APFE"; rem debug
 rem --- Enable / Disable buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 
 	if cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2) = "" then
 		if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2) = ""
@@ -1196,7 +1171,7 @@ rem --- Enable / Disable buttons
 			if user_tpl.credit_installed$="Y"
 				callpoint!.setOptionEnabled("CRCH",1)
 			endif
-			callpoint!.setOptionEnabled("COMM",1)
+
 			gosub able_cash_sale
 
 			if callpoint!.getColumnData("OPE_INVHDR.ORDINV_FLAG")<> "I" then
@@ -1246,7 +1221,6 @@ print "Hdr:BPFX"; rem debug
 rem --- Disable buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 	callpoint!.setOptionEnabled("DINV",0)
 	callpoint!.setOptionEnabled("CINV",0)
@@ -1955,7 +1929,6 @@ rem --- Enable Duplicate buttons, printer
 	if user_tpl.credit_installed$="Y"
 		callpoint!.setOptionEnabled("CRCH",1)
 	endif
-	callpoint!.setOptionEnabled("COMM",1)
 [[OPE_INVHDR.CUSTOMER_ID.AINP]]
 print "Hdr:CUSTOMER_ID.AINP"; rem debug
 
@@ -2157,21 +2130,10 @@ disp_cust_comments: rem --- Display customer comments
                     rem      IN: cust_id$
 rem ==========================================================================
 
-	cmt_text$ = ""
-	arm05_dev = fnget_dev("ARM_CUSTCMTS")
-	dim arm05a$:fnget_tpl$("ARM_CUSTCMTS")
-	more = 1
-
-	read (arm05_dev, key=firm_id$+cust_id$, dom=*next)
-
-	while more
-		read record (arm05_dev, end=*break) arm05a$
-		if arm05a.firm_id$+arm05a.customer_id$ <> firm_id$+cust_id$ then break
-		cmt_text$ = cmt_text$ + cvs(arm05a.std_comments$,3) + $0A$
-	wend
-
-	callpoint!.setColumnData("<<DISPLAY>>.comments", cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	arm01_dev=fnget_dev("ARM_CUSTMAST")
+	dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
+	read record (arm01_dev, key=firm_id$+cust_id$, dom=*next) arm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments", arm01a.memo_1024$,1)
 
 	return
 
@@ -3333,7 +3295,7 @@ rem --- Open needed files
 	open_tables$[30]="OPE_ORDLSDET", open_opts$[30]="OTA"
 	open_tables$[31]="IVM_ITEMPRIC", open_opts$[31]="OTA"
 	open_tables$[32]="IVC_PRICCODE", open_opts$[32]="OTA"
-	open_tables$[33]="ARM_CUSTCMTS", open_opts$[33]="OTA"
+	rem open_tables$[33]="", open_opts$[33]=""
 	open_tables$[34]="OPE_PRNTLIST", open_opts$[34]="OTA"
 	open_tables$[35]="OPM_POINTOFSALE", open_opts$[35]="OTA"
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
@@ -3647,7 +3609,6 @@ rem --- Enable buttons
 	callpoint!.setOptionEnabled("CASH",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 
 rem --- Parse table_chans$[all] into an object

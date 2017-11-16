@@ -399,7 +399,7 @@ rem --- Open Files
 	open_tables$[10]="IVM_ITEMMAST",open_opts$[10]="OTA"
 	open_tables$[11]="POE_LINKED",open_opts$[11]="OTA"
 	open_tables$[12]="IVM_ITEMSYN",open_opts$[12]="OTA"
-	open_tables$[13]="APM_VENDCMTS",open_opts$[13]="OTA"
+	open_tables$[13]="APM_VENDMAST",open_opts$[13]="OTA"
 	open_tables$[14]="POE_RECLSDET",open_opts$[14]="OTA"
 	open_tables$[15]="IVS_PARAMS",open_opts$[15]="OTA"
 	open_tables$[16]="IVM_LSMASTER",open_opts$[16]="OTA"
@@ -594,20 +594,10 @@ return
 
 disp_vendor_comments:	
 	rem --- You must pass in vendor_id$ because we don't know whether it's verified or not
-	cmt_text$=""
-	apm_vendcmts_dev=fnget_dev("APM_VENDCMTS")
-	dim apm_vendcmts$:fnget_tpl$("APM_VENDCMTS")
-	apm_vendcmts_key$=firm_id$+vendor_id$
-	more=1
-	read(apm_vendcmts_dev,key=apm_vendcmts_key$,dom=*next)
-	while more
-		readrecord(apm_vendcmts_dev,end=*break)apm_vendcmts$		 
-		if apm_vendcmts.firm_id$ = firm_id$ and apm_vendcmts.vendor_id$ = vendor_id$ then
-			cmt_text$ = cmt_text$ + cvs(apm_vendcmts.std_comments$,3)+$0A$
-		endif				
-	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	apm_vendmast_dev=fnget_dev("APM_VENDMAST")
+	dim apm_vendmast$:fnget_tpl$("APM_VENDMAST")
+	readrecord(apm_vendmast_dev,key=firm_id$+vendor_id$,dom=*next)apm_vendmast$		 
+	callpoint!.setColumnData("<<DISPLAY>>.comments",apm_vendmast.memo_1024$,1)
 return
 
 

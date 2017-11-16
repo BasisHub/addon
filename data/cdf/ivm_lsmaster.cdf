@@ -1,3 +1,11 @@
+[[IVM_LSMASTER.MEMO_1024.AVAL]]
+rem --- Store first part of memo_1024 in ls_comments
+
+	memo_1024$=callpoint!.getUserInput()
+	if memo_1024$<>callpoint!.getColumnData("IVM_LSMASTER.MEMO_1024")
+		ls_comments$=memo_1024$(1,pos($0A$=memo_1024$+$0A$)-1)
+		callpoint!.setColumnData("IVM_LSMASTER.LS_COMMENTS",ls_comments$,1)
+	endif
 [[IVM_LSMASTER.VENDOR_ID.AVAL]]
 rem "VENDOR INACTIVE - FEATURE"
 vendor_id$ = callpoint!.getUserInput()
@@ -15,28 +23,8 @@ if apm01a.vend_inactive$="Y" then
    gosub disp_message
    callpoint!.setStatus("ACTIVATE")
 endif
-
 [[IVM_LSMASTER.<CUSTOM>]]
 #include std_functions.src
-[[IVM_LSMASTER.AOPT-LLKP]]
-key_pfx$=callpoint!.getColumnData("IVM_LSMASTER.FIRM_ID")+callpoint!.getColumnData("IVM_LSMASTER.ITEM_ID")+
-:	callpoint!.getColumnData("IVM_LSMASTER.WAREHOUSE_ID")
-selected_key$=""
-call stbl("+DIR_SYP")+"bam_inquiry.bbj",
-:	gui_dev,
-:	Form!,
-:	"IVM_LSMASTER",
-:	"",
-:	table_chans$[all],
-:	key_pfx$,
-:	"ALT_KEY_03",
-:	selected_key$
-
-escape
-if selected_key$<>""
-	callpoint!.setColumnData("IVM_LSMASTER.LOTSER_NO",selected_key$(25,20))
-	callpoint!.setStatus("REFRESH")
-endif
 [[IVM_LSMASTER.AOPT-LHST]]
 iv_item_id$=callpoint!.getColumnData("IVM_LSMASTER.ITEM_ID")
 iv_whse_id$=callpoint!.getColumnData("IVM_LSMASTER.WAREHOUSE_ID")

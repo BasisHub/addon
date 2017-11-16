@@ -297,6 +297,7 @@ write_poe_invdet:
 	poe_invdet.receiver_no$=pot_recdet.receiver_no$
 	poe_invdet.po_line_code$=pot_recdet.po_line_code$
 	poe_invdet.order_memo$=pot_recdet.order_memo$
+	poe_invdet.memo_1024$=pot_recdet.memo_1024$
 	poe_invdet.unit_cost$=pot_recdet.unit_cost$
 	poe_invdet.qty_received$=pot_recdet.qty_received$
 	poe_invdet.receipt_cost$=pot_recdet.unit_cost$

@@ -1,3 +1,52 @@
+[[APM_VENDMAST.AOPT-IHST]]
+rem --- Show invoices from this vendor
+
+	vendor_id$=callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID")
+
+	selected_key$ = ""
+	dim filter_defs$[1,2]
+	filter_defs$[0,0]="APT_INVOICEHDR.FIRM_ID"
+	filter_defs$[0,1]="='"+firm_id$+"'"
+	filter_defs$[0,2]="LOCK"
+	filter_defs$[1,0]="APT_INVOICEHDR.VENDOR_ID"
+	filter_defs$[1,1]="='"+vendor_id$+"'"
+	filter_defs$[1,2]="LOCK"
+
+	dim search_defs$[3]
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		Form!,
+:		"AP_INVBYVEND",
+:		"",
+:		table_chans$[all],
+:		selected_key$,
+:		filter_defs$[all],
+:		search_defs$[all],
+:		"",
+:		""
+
+rem --- Show history for selected invoice
+	if selected_key$<>""
+		call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:			"APT_INVOICEHDR",
+:			"PRIMARY",
+:			primary_key$,
+:			table_chans$[all],
+:			status$
+		dim apt_invoicehdr_key$:primary_key$
+		apt_invoicehdr_key$=selected_key$
+
+		rem --- Launch Invoice History Inquiry form
+		user_id$=stbl("+USER_ID")
+		key_pfx$=apt_invoicehdr_key$
+		call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:			"APT_INVOICEHDR",
+:			user_id$,
+:			"",
+:			key_pfx$,
+:			table_chans$[all]
+	endif
 [[APM_VENDMAST.AOPT-HCPY]]
 rem --- Go run the Hard Copy form
 

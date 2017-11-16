@@ -1,3 +1,30 @@
+[[SFE_WOSUBCNT.MEMO_1024.BINQ]]
+rem --- (Barista Bug 9179 workaround) If grid cell isn't editable, then abort so new text can't be entered via edit control.
+	maintGrid!=Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("SFE_WOSUBCNT.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(maintGrid!, col_hdr$)
+	this_row=callpoint!.getValidationRow()
+	isEditable=maintGrid!.isCellEditable(this_row,memo_1024_col)
+	if !isEditable then callpoint!.setStatus("ABORT")
+[[SFE_WOSUBCNT.MEMO_1024.AVAL]]
+rem --- Store first part of memo_1024 in ext_comment.
+rem --- This AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor.
+rem --- If use Comment field, or use ctrl-C or Comments button, code in the comment_entry subroutine is hit instead.
+	disp_text$=callpoint!.getUserInput()
+	if disp_text$<>callpoint!.getColumnUndoData("SFE_WOSUBCNT.MEMO_1024")
+		dim ext_comments$(60)
+		ext_comments$(1)=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("SFE_WOSUBCNT.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("SFE_WOSUBCNT.EXT_COMMENTS",ext_comments$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[SFE_WOSUBCNT.AOPT-COMM]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+[[SFE_WOSUBCNT.EXT_COMMENTS.BINP]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+	callpoint!.setStatus("ABORT")
 [[SFE_WOSUBCNT.VENDOR_ID.AVAL]]
 rem "VENDOR INACTIVE - FEATURE"
 vendor_id$ = callpoint!.getUserInput()
@@ -27,6 +54,11 @@ rem --- Track wo_ref_num in Map to insure they are unique
 	if cvs(wo_ref_num$,2)<>"" then
 		refnumMap!.put(wo_ref_num$,"")
 	endif
+
+rem --- enable/disable PO-related fields based on PO Status (enabled if P or R)
+	line_type$=callpoint!.getColumnData("SFE_WOSUBCNT.LINE_TYPE")
+	gosub enable_po_fields
+	gosub enable_comments
 [[SFE_WOSUBCNT.WO_REF_NUM.AVAL]]
 rem --- Verify wo_ref_num is unique
 	wo_ref_num$=callpoint!.getUserInput()
@@ -245,11 +277,13 @@ rem --- enable/disable PO-related fields based on PO Status (enabled if P or R)
 	
 	line_type$=callpoint!.getUserInput()
 	gosub enable_po_fields
+	gosub enable_comments
 [[SFE_WOSUBCNT.AGRN]]
 rem --- enable/disable PO-related fields based on PO Status (enabled if P or R)
 	
 	line_type$=callpoint!.getColumnData("SFE_WOSUBCNT.LINE_TYPE")
 	gosub enable_po_fields
+	gosub enable_comments
 
 rem --- save current po status flag, po/req# and line#
 
@@ -385,8 +419,78 @@ rem ========================================================
 	endif
 
 	return
+
+comment_entry:
+rem --- on a line where you can access the ls_comments field, pop the new memo_1024 editor instead
+rem --- the editor can be popped on demand for any line using the Comments button (alt-C),
+rem --- but will automatically pop for lines where the ext_comments field is enabled.
+rem ==========================================================================
+
+	disp_text$=callpoint!.getColumnData("SFE_WOSUBCNT.MEMO_1024")
+	sv_disp_text$=disp_text$
+
+	rem --- Comments are not editable if WO is closed, or line type isn't M or I
+	line_type$=callpoint!.getColumnData("SFE_WOSUBCNT.LINE_TYPE")
+	if callpoint!.getDevObject("wo_status")="C" or pos(line_type$="MI")=0 then
+		editable$="NO"
+	else
+		editable$="YES"
+	endif
+
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
+
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Comments/Message Line",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		ext_comments$=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("SFE_WOSUBCNT.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("SFE_WOSUBCNT.EXT_COMMENTS",ext_comments$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE")
+
+	return
+
+rem ========================================================
+enable_comments:
+rem line_type:	input
+rem ========================================================
+
+	if callpoint!.getDevObject("wo_status")<>"C" and pos(line_type$="MI") then
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"SFE_WOSUBCNT.MEMO_1024",1)
+		callpoint!.setOptionEnabled("COMM",1)
+	else
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"SFE_WOSUBCNT.MEMO_1024",0)
+		callpoint!.setOptionEnabled("COMM",0)
+	endif
+
+	return
 [[SFE_WOSUBCNT.BSHO]]
-use ::ado_util.src::util
+rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+	use ::ado_util.src::util
+
+	maintGrid!=Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("SFE_WOSUBCNT.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(maintGrid!, col_hdr$)
+	maintGrid!.setColumnWidth(memo_1024_col,15)
 
 rem --- init data
 

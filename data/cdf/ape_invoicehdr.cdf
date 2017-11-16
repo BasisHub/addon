@@ -493,21 +493,10 @@ rem ----------------------------------------------------------------------------
 disp_vendor_comments:
 	rem --- You must pass in vendor_id$ because we don't know whether it's verified or not
 rem --------------------------------------------------------------------------------------------------------------
-	cmt_text$=""
-	apm09_dev=fnget_dev("APM_VENDCMTS")
-	dim apm09a$:fnget_tpl$("APM_VENDCMTS")
-	apm09_key$=firm_id$+vendor_id$
-	more=1
-	read(apm09_dev,key=apm09_key$,dom=*next)
-	while more
-		readrecord(apm09_dev,end=*break)apm09a$
-		 
-		if apm09a.firm_id$ = firm_id$ and apm09a.vendor_id$ = vendor_id$ then
-			cmt_text$ = cmt_text$ + cvs(apm09a.std_comments$,3)+$0A$
-		endif				
-	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	apm01_dev=fnget_dev("APM_VENDMAST")
+	dim apm01a$:fnget_tpl$("APM_VENDMAST")
+	readrecord(apm01_dev,key=firm_id$+vendor_id$,dom=*next)apm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments",apm01a.memo_1024$,1)
 return
 
 rem --------------------------------------------------------------------------------------------------------------
@@ -575,23 +564,18 @@ rem #endinclude fnget_control.src
 rem --- Open/Lock files
 files=12,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
-files$[1]="APT_INVOICEHDR";rem --- "apt-01"
-files$[2]="APT_INVOICEDET";rem --- "apt-11"
-files$[3]="APM_VENDCMTS";rem --- "apm-09
-files$[4]="APM_VENDMAST";rem --- "apm-01"
-files$[5]="APM_VENDHIST";rem --- "apm-02"
-files$[6]="APS_PARAMS";rem --- "ads-01"
-files$[7]="GLS_PARAMS";rem --- "gls-01"
-files$[8]="APE_CHECKS"
-files$[9]="APE_MANCHECKDET"
-files$[10]="APS_PAYAUTH"
-files$[11]="APT_INVIMAGE"
-files$[12]="GLS_CALENDAR"
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
-options$[10]="OTA@"
-options$[11]="OTA[1]"
+files$[1]="APT_INVOICEHDR",options$[1]="OTA"
+files$[2]="APT_INVOICEDET",options$[2]="OTA"
+rem files$[3]="",options$[3]=""
+files$[4]="APM_VENDMAST",options$[4]="OTA"
+files$[5]="APM_VENDHIST",options$[5]="OTA"
+files$[6]="APS_PARAMS",options$[6]="OTA"
+files$[7]="GLS_PARAMS",options$[7]="OTA"
+files$[8]="APE_CHECKS",options$[8]="OTA"
+files$[9]="APE_MANCHECKDET",options$[9]="OTA"
+files$[10]="APS_PAYAUTH",options$[10]="OTA@"
+files$[11]="APT_INVIMAGE",options$[11]="OTA[1]"
+files$[12]="GLS_CALENDAR",options$[12]="OTA"
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
 :	endfile,
@@ -620,8 +604,10 @@ user_tpl_str$=user_tpl_str$+"dflt_dist_cd:c(2),dflt_gl_account:c(10),dflt_ap_typ
 user_tpl_str$=user_tpl_str$+"disc_pct:c(5),dist_bal_ofst:c(1),inv_amt:c(10),tot_dist:c(10),open_inv_textID:c(5),"
 user_tpl_str$=user_tpl_str$+"dflt_acct_date:c(8)"
 dim user_tpl$:user_tpl_str$
+
 rem --- set up UserObj! as vector to store dist bal display control
 UserObj!=SysGUI!.makeVector()
+
 rem --- add static label for displaying date/amount if pulling up open invoice
 inv_no!=fnget_control!("APE_INVOICEHDR.AP_INV_NO")
 cmts!=fnget_control!("<<DISPLAY>>.COMMENTS")
@@ -633,6 +619,7 @@ cmts_x=cmts!.getX()
 nxt_ctlID=util.getNextControlID()
 Form!.addStaticText(nxt_ctlID,inv_no_x+inv_no_width+25,inv_no_y,cmts_x-(inv_no_x+inv_no_width+25),inv_no_height*2,"")
 user_tpl.open_inv_textID$=str(nxt_ctlID)
+
 rem --- add the display control holding the distribution balance to userObj!
 dist_bal!=fnget_control!("<<DISPLAY>>.DIST_BAL")
 user_tpl.dist_bal_ofst$="0"

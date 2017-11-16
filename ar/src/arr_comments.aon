@@ -11,6 +11,8 @@ rem  +-----------------------------------------+
     setesc std_error
     seterr std_error
 
+    use ::ado_func.src::func
+
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -43,7 +45,7 @@ rem --- Open/Lock files
     files$[1]="ars_params",ids$[1]="ARS_PARAMS"
     files$[2]="arm-01",ids$[2]="ARM_CUSTMAST"
     files$[3]="arm-02",ids$[3]="ARM_CUSTDET"
-    files$[4]="arm-05",ids$[4]="ARM_CUSTCMTS"
+    rem files$[4]="",ids$[4]=""
     files$[5]="arc_termcode",ids$[5]="ARC_TERMCODE"
     files$[6]="arc_salecode",ids$[6]="ARC_SALECODE"
     files$[7]="arc_terrcode",ids$[7]="ARC_TERRCODE"
@@ -53,7 +55,6 @@ rem --- Open/Lock files
     ars01_dev=channels[1]
     arm01_dev=channels[2]
     arm02_dev=channels[3]
-    arm05_dev=channels[4]
     arc_termcode_dev=channels[5]
     arc_salecode_dev=channels[6]
     arc_terrcode_dev=channels[7]
@@ -61,7 +62,7 @@ rem --- Open/Lock files
 rem --- Dimension string templates
 
     dim ars01a$:templates$[1],arm01a$:templates$[2],arm02a$:templates$[3]
-    dim arm05a$:templates$[4],arm10a$:templates$[5],arm10f$:templates$[6],arm10h$:templates$[7]
+    dim arm10a$:templates$[5],arm10f$:templates$[6],arm10h$:templates$[7]
 
 rem --- Assign form input values to local variables
 
@@ -156,7 +157,11 @@ rem --- Read next Customer Detail (arm-02) record
           if sequence$="T" 
 :            if endterr$<>""
 :               if arm02a.territory$>endterr$ break
-
+                
+          rem --- Level break?
+        
+          if sequence$="S" then if arm02a.slspsn_code$<>lastcode$ gosub salesperson
+          if sequence$="T" then if arm02a.territory$<>lastcode$ gosub territory
           
           rem --- Retrieve the Customer Master (arm-01) record
 
@@ -169,42 +174,25 @@ rem --- Read next Customer Detail (arm-02) record
           rem --- Initializations for this customer
 
           dim continued$(width)
-          first=1
           call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(arm01a.phone_no$,2),"",phone_mask$
           phone$=cvs(arm01a.phone_no$,2)
           phone$=str(phone$:phone_mask$,err=*next)
+          
+          rem --- Print the customer info
 
-          rem --- Position Customer Comments (arm-05) file
+          gosub print_customer
 
-          read (arm05_dev,key=arm01_key$,dom=*next)
-
-          rem --- Read next Customer Comments (arm-05) record
-
-          while moredetail
-                k$=key(arm05_dev,end=*break)
-                if pos(arm01_key$=k$)<>1 break
-                
-                rem --- Level break?
-
-                if sequence$="S" then if arm02a.slspsn_code$<>lastcode$ gosub salesperson
-                if sequence$="T" then if arm02a.territory$<>lastcode$ gosub territory
-                
-                read record (arm05_dev,key=k$) arm05a$
-
-                rem --- If this is the first comment print the customer info
-
-                if first gosub print_customer
-
-                rem --- Print the comment line
-
-                OutVect!.addItem("        "+arm05a.std_comments$)
-                xwk=fnblank(2)
-                rem --- Loop back for next comment
-
-          wend
+          rem --- Print customer comments
+                                         
+          lineVect!=func.splitMultiLineField(arm01a.memo_1024$,50+20)
+          if lineVect!.size() then
+              for i=0 to lineVect!.size()-1
+                  OutVect!.addItem("        "+lineVect!.getItem(i))
+                  xwk=fnblank(2)
+              next i
+          endif
 
           rem --- Loop back for next customer record
-
     wend
 
 rem --- All done
@@ -233,7 +221,6 @@ return
 
 print_customer: rem --- Print customer information
 
-    first=0
     total=total+1
     xwk=fnblank(3)
     OutVect!.addItem(fnmask$(arm01a.customer_id$(1,customer_size),m0$)+"  "+arm01a.customer_name$)

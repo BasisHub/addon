@@ -1,3 +1,27 @@
+[[POE_REQDET.AOPT-COMM]]
+rem --- invoke the comments dialog
+
+	gosub comment_entry
+[[POE_REQDET.ORDER_MEMO.BINP]]
+rem --- invoke the comments dialog
+
+	gosub comment_entry
+[[POE_REQDET.MEMO_1024.AVAL]]
+rem --- store first part of memo_1024 in order_memo
+rem --- this AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor
+rem --- if on a memo line or using ctrl-C or Comments button, code in the comment_entry: subroutine is hit instead
+
+	disp_text$=callpoint!.getUserInput()
+	if disp_text$<>callpoint!.getColumnUndoData("POE_REQDET.MEMO_1024")
+		memo_len=len(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"))
+		order_memo$=disp_text$
+		order_memo$=order_memo$(1,min(memo_len,(pos($0A$=order_memo$+$0A$)-1)))
+
+		callpoint!.setColumnData("POE_REQDET.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("POE_REQDET.ORDER_MEMO",order_memo$,1)
+
+		callpoint!.setStatus("MODIFIED")
+	endif
 [[POE_REQDET.SO_INT_SEQ_REF.BINP]]
 rem --- Refresh display of ListButton selection
 	callpoint!.setColumnData("POE_REQDET.SO_INT_SEQ_REF",callpoint!.getColumnData("POE_REQDET.SO_INT_SEQ_REF"),1)
@@ -167,6 +191,7 @@ if dtl!.size()
 	next x
 endif
 
+callpoint!.setOptionEnabled("COMM",0)
 [[POE_REQDET.ADGE]]
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
@@ -246,6 +271,9 @@ rem --- set dates from Header
 callpoint!.setColumnData("POE_REQDET.NOT_B4_DATE",callpoint!.getHeaderColumnData("POE_REQHDR.NOT_B4_DATE"))
 callpoint!.setColumnData("POE_REQDET.REQD_DATE",callpoint!.getHeaderColumnData("POE_REQHDR.REQD_DATE"))
 callpoint!.setColumnData("POE_REQDET.PROMISE_DATE",callpoint!.getHeaderColumnData("POE_REQHDR.PROMISE_DATE"))
+
+rem --- Comments button initially disabled
+callpoint!.setOptionEnabled("COMM",0)
 
 rem --- REFRESH is needed in order to get the default PO_LINE_CODE set in AGCL
 callpoint!.setStatus("REFRESH")
@@ -479,6 +507,13 @@ use ::ado_util.src::util
 
 rem --- set default line code based on param file
 callpoint!.setTableColumnAttribute("POE_REQDET.PO_LINE_CODE","DFLT",str(callpoint!.getDevObject("dflt_po_line_code")))
+
+rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+
+	grid! = util.getGrid(Form!)
+	col_hdr$=callpoint!.getTableColumnAttribute("POE_REQDET.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(grid!, col_hdr$)
+	grid!.setColumnWidth(memo_1024_col,15)
 [[POE_REQDET.PO_LINE_CODE.AVAL]]
 rem --- Line Code - After Validataion
 
@@ -499,6 +534,7 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs
 		callpoint!.setColumnData("POE_REQDET.ITEM_ID","")
 		callpoint!.setColumnData("POE_REQDET.LEAD_TIM_FLG","")
 		callpoint!.setColumnData("POE_REQDET.LOCATION","")
+		callpoint!.setColumnData("POE_REQDET.MEMO_1024","")
 		callpoint!.setColumnData("POE_REQDET.NOT_B4_DATE",callpoint!.getHeaderColumnData("POE_REQHDR.NOT_B4_DATE"))
 		callpoint!.setColumnData("POE_REQDET.NS_ITEM_ID","")
 		callpoint!.setColumnData("POE_REQDET.ORDER_MEMO","")
@@ -537,7 +573,8 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or cvs
 			dim ivm_itemvend$:fnget_tpl$("IVM_ITEMVEND")
 			vendor_id$=callpoint!.getHeaderColumnData("POE_REQHDR.VENDOR_ID")
 			read record(ivm_itemvend_dev,key=firm_id$+vendor_id$+prev_row_item_id$,dom=*next)ivm_itemvend$
-			callpoint!.setColumnData("POE_REQDET.ORDER_MEMO",ivm_itemvend.vendor_item$)
+			callpoint!.setColumnData("POE_REQDET.ORDER_MEMO",ivm_itemvend.vendor_item$,1)
+			callpoint!.setColumnData("POE_REQDET.MEMO_1024",ivm_itemvend.vendor_item$,1)
 		endif
 	endif
 endif
@@ -879,6 +916,10 @@ rem ==========================================================================
 		callpoint!.setColumnEnabled(this_row,"POE_REQDET.WK_ORD_SEQ_REF",0)
 	endif
 
+rem --- Enable Comment button
+
+	callpoint!.setOptionEnabled("COMM",1)
+
 return
 
 rem ========================================================
@@ -914,5 +955,52 @@ rem ========================================================
 		swend
 			
 	endif
+
+	return
+
+rem ==========================================================================
+comment_entry:
+rem --- on a line where you can access the memo/non-stock (order_memo) field, pop the new memo_1024 editor instead
+rem --- the editor can be popped on demand for any line using the Comments button (alt-C),
+rem --- but will automatically pop for lines where the order_memo field is enabled.
+rem ==========================================================================
+
+	disp_text$=callpoint!.getColumnData("POE_REQDET.MEMO_1024")
+	sv_disp_text$=disp_text$
+
+	editable$="YES"
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
+
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Requisition/PO Comments",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		memo_len=len(callpoint!.getColumnData("POE_REQDET.ORDER_MEMO"))
+		order_memo$=disp_text$
+		order_memo$=order_memo$(1,min(memo_len,(pos($0A$=order_memo$+$0A$)-1)))
+
+		callpoint!.setColumnData("POE_REQDET.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("POE_REQDET.ORDER_MEMO",order_memo$,1)
+
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE")
 
 	return

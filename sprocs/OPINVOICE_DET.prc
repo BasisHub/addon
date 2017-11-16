@@ -159,14 +159,15 @@ line_detail: rem --- Item Detail
 			endif
 
 			if pos(opm02a.line_type$="MNO") then
-				item_id$= ope11a.order_memo$
+				item_desc$=cvs(ope11a.memo_1024$,3)
 			endif
 
-			if pos(opm02a.line_type$=" SRDP") then 
-				item_id$= ope11a.item_id$
+			if pos(opm02a.line_type$=" SP") then 
+				item_desc$=cvs(ope11a.item_id$,3)
+                item_id$=cvs(ope11a.item_id$,3)
 			endif
 
-			if pos(opm02a.line_type$=" SRDNP") then 
+			if pos(opm02a.line_type$=" SNP") then 
 				price_raw$=   str(ope11a.unit_price)
 				price_masked$=str(ope11a.unit_price:price_mask$)
 			endif
@@ -181,8 +182,10 @@ line_detail: rem --- Item Detail
 			endif
 
 			if pos(opm02a.line_type$="SP") then
-				item_desc$= item_description$
+				item_desc$=item_desc$+" "+cvs(item_description$,3)+iff(cvs(ope11a.memo_1024$,3)="",""," - "+cvs(ope11a.memo_1024$,3))
 			endif
+            
+            if item_desc$(len(item_desc$),1)=$0A$ then item_desc$=item_desc$(1,len(item_desc$)-1)
 
 			data! = rs!.getEmptyRecordData()
 			data!.setFieldValue("ORDER_QTY_MASKED", order_qty_masked$)

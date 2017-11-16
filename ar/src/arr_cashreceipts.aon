@@ -9,6 +9,7 @@ rem --- All Rights Reserved
 rem --- Still needs totals accumulation
 
     use java.util.TreeMap
+    use ::ado_func.src::func
 
     setesc std_error
     seterr std_error
@@ -91,6 +92,7 @@ rem --- Dimension string templates
 rem --- Assign form input values to local variables
 
     sequence$=option!.getOptionData("PICK_LISTBUTTON")
+    doComments$=option!.getOptionData("PICK_CHECK")
 
 rem --- Retrieve parameter records
 
@@ -180,7 +182,7 @@ rem --- column headings
     columns$[4,0]=Translate!.getTranslation("AON_AMT_APPLIED"),columns$[4,1]="N",columns$[4,2]=str(len(m1$)),columns$[4,3]=m1$,columns$[4,10]="T"
     columns$[5,0]=Translate!.getTranslation("AON_DISC_AMT"),columns$[5,1]="N",columns$[5,2]=str(len(m1$)),columns$[5,3]=m1$,columns$[5,10]="T"
     columns$[6,0]=Translate!.getTranslation("AON_TOT_CREDIT"),columns$[6,1]="N",columns$[6,2]=str(len(m1$)),columns$[6,3]=m1$,columns$[6,10]="T"
-    columns$[7,0]=Translate!.getTranslation("AON_MISC_ACCT"),columns$[7,1]="C",columns$[7,2]="9"
+    columns$[7,0]=Translate!.getTranslation("AON_MISC_ACCT"),columns$[7,1]="C",columns$[7,2]="10"
     columns$[8,0]=Translate!.getTranslation("AON_MISC_AMT"),columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
     columns$[9,0]=Translate!.getTranslation("AON_ABA_NUMBER"),columns$[9,1]="C",columns$[9,2]="9"
     columns$[10,0]=Translate!.getTranslation("AON_PAYMENT"),columns$[10,1]="N",columns$[10,2]=str(len(m1$)),columns$[10,3]=m1$,columns$[10,10]="T"
@@ -346,7 +348,13 @@ rem --- Read the next Cash Receipt Header (are-01) record
           if are01a.cash_rec_cd$<>lastcode$ gosub code_break
           if are01a.deposit_id$<>lastdeposit$ gosub deposit_break
           if are01a.receipt_date$<>lastdate$ gosub date_break
-          
+
+          rem --- Split Cash Receipts header comments into multiple lines
+          if doComments$="Y" then
+              headerCmts!=func.splitMultiLineField(are01a.memo_1024$,50)
+          else
+              headerCmts!=BBjAPI().makeVector()
+          endif
 
           rem --- Retrieve Customer Master (arm-01) record
 
@@ -428,6 +436,13 @@ rem --- Read the next Cash Receipt Header (are-01) record
                     break
                 endif
                 read record (are11_dev) are11a$
+                
+                rem --- Split Cash Receipts detail comments into multiple lines
+                if doComments$="Y" then
+                    detailCmts!=func.splitMultiLineField(are11a.memo_1024$,40)
+                else
+                    detailCmts!=BBjAPI().makeVector()
+                endif
 
                 rem --- Print the detail record
 
@@ -435,13 +450,27 @@ rem --- Read the next Cash Receipt Header (are-01) record
                 discount=are11a.discount_amt
                 credits=applied+discount
 
-                if cvs(name$,3)="" xwk=fnblank(2)
+                if cvs(name$,3)="" then
+                    if headerCmts!.size() then
+                        OutVect!.addItem("     "+headerCmts!.getItem(0))
+                        OutVect!.addItem("")
+                        headerCmts!.removeItem(0)
+                    else
+                        xwk=fnblank(2)
+                    endif
+                endif
                 OutVect!.addItem(check$)
                 OutVect!.addItem(are11a.ar_inv_no$)
                 OutVect!.addItem(str(applied))
                 OutVect!.addItem(str(discount))
                 OutVect!.addItem(str(credits))
-                xwk=fnblank(2)
+                if detailCmts!.size() then
+                    OutVect!.addItem(detailCmts!.getItem(0))
+                    OutVect!.addItem("")
+                    detailCmts!.removeItem(0)
+                else
+                    xwk=fnblank(2)
+                endif
                 OutVect!.addItem(aba$)
                 OutVect!.addItem(payment$)
                 if br then
@@ -451,6 +480,26 @@ rem --- Read the next Cash Receipt Header (are-01) record
                     else
                         OutVect!.addItem("")
                     endif
+                endif
+
+                rem --- Print Cash Receipts detail comments 
+                if detailCmts!.size() then
+                    for i=0 to detailCmts!.size()-1
+                        if headerCmts!.size() then
+                            OutVect!.addItem("     "+headerCmts!.getItem(0))
+                            OutVect!.addItem("")
+                            headerCmts!.removeItem(0)
+                        else
+                            xwk=fnblank(2)
+                        endif
+                        xwk=fnblank(5)
+                        OutVect!.addItem(detailCmts!.getItem(i))
+                        if br then
+                            xwk=fnblank(4)
+                        else
+                            xwk=fnblank(3)
+                        endif
+                    next i
                 endif
 
                 name$=""
@@ -548,16 +597,52 @@ rem --- Read the next Cash Receipt Header (are-01) record
                 k$=key(are21_dev,end=*break)
                 if pos(receipt$=k$)<>1 break
                 read record (are21_dev) are21a$
+                
+                rem --- Split GL Distribution detail comments into multiple lines
+                if doComments$="Y" then
+                    glCmts!=func.splitMultiLineField(are21a.memo_1024$,35)
+                else
+                    glCmts!=BBjAPI().makeVector()
+                endif
 
                 rem --- Print this detail record
                 
                 amount=are21a.gl_post_amt
                 account$=are21a.gl_account$
-                xwk=fnblank(7)
+                    if headerCmts!.size() then
+                        OutVect!.addItem("     "+headerCmts!.getItem(0))
+                        xwk=fnblank(6)
+                        headerCmts!.removeItem(0)
+                    else
+                        xwk=fnblank(7)
+                    endif
                 OutVect!.addItem(fnmask$(account$(1,acct_length),g0$))
                 OutVect!.addItem(str(amount))
-                xwk=fnblank(2)
+                if glCmts!.size() then
+                    OutVect!.addItem(glCmts!.getItem(0))
+                    OutVect!.addItem("")
+                    glCmts!.removeItem(0)
+                else
+                    xwk=fnblank(2)
+                endif
                 if br then OutVect!.addItem("")
+
+                rem --- Print GL Distribution detail comments 
+                if glCmts!.size() then
+                    for i=0 to glCmts!.size()-1
+                        if headerCmts!.size() then
+                            OutVect!.addItem("     "+headerCmts!.getItem(0))
+                            OutVect!.addItem("")
+                            headerCmts!.removeItem(0)
+                        else
+                            xwk=fnblank(2)
+                        endif
+                        xwk=fnblank(7)
+                        OutVect!.addItem(glCmts!.getItem(i))
+                        OutVect!.addItem("")
+                        if br then OutVect!.addItem("")
+                    next i
+                endif
 
                 if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,are01a.receipt_date$,
 :                                                           glstatus,lines,errors,status
@@ -606,8 +691,19 @@ rem --- Read the next Cash Receipt Header (are-01) record
 
           wend
 
-          rem --- Loop back for next Cash Receipt Header (are-01) record
+          rem --- Print Cash Receipts header comments 
+          if headerCmts!.size() then
+              for i=0 to headerCmts!.size()-1
+                  OutVect!.addItem("     "+headerCmts!.getItem(i))
+                  if br then
+                      xwk=fnblank(11)
+                  else
+                      xwk=fnblank(10)
+                  endif
+              next i
+          endif
 
+          rem --- Loop back for next Cash Receipt Header (are-01) record
     wend
 
 rem --- All done

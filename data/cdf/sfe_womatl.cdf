@@ -831,6 +831,7 @@ do_subcontracts:
 			sfe_wosubcnt.unit_measure$=""
 			sfe_wosubcnt.description$=""
 			sfe_wosubcnt.ext_comments$=bmm_billsub.ext_comments$
+			sfe_wosubcnt.memo_1024$=bmm_billsub.memo_1024$
 		endif
 
 		subs_pos=pos(bmm_billsub.bill_no$+bmm_billsub.op_int_seq_ref$=subs$,subs_offset+op_isn_len)

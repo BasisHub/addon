@@ -27,27 +27,24 @@ rem --- Open/Lock files
 files=17,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 
-files$[1]="APM_VENDCMTS";rem --- "apm-09
-files$[2]="APM_VENDMAST";rem --- "apm-01"
-files$[3]="APM_VENDHIST";rem --- "apm-02"
-files$[4]="APS_PARAMS";rem --- "aps-01"
-files$[5]="GLS_PARAMS";rem --- "gls-01"
-files$[6]="POS_PARAMS";rem --- "pos-01"
-files$[7]="IVS_PARAMS";rem --- "ivs-01"
-files$[8]="POE_POHDR";rem --- "poe-02"
-files$[9]="POE_PODET";rem --- "poe-12"
-files$[10]="POT_RECHDR";rem --- "pot-04"
-files$[11]="POT_RECDET";rem --- "pot-14"
-files$[12]="APT_INVOICEHDR";rem --- "apt-01"
-files$[13]="IVM_ITEMMAST";rem --- "ivm-01"
-files$[14]="POC_LINECODE";rem --- "pom-02"
-files$[15]="APC_TERMSCODE"
-files$[16]="APC_TYPECODE"
-files$[17]="GLS_CALENDAR"
+rem files$[1]="",options$[1]=""
+files$[2]="APM_VENDMAST",options$[2]="OTA"
+files$[3]="APM_VENDHIST",options$[3]="OTA"
+files$[4]="APS_PARAMS",options$[4]="OTA"
+files$[5]="GLS_PARAMS",options$[5]="OTA"
+files$[6]="POS_PARAMS",options$[6]="OTA"
+files$[7]="IVS_PARAMS",options$[7]="OTA"
+files$[8]="POE_POHDR",options$[8]="OTA"
+files$[9]="POE_PODET",options$[9]="OTA"
+files$[10]="POT_RECHDR",options$[10]="OTA"
+files$[11]="POT_RECDET",options$[11]="OTA"
+files$[12]="APT_INVOICEHDR",options$[12]="OTA"
+files$[13]="IVM_ITEMMAST",options$[13]="OTA"
+files$[14]="POC_LINECODE",options$[14]="OTA"
+files$[15]="APC_TERMSCODE",options$[15]="OTA"
+files$[16]="APC_TYPECODE",options$[16]="OTA"
+files$[17]="GLS_CALENDAR",options$[17]="OTA"
 
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
 :	endfile,
@@ -462,26 +459,12 @@ rem --- set vendor_id$ and ap_type$ before coming in
 return
 
 disp_vendor_comments:
-	
 	rem --- You must pass in vendor_id$ because we don't know whether it's verified or not
-	cmt_text$=""
 
-	apm09_dev=fnget_dev("APM_VENDCMTS")
-	dim apm09a$:fnget_tpl$("APM_VENDCMTS")
-	apm09_key$=firm_id$+vendor_id$
-	more=1
-	read(apm09_dev,key=apm09_key$,dom=*next)
-	while more
-		readrecord(apm09_dev,end=*break)apm09a$
-		 
-		if apm09a.firm_id$ = firm_id$ and apm09a.vendor_id$ = vendor_id$ then
-			cmt_text$ = cmt_text$ + cvs(apm09a.std_comments$,3)+$0A$
-		else
-			break
-		endif				
-	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	apm01_dev=fnget_dev("APM_VENDMAST")
+	dim apm01a$:fnget_tpl$("APM_VENDMAST")
+	readrecord(apm01_dev,key=firm_id$+vendor_id$,dom=*next)apm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments",apm01a.memo_1024$,1)
 return
 
 calculate_due_and_discount:

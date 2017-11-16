@@ -148,18 +148,6 @@ rem --- get Terms description and message code
         
 all_done:
 
-rem --- Format addresses to be bottom justified
-
-	address$=vend_addr$
-	line_len=vend_addrLine_len
-	gosub format_address
-	vend_addr$=address$
-	
-	address$=ship_addr$
-	line_len=ship_addrLine_len
-	gosub format_address
-	ship_addr$=address$
-
     ord_date$=func.formatDate(poe_reqhdr.ord_date$)
     vend_id$=func.alphaMask(vendor_id$,vend_mask$)
 

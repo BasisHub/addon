@@ -79,6 +79,10 @@ rem --- get gl sales account for this distribution code
 
 	dist_code$ = callpoint!.getColumnData("ARE_INVHDR.AR_DIST_CODE")
 	gosub get_gl_sales_acct
+
+rem --- Display Comments
+	cust_id$=callpoint!.getColumnData("ARE_INVHDR.CUSTOMER_ID")
+	gosub disp_cust_comments
 [[ARE_INVHDR.AGDS]]
 gosub calc_grid_tots
 callpoint!.setColumnData("<<DISPLAY>>.TOT_QTY",str(tqty))
@@ -208,6 +212,11 @@ if cvs(callpoint!.getUserInput(),2)<>"" and callpoint!.getUserInput()<>
 			endif
 		endif                            
 endif
+
+
+rem --- Display Comments
+	cust_id$=customer_id$
+	gosub disp_cust_comments
 [[ARE_INVHDR.INV_DATE.AVAL]]
 gl$=user_tpl.glint$
 invdate$=callpoint!.getUserInput()        
@@ -306,4 +315,12 @@ disable_ctls:rem --- disable selected control
 		endif
 	next dctl
 	return
+
+disp_cust_comments: rem --- You must pass in cust_id$ because we don't know whether it's verified or not
+	arm01_dev=fnget_dev("ARM_CUSTMAST")
+	dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
+	readrecord(arm01_dev,key=firm_id$+cust_id$,dom=*next)arm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments",arm01a.memo_1024$,1)
+	return
+
 #include std_missing_params.src

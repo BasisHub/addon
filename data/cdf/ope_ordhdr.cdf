@@ -176,29 +176,6 @@ rem --- Check for duplicate PO numbers
 :				dflt_data$[all]
 		endif
 	endif
-[[OPE_ORDHDR.AOPT-COMM]]
-rem --- Display Comments form
-
-	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
-	cust$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
-	order$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
-
-	dim dflt_data$[3,1]
-	dflt_data$[1,0] = "AR_TYPE"
-	dflt_data$[1,1] = ar_type$
-	dflt_data$[2,0] = "CUSTOMER_ID"
-	dflt_data$[2,1] = cust$
-	dflt_data$[3,0] = "ORDER_NO"
-	dflt_data$[3,1] = order$
-	comment_pfx$=firm_id$+ar_type$+cust$+order$
-
-	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
-:		"OPE_ORDCOMMENTS", 
-:		stbl("+USER_ID"), 
-:		"MNT", 
-:		comment_pfx$,
-:		table_chans$[all], 
-:		dflt_data$[all]
 [[OPE_ORDHDR.FREIGHT_AMT.AVAL]]
 rem --- Recalculate totals
 
@@ -416,7 +393,6 @@ rem --- Set flags
 	callpoint!.setOptionEnabled("RPRT",0)
 	callpoint!.setOptionEnabled("PRNT",0)
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 	callpoint!.setOptionEnabled("WOLN",0)
 
@@ -760,7 +736,7 @@ rem --- Enable buttons
 	if user_tpl.credit_installed$="Y"
 		callpoint!.setOptionEnabled("CRCH",1)
 	endif
-	callpoint!.setOptionEnabled("COMM",1)
+
 [[OPE_ORDHDR.SLSPSN_CODE.AVAL]]
 print "Hdr:SLSPSN_CODE.AVAL"; rem debug
 
@@ -865,7 +841,6 @@ rem --- Enable buttons as appropriate
 		if user_tpl.credit_installed$="Y"
 			callpoint!.setOptionEnabled("CRCH",1)
 		endif
-		callpoint!.setOptionEnabled("COMM",1)
 
 		if cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"),2)=""
 			callpoint!.setOptionEnabled("DINV",1)
@@ -935,7 +910,6 @@ rem --- Set MODIFIED if totals were changed in the grid
 rem --- Disable header buttons
 
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 	callpoint!.setOptionEnabled("DINV",0)
 	callpoint!.setOptionEnabled("CINV",0)
@@ -1069,7 +1043,7 @@ rem --- Display Ship to information
 	order_no$     = callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 	gosub ship_to_info
 
-rem --- Set comm percent (if calling up a B/O, it will have been cleared);rem bug 8001 CAH
+rem --- Set comm percent (if calling up a B/O, it will have been cleared);rem bug 8001
 
 	slsp$=callpoint!.getColumnData("OPE_ORDHDR.SLSPSN_CODE")
 	gosub get_comm_percent
@@ -1253,33 +1227,7 @@ rem --- clear availability
 
 	gosub clear_avail
 
-rem --- remove Comments record if no invoice history found
 
-	opt01_key$=firm_id$+callpoint!.getColumnData("OPE_ORDHDR.TRANS_STATUS")+
-:		callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")+
-:		callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")+
-:		callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
-
-	opt01_dev=num(callpoint!.getDevObject("opt_invlookup"))
-	found_inv=0
-	while 1
-		read (opt01_dev,key=opt01_key$,knum="AO_STATUS",dom=*break)
-		found_inv=1
-		break; rem --- new order can have at most just one new invoice, if any
-	wend
-
-	if found_inv=0
-		ope_ordcomments=fnget_dev("OPE_ORDCOMMENTS")
-		trip_key$=firm_id$+callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")+
-:			callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")+
-:			callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
-		read(ope_ordcomments,key=trip_key$,dom=*next)
-		while 1
-			ope_ordcomments_key$=key(ope_ordcomments,end=*break)
-			if pos(trip_key$=ope_ordcomments_key$)<>1 break
-			remove (ope_ordcomments,key=ope_ordcomments_key$)
-		wend
-	endif
 [[OPE_ORDHDR.ORDER_DATE.AVAL]]
 rem --- Set user template info
 
@@ -2676,21 +2624,10 @@ disp_cust_comments: rem --- Display customer comment
                     rem      IN: cust_id$
 rem ==========================================================================
 
-	cmt_text$=""
-	arm05_dev=fnget_dev("ARM_CUSTCMTS")
-	dim arm05a$:fnget_tpl$("ARM_CUSTCMTS")
-	more=1
-
-	read (arm05_dev, key=firm_id$+cust_id$, dom=*next)
-
-	while more
-		read record (arm05_dev, end=*break) arm05a$
-		if arm05a.firm_id$+arm05a.customer_id$ <> firm_id$+cust_id$ then break
-		cmt_text$ = cmt_text$ + cvs(arm05a.std_comments$,3) + $0A$
-	wend
-
-	callpoint!.setColumnData("<<DISPLAY>>.comments", cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	arm01_dev=fnget_dev("ARM_CUSTMAST")
+	dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
+	read record (arm01_dev, key=firm_id$+cust_id$, dom=*next) arm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments", arm01a.memo_1024$,1)
 
 	return
 
@@ -3027,7 +2964,7 @@ rem                 = 1 -> user_tpl.hist_ord$ = "N"
 
 rem --- Open needed files
 
-	num_files=43
+	num_files=42
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
@@ -3059,7 +2996,7 @@ rem --- Open needed files
 	open_tables$[30]="OPE_ORDLSDET", open_opts$[30]="OTA"
 	open_tables$[31]="IVM_ITEMPRIC", open_opts$[31]="OTA"
 	open_tables$[32]="IVC_PRICCODE", open_opts$[32]="OTA"
-	open_tables$[33]="ARM_CUSTCMTS", open_opts$[33]="OTA"
+	rem open_tables$[33]="", open_opts$[33]=""
 	open_tables$[34]="OPE_PRNTLIST", open_opts$[34]="OTA"
 	open_tables$[35]="OPM_POINTOFSALE",open_opts$[35]="OTA"
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
@@ -3068,13 +3005,12 @@ rem --- Open needed files
 	open_tables$[39]="OPE_ORDHDR",   open_opts$[39]="OTA"
 	open_tables$[40]="ARC_TERMCODE", open_opts$[40]="OTA"
 	open_tables$[41]="IVM_ITEMSYN",open_opts$[41]="OTA"
-	open_tables$[42]="OPE_ORDCOMMENTS",open_opts$[42]="OTA"
-	open_tables$[43]="OPT_INVHDR",open_opts$[43]="OTAN[2_]"
+	open_tables$[42]="OPT_INVHDR",open_opts$[42]="OTAN[2_]"
 
 	gosub open_tables
 
-	callpoint!.setDevObject("opt_invlookup",open_chans$[43])
-	callpoint!.setDevObject("opt_invlookup_tpl",open_tpls$[43])
+	callpoint!.setDevObject("opt_invlookup",open_chans$[42])
+	callpoint!.setDevObject("opt_invlookup_tpl",open_tpls$[42])
 
 rem --- Verify that there are line codes - abort if not.
 
@@ -3350,7 +3286,6 @@ rem --- Set up Lot/Serial button (and others) properly
 	callpoint!.setOptionEnabled("ADDL",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 	callpoint!.setOptionEnabled("CRCH",0)
-	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setOptionEnabled("CRAT",0)
 	callpoint!.setOptionEnabled("WOLN",0)
 

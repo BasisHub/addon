@@ -1,3 +1,27 @@
+[[OPE_ORDDET.MEMO_1024.AVAL]]
+rem --- store first part of memo_1024 in order_memo
+rem --- this AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor
+rem --- if on a memo line or using ctrl-C or Comments button, code in the comment_entry: subroutine is hit instead
+
+	disp_text$=callpoint!.getUserInput()
+	if disp_text$<>callpoint!.getColumnUndoData("OPE_ORDDET.MEMO_1024")
+		memo_len=len(callpoint!.getColumnData("OPE_ORDDET.ORDER_MEMO"))
+		order_memo$=disp_text$
+		order_memo$=order_memo$(1,min(memo_len,(pos($0A$=order_memo$+$0A$)-1)))
+
+		callpoint!.setColumnData("OPE_ORDDET.MEMO_1024",disp_text$)
+		callpoint!.setColumnData("OPE_ORDDET.ORDER_MEMO",order_memo$,1)
+
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[OPE_ORDDET.AOPT-COMM]]
+rem --- invoke the comments dialog
+
+	gosub comment_entry
+[[OPE_ORDDET.ORDER_MEMO.BINP]]
+rem --- invoke the comments dialog
+
+	gosub comment_entry
 [[OPE_ORDDET.EXT_PRICE.BINP]]
 rem --- Set previous extended price
 
@@ -12,6 +36,7 @@ rem --- Disable header buttons
 	callpoint!.setOptionEnabled("CINV",0)
 	callpoint!.setOptionEnabled("PRNT",0)
 	callpoint!.setOptionEnabled("RPRT",0)
+	callpoint!.setOptionEnabled("COMM",0)
 [[OPE_ORDDET.EXT_PRICE.AVEC]]
 rem --- Extend price now that grid vector has been updated, if the backorder quantity has changed
 if num(callpoint!.getColumnData("OPE_ORDDET.EXT_PRICE")) <> user_tpl.prev_ext_price then
@@ -751,6 +776,7 @@ rem --- Disable detail-only buttons
 	callpoint!.setOptionEnabled("LENT",0)
 	callpoint!.setOptionEnabled("RCPR",0)
 	callpoint!.setOptionEnabled("ADDL",0)
+	callpoint!.setOptionEnabled("COMM",0)
 
 rem --- Set header total amounts
 
@@ -799,6 +825,13 @@ rem --- Did we change rows?
 		wh$   = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
 		gosub set_avail
 	endif
+
+rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+
+	grid! = util.getGrid(Form!)
+	col_hdr$=callpoint!.getTableColumnAttribute("OPE_ORDDET.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(grid!, col_hdr$)
+	grid!.setColumnWidth(memo_1024_col,15)
 [[OPE_ORDDET.AOPT-LENT]]
 rem --- Save current context so we'll know where to return from lot lookup
 
@@ -967,6 +1000,7 @@ rem --- Buttons start disabled
 	callpoint!.setOptionEnabled("LENT",0)
 	callpoint!.setOptionEnabled("RCPR",0)
 	callpoint!.setOptionEnabled("ADDL",0)
+	callpoint!.setOptionEnabled("COMM",0)
 	callpoint!.setStatus("REFRESH")
 [[OPE_ORDDET.BDEL]]
 rem --- Require modified rows be saved before deleting so can't uncommit quantity different from what was committed (bug 8087)
@@ -1893,6 +1927,10 @@ rem --- Disable Back orders if necessary
 rem --- Disable qty shipped if necessary
 	gosub able_qtyshipped
 
+rem --- Enable Comment button
+
+	callpoint!.setOptionEnabled("COMM",1)
+
 	return
 
 rem ===========================================================================
@@ -2179,7 +2217,6 @@ rem ==========================================================================
 		callpoint!.setColumnData("OPE_ORDDET.PRODUCT_TYPE", "")
 		callpoint!.setColumnData("OPE_ORDDET.WAREHOUSE_ID", user_tpl.def_whse$)
 		callpoint!.setColumnData("OPE_ORDDET.ITEM_ID", "")
-		callpoint!.setColumnData("OPE_ORDDET.ORDER_MEMO", "")
 		callpoint!.setColumnData("OPE_ORDDET.EST_SHP_DATE", callpoint!.getHeaderColumnData("OPE_ORDHDR.SHIPMNT_DATE"))
 		callpoint!.setColumnData("OPE_ORDDET.PICK_FLAG", "")
 		callpoint!.setColumnData("OPE_ORDDET.VENDOR_ID", "")
@@ -2195,7 +2232,8 @@ rem ==========================================================================
 
 		if opc_linecode.line_type$="O" then
 			if cvs(callpoint!.getColumnData("OPE_ORDDET.ORDER_MEMO"),3) = "" then
-				callpoint!.setColumnData("OPE_ORDDET.ORDER_MEMO",opc_linecode.code_desc$)
+				callpoint!.setColumnData("OPE_ORDDET.ORDER_MEMO",cvs(opc_linecode.code_desc$,3))
+				callpoint!.setColumnData("OPE_ORDDET.MEMO_1024",cvs(opc_linecode.code_desc$,3))
 			endif
 		endif
 
@@ -2211,6 +2249,52 @@ rem ==========================================================================
 	if opc_linecode.prod_type_pr$ = "N"
 		callpoint!.setColumnData("OPE_ORDDET.PRODUCT_TYPE", "")
 	endif
+
+	return
+
+comment_entry:
+rem --- on a line where you can access the memo/non-stock (order_memo) field, pop the new memo_1024 editor instead
+rem --- the editor can be popped on demand for any line using the Comments button (alt-C),
+rem --- but will automatically pop for lines where the order_memo field is enabled.
+rem ==========================================================================
+
+	disp_text$=callpoint!.getColumnData("OPE_ORDDET.MEMO_1024")
+	sv_disp_text$=disp_text$
+
+	editable$="YES"
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
+
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Pick List/Invoice Comments",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		memo_len=len(callpoint!.getColumnData("OPE_ORDDET.ORDER_MEMO"))
+		order_memo$=disp_text$
+		order_memo$=order_memo$(1,min(memo_len,(pos($0A$=order_memo$+$0A$)-1)))
+
+		callpoint!.setColumnData("OPE_ORDDET.MEMO_1024",disp_text$)
+		callpoint!.setColumnData("OPE_ORDDET.ORDER_MEMO",order_memo$,1)
+
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE")
 
 	return
 

@@ -281,7 +281,11 @@ user_tpl.binp_pay_amt=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))
 rem --- ARNF; record not found (i.e., entered date/customer/receipt cd/chk # for new tran)
 ctl_stat$="D"
 gosub disable_key_fields
+
+commentMap!=new HashMap()
+callpoint!.setDevObject("commentMap",commentMap!)
 gosub get_open_invoices
+
 if len(currdtl$)
 	gosub include_new_OA_trans
 endif
@@ -365,6 +369,7 @@ if data_present$="Y"
 				gridInvoice!.setColumnEditable(0,1)
 				gridInvoice!.setColumnEditable(8,1)
 				gridInvoice!.setColumnEditable(9,1)
+				gridInvoice!.setColumnEditable(11,1)
 				if user_tpl.disc_flag$="Y" then
 					gridInvoice!.setColumnEditable(num(user_tpl.disc_taken_ofst$),1)
 				else
@@ -402,9 +407,10 @@ existing_dtl$=""
 pymt_dist$=""
 user_tpl.gl_applied$="0"
 user_tpl.existing_chk$="Y"
+
 rem --- read thru/store existing are-11 info
 more_dtl=1
-
+commentMap!=new HashMap()
 are01_key$=callpoint!.getColumnData("ARE_CASHHDR.FIRM_ID")+
 :	callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")+
 :	callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")+
@@ -425,7 +431,9 @@ while more_dtl
 	wk$(31)=are11a.discount_amt$
 	pymt_dist$=pymt_dist$+wk$
 	existing_dtl$=existing_dtl$+wk$
+	commentMap!.put(are11a.ar_inv_no$,are11a.memo_1024$)
 wend
+callpoint!.setDevObject("commentMap",commentMap!)
 
 rem --- read thru existing are-21's and store total GL amt posted this check
 more_dtl=1
@@ -504,6 +512,9 @@ user_tpl.existing_chk$=""
 user_tpl.gl_applied$="0"
 user_tpl.binp_pay_amt=0
 
+commentMap!=new HashMap()
+callpoint!.setDevObject("commentMap",commentMap!)
+
 Form!.getControl(num(user_tpl.GLind_id$)).setText("")
 Form!.getControl(num(user_tpl.GLstar_id$)).setText("")
 
@@ -534,8 +545,10 @@ if UserObj!<>null()
 	gridInvoice!.setColumnWidth(0,25)
 endif
 [[ARE_CASHHDR.AWIN]]
-rem --- Open/Lock files
 use ::ado_util.src::util
+use java.util.HashMap
+
+rem --- Open/Lock files
 files=30,begfile=1,endfile=10
 dim files$[files],options$[files],chans$[files],templates$[files]
 files$[1]="ARE_CASHHDR";rem --- "are-01"
@@ -571,7 +584,7 @@ user_tpl_str$=user_tpl_str$+"gridCheck_id:c(5),gridInvoice_id:c(5),gridCheck_col
 user_tpl_str$=user_tpl_str$+"gridCheck_rows:c(5),gridInvoice_rows:c(5),"
 user_tpl_str$=user_tpl_str$+"chk_grid:c(5),inv_grid:c(5),chk_vect:c(5),inv_vect:c(5),chk_sel_vect:c(5),"
 user_tpl_str$=user_tpl_str$+"inv_sel_vect:c(5),cur_bal_ofst:c(5),avail_disc_ofst:c(5),"
-user_tpl_str$=user_tpl_str$+"applied_amt_ofst:c(5),disc_taken_ofst:c(5),new_bal_ofst:c(5),pymt_dist:c(5),"
+user_tpl_str$=user_tpl_str$+"applied_amt_ofst:c(5),disc_taken_ofst:c(5),new_bal_ofst:c(5),cmt_ofst:c(5),pymt_dist:c(5),"
 user_tpl_str$=user_tpl_str$+"existing_dtl:c(5),GLind_id:c(5),GLstar_id:c(5),gl_applied:c(10),binp_pay_amt:n(15)"
 dim user_tpl$:user_tpl_str$
 user_tpl.firm_id$=firm_id$
@@ -623,8 +636,8 @@ nxt_ctlID=num(stbl("+CUSTOM_CTL",err=std_error))
 
 base_ctl!=callpoint!.getControl("<<DISPLAY>>.DISP_CUST_BAL")
 base_x=base_ctl!.getX()
-tmp_x=base_x+base_ctl!.getWidth()+10
-tmp_y=base_ctl!.getY()+base_ctl!.getHeight()
+tmp_x=base_x+base_ctl!.getWidth()+95
+tmp_y=base_ctl!.getY()+55
 tmp_h=base_ctl!.getHeight()
 tmp_w=200
 
@@ -639,13 +652,13 @@ OA_chkbox!=Form!.addCheckBox(nxt_ctlID,tmp_x,tmp_y,tmp_w,tmp_h,Translate!.getTra
 zbal_chkbox!=Form!.addCheckBox(nxt_ctlID+1,tmp_x,tmp_y+tmp_h+1,tmp_w,tmp_h,Translate!.getTranslation("AON_SHOW_ZERO-BALANCE_INVOICES?"),$$)
 asel_chkbox!=Form!.addCheckBox(nxt_ctlID+2,tmp_x,tmp_y+(tmp_h+1)*2,tmp_w,tmp_h,Translate!.getTranslation("AON_AUTO-SELECT_BY_INVOICE?"),$$)
 
-gridInvoice!=Form!.addGrid(nxt_ctlID+3,5,160,700,210)
+gridInvoice!=Form!.addGrid(nxt_ctlID+3,5,220,700,210)
 
 rem --- position the static text (to show when there is a GL dist included) relative to the Applied Amt control
-Form!.addStaticText(nxt_ctlID+4,app_x,app_y+app_h+3,tmp_w,tmp_h,"")
-Form!.addStaticText(nxt_ctlID+5,app_x+app_w+5,app_y,20,tmp_h,"")
+Form!.addStaticText(nxt_ctlID+4,app_x,195,tmp_w,tmp_h,"")
+Form!.addStaticText(nxt_ctlID+5,app_x+app_w+10,175,20,tmp_h,"")
 
-rem --- store ctl ID's of custom controls				
+rem --- store ctl ID's of custom controls #3				
 user_tpl.OA_chkbox_id$=str(nxt_ctlID)
 user_tpl.zbal_chkbox_id$=str(nxt_ctlID+1)
 user_tpl.asel_chkbox_id$=str(nxt_ctlID+2)				
@@ -658,7 +671,6 @@ util.resizeWindow(Form!, SysGui!)
 
 rem --- set user-friendly names for controls' positions in UserObj vector, num grid cols, data pos w/in vector, etc.				
 user_tpl.gridInvoice_cols$="12"				
-user_tpl.gridInvoice_rows$="10"				
 user_tpl.inv_grid$="0"				
 user_tpl.inv_vect$="1"				
 user_tpl.inv_sel_vect$="2"
@@ -667,6 +679,7 @@ user_tpl.avail_disc_ofst$="6"
 user_tpl.applied_amt_ofst$="8"
 user_tpl.disc_taken_ofst$="9"
 user_tpl.new_bal_ofst$="10"
+user_tpl.cmt_ofst$="11"
 user_tpl.pymt_dist$="3"
 user_tpl.existing_dtl$="4"
 gosub format_grids
@@ -694,6 +707,7 @@ rem --- misc other init
 gridInvoice!.setColumnEditable(0,1)
 gridInvoice!.setColumnEditable(8,1)
 gridInvoice!.setColumnEditable(9,1)
+gridInvoice!.setColumnEditable(11,1)
 gridInvoice!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
 gridInvoice!.setTabActionSkipsNonEditableCells(1)
 [[ARE_CASHHDR.AWRI]]
@@ -965,7 +979,7 @@ rem --- cashdet, are-11
 		endif
 		are11a.apply_amt$=str(apply_amt)
 		are11a.discount_amt$=str(disc_amt)
-		if apply_amt<>0 or disc_amt<>0
+		if apply_amt<>0 or disc_amt<>0 then
 			are11a.batch_no$=stbl("+BATCH_NO")
 			are11a$=field(are11a$)
 			writerecord(are_cashdet_dev)are11a$
@@ -987,8 +1001,36 @@ rem --- cashbal, are-31
 		endif
 	next updt_loop
 	endif
+
+	rem --- Save chanded detail comments
+	vectInvoice!=UserObj!.getItem(num(user_tpl.inv_vect$))
+	if vectInvoice!.size() then
+		dim are11a$:fnget_tpl$("ARE_CASHDET")
+		cols=num(user_tpl.gridInvoice_cols$)
+		for voffset=0 to vectInvoice!.size()-1 step cols
+			redim are11a$
+			are11a.firm_id$=firm_id$
+			are11a.ar_type$=callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")
+			are11a.reserved_key_01$=callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")
+			are11a.receipt_date$=callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")
+			are11a.customer_id$=callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")
+			are11a.cash_rec_cd$=callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")
+			are11a.ar_check_no$=callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")
+			are11a.reserved_key_02$=callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_02")
+			are11a.ar_inv_no$=vectInvoice!.getItem(voffset+1)
+			extractrecord(are_cashdet_dev,key=are11a.firm_id$+are11a.ar_type$+are11a.reserved_key_01$+are11a.receipt_date$+
+:			are11a.customer_id$+are11a.cash_rec_cd$+are11a.ar_check_no$+are11a.reserved_key_02$+are11a.ar_inv_no$,dom=*next)are11a$;rem Advisory Locking
+			if are11a.memo_1024$<>vectInvoice!.getItem(voffset+num(user_tpl.cmt_ofst$)) then
+				are11a.memo_1024$=vectInvoice!.getItem(voffset+num(user_tpl.cmt_ofst$))
+				are11a$=field(are11a$)
+				writerecord(are_cashdet_dev)are11a$
+			else
+				read(are_cashdet_dev,end=*next)
+			endif
+		next voffset
+	endif
+
 	callpoint!.setStatus("NEWREC"); rem sets up for new record
-	
 return
 
 rem ==================================================================
@@ -1093,7 +1135,7 @@ rem ---  so delete are-11 and 31 manually here.
 		
 			rem --- cashbal, are-31
 			extractrecord(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
-:				are31a.ar_inv_no$)are31a$;rem Advisory Locking
+:				are31a.ar_inv_no$,dom=*next)are31a$;rem Advisory Locking
 			are31a.apply_amt$=str(num(are31a.apply_amt)-del_pay)
 			are31a.discount_amt$=str(num(are31a.discount_amt$)-del_disc)
 			if num(are31a.apply_amt$)<>0 or num(are31a.discount_amt$)<>0
@@ -1101,7 +1143,7 @@ rem ---  so delete are-11 and 31 manually here.
 				writerecord(are_cashbal_dev)are31a$
 			else
 				remove(are_cashbal_dev,key=are31a.firm_id$+are31a.ar_type$+are31a.reserved_str$+are31a.customer_id$+
-:					are31a.ar_inv_no$)
+:					are31a.ar_inv_no$,dom=*next)
 			endif
 		else
 			more_dtl=0
@@ -1244,7 +1286,12 @@ rem ---   once vectors are built, they're stored in UserObj!
 					vectInvoice!.addItem(str(disp_applied))
 					vectInvoice!.addItem(str(disp_disc_applied))
 					vectInvoice!.addItem(str(disp_bal))
-					vectInvoice!.addItem("")
+					commentMap!=callpoint!.getDevObject("commentMap")
+					if commentMap!.get(art01a.ar_inv_no$)<>null() then
+						vectInvoice!.addItem(commentMap!.get(art01a.ar_inv_no$))
+					else
+						vectInvoice!.addItem(art01a.memo_1024$)
+					endif
 					if chk_sel$="Y" vectInvSel!.addItem("Y") else vectInvSel!.addItem("N")
 				endif
 						
@@ -1539,70 +1586,125 @@ rem ==================================================================
 
 	switch dec(notice.code$)
 		case 7;rem --- edit stop
-			rem --- only column 8 and 9 are enabled (except for checkbox at 0); 8=pay, 9=discount
-			rem --- don't allow discount if not paying anything
-			old_pay=num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.applied_amt_ofst$)))
-			old_disc=num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.disc_taken_ofst$)))
-			new_pay=0
-			new_disc=0
-			if dec(notice.col$)=8
-				new_pay=num(notice.buf$)
-				new_disc=old_disc
-				if new_pay=0 new_disc=0
-			else
-				new_disc=num(notice.buf$)
-				new_pay=old_pay
-				if new_pay=0 new_disc=0
-			endif
-			vectInvoice!.setItem(clicked_row*cols+num(user_tpl.applied_amt_ofst$),str(new_pay))
-			vectInvoice!.setItem(clicked_row*cols+num(user_tpl.disc_taken_ofst$),str(new_disc))
-			vectInvoice!.setItem(clicked_row*cols+num(user_tpl.new_bal_ofst$),
-:					str(num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))+old_pay-new_pay+old_disc-new_disc))
-			gridInvoice!.setCellText(clicked_row,num(user_tpl.applied_amt_ofst$),str(new_pay))
-			gridInvoice!.setCellText(clicked_row,num(user_tpl.disc_taken_ofst$),str(new_disc))
-			gridInvoice!.setCellText(clicked_row,num(user_tpl.new_bal_ofst$),
-:					vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))
-			rem --- Warn when End Balance goes negative
-			if num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))<0 and (old_pay<>new_pay or old_disc<>new_disc)
-				msg_id$="AR_CREDIT_BALANCE"
-				gosub disp_message
-			endif
-			rem --- if this is an OA/CM line (test inv amt, curr amt), then applied amt just increases total to apply
-			if num(vectInvoice!.getItem(clicked_row*cols+4))<0
-:				or num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.cur_bal_ofst$))) <0
-				callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",
-:					str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))+old_pay-new_pay))
-			else
-				callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",
-:					str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_APPLIED"))-old_pay+new_pay))
-				callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",
-:					str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))+old_pay-new_pay))
-			endif
-			if new_pay=0
-				vectInvSel!.setItem(clicked_row,"N")
-				gridInvoice!.setCellStyle(clicked_row,0,SysGUI!.GRID_STYLE_UNCHECKED)
-			endif
-			dim wk$(40)
-			wk$(1)=callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")
-			wk$(11)=vectInvoice!.getItem(clicked_row*cols+1)
-			wk=pos(wk$(1,20)=pymt_dist$)
-			if wk<>0
-				pymt_dist$(wk+20,10)=str(num(pymt_dist$(wk+20,10))+(new_pay-old_pay))
-				pymt_dist$(wk+30,10)=str(num(pymt_dist$(wk+30,10))+(new_disc-old_disc))
-			else
-				wk$(21)=str(new_pay-old_pay)
-				wk$(31)=str(new_disc-old_disc)
-				pymt_dist$=pymt_dist$+wk$
-			endif
-			Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
-			UserObj!.setItem(num(user_tpl.pymt_dist$),pymt_dist$)
-			callpoint!.setStatus("REFRESH-MODIFIED")
+			rem --- only columns 0 (SELECT), 8 (APPLY), 9 (DISC) and 11 (COMMENT) are enabled
+	 		switch dec(notice.col$)
+ 				case 0; rem --- SELECET
+	 				break
+ 				case num(user_tpl.applied_amt_ofst$); rem --- APPLY
+ 				case num(user_tpl.disc_taken_ofst$); rem --- DISC
+					rem --- don't allow discount if not paying anything
+					old_pay=num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.applied_amt_ofst$)))
+					old_disc=num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.disc_taken_ofst$)))
+					new_pay=0
+					new_disc=0
+					if dec(notice.col$)=8
+						new_pay=num(notice.buf$)
+						new_disc=old_disc
+						if new_pay=0 new_disc=0
+					else
+						new_disc=num(notice.buf$)
+						new_pay=old_pay
+						if new_pay=0 new_disc=0
+					endif
+					vectInvoice!.setItem(clicked_row*cols+num(user_tpl.applied_amt_ofst$),str(new_pay))
+					vectInvoice!.setItem(clicked_row*cols+num(user_tpl.disc_taken_ofst$),str(new_disc))
+					vectInvoice!.setItem(clicked_row*cols+num(user_tpl.new_bal_ofst$),
+:						str(num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))+old_pay-new_pay+old_disc-new_disc))
+					gridInvoice!.setCellText(clicked_row,num(user_tpl.applied_amt_ofst$),str(new_pay))
+					gridInvoice!.setCellText(clicked_row,num(user_tpl.disc_taken_ofst$),str(new_disc))
+					gridInvoice!.setCellText(clicked_row,num(user_tpl.new_bal_ofst$),
+:						vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))
+					rem --- Warn when End Balance goes negative
+					if num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.new_bal_ofst$)))<0 and (old_pay<>new_pay or old_disc<>new_disc)
+						msg_id$="AR_CREDIT_BALANCE"
+						gosub disp_message
+					endif
+					rem --- if this is an OA/CM line (test inv amt, curr amt), then applied amt just increases total to apply
+					if num(vectInvoice!.getItem(clicked_row*cols+4))<0
+:					or num(vectInvoice!.getItem(clicked_row*cols+num(user_tpl.cur_bal_ofst$))) <0
+						callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",
+:						str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))+old_pay-new_pay))
+					else
+						callpoint!.setColumnData("<<DISPLAY>>.DISP_APPLIED",
+:							str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_APPLIED"))-old_pay+new_pay))
+						callpoint!.setColumnData("<<DISPLAY>>.DISP_BAL",
+:							str(num(callpoint!.getColumnData("<<DISPLAY>>.DISP_BAL"))+old_pay-new_pay))
+					endif
+					if new_pay=0
+						vectInvSel!.setItem(clicked_row,"N")
+						gridInvoice!.setCellStyle(clicked_row,0,SysGUI!.GRID_STYLE_UNCHECKED)
+					endif
+					dim wk$(40)
+					wk$(1)=callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")
+					wk$(11)=vectInvoice!.getItem(clicked_row*cols+1)
+					wk=pos(wk$(1,20)=pymt_dist$)
+					if wk<>0
+						pymt_dist$(wk+20,10)=str(num(pymt_dist$(wk+20,10))+(new_pay-old_pay))
+						pymt_dist$(wk+30,10)=str(num(pymt_dist$(wk+30,10))+(new_disc-old_disc))
+					else
+						wk$(21)=str(new_pay-old_pay)
+						wk$(31)=str(new_disc-old_disc)
+						pymt_dist$=pymt_dist$+wk$
+					endif
+					Form!.getControl(num(user_tpl.asel_chkbox_id$)).setSelected(0)
+					UserObj!.setItem(num(user_tpl.pymt_dist$),pymt_dist$)
+					callpoint!.setStatus("REFRESH-MODIFIED")
+	 				break
+ 				case num(user_tpl.cmt_ofst$); rem --- COMMENT
+	 				break
+ 				case default
+	 				break
+	 		swend
 		break
 		case 8;rem --- edit start
-			if dec(notice.col$)<>0
-				vectInvSel!.setItem(clicked_row,"Y")
-				gridInvoice!.setCellStyle(clicked_row,0,SysGUI!.GRID_STYLE_CHECKED)
-			endif
+			rem --- only columns 0 (SELECT), 8 (APPLY), 9 (DISC) and 11 (COMMENT) are enabled
+	 		switch dec(notice.col$)
+ 				case 0; rem --- SELECT
+	 				break
+ 				case num(user_tpl.applied_amt_ofst$); rem --- APPLY
+ 				case num(user_tpl.disc_taken_ofst$); rem --- DISC
+					vectInvSel!.setItem(clicked_row,"Y")
+					gridInvoice!.setCellStyle(clicked_row,0,SysGUI!.GRID_STYLE_CHECKED)
+	 				break
+ 				case num(user_tpl.cmt_ofst$); rem --- COMMENT
+					disp_text$=gridInvoice!.getCellText(clicked_row,num(user_tpl.cmt_ofst$))
+					sv_disp_text$=disp_text$
+
+					editable$="YES"
+					force_loc$="NO"
+					baseWin!=null()
+					startx=0
+					starty=0
+					shrinkwrap$="NO"
+					html$="NO"
+					dialog_result$=""
+					spellcheck=1
+
+					call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:						"Cash Receipts Detail Comments",
+:						disp_text$, 
+:						table_chans$[all], 
+:						editable$, 
+:						force_loc$, 
+:						baseWin!, 
+:						startx, 
+:						starty, 
+:						shrinkwrap$, 
+:						html$, 
+:						dialog_result$,
+:						spellcheck
+
+					if disp_text$<>sv_disp_text$
+						gridInvoice!.setCellText(clicked_row,num(user_tpl.cmt_ofst$),disp_text$)
+						vectInvoice!.setItem(clicked_row*cols+num(user_tpl.cmt_ofst$),disp_text$)
+						callpoint!.setStatus("MODIFIED")
+					endif
+
+					callpoint!.setStatus("ACTIVATE")
+	 				break
+ 				case default
+	 				break
+	 		swend
 		break
 		case 12;rem --- grid_key_press (allow space-bar toggle of checkbox)
 			if notice.wparam=32 
@@ -1809,9 +1911,9 @@ rem ==================================================================
 	attr_inv_col$[11,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="75"
 	attr_inv_col$[11,fnstr_pos("MSKI",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
 	attr_inv_col$[11,fnstr_pos("MSKO",attr_def_col_str$[0,0],5)]=user_tpl.amt_msk$
-	attr_inv_col$[12,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="SPACER"
-	attr_inv_col$[12,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=""
-	attr_inv_col$[12,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="25"
+	attr_inv_col$[12,fnstr_pos("DVAR",attr_def_col_str$[0,0],5)]="COMMENT"
+	attr_inv_col$[12,fnstr_pos("LABS",attr_def_col_str$[0,0],5)]=Translate!.getTranslation("AON_COMMENTS")
+	attr_inv_col$[12,fnstr_pos("CTLW",attr_def_col_str$[0,0],5)]="300"
 	for curr_attr=1 to def_inv_cols
 		attr_inv_col$[0,1]=attr_inv_col$[0,1]+pad("CASH_REC_INV."+attr_inv_col$[curr_attr,
 :			fnstr_pos("DVAR",attr_def_col_str$[0,0],5)],40)

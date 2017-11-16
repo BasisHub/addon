@@ -96,20 +96,9 @@ bypass_adjust:
 		wend
 	next files
 
-rem --- Copy Comments
-
-	wocomm_dev=fnget_dev("SFE_WOCOMNT")
-	womcomm_devout=num(callpoint!.getDevObject("copy_comm"))
-	dim wocomm$:fnget_tpl$("SFE_WOCOMNT")
-	read(wocomm_dev,key=firm_id$+wo_loc$+from_wo$,dom=*next)
-
-	while 1
-		read record (wocomm_dev,end=*break)wocomm$
-		if pos(firm_id$+wo_loc$+from_wo$=wocomm$)<>1 break
-		wocomm.wo_no$=to_wo$
-		wocomm$=field(wocomm$)
-		write record (wocomm_devout) wocomm$
-	wend
+	rem --- Capture the memo_1024 from the WO being copied
+	tmp_memo_1024$=callpoint!.getDevObject("tmp_memo_1024")
+	callpoint!.setDevObject("memo_1024",tmp_memo_1024$)
 [[SFE_WOCOPY.BEND]]
 rem --- Close copy channel
 
@@ -119,7 +108,6 @@ rem --- Close copy channel
 	open_tables$[2]="SFE_WOOPRTN",open_opts$[2]="X[2_]"
 	open_tables$[3]="SFE_WOMATL",open_opts$[3]="X[2_]"
 	open_tables$[4]="SFE_WOSUBCNT",open_opts$[4]="X[2_]"
-	open_tables$[5]="SFE_WOCOMNT",open_opts$[5]="X[2_]"
 
 	gosub open_tables
 [[SFE_WOCOPY.BSHO]]
@@ -131,7 +119,7 @@ rem --- Open tables for use during copy
 	open_tables$[2]="SFE_WOOPRTN",open_opts$[2]="OTA[2_]"
 	open_tables$[3]="SFE_WOMATL",open_opts$[3]="OTA[2_]"
 	open_tables$[4]="SFE_WOSUBCNT",open_opts$[4]="OTA[2_]"
-	open_tables$[5]="SFE_WOCOMNT",open_opts$[5]="OTA[2_]"
+	rem open_tables$[5]="",open_opts$[5]=""
 	open_tables$[6]="IVM_ITEMWHSE",open_opts$[6]="OTA@"
 
 	gosub open_tables
@@ -140,8 +128,10 @@ rem --- Open tables for use during copy
 	callpoint!.setDevObject("copy_ops",open_chans$[2])
 	callpoint!.setDevObject("copy_mtl",open_chans$[3])
 	callpoint!.setDevObject("copy_sub",open_chans$[4])
-	callpoint!.setDevObject("copy_comm",open_chans$[5])
 	callpoint!.setDevObject("itemwhse",open_chans$[6])
+
+rem --- Initializations
+	callpoint!.setDevObject("memo_1024","")
 [[SFE_WOCOPY.WO_NO.AVAL]]
 rem --- Populate display fields
 
@@ -163,3 +153,6 @@ rem --- Populate display fields
 		old_qty=wo_mastr.sch_prod_qty
 	endif
 	callpoint!.setColumnData("<<DISPLAY>>.SCH_PROD_QTY",str(old_qty),1)
+
+	rem --- Capture the memo_1024 for the WO being copied
+	callpoint!.setDevObject("tmp_memo_1024",wo_mastr.memo_1024$)

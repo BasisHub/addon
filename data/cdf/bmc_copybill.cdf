@@ -10,24 +10,22 @@ rem --- Open tables for copying
 	open_tables$[1]="BMM_BILLMAST",open_opts$[1]="OTAN[2_]"
 	open_tables$[2]="BMM_BILLMAT",open_opts$[2]="OTAN[2_]"
 	open_tables$[3]="BMM_BILLOPER",open_opts$[3]="OTAN[2_]"
-	open_tables$[4]="BMM_BILLCMTS",open_opts$[4]="OTAN[2_]"
+	rem open_tables$[4]="",open_opts$[4]=""
 	open_tables$[5]="BMM_BILLSUB",open_opts$[5]="OTAN[2_]"
 	open_tables$[6]="BMM_BILLMAST",open_opts$[6]="OTAN[3_]"
 	open_tables$[7]="BMM_BILLMAT",open_opts$[7]="OTAN[3_]"
 	open_tables$[8]="BMM_BILLOPER",open_opts$[8]="OTAN[3_]"
-	open_tables$[9]="BMM_BILLCMTS",open_opts$[9]="OTAN[3_]"
+	rem open_tables$[9]="",open_opts$[9]=""
 	open_tables$[10]="BMM_BILLSUB",open_opts$[10]="OTAN[3_]"
 	gosub open_tables
 
 	callpoint!.setDevObject("oldbillmast",num(open_chans$[1]))
 	callpoint!.setDevObject("oldbillmat",num(open_chans$[2]))
 	callpoint!.setDevObject("oldbilloper",num(open_chans$[3]))
-	callpoint!.setDevObject("oldbillcmts",num(open_chans$[4]))
 	callpoint!.setDevObject("oldbillsub",num(open_chans$[5]))
 	callpoint!.setDevObject("newbillmast",num(open_chans$[6]))
 	callpoint!.setDevObject("newbillmat",num(open_chans$[7]))
 	callpoint!.setDevObject("newbilloper",num(open_chans$[8]))
-	callpoint!.setDevObject("newbillcmts",num(open_chans$[9]))
 	callpoint!.setDevObject("newbillsub",num(open_chans$[10]))
 [[BMC_COPYBILL.ASVA]]
 rem --- Check to see if the Bill already exists
@@ -90,20 +88,6 @@ rem --- copy Operations
 		write record (new_bmm_oper) bmm_oper$
 	wend
 
-rem --- copy comments
-
-	old_bmm_cmts=callpoint!.getDevObject("oldbillcmts")
-	new_bmm_cmts=callpoint!.getDevObject("newbillcmts")
-	dim bmm_cmts$:fnget_tpl$("BMM_BILLCMTS")
-	read record (old_bmm_cmts,key=firm_id$+old_bill$,dom=*next)
-	while 1
-		read record (old_bmm_cmts,end=*break) bmm_cmts$
-		if pos(firm_id$+old_bill$=bmm_cmts$)<>1 break
-		bmm_cmts.bill_no$=new_bill$
-		bmm_cmts$=field(bmm_cmts$)
-		write record (new_bmm_cmts) bmm_cmts$
-	wend
-
 rem --- copy subcontracts
 
 	old_bmm_sub=callpoint!.getDevObject("oldbillsub")
@@ -125,12 +109,12 @@ rem --- Close files
 	open_tables$[1]="BMM_BILLMAST",open_opts$[1]="C[2_]"
 	open_tables$[2]="BMM_BILLMAT",open_opts$[2]="C[2_]"
 	open_tables$[3]="BMM_BILLOPER",open_opts$[3]="C[2_]"
-	open_tables$[4]="BMM_BILLCMTS",open_opts$[4]="C[2_]"
+	rem open_tables$[4]="",open_opts$[4]=""
 	open_tables$[5]="BMM_BILLSUB",open_opts$[5]="C[2_]"
 	open_tables$[6]="BMM_BILLMAST",open_opts$[6]="C[3_]"
 	open_tables$[7]="BMM_BILLMAT",open_opts$[7]="C[3_]"
 	open_tables$[8]="BMM_BILLOPER",open_opts$[8]="C[3_]"
-	open_tables$[9]="BMM_BILLCMTS",open_opts$[9]="C[3_]"
+	rem open_tables$[9]="",open_opts$[9]=""
 	open_tables$[10]="BMM_BILLSUB",open_opts$[10]="C[3_]"
 	gosub open_tables
 

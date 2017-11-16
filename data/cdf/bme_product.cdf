@@ -97,20 +97,16 @@ disp_bill_comments:
 rem =======================================================
 	cmt_text$=""
 
-	bmm09_dev=fnget_dev("BMM_BILLCMTS")
-	dim bmm09a$:fnget_tpl$("BMM_BILLCMTS")
-	bmm09_key$=firm_id$+bill_no$
-	more=1
-	read(bmm09_dev,key=bmm09_key$,dom=*next)
-	while more
-		readrecord(bmm09_dev,end=*break)bmm09a$
+	bmm01_dev=fnget_dev("BMM_BILLMAST")
+	dim bmm01a$:fnget_tpl$("BMM_BILLMAST")
+	bmm01_key$=firm_id$+bill_no$
+	readrecord(bmm01_dev,key=bmm01_key$,dom=*next)bmm01a$
 		 
-		if bmm09a.firm_id$ = firm_id$ and bmm09a.bill_no$ = bill_no$ then
-			cmt_text$ = cmt_text$ + cvs(bmm09a.std_comments$,3)+$0A$
-		endif				
-	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	if bmm01a.firm_id$ = firm_id$ and bmm01a.bill_no$ = bill_no$ then
+		cmt_text$ = cvs(bmm01a.memo_1024$,3)
+	endif				
+	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$,1)
+
 return
 
 disable_wh:
@@ -193,7 +189,7 @@ rem --- Open files
 	open_tables$[1]="IVM_ITEMMAST",open_opts$[1]="OTA"
 	open_tables$[2]="IVM_ITEMWHSE",open_opts$[2]="OTA"
 	open_tables$[3]="IVS_PARAMS",open_opts$[3]="OTA"
-	open_tables$[4]="BMM_BILLCMTS",open_opts$[4]="OTA"
+	open_tables$[4]="BMM_BILLMAST",open_opts$[4]="OTA"
 	gosub open_tables
 
 rem --- get multiple warehouse flag and default warehouse

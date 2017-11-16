@@ -2,17 +2,14 @@
 rem --- Open/Lock files
 files=8,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
-files$[1]="APT_INVOICEDIST";rem --- "apt-02"
-files$[2]="APM_VENDCMTS";rem --- "apm-09
-files$[3]="APM_VENDMAST";rem --- "apm-01"
-files$[4]="APM_VENDHIST";rem --- "apm-02"
-files$[5]="APS_PARAMS";rem --- "ads-01"
-files$[6]="GLS_PARAMS";rem --- "gls-01"
-files$[7]="APC_TYPECODE";rem --- "apm-10A"
-files$[8]="GLS_CALENDAR"
-for wkx=begfile to endfile
-	options$[wkx]="OTA"
-next wkx
+files$[1]="APT_INVOICEDIST",options$[1]="OTA"
+rem files$[2]="",options$[2]=""
+files$[3]="APM_VENDMAST",options$[3]="OTA"
+files$[4]="APM_VENDHIST",options$[4]="OTA"
+files$[5]="APS_PARAMS",options$[5]="OTA"
+files$[6]="GLS_PARAMS",options$[6]="OTA"
+files$[7]="APC_TYPECODE",options$[6]="OTA"
+files$[8]="GLS_CALENDAR",options$[8]="OTA"
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
 :	endfile,
@@ -316,20 +313,12 @@ return
 
 disp_vendor_comments:
 	
-	cmt_text$=""
-	apm09_dev=fnget_dev("APM_VENDCMTS")
-	dim apm09a$:fnget_tpl$("APM_VENDCMTS")
-	apm09_key$=firm_id$+tmp_vendor_id$
-	more=1
-	read(apm09_dev,key=apm09_key$,dom=*next)
-	while more
-		readrecord(apm09_dev,end=*break)apm09a$
-		if apm09a.firm_id$+apm09a.vendor_id$<>firm_id$+tmp_vendor_id$  break
-			cmt_text$=cmt_text$+cvs(apm09a.std_comments$,3)+$0A$
-		endif				
-	wend
-	callpoint!.setColumnData("<<DISPLAY>>.comments",cmt_text$)
-	callpoint!.setStatus("REFRESH")
+	apm01_dev=fnget_dev("APM_VENDMAST")
+	dim apm01a$:fnget_tpl$("APM_VENDMAST")
+	readrecord(apm01_dev,key=firm_id$+tmp_vendor_id$,dom=*next)apm01a$
+	callpoint!.setColumnData("<<DISPLAY>>.comments",apm01a.memo_1024$,1)
+return
+
 calculate_due_and_discount:
 	apm10c_dev=fnget_dev("APC_TERMSCODE")
 	dim apm10c$:fnget_tpl$("APC_TERMSCODE")

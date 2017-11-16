@@ -384,7 +384,7 @@ rem analyze gui_event$ and notice$ to see which control's callback triggered the
 [[GLM_ACCTSUMHDR.ASIZ]]
 	if UserObj!<>null()
 		gridActivity!=UserObj!.getItem(num(user_tpl.grid_ofst$))
-		gridActivity!.setSize(Form!.getWidth()-(gridActivity!.getX()*2),Form!.getHeight()-(gridActivity!.getY()+40))
+		gridActivity!.setSize(Form!.getWidth()-(gridActivity!.getX()*2),Form!.getHeight()-(gridActivity!.getY()+10))
 	endif
 [[GLM_ACCTSUMHDR.AREC]]
 rem compare budget columns/types from gls01 with defined display columns

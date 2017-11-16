@@ -186,37 +186,40 @@ line_detail: rem --- Item Detail
 			endif
 
 			if pos(opm02a.line_type$="MNO") then
-				item_id$= ope11a.order_memo$
+				item_desc$=cvs(ope11a.memo_1024$,3)
 			endif
 
-			if pos(opm02a.line_type$=" SRDP") then 
-				item_id$= ope11a.item_id$
+			if pos(opm02a.line_type$=" SP") then 
+				item_desc$=cvs(ope11a.item_id$,3)
+                item_id$=cvs(ope11a.item_id$,3)
 			endif
 
-			if pos(opm02a.line_type$=" SRDNPO") and print_prices$="Y" 
+			if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" 
 				price_raw$=   str(ope11a.unit_price*ope11a.qty_ordered)
 				price_masked$=str(num(price_raw$):price_mask$)
 			endif
 
             if pick_or_quote$<>"P"
-                if pos(opm02a.line_type$=" SRDNP") and mult_wh$ = "Y" then 
+                if pos(opm02a.line_type$=" SNP") and mult_wh$ = "Y" then 
                     whse$ = ope11a.warehouse_id$
                 else
                     whse$ = ""
                 endif
 			        
                 if opm02a.dropship$="Y"
-                    location$ = "*Dropship"				
+                    location$ = "AON_DROPSHIP"				
                 else   
-                    if pos(opm02a.line_type$=" SRDP")<>0
+                    if pos(opm02a.line_type$=" SP")<>0
                         location$ = ivm02a.location$
                     endif
                 endif  
             endif
 
 			if pos(opm02a.line_type$="SP") then
-				item_desc$= item_description$
+				item_desc$=item_desc$+" "+cvs(item_description$,3)+iff(cvs(ope11a.memo_1024$,3)="",""," - "+cvs(ope11a.memo_1024$,3))
 			endif
+
+            if item_desc$(len(item_desc$),1)=$0A$ then item_desc$=item_desc$(1,len(item_desc$)-1)
 
             if sf$="Y" then
                 redim sfe01a$

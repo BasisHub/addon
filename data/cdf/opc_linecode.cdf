@@ -22,12 +22,6 @@ rem --- Disable fields that don't apply
 [[OPC_LINECODE.AR_DIST_CODE.AVAL]]
 rem --- Either fill or blank out 3 G/L display fields
 	gosub display_gl_fields
-[[OPC_LINECODE.MESSAGE_TYPE.BINP]]
-rem --- Set default type
-	if message_type$=" "
-		callpoint!.setColumnData("OPC_LINECODE.MESSAGE_TYPE","B")
-		callpoint!.setStatus("REFRESH")
-	endif
 [[OPC_LINECODE.PROD_TYPE_PR.AVAL]]
 rem --- Maybe disable Product Type
 	callpoint!.setColumnData("OPC_LINECODE.PROD_TYPE_PR", callpoint!.getUserInput())
@@ -65,9 +59,9 @@ rem --- re-enable all fields
 	gosub disable_ctls
 [[OPC_LINECODE.<CUSTOM>]]
 #include std_functions.src
-
+rem ========================================================
 disable_ctls:rem --- Disable fields that don't apply
-
+rem ========================================================
 	dim dctl$[7],dmap$[7]
 	dctl$[1]="GL_REV_ACCT"
 	dctl$[2]="TAXABLE_FLAG"
@@ -119,7 +113,7 @@ disable_ctls:rem --- Disable fields that don't apply
 		dmap$[5]=""
 	endif
 
-	rem --- Produce Type Processing
+	rem --- Product Type Processing
 	prod_type_pr$=callpoint!.getColumnData("OPC_LINECODE.PROD_TYPE_PR")
 	if prod_type_pr$<>"D"
 		dmap$[4]="I"
@@ -140,13 +134,18 @@ disable_ctls:rem --- Disable fields that don't apply
 			callpoint!.setColumnData("OPC_LINECODE."+dctl$,"")
 		endif
 	next dctl
+
+	if cvs(callpoint!.getColumnData("OPC_LINECODE.MESSAGE_TYPE"),3)="" then callpoint!.setColumnData("OPC_LINECODE.MESSAGE_TYPE","B")
+
 	callpoint!.setStatus("REFRESH")
 
 	rem --- either fill or blank out 3 G/L display fields
 	gosub display_gl_fields
 return
 
+rem ========================================================
 display_gl_fields:rem --- fill or clear 3 G/L display fields
+rem ========================================================
 	if user_tpl.gl$="Y"
 		dist_code$=callpoint!.getColumnData("OPC_LINECODE.AR_DIST_CODE")
 		if cvs(dist_code$,2)=""

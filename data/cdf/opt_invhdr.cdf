@@ -19,29 +19,6 @@ rem --- If missing, set the customer for this invoice.
 		rem --- Reset index back to AO_STAT_CUST_INV.
 		read(opt_invhdr_dev,key=firm_id$,knum="AO_STAT_CUST_INV",dom=*next)
 	endif
-[[OPT_INVHDR.AOPT-COMM]]
-rem --- Display Comments form
-
-	ar_type$=callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")
-	cust$=callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")
-	order$=callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")
-
-	dim dflt_data$[3,1]
-	dflt_data$[1,0] = "AR_TYPE"
-	dflt_data$[1,1] = ar_type$
-	dflt_data$[2,0] = "CUSTOMER_ID"
-	dflt_data$[2,1] = cust$
-	dflt_data$[3,0] = "ORDER_NO"
-	dflt_data$[3,1] = order$
-	comment_pfx$=firm_id$+ar_type$+cust$+order$
-
-	call stbl("+DIR_SYP") + "bam_run_prog.bbj", 
-:		"OPE_ORDCOMMENTS", 
-:		stbl("+USER_ID"), 
-:		"MNT", 
-:		comment_pfx$,
-:		table_chans$[all], 
-:		dflt_data$[all]
 [[OPT_INVHDR.AFMC]]
 rem --- Inits
 
@@ -78,7 +55,7 @@ rem --- Open needed files
 	open_tables$[29]="IVS_PARAMS",   open_opts$[29]="OTA"
 	open_tables$[31]="IVM_ITEMPRIC", open_opts$[31]="OTA"
 	open_tables$[32]="IVC_PRICCODE", open_opts$[32]="OTA"
-	open_tables$[33]="ARM_CUSTCMTS", open_opts$[33]="OTA"
+	rem open_tables$[33]="", open_opts$[33]=""
 	open_tables$[35]="OPM_POINTOFSALE", open_opts$[35]="OTA"
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
 	open_tables$[37]="OPC_DISCCODE", open_opts$[37]="OTA"

@@ -1,3 +1,22 @@
+[[BMM_BILLSUB.MEMO_1024.AVAL]]
+rem --- Store first part of memo_1024 in ext_comment.
+rem --- This AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor.
+rem --- If use Comment field, or use ctrl-C or Comments button, code in the comment_entry subroutine is hit instead.
+	disp_text$=callpoint!.getUserInput()
+	if disp_text$<>callpoint!.getColumnUndoData("BMM_BILLSUB.MEMO_1024")
+		dim ext_comments$(60)
+		ext_comments$(1)=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("BMM_BILLSUB.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("BMM_BILLSUB.EXT_COMMENTS",ext_comments$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[BMM_BILLSUB.AOPT-COMM]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+[[BMM_BILLSUB.EXT_COMMENTS.BINP]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+	callpoint!.setStatus("ABORT")
 [[BMM_BILLSUB.VENDOR_ID.AVAL]]
 rem "VENDOR INACTIVE - FEATURE"
 vendor_id$ = callpoint!.getUserInput()
@@ -69,7 +88,7 @@ rem --- Capture starting wo_ref_num
 	prev_wo_ref_num$=callpoint!.getColumnData("BMM_BILLSUB.WO_REF_NUM")
 	callpoint!.setDevObject("prev_wo_ref_num",prev_wo_ref_num$)
 [[BMM_BILLSUB.BDTW]]
-use ::ado_util.src::util
+
 [[BMM_BILLSUB.OBSOLT_DATE.AVAL]]
 rem --- Check for valid dates
 
@@ -163,6 +182,48 @@ rem ===================================================================
 	endif
 
 	return
+
+comment_entry:
+rem --- on a line where you can access the ls_comments field, pop the new memo_1024 editor instead
+rem --- the editor can be popped on demand for any line using the Comments button (alt-C),
+rem --- but will automatically pop for lines where the ext_comments field is enabled.
+rem ==========================================================================
+
+	disp_text$=callpoint!.getColumnData("BMM_BILLSUB.MEMO_1024")
+	sv_disp_text$=disp_text$
+
+	editable$="YES"
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
+
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Comments/Message Line",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		ext_comments$=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("BMM_BILLSUB.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("BMM_BILLSUB.EXT_COMMENTS",ext_comments$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE")
+
+	return
 [[BMM_BILLSUB.BGDR]]
 rem --- Display Net Qty and Total Cost
 
@@ -172,6 +233,7 @@ rem --- Display Net Qty and Total Cost
 	unit_cost=num(callpoint!.getColumnData("BMM_BILLSUB.UNIT_COST"))
 	gosub calc_display
 [[BMM_BILLSUB.BSHO]]
+	use ::ado_util.src::util
 	use ::bmo_BmUtils.aon::BmUtils
 	declare BmUtils bmUtils!
 
@@ -237,3 +299,9 @@ rem --- Disable WO_REF_NUM when locked
 		opts$=callpoint!.getTableColumnAttribute("BMM_BILLSUB.WO_REF_NUM","OPTS")
 		callpoint!.setTableColumnAttribute("BMM_BILLSUB.WO_REF_NUM","OPTS",opts$+"C"); rem --- makes read only
 	endif
+
+rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+	maintGrid!=Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("BMM_BILLSUB.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(maintGrid!, col_hdr$)
+	maintGrid!.setColumnWidth(memo_1024_col,15)

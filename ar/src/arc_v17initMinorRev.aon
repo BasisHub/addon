@@ -1,0 +1,358 @@
+rem --- AR Initialize Data File Changes Implemented During Minor Releases of v17
+rem --- Program arc_v17initMinorRev.aon
+
+rem --- AddonSoftware Version 17.10 - Aug2017
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
+rem --- rdForm!      : Window object to hold progress meter (input)
+rem --- status       : Status/0=No error (returned)
+
+    use java.io.File
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    seterr std_error
+    setesc std_error
+    
+    enter theFirm$,rdForm!,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Get program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    milestone=50
+    milestone=num(stbl("+MILESTONE",err=*next),err=*next)
+    firm_id$=sysinfo.firm_id$
+
+rem --- Open/Lock files
+
+    num_files=5
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",      open_opts$[1]="OTA"
+    open_tables$[2]="ARM_CUSTMAST",     open_opts$[2]="OTA"
+    open_tables$[3]="ARM_CUSTCMTS",     open_opts$[3]="OTA"
+    open_tables$[4]="ART_INVHDR",       open_opts$[4]="OTA"
+    open_tables$[5]="ART_INVDET",       open_opts$[5]="OTA"
+
+    gosub open_tables
+
+    ddm_systems=num(open_chans$[1]);     dim ddm_systems$:open_tpls$[1]
+    armCustMast_dev=num(open_chans$[2]); dim armCustMast$:open_tpls$[2]
+    rem armCustCmts_dev=num(open_chans$[3])
+    artInvHdr_dev=num(open_chans$[4]); dim artInvHdr$:open_tpls$[4]
+    artInvDet_dev=num(open_chans$[5]); dim artInvDet$:open_tpls$[5]
+
+rem --- Table definition for ARM_CUSTCMTS (arm-05) may be deleted in v19 (see Addon Bug 9127). So it may not
+rem --- exist when upgrading from before v17 to after v18, and adc_v1700conversion.aon executes arc_v17initMinorRev.aon.
+
+    armCustCmts_dev=num(open_chans$[3])
+    if armCustCmts_dev dim armCustCmts$:open_tpls$[3]
+    
+rem --- Open log file in aon/logs directory
+    
+    aonDir$=""
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
+    endif
+
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Verify have BBTranslator object Translate!
+
+    if Translate!=null() then 
+        gosub get_translate_object
+        if status then
+            err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+            err_no$="12"
+        else
+            if Translate!=null() then
+                err_msg$="Cannot create BBTranslator object Translate!"
+                err_no$="999"
+            endif
+        endif
+        if err_msg$<>"" then
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+            print(log_dev)"***** Error: "+err_msg$+" *****"
+            print(log_dev)
+            print(log_dev)"Initdata log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(log_dev)
+            
+            msg_id$="GENERIC_WARN"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=err_msg$
+            gosub disp_message
+            
+            status=num(err_no$)
+            goto std_exit
+        endif
+    endif
+
+rem --- As necessary, creating a small invisible window to hold progress meter
+
+    if rdForm!=null() then
+        sysGUI!=BBjAPI().getSysGui()
+        if BBjAPI().isInMDI() then
+            desktop_w=BBjAPI().getMDI().getClientWidth()
+            desktop_h=BBjAPI().getMDI().getClientHeight()
+        else
+            screenSize!=sysGUI!.getSystemMetrics().getScreenSize()
+            desktop_w=screenSize!.width
+            desktop_h=screenSize!.height
+        endif
+        rdForm!=sysGUI!.addWindow(int(desktop_w/2),int(desktop_h/2),1,1,"",$00000000$)
+        rdForm!.setTitleBarVisible(0)
+        rdForm!.setVisible(0)
+    endif
+    
+rem --- Start progress meter
+
+    meter_title$="arc_v17initMinorRev.aon"
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST"
+    gosub disp_meter
+
+rem --- Initialize ARM_CUSTMAST new MEMO_1024 field
+
+    rem --- As of v17.10, DataPort handles initializing ARM_CUSTMAST.MEMO_1024 from ARM_CUSTCMTS (arm-05).
+    rem --- And, ARM_CUSTCMTS (arm-05) may not exist when upgrading via DataPort.
+    if armCustCmts_dev then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" "+"ARM_CUSTMAST.MEMO_1024"
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)
+        print(log_dev)meter_text$
+    
+        rem --- Build new ARM_CUSTMAST.MEMO_1024 field from ARM_CUSTCMTS (arm-05) table
+        currentFirm$=""
+        currentCustomer$=""
+        memo$=""
+        read(armCustCmts_dev,key=theFirm$,dom=*next)
+        while 1
+            armCustCmts_key$=key(armCustCmts_dev,end=*break)
+            if cvs(theFirm$,2)<>"" and pos(theFirm$=armCustCmts_key$)<>1 then break
+            readrecord(armCustCmts_dev)armCustCmts$
+            if armCustCmts.firm_id$+armCustCmts.customer_id$<>currentFirm$+currentCustomer$ then
+                gosub writeArmCustMastMemo1024
+                memo$=""
+                currentCustomer$=armCustCmts.customer_id$
+                if armCustCmts.firm_id$<>currentFirm$ then
+                    rem --- Log next firm processed
+                    print(log_dev)"    ARM_CUSTCMTS.FIRM_ID = "+armCustCmts.firm_id$
+                    currentFirm$=armCustCmts.firm_id$
+                endif
+            endif
+            memo$=memo$+cvs(armCustCmts.std_comments$,2)+$0A$
+        wend
+        gosub writeArmCustMastMemo1024
+    endif
+    
+rem --- Rebuild ART_INVHDR for new AO_INVIOCE alternat key
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" ART_INVHDR "+Translate!.getTranslation("AON_ALTERNATE_KEY","Alternate Key")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)meter_text$
+
+    rem --- Use Barista's table rebuild utility
+    call stbl("+DIR_SYP")+"bax_rebuild_table.bbj","ART_INVHDR",rdForm!,null(),rd_table_chans$[all],rd_rebuild_action$,rd_rebuild_stat$
+            if rd_rebuild_stat$<>""
+                print(log_dev)"    ****bax_rebuild_table.bbj error: "+rd_rebuild_stat$+" ****"
+            endif
+    
+rem --- Rebuild ART_INVDET for new AO_INVIOCE alternat key
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+" ART_INVDET "+Translate!.getTranslation("AON_ALTERNATE_KEY","Alternate Key")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)
+    print(log_dev)meter_text$
+
+    rem --- Use Barista's table rebuild utility
+    call stbl("+DIR_SYP")+"bax_rebuild_table.bbj","ART_INVDET",rdForm!,null(),rd_table_chans$[all],rd_rebuild_action$,rd_rebuild_stat$
+            if rd_rebuild_stat$<>""
+                print(log_dev)"    ****bax_rebuild_table.bbj error: "+rd_rebuild_stat$+" ****"
+            endif
+
+done: rem --- All done
+    
+    rem --- Stop progress meter
+    meter_text$=""
+    meter_action$="LST-END"
+    gosub disp_meter
+
+    rem --- Complete and close log file
+    print(log_dev)
+    print(log_dev)"v17initMinorRevAR log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+    goto std_exit
+
+writeArmCustMastMemo1024: rem --- Write ARM_CUSTMAST new MEMO_1024 field
+
+    extractrecord(armCustMast_dev,key=currentFirm$+currentCustomer$,dom=*return)armCustMast$
+    armCustMast.memo_1024$=memo$
+    writerecord(armCustMast_dev)armCustMast$
+
+    return
+
+open_log: rem --- Open log file
+           
+    rem --- create logs directory at location
+    logDir$=FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$=logDir$+"/v17initMinorRevAR_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".log"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+            
+    rem --- write log header info
+    print(log_dev)"v17initMinorRevAR log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+
+    return
+
+get_translate_object: rem --- Get BBTranslator object Translate!
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+    if adm_modules.locale_resource$="" or adm_modules.locale_path$=""
+        readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*next)adm_modules$
+    endif
+    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+        locale_path$=adm_modules.locale_path$
+        rdTransSpaceKey$=adm_modules.locale_resource$+"_"+stbl("+USER_LOCALE")+"_BBTranslator"
+        Translate!=cast(BBTranslator,BBjAPI().getGroupNamespace().getValue(rdTransSpaceKey$,err=*next))
+        if Translate!=null()
+            Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$)
+            BBjAPI().getGroupNamespace().setValue(rdTransSpaceKey$,Translate!)
+        endif
+    endif
+
+    return
+    
+disp_meter: rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+    sysGUI!=BBjAPI().getSysGui()
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src
