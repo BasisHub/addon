@@ -1,3 +1,11 @@
+[[IVE_TRANSHDR.MEMO_1024.AVAL]]
+rem --- Store first part of memo_1024 in trans_cmt.
+	memo_1024$=callpoint!.getUserInput()
+	if memo_1024$<>callpoint!.getColumnData("IVE_TRANSHDR.MEMO_1024")
+		dim trans_cmt$(20)
+		trans_cmt$(1)=memo_1024$(1,pos($0A$=memo_1024$+$0A$)-1)
+		callpoint!.setColumnData("IVE_TRANSHDR.TRANS_CMT",trans_cmt$)
+	endif
 [[IVE_TRANSHDR.APFE]]
 	gosub clear_display_fields
 [[IVE_TRANSHDR.ADEL]]

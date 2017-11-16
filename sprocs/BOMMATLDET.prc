@@ -90,7 +90,7 @@ rem --- Get masks
 rem --- Build SQL statement
 
     sql_prep$=""
-    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, material_seq, bmm_billmat.item_id, line_type, unit_measure, ext_comments, "+$0a$
+    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, material_seq, bmm_billmat.item_id, line_type, unit_measure, memo_1024, "+$0a$
     sql_prep$=sql_prep$+"  effect_date, obsolt_date, qty_required, alt_factor, divisor, scrap_factor, op_int_seq_ref, "+$0a$
     sql_prep$=sql_prep$+"  ivm_itemmast.item_desc as itemdesc, ivm_itemwhse.unit_cost as unitcost, count(bmm_billmast.firm_id) as b_count"+$0a$
     sql_prep$=sql_prep$+"FROM bmm_billmat"+$0a$
@@ -105,7 +105,7 @@ rem --- Build SQL statement
       sql_prep$=sql_prep$+" AND ivm_itemmast.item_inactive <> 'Y' " 
     endif
     sql_prep$=sql_prep$+"GROUP BY bmm_billmat.firm_id, bmm_billmat.bill_no, bmm_billmat.material_seq, bmm_billmat.item_id, "+$0a$
-    sql_prep$=sql_prep$+"  line_type, unit_measure, ext_comments, effect_date, obsolt_date, qty_required, alt_factor, divisor, "+$0a$
+    sql_prep$=sql_prep$+"  line_type, unit_measure, memo_1024, effect_date, obsolt_date, qty_required, alt_factor, divisor, "+$0a$
     sql_prep$=sql_prep$+"  scrap_factor, itemdesc, unitcost, op_int_seq_ref"+$0a$
     
     sql_chan=sqlunt
@@ -131,7 +131,7 @@ rem --- Build result set
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))
         if read_tpl.line_type$="M"
             Rem --- Send data row for Memos
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.ext_comments$)
+            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
         else
             rem --- Send data row for non-Memos
             net_qty=0

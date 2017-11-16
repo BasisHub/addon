@@ -43,26 +43,32 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    num_files=5
+    num_files=8
     dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
     open_tables$[1]="DDM_SYSTEMS",      open_opts$[1]="OTA"
-    open_tables$[2]="IVE_TRANSDET",     open_opts$[2]="OTA"
-    open_tables$[3]="IVM_LSMASTER",     open_opts$[3]="OTA"
-    open_tables$[4]="IVM_ITEMMAST",     open_opts$[4]="OTA"
-    open_tables$[5]="IVM_ITEMCMTS",     open_opts$[5]="OTA"
+    open_tables$[2]="IVM_ITEMMAST",     open_opts$[2]="OTA"
+    open_tables$[3]="IVE_TRANSDET",     open_opts$[3]="OTA"
+    open_tables$[4]="IVM_LSMASTER",     open_opts$[4]="OTA"
+    open_tables$[5]="IVE_TRANSHDR",     open_opts$[5]="OTA"
+    open_tables$[6]="IVT_ITEMTRAN",     open_opts$[6]="OTA"
+    open_tables$[7]="IVT_LSTRANS",     open_opts$[7]="OTA"
+    open_tables$[8]="IVM_ITEMCMTS",     open_opts$[8]="OTA"
 
     gosub open_tables
 
     ddm_systems=num(open_chans$[1]);     dim ddm_systems$:open_tpls$[1]
-    iveTransDet_dev=num(open_chans$[2]); dim iveTransDet$:open_tpls$[2]
-    ivmLSMaster_dev=num(open_chans$[3]); dim ivmLSMaster$:open_tpls$[3]
-    ivmItemMast_dev=num(open_chans$[4]); dim ivmItemMast$:open_tpls$[4]
+    ivmItemMast_dev=num(open_chans$[2]); dim ivmItemMast$:open_tpls$[2]
+    iveTransDet_dev=num(open_chans$[3]); dim iveTransDet$:open_tpls$[3]
+    ivmLSMaster_dev=num(open_chans$[4]); dim ivmLSMaster$:open_tpls$[4]
+    iveTransHdr_dev=num(open_chans$[5]); dim iveTransHdr$:open_tpls$[5]
+    ivtItemTran_dev=num(open_chans$[6]); dim ivtItemTran$:open_tpls$[6]
+    ivtLSTrans_dev=num(open_chans$[7]);  dim ivtLSTrans$:open_tpls$[7]
 
 rem --- Table definition for IVM_ITEMCMTS (ivm-09) may be deleted in v19 (see Addon Bug 9127). So it may not
 rem --- exist when upgrading from before v17 to after v18, and adc_v1700conversion.aon executes ivc_v17initMinorRev.aon.
 
-    ivmItemCmts_dev=num(open_chans$[5])
-    if ivmItemCmts_dev dim ivmItemCmts$:open_tpls$[5]
+    ivmItemCmts_dev=num(open_chans$[8])
+    if ivmItemCmts_dev dim ivmItemCmts$:open_tpls$[8]
     
 rem --- Open log file in aon/logs directory
     
@@ -138,12 +144,32 @@ rem --- Initialize new MEMO_1024 field in selected files
     fileVec!=BBjAPI().makeVector()
     fileVec!.addItem(iveTransDet_dev)
     fileVec!.addItem(fattr(iveTransDet$))
+    fileVec!.addItem("LS_COMMENTS")
     selectedFiles!.put("IVE_TRANSDET",fileVec!)
     
     fileVec!=BBjAPI().makeVector()
     fileVec!.addItem(ivmLSMaster_dev)
     fileVec!.addItem(fattr(ivmLSMaster$))
+    fileVec!.addItem("LS_COMMENTS")
     selectedFiles!.put("IVM_LSMASTER",fileVec!)
+    
+    fileVec!=BBjAPI().makeVector()
+    fileVec!.addItem(iveTransHdr_dev)
+    fileVec!.addItem(fattr(iveTransHdr$))
+    fileVec!.addItem("TRANS_CMT")
+    selectedFiles!.put("IVE_TRANSHDR",fileVec!)
+    
+    fileVec!=BBjAPI().makeVector()
+    fileVec!.addItem(ivtItemTran_dev)
+    fileVec!.addItem(fattr(ivtItemTran$))
+    fileVec!.addItem("TRANS_CMT")
+    selectedFiles!.put("IVT_ITEMTRAN",fileVec!)
+    
+    fileVec!=BBjAPI().makeVector()
+    fileVec!.addItem(ivtLSTrans_dev)
+    fileVec!.addItem(fattr(ivtLSTrans$))
+    fileVec!.addItem("TRANS_CMT")
+    selectedFiles!.put("IVT_LSTRANS",fileVec!)
 
     filesIter!=selectedFiles!.keySet().iterator()
     while filesIter!.hasNext()
@@ -151,6 +177,7 @@ rem --- Initialize new MEMO_1024 field in selected files
         fileVec!=selectedFiles!.get(thisFile$)
         thisChan=fileVec!.getItem(0)
         dim thisTpl$:fileVec!.getItem(1)
+        thisCmtField$=fileVec!.getItem(2)
         currentFirm$=""
 
         rem --- Increment progress meter
@@ -161,7 +188,7 @@ rem --- Initialize new MEMO_1024 field in selected files
         print(log_dev)
         print(log_dev)meter_text$
 
-        rem --- Populate new MEMO_1024 field with old LS_COMMENTS field
+        rem --- Populate new MEMO_1024 field with old comment field
         read(thisChan,key=theFirm$,dom=*next)
         while 1
             this_key$=key(thisChan,end=*break)
@@ -172,8 +199,9 @@ rem --- Initialize new MEMO_1024 field in selected files
                 print(log_dev)"    "+thisFile$+".FIRM_ID = "+thisTpl.firm_id$
                 currentFirm$=thisTpl.firm_id$
             endif
-            if cvs(thisTpl.ls_comments$,2)<>"" and cvs(thisTpl.memo_1024$,2)="" then
-                thisTpl.memo_1024$=cvs(thisTpl.ls_comments$,2)
+            comment$=cvs(field(thisTpl$,thisCmtField$),2)
+            if comment$<>"" and cvs(thisTpl.memo_1024$,2)="" then
+                thisTpl.memo_1024$=comment$
                 writerecord(thisChan)thisTpl$
             else
                 read(thisChan)

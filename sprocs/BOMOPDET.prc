@@ -88,7 +88,7 @@ rem --- Get masks
 rem --- Build SQL statement
 
     sql_prep$=""
-    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, op_seq, op_code, line_type, ext_comments, hrs_per_pce, pcs_per_hour, "+$0a$
+    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, op_seq, op_code, line_type, memo_1024, hrs_per_pce, pcs_per_hour, "+$0a$
     sql_prep$=sql_prep$+"  setup_time, move_time, effect_date, obsolt_date, internal_seq_no, bmc_opcodes.queue_time as queue, "+$0a$
     sql_prep$=sql_prep$+"  bmc_opcodes.code_desc as codedesc, bmc_opcodes.direct_rate as direct_rate, bmc_opcodes.ovhd_factor as ovhd_factor"+$0a$
     sql_prep$=sql_prep$+"FROM bmm_billoper"+$0a$
@@ -120,7 +120,7 @@ rem --- Build result set
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))
         if read_tpl.line_type$="M"
             Rem --- Send data row for Memos
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.ext_comments$)
+            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
         else
             rem --- Send data row for non-Memos
             net_hrs=0

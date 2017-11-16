@@ -1,3 +1,34 @@
+[[BMM_BILLOPER.LINE_TYPE.AVAL]]
+rem --- Enable/disable Comments button
+	line_type$=callpoint!.getColumnData("BMM_BILLOPER.LINE_TYPE")
+	gosub enable_comments
+[[BMM_BILLOPER.AOPT-COMM]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+[[BMM_BILLOPER.EXT_COMMENTS.BINP]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+	callpoint!.setStatus("ABORT")
+[[BMM_BILLOPER.MEMO_1024.AVAL]]
+rem --- Store first part of memo_1024 in ext_comment.
+rem --- This AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor.
+rem --- If use Comment field, or use ctrl-C or Comments button, code in the comment_entry subroutine is hit instead.
+	disp_text$=callpoint!.getUserInput()
+	if disp_text$<>callpoint!.getColumnUndoData("BMM_BILLOPER.MEMO_1024")
+		dim ext_comments$(60)
+		ext_comments$(1)=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("BMM_BILLOPER.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("BMM_BILLOPER.EXT_COMMENTS",ext_comments$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[BMM_BILLOPER.MEMO_1024.BINQ]]
+rem --- (Barista Bug 9179 workaround) If grid cell isn't editable, then abort so new text can't be entered via edit control.
+	maintGrid!=Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("BMM_BILLOPER.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(maintGrid!, col_hdr$)
+	this_row=callpoint!.getValidationRow()
+	isEditable=maintGrid!.isCellEditable(this_row,memo_1024_col)
+	if !isEditable then callpoint!.setStatus("ABORT")
 [[BMM_BILLOPER.AGDR]]
 rem --- Track wo_op_ref in Map to insure they are unique
 	refnumMap!=callpoint!.getDevObject("refnumMap")
@@ -7,6 +38,10 @@ rem --- Track wo_op_ref in Map to insure they are unique
 	if num(wo_op_ref$)>lastOpRef then
 		callpoint!.setDevObject("lastOpRef",num(wo_op_ref$))
 	endif
+
+rem --- Enable/disable Comments button
+	line_type$=callpoint!.getColumnData("BMM_BILLOPER.LINE_TYPE")
+	gosub enable_comments
 [[BMM_BILLOPER.BDEL]]
 rem --- Update refnumMap!
 	refnumMap!=callpoint!.getDevObject("refnumMap")
@@ -80,6 +115,10 @@ rem --- Verify wo_op_ref is unique
 rem --- Set Op Code DevObject
 
 	callpoint!.setDevObject("op_code",callpoint!.getColumnData("BMM_BILLOPER.OP_CODE"))
+
+rem --- Enable/disable Comments button
+	line_type$=callpoint!.getColumnData("BMM_BILLOPER.LINE_TYPE")
+	gosub enable_comments
 [[BMM_BILLOPER.AREC]]
 rem --- Set Op Code DevObject
 
@@ -201,11 +240,86 @@ rem ===================================================================
 	endif
 
 	return
+
+rem ==========================================================================
+comment_entry:
+rem --- on a line where you can access the ext_comments field, pop the new memo_1024 editor instead
+rem --- the editor can be popped on demand for any line using the Comments button (alt-C),
+rem --- but will automatically pop for lines where the ext_comments field is enabled.
+rem ==========================================================================
+
+	disp_text$=callpoint!.getColumnData("BMM_BILLOPER.MEMO_1024")
+	sv_disp_text$=disp_text$
+
+	rem --- Comments are only editable for line type M
+	line_type$=callpoint!.getColumnData("BMM_BILLOPER.LINE_TYPE")
+	if line_type$="M" then
+		editable$="YES"
+	else
+		editable$="NO"
+	endif
+
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
+
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Comments/Message Line",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		ext_comments$=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("BMM_BILLOPER.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("BMM_BILLOPER.EXT_COMMENTS",ext_comments$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE")
+
+	return
+
+rem ========================================================
+enable_comments:
+rem line_type:	input
+rem ========================================================
+
+	if line_type$="M" then
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"BMM_BILLOPER.MEMO_1024",1)
+		callpoint!.setOptionEnabled("COMM",1)
+	else
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"BMM_BILLOPER.MEMO_1024",0)
+		callpoint!.setOptionEnabled("COMM",0)
+	endif
+
+	return
 [[BMM_BILLOPER.BSHO]]
 rem --- Setup java class for Derived Data Element
 
+	use ::ado_util.src::util
 	use ::bmo_BmUtils.aon::BmUtils
 	declare BmUtils bmUtils!
+
+rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+
+	maintGrid!=Form!.getControl(num(stbl("+GRID_CTL")))
+	col_hdr$=callpoint!.getTableColumnAttribute("BMM_BILLOPER.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(maintGrid!, col_hdr$)
+	maintGrid!.setColumnWidth(memo_1024_col,15)
+
+rem --- Open files for later use
 
 	num_files=1
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
