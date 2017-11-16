@@ -31,6 +31,6 @@ rem --- Check For Required Fiscal Calendars
 rem --- Init new record
 
 	callpoint!.setColumnData("GLS_PARAMS.POST_TO_GL","Y")
-	curr_date$=date(0:"%Mz%Dz%Yl")
-	callpoint!.setColumnData("GLS_PARAMS.CURRENT_YEAR",curr_date$(5,4))
-	callpoint!.setColumnData("GLS_PARAMS.CURRENT_PER",curr_date$(1,2))
+	curr_date$=stbl("+SYSTEM_DATE")
+	callpoint!.setColumnData("GLS_PARAMS.CURRENT_YEAR",curr_date$(1,4))
+	callpoint!.setColumnData("GLS_PARAMS.CURRENT_PER",curr_date$(5,2))

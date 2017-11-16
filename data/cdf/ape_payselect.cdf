@@ -391,7 +391,7 @@ apm01_dev=fnget_dev("APM_VENDMAST")
 apm01_tpl$=fnget_tpl$("APM_VENDMAST")
 dim apm01a$:apm01_tpl$
 apm01a_key$=firm_id$+vendor_id$
-find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
+find record (apm01_dev,key=apm01a_key$,dom=*next) apm01a$
 if apm01a.vend_inactive$="Y" then
    call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
    msg_id$="AP_VEND_INACTIVE"

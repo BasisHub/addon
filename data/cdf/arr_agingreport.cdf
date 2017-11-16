@@ -79,9 +79,9 @@ if callpoint!.getUserInput()="Y"
 else
 	if callpoint!.getColumnData("ARR_AGINGREPORT.UPDATE_AGING")="Y"
 		callpoint!.setMessage("FIXED_PERIODS")
-		callpoint!.setUserInput("Y")
-		callpoint!.setColumnData("ARR_AGINGREPORT.DAYS_IN_PER","30")
-		callpoint!.setStatus("REFRESH")
+		callpoint!.setColumnData("ARR_AGINGREPORT.FIXED_PERIODS","Y",1)
+		callpoint!.setStatus("ABORT")
+		break
 	endif
 endif
 [[ARR_AGINGREPORT.AREC]]
@@ -117,6 +117,18 @@ days_in_per=num(callpoint!.getColumnData("ARR_AGINGREPORT.DAYS_IN_PER"))
 start_date$=callpoint!.getUserInput()
 if callpoint!.getColumnData("ARR_AGINGREPORT.FIXED_PERIODS")="Y"
 	gosub calc_dates_fixed
+else
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_CUR_THRU",start_date$,1)
+	future_from$=date(jul(start_date$,"%Yd%Mz%Dz")+1:"%Yd%Mz%Dz")
+	callpoint!.setColumnData("ARR_AGINGREPORT.AGEDATE_FUT_FROM",future_from$,1)
+
+	err_stat$="N"
+	last_date$=start_date$
+	prev_date$=callpoint!.getColumnData("ARR_AGINGREPORT.AGEDATE_CUR_FROM")
+	gosub check_dates
+	if err_stat$="Y" then
+		callpoint!.setFocus("ARR_AGINGREPORT.AGEDATE_CUR_FROM")
+	endif
 endif
 callpoint!.setStatus("REFRESH")
 [[ARR_AGINGREPORT.<CUSTOM>]]

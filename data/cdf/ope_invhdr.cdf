@@ -2503,6 +2503,9 @@ rem ==========================================================================
 			ivm01_dev=fnget_dev("IVM_ITEMMAST")
 			dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
 
+			ivm02_dev = fnget_dev("IVM_ITEMWHSE")
+			dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
+
 			read (opt11_dev,knum="PRIMARY",dom=*next);rem set opt11 to use primary key
 			read (opt11_dev, key=firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.order_no$+opt01a.ar_inv_no$, dom=*next)
 
@@ -2525,6 +2528,7 @@ rem ==========================================================================
 				ope11a$=opt11a$
 
 				if cvs(opt11a.line_code$,2)<>"" then 
+					redim opc_linecode$ 
 					read record (opc_linecode_dev, key=firm_id$+opt11a.line_code$, dom=*next) opc_linecode$
 				endif
 
@@ -2555,9 +2559,24 @@ rem ==========================================================================
 							ope11a.taxable_amt = ope11a.ext_price
 						endif
 					else
+						redim ivm01a$
 						read record (ivm01_dev, key=firm_id$+ope11a.item_id$, dom=*next) ivm01a$
 						if opc_linecode.taxable_flag$="Y" and ivm01a.taxable_flag$="Y" then 
 							ope11a.taxable_amt = ope11a.ext_price
+						endif
+
+						rem --- Warn about superseded items
+						if ivm01a.alt_sup_flag$="S" then
+							redim ivm02a$
+							readrecord (ivm02_dev, key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$, dom=*next) ivm02a$
+
+							msg_id$="OP_INCLUDES_SUPERSED"
+							dim msg_tokens$[4]
+							msg_tokens$[1]=str(ope11a.qty_ordered)
+							msg_tokens$[2]=cvs(ope11a.item_id$,2)
+							msg_tokens$[3]=cvs(ivm01a.alt_sup_item$,2)
+							msg_tokens$[4]=str(ivm02a.qty_on_hand - ivm02a.qty_commit)
+							gosub disp_message
 						endif
 					endif
 				endif

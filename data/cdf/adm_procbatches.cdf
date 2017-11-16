@@ -23,8 +23,8 @@ rem --- disallow user entering non-existent batch number
 	else
 rem --- set defaults
 
-		callpoint!.setColumnData("ADM_PROCBATCHES.DATE_OPENED",date(0:"%Yd%Mz%Dz"),1)
-		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_DATE",date(0:"%Yd%Mz%Dz"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.DATE_OPENED",stbl("+SYSTEM_DATE"),1)
+		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_DATE",stbl("+SYSTEM_DATE"),1)
 		callpoint!.setColumnData("ADM_PROCBATCHES.LSTUSE_TIME",date(0:"%hz%mz"),1)
 		callpoint!.setColumnData("ADM_PROCBATCHES.PROCESS_ID",stbl("+PROCESS_ID"),1)
 		callpoint!.setColumnData("ADM_PROCBATCHES.TIME_OPENED",date(0:"%hz%mz"),1)

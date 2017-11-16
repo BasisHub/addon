@@ -29,7 +29,7 @@ rem ' set up the sql query
 sql$ = "SELECT t1.ar_inv_no as ar_inv_nbr, "
 sql$ = sql$ + "t1.invoice_date AS invoice_date, "
 sql$ = sql$ + "t1.total_sales as invoice_amt FROM OPT_INVHDR t1 "
-sql$ = sql$ + "WHERE t1.trans_status='U' AND firm_id = '" + firm_id$ + "' AND t1.ar_type = '  ' AND CUSTOMER_ID = '" + customer_nbr$ + "' AND t1.INVOICE_DATE >= '" + beg_dt$ + "' and t1.INVOICE_DATE <= '" +end_dt$ + "' "
+sql$ = sql$ + "WHERE t1.trans_status='U' AND t1.invoice_type<>'V' AND firm_id = '" + firm_id$ + "' AND t1.ar_type = '  ' AND CUSTOMER_ID = '" + customer_nbr$ + "' AND t1.INVOICE_DATE >= '" + beg_dt$ + "' and t1.INVOICE_DATE <= '" +end_dt$ + "' "
 sql$ = sql$ + "ORDER BY t1.ar_inv_no"
 
 chan = sqlunt

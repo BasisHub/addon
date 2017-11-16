@@ -2380,6 +2380,9 @@ rem ==========================================================================
 			ivm01_dev=fnget_dev("IVM_ITEMMAST")
 			dim ivm01a$:fnget_tpl$("IVM_ITEMMAST")
 
+			ivm02_dev = fnget_dev("IVM_ITEMWHSE")
+			dim ivm02a$:fnget_tpl$("IVM_ITEMWHSE")
+
 			read (opt11_dev,knum="PRIMARY",dom=*next);rem set opt11 to use primary key
 			read (opt11_dev, key=firm_id$+opt01a.ar_type$+opt01a.customer_id$+opt01a.order_no$+opt01a.ar_inv_no$, dom=*next)
 
@@ -2402,7 +2405,8 @@ rem ==========================================================================
 
 				ope11a$=opt11a$
 
-				if cvs(opt11a.line_code$,2)<>"" then 
+				if cvs(opt11a.line_code$,2)<>"" then
+					redim opc_linecode$ 
 					read record (opc_linecode_dev, key=firm_id$+opt11a.line_code$, dom=*next) opc_linecode$
 				endif
 
@@ -2433,9 +2437,24 @@ rem ==========================================================================
 							ope11a.taxable_amt = ope11a.ext_price
 						endif
 					else
+						redim ivm01a$
 						read record (ivm01_dev, key=firm_id$+ope11a.item_id$, dom=*next) ivm01a$
 						if opc_linecode.taxable_flag$="Y" and ivm01a.taxable_flag$="Y" then 
 							ope11a.taxable_amt = ope11a.ext_price
+						endif
+
+						rem --- Warn about superseded items
+						if ivm01a.alt_sup_flag$="S" then
+							redim ivm02a$
+							readrecord (ivm02_dev, key=firm_id$+ope11a.warehouse_id$+ope11a.item_id$, dom=*next) ivm02a$
+
+							msg_id$="OP_INCLUDES_SUPERSED"
+							dim msg_tokens$[4]
+							msg_tokens$[1]=str(ope11a.qty_ordered)
+							msg_tokens$[2]=cvs(ope11a.item_id$,2)
+							msg_tokens$[3]=cvs(ivm01a.alt_sup_item$,2)
+							msg_tokens$[4]=str(ivm02a.qty_on_hand - ivm02a.qty_commit)
+							gosub disp_message
 						endif
 					endif
 				endif
@@ -2750,22 +2769,6 @@ rem --- Should we call Credit Action?
 rem ==========================================================================
 do_picklist: rem --- Print a Pick List
 rem ==========================================================================
-
-	print "in do_picklist..."; rem debug
-
-	ope_ordhdr=fnget_dev("OPE_ORDHDR")
-	read (ope_ordhdr);rem release extract so Pick List print can re-extract it
-
-	rem --- check if reprint
-	set_reprint_flag$=""
-	set_reprint_flag_old_value$=""
-	if callpoint!.getColumnData("OPE_ORDHDR.PRINT_STATUS") = "Y" then 
-		set_reprint_flag$="Y"
-		set_reprint_flag_value$=callpoint!.getColumnData("OPE_ORDHDR.REPRINT_FLAG")
-		callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG", "Y")
-	endif
-
-rem --- on demand pick list (or quote)
  
 	cp_cust_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 	cp_order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
@@ -2789,7 +2792,12 @@ rem --- on demand pick list (or quote)
 :	                       "",
 :	                       dflt_data$[all]	
 
-	callpoint!.setStatus("RECORD:["+firm_id$+"E"+"  "+cp_cust_id$+cp_order_no$+cp_invoice_no$+"]")
+	rem --- Update print_status
+	ope01_dev=fnget_dev("OPE_ORDHDR")
+	dim ope01a$:fnget_tpl$("OPE_ORDHDR")
+	extract record (ope01_dev, key=firm_id$+"E"+"  "+cp_cust_id$+cp_order_no$+cp_invoice_no$) ope01a$; rem Advisory Locking
+	callpoint!.setColumnData("OPE_ORDHDR.PRINT_STATUS",ope01a.print_status$,1)
+	callpoint!.setColumnData("OPE_ORDHDR.REPRINT_FLAG",ope01a.reprint_flag$,1)
 
 	return
 

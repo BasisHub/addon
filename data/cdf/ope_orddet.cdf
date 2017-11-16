@@ -69,6 +69,14 @@ endif
 rem --- Line code may not be displayed correctly when selected via arrow key instead of mouse
 	callpoint!.setStatus("REFRESH:LINE_CODE")
 [[OPE_ORDDET.ITEM_ID.AINV]]
+rem --- Skip check for item synonyms
+
+	if callpoint!.getDevObject("skip_ItemId_AINV") then
+		callpoint!.setDevObject("skip_ItemId_AINV",0)
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
 rem --- Check for item synonyms
 
 	rem --- Get starting item so we know if it gets changed
@@ -410,6 +418,7 @@ rem --- Set previous item / enable repricing, options, lot
 	gosub enable_repricing
 	gosub enable_addl_opts
 	gosub able_lot_button
+	callpoint!.setDevObject("skip_ItemId_AINV",0)
 [[OPE_ORDDET.LINE_CODE.BINP]]
 
 rem --- Set previous value / enable repricing, options, lots
@@ -1320,11 +1329,11 @@ rem --- Item probably isn't set yet, but we don't know for sure
 [[OPE_ORDDET.ITEM_ID.AVAL]]
 rem "Inventory Inactive Feature"
 
-	item_id$=callpoint!.getUserInput()
+	item$=callpoint!.getUserInput()
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
 	ivm01_tpl$=fnget_tpl$("IVM_ITEMMAST")
 	dim ivm01a$:ivm01_tpl$
-	ivm01a_key$=firm_id$+item_id$
+	ivm01a_key$=firm_id$+item$
 	find record (ivm01_dev,key=ivm01a_key$,err=*break)ivm01a$
 	if ivm01a.item_inactive$="Y" then
 		msg_id$="IV_ITEM_INACTIVE"
@@ -1333,15 +1342,13 @@ rem "Inventory Inactive Feature"
 		msg_tokens$[2]=cvs(ivm01a.display_desc$,2)
 		gosub disp_message
 		callpoint!.setStatus("ACTIVATE-ABORT")
+		callpoint!.setDevObject("skip_ItemId_AINV",1)
 		break
 	endif
 
-rem --- Check item/warehouse combination and setup values
-
-	item$ = callpoint!.getUserInput()
+rem --- Do not allow changing item when OP parameter set for asking about creating Work Order and item is committed.
 
 	if item$<>user_tpl.prev_item$ then
-		rem --- Do not allow changing item when OP parameter set for asking about creating Work Order and item is committed.
 		op_create_wo$=callpoint!.getDevObject("op_create_wo")
 		if op_create_wo$="A" and callpoint!.getColumnData("OPE_ORDDET.COMMIT_FLAG")="Y" then
 			soCreateWO! = callpoint!.getDevObject("soCreateWO")
@@ -1355,6 +1362,7 @@ rem --- Check item/warehouse combination and setup values
 					msg_tokens$[2] = Translate!.getTranslation("AON_ITEM")
 					gosub disp_message
 					callpoint!.setStatus("ACTIVATE-ABORT")
+					callpoint!.setDevObject("skip_ItemId_AINV",1)
 					break
 				else
 					rem --- Remove existing woVect! with previous item
@@ -1366,6 +1374,8 @@ rem --- Check item/warehouse combination and setup values
 			gosub clear_all_numerics
 		endif
 	endif
+
+rem --- Check item/warehouse combination and setup values
 
 	wh$   = callpoint!.getColumnData("OPE_ORDDET.WAREHOUSE_ID")
 	if cvs(wh$,2)="" then
@@ -1391,6 +1401,36 @@ rem --- Check item/warehouse combination and setup values
 		if pos(user_tpl.line_type$="SP") and num(ivm02a.unit_cost$)=0 or (user_tpl.line_dropship$="Y" and user_tpl.dropship_cost$="Y")
 			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"OPE_ORDDET.UNIT_COST",1)
 		endif
+
+		rem --- Check if item superseded
+		if item$<>user_tpl.prev_item$ and ivm01a.alt_sup_flag$="S" then
+			msg_id$="OP_SUPERSEDED_ITEM"
+			dim msg_tokens$[3]
+			msg_tokens$[1]=cvs(item$,2)
+			msg_tokens$[2]=cvs(ivm01a.alt_sup_item$,2)
+			msg_tokens$[3]=avail$[3]
+			gosub disp_message
+			callpoint!.setStatus("ACTIVATE")
+			if msg_opt$="C" then
+				callpoint!.setStatus("ABORT")
+				callpoint!.setDevObject("skip_ItemId_AINV",1)
+				break
+			else
+				if num(avail$[3])<=0 then
+					msg_id$="OP_SUPERSEDE_CONFIRM"
+					dim msg_tokens$[1]
+					msg_tokens$[1]=cvs(item$,2)
+					gosub disp_message
+					callpoint!.setStatus("ACTIVATE")
+					if msg_opt$="N" then
+						callpoint!.setStatus("ABORT")
+						callpoint!.setDevObject("skip_ItemId_AINV",1)
+						break
+					endif
+				endif
+			endif
+		endif
+
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPE_ORDDET.QTY_SHIPPED.AVAL]]

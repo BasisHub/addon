@@ -42,8 +42,7 @@ rem --- Enable/Disable Date field
 	if callpoint!.getUserInput()="N"
 		ctl_stat$=""
 		if callpoint!.getColumnData("APE_INVDATE.DEF_ACCT_DATE")=""
-			acctdate$=date(0:"%Y%Mz%Dz")
-			acctdate$=stbl("+SYSTEM_DATE",err=*next)
+			acctdate$=stbl("+SYSTEM_DATE")
 		else
 			acctdate$=callpoint!.getColumnData("APE_INVDATE.DEF_ACCT_DATE")
 		endif

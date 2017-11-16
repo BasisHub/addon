@@ -139,6 +139,25 @@ gosub disp_totals
 gosub calc_grid_tots
 gosub disp_totals
 [[POE_INVSEL.PO_NO.AVAL]]
+rem --- For new detail lines, locate first un-billed receiver for this PO
+if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())="Y" and cvs(callpoint!.getColumnData("POE_INVSEL.RECEIVER_NO"),2)="" then
+	pot_rechdr_dev=fnget_dev("POT_RECHDR")
+	dim pot_rechdr$:fnget_tpl$("POT_RECHDR")
+	po_no$=callpoint!.getUserInput()
+	read(pot_rechdr_dev,key=firm_id$+po_no$,dom=*next)
+	while 1
+		readrecord(pot_rechdr_dev,end=*break)pot_rechdr$
+		if pot_rechdr.firm_id$+pot_rechdr.po_no$<>firm_id$+po_no$ then break
+		curr_po_no$=po_no$
+		curr_receiver_no$=pot_rechdr.receiver_no$
+		skip_warning=1
+		gosub receiver_already_selected
+		if abort_receiver_already_selected then continue
+		callpoint!.setColumnData("POE_INVSEL.RECEIVER_NO",pot_rechdr.receiver_no$,1)
+		break
+	wend
+endif
+
 gosub accum_receiver_tot; rem accumulate total for po/receiver# entered
 [[POE_INVSEL.AWRI]]
 rem --- accum tot for po/receiver# entered and write to poe-25 for new/modified rows
@@ -149,6 +168,8 @@ if callpoint!.getGridRowNewStatus(num(callpoint!.getValidationRow()))="Y" or
 		gosub accum_receiver_tot
 endif
 [[POE_INVSEL.AGRE]]
+curr_po_no$=callpoint!.getColumnData("POE_INVSEL.PO_NO")
+curr_receiver_no$=callpoint!.getColumnData("POE_INVSEL.RECEIVER_NO")
 gosub receiver_already_selected
 if abort_receiver_already_selected then break
 
@@ -173,8 +194,6 @@ abort_receiver_already_selected=0
 if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 
 	curr_row=callpoint!.getValidationRow()
-	curr_po_no$=callpoint!.getColumnData("POE_INVSEL.PO_NO")
-	curr_receiver_no$=callpoint!.getColumnData("POE_INVSEL.RECEIVER_NO")
 	already_sel$=""
 	g!=gridVect!.getItem(0)
 	if g!.size()
@@ -185,19 +204,21 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 				if cvs(rec$,3)<>"" and callpoint!.getGridRowDeleteStatus(x)<>"Y"
 					this_po_no$=rec.po_no$
 					this_receiver_no$=rec.receiver_no$
-					if this_po_no$+this_receiver_no$=curr_po_no$+curr_receiver_no$ then already_sel$="Y"
-					if cvs(this_receiver_no$,3)="" then if this_po_no$=curr_po_no$ then already_sel$="Y"
-					if cvs(curr_receiver_no$,3)="" then if this_po_no$=curr_po_no$ then already_sel$="Y"						
+					if this_po_no$+this_receiver_no$=curr_po_no$+curr_receiver_no$ then already_sel$="Y"; break
+					if cvs(this_receiver_no$,3)="" then if this_po_no$=curr_po_no$ then already_sel$="Y"; break
+					if cvs(curr_receiver_no$,3)="" then if this_po_no$=curr_po_no$ then already_sel$="Y"; break						
 				endif
 			endif
 		next x
 	endif
 
-	if already_sel$="Y"
-		msg_id$="PO_REC_SEL"
-		gosub disp_message
-		callpoint!.setStatus("ABORT")
-		callpoint!.setFocus(callpoint!.getValidationRow(),"POE_INVSEL.RECEIVER_NO",1)
+	if already_sel$="Y" then
+		if !skip_warning then
+			msg_id$="PO_REC_SEL"
+			gosub disp_message
+			callpoint!.setStatus("ABORT")
+			callpoint!.setFocus(callpoint!.getValidationRow(),"POE_INVSEL.RECEIVER_NO",1)
+		endif
 		abort_receiver_already_selected=1
 	endif
 endif

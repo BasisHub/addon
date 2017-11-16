@@ -33,6 +33,7 @@ rem --- Get 'IN' SPROC parameters
 	price_mask$ =    sp!.getParameter("PRICE_MASK")
 	selected_whse$ = sp!.getParameter("SELECTED_WHSE")
     pick_or_quote$ = sp!.getParameter("PICK_OR_QUOTE")
+    reprint$ =       sp!.getParameter("REPRINT")
     print_prices$ =  sp!.getParameter("PRINT_PRICES")
     mult_wh$ =       sp!.getParameter("MULT_WH")
 	barista_wd$ =    sp!.getParameter("BARISTA_WD")
@@ -142,6 +143,9 @@ rem --- Main
 
 			internal_seq_no$ = ope11a.internal_seq_no$
             if !whse_len then whse_len=len(ope11a.warehouse_id$);rem store len of wh field on first detail read for later use in warehouse message routine (to avoid hard-coding '2')
+
+            if reprint$<>"Y" and ope11a.pick_flag$="Y" then continue; rem --- Not a reprint and already printed
+            if reprint$="Y" and ope11a.pick_flag$<>"Y" then continue; rem --- A reprint and not printed yet
 		
         rem --- Type
 		
