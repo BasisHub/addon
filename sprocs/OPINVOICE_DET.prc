@@ -185,7 +185,7 @@ line_detail: rem --- Item Detail
 				item_desc$=item_desc$+" "+cvs(item_description$,3)+iff(cvs(ope11a.memo_1024$,3)="",""," - "+cvs(ope11a.memo_1024$,3))
 			endif
             
-            if item_desc$(len(item_desc$),1)=$0A$ then item_desc$=item_desc$(1,len(item_desc$)-1)
+            if len(item_desc$) then if item_desc$(len(item_desc$),1)=$0A$ then item_desc$=item_desc$(1,len(item_desc$)-1)
 
 			data! = rs!.getEmptyRecordData()
 			data!.setFieldValue("ORDER_QTY_MASKED", order_qty_masked$)

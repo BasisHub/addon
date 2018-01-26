@@ -24,6 +24,7 @@ rem --- Update Credit changes to master file
 		ope03a.firm_id$=firm_id$
 		ope03a.rev_date$=tick_date$
 		ope03a.customer_id$=customer_id$
+		ope03a.order_no$=pad(" ",dec(fattr(ope03a$,"ORDER_NO")(10,2)));rem Order Number all spaces for tickler
 		ope03_key$=ope03a.firm_id$+ope03a.rev_date$+ope03a.customer_id$+ope03a.order_no$
 		extractrecord(ope03_dev,key=ope03_key$,dom=*next)x$; rem Advisory Locking
 		ope03a$=field(ope03a$)

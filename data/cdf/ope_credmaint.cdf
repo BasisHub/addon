@@ -359,7 +359,7 @@ update_tickler: rem --- Modify Tickler date
 		ope03a.firm_id$=firm_id$
 		ope03a.rev_date$=tick_date$
 		ope03a.customer_id$=cust_no$
-		ope03a.order_no$=ord$
+		ope03a.order_no$=pad(ord$,dec(fattr(ope03a$,"ORDER_NO")(10,2)));rem Order Number all spaces for tickler
 		ope03_key$=ope03a.firm_id$+ope03a.rev_date$+ope03a.customer_id$+ope03a.order_no$
 		extractrecord(ope03_dev,key=ope03_key$,dom=*next)x$; rem Advisory Locking
 		ope03a$=field(ope03a$)
@@ -384,20 +384,39 @@ return
 rem --- Comment Maintenance
 
 	gosub update_tickler
-	cust_id$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
-	user_id$=stbl("+USER_ID")
 
-	dim dflt_data$[2,1]
-	dflt_data$[1,0]="CUSTOMER_ID"
-	dflt_data$[1,1]=cust_id$
+	disp_text$=callpoint!.getColumnData("<<DISPLAY>>.COMMENTS")
+	sv_disp_text$=disp_text$
 
-	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
-:		"ARM_CUSTCMTS",
-:		user_id$,
-:		"MNT",
-:		firm_id$+cust_id$,
-:		table_chans$[all],
-:		"",
-:		dflt_data$[all]
+	editable$="YES"
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
 
-	gosub disp_cust_comments
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Customer Comments",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		rem --- Update comments to master file
+		arm01_dev=fnget_dev("ARM_CUSTMAST")
+		dim arm01a$:fnget_tpl$("ARM_CUSTMAST")
+		extractrecord(arm01_dev,key=firm_id$+callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID"))arm01a$; rem Advisory Locking
+		arm01a.memo_1024$=disp_text$
+		arm01a$=field(arm01a$)
+		writerecord(arm01_dev)arm01a$
+		callpoint!.setColumnData("<<DISPLAY>>.COMMENTS",disp_text$,1)
+	endif
