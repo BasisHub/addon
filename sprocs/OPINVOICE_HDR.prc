@@ -392,7 +392,7 @@ format_address: rem --- Reformat address to bottom justify
 
 get_stdMessage: rem --- Get Standard Message lines
 
-    find record (opc_message, key=firm_id$+ope01a.message_code$, dom=*endif) opc_message$
+    find record (opc_message, key=firm_id$+ope01a.message_code$, dom=*next) opc_message$
 	
     return
 

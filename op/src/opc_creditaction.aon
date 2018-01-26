@@ -9,7 +9,7 @@ rem --- All Rights Reserved
     setesc std_error
     seterr std_error
 
-    enter cust_id$, order_no$, table_chans$[all], callpoint!, action$, status
+    enter cust_id$, order_no$, invoice_no$, table_chans$[all], callpoint!, action$, status
     
 rem --- Use statements, declares
 
@@ -79,58 +79,30 @@ rem --- Retrieve parameter record(s)
 rem --- Initialize Data
 
     action$=""
- 
-    found = 0
-    trip_key$=firm_id$+"  "+cust_id$+order_no$
-    read (ope01_dev, key=trip_key$, knum="PRIMARY", dom=*next)
-    while 1
-        ope01_key$=key(ope01_dev,end=*break)
-        if pos(trip_key$=ope01_key$)<>1 then break
-        readrecord(ope01_dev)ope01a$
-        if pos(ope01a.trans_status$="ER") then
-            found=1
-            break; rem --- new order can have at most just one new invoice, if any
-        endif
-    wend
-    read(ope01_dev,knum="AO_STATUS"); rem --- reset knum for ope_invhdr and ope_ordhdr
-    
-    if !found then goto std_exit
-    
+
+    rem --- Make sure ope_invhdr or ope_ordhdr record exists. Use knum=AO_STATUS the same as the forms.
+    extractrecord(ope01_dev,key=firm_id$+"E"+"  "+cust_id$+order_no$+invoice_no$,dom=*next)ope01a$
+    if cvs(ope01a.firm_id$+ope01a.customer_id$+ope01a.order_no$,2)="" then
+        rem --- Not in Entry, so check the Register
+        extractrecord(ope01_dev,key=firm_id$+"R"+"  "+cust_id$+order_no$+invoice_no$,dom=*next)ope01a$
+    endif
+    if cvs(ope01a.firm_id$+ope01a.customer_id$+ope01a.order_no$,2)="" then goto std_exit
+
+    terms_code$=ope01a.terms_code$
+    credit_flag$=ope01a.credit_flag$
     backorderedControl! = cast(BBjControl, callpoint!.getDevObject("backordered_control"))
     
 rem --- Has order/invoice been printed?
-rem --- This section will never be executed from Order Entry. Maybe from Invoice Entry, so I'll leave it --- jpb 9/7/10
-    if callpoint!.getColumnData("PRINT_STATUS") = "Y" then
-    
+    if ope01a.print_status$ = "Y" then
         rem --- Exit silently
-    
-        rem msg_id$="OP_PRINTED_CREDIT"
-        rem gosub disp_message
-        
-        rem if msg_opt$ = "N" then
-            action$ = "S"
-            backorderedControl!.setText("Order/Invoice is Printed")
-            callpoint!.setDevObject("credit_action_done", "Y")
-            goto std_exit
-        rem endif
-    endif
-
-rem --- Check For Quotes
-rem --- This should never get executed here either. Order Entry is now preventing quotes from getting to this call
-    if callpoint!.getColumnData("INVOICE_TYPE")="P" then
-		escape
-        status$="This is a Quote"
-        backorderedControl!.setText(status$)
-        
-        callpoint!.setColumnData("CREDIT_FLAG","")
-        callpoint!.setStatus("SETORIG")
-        
-        action$ = "Q"
+        action$ = "S"
+        backorderedControl!.setText("Order/Invoice is Printed")
+        callpoint!.setDevObject("credit_action_done", "Y")
         goto std_exit
     endif
 
 rem --- Credit memos shouldn't get processed
-    if num(callpoint!.getColumnData("TOTAL_SALES")) <=0 then
+    if ope01a.total_sales <= 0 then
         action$ = "M"
         backorderedControl!.setText("Credit Memo: no processing")
         goto final_updates
@@ -141,7 +113,7 @@ rem --- Get over credit limit flag
     if ars01c.display_bal$ <> "A" and callpoint!.getDevObject("credit_status_done") <> "Y" then
     
     rem --- Display credit management (status)
-    
+
         call pgmdir$+"opc_creditmgmnt.aon", cust_id$, order_no$, table_chans$[all], callpoint!, status
         if status = 999 then goto std_exit
     endif
@@ -149,7 +121,7 @@ rem --- Get over credit limit flag
     ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
     over_credit_limit = ordHelp!.calcOverCreditLimit()
     credit_hold_reason$ = ordHelp!.getCreditHoldReason()
-	if callpoint!.getColumnData("CREDIT_FLAG") = "C" over_credit_limit = 1
+	if credit_flag$ = "C" then over_credit_limit = 1
 	
 rem --- Is credit ok?
 
@@ -159,7 +131,7 @@ rem --- Is credit ok?
         status$="Credit is OK"
 		callpoint!.setDevObject("msg_credit_okay","Y")
     else
-        if callpoint!.getColumnData("CREDIT_FLAG")="R" then 
+        if credit_flag$="R" then 
 			callpoint!.setDevObject("msg_released","Y")
             status$="Order is Released"
         endif
@@ -179,7 +151,7 @@ display_form: rem --- Display
     dflt_data$[1,0] = "STATUS_MESSAGE"
     dflt_data$[1,1] = credit_hold_reason$
     dflt_data$[2,0] = "AR_TERMS_CODE"
-    dflt_data$[2,1] = callpoint!.getColumnData("TERMS_CODE")
+    dflt_data$[2,1] = terms_code$
     
     credit_action = 0
     callpoint!.setDevObject("cust_id", cust_id$)
@@ -197,8 +169,8 @@ display_form: rem --- Display
         
         rem --- Hold order
 		
-			callpoint!.setColumnData("CREDIT_FLAG","C")
             action$ = "H"
+            credit_flag$ = "C"
             break
             
         case 2
@@ -211,17 +183,18 @@ display_form: rem --- Display
             write record (arm02_dev) arm02a$
             
             action$ = "C"
+            credit_flag$ = "C"
             break
             
         case 3
         
         rem --- Release this order
         
-            terms$ = str(callpoint!.getDevObject("new_terms_code"))
+            terms_code$ = str(callpoint!.getDevObject("new_terms_code"))
 
-            if terms$<>"null" then
+            if terms_code$<>"null" then
                 action$ = "R"
-				callpoint!.setColumnData("CREDIT_FLAG","R")
+                credit_flag$ = "R"
 				callpoint!.setDevObject("msg_released","Y")
             else
                 rem action$ = ?
@@ -234,7 +207,7 @@ display_form: rem --- Display
         rem --- Delete order
         
             action$="D"
-            callpoint!.setColumnData("CREDIT_FLAG","")
+            credit_flag$ = ""
             break
             
         case default
@@ -249,9 +222,12 @@ rem --- Update Tickler File
 
 rem --- Update order header file
 
-    callpoint!.setColumnData("LOCK_STATUS","N")
 	if action$<>"D"
-		callpoint!.setStatus("SAVE")
+        ope01a.terms_code$=terms_code$
+        ope01a.lock_status$="N"
+        ope01a.credit_flag$=credit_flag$
+        ope01a$=field(ope01a$)
+        writerecord(ope01_dev)ope01a$     
 	endif
     
     callpoint!.setDevObject("credit_action_done", "Y")
@@ -277,7 +253,7 @@ rem --- Find only tickler records for this order
     
     rem --- Found and no need to remove or update
     
-        if callpoint!.getColumnData("ORDER_DATE") = ope03a.rev_date$ and callpoint!.getColumnData("CREDIT_FLAG")="C" then 
+        if ope01a.order_date$ = ope03a.rev_date$ and credit_flag$="C" then 
             update = 0
             break
         endif
@@ -291,10 +267,10 @@ rem --- Find only tickler records for this order
 
 rem --- Update tickler file with new record
     
-    if callpoint!.getColumnData("CREDIT_FLAG")="C" and update then
+    if credit_flag$="C" and update then
         dim ope03a$:fattr(ope03a$)
         ope03a.firm_id$ = firm_id$
-        ope03a.rev_date$ = callpoint!.getColumnData("ORDER_DATE")
+        ope03a.rev_date$ = ope01a.order_date$
         ope03a.customer_id$ = cust_id$
         ope03a.order_no$ = order_no$
         ope03a$ = field(ope03a$)

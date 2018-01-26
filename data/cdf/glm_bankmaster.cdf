@@ -127,10 +127,31 @@ rem " --- Calculate Summary info
 
   	gosub calc_totals
 [[GLM_BANKMASTER.CURSTM_DATE.AVAL]]
-rem " --- Recalc Summary Info
+rem --- Current statement date must be after prior statement end date
+	curstm_date$=callpoint!.getUserInput()
+	pri_end_date$=callpoint!.getColumnData("GLM_BANKMASTER.PRI_END_DATE")
+	if cvs(pri_end_date$,2)<>"" and pri_end_date$>curstm_date$ then
+		msg_id$="GL_BANK_PRIDATE"
+		gosub disp_message
+		if msg_opt$="N"
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+	endif
 
+rem --- Current statement date must be in prior, current or next fiscal year
+	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",pgm(-2),"GL","","",status
+	call stbl("+DIR_PGM")+"glc_datecheck.aon",curstm_date$,"N",period$,year$,glstatus
+	if glstatus=101 then
+		dim msg_tokens$[1]
+		msg_tokens$[1]=fndate$(curstm_date$)+" "+Translate!.getTranslation("AON_IS_NOT_IN_THE_PRIOR,_CURRENT_OR_NEXT_GL_YEAR.")
+		call stbl("+DIR_SYP")+"bac_message.bbj","GENERIC_WARN",msg_tokens$[all],msg_opt$,table_chans$[all]
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
+rem --- Recalc Summary Info
 	gosub calc_totals
-
 [[GLM_BANKMASTER.AOPT-DETL]]
 rem " --- Recalc Summary Info
 
@@ -198,24 +219,15 @@ rem ====================================================
 check_date: rem --- Check Statement Ending Date
 rem ====================================================
 
-	status=0
-	call stbl("+DIR_PGM")+"glc_ctlcreate.aon",pgm(-2),"GL","","",status
-	if status release
-	call stbl("+DIR_PGM")+"glc_datecheck.aon",stmtdate$,"Y",stmtperiod$,stmtyear$,status
-	if status>100 then return
+	call stbl("+DIR_PGM")+"adc_fiscalperyr.aon",firm_id$,stmtdate$,stmtperiod$,stmtyear$,table_chans$[all],status
+	if status then return
+
 	stmtperiod=num(stmtperiod$)
 	stmtperiod$=str(stmtperiod:"00")
 	stmtyear=num(stmtyear$)
 	if gls01a.gl_yr_closed$="Y" currentgl=num(gls01a.current_year$) else currentgl=num(gls01a.current_year$)-1; rem "GL year end closed?
 	priorgl=currentgl-1
 	nextgl=currentgl+1
-	if stmtyear<priorgl and stmtyear>nextgl
-		dim message$[1]
-		message$[0]=Translate!.getTranslation("AON_DATE_IS_NOT_IN_PRIOR,_CURRENT_OR_NEXT_G/L_YEAR.")
-		message$[1]=Translate!.getTranslation("AON________PRESS_<ENTER>_TO_CONTINUE")
-		call stbl("+DIR_PGM")+ "adc.stdmessage.aon",2,message$[all],1,0,0,v$,v3
-		status=1
-	endif
 	return
 
 rem ====================================================
@@ -313,7 +325,7 @@ rem --- Find G/L Record"
 	gls01_dev=user_tpl.gls01_dev
 	readrecord(gls01_dev,key=firm_id$+"GL00")gls01a$
 	gosub check_date
-	if status>100 then
+	if status then
 		callpoint!.setStatus("ABORT")
 		break
 	endif

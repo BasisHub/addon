@@ -823,12 +823,28 @@ rem --- Informational warning for category N WO's - requirements may need to be 
 	endif
 [[SFE_WOMASTR.AOPT-COPY]]
 rem --- Copy from other Work Order
+	wo_loc$=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
+	wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
 
-	rem --- Must be in edit mode for this feature
+	rem --- Add Barista soft lock for this record if not already in edit mode
 	if !callpoint!.isEditMode() then
-		msg_id$="AD_EDIT_MODE_REQUIRE"
-		gosub disp_message
-		break
+		rem --- Is there an existing soft lock?
+		lock_table$="SFE_WOMASTR"
+		lock_record$=firm_id$+wo_loc$+wo_no$
+		lock_type$="C"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		if lock_status$="" then
+			rem --- Add temporary soft lock used just for this task
+			lock_type$="L"
+			call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		else
+			rem --- Record locked by someone else
+			msg_id$="ENTRY_REC_LOCKED"
+			gosub disp_message
+			break
+		endif
 	endif
 
 rem --- Check to make sure there aren't existing requirements
@@ -836,9 +852,6 @@ rem --- Check to make sure there aren't existing requirements
 	woe02_dev=fnget_dev("SFE_WOOPRTN")
 	woe22_dev=fnget_dev("SFE_WOMATL")
 	woe32_dev=fnget_dev("SFE_WOSUBCNT")
-
-	wo_loc$=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
-	wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
 
 	found_reqs=0
 
@@ -914,6 +927,9 @@ rem --- Get memo_1024 comments from WO that was copied
 	memoRefNum!.setText(memo_1024$)
 
 	callpoint!.setStatus("SAVE")
+
+rem --- No need to remove temporary soft lock used just for this task since the SAVE takes care of it.
+
 [[SFE_WOMASTR.SCH_PROD_QTY.AVAL]]
 rem --- Verify minimum quantity > 0
 
@@ -981,11 +997,25 @@ rem --- Display Job Status
 [[SFE_WOMASTR.AOPT-RELS]]
 rem --- Release/Commit the Work Order
 
-	rem --- Must be in edit mode for this feature
+	rem --- Add Barista soft lock for this record if not already in edit mode
 	if !callpoint!.isEditMode() then
-		msg_id$="AD_EDIT_MODE_REQUIRE"
-		gosub disp_message
-		break
+		rem --- Is there an existing soft lock?
+		lock_table$="SFE_WOMASTR"
+		lock_record$=firm_id$+callpoint!.getDevObject("wo_loc")+callpoint!.getDevObject("wo_no")
+		lock_type$="C"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		if lock_status$="" then
+			rem --- Add temporary soft lock used just for this task
+			lock_type$="L"
+			call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		else
+			rem --- Record locked by someone else
+			msg_id$="ENTRY_REC_LOCKED"
+			gosub disp_message
+			break
+		endif
 	endif
 
 	callpoint!.setDevObject("wo_status",callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS"))
@@ -1003,18 +1033,39 @@ rem --- Release/Commit the Work Order
 		callpoint!.setStatus("RECORD:["+firm_id$+callpoint!.getDevObject("wo_loc")+callpoint!.getDevObject("wo_no")+"]")
 	endif
 
+	rem --- Remove temporary soft lock used just for this task 
+	if !callpoint!.isEditMode() and lock_type$="L" then
+		lock_type$="U"
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	endif
 [[SFE_WOMASTR.AOPT-SCHD]]
 rem --- Schedule the Work Order
+	wo_location$=callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION")
+	wo_no$=callpoint!.getColumnData("SFE_WOMASTR.WO_NO")
 
-	rem --- Must be in edit mode for this feature
+	rem --- Add Barista soft lock for this record if not already in edit mode
 	if !callpoint!.isEditMode() then
-		msg_id$="AD_EDIT_MODE_REQUIRE"
-		gosub disp_message
-		break
+		rem --- Is there an existing soft lock?
+		lock_table$="SFE_WOMASTR"
+		lock_record$=firm_id$+wo_location$+wo_no$
+		lock_type$="C"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		if lock_status$="" then
+			rem --- Add temporary soft lock used just for this task
+			lock_type$="L"
+			call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		else
+			rem --- Record locked by someone else
+			msg_id$="ENTRY_REC_LOCKED"
+			gosub disp_message
+			break
+		endif
 	endif
 
-	callpoint!.setDevObject("wo_no",callpoint!.getColumnData("SFE_WOMASTR.WO_NO"))
-	callpoint!.setDevObject("wo_location",callpoint!.getColumnData("SFE_WOMASTR.WO_LOCATION"))
+	callpoint!.setDevObject("wo_no",wo_no$)
+	callpoint!.setDevObject("wo_location",wo_location$)
 	callpoint!.setDevObject("order_no",callpoint!.getColumnData("SFE_WOMASTR.ORDER_NO"))
 	callpoint!.setDevObject("item_id",callpoint!.getColumnData("SFE_WOMASTR.ITEM_ID"))
 	callpoint!.setDevObject("customer_id",callpoint!.getColumnData("SFE_WOMASTR.CUSTOMER_ID"))
@@ -1054,6 +1105,12 @@ rem --- Schedule the Work Order
 		callpoint!.setColumnData("SFE_WOMASTR.ESTSTT_DATE",start_date$,1)
 		callpoint!.setColumnData("SFE_WOMASTR.ESTCMP_DATE",comp_date$,1)
 		callpoint!.setStatus("MODIFIED")
+	endif
+
+	rem --- Remove temporary soft lock used just for this task 
+	if !callpoint!.isEditMode() and lock_type$="L" then
+		lock_type$="U"
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 	endif
 [[SFE_WOMASTR.ORDER_NO.AVAL]]
 rem --- Validate Open Sales Order

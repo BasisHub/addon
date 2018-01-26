@@ -240,20 +240,42 @@ rem --- Now we've been on the Totals tab
 rem --- Enable/Disable Cash Sale button
 	gosub able_cash_sale
 [[OPE_INVHDR.AOPT-UINV]]
-rem --- Check to see if record has been modified (don't undo until rec is saved)
+rem --- Undo Invoice
+	ar_type$=callpoint!.getColumnData("OPE_INVHDR.AR_TYPE")
+	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	old_inv_no$=callpoint!.getColumnData("OPE_INVHDR.AR_INV_NO")
 
+rem --- Make sure modified records are saved before un-doing
 	if pos("M"=callpoint!.getRecordStatus())
-		callpoint!.setOptionEnabled("UINV",0)
-		msg_id$="AD_SAVE_BEFORE_UNDO"
-		gosub disp_message
-		break
+		gosub get_disk_rec
+		write record (ordhdr_dev) ordhdr_rec$
+		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
+		extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
+
+		rem --- Do not need to callpoint!.setStatus("SETORIG") here because the
+		rem --- callpoint!.setStatus("RECORD:["+ ... "]") at the end of this callpoint will do it.
 	endif
 
-rem --- Must be in edit mode for this feature
+rem --- Add Barista soft lock for this record if not already in edit mode
 	if !callpoint!.isEditMode() then
-		msg_id$="AD_EDIT_MODE_REQUIRE"
-		gosub disp_message
-		break
+		rem --- Is there an existing soft lock?
+		lock_table$="OPT_INVHDR"
+		lock_record$=firm_id$+"E"+ar_type$+cust_id$+order_no$+old_inv_no$
+		lock_type$="C"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		if lock_status$="" then
+			rem --- Add temporary soft lock used just for this print task
+			lock_type$="L"
+			call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		else
+			rem --- Record locked by someone else
+			msg_id$="ENTRY_REC_LOCKED"
+			gosub disp_message
+			break
+		endif
 	endif
 
 rem --- Cannot undo if cash has been applied to invoice
@@ -424,6 +446,12 @@ rem --- All Done
 
 	user_tpl.do_end_of_form = 0
 	callpoint!.setStatus("NEWREC")
+
+rem --- Remove temporary soft lock used just for this print task 
+	if !callpoint!.isEditMode() and lock_type$="L" then
+		lock_type$="U"
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	endif
 [[OPE_INVHDR.AOPT-CRCH]]
 print "Hdr:AOPT:CRCH"; rem debug
 
@@ -742,20 +770,41 @@ rem --- Set type in OrderHelper object
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	ordHelp!.setInv_type(callpoint!.getUserInput())
 [[OPE_INVHDR.AOPT-PRNT]]
-rem --- Check to see if record has been modified (don't print until rec is saved)
+rem --- Print Now
+	customer_id$=callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
+	order_no$=callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
+	ar_inv_no$=callpoint!.getColumnData("OPE_INVHDR.AR_INV_NO")
 
+rem --- Make sure modified records are saved before printing
 	if pos("M"=callpoint!.getRecordStatus())
-		callpoint!.setOptionEnabled("PRNT",0)
-		msg_id$="AD_SAVE_BEFORE_PRINT"
-		gosub disp_message
-		break
+		gosub get_disk_rec
+		write record (ordhdr_dev) ordhdr_rec$
+		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
+		extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
+
+		rem --- Do not need to callpoint!.setStatus("SETORIG") here because the
+		rem --- callpoint!.setStatus("RECORD:["+ ... "]") at the end of this callpoint will do it.
 	endif
 
-rem --- Must be in edit mode for this feature
+rem --- Add Barista soft lock for this record if not already in edit mode
 	if !callpoint!.isEditMode() then
-		msg_id$="AD_EDIT_MODE_REQUIRE"
-		gosub disp_message
-		break
+		rem --- Is there an existing soft lock?
+		lock_table$="OPT_INVHDR"
+		lock_record$=firm_id$+"E"+"  "+customer_id$+order_no$+ar_inv_no$
+		lock_type$="C"
+		lock_status$=""
+		lock_disp$=""
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		if lock_status$="" then
+			rem --- Add temporary soft lock used just for this print task
+			lock_type$="L"
+			call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+		else
+			rem --- Record locked by someone else
+			msg_id$="ENTRY_REC_LOCKED"
+			gosub disp_message
+			break
+		endif
 	endif
 
 rem --- Get cash if needed for cash transaction
@@ -774,41 +823,17 @@ rem --- Print a counter Invoice
 		break
 	endif
 
-	if user_tpl.credit_installed$ <> "Y" or callpoint!.getColumnData("OPE_INVHDR.CASH_SALE") = "Y" then
+rem --- No need to check credit first
 
-	rem --- No need to check credit first
+	gosub do_invoice
+	user_tpl.do_end_of_form = 0
+	callpoint!.clearStatus()
+	callpoint!.setStatus("NEWREC-ACTIVATE")
 
-		gosub do_invoice
-		user_tpl.do_end_of_form = 0
-		callpoint!.clearStatus()
-		callpoint!.setStatus("NEWREC-ACTIVATE")
-	else
-
-	rem --- Can't print until released from credit
-
-		gosub force_print_status
-		gosub do_credit_action
-
-		print "---Print Status: """, callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS"), """"; rem debug
-
-		if pos(action$ = "XU") or (action$ = "R" and callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "N") then 
-
-		rem --- Couldn't do credit action, or did credit action w/ no problem, or released from credit but didn't print
-
-			gosub do_invoice
-			user_tpl.do_end_of_form = 0
-			callpoint!.clearStatus()
-			callpoint!.setStatus("NEWREC-ACTIVATE")
-		else
-			if action$ = "R" and callpoint!.getColumnData("OPE_INVHDR.PRINT_STATUS") = "Y" then 
-
-			rem --- Released from credit and did print
-
-				user_tpl.do_end_of_form = 0
-				callpoint!.clearStatus()
-				callpoint!.setStatus("NEWREC")
-			endif
-		endif
+rem --- Remove temporary soft lock used just for this print task 
+	if !callpoint!.isEditMode() and lock_type$="L" then
+		lock_type$="U"
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 	endif
 [[OPE_INVHDR.BREX]]
 rem --- Are both Customer and Order entered?
@@ -882,16 +907,6 @@ rem --- Calculate taxes and write it back
 	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
 	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
 	callpoint!.setStatus("SETORIG")
-
-rem --- Credit action
-
-	rem --- Temporay work around to avoid error 11 when no record exists re Barista bug 5743
-	rem --- Header record will exist if at least one detail line has been entered.
-	if GridVect!.getItem(0).size()>0 then
-		if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
-			gosub do_credit_action
-		endif
-	endif
 
 rem --- Does the total of lot/serial# match the qty shipped for each detail line?
 
@@ -2707,7 +2722,6 @@ rem ==========================================================================
 	rem --- Write flag to file so opc_creditaction can see it
 
 		gosub get_disk_rec
-		ordhdr_rec$ = field(ordhdr_rec$)
 		write record (ordhdr_dev) ordhdr_rec$
 		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
 		extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
@@ -2718,89 +2732,12 @@ rem ==========================================================================
 	return
 
 rem ==========================================================================
-do_credit_action: rem --- Launch the credit action program / form
-rem ==========================================================================
-
-rem --- Invoicing should only allow this if already on Credit Hold.
-
-rem --- The following line will prevent credit action from ever being called.
-action$="U"
-return
-
-	if callpoint!.getColumnData("OPE_INVHDR.CREDIT_FLAG") <> "C"
-		action$="U"
-		return
-	endif
-
-	print "in do_credit_action..."; rem debug
-
-	inv_type$ = callpoint!.getColumnData("OPE_INVHDR.INVOICE_TYPE")
-	cust_id$  = callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID")
-	order_no$ = callpoint!.getColumnData("OPE_INVHDR.ORDER_NO")
-
-rem --- Should we call Credit Action?
-
-	if user_tpl.credit_installed$ = "Y" and inv_type$ <> "P" and cvs(cust_id$, 2) <> "" and cvs(order_no$, 2) <> "" then
-		callpoint!.setDevObject("run_by", "invoice")
-		call user_tpl.pgmdir$+"opc_creditaction.aon", cust_id$, order_no$, table_chans$[all], callpoint!, action$, status
-		callpoint!.setStatus("ACTIVATE")
-		if status = 999 then goto std_exit
-
-	rem --- Delete the order
-
-		if action$ = "D" then 
-			callpoint!.setStatus("DELETE")
-			return
-		endif
-
-		if pos(action$="HC")<>0 then
-
-		rem --- Order on hold
-
-			callpoint!.setColumnData("OPE_INVHDR.CREDIT_FLAG","C")
-		else
-			if action$="R" then
-
-			rem --- Order released
-
-				callpoint!.setColumnData("OPE_INVHDR.CREDIT_FLAG","R")
-				terms$ = str(callpoint!.getDevObject("new_terms_code"))
-
-				if terms$ <> "" then
-					callpoint!.setColumnData("OPE_INVHDR.TERMS_CODE", terms$)
-				endif
-				callpoint!.setDevObject("msg_released","Y")
-				callpoint!.setDevObject("msg_hold","")
-				call user_tpl.pgmdir$+"opc_creditmsg.aon","H",callpoint!,UserObj!
-			else
-				callpoint!.setColumnData("OPE_INVHDR.CREDIT_FLAG","")			
-			endif
-		endif
-
-	rem --- Order was printed within the credit action program
-
-		if str(callpoint!.getDevObject("document_printed")) = "Y" then 
-			callpoint!.setColumnData("OPE_INVHDR.PRINT_STATUS", "Y")
-			print "---Print Status: Y"; rem debug
-		endif
-
-	endif
-
-	print "---action$: """, action$, """"; rem debug
-	print "out"; rem debug
-
-	return
-
-rem ==========================================================================
 do_invoice: rem --- Print an Invoice
 rem ==========================================================================
-
-	print "in do_invoice..."; rem debug
 
 rem --- Make sure everything's written back to disk
 
 	gosub get_disk_rec
-	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
 	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
 rem	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking - rem'd because invoice program does the extract
@@ -3036,12 +2973,11 @@ rem --- Update CASH_SALE flag
 rem --- Write flag to disk
 
 	gosub get_disk_rec
-
-	ordhdr_rec$ = field(ordhdr_rec$)
 	write record (ordhdr_dev) ordhdr_rec$
 	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
 	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
 
+	callpoint!.setStatus("SETORIG")
 	return
 
 rem ==========================================================================
@@ -3064,13 +3000,11 @@ rem ==========================================================================
 	invoice_no$=callpoint!.getColumnData("OPE_INVHDR.AR_INV_NO")
 
 	found = 0
-	extract record (ordhdr_dev, key=firm_id$+trans_status$+"  "+cust_id$+order_no$+invoice_no$, dom=*endif) ordhdr_rec$; found = 1; rem Advisory Locking
+	extract record (ordhdr_dev, key=firm_id$+trans_status$+"  "+cust_id$+order_no$+invoice_no$, dom=*next) ordhdr_rec$; found = 1; rem Advisory Locking
 
-rem --- Copy in any form data that's changed
-
+	rem --- Copy in any form data that's changed
 	ordhdr_rec$ = util.copyFields(ordhdr_tpl$, callpoint!)
-
-rem debug --- This is a Barista kludge
+	ordhdr_rec$ = field(ordhdr_rec$)
 
 	if !found then 
 		write record (ordhdr_dev,  dom=*endif) ordhdr_rec$
