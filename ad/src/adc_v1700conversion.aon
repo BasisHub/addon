@@ -1864,56 +1864,260 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
         gosub disp_meter
         print(log_dev)meter_text$
 
+        rem --- As of v17.10, DataPort handles initializing SEQUENCE_REF in PRIMARY key of POT_INVHDR (pot-05), POT_INVSEL (pot-15) and POT_INVDET (pot-25)
         rem --- As of v17.10, DataPort handles initializing POC_MESSAGE from POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14)
         if convCtrl!.getProperty("data_source")="OCJ" then
 
-            rem --- Make sure POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14)
+            rem --- Open ddm_tables and ddm_table_tpls in new install
+            num_files=2
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
+            open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
+            gosub open_tables
+            new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
+            new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
+
+            rem --- Open ddm_tables in old source
+            old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+            open_success=0
+            old_ddmTables=unt
+            open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
+            if !open_success then
+                rem --- Required file missing
+                msg_id$="AD_FILE_MISSING"
+                dim msg_tokens$[1]
+                msg_tokens$[1]=old_ddm_table$
+                gosub disp_message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+                goto done
+            endif
+
+            rem --- Open ddm_table_tpls in old source
+            old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+            open_success=0
+            old_ddmTableTpls=unt
+            open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
+            if open_success then
+                dim old_ddmTableTpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+            else
+                rem --- Required file missing
+                msg_id$="AD_FILE_MISSING"
+                dim msg_tokens$[1]
+                msg_tokens$[1]=old_ddm_table_tpls$
+                gosub disp_message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
+                goto done
+            endif
+
+            rem --- For v17.10, replace SEQUENCE_NO with SEQUENCE_REF in PRIMARY key of POT_INVHDR (pot-05)
+
+            rem --- Verify can read old pot-05 for addon_source
+            oldStbl$="+PODATA"
+            oldFile$="pot-05"
+            gosub get_path_to_old_file
+            old_pot05$=oldPathToFile$
+            open_success=0
+            old_pot05_dev=unt
+            open(old_pot05_dev,err=*next)old_pot05$; open_success=1
+            if !open_success then
+                rem --- Required file missing
+                msg_id$="AD_FILE_MISSING"
+                dim msg_tokens$[1]
+                msg_tokens$[1]=old_pot05$
+                gosub disp_message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_pot05$+" *****"
+                goto done
+            endif
+
+            rem --- Get record template for old pot-05 file
+            pot_table$="POT_INVHDR"
+            tpl_found=0
+            findrecord(old_ddmTableTpls,key=pad(pot_table$,16),dom=*next)old_ddmTableTpls$;tpl_found=1
+            if tpl_found then
+                dim old_pot05_tpl$:old_ddmTableTpls.template$
+                rem --- Skip if old template doesn't include sequence_no
+                x$=field(old_pot05_tpl$,"sequence_no",err=*endif)
+    
+                rem --- Clear and open new pot-05 file
+                num_files=1
+                dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                open_tables$[1]="POT_INVHDR", open_opts$[1]="IOTA"
+                gosub open_tables
+                pot_invhdr_dev=num(open_chans$[1])
+                dim pot_invhdr_tpl$:open_tpls$[1]
+    
+                rem --- Copy old pot-05 records to new pot-05 setting sequence_ref
+                read(old_pot05_dev,key="",dom=*next)
+                while 1
+                    readrecord(old_pot05_dev,end=*break)old_pot05_tpl$
+                    redim pot_invhdr_tpl$
+                    call pgmdir$+"adc_copyfile.aon",old_pot05_tpl$,pot_invhdr_tpl$,status
+                    if status then break
+                    pot_invhdr_tpl.sequence_ref$=old_pot05_tpl.sequence_no$
+                    pot_invhdr_tpl$=field(pot_invhdr_tpl$)
+                    writerecord(pot_invhdr_dev)pot_invhdr_tpl$
+                wend
+                if status then
+                    rem --- Conversion did NOT complete successfully, exit with error message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": POT_INVHDR (pot-05) *****"
+                    goto done
+                endif
+            else
+                rem --- Required template missing
+                meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+                goto done
+            endif
+
+            rem --- For v17.10, replace SEQUENCE_NO with SEQUENCE_REF in PRIMARY key of POT_INVSEL (pot-15)
+
+            rem --- Verify can read old pot-15 for addon_source
+            oldStbl$="+PODATA"
+            oldFile$="pot-15"
+            gosub get_path_to_old_file
+            old_pot15$=oldPathToFile$
+            open_success=0
+            old_pot15_dev=unt
+            open(old_pot15_dev,err=*next)old_pot15$; open_success=1
+            if !open_success then
+                rem --- Required file missing
+                msg_id$="AD_FILE_MISSING"
+                dim msg_tokens$[1]
+                msg_tokens$[1]=old_pot15$
+                gosub disp_message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_pot15$+" *****"
+                goto done
+            endif
+
+            rem --- Get record template for old pot-15 file
+            pot_table$="POT_INVSEL"
+            tpl_found=0
+            findrecord(old_ddmTableTpls,key=pad(pot_table$,16),dom=*next)old_ddmTableTpls$;tpl_found=1
+            if tpl_found then
+                dim old_pot15_tpl$:old_ddmTableTpls.template$
+                rem --- Skip if old template doesn't include sequence_no
+                x$=field(old_pot15_tpl$,"sequence_no",err=*endif)
+    
+                rem --- Clear and open new pot-15 file
+                num_files=1
+                dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                open_tables$[1]="POT_INVSEL", open_opts$[1]="IOTA"
+                gosub open_tables
+                pot_invsel_dev=num(open_chans$[1])
+                dim pot_invsel_tpl$:open_tpls$[1]
+    
+                rem --- Copy old pot-15 records to new pot-15 setting sequence_ref
+                read(old_pot15_dev,key="",dom=*next)
+                while 1
+                    readrecord(old_pot15_dev,end=*break)old_pot15_tpl$
+                    redim pot_invsel_tpl$
+                    call pgmdir$+"adc_copyfile.aon",old_pot15_tpl$,pot_invsel_tpl$,status
+                    if status then break
+                    pot_invsel_tpl.sequence_ref$=old_pot15_tpl.sequence_no$
+                    pot_invsel_tpl$=field(pot_invsel_tpl$)
+                    writerecord(pot_invsel_dev)pot_invsel_tpl$
+                wend
+                if status then
+                    rem --- Conversion did NOT complete successfully, exit with error message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": POT_INVSEL (pot-15) *****"
+                    goto done
+                endif
+            else
+                rem --- Required template missing
+                meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+                goto done
+            endif
+
+            rem --- For v17.10, replace SEQUENCE_NO with SEQUENCE_REF in PRIMARY key of POT_INVDET (pot-25)
+
+            rem --- Verify can read old pot-25 for addon_source
+            oldStbl$="+PODATA"
+            oldFile$="pot-25"
+            gosub get_path_to_old_file
+            old_pot25$=oldPathToFile$
+            open_success=0
+            old_pot25_dev=unt
+            open(old_pot25_dev,err=*next)old_pot25$; open_success=1
+            if !open_success then
+                rem --- Required file missing
+                msg_id$="AD_FILE_MISSING"
+                dim msg_tokens$[1]
+                msg_tokens$[1]=old_pot25$
+                gosub disp_message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_pot25$+" *****"
+                goto done
+            endif
+
+            rem --- Get record template for old pot-25 file
+            pot_table$="POT_INVDET"
+            tpl_found=0
+            findrecord(old_ddmTableTpls,key=pad(pot_table$,16),dom=*next)old_ddmTableTpls$;tpl_found=1
+            if tpl_found then
+                dim old_pot25_tpl$:old_ddmTableTpls.template$
+                rem --- Skip if old template doesn't include sequence_no
+                x$=field(old_pot25_tpl$,"sequence_no",err=*endif)
+    
+                rem --- Clear and open new pot-25 file
+                num_files=1
+                dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                open_tables$[1]="POT_INVDET", open_opts$[1]="IOTA"
+                gosub open_tables
+                pot_invdet_dev=num(open_chans$[1])
+                dim pot_invdet_tpl$:open_tpls$[1]
+    
+                rem --- Copy old pot-25 records to new pot-25 setting sequence_ref
+                read(old_pot25_dev,key="",dom=*next)
+                while 1
+                    readrecord(old_pot25_dev,end=*break)old_pot25_tpl$
+                    redim pot_invdet_tpl$
+                    call pgmdir$+"adc_copyfile.aon",old_pot25_tpl$,pot_invdet_tpl$,status
+                    if status then break
+                    pot_invdet_tpl.sequence_ref$=old_pot25_tpl.sequence_no$
+                    pot_invdet_tpl$=field(pot_invdet_tpl$)
+                    writerecord(pot_invdet_dev)pot_invdet_tpl$
+                wend
+                if status then
+                    rem --- Conversion did NOT complete successfully, exit with error message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": POT_INVDET (pot-25) *****"
+                    goto done
+                endif
+            else
+                rem --- Required template missing
+                meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+                goto done
+            endif
+
+            rem --- Make sure POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14) are present
             open_success=0
             pom04_dev=unt
             open(pom04_dev,err=*next)dataDir$+"/pom-04"; open_success=1
             if !open_success then
                 rem --- Copy POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14) from old source to the new install
-
-                rem --- Open ddm_tables and ddm_table_tpls in new install
-                num_files=2
-                dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                gosub open_tables
-                new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-    
-                rem --- Open ddm_tables in old source
-                old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
-                open_success=0
-                old_ddmTables=unt
-                open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                if !open_success then
-                    rem --- Required file missing
-                    msg_id$="AD_FILE_MISSING"
-                    dim msg_tokens$[1]
-                    msg_tokens$[1]=old_ddm_table$
-                    gosub disp_message
-                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
-                    goto done
-                endif
-
-                rem --- Open ddm_table_tpls in old source
-                old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                open_success=0
-                old_ddmTableTpls=unt
-                open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                if !open_success then
-                    rem --- Required file missing
-                    msg_id$="AD_FILE_MISSING"
-                    dim msg_tokens$[1]
-                    msg_tokens$[1]=old_ddm_table_tpls$
-                    gosub disp_message
-                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                    goto done
-                endif
     
                 rem --- Get table definition for old source POC_MSGCODE file, and add it to new install
                 oldFile$="POC_MSGCODE"
