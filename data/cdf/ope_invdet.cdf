@@ -2236,6 +2236,7 @@ rem ==========================================================================
 		callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
 		callpoint!.setDevObject("msg_exceeded","Y")
 		user_tpl.credit_limit_warned = 1
+		callpoint!.setStatus("ACTIVATE")
 	endif
 
 	return

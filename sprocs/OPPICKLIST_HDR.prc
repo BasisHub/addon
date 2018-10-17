@@ -41,7 +41,7 @@ datatemplate$ = datatemplate$ + "bill_addr_line7:C(30),"
 datatemplate$ = datatemplate$ + "ship_addr_line1:C(30),ship_addr_line2:C(30),ship_addr_line3:C(30),"
 datatemplate$ = datatemplate$ + "ship_addr_line4:C(30),ship_addr_line5:C(30),ship_addr_line6:C(30),"
 datatemplate$ = datatemplate$ + "ship_addr_line7:C(30),"
-dataTemplate$ = dataTemplate$ + "salesrep_code:C(3),salesrep_desc:C(20),cust_po_num:C(20),ship_via:C(10),"
+dataTemplate$ = dataTemplate$ + "salesrep_code:C(3),salesrep_desc:C(20),cust_po_num:C(20),ship_via:C(10),shipping_id:C(15),"
 dataTemplate$ = dataTemplate$ + "fob:C(15),ship_date:C(10),terms_code:C(3),terms_desc:C(20),price_code:C(2),"
 datatemplate$ = datatemplate$ + "inv_std_message:C(1024*=1)"
 
@@ -154,6 +154,7 @@ rem --- Initialize Data
 	slspsn_desc$ =  ""
 	cust_po_no$ =   ""
 	ship_via$ =     ""
+    shipping_id$ =  ""
 	fob$ =          ""
 	ship_date$ =    ""
 	terms_code$ =   ""
@@ -174,6 +175,7 @@ rem --- Main Read
 	order_date$ =   func.formatDate(ope01a.order_date$)
 	cust_po_no$ =   ope01a.customer_po_no$
 	ship_via$ =     ope01a.ar_ship_via$
+    shipping_id$ =  ope01a.shipping_id$
 	fob$ =          ope01a.fob$
 	ship_date$ =    func.formatDate(ope01a.shipmnt_date$)
     price_code$ =   ope01a.price_code$
@@ -298,6 +300,7 @@ rem --- Format addresses to be bottom justified
     data!.setFieldValue("SALESREP_DESC", slspsn_desc$)
     data!.setFieldValue("CUST_PO_NUM", cust_po_no$)
     data!.setFieldValue("SHIP_VIA", ship_via$)
+    data!.setFieldValue("SHIPPING_ID", shipping_id$)
     data!.setFieldValue("FOB", fob$)
     data!.setFieldValue("SHIP_DATE", ship_date$)
     data!.setFieldValue("TERMS_CODE", terms_code$)

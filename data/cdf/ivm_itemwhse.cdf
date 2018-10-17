@@ -27,15 +27,15 @@ if cvs(ivm05a.firm_id$,2)=""  then
 	ivm05a.vendor_id$=vendor_id$
 	ivm05a.item_id$=item_id$
 	ivm05a.prisec_flag$="P"
-	ivm05.break_qty_01=0
-	ivm05.break_qty_02=0
-	ivm05.break_qty_03=0
-	ivm05.unit_cost_01=0
-	ivm05.unit_cost_02=0
-	ivm05.unit_cost_03=0
-	ivm05.last_po_cost=0
-	ivm05.last_po_lead=0
-	ivm05.lead_time=0
+	ivm05a.break_qty_01=0
+	ivm05a.break_qty_02=0
+	ivm05a.break_qty_03=0
+	ivm05a.unit_cost_01=0
+	ivm05a.unit_cost_02=0
+	ivm05a.unit_cost_03=0
+	ivm05a.last_po_cost=0
+	ivm05a.last_po_lead=0
+	ivm05a.lead_time=0
 	writerecord(ivm05_dev)ivm05a$
 
 	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size

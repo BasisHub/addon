@@ -1,3 +1,38 @@
+[[OPT_INVHDR.AOPT-SHPT]]
+rem --- Launch Shipment Tracking Information inquiry
+	selected_key$ = ""
+	dim filter_defs$[4,2]
+	filter_defs$[0,0]="OPT_SHIPTRACK.FIRM_ID"
+	filter_defs$[0,1]="='"+firm_id$+"'"
+	filter_defs$[0,2]="LOCK"
+	filter_defs$[1,0]="OPT_SHIPTRACK.AR_TYPE"
+	filter_defs$[1,1]="='"+callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")+"'"
+	filter_defs$[1,2]="LOCK"
+	filter_defs$[2,0]="OPT_SHIPTRACK.CUSTOMER_ID"
+	filter_defs$[2,1]="='"+callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")+"'"
+	filter_defs$[2,2]="LOCK"
+	filter_defs$[3,0] ="OPT_SHIPTRACK.ORDER_NO"
+	filter_defs$[3,1] ="='"+callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")+"'"
+	filter_defs$[3,2]="LOCK"
+	filter_defs$[4,0]="OPT_SHIPTRACK.SHIP_SEQ_NO"
+	filter_defs$[4,1]="='"+callpoint!.getColumnData("OPT_INVHDR.SHIP_SEQ_NO")+"'"
+	filter_defs$[4,2]="LOCK"
+	dim search_defs$[3]
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		Form!,
+:		"OP_SHIPTRACK",
+:		"",
+:		table_chans$[all],
+:		selected_keys$,
+:		filter_defs$[all],
+:		search_defs$[all],
+:		"",
+:		"AO_STATUS"
+[[OPT_INVHDR.ARAR]]
+rem --- Disable additional options for now
+	callpoint!.setOptionEnabled("SHPT",0)
 [[OPT_INVHDR.AR_INV_NO.AVAL]]
 rem --- If missing, set the customer for this invoice.
 	if cvs(callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID"),3)="" then
@@ -28,7 +63,7 @@ rem --- Inits
 [[OPT_INVHDR.BSHO]]
 rem --- Open needed files
 
-	num_files=38
+	num_files=39
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
@@ -60,6 +95,7 @@ rem --- Open needed files
 	open_tables$[36]="ARC_SALECODE", open_opts$[36]="OTA"
 	open_tables$[37]="OPC_DISCCODE", open_opts$[37]="OTA"
 	open_tables$[38]="OPC_TAXCODE",  open_opts$[38]="OTA"
+	open_tables$[39]="OPT_SHIPTRACK",  open_opts$[39]="OTA"
 	
 gosub open_tables
 
@@ -391,6 +427,19 @@ rem --- Display invoice total
 :			  num(callpoint!.getColumnData("OPT_INVHDR.FREIGHT_AMT"))
 
 	callpoint!.setColumnData("<<DISPLAY>>.ORDER_TOT",str(net_sales),1)
+
+rem --- Enable SHPT additional options if shipment tracking info exists
+	optShipTrack_dev = fnget_dev("OPT_SHIPTRACK")
+	ar_type$=callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")
+	ship_seq_no$=callpoint!.getColumnData("OPT_INVHDR.SHIP_SEQ_NO")
+	trip_key$=firm_id$+ar_type$+cust_id$+order_no$+ship_seq_no$
+	read(optShipTrack_dev,key=trip_key$,dom=*next)
+	optShipTrack_key$=key(optShipTrack_dev,end=*next)
+	if pos(trip_key$=optShipTrack_key$)=1 then
+		callpoint!.setOptionEnabled("SHPT",1)
+	else
+		callpoint!.setOptionEnabled("SHPT",0)
+	endif
 [[OPT_INVHDR.AOPT-PRNT]]
 rem --- historical invoice
  

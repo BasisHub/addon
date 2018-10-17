@@ -1,3 +1,17 @@
+[[OPE_ORDHDR.AOPT-SHPT]]
+rem --- Launch Shipment Tracking maintenance grid
+	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
+	customer_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+	order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
+	ship_seq_no$=callpoint!.getColumnData("OPE_ORDHDR.SHIP_SEQ_NO")
+	key_pfx$=firm_id$+ar_type$+customer_id$+order_no$+ship_seq_no$
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:	"OPT_SHIPTRACK",
+:       stbl("+USER_ID"),
+:       "MNT",
+:       key_pfx$,
+:       table_chans$[all]
 [[OPE_ORDHDR.AOPT-WOLN]]
 rem --- Launch ope_createwos form to create selected work orders
 
@@ -400,6 +414,7 @@ rem --- Set flags
 	callpoint!.setOptionEnabled("CRCH",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 	callpoint!.setOptionEnabled("WOLN",0)
+	callpoint!.setOptionEnabled("SHPT",0)
 
 rem --- Clear order helper object
 
@@ -770,7 +785,6 @@ rem --- Enable buttons
 	if user_tpl.credit_installed$="Y"
 		callpoint!.setOptionEnabled("CRCH",1)
 	endif
-
 [[OPE_ORDHDR.SLSPSN_CODE.AVAL]]
 print "Hdr:SLSPSN_CODE.AVAL"; rem debug
 
@@ -1087,6 +1101,7 @@ rem --- Enable buttons
 	callpoint!.setOptionEnabled("PRNT",1)
 	callpoint!.setOptionEnabled("RPRT",num(callpoint!.getDevObject("reprintable")))
 	callpoint!.setOptionEnabled("TTLS",1)
+	callpoint!.setOptionEnabled("SHPT",1)
 
 
 rem --- Set all previous values
@@ -1359,6 +1374,38 @@ rem --- Save controls in the global userObj! (vector)
 	userObj!.addItem(mwin!.addStaticText(15108,695,35,160,15,"",$0000$)); rem Manual Price  (9)
  	userObj!.addItem(mwin!.addStaticText(15109,695,50,160,15,"",$0000$)); rem Alt/Super (10)
 [[OPE_ORDHDR.BDEL]]
+rem --- User approval required if packages have already been shipped
+
+	trackingNos!=new java.util.HashMap()
+	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
+	customer_id$=callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
+	order_no$=callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
+	ship_seq_no$=callpoint!.getColumnData("OPE_ORDHDR.SHIP_SEQ_NO")
+	optShipTrack_dev = fnget_dev("OPT_SHIPTRACK")
+	dim optShipTrack$:fnget_tpl$("OPT_SHIPTRACK")
+	read(optShipTrack_dev,key=firm_id$+ar_type$+customer_id$+order_no$+ship_seq_no$,dom=*next)
+	while 1
+		optShipTrack_key$=key(optShipTrack_dev,end=*break)
+		if pos(firm_id$+ar_type$+customer_id$+order_no$+ship_seq_no$=optShipTrack_key$)<>1 then break
+		readrecord(optShipTrack_dev)optShipTrack$
+		if optShipTrack.void_flag$="Y" then
+			trackingNos!.remove(optShipTrack.tracking_no$)
+		else
+			trackingNos!.put(optShipTrack.tracking_no$,optShipTrack.tracking_no$)
+		endif
+	wend
+
+	rem --- If packages shipped, need user approval to delete order.
+	if trackingNos!.size()>0 then
+		msg_id$="OP_PACKAGE_SHIPPED"
+		gosub disp_message
+		if msg_opt$="N" then
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+		callpoint!.setStatus("ACTIVATE")
+	endif
+
 rem --- Get user approval to delete if there are any WOs linked to this Sales Order
 
 	op_create_wo$=callpoint!.getDevObject("op_create_wo")
@@ -1632,6 +1679,8 @@ end_of_reprintable:
 		callpoint!.setColumnData("OPE_ORDHDR.ORDINV_FLAG","O")
 		callpoint!.setColumnData("OPE_ORDHDR.INVOICE_DATE",sysinfo.system_date$)
 		callpoint!.setColumnData("OPE_ORDHDR.AR_SHIP_VIA",arm01a.ar_ship_via$)
+		callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_ID",arm01a.shipping_id$)
+		callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_EMAIL",arm01a.shipping_email$)
 		callpoint!.setColumnData("OPE_ORDHDR.SLSPSN_CODE",arm02a.slspsn_code$)
 		callpoint!.setColumnData("OPE_ORDHDR.TERMS_CODE",arm02a.ar_terms_code$)
 		callpoint!.setColumnData("OPE_ORDHDR.DISC_CODE",arm02a.disc_code$)
@@ -2072,10 +2121,14 @@ ship_to_info: rem --- Get and display Bill To Information
               rem          order_no$
 rem ==========================================================================
 
+	custmast_dev=fnget_dev("ARM_CUSTMAST")
+	dim custmast$:fnget_tpl$("ARM_CUSTMAST")
+	findrecord(custmast_dev,key=firm_id$+cust_id$,dom=*next)custmast$
+
 	ar_type$=callpoint!.getColumnData("OPE_ORDHDR.AR_TYPE")
 	custdet_dev=fnget_dev("ARM_CUSTDET")
 	dim custdet$:fnget_tpl$("ARM_CUSTDET")
-	read record(custdet_dev,key=firm_id$+cust_id$+ar_type$)custdet$
+	read record(custdet_dev,key=firm_id$+cust_id$+ar_type$,dom=*next)custdet$
 
 	if ship_to_type$<>"M" then 
 
@@ -2099,6 +2152,9 @@ rem ==========================================================================
 				callpoint!.setColumnData("OPE_ORDHDR.SLSPSN_CODE",custship_tpl.slspsn_code$)
 				callpoint!.setColumnData("OPE_ORDHDR.TERRITORY",custship_tpl.territory$)
 				callpoint!.setColumnData("OPE_ORDHDR.TAX_CODE",custship_tpl.tax_code$)
+				if cvs(custship_tpl.ar_ship_via$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.AR_SHIP_VIA",custship_tpl.ar_ship_via$)
+				if cvs(custship_tpl.shipping_id$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_ID",custship_tpl.shipping_id$)
+				if cvs(custship_tpl.shipping_email$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_EMAIL",custship_tpl.shipping_email$)
 			endif
 		else
 			callpoint!.setColumnData("OPE_ORDHDR.SHIPTO_NO","")
@@ -2116,6 +2172,9 @@ rem ==========================================================================
 				callpoint!.setColumnData("OPE_ORDHDR.SLSPSN_CODE",custdet.slspsn_code$)
 				callpoint!.setColumnData("OPE_ORDHDR.TERRITORY",custdet.territory$)
 				callpoint!.setColumnData("OPE_ORDHDR.TAX_CODE",custdet.tax_code$)
+				if cvs(custmast.ar_ship_via$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.AR_SHIP_VIA",custmast.ar_ship_via$,1)
+				if cvs(custmast.shipping_id$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_ID",custmast.shipping_id$)
+				if cvs(custmast.shipping_email$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_EMAIL",custmast.shipping_email$)
 			endif
 		endif
 
@@ -2125,7 +2184,10 @@ rem ==========================================================================
 		if ship_to_type$<>callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE") then
 			if custdet.slspsn_code$<>callpoint!.getColumnData("OPE_ORDHDR.SLSPSN_CODE") or
 :			custdet.territory$<>callpoint!.getColumnData("OPE_ORDHDR.TERRITORY") or
-:			custdet.tax_code$<>callpoint!.getColumnData("OPE_ORDHDR.TAX_CODE") then
+:			custdet.tax_code$<>callpoint!.getColumnData("OPE_ORDHDR.TAX_CODE") or
+:			(cvs(custmast.ar_ship_via$,2)<>"" and cvs(custmast.ar_ship_via$,2)<>callpoint!.getColumnData("OPE_ORDHDR.AR_SHIP_VIA")) or
+:			(cvs(custmast.shipping_id$,2)<>"" and cvs(custmast.shipping_id$,2)<>callpoint!.getColumnData("OPE_ORDHDR.SHIPPING_ID")) or
+:			(cvs(custmast.shipping_email$,2)<>"" and cvs(custmast.shipping_email$,2)<>callpoint!.getColumnData("OPE_ORDHDR.SHIPPING_EMAIL")) then
 				msg_id$="OP_SHIPTO_CODE_CHGS"
 				gosub disp_message
 
@@ -2133,6 +2195,9 @@ rem ==========================================================================
 				callpoint!.setColumnData("OPE_ORDHDR.SLSPSN_CODE",custdet.slspsn_code$)
 				callpoint!.setColumnData("OPE_ORDHDR.TERRITORY",custdet.territory$)
 				callpoint!.setColumnData("OPE_ORDHDR.TAX_CODE",custdet.tax_code$)
+				if cvs(custmast.ar_ship_via$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.AR_SHIP_VIA",custmast.ar_ship_via$,1)
+				if cvs(custmast.shipping_id$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_ID",custmast.shipping_id$)
+				if cvs(custmast.shipping_email$,2)<>"" then callpoint!.setColumnData("OPE_ORDHDR.SHIPPING_EMAIL",custmast.shipping_email$)
 			endif
 		endif
 
@@ -2349,6 +2414,7 @@ rem ==========================================================================
 			ope01a.arc_time$   = ""
 			ope01a.batch_no$   = ""
 			ope01a.audit_number   = 0
+			ope01a.ship_seq_no$="001"
 
 			ope01a$=field(ope01a$)
 			write record (ope01_dev) ope01a$
@@ -3000,7 +3066,7 @@ rem                 = 1 -> user_tpl.hist_ord$ = "N"
 
 rem --- Open needed files
 
-	num_files=42
+	num_files=43
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	
 	open_tables$[1]="ARM_CUSTMAST",  open_opts$[1]="OTA"
@@ -3042,6 +3108,7 @@ rem --- Open needed files
 	open_tables$[40]="ARC_TERMCODE", open_opts$[40]="OTA"
 	open_tables$[41]="IVM_ITEMSYN",open_opts$[41]="OTA"
 	open_tables$[42]="OPT_INVHDR",open_opts$[42]="OTAN[2_]"
+	open_tables$[43]="OPT_SHIPTRACK",open_opts$[43]="OTA"
 
 	gosub open_tables
 
