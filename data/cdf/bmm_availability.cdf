@@ -23,6 +23,22 @@ rem --- Refill grid
 	gosub create_reports_vector
 	gosub fill_grid
 [[BMM_AVAILABILITY.<CUSTOM>]]
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+	def fnmask$(q1$,q2$)
+	    if cvs(q1$,2)="" return ""
+	    if q2$="" q2$=fill(len(q1$),"0")
+	    return str(-num(q1$,err=*next):q2$,err=*next)
+	    q=1
+	    q0=0
+	    while len(q2$(q))
+	        if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+	        q=q+1
+	    wend
+	    if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+	    return str(q1$:q2$)
+	fnend
+
 rem ==========================================================================
 format_grid: rem --- Use Barista program to format the grid
 rem ==========================================================================
@@ -109,6 +125,8 @@ rem --- qty_req: input
 rem --- prod_date$: input
 rem ==========================================================================
 
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","I","",ivIMask$,0,0
+
 	vectAvail! = BBjAPI().makeVector()
 
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
@@ -150,7 +168,11 @@ rem ==========================================================================
 			vectAvail!.addItem("*")
 		endif
 		vectAvail!.addItem(sub_bill$); rem 2 - Sub Bill flag
-		vectAvail!.addItem(bmm02.item_id$); rem 3
+		if sub_bill$="*" then
+			vectAvail!.addItem(bmm02.item_id$); rem 3
+		else
+			vectAvail!.addItem(fnmask$(bmm02.item_id$,ivIMask$)); rem 3
+		endif
 		vectAvail!.addItem(ivm01.item_desc$); rem 4 - Description
 		vectAvail!.addItem(str(net_qty*qty_req)); rem 5 - Qty Req'd
 		vectAvail!.addItem(str(ivm02.qty_on_hand)); rem 6 - On Hand

@@ -5,6 +5,22 @@ rem --- Warn when Material Requirements include item not in the production wareh
 		gosub disp_message
 	endif
 [[SFE_RELEASEWO.<CUSTOM>]]
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+	def fnmask$(q1$,q2$)
+	    if cvs(q1$,2)="" return ""
+	    if q2$="" q2$=fill(len(q1$),"0")
+	    return str(-num(q1$,err=*next):q2$,err=*next)
+	    q=1
+	    q0=0
+	    while len(q2$(q))
+	        if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+	        q=q+1
+	    wend
+	    if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+	    return str(q1$:q2$)
+	fnend
+
 rem =====================================================
 format_grid: rem --- format the grid that will display component shortages
 
@@ -85,6 +101,8 @@ load_grid: rem --- create vector of availability info and load grid
 
 rem =====================================================
 
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","I","",ivIMask$,0,0
+
 	sfe22_dev=fnget_dev("SFE_WOMATL")
 	ivm01_dev=fnget_dev("IVM_ITEMMAST")
 	ivm02_dev=fnget_dev("IVM_ITEMWHSE")
@@ -121,7 +139,7 @@ rem =====================================================
 		endif
 		dim ivm_itemmast$:fattr(ivm_itemmast$)
 		read record (ivm01_dev,key=firm_id$+sfe_womatl.item_id$,dom=*next)ivm_itemmast$
-		vectAvail!.addItem(sfe_womatl.item_id$)
+		vectAvail!.addItem(fnmask$(sfe_womatl.item_id$,ivIMask$))
 		vectAvail!.addItem(cvs(ivm_itemmast.item_desc$,3)+at_whse$)
 		vectAvail!.addItem(sfe_womatl.total_units$)
 		vectAvail!.addItem(ivm_itemwhse.qty_on_hand$)

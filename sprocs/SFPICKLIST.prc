@@ -30,6 +30,7 @@ rem --- get SPROC parameters
     wo_location$=sp!.getParameter("WO_LOCATION")
     wo_no$=sp!.getParameter("WO_NO")
     cust_mask$=sp!.getParameter("CUST_MASK")
+    ivIMask$=sp!.getParameter("ITEM_MASK")
     qty_mask$=sp!.getParameter("QTY_MASK")
     bm$=sp!.getParameter("BOM_INTERFACE")
     key_num$=sp!.getParameter("KEY_NUM")
@@ -298,7 +299,7 @@ add_to_recordset: rem --- add header, detail and/or comment info to recordset
     
     data!.setFieldValue("wh_loc",wh_loc$)
     data!.setFieldValue("req_qty",req_qty$)
-    data!.setFieldValue("item_no",item_no$)
+    data!.setFieldValue("item_no",fnmask$(item_no$,ivIMask$))
     data!.setFieldValue("item_desc",item_desc$)
     data!.setFieldValue("lotser_prompt",lot_ser$)
     data!.setFieldValue("lotser_prompt2",lot_ser2$)
@@ -398,13 +399,14 @@ rem --- Date/time handling functions
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
     def fnmask$(q1$,q2$)
+        if cvs(q1$,2)="" return ""
         if q2$="" q2$=fill(len(q1$),"0")
         return str(-num(q1$,err=*next):q2$,err=*next)
         q=1
         q0=0
         while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)

@@ -74,6 +74,7 @@ rem	call stbl("+DIR_SYP")+"bas_process_beg.bbj",stbl("+USER_ID"),rd_table_chans$
 	pgmdir$=stbl("+DIR_PGM",err=*next)
 
 	iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
+    ivIMask$=fngetmask$("iv_item_mask","UUUUUUUUUUUUUUUUUUUU",masks$)
 	sf_cost_mask$=fngetmask$("sf_cost_mask","###,##0.0000-",masks$)
 	sf_amt_mask$=fngetmask$("sf_amt_mask","###,##0.00-",masks$)
 	sf_hours_mask$=fngetmask$("sf_hours_mask","#,##0.00",masks$)
@@ -315,7 +316,7 @@ rem --     - The COMMENT field is used for a memo line's comment; it's printed o
 rem --     - The full memo comment prints because there are no numeric cols taking space.
 
 	rem --- Build ITEM field based on report type and item len param
-		temp_itemPlusDesc$=read_tpl.item_id$(1,item_len)+"  "+cvs(ivm_itemmast.item_desc$,2)
+		temp_itemPlusDesc$=cvs(fnmask$(read_tpl.item_id$(1,item_len),ivIMask$),2)+"  "+cvs(ivm_itemmast.item_desc$,2)
 		
 	rem --- To fit the form, if temp_itemPlusDesc$ is too long make it two lines
 		if len(temp_itemPlusDesc$)>max_itemPlusDesc_len
@@ -345,13 +346,14 @@ rem --- Functions
 rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
 
     def fnmask$(q1$,q2$)
+        if cvs(q1$,2)="" return ""
         if q2$="" q2$=fill(len(q1$),"0")
         return str(-num(q1$,err=*next):q2$,err=*next)
         q=1
         q0=0
         while len(q2$(q))
-              if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
-              q=q+1
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
         wend
         if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
         return str(q1$:q2$)

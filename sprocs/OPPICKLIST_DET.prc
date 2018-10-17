@@ -31,6 +31,7 @@ rem --- Get 'IN' SPROC parameters
     ar_inv_no$ =     sp!.getParameter("AR_INV_NO")
 	qty_mask$ =      sp!.getParameter("QTY_MASK")
 	price_mask$ =    sp!.getParameter("PRICE_MASK")
+    ivIMask$ =       sp!.getParameter("ITEM_MASK")
 	selected_whse$ = sp!.getParameter("SELECTED_WHSE")
     pick_or_quote$ = sp!.getParameter("PICK_OR_QUOTE")
     reprint$ =       sp!.getParameter("REPRINT")
@@ -166,7 +167,7 @@ rem --- Main
 			
             if start_block then
                 find record (opm02_dev, key=firm_id$+ope11a.line_code$, dom=*endif) opm02a$
-                ivm01a.item_desc$ = ope11a.item_id$
+                ivm01a.item_desc$ = fnmask$(ope11a.item_id$,ivIMask$)
                 
                 if pos(pick_or_quote$="P")<>0 or ope11a.commit_flag$<>"N" and pos(ope11a.warehouse_id$=othwhse$)=0 
                     othwhse$=othwhse$+ope11a.warehouse_id$
@@ -215,8 +216,8 @@ line_detail: rem --- Item Detail
 			endif
 
 			if pos(opm02a.line_type$=" SP") then 
-				item_desc$=cvs(ope11a.item_id$,3)
-                item_id$=cvs(ope11a.item_id$,3)
+				item_desc$=cvs(fnmask$(ope11a.item_id$,ivIMask$),3)
+                item_id$=cvs(fnmask$(ope11a.item_id$,ivIMask$),3)
 			endif
 
 			if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" 
@@ -388,6 +389,21 @@ rem --- Functions
         return q1$
     fnend
 
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if cvs(q1$,2)="" return ""
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
 	
 sproc_error:rem --- SPROC error trap/handler
     rd_err_text$="", err_num=err

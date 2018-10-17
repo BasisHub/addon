@@ -93,7 +93,12 @@ rem --- Launches carrier's shipment tracking web page for a package (tracking nu
 	carrier_url$=cvs(arcCarrierCode.carrier_url$,3)
 	if carrier_url$<>"" then
 		if carrier_url$(len(carrier_url$))<>"=" then carrier_url$=carrier_url$+"="
-		BBjAPI().getThinClient().browse(carrier_url$+cvs(tracking_no$,2))
+		tracking_url$=carrier_url$+cvs(tracking_no$,2)
+		webpageCounter!=callpoint!.getDevObject("webpageCounter")
+		if webpageCounter!=null() then webpageCounter!="0"
+		webpageCounter$=str(1+num(webpageCounter!))
+		returnCode=scall("bbj "+$22$+"opt_shiptrack.aon"+$22$+" - -u"+tracking_url$+" -c"+webpageCounter$+" &")
+		callpoint!.setDevObject("webpageCounter",webpageCounter$)
 	else
 		msg_id$="AR_MISSING_CARRIER_C"
 		dim msg_tokens$[1]

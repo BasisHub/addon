@@ -86,6 +86,7 @@ rem --- Get masks
     bm_unit_mask$=fngetmask$("bm_unit_mask","#,##0.0000-",masks$)
     iv_cost_mask$=fngetmask$("iv_cost_mask","###,##0.0000-",masks$)
     iv_units_mask$=fngetmask$("iv_units_mask","#,##0.0000-",masks$)
+    ivIMask$=fngetmask$("iv_item_mask","UUUUUUUUUUUUUUUUUUUU",masks$)
 
 rem --- Build SQL statement
 
@@ -142,7 +143,11 @@ rem --- Build result set
             endif
 
             data!.setFieldValue("WO_REF_NUM",read_tpl.wo_ref_num$)
-            data!.setFieldValue("ITEM_ID",read_tpl.item_id$)
+            if num(read_tpl.b_count$)=1 then
+                data!.setFieldValue("ITEM_ID",read_tpl.item_id$)
+            else
+                data!.setFieldValue("ITEM_ID",fnmask$(read_tpl.item_id$,ivIMask$))
+            endif
             data!.setFieldValue("UNIT_MEASURE",read_tpl.unit_measure$)
             data!.setFieldValue("QTY_REQUIRED",str(read_tpl.qty_required:iv_units_mask$))
             data!.setFieldValue("ALT_FACTOR",str(read_tpl.alt_factor:bm_mFactor_mask$))
@@ -181,6 +186,22 @@ rem --- Functions
         q=pos("|"=q$)
         q$=q$(1,q-1)
         return q$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if cvs(q1$,2)="" return ""
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
     fnend
 
 sproc_error:rem --- SPROC error trap/handler

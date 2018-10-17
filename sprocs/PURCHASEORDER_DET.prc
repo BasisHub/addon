@@ -33,6 +33,7 @@ rem --- Get 'IN' SPROC parameters
     vendor_id$=sp!.getParameter("VENDOR_ID")
 	qty_mask$=sp!.getParameter("QTY_MASK")
 	cost_mask$=sp!.getParameter("COST_MASK")
+    ivImask$=sp!.getParameter("ITEM_MASK")
 	ext_mask$=sp!.getParameter("EXT_MASK")
     iv_precision$=sp!.getParameter("IV_PRECISION")
     prt_vdr_item$=sp!.getParameter("PRT_VDR_ITEM")
@@ -134,13 +135,13 @@ rem --- Main
             find record (ivm_itemmast,key=firm_id$+poe_podet.item_id$,dom=*next) ivm_itemmast$
                         
 			qty_ordered$=str(qty:qty_mask$)
-			item_id_desc_msg$=ivm_itemmast.item_id$;rem --- this field will contain the item id OR the description OR vendor part/address/message text, depending on the line
+			item_id_desc_msg$=fnmask$(ivm_itemmast.item_id$,ivIMask$);rem --- this field will contain the item id OR the description OR vendor part/address/message text, depending on the line
 			reqd_date$=func.formatDate(poe_podet.reqd_date$)
 			unit_cost$=str(poe_podet.unit_cost:cost_mask$)
 			unit_measure$=poe_podet.unit_measure$
 			extension$=str(extension:ext_mask$)
             
-            item_id_desc_msg$=cvs(ivm_itemmast.item_id$,3)+" "+func.displayDesc(ivm_itemmast.item_desc$)
+            item_id_desc_msg$=cvs(fnmask$(ivm_itemmast.item_id$,ivIMask$),3)+" "+func.displayDesc(ivm_itemmast.item_desc$)
 
             if prt_vdr_item$="Y"
                 dim ivm_itemvend$:fattr(ivm_itemvend$)
@@ -307,6 +308,22 @@ process_messages:rem --- Header or Detail level message codes
     gosub add_to_recordset
     
     return
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if cvs(q1$,2)="" return ""
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
 	
 sproc_error:rem --- SPROC error trap/handler
     rd_err_text$="", err_num=err

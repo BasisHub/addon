@@ -85,6 +85,8 @@ rem --- masks$ will contain pairs of fields in a single string mask_name^mask|
 			masks$=masks$+"|"
 		endif
 	endif
+
+    ivIMask$=fngetmask$("iv_item_mask","UUUUUUUUUUUUUUUUUUUU",masks$)
 	
 rem --- create the in memory recordset for return
 
@@ -248,6 +250,37 @@ rem --- Functions
         q1$=date(jul(num(q$(1,4)),num(q$(5,2)),num(q$(7,2)),err=*next),err=*next)
         if q1$="" q1$=q$
         return q1$
+    fnend
+
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+    def fnmask$(q1$,q2$)
+        if cvs(q1$,2)="" return ""
+        if q2$="" q2$=fill(len(q1$),"0")
+        return str(-num(q1$,err=*next):q2$,err=*next)
+        q=1
+        q0=0
+        while len(q2$(q))
+            if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+            q=q+1
+        wend
+        if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+        return str(q1$:q2$)
+    fnend
+
+    def fngetmask$(q1$,q2$,q3$)
+        rem --- q1$=mask name, q2$=default mask if not found in mask string, q3$=mask string from parameters
+        q$=q2$
+        if len(q1$)=0 return q$
+        if q1$(len(q1$),1)<>"^" q1$=q1$+"^"
+        q=pos(q1$=q3$)
+        if q=0 return q$
+        q$=q3$(q)
+        q=pos("^"=q$)
+        q$=q$(q+1)
+        q=pos("|"=q$)
+        q$=q$(1,q-1)
+        return q$
     fnend
 
 sproc_error:rem --- SPROC error trap/handler

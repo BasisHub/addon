@@ -320,7 +320,25 @@ rem --- Get the control ID of the event
 		swend
 	endif
 [[IVC_ITEMLOOKUP.<CUSTOM>]]
+rem --- fnmask$: Alphanumeric Masking Function (formerly fnf$)
+
+	def fnmask$(q1$,q2$)
+	    if cvs(q1$,2)="" return ""
+	    if q2$="" q2$=fill(len(q1$),"0")
+	    return str(-num(q1$,err=*next):q2$,err=*next)
+	    q=1
+	    q0=0
+	    while len(q2$(q))
+	        if pos(q2$(q,1)="-()") q0=q0+1 else q2$(q,1)="X"
+	        q=q+1
+	    wend
+	    if len(q1$)>len(q2$)-q0 q1$=q1$(1,len(q2$)-q0)
+	    return str(q1$:q2$)
+	fnend
+
 load_and_display_grid:
+
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","I","",ivIMask$,0,0
 
 	ivm_itemmast_dev=fnget_dev("IVM_ITEMMAST")
 	dim ivm_itemmast$:fnget_tpl$("IVM_ITEMMAST")
@@ -341,7 +359,7 @@ load_and_display_grid:
 		read record (ivm_itemmast_dev,key=firm_id$+searchrec.item_id$,dom=*next)ivm_itemmast$
 	
 		vectSearch!.addItem(field(searchrec$,search_field$))
-		vectSearch!.addItem(ivm_itemmast.item_id$)
+		vectSearch!.addItem(fnmask$(ivm_itemmast.item_id$,ivIMask$))
 		vectSearch!.addItem(ivm_itemmast.item_desc$)
 	wend
 
@@ -372,6 +390,8 @@ return
 
 load_and_display_grid_sql:
 
+	call stbl("+DIR_PGM")+"adc_getmask.aon","","IV","I","",ivIMask$,0,0
+
 	vectSearch!=SysGUI!.makeVector()
 
 	rem --- execute the sql statement constructed in sql_prep$
@@ -385,7 +405,7 @@ load_and_display_grid_sql:
         while 1
 	        read_tpl$=sqlfetch(sql_chan,err=*break) 
 		vectSearch!.addItem(read_tpl.vendor_name$)
-		vectSearch!.addItem(read_tpl.item_id$)
+		vectSearch!.addItem(fnmask$(read_tpl.item_id$,ivIMask$))
 		vectSearch!.addItem(read_tpl.item_desc$)
  	wend
 

@@ -15,37 +15,19 @@ rem --- Enable SHPT additional options if shipment tracking info exists
 rem --- Disable additional options for now
 	callpoint!.setOptionEnabled("SHPT",0)
 [[OPT_INVHDR.AOPT-SHPT]]
-rem --- Launch Shipment Tracking Information inquiry
-	selected_key$ = ""
-	dim filter_defs$[4,2]
-	filter_defs$[0,0]="OPT_SHIPTRACK.FIRM_ID"
-	filter_defs$[0,1]="='"+firm_id$+"'"
-	filter_defs$[0,2]="LOCK"
-	filter_defs$[1,0]="OPT_SHIPTRACK.AR_TYPE"
-	filter_defs$[1,1]="='"+callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")+"'"
-	filter_defs$[1,2]="LOCK"
-	filter_defs$[2,0]="OPT_SHIPTRACK.CUSTOMER_ID"
-	filter_defs$[2,1]="='"+callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")+"'"
-	filter_defs$[2,2]="LOCK"
-	filter_defs$[3,0] ="OPT_SHIPTRACK.ORDER_NO"
-	filter_defs$[3,1] ="='"+callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")+"'"
-	filter_defs$[3,2]="LOCK"
-	filter_defs$[4,0]="OPT_SHIPTRACK.SHIP_SEQ_NO"
-	filter_defs$[4,1]="='"+callpoint!.getColumnData("OPT_INVHDR.SHIP_SEQ_NO")+"'"
-	filter_defs$[4,2]="LOCK"
-	dim search_defs$[3]
+rem --- Launch Shipment Tracking grid (view only)
+	ar_type$=callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")
+	customer_id$=callpoint!.getColumnData("OPT_INVHDR.CUSTOMER_ID")
+	order_no$=callpoint!.getColumnData("OPT_INVHDR.ORDER_NO")
+	ship_seq_no$=callpoint!.getColumnData("OPT_INVHDR.SHIP_SEQ_NO")
+	key_pfx$=firm_id$+ar_type$+customer_id$+order_no$+ship_seq_no$
 
-	call stbl("+DIR_SYP")+"bax_query.bbj",
-:		gui_dev,
-:		Form!,
-:		"OP_SHIPTRACK",
-:		"",
-:		table_chans$[all],
-:		selected_keys$,
-:		filter_defs$[all],
-:		search_defs$[all],
-:		"",
-:		"AO_STATUS"
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:	"OPT_SHIPTRACK",
+:       stbl("+USER_ID"),
+:       "QRY",
+:       key_pfx$,
+:       table_chans$[all]
 [[OPT_INVHDR.ARAR]]
 rem --- Disable additional options for now
 	callpoint!.setOptionEnabled("SHPT",0)
