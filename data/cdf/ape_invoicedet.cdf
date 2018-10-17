@@ -1,3 +1,15 @@
+[[APE_INVOICEDET.AREC]]
+rem --- Disable some grid columns depending on params
+	if user_tpl.misc_entry$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.MISCELLANEA",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.MISCELLANEA",1)
+	endif
+ 	if user_tpl.units_flag$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.UNITS",1)
+	endif
 [[APE_INVOICEDET.GL_ACCOUNT.AVAL]]
 rem "GL INACTIVE FEATURE"
    glm01_dev=fnget_dev("GLM_ACCT")
@@ -20,6 +32,18 @@ rem --- Verify totals balance
 
 	gosub calc_grid_tots
 	gosub disp_totals
+
+rem --- Disable some grid columns depending on params
+	if user_tpl.misc_entry$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.MISCELLANEA",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.MISCELLANEA",1)
+	endif
+ 	if user_tpl.units_flag$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.UNITS",1)
+	endif
 [[APE_INVOICEDET.AWRI]]
 rem --- Verify totals balance
 
@@ -58,6 +82,18 @@ callpoint!.setTableColumnAttribute("APE_INVOICEDET.BATCH_NO","PVAL",$22$+stbl("+
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots
 gosub disp_totals
+
+rem --- Disable some grid columns depending on params
+	if user_tpl.misc_entry$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.MISCELLANEA",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.MISCELLANEA",1)
+	endif
+	if user_tpl.units_flag$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_INVOICEDET.UNITS",1)
+	endif
 [[APE_INVOICEDET.ADEL]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots

@@ -485,6 +485,7 @@ rem ========================================================
 	return
 [[SFE_WOSUBCNT.BSHO]]
 rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+	use ::ado_func.src::func
 	use ::ado_util.src::util
 
 	maintGrid!=Form!.getControl(num(stbl("+GRID_CTL")))
@@ -548,11 +549,15 @@ rem --- fill listbox for use with Op Sequence
         ops_list!.addItem(sfe02a.wo_op_ref$+" - "+sfe02a.op_code$+" - "+op_code.code_desc$)
 	wend
 
+	ldat$=""
 	if ops_lines!.size()>0
-		ldat$=""
+		descVect!=BBjAPI().makeVector()
+		codeVect!=BBjAPI().makeVector()
 		for x=0 to ops_lines!.size()-1
-			ldat$=ldat$+ops_items!.getItem(x)+"~"+ops_lines!.getItem(x)+";"
+			descVect!.addItem(ops_items!.getItem(x))
+			codeVect!.addItem(ops_lines!.getItem(x))
 		next x
+		ldat$=func.buildListButtonList(descVect!,codeVect!)
 	endif
 
 	callpoint!.setTableColumnAttribute("SFE_WOSUBCNT.OPER_SEQ_REF","LDAT",ldat$)

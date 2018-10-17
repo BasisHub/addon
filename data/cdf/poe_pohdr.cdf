@@ -1,3 +1,118 @@
+[[POE_POHDR.AOPT-DREC]]
+rem --- Duplicate Historical Receipt
+	dim filter_defs$[1,2]
+	filter_defs$[1,0] = "POE_POHDR.FIRM_ID"
+	filter_defs$[1,1] = "='"+firm_id$+"'"
+	filter_defs$[1,2] = "LOCK"
+
+	call stbl("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev,
+:		Form!,
+:		"PO_INVRECPT",
+:		"DEFAULT",
+:		table_chans$[all],
+:		sel_key$,
+:		filter_defs$[all]
+
+	if sel_key$<>""
+		call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:			"POT_RECHDR",
+:			"PRIMARY",
+:			pot_rechdr_key$,
+:			table_chans$[all],
+:			status$
+
+		call stbl("+DIR_SYP")+"bas_sequences.bbj","PO_NO",seq_id$,rd_table_chans$[all]
+		if seq_id$<>"" then
+			rem --- Copy header record
+			poe_pohdr_dev = fnget_dev("POE_POHDR")
+			dim poe_pohdr$:fnget_tpl$("POE_POHDR")
+
+			pot_rechdr_dev = fnget_dev("POT_RECHDR")
+			dim pot_rechdr$:fnget_tpl$("POT_RECHDR")
+			dim pot_rechdr_key$:pot_rechdr_key$
+			pot_rechdr_key$=sel_key$(1,len(pot_rechdr_key$))
+			read record (pot_rechdr_dev, key=pot_rechdr_key$,dom=*endif) pot_rechdr$
+
+			call stbl("+DIR_PGM")+"adc_copyfile.aon",pot_rechdr$,poe_pohdr$,status
+			if status=0 then
+				dim sysinfo$:stbl("+SYSINFO_TPL")
+				sysinfo$=stbl("+SYSINFO")
+				today$=sysinfo.system_date$
+				today_jul=jul(num(today$(1,4)),num(today$(5,2)),num(today$(7,2)))
+				rec_ord_date_jul=jul(num(pot_rechdr.ord_date$(1,4)),num(pot_rechdr.ord_date$(5,2)),num(pot_rechdr.ord_date$(7,2)))
+				rec_promise_date_jul=jul(num(pot_rechdr.promise_date$(1,4)),num(pot_rechdr.promise_date$(5,2)),num(pot_rechdr.promise_date$(7,2)))
+				rec_not_b4_date_jul=jul(num(pot_rechdr.not_b4_date$(1,4)),num(pot_rechdr.not_b4_date$(5,2)),num(pot_rechdr.not_b4_date$(7,2)))
+				rec_reqd_date_jul=jul(num(pot_rechdr.reqd_date$(1,4)),num(pot_rechdr.reqd_date$(5,2)),num(pot_rechdr.reqd_date$(7,2)))
+
+				poe_pohdr.po_no$=seq_id$
+				poe_pohdr.req_no$=""
+				poe_pohdr.ord_date$=today$
+				if cvs(pot_rechdr.promise_date$,2)<>"" then poe_pohdr.promise_date$=date(today_jul+(rec_promise_date_jul-rec_ord_date_jul):"%Yl%Mz%Dz")
+				if cvs(pot_rechdr.not_b4_date$,2)<>"" poe_pohdr.not_b4_date$=date(today_jul+(rec_not_b4_date_jul-rec_ord_date_jul):"%Yl%Mz%Dz")
+				if cvs(pot_rechdr.reqd_date$,2)<>"" poe_pohdr.reqd_date$=date(today_jul+(rec_reqd_date_jul-rec_ord_date_jul):"%Yl%Mz%Dz")
+				poe_pohdr.recpt_date$=""
+				poe_pohdr.ds_state_cd$=pot_rechdr.ds_state_code$
+				poe_pohdr.entered_by$=""
+
+				poe_pohdr$=field(poe_pohdr$)
+				write record (poe_pohdr_dev) poe_pohdr$
+				poe_pohdr_key$=poe_pohdr.firm_id$+poe_pohdr.po_no$
+				extractrecord(poe_pohdr_dev,key=poe_pohdr_key$)poe_pohdr$; rem Advisory Locking
+				callpoint!.setStatus("SETORIG")
+
+				rem --- Copy detail records
+				poe_podet_dev = fnget_dev("POE_PODET")
+				dim poe_podet$:fnget_tpl$("POE_PODET")
+
+				pot_recdet_dev = fnget_dev("POT_RECDET")
+				dim pot_recdet$:fnget_tpl$("POT_RECDET")
+				read(pot_recdet_dev, key=pot_rechdr_key$,dom=*next)
+				while 1
+					pot_recdet_key$=key(pot_recdet_dev,end=*break)
+					if pos(pot_rechdr_key$=pot_recdet_key$)<>1 then break
+					readrecord(pot_recdet_dev)pot_recdet$
+
+					redim poe_podet$
+					call stbl("+DIR_PGM")+"adc_copyfile.aon",pot_recdet$,poe_podet$,status
+					if status then continue
+
+					call stbl("+DIR_SYP")+"bas_sequences.bbj","INTERNAL_SEQ_NO",int_seq_no$,table_chans$[all]
+					recdet_reqd_date_jul=jul(num(pot_recdet.reqd_date$(1,4)),num(pot_recdet.reqd_date$(5,2)),num(pot_recdet.reqd_date$(7,2)))
+					recdet_promise_date_jul=jul(num(pot_recdet.promise_date$(1,4)),num(pot_recdet.promise_date$(5,2)),num(pot_recdet.promise_date$(7,2)))
+					recdet_not_b4_date_jul=jul(num(pot_recdet.not_b4_date$(1,4)),num(pot_recdet.not_b4_date$(5,2)),num(pot_recdet.not_b4_date$(7,2)))
+
+					poe_podet.po_no$=poe_pohdr.po_no$
+					poe_podet.internal_seq_no$=int_seq_no$
+					if cvs(pot_recdet.reqd_date$,2)<>"" poe_podet.reqd_date$=date(today_jul+(recdet_reqd_date_jul-recdet_ord_date_jul):"%Yl%Mz%Dz")
+					if cvs(pot_recdet.promise_date$,2)<>"" then poe_podet.promise_date$=date(today_jul+(recdet_promise_date_jul-recdet_ord_date_jul):"%Yl%Mz%Dz")
+					if cvs(pot_recdet.not_b4_date$,2)<>"" poe_podet.not_b4_date$=date(today_jul+(recdet_not_b4_date_jul-recdet_ord_date_jul):"%Yl%Mz%Dz")
+					poe_podet.req_no$=""
+					poe_podet.wo_no$=""
+					poe_podet.wk_ord_seq_ref$=""
+					poe_podet.so_int_seq_ref$=""
+					poe_podet.qty_received=0
+					poe_podet.qty_invoiced=0
+
+					status=0
+					call stbl("+DIR_PGM")+"poc_itemvend.aon","R","P",
+:						poe_pohdr.vendor_id$,
+:						poe_pohdr.ord_date$,
+:						poe_podet.item_id$,
+:						poe_podet.conv_factor,
+:						unit_cost,
+:						poe_podet.qty_ordered,
+:						callpoint!.getDevObject("iv_prec"),
+:						status
+
+					if status=0 then poe_podet.unit_cost=unit_cost
+					poe_podet$=field(poe_podet$)
+					write record (poe_podet_dev) poe_podet$
+				wend
+				callpoint!.setStatus("RECORD:["+poe_pohdr.firm_id$+poe_pohdr.po_no$+"]")
+			endif
+		endif
+	endif
 [[POE_POHDR.SHIPTO_NO.AVAL]]
 rem --- if dropshipping, retrieve/display specified shipto address
 
@@ -21,6 +136,7 @@ rem --- disable buttons
 
 	callpoint!.setOptionEnabled("QPRT",0)
 	callpoint!.setOptionEnabled("DPRT",0)
+	callpoint!.setOptionEnabled("DREC",0)
 [[POE_POHDR.ORD_DATE.AVAL]]
 ord_date$=cvs(callpoint!.getUserInput(),2)
 req_date$=cvs(callpoint!.getColumnData("POE_POHDR.REQD_DATE"),2)
@@ -428,6 +544,11 @@ rem --- enable/disable buttons
 	if po_no$<>""
 		callpoint!.setOptionEnabled("QPRT",1)
 		callpoint!.setOptionEnabled("DPRT",1)
+		callpoint!.setOptionEnabled("DREC",0)
+	else
+		callpoint!.setOptionEnabled("QPRT",0)
+		callpoint!.setOptionEnabled("DPRT",0)
+		callpoint!.setOptionEnabled("DREC",1)
 	endif
 [[POE_POHDR.AWRI]]
 rem --- need to put out poe_poprint record
@@ -614,11 +735,12 @@ if bad_date$="" then gosub warn_dates
 rem print 'show';rem debug
 rem --- inits
 
+	use ::ado_func.src::func
 	use ::ado_util.src::util
 	use java.util.Properties
 
 rem --- Open Files
-	num_files=19
+	num_files=21
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_PARAMS",open_opts$[2]="OTA"
@@ -639,6 +761,8 @@ rem --- Open Files
 	open_tables$[17]="APM_VENDMAST",open_opts$[17]="OTA"
 	open_tables$[18]="POE_RECDET",open_opts$[18]="OTA"
 	open_tables$[19]="APM_VENDADDR",open_opts$[19]="OTA"
+	open_tables$[20]="POT_RECHDR",open_opts$[20]="OTA"
+	open_tables$[21]="POT_RECDET",open_opts$[21]="OTA"
 
 	gosub open_tables
 
@@ -1005,9 +1129,13 @@ rem --- read thru selected sales order and build list of lines for which line co
 		endif
 	else 
 		ldat$=""
+		descVect!=BBjAPI().makeVector()
+		codeVect!=BBjAPI().makeVector()
 		for x=0 to order_lines!.size()-1
-			ldat$=ldat$+order_items!.getItem(x)+"~"+order_lines!.getItem(x)+";"
+			descVect!.addItem(order_items!.getItem(x))
+			codeVect!.addItem(order_lines!.getItem(x))
 		next x
+		ldat$=func.buildListButtonList(descVect!,codeVect!)
 
 		callpoint!.setDevObject("ds_orders","Y")		
 		callpoint!.setDevObject("so_ldat",ldat$)

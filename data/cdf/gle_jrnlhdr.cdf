@@ -218,21 +218,9 @@ user_tpl.units_ofst$="3"
 UserObj!.addItem(gls01a$)
 user_tpl.gls01a_ofst$="4"
 
-rem --- need to disable units column in grid if gls01a.units_flag$ isn't "Y"
-if gls01a.units_flag$="Y"
-	w!=Form!.getChildWindow(1109)
-	c!=w!.getControl(5900)
-	enable_color!=c!.getCellBackColor(0,0)
-	c!.setColumnEditable(5,1)
-	c!.setColumnBackColor(5,enable_color!)
+rem --- Need to disable units column in grid if gls01a.units_flag$ isn't "Y"
+callpoint!.setDevObject("units_flag",gls01a.units_flag$)
 
-else
-	w!=Form!.getChildWindow(1109)
-	c!=w!.getControl(5900)
-	disable_color!=c!.getLineColor()
-	c!.setColumnEditable(5,0)
-	c!.setColumnBackColor(5,disable_color!)
-endif
 rem --- Disable display only columns
 	dctls!=SysGUI!.makeVector()
 	dctls!.addItem("<<DISPLAY>>.DEBIT_AMT")

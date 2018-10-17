@@ -84,9 +84,70 @@ scan_source:rem --- Scan Source Directory and build vectors to populate gridFile
 		if cvs(dir_file$,4)="PRX-10" then continue
 		dir_files$=dir_files$+pad(dir_file$,6)
 	wend
-
 	dir_files$=ssort(dir_files$,6)
-    
+
+	rem --- Verify files defined in DDM-03 are present for installed modules
+	sym04_dev=unt
+	if num(callpoint!.getColumnData("ADX_DATAPORT.ADDON_VERSION"))=6
+		open(sym04_dev)callpoint!.getColumnData("ADX_DATAPORT.SOURCE_DIR")+"/SYM-04"
+	else
+		open(sym04_dev)callpoint!.getColumnData("ADX_DATAPORT.SOURCE_DIR")+"/sym-04"
+	endif
+
+	installed_modules$=""
+	read(sym04_dev,key="",dom=*next)
+	while 1
+		read(sym04_dev,end=*break)sym04_0$,sym04_1$
+		if sym04_1$(39,1)="Y" then installed_modules$=installed_modules$+sym04_0$
+	wend
+
+	log_dev=0
+	files_not_found$=""
+	for i=1 to len(installed_modules$) step 2
+		module$=installed_modules$(i,2)
+		read(ddm03_dev,key=module$,dom=*next)
+		while 1
+			read(ddm03_dev,end=*break)ddm03_0$
+			if pos(module$=ddm03_0$)<>1 then break
+			dim file$(6)
+			file$(1)=ddm03_0$
+
+			rem --- Skip these files
+			if pos("DD"=cvs(file$,4))=1 then continue
+			if pos("W-"=cvs(file$,4))=3 then continue
+			if pos("SH"=cvs(file$,4))=1 then continue
+			if pos("WOX-"=cvs(file$,4))=1 then continue
+			if cvs(file$,4)="SYM-09" then continue
+			if cvs(file$,4)="SYM-19" then continue
+			if cvs(file$,4)="SYM-39" then continue
+			if cvs(file$,4)="SYM-49" then continue
+			if cvs(file$,4)="GLM-18" then continue
+			if cvs(file$,4)="GLW-11" then continue
+			if cvs(file$,4)="PRX-10" then continue
+			if cvs(file$,4)=module$+"S-01" then continue
+
+			if pos(file$=files_not_found$,6)=0 and pos(file$=dir_files$,6)=0 then
+				if log_dev=0 then
+					logdir$=stbl("+DATAPORT_LOGS")
+					mkdir logdir$,err=*next
+					logfile$=logdir$+"DataPort_"+DATE(0:"%Mz%Dz%Yz")+"_"+DATE(0:"%Hz%mz")+".txt"
+					erase logfile$,err=*next
+					string logfile$
+					log_dev=unt
+					open (log_dev)logfile$
+					callpoint!.setDevObject("logfile",logfile$)
+
+					print(log_dev)"Files not found during scan. "
+				endif
+				files_not_found$=files_not_found$+file$
+				print(log_dev) "    "+file$+" not found"
+			endif
+		wend
+	next i
+	if files_not_found$<>"" then print(log_dev) ""
+	close (sym04_dev)
+
+	rem --- Build grid of source files    
 	if len(dir_files$)<>0
     
 		for xwk=1 to len(dir_files$) step 6
@@ -557,3 +618,4 @@ rem	gridFiles!.setTabAction(SysGUI!.GRID_NAVIGATE_LEGACY)
 	gridFiles!.setCallback(gridFiles!.ON_GRID_MOUSE_UP,"custom_event")
 
 	callpoint!.setDevObject("gridFiles",gridFiles!)
+	callpoint!.setDevObject("logfile","")

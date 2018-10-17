@@ -1,3 +1,10 @@
+[[GLE_RECJEDET.AREC]]
+rem --- Disable units column in grid if gls01a.units_flag$ isn't "Y"
+	if callpoint!.getDevObject("units_flag")="Y" then
+		callpoint!.setColumnEnabled(-1,"GLE_RECJEDET.UNITS",1)
+	else
+		callpoint!.setColumnEnabled(-1,"GLE_RECJEDET.UNITS",0)
+	endif
 [[GLE_RECJEDET.GL_ACCOUNT.AVAL]]
 rem "GL INACTIVE FEATURE"
    glm01_dev=fnget_dev("GLM_ACCT")
@@ -20,10 +27,23 @@ rem --- set default memo to the description from the header
 
 callpoint!.setTableColumnAttribute("GLE_RECJEDET.GL_POST_MEMO","DFLT",callpoint!.getHeaderColumnData("GLE_RECJEHDR.DESCRIPTION"))
 
+rem --- Disable units column in grid if gls01a.units_flag$ isn't "Y"
+	if callpoint!.getDevObject("units_flag")="Y" then
+		callpoint!.setColumnEnabled(-1,"GLE_RECJEDET.UNITS",1)
+	else
+		callpoint!.setColumnEnabled(-1,"GLE_RECJEDET.UNITS",0)
+	endif
 [[GLE_RECJEDET.AUDE]]
 rem --- recal/display tots after deleting a grid row
 gosub calc_grid_tots
 gosub disp_totals
+
+rem --- Disable units column in grid if gls01a.units_flag$ isn't "Y"
+	if callpoint!.getDevObject("units_flag")="Y" then
+		callpoint!.setColumnEnabled(-1,"GLE_RECJEDET.UNITS",1)
+	else
+		callpoint!.setColumnEnabled(-1,"GLE_RECJEDET.UNITS",0)
+	endif
 [[GLE_RECJEDET.ADEL]]
 rem --- recal/display tots after deleting a grid row
 gosub calc_grid_tots

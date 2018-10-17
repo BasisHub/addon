@@ -1,3 +1,37 @@
+[[APE_MANCHECKDET.AREC]]
+rem --- Enable/disable RET_FLAG column
+	if user_tpl.ret_flag$="Y"
+		callpoint!.setColumnEnabled(-1,"APE_MANCHECKDET.RETENTION",1)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_MANCHECKDET.RETENTION",0)
+	endif
+[[APE_MANCHECKDET.ADGE]]
+rem --- Enable/disable RET_FLAG column
+	if user_tpl.ret_flag$="Y"
+		callpoint!.setColumnEnabled(-1,"APE_MANCHECKDET.RETENTION",1)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_MANCHECKDET.RETENTION",0)
+	endif
+[[APE_MANCHECKDET.AGDR]]
+rem --- Enable/disable current INVOICE_DATE and AP_DIST_CODE cells
+	apt_invoicehdr_dev=fnget_dev("APT_INVOICEHDR")
+	ap_type$=callpoint!.getHeaderColumnData("APE_MANCHECKHDR.AP_TYPE")
+	vendor_id$=callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID")
+	invoice_no$=callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+	invoice_found=0
+	find(apt_invoicehdr_dev,key=firm_id$+ap_type$+vendor_id$+invoice_no$, dom=*next); invoice_found=1
+
+	if invoice_found then
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.INVOICE_DATE",0)
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",0)
+	else
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.INVOICE_DATE",1)
+		if user_tpl.multi_dist$="Y"
+			callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",1)
+		else
+			callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",0)
+		endif
+	endif
 [[APE_MANCHECKDET.AGRN]]
 rem --- Enable Load Image and View Images options as needed
 
@@ -32,6 +66,12 @@ rem --- Displaye invoice images in the browser
 			switch (BBjAPI().TRUE)
 				case invimage.scan_docs_to$="BDA"
 					rem --- Do Barista Doc Archive
+					sslReq = BBUtils.isWebServerSSLEnabled()
+					url$ = BBUtils.copyFileToWebServer(cvs(invimage.doc_url$,2),"appreviewtemp", sslReq)
+					BBjAPI().getThinClient().browse(url$)
+					urlVect!=callpoint!.getDevObject("urlVect")
+					urlVect!.add(url$)
+					callpoint!.setDevObject("urlVect",urlVect!)
 					break
 				case invimage.scan_docs_to$="GD "
 					rem --- Do Google Docs
@@ -81,11 +121,13 @@ rem --- Should Open Invoice button be enabled?
 		callpoint!.setOptionEnabled("OINV",0)
 	endif
 [[APE_MANCHECKDET.BGDS]]
-rem print 'show', "Det: BGDS"; rem debug
-
 rem --- Inits
 
 	use ::ado_util.src::util
+	use ::BBUtils.bbj::BBUtils
+
+
+	
 [[APE_MANCHECKDET.AOPT-OINV]]
 rem -- Call inquiry program to view open invoices this vendor
 rem -- only allow if trans_type is manual (vs reversal/void)
@@ -213,6 +255,33 @@ rem --- Set preset val for batch_no
 rem --- Recalc totals for header
 	gosub calc_tots
 	gosub disp_tots
+
+rem --- Enable/disable current INVOICE_DATE and AP_DIST_CODE cells
+	apt_invoicehdr_dev=fnget_dev("APT_INVOICEHDR")
+	ap_type$=callpoint!.getHeaderColumnData("APE_MANCHECKHDR.AP_TYPE")
+	vendor_id$=callpoint!.getHeaderColumnData("APE_MANCHECKHDR.VENDOR_ID")
+	invoice_no$=callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO")
+	invoice_found=0
+	find(apt_invoicehdr_dev,key=firm_id$+ap_type$+vendor_id$+invoice_no$, dom=*next); invoice_found=1
+
+	if invoice_found then
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.INVOICE_DATE",0)
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",0)
+	else
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.INVOICE_DATE",1)
+		if user_tpl.multi_dist$="Y"
+			callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",1)
+		else
+			callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",0)
+		endif
+	endif
+
+rem --- Enable/disable RET_FLAG column
+	if user_tpl.ret_flag$="Y"
+		callpoint!.setColumnEnabled(-1,"APE_MANCHECKDET.RETENTION",1)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_MANCHECKDET.RETENTION",0)
+	endif
 [[APE_MANCHECKDET.BDEL]]
 rem --- need to delete the GL dist recs here (but don't try if nothing in grid row/rec_data$)
 if cvs(rec_data$,3)<>"" gosub delete_gldist
@@ -348,7 +417,6 @@ rem --- Look for Open Invoice
 
 	ape02_key$ = firm_id$ + ap_type$ + check_no$ + vendor_id$
 	apt01ak1$ = firm_id$ + ap_type$ + vendor_id$ + invoice_no$ 
-	print "---apt01 key: """, apt01ak1$, """"; rem debug
 	ape22_dev1 = user_tpl.ape22_dev1
 
 	call stbl("+DIR_SYP")+"bac_key_template.bbj",
@@ -363,8 +431,6 @@ rem --- Look for Open Invoice
 	if pos(apt01ak1$ = apt01a$) = 1 then
 
 	rem --- Open Invoice record found
-
-		print "---open invoice record found..."; rem debug
 
 		if apt01a.selected_for_pay$ = "Y" then
 			callpoint!.setMessage("AP_INV_ON_CHK_REGSTR")
@@ -426,9 +492,9 @@ rem --- Look for Open Invoice
 
 		w!=Form!.getChildWindow(1109)
 		c!=w!.getControl(5900)
-		c!.setColumnEditable(1,0)
-		c!.setColumnEditable(2,0)
 		c!.startEdit(c!.getSelectedRow(),4)
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.INVOICE_DATE",1)
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",0)
 
 	else
 
@@ -440,14 +506,13 @@ rem --- Look for Open Invoice
 
 		w!=Form!.getChildWindow(1109)
 		c!=w!.getControl(5900)
-		c!.setColumnEditable(1,1)
-		c!.setColumnEditable(2,1)
-		if user_tpl.multi_dist$="Y"
-			c!.setColumnEditable(2,1)
-		else
-			c!.setColumnEditable(2,0)
-		endif
 		c!.startEdit(c!.getSelectedRow(),1)
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.INVOICE_DATE",1)
+		if user_tpl.multi_dist$="Y"
+			callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",1)
+		else
+			callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"APE_MANCHECKDET.AP_DIST_CODE",0)
+		endif
 		callpoint!.setColumnData("APE_MANCHECKDET.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
 		callpoint!.setColumnData("APE_MANCHECKDET.INVOICE_DATE",callpoint!.getHeaderColumnData("APE_MANCHECKHDR.CHECK_DATE"))
 

@@ -1,3 +1,41 @@
+[[APM_APPROVERS.ADIS]]
+rem --- enable/disable according to authorization level
+
+if num(callpoint!.getColumnData("APM_APPROVERS.PAYABLES_CLERK"))=1
+	callpoint!.setColumnData("APM_APPROVERS.PRELIM_APPROVAL","0",1)
+	callpoint!.setColumnData("APM_APPROVERS.CHECK_SIGNER","0",1)
+	callpoint!.setColumnData("APM_APPROVERS.SIGNATURE_FILE","",1)
+	callpoint!.setColumnData("APM_APPROVERS.LIMIT_AUTH","0",1)
+	callpoint!.setColumnData("APM_APPROVERS.MAX_AUTH_AMT","",1)
+
+	callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.SIGNATURE_FILE",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.LIMIT_AUTH",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.MAX_AUTH_AMT",0)
+else
+	callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",1)
+	callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",1)
+endif
+[[APM_APPROVERS.PAYABLES_CLERK.AVAL]]
+rem --- if selected, disable/clear other fields
+
+if num(callpoint!.getUserInput())=1
+	callpoint!.setColumnData("APM_APPROVERS.PRELIM_APPROVAL","0",1)
+	callpoint!.setColumnData("APM_APPROVERS.CHECK_SIGNER","0",1)
+	callpoint!.setColumnData("APM_APPROVERS.SIGNATURE_FILE","",1)
+	callpoint!.setColumnData("APM_APPROVERS.LIMIT_AUTH","0",1)
+	callpoint!.setColumnData("APM_APPROVERS.MAX_AUTH_AMT","",1)
+
+	callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.SIGNATURE_FILE",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.LIMIT_AUTH",0)
+	callpoint!.setColumnEnabled("APM_APPROVERS.MAX_AUTH_AMT",0)
+else
+	callpoint!.setColumnEnabled("APM_APPROVERS.PRELIM_APPROVAL",1)
+	callpoint!.setColumnEnabled("APM_APPROVERS.CHECK_SIGNER",1)
+endif
 [[APM_APPROVERS.BSHO]]
 rem --- Open/Lock files
 

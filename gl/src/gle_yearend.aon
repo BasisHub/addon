@@ -56,10 +56,49 @@ rem --- Initializations
     prompt$="N"
     update$="Y"
 
+rem --- Is prior fiscal year already closed?
+    prior_year=num(gls01a.current_year$)-1
+    if gls01a.gl_yr_closed$="Y"
+        msg_id$="FISCAL_CLOSED"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=str(prior_year:"0000")
+        gosub disp_message
+        goto std_exit
+    endif
+
 rem --- All transaction files empty?
 
     call pgmdir$+"glc_filecheck.aon",firm_id$,rd_table_chans$[all],status
     if status goto std_exit
+
+rem --- Verify period end process for last fiscal period of the year has been completed first for all subsidiary accounting modules.
+    modules$="APARIVSF"
+    for i=1 to len(modules$) step 2
+        mod$=modules$(i,2)
+        dim info$[20]
+        call pgmdir$+"adc_application.aon",mod$,info$[all]
+        if info$[20]<>"Y" then continue; rem --- module not installed
+
+        files=1,begfile=1,endfile=files
+        dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
+        files$[1]=cvs(mod$,8)+"s_params",ids$[1]=mod$+"S_PARAMS"
+        call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
+:                                   ids$[all],templates$[all],channels[all],batch,status
+        if status goto std_exit
+        mod_dev=channels[1]
+        dim mod_tpl$:templates$[1]
+        
+        find record (mod_dev,key=firm_id$+mod$+"00",err=std_missing_params) mod_tpl$
+        if prior_year>=num(mod_tpl.current_year$) then
+            rem --- Module's period end not completed for last period of prior fiscal year
+            msg_id$="CANNOT_CLOSE_FISCAL"
+            dim msg_tokens$[2]
+            msg_tokens$[1]=str(prior_year:"0000")
+            msg_tokens$[2]=mod$
+            gosub disp_message
+            goto std_exit
+        endif
+    next i
 
 rem --- Verify that the 1099 year has been closed if AP is installed
     

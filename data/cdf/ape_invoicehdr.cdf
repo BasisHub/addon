@@ -1,5 +1,5 @@
 [[APE_INVOICEHDR.AOPT-VIDI]]
-rem --- Displaye invoice images in the browser
+rem --- Display invoice images in the browser
 	invimage_dev=fnget_dev("1APT_INVIMAGE")
 	dim invimage$:fnget_tpl$("1APT_INVIMAGE")
 	vendor_id$ = callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID")
@@ -15,6 +15,12 @@ rem --- Displaye invoice images in the browser
 		switch (BBjAPI().TRUE)
 			case invimage.scan_docs_to$="BDA"
 				rem --- Do Barista Doc Archive
+				sslReq = BBUtils.isWebServerSSLEnabled()
+				url$ = BBUtils.copyFileToWebServer(cvs(invimage.doc_url$,2),"appreviewtemp", sslReq)
+				BBjAPI().getThinClient().browse(url$)
+				urlVect!=callpoint!.getDevObject("urlVect")
+				urlVect!.add(url$)
+				callpoint!.setDevObject("urlVect",urlVect!)
 				break
 			case invimage.scan_docs_to$="GD "
 				rem --- Do Google Docs
@@ -25,8 +31,6 @@ rem --- Displaye invoice images in the browser
 				break
 		swend
 	wend
-
-
 [[APE_INVOICEHDR.AOPT-LIIM]]
 rem --- Select invoice image and upload
 	files=2
@@ -82,6 +86,7 @@ callpoint!.setStatus("ACTIVATE-ABORT")
 rem --- setup utility
 
 	use ::ado_util.src::util
+	use ::BBUtils.bbj::BBUtils
 [[APE_INVOICEHDR.ARNF]]
 if user_tpl.multi_dist$<>"Y"
 	callpoint!.setColumnData("APE_INVOICEHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
@@ -104,6 +109,15 @@ rem --- remove software lock on batch, if batching
 		lock_status$=""
 		lock_disp$=""
 		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	endif
+
+rem --- remove images copied temporarily to web servier for viewing
+
+	urlVect!=callpoint!.getDevObject("urlVect")
+	if urlVect!.size()
+		for wk=0 to urlVect!.size()-1
+			BBUtils.deleteFromWebServer(urlVect!.get(wk))
+		next wk
 	endif
 [[APE_INVOICEHDR.REFERENCE.AVAL]]
 callpoint!.setStatus("REFRESH");REM TEST
@@ -695,8 +709,6 @@ c!=w!.getControl(5900)
 if gl$="N" 
 	c!.setFocusable(0)
 endif
-if user_tpl.misc_entry$="N" c!.setColumnEditable(2,0)
-if user_tpl.units_flag$="N" c!.setColumnEditable(4,0)
 
 rem --- Get Payment Authorization parameter record
 
@@ -711,5 +723,10 @@ rem --- Disable Load Image and View Images options as needed
 			callpoint!.setOptionEnabled("LIIM",0)
 			callpoint!.setOptionEnabled("VIDI",0)
 	endif
+
+rem --- Init a vector to store urls for viewed images
+
+	urlVect!=BBjAPI().makeVector()
+	callpoint!.setDevObject("urlVect",urlVect!)
 
 		

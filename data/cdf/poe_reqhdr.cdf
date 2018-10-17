@@ -472,9 +472,13 @@ rem --- read thru selected sales order and build list of lines for which line co
 		callpoint!.setDevObject("so_lines_list","")
 	else 
 		ldat$=""
+		descVect!=BBjAPI().makeVector()
+		codeVect!=BBjAPI().makeVector()
 		for x=0 to order_lines!.size()-1
-			ldat$=ldat$+order_items!.getItem(x)+"~"+order_lines!.getItem(x)+";"
+			descVect!.addItem(order_items!.getItem(x))
+			codeVect!.additem(order_lines!.getItem(x))
 		next x
+		ldatString$=func.buildListButtonList(descVect!,codeVect!)
 
 		callpoint!.setDevObject("ds_orders","Y")		
 		callpoint!.setDevObject("so_ldat",ldat$)
@@ -545,9 +549,9 @@ writerecord (poe_reqprint_dev)poe_reqprint$
 
 return
 [[POE_REQHDR.BSHO]]
-rem print 'show';rem debug
 rem --- inits
 
+	use ::ado_func.src::func
 	use ::ado_util.src::util
 
 rem --- Open Files

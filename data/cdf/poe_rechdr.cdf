@@ -379,9 +379,9 @@ endif
 tmp$=cvs(callpoint!.getUserInput(),2)
 if tmp$<>"" and tmp$<callpoint!.getColumnData("POE_RECHDR.ORD_DATE") then callpoint!.setStatus("ABORT")
 [[POE_RECHDR.BSHO]]
-rem print 'show';rem debug
 rem --- inits
 
+	use ::ado_func.src::func
 	use ::ado_util.src::util
 
 rem --- Open Files
@@ -736,9 +736,14 @@ get_dropship_order_lines: rem --- Build list of dropship lines in linked SO
 		callpoint!.setDevObject("so_lines_list","")
 	else 
 		ldat$=""
+		descVect!=BBjAPI().makeVector()
+		codeVect!=BBjAPI().makeVector()
 		for x=0 to order_lines!.size()-1
-			ldat$=ldat$+order_items!.getItem(x)+"~"+order_lines!.getItem(x)+";"
+			descVect!.addItem(order_items!.getItem(x))
+			codeVect!.addItem(order_lines!.getItem(x))
 		next x
+		ldat$=func.buildListButtonList(descVect!,codeVect!)
+
 
 		callpoint!.setDevObject("ds_orders","Y")		
 		callpoint!.setDevObject("so_ldat",ldat$)

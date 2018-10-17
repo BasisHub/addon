@@ -315,6 +315,7 @@ rem --- won't work there (too late).
 
 rem --- Initializations
 
+	use ::ado_func.src::func
 	use ::opo_SalesOrderCreateWO.aon::SalesOrderCreateWO
 
 rem --- Set new record flag
@@ -1607,11 +1608,15 @@ rem =========================================================
 		endif
 	endif
 
+	ldat$=""
 	if ops_lines!.size()>0
-		ldat$=""
+		descVect!=BBjAPI().makeVector()
+		codeVect!=BBjAPI().makeVector()
 		for x=0 to ops_lines!.size()-1
-			ldat$=ldat$+ops_items!.getItem(x)+"~"+ops_lines!.getItem(x)+";"
+			descVect!.addItem(ops_items!.getItem(x))
+			codeVect!.addItem(ops_lines!.getItem(x))
 		next x
+		ldat$=func.buildListButtonList(descVect!,codeVect!)
 	endif
 
 	ctlSeqRef!.insertItems(0,ops_list!)

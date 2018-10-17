@@ -817,18 +817,106 @@ method_error:rem --- Method error trap/handler (11Oct2017)
             methodret lineVect!
             
 splitMultiLineField_error:rem --- Method error trap/handler (11Oct2017)
-    rd_err_text$="", err_num=err
-    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    if err_num=252 then
-        E!=BBjAPI().getLastBBjException()
-        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
-        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
-    endif
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
-    if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
-    if pos("RETRY"=rd_err_act$)<>0 retry
-    x$=stbl("+THROWN_ERR","TRUE")   
-    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Builds the string used to initialize a ListButton created with Barista's callpoint method
+        rem  *         callpoint!.setTableColumnAttribute(<Table.Column>,"LDAT",ldatString$)
+        rem  * Removes Barista special characters, semicolons (;) and tildes (~), from descriptions in descVect!
+        rem  * before joining them up with their corresponding codes in codeVect!. Skips codes in codeVect!
+        rem  * (and their corresponding descriptions) if the code includes a Barista special characters,
+        rem  * semicolons (;) and tildes (~).
+        rem  * 
+        rem  * @param BBjVector descVect!
+        rem  * @param BBjVector codeVect!
+        rem  * 
+        rem  * @return BBjString ldatString
+        rem  */
+        method public static BBjString buildListButtonList(BBjVector descVect!, BBjVector codeVect!)
+            seterr buildListButtonList_error
+            ldatString$=""
+            badCodeVect!=BBjAPI().makeVector()
+            badDescVect!=BBjAPI().makeVector()
+            specialCharsVect!=BBjAPI().makeVector()
+            specialCharsVect!.addItem(";")
+            specialCharsVect!.addItem("~")
+            
+            for i=0 to specialCharsVect!.size()-1
+                specialChar$=specialCharsVect!.getItem(i)
+                if codeVect!.size() then
+                    goodCodeVect!=BBjAPI().makeVector()
+                    goodDescVect!=BBjAPI().makeVector()
+                    for j=0 to codeVect!.size()-1
+                        code$=codeVect!.getItem(j)
+                        desc$=descVect!.getItem(j,err=*continue)
+                        if pos(specialChar$=code$) then
+                            rem --- Code includes special character
+                            badCodeVect!.addItem(code$)
+                            badDescVect!.addItem(desc$)
+                        else
+                            rem --- Code is good
+                            while pos(specialChar$=desc$)
+                                rem --- Replace special character in descriptoin with a blank
+                                xpos=pos(specialChar$=desc$)
+                                desc$=desc$(1,xpos-1)+" "+desc$(xpos+1)
+                            wend
+
+                            rem --- Descriptoin is good too
+                            goodCodeVect!.addItem(code$)
+                            goodDescVect!.addItem(desc$)
+                        endif
+                    next j
+                    codeVect!=cast(BBjVector,goodCodeVect!.clone())
+                    descVect!=cast(BBjVector,goodDescVect!.clone())
+                endif
+            next i
+
+            rem --- Build ldatString$
+            if codeVect!.size() then
+                for j=0 to codeVect!.size()-1
+                    ldatString$=ldatString$+descVect!.getItem(j)+"~"+codeVect!.getItem(j)+";"
+                next j
+            endif
+
+            rem --- Display message for bad codes
+            if badCodeVect!.size() then
+                badCodes$=""
+                for k=0 to badCodeVect!.size()-1
+                    badCodes$=BadCodes$+$0A$+badCodeVect!.getItem(k)+"  ---  "+badDescVect!.getItem(k)
+                next k
+                msg_id$="AD_BAD_LDAT_CODE"
+                dim msg_tokens$[4]
+                msg_tokens$[1]=badCodes$
+                call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+            endif
+
+            methodret ldatString$
+            
+buildListButtonList_error:rem --- Method error trap/handler (11Oct2017)
+            rd_err_text$="", err_num=err
+            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+            if err_num=252 then
+                E!=BBjAPI().getLastBBjException()
+                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+            endif
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+            if pos("RETRY"=rd_err_act$)<>0 retry
+            x$=stbl("+THROWN_ERR","TRUE")   
+            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
         
     classend

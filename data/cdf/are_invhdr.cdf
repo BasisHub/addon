@@ -148,14 +148,6 @@ rem --- Additional init
 	if status<>0 goto std_exit
 	user_tpl.glint$=gl$
 
-	if gl$<>"Y"
-		rem --- this logic creates/sets window object w! to child window, then creates/sets control object
-		rem --- to control w/ ID 5900, (c!.getName()should be the grd_ARE_INVDET)
-		rem --- finally, sets first (0) column as not editable (0) (the GL acct#)
-		w!=Form!.getChildWindow(1109)
-		c!=w!.getControl(5900)
-		c!.setColumnEditable(0,0)
-	endif
 rem --- Retrieve parameter data - not keeping any of it here, just make sure params exist
 	ars01a_key$=firm_id$+"AR00"
 	find record (ads01_dev,key=ars01a_key$,err=std_missing_params) ars01a$

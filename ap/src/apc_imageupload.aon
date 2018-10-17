@@ -98,12 +98,16 @@ rem --- Save selected image on server
     tempFileLocation$=cf!.copyFromClient()
 	nameOnServer$=response$
 	serverPath$ = stbl("+DOC_DIR_PDF")
+	mkdir serverPath$,err=*next
 
     rem --- strip the path and get the ordinary file name of the uploaded file
     filePath$=nameOnServer$
     gosub fix_path
     nameOnServer$=filePath$
     if pos("/"=nameOnServer$) then nameOnServer$=nameOnServer$(pos("/"=nameOnServer$,-1)+1)
+    rem --- doc is saved in +DOC_DIR_PDF temporarily if using GDoc (i.e. deleted after upload), but permanently if saving to Barista Docs
+    rem --- make the name different in latter case, so if the same doc is saved in Barista and then GDoc, the GDoc remove won't remove the Barista copy
+    if scan_docs_to$="BDA" then nameOnServer$="APInv_"+nameOnServer$ 
 
     erase serverPath$+nameOnServer$,err=*next
     rename tempFileLocation$,serverPath$+nameOnServer$
@@ -127,32 +131,31 @@ rem --- Preview selected image
 	
 rem --- Do Barista Doc Archive
     if scan_docs_to$="BDA" then
-        rem --- Initialize Barista Doc Inquiry
-        document$=""
+
+        gosub get_sequence
+        
+        rem --- Get Next Document Number and update Document Archive (ads_documents)
+        doc_source$=""
+        dt_stamp$=date(0:"%Yd%Mz%Dz")
+        tm_stamp$=date(0:"%Hz%mz%sz")
+        doc_ext$="PDF"
+        doc_source$="E"
+        call stbl("+DIR_SYP")+"bas_sequences.bbj","DOC_NO",new_doc_id$,rd_table_chans$[all]     
+        doc_long_name$="APInvoice_"+ap_type$+"_"+vendor_id$+"_"+cvs(ap_inv_no$,2)+"_"+sequence$
+        call stbl("+DIR_SYP")+"bac_documents.bbj",new_doc_id$,dt_stamp$,tm_stamp$,doc_source$,doc_ext$,serverPath$,
+:           "","","","",rd_table_chans$[all],"",nameOnServer$,doc_long_name$,""
+
+        doc_ref$=serverPath$+nameOnServer$
+        gosub update_image_table
+
         goto done
     endif; rem --- Do Barista Doc Archive
 
 rem --- Do Google Docs
     if scan_docs_to$="GD " then
-    	rem --- Get next sequence number
-    	next_seq_no=0
-    	trip_key$=firm_id$+vendor_id$+ap_inv_no$
-        read(invimage_dev,key=trip_key$+$ff$,dom=*next)
-        previous_key$=""
-        previous_key$=keyp(invimage_dev,end=*next)
-        if pos(trip_key$=previous_key$)=1 then
-            next_seq_no=1+num(previous_key$(1+len(trip_key$)),err=*next)
-        endif
-        wk$=fattr(invimage$,"SEQUENCE_NUM")
-        seq_no_mask$=fill(dec(wk$(10,2)),"0")
-        max_seq_no=num(fill(dec(wk$(10,2)),"9"))
-        if next_seq_no>max_seq_no then
-            msg_id$="AP_IMAGE_LIMIT"
-            gosub disp_message
-            goto done
-        endif
-        sequence$=str(next_seq_no:seq_no_mask$)
-    
+
+        gosub get_sequence
+
     	rem --- Build the folder name from vendor name and id and 
     	read record(vendmast_dev,key=firm_id$+vendor_id$,dom=*next)vendmast$
     	subdir$ = cvs(vendmast.vendor_name$,3)
@@ -238,22 +241,50 @@ rem --- Do Google Docs
             msg_tokens$[2]=errmes(-1)
     		gosub disp_message
     	else
-            rem --- Write the invoice image record
-    		dim invimage$:fattr(invimage$)
-    		invimage.firm_id$ = firm_id$
-    		invimage.vendor_id$ = vendor_id$
-    		invimage.ap_inv_no$ = ap_inv_no$
-    		invimage.sequence_num$ = sequence$
-            invimage.scan_docs_to$ = scan_docs_to$
-    		invimage.doc_url$ = doc!.getHref()
-    		invimage$=field(invimage$)
-    		write record(invimage_dev)invimage$
-    		msg_id$="AP_INVIMAGE_UPLOADED"
-    		gosub disp_message			
+            doc_ref$=doc!.getHref()
+            gosub update_image_table			
     	endif
     	
     	goto done
     endif; rem --- Do Google Docs
+    
+get_sequence:
+    rem --- Get next sequence number
+    next_seq_no=0
+    trip_key$=firm_id$+vendor_id$+ap_inv_no$
+    read(invimage_dev,key=trip_key$+$ff$,dom=*next)
+    previous_key$=""
+    previous_key$=keyp(invimage_dev,end=*next)
+    if pos(trip_key$=previous_key$)=1 then
+        next_seq_no=1+num(previous_key$(1+len(trip_key$)),err=*next)
+    endif
+    wk$=fattr(invimage$,"SEQUENCE_NUM")
+    seq_no_mask$=fill(dec(wk$(10,2)),"0")
+    max_seq_no=num(fill(dec(wk$(10,2)),"9"))
+    if next_seq_no>max_seq_no then
+        msg_id$="AP_IMAGE_LIMIT"
+        gosub disp_message
+        goto done
+    endif
+    sequence$=str(next_seq_no:seq_no_mask$)
+        
+    return
+
+update_image_table:
+    rem --- Write the invoice image record
+    dim invimage$:fattr(invimage$)
+    invimage.firm_id$ = firm_id$
+    invimage.vendor_id$ = vendor_id$
+    invimage.ap_inv_no$ = ap_inv_no$
+    invimage.sequence_num$ = sequence$
+    invimage.scan_docs_to$ = scan_docs_to$
+    invimage.doc_url$ = doc_ref$
+    invimage$=field(invimage$)
+    write record(invimage_dev)invimage$
+    msg_id$="AP_INVIMAGE_UPLOADED"
+    gosub disp_message
+
+    return
 
 done: rem --- All done
     rem --- clean up
@@ -271,13 +302,13 @@ fix_path: rem --- Flip directory path separators
 
     return
         
-close_tables: rem --- Close tables previously opened here
-        
-    num_files=1
-    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-    open_tables$[1]="APE_INVOICEHDR",open_opts$[1]="C@"
-
-    gosub open_tables
+close_tables: rem --- Close tables opened in this call
+rem --- since rd_table_chans$[0,0] wasn't passed in, just close everything that's been put into it
+       
+    num_files=len(rd_table_chans$[0,0])/20
+    for wk=0 to num_files-1
+        close(num(rd_table_chans$[0,0](wk*20+18,3),err=*next),err=*next)
+    next wk
     
     return
          

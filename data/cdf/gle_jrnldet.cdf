@@ -1,3 +1,10 @@
+[[GLE_JRNLDET.AREC]]
+rem --- Need to disable units column in grid if gls01a.units_flag$ isn't "Y"
+	if callpoint!.getDevObject("units_flag")="Y" then
+		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",1)
+	else
+		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",0)
+	endif
 [[GLE_JRNLDET.BDGX]]
 rem --- Disable comments
 	callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"GLE_JRNLDET.MEMO_1024",0)
@@ -66,6 +73,13 @@ rem --- set default value for memo lines to the description entered in the heade
 	description$=callpoint!.getHeaderColumnData("GLE_JRNLHDR.DESCRIPTION")
 	callpoint!.setTableColumnAttribute("GLE_JRNLDET.GL_POST_MEMO","DFLT",description$)
 	callpoint!.setTableColumnAttribute("GLE_JRNLDET.MEMO_1024","DFLT",description$)
+
+rem --- Need to disable units column in grid if gls01a.units_flag$ isn't "Y"
+	if callpoint!.getDevObject("units_flag")="Y" then
+		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",1)
+	else
+		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",0)
+	endif
 [[GLE_JRNLDET.AGCL]]
 rem --- set preset val for batch_no
 
@@ -80,8 +94,15 @@ rem --- Set column size for memo_1024 field very small so it doesn't take up roo
 	grid!.setColumnWidth(memo_1024_col,15)
 [[GLE_JRNLDET.AUDE]]
 rem --- recal/display tots after deleting a grid row
-gosub calc_grid_tots
-gosub disp_totals
+	gosub calc_grid_tots
+	gosub disp_totals
+
+rem --- Need to disable units column in grid if gls01a.units_flag$ isn't "Y"
+	if callpoint!.getDevObject("units_flag")="Y" then
+		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",1)
+	else
+		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",0)
+	endif
 [[GLE_JRNLDET.ADEL]]
 rem --- recal/display tots after deleting a grid row
 gosub calc_grid_tots

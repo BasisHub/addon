@@ -70,7 +70,7 @@ rem --- Columns for the record set are defined using a string template
 	      temp$="FIRM_ID:C(2), WO_NO:C(7*), WO_TYPE:C(1*), WO_CATEGORY:C(1*), WO_STATUS:C(1*), CUSTOMER_ID:C(1*), "
 	temp$=temp$+"SLS_ORDER_NO:C(1*), WAREHOUSE_ID:C(1*), ITEM_ID:C(1*), OPENED_DATE:C(1*), LAST_CLOSE:C(1*), "
 	temp$=temp$+"TYPE_DESC:C(1*), PRIORITY:C(1*), UOM:C(1*), YIELD:C(1*), PROD_QTY:C(1*), COMPLETED:C(1*), "
-	temp$=temp$+"LAST_ACT_DATE:C(1*), ITEM_DESC_1:C(1*), ITEM_DESC_2:C(1*), DRAWING_NO:C(1*), REV:C(1*), "
+	temp$=temp$+"LAST_ACT_DATE:C(1*), ITEM_DESC_1:C(1*), ITEM_DESC_2:C(1*), IMAGE_PATH:C(1*), DRAWING_NO:C(1*), REV:C(1*), "
 	temp$=temp$+"INCLUDE_LOTSER:C(1*), MAST_CLS_INP_QTY_STR:C(1*), MAST_CLS_INP_DT:C(1*), MAST_CLOSED_COST_STR:C(1*), "
 	temp$=temp$+"COMPLETE_YN:C(1*), COST_MASK:C(1*), UNITS_MASK:C(1*), AMT_MASK:C(1*), "	
 	temp$=temp$+"COST_MASK_PATTERN:C(1*), UNITS_MASK_PATTERN:C(1*), AMT_MASK_PATTERN:C(1*), "	
@@ -361,6 +361,20 @@ rem --- Trip Read
 		else
 			data!.setFieldValue("ITEM_DESC_1",ivm_itemmast.item_desc$)
 		endif
+        if cvs(ivm_itemmast.image_path$,2)<>"" then
+            rem --- Get real path to image from image_path, which may include an STBL for the image dir
+            image_dir$=""
+            image_path$=cvs(ivm_itemmast.image_path$,2)
+            if pos("["=image_path$) and pos("]+"=image_path$) then
+                image_dir$=stbl(image_path$(pos("["=image_path$)+1,pos("]+"=image_path$)-2),err=*next)
+                image_path$=image_path$(pos("]+"=image_path$)+2)
+            endif
+            if image_path$(1,1)=$22$ then image_path$=image_path$(2) 
+            if image_path$(len(image_path$))=$22$ then image_path$=image_path$(1,len(image_path$)-1)
+            if image_dir$<>"" then image_path$=image_dir$+image_path$
+            image_file$=BBjAPI().getFileSystem().resolvePath(image_path$,err=*endif)
+            data!.setFieldValue("IMAGE_PATH",image_file$)
+        endif
 		data!.setFieldValue("DRAWING_NO",read_tpl.drawing_no$)
 		data!.setFieldValue("REV",read_tpl.drawing_rev$)
 		data!.setFieldValue("INCLUDE_LOTSER",include_lotser$)

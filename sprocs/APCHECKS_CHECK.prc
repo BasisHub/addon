@@ -88,7 +88,7 @@ rem --- Get data from work file
 	sql_prep$=sql_prep$+"  AND check_no='"+check_no$+"' "
 	sql_prep$=sql_prep$+"  AND chk_pagenum='"+curr_page$+"' "; rem Though a APType-Vendor may have multi checks (overflow), process only one pg at a time
 	sql_prep$=sql_prep$+"  AND section_type='C' "
-	
+
 	sql_chan=sqlunt
 	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
 	sqlprep(sql_chan)sql_prep$
@@ -98,8 +98,7 @@ rem --- Get data from work file
 rem --- Loop through result set from work file query
 	
 	while TRUE
-		read_tpl$ = sqlfetch(sql_chan,end=*break)
-		
+		read_tpl$ = sqlfetch(sql_chan,end=*break)		
 		data! = rs!.getEmptyRecordData()
 		data!.setFieldValue("CHECK_DATE", fndate$(read_tpl.check_date$))
         if cvs(read_tpl.signature_2$,2)="" then
@@ -110,15 +109,21 @@ rem --- Loop through result set from work file query
                 data!.setFieldValue("TWO_SIGNATURE_2", "")
             else
                 rem --- Have one signature on this check
-                data!.setFieldValue("ONE_SIGNATURE", cvs(stbl("+CUST_IMAGES")+read_tpl.signature_1$,2))
+                tmp_sig$=read_tpl.signature_1$
+                gosub resolve_sig_path
+                data!.setFieldValue("ONE_SIGNATURE", image_file$)
                 data!.setFieldValue("TWO_SIGNATURE_1", "")
                 data!.setFieldValue("TWO_SIGNATURE_2", "")
             endif
         else
             rem --- Have two signatures on this check
+            tmp_sig$=read_tpl.signature_1$
+            gosub resolve_sig_path
             data!.setFieldValue("ONE_SIGNATURE", "")
-            data!.setFieldValue("TWO_SIGNATURE_1", cvs(stbl("+CUST_IMAGES")+read_tpl.signature_1$,2))
-            data!.setFieldValue("TWO_SIGNATURE_2", cvs(stbl("+CUST_IMAGES")+read_tpl.signature_2$,2))
+            data!.setFieldValue("TWO_SIGNATURE_1", image_file$)
+            tmp_sig$=read_tpl.signature_2$
+            gosub resolve_sig_path           
+            data!.setFieldValue("TWO_SIGNATURE_2", image_file$)
         endif
 		data!.setFieldValue("CHECK_AMT", read_tpl.chk_amt_str$); rem Already in str; may include stars or VOID
 		data!.setFieldValue("EXACTLY_AMT", read_tpl.chk_exactly$); rem Includes the text "Exactly" and "***" 
@@ -129,6 +134,23 @@ rem --- Loop through result set from work file query
 	sp!.setRecordSet(rs!)
 
     goto std_exit
+
+resolve_sig_path:
+
+    if cvs(tmp_sig$,2)<>"" then
+        rem --- Get path to signature image, which may include an STBL for the image dir
+        image_dir$=""
+        image_path$=cvs(tmp_sig$,2)
+        if pos("["=image_path$) and pos("]+"=image_path$) then
+            image_dir$=stbl(image_path$(pos("["=image_path$)+1,pos("]+"=image_path$)-2),err=*next)
+            image_path$=image_path$(pos("]+"=image_path$)+2)
+        endif
+        if image_path$(1,1)=$22$ then image_path$=image_path$(2) 
+        if image_path$(len(image_path$))=$22$ then image_path$=image_path$(1,len(image_path$)-1)
+        if image_dir$<>"" then image_path$=image_dir$+image_path$
+        image_file$=BBjAPI().getFileSystem().resolvePath(image_path$,err=*endif)
+    endif
+    return
 
 disp_message: rem --- Display Message Dialog
 

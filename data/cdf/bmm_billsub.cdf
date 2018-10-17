@@ -233,6 +233,7 @@ rem --- Display Net Qty and Total Cost
 	unit_cost=num(callpoint!.getColumnData("BMM_BILLSUB.UNIT_COST"))
 	gosub calc_display
 [[BMM_BILLSUB.BSHO]]
+	use ::ado_func.src::func
 	use ::ado_util.src::util
 	use ::bmo_BmUtils.aon::BmUtils
 	declare BmUtils bmUtils!
@@ -276,11 +277,15 @@ rem --- fill listbox for use with Op Sequence
 		ops_list!.addItem(bmm03a.wo_op_ref$+" - "+bmm03a.op_code$+" - "+bmm08a.code_desc$)
 	wend
 
+	ldat$=""
 	if ops_lines!.size()>0
-		ldat$=""
+		descVect!=BBjAPI().makeVector()
+		codeVect!=BBjAPI().makeVector()
 		for x=0 to ops_lines!.size()-1
-			ldat$=ldat$+ops_items!.getItem(x)+"~"+ops_lines!.getItem(x)+";"
+			descVect!.addItem(ops_items!.getItem(x))
+			codeVect!.addItem(ops_lines!.getItem(x))
 		next x
+		ldat$=func.buildListButtonList(descVect!,codeVect!)
 	endif
 
 	callpoint!.setTableColumnAttribute("BMM_BILLSUB.OP_INT_SEQ_REF","LDAT",ldat$)

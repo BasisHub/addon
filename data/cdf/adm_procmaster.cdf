@@ -1,3 +1,14 @@
+[[ADM_PROCMASTER.APFE]]
+rem --- Batched files for this process must be empty in order to turn on batching.
+if callpoint!.isEditMode() and !callpoint!.getDevObject("warned_cannot_batch") then
+	file_count=callpoint!.getDevObject("file_count")
+	keys_used=callpoint!.getDevObject("keys_used")
+	if file_count=0 or keys_used<>0
+		msg_id$="AD_CANNOT_BATCH"
+		gosub disp_message
+		callpoint!.setDevObject("warned_cannot_batch",1)
+	endif
+endif
 [[ADM_PROCMASTER.BDEL]]
 rem --- don't allow delete if any batches are out there
 
@@ -54,6 +65,9 @@ if callpoint!.getColumnData("ADM_PROCMASTER.ALLOW_BATCH")="Y" then
 	wend
 endif
 
+callpoint!.setDevObject("warned_cannot_batch",0)
+callpoint!.setDevObject("file_count",file_count)
+callpoint!.setDevObject("keys_used",keys_used)
 if file_count>0 and keys_used=0
 	callpoint!.setColumnEnabled("ADM_PROCMASTER.BATCH_ENTRY",1)
 else
@@ -91,3 +105,7 @@ num_files=1
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="ADM_AUDITCONTROL",open_opts$[1]="OTA"
 gosub open_tables
+
+callpoint!.setDevObject("file_count",1)
+callpoint!.setDevObject("keys_used",0)
+callpoint!.setDevObject("warned_cannot_batch",0)

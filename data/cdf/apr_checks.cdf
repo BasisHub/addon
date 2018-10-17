@@ -27,6 +27,7 @@ rem --- Warn if this check number has been previously used
 			rem --- Must check all AP Types when ap_type is blank/empty
 			if cvs(ap_type$,2)="" then
 				aptCheckHistory_key$=key(aptCheckHistory_dev,end=*break)
+				if pos(firm_id$=aptCheckHistory_key$)<>1 then break
 				if pos(firm_id$+next_ap_type$=aptCheckHistory_key$)=1 then
 					rem --- Skip ahead to next ap_type
 					read(aptCheckHistory_dev,key=firm_id$+aptCheckHistory.ap_type$+$FF$,dom=*next)

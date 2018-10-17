@@ -1,3 +1,35 @@
+[[APE_RECURRINGDET.AREC]]
+rem --- Disable some grid columns depending on params
+	if user_tpl.glint$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_ACCOUNT",0)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_POST_AMT",0)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_ACCOUNT",1)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_POST_AMT",1)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",1)
+	endif
+	if user_tpl.units_flag$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",1)
+	endif
+[[APE_RECURRINGDET.ADGE]]
+rem --- Disable some grid columns depending on params
+	if user_tpl.glint$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_ACCOUNT",0)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_POST_AMT",0)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_ACCOUNT",1)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_POST_AMT",1)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",1)
+	endif
+	if user_tpl.units_flag$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",1)
+	endif
 [[APE_RECURRINGDET.GL_ACCOUNT.AVAL]]
 rem "GL INACTIVE FEATURE"
    glm01_dev=fnget_dev("GLM_ACCT")
@@ -19,6 +51,22 @@ rem "GL INACTIVE FEATURE"
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots
 gosub disp_totals
+
+rem --- Disable some grid columns depending on params
+	if user_tpl.glint$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_ACCOUNT",0)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_POST_AMT",0)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_ACCOUNT",1)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.GL_POST_AMT",1)
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",1)
+	endif
+	if user_tpl.units_flag$="N" then
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",0)
+	else
+		callpoint!.setColumnEnabled(-1,"APE_RECURRINGDET.UNITS",1)
+	endif
 [[APE_RECURRINGDET.ADEL]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots

@@ -174,6 +174,15 @@ rem --- remove software lock on batch, if batching
 		lock_disp$=""
 		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 	endif
+
+rem --- remove images copied temporarily to web servier for viewing
+
+	urlVect!=callpoint!.getDevObject("urlVect")
+	if urlVect!.size()
+		for wk=0 to urlVect!.size()-1
+			BBUtils.deleteFromWebServer(urlVect!.get(wk))
+		next wk
+	endif
 [[APE_MANCHECKHDR.BTBL]]
 rem --- Get Batch information
 
@@ -381,20 +390,14 @@ rem --- Disable ap type control if param for multi-types is N
 		ctl_stat$="I"
 		gosub disable_fields
 	endif
-			
-rem --- Disable some grid columns
-
-	w!=Form!.getChildWindow(1109)
-	c!=w!.getControl(5900)
-	c!.setColumnEditable(6,0)
-	c!.setColumnEditable(7,0)
-	if user_tpl.multi_types$="N" c!.setColumnEditable(2,0)
 
 rem --- Disable button
 
 	callpoint!.setOptionEnabled("OINV",0)
 [[APE_MANCHECKHDR.AWIN]]
 rem print 'show',; rem debug
+
+	use ::BBUtils.bbj::BBUtils
 
 rem --- Open/Lock files
 	files=30,begfile=1,endfile=15
@@ -567,22 +570,16 @@ rem --- Get Payment Authorization parameter record
 	readrecord(aps_payauth,key=firm_id$+"AP00",dom=*next)aps_payauth$
 	callpoint!.setDevObject("use_pay_auth",aps_payauth.use_pay_auth)
 	callpoint!.setDevObject("scan_docs_to",aps_payauth.scan_docs_to$)
-[[APE_MANCHECKHDR.AREC]]
-print "Head: AREC (After New Record)"; rem debug
-print "open_check$ reset"; rem debug
 
+rem --- Create vector of urls for viewed invoice images
+
+	urlVect!=BBjAPI().makeVector()
+	callpoint!.setDevObject("urlVect",urlVect!)
+[[APE_MANCHECKHDR.AREC]]
 user_tpl.reuse_chk$=""
 user_tpl.open_check$=""
 user_tpl.dflt_gl_account$=""
 callpoint!.setColumnData("<<DISPLAY>>.comments","")
-rem --- enable/disable grid cells
-w!=Form!.getChildWindow(1109)
-c!=w!.getControl(5900)
-c!.setColumnEditable(0,1)
-c!.setColumnEditable(1,1)
-c!.setColumnEditable(6,0)
-c!.setColumnEditable(7,0)
-if user_tpl.multi_dist$="N" c!.setColumnEditable(2,0)
 
 rem --- if not multi-type then set the defalut AP Type
 if user_tpl.multi_types$="N" then

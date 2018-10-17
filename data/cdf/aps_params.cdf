@@ -98,7 +98,7 @@ rem --- Display selected color
 [[APS_PAYAUTH.SCAN_DOCS_TO.AVAL]]
 rem --- Restrict selection to currently available options
 	scan_docs_to$=callpoint!.getUserInput()
-	if pos(scan_docs_to$="NOTGD ",3)=0 then
+	if pos(scan_docs_to$="NOTGD BDA",3)=0 then
 		callpoint!.setMessage("AD_OPTION_NOT")
 		callpoint!.setStatus("ABORT")
 		break

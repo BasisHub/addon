@@ -396,13 +396,3 @@ endif
 	ctl_name$="<<DISPLAY>>.DIST_BAL"
 	ctl_stat$="I"
 	gosub disable_fields
-rem --- disable some grid columns depending on params
-w!=Form!.getChildWindow(1109)
-c!=w!.getControl(5900)
-if gl$="N" 
-	numcols=c!.getNumColumns()
-	for x=0 to numcols-1
-		c!.setColumnEditable(x,0)
-	next x
-endif
-if user_tpl.units_flag$="N" c!.setColumnEditable(3,0)

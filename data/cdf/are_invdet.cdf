@@ -1,3 +1,17 @@
+[[ARE_INVDET.AREC]]
+rem --- Disable GL_ACCOUNT if not using GL
+	if user_tpl.glint$<>"Y"
+		callpoint!.setColumnEnabled(-1,"ARE_INVDET.GL_ACCOUNT",0)
+	else
+		callpoint!.setColumnEnabled(-1,"ARE_INVDET.GL_ACCOUNT",1)
+	endif
+[[ARE_INVDET.ADGE]]
+rem --- Disable GL_ACCOUNT if not using GL
+	if user_tpl.glint$<>"Y"
+		callpoint!.setColumnEnabled(-1,"ARE_INVDET.GL_ACCOUNT",0)
+	else
+		callpoint!.setColumnEnabled(-1,"ARE_INVDET.GL_ACCOUNT",1)
+	endif
 [[ARE_INVDET.BDGX]]
 rem --- Disable comments
 	callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"ARE_INVDET.MEMO_1024",0)
@@ -81,6 +95,13 @@ rem --- Set column size for memo_1024 field very small so it doesn't take up roo
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots
 gosub disp_totals
+
+rem --- Disable GL_ACCOUNT if not using GL
+	if user_tpl.glint$<>"Y"
+		callpoint!.setColumnEnabled(-1,"ARE_INVDET.GL_ACCOUNT",0)
+	else
+		callpoint!.setColumnEnabled(-1,"ARE_INVDET.GL_ACCOUNT",1)
+	endif
 [[ARE_INVDET.ADEL]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots
