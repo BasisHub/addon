@@ -87,13 +87,14 @@ rem --- Initialize Data
         extractrecord(ope01_dev,key=firm_id$+"R"+"  "+cust_id$+order_no$+invoice_no$,dom=*next)ope01a$
     endif
     if cvs(ope01a.firm_id$+ope01a.customer_id$+ope01a.order_no$,2)="" then goto std_exit
-
-    terms_code$=ope01a.terms_code$
-    credit_flag$=ope01a.credit_flag$
+    
+    rem --- NOTE: Form has not updated the header record yet, so CANNOT use non-key fields
+    terms_code$=callpoint!.getColumnData("TERMS_CODE")
+    credit_flag$=callpoint!.getColumnData("CREDIT_FLAG")
     backorderedControl! = cast(BBjControl, callpoint!.getDevObject("backordered_control"))
     
 rem --- Has order/invoice been printed?
-    if ope01a.print_status$ = "Y" then
+    if callpoint!.getColumnData("PRINT_STATUS") = "Y" then
         rem --- Exit silently
         action$ = "S"
         backorderedControl!.setText("Order/Invoice is Printed")
@@ -102,7 +103,7 @@ rem --- Has order/invoice been printed?
     endif
 
 rem --- Credit memos shouldn't get processed
-    if ope01a.total_sales <= 0 then
+    if num(callpoint!.getColumnData("TOTAL_SALES")) <=0 then
         action$ = "M"
         backorderedControl!.setText("Credit Memo: no processing")
         goto final_updates
@@ -156,7 +157,7 @@ display_form: rem --- Display
     credit_action = 0
     callpoint!.setDevObject("cust_id", cust_id$)
     callpoint!.setDevObject("order_no", order_no$)
-    callpoint!.setDevObject("pick_or_quote",ope01a.invoice_type$);rem used if printing pick list from credit mgmt form
+    callpoint!.setDevObject("pick_or_quote",callpoint!.getColumnData("INVOICE_TYPE"));rem used if printing pick list from credit mgmt form
     
     call sypdir$+"bam_run_prog.bbj", "OPE_CREDITACTION", stbl("+USER_ID"), "", "", table_chans$[all], "", dflt_data$[all]   
 
@@ -223,11 +224,9 @@ rem --- Update Tickler File
 rem --- Update order header file
 
 	if action$<>"D"
-        ope01a.terms_code$=terms_code$
-        ope01a.lock_status$="N"
-        ope01a.credit_flag$=credit_flag$
-        ope01a$=field(ope01a$)
-        writerecord(ope01_dev)ope01a$     
+        callpoint!.setColumnData("TERMS_CODE",terms_code$,1)
+        callpoint!.setColumnData("LOCK_STATUS","N",1)
+        callpoint!.setColumnData("CREDIT_FLAG",credit_flag$,1)
 	endif
     
     callpoint!.setDevObject("credit_action_done", "Y")
@@ -253,7 +252,7 @@ rem --- Find only tickler records for this order
     
     rem --- Found and no need to remove or update
     
-        if ope01a.order_date$ = ope03a.rev_date$ and credit_flag$="C" then 
+        if callpoint!.getColumnData("ORDER_DATE") = ope03a.rev_date$ and credit_flag$="C" then 
             update = 0
             break
         endif
@@ -270,7 +269,7 @@ rem --- Update tickler file with new record
     if credit_flag$="C" and update then
         dim ope03a$:fattr(ope03a$)
         ope03a.firm_id$ = firm_id$
-        ope03a.rev_date$ = ope01a.order_date$
+        ope03a.rev_date$ = callpoint!.getColumnData("ORDER_DATE")
         ope03a.customer_id$ = cust_id$
         ope03a.order_no$ = order_no$
         ope03a$ = field(ope03a$)
@@ -315,7 +314,7 @@ disp_message: rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -333,9 +332,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

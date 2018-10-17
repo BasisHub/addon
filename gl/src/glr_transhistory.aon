@@ -11,6 +11,8 @@ rem  +-----------------------------------------+
     setesc std_error
     seterr std_error
 
+    use ::ado_func.src::func
+
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -186,8 +188,8 @@ rem --- Document columns
         columns$[0,0]=Translate!.getTranslation("AON_ACCOUNT"),columns$[0,1]="C",columns$[0,2]=str(m0),columns$[0,3]=m0$,columns$[0,10]="1"
         columns$[1,0]=Translate!.getTranslation("AON_DATE"),columns$[1,1]="C",columns$[1,2]="10"
         columns$[2,0]=Translate!.getTranslation("AON_JRNL"),columns$[2,1]="C",columns$[2,2]="5"
-        columns$[3,0]=Translate!.getTranslation("AON_AUDIT_#"),columns$[3,1]="C",columns$[3,2]="10"
-        columns$[4,0]=Translate!.getTranslation("AON_MEMO"),columns$[4,1]="C",columns$[4,2]="25"
+        columns$[3,0]=Translate!.getTranslation("AON_AUDIT_#"),columns$[3,1]="C",columns$[3,2]="8"
+        columns$[4,0]=Translate!.getTranslation("AON_MEMO"),columns$[4,1]="C",columns$[4,2]="37"
         columns$[5,0]=Translate!.getTranslation("AON_REF_1"),columns$[5,1]="C",columns$[5,2]="12"
         columns$[6,0]=Translate!.getTranslation("AON_REF_2"),columns$[6,1]="C",columns$[6,2]="12"
         columns$[7,0]=Translate!.getTranslation("AON_REF_3"),columns$[7,1]="C",columns$[7,2]="12"
@@ -309,6 +311,9 @@ rem --- Read next transaction history (glt-06) record
           n[1]=credits
           n[2]=units
 
+          rem --- Split detail line comments into multiple lines
+          lineVect!=func.splitMultiLineField(glt06a.memo_1024$,40)
+
           rem --- Print detail line
             
             if export_format$="Y"
@@ -322,7 +327,12 @@ rem --- Read next transaction history (glt-06) record
                 OutVect!.addItem(fndate$(glt06a.trns_date$))
                 OutVect!.addItem(glt06a.journal_id$)
                 OutVect!.addItem(glt06a.gl_adt_no$)
-                OutVect!.addItem(glt06a.description$)
+                if lineVect!.size() then
+                    OutVect!.addItem(lineVect!.getItem(0))
+                    lineVect!.removeItem(0)
+                else
+                    OutVect!.addItem("")
+                endif
                 OutVect!.addItem(glt06a.reference_01$)
                 OutVect!.addItem(glt06a.reference_02$)
                 OutVect!.addItem(glt06a.reference_03$)
@@ -330,6 +340,15 @@ rem --- Read next transaction history (glt-06) record
                 OutVect!.addItem(credit$)
                 OutVect!.addItem(unit$)
                 l1=l1+1
+
+                rem --- Print rest of detail line comments 
+                if lineVect!.size() then
+                    for i=0 to lineVect!.size()-1
+                        xwk=fnblank(4)
+                        OutVect!.addItem(lineVect!.getItem(i))
+                        xwk=fnblank(6)
+                    next i
+                endif
             endif
 
           rem --- Accumulate totals
@@ -773,7 +792,7 @@ disp_message:rem --- Display Message Dialog
     
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -791,9 +810,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

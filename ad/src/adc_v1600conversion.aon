@@ -149,6 +149,29 @@ rem --- For version 16.00, initialize 3-char sequence_no in ape_invoicedet, ape_
                 endif
             next source
         endif
+
+        rem --- If starting conversion from v14 or earlier, need to initialize invoice_bal in apt_invoicehdr (see Bug 9294 for details).
+        if num(convCtrl!.getProperty("start_version"))<15 then
+            rem --- Rebuild AP Invoice Balance
+            theFirm$=""
+            call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
+            if status=0 then
+                rem --- Conversion completed successfully
+                rem --- Increment progress meter
+                meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+"Rebuild AP Invoice Balance"
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+            else
+                rem --- Conversion did NOT complete successfully, exit with error message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                   Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+"Rebuild AP Invoice Balance"+" *****"
+                goto done
+            endif
+        endif
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
@@ -409,7 +432,7 @@ disp_message: rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (22Feb2013)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -421,9 +444,20 @@ std_error: rem --- Standard error handler (22Feb2013)
         endif
     endif
 
-    rd_err_text$=""
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

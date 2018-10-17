@@ -2,6 +2,7 @@
 rem --- Declare Java classes used
 
 	use java.io.File
+	use ::adc_updatexmlfiles.aon::UpdateSyncXmlFiles
 [[ADX_UPDATEXML.UPGRADE.AINP]]
 rem --- Enable/disable input field for backup sync location
 
@@ -113,6 +114,17 @@ validate_new_sync_dir: rem --- Validate directory for new data/sync location
 		callpoint!.setFocus(focus$)
 		callpoint!.setStatus("ABORT")
 		return
+	endif
+
+	rem --- Get version of source Addon installation from source data/sync/adm_modules~01007514ad.xml
+	utility! = new UpdateSyncXmlFiles(rdForm!,0)
+	oldVers! = utility!.getModuleVersion(new File(loc_dir$))
+	if oldVers!.get("AD")<>null() and num(oldVers!.get("AD"))<18
+		rem --- The Barista instance for new data/sync location must be v18 or later.
+		msg_id$="AD_NEW_LOC_NOT_V18"
+		gosub disp_message
+		callpoint!.setFocus(focus$)
+		callpoint!.setStatus("ABORT")
 	endif
 
 	success=1

@@ -11,6 +11,8 @@ rem  +-----------------------------------------+
     setesc std_error
     seterr std_error
 
+    use ::ado_func.src::func
+
 rem --- Retrieve the program path
 
     pgmdir$=stbl("+DIR_PGM",err=*next)
@@ -275,6 +277,9 @@ rem --- Format detail line fields
 :                               credit$=str(abs(glt04a.trans_amt))
           if gls01a.units_flag$="Y" 
 :            if units<>0 unit$=str(units)
+                
+        rem --- Split detail line comments into multiple lines
+        lineVect!=func.splitMultiLineField(glt04a.memo_1024$,40)
 
 rem --- Detail line by audit number
 
@@ -283,11 +288,24 @@ rem --- Detail line by audit number
             OutVect!.addItem(fndate$(glt04a.trns_date$))
             OutVect!.addItem(fnmask$(glt04a.gl_account$(1,acctlen),m0$))
             OutVect!.addItem(description$)
-            OutVect!.addItem(glt04a.description$)
+            if lineVect!.size() then
+                OutVect!.addItem(lineVect!.getItem(0))
+                lineVect!.removeItem(0)
+            else
+                OutVect!.addItem("")
+            endif
             OutVect!.addItem(debit$)
             OutVect!.addItem(credit$)
             OutVect!.addItem(unit$)
 
+            rem --- Print rest of detail line comments 
+            if lineVect!.size() then
+                for i=0 to lineVect!.size()-1
+                    xwk=fnblank(3)
+                    OutVect!.addItem(lineVect!.getItem(i))
+                    xwk=fnblank(3)
+                next i
+            endif
         endif 
 
  rem --- Detail line by date
@@ -299,7 +317,12 @@ rem --- Detail line by audit number
 
             OutVect!.addItem(fnmask$(glt04a.gl_account$(1,acctlen),m0$))
             OutVect!.addItem(description$)
-            OutVect!.addItem(glt04a.description$)
+            if lineVect!.size() then
+                OutVect!.addItem(lineVect!.getItem(0))
+                lineVect!.removeItem(0)
+            else
+                OutVect!.addItem("")
+            endif
             OutVect!.addItem(m$)
             OutVect!.addItem(glt04a.posting_year$(3,2))
             OutVect!.addItem(glt04a.gl_adt_no$)
@@ -307,6 +330,14 @@ rem --- Detail line by audit number
             OutVect!.addItem(credit$)
             OutVect!.addItem(unit$)
 
+            rem --- Print rest of detail line comments 
+            if lineVect!.size() then
+                for i=0 to lineVect!.size()-1
+                    xwk=fnblank(2)
+                    OutVect!.addItem(lineVect!.getItem(i))
+                    xwk=fnblank(6)
+                next i
+            endif
         endif
 
 rem --- Any reference fields?
@@ -632,7 +663,7 @@ disp_message:rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -650,9 +681,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

@@ -645,6 +645,21 @@ rem --- Update links to Work Orders
 :				po_no$,po_seq$,"P",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
 		endif
 	endif
+
+rem --- Need to update POE_LINKED when this is a dropship
+	so_line_no$=callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF")
+	if num(so_line_no$)<>0
+		poe_linked_dev=fnget_dev("POE_LINKED")
+		dim poe_linked$:fnget_tpl$("POE_LINKED")
+
+		poe_linked.firm_id$=firm_id$
+		poe_linked.po_no$=callpoint!.getColumnData("POE_PODET.PO_NO")
+		poe_linked.poedet_seq_ref$=callpoint!.getColumnData("POE_PODET.INTERNAL_SEQ_NO")
+		poe_linked.customer_id$=callpoint!.getHeaderColumnData("POE_POHDR.CUSTOMER_ID")
+		poe_linked.order_no$=callpoint!.getHeaderColumnData("POE_POHDR.ORDER_NO")
+		poe_linked.opedet_seq_ref$=so_line_no$
+		write record (poe_linked_dev)poe_linked$
+	endif
 [[POE_PODET.ADEL]]
 gosub update_header_tots
 
@@ -668,6 +683,15 @@ rem --- Update links to Work Orders
 			call pgmdir$+"poc_requpdate.aon",sfe_womatl_dev,sfe_wosubcnt_dev,
 :				po_no$,po_seq$,"P",poc_linecode.line_type$,old_wo$,old_woseq$,new_wo$,new_woseq$,status
 		endif
+	endif
+
+rem --- Need to update POE_LINKED when this is a dropship
+	so_line_no$=callpoint!.getColumnData("POE_PODET.SO_INT_SEQ_REF")
+	if num(so_line_no$)<>0
+		poe_linked_dev=fnget_dev("POE_LINKED")
+
+		poe_linked_key$=firm_id$+callpoint!.getColumnData("POE_PODET.PO_NO")+callpoint!.getColumnData("POE_PODET.INTERNAL_SEQ_NO")
+		remove(poe_linked_dev,key=poe_linked_key$,dom=*next)
 	endif
 [[POE_PODET.ADGE]]
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
@@ -866,6 +890,12 @@ rem ==========================================================================
 	endif
 	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
 	line_type$=poc_linecode.line_type$
+
+	rem --- Dropship PO line codes are no longer supported. Now the entire PO must be dropshipped.
+	if poc_linecode.dropship$="Y" then
+		msg_id$="PO_DROPSHIP_LINE_CD "
+		gosub disp_message
+	endif
 
 rem --- Manually enable/disable fields based on Line Type
 

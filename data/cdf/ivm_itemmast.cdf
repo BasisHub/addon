@@ -115,10 +115,20 @@ rem --- Is item code blank?
 	endif
 [[IVM_ITEMMAST.LOTSER_ITEM.AVAL]]
 rem --- Disable inventoried if not lotted/serialized
-	if callpoint!.getUserInput()<>"Y" then
+	inventoried$=callpoint!.getUserInput()
+	if inventoried$<>"Y" then
 		callpoint!.setColumnEnabled("IVM_ITEMMAST.INVENTORIED",0)
+		callpoint!.setColumnData("IVM_ITEMMAST.INVENTORIED","N",1)
 	else
 		callpoint!.setColumnEnabled("IVM_ITEMMAST.INVENTORIED",1)
+	endif
+
+rem --- Disable sell_purch_um if lotted/serialized, or sell_purch_um not allowed
+	if inventoried$="Y" or callpoint!.getDevObject("allow_SellPurchUM")="N" then
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.SELL_PURCH_UM",0)
+		callpoint!.setColumnData("IVM_ITEMMAST.SELL_PURCH_UM","N",1)
+	else
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.SELL_PURCH_UM",1)
 	endif
 [[IVM_ITEMMAST.INVENTORIED.AVAL]]
 rem --- Can't change Inventoried flag if there is QOH, and disable lotted/serialized flag if inventoried=Y
@@ -191,6 +201,25 @@ rem --- Disable lotted/serialized flag if inventoried=Y
 		callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",0)
 	else
 		callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",1)
+	endif
+
+rem --- Disable sell_purch_um if lotted/serialized, or sell_purch_um not allowed
+	if callpoint!.getColumnData("IVM_ITEMMAST.LOTSER_ITEM")="Y" or callpoint!.getDevObject("allow_SellPurchUM")="N" then
+		callpoint!.setColumnEnabled("IVM_ITEMMAST.SELL_PURCH_UM",0)
+	else
+		rem --- Always disable if BOM and creating WOs from Sales Orders
+		if callpoint!.getDevObject("bm_installed")="Y" and cvs(callpoint!.getDevObject("op_create_wo"),2)<>"" then
+			bmm01_dev = fnget_dev("BMM_BILLMAST")
+			found_bom=0
+			find(bmm01_dev,key=firm_id$+callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID"),dom=*next); found_bom=1
+			if found_bom then
+				callpoint!.setColumnEnabled("IVM_ITEMMAST.SELL_PURCH_UM",0)
+			else
+				callpoint!.setColumnEnabled("IVM_ITEMMAST.SELL_PURCH_UM",1)
+			endif
+		else
+			callpoint!.setColumnEnabled("IVM_ITEMMAST.SELL_PURCH_UM",1)
+		endif
 	endif
 [[<<DISPLAY>>.ITEM_DESC_SEG_3.AVAL]]
 rem --- Set this section back into desc, if modified
@@ -675,10 +704,12 @@ rem --- init/parameters
 	ap$=info$[20]
 	call dir_pgm1$+"adc_application.aon","BM",info$[all]
 	bm$=info$[20]
+	callpoint!.setDevObject("bm_installed",bm$)
 	call dir_pgm1$+"adc_application.aon","GL",info$[all]
 	gl$=info$[20]
 	call dir_pgm1$+"adc_application.aon","OP",info$[all]
 	op$=info$[20]
+	callpoint!.setDevObject("op_installed",op$)
 	call dir_pgm1$+"adc_application.aon","PO",info$[all]
 	po$=info$[20]
 	call dir_pgm1$+"adc_application.aon","SF",info$[all]
@@ -766,11 +797,6 @@ rem --- additional file opens, depending on which apps are installed, param valu
 		files=files+3
 	endif
 
-	if ivs01a.master_flag_01$="Y" or ivs01a.master_flag_02$="Y" or ivs01a.master_flag_03$="Y"
-		more_files$=more_files$+"IVM_DESCRIP1;IVM_DESCRIP2;IVM_DESCRIP3;"
-		files=files+3
-	endif 
-
 	if ar$="Y" then 
 		more_files$=more_files$+"ARM_CUSTMAST;ARC_DISTCODE;"
 		files=files+2
@@ -782,8 +808,8 @@ rem --- additional file opens, depending on which apps are installed, param valu
 	endif
 
 	if op$="Y" then 
-		more_files$=more_files$+"OPE_ORDHDR;OPE_ORDDET;"
-		files=files+2
+		more_files$=more_files$+"OPS_PARAMS;OPE_ORDHDR;OPE_ORDDET;"
+		files=files+3
 	endif
 
 	if po$="Y" then 
@@ -858,6 +884,13 @@ rem --- if you aren't doing lotted/serialized
 
 	if pos(ivs01a.lotser_flag$="LS")=0 then callpoint!.setColumnEnabled("IVM_ITEMMAST.LOTSER_ITEM",-1)
 
+rem --- Don't allow SELL_PURCH_UM if not allowed in IVS_PARAMS or not using lotted/serialized inventory.
+	allow_SellPurchUM$="Y"
+	if ivs01a.sell_purch_um$<>"Y" then
+		allow_SellPurchUM$="N"
+	endif
+	callpoint!.setDevObject("allow_SellPurchUM",allow_SellPurchUM$)
+
 rem --- If you don't distribute by item, or there's no GL, disable GL fields
 
 	if di$<>"N" or gl$<>"Y"
@@ -872,6 +905,16 @@ rem --- Disable Sales Analysis level if SA is not installed
 	if sa$<>"Y" then
 		callpoint!.setColumnEnabled("IVM_ITEMMAST.SA_LEVEL",-1)
 	endif
+
+rem ... Creating WOs from Sales Orders?
+	op_create_wo$=""
+	if op$="Y" then
+		opsParams_dev=fnget_dev("OPS_PARAMS")
+		dim opsParams$:fnget_tpl$("OPS_PARAMS")
+		findrecord (opsParams_dev,key=firm_id$+"AR00",dom=*next)opsParams$
+		op_create_wo$=opsParams.op_create_wo$
+	endif
+	callpoint!.setDevObject("op_create_wo",op_create_wo$)
 [[IVM_ITEMMAST.AOPT-PORD]]
 cp_item_id$=callpoint!.getColumnData("IVM_ITEMMAST.ITEM_ID")
 user_id$=stbl("+USER_ID")

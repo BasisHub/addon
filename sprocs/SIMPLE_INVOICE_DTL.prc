@@ -67,7 +67,9 @@ while 1
 
     data! = rs!.getEmptyRecordData()
     data!.setFieldValue("TRNS_DATE", fndate$(are15.trns_date$))
-    data!.setFieldValue("MEMO", are15.description$)
+    memo_1024$=are15.memo_1024$
+    if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+    data!.setFieldValue("MEMO",memo_1024$)
     if memo
         data!.setFieldValue("UNITS",str(are15.units:unit_mask$))
         data!.setFieldValue("UNIT_PRICE",str(are15.unit_price:amt_mask$))

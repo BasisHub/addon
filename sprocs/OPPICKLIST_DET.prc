@@ -46,7 +46,7 @@ rem --- create the in memory recordset for return
 	dataTemplate$ = dataTemplate$ + "order_qty_masked:c(1*), ship_qty:c(1*), bo_qty:c(1*), "
 	dataTemplate$ = dataTemplate$ + "item_id:c(1*), item_desc:c(1*), whse:c(2*), "
 	dataTemplate$ = dataTemplate$ + "price_raw:c(1*), price_masked:c(1*), "
-	dataTemplate$ = dataTemplate$ + "location:c(1*),internal_seq_no:c(1*), "
+	dataTemplate$ = dataTemplate$ + "location:c(1*), internal_seq_no:c(1*), um_sold:c(2*), "
 	dataTemplate$ = dataTemplate$ + "item_is_ls:c(1), linetype_allows_ls:c(1), carton:c(1*), "
     dataTemplate$ = dataTemplate$ + "whse_message:c(1*), whse_msg_sfx:c(1*), ship_qty_raw:c(1*), "
     dataTemplate$ = dataTemplate$ + "wo_info1:c(1*), wo_info2:c(1*)"
@@ -70,14 +70,15 @@ rem --- Initializations
 rem --- Open Files    
 rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
 
-    files=iff(sf$="Y",5,4),begfile=1,endfile=files
+    files=iff(sf$="Y",6,5),begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]    
 
     files$[1]="ivm-01",      ids$[1]="IVM_ITEMMAST"
     files$[2]="opt-11",      ids$[2]="OPE_INVDET"
     files$[3]="opm-02",      ids$[3]="OPC_LINECODE"
     files$[4]="ivm-02",      ids$[4]="IVM_ITEMWHSE"
-    if sf$="Y" then files$[5]="sfe-01",ids$[5]="SFE_WOMASTR"
+    files$[5]="ivs_params",  ids$[5]="IVS_PARAMS"
+    if sf$="Y" then files$[6]="sfe-01",ids$[6]="SFE_WOMASTR"
 
 	call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],ids$[all],templates$[all],channels[all],batch,status
 
@@ -93,17 +94,23 @@ rem --- Note 'files' and 'channels[]' are used in close loop, so don't re-use
     ope11_dev   = channels[2]
     opm02_dev   = channels[3]
     ivm02_dev   = channels[4]
+    ivsParams_dev=channels[5]
     
     dim ivm01a$:templates$[1]
     dim ope11a$:templates$[2]
     dim opm02a$:templates$[3]
     dim ivm02a$:templates$[4]
+    dim ivsParams$:templates$[5]
     
     if sf$="Y" then
-        sfe01_dev=channels[5]
-        dim sfe01a$:templates$[5]
+        sfe01_dev=channels[6]
+        dim sfe01a$:templates$[6]
     endif
 
+rem --- Get IV parameters
+
+    findrecord(ivsParams_dev,key=firm_id$+"IV00",dom=*next)ivsParams$
+    
 rem --- Main
 
     read (ope11_dev, key=firm_id$+"E"+ar_type$+customer_id$+order_no$+ar_inv_no$, knum="AO_STAT_CUST_ORD", dom=*next)
@@ -113,7 +120,7 @@ rem --- Main
     rem --- Detail lines
 
         while 1
-				
+
 			order_qty_masked$ =   ""
             ship_qty$ =           ""
             bo_qty$ =             ""
@@ -132,6 +139,9 @@ rem --- Main
             ship_qty_raw$ =       ""
             wo_info1$ =           ""
             wo_info2$ =           ""
+            um_sold$ =            ""
+            qtyOrdered_purchaseUM = 0
+            qtyOrdered_salesUM    = 0
             			
             read record (ope11_dev, end=*break) ope11a$
 
@@ -178,6 +188,7 @@ rem --- Main
 line_detail: rem --- Item Detail
 
 			if pos(opm02a.line_type$="MO")=0 then
+                qtyOrdered_salesUM=ope11a.qty_ordered
 				order_qty_masked$= str(ope11a.qty_ordered:qty_mask$)
                 ship_qty_raw$= str(ope11a.qty_ordered)
 				if ope11a.commit_flag$="N"
@@ -187,10 +198,20 @@ line_detail: rem --- Item Detail
                     bo_qty$=""
                 endif
                 carton$=""
+                if ivsParams.sell_purch_um$="Y" and ivm01a.sell_purch_um$="Y" then
+                    rem --- Use Unit of Purchase, and as necessary also use Unit of Sale
+                    qtyOrdered_purchaseUM=int(ope11a.qty_ordered/ivm01a.conv_factor)
+                    qtyOrdered_salesUM=ope11a.qty_ordered-(qtyOrdered_purchaseUM*ivm01a.conv_factor)
+                    if qtyOrdered_purchaseUM then
+                        rem --- Use Unit of Purchase
+                        order_qty_masked$= str(qtyOrdered_purchaseUM:qty_mask$)
+                        ship_qty_raw$= str(qtyOrdered_purchaseUM)
+                    endif
+                endif
 			endif
 
 			if pos(opm02a.line_type$="MNO") then
-				item_desc$=cvs(ope11a.memo_1024$,3)
+				item_desc$=cvs(memo_1024$,3)
 			endif
 
 			if pos(opm02a.line_type$=" SP") then 
@@ -201,6 +222,17 @@ line_detail: rem --- Item Detail
 			if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" 
 				price_raw$=   str(ope11a.unit_price*ope11a.qty_ordered)
 				price_masked$=str(num(price_raw$):price_mask$)
+			endif
+			if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" then
+			    if qtyOrdered_purchaseUM then
+                    rem --- Use Unit of Purchase
+                    price_raw$=   str(ope11a.unit_price*ivm01a.conv_factor*qtyOrdered_purchaseUM)
+                    price_masked$=str(num(price_raw$):price_mask$)
+			    else
+                    rem --- Use Unit of Sale
+    				price_raw$=   str(ope11a.unit_price*qtyOrdered_salesUM)
+    				price_masked$=str(num(price_raw$):price_mask$)
+				endif
 			endif
 
             if pick_or_quote$<>"P"
@@ -220,7 +252,7 @@ line_detail: rem --- Item Detail
             endif
 
 			if pos(opm02a.line_type$="SP") then
-				item_desc$=item_desc$+" "+cvs(item_description$,3)+iff(cvs(ope11a.memo_1024$,3)="",""," - "+cvs(ope11a.memo_1024$,3))
+				item_desc$=item_desc$+" "+cvs(item_description$,3)+iff(cvs(memo_1024$,3)="",""," - "+cvs(memo_1024$,3))
 			endif
 
             if len(item_desc$) then if item_desc$(len(item_desc$),1)=$0A$ then item_desc$=item_desc$(1,len(item_desc$)-1)
@@ -235,30 +267,57 @@ line_detail: rem --- Item Detail
                 endif
             endif
 
-			data! = rs!.getEmptyRecordData()
-			data!.setFieldValue("ORDER_QTY_MASKED", order_qty_masked$)
-			data!.setFieldValue("SHIP_QTY", ship_qty$)
-			data!.setFieldValue("BO_QTY", bo_qty$)
-			data!.setFieldValue("ITEM_ID", item_id$)
-			data!.setFieldValue("ITEM_DESC", item_desc$)
-			data!.setFieldValue("WHSE", whse$)
-            data!.setFieldValue("LOCATION",location$)
-			data!.setFieldValue("PRICE_RAW", price_raw$)
-			data!.setFieldValue("PRICE_MASKED", price_masked$)
-            data!.setFieldValue("CARTON",carton$)
-			data!.setFieldValue("INTERNAL_SEQ_NO",internal_seq_no$)
-			data!.setFieldValue("ITEM_IS_LS",item_is_ls$)
-			data!.setFieldValue("LINETYPE_ALLOWS_LS",linetype_allows_ls$)
-            data!.setFieldValue("WHSE_MESSAGE",whse_message$)
-            data!.setFieldValue("WHSE_MSG_SFX",whse_msg_sfx$)
-            data!.setFieldValue("SHIP_QTY_RAW", ship_qty_raw$)
-            data!.setFieldValue("WO_INFO1", wo_info1$)
-            data!.setFieldValue("WO_INFO2", wo_info2$)
+            rem --- How many pick list lines are needed for this order detail line?
+            linesNeeded=1
+            if qtyOrdered_purchaseUM and qtyOrdered_salesUM then linesNeeded=2
 
-			rs!.insert(data!)		
+            for line=1 to linesNeeded
+                rem --- Unit of Purchase can only be used on the first line, but the first line can use either Unit of Purchase or Unit of Sale.
+                if line=1 and qtyOrdered_purchaseUM then
+                    rem --- Use Unit of Purchase
+                    um_sold$=ivm01a.purchase_um$
+                else
+                    rem --- Use Unit of Sale
+                    if pos(opm02a.line_type$="MO")=0 then
+                        um_sold$=ivm01a.unit_of_sale$
+                        order_qty_masked$= str(qtyOrdered_salesUM:qty_mask$)
+                        ship_qty_raw$= str(qtyOrdered_salesUM)
+                    endif
+                    if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" then
+                        price_raw$=   str(ope11a.unit_price*qtyOrdered_salesUM)
+                        price_masked$=str(num(price_raw$):price_mask$)
+                    endif
+                endif
+                
+                rem --- Cannot use internal_seq_no for the second line because the Jasper LINE_ITEM Group Header is grouped by internal_seq_no.
+                rem --- Use line_no instead of internal_seq_no for the second line to avoid that grouping, which causes second line to not print.
+                if line=2 then internal_seq_no$=ope11a.line_no$
+                
+    			data! = rs!.getEmptyRecordData()
+    			data!.setFieldValue("ORDER_QTY_MASKED", order_qty_masked$)
+    			data!.setFieldValue("SHIP_QTY", ship_qty$)
+    			data!.setFieldValue("BO_QTY", bo_qty$)
+    			data!.setFieldValue("ITEM_ID", item_id$)
+    			data!.setFieldValue("ITEM_DESC", item_desc$)
+    			data!.setFieldValue("WHSE", whse$)
+                data!.setFieldValue("LOCATION",location$)
+    			data!.setFieldValue("PRICE_RAW", price_raw$)
+    			data!.setFieldValue("PRICE_MASKED", price_masked$)
+                data!.setFieldValue("CARTON",carton$)
+    			data!.setFieldValue("INTERNAL_SEQ_NO",internal_seq_no$)
+                if pos(opm02a.line_type$="MO")=0 then data!.setFieldValue("UM_SOLD",um_sold$)			
+    			data!.setFieldValue("ITEM_IS_LS",item_is_ls$)
+    			data!.setFieldValue("LINETYPE_ALLOWS_LS",linetype_allows_ls$)
+                data!.setFieldValue("WHSE_MESSAGE",whse_message$)
+                data!.setFieldValue("WHSE_MSG_SFX",whse_msg_sfx$)
+                data!.setFieldValue("SHIP_QTY_RAW", ship_qty_raw$)
+                data!.setFieldValue("WO_INFO1", wo_info1$)
+                data!.setFieldValue("WO_INFO2", wo_info2$)
+    
+    			rs!.insert(data!)
+			next line		
 
         rem --- End of detail lines
-
         wend
 
 rem --- Determine the warehouse message to send back to header report

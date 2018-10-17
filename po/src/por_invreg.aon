@@ -6,6 +6,7 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
+    use ::ado_func.src::func
     use java.util.Iterator
     use java.util.TreeMap
 
@@ -42,6 +43,7 @@ rem --- Document initializations
 rem --- Assign form input values to local variables
 
     level$=Option!.getOptionData("REPORT_SEQUENCE")
+    doComments$=option!.getOptionData("PICK_CHECK")
 
 rem --- Open/Lock Files
 
@@ -254,7 +256,7 @@ rem --- Column headings
 	columns$[6,0]=Translate!.getTranslation("AON_HOLD"),columns$[6,1]="C",columns$[6,2]="5"
 	columns$[7,0]=Translate!.getTranslation("AON_INV_DATE")+"^"+Translate!.getTranslation("AON_DUE_DATE"),columns$[7,1]="C",columns$[7,2]="10"
 	columns$[8,0]=Translate!.getTranslation("AON_ACCT_DATE")+"^"+Translate!.getTranslation("AON_DISC_DATE"),columns$[8,1]="C",columns$[8,2]="10"
-	columns$[9,0]=Translate!.getTranslation("AON_REF/")+"^"+Translate!.getTranslation("AON_MEMO"),columns$[9,1]="C",columns$[9,2]="10"
+	columns$[9,0]=Translate!.getTranslation("AON_REF/")+"^"+Translate!.getTranslation("AON_MEMO"),columns$[9,1]="C",columns$[9,2]="25"
 	columns$[10,0]=Translate!.getTranslation("AON_INVOICE")+"^"+Translate!.getTranslation("AON_AMOUNT"),columns$[10,1]="N",columns$[10,2]="10",columns$[10,3]=m1$
 	columns$[11,0]=rh1$+"^"+rh2$,columns$[11,1]="N",columns$[11,2]="10",columns$[11,3]=m1$
 
@@ -435,6 +437,19 @@ rem --- Print invoice header
 	outVect!.addItem(poe05a.ap_inv_memo$)
 	outVect!.addItem("")
 	outVect!.addItem(retention$)
+       
+    if doComments$="Y" then
+        lineVect!=func.splitMultiLineField(poe05a.memo_1024$,40)
+    else
+        lineVect!=BBjAPI().makeVector()
+    endif
+    if lineVect!.size()>1 then
+        for i=0 to lineVect!.size()-1
+            xwk=fnblank(9)
+            OutVect!.addItem(lineVect!.getItem(i))
+            xwk=fnblank(2)
+        next i
+    endif
 
     recs=recs+1
     glskip=0
@@ -1011,7 +1026,7 @@ disp_message:rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -1029,9 +1044,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

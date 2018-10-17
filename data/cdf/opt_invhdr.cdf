@@ -84,6 +84,8 @@ rem --- get IV Params
 	dim ivs01a$:open_tpls$[29]
 	read record (num(open_chans$[29]), key=firm_id$+"IV00") ivs01a$
 
+	callpoint!.setDevObject("sell_purch_um",ivs01a.sell_purch_um$)
+
 rem --- See if blank warehouse exists
 
 	blank_whse$ = "N"

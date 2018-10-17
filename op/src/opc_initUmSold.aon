@@ -1,0 +1,159 @@
+rem --- Initialize UM_SOLD And CONV_FACTOR In OPT_INVDET
+rem --- Program opc_initUmSold.aon
+
+rem --- AddonSoftware Version 18.00 - Feb2017
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+rem --- theFirm$     : The firm ID to rebuild. Use blank ("") for all firms. (input)
+rem --- rdForm!      : Window object to hold progress meter (input)
+rem --- status       : Status/0=No error (returned)
+
+    use java.io.File
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+
+    seterr std_error
+    setesc std_error
+    
+    enter theFirm$,rdForm!,status
+
+rem --- Initializations
+
+    status=0
+
+rem --- Get program path
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    
+rem --- Retrieve sysinfo data
+
+    rem --- If BUI, initialize Barista processes
+    if info(3,6)="5" then
+        use ::ado_util.src::util
+        Translate!=util.initBUIProcess()
+        if Translate!=null() then goto std_exit
+    endif
+
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+
+rem --- Open/Lock files
+
+    num_files=3
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="OPT_INVDET",      open_opts$[1]="OTA"
+    open_tables$[2]="OPC_LINECODE",      open_opts$[2]="OTA"
+    open_tables$[3]="IVM_ITEMMAST",      open_opts$[3]="OTA"
+
+    gosub open_tables
+
+    optInvDet_dev=num(open_chans$[1]); dim optInvDet$:open_tpls$[1]
+    opcLineCode_dev=num(open_chans$[2]); dim opcLineCode$:open_tpls$[2]
+    ivmItemMast_dev=num(open_chans$[3]); dim ivmItemMast$:open_tpls$[3]
+
+rem --- Initialize UM_SOLD And CONV_FACTOR In OPT_INVDET
+    read (optInvDet_dev,key=theFirm$,dom=*next)
+    while 1
+        readrecord (optInvDet_dev,end=*break)optInvDet$
+        if cvs(theFirm$,2)<>"" and optInvDet.firm_id$<>theFirm$ break
+        writerecord=0
+
+        rem --- If UM_SOLD is blank, set it to IVM_ITEMMAST UNIT_OF_SALE for Regular Sale and Special Distribution lines.
+        if cvs(optInvDet.um_sold$,2)="" then
+            readrecord(opcLineCode_dev,key=optInvDet.firm_id$+optInvDet.line_code$,dom=*endif)opcLineCode$
+            if pos(opcLineCode.line_type$="SP") then
+                readrecord(ivmItemMast_dev,key=optInvDet.firm_id$+optInvDet.item_id$,dom=*endif)ivmItemMast$
+                optInvDet.um_sold$=ivmItemMast.unit_of_sale$
+                writerecord=1
+            endif
+        endif
+        
+        rem --- If CONV_FACTOR is zero, set it to one for non-Memo lines.
+        if optInvDet.conv_factor=0 then
+            readrecord(opcLineCode_dev,key=optInvDet.firm_id$+optInvDet.line_code$,dom=*endif)opcLineCode$
+            if opcLineCode.line_type$<>"M" then
+                optInvDet.conv_factor=1
+                writerecord=1
+            endif
+        endif
+
+        if writerecord then writerecord(optInvDet_dev)optInvDet$
+    wend
+
+done: rem --- All done
+
+    goto std_exit
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       rd_table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+   
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (11Oct2017)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    exit
+
+rem #endinclude std_exit.src

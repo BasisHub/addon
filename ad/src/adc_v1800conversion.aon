@@ -17,7 +17,7 @@ rem --- CONV_STATUS : Status code/0=No error (Returned)
 
     use ::ado_file.src::FileObject
     use ::ado_SyncRecords.aon::SyncRecords
-    
+   
     setesc std_error
     seterr std_error
     
@@ -57,6 +57,245 @@ rem --- Start progress meter
     meter_action$="WIN-LST"
     gosub disp_meter
 
+rem --- Prior to v17.12 the MSG_ID key field size in aon/data/sync/ads_messages~iv_lf_adjust_warn.xml was 22 instead of 20 (Bug 9261).
+rem --- This can result in two bogus records for that bad key in aon/data/admin_backup/ads_messages~[01007517IV].xml following an upgrade
+rem --- to v18, and the actual IV_LF_ADJUST_WARN being removed from ads_messages.
+rem --- The following code removes those bogus "IV_LF_ADJUST_WARN     " sync xml records (22-char instead of 20-char),
+rem --- and restores the IV_LF_ADJUST_WARN message record to the ads_messages table.
+
+    rem --- Increment progress meter
+    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+" "+Translate!.getTranslation("AON_MODIFIED_SYNC_FILES")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+    rem --- Remove bogus 22-char IV_LF_ADJUST_WARN records in admin_backup/ads_messages~[01007517IV].xml
+    rem --- Remove no-longer-used SETPRINTER record in admin_backup/ads_autolaunch~[01007514AD].xml
+    xml_file$=aonDir$+"data/admin_backup/ads_messages~[01007514IV].xml"
+    xml_key$=$09$+"<barista_record>"+$0a$+$09$+$09$+"<MSG_ID>IV_LF_ADJUST_WARN     </MSG_ID>"+$0a$
+    gosub remove_from_xml
+    xml_file$=aonDir$+"data/admin_backup/ads_autolaunch~[01007514AD].xml"
+    xml_key$=$09$+"<barista_record>"+$0a$+$09$+$09$+"<PROCESS_ID>SETPRINTER</PROCESS_ID>"+$0a$
+    gosub remove_from_xml
+
+    rem --- Add temporary "delete" sync files for obsolete records being eliminated
+    tmpSync_dev=unt
+    open(tmpSync_dev,isz=-1,mode="O_CREATE,O_TRUNC")aonDir$+"/data/sync/ads_autolaunch~{setprinter}.xml"
+    write(tmpSync_dev)"<?xml version='1.0' encoding='UTF-8' ?>"
+    write(tmpSync_dev)"<barista_admin_record>"
+    write(tmpSync_dev)"    <barista_record_table>ADS_AUTOLAUNCH</barista_record_table>"
+    write(tmpSync_dev)"    <PROCESS_ID>SETPRINTER</PROCESS_ID>"
+    write(tmpSync_dev)"</barista_admin_record>"
+    close(tmpSync_dev)
+
+    rem --- restore the IV_LF_ADJUST_WARN message to the data table, and delete the SETPRINTER autolaunch record from the table
+    syncFiles!=BBjAPI().makeVector()
+    syncFiles!.addItem("ads_messages~iv_lf_adjust_warn.xml")
+    syncFiles!.addItem("ads_autolaunch~{setprinter}.xml"); rem --- also deleting this one (is no longer in data/sync/, but can come across in v17 to v18 upgrade)
+    syncRecs!=new SyncRecords(aonDir$)
+    syncRecs!.updateRecords(syncFiles!)
+
+    rem --- Erase temporary "delete" sync file
+    erase aonDir$+"/data/sync/ads_autolaunch~{setprinter}.xml",err=*next
+
+rem --- For version 18.00, initialize MEMO_1024 in ARE_INVDET
+
+    this_module$="AR"
+    if installMap!.get(this_module$)="Y" then
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        rem --- Open File(s)
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="ARE_INVDET",   open_opts$[1]="OTA"
+
+        gosub open_tables
+
+        areInvDet_dev=num(open_chans$[1])
+        dim areInvDet$:open_tpls$[1]
+
+        rem --- Identify files to initialize MEMO_1024 in
+        selectedFiles!=new java.util.TreeMap()
+        
+        fileVec!=BBjAPI().makeVector()
+        fileVec!.addItem(areInvDet_dev)
+        fileVec!.addItem(fattr(areInvDet$))
+        fileVec!.addItem("DESCRIPTION")
+        selectedFiles!.put("ARE_INVDET",fileVec!)
+
+        rem --- Initialize new MEMO_1024 field with old comment field
+        gosub initMemo1024
+    else
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+
+rem --- For version 18.00, initialize MEMO_1024 in GLE_JRNLDET, GLE_DAILYDETAIL and GLT_TRANSDETAIL
+
+    this_module$="GL"
+    if installMap!.get(this_module$)="Y" then
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        rem --- Open File(s)
+        num_files=3
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="GLE_JRNLDET",   open_opts$[1]="OTA"
+        open_tables$[2]="GLE_DAILYDETAIL",  open_opts$[2]="OTA"
+        open_tables$[3]="GLT_TRANSDETAIL",  open_opts$[3]="OTA"
+
+        gosub open_tables
+
+        gleJrnlDet_dev=num(open_chans$[1])
+        gleDailyDetail_dev=num(open_chans$[2])
+        gltTransDetail_dev=num(open_chans$[3])
+        dim gleJrnlDet$:open_tpls$[1]
+        dim gleDailyDetail$:open_tpls$[2]
+        dim gltTransDetail$:open_tpls$[3]
+
+        rem --- Identify files to initialize MEMO_1024 in
+        selectedFiles!=new java.util.TreeMap()
+        
+        fileVec!=BBjAPI().makeVector()
+        fileVec!.addItem(gleJrnlDet_dev)
+        fileVec!.addItem(fattr(gleJrnlDet$))
+        fileVec!.addItem("GL_POST_MEMO")
+        selectedFiles!.put("GLE_JRNLDET",fileVec!)
+        
+        fileVec!=BBjAPI().makeVector()
+        fileVec!.addItem(gleDailyDetail_dev)
+        fileVec!.addItem(fattr(gleDailyDetail$))
+        fileVec!.addItem("DESCRIPTION")
+        selectedFiles!.put("GLE_DAILYDETAIL",fileVec!)
+        
+        fileVec!=BBjAPI().makeVector()
+        fileVec!.addItem(gltTransDetail_dev)
+        fileVec!.addItem(fattr(gltTransDetail$))
+        fileVec!.addItem("DESCRIPTION")
+        selectedFiles!.put("GLT_TRANSDETAIL",fileVec!)
+
+        rem --- Initialize new MEMO_1024 field with old comment field
+        gosub initMemo1024
+    else
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+
+rem --- For version 18.00, initialize um_sold and conv_factor in opt_invdet
+
+    this_module$="OP"
+    if installMap!.get(this_module$)="Y" then 
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+        
+        rem --- Execute initialization utility for um_sold and conv_factor in opt_invdet
+        theFirm$=""
+        call pgmdir$+"opc_initUmSold.aon",theFirm$,rdForm!,status
+        if status=0 then
+            rem --- Conversion completed successfully
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_DATA_INIT","Data initialization")+" "+
+:               Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": OPT_INVDET"
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        else
+            rem --- Conversion did NOT complete successfully, exit with error message
+            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:               Translate!.getTranslation("AON_DATA_INIT","Data initialization")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:               Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": OPT_INVDET"+" *****"
+            goto done
+        endif
+    else
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+
+rem --- For version 18.00, initialize MEMO_1024 in SFE_WOMATL and SFE_WOOPRTN
+
+    this_module$="SF"
+    if installMap!.get(this_module$)="Y" then
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        rem --- Open File(s)
+        num_files=2
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]="SFE_WOMATL",   open_opts$[1]="OTA"
+        open_tables$[2]="SFE_WOOPRTN",  open_opts$[2]="OTA"
+
+        gosub open_tables
+
+        sfeWOMatl_dev=num(open_chans$[1])
+        sfeWOOprtn_dev=num(open_chans$[2])
+        dim sfeWomatl$:open_tpls$[1]
+        dim sfeWooprtn$:open_tpls$[2]
+
+        rem --- Identify files to initialize MEMO_1024 in
+        selectedFiles!=new java.util.TreeMap()
+        
+        fileVec!=BBjAPI().makeVector()
+        fileVec!.addItem(sfeWOMatl_dev)
+        fileVec!.addItem(fattr(sfeWOMatl$))
+        fileVec!.addItem("EXT_COMMENTS")
+        selectedFiles!.put("SFE_WOMATL",fileVec!)
+        
+        fileVec!=BBjAPI().makeVector()
+        fileVec!.addItem(sfeWOOprtn_dev)
+        fileVec!.addItem(fattr(sfeWOOprtn$))
+        fileVec!.addItem("EXT_COMMENTS")
+        selectedFiles!.put("SFE_WOOPRTN",fileVec!)
+
+        rem --- Initialize new MEMO_1024 field with old comment field
+        gosub initMemo1024
+    else
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+    
 rem --- Initialize data file changes implemented during minor releases of v17
 
     if num(convCtrl!.getProperty("start_version"))>=17 then
@@ -213,6 +452,22 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+        
+                rem --- Delete conversion marker files associated with this conversion
+                conv_marker_name$="v1800_apm-01"
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Delete conversion marker file
+                    if convmarkerFile!.delete() then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_proc_recs=meter_proc_recs+1
+                        meter_action$="MTR-LST"
+                        gosub disp_meter
+                        print(log_dev)meter_text$
+                    endif
+                endif
             else
                 rem --- Conversion did NOT complete successfully, exit with error message
                 err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -381,6 +636,22 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+        
+                rem --- Delete conversion marker files associated with this conversion
+                conv_marker_name$="v1800_arm-01"
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Delete conversion marker file
+                    if convmarkerFile!.delete() then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_proc_recs=meter_proc_recs+1
+                        meter_action$="MTR-LST"
+                        gosub disp_meter
+                        print(log_dev)meter_text$
+                    endif
+                endif
             else
                 rem --- Conversion did NOT complete successfully, exit with error message
                 err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -549,6 +820,22 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+        
+                rem --- Delete conversion marker files associated with this conversion
+                conv_marker_name$="v1800_bmm-01"
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Delete conversion marker file
+                    if convmarkerFile!.delete() then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_proc_recs=meter_proc_recs+1
+                        meter_action$="MTR-LST"
+                        gosub disp_meter
+                        print(log_dev)meter_text$
+                    endif
+                endif
             else
                 rem --- Conversion did NOT complete successfully, exit with error message
                 err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -717,6 +1004,22 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+        
+                rem --- Delete conversion marker files associated with this conversion
+                conv_marker_name$="v1800_glm-01"
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Delete conversion marker file
+                    if convmarkerFile!.delete() then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_proc_recs=meter_proc_recs+1
+                        meter_action$="MTR-LST"
+                        gosub disp_meter
+                        print(log_dev)meter_text$
+                    endif
+                endif
             else
                 rem --- Conversion did NOT complete successfully, exit with error message
                 err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -885,6 +1188,22 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+        
+                rem --- Delete conversion marker files associated with this conversion
+                conv_marker_name$="v1800_ivm-01"
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Delete conversion marker file
+                    if convmarkerFile!.delete() then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_proc_recs=meter_proc_recs+1
+                        meter_action$="MTR-LST"
+                        gosub disp_meter
+                        print(log_dev)meter_text$
+                    endif
+                endif
             else
                 rem --- Conversion did NOT complete successfully, exit with error message
                 err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -912,7 +1231,7 @@ rem --- Initialize data file changes implemented during minor releases of v17
             meter_action$="MTR-LST"
             gosub disp_meter
             print(log_dev)meter_text$
-    
+
             rem --- As of v17.10, DataPort handles initializing OPC_MESSAGE from OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14)
             if convCtrl!.getProperty("data_source")="OCJ" then
     
@@ -1119,8 +1438,253 @@ rem --- Initialize data file changes implemented during minor releases of v17
             gosub disp_meter
             print(log_dev)meter_text$
     
+            rem --- As of v17.10, DataPort handles initializing SEQUENCE_REF in PRIMARY key of POT_INVHDR (pot-05), POT_INVSEL (pot-15) and POT_INVDET (pot-25)
             rem --- As of v17.10, DataPort handles initializing POC_MESSAGE from POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14)
             if convCtrl!.getProperty("data_source")="OCJ" then
+
+                rem --- Open ddm_tables and ddm_table_tpls in new install
+                num_files=2
+                dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
+                open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
+                gosub open_tables
+                new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
+                new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
+    
+                rem --- Open ddm_tables in old source
+                old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                open_success=0
+                old_ddmTables=unt
+                open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
+                if !open_success then
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=old_ddm_table$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+                    goto done
+                endif
+    
+                rem --- Open ddm_table_tpls in old source
+                old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+                open_success=0
+                old_ddmTableTpls=unt
+                open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
+                if open_success then
+                    dim old_ddmTableTpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                else
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=old_ddm_table_tpls$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
+                    goto done
+                endif
+    
+                rem --- For v17.10, replace SEQUENCE_NO with SEQUENCE_REF in PRIMARY key of POT_INVHDR (pot-05)
+    
+                rem --- Verify can read old pot-05 for addon_source
+                oldStbl$="+PODATA"
+                oldFile$="pot-05"
+                gosub get_path_to_old_file
+                old_pot05$=oldPathToFile$
+                open_success=0
+                old_pot05_dev=unt
+                open(old_pot05_dev,err=*next)old_pot05$; open_success=1
+                if !open_success then
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=old_pot05$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_pot05$+" *****"
+                    goto done
+                endif
+    
+                rem --- Get record template for old pot-05 file
+                pot_table$="POT_INVHDR"
+                tpl_found=0
+                findrecord(old_ddmTableTpls,key=pad(pot_table$,16),dom=*next)old_ddmTableTpls$;tpl_found=1
+                if tpl_found then
+                    dim old_pot05_tpl$:old_ddmTableTpls.template$
+                    rem --- Skip if old template doesn't include sequence_no
+                    x$=field(old_pot05_tpl$,"sequence_no",err=*endif)
+        
+                    rem --- Clear and open new pot-05 file
+                    num_files=1
+                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                    open_tables$[1]="POT_INVHDR", open_opts$[1]="IOTA"
+                    gosub open_tables
+                    pot_invhdr_dev=num(open_chans$[1])
+                    dim pot_invhdr_tpl$:open_tpls$[1]
+        
+                    rem --- Copy old pot-05 records to new pot-05 setting sequence_ref
+                    read(old_pot05_dev,key="",dom=*next)
+                    while 1
+                        readrecord(old_pot05_dev,end=*break)old_pot05_tpl$
+                        redim pot_invhdr_tpl$
+                        call pgmdir$+"adc_copyfile.aon",old_pot05_tpl$,pot_invhdr_tpl$,status
+                        if status then break
+                        pot_invhdr_tpl.sequence_ref$=old_pot05_tpl.sequence_no$
+                        pot_invhdr_tpl$=field(pot_invhdr_tpl$)
+                        writerecord(pot_invhdr_dev)pot_invhdr_tpl$
+                    wend
+                    if status then
+                        rem --- Conversion did NOT complete successfully, exit with error message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": POT_INVHDR (pot-05) *****"
+                        goto done
+                    endif
+                else
+                    rem --- Required template missing
+                    meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+                    goto done
+                endif
+    
+                rem --- For v17.10, replace SEQUENCE_NO with SEQUENCE_REF in PRIMARY key of POT_INVSEL (pot-15)
+    
+                rem --- Verify can read old pot-15 for addon_source
+                oldStbl$="+PODATA"
+                oldFile$="pot-15"
+                gosub get_path_to_old_file
+                old_pot15$=oldPathToFile$
+                open_success=0
+                old_pot15_dev=unt
+                open(old_pot15_dev,err=*next)old_pot15$; open_success=1
+                if !open_success then
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=old_pot15$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_pot15$+" *****"
+                    goto done
+                endif
+    
+                rem --- Get record template for old pot-15 file
+                pot_table$="POT_INVSEL"
+                tpl_found=0
+                findrecord(old_ddmTableTpls,key=pad(pot_table$,16),dom=*next)old_ddmTableTpls$;tpl_found=1
+                if tpl_found then
+                    dim old_pot15_tpl$:old_ddmTableTpls.template$
+                    rem --- Skip if old template doesn't include sequence_no
+                    x$=field(old_pot15_tpl$,"sequence_no",err=*endif)
+        
+                    rem --- Clear and open new pot-15 file
+                    num_files=1
+                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                    open_tables$[1]="POT_INVSEL", open_opts$[1]="IOTA"
+                    gosub open_tables
+                    pot_invsel_dev=num(open_chans$[1])
+                    dim pot_invsel_tpl$:open_tpls$[1]
+        
+                    rem --- Copy old pot-15 records to new pot-15 setting sequence_ref
+                    read(old_pot15_dev,key="",dom=*next)
+                    while 1
+                        readrecord(old_pot15_dev,end=*break)old_pot15_tpl$
+                        redim pot_invsel_tpl$
+                        call pgmdir$+"adc_copyfile.aon",old_pot15_tpl$,pot_invsel_tpl$,status
+                        if status then break
+                        pot_invsel_tpl.sequence_ref$=old_pot15_tpl.sequence_no$
+                        pot_invsel_tpl$=field(pot_invsel_tpl$)
+                        writerecord(pot_invsel_dev)pot_invsel_tpl$
+                    wend
+                    if status then
+                        rem --- Conversion did NOT complete successfully, exit with error message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": POT_INVSEL (pot-15) *****"
+                        goto done
+                    endif
+                else
+                    rem --- Required template missing
+                    meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+                    goto done
+                endif
+    
+                rem --- For v17.10, replace SEQUENCE_NO with SEQUENCE_REF in PRIMARY key of POT_INVDET (pot-25)
+    
+                rem --- Verify can read old pot-25 for addon_source
+                oldStbl$="+PODATA"
+                oldFile$="pot-25"
+                gosub get_path_to_old_file
+                old_pot25$=oldPathToFile$
+                open_success=0
+                old_pot25_dev=unt
+                open(old_pot25_dev,err=*next)old_pot25$; open_success=1
+                if !open_success then
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=old_pot25$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_pot25$+" *****"
+                    goto done
+                endif
+    
+                rem --- Get record template for old pot-25 file
+                pot_table$="POT_INVDET"
+                tpl_found=0
+                findrecord(old_ddmTableTpls,key=pad(pot_table$,16),dom=*next)old_ddmTableTpls$;tpl_found=1
+                if tpl_found then
+                    dim old_pot25_tpl$:old_ddmTableTpls.template$
+                    rem --- Skip if old template doesn't include sequence_no
+                    x$=field(old_pot25_tpl$,"sequence_no",err=*endif)
+        
+                    rem --- Clear and open new pot-25 file
+                    num_files=1
+                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                    open_tables$[1]="POT_INVDET", open_opts$[1]="IOTA"
+                    gosub open_tables
+                    pot_invdet_dev=num(open_chans$[1])
+                    dim pot_invdet_tpl$:open_tpls$[1]
+        
+                    rem --- Copy old pot-25 records to new pot-25 setting sequence_ref
+                    read(old_pot25_dev,key="",dom=*next)
+                    while 1
+                        readrecord(old_pot25_dev,end=*break)old_pot25_tpl$
+                        redim pot_invdet_tpl$
+                        call pgmdir$+"adc_copyfile.aon",old_pot25_tpl$,pot_invdet_tpl$,status
+                        if status then break
+                        pot_invdet_tpl.sequence_ref$=old_pot25_tpl.sequence_no$
+                        pot_invdet_tpl$=field(pot_invdet_tpl$)
+                        writerecord(pot_invdet_dev)pot_invdet_tpl$
+                    wend
+                    if status then
+                        rem --- Conversion did NOT complete successfully, exit with error message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": POT_INVDET (pot-25) *****"
+                        goto done
+                    endif
+                else
+                    rem --- Required template missing
+                    meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+                    goto done
+                endif
     
                 rem --- Make sure POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14)
                 open_success=0
@@ -1128,47 +1692,6 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 open(pom04_dev,err=*next)dataDir$+"/pom-04"; open_success=1
                 if !open_success then
                     rem --- Copy POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14) from old source to the new install
-    
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
-                    open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
-                        goto done
-                    endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
         
                     rem --- Get table definition for old source POC_MSGCODE file, and add it to new install
                     oldFile$="POC_MSGCODE"
@@ -1465,6 +1988,22 @@ rem --- Initialize data file changes implemented during minor releases of v17
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+        
+                rem --- Delete conversion marker files associated with this conversion
+                conv_marker_name$="v1800_woe-01"
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Delete conversion marker file
+                    if convmarkerFile!.delete() then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_proc_recs=meter_proc_recs+1
+                        meter_action$="MTR-LST"
+                        gosub disp_meter
+                        print(log_dev)meter_text$
+                    endif
+                endif
             else
                 rem --- Conversion did NOT complete successfully, exit with error message
                 err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -1518,6 +2057,80 @@ done: rem --- Done, close things up
     if completed_successfully then conv_status=0; rem --- no errors encountered
 	goto std_exit
 
+remove_from_xml: rem --- remove incorrect or not-used admin_backup/*.xml entries that came over from conversion sync file backup
+    rem --- in: xml_file$, xml_key$
+    file_exists=0
+    xml_doc$=""
+    xml_chan=unt
+    open(xml_chan,err=*next)xml_file$; file_exists=1
+    if file_exists then
+        rem --- Get current XML document
+        xml_fin$=fin(xml_chan)
+        xml_size=dec($00$+xml_fin$(1,4))
+        if xml_size
+            readrecord(xml_chan,siz=xml_size)xml_doc$
+        endif
+        close(xml_chan)
+    endif
+    if xml_doc$<>"" then
+        rem --- Snip out unwanted records
+        start_pos=pos(xml_key$=xml_doc$)
+        while start_pos
+            end_pos=pos("</barista_record>"=xml_doc$(start_pos))
+            if end_pos then
+                xml_doc$=xml_doc$(1,start_pos-2)+xml_doc$(start_pos+end_pos+(len("</barista_record>")-1))
+                start_pos=pos(xml_key$=xml_doc$)
+            else
+                start_pos=0
+            endif
+        wend
+
+        rem --- Erase XML file if no records in the XML document, else save the updated XML document.
+        if pos($09$+"<barista_record>"+$0a$=xml_doc$)=0 then
+            erase xml_file$,err=*next
+        else
+            tmp_xml_file$=xml_file$+"~"+str(int(tim*100000):"0000000")+".tmp"
+            rename xml_file$,tmp_xml_file$
+            string xml_file$
+    
+            xml_chan=unt
+            open (xml_chan)xml_file$
+            write record(xml_chan)xml_doc$
+            close(xml_chan)
+    
+            erase tmp_xml_file$
+        endif
+    endif
+    return
+
+initMemo1024: rem --- Initialize new MEMO_1024 field with old comment field
+    rem --- IN: selectedFiles! - TreeMap of Vectors with needed info
+
+    rem --- Initialize new MEMO_1024 field in selected files
+    filesIter!=selectedFiles!.keySet().iterator()
+    while filesIter!.hasNext()
+        thisFile$=filesIter!.next()
+        fileVec!=selectedFiles!.get(thisFile$)
+        thisChan=fileVec!.getItem(0)
+        dim thisTpl$:fileVec!.getItem(1)
+        thisCmtField$=fileVec!.getItem(2)
+
+        rem --- Populate new MEMO_1024 field with old comment field
+        read(thisChan,key="",dom=*next)
+        while 1
+            extractrecord(thisChan,end=*break)thisTpl$; rem Advisory Locking
+            comment$=cvs(field(thisTpl$,thisCmtField$),2)
+            if comment$<>"" and cvs(thisTpl.memo_1024$,2)="" then
+                thisTpl.memo_1024$=comment$
+                writerecord(thisChan)thisTpl$
+            else
+                read(thisChan)
+            endif
+        wend
+    wend
+
+    return
+    
 get_path_to_old_file: rem --- Locate data directory in old Addon installation
     rem --- IN: oldStbl$ - STBL in old addon.syn that points to the data directory where the old file is located
     rem --- IN: oldFile$ - name of old file to get path for
@@ -1618,7 +2231,7 @@ disp_message: rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (22Feb2013)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -1630,9 +2243,20 @@ std_error: rem --- Standard error handler (22Feb2013)
         endif
     endif
 
-    rd_err_text$=""
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

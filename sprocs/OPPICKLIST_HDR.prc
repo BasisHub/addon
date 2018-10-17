@@ -304,7 +304,9 @@ rem --- Format addresses to be bottom justified
     data!.setFieldValue("TERMS_DESC", terms_desc$)
     data!.setFieldValue("PRICE_CODE", price_code$)
 
-    data!.setFieldValue("INV_STD_MESSAGE", opc_message.memo_1024$)
+    memo_1024$=opc_message.memo_1024$
+    if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+    data!.setFieldValue("INV_STD_MESSAGE", memo_1024$)
 
     rs!.insert(data!)
 

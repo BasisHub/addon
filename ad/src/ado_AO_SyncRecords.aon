@@ -13,7 +13,6 @@ rem  * (1) removes the corresponding record from the corresponding table/file,
 rem  * (2) inserts a new record in the corresponding table/file using the data in the matching file
 rem  * in Addon's standard aon/data/sync directory, and
 rem  * (3) make backup sync file for removed record.
-rem  *    ***** NOTE: Currently (v17) does not handle multiple record XML files. *****
 rem  */
 
     use java.io.File
@@ -65,7 +64,7 @@ rem  */
             
             methodret
             
-SyncRecords_error:rem --- Method error trap/handler
+SyncRecords_error:rem --- Method error trap/handler (11Oct2017)
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             if err_num=252 then
@@ -83,8 +82,6 @@ SyncRecords_error:rem --- Method error trap/handler
         rem /**
         rem  * Filters out of the given vector sync files for records we do not want to remove/overwrite.
         rem  * For example, user data in ads_sequences~*.xml and ads_masks~*.xml must be preserved.
-        rem  *    ***** NOTE: Currently (v17) does not handle multiple record XML files. *****
-        rem  *    ***** NOTE: This currently (v17) only affects adm_rolealias~[all].xml. *****
         rem  *
         rem  * @param BBjVector syncFiles!
         rem  * 
@@ -102,9 +99,6 @@ SyncRecords_error:rem --- Method error trap/handler
                     if len(file$)<5 then continue
                     if file$(len(file$)-3)<>".xml" then continue
                     
-                    rem --- Cannot be a multiple record xml file.
-                    if pos("~["=file$) then continue
-                    
                     rem --- Skip ads_sequences~*.xml files
                     if pos("ads_sequences~"=file$) then continue
 
@@ -117,7 +111,7 @@ SyncRecords_error:rem --- Method error trap/handler
 
             methodret tempVect!
             
-filterRecords_error:rem --- Method error trap/handler
+filterRecords_error:rem --- Method error trap/handler (11Oct2017)
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             if err_num=252 then
@@ -149,7 +143,6 @@ filterRecords_error:rem --- Method error trap/handler
             if syncFiles!.size() then
                 for i=0 to syncFiles!.size()-1
                     file$=syncFiles!.getItem(i)
-                    if pos("~{"=file$) then continue; rem --- Record have already been removed, so skip "delete" sync files here
 
                     sourceChan=unt
                     open(sourceChan,isz=-1,err=*continue)#syncDir$+"/"+file$
@@ -212,7 +205,7 @@ filterRecords_error:rem --- Method error trap/handler
             rmdir syncTmpDir$,err=*next
             methodret
             
-insertRecords_error:rem --- Method error trap/handler
+insertRecords_error:rem --- Method error trap/handler (11Oct2017)
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             if err_num=252 then
@@ -262,100 +255,7 @@ insertRecords_error:rem --- Method error trap/handler
 
             methodret fieldsProp!
             
-parseSyncFile_error:rem --- Method error trap/handler
-            rd_err_text$="", err_num=err
-            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-            if err_num=252 then
-                E!=BBjAPI().getLastBBjException()
-                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
-                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
-            endif
-            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
-            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
-            if pos("RETRY"=rd_err_act$)<>0 retry
-            x$=stbl("+THROWN_ERR","TRUE")   
-            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
-        methodend
-
-        rem /**
-        rem  * Removes table records for given sync files, and saves copy of sync file for removed records.
-        rem  *
-        rem  * @param BBjVector syncFiles!
-        rem  */
-        method protected void removeRecords(BBjVector syncFiles!)
-            seterr removeRecords_error
-
-            rem --- Create backup directories as necessary
-            adminBackupDir$=#aonDir$+"/data/admin_backup"
-            tmpDir$=adminBackupDir$+"/tmp_bak"
-            bakDir$=adminBackupDir$+"/bak"
-            mkdir adminBackupDir$,err=*next
-            mkdir tmpDir$,err=*next
-            mkdir bakDir$,err=*next
-
-            if syncFiles!.size() then
-                for i=0 to syncFiles!.size()-1
-                    file$=syncFiles!.getItem(i)
-                    
-                    rem --- Parse fields in xml sync file
-                    fieldsProp!=#parseSyncFile(file$)
-                    if fieldsProp!.size()=0 then continue
-                    
-                    rem --- Get key fields for this table
-                    curr_key$=""
-                    table_alias$=fieldsProp!.getProperty("BARISTA_RECORD_TABLE")
-                    call stbl("+DIR_SYP")+"bac_key_template.bbj",table_alias$,"",key_template$,rd_table_chans$[all],status$
-                    if status$<>"" then continue
-                    dim keyTmpl$:key_template$
-                    keyFields$=fattr(keyTmpl$,"")
-                    nextPos=pos($0A$=keyFields$)
-                    while nextPos
-                        thisField$=keyFields$(1,nextPos-1)
-                        curr_key$=curr_key$+fieldsProp!.getProperty(thisField$)
-                        
-                        keyFields$=keyFields$(nextPos+1)
-                        nextPos=pos($0A$=keyFields$)
-                    wend
-
-                    rem --- Backup this sync record
-                    exp_path$=tmpDir$+"/"
-                    call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj",table_alias$,curr_key$,exp_path$,rd_table_chans$[all],"",status$
-                    if status$<>"" then continue
-
-                    rem --- Remove record
-                    table_dev=num(rd_table_chans$[0,0](pos(pad(table_alias$,17)=rd_table_chans$[0,0],20)+17,3))
-                    remove(table_dev,key=curr_key$,dom=*next)
-                next i
-            endif
-
-            rem --- Rename backed up sync files and move them to admin_bakup/bak directory
-            tmpDir!=new File(tmpDir$)
-            tmpfileVector!=new Vector(java.util.Arrays.asList(tmpDir!.list()))
-            if(tmpfileVector!.size()>0) then
-                testChan=unt
-                for i=0 to tmpfileVector!.size()-1
-                    tmpName$=cast(BBjString,tmpfileVector!.get(i))
-                    tmpFile!=new File(tmpDir!,tmpName$)
-                                    
-                    rem --- Find unique name for the backup file
-                    bakFile$=bakDir$+"/"+tmpName$+".bak1"
-                    j=1
-                    while 1
-                        open(testChan,err=*break)bakFile$
-                        close(testChan)
-                        j=j+1
-                        bakFile$=bakDir$+"/"+tmpName$+".bak"+str(j)
-                    wend
-                    
-                    rem --- Move the temp file to the backup file
-                    rename tmpFile!.getPath() to bakFile$, err=*next
-                next i
-            endif
-            rmdir tmpDir$,err=*next
-
-            methodret
-            
-removeRecords_error:rem --- Method error trap/handler
+parseSyncFile_error:rem --- Method error trap/handler (11Oct2017)
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             if err_num=252 then
@@ -373,7 +273,6 @@ removeRecords_error:rem --- Method error trap/handler
         rem /**
         rem  * Removes table records for given sync files (and saves copy of sync file for removed records), and
         rem  * inserts new records.
-        rem  *    ***** NOTE: Currently (v17) does not handle multiple record XML files. *****
         rem  *
         rem  * @param BBjVector syncFiles!
         rem  */
@@ -383,15 +282,12 @@ removeRecords_error:rem --- Method error trap/handler
             rem --- Filter records
             filteredFiles!=#filterRecords(syncFiles!)
 
-            rem --- Remove records
-            #removeRecords(filteredFiles!)
-
             rem --- Insert records
             #insertRecords(filteredFiles!)
 
             methodret
             
-updateRecords_error:rem --- Method error trap/handler
+updateRecords_error:rem --- Method error trap/handler (11Oct2017)
             rd_err_text$="", err_num=err
             if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
             if err_num=252 then

@@ -106,6 +106,9 @@ rem --- Main
         readrecord (poe_reqdet,end=*break) poe_reqdet$
         if pos(firm_id$+req_no$=poe_reqdet$)<>1 then break
         
+        memo_1024$=poe_reqdet.memo_1024$
+        if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+
         qty=poe_reqdet.req_qty
         
         find record (poc_linecode,key=firm_id$+poe_reqdet.po_line_code$,dom=*next) poc_linecode$
@@ -147,8 +150,8 @@ rem --- Main
                 endif
             endif
             
-            if cvs(poe_reqdet.memo_1024$,3)<>""
-                item_id_desc_msg$=item_id_desc_msg$+$0A$+poe_reqdet.memo_1024$
+            if cvs(memo_1024$,3)<>""
+                item_id_desc_msg$=item_id_desc_msg$+$0A$+memo_1024$
             endif
             gosub add_to_recordset
 
@@ -163,28 +166,29 @@ rem --- Main
 			unit_measure$=poe_reqdet.unit_measure$
 			extension$=str(extension:ext_mask$)
 
-            item_id_desc_msg$=poe_reqdet.memo_1024$
+            item_id_desc_msg$=memo_1024$
             gosub add_to_recordset
             
             break
 
         case vend_part_num; rem --- Vendor Part Number
         
-            item_id_desc_msg$=vend_item_prompt$+poe_reqdet.memo_1024$
-            gosub add_to_recordset
+            rem --- Vendor part number now added to the item description
+            rem item_id_desc_msg$=vend_item_prompt$+memo_1024$
+            rem gosub add_to_recordset
                 
             break
 
         case message_line; rem --- Message Line
 
-            item_id_desc_msg$=poe_reqdet.memo_1024$
+            item_id_desc_msg$=memo_1024$
             gosub add_to_recordset
                                 
             break
 
         case other_line; rem --- Other Line
         
-            item_id_desc_msg$=poe_reqdet.memo_1024$
+            item_id_desc_msg$=memo_1024$
             reqd_date$=func.formatDate(poe_reqdet.reqd_date$)            
             unit_cost$=str(poe_reqdet.unit_cost:cost_mask$)
             extension$=str(extension:ext_mask$)
@@ -295,7 +299,9 @@ process_messages:rem --- Header or Detail level message codes
 
     find record (poc_message,key=firm_id$+msg_cd$,dom=*return) poc_message$
     rem --- if type isn't Both or Requisitions, skip it (other types P=POs, N=neither)
-    if pos(poc_message.message_type$ = "BR")<>0 then item_id_desc_msg$=poc_message.memo_1024$
+    memo$=poc_message.memo_1024$
+    if len(memo$) and memo$(len(memo$))=$0A$ then memo$=memo$(1,len(memo$)-1); rem --- trim trailing newline
+    if pos(poc_message.message_type$ = "BR")<>0 then item_id_desc_msg$=memo$
     gosub add_to_recordset
     
     return

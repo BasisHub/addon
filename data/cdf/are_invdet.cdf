@@ -1,3 +1,40 @@
+[[ARE_INVDET.BDGX]]
+rem --- Disable comments
+	callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"ARE_INVDET.MEMO_1024",0)
+	callpoint!.setOptionEnabled("COMM",0)
+[[ARE_INVDET.AGRN]]
+rem --- Enable comments
+	if callpoint!.isEditMode() then
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"ARE_INVDET.MEMO_1024",1)
+		callpoint!.setOptionEnabled("COMM",1)
+	else
+		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"ARE_INVDET.MEMO_1024",0)
+		callpoint!.setOptionEnabled("COMM",0)
+	endif
+[[ARE_INVDET.MEMO_1024.AVAL]]
+rem --- store first part of memo_1024 in description
+rem --- this AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor
+rem --- if on a memo line or using ctrl-C or Comments button, code in the comment_entry: subroutine is hit instead
+
+	disp_text$=callpoint!.getUserInput()
+	if disp_text$<>callpoint!.getColumnUndoData("ARE_INVDET.MEMO_1024")
+		description_len=len(callpoint!.getColumnData("ARE_INVDET.GL_POST_MEMO"))
+		description$=disp_text$
+		description$=description$(1,min(description_len,(pos($0A$=description$+$0A$)-1)))
+
+		callpoint!.setColumnData("ARE_INVDET.MEMO_1024",disp_text$)
+		callpoint!.setColumnData("ARE_INVDET.DESCRIPTION",description$,1)
+
+		callpoint!.setStatus("MODIFIED")
+	endif
+[[ARE_INVDET.DESCRIPTION.BINP]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+	callpoint!.setStatus("ABORT")
+[[ARE_INVDET.AOPT-COMM]]
+rem --- Launch Comments dialog
+	gosub comment_entry
+	callpoint!.setStatus("ABORT")
 [[ARE_INVDET.GL_ACCOUNT.AVAL]]
 rem "GL INACTIVE FEATURE"
    glm01_dev=fnget_dev("GLM_ACCT")
@@ -32,6 +69,14 @@ endif
 [[ARE_INVDET.AGCL]]
 rem --- set preset val for batch_no
 callpoint!.setTableColumnAttribute("ARE_INVDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
+rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
+	use ::ado_util.src::util
+
+	grid! = util.getGrid(Form!)
+	col_hdr$=callpoint!.getTableColumnAttribute("ARE_INVDET.MEMO_1024","LABS")
+	memo_1024_col=util.getGridColumnNumber(grid!, col_hdr$)
+	grid!.setColumnWidth(memo_1024_col,15)
 [[ARE_INVDET.AUDE]]
 rem --- after deleting a row from detail grid, recalc/redisplay balance left to distribute
 gosub calc_grid_tots
@@ -62,6 +107,8 @@ gosub calc_grid_tots
 gosub disp_totals
 [[ARE_INVDET.<CUSTOM>]]
 #include std_functions.src
+#include std_missing_params.src
+
 calc_grid_tots:
 
 	recVect!=GridVect!.getItem(0)
@@ -94,4 +141,44 @@ rem --- get context and ID of total quantity/amount display controls, and redisp
 
 	return
 
-#include std_missing_params.src
+rem ==========================================================================
+comment_entry:
+rem --- pop the new memo_1024 editor instead of entering the description cell
+rem --- the editor can be popped on demand for any line using the Comments button (alt-C)
+rem ==========================================================================
+
+	disp_text$=callpoint!.getColumnData("ARE_INVDET.MEMO_1024")
+	sv_disp_text$=disp_text$
+
+	editable$="YES"
+	force_loc$="NO"
+	baseWin!=null()
+	startx=0
+	starty=0
+	shrinkwrap$="NO"
+	html$="NO"
+	dialog_result$=""
+
+	call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		"Comments/Message Line",
+:		disp_text$, 
+:		table_chans$[all], 
+:		editable$, 
+:		force_loc$, 
+:		baseWin!, 
+:		startx, 
+:		starty, 
+:		shrinkwrap$, 
+:		html$, 
+:		dialog_result$
+
+	if disp_text$<>sv_disp_text$
+		description$=disp_text$(1,pos($0A$=disp_text$+$0A$)-1)
+		callpoint!.setColumnData("ARE_INVDET.MEMO_1024",disp_text$,1)
+		callpoint!.setColumnData("ARE_INVDET.DESCRIPTION",description$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE")
+
+	return

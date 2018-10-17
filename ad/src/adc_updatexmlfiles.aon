@@ -39,7 +39,7 @@ done: rem --- All done
    
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -57,9 +57,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 
@@ -124,7 +129,18 @@ rem  */
         rem  */
         method public void updateXmlFiles(BBjString newSyncLoc$, BBjString oldSyncLoc$, BBjString syncBackupDir$, BBjInt upgrade%)
             seterr method_error
+
+            rem --- get new version from adm_modules~*.xml in data/sync dir at new location
             appDir$ = #parseAppPath(newSyncLoc$)
+            declare HashMap newVers!
+            newVers! = #getModuleVersion(new File(appDir$ + "/data/sync"))
+
+            rem --- get old version from adm_modules~*.xml in data/sync dir at old location
+            oldappDir$ = #parseAppPath(oldSyncLoc$)
+            declare HashMap oldVers!
+            oldVers! = #getModuleVersion(new File(oldappDir$ + "/data/sync"))
+
+            rem --- Create progess meter and open log file
             if upgrade% then 
 				rem --- count number of settings files
 				#meter_total_recs = 90 + #copyDirectories(new File(#parseSettingsPath(oldSyncLoc$)), null())
@@ -136,52 +152,58 @@ rem  */
                 rem --- copy non-branded sync xml files from provided location
                 rem --- (appDir$ path separators already flipped to "/")
 rem                #copyFiles(new File(syncBackupDir$), new File(appDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
-                #copyFiles(new File(syncBackupDir$), new File(appDir$(1,pos("/"=appDir$,-1)) + "barista/admin_backup"), new XmlFilter())
+                rem --- In v18 and later, bax_sync_backup.bbj no longer puts admin_backup XML files in the barista/admin_backup directory.
+rem                #copyFiles(new File(syncBackupDir$), new File(appDir$(1,pos("/"=appDir$,-1)) + "barista/admin_backup"), new XmlFilter()); rem ... pre-v18
 
                 rem --- copy branded consolidated (not non-consolidated) sync xml files
                 rem --- (prior to v11.0 branded consolidated sync xml files were in data/sync directory,
                 rem ---  and non-consolidated sync xml files were deleted when consolidated files were created)
-                oldappDir$ = #parseAppPath(oldSyncLoc$)
                 declare File oldBackupDir!
                 oldBackupDir! = new File(oldappDir$ + "/data/admin_backup")
                 if !oldBackupDir!.exists() or !oldBackupDir!.isDirectory()
                     oldBackupDir! = new File(oldSyncLoc$)
                 endif
 rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new XmlFilter()); rem ... pre-v11
+                rem --- In v18 and later, bax_sync_backup.bbj puts both branded and non-branded admin_backup XML files in the application's data/admin_backup directory.
                 #copyFiles(oldBackupDir!, new File(appDir$ + "/data/admin_backup"), new XmlFilter())
 
 				rem --- copy old ads_masks~*.xml files, except ads_masks~99*.xml and ads_masks~[*.xml files
 				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
-                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new MasksFilter())
+rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new MasksFilter())
+                rem --- Application's data/sync XML files are now sync'd in after the admin_backup XML files.
+                rem --- The application data/sync directory should only include standard/default XML files distributed with the application.
 
 				rem --- copy old ads_sequences~*.xml files, except ads_sequences~99*.xml and ads_sequences~[*.xml files
 				rem --- (starting with v11.00 non-consolidated sync xml files will not be deleted when consolidated files are created)
-                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new SequencesFilter())
+rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), new SequencesFilter())
+                rem --- Application's data/sync XML files are now sync'd in after the admin_backup XML files.
+                rem --- The application data/sync directory should only include standard/default XML files distributed with the application.
 
-                rem --- delete non-branded sync xml files from provided location
-                #deleteFiles(new File(syncBackupDir$), new XmlFilter())
-
-                rem --- delete branded consolidated (not non-consolidated) sync xml files
-                #deleteFiles(oldBackupDir!, new XmlFilter())
-
-                rem --- delete old ads_masks~*.xml files
-                #deleteFiles(oldBackupDir!, new MasksFilter())
-
-                rem --- delete old ads_sequences~*.xml files
-                #deleteFiles(oldBackupDir!, new SequencesFilter())
+                rem --- Prior to v11, the auto sync didn't automatically generate fresh sync files
+                if oldVers!<>null() and oldVers!.containsKey("AD") and num(oldVers!.get("AD"))<11 then
+                    rem --- delete non-branded sync xml files from provided location
+                    #deleteFiles(new File(syncBackupDir$), new XmlFilter())
+    
+                    rem --- delete branded consolidated (not non-consolidated) sync xml files
+                    #deleteFiles(oldBackupDir!, new XmlFilter())
+    
+                    rem --- delete old ads_masks~*.xml files
+rem                     #deleteFiles(oldBackupDir!, new MasksFilter())
+                    rem --- No longer necessary. Files already deleted using XmlFilter() filter.
+    
+                    rem --- delete old ads_sequences~*.xml files
+rem                     #deleteFiles(oldBackupDir!, new SequencesFilter())
+                    rem --- No longer necessary. Files already deleted using XmlFilter() filter.
+                endif
 				
 				rem --- recursively copy old barista/settings directory
                 #log("")
 				#copyDirectories(new File(#parseSettingsPath(oldSyncLoc$)), new File(#parseSettingsPath(newSyncLoc$)))
             endif
-			
-			rem --- get current version from adm_modules~*.xml in data/sync dir
-			declare HashMap newVers!
-			newVers! = #getModuleVersion(new File(appDir$ + "/data/sync"))
             
             rem --- update xml files in data/sync dir
             #updateXmlFiles(new File(appDir$ + "/data/sync"))
-            
+
             rem --- update xml files in data/admin_backup dir
             #updateXmlFiles(new File(appDir$ + "/data/admin_backup"), newVers!)
 
@@ -189,19 +211,19 @@ rem                #copyFiles(oldBackupDir!, new File(appDir$ + "/data/sync"), n
             #destroyProgressMeter()
             methodret
             
-method_error:rem --- Method error trap/handler
-            rd_err_text$="", err_num=err
-            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-            if err_num=252 then
-                E!=BBjAPI().getLastBBjException()
-                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
-                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
-            endif
-            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
-            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
-            if pos("RETRY"=rd_err_act$)<>0 retry
-            x$=stbl("+THROWN_ERR","TRUE")   
-            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+method_error:rem --- Method error trap/handler (11Oct2017)
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$)<>0 retry
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -345,17 +367,28 @@ method_error: rem --- Method error trap/handler
             if dir! <> null() and dir!.exists() and dir!.isDirectory() and dir!.list() <> null()
 				declare Vector fileVector!
 				declare File xml!
-				fileVector! = new Vector(java.util.Arrays.asList(dir!.list(new NonConsolidatedAdmModules())))
-				appDir$ = #parseAppPath(dir!.getPath())
-				startProdIdTag$ = "<ASC_PROD_ID>"
-				startProdIdTagLen = len(startProdIdTag$)
-				endProdIdTag$ = "</ASC_PROD_ID>"
-				startVersionTag$ = "<VERSION_ID>"
-				startVersionTagLen = len(startVersionTag$)
-				endVersionTag$ = "</VERSION_ID>"
-
-				rem --- read non-consolidated adm_modules~[^\[].*\.xml files
-				if(fileVector!.size()>0) then
+				fileVector! = new Vector(java.util.Arrays.asList(dir!.list(new AdmModulesFileter())))
+				
+                if(fileVector!.size()>0) then
+                    rem --- May have both consolidated and non-consolidate XMLs for the same table. Process the consolidated sync XML last.
+                    consolidated_file$=""
+                    for i=0 to fileVector!.size()-1
+                        file_name$ = cast(BBjString, fileVector!.get(i))
+                        if pos("~["=file_name$)=0 then continue
+                        consolidated_file$=fileVector!.remove(i)
+                        break
+                    next i
+                    if consolidated_file$<>"" then fileVector!.add(consolidated_file$)
+    				
+    				appDir$ = #parseAppPath(dir!.getPath())
+    				startProdIdTag$ = "<ASC_PROD_ID>"
+    				startProdIdTagLen = len(startProdIdTag$)
+    				endProdIdTag$ = "</ASC_PROD_ID>"
+    				startVersionTag$ = "<VERSION_ID>"
+    				startVersionTagLen = len(startVersionTag$)
+    				endVersionTag$ = "</VERSION_ID>"
+    
+    				rem --- read non-consolidated adm_modules~[^\[].*\.xml files
 					for i=0 to fileVector!.size()-1
 						module$=""
 						version$=""
@@ -448,8 +481,8 @@ method_error: rem --- Method error trap/handler
                 for i=0 to fileVector!.size()-1
                     name$ = cast(BBjString, fileVector!.get(i))
                     xml! = new File(dir!, name$)
-                    
-                    rem --- skip except adm_modules~*.xml files
+
+                    rem --- skip except adm_modules~*.xml and ads_autolaunch~*.xml files
                     if !cast(BBjString, name$).matches("adm_modules~.*\.xml") and
 :                   !cast(BBjString, name$).matches("ads_autolaunch~.*\.xml")
 :                   then 
@@ -583,19 +616,19 @@ method_error: rem --- Method error trap/handler
             wend
             methodret
             
-method_error:rem --- Method error trap/handler
-            rd_err_text$="", err_num=err
-            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-            if err_num=252 then
-                E!=BBjAPI().getLastBBjException()
-                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
-                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
-            endif
-            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
-            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
-            if pos("RETRY"=rd_err_act$)<>0 retry
-            x$=stbl("+THROWN_ERR","TRUE")   
-            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+method_error:rem --- Method error trap/handler (11Oct2017)
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$)<>0 retry
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -675,19 +708,19 @@ method_error:rem --- Method error trap/handler
             wend
             methodret
             
-method_error:rem --- Method error trap/handler
-            rd_err_text$="", err_num=err
-            if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-            if err_num=252 then
-                E!=BBjAPI().getLastBBjException()
-                rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
-                if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
-            endif
-            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
-            if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
-            if pos("RETRY"=rd_err_act$)<>0 retry
-            x$=stbl("+THROWN_ERR","TRUE")   
-            throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+method_error:rem --- Method error trap/handler (11Oct2017)
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$)<>0 retry
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
         methodend
 
         rem /**
@@ -1043,13 +1076,13 @@ rem  */
     classend
     
 rem /**
-rem  * FilenameFilter Class to filter adm_modules~[^\[].*\.xml files.
+rem  * FilenameFilter Class to filter adm_modules~*.xml files.
 rem  */
 
-    class public NonConsolidatedAdmModules implements java.io.FilenameFilter
+    class public AdmModulesFileter implements java.io.FilenameFilter
 
         method public boolean accept(File dir!, String file!)
-			if file!.matches("adm_modules~[^\[].*\.xml")
+            if file!.startsWith("adm_modules~") and file!.endsWith(".xml")
 				methodret Boolean.valueOf("true")
 			else
 				methodret Boolean.valueOf("false")

@@ -28,12 +28,23 @@ rem --- Update paid_code for selected grid rows
 		for i=0 to selectedRows!.size()-1
 			rem --- Update grid row
 			row=selectedRows!.getItem(i)
-			grid!.setCellText(row,col,itemText$)
-
-			rem --- Update record on disc
-			gltBankChecks$=GridVect!.getItem(row)
-			gltBankChecks.paid_code$=itemCode$
-			writerecord(gltBankChecks_dev)gltBankChecks$
+			rem --- Check if current row and update "classically" if so
+			if row=callpoint!.getValidationRow() then
+				if callpoint!.getColumnData("GLT_BANKCHECKS.PAID_CODE")<>itemCode$ then
+					callpoint!.setColumnData("GLT_BANKCHECKS.PAID_CODE",itemCode$,1)
+					callpoint!.setStatus("MODIFIED")
+				endif
+			else
+				grid!.setCellListSelection(row,col,item,1)
+				rem --- Update record image, if necessary
+ 				gltBankChecks$=GridVect!.getItem(row)
+				if gltBankChecks.paid_code$<>itemCode$ then
+ 					gltBankChecks.paid_code$=itemCode$
+					GridVect!.setItem(row,gltBankChecks$)
+					rem --- Set row as modified (disk icon)
+					callpoint!.setGridRowModifyStatus(row,1)
+				endif
+			endif
 		next i
 	endif
 [[GLT_BANKCHECKS.BSHO]]

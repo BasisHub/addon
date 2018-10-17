@@ -40,7 +40,7 @@ rem --- Initializations
     dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
     
     rem --- Make sure needed STBLs are set
-    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
+    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,table_chans$[all]
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
@@ -66,7 +66,21 @@ rem --- If conversion control file data/adx_conversionCtrl present and data_sour
         gosub open_tables
         ads_autolaunch_dev=num(open_chans$[1]); dim ads_autolaunch$:open_tpls$[1]
 
-        remove(ads_autolaunch_dev,key="INIT_DATA",dom=*next)
+        extractrecord(ads_autolaunch_dev,key="INIT_DATA",dom=*next)ads_autolaunch$
+        if ads_autolaunch.process_id$="INIT_DATA" then
+            remove(ads_autolaunch_dev,key="INIT_DATA",dom=*endif)
+            
+            rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
+            dev_mode$=""
+            call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
+
+            rem --- Update admin xml file
+            if rdMountVect!<>null() and rdMountVect!.size()>0
+                exp_action$="D"
+                exp_add_only$=""
+                call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_AUTOLAUNCH",ads_autolaunch$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+            endif
+        endif
     endif
     
 done: rem --- All done
@@ -82,7 +96,7 @@ open_tables: rem --- Open Tables
 :       open_opts$[all],
 :       open_chans$[all],
 :       open_tpls$[all],
-:       rd_table_chans$[all],
+:       table_chans$[all],
 :       open_batch,
 :       open_status$
 
@@ -104,7 +118,7 @@ disp_message: rem --- Display Message Dialog
     
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (22Feb2013)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -116,9 +130,20 @@ std_error: rem --- Standard error handler (22Feb2013)
         endif
     endif
 
-    rd_err_text$=""
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

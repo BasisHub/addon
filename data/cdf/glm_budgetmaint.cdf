@@ -37,7 +37,7 @@ rem --- Update grid data when leave checkbox and value has changed
 					Form!.setCursor(Form!.CURSOR_NORMAL)
 				endif
 			endif
-			for i=1 to 5
+			for i=1 to user_tpl.years_to_display
 				priorYear$=str(gls_cur_yr-i:"0000")
 				align_prior=alignCalendar!.canAlignCalendar(priorYear$)
 				if align_prior then
@@ -116,11 +116,25 @@ for x=1 to 4
 	tps!.addItem(field(gls01a$,"bud_mn_type_"+str(x:"00")))
 next x
 
+rem --- Get number of years to display in the grid
+years_to_display=5
+years_to_display=abs(int(num(stbl("+GLYEARS",err=*next),err=*next)))
+if years_to_display=0 then
+	glm02_dev=fnget_dev("GLM_ACCTSUMMARY")
+	dim glm02$:fnget_tpl$("GLM_ACCTSUMMARY")
+	read(glm02_dev,key=firm_id$,knum="BY_YEAR_ACCT",dom=*next)
+	readrecord(glm02_dev,end=*next)glm02$
+	if glm02.firm_id$=firm_id$ then
+		years_to_display=min(100,num(gls01a.current_year$)-num(glm02.year$,err=*next)+1)
+	endif
+	read(glm02_dev,key=firm_id$,knum="PRIMARY",dom=*next)
+endif
+
 rem --- Need to handle possible year in grid with more periods than the current fiscal year
-rem --- Check next year and previous five years
+rem --- Check next year and previous years being displayed
 readrecord(gls_calendar_dev,key=firm_id$+gls01a.current_year$,dom=std_missing_params)gls_calendar$
 num_pers=num(gls_calendar.total_pers$)
-for yr=num(gls01a.current_year$)-5 to num(gls01a.current_year$)+1
+for yr=num(gls01a.current_year$)-years_to_display to num(gls01a.current_year$)+1
 	if num_pers=13 then break
 	dim thisCalendar$:fattr(gls_calendar$)
 	readrecord(gls_calendar_dev,key=firm_id$+str(yr),dom=*continue)thisCalendar$
@@ -169,7 +183,7 @@ gridBudgets!.setCallback(gridBudgets!.ON_GRID_EDIT_STOP,"custom_event")
 
 rem store desired data (mostly offsets of items in UserObj) in user_tpl
 tpl_str$="pers:c(5),pers_ofst:c(5),codes_ofst:c(5),codeList_ofst:c(5),grid_ctlID:c(5),grid_ofst:c(5),"+
-:		  "cols_ofst:c(5),tps_ofst:c(5),amt_mask:c(15),sv_budget_tp:c(30*)"
+:		  "cols_ofst:c(5),tps_ofst:c(5),amt_mask:c(15),sv_budget_tp:c(30*),years_to_display:n(3)"
 
 dim user_tpl$:tpl_str$
 
@@ -182,6 +196,7 @@ user_tpl.grid_ofst$="3"
 user_tpl.cols_ofst$="4"
 user_tpl.tps_ofst$="5"
 user_tpl.amt_mask$=m1$
+user_tpl.years_to_display=years_to_display
 
 rem store desired vectors/objects in UserObj!
 UserObj!=SysGUI!.makeVector()
@@ -748,7 +763,7 @@ rem ==========================================================================
 
 	alignCalendar! = callpoint!.getDevObject("alignCalendar")
 	align=alignCalendar!.canAlignCalendar(str(num(pick_year$)+1))
-	for yr=num(pick_year$)-5 to num(pick_year$)
+	for yr=num(pick_year$)-user_tpl.years_to_display to num(pick_year$)
 		if align then break
 		align=alignCalendar!.canAlignCalendar(str(yr))
 	next yr
@@ -803,11 +818,11 @@ rem ==========================================================================
 	amt$=Translate!.getTranslation("AON_AMT")
 	unit$=Translate!.getTranslation("AON_UNIT")
 	extra_row_types$=callpoint!.getDevObject("extra_row_types")
-	gridBudgets!.setNumRows(cols!.size()+(6*len(extra_row_types$)/2))
+	gridBudgets!.setNumRows(cols!.size()+((user_tpl.years_to_display+1)*len(extra_row_types$)/2))
 	row=cols!.size()
 	gls_cur_yr=num(callpoint!.getDevObject("gls_cur_yr"))
 	extraRows!=SysGUI!.makeVector()
-	for yr=gls_cur_yr to gls_cur_yr-5 step -1
+	for yr=gls_cur_yr to gls_cur_yr-user_tpl.years_to_display step -1
 		for i=1 to len(extra_row_types$) step 2
 			actbud$=iff(extra_row_types$(i,1)="A",actual$,budget$)
 			amtunit$=iff(extra_row_types$(i+1,1)="A",amt$,unit$)

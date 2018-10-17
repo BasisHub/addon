@@ -1640,7 +1640,7 @@ rem =========================================================
 rem --- Set new record flag
 
 	callpoint!.setDevObject("new_rec","Y")
-	callpoint!.setDevObject("wo_status","")
+	callpoint!.setDevObject("wo_status",callpoint!.getColumnData("SFE_WOMASTR.WO_STATUS"))
 	callpoint!.setDevObject("wo_no","")
 	callpoint!.setDevObject("wo_loc","")
 

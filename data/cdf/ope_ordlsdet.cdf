@@ -1,3 +1,26 @@
+[[OPE_ORDLSDET.QTY_SHIPPED.AVAL]]
+rem --- Skip if qty_shipped not changed
+	shipqty  = num(callpoint!.getUserInput())
+	prev_shipqty=num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_SHIPPED"))
+	if shipqty = prev_shipqty then break
+
+rem --- Warn if ship quantity is more than order quantity
+	ordqty = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"))
+	if shipqty > ordqty then
+		msg_id$="SHIP_EXCEEDS_ORD"
+		dim msg_tokens$[1]
+		if ordqty=0 then
+			msg_tokens$[1] = "???"
+		else
+			msg_tokens$[1] = str(round(100*(ordqty-shipqty)/ordqty,1):"###0.0 ")
+		endif
+		gosub disp_message
+		if msg_opt$="C" then
+			callpoint!.setUserInput(str(prev_shipqty))
+			callpoint!.setStatus("ABORT-REFRESH")
+			break; rem --- exit callpoint
+		endif
+	endif
 [[OPE_ORDLSDET.AGDS]]
 rem --- Can't use qty_shipped from ope_invdet and ope_orddet. Must total it up here.
 	qty_shipped=0
@@ -78,19 +101,19 @@ rem --- If not a new row, uncommit the lot/serial
 
 	endif
 [[OPE_ORDLSDET.QTY_ORDERED.AVAL]]
-print "QTY_ORDERED.AVAL"; rem debug
+rem --- Skip if qty_ordered not changed
+	qty_ordered = num(callpoint!.getUserInput())
+	prev_orderqty=num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"))
+	if qty_ordered = prev_orderqty then break
 
 rem ---- If serial (as opposed to lots), qty must be 1 or -1
 
-	qty_ordered = num(callpoint!.getUserInput())
 	gosub there_can_be_only_one
 
 	if aborted then 
 		callpoint!.setStatus("ABORT")
 		break; rem --- exit callpoint
 	endif
-
-	print "---Not aborted"; rem debug
 
 rem --- Check quantity ordered against what's available on the Lot
 
@@ -122,34 +145,24 @@ rem --- Check quantity ordered against what's available on the Lot
 
 rem --- Update qty left to order
 
-	print "---Left to Ord:", user_tpl.left_to_ord; rem debug
-	print "---Qty Ordered:", qty_ordered; rem debug
-	print "---Prev Qty   :", user_tpl.prev_ord; rem debug
-	print "---left + prev - ordered "; rem debug
 	user_tpl.left_to_ord = user_tpl.left_to_ord + user_tpl.prev_ord - qty_ordered 
-	print "---Qty left to ord:", user_tpl.left_to_ord; rem debug
 
-rem --- Set shipped default
+rem --- Set shipped default for new line
 
-	callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED", str(qty_ordered),1)
+	if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())="Y" then
+		callpoint!.setColumnData("OPE_ORDLSDET.QTY_SHIPPED", str(qty_ordered),1)
+	endif
 [[OPE_ORDLSDET.AGRE]]
-print "AGRE"; rem debug
-
 rem --- Check quantities, do commits if this row isn't deleted
 
 	if callpoint!.getGridRowDeleteStatus( callpoint!.getValidationRow() ) <> "Y" and
 :		cvs( callpoint!.getColumnData("OPE_ORDLSDET.LOTSER_NO"), 3)        <> "" 
 :	then
 
-	rem --- Check if Serial and validate quantity
+	rem --- Check for Sales Line quantity
 
 		qty_shipped = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_SHIPPED"))
 		qty_ordered = num(callpoint!.getColumnData("OPE_ORDLSDET.QTY_ORDERED"))
-
-		gosub valid_quantities
-		if aborted then break; rem --- exit callpoint
-
-	rem --- Now check for Sales Line quantity
 
 		if callpoint!.getGridRowNewStatus( callpoint!.getValidationRow() )    = "Y" or
 :		   callpoint!.getGridRowModifyStatus( callpoint!.getValidationRow() ) = "Y" 
@@ -208,8 +221,6 @@ rem --- Check quantities, do commits if this row isn't deleted
 	endif
  
 [[OPE_ORDLSDET.BEND]]
-print "BEND"; rem debug
-
 rem --- Check total quantity from all lines against ordered quantity and shipped
 
 	declare BBjVector GridVect!
@@ -227,14 +238,10 @@ rem --- Check total quantity from all lines against ordered quantity and shipped
 
 			if cvs(gridrec$,3) <> "" and callpoint!.getGridRowDeleteStatus(reccnt) <> "Y" then 
 
-			rem --- Check if Serial and validate quantity
+			rem --- Check available
 
 				qty_shipped = gridrec.qty_shipped
 				qty_ordered = gridrec.qty_ordered
-				gosub valid_quantities
-				if aborted then break
-
-			rem --- Check available
 
 				if callpoint!.getGridRowNewStatus(reccnt) = "Y" or
 :				   callpoint!.getGridRowModifyStatus(reccnt) = "Y" 
@@ -255,11 +262,10 @@ rem --- Check total quantity from all lines against ordered quantity and shipped
 	endif
 
 rem --- Warn that selected lot/serial#'s does not match order qty
-
-	if lot_ord <> num(callpoint!.getDevObject("ord_qty")) then 
+	if lot_ship <> lot_ord then 
 		msg_id$ = "OP_LOT_QTY_UNEQUAL"
 		dim msg_tokens$[3]
-		msg_tokens$[1] = str(lot_ord)
+		msg_tokens$[1] = str(lot_ship)
 
 		if callpoint!.getDevObject("lotser_flag") = "L" then 
 			msg_tokens$[2] = Translate!.getTranslation("AON_LOT_NUMBERS")
@@ -267,7 +273,7 @@ rem --- Warn that selected lot/serial#'s does not match order qty
 			msg_tokens$[2] = Translate!.getTranslation("AON_SERIAL_NUMBERS")
 		endif
 
-		msg_tokens$[3] = str(callpoint!.getDevObject("ord_qty"))
+		msg_tokens$[3] = str(lot_ord)
 		gosub disp_message
 		if msg_opt$="N"
 			callpoint!.setStatus("ABORT")
@@ -277,10 +283,6 @@ rem --- Warn that selected lot/serial#'s does not match order qty
 
 rem --- Send back qty shipped
 
-	if lot_ord>num(callpoint!.getDevObject("ord_qty")) then
-		callpoint!.setStatus("ABORT")
-		break
-	endif
 	callpoint!.setDevObject("total_shipped", str(lot_ship))
 [[OPE_ORDLSDET.<CUSTOM>]]
 rem ==========================================================================
@@ -327,7 +329,6 @@ there_can_be_only_one: rem --- Serial#'s can only have a quantity of 1 or -1
                        rem      IN: qty_ordered
 rem ==========================================================================
 
-	print "in there_can_be_only_one..."; rem debug
 	aborted = 0
 
 	if callpoint!.getDevObject("lotser_flag") = "S" and cvs(callpoint!.getColumnData("OPE_ORDLSDET.LOTSER_NO"),2)<>"" and
@@ -336,32 +337,6 @@ rem ==========================================================================
 		gosub disp_message
 		callpoint!.setStatus("ABORT")
 		aborted = 1
-		print "---Aborted:", aborted; rem debug
-	endif
-
-	print "back"; rem debug
-
-	return
-
-rem ==========================================================================
-valid_quantities: rem --- Validate Quantities
-                  rem       IN: qty_shipped
-                  rem           qty_ordered
-                  rem      OUT: aborted - true/false
-rem ==========================================================================
-
-	gosub there_can_be_only_one
-
-	if !aborted then
-
-	rem --- Ship Qty must be <= Order Qty
-
-		if abs(qty_ordered) < abs(qty_shipped) then 
-			msg_id$ = "SHIP_EXCEEDS_ORD"
-			gosub disp_message
-			callpoint!.setStatus("ABORT")
-			aborted = 1
-		endif
 	endif
 
 	return
@@ -377,7 +352,6 @@ rem ==========================================================================
 rem --- This routine uncommits warehouse (since already committed when entering detail line)
 rem --- then re-commits warehouse and commits lot/serial master
 
-	print "in commit_lots..."; rem debug
 	wh$   = callpoint!.getDevObject("wh")
 	item$ = callpoint!.getDevObject("item")
 

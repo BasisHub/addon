@@ -8,10 +8,11 @@ filter_defs$[0,0]="APM_VENDMAST.FIRM_ID"
 filter_defs$[0,1]="='"+firm_id$+"'"
 filter_defs$[0,2]="LOCK"
 
-filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
-filter_defs$[1,1]="='"+ap_type$+"'"
-filter_defs$[1,2]="LOCK"
-
+if cvs(ap_type$,3)<>""
+	filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
+	filter_defs$[1,1]="='"+ap_type$+"'"
+	filter_defs$[1,2]="LOCK"
+endif
 
 call STBL("+DIR_SYP")+"bax_query.bbj",
 :		gui_dev, 

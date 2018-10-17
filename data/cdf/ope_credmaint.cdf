@@ -23,8 +23,31 @@ rem --- Update the tickler date
 rem --- Make sure this form is closed before the Credit Review and Release grid gets focus
 	callpoint!.setStatus("EXIT")
 [[OPE_CREDMAINT.ARER]]
+rem --- If tickler date is blank, use existing tickler date if one already exists for the customer and order.
+	old_tick_date$=callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE")
+	if cvs(old_tick_date$,2)="" then
+		ope03_dev=fnget_dev("OPE_CREDDATE")
+		dim ope03a$:fnget_tpl$("OPE_CREDDATE")
+		cust_no$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
+		ord$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_NO")
+		ope03a.firm_id$=firm_id$
+		ope03a.customer_id$=pad(cust_no$,dec(fattr(ope03a$,"CUSTOMER_ID")(10,2)))
+		ope03a.order_no$=pad(ord$,dec(fattr(ope03a$,"ORDER_NO")(10,2)))
+		ope03_trip$=ope03a.firm_id$+ope03a.customer_id$+ope03a.order_no$
+		read(ope03_dev,key=ope03_trip$,knum="BY_ORDER",dom=*next)
+		ope03_key$=key(ope03_dev,end=*next)
+		if pos(ope03_trip$=ope03_key$)=1 then
+			readrecord(ope03_dev)ope03a$
+			old_tick_date$=ope03a.rev_date$
+			callpoint!.setColumnData("OPE_CREDMAINT.REV_DATE",old_tick_date$,1)
+		endif
+
+		rem --- Reset ope03_dev to its PRIMARY key
+		read(ope03_dev,key="",knum="PRIMARY",dom=*next)
+	endif
+
 rem --- Hold on to old tickler date so we know if it gets changed
-	callpoint!.setDevObject("old_tick_date",callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE"))
+	callpoint!.setDevObject("old_tick_date",old_tick_date$)
 
 rem --- Display Comments
 	cust_id$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
@@ -338,10 +361,14 @@ rem --- You must pass in cust_id$ because we don't know whether it's verified or
 return
 
 update_tickler: rem --- Modify Tickler date
+	tick_date$=callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE")
+	if cvs(tick_date$,2)="" then
+		rem --- Do not write blank tickler date
+		return
+	endif
 	ope03_dev=fnget_dev("OPE_CREDDATE")
 	dim ope03a$:fnget_tpl$("OPE_CREDDATE")
 	gosub remove_tickler
-	tick_date$=callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE")
 	callpoint!.setDevObject("old_tick_date",tick_date$)
 	ord$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_NO")
 	cust_no$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")
@@ -409,4 +436,5 @@ rem --- Comment Maintenance
 		arm01a$=field(arm01a$)
 		writerecord(arm01_dev)arm01a$
 		callpoint!.setColumnData("<<DISPLAY>>.COMMENTS",disp_text$,1)
+		callpoint!.setDevObject("memo_1024",disp_text$)
 	endif

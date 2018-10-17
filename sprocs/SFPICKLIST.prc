@@ -185,21 +185,15 @@ rem --- Other header fields
     rev_no$=sfe_womastr.drawing_rev$
     prod_qty$=str(sfe_womastr.sch_prod_qty-sfe_womastr.qty_cls_todt:qty_mask$)
 
-rem --- Get Header level comments
+rem --- Get Header level comments, i.e. memo lines entered before the first sfe_womatl detail line for an item
 
     read (sfw_picklctn,key=sfe_womathdr.firm_id$+sfe_womathdr.wo_location$+sfe_womathdr.wo_no$,knum=key_num$,dom=*next)
     
     head_comm$=""
     gosub get_wo_hdr_cmnts
-    cmt_len=len(sfe_womatl.ext_comments$)
     if head_comm$<>""
-        for x=1 to len(head_comm$) step cmt_len*2
-            item_no$=head_comm$(x,cmt_len)
-			if len(head_comm$)>x+cmt_len
-                item_desc$=head_comm$(x+cmt_len,cmt_len)
-            endif
-            gosub add_to_recordset
-		next x
+        item_desc$=head_comm$
+        gosub add_to_recordset
 	endif
 
 rem --- Get details
@@ -234,15 +228,9 @@ rem --- Get details
 
         line_comm$=""
         gosub get_mat_line_cmnts
-        cmt_len=len(sfe_womatl.ext_comments$)
         if line_comm$<>""
-            for x=1 to len(line_comm$) step cmt_len*2
-                item_no$=line_comm$(x,cmt_len)
-                if len(line_comm$)>x+cmt_len
-                    item_desc$=line_comm$(x+cmt_len,cmt_len)
-                endif
-                gosub add_to_recordset
-            next x
+            item_desc$=line_comm$
+            gosub add_to_recordset
         endif
 
     rem --- Put out the lot/serial lines
@@ -340,13 +328,15 @@ get_mat_line_cmnts: rem --- Get comments for this material line
         sfe_womatl_key$=key(sfe_womatl,end=*break)
         if pos(sfe_womathdr.firm_id$+sfe_womathdr.wo_location$+sfe_womathdr.wo_no$=sfe_womatl_key$)<>1 then break
 		redim sfe_womatl$
-        read record (sfe_womatl) sfe_womatl$
+        read record (sfe_womatl,key=sfe_womatl_key$) sfe_womatl$
         if sfe_womatl.line_type$<>"M" then break 
-		line_comm$=line_comm$+sfe_womatl.ext_comments$
+        memo_1024$=sfe_womatl.memo_1024$
+        if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+		line_comm$=line_comm$+memo_1024$
     wend
     return
 
-get_wo_hdr_cmnts: rem --- Get header comments for this Work Order
+get_wo_hdr_cmnts: rem --- Get header comments for this Work Order, i.e. memo lines entered before the first sfe_womatl detail line for an item
 
     read (sfe_womatl,key=sfe_womathdr.firm_id$+sfe_womathdr.wo_location$+sfe_womathdr.wo_no$,dom=*next)
     while more
@@ -355,7 +345,9 @@ get_wo_hdr_cmnts: rem --- Get header comments for this Work Order
 		redim sfe_womatl$
         read record (sfe_womatl) sfe_womatl$
         if sfe_womatl.line_type$<>"M" then break
-		head_comm$=head_comm$+sfe_womatl.ext_comments$		
+        memo_1024$=sfe_womatl.memo_1024$
+        if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+		head_comm$=head_comm$+memo_1024$		
     wend
     return
 

@@ -28,12 +28,23 @@ rem --- Update posted_code for selected grid rows
 		for i=0 to selectedRows!.size()-1
 			rem --- Update grid row
 			row=selectedRows!.getItem(i)
-			grid!.setCellText(row,col,itemText$)
-
-			rem --- Update record on disc
-			gltBankOther$=GridVect!.getItem(row)
-			gltBankOther.posted_code$=itemCode$
-			writerecord(gltBankOther_dev)gltBankOther$
+			rem --- Check if current row and update "classically" if so
+			if row=callpoint!.getValidationRow() then
+				if callpoint!.getColumnData("GLT_BANKOTHER.POSTED_CODE")<>itemCode$ then
+					callpoint!.setColumnData("GLT_BANKOTHER.POSTED_CODE",itemCode$,1)
+					callpoint!.setStatus("MODIFIED")
+				endif
+			else
+				grid!.setCellListSelection(row,col,item,1)
+				rem --- Update record image, if necessary
+ 				gltBankOther$=GridVect!.getItem(row)
+				if gltBankOther.posted_code$<>itemCode$ then
+ 					gltBankOther.posted_code$=itemCode$
+					GridVect!.setItem(row,gltBankOther$)
+					rem --- Set row as modified (disk icon)
+					callpoint!.setGridRowModifyStatus(row,1)
+				endif
+			endif
 		next i
 	endif
 [[GLT_BANKOTHER.BSHO]]

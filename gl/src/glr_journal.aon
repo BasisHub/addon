@@ -16,6 +16,8 @@ rem --- alt key containing batch#. (batching.CAH)
 
     setesc std_error
     seterr std_error
+
+    use ::ado_func.src::func
     
 rem --- Document initializations
 
@@ -185,8 +187,8 @@ rem --- Document columns
     columns$[2,0]=Translate!.getTranslation("AON_TRANSACTION"),columns$[2,1]="C",columns$[2,2]="30"
     columns$[3,0]=Translate!.getTranslation("AON_DATE"),columns$[3,1]="C",columns$[3,2]="10"
     columns$[4,0]=Translate!.getTranslation("AON_REVERSAL"),columns$[4,1]="C",columns$[4,2]="10"
-    columns$[5,0]=Translate!.getTranslation("AON_MEMO"),columns$[5,1]="C",columns$[5,2]="10"
-    columns$[6,0]=Translate!.getTranslation("AON_CYCLE"),columns$[6,1]="C",columns$[6,2]="15"
+    columns$[5,0]=Translate!.getTranslation("AON_MEMO"),columns$[5,1]="C",columns$[5,2]="30"
+    columns$[6,0]=Translate!.getTranslation("AON_CYCLE"),columns$[6,1]="C",columns$[6,2]="5"
     columns$[7,0]=Translate!.getTranslation("AON_DEBITS"),columns$[7,1]="N",columns$[7,2]=str(len(m1$)),columns$[7,3]=m1$,columns$[7,10]="T"
     columns$[8,0]=Translate!.getTranslation("AON_CREDITS"),columns$[8,1]="N",columns$[8,2]=str(len(m1$)),columns$[8,3]=m1$,columns$[8,10]="T"
     columns$[9,0]=Translate!.getTranslation("AON_UNITS"),columns$[9,1]="N",columns$[9,2]=str(len(m2$)),columns$[9,3]=m2$,columns$[9,10]="T"
@@ -246,6 +248,9 @@ level_breaks: rem --- Level breaks
                 if amount<0 credit$=str(abs(amount))
                 if amount>0 debit$=str(amount)
                 if gls01a.units_flag$="Y" if gle11a.units<>0 units$=str(gle11a.units)
+                
+                rem --- Split Journal Entry detail comments into multiple lines
+                lineVect!=func.splitMultiLineField(gle11a.memo_1024$,40)
 
                 rem --- Print detail line
 
@@ -254,11 +259,25 @@ level_breaks: rem --- Level breaks
                 OutVect!.addItem(glm01a.gl_acct_desc$)
                 OutVect!.addItem("")
                 OutVect!.addItem("")
-                OutVect!.addItem(gle11a.gl_post_memo$)
+                if lineVect!.size() then
+                    OutVect!.addItem(lineVect!.getItem(0))
+                    lineVect!.removeItem(0)
+                else
+                    OutVect!.addItem("")
+                endif
                 OutVect!.addItem("")
                 OutVect!.addItem(debit$)
                 OutVect!.addItem(credit$)
                 OutVect!.addItem(units$)
+
+                rem --- Print rest of Journal Entry detail comments 
+                if lineVect!.size() then
+                    for i=0 to lineVect!.size()-1
+                        xwk=fnblank(5)
+                        OutVect!.addItem(lineVect!.getItem(i))
+                        xwk=fnblank(4)
+                    next i
+                endif
 
                 rem --- Accumulate totals
 
@@ -275,7 +294,7 @@ level_breaks: rem --- Level breaks
                 ref1$=gle01a.je_trans_id$
                 ref2$=gle11a.line_no$
                 ref3$=""
-                memo$=gle11a.gl_post_memo$
+                memo$=gle11a.memo_1024$
                 if cvs(gle01a.cycle_code$,2)<>"" ref3$=Translate!.getTranslation("AON_CYCLE_")+gle01a.cycle_code$
                 gosub glrecap
                 
@@ -486,7 +505,7 @@ disp_message:rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -504,9 +523,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

@@ -1,3 +1,83 @@
+[[ARM_CUSTMAST.AOPT-CRDT]]
+rem --- Launch Customer Maitenance form for this customer
+	user_id$=stbl("+USER_ID")
+	customer_id$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+	cred_hold$=callpoint!.getColumnData("ARM_CUSTDET.CRED_HOLD")
+	cred_limit$=callpoint!.getColumnData("ARM_CUSTDET.CREDIT_LIMIT")
+	memo_1024$=callpoint!.getColumnData("ARM_CUSTMAST.MEMO_1024")
+	callpoint!.setDevObject("cred_hold",cred_hold$)
+	callpoint!.setDevObject("cred_limit",cred_limit$)
+	callpoint!.setDevObject("memo_1024",memo_1024$)
+
+	dim dflt_data$[27,1]
+	dflt_data$[1,0]="CUSTOMER_ID"
+	dflt_data$[1,1]=customer_id$
+	dflt_data$[2,0]="ADDR_LINE_1"
+	dflt_data$[2,1]=callpoint!.getColumnData("ARM_CUSTMAST.ADDR_LINE_1")
+	dflt_data$[3,0]="ADDR_LINE_2"
+	dflt_data$[3,1]=callpoint!.getColumnData("ARM_CUSTMAST.ADDR_LINE_2")
+	dflt_data$[4,0]="ADDR_LINE_3"
+	dflt_data$[4,1]=callpoint!.getColumnData("ARM_CUSTMAST.ADDR_LINE_3")
+	dflt_data$[5,0]="ADDR_LINE_4"
+	dflt_data$[5,1]=callpoint!.getColumnData("ARM_CUSTMAST.ADDR_LINE_4")
+	dflt_data$[6,0]="CITY"
+	dflt_data$[6,1]=callpoint!.getColumnData("ARM_CUSTMAST.CITY")
+	dflt_data$[7,0]="STATE_CODE"
+	dflt_data$[7,1]=callpoint!.getColumnData("ARM_CUSTMAST.STATE_CODE")
+	dflt_data$[8,0]="ZIP_CODE"
+	dflt_data$[8,1]=callpoint!.getColumnData("ARM_CUSTMAST.ZIP_CODE")
+	dflt_data$[9,0]="COUNTRY"
+	dflt_data$[9,1]=callpoint!.getColumnData("ARM_CUSTMAST.COUNTRY")
+	dflt_data$[10,0]="CONTACT_NAME"
+	dflt_data$[10,1]=callpoint!.getColumnData("ARM_CUSTMAST.CONTACT_NAME")
+	dflt_data$[11,0]="PHONE_NO"
+	dflt_data$[11,1]=callpoint!.getColumnData("ARM_CUSTMAST.PHONE_NO")
+	dflt_data$[12,0]="PHONE_EXTEN"
+	dflt_data$[12,1]=callpoint!.getColumnData("ARM_CUSTMAST.PHONE_EXTEN")
+	dflt_data$[13,0]="FAX_NO"
+	dflt_data$[13,1]=callpoint!.getColumnData("ARM_CUSTMAST.FAX_NO")
+	dflt_data$[14,0]="SLSPSN_CODE"
+	dflt_data$[14,1]=callpoint!.getColumnData("ARM_CUSTDET.SLSPSN_CODE")
+	dflt_data$[15,0]="AR_TERMS_CODE"
+	dflt_data$[15,1]=callpoint!.getColumnData("ARM_CUSTDET.AR_TERMS_CODE")
+	dflt_data$[16,0]="CRED_HOLD"
+	dflt_data$[16,1]=cred_hold$
+	dflt_data$[17,0]="AGING_FUTURE"
+	dflt_data$[17,1]=callpoint!.getColumnData("ARM_CUSTDET.AGING_FUTURE")
+	dflt_data$[18,0]="AGING_CUR"
+	dflt_data$[18,1]=callpoint!.getColumnData("ARM_CUSTDET.AGING_CUR")
+	dflt_data$[19,0]="AGING_30"
+	dflt_data$[19,1]=callpoint!.getColumnData("ARM_CUSTDET.AGING_30")
+	dflt_data$[20,0]="AGING_60"
+	dflt_data$[20,1]=callpoint!.getColumnData("ARM_CUSTDET.AGING_60")
+	dflt_data$[21,0]="AGING_90"
+	dflt_data$[21,1]=callpoint!.getColumnData("ARM_CUSTDET.AGING_90")
+	dflt_data$[22,0]="AGING_120"
+	dflt_data$[22,1]=callpoint!.getColumnData("ARM_CUSTDET.AGING_120")
+	dflt_data$[23,0]="CREDIT_LIMIT"
+	dflt_data$[23,1]=cred_limit$
+	dflt_data$[24,0]="REV_DATE"
+	dflt_data$[24,1]=""
+	dflt_data$[25,0]="ORDER_NO"
+	dflt_data$[25,1]=""
+	dflt_data$[26,0]="ORDER_DATE"
+	dflt_data$[26,1]=""
+	dflt_data$[27,0]="SHIPMNT_DATE"
+	dflt_data$[27,1]=""
+
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"OPE_CREDMAINT",
+:		user_id$,
+:		"",
+:		firm_id$+customer_id$,
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
+
+rem --- Refresh data that might have been changed in Credit Maintenance
+	callpoint!.setColumnData("ARM_CUSTDET.CRED_HOLD",str(callpoint!.getDevObject("cred_hold")),1)
+	callpoint!.setColumnData("ARM_CUSTDET.CREDIT_LIMIT",str(callpoint!.getDevObject("cred_limit")),1)
+	callpoint!.setColumnData("ARM_CUSTMAST.MEMO_1024",str(callpoint!.getDevObject("memo_1024")),1)
 [[ARM_CUSTMAST.BEND]]
 rem --- call the close() method for the gmClient! object on the way out
 
@@ -720,6 +800,7 @@ rem --- Retrieve parameter data
 		callpoint!.setOptionEnabled("QUOT",0)
 		callpoint!.setOptionEnabled("ORDR",0)
 		callpoint!.setOptionEnabled("INVC",0)
+		callpoint!.setOptionEnabled("CRDT",0)
 	endif
 	dctl$[9]="<<DISPLAY>>.DSP_BALANCE"
 	dctl$[10]="<<DISPLAY>>.DSP_MTD_PROFIT"

@@ -626,6 +626,10 @@ if callpoint!.getGridRowDeleteStatus(num(callpoint!.getValidationRow()))<>"Y"
 		next x
 	endif	
 
+	rem --- Disable SO Seq No column if SO line reference is okay
+	if msg_id$<>"PO_DUP_SO_LINE" then
+		callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",0)
+	endif
 endif
 
 rem --- look at wo number; if different than it was when we entered the row, update and/or remove link in corresponding wo detail line
@@ -700,8 +704,6 @@ rem --- if received > ordered - previously received, warn, but not fatal
 	if qty_received > qty_ordered - qty_prev_rec
 		callpoint!.setMessage("PO_REC_QTY_WARN")
 	endif
-
-
 [[POE_RECDET.AGRN]]
 rem --- save current qty/price this row
 
@@ -846,22 +848,21 @@ endif
 rem --- if there are order lines to display/access in the sales order line item listbutton, set the LDAT and list display
 rem --- get the detail grid, then get the listbutton within the grid; set the list on the listbutton, and put the listbutton back in the grid
 
-order_list!=callpoint!.getDevObject("so_lines_list")
 ldat$=callpoint!.getDevObject("so_ldat")
-
 if ldat$<>""
-	callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",1)
 	callpoint!.setTableColumnAttribute("POE_RECDET.SO_INT_SEQ_REF","LDAT",ldat$)
 	g!=callpoint!.getDevObject("dtl_grid")
 	col_hdr$=callpoint!.getTableColumnAttribute("POE_RECDET.SO_INT_SEQ_REF","LABS")
 	col_ref=util.getGridColumnNumber(g!, col_hdr$)
 	c!=g!.getColumnListControl(col_ref)
 	c!.removeAllItems()
+	order_list!=callpoint!.getDevObject("so_lines_list")
 	c!.insertItems(0,order_list!)
 	g!.setColumnListControl(col_ref,c!)	
-else
-	callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",0)
 endif 
+
+rem --- Disable SO Seq No column
+	callpoint!.setColumnEnabled(-1,"POE_RECDET.SO_INT_SEQ_REF",0)
 [[POE_RECDET.BDGX]]
 rem -- loop thru gridVect; if there are any lines not marked deleted, set the callpoint!.setDevObject("dtl_posted") to Y
 
@@ -879,10 +880,14 @@ callpoint!.setDevObject("qty_this_row",0)
 callpoint!.setDevObject("cost_this_row",0)
 callpoint!.setColumnData("POE_RECDET.PO_NO",callpoint!.getHeaderColumnData("POE_RECHDR.PO_NO"))
 
-rem callpoint!.setFocus(num(callpoint!.getValidationRow()),"POE_RECDET.PO_LINE_CODE"); rem shouldn't need now that Barista bug 3999 fixed
-
 rem --- Comments button initially disabled
 callpoint!.setOptionEnabled("COMM",0)
+
+rem --- Enable SO Seq No column if there are order lines to display/access in the sales order line item listbutton
+ldat$=callpoint!.getDevObject("so_ldat")
+if ldat$<>"" then
+	callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"POE_RECDET.SO_INT_SEQ_REF",1)
+endif
 [[POE_RECDET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 
@@ -982,6 +987,12 @@ update_line_type_info:
 	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 	callpoint!.setDevObject("line_type",poc_linecode.line_type$)
 	gosub enable_by_line_type
+
+	rem --- Dropship PO line codes are no longer supported. Now the entire PO must be dropshipped.
+	if poc_linecode.dropship$="Y" then
+		msg_id$="PO_DROPSHIP_LINE_CD "
+		gosub disp_message
+	endif
 
 return
 

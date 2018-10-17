@@ -1,0 +1,309 @@
+rem ==========================================================================
+rem --- adx_rebuild_FTI.aon
+rem --- An Auto-Launch task that runs after version-specific upgrade conversions.
+rem --- Launches the FTI rebuild utility
+rem --- Done as a separate task (rather than being done at the end of adx_init_data.aon) to ensure that files are closed.
+rem --- IOW, rebuilding an FTI on a file that's open can corrupt the file
+rem --- 
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+rem --- All Rights Reserved
+rem ==========================================================================
+
+    use java.io.File
+    use java.util.Properties
+    use ::bbtranslator.bbj::BBTranslator
+    use ::ado_file.src::FileObject
+    
+    setesc std_error
+    seterr std_error
+
+rem --- Get program arguments
+
+    if argc>1
+        for curr_argv=1 to argc-1
+            temp_argv$=argv(curr_argv)
+            if pos("-u"=temp_argv$)=1 user_id$=stbl("+USER_ID",temp_argv$(3));rem User ID
+        next curr_argv
+    endif
+
+    if user_id$=""
+        use ::sys/prog/bao_security.bbj::Security
+        user_id$=Security.getURLUser()
+        if cvs(user_id$,2)="" then user_id$=stbl("+USER_ID",err=*next)
+        if cvs(user_id$,2)="" then user_id$="ADMIN"
+    endif
+
+rem --- Initializations
+
+    pgmdir$=stbl("+DIR_PGM",err=*next)
+    dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+
+rem --- Make sure needed STBLs are set
+
+    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
+    sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_template$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+
+rem --- Open log file in aon/logs directory
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_SYSTEMS",open_opts$[1]="OTA"
+    gosub open_tables
+    ddm_systems=num(open_chans$[1]);dim ddm_systems$:open_tpls$[1]
+    
+    aonDir$=""
+    readrecord(ddm_systems,key=pad("ADDON",16," "),knum="SYSTEM_ID",err=*next)ddm_systems$
+    if cvs(ddm_systems.mount_dir$,2)<>"" then
+        aonDir$=ddm_systems.mount_dir$
+    endif
+
+    location$ = aonDir$
+    gosub open_log
+
+rem --- Creating a small invisible window to hold progress meter
+
+    sysGUI!=BBjAPI().getSysGui()
+    if BBjAPI().isInMDI() then
+        desktop_w=BBjAPI().getMDI().getClientWidth()
+        desktop_h=BBjAPI().getMDI().getClientHeight()
+    else
+        screenSize!=sysGUI!.getSystemMetrics().getScreenSize()
+        desktop_w=screenSize!.width
+        desktop_h=screenSize!.height
+    endif
+    rdForm!=sysGUI!.addWindow(int(desktop_w/2),int(desktop_h/2),1,1,"",$00000000$)
+    rdForm!.setTitleBarVisible(0)
+    rdForm!.setVisible(0)
+
+rem --- Start progress meter
+
+    if Translate!=null() then 
+        gosub get_translate_object
+        if status then
+            err_msg$="Cannot open Barista file adm_modules.dat. Status="+str(status)
+            err_no$="12"
+        else
+            if Translate!=null() then
+                err_msg$="Cannot create BBTranslator object Translate!"
+                err_no$="999"
+            endif
+        endif
+        if err_msg$<>"" then
+            call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),"",err_no$,err_msg$,err_act$
+            print(log_dev)"***** Error: "+err_msg$+" *****"
+            print(log_dev)
+            print(log_dev)"Post-upgrade FTI rebuild finished UNSUCCESSFULLY: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+            close(log_dev)
+            goto done
+        endif
+    endif
+    meter_title$=Translate!.getTranslation("AON_FULL_TEXT_INDEX_START","Recreating Full Text Indexes")
+    meter_total_recs=0
+    meter_proc_recs=0
+    meter_text$=""
+    meter_action$="WIN-LST-OK"
+    gosub disp_meter
+
+rem --- Call the FTI rebuild
+
+    meter_text$=Translate!.getTranslation("AON_FULL_TEXT_INDEX_START","Recreating Full Text Indexes"+".")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+
+    rd_run_arg$="bbj "+stbl("+DIR_SYP")+"bam_dd_export_FTI.bbj - -auto -u"+stbl("+USER_ID")
+    rd_scall_result=scall(rd_run_arg$,err=*next)
+    meter_text$=Translate!.getTranslation("AON_FULL_TEXT_INDEX","Full Text Indexes (re)created.")
+    meter_proc_recs=meter_proc_recs+1
+    meter_action$="MTR-LST"
+    gosub disp_meter
+    print(log_dev)meter_text$
+
+rem --- Complete and close log file
+
+    print(log_dev)
+    print(log_dev)"Post-upgrade FTI rebuild finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    close(log_dev)
+
+rem --- Stop progress meter
+    meter_text$=""
+    meter_proc_recs=meter_total_recs
+    meter_action$="LST-END"
+    gosub disp_meter
+
+done:rem --- Update AutoLaunch Status
+     rem --- NOTE: not doing admin_backup (via bax_xmlrec_exp.bbj) here, since the change from 'C' to 'N' back to 'C' is fleeting - open happens at the end of post-upgrade conversions.
+	
+	num_files=1
+	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+	open_tables$[1]="ADS_AUTOLAUNCH", open_opts$[1]="OTA"
+
+	gosub open_tables
+
+    ads_autolaunch_dev=num(open_chans$[1]);dim ads_autolaunch$:open_tpls$[1]
+
+    extractrecord(ads_autolaunch_dev,key="INIT_DATA9")ads_autolaunch$; rem Advisory Locking
+    ads_autolaunch.process_status$="C"
+    ads_autolaunch.trans_date$=date(0:"%Yl%Mz%Dz")
+    ads_autolaunch.trans_time$=date(0:"%Hz%mz%sz")
+    ads_autolaunch$ = field(ads_autolaunch$)
+
+    rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
+    dev_mode$=""
+    call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
+
+    rem --- Update admin xml file
+    if rdMountVect!<>null() and rdMountVect!.size()>0
+        exp_action$="C"
+        exp_add_only$=""
+        call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_AUTOLAUNCH",ads_autolaunch$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+    endif
+
+    writerecord(ads_autolaunch_dev)ads_autolaunch$
+
+	goto std_exit
+
+open_log: rem --- Open log file
+          
+    rem --- create logs directory at location
+    logDir$=FileObject.fixPath(location$ + "/logs", "/")
+    FileObject.makeDirs(new File(logDir$))
+
+    rem --- create and open log file
+    log$=logDir$+"/rebuildFTI_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".log"
+    erase log$,err=*next
+    string log$
+    log_dev=unt
+    open(log_dev)log$
+            
+    rem --- write log header info
+    print(log_dev)"Post-upgrade FTI rebuild started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+    print(log_dev)
+
+    return
+
+open_tables:rem -----<Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>""
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+            msg_tokens$[1]=open_status$
+        gosub disp_message
+        goto std_exit
+    endif
+
+    return
+
+get_translate_object: rem --- Get BBTranslator object Translate!
+
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="ADM_MODULES", open_opts$[1]="OTA"
+    gosub open_tables
+    if status then return
+
+    adm_modules=num(open_chans$[1]);dim adm_modules$:open_tpls$[1]
+    readrecord(adm_modules,key=pad("01007514AD",11),dom=*next)adm_modules$
+    if adm_modules.locale_resource$="" or adm_modules.locale_path$=""
+        readrecord(adm_modules,key=pad(sysinfo.lic_feature$,11),dom=*next)adm_modules$
+    endif
+    if adm_modules.locale_resource$<>"" and adm_modules.locale_path$<>""
+        locale_path$=adm_modules.locale_path$
+        rdTransSpaceKey$=adm_modules.locale_resource$+"_"+stbl("+USER_LOCALE")+"_BBTranslator"
+        Translate!=cast(BBTranslator,BBjAPI().getGroupNamespace().getValue(rdTransSpaceKey$,err=*next))
+        if Translate!=null()
+            Translate!=BBTranslator.getInstance(adm_modules.locale_resource$,stbl("+USER_LOCALE"),null(),locale_path$)
+            BBjAPI().getGroupNamespace().setValue(rdTransSpaceKey$,Translate!)
+        endif
+    endif
+
+    return
+
+disp_meter: rem --- Display Progress Meter
+
+    rem --- sysGUI! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjSysGui sysGUI!
+
+    rem --- rdForm! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow rdForm!
+
+    rem --- meterWin! is not declared in bam_prog_bar.bbj, so can't declare it here
+    rem declare BBjTopLevelWindow meterWin!
+
+    call stbl("+DIR_SYP")+"bam_prog_bar.bbj",
+:       sysGUI!,
+:       rdForm!,
+:       meterWin!,
+:       meter_title$,
+:       meter_total_recs,
+:       meter_proc_recs,
+:       meter_text$,
+:       meter_action$
+
+    return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (11Oct2017)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+
+rem #endinclude std_error.src
+
+rem #include std_end.src
+
+std_exit: rem --- Standard program end (01Mar2006)
+
+    run stbl("+DIR_SYP",err=*next)+"bas_process_end.bbj",err=*next
+    release
+
+rem #endinclude std_end.src
+
+    end

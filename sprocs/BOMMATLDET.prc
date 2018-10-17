@@ -131,7 +131,9 @@ rem --- Build result set
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))
         if read_tpl.line_type$="M"
             Rem --- Send data row for Memos
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
+            memo_1024$=read_tpl.memo_1024$
+            if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+            data!.setFieldValue("EXT_COMMENTS",memo_1024$)
         else
             rem --- Send data row for non-Memos
             net_qty=0

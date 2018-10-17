@@ -146,7 +146,7 @@ rem --- Build SQL statement
 	sql_prep$=sql_prep$+"     , m.scrap_factor, m.divisor, m.alt_factor "+$0a$
 	sql_prep$=sql_prep$+"     , m.qty_required, m.units, m.unit_cost "+$0a$
 	sql_prep$=sql_prep$+"     , m.total_units, m.total_cost, m.line_type "+$0a$
-	sql_prep$=sql_prep$+"     , m.ext_comments, o.wo_op_ref "+$0a$
+	sql_prep$=sql_prep$+"     , m.memo_1024, o.wo_op_ref "+$0a$
 	sql_prep$=sql_prep$+"  FROM sfe_womatl m"+$0a$
 	sql_prep$=sql_prep$+"LEFT JOIN sfe_wooprtn o "+$0a$	
 	sql_prep$=sql_prep$+"       ON m.firm_id=o.firm_id "+$0a$	
@@ -181,7 +181,9 @@ rem --- Trip Read
 		
 		if read_tpl.line_type$="M"
 			rem --- Send data row for Memos
-			data!.setFieldValue("COMMENT",read_tpl.ext_comments$); rem Note: Memos are allowed more print space
+            memo_1024$=read_tpl.memo_1024$
+            if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
+			data!.setFieldValue("COMMENT",memo_1024$); rem Note: Memos are allowed more print space
 			rs!.insert(data!)
 		else
 			rem --- Send data row for non-Memos

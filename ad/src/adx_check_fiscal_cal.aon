@@ -35,7 +35,7 @@ rem --- Initializations
     dir_syp$=stbl("+DIR_SYP")
     
     rem --- Make sure needed STBLs are set
-    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,rd_table_chans$[all]
+    call stbl("+DIR_SYP")+"bas_process_beg.bbj",user_id$,table_chans$[all]
     sysinfo_template$=stbl("+SYSINFO_TPL",err=*next)
     dim sysinfo$:sysinfo_template$
     sysinfo$=stbl("+SYSINFO",err=*next)
@@ -51,17 +51,37 @@ rem --- Need to remove the old FISCAL_CAL record that might still be in ads_auto
 
     wk$=fattr(ads_autolaunch$,"PROCESS_ID")
     process_id$=pad("FISCAL_CAL",dec(wk$(10,2)))
-        
+
     extractrecord(ads_autolaunch_dev,key=process_id$,dom=*next)ads_autolaunch$
     if ads_autolaunch.process_id$=process_id$ then
+
+        rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
+        dev_mode$=""
+        call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
+
         if ads_autolaunch.process_status$="C" then
             rem --- Remove Completed old FISCAL_CAL task
             rem --- Can't remove in FISCAL_CAL task because causes error 11 in Barista's bax_auto_launch.bbj
             remove(ads_autolaunch_dev,key=process_id$,dom=*next)
+
+            rem --- Update admin xml file
+            if rdMountVect!<>null() and rdMountVect!.size()>0
+                exp_action$="D"
+                exp_add_only$=""
+                call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_AUTOLAUNCH",ads_autolaunch$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+            endif
         else
             rem --- Set old FISCAL_CAL task as Completed, then exit this task
             ads_autolaunch.process_status$="C"
             ads_autolaunch$ = field(ads_autolaunch$)
+
+            rem --- Update admin xml file
+            if rdMountVect!<>null() and rdMountVect!.size()>0
+                exp_action$="C"
+                exp_add_only$=""
+                call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_AUTOLAUNCH",ads_autolaunch$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+            endif
+
             writerecord(ads_autolaunch_dev)ads_autolaunch$
             goto done
         endif
@@ -129,7 +149,7 @@ open_tables:rem -----<Open Tables
 :       open_opts$[all],
 :       open_chans$[all],
 :       open_tpls$[all],
-:       rd_table_chans$[all],
+:       table_chans$[all],
 :       open_batch,
 :       open_status$
 
@@ -151,7 +171,7 @@ disp_message: rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -169,9 +189,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

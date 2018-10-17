@@ -686,6 +686,12 @@ rem ==========================================================================
 	read record(poc_linecode_dev,key=firm_id$+po_line_code$,dom=*next)poc_linecode$
 	line_type$=poc_linecode.line_type$
 
+	rem --- Dropship PO line codes are no longer supported. Now the entire PO must be dropshipped.
+	if poc_linecode.dropship$="Y" then
+		msg_id$="PO_DROPSHIP_LINE_CD "
+		gosub disp_message
+	endif
+
 rem --- Manually enable/disable fields based on Line Type
 
 rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)

@@ -670,43 +670,48 @@ able_backup_sync_dir: rem --- Enable/disable input field for sync backup directo
 	open(testChan, err=*next)bar_dir$ + "/admin_backup"; backup_found=1
 	close(testChan)
 
-	rem --- Check version of old Barista (will automatically do Create Sync File Backup if at least version 12)
+	rem --- Check version of old Barista (will automatically do Create Sync File Backup if pre-version 18)
 	rem --- Locate the database for old Barista
 	dbname$ = ""
-	oldBarDir$=bar_dir$
-	if pos(":"=oldBarDir$)=0 then oldBarDir$=dsk("")+oldBarDir$
-	sourceChan=unt
-	open(sourceChan,isz=-1)oldBarDir$+"/sys/config/enu/barista.cfg"
-	while 1
-		read(sourceChan,end=*break)record$
-		rem --- get database from SET +DBNAME line
-		if pos("SET +DBNAME="=record$)=1 then
-			dbname$=record$(pos("="=record$)+1)
-			break
-		endif
-	wend
-	close(sourceChan)
+	if backup_found then
+		oldBarDir$=bar_dir$
+		if pos(":"=oldBarDir$)=0 then oldBarDir$=dsk("")+oldBarDir$
+		sourceChan=unt
+		open(sourceChan,isz=-1)oldBarDir$+"/sys/config/enu/barista.cfg"
+		while 1
+			read(sourceChan,end=*break)record$
+			rem --- get database from SET +DBNAME line
+			if pos("SET +DBNAME="=record$)=1 then
+				dbname$=record$(pos("="=record$)+1)
+				break
+			endif
+		wend
+		close(sourceChan)
+	endif
 
 	rem --- Query old ADM_MODULES for Barista Administration version
-	sql_chan=sqlunt
-	sqlopen(sql_chan)dbname$
-	sql_prep$="SELECT version_id FROM adm_modules where asc_comp_id='01007514' and asc_prod_id='ADB'"
-	sqlprep(sql_chan)sql_prep$
-	dim select_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
-	select_tpl$=sqlfetch(sql_chan,err=*break) 
-	adb_version$=cvs(select_tpl.version_id$,3)
-	sqlclose(sql_chan)
+	adb_version$=""
+		if dbname$<>"" then
+		sql_chan=sqlunt
+		sqlopen(sql_chan)dbname$
+		sql_prep$="SELECT version_id FROM adm_modules where asc_comp_id='01007514' and asc_prod_id='ADB'"
+		sqlprep(sql_chan)sql_prep$
+		dim select_tpl$:sqltmpl(sql_chan)
+		sqlexec(sql_chan)
+		select_tpl$=sqlfetch(sql_chan,err=*break) 
+		adb_version$=cvs(select_tpl.version_id$,3)
+		sqlclose(sql_chan)
+	endif
 
-	rem --- Automatically do Create Sync File Backup if old Barista is at least version 12
-	if num(adb_version$)>=12 then
+	rem --- Automatically do Create Sync File Backup if old Barista is pre-version 18
+	if num(adb_version$)<18 then
 		do_sync_backup=1
 	else
 		do_sync_backup=0
 	endif
 	callpoint!.setDevObject("do_sync_backup",do_sync_backup)
 
-	if backup_found or do_sync_backup then
+	if backup_found then
 		rem --- Initialize and disable sync backup directory
 		callpoint!.setColumnEnabled("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR",0)
 		callpoint!.setColumnData("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR",bar_dir$ + "/admin_backup")
@@ -778,16 +783,19 @@ rem ==========================================================================
 	bar_dir$=old_bar_loc$+"/barista"
 	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
 	sourceChan=unt
-	open(sourceChan,isz=-1)bar_dir$+"/sys/config/"+cvs(stbl("+LANGUAGE_ORIGIN"),8)+"/barista.cfg"
-	while 1
-		read(sourceChan,end=*break)record$
-		rem --- get database from SET +DBNAME line
-		if pos("SET +DBNAME="=record$)=1 then
-			dbname$=record$(pos("="=record$)+1)
-		break
-		endif
+	cfg_found=0
+	open(sourceChan,isz=-1,err=*next)bar_dir$+"/sys/config/"+cvs(stbl("+LANGUAGE_ORIGIN"),8)+"/barista.cfg"; cfg_found=1
+	if cfg_found then
+		while 1
+			read(sourceChan,end=*break)record$
+			rem --- get database from SET +DBNAME line
+			if pos("SET +DBNAME="=record$)=1 then
+				dbname$=record$(pos("="=record$)+1)
+			break
+			endif
 		wend
-	close(sourceChan)
+		close(sourceChan)
+	endif
 
 	rem --- Build HashMap of all parent and child applications. The HashMap is keyed by the parent,
 	rem --- and holds a Vector of all the children for that parent.
@@ -797,35 +805,37 @@ rem ==========================================================================
 	rootVect! = new Vector()
 	declare Vector childVect!
 	declare HashMap propMap!
-	sql_chan=sqlunt
-	sqlopen(sql_chan)dbname$
-	sql_prep$="SELECT mount_sys_id, mount_dir, parent_sys_id FROM ddm_systems order by mount_seq_no"
-	sqlprep(sql_chan)sql_prep$
-	dim select_tpl$:sqltmpl(sql_chan)
-	sqlexec(sql_chan)
-	while 1
-		select_tpl$=sqlfetch(sql_chan,err=*break) 
-		child$=cvs(select_tpl.mount_sys_id$,3)
-		child_dir$=cvs(select_tpl.mount_dir$,3)
-		parent$=cvs(select_tpl.parent_sys_id$,3)
-		propMap! = new HashMap()
-		propMap!.put("mount_sys_id",child$)
-		propMap!.put("mount_dir",child_dir$)
-		propMap!.put("parent_sys_id",parent$)
-		if parent$="" then
-			rootVect!.add(propMap!)
-		else
-			if appMap!.containsKey(parent$) then
-				childVect! = cast(Vector, appMap!.get(parent$))
-				childVect!.add(propMap!)
+	if dbname$<>"" then
+		sql_chan=sqlunt
+		sqlopen(sql_chan)dbname$
+		sql_prep$="SELECT mount_sys_id, mount_dir, parent_sys_id FROM ddm_systems order by mount_seq_no"
+		sqlprep(sql_chan)sql_prep$
+		dim select_tpl$:sqltmpl(sql_chan)
+		sqlexec(sql_chan)
+		while 1
+			select_tpl$=sqlfetch(sql_chan,err=*break) 
+			child$=cvs(select_tpl.mount_sys_id$,3)
+			child_dir$=cvs(select_tpl.mount_dir$,3)
+			parent$=cvs(select_tpl.parent_sys_id$,3)
+			propMap! = new HashMap()
+			propMap!.put("mount_sys_id",child$)
+			propMap!.put("mount_dir",child_dir$)
+			propMap!.put("parent_sys_id",parent$)
+			if parent$="" then
+				rootVect!.add(propMap!)
 			else
-				childVect! = new Vector()
-				childVect!.add(propMap!)
-				appMap!.put(parent$, childVect!)
+				if appMap!.containsKey(parent$) then
+					childVect! = cast(Vector, appMap!.get(parent$))
+					childVect!.add(propMap!)
+				else
+					childVect! = new Vector()
+					childVect!.add(propMap!)
+					appMap!.put(parent$, childVect!)
+				endif
 			endif
-		endif
-	wend
-	sqlclose(sql_chan)
+		wend
+		sqlclose(sql_chan)
+	endif
 
 	rem --- Build rows for app grid
 	appRowVect!=SysGUI!.makeVector()

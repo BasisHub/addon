@@ -114,9 +114,11 @@ rem --- Build result set
         data!.setFieldValue("LINE_TYPE",read_tpl.line_type$)
         data!.setFieldValue("EFFECT_DATE",cvs(read_tpl.effect_date$,2))
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))
+        memo_1024$=read_tpl.memo_1024$
+        if len(memo_1024$) and memo_1024$(len(memo_1024$))=$0A$ then memo_1024$=memo_1024$(1,len(memo_1024$)-1); rem --- trim trailing newline
         if read_tpl.line_type$="M"
             Rem --- Send data row for Memos
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
+            data!.setFieldValue("EXT_COMMENTS",memo_1024$)
         else
             rem --- Send data row for non-Memos
             net_qty=0
@@ -130,7 +132,7 @@ rem --- Build result set
             data!.setFieldValue("QTY_REQUIRED",str(read_tpl.qty_required:iv_units_mask$))
             data!.setFieldValue("ALT_FACTOR",str(read_tpl.alt_factor:bm_mFactor_mask$))
             data!.setFieldValue("UNIT_COST",str(read_tpl.unit_cost:iv_cost_mask$))
-            data!.setFieldValue("EXT_COMMENTS",read_tpl.memo_1024$)
+            data!.setFieldValue("EXT_COMMENTS",memo_1024$)
             data!.setFieldValue("LEAD_TIME",str(read_tpl.lead_time))
             data!.setFieldValue("UNIT_MEASURE",read_tpl.unit_measure$)
             data!.setFieldValue("OP_INT_SEQ_REF",read_tpl.op_int_seq_ref$)

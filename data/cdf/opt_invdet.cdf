@@ -1,3 +1,17 @@
+[[OPT_INVDET.BGDR]]
+rem --- Initialize UM_SOLD related <DISPLAY> fields
+	conv_factor=num(callpoint!.getColumnData("OPT_INVDET.CONV_FACTOR"))
+	if conv_factor=0 then conv_factor=1
+	qty_ordered=num(callpoint!.getColumnData("OPT_INVDET.QTY_ORDERED"))/conv_factor
+	callpoint!.setColumnData("<<DISPLAY>>.QTY_ORDERED_DSP",str(qty_ordered))
+	unit_price=num(callpoint!.getColumnData("OPT_INVDET.UNIT_PRICE"))*conv_factor
+	callpoint!.setColumnData("<<DISPLAY>>.UNIT_PRICE_DSP",str(unit_price))
+	qty_backord=num(callpoint!.getColumnData("OPT_INVDET.QTY_BACKORD"))/conv_factor
+	callpoint!.setColumnData("<<DISPLAY>>.QTY_BACKORD_DSP",str(qty_backord))
+	qty_shipped=num(callpoint!.getColumnData("OPT_INVDET.QTY_SHIPPED"))/conv_factor
+	callpoint!.setColumnData("<<DISPLAY>>.QTY_SHIPPED_DSP",str(qty_shipped))
+	std_list_prc=num(callpoint!.getColumnData("OPT_INVDET.STD_LIST_PRC"))*conv_factor
+	callpoint!.setColumnData("OPT_INVDET.STD_LIST_PRC",str(std_list_prc))
 [[OPT_INVDET.AGCL]]
 rem --- Set column size for memo_1024 field very small so it doesn't take up room, but still available for hover-over of memo contents
 
@@ -44,7 +58,7 @@ able_lot_button: rem --- Enable/disable Lot/Serial button
 rem ==========================================================================
 
 	item_id$   = callpoint!.getColumnData("OPT_INVDET.ITEM_ID")
-	qty_ord = num(callpoint!.getColumnData("OPT_INVDET.QTY_ORDERED"))
+	qty_ord = num(callpoint!.getColumnData("<<DISPLAY>>.QTY_ORDERED_DSP"))
 	gosub lot_ser_check
 
 	if lotted$ = "Y" and qty_ord <> 0 then

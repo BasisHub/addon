@@ -186,6 +186,7 @@ rem --- Detail Headings
         dtlhdg$[3]="WH"
         dtlhdg$[4]=Translate!.getTranslation("AON_ORDERED")
         dtlhdg$[5]=Translate!.getTranslation("AON_COMMITTED")
+        dtlhdg$[6]="UM"
         dtlhdg$[7]=Translate!.getTranslation("AON_SHIP")
         dtlhdg$[8]=Translate!.getTranslation("AON_PRICE")
         dtlhdg$[9]=Translate!.getTranslation("AON_EXTENSION")
@@ -311,11 +312,11 @@ make_dtl_line: rem --- Store Detail Line
     else
         committed$=Translate!.getTranslation("AON_YES")
         if dtlrec.commit_flag$<>"Y" committed$=Translate!.getTranslation("AON_NO")
-        OutVect!.addItem(str(dtlrec.qty_ordered:m2$))
+        OutVect!.addItem(str(dtlrec.qty_ordered/dtlrec.conv_factor:m2$))
         OutVect!.addItem(committed$)
-        OutVect!.addItem("")
-        OutVect!.addItem(str(dtlrec.qty_shipped:m2$))
-        OutVect!.addItem(str(dtlrec.unit_price:m2$))
+        OutVect!.addItem(dtlrec.um_sold$)
+        OutVect!.addItem(str(dtlrec.qty_shipped/dtlrec.conv_factor:m2$))
+        OutVect!.addItem(str(dtlrec.unit_price*dtlrec.conv_factor:m2$))
         OutVect!.addItem(str(dtlrec.ext_price:m1$))
     endif
     
@@ -516,7 +517,7 @@ rem #endinclude std_functions.src
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -534,9 +535,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 

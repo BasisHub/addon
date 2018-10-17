@@ -1330,6 +1330,9 @@ rem --- Create Inventory Availability window
 	mwin!.addStaticText(15005,415,25,75,15,Translate!.getTranslation("AON_WAREHOUSE:"),$$)
 	mwin!.addStaticText(15006,415,40,75,15,Translate!.getTranslation("AON_TYPE:"),$$)
 
+	inv_avail_title!=mwin!.addStaticText(15010,125,5,100,15,"",$4010$)
+	callpoint!.setDevObject("inv_avail_title",inv_avail_title!)
+
 rem --- Save controls in the global userObj! (vector)
 
 	userObj! = SysGUI!.makeVector()
@@ -1955,7 +1958,6 @@ rem --- If cash customer, get correct customer number
 		callpoint!.setStatus("REFRESH")
 	endif
 [[OPE_ORDHDR.AWRI]]
-
 rem --- Write/Remove manual ship to file
 
 	cust_id$    = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
@@ -2837,6 +2839,9 @@ rem ==========================================================================
 	userObj!.getItem(user_tpl.manual_price).setText("")
 	userObj!.getItem(user_tpl.alt_super).setText("")
 
+	inv_avail_title!=callpoint!.getDevObject("inv_avail_title")
+	inv_avail_title!.setVisible(0)
+
 	return
 
 rem ==========================================================================
@@ -3073,6 +3078,9 @@ rem --- get IV Params
 	dim ivs01a$:open_tpls$[29]
 	read record (num(open_chans$[29]), key=firm_id$+"IV00") ivs01a$
 
+	callpoint!.setDevObject("precision",ivs01a.precision$)
+	callpoint!.setDevObject("sell_purch_um",ivs01a.sell_purch_um$)
+
 rem --- see if blank warehouse exists
 
 	blank_whse$="N"
@@ -3280,7 +3288,6 @@ rem --- Save the indices of the controls for the Avail Window, setup in AFMC
 	callpoint!.setDevObject("total_sales_disp","14")
 	callpoint!.setDevObject("total_cost","15")
 	callpoint!.setDevObject("tax_amt_disp","16")
-	callpoint!.setDevObject("precision",ivs01a.precision$)
 	callpoint!.setDevObject("disc_amt_disp","17")
 	callpoint!.setDevObject("backord_disp","18")
 	callpoint!.setDevObject("credit_disp","19")
@@ -3339,3 +3346,7 @@ rem --- Set object for which customer number is being shown and that details hav
 rem --- setup message_tpl$
 
 	gosub init_msgs
+
+rem --- Get next available control ID
+	callpoint!.setDevObject("nxt_ctlID",num(stbl("+CUSTOM_CTL",err=std_error)))
+

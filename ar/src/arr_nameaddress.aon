@@ -51,7 +51,7 @@ rem --- Assign form input values to local variables
     endcust$=option!.getOptionData("CUSTOMER_ID_2")
     begalt$=option!.getOptionData("ALT_SEQUENCE_1")
     endalt$=option!.getOptionData("ALT_SEQUENCE_2")
-    rem "CUSTOMER INACTIVE FEATURE"
+    col_format$=Option!.getOptionData("COL_FORMAT")
     inactive$=Option!.getOptionData("CUST_INACTIVE")
 
 rem --- Retrieve parameter records
@@ -102,15 +102,28 @@ rem --- Initializations
 
 rem --- Document columns
 
-    columns=6
+    if col_format$="Y" then
+        columns=9
+        col_start=6
+    else
+        columns=6
+        col_start=3
+    endif
     dim columns$[columns,3]
     columns$[0,0]=Translate!.getTranslation("AON_CUST_NO"),columns$[0,1]="C",columns$[0,2]="8"
     columns$[1,0]=Translate!.getTranslation("AON_NAME"),columns$[1,1]="C",columns$[1,2]="30"
-    columns$[2,0]=Translate!.getTranslation("AON_ADDRESS"),columns$[2,1]="C",columns$[2,2]="24"
-    columns$[3,0]=Translate!.getTranslation("AON_CITY"),columns$[3,1]="C",columns$[3,2]="15"
-    columns$[4,0]=Translate!.getTranslation("AON_STATE"),columns$[4,1]="C",columns$[4,2]="5"
-    columns$[5,0]=Translate!.getTranslation("AON_POSTAL"),columns$[5,1]="C",columns$[5,2]="8"
-    columns$[6,0]=Translate!.getTranslation("AON_PHONE"),columns$[6,1]="C",columns$[6,2]="10"
+    if col_format$="Y" then
+        columns$[2,0]=Translate!.getTranslation("AON_ADDRESS_1"),columns$[2,1]="C",columns$[2,2]="24"
+        columns$[3,0]=Translate!.getTranslation("AON_ADDRESS_2"),columns$[3,1]="C",columns$[3,2]="24"
+        columns$[4,0]=Translate!.getTranslation("AON_ADDRESS_3"),columns$[4,1]="C",columns$[4,2]="24"
+        columns$[5,0]=Translate!.getTranslation("AON_ADDRESS_4"),columns$[5,1]="C",columns$[5,2]="24"
+    else
+        columns$[2,0]=Translate!.getTranslation("AON_ADDRESS"),columns$[2,1]="C",columns$[2,2]="24"
+    endif
+    columns$[col_start,0]=Translate!.getTranslation("AON_CITY"),columns$[col_start,1]="C",columns$[col_start,2]="15"
+    columns$[col_start+1,0]=Translate!.getTranslation("AON_STATE"),columns$[col_start+1,1]="C",columns$[col_start+1,2]="5"
+    columns$[col_start+2,0]=Translate!.getTranslation("AON_POSTAL"),columns$[col_start+2,1]="C",columns$[col_start+2,2]="8"
+    columns$[col_start+3,0]=Translate!.getTranslation("AON_PHONE"),columns$[col_start+3,1]="C",columns$[col_start+3,2]="10"
 
     call stbl("+DIR_PGM",err=*next)+"adc_docout_adj.aon",columns$[all]
 
@@ -156,10 +169,17 @@ rem --- Read next Customer Master (arm-01) record
 
           OutVect!.addItem(fnmask$(arm01a.customer_id$(1,customer_size),m0$))
           OutVect!.addItem(arm01a.customer_name$)
-          if addrVect!.size()>0 then
-              OutVect!.addItem(addrVect!.getItem(0))
+          if col_format$="Y" then
+              OutVect!.addItem(arm01a.addr_line_1$)
+              OutVect!.addItem(arm01a.addr_line_2$)
+              OutVect!.addItem(arm01a.addr_line_3$)
+              OutVect!.addItem(arm01a.addr_line_4$)
           else
-              OutVect!.addItem("")
+              if addrVect!.size()>0 then
+                  OutVect!.addItem(addrVect!.getItem(0))
+              else
+                  OutVect!.addItem("")
+              endif
           endif
           OutVect!.addItem(arm01a.city$)
           OutVect!.addItem(arm01a.state_code$)
@@ -172,7 +192,7 @@ rem --- Read next Customer Master (arm-01) record
           phone$=str(phone$:phone_mask$,err=*next)
           OutVect!.addItem(phone$)
         
-          if addrVect!.size()>1 then
+          if col_format$<>"Y" and addrVect!.size()>1 then
               for i=1 to addrVect!.size()-1
                   xwk=fnblank(2)
                   OutVect!.addItem(addrVect!.getItem(i))
@@ -240,7 +260,7 @@ disp_message:rem --- Display Message Dialog
 
 rem #include std_error.src
 
-std_error: rem --- Standard error handler (18Nov2014)
+std_error: rem --- Standard error handler (11Oct2017)
 
     if tcb(19)>0
         rem --- Escape handler
@@ -258,9 +278,14 @@ std_error: rem --- Standard error handler (18Nov2014)
         lock_chan=tcb(12)  
     endif
 
-    rd_err_text$=""
+    rd_err_text$="",err_num=err
     if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
-    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
     if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
     if pos("RETRY"=rd_err_act$) retry
     if pgm(-1)<>pgm(-2) status=999; exit 
