@@ -8,7 +8,7 @@ files$[3]="APM_VENDMAST",options$[3]="OTA"
 files$[4]="APM_VENDHIST",options$[4]="OTA"
 files$[5]="APS_PARAMS",options$[5]="OTA"
 files$[6]="GLS_PARAMS",options$[6]="OTA"
-files$[7]="APC_TYPECODE",options$[6]="OTA"
+files$[7]="APC_TYPECODE",options$[7]="OTA"
 files$[8]="GLS_CALENDAR",options$[8]="OTA"
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,

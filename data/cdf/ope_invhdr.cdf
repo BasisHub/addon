@@ -914,19 +914,22 @@ rem --- Calculate taxes and write it back
 
 	discount_amt = num(callpoint!.getColumnData("OPE_INVHDR.DISCOUNT_AMT"))
 	freight_amt = num(callpoint!.getColumnData("OPE_INVHDR.FREIGHT_AMT"))
+	total_sales = num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
 	taxable_sales = ordHelp!.getTaxableSales()
-	gosub get_disk_rec
-	taxAndTaxableVect! = ordHelp!.calculateTax(discount_amt, freight_amt,
+	if discount_amt<>0 or freight_amt<>0 or total_sales<>0 or taxable_sales<>0 then
+		gosub get_disk_rec
+		taxAndTaxableVect! = ordHelp!.calculateTax(discount_amt, freight_amt,
 :												taxable_sales,
 :												num(callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES")))
 
-	ordhdr_rec.tax_amount = taxAndTaxableVect!.getItem(0)
-	ordhdr_rec.taxable_amt = taxAndTaxableVect!.getItem(1)
-	ordhdr_rec$ = field(ordhdr_rec$)
-	write record (ordhdr_dev) ordhdr_rec$
-	ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
-	extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
-	callpoint!.setStatus("SETORIG")
+		ordhdr_rec.tax_amount = taxAndTaxableVect!.getItem(0)
+		ordhdr_rec.taxable_amt = taxAndTaxableVect!.getItem(1)
+		ordhdr_rec$ = field(ordhdr_rec$)
+		write record (ordhdr_dev) ordhdr_rec$
+		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
+		extractrecord(ordhdr_dev,key=ordhdr_key$)ordhdr_rec$; rem Advisory Locking
+		callpoint!.setStatus("SETORIG")
+	endif
 
 rem --- Does the total of lot/serial# match the qty shipped for each detail line?
 
@@ -1152,12 +1155,15 @@ rem --- Enable / Disable buttons
 		endif
 		callpoint!.setOptionEnabled("PRNT",0)
 		callpoint!.setOptionEnabled("UINV",0)
+		callpoint!.setOptionEnabled("SHPT",0)
 	else
 		if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2) = "" then
 			callpoint!.setOptionEnabled("PRNT",0)
+			callpoint!.setOptionEnabled("SHPT",0)
 			callpoint!.setOptionEnabled("CASH",0)
 		else
 			callpoint!.setOptionEnabled("PRNT",1)
+			callpoint!.setOptionEnabled("SHPT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
 			if user_tpl.credit_installed$="Y"
 				callpoint!.setOptionEnabled("CRCH",1)
@@ -1219,6 +1225,7 @@ rem --- Disable buttons
 	callpoint!.setOptionEnabled("PRNT",0)
 	callpoint!.setOptionEnabled("CASH",0)
 	callpoint!.setOptionEnabled("TTLS",0)
+	callpoint!.setOptionEnabled("SHPT",1)
 
 rem --- Capture current totals so we can tell later if they were changed in the grid
 
@@ -1723,6 +1730,8 @@ rem --- Do we need to create a new order number?
 			break; rem --- exit callpoint
 		else
 			callpoint!.setUserInput(order_no$)
+			orderNo!=callpoint!.getControl("OPE_INVHDR.ORDER_NO")
+			orderNo!.setText(order_no$)
 			new_seq$ = "Y"
 		endif
 	endif
@@ -3086,9 +3095,9 @@ rem ==========================================================================
 	ordhdr_rec$ = util.copyFields(ordhdr_tpl$, callpoint!)
 	ordhdr_rec$ = field(ordhdr_rec$)
 
-	if !found then 
+	if !found then
 		write record (ordhdr_dev,  dom=*endif) ordhdr_rec$
-		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.order_no$
+		ordhdr_key$=ordhdr_rec.firm_id$+ordhdr_rec.trans_status$+ordhdr_rec.ar_type$+ordhdr_rec.customer_id$+ordhdr_rec.order_no$+ordhdr_rec.ar_inv_no$
 		extract record (ordhdr_dev, key=ordhdr_key$) ordhdr_rec$; rem Advisory Locking
 		callpoint!.setStatus("SETORIG")
 	endif

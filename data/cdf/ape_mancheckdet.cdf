@@ -108,8 +108,6 @@ rem --- Disable buttons when going to header
 	callpoint!.setOptionEnabled("VIMG",0)
 	callpoint!.setOptionEnabled("LIMG",0)
 [[APE_MANCHECKDET.AP_INV_NO.BINP]]
-print "Det: AP_INV_NO.AVAL"; rem debug
-
 rem --- Should Open Invoice button be enabled?
 
 	trans_type$ = callpoint!.getHeaderColumnData("APE_MANCHECKHDR.TRANS_TYPE")
@@ -371,7 +369,8 @@ endif
 callpoint!.setStatus("MODIFIED-REFRESH")
 
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
-print "Det: AP_INV_NO.AVAL"; rem debug
+rem --- Skip AVAL if AP_INV_NO wasn't changed to avoid re-initializing INVOICE_AMT, etc.
+	if callpoint!.getUserInput()=callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO") then break
 
 rem --- Check to make sure Invoice isn't already in the grid
 

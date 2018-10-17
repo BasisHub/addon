@@ -1,4 +1,7 @@
 [[GLE_JRNLDET.AREC]]
+rem --- Skip launching Comments dialog for new rows
+	callpoint!.setDevObject("skip_memo","Y")
+
 rem --- Need to disable units column in grid if gls01a.units_flag$ isn't "Y"
 	if callpoint!.getDevObject("units_flag")="Y" then
 		callpoint!.setColumnEnabled(-1,"GLE_JRNLDET.UNITS",1)
@@ -30,9 +33,15 @@ rem --- Launch Comments dialog
 	gosub comment_entry
 	callpoint!.setStatus("ABORT")
 [[GLE_JRNLDET.GL_POST_MEMO.BINP]]
-rem --- Launch Comments dialog
-	gosub comment_entry
-	callpoint!.setStatus("ABORT")
+rem --- Skip launching Comments dialog the first time
+	if callpoint!.getDevObject("skip_memo")="Y" then
+		callpoint!.setFocus(callpoint!.getValidationRow(),"GLE_JRNLDET.DEBIT_AMT",1)
+	else
+		gosub comment_entry
+		callpoint!.setStatus("ABORT")
+	endif
+	rem --- Launch Comments dialog the next time
+	callpoint!.setDevObject("skip_memo","N")
 [[GLE_JRNLDET.GL_ACCOUNT.AVAL]]
 rem "GL INACTIVE FEATURE"
    glm01_dev=fnget_dev("GLM_ACCT")
@@ -62,6 +71,11 @@ rem --- Enable comments
 	else
 		callpoint!.setColumnEnabled(callpoint!.getValidationRow(),"GLE_JRNLDET.MEMO_1024",0)
 		callpoint!.setOptionEnabled("COMM",0)
+	endif
+
+rem --- Always launch Comments dialog for existing rows
+	if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())<>"Y" then
+		callpoint!.setDevObject("skip_memo","N")
 	endif
 [[GLE_JRNLDET.AGRE]]
 rem --- recal/display tots when leaving a grid row

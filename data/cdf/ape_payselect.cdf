@@ -762,7 +762,7 @@ rem --- note: if user is both a reviewer and approver, does not currently allow 
 			row = num(rowsSelected!.getItem(item))
 			vendor_id$ = gridInvoices!.getCellText(row,3)
 			ap_inv_no$ = gridInvoices!.getCellText(row,5)
-	        inv_amt  = num(gridInvoices!.getCellText(curr_row,9))
+			inv_amt  = num(gridInvoices!.getCellText(row,9))
 			vendorTotalsMap!=callpoint!.getDevObject("vendorTotalsMap")
 			thisVendor_total = cast(BBjNumber, vendorTotalsMap!.get(vendor_id$))
 			gosub get_pay_auth_invoice_status

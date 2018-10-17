@@ -1,3 +1,19 @@
+[[OPT_INVHDR.APFE]]
+rem --- Enable SHPT additional options if shipment tracking info exists
+	optShipTrack_dev = fnget_dev("OPT_SHIPTRACK")
+	ar_type$=callpoint!.getColumnData("OPT_INVHDR.AR_TYPE")
+	ship_seq_no$=callpoint!.getColumnData("OPT_INVHDR.SHIP_SEQ_NO")
+	trip_key$=firm_id$+ar_type$+cust_id$+order_no$+ship_seq_no$
+	read(optShipTrack_dev,key=trip_key$,dom=*next)
+	optShipTrack_key$=key(optShipTrack_dev,end=*next)
+	if pos(trip_key$=optShipTrack_key$)=1 then
+		callpoint!.setOptionEnabled("SHPT",1)
+	else
+		callpoint!.setOptionEnabled("SHPT",0)
+	endif
+[[OPT_INVHDR.BPFX]]
+rem --- Disable additional options for now
+	callpoint!.setOptionEnabled("SHPT",0)
 [[OPT_INVHDR.AOPT-SHPT]]
 rem --- Launch Shipment Tracking Information inquiry
 	selected_key$ = ""

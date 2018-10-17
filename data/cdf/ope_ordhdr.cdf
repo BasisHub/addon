@@ -898,6 +898,7 @@ rem --- Enable buttons as appropriate
 			callpoint!.setOptionEnabled("TTLS",0)
 			rem callpoint!.setOptionEnabled("CRAT",0); rem --- handled via opc_creditmsg.aon call below
 			callpoint!.setOptionEnabled("WOLN",0)
+			callpoint!.setOptionEnabled("SHPT",0)
 		else
 			callpoint!.setOptionEnabled("DINV",0)
 			callpoint!.setOptionEnabled("CINV",0)
@@ -905,6 +906,7 @@ rem --- Enable buttons as appropriate
 			callpoint!.setOptionEnabled("PRNT",1)
 			callpoint!.setOptionEnabled("TTLS",1)
 			rem callpoint!.setOptionEnabled("CRAT",1); rem --- handled via opc_creditmsg.aon call below
+			callpoint!.setOptionEnabled("SHPT",1)
 
 			op_create_wo$=callpoint!.getDevObject("op_create_wo")
 			if op_create_wo$="A" then
@@ -965,6 +967,7 @@ rem --- Disable header buttons
 	callpoint!.setOptionEnabled("RPRT",0)
 	callpoint!.setOptionEnabled("TTLS",0)
 	callpoint!.setOptionEnabled("WOLN",0)
+	callpoint!.setOptionEnabled("SHPT",0)
 
 rem --- Capture current totals so we can tell later if they were changed in the grid
 

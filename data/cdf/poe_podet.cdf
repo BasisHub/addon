@@ -746,11 +746,6 @@ callpoint!.setStatus("REFRESH")
 [[POE_PODET.WAREHOUSE_ID.AVAL]]
 rem --- Warehouse ID - After Validataion
 
-if callpoint!.getHeaderColumnData("POE_POHDR.WAREHOUSE_ID")<>pad(callpoint!.getUserInput(),2)
-	msg_id$="PO_WHSE_NOT_MATCH"
-	gosub disp_message
-endif
-
 gosub validate_whse_item
 [[POE_PODET.AGDR]]
 rem --- After Grid Display Row
@@ -899,7 +894,6 @@ rem ==========================================================================
 
 rem --- Manually enable/disable fields based on Line Type
 
-rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 	switch pos(poc_linecode.line_type$="SNOMV")
 		case 1; rem Standard
 			callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.NS_ITEM_ID",0)
@@ -975,6 +969,13 @@ rem	callpoint!.setStatus("ENABLE:"+poc_linecode.line_type$)
 		case default; rem everything else
 			break
 	swend
+
+	rem --- Disable warehouse for drop ship lines, or when warehouse entered in header
+	if (callpoint!.getHeaderColumnData("POE_POHDR.DROPSHIP")="Y" or poc_linecode.dropship$="Y") or
+:		cvs(callpoint!.getHeaderColumnData("POE_POHDR.WAREHOUSE_ID"),2)<>"" then
+		callpoint!.setColumnEnabled(num(callpoint!.getValidationRow()),"POE_PODET.WAREHOUSE_ID",0)
+	endif
+
 	callpoint!.setStatus("REFRESH")
 	callpoint!.setDevObject("line_type",poc_linecode.line_type$)
 

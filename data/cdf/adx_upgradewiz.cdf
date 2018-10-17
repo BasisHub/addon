@@ -794,6 +794,7 @@ rem ==========================================================================
 		wend
 		close(sourceChan)
 	endif
+	callpoint!.setDevObject("old_dbname",dbname$)
 
 	rem --- Build HashMap of all parent and child applications. The HashMap is keyed by the parent,
 	rem --- and holds a Vector of all the children for that parent.
