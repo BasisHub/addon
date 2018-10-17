@@ -445,7 +445,7 @@ update_glm_acctsummary:
 rem ---  Parse thru gridBudgets! and write back any budget recs to glm-02
 rem --- Only budget and planned budget rows are editable. Actual rows are disabled
 
-cols=vectGLSummary!.size()-2
+cols=vectGLSummary!.size()-1
 if cols>0
 	label$=gridBudgets!.getCellText(curr_row,0)
 	record_type$=label$(pos(" ("=label$,-1)+2)
