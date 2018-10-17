@@ -368,35 +368,34 @@ rem --- Read next Check Detail (apw-01) record
                 rem --- Calculate GL distribution when operating on a cash basis
                 rem --- and update the recap file
 
-                while cashbasis
-                      total=0
+                if cashbasis then
+                      total=ape04a.payment_amt + ape04a.discount_amt
                       posted=0
+                      factor=1
+                      if ape04a.orig_inv_amt<>0 then factor=total/ape04a.orig_inv_amt
                       account$=""
-                      invoice$=ape04a.firm_id$+ape04a.ap_type$+
-:                              ape04a.vendor_id$+"I"+ape04a.ap_inv_no$
+                      invoice$=ape04a.firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$
                       read (apt02_dev,key=invoice$,dom=*next)
-                      while moredetail
+                      while 1
                             k$=key(apt02_dev,end=*break)
                             if pos(invoice$=k$)<>1 break
                             read record (apt02_dev) apt02a$
-                            if total=0 total=ape04a.payment_amt+ape04a.discount_amt
-                            if total=0 continue
                             account$=apt02a.gl_account$
-                            factor=(ape04a.payment_amt/total)
-                            amount=apt02a.gl_post_amt*factor
+                            gl_post_amt=round(apt02a.gl_post_amt*factor,2)
+                            posted=posted+gl_post_amt
+                            
+                            rem --- Adjust last distribution for possible penney rounding errors
+                            apt02_key$=""
+                            apt02_key$=key(apt02_dev,end=*next)
+                            if pos(firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$=apt02_key$)<>1 then
+                                gl_post_amt=gl_post_amt+(total-posted)
+                            endif
+
+                            amount=gl_post_amt
                             units=apt02a.units*factor
                             gosub glrecap
-                            posted=posted+amount
                       wend
-                      while account$<>""
-                            if posted<>ape04a.invoice_amt
-                               amount=ape04a.payment_amt-posted
-                               gosub glrecap
-                            endif
-                            break
-                      wend
-                      break
-                wend
+                endif
 
                 rem --- Generate remaining GL distribution and update the recap file
  

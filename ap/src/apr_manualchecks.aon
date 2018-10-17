@@ -364,7 +364,6 @@ rem --- Accumulate totals
 
 rem --- Format detail line fields
 
-					payment=-apt05a.invoice_amt+apt05a.discount_amt+apt05a.retention
 					invoice$=apt05a.ap_inv_no$
 					invdate$=fndate$(apt05a.check_date$)
 					amount$=str(it[0])
@@ -492,7 +491,7 @@ rem --- Accumulate totals
 						dim it[4]
 						it[0]=ape22a.invoice_amt
 						it[1]=ape22a.discount_amt
-						it[2]=ape22a.invoice_amt-ape22a.discount_amt-ape22a.retention
+                        it[2]=ape22a.net_paid_amt
 						it[3]=ape22a.retention
 						for x=0 to 3
 							ct[x]=ct[x]+it[x]
@@ -516,18 +515,20 @@ rem --- Generate GL postings for this check/invoice
 
 rem --- Cash basis
 
-						while cashbasis
+						if cashbasis then
 							account$=""
 							amount=0
 							total=0
 							distribution=0
-							invoice$=ape22a.firm_id$+ape22a.ap_type$+
-:								ape22a.vendor_id$+"I"+ape22a.ap_inv_no$
+							factor=1
+                            if ape22a.invoice_amt<>0 then factor=(ape22a.net_paid_amt+ape22a.discount_amt)/ape22a.invoice_amt
+							invoice$=ape22a.firm_id$+ape22a.ap_type$+ape22a.vendor_id$+"I"+ape22a.ap_inv_no$
+
 
 rem --- Accumulate total distribution for this check
 
 							read (apt02_dev,key=invoice$,dom=*next)
-							while moredetail
+							while 1
 								k$=key(apt02_dev,end=*break)
 								if pos(invoice$=k$)<>1 break
 								read record (apt02_dev) apt02a$
@@ -538,37 +539,35 @@ rem --- Accumulate total distribution for this check
 rem --- Prorate postings based on total distribution
 
 							read (apt02_dev,key=invoice$,dom=*next)
-							while moredetail
+							while 1
 								k$=key(apt02_dev,end=*break)
 								if pos(invoice$=k$)<>1 break
 								read record (apt02_dev) apt02a$
 								if apt02a.gl_account$<>account$ gosub account_break
-								amount=amount+((apt02a.gl_post_amt*invoice)/distribution)
+                                amount=amount+round(apt02a.gl_post_amt*factor,2)
 							wend
 
 rem --- Last posting to prevent rounding errors
 
-							amount=invoice-total
+                            amount=(ape22a.net_paid_amt+ape22a.discount_amt)-total
 							if account$<>"" gosub glrecap
-							break
-						wend
+						endif
 
 rem --- AP accrual posting if cash basis isn't being used
 
-						while cashbasis=0
+						if !cashbasis then
 							k$=ape22a.firm_id$+ape22a.ap_type$+ape22a.vendor_id$+
 :								ape22a.ap_inv_no$
 							find (apt01_dev,key=k$,dom=*break) 
 							account$=apm10b.gl_ap_acct$
-							amount=invoice
+							amount=ape22a.net_paid_amt+ape22a.discount_amt
 							gosub glrecap
-							break
-						wend
+						endif
         
 rem --- Cash and discount postings for this check
 
 						account$=apm10b.gl_cash_acct$
-						amount=ape22a.discount_amt-ape22a.invoice_amt+ape22a.retention
+                        amount=-ape22a.net_paid_amt
 						gosub glrecap
 						account$=apm10b.gl_disc_acct$
 						amount=-ape22a.discount_amt
@@ -576,7 +575,6 @@ rem --- Cash and discount postings for this check
 
 rem --- Format detail line fields
 
-						payment=ape22a.invoice_amt-ape22a.discount_amt-ape22a.retention
 						invoice$=ape22a.ap_inv_no$
 						invdate$=fndate$(ape22a.invoice_date$)
 						amount$=str(it[0])

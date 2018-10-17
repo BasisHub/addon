@@ -17,24 +17,14 @@ if arm01a.cust_inactive$="Y" then
 endif
 
 [[OPE_CREDMAINT.ASVA]]
+rem --- Update the tickler date
+	gosub update_tickler
+
 rem --- Make sure this form is closed before the Credit Review and Release grid gets focus
 	callpoint!.setStatus("EXIT")
 [[OPE_CREDMAINT.ARER]]
-rem --- Set dates to CCYYMMDD
-	tick_date$=pad(callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE"),8)
-	tick_date$=tick_date$(5,4)+tick_date$(1,4)
-	callpoint!.setColumnData("OPE_CREDMAINT.REV_DATE",tick_date$)
-	callpoint!.setDevObject("old_tick_date",tick_date$)
-	ord_date$=callpoint!.getColumnData("OPE_CREDMAINT.ORDER_DATE")
-	if len(ord_date$)>0
-		ord_date$=ord_date$(5,4)+ord_date$(1,4)
-		callpoint!.setColumnData("OPE_CREDMAINT.ORDER_DATE",ord_date$)
-	endif
-	ship_date$=callpoint!.getColumnData("OPE_CREDMAINT.SHIPMNT_DATE")
-	if len(ship_date$)>0
-		ship_date$=ship_date$(5,4)+ship_date$(1,4)
-		callpoint!.setColumnData("OPE_CREDMAINT.SHIPMNT_DATE",ship_date$)
-	endif
+rem --- Hold on to old tickler date so we know if it gets changed
+	callpoint!.setDevObject("old_tick_date",callpoint!.getColumnData("OPE_CREDMAINT.REV_DATE"))
 
 rem --- Display Comments
 	cust_id$=callpoint!.getColumnData("OPE_CREDMAINT.CUSTOMER_ID")

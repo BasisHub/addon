@@ -177,13 +177,13 @@ launch_cred_maint:
 	dflt_data$[23,0]="CREDIT_LIMIT"
 	dflt_data$[23,1]=str(arm02a.credit_limit)
 	dflt_data$[24,0]="REV_DATE"
-	dflt_data$[24,1]=gridCredit!.getCellText(curr_row,0)
+	dflt_data$[24,1]=date(jul(gridCredit!.getCellText(curr_row,0),stbl("+DATE_GRID")):"%Yd%Mz%Dz")
 	dflt_data$[25,0]="ORDER_NO"
 	dflt_data$[25,1]=gridCredit!.getCellText(curr_row,3)
 	dflt_data$[26,0]="ORDER_DATE"
-	dflt_data$[26,1]=gridCredit!.getCellText(curr_row,4)
+	dflt_data$[26,1]=date(jul(gridCredit!.getCellText(curr_row,4),stbl("+DATE_GRID")):"%Yd%Mz%Dz")
 	dflt_data$[27,0]="SHIPMNT_DATE"
-	dflt_data$[27,1]=gridCredit!.getCellText(curr_row,5)
+	dflt_data$[27,1]=date(jul(gridCredit!.getCellText(curr_row,5),stbl("+DATE_GRID")):"%Yd%Mz%Dz")
 	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
 :		"OPE_CREDMAINT",
 :		user_id$,
