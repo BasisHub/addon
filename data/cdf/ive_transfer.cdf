@@ -1,3 +1,6 @@
+[[IVE_TRANSFER.BREC]]
+rem --- Disable Lot Lookup button
+	callpoint!.setOptionEnabled("LOTS",0)
 [[IVE_TRANSFER.ARAR]]
 	callpoint!.setDevObject("qty_ok","")
 [[IVE_TRANSFER.ITEM_ID.AINV]]
@@ -189,8 +192,6 @@ rem --- Is qty valid?
 		callpoint!.setStatus("ABORT")
 	endif
 [[IVE_TRANSFER.LOTSER_NO.AVAL]]
-print "debug - in LOTSRE_NO.AVAL"; rem debug
-
 rem --- Validate entered lot/serial#
 
 	whse$  = callpoint!.getColumnData("IVE_TRANSFER.WAREHOUSE_ID")
@@ -280,6 +281,12 @@ rem		util.enableField(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 			endif
 		endif
 
+	endif
+
+	rem --- Enable Lot Lookup for inventoried lotted items
+	if user_tpl.this_item_is_lot_ser% and !user_tpl.serialized% then
+		rem --- Is item lotted and inventoried?
+		callpoint!.setOptionEnabled("LOTS",1)
 	endif
 
 item_id_aval_end:
@@ -431,12 +438,7 @@ rem --- Set IV flags
 	user_tpl.ls$ = iff( pos(ivs01a.lotser_flag$ = "LS"), "Y", "N" )
 	user_tpl.lf$ = iff( pos(ivs01a.lifofifo$    = "LF"), "Y", "N" )
 
-	print "debug - Lots/Serial#? (from params): ", ivs01a.lotser_flag$
-
 	if ivs01a.lotser_flag$ = "S" then user_tpl.serialized% = 1
-
-	rem This should happen in AREC
-	rem util.disableField(callpoint!, "IVE_TRANSFER.LOTSER_NO")
 
 rem --- Is the GL module installed?
 
@@ -493,7 +495,7 @@ rem ===========================================================================
 
 	find record (fnget_dev(item_file$), key=firm_id$+item$) ivm01a$
 
-	callpoint!.setColumnData("<<DISPLAY>>.PURCHASE_UM",ivm01a.purchase_um$)
+	callpoint!.setColumnData("<<DISPLAY>>.UNIT_OF_SALE",ivm01a.unit_of_sale$)
 	callpoint!.setStatus("REFRESH")
 
 return
