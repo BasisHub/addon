@@ -1,3 +1,8 @@
+[[IVC_TRANCODE.BWAR]]
+rem --- if post to GL is blank, set it to 'N'
+	if callpoint!.getColumnData("IVC_TRANCODE.POST_GL")<>"Y"
+		callpoint!.setColumnData("IVC_TRANCODE.POST_GL","N",1)
+	endif
 [[IVC_TRANCODE.GL_ADJ_ACCT.AVAL]]
 rem "GL INACTIVE FEATURE"
    glm01_dev=fnget_dev("GLM_ACCT")
@@ -82,6 +87,7 @@ rem --- Check for G/L Number if Post to G/L is up
 			callpoint!.setStatus("ABORT")
 		endif
 	endif
+
 [[IVC_TRANCODE.<CUSTOM>]]
 #include std_functions.src
 #include std_missing_params.src
