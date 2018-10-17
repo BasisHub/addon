@@ -751,6 +751,11 @@ rem --- clear availability
 rem --- Set flag
 
 	user_tpl.record_deleted = 0
+
+rem --- Disable Ship To fields
+
+	ship_to_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
+	gosub disable_shipto
 [[OPE_INVHDR.INVOICE_TYPE.AVAL]]
 print "Hdr:INVOICE_TYPE.AVAL"; rem debug
 
@@ -1026,37 +1031,7 @@ rem -- Deal with which Ship To type
 
 rem --- Disable Ship To fields
 
-	declare BBjVector column!
-	column! = BBjAPI().makeVector()
-
-	
-	column!.addItem("OPE_INVHDR.SHIPTO_NO")
-	if ship_to_type$="S"
-		status = 1
-	else
-		status = 0
-	endif
-	callpoint!.setColumnEnabled(column!, status)
-	callpoint!.setDevObject("abort_shipto_no",0)
-
-	column!.clear()
-	column!.addItem("<<DISPLAY>>.SNAME")
-	column!.addItem("<<DISPLAY>>.SADD1")
-	column!.addItem("<<DISPLAY>>.SADD2")
-	column!.addItem("<<DISPLAY>>.SADD3")
-	column!.addItem("<<DISPLAY>>.SADD4")
-	column!.addItem("<<DISPLAY>>.SCITY")
-	column!.addItem("<<DISPLAY>>.SSTATE")
-	column!.addItem("<<DISPLAY>>.SZIP")
-	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
-
-	if ship_to_type$="M"
-		status = 1
-	else
-		status = 0
-	endif
-
-	callpoint!.setColumnEnabled(column!, status)
+	gosub disable_shipto
 [[OPE_INVHDR.SHIPTO_NO.AVAL]]
 rem --- Check Ship-to's
 
@@ -1138,27 +1113,13 @@ rem --- Allow changing shipto_type when abort shipto_no
 [[OPE_INVHDR.AOPT-CINV]]
 rem --- Credit Historical Invoice
 
-	if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2)="" or
-:	   cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2)<>""
-:	then
-		msg_id$="OP_NO_HIST"
-		gosub disp_message
-	else
-		line_sign=-1
-		gosub copy_order
-	endif
+	line_sign=-1
+	gosub copy_order
 [[OPE_INVHDR.AOPT-DINV]]
 rem --- Duplicate Historical Invoice
 
-	if cvs(callpoint!.getColumnData("OPE_INVHDR.CUSTOMER_ID"),2)="" or
-:	   cvs(callpoint!.getColumnData("OPE_INVHDR.ORDER_NO"),2)<>""
-:	then 
-		msg_id$="OP_NO_HIST"
-		gosub disp_message
-	else
-		line_sign=1
-		gosub copy_order
-	endif
+	line_sign=1
+	gosub copy_order
 [[OPE_INVHDR.APFE]]
 print "Hdr:APFE"; rem debug
 
@@ -1691,6 +1652,11 @@ rem --- Capture current totals so we can tell later if they were changed in the 
 	callpoint!.setDevObject("taxable_amt",callpoint!.getColumnData("OPE_INVHDR.TAXABLE_AMT"))
 	callpoint!.setDevObject("total_cost",callpoint!.getColumnData("OPE_INVHDR.TOTAL_COST"))
 	callpoint!.setDevObject("total_sales",callpoint!.getColumnData("OPE_INVHDR.TOTAL_SALES"))
+
+rem --- Disable Ship To fields
+
+	ship_to_type$ = callpoint!.getColumnData("OPE_INVHDR.SHIPTO_TYPE")
+	gosub disable_shipto
 [[OPE_INVHDR.ORDER_NO.AVAL]]
 rem --- Do we need to create a new order number?
 
@@ -2398,6 +2364,12 @@ rem ==========================================================================
 			opt01_dev = fnget_dev("OPT_INVHDR")
 			dim opt01a$:fnget_tpl$("OPT_INVHDR")
 			read record (opt01_dev, key=key_opt$) opt01a$
+			if opt01a.trans_status$<>"U" then
+				rem --- Can only duplicate historical invoices
+				msg_id$="OP_NO_HIST"
+				gosub disp_message
+				copy_ok$="N"
+			endif
 			break
 		else
 			copy_ok$="N"
@@ -3141,6 +3113,44 @@ rem ==========================================================================
 		rem --- disable Cash Sale button when not on Totals tab
 		callpoint!.setOptionEnabled("CASH",0)
 	endif
+
+	return
+
+rem ==========================================================================
+disable_shipto: rem --- Disable Ship To fields
+rem IN: ship_to_type$
+rem ==========================================================================
+
+	declare BBjVector column!
+	column! = BBjAPI().makeVector()
+	
+	column!.addItem("OPE_ORDHDR.SHIPTO_NO")
+	if ship_to_type$="S"
+		status = 1
+	else
+		status = 0
+	endif
+	callpoint!.setColumnEnabled(column!, status)
+	callpoint!.setDevObject("abort_shipto_no",0)
+
+	column!.clear()
+	column!.addItem("<<DISPLAY>>.SNAME")
+	column!.addItem("<<DISPLAY>>.SADD1")
+	column!.addItem("<<DISPLAY>>.SADD2")
+	column!.addItem("<<DISPLAY>>.SADD3")
+	column!.addItem("<<DISPLAY>>.SADD4")
+	column!.addItem("<<DISPLAY>>.SCITY")
+	column!.addItem("<<DISPLAY>>.SSTATE")
+	column!.addItem("<<DISPLAY>>.SZIP")
+	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
+
+	if ship_to_type$="M"
+		status = 1
+	else
+		status = 0
+	endif
+
+	callpoint!.setColumnEnabled(column!, status)
 
 	return
 [[OPE_INVHDR.ASHO]]

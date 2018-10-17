@@ -66,6 +66,7 @@ rem --- Dimension string templates
 
 rem --- Assign form input values to local variables
 
+    ap_type$=Option!.getOptionData("AP_TYPE")
     agingdate$=Option!.getOptionData("AGING_DATE")
     option$=Option!.getOptionData("REPORT_OPTION")
     future$=Option!.getOptionData("PICK_CHECK")
@@ -419,7 +420,7 @@ rem --- Start progress meter and position driver file
     lastvendor$=""
     total_recs=0
     call pgmdir$+"adc_progress.aon","NC",channel_name$,"","","",0,channel,1,meter_num,status
-    read (channel,key=firm_id$,dom=*next)
+    read (channel,key=firm_id$+ap_type$,dom=*next)
 
 rem --- Read next Invoice Header (apt-01) record
   
@@ -444,6 +445,7 @@ rem --- Read next Invoice Header (apt-01) record
         rem --- Level breaks
 
         if apt01a.ap_type$<>lasttype$ then gosub type_break
+        if cvs(ap_type$,2)<>"" and apt01a.ap_type$<>ap_type$ then break
         if apt01a.vendor_id$<>lastvendor$ then gosub vendor_break
 
         rem --- Initializations for this invoice
@@ -612,7 +614,7 @@ type_break: rem --- AP Type break
     if lasttype$<>"" then 
         gosub vendor_break
         
-        if multitypes
+        if cvs(ap_type$,2)="" or lasttype$=ap_type$ then
             total$=Translate!.getTranslation("AON_TOTALS_FOR_")+aptype$
             typebreak_flag = 1
             
@@ -626,7 +628,7 @@ type_break: rem --- AP Type break
         
     endif   
     
-    if multitypes and !(done) then 
+    if multitypes and !done then 
         dim apm10a$:fattr(apm10a$),at[4],ar[4]
         apm10a.firm_id$=apt01a.firm_id$
         apm10a.record_id_a$="A"
@@ -636,11 +638,13 @@ type_break: rem --- AP Type break
         k$=apm10a.firm_id$+apm10a.record_id_a$+apm10a.ap_type$
         find record (apm10_dev,key=k$,dom=*next) apm10a$
         lasttype$=apm10a.ap_type$
-        
-        aptype$=Translate!.getTranslation("AON_AP_TYPE_")+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
-        BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-        HdrVect!.addItem(aptype$)
-        lines=maxlines+1
+
+        if cvs(ap_type$,2)="" or lasttype$=ap_type$ then 
+            aptype$=Translate!.getTranslation("AON_AP_TYPE_")+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
+            BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
+            HdrVect!.addItem(aptype$)
+            lines=maxlines+1
+        endif
     endif
     
     return
@@ -829,8 +833,8 @@ std_missing_params: rem --- Standard missing parameter handler (15Apr2006)
     rd_err_text$=""
     if tcb(5)<>0 and pgm(-1)=pgm(-2) rd_err_text$=pgm(tcb(5))
     pgmdir$=stbl("+DIR_PGM",err=std_missing_params_exit)
-    call stbl("+DIR_SYP")+"bac_noparams.bbj",err=std_missing_params_exit,pgm(-2),str(tcb(5)),
-:                                   str(err),rd_err_text$,rd_err_act$
+    call pgmdir$+"adc_noparams.aon",err=std_missing_params_exit,pgm(-2),str(tcb(5):"00000"),
+:       str(err:"000"),rd_err_text$,rd_err_act$
 std_missing_params_exit:
     master_user$=cvs(stbl("+MASTER_USER",err=std_missing_params_release),2)
     sysinfo_template$=stbl("+SYSINFO_TPL",err=std_missing_params_release)

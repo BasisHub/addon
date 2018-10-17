@@ -31,6 +31,21 @@ rem --- Clear out gle-08
     call stbl("+DIR_PGM")+"adc_clearfile.aon",gle08_dev
     call stbl("+DIR_PGM")+"adc_clearfile.aon",gle09_dev
 
+    if alignPeriods$="Y" then
+        use ::glo_AlignFiscalCalendar.aon::AlignFiscalCalendar
+        alignCalendar!=new AlignFiscalCalendar(firm_id$)
+        alignCalendar!.setBaseFiscalYear(begyear$)
+        tripKey$=alignCalendar!.alignCalendar(begyear$)
+        rem --- Check tripKey$ in case of error
+        if tripKey$="" then
+            msg_id$="GL_CANNOT_ALIGN_PERS"
+            dim msg_tokens$[1]
+            msg_tokens$[1]=glyear$
+            gosub disp_message
+            alignPeriods$="N"
+        endif
+    endif	
+
 rem --- Position GL Account Master (glm-01)
 
     k$=""
@@ -130,13 +145,20 @@ rem --- Run report headings overlay
 summary_activity: rem --- Retrieve either current or prior year Summary Activity (glm-02) record
 
     dim a[mp],u[mp]
-    redim glm02a$
-    glm02a.firm_id$=glm01a.firm_id$
-    glm02a.gl_account$=glm01a.gl_account$
-    glm02a.year$=this_year$
-    glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.year$
-    find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
-    call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+	if alignPeriods$="Y" then
+        redim glw02a$
+        glw02_key$=glm01a.firm_id$+this_year$+begyear$+glm01a.gl_account$
+        find record(glw02_dev,key=glw02_key$,dom=*next)glw02a$
+        call pgmdir$+"glc_summary.aon","R",glw02a$,a[all],u[all],status
+	else
+        redim glm02a$
+        glm02a.firm_id$=glm01a.firm_id$
+        glm02a.gl_account$=glm01a.gl_account$
+        glm02a.year$=this_year$
+        glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.year$
+        find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
+        call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+    endif
     return
 
 report_amounts: rem --- Retrieve 13 Period Financial Report Amount (gle-08) record
@@ -175,6 +197,11 @@ report_amounts: rem --- Retrieve 13 Period Financial Report Amount (gle-08) reco
 :      else gle08a.gl_rpt_no$=glm11a.gl_rpt_no$, gle08a.gl_rpt_line$=glm11a.gl_rpt_line$
 
     return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
 
 rem #include std_error.src
 

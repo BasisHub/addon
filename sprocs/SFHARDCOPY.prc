@@ -34,6 +34,7 @@ rem --- Get the IN parameters used by the procedure
 													rem E = Detail Rpt from WO *E*ntry
 													rem C = *C*losed WO Detail Rpt
 	firm_id$ = sp!.getParameter("FIRM_ID")
+    wo_category$ = sp!.getParameter("WO_CATEGORY",err=*next)
 	wo_loc$  = sp!.getParameter("WO_LOCATION")
 	from_wo$ = sp!.getParameter("WO_NO_1")
 	thru_wo$ = sp!.getParameter("WO_NO_2")
@@ -195,6 +196,11 @@ rem --- Build SQL statement
     sql_prep$=""
 	where_clause$=" firm_id = '"+firm_id$+"' AND wo_location = '"+wo_loc$+"' AND "
 	order_clause$=""
+
+    rem --- Filter on wo_category
+    if wo_category$<>"" then
+        where_clause$=where_clause$+" wo_category in ("+wo_category$+") AND "
+    endif    
 	
 	sql_prep$="select * from sfe_womastr "
     action=pos(report_seq$="WBCT")-1
@@ -228,7 +234,7 @@ rem --- Build SQL statement
 
 	rem --- Limit resultset to Opened/Closed/Planned/Quoted based on wostatus$
 	rem --- UNLESS all four of them are specified--indicating all
-	
+
 	if len(wostatus$)>0  
 :	 and !(pos("O"=wostatus$)>0 and pos("C"=wostatus$)>0 and pos("P"=wostatus$)>0 and pos("Q"=wostatus$)>0)
 		where_clause$=where_clause$+" ("

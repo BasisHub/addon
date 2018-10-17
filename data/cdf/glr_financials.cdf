@@ -47,6 +47,11 @@ rem --- Verify haven't exceeded calendar total periods for current GL fiscal yea
 			break
 		endif
 	endif
+
+	rem --- Re-initialize align_periods for new pick_year
+	pick_year$=year$
+	gosub init_align_periods
+
 [[GLR_FINANCIALS.ASVA]]
 rem --- update GLE_FINANCIALRPT (gle-04) -- remove/write -- based on what's checked in the grid
 rem --- also update GLS_FINANCIALS w/ period/year from form, first updt sequence '9', first print flag 'N'
@@ -96,6 +101,10 @@ rem --- Set maximum number of periods allowed for this fiscal year
 	current_year$=callpoint!.getColumnData("GLR_FINANCIALS.YEAR")
 	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
 	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+
+rem --- Initialize align_periods for pick_year
+	pick_year$=gls01a.current_year$
+	gosub init_align_periods
 [[GLR_FINANCIALS.ACUS]]
 rem process custom event -- used in this pgm to select/de-select checkboxes in grid
 rem see basis docs notice() function, noticetpl() function, notify event, grid control notify events for more info
@@ -230,9 +239,28 @@ switch_value:rem --- Switch Check Values
 	SysGUI!.setRepaintEnabled(1)
 
 	return
+
+rem ==========================================================================
+init_align_periods: rem --- Initialize align_periods for pick_year
+rem		pick_year$: input
+rem ==========================================================================
+	alignCalendar! = new AlignFiscalCalendar(firm_id$)
+	if alignCalendar!.canAlignCalendar(pick_year$) or alignCalendar!.canAlignCalendar(str(num(pick_year$)-1)) then
+		rem --- can align calendar
+		callpoint!.setColumnEnabled("GLR_FINANCIALS.ALIGN_PERIODS",1)
+	else
+		rem --- canNOT align calendar
+		callpoint!.setColumnEnabled("GLR_FINANCIALS.ALIGN_PERIODS",0)
+	endif
+	callpoint!.setColumnData("GLR_FINANCIALS.ALIGN_PERIODS","N",1)
+
+	return
 		
 #include std_missing_params.src
 [[GLR_FINANCIALS.AWIN]]
+rem --- Needed classes
+	use ::glo_AlignFiscalCalendar.aon::AlignFiscalCalendar
+
 rem --- Open/Lock files
 
 use ::ado_util.src::util

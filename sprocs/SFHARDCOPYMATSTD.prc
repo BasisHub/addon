@@ -55,7 +55,7 @@ rem --- Columns for the record set are defined using a string template
 	
 	temp$=""
 	temp$=temp$+"REF_NO:C(1*), ITEM:C(1*), COMMENT:C(1*), OP_SEQ:C(1*), SCRAP:C(1*), "
-	temp$=temp$+"DIVISOR:C(1*), FACTOR:C(1*), QTY_REQ:C(1*), "
+	temp$=temp$+"DIVISOR:C(1*), FACTOR:C(1*), QTY_REQ:C(1*), UNIT_MEASURE:C(2*), "
 	temp$=temp$+"UNITS_EA:C(1*), COST_EA:C(1*), UNITS_TOT:C(1*), COST_TOT:C(1*), "
 	temp$=temp$+"THIS_IS_TOTAL_LINE:C(1*), COST_EA_RAW:C(1*), COST_TOT_RAW:C(1*) "	
 	
@@ -142,7 +142,7 @@ rem --- Get proper Op Code Maintenance table
 rem --- Build SQL statement
 
 	sql_prep$=""
-	sql_prep$=sql_prep$+"SELECT m.wo_ref_num, m.item_id, m.oper_seq_ref "+$0a$
+	sql_prep$=sql_prep$+"SELECT m.wo_ref_num, m.item_id, m.oper_seq_ref, m.unit_measure "+$0a$
 	sql_prep$=sql_prep$+"     , m.scrap_factor, m.divisor, m.alt_factor "+$0a$
 	sql_prep$=sql_prep$+"     , m.qty_required, m.units, m.unit_cost "+$0a$
 	sql_prep$=sql_prep$+"     , m.total_units, m.total_cost, m.line_type "+$0a$
@@ -193,6 +193,7 @@ rem --- Trip Read
 			data!.setFieldValue("ITEM",item_n_desc1$); rem From build_itemfield routine
 			
 			data!.setFieldValue("OP_SEQ",read_tpl.wo_op_ref$)
+            data!.setFieldValue("UNIT_MEASURE",read_tpl.unit_measure$)
 			
 			data!.setFieldValue("SCRAP",str(read_tpl.scrap_factor:sf_matlfact_mask$))
 			data!.setFieldValue("DIVISOR",str(read_tpl.divisor:sf_matlfact_mask$))
@@ -269,6 +270,7 @@ rem --- Subroutines
 			data!.setFieldValue("ITEM",FILL(LEN(item_n_desc1$)-1,"W")+"x")
 			
 			data!.setFieldValue("OP_SEQ",FILL(LEN(read_tpl.wo_op_ref$)-1,"9")+"x")
+            data!.setFieldValue("UNIT_MEASURE",FILL(LEN(read_tpl.unit_measure$)-1,"W")+"x")
 			
 			data!.setFieldValue("SCRAP","x"+sf_matlfact_mask$+"x")
 			data!.setFieldValue("DIVISOR","x"+sf_matlfact_mask$+"x")

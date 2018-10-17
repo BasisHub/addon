@@ -1,8 +1,12 @@
+[[GLM_ACCT.BWAR]]
+rem --- Capture current selection in summ_dtl list 
+	callpoint!.setColumnData("GLM_ACCT.DETAIL_FLAG",callpoint!.getColumnData("<<DISPLAY>>.SUMM_DTL"))
 [[GLM_ACCT.AREC]]
 rem --- Set Default value for Detail Flag
 
 	detail_flag$=callpoint!.getDevObject("detail_flag")
 	callpoint!.setColumnData("GLM_ACCT.DETAIL_FLAG",detail_flag$)
+	callpoint!.setColumnData("<<DISPLAY>>.SUMM_DTL",detail_flag$,1)
 [[GLM_ACCT.ADEL]]
 rem --- Remove all glm-02 recs
 
@@ -81,6 +85,9 @@ rem --- Set initial values for period and year
 	callpoint!.setColumnData("<<DISPLAY>>.FISCAL_YEAR",fiscal_yr$,1)
 
 	gosub display_mtd_ytd
+
+rem --- Set current selection in summ_dtl list 
+	callpoint!.setColumnData("<<DISPLAY>>.SUMM_DTL",callpoint!.getColumnData("GLM_ACCT.DETAIL_FLAG"),1)
 [[GLM_ACCT.BDEL]]
 rem --- Check for activity
 	okay$="Y"
@@ -458,8 +465,21 @@ endif
 	callpoint!.setDevObject("gls_cur_per",gls01a.current_per$)
 	if gls01a.detail_flag$<>"Y"
 		callpoint!.setColumnEnabled("GLM_ACCT.DETAIL_FLAG",-1)
+		callpoint!.setColumnEnabled("<<DISPLAY>>.SUMM_DTL",-1)
 	endif
 	callpoint!.setDevObject("detail_flag",gls01a.detail_flag$)
 
 	tns!=BBjAPI().getNamespace("GLM_ACCT","drill",1)
 	tns!.setValue("cur_per",gls01a.current_per$)
+
+rem --- Create Yes-No version of summ_dtl list
+	ldat_list$=pad(Translate!.getTranslation("AON_DETAIL"),15)+"~"+"Y ;"
+	ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_SUMMARY"),15)+"~"+"N ;"
+
+	callpoint!.setTableColumnAttribute("<<DISPLAY>>.SUMM_DTL","LDAT",ldat_list$)
+
+	rem --- Remove code from ListButton display
+	summ_dtl!=callpoint!.getControl("<<DISPLAY>>.SUMM_DTL")
+	summ_dtl!.removeAllItems()
+	summ_dtl!.addItem(Translate!.getTranslation("AON_DETAIL"))
+	summ_dtl!.addItem(Translate!.getTranslation("AON_SUMMARY"))

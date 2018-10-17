@@ -34,6 +34,38 @@ rem --- Initializations
     pqy$="PQY"
     total_recs=0
 
+   if alignPeriods$="Y" then
+      use ::glo_AlignFiscalCalendar.aon::AlignFiscalCalendar
+      alignCalendar!=new AlignFiscalCalendar(firm_id$)
+      alignCalendar!.setBaseFiscalYear(gls01a.current_year$)
+
+      if alignCalendar!.canAlignCalendar(begyear$) then
+          rem --- Align beginning year
+          tripKey$=alignCalendar!.alignCalendar(begyear$)
+          rem --- Check tripKey$ in case of error
+          if tripKey$="" then
+             msg_id$="GL_CANNOT_ALIGN_PERS"
+             dim msg_tokens$[1]
+             msg_tokens$[1]=glyear$
+             gosub disp_message
+             alignPeriods$="N"
+          endif
+      endif
+      
+      if alignCalendar!.canAlignCalendar(str(num(begyear$)-1)) then
+          rem --- Align previous year
+          tripKey$=alignCalendar!.alignCalendar(str(num(begyear$)-1))
+          rem --- Check tripKey$ in case of error
+          if tripKey$="" then
+             msg_id$="GL_CANNOT_ALIGN_PERS"
+             dim msg_tokens$[1]
+             msg_tokens$[1]=glyear$
+             gosub disp_message
+             alignPeriods$="N"
+          endif
+      endif
+    endif
+   
 rem --- Dimension matrices for financial reports
 
 rem --- Matrix definitions for I[X,Y,Z],J[X,Y,Z],T[X,Y,Z],S[X,Y,Z]
@@ -100,14 +132,23 @@ rem --- Read next GL Account Master (glm-01) record
               glm02a.year$=this_year$
               glm02_key$=glm02a.firm_id$+glm02a.gl_account$+glm02a.year$
               if r=0 or r=2 then
+                if alignPeriods$="Y" and alignCalendar!.canAlignCalendar(this_year$) then
+                  rem --- Aligned file
+                  glw_acctsum_key$=glm01a.firm_id$+this_year$+gls01a.current_year$+glm01a.gl_account$
+                  find record(glw_acctsum_dev,key=glw_acctsum_key$,dom=*endif)glw_acctsum$
+                  call pgmdir$+"glc_summary.aon","R",glw_acctsum$,a[all],u[all],status
+                else
                   rem --- actuals
                   glm02_dev=glm_acctsummary_dev
+                  find record (glm02_dev,key=glm02_key$,dom=*endif) glm02a$
+                  call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
+                endif
               else
                   rem --- budget
                   glm02_dev=glm_acctbudget_dev
+                  find record (glm02_dev,key=glm02_key$,dom=*endif) glm02a$
+                  call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
               endif
-              find record (glm02_dev,key=glm02_key$,dom=*next) glm02a$
-              call pgmdir$+"glc_summary.aon","R",glm02a$,a[all],u[all],status
               for x=0 to mp
                   x[r,0,x]=a[x]
                   x[r,1,x]=u[x]
@@ -379,6 +420,11 @@ sum_matrix: rem --- Sum array before returning
         next y
     next x
     return
+
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+return
 
 std_error: rem --- Standard error handler (11Oct2017)
 

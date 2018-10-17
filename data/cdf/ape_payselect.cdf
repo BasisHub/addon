@@ -2449,7 +2449,13 @@ rem --- Payment Amount
 				wend
                 if apt01a.discount_amt<0 and apt01a.invoice_amt>0 then apt01a.discount_amt=0
 				gridInvoices!.setCellText(curr_row, 10, str(str(apt01a.invoice_amt - apt01a.retention - apt01a.discount_amt)))
-				gridInvoices!.setCellText(curr_row,11,str(apt01a.discount_amt))
+				if callpoint!.getColumnData("APE_PAYSELECT.INCLUDE_DISC")="Y" or
+:					apt01a.disc_date$ >= sysinfo.system_date$
+:				then
+					gridInvoices!.setCellText(curr_row, 11, apt01a.discount_amt$)
+				else
+					gridInvoices!.setCellText(curr_row, 11, "0.00")
+				endif
 
 rem --- Now calculate proper Amt Due, Payment and Discount amounts
 

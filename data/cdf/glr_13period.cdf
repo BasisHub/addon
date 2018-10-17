@@ -47,6 +47,13 @@ rem --- Verify haven't exceeded calendar total periods for current GL fiscal yea
 			break
 		endif
 	endif
+
+
+rem --- Re-initialize align_periods for new pick_year
+	pick_year$=year$
+	gosub init_align_periods
+
+
 [[GLR_13PERIOD.<CUSTOM>]]
 format_grid:
 
@@ -146,6 +153,22 @@ switch_value:rem --- Switch Check Values
 	SysGUI!.setRepaintEnabled(1)
 
 	return
+
+rem ==========================================================================
+init_align_periods: rem --- Initialize align_periods for pick_year
+rem		pick_year$: input
+rem ==========================================================================
+	alignCalendar! = new AlignFiscalCalendar(firm_id$)
+	if alignCalendar!.canAlignCalendar(pick_year$) or alignCalendar!.canAlignCalendar(str(num(pick_year$)-1))  then
+		rem --- can align calendar
+		callpoint!.setColumnEnabled("GLR_13PERIOD.ALIGN_PERIODS",1)
+	else
+		rem --- canNOT align calendar
+		callpoint!.setColumnEnabled("GLR_13PERIOD.ALIGN_PERIODS",0)
+	endif
+	callpoint!.setColumnData("GLR_13PERIOD.ALIGN_PERIODS","N",1)
+
+	return
 		
 #include std_missing_params.src
 [[GLR_13PERIOD.ASIZ]]
@@ -199,6 +222,10 @@ rem --- Set maximum number of periods allowed for this fiscal year
 	current_year$=callpoint!.getColumnData("GLR_13PERIOD.YEAR")
 	readrecord(gls_calendar_dev,key=firm_id$+current_year$,dom=*next)gls_calendar$
 	callpoint!.setDevObject("total_pers",gls_calendar.total_pers$)
+
+rem --- Initialize align_periods for pick_year
+	pick_year$=gls01a.current_year$
+	gosub init_align_periods
 [[GLR_13PERIOD.ASVA]]
 rem "update GLE_13PERIODRPT (gle-05) -- remove/write -- based on what's checked in the grid
 
@@ -231,6 +258,9 @@ else
 	gosub open_tables
 endif
 [[GLR_13PERIOD.AWIN]]
+rem --- Needed classes
+	use ::glo_AlignFiscalCalendar.aon::AlignFiscalCalendar
+
 use ::ado_util.src::util
 
 num_files=5

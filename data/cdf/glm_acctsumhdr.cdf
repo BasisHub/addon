@@ -387,6 +387,12 @@ rem analyze gui_event$ and notice$ to see which control's callback triggered the
 		gridActivity!.setSize(Form!.getWidth()-(gridActivity!.getX()*2),Form!.getHeight()-(gridActivity!.getY()+10))
 	endif
 [[GLM_ACCTSUMHDR.AREC]]
+rem --- Set Default value for Detail Flag
+
+	detail_flag$=callpoint!.getDevObject("detail_flag")
+	callpoint!.setColumnData("GLM_ACCTSUMHDR.DETAIL_FLAG",detail_flag$)
+	callpoint!.setColumnData("<<DISPLAY>>.SUMM_DTL",detail_flag$,1)
+
 rem compare budget columns/types from gls01 with defined display columns
 rem set the 4 listbuttons accordingly, and read/display corres glm02 data
 
@@ -618,6 +624,9 @@ rem --- Set initial values for period and year
 
 	gosub display_mtd_ytd
 
+rem --- Set current selection in summ_dtl list 
+	callpoint!.setColumnData("<<DISPLAY>>.SUMM_DTL",callpoint!.getColumnData("GLM_ACCTSUMHDR.DETAIL_FLAG"),1)
+
 	if cvs(callpoint!.getColumnData("GLM_ACCTSUMHDR.GL_ACCOUNT"),2)<>"" then
 		gosub fill_gridActivity
 	else
@@ -689,8 +698,22 @@ endif
 	callpoint!.setDevObject("alignCalendar",new AlignFiscalCalendar(firm_id$))
 	callpoint!.setDevObject("gridModified","0")
 
+	callpoint!.setDevObject("detail_flag",gls01a.detail_flag$)
+
 	tns!=BBjAPI().getNamespace("GLM_ACCT","drill",1)
 	tns!.setValue("cur_per",gls01a.current_per$)
+
+rem --- Create Yes-No version of summ_dtl list
+	ldat_list$=pad(Translate!.getTranslation("AON_DETAIL"),15)+"~"+"Y ;"
+	ldat_list$=ldat_list$+pad(Translate!.getTranslation("AON_SUMMARY"),15)+"~"+"N ;"
+
+	callpoint!.setTableColumnAttribute("<<DISPLAY>>.SUMM_DTL","LDAT",ldat_list$)
+
+	rem --- Remove code from ListButton display
+	summ_dtl!=callpoint!.getControl("<<DISPLAY>>.SUMM_DTL")
+	summ_dtl!.removeAllItems()
+	summ_dtl!.addItem(Translate!.getTranslation("AON_DETAIL"))
+	summ_dtl!.addItem(Translate!.getTranslation("AON_SUMMARY"))
 [[<<DISPLAY>>.CURRENT_PER.AVAL]]
 rem --- set variables
 

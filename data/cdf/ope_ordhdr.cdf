@@ -307,6 +307,11 @@ rem --- Clear availability information
 rem --- Set flags
 
 	user_tpl.record_deleted = 0
+
+rem --- Disable Ship To fields
+
+	ship_to_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
+	gosub disable_shipto
 [[OPE_ORDHDR.ARAR]]
 rem --- If First/Last Record was used, did it return an Order?
 
@@ -490,12 +495,12 @@ rem --- Is flag down?
 
 rem --- Credit action
 
-	rem --- Temporay work around to avoid error 11 when no record exists re Barista bug 5743
 	rem --- Header record will exist if at least one detail line has been entered.
 	if GridVect!.getItem(0).size()>0 then
 		if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
 			callpoint!.setDevObject("cred_action_from_print_now","")
 			gosub do_credit_action
+			if action$="R" then callpoint!.setStatus("SAVE")
 		endif
 	endif
 
@@ -1161,6 +1166,11 @@ rem --- Create soCreateWO! instance if needed
 		callpoint!.setDevObject("soCreateWO",soCreateWO!)
 		callpoint!.setDevObject("createWOs_status","")
 	endif
+
+rem --- Disable Ship To fields
+
+	ship_to_type$ = callpoint!.getColumnData("OPE_ORDHDR.SHIPTO_TYPE")
+	gosub disable_shipto
 [[OPE_ORDHDR.BOVE]]
 rem --- Restrict lookup to open orders and open invoices
 
@@ -1426,27 +1436,13 @@ rem --- Remove committments for detail records by calling ATAMO
 [[OPE_ORDHDR.AOPT-CINV]]
 rem --- Credit Historical Invoice
 
-	if cvs(callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID"),2)="" or
-:	   cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"),2)<>""
-:	then
-		msg_id$="OP_NO_HIST"
-		gosub disp_message
-	else
-		line_sign=-1
-		gosub copy_order
-	endif
+	line_sign=-1
+	gosub copy_order
 [[OPE_ORDHDR.AOPT-DINV]]
 rem --- Duplicate Historical Invoice
 
-	if cvs(callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID"),2)="" or
-:	   cvs(callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO"),2)<>""
-:	then 
-		msg_id$="OP_NO_HIST"
-		gosub disp_message
-	else
-		line_sign=1
-		gosub copy_order
-	endif
+	line_sign=1
+	gosub copy_order
 [[OPE_ORDHDR.SHIPTO_NO.AVAL]]
 rem --- Check Ship-to's
 
@@ -1709,36 +1705,7 @@ rem -- Deal with which Ship To type
 
 rem --- Disable Ship To fields
 
-	declare BBjVector column!
-	column! = BBjAPI().makeVector()
-	
-	column!.addItem("OPE_ORDHDR.SHIPTO_NO")
-	if ship_to_type$="S"
-		status = 1
-	else
-		status = 0
-	endif
-	callpoint!.setColumnEnabled(column!, status)
-	callpoint!.setDevObject("abort_shipto_no",0)
-
-	column!.clear()
-	column!.addItem("<<DISPLAY>>.SNAME")
-	column!.addItem("<<DISPLAY>>.SADD1")
-	column!.addItem("<<DISPLAY>>.SADD2")
-	column!.addItem("<<DISPLAY>>.SADD3")
-	column!.addItem("<<DISPLAY>>.SADD4")
-	column!.addItem("<<DISPLAY>>.SCITY")
-	column!.addItem("<<DISPLAY>>.SSTATE")
-	column!.addItem("<<DISPLAY>>.SZIP")
-	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
-
-	if ship_to_type$="M"
-		status = 1
-	else
-		status = 0
-	endif
-
-	callpoint!.setColumnEnabled(column!, status)
+	gosub disable_shipto
 [[OPE_ORDHDR.ASHO]]
 rem --- Get default dates, POS station
 
@@ -2311,6 +2278,12 @@ rem ==========================================================================
 			opt01_dev = fnget_dev("OPT_INVHDR")
 			dim opt01a$:fnget_tpl$("OPT_INVHDR")
 			read record (opt01_dev, key=key_opt$) opt01a$
+			if opt01a.trans_status$<>"U" then
+				rem --- Can only duplicate historical invoices
+				msg_id$="OP_NO_HIST"
+				gosub disp_message
+				copy_ok$="N"
+			endif
 			break
 		else
 			copy_ok$="N"
@@ -2982,6 +2955,44 @@ rem ==========================================================================
 	endif
 		
 	return
+
+rem ==========================================================================
+disable_shipto: rem --- Disable Ship To fields
+rem IN: ship_to_type$
+rem ==========================================================================
+
+	declare BBjVector column!
+	column! = BBjAPI().makeVector()
+	
+	column!.addItem("OPE_ORDHDR.SHIPTO_NO")
+	if ship_to_type$="S"
+		status = 1
+	else
+		status = 0
+	endif
+	callpoint!.setColumnEnabled(column!, status)
+	callpoint!.setDevObject("abort_shipto_no",0)
+
+	column!.clear()
+	column!.addItem("<<DISPLAY>>.SNAME")
+	column!.addItem("<<DISPLAY>>.SADD1")
+	column!.addItem("<<DISPLAY>>.SADD2")
+	column!.addItem("<<DISPLAY>>.SADD3")
+	column!.addItem("<<DISPLAY>>.SADD4")
+	column!.addItem("<<DISPLAY>>.SCITY")
+	column!.addItem("<<DISPLAY>>.SSTATE")
+	column!.addItem("<<DISPLAY>>.SZIP")
+	column!.addItem("<<DISPLAY>>.SCNTRY_ID")
+
+	if ship_to_type$="M"
+		status = 1
+	else
+		status = 0
+	endif
+
+	callpoint!.setColumnEnabled(column!, status)
+
+	return
 [[OPE_ORDHDR.BSHO]]
 rem --- Documentation
 rem     Old s$(7,1) = 0 -> user_tpl.hist_ord$ = "Y" - order came from history
@@ -3349,4 +3360,3 @@ rem --- setup message_tpl$
 
 rem --- Get next available control ID
 	callpoint!.setDevObject("nxt_ctlID",num(stbl("+CUSTOM_CTL",err=std_error)))
-
