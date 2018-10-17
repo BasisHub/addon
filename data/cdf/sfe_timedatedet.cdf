@@ -1,3 +1,19 @@
+[[SFE_TIMEDATEDET.BGDC]]
+rem --- set preset val for batch_no
+	callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
+rem --- When PR is installed
+	if callpoint!.getDevObject("pr")="Y"
+		rem --- Validate pay_code with PRC_PAYCODE
+		callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.PAY_CODE","DTAB","PRC_PAYCODE")
+		callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.PAY.PAY_CODE","DCOL","PR_CODE_DESC")
+		callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.PAY_CODE","DKNM","[+FIRM_ID]+""A""+@")
+
+		rem --- Validate title_code with PRC_TITLCODE
+		callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.TITLE_CODE","DTAB","PRC_TITLCODE")
+		callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.TITLE_CODE","DCOL","CODE_DESC")
+		callpoint!.setTableColumnAttribute("SFE_TIMEDATEDET.TITLE_CODE","DKNM","[+FIRM_ID]+""F""+@")
+	endif
 [[<<DISPLAY>>.OP_REF.AVAL]]
 rem --- Use this op_ref to initialize op_code and oper_seq_ref
 	op_ref$=callpoint!.getUserInput()
@@ -246,8 +262,9 @@ rem ==========================================================================
 
 		rem --- Use imployee's pay code
 		bad_code$="PC"
+		trans_date$=callpoint!.getHeaderColumnData("SFE_TIMEDATE.TRANS_DATE")
 		emplearn_dev=callpoint!.getDevObject("emplearn_dev")
-		find(emplearn_dev,key=firm_id$+employee_no$+"A"+pay_code$,dom=*endif)
+		find(emplearn_dev,key=firm_id$+employee_no$+trans_date$(1,4)+"A"+pay_code$,dom=*endif)
 		paycode_dev=callpoint!.getDevObject("paycode_dev")
 		dim paycode$:callpoint!.getDevObject("paycode_tpl")
 		findrecord(paycode_dev,key=firm_id$+"A"+pay_code$,dom=*endif)paycode$

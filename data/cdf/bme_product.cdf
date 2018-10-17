@@ -11,9 +11,26 @@ rem --- remove software lock on batch, if batching
 		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
 	endif
 [[BME_PRODUCT.ITEM_ID.BINQ]]
-	whse$=callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")
-        callpoint!.setDevObject("whse",whse$)
+rem --- Bill of Materials Item/Whse Lookup
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","PRIMARY",key_tpl$,rd_table_chans$[all],status$
+	dim ivmItemWhse_key$:key_tpl$
+	dim filter_defs$[2,2]
+	filter_defs$[1,0]="IVM_ITEMWHSE.FIRM_ID"
+	filter_defs$[1,1]="='"+firm_id$ +"'"
+	filter_defs$[1,2]="LOCK"
+	filter_defs$[2,0]="IVM_ITEMWHSE.WAREHOUSE_ID"
+	filter_defs$[2,1]="='"+callpoint!.getColumnData("BME_PRODUCT.WAREHOUSE_ID")+"'"
+	filter_defs$[2,2]="LOCK"
+	
+	call stbl("+DIR_SYP")+"bax_query.bbj",gui_dev,form!,"BM_ITEMWHS_LK","",table_chans$[all],ivmItemWhse_key$,filter_defs$[all]
 
+	rem --- Update item_id if changed
+	if cvs(ivmItemWhse_key$,2)<>"" and ivmItemWhse_key.item_id$<>callpoint!.getColumnData("BME_PRODUCT.ITEM_ID") then 
+		callpoint!.setColumnData("BME_PRODUCT.ITEM_ID",ivmItemWhse_key.item_id$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE-ABORT")
 [[BME_PRODUCT.BTBL]]
 rem --- Get Batch information
 

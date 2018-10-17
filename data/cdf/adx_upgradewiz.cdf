@@ -224,9 +224,9 @@ rem --- Validate old barista install location
 	callpoint!.setColumnData("ADX_UPGRADEWIZ.OLD_BAR_LOC",old_bar_loc$)
 	if abort then break
 
-rem --- Validate sync backup directory when not doing Create Sync File Backup
+rem --- Validate sync backup directory when doing Create Sync File Backup
 
-	if callpoint!.getDevObject("do_sync_backup")=0 then
+	if callpoint!.getDevObject("do_sync_backup")<>0 then
 		sync_backup_dir$ = callpoint!.getColumnData("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR")
 		gosub validate_sync_backup_dir
 		callpoint!.setColumnData("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR",sync_backup_dir$)
@@ -673,25 +673,23 @@ able_backup_sync_dir: rem --- Enable/disable input field for sync backup directo
 	rem --- Check version of old Barista (will automatically do Create Sync File Backup if pre-version 18)
 	rem --- Locate the database for old Barista
 	dbname$ = ""
-	if backup_found then
-		oldBarDir$=bar_dir$
-		if pos(":"=oldBarDir$)=0 then oldBarDir$=dsk("")+oldBarDir$
-		sourceChan=unt
-		open(sourceChan,isz=-1)oldBarDir$+"/sys/config/enu/barista.cfg"
-		while 1
-			read(sourceChan,end=*break)record$
-			rem --- get database from SET +DBNAME line
-			if pos("SET +DBNAME="=record$)=1 then
-				dbname$=record$(pos("="=record$)+1)
-				break
-			endif
-		wend
-		close(sourceChan)
-	endif
+	oldBarDir$=bar_dir$
+	if pos(":"=oldBarDir$)=0 then oldBarDir$=dsk("")+oldBarDir$
+	sourceChan=unt
+	open(sourceChan,isz=-1)oldBarDir$+"/sys/config/enu/barista.cfg"
+	while 1
+		read(sourceChan,end=*break)record$
+		rem --- get database from SET +DBNAME line
+		if pos("SET +DBNAME="=record$)=1 then
+			dbname$=record$(pos("="=record$)+1)
+			break
+		endif
+	wend
+	close(sourceChan)
 
 	rem --- Query old ADM_MODULES for Barista Administration version
 	adb_version$=""
-		if dbname$<>"" then
+	if dbname$<>"" then
 		sql_chan=sqlunt
 		sqlopen(sql_chan)dbname$
 		sql_prep$="SELECT version_id FROM adm_modules where asc_comp_id='01007514' and asc_prod_id='ADB'"
@@ -711,7 +709,7 @@ able_backup_sync_dir: rem --- Enable/disable input field for sync backup directo
 	endif
 	callpoint!.setDevObject("do_sync_backup",do_sync_backup)
 
-	if backup_found then
+	if backup_found or num(adb_version$)>=18 then
 		rem --- Initialize and disable sync backup directory
 		callpoint!.setColumnEnabled("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR",0)
 		callpoint!.setColumnData("ADX_UPGRADEWIZ.SYNC_BACKUP_DIR",bar_dir$ + "/admin_backup")

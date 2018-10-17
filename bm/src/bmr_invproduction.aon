@@ -264,21 +264,17 @@ rem --- Open Additional Files
 		dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
         open_tables$[1]="IVM_ITEMTIER",open_opts$[1]="OTA"
         open_tables$[2]="IVW_LFDET",open_opts$[2]="OTAL"
-        open_tables$[3]="IVW_LFCOST",open_opts$[3]="OTAL"
 
 		gosub open_tables
         
         ivm04_dev=num(open_chans$[1])
 		ivw04_dev=num(open_chans$[2])
-		ivw05_dev=num(open_chans$[3])
-        dim ivm04a$:open_tpls$[1],ivw04a$:open_tpls$[2],ivw05a$:open_tpls$[3]
+        dim ivm04a$:open_tpls$[1],ivw04a$:open_tpls$[2]
 		template$[12]=open_tpls$[1]; rem ivm04 IVM_ITEMTIER
 		template$[13]=open_tpls$[2]; rem ivw04 IVW_LFDET
-		template$[14]=open_tpls$[3]; rem ivw05 IVW_LFCOST
 
 		rem --- Clear LIFO/FIFO Work Files
         call pgmdir$+"adc_clearfile.aon",ivw04_dev
-        call pgmdir$+"adc_clearfile.aon",ivw05_dev
     endif   
 
     if gl$="Y" then 
@@ -411,7 +407,7 @@ item_info:
             unitcost=ivm02a.unit_cost
             if lf$="Y" then 
                 gosub lifo_fifo
-                unitcost=ivw05a.unit_cost
+                unitcost=icost
             endif
             skip=1
             gosub distributions
@@ -515,18 +511,21 @@ rem --- Totals
 		goto std_exit_no_update
 	endif
 
+
 	if short<>0 then
 		xwk=fnblank(columns+1)
 		OutVect!.addItem("*** "+Translate!.getTranslation("AON_WARNING")+": "+Translate!.getTranslation("AON_AMOUNTS_IN_THE_SHORTAGE_COLUMN_WILL_CREATE_NEGATIVE"))
         xwk=fnblank(columns)
         OutVect!.addItem(Translate!.getTranslation("AON_ON_HAND_BALANCES_IN_INVENTORY"))
 		xwk=fnblank(columns)
-		
-		dim message$[1]
-		message$[0]=Translate!.getTranslation("AON_AMOUNTS_IN_THE_SHORTAGE_COLUMN_WILL_CREATE_NEGATIVE")
-		message$[1]=Translate!.getTranslation("AON_ON_HAND_BALANCES_IN_INVENTORY")+" "+Translate!.getTranslation("AON_(<ENTER>=CONTINUE)")
-		call pgmdir$+"adc_stdmessage.aon",2,message$[all],1,22,-1,v$,v3
-		if v3=4 then goto std_exit_no_update
+
+        message$=Translate!.getTranslation("AON_AMOUNTS_IN_THE_SHORTAGE_COLUMN_WILL_CREATE_NEGATIVE")
+        message$=message$+" "+Translate!.getTranslation("AON_ON_HAND_BALANCES_IN_INVENTORY")
+        msg_id$="GENERIC_WARN_CANCEL"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=message$
+        gosub disp_message
+        if msg_opt$="C" then goto std_exit_no_update
 	endif
 	channel=bmw01_dev
 	width=132
@@ -637,7 +636,7 @@ lifo_fifo: rem --- LIFO/FIFO
 		net_qty=1*fnqty(bmm02a.qty_required,bmm02a.alt_factor,bmm02a.divisor,bmm01a.est_yield,bmm02a.scrap_factor)
         qty=abs(net_qty*bme01a.qty_ordered)
         cost=unitcost
-        ivw05a.unit_cost=0
+        icost=0
         
 rem --- Inquires For Tier Cost For Returned Items
 		if net_qty*bme01a.qty_ordered<0 then 
@@ -649,10 +648,7 @@ rem --- Inquires For Tier Cost For Returned Items
 		endif       
 
 		call pgmdir$+"ivc_lifofifo.aon",action$,type$,lf_date$,iv_chans[all],iv_tmpls$[all],item$[all],places,qty,cost,ret_cost,status
-		if ret_cost<>0 then ivw05a.unit_cost=ret_cost
-		w9$=fill(17)+bmm02a.item_id$+bmm02a.material_seq$
-		ivw05a.firm_id$=bmm02a.firm_id$
-        write record (ivw05_dev,key=w9$) ivw05a$
+		if ret_cost<>0 then icost=ret_cost
         return
 
 warehouse: rem --- Warehouse
@@ -793,7 +789,7 @@ explodephantoms: rem --- Explode Phantoms
         channel[7]=bms01a_dev,channel[8]=glm01_dev
         channel[9]=glw11_dev
         channel[10]=arm10d_dev
-        channel[12]=ivm04_dev,channel[13]=ivw04_dev,channel[14]=ivw05_dev
+        channel[12]=ivm04_dev,channel[13]=ivw04_dev
         channel[15]=bmm02_dev
 		channel[16]=gls01a_dev
 		channel[17]=gls_calendar_dev

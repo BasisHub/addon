@@ -61,7 +61,7 @@ rem --- Create a memory record set to hold results.
 rem --- Columns for the record set are defined using a string template
 
     temp$=""
-    temp$=temp$+"FIRM_ID:C(1*), BILL_NO:C(1*), SUBCONT_SEQ:C(1*), LINE_TYPE:C(1*), UNIT_MEASURE:C(1*), VENDOR_ID:C(1*), EXT_COMMENTS:C(1*), "
+    temp$=temp$+"FIRM_ID:C(1*), BILL_NO:C(1*), WO_REF_NUM:C(1*), LINE_TYPE:C(1*), UNIT_MEASURE:C(1*), VENDOR_ID:C(1*), EXT_COMMENTS:C(1*), "
     temp$=temp$+"EFFECT_DATE:C(1*), OBSOLT_DATE:C(1*), OP_INT_SEQ_REF:C(1*), QTY_REQUIRED:C(1*), ALT_FACTOR:C(1*), UNIT_COST:C(1*), DIVISOR:C(1*), "
     temp$=temp$+"LEAD_TIME:C(1*), VENDNAME:C(1*), SUB_COST:C(1*), NET_QTY:C(1*), TOT_SUB_COST:N(1*)"
 
@@ -85,7 +85,7 @@ rem --- Get masks
 rem --- Build SQL statement
 
     sql_prep$=""
-    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, subcont_seq, line_type, unit_measure, vendor_id, memo_1024, "+$0a$
+    sql_prep$=sql_prep$+"SELECT firm_id, bill_no, wo_ref_num, line_type, unit_measure, vendor_id, memo_1024, "+$0a$
     sql_prep$=sql_prep$+"  effect_date, obsolt_date, op_int_seq_ref, qty_required, alt_factor, unit_cost, divisor, "+$0a$
     sql_prep$=sql_prep$+"  lead_time, apm_vendmast.vendor_name as vendname"+$0a$
     sql_prep$=sql_prep$+"FROM bmm_billsub"+$0a$
@@ -110,7 +110,7 @@ rem --- Build result set
         data! = rs!.getEmptyRecordData()
         data!.setFieldValue("FIRM_ID",read_tpl.firm_id$)
         data!.setFieldValue("BILL_NO",read_tpl.bill_no$)
-        data!.setFieldValue("SUBCONT_SEQ",read_tpl.subcont_seq$)
+        data!.setFieldValue("WO_REF_NUM",read_tpl.wo_ref_num$)
         data!.setFieldValue("LINE_TYPE",read_tpl.line_type$)
         data!.setFieldValue("EFFECT_DATE",cvs(read_tpl.effect_date$,2))
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))

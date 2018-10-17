@@ -33,7 +33,7 @@ rem  ==============================================================
 		sub_qty=lot_size
 		ap$=callpoint!.getDevObject("ap_installed")
 		rem --- NOTE: LIFO/FIFO flag is hard coded to "N".
-		rem --- NOTE: If LIFO/FIFO is going to be used, need to lock and clear IVW_LFCOST (ivw-05) and IVW_LFDET (ivw-04).
+		rem --- NOTE: If LIFO/FIFO is going to be used, need to lock and clear IVW_LFDET (ivw-04).
 		call "bmc_getcost.aon",table_chans$[all],bill_no$,lot_size,prod_date$,ap$,"N",1,
 :			mat_cost,lab_cost,oh_cost,sub_cost,setup_div,sub_qty,"N",whse$,ea_status
 

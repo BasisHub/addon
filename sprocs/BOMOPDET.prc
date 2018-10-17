@@ -65,7 +65,7 @@ rem --- Columns for the record set are defined using a string template
     temp$=""
     temp$=temp$+"FIRM_ID:C(1*), BILL_NO:C(1*), OP_SEQ:C(1*), OP_CODE:C(1*), LINE_TYPE:C(1*), EXT_COMMENTS:C(1*), "
     temp$=temp$+"HRS_PER_PCE:C(1*), PCS_PER_HOUR:C(1*), SETUP_TIME:C(1*), MOVE_TIME:C(1*), EFFECT_DATE:C(1*), "
-    temp$=temp$+"OBSOLT_DATE:C(1*), INTERNAL_SEQ_NO:C(1*), QUEUE:C(1*), CODEDESC:C(1*), DIRECT_RATE:C(1*), "
+    temp$=temp$+"OBSOLT_DATE:C(1*), WO_OP_REF:C(1*), QUEUE:C(1*), CODEDESC:C(1*), DIRECT_RATE:C(1*), "
     temp$=temp$+"NET_HRS:C(1*), DIR_COST:C(1*), OH_COST:C(1*), OP_COST:C(1*), TOT_DIR_COST:N(1*), TOT_OH_COST:N(1*)"
 
     rs! = BBJAPI().createMemoryRecordSet(temp$)
@@ -89,7 +89,7 @@ rem --- Build SQL statement
 
     sql_prep$=""
     sql_prep$=sql_prep$+"SELECT firm_id, bill_no, op_seq, op_code, line_type, memo_1024, hrs_per_pce, pcs_per_hour, "+$0a$
-    sql_prep$=sql_prep$+"  setup_time, move_time, effect_date, obsolt_date, internal_seq_no, bmc_opcodes.queue_time as queue, "+$0a$
+    sql_prep$=sql_prep$+"  setup_time, move_time, effect_date, obsolt_date, wo_op_ref, bmc_opcodes.queue_time as queue, "+$0a$
     sql_prep$=sql_prep$+"  bmc_opcodes.code_desc as codedesc, bmc_opcodes.direct_rate as direct_rate, bmc_opcodes.ovhd_factor as ovhd_factor"+$0a$
     sql_prep$=sql_prep$+"FROM bmm_billoper"+$0a$
     sql_prep$=sql_prep$+"LEFT JOIN bmc_opcodes"+$0a$
@@ -115,7 +115,7 @@ rem --- Build result set
         data!.setFieldValue("BILL_NO",read_tpl.bill_no$)
         data!.setFieldValue("OP_SEQ",read_tpl.op_seq$)
         data!.setFieldValue("LINE_TYPE",read_tpl.line_type$)
-        data!.setFieldValue("INTERNAL_SEQ_NO",read_tpl.internal_seq_no$)
+        data!.setFieldValue("WO_OP_REF",read_tpl.wo_op_ref$)
         data!.setFieldValue("EFFECT_DATE",cvs(read_tpl.effect_date$,2))
         data!.setFieldValue("OBSOLT_DATE",cvs(read_tpl.obsolt_date$,2))
         if read_tpl.line_type$="M"

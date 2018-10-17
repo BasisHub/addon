@@ -7,15 +7,44 @@ dim apm01a$:apm01_tpl$
 apm01a_key$=firm_id$+vendor_id$
 find record (apm01_dev,key=apm01a_key$,err=*break) apm01a$
 if apm01a.vend_inactive$="Y" then
-   call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
-   msg_id$="AP_VEND_INACTIVE"
-   dim msg_tokens$[2]
-   msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
-   msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
-   gosub disp_message
-   callpoint!.setStatus("ACTIVATE")
+	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+	msg_id$="AP_VEND_INACTIVE"
+	dim msg_tokens$[2]
+	msg_tokens$[1]=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+	msg_tokens$[2]=cvs(apm01a.vendor_name$,2)
+	gosub disp_message
+	callpoint!.setStatus("ACTIVATE")
 endif
 
+rem --- Make sure ivm_itemvend record exists for the stocking vendor
+ivm05_dev=fnget_dev("IVM_ITEMVEND")
+dim ivm05a$:fnget_tpl$("IVM_ITEMVEND")
+item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
+findrecord(ivm05_dev,key=firm_id$+vendor_id$+item_id$,dom=*next)ivm05a$
+if cvs(ivm05a.firm_id$,2)=""  then
+	rem --- Create ivm_itemvend record for this vendor
+	ivm05a.firm_id$=firm_id$
+	ivm05a.vendor_id$=vendor_id$
+	ivm05a.item_id$=item_id$
+	ivm05a.prisec_flag$="P"
+	ivm05.break_qty_01=0
+	ivm05.break_qty_02=0
+	ivm05.break_qty_03=0
+	ivm05.unit_cost_01=0
+	ivm05.unit_cost_02=0
+	ivm05.unit_cost_03=0
+	ivm05.last_po_cost=0
+	ivm05.last_po_lead=0
+	ivm05.lead_time=0
+	writerecord(ivm05_dev)ivm05a$
+
+	call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
+	msg_id$="IV_ITEM_VEND_MISSING"
+	dim msg_tokens$[1]
+	msg_tokens$[1]=fnmask$(vendor_id$,m0$)
+	gosub disp_message
+	callpoint!.setStatus("ACTIVATE")
+endif
 [[IVM_ITEMWHSE.AENA]]
 rem --- Disable Barista menu items
 	wctl$="31031"; rem --- Save-As menu item in barista.ini
@@ -262,7 +291,7 @@ if (callpoint!.getUserInput()<"A" or callpoint!.getUserInput()>"Z") and cvs(call
 [[IVM_ITEMWHSE.BSHO]]
 rem --- Open extra tables
 
-num_files=10
+num_files=11
 dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 open_tables$[1]="POE_PODET",open_opts$[1]="OTA"
 open_tables$[2]="OPE_ORDDET",open_opts$[2]="OTA"
@@ -276,6 +305,10 @@ open_tables$[7]="OPC_LINECODE",open_opts$[7]="OTA"
 open_tables$[8]="POE_RECHDR",open_opts$[8]="OTA"
 open_tables$[9]="POE_RECDET",open_opts$[9]="OTA"
 open_tables$[10]="POE_POHDR",open_opts$[10]="OTA"
+if callpoint!.getDevObject("ap_installed") = "Y"
+	open_tables$[11]="IVM_ITEMVEND",open_opts$[11]="OTA"
+endif
+
 gosub open_tables
 
 rem --- Get IV params
@@ -310,9 +343,14 @@ callpoint!.setTableColumnAttribute("IVM_ITEMWHSE.EOQ_CODE","DFLT",ivs10d.eoq_cod
 callpoint!.setTableColumnAttribute("IVM_ITEMWHSE.ORD_PNT_CODE","DFLT",ivs10d.ord_pnt_code$)
 callpoint!.setTableColumnAttribute("IVM_ITEMWHSE.SAF_STK_CODE","DFLT",ivs10d.saf_stk_code$)
 
-rem -- if AR dist by item param is not checked, disable the dist code field
+rem --- if AR dist by item param is not checked, disable the dist code field
 if callpoint!.getDevObject("di")<>"Y"
 	callpoint!.setColumnEnabled("AR_DIST_CODE",-1)
+endif
+
+rem --- Disable vendor_id if AP not installed
+if callpoint!.getDevObject("ap_installed")<>"Y"
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.VENDOR_ID",-1)
 endif
 [[IVM_ITEMWHSE.AOPT-HIST]]
 iv_item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")

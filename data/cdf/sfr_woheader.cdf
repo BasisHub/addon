@@ -1,9 +1,30 @@
 [[SFR_WOHEADER.BILL_NO.BINQ]]
-	whse$=callpoint!.getColumnData("SFR_WOHEADER.WAREHOUSE_ID")
-        callpoint!.setDevObject("whse",whse$)
-[[SFR_WOHEADER.BFMC]]
-rem --- Set Custom Query for BOM Item Number
+rem --- Bill of Materials Item/Whse Lookup
+	call stbl("+DIR_SYP")+"bac_key_template.bbj","IVM_ITEMWHSE","PRIMARY",key_tpl$,rd_table_chans$[all],status$
+	dim ivmItemWhse_key$:key_tpl$
+	dim filter_defs$[2,2]
+	filter_defs$[1,0]="IVM_ITEMWHSE.FIRM_ID"
+	filter_defs$[1,1]="='"+firm_id$ +"'"
+	filter_defs$[1,2]="LOCK"
+	filter_defs$[2,0]="IVM_ITEMWHSE.WAREHOUSE_ID"
+	filter_defs$[2,1]="='"+callpoint!.getColumnData("SFR_WOHEADER.WAREHOUSE_ID")+"'"
+	filter_defs$[2,2]="LOCK"
+	
+	call stbl("+DIR_SYP")+"bax_query.bbj",gui_dev,form!,"BM_ITEMWHS_LK","",table_chans$[all],ivmItemWhse_key$,filter_defs$[all]
 
+	rem --- Get which bill_no control was used
+	bill_no$="SFR_WOHEADER.BILL_NO_1"
+	if num(callpoint!.getControlID())<>callpoint!.getControl(bill_no$).getID() then
+		bill_no$="SFR_WOHEADER.BILL_NO_2"
+	endif
+
+	rem --- Update bill_no control text if changed
+	if cvs(ivmItemWhse_key$,2)<>"" and ivmItemWhse_key.item_id$<>callpoint!.getColumnData(bill_no$) then 
+		callpoint!.setColumnData(bill_no$,ivmItemWhse_key.item_id$,1)
+		callpoint!.setStatus("MODIFIED")
+	endif
+
+	callpoint!.setStatus("ACTIVATE-ABORT")
 [[SFR_WOHEADER.BILL_NO.AVAL]]
 rem --- Validate against BOM_BILLMAST
 

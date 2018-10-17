@@ -1,3 +1,24 @@
+[[SFE_TIMEWODET.BGDC]]
+rem --- set preset val for batch_no
+	callpoint!.setTableColumnAttribute("SFE_TIMEWODET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
+rem --- When PR is installed
+	if callpoint!.getDevObject("pr")="Y"
+		rem --- Validate employee_no with PRM_EMPLMAST instead of SFM_EMPLMAST
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","DCOL","EMPL_DISPNAME")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","IDEF","PR_EMPLOYEES")
+
+		rem --- Validate pay_code with PRC_PAYCODE
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DTAB","PRC_PAYCODE")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DCOL","PR_CODE_DESC")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DKEY","[+FIRM_ID]+""A""+@")
+
+		rem --- Validate title_code with PRC_TITLCODE
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DTAB","PRC_TITLCODE")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DCOL","CODE_DESC")
+		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DKEY","[+FIRM_ID]+""F""+@")
+	endif
 [[<<DISPLAY>>.OP_REF.AVAL]]
 rem --- Use this op_ref to initialize op_code and oper_seq_ref
 	op_ref$=callpoint!.getUserInput()
@@ -163,10 +184,11 @@ rem ==========================================================================
 		rem --- Payroll Interface,  use employee's pay and title codes
 		employee_no$=callpoint!.getColumnData("SFE_TIMEWODET.EMPLOYEE_NO")
 
-		rem --- Use imployee's pay code
+		rem --- Use employee's pay code
 		bad_code$="PC"
+		trans_date$=callpoint!.getHeaderColumnData("SFE_TIMEWO.TRANS_DATE")
 		emplearn_dev=callpoint!.getDevObject("emplearn_dev")
-		find(emplearn_dev,key=firm_id$+employee_no$+"A"+pay_code$,dom=*endif)
+		find(emplearn_dev,key=firm_id$+employee_no$+trans_date$(1,4)+"A"+pay_code$,dom=*endif)
 		paycode_dev=callpoint!.getDevObject("paycode_dev")
 		dim paycode$:callpoint!.getDevObject("paycode_tpl")
 		findrecord(paycode_dev,key=firm_id$+"A"+pay_code$,dom=*endif)paycode$
@@ -174,7 +196,7 @@ rem ==========================================================================
 		paycode_rate=paycode.calc_rtamt
 		premium_rate=paycode.prem_factor
 
-		rem --- Use imployee's title code
+		rem --- Use employee's title code
 		if callpoint!.getDevObject("pay_actstd")="A" then 
 			bad_code$="TC"
 			emplpay_dev=callpoint!.getDevObject("emplpay_dev")
@@ -185,7 +207,7 @@ rem ==========================================================================
 			findrecord(titlcode_dev,key=firm_id$+"F"+title_code$,dom=*endif)titlcode$
 			bad_code$=""
 
-			rem --- Calculate actual pay rate"
+			rem --- Calculate actual pay rate
 			rate=0
 			std_rate=emplpay.std_rate
 			std_hrs=emplpay.std_hrs
@@ -347,21 +369,3 @@ rem --- Initializations
 [[SFE_TIMEWODET.BGDS]]
 rem --- Set precision
 	precision num(callpoint!.getDevObject("precision"))
-[[SFE_TIMEWODET.AGCL]]
-rem --- set preset val for batch_no
-	callpoint!.setTableColumnAttribute("SFE_TIMEWODET.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
-
-rem --- When PR is installed
-	if callpoint!.getDevObject("pr")="Y"
-		rem --- Validate employee_no with PRM_EMPLMAST instead of SFM_EMPLMAST
-		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","DTAB","PRM_EMPLMAST")
-		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.EMPLOYEE_NO","IDEF","PR_EMPLOYEES")
-
-		rem --- Validate pay_code with PRC_PAYCODE
-		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DTAB","PRC_PAYCODE")
-		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.PAY_CODE","DKNM","[+FIRM_ID]+""A""+@")
-
-		rem --- Validate title_code with PRC_TITLCODE
-		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DTAB","PRC_TITLCODE")
-		callpoint!.setTableColumnAttribute("SFE_TIMEWODET.TITLE_CODE","DKNM","[+FIRM_ID]+""F""+@")
-	endif

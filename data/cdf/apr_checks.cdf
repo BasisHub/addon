@@ -1,3 +1,43 @@
+[[APR_CHECKS.CHECK_NO.AVAL]]
+rem --- Warn if this check number has been previously used
+	check_no$=callpoint!.getUserInput()
+	aptCheckHistory_dev=fnget_dev("APT_CHECKHISTORY")
+	dim aptCheckHistory$:fnget_tpl$("APT_CHECKHISTORY")
+	ap_type$=pad(callpoint!.getColumnData("APR_CHECKS.AP_TYPE"),len(aptCheckHistory.ap_type$))
+
+	next_ap_type$=ap_type$
+	read(aptCheckHistory_dev,key=firm_id$+next_ap_type$+check_no$,dom=*next)
+	while 1
+		readrecord(aptCheckHistory_dev,end=*break)aptCheckHistory$
+		if aptCheckHistory.firm_id$<>firm_id$ then break
+		callpoint!.setDevObject("reuse_check_num","")		
+		if aptCheckHistory.ap_type$+aptCheckHistory.check_no$=next_ap_type$+check_no$ then
+			rem --- This check number was previously used
+			msg_id$="AP_CHECK_NUM_USED"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=check_no$
+			gosub disp_message
+			if msg_opt$="C" then
+				callpoint!.setStatus("ABORT")
+				callpoint!.setDevObject("reuse_check_num","N")
+			else
+				callpoint!.setDevObject("reuse_check_num","Y")		
+			endif
+		else
+			rem --- Must check all AP Types when ap_type is blank/empty
+			if cvs(ap_type$,2)="" then
+				aptCheckHistory_key$=key(aptCheckHistory_dev,end=*break)
+				if pos(firm_id$+next_ap_type$=aptCheckHistory_key$)=1 then
+					rem --- Skip ahead to next ap_type
+					read(aptCheckHistory_dev,key=firm_id$+aptCheckHistory.ap_type$+$FF$,dom=*next)
+				endif
+				readrecord(aptCheckHistory_dev,end=*break)aptCheckHistory$
+				next_ap_type$=aptCheckHistory.ap_type$
+				read(aptCheckHistory_dev,key=firm_id$+next_ap_type$+check_no$,dom=*continue)
+			endif
+		endif
+		break
+	wend
 [[APR_CHECKS.ARER]]
 rem --- Use default check form order if available
 	default_form_order$=callpoint!.getDevObject("default_form_order")
@@ -91,10 +131,11 @@ endif
 [[APR_CHECKS.BSHO]]
 rem --- See if we need to disable AP Type
 rem --- and see if a print run in currently running
-	num_files=2
+	num_files=3
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="ADX_LOCKS",   open_opts$[2]="OTA"
+	open_tables$[3]="APT_CHECKHISTORY",open_opts$[3]="OTA"
 	gosub open_tables
 
 	aps01_dev=fnget_dev("APS_PARAMS")
@@ -134,6 +175,9 @@ rem --- Abort if a check run is actively running
 
 		break
 	wend
+
+rem --- Initializations
+	callpoint!.setDevObject("reuse_check_num","")		
 [[APR_CHECKS.<CUSTOM>]]
 disable_fields:
 rem --- used to disable/enable controls depending on parameter settings
@@ -156,12 +200,22 @@ if num(callpoint!.getColumnData("APR_CHECKS.CHECK_NO")) = 0 then
 	msg_opt$=""
 	gosub disp_message
 	callpoint!.setStatus("ABORT")
-rem --- Set focus on the Check Number field
+	rem --- Set focus on the Check Number field
 	ctlContext=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLC"))
 	ctlID=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLI"))
 	chk_no!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
 	chk_no!.focus()
 endif
+
+rem --- Don't allow re-using an unwanted check number
+if callpoint!.getDevObject("reuse_check_num")="N" then
+	rem --- Set focus on the Check Number field
+	ctlContext=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLC"))
+	ctlID=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLI"))
+	chk_no!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+	chk_no!.focus()
+endif
+
 rem --- Validate Check Date
 check_date$=callpoint!.getColumnData("APR_CHECKS.CHECK_DATE")
 check_date=1

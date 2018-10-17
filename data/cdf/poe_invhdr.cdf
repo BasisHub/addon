@@ -1,3 +1,39 @@
+[[POE_INVHDR.VENDOR_ID.BINQ]]
+rem --- Set filter_defs$[] to only show vendors of given AP Type
+
+ap_type$=callpoint!.getColumnData("POE_INVHDR.AP_TYPE")
+
+dim filter_defs$[2,2]
+filter_defs$[0,0]="APM_VENDMAST.FIRM_ID"
+filter_defs$[0,1]="='"+firm_id$+"'"
+filter_defs$[0,2]="LOCK"
+
+filter_defs$[1,0]="APM_VENDHIST.AP_TYPE"
+filter_defs$[1,1]="='"+ap_type$+"'"
+filter_defs$[1,2]="LOCK"
+
+
+call STBL("+DIR_SYP")+"bax_query.bbj",
+:		gui_dev, 
+:		form!,
+:		"AP_VEND_LK",
+:		"DEFAULT",
+:		table_chans$[all],
+:		sel_key$,
+:		filter_defs$[all]
+
+if sel_key$<>""
+	call stbl("+DIR_SYP")+"bac_key_template.bbj",
+:		"APM_VENDMAST",
+:		"PRIMARY",
+:		apm_vend_key$,
+:		table_chans$[all],
+:		status$
+	dim apm_vend_key$:apm_vend_key$
+	apm_vend_key$=sel_key$
+	callpoint!.setColumnData("POE_INVHDR.VENDOR_ID",apm_vend_key.vendor_id$,1)
+endif	
+callpoint!.setStatus("ACTIVATE-ABORT")
 [[POE_INVHDR.ARAR]]
 if cvs(callpoint!.getColumnData("POE_INVHDR.AP_INV_NO"),2)<>""then
 	if callpoint!.getDevObject("gl_installed")="Y" and callpoint!.getDevObject("cash_basis")<>"Y"
