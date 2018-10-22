@@ -482,6 +482,14 @@ validate_new_aon_loc: rem --- Validate new aon install location
 		new_aon_loc$ = new_aon_loc$(1, len(new_aon_loc$)-4)
 	endif
 
+	rem --- Fix path for this OS
+	current_dir$=dir("")
+	current_drive$=dsk("",err=*next)
+    	FileObject.makeDirs(new File(new_aon_loc$))
+	chdir(new_aon_loc$)
+	new_loc$=current_drive$+dir("")
+	chdir(current_dir$)
+
 	rem --- Don’t allow current download location
 
 	testLoc$=new_aon_loc$

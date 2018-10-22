@@ -1,3 +1,43 @@
+[[ADX_INSTALLWIZ.AREC]]
+rem --- Initialize new record
+	callpoint!.setColumnData("ADX_INSTALLWIZ.INSTALL_TYPE","Q")
+[[ADX_INSTALLWIZ.NEW_INSTALL_LOC.AVAL]]
+rem --- Validate directory for aon new install location
+
+	new_loc$ = callpoint!.getUserInput()
+	gosub validate_aon_dir
+	if abort then
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+	callpoint!.setUserInput( new_loc$)
+[[ADX_INSTALLWIZ.INSTALL_TYPE.AVAL]]
+rem --- Use adx_firmsetup form to get new firm ID, name, address, etc
+	callpoint!.setDevObject("formData",null())
+	if callpoint!.getUserInput()<>"Q" then
+		dim dflt_data$[3,1]
+		dflt_data$[1,0] = "DATA_LOCATION"
+		dflt_data$[1,1] = callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC")+"/aon/data/"
+		dflt_data$[2,0] = "INSTALL_TYPE"
+		dflt_data$[2,1] = callpoint!.getUserInput()
+		dflt_data$[3,0] = "NEW_INSTALL"
+		dflt_data$[3,1] = "1"; rem --- Yes, it's for a new install
+
+		call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADX_FIRMSETUP",stbl("+USER_ID"),"MNT","",table_chans$[all],"",dflt_data$[all]
+
+		formData!=callpoint!.getDevObject("formData")
+		if formData!=null() then
+			rem --- Exited adx_firmsetup form finishing it
+			callpoint!.setStatus("ABORT")
+			break
+		endif
+
+		rem --- Display new firm ID
+		callpoint!.setColumnData("ADX_INSTALLWIZ.NEW_FIRM_ID",formData!.getProperty("NEW_FIRM_ID"),1)
+		callpoint!.setFocus("ADX_INSTALLWIZ.APP_HELP")
+		callpoint!.setStatus("ACTIVATE")
+	endif
+	
 [[ADX_INSTALLWIZ.DB_NAME.AVAL]]
 rem --- Validate new database name
 
@@ -50,7 +90,7 @@ validate_new_db_name: rem --- Validate new database name
 
 		rem --- Okay to use this db if PRB Payroll is being installed, and it does not exist yet at new install location.
 		dim adm_modules$:fnget_tpl$("ADM_MODULES")
-		find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules$
+		findrecord(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules$
 		if adm_modules.sys_install$="Y" then
 			prbabsDir_exists=0
 			testChan=unt
@@ -80,6 +120,12 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 
 	abort=0
 
+	rem --- Flip directory path separators
+
+	filePath$=new_loc$
+	gosub fix_path
+	new_loc$=filePath$
+
 	rem --- Remove trailing slashes (/ and \) from aon new install location
 
 	while len(new_loc$) and pos(new_loc$(len(new_loc$),1)="/\")
@@ -91,6 +137,14 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 	if len(new_loc$)>=4 and pos(new_loc$(1+len(new_loc$)-4)="/aon\aon" ,4)
 		new_loc$ = new_loc$(1, len(new_loc$)-4)
 	endif
+
+	rem --- Fix path for this OS
+	current_dir$=dir("")
+	current_drive$=dsk("",err=*next)
+    	FileObject.makeDirs(new File(new_loc$))
+	chdir(new_loc$)
+	new_loc$=current_drive$+dir("")
+	chdir(current_dir$)
 
 	rem --- Don’t allow current download location
 
@@ -138,7 +192,7 @@ validate_aon_dir: rem --- Validate directory for aon new install location
 	rem --- If PRB Payroll is being installed, and location is not currently used by PRB Payroll, 
 	rem --- ask if they want to install PRB Payroll there too. 
 	dim adm_modules$:fnget_tpl$("ADM_MODULES")
-	find(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules$
+	findrecord(fnget_dev("ADM_MODULES"),key="01004419"+"PRB",dom=*next)adm_modules$
 	if adm_modules.sys_install$="Y" and !prbabsDir_exists then
 		msg_id$="AD_INSTALL_PR_HERE"
 		gosub disp_message
@@ -171,7 +225,7 @@ validate_firm_id: rem -- Validate new firm ID with demo data
 	abort=0
 
 	rem --- Firm is required unless with demo data
-	if firm_id$="" and copy_data$="P" then
+	if firm_id$="" and install_type$<>"Q" then
 		msg_id$="AD_FIRM_WO_DEMO"
 		gosub disp_message
 		callpoint!.setFocus(focus$)
@@ -180,8 +234,8 @@ validate_firm_id: rem -- Validate new firm ID with demo data
 		return
 	endif
 
-	rem --- Cannot use firm 99
-	if firm_id$="99" then
+	rem --- Cannot use firm 99 or ZZ
+	if pos(firm_id$="99ZZ",2) then
 		msg_id$="AD_FIRM_ID_BAD"
 		dim msg_tokens$[1]
 		msg_tokens$[1]=firm_id$
@@ -192,6 +246,15 @@ validate_firm_id: rem -- Validate new firm ID with demo data
 		return
 	endif
 
+	return
+
+fix_path: rem --- Flip directory path separators
+
+	pos=pos("\"=filePath$)
+	while pos
+		filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+		pos=pos("\"=filePath$)
+	wend
 	return
 [[ADX_INSTALLWIZ.ASVA]]
 rem --- Validate directory for aon new install location
@@ -208,14 +271,7 @@ rem -- Validate new firm ID with demo data
 	callpoint!.setColumnData("ADX_INSTALLWIZ.APP_HELP",str(help!.isSelected()))
 
 	firm_id$=callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_FIRM_ID")
-	copy_data$=callpoint!.getColumnData("ADX_INSTALLWIZ.INSTALL_TYPE")
+	install_type$=callpoint!.getColumnData("ADX_INSTALLWIZ.INSTALL_TYPE")
 	focus$="ADX_INSTALLWIZ.NEW_FIRM_ID"
 	gosub validate_firm_id
-	if abort then break
-[[ADX_INSTALLWIZ.NEW_INSTALL_LOC.AVAL]]
-rem --- Validate directory for aon new install location
-
-	new_loc$=(new File(callpoint!.getUserInput())).getCanonicalPath()
-	gosub validate_aon_dir
-	callpoint!.setUserInput(new_loc$)
 	if abort then break

@@ -1,9 +1,14 @@
 [[POE_POHDR.AOPT-DREC]]
 rem --- Duplicate Historical Receipt
-	dim filter_defs$[1,2]
-	filter_defs$[1,0] = "POE_POHDR.FIRM_ID"
+	dim filter_defs$[2,2]
+	filter_defs$[1,0] = "POT_RECHDR.FIRM_ID"
 	filter_defs$[1,1] = "='"+firm_id$+"'"
 	filter_defs$[1,2] = "LOCK"
+	if cvs(callpoint!.getColumnData("POE_POHDR.VENDOR_ID"),2)<>"" then
+		filter_defs$[2,0] = "POT_RECHDR.VENDOR_ID"
+		filter_defs$[2,1] = "='"+callpoint!.getColumnData("POE_POHDR.VENDOR_ID")+"'"
+		filter_defs$[2,2] = "LOCK"
+	endif
 
 	call stbl("+DIR_SYP")+"bax_query.bbj",
 :		gui_dev,
@@ -22,7 +27,11 @@ rem --- Duplicate Historical Receipt
 :			table_chans$[all],
 :			status$
 
-		call stbl("+DIR_SYP")+"bas_sequences.bbj","PO_NO",seq_id$,rd_table_chans$[all]
+		if cvs(callpoint!.getColumnData("POE_POHDR.PO_NO"),2)="" then
+			call stbl("+DIR_SYP")+"bas_sequences.bbj","PO_NO",seq_id$,rd_table_chans$[all]
+		else
+			seq_id$=callpoint!.getColumnData("POE_POHDR.PO_NO")
+		endif
 		if seq_id$<>"" then
 			rem --- Copy header record
 			poe_pohdr_dev = fnget_dev("POE_POHDR")
@@ -84,9 +93,9 @@ rem --- Duplicate Historical Receipt
 
 					poe_podet.po_no$=poe_pohdr.po_no$
 					poe_podet.internal_seq_no$=int_seq_no$
-					if cvs(pot_recdet.reqd_date$,2)<>"" poe_podet.reqd_date$=date(today_jul+(recdet_reqd_date_jul-recdet_ord_date_jul):"%Yl%Mz%Dz")
-					if cvs(pot_recdet.promise_date$,2)<>"" then poe_podet.promise_date$=date(today_jul+(recdet_promise_date_jul-recdet_ord_date_jul):"%Yl%Mz%Dz")
-					if cvs(pot_recdet.not_b4_date$,2)<>"" poe_podet.not_b4_date$=date(today_jul+(recdet_not_b4_date_jul-recdet_ord_date_jul):"%Yl%Mz%Dz")
+					if cvs(pot_recdet.reqd_date$,2)<>"" poe_podet.reqd_date$=date(today_jul+(recdet_reqd_date_jul-rec_ord_date_jul):"%Yl%Mz%Dz")
+					if cvs(pot_recdet.promise_date$,2)<>"" then poe_podet.promise_date$=date(today_jul+(recdet_promise_date_jul-rec_ord_date_jul):"%Yl%Mz%Dz")
+					if cvs(pot_recdet.not_b4_date$,2)<>"" poe_podet.not_b4_date$=date(today_jul+(recdet_not_b4_date_jul-rec_ord_date_jul):"%Yl%Mz%Dz")
 					poe_podet.req_no$=""
 					poe_podet.wo_no$=""
 					poe_podet.wk_ord_seq_ref$=""

@@ -9,19 +9,20 @@ rem --- All Rights Reserved
 rem ==========================================================================
 
 
-rem --- OLDLOCATION$ : Location of source aon directory being copied (Input)
-rem --- NEWLOCATION$ : Location of target aon directory (Input)
-rem --- DEMODATA%    : 0=Do not copy demo data/1=Copy demo data (Input)
-rem --- HELP%        : 0=Do not copy AddonHelp.jar/1=Copy AddonHelp.jar (Input)
-rem --- RDFORM!      : Parent BBjTopLevelWindow object, the form (Input)
-rem --- WAIT4OK%     : Wait for user's OK when done, 0=don't wait/1=wait (Input)
-rem --- STATUS       : Status code/0=No error (Returned)
+rem --- OLDLOCATION$   : Location of source aon directory being copied (Input)
+rem --- NEWLOCATION$   : Location of target aon directory (Input)
+rem --- REQUIREDFILES% : 
+rem --- DEMODATA%      : 0=Do not copy demo data/1=Copy demo data (Input)
+rem --- HELP%          : 0=Do not copy AddonHelp.jar/1=Copy AddonHelp.jar (Input)
+rem --- RDFORM!        : Parent BBjTopLevelWindow object, the form (Input)
+rem --- WAIT4OK%       : Wait for user's OK when done, 0=don't wait/1=wait (Input)
+rem --- STATUS         : Status code/0=No error (Returned)
 
     declare BBjTopLevelWindow rdForm!
 
     seterr std_error
     setesc std_error
-    enter oldLocation$,newLocation$,demoData%,help%,rdForm!,wait4ok%,status
+    enter oldLocation$,newLocation$,requiredFiles%,demoData%,help%,rdForm!,wait4ok%,status
 
 rem --- Initializations
 
@@ -31,7 +32,7 @@ rem --- Recursively copy oldLocation to newLocation
 
     declare CopyAonDir utility!
     utility! = new CopyAonDir(rdForm!, wait4ok%)
-    utility!.copyAonDirectory(oldLocation$, newLocation$, demoData%, help%)
+    utility!.copyAonDirectory(oldLocation$, newLocation$, requiredFiles%, demoData%, help%)
     
 done: rem --- All done
     
@@ -149,16 +150,17 @@ method_error:rem --- Method error trap/handler (11Oct2017)
         rem  *
         rem  * @param BBjString oldLocation$
         rem  * @param BBjString newLocation$
-        rem  * @param BBjInt demoData
-        rem  * @param BBjInt helpFile
+        rem  * @param BBjInt requiredFiles%
+        rem  * @param BBjInt demoData%
+        rem  * @param BBjInt helpFile%
         rem  */
-        method public void copyAonDirectory(BBjString oldLocation$, BBjString newLocation$, BBjInt demoData%, BBjInt helpFile%)
+        method public void copyAonDirectory(BBjString oldLocation$, BBjString newLocation$, BBjInt requiredFiles%, BBjInt demoData%, BBjInt helpFile%)
             seterr method_error
             if demoData% then #meter_total_recs = #meter_total_recs + 500
             #meter! = #createProgressMeter()
             #openLog(demoData%, oldLocation$, newLocation$)
 
-            #copyAonDirectory(new File(oldLocation$), new File(newLocation$), demoData%, helpFile%)
+            #copyAonDirectory(new File(oldLocation$), new File(newLocation$), requiredFiles%, demoData%, helpFile%)
 
 			if !demoData% then
 
@@ -187,7 +189,7 @@ method_error:rem --- Method error trap/handler (11Oct2017)
 				endif
 
                 rem --- When not using demo data, remove ads_masks~*.xml files except don't remove ads_masks~99*.xml files
-                rem --- Now that Barista's Create Sync File Backup utility only backs up changes, all the ads_masks~*.xml
+                rem --- Bug 5796: Now that Barista's Create Sync File Backup utility only backs up changes, all the ads_masks~*.xml
                 rem --- files are needed to initialize default values on a new system when the values weren't changed on
                 rem --- the old system. The Install Wizard, via Set Up New Firm utility adc_firmsetup.aon, handles removing
                 rem --- demo ads_masks~*.xml files and creating new ones.
@@ -204,7 +206,7 @@ method_error:rem --- Method error trap/handler (11Oct2017)
 				rem wend
 
 				rem --- When not using demo data, remove ads_sequences~*.xml files except dont' remove ads_sequences~99*.xml files
-                rem --- Now that Barista's Create Sync File Backup utility only backs up changes, all the ads_sequences~*.xml
+                rem --- Bug 5796: Now that Barista's Create Sync File Backup utility only backs up changes, all the ads_sequences~*.xml
                 rem --- files are needed to initialize default values on a new system when the values weren't changed on
                 rem --- the old system. The Install Wizard, via Set Up New Firm utility adc_firmsetup.aon, handles removing
                 rem --- demo ads_sequences~*.xml files and creating new ones.
@@ -217,18 +219,10 @@ method_error:rem --- Method error trap/handler (11Oct2017)
 				rem 	#incrementProgressMeter("removed: "+aFile!.getPath())
 				rem 	#log("REMOVED: " + aFile!.getPath())
 				rem wend
-	
+
 				rem --- When not using demo data, copy requiredFiles!
-				declare Vector requiredFiles!
-				requiredFiles! = new Vector()
-				requiredFiles!.add("adm_rptctl")
-				requiredFiles!.add("adm-09"); rem --- adm_procmaster
-				requiredFiles!.add("adm-19"); rem --- adm_procdetail
-				requiredFiles!.add("adm-39"); rem --- adm_proctables
-				requiredFiles!.add("glm-06"); rem --- adm_auditcontrol
-				requiredFiles!.add("glm-03"); rem --- glc_journalcode
-				requiredFiles!.add("ivc_whsecode")
-				requiredFiles!.add("opm_pointofsale")
+                declare Vector requiredFiles!
+				requiredFiles! = #getRequiredFiles(requiredFiles%)
 				iter! = requiredFiles!.iterator()
 				while iter!.hasNext()
 					aFile! = new File(newLocation$ + "/data", cast(String, iter!.next()))
@@ -276,10 +270,11 @@ method_error:rem --- Method error trap/handler (11Oct2017)
         rem  *
         rem  * @param File source
         rem  * @param File target
-        rem  * @param BBjNumber demoData
-        rem  * @param BBjInt helpFile
+        rem  * @param BBjInt requiredFiles%
+        rem  * @param BBjInt demoData%
+        rem  * @param BBjInt helpFile%
         rem  */
-        method private void copyAonDirectory(File source!, File target!, BBjInt demoData%, BBjInt helpFile%)
+        method private void copyAonDirectory(File source!, File target!, BBjInt requiredFiles%, BBjInt demoData%, BBjInt helpFile%)
             seterr method_error
     
             rem -- recursively process directories and copy files
@@ -301,7 +296,7 @@ method_error:rem --- Method error trap/handler (11Oct2017)
                     for i=0 to fileVector!.size()-1
                         #copyAonDirectory(new File(source!, cast(BBjString, fileVector!.get(i))), 
 :                                         new File(target!, cast(BBjString, fileVector!.get(i))), 
-:                                         demoData%, helpFile%)
+:                                         requiredFiles%, demoData%, helpFile%)
                     next i
                 endif
                 
@@ -384,6 +379,115 @@ method_error:rem --- Method error trap/handler (11Oct2017)
             endif
             
             methodret skipDir%
+            
+method_error:rem --- Method error trap/handler (11Oct2017)
+    rd_err_text$="", err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$
+    if pos("ESCAPE"=rd_err_act$)<>0 seterr 0;setesc 0
+    if pos("RETRY"=rd_err_act$)<>0 retry
+    x$=stbl("+THROWN_ERR","TRUE")   
+    throw "["+pgm(-2)+"] "+str(tcb(5))+": "+rd_err_text$,err_num
+        methodend
+
+        rem /**
+        rem  * Get list of required files. Either (1) required files listed in readme.htm, or (2) files with firm ZZ default data,
+        rem  * or (3) required files listed in readme.htm plus files with firm ZZ deault data.
+        rem  *         
+        rem  * @param BBjInt fileType%      1 = required files listed in readme.htm
+        rem  *                              2 = files with firm ZZ default data
+        rem  *                              3 = required files listed in readme.htm plus files with firm ZZ default data
+        rem  *
+        rem  * @return Vector requiredFiles!
+        rem  */
+        method public static Vector getRequiredFiles(BBjInt fileType%)
+            seterr method_error
+            declare Vector requiredFiles!
+            requiredFiles! = new Vector()
+
+            rem --- Required files listed in readme.htm
+            if fileType%=1 or fileType%=3 then
+                requiredFiles!.add("adm_rptctl")
+                requiredFiles!.add("adm-09"); rem --- adm_procmaster
+                requiredFiles!.add("adm-19"); rem --- adm_procdetail
+                requiredFiles!.add("adm-39"); rem --- adm_proctables
+                requiredFiles!.add("glm-03"); rem --- glc_journalcode
+                requiredFiles!.add("glm-06"); rem --- adm_auditcontrol
+                requiredFiles!.add("ivc_whsecode")
+                requiredFiles!.add("opm_pointofsale")
+            endif
+
+            rem --- Files with firm ZZ default data.
+            if fileType%=2 or fileType%=3 then
+                if fileType%=2 then requiredFiles!.add("adm_rptctl")
+                if fileType%=2 then requiredFiles!.add("adm-09"); rem --- adm_procmaster
+                if fileType%=2 then requiredFiles!.add("adm-19"); rem --- adm_procdetail
+                if fileType%=2 then requiredFiles!.add("adm-39"); rem --- adm_proctables
+                requiredFiles!.add("ads_compinfo")
+                requiredFiles!.add("apc_distribution")
+                requiredFiles!.add("apc_paymentgroup")
+                requiredFiles!.add("apc_termscode")
+                requiredFiles!.add("apc_typecode")
+                requiredFiles!.add("aps_params")
+                requiredFiles!.add("aps_report")
+                requiredFiles!.add("arc_carriercode")
+                requiredFiles!.add("arc_cashcode")
+                requiredFiles!.add("arc_custtype")
+                requiredFiles!.add("arc_distcode")
+                requiredFiles!.add("arc_salecode")
+                requiredFiles!.add("arc_scaccode")
+                requiredFiles!.add("arc_shipviacode")
+                requiredFiles!.add("arc_termcode")
+                requiredFiles!.add("arc_terrcode")
+                requiredFiles!.add("ars_params")
+                requiredFiles!.add("ars_report")
+                requiredFiles!.add("bmm-08"); rem --- bmc_opcodes
+                requiredFiles!.add("bms_params")
+                requiredFiles!.add("glm-01"); rem --- glm_acct
+                if fileType%=2 then requiredFiles!.add("glm-03"); rem --- glc_journalcode
+                if fileType%=2 then requiredFiles!.add("glm-06"); rem --- adm_auditcontrol
+                requiredFiles!.add("glm-07"); rem --- glc_cyclecode
+                requiredFiles!.add("glm-10"); rem --- glm_acctbreaks
+                requiredFiles!.add("glm-11"); rem --- glm_finassign
+                requiredFiles!.add("glm-12"); rem --- glm_finmaster
+                requiredFiles!.add("glm-21"); rem --- glm_cofinassign
+                requiredFiles!.add("glm-22"); rem --- glm_findetail
+                requiredFiles!.add("glm-32"); rem --- glm_fincolumns
+                requiredFiles!.add("gls_calendar")
+                requiredFiles!.add("gls_earnings")
+                requiredFiles!.add("gls_financials")
+                requiredFiles!.add("gls_params")
+                requiredFiles!.add("ivc_buycode")
+                requiredFiles!.add("ivc_priccode")
+                requiredFiles!.add("ivc_prodcode")
+                requiredFiles!.add("ivc_trancode")
+                if fileType%=2 then requiredFiles!.add("ivc_whsecode")
+                requiredFiles!.add("ivm-13"); rem --- ivc_clascode
+                requiredFiles!.add("ivm-15"); rem --- ivc_typecode
+                requiredFiles!.add("ivs_params")
+                requiredFiles!.add("opc_message")
+                requiredFiles!.add("opm-02"); rem --- opc_linecode
+                requiredFiles!.add("opm-03"); rem --- opc_disccode
+                requiredFiles!.add("opm-05"); rem --- opc_pricecds
+                requiredFiles!.add("opm-06"); rem --- opc_taxcode
+                if fileType%=2 then requiredFiles!.add("opm_pointofsale")
+                requiredFiles!.add("poc_message")
+                requiredFiles!.add("pom-02"); rem --- poc_linecode
+                requiredFiles!.add("pom-03"); rem --- poc_rejctcod
+                requiredFiles!.add("pom-13"); rem --- poc_rejctcmt
+                requiredFiles!.add("pos_params")
+                requiredFiles!.add("sas_params")
+                requiredFiles!.add("sfm-02"); rem --- sfc_oprtncod
+                requiredFiles!.add("sfm-10"); rem --- sfc_wotypecd
+                requiredFiles!.add("sfs_params")
+            endif
+
+            methodret requiredFiles!
             
 method_error:rem --- Method error trap/handler (11Oct2017)
     rd_err_text$="", err_num=err

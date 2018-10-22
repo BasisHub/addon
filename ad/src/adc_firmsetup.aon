@@ -8,49 +8,70 @@ rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 rem ==========================================================================
 
-rem --- OLDLOCATION$: (Optional) Path to data directory under the current download directory (Input)
-rem --- DATADIR$    : Absolute path to the aon/data directory (Input)
-rem --- NEWFIRM$    : New firm ID, not required when with demo data (Input)
+rem --- FORMDATA!   : Property object with form data from Barista's Option! object (Input)
 rem --- DEMODATA%   : 0=Without demo data/1=With demo data (Input)
 rem --- RDFORM!     : Parent BBjTopLevelWindow object, the form (Input)
 rem --- WAIT4OK%    : Wait for user's OK when done, 0=don't wait/1=wait (Input)
 rem --- STATUS      : Status code/0=No error (Returned)
 
-    enter dataDir$,newFirm$,demoData%,rdForm!,wait4ok%,status,err=oldLocation
-    goto init
-
-oldLocation:
-    enter oldLocation$,dataDir$,newFirm$,demoData%,rdForm!,wait4ok%,status
-
-init: rem --- Initializations
     use java.io.File
-    use java.util.Vector
-    use java.util.HashMap
     use java.util.Iterator
+    use java.util.TreeMap
+    use java.util.Vector
     use ::bbtranslator.bbj::BBTranslator
     use ::ado_file.src::FileObject
+    use ::adc_copyaon.aon::CopyAonDir
 
     seterr std_error
     setesc std_error
 
+    enter formData!,demoData%,rdForm!,wait4ok%,status
+
+rem --- Initializations
     status=0
     BLOCKSIZE = 2^20
     dir_syp$=stbl("+DIR_SYP")
     sysGUI! = BBjAPI().getSysGui()
 	declare File aFile!
 	declare Iterator iter!
+
+	rem --- Retrieve sysinfo data
+    sysinfo_tpl$=stbl("+SYSINFO_TPL",err=*next)
+    dim sysinfo$:sysinfo_tpl$
+    sysinfo$=stbl("+SYSINFO",err=*next)
+    systemYear$=sysinfo.system_date$(1,4)
+    systemMonth$=sysinfo.system_date$(5,2)
+
+	rem --- Get user inputs
+    dataDir$=formData!.getProperty("DATA_LOCATION")
+    newFirm$=formData!.getProperty("NEW_FIRM_ID")
+    firmName$=formData!.getProperty("FIRM_NAME")
+    addrLine1$=formData!.getProperty("ADDR_LINE_1")
+    addrLine2$=formData!.getProperty("ADDR_LINE_2")
+    city$=formData!.getProperty("CITY")
+    stateCode$=formData!.getProperty("STATE_CODE")
+    zipCode$=formData!.getProperty("ZIP_CODE")
+    countryId$=formData!.getProperty("CNTRY_ID")
+    phoneNo$=formData!.getProperty("PHONE_NO")
+    federalId$=formData!.getProperty("FEDERAL_ID")
+    installType$=formData!.getProperty("INSTALL_TYPE")
+    newInstall=num(formData!.getProperty("NEW_INSTALL"))
 	
-	rem --- Initialize HashMap with files required for a clean new install
-	declare HashMap requiredFiles!
-	requiredFiles! = new HashMap()
-	requiredFiles!.put("adm_rptctl","")
-	requiredFiles!.put("adm-09",""); rem --- adm_procmaster
-	requiredFiles!.put("adm-19",""); rem --- adm_procdetail
-    requiredFiles!.put("adm-39",""); rem --- adm_proctables
-	requiredFiles!.put("glm-06",""); rem --- adm_auditcontrol
-	requiredFiles!.put("glm-03",""); rem --- glc_journalcode
-	requiredFiles!.put("ivc_whsecode","")
-	requiredFiles!.put("opm_pointofsale","")
+	rem --- Initialize TreeMap with files required for a clean new install
+	declare Vector fileVect!
+	declare TreeMap requiredFiles!
+	if installType$="X" then
+	    rem --- Without data
+	    fileVect! = CopyAonDir.getRequiredFiles(1); rem --- Only required files listed in readme.htm
+	else
+	    rem --- With default parameters and codes
+        fileVect! = CopyAonDir.getRequiredFiles(3); rem --- Required files listed in readme.htm plus files with firm ZZ default data
+	endif
+	requiredFiles! = new TreeMap()
+	for i=0 to fileVect!.size()-1
+	    thisFile$=fileVect!.get(i)
+	    requiredFiles!.put(thisFile$,"")
+	next i
     
 	rem --- Flip directory path separators
     filePath$=dataDir$
@@ -59,15 +80,22 @@ init: rem --- Initializations
 
 	rem --- Get aon directory location from aon/data path
 	aonDir$=dataDir$(1, pos("/data"=dataDir$,-1)-1)
-	
-	rem --- Get aon/data directory under the current download directory
-	if oldLocation$="" then
-    	sep$ = java.io.File.separator
-    	bbjHome$=java.lang.System.getProperty("basis.BBjHome")
-    	oldData$ = bbjHome$ + sep$ + "apps" + sep$ + "aon" + sep$ + "data"
-	else
-	    oldData$=oldLocation$
-	endif
+
+    rem --- Get barista directory location from aon directory
+    barDir$=aonDir$(1, pos("/aon"=dataDir$,-1)-1)+"/barista"
+
+rem --- Open files
+    num_files=1
+    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+    open_tables$[1]="DDM_TABLE_TPLS",open_opts$[1]="OTA"
+
+    gosub open_tables
+
+    ddmTableTpls_dev=num(open_chans$[1]); dim ddmTableTpls$:open_tpls$[1]
+            
+rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
+    dev_mode$=""
+    call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
 
 rem --- Count files to process so can size progress meter
 	declare File dataDir!
@@ -76,69 +104,26 @@ rem --- Count files to process so can size progress meter
 	rem --- Count requiredFiles!
 	meterSize=requiredFiles!.size()
 
-	if cvs(newFirm$,3)<>"" then 
-		rem --- Get/count ads_masks~99*.xml files in aon/data/sync directory
-		declare File syncDir!
-		declare Vector masks99Files!
-		syncDir! = new File(dataDir$ + "/sync")
-		if syncDir!.listFiles(new Masks99Filter())<>null() then
-    		masks99Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Masks99Filter())))
-    		meterSize=meterSize+masks99Files!.size()
-		else
-		    masks99Files! = new Vector()
-		endif
+	if cvs(newFirm$,3)<>"" then
+        rem --- Add 1 for creating Barista's adm_firms.dat record to new firm
+        meterSize=meterSize+1
 
-		rem --- Get/count ads_sequences~99*.xml files in aon/data/sync directory
-		declare Vector sequences99Files!
-        if syncDir!.listFiles(new Sequences99Filter())<>null() then
-    		sequences99Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Sequences99Filter())))
-    		meterSize=meterSize+sequences99Files!.size()
-		else
-		    sequences99Files! = new Vector()
-		endif
+        rem --- Add 1 for copying Barista's ads_masks.dat firm ZZ records to new firm
+        meterSize=meterSize+1
+
+        rem --- Add 1 for copying Barista's ads_sequences.dat firm ZZ records to new firm
+        meterSize=meterSize+1
 	endif
-	
-	if !demodata% then
-		rem --- Count requiredFiles! again
-		meterSize=meterSize+requiredFiles!.size()
 
-		rem --- Get/count ads_masks~01*.xml files in aon/data/sync directory
-        declare File syncDir!
-        declare Vector masks01Files!
-        syncDir! = new File(dataDir$ + "/sync")
-        if syncDir!.listFiles(new Masks01Filter())<>null() then
-    		masks01Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Masks01Filter())))
-    		meterSize=meterSize+masks01Files!.size()
-		else
-		    masks01Files! = new Vector()
-		endif
-		
-		rem --- Get/count ads_masks~02*.xml files in aon/data/sync directory
-		declare Vector masks02Files!
-        if syncDir!.listFiles(new Masks02Filter())<>null() then
-    		masks02Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Masks02Filter())))
-    		meterSize=meterSize+masks02Files!.size()
-		else
-		    masks02Files! = new Vector()
-		endif
-		
-		rem --- Get/count ads_sequences~01*.xml files in aon/data/sync directory
-		declare Vector sequences01Files!
-        if syncDir!.listFiles(new Sequences01Filter())<>null() then
-    		sequences01Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Sequences01Filter())))
-    		meterSize=meterSize+sequences01Files!.size()
-		else
-		    sequences01Files! = new Vector()
-		endif
-		
-		rem --- Get/count ads_sequences~02*.xml files in aon/data/sync directory
-		declare Vector sequences02Files!
-        if syncDir!.listFiles(new Sequences02Filter())<>null() then
-    		sequences02Files! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new Sequences02Filter())))
-    		meterSize=meterSize+sequences02Files!.size()
-		else
-		    sequences02Files! = new Vector()
-		endif
+	if newInstall and !demodata% then
+        rem --- Add 2 for removing firms 01 and 02 from Barista's adm_firms.dat file
+        meterSize=meterSize+2
+
+        rem --- Add 2 for removing firms 01 and 02 from Barista's ads_masks.dat file
+        meterSize=meterSize+2
+
+        rem --- Add 2 for removing firms 01 and 02 from Barista's ads_sequences.dat file
+        meterSize=meterSize+2
 		
 		rem --- Get/count inventory item image in aon/images directory
 		declare File imagesDir!
@@ -156,6 +141,8 @@ rem --- Count files to process so can size progress meter
 		
 		rem --- Get/count demo data files in aon/data directory
 		declare Vector dataFiles!
+        declare File syncDir!
+        syncDir! = new File(dataDir$ + "/sync")
         if syncDir!.listFiles(new DataFilter())<>null() then
     		dataFiles! = new Vector(java.util.Arrays.asList(syncDir!.listFiles(new DataFilter())))
     		meterSize=meterSize+dataFiles!.size()
@@ -184,30 +171,8 @@ rem --- Open log file
     location$ = aonDir$
     gosub open_log
 
-rem --- When not using demo data, remove inventory item image (except addon_logo32.png)
-	if !demodata% then
-		print(log_dev)""
-		print(log_dev)"remove inventory item images"
-		iter! = imagesFiles!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-		
-			rem --- Remove inventory item image (except addon_logo32.png)
-			if aFile!.getName()<>"addon_logo32.png" then
-				aFile!.delete()
-
-				rem --- Increment progress meter
-				meter_text$="removed: "+aFile!.getPath()
-				meter_proc_recs=meter_proc_recs+1
-				meter_action$="MTR-LST"
-				gosub disp_meter
-				print(log_dev)meter_text$
-			endif
-		wend
-	endif
-
-rem --- When not using demo data, remove demo data files (except requiredFiles!)
-	if !demodata% then
+rem --- When new install not using demo data, remove demo data files (except requiredFiles!)
+	if newInstall and !demodata% then
 		print(log_dev)""
 		print(log_dev)"remove demo data files"
 		iter! = dataFiles!.iterator()
@@ -230,246 +195,370 @@ rem --- When not using demo data, remove demo data files (except requiredFiles!)
 			endif
 		wend
 	endif
-	
-rem --- Process requiredFiles!
-	print(log_dev)""
-	print(log_dev)"process required data files"
-	iter! = requiredFiles!.keySet().iterator()
-	while iter!.hasNext()
-		aFile! = new File(dataDir!, cast(String, iter!.next()))
 
-		rem --- Need to copy requiredFiles! if they are missing
-		missing=1
-		file_dev=unt
-		open(file_dev,err=*next)aFile!.getPath();missing=0
-		close(file_dev)
-		if missing then
-			rem --- Copy files
-			sourceChan=unt
-			open(sourceChan,isz=-1,err=*continue)oldData$+"/"+aFile!.getName()
-			targetChan=unt
-			open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")aFile!.getPath()
-			while 1
-				readrecord(sourceChan,siz=BLOCKSIZE,end=*break)record$
-				writerecord(targetChan)record$
-			wend
-			close(sourceChan)
-			close(targetChan)
+rem --- When new install not using demo data, remove firms 01 and 02 from Barista's adm_firms.dat file
+    admFirms_found=0
+    admFirms_dev=unt
+    open(admFirms_dev,err=*next)barDir$+"/sys/data/adm_firms.dat"; admFirms_found=1
+    if newInstall and !demodata% and admFirms_found then
+        findrecord(ddmTableTpls_dev,key=pad(cvs("ADM_FIRMS",4),16),dom=*endif)ddmTableTpls$
+        dim admFirms$:ddmTableTpls.dd_table_tpl$
+        for i=1 to 2
+            firm_id$=str(i:"00")
+            print(log_dev)""
+            print(log_dev)"remove "+firm_id$+" from Barista's adm_firms.dat file"
+            readrecord(admFirms_dev,key=firm_id$,dom=*continue)admFirms$
+            remove(admFirms_dev,key=firm_id$)
+
+            rem --- Increment progress meter
+            meter_text$="removed firms "+firm_id$+" from adm_firms.dat"
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        next i
+    endif
+
+rem --- Create Barista's adm_firms.dat record for new firm
+    if cvs(newFirm$,3)<>"" and admFirms_found then 
+        print(log_dev)""
+        print(log_dev)"create Barista's adm_firms.dat record for new firm "+newFirm$
+        findrecord(ddmTableTpls_dev,key=pad(cvs("ADM_FIRMS",4),16),dom=*endif)ddmTableTpls$
+        dim admFirms$:ddmTableTpls.dd_table_tpl$
+        admFirms.company_id$=newFirm$
+        admFirms.firm_name$=firmName$
+        admFirms.help_flag$="Y"
+        admFirms.batch_entry$="N"
+        if pos(newFirm$="0102",2) then
+            admFirms.user_modified$="M"
+        else
+            admFirms.user_modified$="A"
+        endif
+        writerecord(admFirms_dev)admFirms$
+
+        rem --- When an existing installation, create admin_backup records using bax_xmlrec_exp.bbj
+        if !newInstall and rdMountVect!<>null() and rdMountVect!.size()>0 then
+            rem --- Create admin_backup records for admin data (adm_firms, ads_masks and ads_sequences) changes
+            exp_action$=admFirms.user_modified$
+            exp_add_only$=""
+            call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADM_FIRMS",admFirms$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+        endif
+
+        rem --- Increment progress meter
+        meter_text$="created adm_firms.dat record for new firm "+newFirm$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+    close(admFirms_dev,err=*next)
+
+rem --- When new install not using demo data, remove firms 01 and 02 from Barista's ads_masks.dat file
+    adsMasks_found=0
+    adsMasks_dev=unt
+    open(adsMasks_dev,err=*next)barDir$+"/sys/data/ads_masks.dat"; adsMasks_found=1
+    if newInstall and !demodata% and adsMasks_found then
+        findrecord(ddmTableTpls_dev,key=pad(cvs("ADS_MASKS",4),16),dom=*endif)ddmTableTpls$
+        dim adsMasks$:ddmTableTpls.dd_table_tpl$
+        for i=1 to 2
+            firm_id$=str(i:"00")
+            print(log_dev)""
+            print(log_dev)"remove "+firm_id$+" from Barista's ads_masks.dat file"
+            read(adsMasks_dev,key=firm_id$,dom=*next)
+            while 1
+                masksKey$=key(adsMasks_dev,end=*break)
+                if pos(firm_id$=masksKey$)<>1 then break
+                readrecord(adsMasks_dev,end=*break)adsMasks$
+                remove(adsMasks_dev,key=masksKey$)
+            wend
+
+            rem --- Increment progress meter
+            meter_text$="removed firms "+firm_id$+" from ads_masks.dat"
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        next i
+    endif
+
+rem --- Copy Barista's ads_masks.dat firm ZZ records to new firm
+    if cvs(newFirm$,3)<>"" and adsMasks_found then 
+        print(log_dev)""
+        print(log_dev)"copy Barista's ads_masks.dat firm ZZ records to new firm "+newFirm$
+        findrecord(ddmTableTpls_dev,key=pad(cvs("ADS_MASKS",4),16),dom=*endif)ddmTableTpls$
+        dim adsMasks$:ddmTableTpls.dd_table_tpl$
+        read(adsMasks_dev,key="ZZ",dom=*next)
+        while 1
+            masksKey$=key(adsMasks_dev,end=*break)
+            if pos("ZZ"=masksKey$)<>1 then break
+            readrecord(adsMasks_dev)adsMasks$
+            adsMasks.firm_id$=newFirm$
+            if pos(newFirm$="0102",2) then
+                adsMasks.user_modified$="M"
+            else
+                adsMasks.user_modified$="A"
+            endif
+            writerecord(adsMasks_dev)adsMasks$
+            rem --- Re-set file pointer to next ZZ record
+            read(adsMasks_dev,key=masksKey$)
+
+            rem --- When an existing installation, create admin_backup records using bax_xmlrec_exp.bbj
+            if !newInstall and rdMountVect!<>null() and rdMountVect!.size()>0 then
+                rem --- Create admin_backup records for admin data (adm_firms, ads_masks and ads_sequences) changes
+                exp_action$=adsMasks.user_modified$
+                exp_add_only$=""
+                call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_MASKS",adsMasks$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+            endif
+        wend
+
+        rem --- Increment progress meter
+        meter_text$="copied ads_masks.dat firm ZZ records to new firm "+newFirm$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+    close(adsMasks_dev,err=*next)
+
+rem --- When new install not using demo data, remove firms 01 and 02 from Barista's ads_sequences.dat file
+    adsSequences_found=0
+    adsSequences_dev=unt
+    open(adsSequences_dev,err=*next)barDir$+"/sys/data/ads_sequences.dat"; adsSequences_found=1
+    if newInstall and !demodata% and adsSequences_found then
+        findrecord(ddmTableTpls_dev,key=pad(cvs("ADS_SEQUENCES",4),16),dom=*endif)ddmTableTpls$
+        dim adsSequences$:ddmTableTpls.dd_table_tpl$
+        for i=1 to 2
+            firm_id$=str(i:"00")
+            print(log_dev)""
+            print(log_dev)"remove "+firm_id$+" from Barista's ads_sequences.dat file"
+            read(adsSequences_dev,key=firm_id$,dom=*next)
+            while 1
+                sequencesKey$=key(adsSequences_dev,end=*break)
+                if pos(firm_id$=sequencesKey$)<>1 then break
+                readrecord(adsSequences_dev,end=*break)adsSequences$
+                remove(adsSequences_dev,key=sequencesKey$)
+            wend
+
+            rem --- Increment progress meter
+            meter_text$="removed firms "+firm_id$+" from ads_sequences.dat"
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        next i
+    endif
+
+rem --- Copy Barista's ads_sequences.dat firm ZZ records to new firm
+    if cvs(newFirm$,3)<>"" and adsSequences_found then 
+        print(log_dev)""
+        print(log_dev)"copy Barista's ads_sequences.dat firm ZZ records to new firm "+newFirm$
+        findrecord(ddmTableTpls_dev,key=pad(cvs("ADS_SEQUENCES",4),16),dom=*endif)ddmTableTpls$
+        dim adsSequences$:ddmTableTpls.dd_table_tpl$
+        read(adsSequences_dev,key="ZZ",dom=*next)
+        while 1
+            sequencesKey$=key(adsSequences_dev,end=*break)
+            if pos("ZZ"=sequencesKey$)<>1 then break
+            readrecord(adsSequences_dev)adsSequences$
+            adsSequences.firm_id$=newFirm$
+            if pos(newFirm$="0102",2) then
+                adsSequences.user_modified$="M"
+            else
+                adsSequences.user_modified$="A"
+            endif
+            writerecord(adsSequences_dev)adsSequences$
+            rem --- Re-set file pointer to next ZZ record
+            read(adsSequences_dev,key=sequencesKey$)
+
+            rem --- When an existing installation, create admin_backup records using bax_xmlrec_exp.bbj
+            if !newInstall and rdMountVect!<>null() and rdMountVect!.size()>0 then
+                rem --- Create admin_backup records for admin data (adm_firms, ads_masks and ads_sequences) changes
+                exp_action$=adsSequences.user_modified$
+                exp_add_only$=""
+                call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_SEQUENCES",adsSequences$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+            endif
+        wend
+
+        rem --- Increment progress meter
+        meter_text$="copied ads_sequences.dat firm ZZ records to new firm "+newFirm$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+    close(adsSequences_dev,err=*next)
+
+rem --- When new install not using demo data, create admin_backup records using bax_sync_backup.bbj
+    if newInstall and !demodata% then
+        rem --- Create admin_backup records for admin data (adm_firms, ads_masks and ads_sequences) changes
+        print(log_dev)""
+        print(log_dev)"create admin_backup records for admin data changes"
     
-			rem --- Increment progress meter
-			meter_text$="copied: "+oldData$+"/"+aFile!.getName()
-			meter_proc_recs=meter_proc_recs+1
-			meter_action$="MTR-LST"
-			gosub disp_meter
-			print(log_dev)meter_text$
-		endif
-		
-		rem --- Open file
-		file_dev=unt
-		open(file_dev)aFile!.getPath()
+        rem --- Pass bax_sync_backup.bbj the full path to the installation’s Barista directory
+        call stbl("+DIR_SYP")+"bax_sync_backup.bbj","AUTO",barDir$,sysGUI!,rdForm!,null(),table_chans$[all]
+    endif
 
-		rem --- When not using demo data, remove firm 01 and 02 data
-		if !demodata% then
-			read(file_dev,key="01",dom=*next)
-			while 1
-				key$=key(file_dev,end=*break)
-				if len(key$)>=2 and pos(key$(1,2)="0102",2) then
-					remove(file_dev,key=key$)
-				else
-					read(file_dev,end=*break)
-				endif
-			wend
-		endif
-		
-		rem --- Copy firm 99 to new firm, if new firm not blank
-		if cvs(newFirm$,3)<>"" then 
-			write_dev=unt
-			open(write_dev)aFile!.getPath()
-			read(file_dev,key="99",dom=*next)
-			while 1
-				key$=key(file_dev,err=*break)
-				if len(key$)>=2 and key$(1,2)="99"
-					readrecord(file_dev,key=key$)record$
-					writerecord(write_dev,key=newFirm$+key$(3),dom=*next)newFirm$+record$(3)
-				else
-					read(file_dev,end=*break)
-				endif
-			wend
+rem --- Process requiredFiles!
+    print(log_dev)""
+    print(log_dev)"process required data files"
+    iter! = requiredFiles!.keySet().iterator()
+    while iter!.hasNext()
+        aFile! = new File(dataDir!, cast(String, iter!.next()))
+        
+        rem --- Open file
+        file_dev=unt
+        open(file_dev,err=*continue)aFile!.getPath()
 
-			rem --- Close files
-			close(write_dev)
-			close(file_dev)
-		
-			rem --- Increment progress meter
-			meter_text$="copied firm 99 to "+newFirm$+": "+aFile!.getPath()
-			meter_proc_recs=meter_proc_recs+1
-			meter_action$="MTR-LST"
-			gosub disp_meter
-			print(log_dev)meter_text$
-		endif
-	wend
+        rem --- When new install not using demo data, remove firm 01 and 02 data
+        if newInstall and !demodata% then
+            read(file_dev,key="01",dom=*next)
+            while 1
+                key$=key(file_dev,end=*break)
+                if len(key$)>=2 and pos(key$(1,2)="0102",2) then
+                    remove(file_dev,key=key$)
+                else
+                    read(file_dev,end=*break)
+                endif
+            wend
+        endif
+        
+        rem --- Copy firm ZZ to new firm, if new firm not blank
+        if cvs(newFirm$,3)<>"" then 
+            write_dev=unt
+            open(write_dev)aFile!.getPath()
+            read(file_dev,key="ZZ",dom=*next)
+            while 1
+                key$=key(file_dev,err=*break)
+                if len(key$)>=2 and key$(1,2)="ZZ"
+                    readrecord(file_dev,key=key$)record$
+                    writerecord(write_dev,key=newFirm$+key$(3),dom=*next)newFirm$+record$(3)
+                else
+                    read(file_dev,end=*break)
+                endif
+            wend
 
-	rem --- When not using demo data, remove ads_masks~01*.xml files 
-	if !demodata% then
-		print(log_dev)""
-		print(log_dev)"remove ads_masks~01*.xml files"
-		iter! = masks01Files!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-			aFile!.delete()
+            rem --- Handle files with special initialization requirements 
+            thisFile$=aFile!.getName()
+            findrecord(ddmTableTpls_dev,key=pad(cvs(thisFile$,4),16),dom=*endif)ddmTableTpls$
+            dim record$:ddmTableTpls.dd_table_tpl$
+            switch (BBjAPI().TRUE)
+                case thisFile$ = "ads_compinfo"
+                    record.firm_id$=newFirm$
+                    record.firm_name$=firmName$
+                    record.addr_line_1$=addrLine1$
+                    record.addr_line_2$=addrLine2$
+                    record.city$=city$
+                    record.state_code$=stateCode$
+                    record.country_id$=countryId$
+                    record.postal_code$=zipCode$
+                    record.phone_no$=phoneNo$
+                    record.own_tax_id$=federalId$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "aps_params"
+                    findrecord(file_dev,key=newFirm$+"AP00")record$
+                    record.current_per$=systemMonth$
+                    record.current_year$=systemYear$
+                    record.cur_1099_yr$=systemYear$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "aps_report"
+                    record.firm_id$=newFirm$
+                    record.ap$="AP"
+                    record.sequence_02$="02"
+                    record.name$=firmName$
+                    record.addr_line_1$=addrLine1$
+                    record.addr_line_2$=addrLine2$
+                    record.city$=city$
+                    record.state_code$=stateCode$
+                    record.zip_code$=zipCode$
+                    record.phone_no$=phoneNo$
+                    record.federal_id$=federalId$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "ars_params"
+                    findrecord(file_dev,key=newFirm$+"AR00")record$
+                    record.current_per$=systemMonth$
+                    record.current_year$=systemYear$
+                    record.lstcom_date$=""
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "ars_report"
+                    record.firm_id$=newFirm$
+                    record.ar$="AR"
+                    record.sequence_02$="02"
+                    record.name$=firmName$
+                    record.addr_line_1$=addrLine1$
+                    record.addr_line_2$=addrLine2$
+                    record.city$=city$
+                    record.state_code$=stateCode$
+                    record.zip_code$=zipCode$
+                    record.phone_no$=phoneNo$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "gls_calendar"
+                    read(file_dev,key=newFirm$,dom=*next)
+                    while 1
+                        thisKey$=key(file_dev,end=*break)
+                        if pos(newFirm$=thisKey$)<>1 then break
+                        findrecord(file_dev,key=thisKey$)record$
+                        remove(file_dev,key=thisKey$,err=*next)
+                    wend
+                    if record.firm_id$=newFirm$ then
+                        for per=1 to 13
+                                locked_flag$="locked_flag_"+str(per:"00")
+                                field record$,locked_flag$="N"
+                                locked_date$="locked_date_"+str(per:"00")
+                                field record$,locked_date$=""
+                        next per
+                    endif
+                    record.year$=str(num(systemYear$)-1)
+                    writerecord(file_dev)record$
+                    record.year$=systemYear$
+                    writerecord(file_dev)record$
+                    record.year$=str(num(systemYear$)+1)
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "gls_financials"
+                    findrecord(file_dev,key=newFirm$+"GL02")record$
+                    record.period$=systemMonth$
+                    record.year$=systemYear$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "gls_params"
+                    findrecord(file_dev,key=newFirm$+"GL00")record$
+                    record.current_per$=systemMonth$
+                    record.current_year$=systemYear$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "ivs_params"
+                    findrecord(file_dev,key=newFirm$+"IV00")record$
+                    record.current_per$=systemMonth$
+                    record.current_year$=systemYear$
+                    writerecord(file_dev)record$
+                    break
+                case thisFile$ = "sfs_params"
+                    findrecord(file_dev,key=newFirm$+"SF00")record$
+                    record.current_per$=systemMonth$
+                    record.current_year$=systemYear$
+                    writerecord(file_dev)record$
+                    break
+                    break
+                case default
+                    break
+            swend
 
-			rem --- Increment progress meter
-			meter_text$="removed: "+aFile!.getPath()
-			meter_proc_recs=meter_proc_recs+1
-			meter_action$="MTR-LST"
-			gosub disp_meter
-			print(log_dev)meter_text$
-		wend
-	endif
-
-	rem --- When not using demo data, remove ads_masks~02*.xml files 
-	if !demodata% then
-		print(log_dev)""
-		print(log_dev)"remove ads_masks~02*.xml files"
-		iter! = masks02Files!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-			aFile!.delete()
-
-			rem --- Increment progress meter
-			meter_text$="removed: "+aFile!.getPath()
-			meter_proc_recs=meter_proc_recs+1
-			meter_action$="MTR-LST"
-			gosub disp_meter
-			print(log_dev)meter_text$
-		wend
-	endif
-
-rem --- Process ads_masks99Files!, if new firm not blank
-	if cvs(newFirm$,3)<>"" then 
-		print(log_dev)""
-		print(log_dev)"process sync ads_masks~99*.xml files"
-		iter! = masks99Files!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-		
-			rem --- Copy firm 99 to new firm
-			if aFile!.getName().startsWith("ads_masks~99") then
-				source$=aFile!.getPath()
-				target$=source$(1,pos("99"=source$)-1)+newFirm$+source$(pos("99"=source$)+2)
-						
-				rem --- copy source file to target file, making necessary updates
-				sourceChan=unt
-				open(sourceChan,isz=-1)source$
-				targetChan=unt
-				open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target$
-				while 1
-					read(sourceChan,end=*break)record$
-
-					rem --- replace firm ID in <FIRM_ID> lines
-					if(pos("<FIRM_ID>"=cvs(record$,4))) then
-						x = pos("<FIRM_ID>"=cvs(record$,4)) + len("<FIRM_ID>")
-						line$ = record$(1,x-1)
-						line$ = line$ + newFirm$
-						line$ = line$ + record$(x+2)
-						record$ = line$
-					endif
-
-					write(targetChan)record$
-				wend
-				close(sourceChan)
-				close(targetChan)
-
-				rem --- Increment progress meter
-				meter_text$="copied firm 99 to "+newFirm$+": "+target$
-				meter_proc_recs=meter_proc_recs+1
-				meter_action$="MTR-LST"
-				gosub disp_meter
-				print(log_dev)meter_text$
-			endif
-		wend
-	endif
-
-	rem --- When not using demo data, remove ads_sequences~01*.xml files 
-	if !demodata% then
-		print(log_dev)""
-		print(log_dev)"remove ads_sequences~01*.xml files"
-		iter! = sequences01Files!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-			aFile!.delete()
-
-			rem --- Increment progress meter
-			meter_text$="removed: "+aFile!.getPath()
-			meter_proc_recs=meter_proc_recs+1
-			meter_action$="MTR-LST"
-			gosub disp_meter
-			print(log_dev)meter_text$
-		wend
-	endif
-
-	rem --- When not using demo data, remove ads_sequences~02*.xml files 
-	if !demodata% then
-		print(log_dev)""
-		print(log_dev)"remove ads_sequences~02*.xml files"
-		iter! = sequences02Files!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-			aFile!.delete()
-
-			rem --- Increment progress meter
-			meter_text$="removed: "+aFile!.getPath()
-			meter_proc_recs=meter_proc_recs+1
-			meter_action$="MTR-LST"
-			gosub disp_meter
-			print(log_dev)meter_text$
-		wend
-	endif
-
-rem --- Process ads_sequences99Files!
-	if cvs(newFirm$,3)<>"" then 
-		print(log_dev)""
-		print(log_dev)"process sync ads_sequences~99*.xml files"
-		iter! = sequences99Files!.iterator()
-		while iter!.hasNext()
-			aFile! = cast(File, iter!.next())
-
-			rem --- Copy firm 99 to new firm
-			if aFile!.getName().startsWith("ads_sequences~99") then
-				source$=aFile!.getPath()
-				target$=source$(1,pos("99"=source$)-1)+newFirm$+source$(pos("99"=source$)+2)
-						
-				rem --- copy source file to target file, making necessary updates
-				sourceChan=unt
-				open(sourceChan,isz=-1)source$
-				targetChan=unt
-				open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")target$
-				while 1
-					read(sourceChan,end=*break)record$
-
-					rem --- replace firm ID in <FIRM_ID> lines
-					if(pos("<FIRM_ID>"=cvs(record$,4))) then
-						x = pos("<FIRM_ID>"=cvs(record$,4)) + len("<FIRM_ID>")
-						line$ = record$(1,x-1)
-						line$ = line$ + newFirm$
-						line$ = line$ + record$(x+2)
-						record$ = line$
-					endif
-
-					write(targetChan)record$
-				wend
-				close(sourceChan)
-				close(targetChan)
-
-				rem --- Increment progress meter
-				meter_text$="copied firm 99 to "+newFirm$+": "+target$
-				meter_proc_recs=meter_proc_recs+1
-				meter_action$="MTR-LST"
-				gosub disp_meter
-				print(log_dev)meter_text$
-			endif
-		wend
-	endif
+            rem --- Close files
+            close(write_dev)
+            close(file_dev)
+        
+            rem --- Increment progress meter
+            meter_text$="copied firm ZZ to "+newFirm$+": "+aFile!.getPath()
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        endif
+    wend
     
 done: rem --- All done
     
@@ -482,6 +571,8 @@ done: rem --- All done
 	print(log_dev)""
     print(log_dev)"Firmsetup log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
     close(log_dev)
+    
+    close(ddmTableTpls_dev,err=*next)
 
     goto std_exit
 
@@ -542,6 +633,36 @@ open_log:rem --- Open log file
         print(log_dev)"Without demo data."
     endif
     print(log_dev)
+
+    return
+    
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+
+    return
+    
+disp_message:rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
 
     return
     
@@ -621,13 +742,13 @@ rem  */
     classend
 
 rem /**
-rem  * FilenameFilter Class to filter ads_masks~99.xml files.
+rem  * FilenameFilter Class to filter ads_masks~ZZ.xml files.
 rem  */
 
-    class public Masks99Filter implements java.io.FilenameFilter
+    class public MasksZZFilter implements java.io.FilenameFilter
 
         method public boolean accept(File dir!, String file!)
-			if file!.startsWith("ads_masks~99") and file!.endsWith(".xml")
+			if file!.startsWith("ads_masks~ZZ") and file!.endsWith(".xml")
 				methodret Boolean.valueOf("true")
 			else
 				methodret Boolean.valueOf("false")
@@ -669,13 +790,13 @@ rem  */
     classend
 
 rem /**
-rem  * FilenameFilter Class to filter ads_sequences~99.xml files.
+rem  * FilenameFilter Class to filter ads_sequences~ZZ.xml files.
 rem  */
 
-    class public Sequences99Filter implements java.io.FilenameFilter
+    class public SequencesZZFilter implements java.io.FilenameFilter
 
         method public boolean accept(File dir!, String file!)
-			if file!.startsWith("ads_sequences~99") and file!.endsWith(".xml")
+			if file!.startsWith("ads_sequences~ZZ") and file!.endsWith(".xml")
 				methodret Boolean.valueOf("true")
 			else
 				methodret Boolean.valueOf("false")

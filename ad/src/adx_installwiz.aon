@@ -8,6 +8,7 @@ rem --- All Rights Reserved
 rem ==========================================================================
 
     use java.io.File
+    use java.util.Properties
     use ::ado_file.src::FileObject
 
     setesc std_error
@@ -37,7 +38,7 @@ rem --- if installType is "Q", then run program that does 'quick copy'
 rem --- that program copies pre-sync'd barista and addon, plus examples and/or default if they're sync'd into barista
 rem --- it will copy demo data as well; used for demo/training
 
-	if installType$="Q" then run stbl("+DIR_PGM")+"adx_quickcopywiz.aon"
+	if copyData% then run stbl("+DIR_PGM")+"adx_quickcopywiz.aon"
 
     rem --- Flip directory path separators for bbjHome
     filepath$=java.lang.System.getProperty("basis.BBjHome")
@@ -107,8 +108,15 @@ rem --- Recursively copy oldLocation to newAonLoc
     gosub disp_meter
     print(log_dev)meter_text$
 
+    if installType$="X" then
+        rem --- Without data
+        requiredFiles%=1; rem --- Only required files listed in readme.htm
+    else
+        rem --- With default parameters and codes
+        requiredFiles%=3; rem --- Required files listed in readme.htm plus files with firm ZZ default data
+    endif
     for syscnt=0 to mountedSys!.size()-1
-        call pgmdir$+"adc_copyaon.aon",oldLocation!.getItem(syscnt),mountedSys!.getItem(syscnt),copyData%,help%,rdForm!,0,status
+        call pgmdir$+"adc_copyaon.aon",oldLocation!.getItem(syscnt),mountedSys!.getItem(syscnt),requiredFiles%,copyData%,help%,rdForm!,0,status
 
         rem --- Clear data/admin_backup directory copied from oldLocation
         admin_backup_dir$=mountedSys!.getItem(syscnt)+"/data/admin_backup/"
@@ -221,23 +229,6 @@ rem --- BIM clears barista/settings dir, so must do this step after BIMing and b
         call pgmdir$+"adc_updatexmlfiles.aon",newSyncLoc$,oldSyncLoc$,syncBackupDir$,upgrade%,rdForm!,0,status
     next syscnt
 
-rem --- Setup new firm before auto-sync so new firm's masks and sequences will get sync'd in
-
-    if cvs(newFirm$,2)<>"" then
-        rem --- Increment progress meter
-        meter_text$=Translate!.getTranslation("AON_SETUP_FIRM")
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
-
-        for syscnt=0 to mountedSys!.size()-1
-            oldLocation$=oldLocation!.getItem(syscnt)
-            newDataDir$=mountedSys!.getItem(syscnt)+"/data"
-            call pgmdir$+"adc_firmsetup.aon::oldLocation",oldLocation$,newDataDir$,newFirm$,copyData%,rdForm!,0,status
-        next syscnt
-    endif
-
 rem --- Launch auto-sync in new barista for the new addon.syn
 rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to bypass bar_login.bbj in the new barista
 
@@ -248,7 +239,7 @@ rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to b
     gosub disp_meter
     print(log_dev)meter_text$
 
-    rem --- Launch bax_dd_synch_auto.bbj
+    rem --- Launch bax_dd_synch_auto.bbj in the new installation
 	bar_dir$=newBarDir$
 	if pos(":"=bar_dir$)=0 then bar_dir$=dsk("")+bar_dir$
 	run_arg$="bbj -tT0 -q -WD"+$22$+bar_dir$+$22$
@@ -265,7 +256,25 @@ rem --- Run auto-sync bax_dd_synch_auto.bbj program via bax_launch_task.bbj to b
 :       +" -w"
 	    scall_result=scall(run_arg$+user_arg$,err=*next)
     next syscnt
-    
+
+rem --- Setup new firm AFTER auto-sync so new firm's masks and sequences can be copied from firm ZZ
+rem --- NOTE: newFirm$="" for Quick Copy installs
+
+    if cvs(newFirm$,2)<>"" then
+        rem --- Increment progress meter
+        meter_text$=Translate!.getTranslation("AON_SETUP_FIRM")
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        formData!=callpoint!.getDevObject("formData"); rem --- Use formData! created in adx_firmsetup.aon
+        for syscnt=0 to mountedSys!.size()-1
+            formData!.setProperty("DATA_LOCATION",mountedSys!.getItem(syscnt)+"/data")
+            call pgmdir$+"adc_firmsetup.aon",formData!,copyData%,rdForm!,0,status
+        next syscnt
+    endif
+
 done: rem --- All done
     
     rem --- Stop progress meter
@@ -361,6 +370,9 @@ fix_path: rem --- Flip directory path separators
         filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
         pos=pos("\"=filePath$)
     wend
+    
+    rem --- Remove trailing slash
+    if filePath$(len(filePath$))="/" then filePath$=filePath$(1,len(filePath$)-1)
 	return
     
 search_replace: rem --- Search record$ for search$, and replace with replace$
@@ -398,7 +410,7 @@ disp_meter:rem --- Display Progress Meter
 open_log:rem --- Open log file
             
     rem --- create logs directory at location
-    logDir$ = FileObject.fixPath(location$ + "/logs", "/")
+    logDir$ = FileObject.fixPath(location$ + "/aon/logs", "/")
     FileObject.makeDirs(new File(logDir$))
 
     rem --- create and open log file
@@ -416,9 +428,13 @@ open_log:rem --- Open log file
     print(log_dev)"New aon Location: " + newAonLoc$
     print(log_dev)"New Firm ID: " + newFirm$
     if copyData% then
-        print(log_dev)"Install demo data."
+        print(log_dev)"Quick Copy (includes demo data)"
     else
-        print(log_dev)"Do not install demo data."
+        if installType$="D" then
+            print(log_dev)"Production With Default Data"
+        else
+            print(log_dev)"Production Without Data"
+        endif
     endif
     if help% then
         print(log_dev)"Install Addon help file."
