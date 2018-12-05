@@ -76,8 +76,6 @@ rem --- Set invoice printing global
 
 	callpoint!.setDevObject( "print_invoice", callpoint!.getColumnData("<<DISPLAY>>.PRINT") )
 [[OPE_INVCASH.ARAR]]
-print "OPE_INVCASH:ARAR"; rem debug
-
 rem --- Set table_chans$[all] into util object for getDev() and getTmpl()
 
 	declare ArrayObject tableChans!
@@ -134,6 +132,16 @@ rem --- Set change amount
 		callpoint!.setColumnData("<<DISPLAY>>.CHANGE", str(tendered - invoice_amt))
 		callpoint!.setStatus("REFRESH")
 		print "---Set Change Amount:", tendered - invoice_amt; rem debug
+	endif
+
+rem --- Set cash_code_type
+	cashCode_dev=fnget_dev("ARC_CASHCODE")
+	dim cashCode$:fnget_tpl$("ARC_CASHCODE")
+	code$=callpoint!.getColumnData("OPE_INVCASH.CASH_REC_CD")
+	found = 0
+	findrecord (cashCode_dev,key=firm_id$+"C"+code$,dom=*next)cashCode$; found = 1
+	if found then
+		callpoint!.setDevObject("cash_code_type",cashCode.trans_type$)
 	endif
 [[OPE_INVCASH.TENDERED_AMT.AVAL]]
 print "OPE_INVCASH.TENDERED_AMT:AVAL"; rem debug

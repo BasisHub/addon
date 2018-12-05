@@ -5,11 +5,12 @@ rem --- AddonSoftware Version 15.00 - Aug2014
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 
-rem --- CONVCTRL!   : Property object of the conversion control file data/adx_conversionCtrl (Input)
-rem --- INSTALLMAP! : HashMap object of installed modules, keyed by module ID (Input)
-rem --- rdForm!     : Window object to hold progress meter
-rem --- Translate!  : Translator object translations
-rem --- CONV_STATUS : Status code/0=No error (Returned)
+rem --- CONVCTRLFILECHAN : Channel number conversion control file data/adx_conversionCtrl is open on (Input)
+rem --- CONVCTRL!        : Property object of the conversion control file data/adx_conversionCtrl (Input)
+rem --- INSTALLMAP!      : HashMap object of installed modules, keyed by module ID (Input)
+rem --- rdForm!          : Window object to hold progress meter
+rem --- Translate!       : Translator object translations
+rem --- CONV_STATUS      : Status code/0=No error (Returned)
 
     use java.io.File
     use java.util.HashMap
@@ -18,7 +19,7 @@ rem --- CONV_STATUS : Status code/0=No error (Returned)
     setesc std_error
     seterr std_error
     
-    enter convCtrl!,installMap!,rdForm!,Translate!,conv_status
+    enter convCtrlFileChan,convCtrl!,installMap!,rdForm!,Translate!,conv_status
 
 rem --- Initializations
 
@@ -64,7 +65,19 @@ rem --- *s_params.post_to_gl must be intialized with old adm_modules.post_gl whe
         gosub disp_meter
         print(log_dev)meter_text$
 
-	    gosub init_post_to_gl
+        task$="1200_GL_init_post_to_gl"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+	        gosub init_post_to_gl
+	        
+	        write(convCtrlFileChan)task$+"=Completed"
+	    else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+	    endif
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
@@ -88,7 +101,19 @@ rem --- if credit-card transaction type, encrypt credit card# and move it to new
         gosub disp_meter
         print(log_dev)meter_text$
 
-        gosub convert_credit_cards
+        task$="1200_OP_convert_credit_cards"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            gosub convert_credit_cards
+            
+            write(convCtrlFileChan)task$+"=Completed"
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        endif
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
@@ -145,6 +170,8 @@ init_post_to_gl:
         mod$=modules$(i,2)
         rem --- Skip modules where *S_PARAMS table doesn't exist
         if pos(mod$="ADMP",2) then continue
+        rem --- Skip modules modules not installed
+        if installMap!.get(mod$)<>"Y" then continue
         
         open_tables$[j]=mod$+"S_PARAMS", open_opts$[j]="OTA"
     next i

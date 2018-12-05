@@ -5,11 +5,12 @@ rem --- AddonSoftware Version 15.00 - Sept2014
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 
-rem --- CONVCTRL!   : Property object of the conversion control file data/adx_conversionCtrl (Input)
-rem --- INSTALLMAP! : HashMap object of installed modules, keyed by module ID (Input)
-rem --- rdForm!     : Window object to hold progress meter
-rem --- Translate!  : Translator object translations
-rem --- CONV_STATUS : Status code/0=No error (Returned)
+rem --- CONVCTRLFILECHAN : Channel number conversion control file data/adx_conversionCtrl is open on (Input)
+rem --- CONVCTRL!        : Property object of the conversion control file data/adx_conversionCtrl (Input)
+rem --- INSTALLMAP!      : HashMap object of installed modules, keyed by module ID (Input)
+rem --- rdForm!          : Window object to hold progress meter
+rem --- Translate!       : Translator object translations
+rem --- CONV_STATUS      : Status code/0=No error (Returned)
 
     use java.io.File
     use java.util.Properties
@@ -18,7 +19,7 @@ rem --- CONV_STATUS : Status code/0=No error (Returned)
     setesc std_error
     seterr std_error
     
-    enter convCtrl!,installMap!,rdForm!,Translate!,conv_status
+    enter convCtrlFileChan,convCtrl!,installMap!,rdForm!,Translate!,conv_status
 
 rem --- Initializations
 
@@ -70,102 +71,113 @@ rem ---                    - remove 'DEMONAG' auto-launch record with short keys
         gosub disp_meter
         print(log_dev)meter_text$
 
-        num_files=6
-        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-        open_tables$[1]="DDM_DRILL_DEFS",   open_opts$[1]="OTA"
-        open_tables$[2]="ADM_RPTCTL",   open_opts$[2]="OTA"
-        open_tables$[3]="ADM_RPTCTL_RCP",   open_opts$[3]="OTA"
-        open_tables$[4]="APM_VENDRPT_CTL",   open_opts$[4]="OTA"
-        open_tables$[5]="ARM_CUSTRPT_CTL",   open_opts$[5]="OTA"
-        open_tables$[6]="ADS_AUTOLAUNCH",   open_opts$[6]="OTA@"
-        gosub open_tables
-        ddm_drilldefs_dev=num(open_chans$[1])
-        adm_rptctl_dev=num(open_chans$[2])
-        adm_rptctl_rcp_dev=num(open_chans$[3])
-        apm_vendrpt_ctl_dev=num(open_chans$[4])
-        arm_custrpt_ctl_dev=num(open_chans$[5])
-        ads_autolaunch_dev=num(open_chans$[6])
-        dim ddm_drilldefs$:open_tpls$[1]
-        dim adm_rptctl$:open_tpls$[2]
-        dim adm_rptctl_rcp$:open_tpls$[3]
-        dim apm_vendrpt_ctl$:open_tpls$[4]
-        dim arm_custrpt_ctl$:open_tpls$[5]
-        dim ads_autolaunch$:open_tpls$[6]
-        
-        rem --- Delete AR_INV_SALES drilldown definition
-        wk$=fattr(ddm_drilldefs$,"DRILL_DEF_ID")
-        dim drill_def_id$(dec(wk$(10,2)))
-        drill_def_id$(1)="AR_INV_SALES"
-        remove(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)
-
-        rem --- Consolidate customer and vendor report control records into report control recipients table
-
-        reports$=""
-        
-        rem --- Customers
-        read (arm_custrpt_ctl_dev,key="",dom=*next)
-        while 1
-            readrecord(arm_custrpt_ctl_dev,err=*break)arm_custrpt_ctl$
-            if pos(arm_custrpt_ctl.firm_id$+arm_custrpt_ctl.report_alias$=reports$)=0 then reports$=reports$+arm_custrpt_ctl.firm_id$+arm_custrpt_ctl.report_alias$+"^C;"
-            dim adm_rptctl_rcp$:fattr(adm_rptctl_rcp$)
-            status=0
-            call pgmdir$+"adc_copyfile.aon",arm_custrpt_ctl$,adm_rptctl_rcp$,status
-            if status then continue
-            adm_rptctl_rcp.dd_table_alias$=arm_custrpt_ctl.report_alias$
-            adm_rptctl_rcp.recipient_name$=arm_custrpt_ctl.customer_name$
-            adm_rptctl_rcp.recipient_tp$="C"
-            writerecord(adm_rptctl_rcp_dev)adm_rptctl_rcp$
-        wend
-
-        rem --- Vendors
-        read (apm_vendrpt_ctl_dev,key="",dom=*next)
-        while 1
-            readrecord(apm_vendrpt_ctl_dev,err=*break)apm_vendrpt_ctl$
-            if pos(apm_vendrpt_ctl.firm_id$+apm_vendrpt_ctl.report_alias$=reports$)=0 then reports$=reports$+apm_vendrpt_ctl.firm_id$+apm_vendrpt_ctl.report_alias$+"^V;"
-            dim adm_rptctl_rcp$:fattr(adm_rptctl_rcp$)
-            call pgmdir$+"adc_copyfile.aon",apm_vendrpt_ctl$,adm_rptctl_rcp$,status
-            if status then continue
-            adm_rptctl_rcp.dd_table_alias$=apm_vendrpt_ctl.report_alias$
-            adm_rptctl_rcp.recipient_name$=apm_vendrpt_ctl.vendor_name$
-            adm_rptctl_rcp.recipient_tp$="V"
-            writerecord(adm_rptctl_rcp_dev)adm_rptctl_rcp$
-        wend
-
-        rem --- now update adm_rptctl's document type based on reports$
-        while len(reports$)
-            rpt$=reports$(1,pos(";"=reports$+";")-1)
-            reports$=reports$(pos(";"=reports$)+1)
-            rpt_key$=rpt$(1,pos("^"=rpt$)-1)
-            rpt_tp$=rpt$(pos("^"=rpt$)+1)
-            readrecord(adm_rptctl_dev,key=rpt_key$,err=*continue)adm_rptctl$
-            adm_rptctl.recipient_tp$=rpt_tp$
-            writerecord(adm_rptctl_dev)adm_rptctl$
-        wend
-
-        rem --- Remove 'DEMONAG' auto-launch record with short keys
-        extractrecord(ads_autolaunch_dev,key="DEMONAG",dom=*next)ads_autolaunch$
-        if ads_autolaunch.process_id$="DEMONAG" then
-            remove(ads_autolaunch_dev,key="DEMONAG",dom=*endif)
+        task$="1500_AD_drilldown_defs"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            num_files=6
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1]="DDM_DRILL_DEFS",   open_opts$[1]="OTA"
+            open_tables$[2]="ADM_RPTCTL",   open_opts$[2]="OTA"
+            open_tables$[3]="ADM_RPTCTL_RCP",   open_opts$[3]="OTA"
+            open_tables$[4]="APM_VENDRPT_CTL",   open_opts$[4]="OTA"
+            open_tables$[5]="ARM_CUSTRPT_CTL",   open_opts$[5]="OTA"
+            open_tables$[6]="ADS_AUTOLAUNCH",   open_opts$[6]="OTA@"
+            gosub open_tables
+            ddm_drilldefs_dev=num(open_chans$[1])
+            adm_rptctl_dev=num(open_chans$[2])
+            adm_rptctl_rcp_dev=num(open_chans$[3])
+            apm_vendrpt_ctl_dev=num(open_chans$[4])
+            arm_custrpt_ctl_dev=num(open_chans$[5])
+            ads_autolaunch_dev=num(open_chans$[6])
+            dim ddm_drilldefs$:open_tpls$[1]
+            dim adm_rptctl$:open_tpls$[2]
+            dim adm_rptctl_rcp$:open_tpls$[3]
+            dim apm_vendrpt_ctl$:open_tpls$[4]
+            dim arm_custrpt_ctl$:open_tpls$[5]
+            dim ads_autolaunch$:open_tpls$[6]
             
-            rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
-            dev_mode$=""
-            call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
-
-            rem --- Update admin xml file
-            if rdMountVect!<>null() and rdMountVect!.size()>0
-                exp_action$="D"
-                exp_add_only$=""
-                call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_AUTOLAUNCH",ads_autolaunch$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+            rem --- Delete AR_INV_SALES drilldown definition
+            wk$=fattr(ddm_drilldefs$,"DRILL_DEF_ID")
+            dim drill_def_id$(dec(wk$(10,2)))
+            drill_def_id$(1)="AR_INV_SALES"
+            remove(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)
+    
+            rem --- Consolidate customer and vendor report control records into report control recipients table
+    
+            reports$=""
+            
+            rem --- Customers
+            read (arm_custrpt_ctl_dev,key="",dom=*next)
+            while 1
+                readrecord(arm_custrpt_ctl_dev,err=*break)arm_custrpt_ctl$
+                if pos(arm_custrpt_ctl.firm_id$+arm_custrpt_ctl.report_alias$=reports$)=0 then reports$=reports$+arm_custrpt_ctl.firm_id$+arm_custrpt_ctl.report_alias$+"^C;"
+                dim adm_rptctl_rcp$:fattr(adm_rptctl_rcp$)
+                status=0
+                call pgmdir$+"adc_copyfile.aon",arm_custrpt_ctl$,adm_rptctl_rcp$,status
+                if status then continue
+                adm_rptctl_rcp.dd_table_alias$=arm_custrpt_ctl.report_alias$
+                adm_rptctl_rcp.recipient_name$=arm_custrpt_ctl.customer_name$
+                adm_rptctl_rcp.recipient_tp$="C"
+                writerecord(adm_rptctl_rcp_dev)adm_rptctl_rcp$
+            wend
+    
+            rem --- Vendors
+            read (apm_vendrpt_ctl_dev,key="",dom=*next)
+            while 1
+                readrecord(apm_vendrpt_ctl_dev,err=*break)apm_vendrpt_ctl$
+                if pos(apm_vendrpt_ctl.firm_id$+apm_vendrpt_ctl.report_alias$=reports$)=0 then reports$=reports$+apm_vendrpt_ctl.firm_id$+apm_vendrpt_ctl.report_alias$+"^V;"
+                dim adm_rptctl_rcp$:fattr(adm_rptctl_rcp$)
+                call pgmdir$+"adc_copyfile.aon",apm_vendrpt_ctl$,adm_rptctl_rcp$,status
+                if status then continue
+                adm_rptctl_rcp.dd_table_alias$=apm_vendrpt_ctl.report_alias$
+                adm_rptctl_rcp.recipient_name$=apm_vendrpt_ctl.vendor_name$
+                adm_rptctl_rcp.recipient_tp$="V"
+                writerecord(adm_rptctl_rcp_dev)adm_rptctl_rcp$
+            wend
+    
+            rem --- now update adm_rptctl's document type based on reports$
+            while len(reports$)
+                rpt$=reports$(1,pos(";"=reports$+";")-1)
+                reports$=reports$(pos(";"=reports$)+1)
+                rpt_key$=rpt$(1,pos("^"=rpt$)-1)
+                rpt_tp$=rpt$(pos("^"=rpt$)+1)
+                readrecord(adm_rptctl_dev,key=rpt_key$,err=*continue)adm_rptctl$
+                adm_rptctl.recipient_tp$=rpt_tp$
+                writerecord(adm_rptctl_dev)adm_rptctl$
+            wend
+    
+            rem --- Remove 'DEMONAG' auto-launch record with short keys
+            extractrecord(ads_autolaunch_dev,key="DEMONAG",dom=*next)ads_autolaunch$
+            if ads_autolaunch.process_id$="DEMONAG" then
+                remove(ads_autolaunch_dev,key="DEMONAG",dom=*endif)
+                
+                rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
+                dev_mode$=""
+                call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
+    
+                rem --- Update admin xml file
+                if rdMountVect!<>null() and rdMountVect!.size()>0
+                    exp_action$="D"
+                    exp_add_only$=""
+                    call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj","ADS_AUTOLAUNCH",ads_autolaunch$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+                endif
             endif
+    
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+            write(convCtrlFileChan)task$+"=Completed"
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
         endif
-
-        rem --- Increment progress meter
-        meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
@@ -188,64 +200,75 @@ rem --- For version 15.00, initialize invoice_bal and disc_taken in art_invhdr
         gosub disp_meter
         print(log_dev)meter_text$
 
-        rem --- Does conversion marker file exist for initializeing invoice_bal in art_invhdr?
-        conv_marker_name$="v1500_art-01"
-        conv_marker_file$=dataDir$+conv_marker_name$
-        convmarkerFile!=new File(conv_marker_file$)
-        if convmarkerFile!.exists() then
-            rem --- Verify required files are present
-            missingFiles!=BBjAPI().makeVector()
-            requiredFiles!=BBjAPI().makeVector()
-            requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
-            for i=0 to requiredFiles!.size()-1
-                file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
-                if !file!.exists() then
-                    missingFiles!.addItem(requiredFiles!.get(i))
-                endif
-            next i
-            if missingFiles!.size()=0 then
-                rem --- Initialize invoice_bal and disc_taken in art_invhdr
-                theFirm$=""
-                call pgmdir$+"arc_rebuildinvbal.aon",theFirm$,status
-                if status=0 then
-                    rem --- Conversion completed successfully
-                    rem --- Increment progress meter
-                    meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
-
-                    rem --- Delete conversion marker file
-                    if convmarkerFile!.delete() then
+        task$="1500_AR_art-01"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            rem --- Does conversion marker file exist for initializeing invoice_bal in art_invhdr?
+            conv_marker_name$="v1500_art-01"
+            conv_marker_file$=dataDir$+conv_marker_name$
+            convmarkerFile!=new File(conv_marker_file$)
+            if convmarkerFile!.exists() then
+                rem --- Verify required files are present
+                missingFiles!=BBjAPI().makeVector()
+                requiredFiles!=BBjAPI().makeVector()
+                requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
+                for i=0 to requiredFiles!.size()-1
+                    file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
+                    if !file!.exists() then
+                        missingFiles!.addItem(requiredFiles!.get(i))
+                    endif
+                next i
+                if missingFiles!.size()=0 then
+                    rem --- Initialize invoice_bal and disc_taken in art_invhdr
+                    theFirm$=""
+                    call pgmdir$+"arc_rebuildinvbal.aon",theFirm$,status
+                    if status=0 then
+                        rem --- Conversion completed successfully
                         rem --- Increment progress meter
-                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                        meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))
                         meter_proc_recs=meter_proc_recs+1
                         meter_action$="MTR-LST"
                         gosub disp_meter
                         print(log_dev)meter_text$
+                        write(convCtrlFileChan)task$+"=Completed"
+    
+                        rem --- Delete conversion marker file
+                        if convmarkerFile!.delete() then
+                            rem --- Increment progress meter
+                            meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                            meter_proc_recs=meter_proc_recs+1
+                            meter_action$="MTR-LST"
+                            gosub disp_meter
+                            print(log_dev)meter_text$
+                        endif
+                    else
+                        rem --- Conversion did NOT complete successfully, exit with error message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))+" *****"
+                        goto done
                     endif
                 else
-                    rem --- Conversion did NOT complete successfully, exit with error message
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=missingFiles!.get(0)
+                    gosub disp_message
                     err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))+" *****"
+:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+missingFiles!.get(0)+" *****"
                     goto done
                 endif
             else
-                rem --- Required file missing
-                msg_id$="AD_FILE_MISSING"
-                dim msg_tokens$[1]
-                msg_tokens$[1]=missingFiles!.get(0)
-                gosub disp_message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:               Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+missingFiles!.get(0)+" *****"
-                goto done
+                rem --- Increment progress meter
+                meter_text$=Translate!.getTranslation("AON_CONV_MARKER_NOT_FOUND","Conversion marker file not found")+": "+conv_marker_file$
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
             endif
         else
             rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_CONV_MARKER_NOT_FOUND","Conversion marker file not found")+": "+conv_marker_file$
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
             meter_proc_recs=meter_proc_recs+1
             meter_action$="MTR-LST"
             gosub disp_meter
@@ -273,144 +296,10 @@ rem --- For version 15.00, initialize product_type in ivm_itemwhse
         gosub disp_meter
         print(log_dev)meter_text$
 
-        rem --- Does conversion marker file exist for initializeing product_type in ivm_itemwhse?
-        conv_marker_name$="v1500_ivm-01"
-        conv_marker_file$=dataDir$+conv_marker_name$
-        convmarkerFile!=new File(conv_marker_file$)
-        if convmarkerFile!.exists() then
-            rem --- Verify required files are present
-            missingFiles!=BBjAPI().makeVector()
-            requiredFiles!=BBjAPI().makeVector()
-            requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
-            for i=0 to requiredFiles!.size()-1
-                file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
-                if !file!.exists() then
-                    missingFiles!.addItem(requiredFiles!.get(i))
-                endif
-            next i
-            if missingFiles!.size()=0 then
-                rem --- Initialize product_type in ivm_itemwhse?
-                gosub v1500_ivm02
-                if status=0 then
-                    rem --- Conversion completed successfully
-                    rem --- Increment progress meter
-                    meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
-
-                    rem --- Delete conversion marker file
-                    if convmarkerFile!.delete() then
-                        rem --- Increment progress meter
-                        meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                    endif
-                else
-                    rem --- Conversion did NOT complete successfully, exit with error message
-                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))+" *****"
-                    goto done
-                endif
-            else
-                rem --- Required file missing
-                msg_id$="AD_FILE_MISSING"
-                dim msg_tokens$[1]
-                msg_tokens$[1]=missingFiles!.get(0)
-                gosub disp_message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:               Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+missingFiles!.get(0)+" *****"
-                goto done
-            endif
-        else
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_CONV_MARKER_NOT_FOUND","Conversion marker file not found")+": "+conv_marker_file$
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-        endif
-    else
-        rem --- Increment progress meter
-        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:       Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
-    endif
-
-rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) file changes
-
-    this_module$="OP"
-    if installMap!.get(this_module$)="Y" then 
-        rem --- Increment progress meter
-        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
-
-        rem --- If data_source=OCJ, verify can read DDM_TABLE_TPLS for barista_source
-        if convCtrl!.getProperty("data_source")="OCJ" then
-            ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-            open_success=0
-            ddm_table_tpls=unt
-            open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
-            if open_success then
-                dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
-            else
-                rem --- Required file missing
-                msg_id$="AD_FILE_MISSING"
-                dim msg_tokens$[1]
-                msg_tokens$[1]=ddm_table_tpls$
-                gosub disp_message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
-                goto done
-            endif
-        endif
-
-        rem --- If data_source=OCJ and have v1500_ope-01 conversion marker file, verify can read old opt-11 for addon_source
-        if convCtrl!.getProperty("data_source")="OCJ" then
-            conv_marker_file$=dataDir$+"v1500_ope-01"
-            convmarkerFile!=new File(conv_marker_file$)
-            if convmarkerFile!.exists() then
-                oldStbl$="+OPDATA"
-                oldFile$="opt-11"
-                gosub get_path_to_old_file
-                old_opt11$=oldPathToFile$
-                open_success=0
-                old_opt11_dev=unt
-                open(old_opt11_dev,err=*next)old_opt11$; open_success=1
-                if !open_success then
-                    rem --- Required file missing
-                    msg_id$="AD_FILE_MISSING"
-                    dim msg_tokens$[1]
-                    msg_tokens$[1]=old_opt11$
-                    gosub disp_message
-                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_opt11$+" *****"
-                    goto done
-                endif
-            endif
-        endif
-
-        rem --- Process each conversion marker file that exist    
-        convMarkers!=BBjAPI().makeVector()
-        convMarkers!.addItem("v1500_ope-01")
-        convMarkers!.addItem("v1500_ope-21")
-        convMarkers!.addItem("v1500_ope-31")
-        convMarkers!.addItem("v1500_ope-41")
-        for marker=0 to convMarkers!.size()-1
-            rem --- Does conversion marker file exist?
-            conv_marker_name$=convMarkers!.get(marker)
+        task$="1500_IV_ivm-01"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            rem --- Does conversion marker file exist for initializeing product_type in ivm_itemwhse?
+            conv_marker_name$="v1500_ivm-01"
             conv_marker_file$=dataDir$+conv_marker_name$
             convmarkerFile!=new File(conv_marker_file$)
             if convmarkerFile!.exists() then
@@ -419,32 +308,14 @@ rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) fi
                 requiredFiles!=BBjAPI().makeVector()
                 requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
                 for i=0 to requiredFiles!.size()-1
-                    filename$=requiredFiles!.get(i)
-                    rem --- Because of v15.00 key and field changes to opt-11, it should always fail in OCJ.
-                    rem --- So don't require opt-11 for v15.00 conversion using OCJ.
-                    if convCtrl!.getProperty("data_source")="OCJ" and filename$="opt-11" then continue 
-                    file!=new File(stbl("+"+this_module$+"DATA")+filename$)
+                    file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
                     if !file!.exists() then
-                        missingFiles!.addItem(filename$)
+                        missingFiles!.addItem(requiredFiles!.get(i))
                     endif
                 next i
                 if missingFiles!.size()=0 then
-                    rem --- data conversions for OP RTP file changes
-                    switch marker
-                        case 0
-                            gosub v1500_ope01
-                            if status=0 then gosub v1500_ope11
-                            break
-                        case 1
-                            gosub v1500_ope21
-                            break
-                        case 2
-                            gosub v1500_ope31
-                            break
-                        case 3
-                            gosub v1500_ope41
-                            break
-                    swend
+                    rem --- Initialize product_type in ivm_itemwhse?
+                    gosub v1500_ivm02
                     if status=0 then
                         rem --- Conversion completed successfully
                         rem --- Increment progress meter
@@ -488,16 +359,189 @@ rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) fi
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
-
-                rem --- Increment progress meter
-                meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:               Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+conv_marker_name$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
             endif
-        next marker
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        endif
+    else
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:       Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+
+rem --- For version 15.00, data conversions for OP Real Time Processing (RTP) file changes
+
+    this_module$="OP"
+    if installMap!.get(this_module$)="Y" then 
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
+        task$="1500_OP_RTP"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            rem --- If data_source=OCJ, verify can read DDM_TABLE_TPLS for barista_source
+            if convCtrl!.getProperty("data_source")="OCJ" then
+                ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+                open_success=0
+                ddm_table_tpls=unt
+                open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                if open_success then
+                    dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                else
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=ddm_table_tpls$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
+                    goto done
+                endif
+            endif
+    
+            rem --- If data_source=OCJ and have v1500_ope-01 conversion marker file, verify can read old opt-11 for addon_source
+            if convCtrl!.getProperty("data_source")="OCJ" then
+                conv_marker_file$=dataDir$+"v1500_ope-01"
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    oldStbl$="+OPDATA"
+                    oldFile$="opt-11"
+                    gosub get_path_to_old_file
+                    old_opt11$=oldPathToFile$
+                    open_success=0
+                    old_opt11_dev=unt
+                    open(old_opt11_dev,err=*next)old_opt11$; open_success=1
+                    if !open_success then
+                        rem --- Required file missing
+                        msg_id$="AD_FILE_MISSING"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]=old_opt11$
+                        gosub disp_message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_opt11$+" *****"
+                        goto done
+                    endif
+                endif
+            endif
+    
+            rem --- Process each conversion marker file that exist    
+            convMarkers!=BBjAPI().makeVector()
+            convMarkers!.addItem("v1500_ope-01")
+            convMarkers!.addItem("v1500_ope-21")
+            convMarkers!.addItem("v1500_ope-31")
+            convMarkers!.addItem("v1500_ope-41")
+            for marker=0 to convMarkers!.size()-1
+                rem --- Does conversion marker file exist?
+                conv_marker_name$=convMarkers!.get(marker)
+                conv_marker_file$=dataDir$+conv_marker_name$
+                convmarkerFile!=new File(conv_marker_file$)
+                if convmarkerFile!.exists() then
+                    rem --- Verify required files are present
+                    missingFiles!=BBjAPI().makeVector()
+                    requiredFiles!=BBjAPI().makeVector()
+                    requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
+                    for i=0 to requiredFiles!.size()-1
+                        filename$=requiredFiles!.get(i)
+                        rem --- Because of v15.00 key and field changes to opt-11, it should always fail in OCJ.
+                        rem --- So don't require opt-11 for v15.00 conversion using OCJ.
+                        if convCtrl!.getProperty("data_source")="OCJ" and filename$="opt-11" then continue 
+                        file!=new File(stbl("+"+this_module$+"DATA")+filename$)
+                        if !file!.exists() then
+                            missingFiles!.addItem(filename$)
+                        endif
+                    next i
+                    if missingFiles!.size()=0 then
+                        rem --- data conversions for OP RTP file changes
+                        switch marker
+                            case 0
+                                gosub v1500_ope01
+                                if status=0 then gosub v1500_ope11
+                                break
+                            case 1
+                                gosub v1500_ope21
+                                break
+                            case 2
+                                gosub v1500_ope31
+                                break
+                            case 3
+                                gosub v1500_ope41
+                                break
+                        swend
+                        if status=0 then
+                            rem --- Conversion completed successfully
+                            rem --- Increment progress meter
+                            meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))
+                            meter_proc_recs=meter_proc_recs+1
+                            meter_action$="MTR-LST"
+                            gosub disp_meter
+                            print(log_dev)meter_text$
+        
+                            rem --- Delete conversion marker file
+                            if convmarkerFile!.delete() then
+                                rem --- Increment progress meter
+                                meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                                meter_proc_recs=meter_proc_recs+1
+                                meter_action$="MTR-LST"
+                                gosub disp_meter
+                                print(log_dev)meter_text$
+                            endif
+                        else
+                            rem --- Conversion did NOT complete successfully, exit with error message
+                            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))+" *****"
+                            goto done
+                        endif
+                    else
+                        rem --- Required file missing
+                        msg_id$="AD_FILE_MISSING"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]=missingFiles!.get(0)
+                        gosub disp_message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+missingFiles!.get(0)+" *****"
+                        goto done
+                    endif
+                else
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_CONV_MARKER_NOT_FOUND","Conversion marker file not found")+": "+conv_marker_file$
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+    
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+conv_marker_name$
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+                endif
+            next marker
+            write(convCtrlFileChan)task$+"=Completed"
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        endif
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
@@ -520,94 +564,105 @@ rem --- For version 15.00, data conversions for SA Real Time Processing (RTP) fi
         gosub disp_meter
         print(log_dev)meter_text$
 
-        rem --- Identify types of Sales Analysis being used
-        typeSA!=new java.util.HashMap()
-        saFile!=new File(dataDir$+"sam-01")
-        if saFile!.exists() then
-            typeSA!.put("BY_CUSTOMER","Y") 
+        task$="1500_SA_RTP"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            rem --- Identify types of Sales Analysis being used
+            typeSA!=new java.util.HashMap()
+            saFile!=new File(dataDir$+"sam-01")
+            if saFile!.exists() then
+                typeSA!.put("BY_CUSTOMER","Y") 
+            else
+                typeSA!.put("BY_CUSTOMER","") 
+            endif
+            saFile!=new File(dataDir$+"sam-02")
+            if saFile!.exists() then
+                typeSA!.put("BY_TERRITORY","Y") 
+            else
+                typeSA!.put("BY_TERRITORY","") 
+            endif
+            saFile!=new File(dataDir$+"sam-03")
+            if saFile!.exists() then
+                typeSA!.put("BY_SALESPSN","Y") 
+            else
+                typeSA!.put("BY_SALESPSN","") 
+            endif
+            saFile!=new File(dataDir$+"sam-04")
+            if saFile!.exists() then
+                typeSA!.put("BY_CUSTOMER_TYPE","Y") 
+            else
+                typeSA!.put("BY_CUSTOMER_TYPE","") 
+            endif
+            saFile!=new File(dataDir$+"sam-05")
+            if saFile!.exists() then
+                typeSA!.put("BY_SHIPTO","Y") 
+            else
+                typeSA!.put("BY_SHIPTO","") 
+            endif
+            saFile!=new File(dataDir$+"sam-06")
+            if saFile!.exists() then
+                typeSA!.put("BY_SIC_CODE","Y") 
+            else
+                typeSA!.put("BY_SIC_CODE","") 
+            endif
+            saFile!=new File(dataDir$+"sam-07")
+            if saFile!.exists() then
+                typeSA!.put("BY_PRODUCT","Y") 
+            else
+                typeSA!.put("BY_PRODUCT","") 
+            endif
+            saFile!=new File(dataDir$+"sam-08")
+            if saFile!.exists() then
+                typeSA!.put("BY_WHSE","Y") 
+            else
+                typeSA!.put("BY_WHSE","") 
+            endif
+            saFile!=new File(dataDir$+"sam-09")
+            if saFile!.exists() then
+                typeSA!.put("BY_VENDOR","Y") 
+            else
+                typeSA!.put("BY_VENDOR","") 
+            endif
+            saFile!=new File(dataDir$+"sam-10")
+            if saFile!.exists() then
+                typeSA!.put("BY_DIST_CODE","Y") 
+            else
+                typeSA!.put("BY_DIST_CODE","") 
+            endif
+            saFile!=new File(dataDir$+"sam-11")
+            if saFile!.exists() then
+                typeSA!.put("BY_NONSTOCK","Y") 
+            else
+                typeSA!.put("BY_NONSTOCK","") 
+            endif
+    
+    
+            rem --- Rebuild Sales Analysis from Invoice History
+            theFirm$=""
+            call pgmdir$+"sac_histrebuild_v15.aon",theFirm$,convCtrl!,typeSA!,status
+            if status=0 then
+                rem --- Conversion completed successfully
+                rem --- Increment progress meter
+                meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:               Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+                write(convCtrlFileChan)task$+"=Completed"
+            else
+                rem --- Conversion did NOT complete successfully, exit with error message
+                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:               Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:               Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$+" *****"
+                goto done
+            endif
         else
-            typeSA!.put("BY_CUSTOMER","") 
-        endif
-        saFile!=new File(dataDir$+"sam-02")
-        if saFile!.exists() then
-            typeSA!.put("BY_TERRITORY","Y") 
-        else
-            typeSA!.put("BY_TERRITORY","") 
-        endif
-        saFile!=new File(dataDir$+"sam-03")
-        if saFile!.exists() then
-            typeSA!.put("BY_SALESPSN","Y") 
-        else
-            typeSA!.put("BY_SALESPSN","") 
-        endif
-        saFile!=new File(dataDir$+"sam-04")
-        if saFile!.exists() then
-            typeSA!.put("BY_CUSTOMER_TYPE","Y") 
-        else
-            typeSA!.put("BY_CUSTOMER_TYPE","") 
-        endif
-        saFile!=new File(dataDir$+"sam-05")
-        if saFile!.exists() then
-            typeSA!.put("BY_SHIPTO","Y") 
-        else
-            typeSA!.put("BY_SHIPTO","") 
-        endif
-        saFile!=new File(dataDir$+"sam-06")
-        if saFile!.exists() then
-            typeSA!.put("BY_SIC_CODE","Y") 
-        else
-            typeSA!.put("BY_SIC_CODE","") 
-        endif
-        saFile!=new File(dataDir$+"sam-07")
-        if saFile!.exists() then
-            typeSA!.put("BY_PRODUCT","Y") 
-        else
-            typeSA!.put("BY_PRODUCT","") 
-        endif
-        saFile!=new File(dataDir$+"sam-08")
-        if saFile!.exists() then
-            typeSA!.put("BY_WHSE","Y") 
-        else
-            typeSA!.put("BY_WHSE","") 
-        endif
-        saFile!=new File(dataDir$+"sam-09")
-        if saFile!.exists() then
-            typeSA!.put("BY_VENDOR","Y") 
-        else
-            typeSA!.put("BY_VENDOR","") 
-        endif
-        saFile!=new File(dataDir$+"sam-10")
-        if saFile!.exists() then
-            typeSA!.put("BY_DIST_CODE","Y") 
-        else
-            typeSA!.put("BY_DIST_CODE","") 
-        endif
-        saFile!=new File(dataDir$+"sam-11")
-        if saFile!.exists() then
-            typeSA!.put("BY_NONSTOCK","Y") 
-        else
-            typeSA!.put("BY_NONSTOCK","") 
-        endif
-
-
-        rem --- Rebuild Sales Analysis from Invoice History
-        theFirm$=""
-        call pgmdir$+"sac_histrebuild_v15.aon",theFirm$,convCtrl!,typeSA!,status
-        if status=0 then
-            rem --- Conversion completed successfully
             rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
             meter_proc_recs=meter_proc_recs+1
             meter_action$="MTR-LST"
             gosub disp_meter
             print(log_dev)meter_text$
-        else
-            rem --- Conversion did NOT complete successfully, exit with error message
-            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:           Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$+" *****"
-            goto done
         endif
     else
         rem --- Increment progress meter

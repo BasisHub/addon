@@ -5,11 +5,12 @@ rem --- AddonSoftware Version 16.00 - Feb2016
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 
-rem --- CONVCTRL!   : Property object of the conversion control file data/adx_conversionCtrl (Input)
-rem --- INSTALLMAP! : HashMap object of installed modules, keyed by module ID (Input)
-rem --- rdForm!     : Window object to hold progress meter
-rem --- Translate!  : Translator object translations
-rem --- CONV_STATUS : Status code/0=No error (Returned)
+rem --- CONVCTRLFILECHAN : Channel number conversion control file data/adx_conversionCtrl is open on (Input)
+rem --- CONVCTRL!        : Property object of the conversion control file data/adx_conversionCtrl (Input)
+rem --- INSTALLMAP!      : HashMap object of installed modules, keyed by module ID (Input)
+rem --- rdForm!          : Window object to hold progress meter
+rem --- Translate!       : Translator object translations
+rem --- CONV_STATUS      : Status code/0=No error (Returned)
 
     use java.io.File
     use java.util.HashMap
@@ -18,7 +19,7 @@ rem --- CONV_STATUS : Status code/0=No error (Returned)
     setesc std_error
     seterr std_error
     
-    enter convCtrl!,installMap!,rdForm!,Translate!,conv_status
+    enter convCtrlFileChan,convCtrl!,installMap!,rdForm!,Translate!,conv_status
 
 rem --- Initializations
 
@@ -64,112 +65,134 @@ rem --- For version 16.00, initialize 3-char sequence_no in ape_invoicedet, ape_
         gosub disp_meter
         print(log_dev)meter_text$
 
-        rem --- If data_source=OCJ, verify can read DDM_TABLE_TPLS for barista_source
-        if convCtrl!.getProperty("data_source")="OCJ" then
-            ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-            open_success=0
-            ddm_table_tpls=unt
-            open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
-            if open_success then
-                dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
-            else
-                rem --- Required file missing
-                msg_id$="AD_FILE_MISSING"
-                dim msg_tokens$[1]
-                msg_tokens$[1]=ddm_table_tpls$
-                gosub disp_message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
-                goto done
-            endif
-        endif
-
-        rem --- If data_source=OCJ, process ape-11, ape-13 and apt-11 if they exist in addon_source
-        rem --- Because of v16.00 key changes to ape-11, ape-13 and apt-11, they should always fail in OCJ.
-        rem --- So don't bother looking for these files immediately following v16.00 conversion using OCJ.
-        if convCtrl!.getProperty("data_source")="OCJ" then
-            sourceFileVec!=BBjAPI().makeVector()
-            tablealiasVec!=BBjAPI().makeVector()
-            sourceFileVec!.addItem("ape-11");tableAliasVec!.addItem("APE_INVOICEDET")
-            sourceFileVec!.addItem("ape-13");tableAliasVec!.addItem("APE_RECURRINGDET")
-            sourceFileVec!.addItem("apt-11");tableAliasVec!.addItem("APT_INVOICEDET")
-            for source=0 to sourcefileVec!.size()-1
-                rem --- Does source file exist?
-                oldStbl$="+APDATA"
-                oldFile$=sourceFileVec!.get(source)
-                tableAlias$=tableAliasVec!.get(source)
-                gosub get_path_to_old_file
-                source_file$=oldPathToFile$
+        task$="1600_AP_sequence_no"
+        if convCtrl!.getProperty(task$)<>"Completed" and convCtrl!.getProperty("data_source")="OCJ" then
+            rem --- If data_source=OCJ, verify can read DDM_TABLE_TPLS for barista_source
+            if convCtrl!.getProperty("data_source")="OCJ" then
+                ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                 open_success=0
-                source_dev=unt
-                open(source_dev,err=*next)source_file$; open_success=1
+                ddm_table_tpls=unt
+                open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
                 if open_success then
-                    rem --- Increment progress meter
-                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": "+oldFile$
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
-                    
-                    rem --- Get record template for source file
-                    tpl_found=0
-                    findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
-                    if tpl_found then
-                        dim source_tpl$:ddm_table_tpls.template$
-                    else
-                        rem --- Required template missing
-                        meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                    dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                else
+                    rem --- Required file missing
+                    msg_id$="AD_FILE_MISSING"
+                    dim msg_tokens$[1]
+                    msg_tokens$[1]=ddm_table_tpls$
+                    gosub disp_message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
+                    goto done
+                endif
+            endif
+    
+            rem --- If data_source=OCJ, process ape-11, ape-13 and apt-11 if they exist in addon_source
+            rem --- Because of v16.00 key changes to ape-11, ape-13 and apt-11, they should always fail in OCJ.
+            rem --- So don't bother looking for these files immediately following v16.00 conversion using OCJ.
+            if convCtrl!.getProperty("data_source")="OCJ" then
+                sourceFileVec!=BBjAPI().makeVector()
+                tablealiasVec!=BBjAPI().makeVector()
+                sourceFileVec!.addItem("ape-11");tableAliasVec!.addItem("APE_INVOICEDET")
+                sourceFileVec!.addItem("ape-13");tableAliasVec!.addItem("APE_RECURRINGDET")
+                sourceFileVec!.addItem("apt-11");tableAliasVec!.addItem("APT_INVOICEDET")
+                for source=0 to sourcefileVec!.size()-1
+                    rem --- Does source file exist?
+                    oldStbl$="+APDATA"
+                    oldFile$=sourceFileVec!.get(source)
+                    tableAlias$=tableAliasVec!.get(source)
+                    gosub get_path_to_old_file
+                    source_file$=oldPathToFile$
+                    open_success=0
+                    source_dev=unt
+                    open(source_dev,err=*next)source_file$; open_success=1
+                    if open_success then
+                        rem --- Increment progress meter
+                        meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": "+oldFile$
                         meter_proc_recs=meter_proc_recs+1
                         meter_action$="MTR-LST"
                         gosub disp_meter
                         print(log_dev)meter_text$
-                        continue
+                        
+                        rem --- Get record template for source file
+                        tpl_found=0
+                        findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                        if tpl_found then
+                            dim source_tpl$:ddm_table_tpls.template$
+                        else
+                            rem --- Required template missing
+                            meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                               " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                            meter_proc_recs=meter_proc_recs+1
+                            meter_action$="MTR-LST"
+                            gosub disp_meter
+                            print(log_dev)meter_text$
+                            continue
+                        endif
+    
+                        rem --- Open file in new data dictionary
+                        num_files=1
+                        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                        open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                        gosub open_tables
+                        target_dev=num(open_chans$[1])
+                        dim target_tpl$:open_tpls$[1]
+                        wk$=fattr(target_tpl$,"sequence_no")
+                        
+                        rem --- Copy source records to target, converting 2-char sequence_num to 3-char zero filled sequence_no
+                        read(source_dev,key="",dom=*next)
+                        while 1
+                            readrecord(source_dev,end=*break)source_tpl$
+                            call stbl("+DIR_PGM")+"adc_copyfile.aon",source_tpl$,target_tpl$,status
+                            target_tpl.sequence_no$=pad(source_tpl.sequence_num$, dec(wk$(10,2)), "R", "0")
+    
+                            rem --- Write target record
+                            writerecord(target_dev)target_tpl$
+                        wend
                     endif
-
-                    rem --- Open file in new data dictionary
-                    num_files=1
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
-                    gosub open_tables
-                    target_dev=num(open_chans$[1])
-                    dim target_tpl$:open_tpls$[1]
-                    wk$=fattr(target_tpl$,"sequence_no")
-                    
-                    rem --- Copy source records to target, converting 2-char sequence_num to 3-char zero filled sequence_no
-                    read(source_dev,key="",dom=*next)
-                    while 1
-                        readrecord(source_dev,end=*break)source_tpl$
-                        call stbl("+DIR_PGM")+"adc_copyfile.aon",source_tpl$,target_tpl$,status
-                        target_tpl.sequence_no$=pad(source_tpl.sequence_num$, dec(wk$(10,2)), "R", "0")
-
-                        rem --- Write target record
-                        writerecord(target_dev)target_tpl$
-                    wend
-                endif
-            next source
+                next source
+            endif
+            write(convCtrlFileChan)task$+"=Completed"
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
         endif
 
         rem --- If starting conversion from v14 or earlier, need to initialize invoice_bal in apt_invoicehdr (see Bug 9294 for details).
         if num(convCtrl!.getProperty("start_version"))<15 then
-            rem --- Rebuild AP Invoice Balance
-            theFirm$=""
-            call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
-            if status=0 then
-                rem --- Conversion completed successfully
+            task$="1600_AP_invoice_bal"
+            if convCtrl!.getProperty(task$)<>"Completed" and convCtrl!.getProperty("data_source")="OCJ" then
+                rem --- Rebuild AP Invoice Balance
+                theFirm$=""
+                call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
+                if status=0 then
+                    rem --- Conversion completed successfully
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+"Rebuild AP Invoice Balance"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+                    write(convCtrlFileChan)task$+"=Completed"
+                 else
+                    rem --- Conversion did NOT complete successfully, exit with error message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+"Rebuild AP Invoice Balance"+" *****"
+                    goto done
+                endif
+           else
                 rem --- Increment progress meter
-                meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+"Rebuild AP Invoice Balance"
+                meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
                 meter_proc_recs=meter_proc_recs+1
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
-            else
-                rem --- Conversion did NOT complete successfully, exit with error message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+"Rebuild AP Invoice Balance"+" *****"
-                goto done
             endif
         endif
     else
@@ -199,101 +222,112 @@ rem --- For version 16.00, initialize changes for Bank Reconciliation
         dim sysinfo$:sysinfo_template$
         sysinfo$=stbl("+SYSINFO",err=*next)
 
-        rem --- Open File(s)
-        num_files=5
-        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-        open_tables$[1]="ADM_FIRMS",   open_opts$[1]="OTA"
-        open_tables$[2]="ARS_PARAMS",   open_opts$[2]="OTA"
-        open_tables$[3]="ARE_CASHHDR",   open_opts$[3]="OTA"
-        open_tables$[4]="ART_DEPOSIT",   open_opts$[4]="OTA"
-        open_tables$[5]="GLT_BANKOTHER",   open_opts$[5]="OTA"
-
-        gosub open_tables
-
-        admFirms_dev=num(open_chans$[1])
-        arsParams_dev=num(open_chans$[2])
-        areCashhdr_dev=num(open_chans$[3])
-        artDeposit_dev=num(open_chans$[4])
-        glt15_dev=num(open_chans$[5])
-        dim admFirms$:open_tpls$[1]
-        dim arsParams$:open_tpls$[2]
-        dim areCashhdr$:open_tpls$[3]
-        dim artDeposit$:open_tpls$[4]
-        dim glt15a$:open_tpls$[5]
-
-        rem --- Only process firms that are using Bank Reconciliation in AR
-        read(admFirms_dev,key="",dom=*next)
-        while 1
-            readrecord(admFirms_dev,end=*break)admFirms$
-            firm_id$=admFirms.company_id$
-        
-            rem --- Is this firm using Bank Reconciliation in AR?
-            findrecord(arsParams_dev,key=firm_id$+"AR00",dom=*continue)arsParams$
-            if arsParams.br_interface$<>"Y" then continue
-
-            rem --- Generate Deposit for each unique receipt date and cash receipt code in ARE_CASHHDR (are-01).
-            datecodeMap!=new HashMap()
-            depositMap!=new HashMap()
-            read(areCashhdr_dev,key=firm_id$,dom=*next)
+        task$="1600_AR_bank_rec"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            rem --- Open File(s)
+            num_files=5
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1]="ADM_FIRMS",   open_opts$[1]="OTA"
+            open_tables$[2]="ARS_PARAMS",   open_opts$[2]="OTA"
+            open_tables$[3]="ARE_CASHHDR",   open_opts$[3]="OTA"
+            open_tables$[4]="ART_DEPOSIT",   open_opts$[4]="OTA"
+            open_tables$[5]="GLT_BANKOTHER",   open_opts$[5]="OTA"
+    
+            gosub open_tables
+    
+            admFirms_dev=num(open_chans$[1])
+            arsParams_dev=num(open_chans$[2])
+            areCashhdr_dev=num(open_chans$[3])
+            artDeposit_dev=num(open_chans$[4])
+            glt15_dev=num(open_chans$[5])
+            dim admFirms$:open_tpls$[1]
+            dim arsParams$:open_tpls$[2]
+            dim areCashhdr$:open_tpls$[3]
+            dim artDeposit$:open_tpls$[4]
+            dim glt15a$:open_tpls$[5]
+    
+            rem --- Only process firms that are using Bank Reconciliation in AR
+            read(admFirms_dev,key="",dom=*next)
             while 1
-                areCashhdr_key$=key(areCashhdr_dev,end=*break)
-                if pos(firm_id$=areCashhdr_key$)<>1 then break
-                readrecord(areCashhdr_dev)areCashhdr$
-
-                rem --- Use the same Deposit for all cash sales with the same receipt date and cash receipt code
-                if datecodeMap!.containsKey(areCashhdr.receipt_date$+areCashhdr.cash_rec_cd$) then
-                    rem --- Update total deposit amount for this depoist
-                    deposit_id$=datecodeMap!.get(areCashhdr.receipt_date$+areCashhdr.cash_rec_cd$)
-                    totalPayments=depositMap!.get(deposit_id$)+areCashhdr.payment_amt
-                    depositMap!.put(deposit_id$,totalPayments)
-
-                    rem --- Update art_deposit tot_deposit_amt
-                    extractrecord(artDeposit_dev,key=firm_id$+deposit_id$,dom=*endif)artDeposit$
-                    artDeposit.tot_deposit_amt=totalPayments
-                    artDeposit$=field(artDeposit$)
-                    writerecord(artDeposit_dev)artDeposit$
-                else
-                    rem --- Get a new deposit
-                    while 1
-                        call stbl("+DIR_SYP")+"bas_sequences.bbj","DEPOSIT_ID",deposit_id$,rd_table_chans$[all],"QUIET"
-
-                        rem --- Don't allow using manually entered deposits from glt_bankother
-                        dim glt15a$:fattr(glt15a$)
-                        readrecord(glt15_dev,key=firm_id$+deposit_id$,knum="AO_TRANS_NO",dom=*next)glt15a$
-                        if glt15a.trans_no$=deposit_id$ and glt15a.trans_type$="D" then continue
-
-                        rem --- Prevent re-using an existing deposit_id
-                        find(artDeposit_dev,key=firm_id$+deposit_id$,dom=*break)
-                    wend
-
-                    rem --- Update total deposit amount for this depoist
-                    totalPayments=areCashhdr.payment_amt
-                    depositMap!.put(deposit_id$,totalPayments)
-                    datecodeMap!.put(areCashhdr.receipt_date$+areCashhdr.cash_rec_cd$,deposit_id$)
-
-                    rem --- Write new art_deposit record
-                    dim artDeposit$:fattr(artDeposit$)
-                    artDeposit.firm_id$=firm_id$
-                    artDeposit.deposit_id$=deposit_id$
-                    artDeposit.deposit_date$=areCashhdr.receipt_date$
-                    artDeposit.description$="v16.00 conversion: "+areCashhdr.receipt_date$+"-"+areCashhdr.cash_rec_cd$
-                    artDeposit.cash_rec_cd$=areCashhdr.cash_rec_cd$
-                    artDeposit.created_user$=sysinfo.user_id$
-                    artDeposit.created_date$=date(0:"%Yd%Mz%Dz")
-                    artDeposit.created_time$=date(0:"%Hz%mz")
-                    artDeposit.trans_status$="E"
-                    artDeposit.batch_no$=areCashhdr.batch_no$
-                    artDeposit.audit_number=0
-                    artDeposit.tot_deposit_amt=totalPayments
-                    artDeposit$=field(artDeposit$)
-                    writerecord(artDeposit_dev)artDeposit$
-                endif
-
-                areCashhdr.deposit_id$=deposit_id$
-                areCashhdr$=field(areCashhdr$)
-                writerecord(areCashhdr_dev)areCashhdr$
+                readrecord(admFirms_dev,end=*break)admFirms$
+                firm_id$=admFirms.company_id$
+            
+                rem --- Is this firm using Bank Reconciliation in AR?
+                findrecord(arsParams_dev,key=firm_id$+"AR00",dom=*continue)arsParams$
+                if arsParams.br_interface$<>"Y" then continue
+    
+                rem --- Generate Deposit for each unique receipt date and cash receipt code in ARE_CASHHDR (are-01).
+                datecodeMap!=new HashMap()
+                depositMap!=new HashMap()
+                read(areCashhdr_dev,key=firm_id$,dom=*next)
+                while 1
+                    areCashhdr_key$=key(areCashhdr_dev,end=*break)
+                    if pos(firm_id$=areCashhdr_key$)<>1 then break
+                    readrecord(areCashhdr_dev)areCashhdr$
+    
+                    rem --- Use the same Deposit for all cash sales with the same receipt date and cash receipt code
+                    if datecodeMap!.containsKey(areCashhdr.receipt_date$+areCashhdr.cash_rec_cd$) then
+                        rem --- Update total deposit amount for this depoist
+                        deposit_id$=datecodeMap!.get(areCashhdr.receipt_date$+areCashhdr.cash_rec_cd$)
+                        totalPayments=depositMap!.get(deposit_id$)+areCashhdr.payment_amt
+                        depositMap!.put(deposit_id$,totalPayments)
+    
+                        rem --- Update art_deposit tot_deposit_amt
+                        extractrecord(artDeposit_dev,key=firm_id$+deposit_id$,dom=*endif)artDeposit$
+                        artDeposit.tot_deposit_amt=totalPayments
+                        artDeposit$=field(artDeposit$)
+                        writerecord(artDeposit_dev)artDeposit$
+                    else
+                        rem --- Get a new deposit
+                        while 1
+                            call stbl("+DIR_SYP")+"bas_sequences.bbj","DEPOSIT_ID",deposit_id$,rd_table_chans$[all],"QUIET"
+    
+                            rem --- Don't allow using manually entered deposits from glt_bankother
+                            dim glt15a$:fattr(glt15a$)
+                            readrecord(glt15_dev,key=firm_id$+deposit_id$,knum="AO_TRANS_NO",dom=*next)glt15a$
+                            if glt15a.trans_no$=deposit_id$ and glt15a.trans_type$="D" then continue
+    
+                            rem --- Prevent re-using an existing deposit_id
+                            find(artDeposit_dev,key=firm_id$+deposit_id$,dom=*break)
+                        wend
+    
+                        rem --- Update total deposit amount for this depoist
+                        totalPayments=areCashhdr.payment_amt
+                        depositMap!.put(deposit_id$,totalPayments)
+                        datecodeMap!.put(areCashhdr.receipt_date$+areCashhdr.cash_rec_cd$,deposit_id$)
+    
+                        rem --- Write new art_deposit record
+                        dim artDeposit$:fattr(artDeposit$)
+                        artDeposit.firm_id$=firm_id$
+                        artDeposit.deposit_id$=deposit_id$
+                        artDeposit.deposit_date$=areCashhdr.receipt_date$
+                        artDeposit.description$="v16.00 conversion: "+areCashhdr.receipt_date$+"-"+areCashhdr.cash_rec_cd$
+                        artDeposit.cash_rec_cd$=areCashhdr.cash_rec_cd$
+                        artDeposit.created_user$=sysinfo.user_id$
+                        artDeposit.created_date$=date(0:"%Yd%Mz%Dz")
+                        artDeposit.created_time$=date(0:"%Hz%mz")
+                        artDeposit.trans_status$="E"
+                        artDeposit.batch_no$=areCashhdr.batch_no$
+                        artDeposit.audit_number=0
+                        artDeposit.tot_deposit_amt=totalPayments
+                        artDeposit$=field(artDeposit$)
+                        writerecord(artDeposit_dev)artDeposit$
+                    endif
+    
+                    areCashhdr.deposit_id$=deposit_id$
+                    areCashhdr$=field(areCashhdr$)
+                    writerecord(areCashhdr_dev)areCashhdr$
+                wend
             wend
-        wend
+            write(convCtrlFileChan)task$+"=Completed"
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        endif
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+

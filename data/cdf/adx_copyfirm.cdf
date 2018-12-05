@@ -1,24 +1,36 @@
-[[ADX_COPYFIRM.UPDT_REC_COUNT.BINP]]
-rem --- get value of checkbox before input
+[[ADX_COPYFIRM.FILES_TO_COPY.AINP]]
+rem --- Skip if files_to_copy hasn't changed
+	files_to_copy$=callpoint!.getUserInput()
+	if files_to_copy$=callpoint!.getColumnData("ADX_COPYFIRM.FILES_TO_COPY") then break
 
-	callpoint!.setDevObject("updt_rec_count",callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT"))
-[[ADX_COPYFIRM.UPDT_REC_COUNT.AVAL]]
-rem --- get recs/firm when checked
+rem --- Update checked/uncheck grid rows
+	callpoint!.setColumnData("ADX_COPYFIRM.FILES_TO_COPY",files_to_copy$,1)
+	gosub fill_grid
+[[ADX_COPYFIRM.UPDT_REC_COUNT.AINP]]
+rem --- Skip if files_to_copy hasn't changed
+	updt_rec_count$=callpoint!.getUserInput()
+	if updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT") then break
 
-	updt_rec_count$=callpoint!.getDevObject("updt_rec_count")
-	if updt_rec_count$<>callpoint!.getUserInput()
-		updt_rec_count$=callpoint!.getUserInput()
-		firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)	
-		gosub set_firm_recs
-		callpoint!.setDevObject("updt_rec_count",updt_rec_count$)
-	endif
-	
+rem --- Get record counts for from firm
+	firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)	
+	gosub set_firm_recs
+	callpoint!.setColumnData("ADX_COPYFIRM.UPDT_REC_COUNT",updt_rec_count$,1)
+	gosub fill_grid
+[[ADX_COPYFIRM.AREC]]
+rem --- Initializations
+	rem --- Set asc_comp_id and files_to_copy
+	callpoint!.setColumnData("ADX_COPYFIRM.ASC_COMP_ID","01007514")
+	callpoint!.setColumnData("ADX_COPYFIRM.FILES_TO_COPY","T")
+	callpoint!.setColumnEnabled("ADX_COPYFIRM.FILES_TO_COPY",1)
+
+	rem --- Set updt_rec_count
+	callpoint!.setColumnData("ADX_COPYFIRM.UPDT_REC_COUNT","Y")
 [[ADX_COPYFIRM.ASIZ]]
 rem --- resize grid
-
 	gridFiles!=callpoint!.getDevObject("gridFiles")
 	gridFiles!.setSize(Form!.getWidth()-(gridFiles!.getX()*2),Form!.getHeight()-(gridFiles!.getY()+40))
 	gridFiles!.setFitToGrid(1)
+	callpoint!.setDevObject("gridFiles",gridFiles!)
 [[ADX_COPYFIRM.ASVA]]
 rem --- Confirm ready to copy data
 	numSelected=0
@@ -52,21 +64,25 @@ rem --- Confirm ready to copy data
 	endif
 
 rem --- Copy selected data
-
-    	use ::ado_file.src::FileObject
-	use java.io.File
-
 	if numSelected then
 		rem --- Start progress meter
 		meter_title$=Form!.getTitle()
 		meter_total_recs=numSelected
 		meter_proc_recs=0
-		meter_data$=""
+		table_alias$=""
 		meter_action$="WIN-LST-OK"
 		gosub disp_meter
 
-		rem --- create logs directory at new location
-		logpath$=stbl("+ADDATA")+"/logs"
+		rem --- Flip directory path separators
+		filePath$=stbl("+DIR_DAT")
+		gosub fix_path
+		dataDir$=filePath$
+
+		rem --- Get aon directory location from aon/data path
+		aonDir$=dataDir$(1, pos("/data"=dataDir$,-1)-1)
+
+		rem --- Create logs directory under aon directory
+		logpath$=aonDir$+"/logs"
             	FileObject.makeDirs(new File(logpath$))
 
             	rem --- create and open log file
@@ -77,16 +93,37 @@ rem --- Copy selected data
 		open (log_dev)log$
             
 		rem --- write log header info
-		print (log_dev)"Copyfirmtofirm log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+		print (log_dev)"copyfirmtofirm log started: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
+		print (log_dev)"Started by: "+stbl("+USER_ID")
 		print (log_dev)"Company ID: "+callpoint!.getColumnData("ADX_COPYFIRM.ASC_COMP_ID")
 		print (log_dev)"Product ID: "+callpoint!.getColumnData("ADX_COPYFIRM.ASC_PROD_ID")
-		print (log_dev)"From Firm ID: "+callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
-		print (log_dev)"To Firm ID: "+callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
+		print (log_dev)"From Firm ID: "+from_firm$
+		print (log_dev)"To Firm ID: "+to_firm$
+		if callpoint!.getColumnData("ADX_COPYFIRM.FILES_TO_COPY")="A" then
+			print (log_dev)"Copy all files"
+		else
+			print (log_dev)"Copy all files except transaction files"
+		endif
 		print (log_dev)
 
+            
+		rem --- Use bax_mount_sel to get rdMountVect! containing hashes of mounted system and backup directory info for use in bax_xmlrec_exp.bbj
+		exp_add_only$=""
+		dev_mode$=""
+		call stbl("+DIR_SYP")+"bax_mount_sel.bbj",rdMountVect!,table_chans$[all],dev_mode$
+
 		rem --- Process selected files
+		sql_chan=sqlunt
+		sqlopen(sql_chan,err=*endif)stbl("+DBNAME")
 		numcols = num(user_tpl.gridFilesCols$)
 		for curr_row=0 to vectFiles!.size()/(numcols)-1
+			rem --- Increment progress meter
+			meter_data$=cvs(vectFiles!.getItem(curr_row * numcols + 3),2)
+			table_alias$=meter_data$
+			meter_proc_recs=meter_proc_recs+1
+			meter_action$="MTR-LST"
+			gosub disp_meter
+
 			if vectFiles!.getItem(curr_row*numcols)="Y"
 				num_files=2
 				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -99,27 +136,43 @@ rem --- Copy selected data
 				to_table_dev=num(open_chans$[2])
 				table_tpl$=open_tpls$[1]
 
-				rem --- Increment progress meter
-				meter_data$=open_tables$[1]
-				meter_proc_recs=meter_proc_recs+1
-				meter_action$="MTR-LST"
-				gosub disp_meter
-
 				rem --- Update log w/ file name and number of recs in file
-				table_fin$=xfin(from_table_dev)
-				tot_recs=dec(table_fin$(77,4))
-				print (log_dev)"File: "+vectFiles!.getItem(curr_row * numcols + 3)+"("+meter_data$+")"
-				print (log_dev)"Records in file: "+str(tot_recs)
+				from_recs$="?"
+				sql_prep$="select count (firm_id) from "+vectFiles!.getItem(curr_row * numcols + 3) + " where "
+				sql_prep$=sql_prep$+"firm_id = '"+from_firm$+"'"
+				if 1 then
+					sqlprep(sql_chan,err=*endif)sql_prep$
+					dim read_tpl$:sqltmpl(sql_chan)
+					sqlexec(sql_chan,err=*endif)
+					read_tpl$=sqlfetch(sql_chan,err=*endif)
+					from_recs$=str(read_tpl.col001)
+				endif
+				print (log_dev)"File: "+table_alias$+"("+open_tables$[1]+")"
+				print (log_dev)"Firm "+from_firm$+" records in file: "+from_recs$
 
 				rem --- Now copy the records
 				if pos("firm_id:c"=table_tpl$)>0
 					tot_recs_copied=0
 					read(from_table_dev,key=from_firm$,dom=*next)
 					while 1
+						rem --- Read from record
 						dim rec_tpl$:table_tpl$
 						readrecord (from_table_dev,end=*break)rec_tpl$
 						if rec_tpl.firm_id$ <> from_firm$ break
 						rec_tpl.firm_id$ = to_firm$
+
+						rem --- Create admin_backup records for admin data (adm_firms, ads_masks and ads_sequences) changes
+						if table_alias$="ADM_FIRMS" or table_alias$="ADS_MASKS" or table_alias$="ADS_SEQUENCES" then
+							if pos(newFirm$="0102",2) then
+								rec_tpl.user_modified$="M"
+							else
+								rec_tpl.user_modified$="A"
+							endif
+							exp_action$=rec_tpl.user_modified$
+							call stbl("+DIR_SYP")+"bax_xmlrec_exp.bbj",table_alias$,rec_tpl$,exp_action$,exp_add_only$,dev_mode$,rdMountVect!,table_chans$[all]
+						endif
+
+						rem --- Write to record
 						writerecord (to_table_dev)rec_tpl$
 						tot_recs_copied=tot_recs_copied+1
 					wend
@@ -129,11 +182,15 @@ rem --- Copy selected data
 					open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3)
 					open_opts$[1]="CX"
 					gosub open_tables
-					print (log_dev)"Records copied: "+str(tot_recs_copied)
+					print (log_dev)"Records copied to firm "+to_firm$+": "+str(tot_recs_copied)
 					print (log_dev)
 				endif
+			else
+				print (log_dev)"Table "+table_alias$+" skipped"
+				print (log_dev)
 			endif
 		next curr_row
+		sqlclose(sql_chan,err=*next)
 
 		print (log_dev)"Copyfirmtofirm log finished: " + date(0:"%Yd-%Mz-%Dz@%Hz:%mz:%sz")
 		close (log_dev)
@@ -145,6 +202,20 @@ rem --- Copy selected data
 		gosub disp_meter
 	endif
 [[ADX_COPYFIRM.TO_FIRM_ID.AVAL]]
+rem --- Skip if to_firm_id hasn't changed
+	to_firm_id$=callpoint!.getUserInput()
+	if to_firm_id$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID") then break
+
+rem --- Firms 99 and ZZ not allowed for to_firm_id
+	if pos(to_firm_id$="99ZZ",2) then
+		dim msg_tokens$[1]
+		msg_tokens$[1]=to_firm_id$
+		msg_id$="AD_FIRM_ID_BAD"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
 rem --- Make sure 2 firms aren't the same
 	from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY")
 	to_firm$=callpoint!.getUserInput()
@@ -156,11 +227,22 @@ rem --- Make sure 2 firms aren't the same
 		endif
 	endif
 [[ADX_COPYFIRM.FIRM_ID_ENTRY.AVAL]]
-rem --- Set number of recs for firm selected
+rem --- Skip if firm_id_entry hasn't changed
+	from_firm$=callpoint!.getUserInput()
+	if from_firm$=callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY") then break
+
+rem --- Firm ZZ not allowed for firm_id_entry
+	if pos(from_firm$="ZZ",2) then
+		dim msg_tokens$[1]
+		msg_tokens$[1]=from_firm$
+		msg_id$="AD_FIRM_ID_BAD"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 
 rem --- Make sure 2 firms aren't the same
 	to_firm$=callpoint!.getColumnData("ADX_COPYFIRM.TO_FIRM_ID")
-	from_firm$=callpoint!.getUserInput()
 	if cvs(to_firm$,2)<>"" then 
 		gosub check_firms
 		if from_firm$=to_firm$
@@ -169,27 +251,52 @@ rem --- Make sure 2 firms aren't the same
 		endif
 	endif
 
+rem --- Set number of recs for firm selected
 	updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT")
 	if updt_rec_count$="Y"
 		firm$=callpoint!.getUserInput()
 		gosub set_firm_recs
+		gosub fill_grid
 	endif
 [[ADX_COPYFIRM.ASC_PROD_ID.AVAL]]
-rem --- Set Filter
+rem --- Skip if asc_prod_id hasn't changed
+	asc_prod_id$=callpoint!.getUserInput()
+	if asc_prod_id$=callpoint!.getColumnData("ADX_COPYFIRM.ASC_PROD_ID") then break
+
+rem --- Set Filter and update grid
 	gosub filter_recs
 	updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT")
-	if updt_rec_count$="Y"
-		firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
-		gosub set_firm_recs
-	endif
+	firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
+	gosub set_firm_recs
+	gosub fill_grid
 [[ADX_COPYFIRM.ASC_COMP_ID.AVAL]]
-rem --- Set Filter
+rem --- Skip if asc_comp_id hasn't changed
+	asc_comp_id$=callpoint!.getUserInput()
+	if asc_comp_id$=callpoint!.getColumnData("ADX_COPYFIRM.ASC_COMP_ID") then break
+
+rem --- Disable and clear asc_prod_id unless asc_comp_id was entered
+	if cvs(asc_comp_id$,2)="" then
+		callpoint!.setColumnData("ADX_COPYFIRM.ASC_PROD_ID","",1)
+		callpoint!.setColumnEnabled("ADX_COPYFIRM.ASC_PROD_ID",0)
+	else
+		callpoint!.setColumnEnabled("ADX_COPYFIRM.ASC_PROD_ID",1)
+	endif
+
+rem --- Initialize files_to_copy
+	if asc_comp_id$="01007514" then
+		callpoint!.setColumnData("ADX_COPYFIRM.FILES_TO_COPY","T",1)
+		callpoint!.setColumnEnabled("ADX_COPYFIRM.FILES_TO_COPY",1)
+	else
+		callpoint!.setColumnData("ADX_COPYFIRM.FILES_TO_COPY","A",1)
+		callpoint!.setColumnEnabled("ADX_COPYFIRM.FILES_TO_COPY",0)
+	endif
+
+rem --- Set Filter and update grid
 	gosub filter_recs
 	updt_rec_count$=callpoint!.getColumnData("ADX_COPYFIRM.UPDT_REC_COUNT")
-	if updt_rec_count$="Y"
-		firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
-		gosub set_firm_recs
-	endif
+	firm$=cvs(callpoint!.getColumnData("ADX_COPYFIRM.FIRM_ID_ENTRY"),3)
+	gosub set_firm_recs
+	gosub fill_grid
 [[ADX_COPYFIRM.ACUS]]
 rem --- Process custom event
 rem --- Select/de-select checkboxes in grid
@@ -213,24 +320,22 @@ rem See basis docs notice() function, noticetpl() function, notify event, grid c
 
 	gridFiles! = callpoint!.getDevObject("gridFiles")
 	numcols = gridFiles!.getNumColumns()
-	vectFiles! = callpoint!.getDevObject("vectFiles")
-	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 	curr_row = dec(notice.row$)
 	curr_col = dec(notice.col$)
 
-	switch notice.code
-		case 12; rem --- grid_key_press
-			if notice.wparam=32 gosub switch_value
-			break
+	rem --- Do NOT allow selecting aps_report and ars_report tables in grid
+	if cvs(gridFiles!.getCellText(curr_row,1),2)<>"01007514" or cvs(gridFiles!.getCellText(curr_row,2),2)<>"AD" or 
+:	pos(":"+cvs(gridFiles!.getCellText(curr_row,3),2)+":"=":APS_REPORT:ARS_REPORT:")=0  then
+		switch notice.code
+			case 12; rem --- grid_key_press
+				if notice.wparam=32 gosub switch_value
+				break
 
-		case 14; rem --- grid_mouse_up
-			if notice.col=0 gosub switch_value
-			break
-
-		case 7; rem --- edit stop
-
-		break
-	swend
+			case 14; rem --- grid_mouse_up
+				if notice.col=0 gosub switch_value
+				break
+		swend
+	endif
 [[ADX_COPYFIRM.<CUSTOM>]]
 rem ==========================================================================
 format_grid: rem --- Use Barista program to format the grid
@@ -289,7 +394,7 @@ rem ==========================================================================
 	SysGUI!.setRepaintEnabled(0)
 	gridFiles! = callpoint!.getDevObject("gridFiles")
 	vectFiles! = callpoint!.getDevObject("vectFiles")
-	minrows = num(user_tpl.gridFilesRows$)
+	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 
 	if vectFiles!.size() then
 		numrow = vectFiles!.size() / gridFiles!.getNumColumns()
@@ -298,11 +403,49 @@ rem ==========================================================================
 		gridFiles!.setNumRows(numrow)
 		gridFiles!.setCellText(0,0,vectFiles!)
 
+		rem --- Check/uncheck grid rows
 		for wk=0 to vectFiles!.size()-1 step gridFiles!.getNumColumns()
-			if vectFiles!.getItem(wk) = "Y" then 
-				gridFiles!.setCellStyle(wk / gridFiles!.getNumColumns(), 0, SysGUI!.GRID_STYLE_CHECKED)
+			row=wk/gridFiles!.getNumColumns()
+			gridFiles!.setCellText(row, 0, "")
+
+			if cvs(vectFiles!.getItem(wk+1),2)="01007514" and cvs(vectFiles!.getItem(wk+2),2)="AD" and 
+:			pos(":"+cvs(vectFiles!.getItem(wk+3),2)+":"=":APS_REPORT:ARS_REPORT:")  then
+				rem --- Do NOT allow selecting Addon's aps_report and ars_report tables in grid
+				gridFiles!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_UNCHECKED)
+				gridFiles!.setRowBackColor(row,callpoint!.getDevObject("notEditableColor"))
+				vectFiles!.setItem(wk, "N")
+				vectFilesMaster!.setItem(row*user_tpl.MasterCols+1, "N")
+			else
+				gridFiles!.setRowBackColor(row,callpoint!.getDevObject("editableColor"))
+				if vectFiles!.getItem(wk) = "Y" then 
+					gridFiles!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_CHECKED)
+				else
+					gridFiles!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_UNCHECKED)
+				endif
+
+				rem --- Some Addon tables get special handling 
+				if cvs(vectFiles!.getItem(wk+1),2)="01007514" then
+					rem --- Initialize Addon work tables unchecked
+					if pos("W_"=vectFiles!.getItem(wk+3))=3 then
+						gridFiles!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_UNCHECKED)
+						vectFiles!.setItem(wk, "N")
+						vectFilesMaster!.setItem(row*user_tpl.MasterCols+1, "N")
+					endif
+
+					rem --- Initialize Addon entry and history tables unchecked when transactions are excluded
+					if pos("E_"=vectFiles!.getItem(wk+3))=3  or pos("T_"=vectFiles!.getItem(wk+3))=3 then
+						if callpoint!.getColumnData("ADX_COPYFIRM.FILES_TO_COPY")="T" then
+							gridFiles!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_UNCHECKED)
+							vectFiles!.setItem(wk, "N")
+							vectFilesMaster!.setItem(row*user_tpl.MasterCols+1, "N")
+						else
+							gridFiles!.setCellStyle(row, 0, SysGUI!.GRID_STYLE_CHECKED)
+							vectFiles!.setItem(wk, "Y")
+							vectFilesMaster!.setItem(row*user_tpl.MasterCols+1, "Y")
+						endif
+					endif
+				endif
 			endif
-			gridFiles!.setCellText(wk / gridFiles!.getNumColumns(), 0, "")
 		next wk
 
 		gridFiles!.resort()
@@ -312,78 +455,74 @@ rem ==========================================================================
 		gridFiles!.setNumRows(0)
 	endif
 
+	callpoint!.setDevObject("gridFiles",gridFiles!)
+	callpoint!.setDevObject("vectFiles",vectFiles!)
+	callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 	SysGUI!.setRepaintEnabled(1)
 
 	return
 
 rem ==========================================================================
-create_reports_vector: rem --- Create a vector from the file to fill the grid
+create_reports_vector: rem --- Create a vector from ddm_table to fill the grid
 rem ==========================================================================
 
-rem --- fill with File information
+	modules$=callpoint!.getDevObject("modules")
 
 	ddm_tables_dev=fnget_dev("DDM_TABLES")
 	dim ddm_tables$:fnget_tpl$("DDM_TABLES")
 	read (ddm_tables_dev,key="",dom=*next)
-	rows=0
-
-	modules$=callpoint!.getDevObject("modules")
-
 	while 1
 		read record (ddm_tables_dev, end=*break) ddm_tables$
-
-	rem --- Now fill vectors
-	rem --- Items 1 thru n+1 in FilesMaster must equal items 0 thru n in Files
+			rem --- Now fill vectors
+			rem --- Items 1 thru n+1 in vectFilesMaster! must equal items 0 thru n in vectFiles!
 
 		if pos(ddm_tables.dd_alias_type$="MXVSD")>0 and pos(ddm_tables.asc_prod_id$=modules$,3) > 0 then
 			if ddm_tables.asc_prod_id$ <> "ADB" or
-:				((ddm_tables.asc_prod_id$="ADB") and
-:				 (cvs(ddm_tables.dd_table_alias$,2)="ADQ_FAXEMAIL") or
-:				 (cvs(ddm_tables.dd_table_alias$,2)="ADS_MASKS") or
-:				 (cvs(ddm_tables.dd_table_alias$,2)="ADS_SEQUENCES"))
-				num_files=1
-				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-				open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="OTASN"
+:				(ddm_tables.asc_prod_id$="ADB" and
+:				 (cvs(ddm_tables.dd_table_alias$,2)="ADS_MASKS" or
+:				 cvs(ddm_tables.dd_table_alias$,2)="ADS_SEQUENCES"))
 
-				gosub open_tables
-				if status<>0 break
-				table_chn=num(open_chans$[1])
-				table_tpl$=open_tpls$[1]
-				table_fin$=xfin(table_chn)
-
-				if table_chn >0
-					if len(cvs(table_tpl$,2)) > 0 and pos("firm_id:c"=table_tpl$) > 0 and dec(table_fin$(77,4)) > 0
-						table_fin$=xfin(table_chn)
-						dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-						open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="CX"
-						gosub open_tables
-
-						tot_recs=0
-						if pos(ddm_tables.dd_alias_type$="VMX")>0
-							tot_recs=dec(table_fin$(77,4))
-						endif
-
-						vectFiles!.addItem("Y"); rem 0
-						vectFiles!.addItem(ddm_tables.asc_comp_id$);rem 1
-						vectFiles!.addItem(ddm_tables.asc_prod_id$);rem 2
-						vectFiles!.addItem(ddm_tables.dd_table_alias$); rem 3
-						vectFiles!.addItem(ddm_tables.dd_alias_desc$); rem 4
-						vectFiles!.addItem(str(0));rem was (str(tot_recs)); rem 5
-
-						vectFilesMaster!.addItem("Y"); rem 0 - Filtered Y or N
-						vectFilesMaster!.addItem("Y"); rem 1 - Selected Y or N
-						vectFilesMaster!.addItem(ddm_tables.asc_comp_id$);rem 2
-						vectFilesMaster!.addItem(ddm_tables.asc_prod_id$); rem 3
-						vectFilesMaster!.addItem(ddm_tables.dd_table_alias$); rem 4
-						vectFilesMaster!.addItem(ddm_tables.dd_alias_desc$); rem 5
-						vectFilesMaster!.addItem(str(0));rem was (str(tot_recs)); rem 6
-						rows=rows+1
-					else
-						dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-						open_tables$[1]=cvs(ddm_tables.dd_table_alias$,2),open_opts$[1]="CX"
-						gosub open_tables
-					endif
+				rem --- Skip files that haven't been created yet
+				tablePath$=cvs(ddm_tables.dd_table_path$,3)
+				if pos("["=tablePath$)=1 then
+					rem --- Using stbl for path
+					tablePath$=tablePath$(2)
+					tablePath$=tablePath$(1,len(tablePath$)-1)
+					dataDir$=stbl(tablePath$)
+				else
+					dataDir$=tablePath$
 				endif
+				if pos(dataDir$="\/")=0 and pos(":"=dataDir$)<>2 then
+					rem --- Relative path
+					dataDir$=dir("")+dataDir$
+				endif
+				dataFile$=cvs(ddm_tables.dd_file_name$,2)
+				if cvs(dataFile$,2)="" then dataFile$=cvs(dataFile$,10)
+				thisFile!=new File(dataDir$+dataFile$,err=*continue)
+				if !thisFile!.exists() then continue
+
+				rem --- Filter on asc_comp_id set in AREC
+				if ddm_tables.asc_comp_id$="01007514" then
+					vectFiles!.addItem("Y"); rem 0 - Selected Y or N
+					vectFiles!.addItem(ddm_tables.asc_comp_id$);rem 1
+					vectFiles!.addItem(ddm_tables.asc_prod_id$);rem 2
+					vectFiles!.addItem(ddm_tables.dd_table_alias$); rem 3
+					vectFiles!.addItem(ddm_tables.dd_alias_desc$); rem 4
+					vectFiles!.addItem(""); rem 5 - Number of records to copy
+				endif
+
+				rem --- Filter on asc_comp_id set in AREC
+				if ddm_tables.asc_comp_id$="01007514" then
+					vectFilesMaster!.addItem("Y"); rem 0 - Filtered Yes
+				else
+					vectFilesMaster!.addItem("N"); rem 0 - Filtered N0
+				endif
+				vectFilesMaster!.addItem("Y"); rem 1 - Selected Y or N
+				vectFilesMaster!.addItem(ddm_tables.asc_comp_id$);rem 2
+				vectFilesMaster!.addItem(ddm_tables.asc_prod_id$); rem 3
+				vectFilesMaster!.addItem(ddm_tables.dd_table_alias$); rem 4
+				vectFilesMaster!.addItem(ddm_tables.dd_alias_desc$); rem 5
+				vectFilesMaster!.addItem(""); rem 6 - Number of records to copy
 			endif
 		endif
 	wend
@@ -433,7 +572,6 @@ switch_value: rem --- Switch Check Values
 rem ==========================================================================
 
 	SysGUI!.setRepaintEnabled(0)
-
 	gridFiles! = callpoint!.getDevObject("gridFiles")
 	vectFiles! = callpoint!.getDevObject("vectFiles")
 	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
@@ -446,21 +584,23 @@ rem ==========================================================================
 		for curr_row=1 to TempRows!.size()
 			row_no = num(TempRows!.getItem(curr_row-1))
 
-		rem --- Not checked -> checked
-
 			if gridFiles!.getCellState(row_no,0) = 0 then 
+				rem --- Not checked -> checked
 				gridFiles!.setCellState(row_no,0,1)
 				vectFiles!.setItem(row_no * numcols, "Y")
-
-		rem --- Checked -> not checked
-
+				vectFilesMaster!.setItem(row_no*user_tpl.MasterCols+1, "Y")
 			else
+				rem --- Checked -> not checked
 				gridFiles!.setCellState(row_no,0,0)
 				vectFiles!.setItem(row_no * numcols, "N")
+				vectFilesMaster!.setItem(row_no*user_tpl.MasterCols+1, "N")
 			endif
 		next curr_row
 	endif
 
+	callpoint!.setDevObject("gridFiles",gridFiles!)
+	callpoint!.setDevObject("vectFiles",vectFiles!)
+	callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
 	SysGUI!.setRepaintEnabled(1)
 
 	return
@@ -530,62 +670,15 @@ rem ==========================================================================
 	return
 
 rem ==========================================================================
-set_value: rem --- Set Check Values for all rows - on/off
-		rem --- on_value$="Y" to set all to on
-		rem --- on_value$="N" to set all to off
-rem ==========================================================================
-
-	SysGUI!.setRepaintEnabled(0)
-
-	gridFiles! = callpoint!.getDevObject("gridFiles")
-	vectFiles! = callpoint!.getDevObject("vectFiles")
-	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
-
-	TempRows! = gridFiles!.getSelectedRows()
-	numcols   = gridFiles!.getNumColumns()
-
-	vect_size = num(vectFilesMaster!.size())
-	rows = 0
-
-	for x=1 to vect_size step user_tpl.MasterCols
-		if vectFilesMaster!.getItem(x-1)="Y"
-			rows=rows+1
-		endif
-	next x
-
-	if rows > 0 then
-		for curr_row=1 to rows
-			row_no = curr_row-1
-
-		rem --- set as checked
-			if on_value$="Y" then 
-
-				gridFiles!.setCellState(row_no,0,1)
-
-				vectFiles!.setItem(row_no * numcols, "Y")
-
-		rem --- Checked -> not checked
-
-			else
-				gridFiles!.setCellState(row_no,0,0)
-				vectFiles!.setItem(row_no * numcols, "N")
-			endif
-		next curr_row
-	endif
-
-	SysGUI!.setRepaintEnabled(1)
-
-	return
-
-rem ==========================================================================
 set_firm_recs:
 rem --- in: firm$
 rem --- in: updt_rec_count$
 rem ==========================================================================
 
+	if cvs(firm$,2)="" then return
+
 	SysGUI!.setRepaintEnabled(0)
 	vectFiles! = callpoint!.getDevObject("vectFiles")
-	vectFilesMaster! = callpoint!.getDevObject("vectFilesMaster")
 
 	TempRows! = vectFiles!
 	numcols   = num(user_tpl.gridFilesCols$)
@@ -594,43 +687,33 @@ rem ==========================================================================
 	call pgmdir$+"adc_progress.aon","NC","","Processing...","","",0,ddm_table_dev,1,meter_num,status
 
 	if TempRows!.size() > 0 then
+		sql_chan=sqlunt
+		sqlopen(sql_chan,err=*endif)stbl("+DBNAME")
 		for curr_row=0 to TempRows!.size()/(num(user_tpl.gridFilesCols$))-1
 			call pgmdir$+"adc_progress.aon","S","","","","",0,curr_row,1,meter_num,status
-			if cvs(firm$,2)<>"" and updt_rec_count$="Y"
-				num_files=1
-				dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-				open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3),open_opts$[1]="OTASN"
-				gosub open_tables
-
-				table_chn=num(open_chans$[1]),table_tpl$=open_tpls$[1]
-				if pos("firm_id:"=table_tpl$)=1
-					sql_prep$="select count (firm_id) from "+vectFiles!.getItem(curr_row * numcols + 3) + " where "
-					sql_prep$=sql_prep$+"firm_id = '"+firm$+"'"
-					sql_chan=sqlunt
-					sqlopen(sql_chan,err=*next)stbl("+DBNAME")
-					sqlprep(sql_chan,err=close_sql)sql_prep$
-					dim read_tpl$:sqltmpl(sql_chan)
-					sqlexec(sql_chan)
-					while 1
-						read_tpl$=sqlfetch(sql_chan,err=*break)
-						vectFiles!.setItem(curr_row * numcols + 5, str(read_tpl.col001))
-						break
-					wend
-close_sql:
-					sqlclose(sql_chan)
-				endif
-				open_tables$[1]=vectFiles!.getItem(curr_row * numcols + 3),open_opts$[1]="CX"
-				gosub open_tables
+			if updt_rec_count$="Y" then
+				rem --- Update record count
+				sql_prep$="select count (firm_id) from "+vectFiles!.getItem(curr_row * numcols + 3) + " where "
+				sql_prep$=sql_prep$+"firm_id = '"+firm$+"'"
+				sqlprep(sql_chan,err=*continue)sql_prep$
+				dim read_tpl$:sqltmpl(sql_chan)
+				sqlexec(sql_chan,err=*continue)
+				while 1
+					read_tpl$=sqlfetch(sql_chan,err=*break)
+					vectFiles!.setItem(curr_row * numcols + 5, str(read_tpl.col001))
+					break
+				wend
 			else
-				vectFiles!.setItem(curr_row * numcols + 5, str(0))
+				rem --- Clear existing record count
+				vectFiles!.setItem(curr_row * numcols + 5, "")
 			endif
 		next curr_row
+		sqlclose(sql_chan,err=*next)
 	endif
 
+	callpoint!.setDevObject("vectFiles",vectFiles!)
 	SysGUI!.setRepaintEnabled(1)
 	call pgmdir$+"adc_progress.aon","D","","","","",0,0,0,meter_num,status
-
-	gosub fill_grid
 
 	return
 
@@ -647,6 +730,35 @@ rem ==========================================================================
 		msg_id$ = "ADMIN_COPY_FIRM_SAME"
 		gosub disp_message
 	endif
+
+	return
+
+rem ==========================================================================
+fix_path: rem --- Flip directory path separators
+rem IN: filePath$
+rem OUT: filePath$
+rem ==========================================================================
+
+	pos=pos("\"=filePath$)
+	while pos
+		filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+	pos=pos("\"=filePath$)
+	wend
+
+	return
+
+rem ==========================================================================
+get_RGB: rem --- Parse Red, Green and Blue segments from RGB$ string
+	rem --- input: RGB$
+	rem --- output: R
+	rem --- output: G
+	rem --- output: B
+rem ==========================================================================
+	comma1=pos(","=RGB$,1,1)
+	comma2=pos(","=RGB$,1,2)
+	R=num(RGB$(1,comma1-1))
+	G=num(RGB$(comma1+1,comma2-comma1-1))
+	B=num(RGB$(comma2+1))
 
 	return
 
@@ -675,8 +787,10 @@ rem ==========================================================================
 [[ADX_COPYFIRM.AWIN]]
 rem --- Open/Lock files
 
-	use ::ado_util.src::util
+	use java.io.File
+    	use ::ado_file.src::FileObject
 	use ::ado_func.src::func
+	use ::ado_util.src::util
 
 	num_files=2
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
@@ -712,11 +826,21 @@ rem --- Open/Lock files
 	user_tpl.MasterCols = 7
 
 	gosub format_grid
-	util.resizeWindow(Form!, SysGui!)
 
 	callpoint!.setDevObject("gridFiles",gridFiles!)
 	callpoint!.setDevObject("vectFiles",vectFiles!)
 	callpoint!.setDevObject("vectFilesMaster",vectFilesMaster!)
+
+	rem --- Set background color for editable grid rows
+	RGB$="255,255,255"
+	gosub get_RGB
+	callpoint!.setDevObject("editableColor",BBjAPI().getSysGui().makeColor(R,G,B))
+
+	rem --- Set background color for not editable grid rows
+	RGB$="231,236,255"
+	RGB$=stbl("+GRID_NONEDIT_COLOR",err=*next)
+	gosub get_RGB
+	callpoint!.setDevObject("notEditableColor",BBjAPI().getSysGui().makeColor(R,G,B))
 
 rem --- Misc other init
 
@@ -726,14 +850,12 @@ rem --- Misc other init
 
 	gosub checkout_licenses
 	gosub create_reports_vector
+	callpoint!.setColumnData("ADX_COPYFIRM.FILES_TO_COPY","T")
 	gosub fill_grid
-	util.resizeWindow(Form!,SysGUI!)
 
 rem --- Set callbacks - processed in ACUS callpoint
 
 	gridFiles!.setCallback(gridFiles!.ON_GRID_KEY_PRESS,"custom_event")
 	gridFiles!.setCallback(gridFiles!.ON_GRID_MOUSE_UP,"custom_event")
 	gridFiles!.setCallback(gridFiles!.ON_GRID_EDIT_STOP,"custom_event")
-
-	callpoint!.setOptionEnabled("CPYF",0)
-	callpoint!.setDevObject("updt_rec_count","N")
+	callpoint!.setDevObject("gridFiles",gridFiles!)

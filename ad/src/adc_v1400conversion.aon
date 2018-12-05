@@ -5,11 +5,12 @@ rem --- AddonSoftware Version 15.00 - Sept2014
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 
-rem --- CONVCTRL!   : Property object of the conversion control file data/adx_conversionCtrl (Input)
-rem --- INSTALLMAP! : HashMap object of installed modules, keyed by module ID (Input)
-rem --- rdForm!     : Window object to hold progress meter
-rem --- Translate!  : Translator object translations
-rem --- CONV_STATUS : Status code/0=No error (Returned)
+rem --- CONVCTRLFILECHAN : Channel number conversion control file data/adx_conversionCtrl is open on (Input)
+rem --- CONVCTRL!        : Property object of the conversion control file data/adx_conversionCtrl (Input)
+rem --- INSTALLMAP!      : HashMap object of installed modules, keyed by module ID (Input)
+rem --- rdForm!          : Window object to hold progress meter
+rem --- Translate!       : Translator object translations
+rem --- CONV_STATUS      : Status code/0=No error (Returned)
 
     use java.io.File
     use ::ado_file.src::FileObject
@@ -17,7 +18,7 @@ rem --- CONV_STATUS : Status code/0=No error (Returned)
     setesc std_error
     seterr std_error
     
-    enter convCtrl!,installMap!,rdForm!,Translate!,conv_status
+    enter convCtrlFileChan,convCtrl!,installMap!,rdForm!,Translate!,conv_status
 
 rem --- Initializations
 
@@ -63,40 +64,51 @@ rem --- For version 14.10, update drilldown definitions in ddm_drill_defs
         gosub disp_meter
         print(log_dev)meter_text$
 
-        num_files=1
-        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-        open_tables$[1]="DDM_DRILL_DEFS",   open_opts$[1]="OTA"
-        gosub open_tables
-        ddm_drilldefs_dev=num(open_chans$[1])
-        dim ddm_drilldefs$:open_tpls$[1]
-        
-        rem --- Update AP_INVOICES drilldown definition
-        wk$=fattr(ddm_drilldefs$,"DRILL_DEF_ID")
-        dim drill_def_id$(dec(wk$(10,2)))
-        drill_def_id$(1)="AP_INVOICES"
-        readrecord(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)ddm_drilldefs$
-        if ddm_drilldefs.drill_def_id$=drill_def_id$ then
-            ddm_drilldefs.dd_filter_col_01$="INVOICE_BAL"
-            ddm_drilldefs.dd_filter_def_01$="<>0"
-            ddm_drilldefs.filter_prog$=""
-            writerecord(ddm_drilldefs_dev)ddm_drilldefs$
+        task$="1400_AD_drilldown_defs"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            num_files=1
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1]="DDM_DRILL_DEFS",   open_opts$[1]="OTA"
+            gosub open_tables
+            ddm_drilldefs_dev=num(open_chans$[1])
+            dim ddm_drilldefs$:open_tpls$[1]
+            
+            rem --- Update AP_INVOICES drilldown definition
+            wk$=fattr(ddm_drilldefs$,"DRILL_DEF_ID")
+            dim drill_def_id$(dec(wk$(10,2)))
+            drill_def_id$(1)="AP_INVOICES"
+            readrecord(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)ddm_drilldefs$
+            if ddm_drilldefs.drill_def_id$=drill_def_id$ then
+                ddm_drilldefs.dd_filter_col_01$="INVOICE_BAL"
+                ddm_drilldefs.dd_filter_def_01$="<>0"
+                ddm_drilldefs.filter_prog$=""
+                writerecord(ddm_drilldefs_dev)ddm_drilldefs$
+            endif
+            
+            rem --- Update GL_YTD_AMT drilldown definition
+            drill_def_id$(1)="GL_YTD_AMT"
+            readrecord(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)ddm_drilldefs$
+            if ddm_drilldefs.drill_def_id$=drill_def_id$ then
+                ddm_drilldefs.filter_prog$="glf_ytdamts.aon"
+                writerecord(ddm_drilldefs_dev)ddm_drilldefs$
+            endif
+    
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+            write(convCtrlFileChan)task$+"=Completed"
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
         endif
-        
-        rem --- Update GL_YTD_AMT drilldown definition
-        drill_def_id$(1)="GL_YTD_AMT"
-        readrecord(ddm_drilldefs_dev,key=drill_def_id$,dom=*next)ddm_drilldefs$
-        if ddm_drilldefs.drill_def_id$=drill_def_id$ then
-            ddm_drilldefs.filter_prog$="glf_ytdamts.aon"
-            writerecord(ddm_drilldefs_dev)ddm_drilldefs$
-        endif
-
-        rem --- Increment progress meter
-        meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+this_module$
-        meter_proc_recs=meter_proc_recs+1
-        meter_action$="MTR-LST"
-        gosub disp_meter
-        print(log_dev)meter_text$
     else
         rem --- Increment progress meter
         meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
@@ -119,35 +131,15 @@ rem --- For version 14.00, initialize invoice_bal in apt_invoicehdr
         gosub disp_meter
         print(log_dev)meter_text$
 
-        rem --- Does conversion marker file exist for Initializeing invoice_bal in apt_invoicehdr?
-        conv_marker_name$="v1400_apt-01"
-        conv_marker_file$=dataDir$+conv_marker_name$
-        convmarkerFile!=new File(conv_marker_file$)
-        if convmarkerFile!.exists() then
-            rem --- Verify required files are present
-            missingFiles!=BBjAPI().makeVector()
-            requiredFiles!=BBjAPI().makeVector()
-            requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
-            for i=0 to requiredFiles!.size()-1
-                file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
-                if !file!.exists() then
-                    missingFiles!.addItem(requiredFiles!.get(i))
-                endif
-            next i
-            if missingFiles!.size()=0 then
-                rem --- Initialize invoice_bal in apt_invoicehdr
-                theFirm$=""
-                call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
-                if status=0 then
-                    rem --- Conversion completed successfully
-                    rem --- Increment progress meter
-                    meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
-
+        task$="1400_AP_apt-01"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+            rem --- Does conversion marker file exist for Initializeing invoice_bal in apt_invoicehdr?
+            conv_marker_name$="v1400_apt-01"
+            conv_marker_file$=dataDir$+conv_marker_name$
+            convmarkerFile!=new File(conv_marker_file$)
+            if convmarkerFile!.exists() then
+                rem --- Skip "Rebuild AP Invoice Balance" when conversion ends with v16 or later (see Bug 9294 for details).
+                if num(convCtrl!.getProperty("end_version"))>15 then
                     rem --- Delete conversion marker file
                     if convmarkerFile!.delete() then
                         rem --- Increment progress meter
@@ -158,32 +150,66 @@ rem --- For version 14.00, initialize invoice_bal in apt_invoicehdr
                         print(log_dev)meter_text$
                     endif
                 else
-                    rem --- Conversion did NOT complete successfully, exit with error message
-                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))+" *****"
-                    goto done
+                    rem --- Verify required files are present
+                    missingFiles!=BBjAPI().makeVector()
+                    requiredFiles!=BBjAPI().makeVector()
+                    requiredFiles!.addAll(java.util.Arrays.asList(convCtrl!.getProperty(conv_marker_name$(2)).split(";")))
+                    for i=0 to requiredFiles!.size()-1
+                        file!=new File(stbl("+"+this_module$+"DATA")+requiredFiles!.get(i))
+                        if !file!.exists() then
+                            missingFiles!.addItem(requiredFiles!.get(i))
+                        endif
+                    next i
+                    if missingFiles!.size()=0 then
+                        rem --- Initialize invoice_bal in apt_invoicehdr
+                        theFirm$=""
+                        call pgmdir$+"apc_rebuildinvbal.aon",theFirm$,status
+                        if status=0 then
+                            rem --- Conversion completed successfully
+                            rem --- Increment progress meter
+                            meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))
+                            meter_proc_recs=meter_proc_recs+1
+                            meter_action$="MTR-LST"
+                            gosub disp_meter
+                            print(log_dev)meter_text$
+                            write(convCtrlFileChan)task$+"=Completed"
+        
+                            rem --- Delete conversion marker file
+                            if convmarkerFile!.delete() then
+                                rem --- Increment progress meter
+                                meter_text$=Translate!.getTranslation("AON_CONV_MARKER_DELETED","Conversion marker file deleted")+": "+conv_marker_file$
+                                meter_proc_recs=meter_proc_recs+1
+                                meter_action$="MTR-LST"
+                                gosub disp_meter
+                                print(log_dev)meter_text$
+                            endif
+                        else
+                            rem --- Conversion did NOT complete successfully, exit with error message
+                            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                           Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+convCtrl!.getProperty(conv_marker_name$(2))+" *****"
+                            goto done
+                        endif
+                    else
+                        rem --- Required file missing
+                        msg_id$="AD_FILE_MISSING"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]=missingFiles!.get(0)
+                        gosub disp_message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+missingFiles!.get(0)+" *****"
+                        goto done
+                    endif
                 endif
-            else
-                rem --- Required file missing
-                msg_id$="AD_FILE_MISSING"
-                dim msg_tokens$[1]
-                msg_tokens$[1]=missingFiles!.get(0)
-                gosub disp_message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:               Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+missingFiles!.get(0)+" *****"
-                goto done
             endif
         else
-            rem --- If ending conversion at v16 or later, apt_invoicehdr and v1400_apt-01 marker file will be missing (see Bug 9294 for details).
-            if num(convCtrl!.getProperty("end_version"))<16 then
-                rem --- Increment progress meter
-                meter_text$=Translate!.getTranslation("AON_CONV_MARKER_NOT_FOUND","Conversion marker file not found")+": "+conv_marker_file$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
-            endif
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
         endif
     else
         rem --- Increment progress meter

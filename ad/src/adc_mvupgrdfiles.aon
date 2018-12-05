@@ -30,6 +30,7 @@ rem --- STATUS       : Status code/0=No error (Returned)
 
 rem --- Initializations
     status=0
+    BLOCKSIZE=2^20
     dir_syp$=stbl("+DIR_SYP")
     sysGUI! = BBjAPI().getSysGui()
     dataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
@@ -171,17 +172,32 @@ rem --- Update conversion control file data/adx_conversionCtrl, and create conve
     convCtrlFileName$=dataDir$+"adx_conversionCtrl"
     convCtrlFile!=new File(convCtrlFileName$,err=*next)
     if convCtrlFile!.exists() then
-        rem --- Update conversion control file data/adx_conversionCtrl
+        rem --- Get current properties from conversion control file data/adx_conversionCtrl
         fileReader!=new FileReader(convCtrlFile!)
         convCtrl!=new Properties()
         convCtrl!.load(fileReader!)
         fileReader!.close()
 
-        convCtrl!.setProperty("data_source","OCJ")
+        rem --- Update data_source conversion control file data/adx_conversionCtrl
+        convCtrlFileChan=unt
+        open(convCtrlFileChan,isz=-1)convCtrlFileName$
+        targetFile$=convCtrlFileName$+".tmp"
+        targetChan=unt
+        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")targetFile$
 
-        fileWriter!=new FileWriter(convCtrlFile!)
-        convCtrl!.store(fileWriter!,"Addon Conversion Control File")
-        fileWriter!.close()
+        while 1
+            readrecord(convCtrlFileChan,siz=BLOCKSIZE,end=*break)line$
+            if pos("data_source=AIUW"=line$) then
+                xpos=pos("data_source=AIUW"=line$)
+                line$=line$(1,xpos+len("data_source=")-1)+"OCJ"+line$(xpos+len("data_source=")+4)
+            endif
+            writerecord(targetChan)line$
+        wend
+
+        close(convCtrlFileChan,err=*next)
+        close(targetChan,err=*next)
+        erase convCtrlFileName$
+        rename targetFile$ to convCtrlFileName$ 
         
         print(log_dev)"Updated ",convCtrlFileName$
 
@@ -210,6 +226,7 @@ rem --- Update conversion control file data/adx_conversionCtrl, and create conve
 
         rem --- Create conversion marker files for each version needing conversion
         fileDependencies!=new HashMap()
+        dependentVersions$=""
         if indexFirstConversion>=0 then
             rem --- Get file dependencies for each version needing conversion
             convCtrlKeys!=convCtrl!.stringPropertyNames()
@@ -219,7 +236,13 @@ rem --- Update conversion control file data/adx_conversionCtrl, and create conve
                 while iter!.hasNext()
                     key$=iter!.next()
                     if pos(version$+"_"=key$)=1 then
-                        fileDependencies!.put(convCtrl!.getProperty(key$),version$)
+                        if fileDependencies!.containsKey(convCtrl!.getProperty(key$)) then
+                            dependentVersions$=fileDependencies!.get(convCtrl!.getProperty(key$))
+                            if pos(version$+":"=dependentVersions$)=0 then dependentVersions$=dependentVersions$+version$+":"
+                        else
+                            dependentVersions$=version$+":"
+                        endif
+                        fileDependencies!.put(convCtrl!.getProperty(key$),dependentVersions$)
                     endif
                 wend
             next i
@@ -232,7 +255,6 @@ rem --- Update conversion control file data/adx_conversionCtrl, and create conve
             requiredFiles!.clear()
             key!=keyIter!.next()
             requiredFiles!.addAll(java.util.Arrays.asList(key!.split(";")))
-            version$=fileDependencies!.get(key!)
             for i=0 to requiredFiles!.size()-1
                 filename$=requiredFiles!.get(i)
                 rem --- Because of v15.00 key and field changes to opt-11, it should always fail in OCJ.
@@ -245,10 +267,20 @@ rem --- Update conversion control file data/adx_conversionCtrl, and create conve
                 endif
             next i
             if create_marker then
-                markerFile!=new File(dataDir$+"/v"+version$+"_"+requiredFiles!.get(0))
-                markerFile!.createNewFile()
-
-                print(log_dev)"Created conversion marker file: ",markerFile!.getAbsoluteFile()
+                dependentVersions$=fileDependencies!.get(key!)
+                while len(dependentVersions$)>0
+                    xpos=pos(":"=dependentVersions$)
+                    if xpos then
+                        version$=dependentVersions$(1,xpos-1)
+                        dependentVersions$=dependentVersions$(xpos+1)
+                    else
+                        version$=dependentVersions$
+                    endif
+                    markerFile!=new File(dataDir$+"/v"+version$+"_"+requiredFiles!.get(0))
+                    markerFile!.createNewFile()
+            
+                    print(log_dev)"Created conversion marker file: ",markerFile!.getAbsoluteFile()
+                wend
             endif
         wend
     else

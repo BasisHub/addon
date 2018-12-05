@@ -178,8 +178,12 @@ rem ---  load up budget column codes and types from gls_params
 cols!=SysGUI!.makeVector()
 tps!=SysGUI!.makeVector()
 for x=1 to 4
-	cols!.addItem(field(gls01a$,"acct_mn_cols_"+str(x:"00")))
-	tps!.addItem(field(gls01a$,"acct_mn_type_"+str(x:"00")))
+	acct_mn_col$=field(gls01a$,"acct_mn_cols_"+str(x:"00"))
+	acct_mn_type$=field(gls01a$,"acct_mn_type_"+str(x:"00"))
+	if cvs(acct_mn_col$+acct_mn_type$,2)<>"" then
+		cols!.addItem(acct_mn_col$)
+		tps!.addItem(acct_mn_type$)
+	endif
 next x
 
 rem --- Get number of years to display in the grid

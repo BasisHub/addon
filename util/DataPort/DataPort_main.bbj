@@ -59,6 +59,7 @@ rem --- Open files and/or retrieve templates that may be needed for PO file conv
     
 rem --- initialization
 
+    BLOCKSIZE=2^20
     upgradedModules$=""
     source_version = num(callpoint!.getDevObject("source_version"))
     version_cvs = iff(source_version=6,4,8)
@@ -1608,21 +1609,9 @@ rem --- Verify master file records exist for used translations
     endif
 
 rem --- On successful complete, initialize conversion control file data/adx_conversionCtrl
-    fileReader!=new FileReader(convCtrlIniFile!)
-    convCtrl!=new Properties()
-    convCtrl!.load(fileReader!)
-    fileReader!.close()
-    
-    convCtrl!.setProperty("data_source","DataPort")
-    convCtrl!.setProperty("start_version",str(source_version:"00.00"))
-    convCtrl!.setProperty("modules",upgradedModules$)
-    
-    rem --- Get version of this Addon installation
-    redim adm_modules$
-    readrecord(adm_modules_dev,key=pad("01007514AD",11),dom=*next)adm_modules$
-    end_version$=cvs(adm_modules.version_id$,3)
-    convCtrl!.setProperty("end_version",end_version$)
-    
+    convCtrlIniFileChan=unt
+    open(convCtrlIniFileChan,isz=-1)convCtrlIniFileName$
+
     rem --- Put initialized conversion control file in target data directory
     convCtrlFilePath$=destin_folder$
     convCtrlFileName$=convCtrlFilePath$+"/adx_conversionCtrl"
@@ -1635,13 +1624,45 @@ rem --- On successful complete, initialize conversion control file data/adx_conv
         endif
         convCtrlFile!.createNewFile()
     endif
-    fileWriter!=new FileWriter(convCtrlFile!)
-    convCtrl!.store(fileWriter!,"Addon Conversion Control File")
-    fileWriter!.close()
-    print(log_dev)"Initialized ",convCtrlFileName$
+    convCtrlFileChan=unt
+    open(convCtrlFileChan,isz=-1,mode="O_CREATE,O_TRUNC")convCtrlFileName$
+
+    while 1
+        readrecord(convCtrlIniFileChan,siz=BLOCKSIZE,end=*break)line$
+        if pos("data_source="=line$) then
+            xpos=pos("data_source="=line$)
+            line$=line$(1,xpos+len("data_source=")-1)+"DataPort"+line$(xpos+len("data_source="))
+        endif
+        if pos("end_version="=line$) then
+            rem --- Get version of this Addon installation
+            redim adm_modules$
+            readrecord(adm_modules_dev,key=pad("01007514AD",11),dom=*next)adm_modules$
+            end_version$=cvs(adm_modules.version_id$,3)
+    
+            xpos=pos("end_version="=line$)
+            line$=line$(1,xpos+len("end_version=")-1)+end_version$+line$(xpos+len("end_version="))
+        endif
+        if pos("start_version="=line$) then
+            xpos=pos("start_version="=line$)
+            line$=line$(1,xpos+len("start_version=")-1)+str(source_version:"00.00")+line$(xpos+len("start_version="))
+        endif
+        if pos("modules="=line$) then
+            xpos=pos("modules="=line$)
+            line$=line$(1,xpos+len("modules=")-1)+upgradedModules$+line$(xpos+len("modules="))
+        endif
+        writerecord(convCtrlFileChan)line$
+    wend
+
+    close(convCtrlIniFileChan,err=*next)
+    close(convCtrlFileChan,err=*next)
 
 rem --- On successful completion, create conversion marker files in target directory for all file dependency groups that were ported
+    fileReader!=new FileReader(convCtrlIniFile!)
+    convCtrl!=new Properties()
+    convCtrl!.load(fileReader!)
+    fileReader!.close()
     fileDependencies!=new HashMap()
+    dependentVersions$=""
     convCtrlKeys!=convCtrl!.stringPropertyNames()
     versionsVect!=BBjAPI().makeVector()
     versionsVect!.addAll(java.util.Arrays.asList(convCtrl!.getProperty("conversion_versions").split(";")))
@@ -1651,7 +1672,13 @@ rem --- On successful completion, create conversion marker files in target direc
         while iter!.hasNext()
             key$=iter!.next()
             if pos(version$+"_"=key$)=1 then
-                fileDependencies!.put(convCtrl!.getProperty(key$),version$)
+                if fileDependencies!.containsKey(convCtrl!.getProperty(key$)) then
+                    dependentVersions$=fileDependencies!.get(convCtrl!.getProperty(key$))
+                    if pos(version$+":"=dependentVersions$)=0 then dependentVersions$=dependentVersions$+version$+":"
+                else
+                    dependentVersions$=version$+":"
+                endif
+                fileDependencies!.put(convCtrl!.getProperty(key$),dependentVersions$)
             endif
         wend
     next i
@@ -1663,7 +1690,6 @@ rem --- On successful completion, create conversion marker files in target direc
         requiredFiles!.clear()
         key!=keyIter!.next()
         requiredFiles!.addAll(java.util.Arrays.asList(key!.split(";")))
-        version$=fileDependencies!.get(key!)
         for i=0 to requiredFiles!.size()-1
             file!=new File(destin_folder$+"/"+requiredFiles!.get(i))
             if !file!.exists() then
@@ -1672,10 +1698,20 @@ rem --- On successful completion, create conversion marker files in target direc
             endif
         next i
         if create_marker then
-            markerFile!=new File(destin_folder$+"/v"+version$+"_"+requiredFiles!.get(0))
-            markerFile!.createNewFile()
-    
-            print(log_dev)"Created conversion marker file: ",markerFile!.getAbsoluteFile()
+            dependentVersions$=fileDependencies!.get(key!)
+            while len(dependentVersions$)>0
+                xpos=pos(":"=dependentVersions$)
+                if xpos then
+                    version$=dependentVersions$(1,xpos-1)
+                    dependentVersions$=dependentVersions$(xpos+1)
+                else
+                    version$=dependentVersions$
+                endif
+                markerFile!=new File(destin_folder$+"/v"+version$+"_"+requiredFiles!.get(0))
+                markerFile!.createNewFile()
+        
+                print(log_dev)"Created conversion marker file: ",markerFile!.getAbsoluteFile()
+            wend
         endif
     wend
     

@@ -12,9 +12,11 @@ rem ==========================================================================
     use java.io.FileWriter
     use java.util.HashMap
     use java.util.Properties
+    use java.util.Vector
     use ::bbtranslator.bbj::BBTranslator
     use ::ado_file.src::FileObject
-    
+    use ::adc_copyaon.aon::CopyAonDir
+
     setesc std_error
     seterr std_error
 
@@ -38,6 +40,7 @@ rem --- Initializations
 
     close_mdi=0
     no_close_mdi=0
+    BLOCKSIZE=2^20
     err_msg$=""
     pgmdir$=stbl("+DIR_PGM",err=*next)
     dir_syp$=stbl("+DIR_SYP")
@@ -51,7 +54,8 @@ rem --- Initializations
 
 rem --- There's nothing to do if data/adx_conversionCtrl isn’t found, i.e. new install or all required conversions already completed.
 
-    convCtrlFile!=new File(dataDir$+"adx_conversionCtrl",err=*next)
+    convCtrlFileName$=dataDir$+"adx_conversionCtrl"
+    convCtrlFile!=new File(convCtrlFileName$,err=*next)
     if !convCtrlFile!.exists() then goto std_exit
     fileReader!=new FileReader(convCtrlFile!)
 
@@ -268,6 +272,13 @@ rem --- Can't do anything if required files aren't present.
     gosub disp_meter
     print(log_dev)meter_text$
 
+rem --- Position adx_conversionCtrl file pointer at end of file.
+    convCtrlFileChan=unt
+    open(convCtrlFileChan,isz=-1)convCtrlFileName$
+    convCtrlFile_fin$=fin(convCtrlFileChan)
+    convCtrlFile_size=dec($00$+convCtrlFile_fin$(1,4))
+    read(convCtrlFileChan,ind=convCtrlFile_size,end=*next)
+
 rem --- Process needed version conversion programs
     for i=indexFirstConversion to versionsVect!.size()-1
         this_version$=versionsVect!.getItem(i)
@@ -286,7 +297,7 @@ rem --- Process needed version conversion programs
         
         rem --- CALL conversion program for this version
         found_conv_pgm=0
-        call stbl("+DIR_PGM",err=*next)+this_conv_pgm$,err=*next,convCtrl!,installMap!,rdForm!,Translate!,conv_status; found_conv_pgm=1
+        call stbl("+DIR_PGM",err=*next)+this_conv_pgm$,err=*next,convCtrlFileChan,convCtrl!,installMap!,rdForm!,Translate!,conv_status; found_conv_pgm=1
         if !found_conv_pgm then
             rem --- Report conversion program not found, skip other conversions
             err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
@@ -306,6 +317,43 @@ rem --- Process needed version conversion programs
         meter_action$="MTR-LST"
         gosub disp_meter
         print(log_dev)meter_text$
+    next i
+
+rem --- Update firm ZZ records in "required" data files
+    declare Vector fileVect!
+    defaultDataDir$=""
+    defaultDataDir$=FileObject.fixPath(stbl("+DIR_DAT",err=*next), "/")
+    bbjHome$=java.lang.System.getProperty("basis.BBjHome")
+    
+    fileVect! = CopyAonDir.getRequiredFiles(2)
+    for i=0 to fileVect!.size()-1
+        thisFile$=fileVect!.get(i)
+        
+        rem --- Open file in this installation
+        thisFile_dev=unt
+        dataDir$=defaultDataDir$
+        dataDir$=stbl("+"+cvs(thisFile$(1,2),4)+"DATA",err=*next)
+        open(thisFile_dev,err=*continue)dataDir$+thisFile$
+
+        rem --- Open demo data file in BBjHome installation
+        demoFile_dev=unt
+        demoFile$=(new File(bbjHome$+"/apps/aon/data/"+thisFile$)).getAbsolutePath()
+        open(demoFile_dev,err=*continue)demoFile$
+
+        rem --- Copy demo data ZZ records to installation's data files
+        read(demoFile_dev,key="ZZ",dom=*next)
+        while 1
+            key$=key(demoFile_dev,err=*break)
+            if len(key$)>=2 and key$(1,2)="ZZ"
+                readrecord(demoFile_dev,key=key$)record$
+                writerecord(thisFile_dev)record$
+            else
+                read(thisFile_dev,end=*break)
+            endif
+        wend
+
+        close(thisFile_dev,err=*next)
+        close(demoFile_dev,err=*next)
     next i
 	
 done: rem --- All done
@@ -334,17 +382,33 @@ done: rem --- All done
 
     rem --- On successful completion of all conversion programs, move data/adx_conversionCtrl to config/adx_conversionCtrl
     if completed_successfully then
-        if convCtrl!.getProperty("data_source")="OCJ" then
-            rem --- Re-set data_source so adx_conversionCtrl is ready to use for final go live data conversion
-            convCtrl!.setProperty("data_source","AIUW")
+        if convCtrl!.getProperty("data_source")="AIUW" and indexFirstConversion<0 then goto std_exit
 
-            fileWriter!=new FileWriter(convCtrlFile!)
-            convCtrl!.store(fileWriter!,"Addon Conversion Control File")
-            fileWriter!.close()
-        else
-           if convCtrl!.getProperty("data_source")="AIUW" and indexFirstConversion<0 then goto std_exit
-        endif
-        
+        rem --- Re-set data_source and remove completed conversion tasks so adx_conversionCtrl is ready to use for final go live data conversion.
+        close(convCtrlFileChan)
+        open(convCtrlFileChan,isz=-1)convCtrlFileName$
+        targetFile$=convCtrlFileName$+".tmp"
+        targetChan=unt
+        open(targetChan,isz=-1,mode="O_CREATE,O_TRUNC")targetFile$
+
+        lastLine$="#Completed conversions"
+        while 1
+            readrecord(convCtrlFileChan,siz=BLOCKSIZE,end=*break)line$
+            if pos("data_source=OCJ"=line$) then
+                xpos=pos("data_source=OCJ"=line$)
+                line$=line$(1,xpos+len("data_source=")-1)+"AIUW"+line$(xpos+len("data_source=")+3)
+            endif
+            if pos(lastLine$=line$) then
+                line$=line$(1,pos(lastLine$=line$)+len(lastLine$)-1)
+            endif
+            writerecord(targetChan)line$
+        wend
+
+        close(convCtrlFileChan,err=*next)
+        close(targetChan,err=*next)
+        erase convCtrlFileName$
+        rename targetFile$ to convCtrlFileName$ 
+
         savedConvCtrlFile!=new File(aonDir$+"config/adx_conversionCtrl",err=*next)
         if savedConvCtrlFile!.exists() then
             rem --- Keep copy of previously saved config/adx_conversionCtrl

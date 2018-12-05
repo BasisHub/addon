@@ -5,11 +5,12 @@ rem --- AddonSoftware Version 19.00 - Jul2018
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 
 
-rem --- CONVCTRL!   : Property object of the conversion control file data/adx_conversionCtrl (Input)
-rem --- INSTALLMAP! : HashMap object of installed modules, keyed by module ID (Input)
-rem --- rdForm!     : Window object to hold progress meter
-rem --- Translate!  : Translator object translations
-rem --- CONV_STATUS : Status code/0=No error (Returned)
+rem --- CONVCTRLFILECHAN : Channel number conversion control file data/adx_conversionCtrl is open on (Input)
+rem --- CONVCTRL!        : Property object of the conversion control file data/adx_conversionCtrl (Input)
+rem --- INSTALLMAP!      : HashMap object of installed modules, keyed by module ID (Input)
+rem --- rdForm!          : Window object to hold progress meter
+rem --- Translate!       : Translator object translations
+rem --- CONV_STATUS      : Status code/0=No error (Returned)
 
     use java.io.File
     use java.util.HashMap
@@ -21,7 +22,7 @@ rem --- CONV_STATUS : Status code/0=No error (Returned)
     setesc std_error
     seterr std_error
     
-    enter convCtrl!,installMap!,rdForm!,Translate!,conv_status
+    enter convCtrlFileChan,convCtrl!,installMap!,rdForm!,Translate!,conv_status
 
 rem --- Initializations
 
@@ -65,41 +66,52 @@ rem --- Initialize data file changes implemented during minor releases of v18
         rem --- Initialize AR data file changes implemented during minor releases of v18
         this_module$="AR"
         if installMap!.get(this_module$)="Y" then 
-            rem --- Increment progress meter
-            meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-
-            rem --- As of v18.03, DataPort does NOT handle initializing new ARC_SHIPVIACODE table
-        
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+": ARC_SHIPVIACODE"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-    
-            rem --- Execute AR upgrade conversion utility for minor releases of v18
-            theFirm$=""
-            call pgmdir$+"arc_v18initMinorRev.aon",theFirm$,rdForm!,status
-            if status=0 then
-                rem --- Conversion completed successfully
+            task$="1900_ARGL_arc_shipviacode"
+            if convCtrl!.getProperty(task$)<>"Completed" then
                 rem --- Increment progress meter
-                meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": ARC_SHIPVIACODE"
+                meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:                       Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
                 meter_proc_recs=meter_proc_recs+1
                 meter_action$="MTR-LST"
                 gosub disp_meter
                 print(log_dev)meter_text$
+    
+                rem --- As of v18.03, DataPort does NOT handle initializing new ARC_SHIPVIACODE table
+            
+                rem --- Increment progress meter
+                meter_text$=Translate!.getTranslation("AON_INITIALIZING","Initializing")+": ARC_SHIPVIACODE"
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
+        
+                rem --- Execute AR upgrade conversion utility for minor releases of v18
+                theFirm$=""
+                call pgmdir$+"arc_v18initMinorRev.aon",theFirm$,rdForm!,status
+                if status=0 then
+                    rem --- Conversion completed successfully
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": ARC_SHIPVIACODE"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+                    write(convCtrlFileChan)task$+"=Completed"
+                else
+                    rem --- Conversion did NOT complete successfully, exit with error message
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                       Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": ARC_SHIPVIACODE"+" *****"
+                    goto done
+                endif
             else
-                rem --- Conversion did NOT complete successfully, exit with error message
-                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                   Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+Translate!.getTranslation("AON_NOT","Not")+" "+
-:                   Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": ARC_SHIPVIACODE"+" *****"
-                goto done
+                rem --- Increment progress meter
+                meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+                meter_proc_recs=meter_proc_recs+1
+                meter_action$="MTR-LST"
+                gosub disp_meter
+                print(log_dev)meter_text$
             endif
         else
             rem --- Increment progress meter
