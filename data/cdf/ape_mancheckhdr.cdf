@@ -1,3 +1,14 @@
+[[APE_MANCHECKHDR.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("APE_MANCHECKHDR.FIRM_ID")+
+:		callpoint!.getColumnData("APE_MANCHECKHDR.AP_TYPE")+
+:		callpoint!.getColumnData("APE_MANCHECKHDR.CHECK_NO")+
+:		callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[APE_MANCHECKHDR.VENDOR_ID.BINQ]]
 rem --- Set filter_defs$[] to only show vendors of given AP Type
 

@@ -88,6 +88,17 @@ rem --- setup utility
 	use ::ado_util.src::util
 	use ::BBUtils.bbj::BBUtils
 [[APE_INVOICEHDR.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("APE_INVOICEHDR.FIRM_ID")+
+:		callpoint!.getColumnData("APE_INVOICEHDR.AP_TYPE")+
+:		callpoint!.getColumnData("APE_INVOICEHDR.VENDOR_ID")+
+:		callpoint!.getColumnData("APE_INVOICEHDR.AP_INV_NO")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
+
 if user_tpl.multi_dist$<>"Y"
 	callpoint!.setColumnData("APE_INVOICEHDR.AP_DIST_CODE",user_tpl.dflt_dist_cd$)
 	callpoint!.setStatus("REFRESH")
@@ -361,7 +372,7 @@ endif
 	
 [[APE_INVOICEHDR.NET_INV_AMT.AVAL]]
 rem re-calc discount amount based on net x disc %
-disc_amt=num(callpoint!.getUserInput())*(num(user_tpl.disc_pct$)/100)
+disc_amt=round(num(callpoint!.getUserInput())*(num(user_tpl.disc_pct$)/100),2)
 callpoint!.setColumnData("APE_INVOICEHDR.DISCOUNT_AMT",str(disc_amt))
 callpoint!.setStatus("REFRESH:APE_INVOICEHDR.DISCOUNT_AMT")
 [[APE_INVOICEHDR.PAYMENT_GRP.AVAL]]
@@ -460,7 +471,7 @@ rem --- re-calc due and discount dates based on terms code
 	invdate$=callpoint!.getColumnData("APE_INVOICEHDR.INVOICE_DATE")
 	tmp_inv_date$=callpoint!.getColumnData("APE_INVOICEHDR.INVOICE_DATE")
 	gosub calculate_due_and_discount
-	disc_amt=num(callpoint!.getColumnData("APE_INVOICEHDR.NET_INV_AMT"))*(num(user_tpl.disc_pct$)/100)
+	disc_amt=round(num(callpoint!.getColumnData("APE_INVOICEHDR.NET_INV_AMT"))*(num(user_tpl.disc_pct$)/100),2)
 	callpoint!.setColumnData("APE_INVOICEHDR.DISCOUNT_AMT",str(disc_amt))
 	callpoint!.setStatus("REFRESH")
 [[APE_INVOICEHDR.INVOICE_AMT.AVAL]]

@@ -1,0 +1,84 @@
+rem Drilldown to memo_1024 fields
+rem Proprietary Software. BASIS International Ltd.
+rem Program ID: opd_invhdr_cmt.aon -- drilldown from OP Invoice Header query to the memo_1024 comments (internal, header-level comments)
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+    setesc std_error
+    seterr std_error
+    
+    enter rd_gui_dev,rdWindow!,rd_field_tvar$,rd_ddm_drill_defs$,rd_drill_pfx$,rd_table_chans$[all]
+
+    rem --- get channel/template
+    drill_table$=rd_ddm_drill_defs.dd_attr_dtab$
+    if pos(pad(drill_table$,17)=rd_table_chans$[0,0],20)=0 then goto exit_prog
+    drill_chan=fnget_dev(drill_table$)
+    dim drill_rec$:fnget_tpl$(drill_table$)
+
+    rem --- Main process; read the specified record, call the memo_1024 comment viewer
+
+    readrecord(drill_chan,key=rd_drill_pfx$,err=exit_prog)drill_rec$
+
+    disp_text$=drill_rec.memo_1024$
+    if cvs(disp_text$,3)<>""
+        editable$="NO"
+        force_loc$="NO"
+        baseWin!=null()
+        startx=0
+        starty=0
+        shrinkwrap$="NO"
+        html$="NO"
+        dialog_result$=""
+
+        call stbl("+DIR_SYP")+ "bax_display_text.bbj",
+:		    "Comments",
+:		    disp_text$, 
+:		    rd_table_chans$[all], 
+:		    editable$, 
+:		    force_loc$, 
+:		    baseWin!, 
+:		    startx, 
+:		    starty, 
+:		    shrinkwrap$, 
+:		    html$, 
+:		    dialog_result$
+    endif
+    goto exit_prog
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=rd_table_chans$[num(rd_table_chans$[0,0](pos(pad(tmp0$,17)=rd_table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src 
+
+std_error: rem --- Standard error handler (18Nov2014)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$=""
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+    
+exit_prog:rem --- Exit Program
+
+    exit

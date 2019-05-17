@@ -1,3 +1,14 @@
+[[IVE_COSTCHG.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("IVE_COSTCHG.FIRM_ID")+
+:		callpoint!.getColumnData("IVE_COSTCHG.EFFECT_DATE")+
+:		callpoint!.getColumnData("IVE_COSTCHG.WAREHOUSE_ID")+
+:		callpoint!.getColumnData("IVE_COSTCHG.ITEM_ID")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[IVE_COSTCHG.ITEM_ID.AINV]]
 rem --- Item synonym processing
 

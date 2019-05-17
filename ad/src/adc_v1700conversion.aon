@@ -1189,7 +1189,42 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                 rem --- Get record template for old/source GLM_ACCTSUMMARY (glm-02) file
                 old_table$="GLM_ACCTSUMMARY"
                 tpl_found=0
-                rem --- ddm_table_tpls and ddm_table_tpls$ previously initialized for old GLS_PARAMS
+
+                rem --- ddm_table_tpls and ddm_table_tpls$ may not have been previously initialized
+                if ddm_table_tpls=0 then
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+                    open_success=0
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                        tpl_found=0
+                        findrecord(ddm_table_tpls,key=pad(cvs(oldFile$,4),16),dom=*next)ddm_table_tpls$;tpl_found=1
+                        if tpl_found then
+                            dim old_glsParams_tpl$:ddm_table_tpls.template$
+                        else
+                            rem --- Required template missing
+                            err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                               " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
+                            meter_proc_recs=meter_proc_recs+1
+                            meter_action$="MTR-LST"
+                            meter_text$=err_msg$
+                            gosub disp_meter
+                            print(log_dev)meter_text$
+                            goto done
+                        endif
+                    else
+                        rem --- Required file missing
+                        msg_id$="AD_FILE_MISSING"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]=ddm_table_tpls$
+                        gosub disp_message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
+                        goto done
+                    endif
+                endif
+       
                 findrecord(ddm_table_tpls,key=pad(old_table$,16),dom=*next)ddm_table_tpls$;tpl_found=1
                 if tpl_found then
                     dim old_glm02_tpl$:ddm_table_tpls.template$
@@ -1209,7 +1244,9 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                         readrecord(old_glm02_dev,end=*break)old_glm02_tpl$
                         if old_glm02_tpl.firm_id$<>firm_id$ then
                             firm_id$=old_glm02_tpl.firm_id$
-                            displayColumns!=new DisplayColumns(firm_id$)
+                            valid_firm=0
+                            displayColumns!=new DisplayColumns(firm_id$,err=*next); valid_firm=1
+                            if !valid_firm then continue
                         endif
     
                         if displayColumns!.getActBud(old_glm02_tpl.record_id$)="A" then

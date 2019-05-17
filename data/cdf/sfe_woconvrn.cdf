@@ -1,3 +1,13 @@
+[[SFE_WOCONVRN.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("SFE_WOCONVRN.FIRM_ID")+
+:		callpoint!.getColumnData("SFE_WOCONVRN.WO_LOCATION")+
+:		callpoint!.getColumnData("SFE_WOCONVRN.WO_NO")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[SFE_WOCONVRN.BEND]]
 rem --- Remove software lock on batch when batching
 	batch$=stbl("+BATCH_NO",err=*next)

@@ -1,0 +1,89 @@
+CLASS PUBLIC PayPalError
+
+    field private BBjspWebRequest request!
+    field private BBjspWebResponse response!
+  
+    method public void service(BBjspServletContext context!) 
+	
+		rem --- parse response text
+		rem --- wkx0$=response, wkx1$=key to look for, wkx2$=delim used to separate key/value pairs
+
+		def fnparse$(wkx0$,wkx1$,wkx2$)
+
+			wkx3$=""
+			wk1=pos(wkx1$=wkx0$)
+			if wk1
+				wkx3$=wkx0$(wk1+len(wkx1$))
+				wk2=pos(wkx2$=wkx3$)
+				if wk2
+					wkx3$=wkx3$(1,wk2-1)
+				endif
+			endif
+			return wkx3$
+		fnend
+       
+        #request! = context!.getRequest()
+        #response! = context!.getResponse()
+		
+		content!=#request!.getBody()
+		token_id$=fnparse$(content!,"SECURETOKENID=","&")
+		outRef$=fnparse$(content!,"PNREF=","&")
+		outAmt$=fnparse$(content!,"AMT=","&")
+		outFirst$=fnparse$(content!,"FIRSTNAME=","&")
+		outResp$=fnparse$(content!,"RESPMSG=","&")		
+
+		s! = #response!.getOutputStream()
+        s!.write("<html>")
+        s!.write("<body>")
+		s!.write("<div style="+$22$+"background-color: LightGray; font-family: Arial, Helvetica, sans-serif;"+$22$+">")
+		s!.write("<h1><span style="+$22$+"color: Navy;"+$22$+">AddonSoftware</span></h1>")
+		s!.write("<h3><span style="+$22$+"color: Navy;"+$22$+">We're sorry. There was a problem processing this payment.</span></h3>")
+		s!.write("<div style="+$22$+"background-color: WhiteSmoke;"+$22$+">")
+		s!.write("<h4><span style="+$22$+"color: Goldenrod;"+$22$+">Reference number: <span style= "+$22$+"color: Black;"+$22$+">"+outRef$+"</span></span></h4>")
+		s!.write("<h4><span style="+$22$+"color: Goldenrod;"+$22$+">Amount: <span style= "+$22$+"color: Black;"+$22$+">"+outAmt$+"</span></span></h4>")
+		s!.write("<p><span style="+$22$+"color: DimGray;"+$22$+">"+outFirst$+", we could not complete this payment. Reason: "+outResp$+".</span></p>")
+		s!.write("</div>")
+		s!.write("</div>")
+        s!.write("</body>")
+        s!.write("</html>")
+
+		goto end_logging;rem --- rem this line to enable output to .txt for troubleshooting
+
+		response_path!=pgm(-2)
+		response_path$=response_path!.replace("\","/")
+		response_path$=response_path$(1,pos("/"=response_path$,-1,1))+"responselog/"
+		mkdir response_path$,err=*next
+		
+		rspFile$=response_path$+"PayPalError_"+str(int(tim*100000):"0000000")+".txt"
+		erase rspFile$,err=*next
+		string rspFile$
+		rsp_chan=unt
+		open(rsp_chan)rspFile$
+		writerecord(rsp_chan)"Response file created..."+$0D0A$
+		writerecord(rsp_chan)"Method is: "+#request!.getMethod()+$0D0A$
+        
+        if (#request!.getMethod()="POST") then 
+            content!=#request!.getBody()
+			writerecord(rsp_chan)"content is: "+content!
+		else
+			vectParamNames! = #request!.getParameterNames()
+			if vectParamNames!.size()
+				writerecord(rsp_chan)"Returned parameters..."+$0D0A$
+				for wk=0 to vectParamNames!.size()-1
+					writerecord(rsp_chan)vectParamNames!.get(wk)+$0D0A$
+				next wk
+			else
+				writerecord(rsp_chan)"No params sent..."
+				content!=#request!.getBody()
+				writerecord(rsp_chan)"Body??"+$0D0A$
+				writerecord(rsp_chan)content!
+			endif
+        endif 
+		
+		close(rsp_chan)
+
+end_logging:
+
+    METHODEND
+    
+CLASSEND

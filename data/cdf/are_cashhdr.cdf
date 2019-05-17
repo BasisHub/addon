@@ -278,7 +278,21 @@ callpoint!.setTableColumnAttribute("ARE_CASHHDR.BATCH_NO","PVAL",$22$+stbl("+BAT
 rem --- store value in control prior to input so we'll know at AVAL if it changed
 user_tpl.binp_pay_amt=num(callpoint!.getColumnData("ARE_CASHHDR.PAYMENT_AMT"))
 [[ARE_CASHHDR.ARNF]]
-rem --- ARNF; record not found (i.e., entered date/customer/receipt cd/chk # for new tran)
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("ARE_CASHHDR.FIRM_ID")+
+:		callpoint!.getColumnData("ARE_CASHHDR.AR_TYPE")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_01")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RECEIPT_DATE")+
+:		callpoint!.getColumnData("ARE_CASHHDR.CUSTOMER_ID")+
+:		callpoint!.getColumnData("ARE_CASHHDR.CASH_REC_CD")+
+:		callpoint!.getColumnData("ARE_CASHHDR.AR_CHECK_NO")+
+:		callpoint!.getColumnData("ARE_CASHHDR.RESERVED_KEY_02")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
+
 ctl_stat$="D"
 gosub disable_key_fields
 
@@ -1364,9 +1378,15 @@ rem --- will add information for the OA tran to both vectInvoice! and vectInvSel
 	vectInvoice!.addItem(str(currdtl$(21,10)))
 	vectInvoice!.addItem(str(0))
 	vectInvoice!.addItem(str(0))
-	vectInvoice!.addItem("")				
+	commentMap!=callpoint!.getDevObject("commentMap")
+	if commentMap!.get(cvs(currdtl$(11,10),3))<>null() then
+		vectInvoice!.addItem(commentMap!.get(cvs(currdtl$(11,10),3)))
+	else
+		vectInvoice!.addItem("")
+	endif		
 	vectInvSel!.addItem("Y")
 	chk_applied=chk_applied+num(currdtl$(21,10))
+
 return
 
 rem ==================================================================

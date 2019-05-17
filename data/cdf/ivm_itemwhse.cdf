@@ -1,3 +1,21 @@
+[[IVM_ITEMWHSE.AVG_COST.AVAL]]
+rem --- Update unit_cost if using average costing and average cost changes
+	avg_cost$=callpoint!.getUserInput()
+	if callpoint!.getDevObject(cost_method$)="A" and avg_cost$<>callpoint!.getColumnData("IVM_ITEMWHSE.AVG_COST") then
+		callpoint!.setColumnData("IVM_ITEMWHSE.UNIT_COST",avg_cost$,1)
+	endif
+[[IVM_ITEMWHSE.REP_COST.AVAL]]
+rem --- Update unit_cost if using replacement costing and replacement cost changes
+	rep_cost$=callpoint!.getUserInput()
+	if callpoint!.getDevObject(cost_method$)="R" and rep_cost$<>callpoint!.getColumnData("IVM_ITEMWHSE.REP_COST") then
+		callpoint!.setColumnData("IVM_ITEMWHSE.UNIT_COST",rep_cost$,1)
+	endif
+[[IVM_ITEMWHSE.STD_COST.AVAL]]
+rem --- Update unit_cost if using standard costing and standard cost changes
+	std_cost$=callpoint!.getUserInput()
+	if callpoint!.getDevObject(cost_method$)="S" and std_cost$<>callpoint!.getColumnData("IVM_ITEMWHSE.STD_COST") then
+		callpoint!.setColumnData("IVM_ITEMWHSE.UNIT_COST",std_cost$,1)
+	endif
 [[IVM_ITEMWHSE.VENDOR_ID.AVAL]]
 rem "VENDOR INACTIVE - FEATURE"
 vendor_id$ = callpoint!.getUserInput()
@@ -59,6 +77,14 @@ rem --- Initialize product_type with ivm_itemmast product_type
 	dim itemmast_tpl$:fnget_tpl$("IVM_ITEMMAST")
 	readrecord(itemmast_dev,key=firm_id$+callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID"),dom=*next)itemmast_tpl$
 	callpoint!.setColumnData("IVM_ITEMWHSE.PRODUCT_TYPE",itemmast_tpl.product_type$)
+
+rem --- Enisable cost fields for new item.
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.UNIT_COST",1)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.AVG_COST",1)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.STD_COST",1)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.REP_COST",1)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.LANDED_COST",1)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.LAST_PO_COST",1)
 [[IVM_ITEMWHSE.ARAR]]
 rem --- Get total on Open PO lines
 
@@ -219,29 +245,29 @@ rem --- Allow this warehouse to be deleted?
 [[IVM_ITEMWHSE.UNIT_COST.AVAL]]
 rem --- Set default costs from unit cost
 
-unit_cost$ = callpoint!.getUserInput()
+	unit_cost$ = callpoint!.getUserInput()
+	if unit_cost$<>callpoint!.getColumnData("IVM_ITEMWHSE.UNIT_COST") then
 
-if num( callpoint!.getColumnData("IVM_ITEMWHSE.LANDED_COST") ) = 0 then
-	callpoint!.setColumnData("IVM_ITEMWHSE.LANDED_COST",unit_cost$)
-endif
+		if num( callpoint!.getColumnData("IVM_ITEMWHSE.LANDED_COST") ) = 0 then
+			callpoint!.setColumnData("IVM_ITEMWHSE.LANDED_COST",unit_cost$,1)
+		endif
 
-if num( callpoint!.getColumnData("IVM_ITEMWHSE.LAST_PO_COST") ) = 0 then
-	callpoint!.setColumnData("IVM_ITEMWHSE.LAST_PO_COST",unit_cost$)
-endif
+		if num( callpoint!.getColumnData("IVM_ITEMWHSE.LAST_PO_COST") ) = 0 then
+			callpoint!.setColumnData("IVM_ITEMWHSE.LAST_PO_COST",unit_cost$,1)
+		endif
 
-if num( callpoint!.getColumnData("IVM_ITEMWHSE.AVG_COST") ) = 0 then
-	callpoint!.setColumnData("IVM_ITEMWHSE.AVG_COST",unit_cost$)
-endif
+		if num( callpoint!.getColumnData("IVM_ITEMWHSE.AVG_COST") ) = 0 or callpoint!.getDevObject(cost_method$)="A" then
+			callpoint!.setColumnData("IVM_ITEMWHSE.AVG_COST",unit_cost$,1)
+		endif
 
-if num( callpoint!.getColumnData("IVM_ITEMWHSE.STD_COST") ) = 0 then
-	callpoint!.setColumnData("IVM_ITEMWHSE.STD_COST",unit_cost$)
-endif
+		if num( callpoint!.getColumnData("IVM_ITEMWHSE.STD_COST") ) = 0 or callpoint!.getDevObject(cost_method$)="S" then
+			callpoint!.setColumnData("IVM_ITEMWHSE.STD_COST",unit_cost$,1)
+		endif
 
-if num( callpoint!.getColumnData("IVM_ITEMWHSE.REP_COST") ) = 0 then
-	callpoint!.setColumnData("IVM_ITEMWHSE.REP_COST",unit_cost$)
-endif
-
-callpoint!.setStatus("REFRESH")
+		if num( callpoint!.getColumnData("IVM_ITEMWHSE.REP_COST") ) = 0 or callpoint!.getDevObject(cost_method$)="R" then
+			callpoint!.setColumnData("IVM_ITEMWHSE.REP_COST",unit_cost$,1)
+		endif
+	endif
 [[IVM_ITEMWHSE.ADIS]]
 rem --- If select in Physical Intentory, location and cycle can't change
 
@@ -273,6 +299,27 @@ rem --- Draw attention when commit quantities don't add up
 		qtyCommit!=callpoint!.getControl("IVM_ITEMWHSE.QTY_COMMIT")
 		qtyCommit!.setBackColor(rdErrorColor!)
 	endif
+
+rem --- Disable cost fields when there are transactions for this item.
+	ivt04_dev=fnget_dev("IVT_ITEMTRAN")
+	warehouse_id$=callpoint!.getColumnData("IVM_ITEMWHSE.WAREHOUSE_ID")
+	item_id$=callpoint!.getColumnData("IVM_ITEMWHSE.ITEM_ID")
+	read(ivt04_dev,key=firm_id$+warehouse_id$+item_id$,dom=*next)
+	ivt04_key$=""
+	ivt04_key$=key(ivt04_dev,end=*next)
+	if pos(firm_id$+warehouse_id$+item_id$=ivt04_key$)=1 then
+		rem --- Disable cost fields
+		enable=0
+	else
+		rem --- Enable cost fields
+		enable=1
+	endif
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.UNIT_COST",enable)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.AVG_COST",enable)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.STD_COST",enable)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.REP_COST",enable)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.LANDED_COST",enable)
+	callpoint!.setColumnEnabled("IVM_ITEMWHSE.LAST_PO_COST",enable)
 [[IVM_ITEMWHSE.SAFETY_STOCK.AVAL]]
 if num(callpoint!.getUserInput())<0 then callpoint!.setStatus("ABORT")
 [[IVM_ITEMWHSE.ORDER_POINT.AVAL]]
@@ -327,6 +374,7 @@ if pos(ivs01a.lotser_flag$="LS")=0 or str(callpoint!.getDevObject("lot_serial_it
 else
 	callpoint!.setOptionEnabled("IVM_LSMASTER",1)
 endif
+callpoint!.setDevObject(cost_method$,ivs01a.cost_method$)
 
 rem --- Get item defaults
 

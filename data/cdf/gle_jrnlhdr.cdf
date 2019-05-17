@@ -1,3 +1,13 @@
+[[GLE_JRNLHDR.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("GLE_JRNLHDR.FIRM_ID")+
+:		callpoint!.getColumnData("GLE_JRNLHDR.JOURNAL_ID")+
+:		callpoint!.getColumnData("GLE_JRNLHDR.JE_TRANS_ID")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[GLE_JRNLHDR.ARAR]]
 rem --- Initialize dev object for this record
 	if cvs(callpoint!.getColumnData("GLE_JRNLHDR.REVERSE_DATE"),3)<>"" then

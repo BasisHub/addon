@@ -193,6 +193,8 @@ rem --- Run BIM bai_install_manager.bbj program via synchronous system call beca
     sscpName$=cvs(dbName$,8)
     needBaristaprop=1
     needAddonprop=1
+    needJ2Pay=1
+    needANet=1
     needPrbabsprop=1
     paths!=BBjAPI().makeVector()
     env!=BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getEnvironment()
@@ -209,6 +211,16 @@ rem --- Run BIM bai_install_manager.bbj program via synchronous system call beca
                 paths!.setItem(i,newAonLoc$+"/aon/prop/addonprop.jar")
                 needAddonprop=0
             endif
+            if pos("j2pay-2.7.7.jar"=paths!.getItem(i)) and install_aon then
+                rem --- Update path to j2pay-2.7.7.jar
+                paths!.setItem(i,newAonLoc$+"/aon/lib/jars/j2pay-2.7.7.jar")
+                needJ2Pay=0
+            endif
+            if pos("anet-java-sdk-1.9.8-SNAPSHOT.jar"=paths!.getItem(i)) and install_aon then
+                rem --- Update path to anet-java-sdk-1.9.8-SNAPSHOT.jar
+                paths!.setItem(i,newAonLoc$+"/aon/lib/jars/anet-java-sdk-1.9.8-SNAPSHOT.jar")
+                needANet=0
+            endif
             if pos("prbabsprop.jar"=paths!.getItem(i)) then
                 rem --- Update path to prbabsprop.jar
                 paths!.setItem(i,newAonLoc$+"/prbabs/prop/prbabsprop.jar")
@@ -218,8 +230,37 @@ rem --- Run BIM bai_install_manager.bbj program via synchronous system call beca
     endif
     if needBaristaprop then paths!.addItem(newAonLoc$+"/barista/sys/prop/baristaprop.jar")
     if needAddonprop then paths!.addItem(newAonLoc$+"/aon/prop/addonprop.jar")
+    if needJ2Pay then paths!.addItem(newAonLoc$+"/aon/lib/jars/j2pay-2.7.7.jar")
+    if needANet then paths!.addItem(newAonLoc$+"/aon/lib/jars/anet-java-sdk-1.9.8-SNAPSHOT.jar")
     if needPrbabsprop then paths!.addItem(newAonLoc$+"/prbabs/prop/prbabsprop.jar")
     env!.setClasspath(sscpName$, paths!)
+
+    rem --- Create new Web Context in Enterprise Manager
+    declare BBjJettyServerConfiguration serverConfig!
+    declare BBjJettyContextConfiguration contextConfig!
+
+    serverConfig! = BBjAPI().getAdmin(rdAdmin!.getUser(), rdAdmin!.getPassword()).getJettyServerConfig()
+
+    rem --- Make sure we start with a clean fresh web context
+    serverConfig!.removeCustomContext(cvs(dbName$,3))
+    contextConfig! = serverConfig!.createCustomContext(cvs(dbName$,3))
+
+    contextConfig!.enable()
+    contextConfig!.setDocBase((new File(newAonLoc$+"/aon/web")).getAbsolutePath())
+    contextConfig!.setPath("/"+cvs(dbName$,3))
+    contextConfig!.setHTTP(0); rem --- Protocol: Allow insecure HPPT connections
+    contextConfig!.setHttpPort(8888)
+
+    rem --- BBJSP Servlets
+    contextConfig!.addBBjspServlet("AuthorizeWebhook", "/AuthorizeWebhook", (new File(newAonLoc$+"/aon/web/AuthorizeWebhook.aon")).getAbsolutePath())
+	contextConfig!.addBBjspServlet("AuthorizeConfirmation", "/AuthorizeConfirmation", (new File(newAonLoc$+"/aon/web/AuthorizeConfirmation.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("PayPalSilentPost", "/PayPalSilentPost", (new File(newAonLoc$+"/aon/web/PayPalSilentPost.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("PayPalSilentPostFailure", "/PayPalSilentPostFailure", (new File(newAonLoc$+"/aon/web/PayPalSilentPostFailure.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("PayPalError", "/PayPalError", (new File(newAonLoc$+"/aon/web/PayPalError.aon")).getAbsolutePath())
+
+    rem --- Session Cookie
+    contextConfig!.setSessionCookieHttpOnly(1)
+    contextConfig!.setSessionCookieSecure(1)
 
     rem --- Launch bai_install_manager.bbj
 	bar_dir$=dir("")

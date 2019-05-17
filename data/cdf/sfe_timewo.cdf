@@ -1,3 +1,13 @@
+[[SFE_TIMEWO.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("SFE_TIMEWO.FIRM_ID")+
+:		callpoint!.getColumnData("SFE_TIMEWO.WO_NO")+
+:		callpoint!.getColumnData("SFE_TIMEWO.TRANS_DATE")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[SFE_TIMEWO.BFMC]]
 rem --- Open Files
 	num_files=6

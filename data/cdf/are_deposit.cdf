@@ -1,6 +1,60 @@
+[[ARE_DEPOSIT.ASHO]]
+rem --- if coming from Credit Card Payment form, must use cash rec cd and deposit date already established
+
+	cc_cash_rec_cd$=stbl("+cc_cash_rec_cd",err=*next)
+	cc_receipt_date$=stbl("+cc_receipt_date",err=*next)
+
+	if cc_cash_rec_cd$<>"" or cc_receipt_date$<>"" 
+		callpoint!.setColumnEnabled("ARE_DEPOSIT.CASH_REC_CD",-1)
+		callpoint!.setColumnEnabled("ARE_DEPOSIT.DEPOSIT_DATE",-1)
+		callpoint!.setColumnEnabled("ARE_DEPOSIT.TOT_DEPOSIT_AMT",-1);rem --- deposit amt will be updated by credit card form
+	endif
+[[ARE_DEPOSIT.BOVE]]
+rem -- if coming from credit card payment, where date and cash rec code already established, create filters for those fields
+
+	cc_cash_rec_cd$=stbl("+cc_cash_rec_cd",err=*next)
+	cc_receipt_date$=stbl("+cc_receipt_date",err=*next)
+
+	if cc_cash_rec_cd$<>"" or cc_receipt_date$<>""
+		dim filter_defs$[3,2]
+		filter_defs$[1,0]="ARE_DEPOSIT.CASH_REC_CD"
+		filter_defs$[1,1]="='"+cc_cash_rec_cd$+"'"
+		filter_defs$[1,2]="LOCK"
+		filter_defs$[2,0]="ARE_DEPOSIT.DEPOSIT_DATE"
+		filter_defs$[2,1]="='"+cc_receipt_date$+"'"
+		filter_defs$[2,2]="LOCK"
+		filter_defs$[3,0]="ARE_DEPOSIT.BATCH_NO"
+		filter_defs$[3,1]="='"+stbl("+BATCH_NO")+"'"
+		filter_defs$[3,2]="LOCK"
+
+		dim search_defs$[3]
+
+		call stbl("+DIR_SYP")+"bax_query.bbj",
+:			gui_dev,
+:			Form!,
+:			"AR_DEPOSITS",
+:			"",
+:			table_chans$[all],
+:			selected_key$,
+:			filter_defs$[all],
+:			search_defs$[all],
+:			"",
+:			"AO_BATCH_STAT"
+
+		if selected_key$<>"" then 
+			callpoint!.setStatus("RECORD:[" + selected_key$(1,len(selected_key$)-1) +"]")
+		else
+			callpoint!.setStatus("ABORT")
+		endif
+		callpoint!.setStatus("ACTIVATE")
+
+	endif
+[[ARE_DEPOSIT.ARNF]]
+callpoint!.setStatus("MODIFIED")
 [[ARE_DEPOSIT.BTBL]]
 rem --- Get Batch information
 	callpoint!.setTableColumnAttribute("ARE_DEPOSIT.BATCH_NO","PVAL",$22$+stbl("+BATCH_NO")+$22$)
+
 [[ARE_DEPOSIT.DEPOSIT_ID.AVAL]]
 rem --- Don't allow re-using deposit_id with trans_status R or U
 	deposit_id$ = callpoint!.getUserInput()

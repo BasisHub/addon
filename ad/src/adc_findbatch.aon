@@ -1,0 +1,141 @@
+rem adc - Find existing batch for given PRIMARY key (Public/Called)
+rem Program adc_findbatch v8.11.0 05Dec2018
+
+rem  +-----------------------------------------+
+rem  | AddonSoftware Version 8.11.0 - 05Dec2018 |
+rem  |  Copyright BASIS International Ltd.  All Rights Reserved.
+rem  |          All Rights Reserved            |
+rem  +-----------------------------------------+
+
+rem --- tableAlias$     : Table to read with primary key to see if record has an existing batch number (Input)
+rem --- primaryKey$     : Primary key to read table with to see if record has an existing batch number(Input)
+rem --- Translate!      : Translator object translations
+rem --- table_chans$[]  : Barista opened channels array (Input/Returned)
+rem --- existingBatchNo$: Existing batch number if one is found in record for given primary key (Returned)
+rem --- status          : Zero=No Error/Not Zero=Error (Returned)
+
+    use ::bbtranslator.bbj::BBTranslator
+    declare BBTranslator Translate!
+
+    seterr std_error
+    setesc std_error
+    
+    enter tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+    
+rem --- Initialize data
+    status=0
+    existingBatchNo$=""
+
+rem --- Open/Lock files
+
+    if pos(pad("@"+tableAlias$,17)=table_chans$[0,0],20)=0 then
+        num_files=1
+        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+        open_tables$[1]=tableAlias$,open_opts$[1]="OTA@"
+                
+        gosub open_tables
+        
+        if open_status$<>"" then
+            status=999
+            goto done
+        endif        
+    endif
+
+    tableDev=fnget_dev("@"+tableAlias$)
+    dim tableTpl$:fnget_tpl$("@"+tableAlias$)
+
+rem --- Get record for given PRIMARY key
+    readrecord(tableDev,key=primaryKey$,knum="PRIMARY",dom=*next)tableTpl$
+    if cvs(tableTpl.batch_no$,2)<>"" then
+        existingBatchNo$=tableTpl.batch_no$
+        dim msg_tokens$[1]
+        msg_tokens$[1]=Translate!.getTranslation("AON_RECORD_ALREADY_IN_BATCH","This record already exists in batch")+
+:           " "+existingBatchNo$+". "+Translate!.getTranslation("AON_SWITCH_BATCHES","Please switch to that batch.")
+        msg_id$="GENERIC_WARN"
+        gosub disp_message
+    endif
+    
+done: rem --- All done
+
+    goto std_exit
+   
+open_tables:rem --- Open Tables
+
+    call stbl("+DIR_SYP")+"bac_open_tables.bbj",
+:       open_beg,
+:       open_end,
+:       open_tables$[all],
+:       open_opts$[all],
+:       open_chans$[all],
+:       open_tpls$[all],
+:       table_chans$[all],
+:       open_batch,
+:       open_status$
+
+    if open_status$<>"" then
+        msg_id$="ENTRY_OPEN_ERROR"
+        dim msg_tokens$[1]
+        msg_tokens$[1]=open_status$
+        gosub disp_message
+        rdFuncSpace!=bbjAPI().getGroupNamespace().setValue("+build_task","OFF")
+        release
+    endif
+    return
+
+disp_message: rem --- Display Message Dialog
+
+    call stbl("+DIR_SYP")+"bac_message.bbj",msg_id$,msg_tokens$[all],msg_opt$,table_chans$[all]
+
+    return
+
+rem --- Functions
+
+    def fnget_dev(tmp0$)=num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3))
+    def fnget_tpl$(tmp0$)=table_chans$[num(table_chans$[0,0](pos(pad(tmp0$,17)=table_chans$[0,0],20)+17,3)),0]
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (11Oct2017)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+rem #include std_exit.src
+
+std_exit: rem --- Standard called program exit (01Mar2006)
+
+    close (adm09_dev,err=*next)
+    close (adm19_dev,err=*next)
+    exit
+
+rem #endinclude std_exit.src
+
+    end

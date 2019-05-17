@@ -118,6 +118,9 @@ rem --- Warn if ship quantity is more than order quantity
 	rem --- Use UM_SOLD related <DISPLAY> fields to update the real record fields
 	callpoint!.setColumnData("<<DISPLAY>>.QTY_SHIPPED_DSP",str(shipqty))
 	gosub update_record_fields
+
+rem --- Warn if ship quantity is more than currently available.
+	gosub check_ship_qty
 [[<<DISPLAY>>.QTY_SHIPPED_DSP.AVEC]]
 rem --- Extend price now that grid vector has been updated, if the shipped quantity has changed
 qty_shipped = num(callpoint!.getColumnData("<<DISPLAY>>.QTY_SHIPPED_DSP"))
@@ -166,6 +169,9 @@ rem --- Re-calculate qty_shipped and ext_price unless already shipping extra or 
 	rem --- Use UM_SOLD related <DISPLAY> fields to update the real record fields
 	callpoint!.setColumnData("<<DISPLAY>>.QTY_BACKORD_DSP",str(boqty))
 	gosub update_record_fields
+
+rem --- Warn if ship quantity is more than currently available.
+	gosub check_ship_qty
 [[<<DISPLAY>>.QTY_BACKORD_DSP.AVEC]]
 rem --- Extend price now that grid vector has been updated, if the backorder quantity has changed
 if num(callpoint!.getColumnData("<<DISPLAY>>.QTY_BACKORD_DSP")) <> user_tpl.prev_boqty then
@@ -233,6 +239,9 @@ rem --- Recalc quantities and extended price
 	rem --- Use UM_SOLD related <DISPLAY> fields to update the real record fields
 	callpoint!.setColumnData("<<DISPLAY>>.QTY_ORDERED_DSP",str(qty_ord))
 	gosub update_record_fields
+
+rem --- Warn if ship quantity is more than currently available.
+	gosub check_ship_qty
 [[<<DISPLAY>>.QTY_ORDERED_DSP.AVEC]]
 rem --- Extend price now that grid vector has been updated, if the order quantity has changed
 if num(callpoint!.getColumnData("<<DISPLAY>>.UNIT_PRICE_DSP")) <> user_tpl.prev_qty_ord then
@@ -478,6 +487,8 @@ rem --- Need to commit?
 			if user_tpl.line_taxable$ = "Y" and ( pos(user_tpl.line_type$ = "OMN") or user_tpl.item_taxable$ = "Y" ) then 
 				callpoint!.setColumnData("OPE_INVDET.TAXABLE_AMT", str(ext_price))
 			endif
+			rem --- Warn if ship quantity is more than currently available.
+			gosub check_ship_qty
 
 			if user_tpl.line_type$ = "O" and 
 :				num(callpoint!.getColumnData("OPE_INVDET.EXT_PRICE")) = 0 and 
@@ -1041,6 +1052,8 @@ rem --- Is this item lot/serial?
 				unit_price  = num(callpoint!.getColumnData("<<DISPLAY>>.UNIT_PRICE_DSP"))
 				callpoint!.setColumnData("<<DISPLAY>>.QTY_SHIPPED_DSP", str(qty_shipped),1)
 				callpoint!.setColumnData("OPE_INVDET.EXT_PRICE", str(round(qty_shipped * unit_price, 2)),1)
+				rem --- Warn if ship quantity is more than currently available.
+				gosub check_ship_qty
 
 				rem --- Re-calculate qty_backord unless already shipping extra or it's a new line.
 				qty_ordered = num(callpoint!.getColumnData("<<DISPLAY>>.QTY_ORDERED_DSP"))
@@ -2393,6 +2406,20 @@ rem ==========================================================================
 
 	callpoint!.setStatus("ACTIVATE")
 
+	return
+
+rem =========================================================
+check_ship_qty: rem --- Warn if ship quantity is more than currently available.
+rem =========================================================
+	if callpoint!.getColumnData("OPE_INVDET.COMMIT_FLAG") = "Y" then
+		shipqty=num(callpoint!.getColumnData("<<DISPLAY>>.QTY_SHIPPED_DSP"))
+		prev_available=num(userObj!.getItem(user_tpl.avail_avail).getText())
+		curr_available=prev_available+callpoint!.getDevObject("prior_qty")
+		if shipqty>curr_available then
+			msg_id$="SHIP_EXCEEDS_AVAIL"
+			gosub disp_message
+		endif
+	endif
 	return
 
 rem ==========================================================================

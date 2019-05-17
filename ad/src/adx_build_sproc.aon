@@ -141,7 +141,7 @@ rem --- init
 
 rem --- init progress meter
 
-    total_recs=10;rem alter as more 'create procedure' statements are added - eventually will be table driven
+    total_recs=60*2;rem alter as more 'create procedure' statements are added - eventually will be table driven
     curr_rec=0
     task_val$="BUILDSPROC"
     task_desc$="Create SPROC Defs"
@@ -1092,10 +1092,56 @@ rem ==============================================
 
     gosub create_sproc_def		
 	
-	
 rem --- Done with SPROCs. Now do VIEWs
-rem --- As of 10/2013, no VIEWs are needed
+rem --- As of 11/2018, no VIEWs are needed
 
+rem --- Add AddonSoftware Web Context for demo installation
+
+    use java.io.File
+    declare BBjAdmin admin!
+    declare BBjJettyServerConfiguration serverConfig!
+    declare BBjJettyContextConfiguration contextConfig!
+
+	rem --- Get current user credentials using AdminAPI
+
+    user_id$=stbl("+USER_ID",err=*next)
+    thisAdmin!=BBjAPI().getGroupNamespace().getValue("+bar_admin_"+cvs(user_id$,11),err=*next)
+
+    if thisAdmin!=null()
+		sysGUI!=BBjAPI().getSysGui()
+        call stbl("+DIR_SYP")+"bac_em_login.bbj",sysGUI!,null(),thisAdmin!,status$
+        if status$<>"ADMIN" goto done
+    endif
+	
+	rem --- now get BBjAdmin object to set up context
+	
+    admin! = BBJAPI().getAdmin(thisAdmin!.getUser(),thisAdmin!.getPassword())
+    serverConfig! = admin!.getJettyServerConfig()
+    bbjHome$=java.lang.System.getProperty("basis.BBjHome")
+
+	db_name$="AddonSoftware"
+	db_path$=bbjHome$+"/apps/aon/web"
+
+    rem --- Make sure we start with a clean fresh context
+    serverConfig!.removeCustomContext(db_name$)
+    contextConfig! = serverConfig!.createCustomContext(db_name$)
+
+    contextConfig!.enable()
+    contextConfig!.setDocBase((new File(db_path$)).getAbsolutePath())
+    contextConfig!.setPath("/"+cvs(db_name$,11))
+    contextConfig!.setHTTP(0); rem --- Protocol: Allow insecure HPPT connections
+    contextConfig!.setHttpPort(8888)
+    
+    rem --- BBJSP Servlets
+    contextConfig!.addBBjspServlet("AuthorizeWebhook", "/AuthorizeWebhook", (new File(db_path$+"/AuthorizeWebhook.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("AuthorizeConfirmation", "/AuthorizeConfirmation", (new File(db_path$+"/AuthorizeConfirmation.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("PayPalSilentPost", "/PayPalSilentPost", (new File(db_path$+"/PayPalSilentPost.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("PayPalSilentPostFailure", "/PayPalSilentPostFailure", (new File(db_path$+"/PayPalSilentPostFailure.aon")).getAbsolutePath())
+    contextConfig!.addBBjspServlet("PayPalError", "/PayPalError", (new File(db_path$+"/PayPalError.aon")).getAbsolutePath())
+    
+    rem --- Session Cookie
+    contextConfig!.setSessionCookieHttpOnly(1)
+    contextConfig!.setSessionCookieSecure(1)
 
 done:
 

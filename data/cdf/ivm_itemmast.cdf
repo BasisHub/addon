@@ -657,7 +657,7 @@ rem --- Inits
 
 rem --- Open/Lock files
 
-	num_files=7
+	num_files=8
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="IVS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="IVS_DEFAULTS",open_opts$[2]="OTA"
@@ -666,6 +666,7 @@ rem --- Open/Lock files
 	open_tables$[5]="IVM_ITEMWHSE",open_opts$[5]="OTA"
 	open_tables$[6]="IVS_NUMBERS",open_opts$[6]="OTA"
 	open_tables$[7]="IVM_ITEMSYN",open_opts$[7]="OTA"
+	open_tables$[8]="IVT_ITEMTRAN",open_opts$[8]="OTA"
 
 	gosub open_tables
 	if status$ <> ""  then goto std_exit

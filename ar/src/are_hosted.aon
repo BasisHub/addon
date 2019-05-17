@@ -1,0 +1,115 @@
+rem --- Launch PayPal or Authorize.net Hosted Payment Page
+rem --- Program are_paypal.aon
+
+rem --- AddonSoftware Version 18.10 - 11Sep2018
+rem --- Copyright BASIS International Ltd.  All Rights Reserved.
+
+    setesc std_error
+    seterr std_error
+ 
+rem --- Get progarm arguments
+    if argc>1
+        for i=1 to argc-1
+            arg$=argv(i)
+			if pos("-g"=arg$)=1 then gateway$=arg$(3)
+            if pos("-s"=arg$)=1 then sid$=arg$(3)
+            if pos("-t"=arg$)=1 then tokenID$=arg$(3)
+			if pos("-a"=arg$)=1 then amt$=arg$(3)
+			if pos("-l"=arg$)=1 then launchURL$=arg$(3)
+			if pos("-u"=arg$)=1 then gatewayURL$=arg$(3)
+        next i
+    endif
+
+rem --- set URL based on gateway
+	if gateway$="PAYFLOWPRO"
+		hostedURL$=launchURL$+"?SECURETOKENID="+sid$+"&SECURETOKEN="+tokenID$
+	else
+		hostedURL$=launchURL$+"?authtoken="+tokenID$+"&gatewayURL="+gatewayURL$+"&amount="+amt$
+		rem --- this namespace variable gets changed when the confirmation servlet runs
+		rem --- the callback here allows us to auto close the html viewer, rather than displaying a static confirmation page that the user must close
+		ns!=BBjAPI().getNamespace("aon","authorize_confirmation",1)
+		ns!.setCallbackForVariableChange(sid$,"on_auth_conf_close")
+	endif
+
+rem --- Add window for BBjHtmlView control
+    thisGui!=BBjAPI().openSysGui(stbl("+GUI_DEVICE"))
+    
+    margin=25
+    if BBjAPI().isInMDI() then
+        width=BBjAPI().getMDI().getClientWidth()-7*margin
+        height=BBjAPI().getMDI().getClientHeight()-7*margin
+    else
+        screenSize!=thisGui!.getSystemMetrics().getScreenSize()
+        width=screenSize!.width-100
+        height=screenSize!.height-100
+    endif
+    xpos=margin+25*(count-1)
+    ypos=margin+25*(count-1)
+    
+    htmlWin!=thisGui!.addWindow(xpos,ypos,width,height,"",$00010083$)
+    htmlWin!.setCallback(htmlWin!.ON_CLOSE,"on_close")
+    htmlWin!.setCallback(htmlWin!.ON_RESIZE,"on_resize")
+
+rem --- Add BBjHtmlView control containing Authorize.net or PayFlow Pro hosted payment page
+    ctrlID=100
+    htmlView!=htmlWin!.addHtmlView(ctrlID,1,1,htmlWin!.getWidth()-2,htmlWin!.getHeight()-2,"")
+    htmlView!.setUrl(hostedURL$)
+
+    process_events,err=*same
+
+    goto std_exit
+
+on_close: rem --- Close window
+    htmlWin!.destroy()
+	progbar!=BBjAPI().getNamespace("aon","credit_progbar",1)
+	progbar!.setValue(sid$,"start")
+    goto std_exit
+    
+on_resize: rem --- Resize window
+    htmlView!.setSize(htmlWin!.getWidth()-50,htmlWin!.getHeight()-100)
+    return
+
+on_auth_conf_close:
+	ns!.removeCallbackForVariableChange(sid$)
+	goto on_close
+
+rem #include std_error.src
+
+std_error: rem --- Standard error handler (11Oct2017)
+
+    if tcb(19)>0
+        rem --- Escape handler
+        if and(chr(tcb(19)),$08$)=$08$
+            release
+        else
+            setesc std_error
+            return
+        endif
+    endif
+
+    if err=0   
+        rem --- Get tcb(12) and tcb(10) to send into bac_error
+        lock_byte=tcb(10)
+        lock_chan=tcb(12)  
+    endif
+
+    rd_err_text$="",err_num=err
+    if tcb(2)=0 and tcb(5) then rd_err_text$=pgm(tcb(5),tcb(13),err=*next)
+    if err_num=252 then
+        E!=BBjAPI().getLastBBjException()
+        rd_err_text$=rd_err_text$+$0A$+E!.getClass().getName()
+        if E!.getMessage()<>null() then rd_err_text$=rd_err_text$+": "+E!.getMessage()
+    endif
+    call stbl("+DIR_SYP")+"bac_error.bbj",pgm(-2),str(tcb(5)),str(err_num),rd_err_text$,rd_err_act$,lock_byte,lock_chan
+    if pos("ESCAPE"=rd_err_act$) seterr 0; setesc 0
+    if pos("RETRY"=rd_err_act$) retry
+    if pgm(-1)<>pgm(-2) status=999; exit 
+    release
+
+rem #endinclude std_error.src
+
+std_exit: rem --- Exit program
+
+    release
+
+    end

@@ -45,17 +45,43 @@ rem --- enable/disable Invoice Detail button
 rem --- disable Invoice Detail button
 	callpoint!.setOptionEnabled("INVB",0)
 [[POE_INVSEL.AOPT-INVB]]
+rem --- Add Barista soft lock for this record if not already in edit mode
+ap_type$=callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")
+vendor_id$=callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")
+ap_inv_no$=callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+
+if !callpoint!.isEditMode() then
+	rem --- Is there an existing soft lock?
+	lock_table$="POE_INVHDR"
+	lock_record$=firm_id$+ap_type$+vendor_id$+ap_inv_no$
+	lock_type$="C"
+	lock_status$=""
+	lock_disp$=""
+	call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	if lock_status$="" then
+		rem --- Add temporary soft lock used just for this task
+		lock_type$="L"
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	else
+		rem --- Record locked by someone else
+		msg_id$="ENTRY_REC_LOCKED"
+		gosub disp_message
+		break
+	endif
+endif
+
+rem --- Launch poe_invdet form
 dist_bal=num(callpoint!.getHeaderColumnData("POE_INVHDR.INVOICE_AMT"))-num(callpoint!.getDevObject("tot_gl"))
 callpoint!.setDevObject("invdet_bal",str(dist_bal));rem send in Invoice Header Amt - g/l amount
 
-pfx$=firm_id$+callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+pfx$=firm_id$+ap_type$+vendor_id$+ap_inv_no$
 dim dflt_data$[3,1]
 dflt_data$[1,0]="AP_TYPE"
-dflt_data$[1,1]=callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")
+dflt_data$[1,1]=ap_type$
 dflt_data$[2,0]="VENDOR_ID"
-dflt_data$[2,1]=callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")
+dflt_data$[2,1]=vendor_id$
 dflt_data$[3,0]="AP_INV_NO"
-dflt_data$[3,1]=callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+dflt_data$[3,1]=ap_inv_no$
 call stbl("+DIR_SYP")+"bam_run_prog.bbj","POE_INVDET",stbl("+USER_ID"),"MNT",pfx$,table_chans$[all],"",dflt_data$[all]
 
 rem --- re-align invsel w/ invdet based on changes user may have made in invdet
@@ -72,7 +98,7 @@ dim x$:str(callpoint!.getDevObject("poe_invsel_key"))
 last$=""
 
 tot_dist=0
-ky$=firm_id$+callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
+ky$=firm_id$+ap_type$+vendor_id$+ap_inv_no$
 read (poe_invsel_dev,key=ky$,dom=*next)
 while 1
 	read record (poe_invsel_dev,end=*break)poe_invsel$
@@ -120,6 +146,12 @@ endif
 callpoint!.setDevObject("tot_dist",str(tot_dist))
 callpoint!.setHeaderColumnData("POE_INVHDR.INVOICE_AMT",str(tot_dist))
 callpoint!.setStatus("REFGRID")
+
+rem --- Remove temporary soft lock used just for this task 
+if !callpoint!.isEditMode() and lock_type$="L" then
+	lock_type$="U"
+	call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+endif
 [[POE_INVSEL.AREC]]
 rem --- Make sure new grid row is enabled
 util.enableGridRow(Form!,num(callpoint!.getValidationRow()))
@@ -143,11 +175,22 @@ rem --- For new detail lines, locate first un-billed receiver for this PO
 if callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())="Y" and cvs(callpoint!.getColumnData("POE_INVSEL.RECEIVER_NO"),2)="" then
 	pot_rechdr_dev=fnget_dev("POT_RECHDR")
 	dim pot_rechdr$:fnget_tpl$("POT_RECHDR")
+	pot_invdet_dev=fnget_dev("POT_INVDET")
+	ap_type$=callpoint!.getHeaderColumnData("POE_INVHDR.AP_TYPE")
+	vendor_id$=callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")
 	po_no$=callpoint!.getUserInput()
 	read(pot_rechdr_dev,key=firm_id$+po_no$,dom=*next)
 	while 1
 		readrecord(pot_rechdr_dev,end=*break)pot_rechdr$
 		if pot_rechdr.firm_id$+pot_rechdr.po_no$<>firm_id$+po_no$ then break
+
+		rem --- Skip if pot_invdet (pot-25) record exists for the same firm_id+vendor_id+po_no+receiver_no+ap_type
+		pot_invdet_invbypo$=firm_id$+vendor_id$+po_no$+pot_rechdr.receiver_no$+ap_type$
+		read(pot_invdet_dev,key=pot_invdet_invbypo$,knum="INVBYPO",dom=*next)
+		pot_invdet_key$=""
+		pot_invdet_key$=key(pot_invdet_dev,end=*next)
+		if pos(pot_invdet_invbypo$=pot_invdet_key$)=1 then continue; rem --- po_no+receiver_no already invoiced
+
 		curr_po_no$=po_no$
 		curr_receiver_no$=pot_rechdr.receiver_no$
 		skip_warning=1
@@ -364,7 +407,7 @@ able_invoice_detail_button: rem --- enable/disable Invoice Detail button
 :		callpoint!.getHeaderColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getHeaderColumnData("POE_INVHDR.AP_INV_NO")
 	read (poe_invdet,key=invdet_key$,dom=*next)
 	k$=key(poe_invdet,end=*next)
-	if pos(invdet_key$=k$)=1 and callpoint!.isEditMode() then
+	if pos(invdet_key$=k$)=1 then
 		callpoint!.setOptionEnabled("INVB",1)
 	else
 		callpoint!.setOptionEnabled("INVB",0)

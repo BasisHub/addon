@@ -1,3 +1,14 @@
+[[IVE_PRICECHG.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("IVE_PRICECHG.FIRM_ID")+
+:		callpoint!.getColumnData("IVE_PRICECHG.PRICE_CODE")+
+:		callpoint!.getColumnData("IVE_PRICECHG.WAREHOUSE_ID")+
+:		callpoint!.getColumnData("IVE_PRICECHG.ITEM_ID")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[IVE_PRICECHG.ITEM_ID.AVAL]]
 rem "Inventory Inactive Feature"
 item_id$=callpoint!.getUserInput()

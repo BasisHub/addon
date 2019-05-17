@@ -370,7 +370,8 @@ callpoint!.setStatus("MODIFIED-REFRESH")
 
 [[APE_MANCHECKDET.AP_INV_NO.AVAL]]
 rem --- Skip AVAL if AP_INV_NO wasn't changed to avoid re-initializing INVOICE_AMT, etc.
-	if callpoint!.getUserInput()=callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO") then break
+	if callpoint!.getUserInput()=callpoint!.getColumnData("APE_MANCHECKDET.AP_INV_NO") and
+:		callpoint!.getGridRowNewStatus(callpoint!.getValidationRow())<>"Y" then break
 
 rem --- Check to make sure Invoice isn't already in the grid
 

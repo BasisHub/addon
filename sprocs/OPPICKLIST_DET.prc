@@ -323,9 +323,9 @@ line_detail: rem --- Item Detail
 
 rem --- Determine the warehouse message to send back to header report
 
-    whse_message$=iff(pick_or_quote$="P","no_message_for_quotes","")
+    whse_message$="AON_ALL_FROM_THIS_WHSE"
     whse_msg_sfx$=""
-    
+
     if mult_wh$="Y" and pick_or_quote$<>"P"
         
         sel_whse=pos(selected_whse$=othwhse$,whse_len)

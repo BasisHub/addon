@@ -1,3 +1,13 @@
+[[SFE_TIMEDATE.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("SFE_TIMEDATE.FIRM_ID")+
+:		callpoint!.getColumnData("SFE_TIMEDATE.TRANS_DATE")+
+:		callpoint!.getColumnData("SFE_TIMEDATE.EMPLOYEE_NO")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[SFE_TIMEDATE.BFMC]]
 rem --- Get Batch information
 	call stbl("+DIR_PGM")+"adc_getbatch.aon",callpoint!.getAlias(),"",table_chans$[all]

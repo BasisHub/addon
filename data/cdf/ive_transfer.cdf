@@ -1,3 +1,16 @@
+[[IVE_TRANSFER.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("IVE_TRANSFER.FIRM_ID")+
+:		callpoint!.getColumnData("IVE_TRANSFER.WAREHOUSE_ID")+
+:		callpoint!.getColumnData("IVE_TRANSFER.TRANS_DATE")+
+:		callpoint!.getColumnData("IVE_TRANSFER.WAREHOUSE_ID_TO")+
+:		callpoint!.getColumnData("IVE_TRANSFER.ITEM_ID")+
+:		callpoint!.getColumnData("IVE_TRANSFER.LOTSER_NO")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[IVE_TRANSFER.BREC]]
 rem --- Disable Lot Lookup button
 	callpoint!.setOptionEnabled("LOTS",0)

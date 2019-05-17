@@ -477,6 +477,16 @@ rem --- Additional file opens
 rem --- Other inits for sfe_womatisd
 	callpoint!.setDevObject("ls_lookup_row",-1)
 [[SFE_WOMATISH.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("SFE_WOMATISH.FIRM_ID")+
+:		callpoint!.getColumnData("SFE_WOMATISH.WO_LOCATION")+
+:		callpoint!.getColumnData("SFE_WOMATISH.WO_NO")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
+
 rem --- Init new Materials Issues Entry record
 	sfe_womastr_dev=fnget_dev("SFE_WOMASTR")
 	dim sfe_womastr$:fnget_tpl$("SFE_WOMASTR")

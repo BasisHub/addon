@@ -1,3 +1,14 @@
+[[BME_ORDER.ARNF]]
+if num(stbl("+BATCH_NO"),err=*next)<>0
+	rem --- Check if this record exists in a different batch
+	tableAlias$=callpoint!.getAlias()
+	primaryKey$=callpoint!.getColumnData("BME_ORDER.FIRM_ID")+
+:		callpoint!.getColumnData("BME_ORDER.PROD_DATE")+
+:		callpoint!.getColumnData("BME_ORDER.CUSTOMER_ID")+
+:		callpoint!.getColumnData("BME_ORDER.ORDER_NO")
+	call stbl("+DIR_PGM")+"adc_findbatch.aon",tableAlias$,primaryKey$,Translate!,table_chans$[all],existingBatchNo$,status
+	if status or existingBatchNo$<>"" then callpoint!.setStatus("NEWREC")
+endif
 [[BME_ORDER.<CUSTOM>]]
 #include std_functions.src
 [[BME_ORDER.CUSTOMER_ID.AVAL]]

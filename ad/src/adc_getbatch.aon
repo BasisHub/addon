@@ -9,10 +9,12 @@ rem  +-----------------------------------------+
 
 rem --- ALIAS$    : Alias if from form (in)
 rem --- PROG_NAME$: Program Name if from back end program (in)
+rem --- dflt_batch_desc$ added (along with err=*next) for ER9410 to supply default description for credit card payment from ars_cc_custsvc params (in)
+rem --- dflt_batch_no$ also added for ER9410; sent in if are_cashhdr info for credit card payment matches an existing are_cashhdr record (i.e., need to use batch and/or deposit present in the existing are_cashhdr record)
 
     seterr std_error
     setesc std_error
-    enter alias$,prog_name$,table_chans$[all]
+    enter alias$,prog_name$,table_chans$[all],dflt_batch_desc$,dflt_batch_no$,err=*next
     
 rem --- Retrieve the program path
 
@@ -78,14 +80,23 @@ rem --- See if batching is turned on for this process
 
     read record (adm09_dev,key=firm_id$+proc_id$,dom=done)adm09a$
     if adm09a.batch_entry$<>"Y" goto done
-    
-    x$=stbl("+BATCH_DESC",adm09a.description$)
-
+   
+    x$=stbl("+BATCH_DESC",iff(dflt_batch_desc$<>"",dflt_batch_desc$,adm09a.description$))
 
 rem --- Here's where we call the batch setup/select form (allow new or not)
 rem --- The +BATCH_NO stbl will be set in this form's callpoint 
 
-    call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADM_PROCBATCHES",stbl("+USER_ID"),"MNT","",table_chans$[all]
+	if dflt_batch_no$<>""
+		dim dflt_data$[1,1]
+		dflt_data$[1,0]="BATCH_NO"
+		dflt_data$[1,1]=dflt_batch_no$
+		key_pfx$=firm_id$+adm19a.process_id$+dflt_batch_no$
+	else
+		dim dflt_data$[1,1]
+		key_pfx$=""
+	endif
+
+    call stbl("+DIR_SYP")+"bam_run_prog.bbj","ADM_PROCBATCHES",stbl("+USER_ID"),"MNT",key_pfx$,table_chans$[all],"",dflt_data$[all]
     x$=stbl("!CLEAR","+ALLOW_NEW_BATCH")
     x$=stbl("!CLEAR","+BATCH_DESC")
 

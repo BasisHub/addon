@@ -167,8 +167,33 @@ rem --- Update The Transactions (use deltas if WO number wasn't changed)
                 endif
                 write record (wotran_dev) deltaTran$
             else
+                rem --- WO changed
+                rem --- Rather than remove transaction for old WO, adjust it to zero with new transaction to old WO
+                rem remove (wotran_dev,key=k$)
+                seq_mask$=fill(len(sftran.trans_seq$),"0")
+                max_trans_seq=num(fill(len(sftran.trans_seq$),"9"))
+                deltaTran_trip$=sftran.firm_id$+sftran.wo_location$+sftran.wo_no$+sftran.trans_date$
+                read(wotran_dev,key=deltaTran_trip$+$FF$,dom=*next)
+                dim deltaTran_key$:fattr(wotran_key$)
+                deltaTran_key$=keyp(wotran_dev,end=*next)
+                trans_seq=num(deltaTran_key.trans_seq$)
+                if trans_seq<max_trans_seq then
+                    sftran.trans_seq$=str(trans_seq+1:seq_mask$)
+                    sftran.units=-sftran.units
+                    sftran.ext_cost=-sftran.ext_cost
+                    if record_id_flag=0 then sftran.complete_qty=-sftran.complete_qty
+                    writerecord(wotran_dev)sftran$
+                else
+                    max_key$=sftran.firm_id$+sftran.wo_location$+sftran.wo_no$+sftran.trans_date$+str(max_trans_seq:seq_mask$)
+                    dim max_sftran$:fattr(sftran$)
+                    readrecord(wotran_dev,key=max_key$)max_sftrans$
+                    max_sftrans.units=max_sftrans.units-sftran.units
+                    max_sftrans.ext_cost=max_sftrans.ext_cost-sftran.ext_cost
+                    if record_id_flag=0 then max_sftrans.complete_qty=max_sftrans.complete_qty-sftran.complete_qty
+                    writerecord(wotran_dev)sftran$
+                endif
+                
                 rem --- WO changed so use full transaction for the adjustment
-                remove (wotran_dev,key=k$)
                 sftran.wo_no$=sfadja.new_wo_no$
                 sftran.trans_date$=sfadja.new_trn_date$
                 sftran.units=sfadja.new_units

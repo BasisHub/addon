@@ -1,3 +1,64 @@
+[[ARM_CUSTMAST.AOPT-PYMT]]
+rem --- Select invoice(s) for credit card payment
+rem --- May be done via PayPal or Authorize.net hosted page
+rem --- or using J2Pay library, as specified in ars_cc_custsvc
+
+	cp_cust_id$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+	user_id$=stbl("+USER_ID")
+
+	arm_emailfax=fnget_dev("ARM_EMAILFAX")
+	dim arm_emailfax$:fnget_tpl$("ARM_EMAILFAX")
+	readrecord(arm_emailfax,key=firm_id$+cp_cust_id$,dom=*next)arm_emailfax$
+
+	dim dflt_data$[9,1]
+	dflt_data$[1,0]="CUSTOMER_ID"
+	dflt_data$[1,1]=cp_cust_id$
+	dflt_data$[2,0]="ADDRESS_LINE_1"
+	dflt_data$[2,1]=callpoint!.getColumnData("ARM_CUSTMAST.ADDR_LINE_1")
+	dflt_data$[3,0]="ADDRESS_LINE_2"
+	dflt_data$[3,1]=callpoint!.getColumnData("ARM_CUSTMAST.ADDR_LINE_2")
+	dflt_data$[4,0]="CITY"
+	dflt_data$[4,1]=callpoint!.getColumnData("ARM_CUSTMAST.CITY")
+	dflt_data$[5,0]="STATE_CODE"
+	dflt_data$[5,1]=callpoint!.getColumnData("ARM_CUSTMAST.STATE_CODE")
+	dflt_data$[6,0]="ZIP_CODE"
+	dflt_data$[6,1]=callpoint!.getColumnData("ARM_CUSTMAST.ZIP_CODE")
+	dflt_data$[7,0]="CNTRY_ID"
+	dflt_data$[7,1]=callpoint!.getColumnData("ARM_CUSTMAST.CNTRY_ID")
+	dflt_data$[8,0]="PHONE_NO"
+	dflt_data$[8,1]=callpoint!.getColumnData("ARM_CUSTMAST.PHONE_NO")
+	dflt_data$[9,0]="EMAIL_ADDR"
+	dflt_data$[9,1]=arm_emailfax.email_to$
+
+	key_pfx$=cp_cust_id$
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"ARE_CCPMT",
+:                user_id$,
+:                "",
+:                key_pfx$,
+:                table_chans$[all],
+:                "",
+:                dflt_data$[all]
+[[ARM_CUSTMAST.AOPT-RESP]]
+rem --- view electronic receipt response, if applicable 
+	user_id$=stbl("+USER_ID")  
+	cust_id$=callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+
+	dim dflt_data$[1,1]
+	dflt_data$[0,0]="ART_RESPHDR.FIRM_ID"
+	dflt_data$[0,1]=firm_id$
+	dflt_data$[1,0]="ART_RESPHDR.CUSTOMER_ID"
+	dflt_data$[1,1]=cust_id$
+
+	key_pfx$=callpoint!.getColumnData("ARM_CUSTMAST.FIRM_ID")+callpoint!.getColumnData("ARM_CUSTMAST.CUSTOMER_ID")
+	call stbl("+DIR_SYP")+"bam_run_prog.bbj",
+:		"ART_RESPHDR",
+:		user_id$,
+:		"",
+:		key_pfx$,
+:		table_chans$[all],
+:		"",
+:		dflt_data$[all]
 [[ARM_CUSTMAST.AOPT-CRDT]]
 rem --- Launch Customer Maitenance form for this customer
 	user_id$=stbl("+USER_ID")
@@ -419,10 +480,6 @@ rem --- If GM installed, update GoldMine database as necessary
 		endif
 
 	endif
-[[ARM_CUSTMAST.ASHO]]
-rem --- Create/embed widgets to show aged balance
-
-	gosub create_widgets
 [[ARM_CUSTMAST.ADIS]]
 rem --- retrieve dashboard pie or bar chart widget and refresh for current customer/balances
 rem --- pie if all balances >=0, bar if any negatives, hide if all bals are 0
@@ -726,7 +783,7 @@ rem --- clear out the contents of the widgets
 rem --- Open/Lock files
 	dir_pgm$=stbl("+DIR_PGM")
 	sys_pgm$=stbl("+DIR_SYP")
-	num_files=7
+	num_files=9
 
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[2]="ARS_PARAMS",open_opts$[2]="OTA"
@@ -735,17 +792,20 @@ rem --- Open/Lock files
 	open_tables$[5]="ARM_CUSTDET",open_opts$[5]="OTA"
 	open_tables$[6]="ART_INVHDR",open_opts$[6]="OTA"
 	open_tables$[7]="ART_INVDET",open_opts$[7]="OTA"
+	open_tables$[8]="ARS_CC_CUSTSVC",open_opts$[8]="OTA"
+	open_tables$[9]="ARM_EMAILFAX",open_opts$[9]="OTA"
 	gosub open_tables
 
 	ars01_dev=num(open_chans$[2])
 	ars10_dev=num(open_chans$[3])
 	ars01c_dev=num(open_chans$[4])
 	arm02_dev=num(open_chans$[5])
+	ars_cc_custsvc=num(open_chans$[8])
 
 rem --- Dimension miscellaneous string templates
 
 	dim ars01a$:open_tpls$[2],ars10d$:open_tpls$[3],ars01c$:open_tpls$[4]
-	dim arm02_tpl$:open_tpls$[5]
+	dim arm02_tpl$:open_tpls$[5],ars_cc_custsvc$:open_tpls$[8]
 
 rem --- Retrieve parameter data
 	dim info$[20]
@@ -835,6 +895,25 @@ rem --- Additional/optional opens
 		gmClient!=new GmInterfaceClient()
 		callpoint!.setDevObject("gmClient",gmClient!)
 	endif
+
+rem --- disable credit card payment and view response options if not processing credit card payments
+
+	read(ars_cc_custsvc,key=firm_id$,dom=*next)
+	while 1
+		readrecord(ars_cc_custsvc,end=*break)ars_cc_custsvc$
+		if ars_cc_custsvc.firm_id$<>firm_id$ then break
+		if ars_cc_custsvc.use_custsvc_cc$="Y"
+			callpoint!.setOptionEnabled("PYMT",1)
+			callpoint!.setOptionEnabled("RESP",1)
+		else
+			callpoint!.setOptionEnabled("PYMT",0)
+			callpoint!.setOptionEnabled("RESP",0)
+		endif
+	wend
+
+rem --- Create/embed widgets to show aged balance
+
+	gosub create_widgets
 [[ARM_CUSTMAST.<CUSTOM>]]
 rem =======================================================
 create_widgets:rem --- create pie and bar widgets to show aged balance (bar in case credits)

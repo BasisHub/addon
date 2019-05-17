@@ -209,6 +209,8 @@ rem --- Dimension string templates
 rem --- Clear any existing (stale) recs for this firm from the jasper print file
 
 	call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",apw_chkprn_dev,firm_id$,status
+	rem --- Do NOT clear apw_checkinvoice (apw-01) because check printing may have been Restarted.
+    rem call stbl("+DIR_PGM")+"adc_clearpartial.aon","N",apw01_dev,firm_id$,status
 
 rem --- Assign form input values to local variables
 
@@ -742,10 +744,14 @@ check_face: rem --- Print Check
 	chk_amt=t[3]
     check_tot_cents$=str(fpt(chk_amt)*100:"00")
     if check_tot_cents$="00" then check_tot_cents$="NO"
-	
-    chk_exactly$=Translate!.getTranslation("AON_EXACTLY*")+str(int(chk_amt):exactly_amt_mask$)+Translate!.getTranslation("AON_*DOLLARS*AND*")+check_tot_cents$+Translate!.getTranslation("AON_*CENTS")
-    
-    chk_amt_str$=str(chk_amt:check_amt_mask$)
+
+    if t[3] <= 0 then 
+        chk_exactly$=Translate!.getTranslation("AON_***VOID***VOID***VOID***VOID***")
+        chk_amt_str$=Translate!.getTranslation("AON_***VOID***")
+    else 
+        chk_exactly$=Translate!.getTranslation("AON_EXACTLY*")+str(int(chk_amt):exactly_amt_mask$)+Translate!.getTranslation("AON_*DOLLARS*AND*")+check_tot_cents$+Translate!.getTranslation("AON_*CENTS")
+        chk_amt_str$=str(chk_amt:check_amt_mask$)
+    endif
 
     dim apw01a$:fattr(apw01a$)
     apw01a.firm_id$=firm_id$
@@ -855,6 +861,7 @@ overflow: rem --- Overflow
 
 void_check: rem --- Void check
 
+    rem  --- Use only for overflow (i.e. more invoices than fit on one stub) void checks, not zero amount checks
     chk_exactly$=Translate!.getTranslation("AON_***VOID***VOID***VOID***VOID***")
     chk_amt_str$=Translate!.getTranslation("AON_***VOID***")
 
@@ -903,14 +910,14 @@ rem --- Write Void
 	apw_chkprn.chk_amt=chk_amt
 	
     write record (apw_chkprn_dev) apw_chkprn$
-	
-	gosub increment_check
+
+    gosub increment_check
 	
     return
 
 new_vendor: rem --- New Vendor
 
-    if prev_aptype_vend_t1$ <> "" then 
+    if prev_aptype_vend_t1$ <> "" then
 		stub_inv_amt=     t[0]
 		stub_inv_discamt= t[1]
 		stub_inv_amt_pd=  t[3]
@@ -928,11 +935,7 @@ new_vendor: rem --- New Vendor
 		gosub stub_total; rem vendor stub
 		vendstub_rowcnt=1
 
-        if t[3] <= 0 then 
-            gosub void_check 
-        else 
-            gosub check_face
-        endif
+		gosub check_face
 
 rem --- Now go back and re-write ape-04 using ape04_dev2 and ape04b$
 rem --- using the current check number and firm_id$ + prev_aptype_vend_t1$ (ap type and vendor number)

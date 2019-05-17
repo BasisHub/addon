@@ -60,7 +60,7 @@ rem -- setting a delete flag so we know in BREX not to bother checking if out of
 callpoint!.setDevObject("deleted","Y")
 [[POE_INVHDR.BTBL]]
 rem --- Open/Lock files
-files=17,begfile=1,endfile=files
+files=18,begfile=1,endfile=files
 dim files$[files],options$[files],chans$[files],templates$[files]
 
 rem files$[1]="",options$[1]=""
@@ -80,6 +80,7 @@ files$[14]="POC_LINECODE",options$[14]="OTA"
 files$[15]="APC_TERMSCODE",options$[15]="OTA"
 files$[16]="APC_TYPECODE",options$[16]="OTA"
 files$[17]="GLS_CALENDAR",options$[17]="OTA"
+files$[18]="POT_INVDET",options$[18]="OTA"
 
 call stbl("+DIR_SYP")+"bac_open_tables.bbj",
 :	begfile,
@@ -320,17 +321,43 @@ if num(callpoint!.getColumnData("<<DISPLAY>>.DIST_BAL"))<>0
 
 endif
 [[POE_INVHDR.AOPT-INVD]]
+rem --- Add Barista soft lock for this record if not already in edit mode
+ap_type$=callpoint!.getColumnData("POE_INVHDR.AP_TYPE")
+vendor_id$=callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")
+ap_inv_no$=callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
+
+if !callpoint!.isEditMode() then
+	rem --- Is there an existing soft lock?
+	lock_table$="POE_INVHDR"
+	lock_record$=firm_id$+ap_type$+vendor_id$+ap_inv_no$
+	lock_type$="C"
+	lock_status$=""
+	lock_disp$=""
+	call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	if lock_status$="" then
+		rem --- Add temporary soft lock used just for this task
+		lock_type$="L"
+		call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+	else
+		rem --- Record locked by someone else
+		msg_id$="ENTRY_REC_LOCKED"
+		gosub disp_message
+		break
+	endif
+endif
+
+rem --- Launch poe_invdet form
 dist_bal=num(callpoint!.getColumnData("POE_INVHDR.INVOICE_AMT"))-num(callpoint!.getDevObject("tot_gl"))
 callpoint!.setDevObject("invdet_bal",str(dist_bal));rem send in Invoice Header Amt - g/l amount
 
-pfx$=firm_id$+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
+pfx$=firm_id$+ap_type$+vendor_id$+ap_inv_no$
 dim dflt_data$[3,1]
 dflt_data$[1,0]="AP_TYPE"
-dflt_data$[1,1]=callpoint!.getColumnData("POE_INVHDR.AP_TYPE")
+dflt_data$[1,1]=ap_type$
 dflt_data$[2,0]="VENDOR_ID"
-dflt_data$[2,1]=callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")
+dflt_data$[2,1]=vendor_id$
 dflt_data$[3,0]="AP_INV_NO"
-dflt_data$[3,1]=callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
+dflt_data$[3,1]=ap_inv_no$
 call stbl("+DIR_SYP")+"bam_run_prog.bbj","POE_INVDET",stbl("+USER_ID"),"MNT",pfx$,table_chans$[all],"",dflt_data$[all]
 
 rem --- re-align invsel w/ invdet based on changes user may have made in invdet
@@ -347,7 +374,7 @@ dim x$:str(callpoint!.getDevObject("poe_invsel_key"))
 last$=""
 
 tot_dist=0
-ky$=firm_id$+callpoint!.getColumnData("POE_INVHDR.AP_TYPE")+callpoint!.getColumnData("POE_INVHDR.VENDOR_ID")+callpoint!.getColumnData("POE_INVHDR.AP_INV_NO")
+ky$=firm_id$+ap_type$+vendor_id$+ap_inv_no$
 read (poe_invsel_dev,key=ky$,dom=*next)
 while 1
 	read record (poe_invsel_dev,end=*break)poe_invsel$
@@ -393,8 +420,14 @@ if other
 endif
 
 callpoint!.setDevObject("tot_dist",str(tot_dist))
-callpoint!.getColumnData("POE_INVHDR.INVOICE_AMT",str(tot_dist),1)
+callpoint!.setColumnData("POE_INVHDR.INVOICE_AMT",str(tot_dist),1)
 callpoint!.setStatus("RECORD:["+ky$+"]")
+
+rem --- Remove temporary soft lock used just for this task 
+if !callpoint!.isEditMode() and lock_type$="L" then
+	lock_type$="U"
+	call stbl("+DIR_SYP")+"bac_lock_record.bbj",lock_table$,lock_record$,lock_type$,lock_disp$,rd_table_chan,table_chans$[all],lock_status$
+endif
 [[POE_INVHDR.ARNF]]
 rem --- set defaults
 
