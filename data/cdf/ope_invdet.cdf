@@ -904,11 +904,11 @@ rem --- Set header total amounts
 
 	use ::ado_order.src::OrderHelper
 
-	cust_id$  = cvs(callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID"),3)
-	order_no$ = cvs(callpoint!.getColumnData("OPE_INVDET.ORDER_NO"),3)
+	cust_id$  = callpoint!.getColumnData("OPE_INVDET.CUSTOMER_ID")
+	order_no$ = callpoint!.getColumnData("OPE_INVDET.ORDER_NO")
 	inv_type$ = callpoint!.getHeaderColumnData("OPE_INVHDR.INVOICE_TYPE")
 
-	if cust_id$<>"" and order_no$<>"" then
+	if cvs(cust_id$,3)<>"" and cvs(order_no$,3)<>"" then
 
 		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 		ordHelp!.totalSalesDisk(cust_id$, order_no$, inv_type$)

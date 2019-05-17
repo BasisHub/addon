@@ -261,6 +261,10 @@ rem --- Validate directory for aon new install location
 
 	new_loc$ = callpoint!.getColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC")
 	gosub validate_aon_dir
+
+	if pos(new_loc$(len(new_loc$),1)="\/")<>0
+		new_loc$=new_loc$(1,len(new_loc$)-1)
+	endif
 	callpoint!.setColumnData("ADX_INSTALLWIZ.NEW_INSTALL_LOC", new_loc$)
 	if abort then break
 
