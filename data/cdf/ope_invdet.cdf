@@ -2418,6 +2418,7 @@ rem =========================================================
 		if shipqty>curr_available then
 			msg_id$="SHIP_EXCEEDS_AVAIL"
 			gosub disp_message
+			callpoint!.setStatus("ACTIVATE")
 		endif
 	endif
 	return

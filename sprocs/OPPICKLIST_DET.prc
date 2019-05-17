@@ -222,17 +222,17 @@ line_detail: rem --- Item Detail
 
 			if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" 
 				price_raw$=   str(ope11a.unit_price*ope11a.qty_ordered)
-				price_masked$=str(num(price_raw$):price_mask$)
+				price_masked$=str(ope11a.unit_price:price_mask$)
 			endif
 			if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" then
 			    if qtyOrdered_purchaseUM then
                     rem --- Use Unit of Purchase
                     price_raw$=   str(ope11a.unit_price*ivm01a.conv_factor*qtyOrdered_purchaseUM)
-                    price_masked$=str(num(price_raw$):price_mask$)
+                    price_masked$=str(ope11a.unit_price*ivm01a.conv_factor:price_mask$)
 			    else
                     rem --- Use Unit of Sale
     				price_raw$=   str(ope11a.unit_price*qtyOrdered_salesUM)
-    				price_masked$=str(num(price_raw$):price_mask$)
+    				price_masked$=str(ope11a.unit_price:price_mask$)
 				endif
 			endif
 
@@ -286,7 +286,7 @@ line_detail: rem --- Item Detail
                     endif
                     if pos(opm02a.line_type$=" SNPO") and print_prices$="Y" then
                         price_raw$=   str(ope11a.unit_price*qtyOrdered_salesUM)
-                        price_masked$=str(num(price_raw$):price_mask$)
+                        price_masked$=str(ope11a.unit_price:price_mask$)
                     endif
                 endif
                 

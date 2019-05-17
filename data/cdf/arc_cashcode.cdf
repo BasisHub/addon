@@ -1,3 +1,8 @@
+[[ARC_CASHCODE.ADEL]]
+rem --- remove ars_cc_custsvc record also
+
+	ars_cc_custsvc=fnget_dev("ARS_CC_CUSTSVC")
+	remove(ars_cc_custsvc,key=firm_id$+callpoint!.getColumnData("ARC_CASHCODE.CASH_REC_CD"),dom=*next)
 [[ARC_CASHCODE.AREC]]
 rem --- disable gateway config option
 	callpoint!.setOptionEnabled("GTWY",0)

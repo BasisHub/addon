@@ -215,7 +215,7 @@ rem --- Main Read
 			endif
 		endif
 		
-        if ope01a.cash_sale$="Y"
+        if ope01a.cash_sale$="Y" and ope41a.tendered_amt<>0
 		
 		    paid_desc$ = cvs(arm10c.code_desc$,2)
 			
