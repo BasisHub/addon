@@ -18,8 +18,27 @@ rem --- Launch Comments dialog
 rem --- Launch Comments dialog
 	gosub comment_entry
 [[BMM_BILLMAT.LINE_TYPE.AVAL]]
+rem --- Clear cells if Line Type has changed
+	line_type$=callpoint!.getUserInput()
+	if line_type$=callpoint!.getColumnData("BMM_BILLMAT.LINE_TYPE") then break
+	callpoint!.setColumnData("BMM_BILLMAT.WO_REF_NUM","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.SUB_BILL","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.ITEM_ID","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.EXT_COMMENTS","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.MEMO_1024","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.OP_INT_SEQ_REF","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.DIVISOR","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.QTY_REQUIRED","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.ALT_FACTOR","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.SCRAP_FACTOR","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.UNIT_MEASURE","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.NET_REQD","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.UNIT_COST","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.TOTAL_COST","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.EFFECT_DATE","",1)
+	callpoint!.setColumnData("BMM_BILLMAT.OBSOLT_DATE","",1)
+
 rem --- Enable/disable Comments button
-	line_type$=callpoint!.getColumnData("BMM_BILLMAT.LINE_TYPE")
 	gosub enable_comments
 [[BMM_BILLMAT.MEMO_1024.BINQ]]
 rem --- (Barista Bug 9179 workaround) If grid cell isn't editable, then abort so new text can't be entered via edit control.

@@ -1,6 +1,26 @@
 [[BMM_BILLOPER.LINE_TYPE.AVAL]]
+rem --- Clear cells if Line Type has changed
+	line_type$=callpoint!.getUserInput()
+	if line_type$=callpoint!.getColumnData("BMM_BILLOPER.LINE_TYPE") then break
+	callpoint!.setColumnData("BMM_BILLOPER.WO_OP_REF","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.OP_CODE","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.EXT_COMMENTS","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.MEMO_1024","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.QUEUE_TIME","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.SETUP_TIME","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.HRS_PER_PCE","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.PCS_PER_HOUR","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.MOVE_TIME","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.NET_HRS","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.DIRECT_RATE","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.DIRECT_COST","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.OVHD_COST","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.TOT_COST","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.EFFECT_DATE","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.OBSOLT_DATE","",1)
+	callpoint!.setColumnData("BMM_BILLOPER.INTERNAL_SEQ_NO","",1)
+
 rem --- Enable/disable Comments button
-	line_type$=callpoint!.getColumnData("BMM_BILLOPER.LINE_TYPE")
 	gosub enable_comments
 [[BMM_BILLOPER.AOPT-COMM]]
 rem --- Launch Comments dialog

@@ -132,18 +132,23 @@ endif
 [[APR_CHECKS.BSHO]]
 rem --- See if we need to disable AP Type
 rem --- and see if a print run in currently running
-	num_files=3
+	num_files=6
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APS_PARAMS",open_opts$[1]="OTA"
 	open_tables$[2]="ADX_LOCKS",   open_opts$[2]="OTA"
 	open_tables$[3]="APT_CHECKHISTORY",open_opts$[3]="OTA"
+	open_tables$[4]="APS_ACH",open_opts$[4]="OTA"
+	open_tables$[5]="APM_VENDMAST",open_opts$[5]="OTA"
+	open_tables$[6]="APE_CHECKS",open_opts$[6]="OTA"
 	gosub open_tables
 
 	aps01_dev=fnget_dev("APS_PARAMS")
 	adxlocks_dev=fnget_dev("ADX_LOCKS")
+	apsACH_dev=fnget_dev("APS_ACH")
 
 	dim aps01a$:fnget_tpl$("APS_PARAMS")
 	dim adxlocks$:fnget_tpl$("ADX_LOCKS")
+	dim apsACH$:fnget_tpl$("APS_ACH")
 
 rem --- Get parameters
 	aps01_key$=firm_id$+"AP00"
@@ -155,6 +160,9 @@ rem --- Get parameters
 		ctl_stat$="I"
 		gosub disable_fields
 	endif
+
+	readrecord(apsACH_dev,key=firm_id$+"AP00",dom=*next)apsACH$
+	callpoint!.setDevObject("ach_allowed",iff(cvs(apsACH.bnk_acct_cd$,2)="",0,1))
 
 rem --- Abort if a check run is actively running
 	pgm_name_fattr$=fattr(adxlocks$,"MENU_OPTION_ID")
@@ -193,19 +201,42 @@ return
 #include std_missing_params.src
 #include std_functions.src
 [[APR_CHECKS.ASVA]]
-rem --- Validate Check Number
+rem --- Validate Check Number unless only ACH payments selected, i.e. there are no printed checks
 if num(callpoint!.getColumnData("APR_CHECKS.CHECK_NO")) = 0 then
-	msg_id$="ENTRY_INVALID"
-	dim msg_tokens$[1]
-	msg_tokens$[1]=Translate!.getTranslation("AON_CHECK_NUMBER")
-	msg_opt$=""
-	gosub disp_message
-	callpoint!.setStatus("ABORT")
-	rem --- Set focus on the Check Number field
-	ctlContext=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLC"))
-	ctlID=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLI"))
-	chk_no!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
-	chk_no!.focus()
+	if callpoint!.getDevObject("ach_allowed") then
+	rem --- Were any non-ACH payments selected, i.e. are there any printed checks?
+		ape04_dev=fnget_dev("APE_CHECKS")
+		dim ape04a$:fnget_tpl$("APE_CHECKS")
+		apm01_dev=fnget_dev("APM_VENDMAST")
+		dim apm01a$:fnget_tpl$("APM_VENDMAST")
+
+		needCheckNumber=0
+		read(ape04_dev,key=firm_id$,dom=*next)
+		while 1
+			readrecord(ape04_dev,end=*break)ape04a$
+			if ape04a.firm_id$<>firm_id$ then break
+			readrecord(apm01_dev,key=firm_id$+ape04a.vendor_id$,dom=*continue)apm01a$
+			if apm01a.payment_type$<>"P" then continue
+			needCheckNumber=1
+			break
+		wend
+	else
+		needCheckNumber=1
+	endif
+
+	if needCheckNumber then
+		msg_id$="ENTRY_INVALID"
+		dim msg_tokens$[1]
+		msg_tokens$[1]=Translate!.getTranslation("AON_CHECK_NUMBER")
+		msg_opt$=""
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		rem --- Set focus on the Check Number field
+		ctlContext=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLC"))
+		ctlID=num(callpoint!.getTableColumnAttribute("APR_CHECKS.CHECK_NO","CTLI"))
+		chk_no!=SysGUI!.getWindow(ctlContext).getControl(ctlID)
+		chk_no!.focus()
+	endif
 endif
 
 rem --- Don't allow re-using an unwanted check number

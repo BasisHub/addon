@@ -69,16 +69,14 @@ rem --- (if open Computer or Manual check, can reverse; if already a Void or Rev
 rem --- not found in entry file, so see if in open checks
 
 	if cvs(check_no$,3)<>""
-	rem --- above used to be if user_tpl.open_check$<>"Y" and cvs(check_no$,3)<>"" - disable the flag check so it always asks
 		apt05_dev = fnget_dev("APT_CHECKHISTORY")
 		dim apt05a$:fnget_tpl$("APT_CHECKHISTORY")
 
-		read (apt05_dev,key=firm_id$+ap_type$+check_no$+vendor_id$,dom=*next)
+		read (apt05_dev,key=firm_id$+ap_type$+check_no$,dom=*next)
 		readrecord (apt05_dev,end=*next)apt05a$
 
 		if apt05a.firm_id$=firm_id$  and apt05a.ap_type$=ap_type$  and apt05a.check_no$=check_no$
 
-			user_tpl.open_check$="Y"; rem don't check again - disabled for bug 8510
 			vendor_id$=apt05a.vendor_id$
 
 			rem --- Reverse? (Check is Manual or Computer generated)
@@ -132,6 +130,15 @@ rem --- not found in entry file, so see if in open checks
 						callpoint!.setStatus("ABORT")
 					endif
 				endif
+			endif
+		else
+			rem --- Cannot enter a new ACH check number. Must be an existing ACH check number, i.e. it is not numeric.
+			checkNo=-1
+			checkNo=num(check_no$,err=*next)		
+			if checkNo<0 then
+				callpoint!.setColumnData("APE_MANCHECKHDR.CHECK_NO","",1)
+				callpoint!.setStatus("ABORT")
+				break
 			endif
 		endif
 	endif
@@ -459,7 +466,7 @@ rem --- Open/Lock files
 	user_tpl_str$="firm_id:c(2),glint:c(1),glyr:c(4),glper:c(2),glworkfile:c(16),"
 	user_tpl_str$=user_tpl_str$+"amt_msk:c(15),multi_types:c(1),multi_dist:c(1),ret_flag:c(1),"
 	user_tpl_str$=user_tpl_str$+"misc_entry:c(1),post_closed:c(1),units_flag:c(1),"
-	user_tpl_str$=user_tpl_str$+"existing_tran:c(1),open_check:c(1),existing_invoice:c(1),reuse_chk:c(1),"
+	user_tpl_str$=user_tpl_str$+"existing_tran:c(1),existing_invoice:c(1),reuse_chk:c(1),"
 	user_tpl_str$=user_tpl_str$+"dflt_ap_type:c(2),dflt_dist_cd:c(2),dflt_gl_account:c(10),"
 	user_tpl_str$=user_tpl_str$+"tinv_vpos:c(1),tdisc_vpos:c(1),tret_vpos:c(1),tchk_vpos:c(1),"
 	user_tpl_str$=user_tpl_str$+"ap_type_vpos:c(1),vendor_id_vpos:c(1),ape22_dev1:n(5)"
@@ -592,7 +599,6 @@ rem --- Create vector of urls for viewed invoice images
 	callpoint!.setDevObject("urlVect",urlVect!)
 [[APE_MANCHECKHDR.AREC]]
 user_tpl.reuse_chk$=""
-user_tpl.open_check$=""
 user_tpl.dflt_gl_account$=""
 callpoint!.setColumnData("<<DISPLAY>>.comments","")
 
@@ -601,18 +607,10 @@ if user_tpl.multi_types$="N" then
 	callpoint!.setColumnData("APE_MANCHECKHDR.AP_TYPE",user_tpl.dflt_ap_type$)
 endif
 [[APE_MANCHECKHDR.AREA]]
-print "Head: AREA (After Record Read)"; rem debug
-print "open_check$ is reset"; rem debug
-
 user_tpl.existing_tran$="Y"
-user_tpl.open_check$=""
 user_tpl.reuse_chk$=""
 [[APE_MANCHECKHDR.ADIS]]
-print "Head: ADIS (After Record Displays)"; rem debug
-print "open_check$ is reset"; rem debug
-
 user_tpl.existing_tran$="Y"
-user_tpl.open_check$=""
 user_tpl.reuse_chk$=""
 tmp_vendor_id$=callpoint!.getColumnData("APE_MANCHECKHDR.VENDOR_ID")
 gosub disp_vendor_comments

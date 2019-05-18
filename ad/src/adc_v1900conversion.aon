@@ -112,6 +112,118 @@ rem --- For version 19.00, initialize PAYMENT_TYPE in APM_VENDMAST (apm-01)
         print(log_dev)meter_text$
     endif
 
+rem --- For version 19.00, clean up Memo records in BMM_BILLMAT (bmm-02), BMM_BILLOPER (bmm-03) and BMM_BILLSUB (bmm-05), re Bug 9620
+    this_module$="BM"
+    if installMap!.get(this_module$)="Y" then
+        task$="1900_GL_bmm_billmat"
+        if convCtrl!.getProperty(task$)<>"Completed" then
+
+            rem --- Increment progress meter
+            meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+    
+            rem --- Open File(s)
+            num_files=3
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1]="BMM_BILLMAT",   open_opts$[1]="OTA"
+            open_tables$[2]="BMM_BILLOPER",  open_opts$[2]="OTA"
+            open_tables$[3]="BMM_BILLSUB",  open_opts$[3]="OTA"
+    
+            gosub open_tables
+    
+            bmmBillMat_dev=num(open_chans$[1])
+            bmmBillOper_dev=num(open_chans$[2])
+            bmmBillSub_dev=num(open_chans$[3])
+            
+            dim bmmBillMat$:open_tpls$[1]
+            dim bmmBillOper$:open_tpls$[2]
+            dim bmmBillSub$:open_tpls$[3]
+
+            rem --- Clean up Memo records in BMM_BILLMAT (bmm-02)
+            read(bmmBillMat_dev,key="",dom=*next)
+            while 1
+                readrecord(bmmBillMat_dev,end=*break)bmmBillMat$
+                if bmmBillMat.line_type$="S" then continue
+                bmmBillMat.item_id$=""
+                bmmBillMat.op_int_seq_ref$=""
+                bmmBillMat.divisor=1
+                bmmBillMat.qty_required=0
+                bmmBillMat.alt_factor=1
+                bmmBillMat.scrap_factor=0
+                bmmBillMat.unit_measure$=""
+                writerecord(bmmBillMat_dev)bmmBillMat$
+            wend
+
+            rem --- Clean up Memo records in BMM_BILLOPER (bmm-03)
+            read(bmmBillOper_dev,key="",dom=*next)
+            while 1
+                readrecord(bmmBillOper_dev,end=*break)bmmBillOper$
+                if bmmBillOper.line_type$="S" then continue
+                bmmBillOper.op_code$=""
+                bmmBillOper.setup_time=0
+                bmmBillOper.hrs_per_pce=0
+                bmmBillOper.pcs_per_hour=0
+                bmmBillOper.move_time=0
+                writerecord(bmmBillOper_dev)bmmBillOper$
+            wend
+
+            rem --- Clean up Memo records in BMM_BILLSUB (bmm-05)
+            read(bmmBillSub_dev,key="",dom=*next)
+            while 1
+                readrecord(bmmBillSub_dev,end=*break)bmmBillSub$
+                if bmmBillSub.line_type$="S" then continue
+                bmmBillSub.vendor_id$=""
+                bmmBillSub.divisor=1
+                bmmBillSub.qty_required=0
+                bmmBillSub.alt_factor=1
+                bmmBillSub.unit_cost=0
+                bmmBillSub.lead_time=0
+                bmmBillSub.unit_measure$=""
+                bmmBillSub.op_int_seq_ref$=""
+                writerecord(bmmBillSub_dev)bmmBillSub$
+            wend
+            
+            rem --- close files opened for this conversion
+            num_files=3
+            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+            open_tables$[1]="BMM_BILLMAT",   open_opts$[1]="C"
+            open_tables$[2]="BMM_BILLOPER",  open_opts$[2]="C"
+            open_tables$[3]="BMM_BILLSUB",  open_opts$[3]="C"
+            gosub open_tables
+           
+            write(convCtrlFileChan)task$+"=Completed"
+
+            rem --- This task$ conversion completed successfully
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_DATA_CONV","Data conversion")+" "+
+:                       Translate!.getTranslation("AON_COMPLETED_FOR","completed for")+": "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+                
+        else
+            rem --- Increment progress meter
+            meter_text$=Translate!.getTranslation("AON_CONV_PREVIOUSLY","Conversion previously completed for")+" "+task$
+            meter_proc_recs=meter_proc_recs+1
+            meter_action$="MTR-LST"
+            gosub disp_meter
+            print(log_dev)meter_text$
+        endif
+    else
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_NOT","Not")+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_SKIP","SKIP")+" "+Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    endif
+    
 rem --- For version 19.00, Build ADC_BANKACCTCODE from GLM_BANKMASTER (glm-05)
 
     this_module$="GL"
@@ -416,7 +528,7 @@ rem     Need to go back to source database to read/re-key the records.
                     endif
                 endif
 
-                rem --- close up files opened for this conversion
+                rem --- close files opened for this conversion
                 if srcRespHdr_dev then close (srcRespHdr_dev,err=*next)
                 if srcRespDet_dev then close (srcRespDet_dev,err=*next)
                 num_files=2
@@ -524,7 +636,7 @@ rem     #1 will be the case for Barista/Addon upgrades from v12 on; #2 will be t
                             
             wend
             
-            rem --- close up files opened for this conversion
+            rem --- close files opened for this conversion
             num_files=2
             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
             open_tables$[1]="OPT_INVCASH", open_opts$[1]="C"

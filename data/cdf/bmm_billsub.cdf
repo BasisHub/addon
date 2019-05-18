@@ -1,3 +1,22 @@
+[[BMM_BILLSUB.LINE_TYPE.AVAL]]
+rem --- Clear cells if Line Type has changed
+	line_type$=callpoint!.getUserInput()
+	if line_type$=callpoint!.getColumnData("BMM_BILLSUB.LINE_TYPE") then break
+	callpoint!.setColumnData("BMM_BILLSUB.WO_REF_NUM","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.VENDOR_ID","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.EXT_COMMENTS","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.MEMO_1024","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.DIVISOR","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.QTY_REQUIRED","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.ALT_FACTOR","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.UNIT_COST","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.TOTAL_COST","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.LEAD_TIME","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.UNIT_MEASURE","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.OP_INT_SEQ_REF","",1)
+	callpoint!.setColumnData("<<DISPLAY>>.NET_QTY","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.EFFECT_DATE","",1)
+	callpoint!.setColumnData("BMM_BILLSUB.OBSOLT_DATE","",1)
 [[BMM_BILLSUB.MEMO_1024.AVAL]]
 rem --- Store first part of memo_1024 in ext_comment.
 rem --- This AVAL is hit if user navigates via arrows or clicks on the memo_1024 field, and double-clicks or ctrl-F to bring up editor.

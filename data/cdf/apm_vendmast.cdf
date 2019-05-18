@@ -1,3 +1,26 @@
+[[APM_VENDMAST.ABA_NO.AVAL]]
+rem --- Bank routing number must be 9-digit number, or blank
+	aba_no$=callpoint!.getUserInput()
+	abaNo=-1
+	abaNo=num(aba_no$,err=*next)
+	if abaNo<0 or len(aba_no$)<>9 then
+		msg_id$="AD_9DIGIT_ABANO"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
+
+rem ---Bank routing number must pass 371371371 checksum test
+	dim digit[9]
+	for i=1 to 9
+		digit[i]=num(aba_no$(i,1))
+	next i
+	if mod(3*(digit[1]+digit[4]+digit[7])+7*(digit[2]+digit[5]+digit[8])+1*(digit[3]+digit[6]+digit[9]),10)<>0 then
+		msg_id$="AD_BAD_ABANO"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+		break
+	endif
 [[APM_VENDMAST.ADIS]]
 rem --- Enable/disable and Payment Information fields
 	if callpoint!.getColumnData("APM_VENDMAST.PAYMENT_TYPE")="A" then
@@ -19,7 +42,7 @@ rem --- Enable/disable and Payment Information fields
 				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL","",1)
 			endif
 			if reportControl!.getFaxYN()="Y" then
-				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX",AdmRptctlRcp!.getFieldAsString("FAX_TO"),1)
+				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX",AdmRptctlRcp!.getFieldAsString("FAX_NOS"),1)
 			else
 				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX","",1)
 			endif
@@ -56,7 +79,7 @@ rem --- Enable Payment Information fields when paying via ACH
 					callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL",AdmRptctlRcp!.getFieldAsString("EMAIL_TO"),1)
 				endif
 				if reportControl!.getFaxYN()="Y" then
-					callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX",AdmRptctlRcp!.getFieldAsString("FAX_TO"),1)
+					callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX",AdmRptctlRcp!.getFieldAsString("FAX_NOS"),1)
 				endif
 			endif
 		else
