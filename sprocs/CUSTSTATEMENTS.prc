@@ -35,7 +35,7 @@ dataTemplate$ = dataTemplate$ + "address3:C(30),address4:C(30),address5:C(30),ad
 dataTemplate$ = dataTemplate$ + "invoice_date:C(10),ar_inv_no:C(7),inv_type:C(11),invoice_amt:C(1*),trans_amt:C(1*),"
 dataTemplate$ = DataTemplate$ + "invBalance:C(1*),aging_cur:C(1*),aging_30:C(1*),aging_60:C(1*),aging_90:C(1*),aging_120:C(1*),total_bal:C(1*),"
 dataTemplate$ = dataTemplate$ + "remit1:C(30),remit2:C(30),remit3:C(30), remit4:C(30),"
-dataTemplate$ = dataTemplate$ + "ar_address1:C(30),ar_address2:C(30),ar_address3:C(30),ar_address4:C(30),ar_phone_no:C(1*)"
+dataTemplate$ = dataTemplate$ + "ar_address1:C(30),ar_address2:C(30),ar_address3:C(30),ar_address4:C(30),ar_phone_no:C(1*),ar_fax_no:C(1*)"
 
 rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 
@@ -147,6 +147,7 @@ rem	data!.setFieldValue("CUST_NAME",arm01.customer_name$)
     data!.setFieldValue("AR_ADDRESS3", ar_address$(61,30))
     data!.setFieldValue("AR_ADDRESS4", ar_address$(91,30))
     data!.setFieldValue("AR_PHONE_NO", ar_phone_no$)
+    data!.setFieldValue("AR_FAX_NO", ar_fax_no$)
 	rs!.insert(data!)
     
 wend
@@ -196,6 +197,8 @@ format_return_remit_addresses:
 
     call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(ars_report.phone_no$,2),"",phone_mask$
     ar_phone_no$=str(cvs(ars_report.phone_no$,2):phone_mask$)
+    ar_fax_no$=cvs(ars_report.fax_no$,2)
+    if ar_fax_no$<>"" then ar_fax_no$=str(ar_fax_no$:phone_mask$)
     
 return
 

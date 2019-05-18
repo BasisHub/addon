@@ -10,6 +10,13 @@ rem --- All Rights Reserved
     setesc std_error
     seterr std_error
 
+    use java.util.HashMap
+
+    use ::ado_func.src::func
+    use ::ado_rptControl.src::ReportControl
+
+    use ::sys/prog/bao_utilities.bbj::BarUtils
+
 rem --- Document initializations
 
     OutVect!=bbjAPI().makeVector()
@@ -43,10 +50,10 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=15,begfile=1,endfile=files
+    files=19,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="aps_params",ids$[1]="APS_PARAMS"; rem aps-01
-    files$[2]="ape-04",ids$[2]="APE_CHECKS"
+    files$[2]="ape-04",ids$[2]="APE_CHECKS",options$[2]="L"
     files$[5]="apm-01",ids$[5]="APM_VENDMAST"
     files$[6]="apm-02",ids$[6]="APM_VENDHIST"
     files$[9]="apt-01",ids$[9]="APT_INVOICEHDR"
@@ -54,9 +61,12 @@ rem --- Open/Lock files
     files$[11]="apt-05",ids$[11]="APT_CHECKHISTORY"
     files$[12]="apt-11",ids$[12]="APT_INVOICEDET"
     files$[13]="apw-01",ids$[13]="APW_CHECKINVOICE"
-    options$[2]="L"
     files$[14]="apc_typecode",ids$[14]="APC_TYPECODE";rem apm-10A
     files$[15]="apc_distribution",ids$[15]="APC_DISTRIBUTION";rem apm-10B
+    files$[16]="aps_ach",ids$[16]="APS_ACH"
+    files$[17]="adc_bankacctcode",ids$[17]="ADC_BANKACCTCODE"
+    files$[18]="aps_report",ids$[18]="APS_REPORT"
+    files$[19]="ars_report",ids$[19]="ARS_REPORT"
 
 call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
@@ -72,15 +82,19 @@ call pgmdir$+"adc_fileopen.aon",action,begfile,endfile,files$[all],options$[all]
     apw01_dev=channels[13]
     apm10a_dev=channels[14]
     apm10b_dev=channels[15]
+    apsACH_dev=channels[16]
+    adcBankAcctCode_dev=channels[17]
+    apsReport_dev=channels[18]
+    arsReport_dev=channels[19]
 
 rem --- Dimension string templates
 
-    dim ape04a$:templates$[2],
+    dim aps01a$:templates$[1],ape04a$:templates$[2],
 :       apm01a$:templates$[5],apm02a$:templates$[6],
 :       apt01a$:templates$[9],apt02a$:templates$[10],
 :       apt05a$:templates$[11],apt11a$:templates$[12],apw01a$:templates$[13],       
-:       apm10a$:templates$[14],apm10b$:templates$[15],
-:       aps01a$:templates$[1]
+:       apm10a$:templates$[14],apm10b$:templates$[15],apsACH$:templates$[16],
+:       adcBankAcctCode$:templates$[17],apsReport$:templates$[18],arsReport$:templates$[19]
 
 rem  glt14a$:templates$[11],glw11a$:templates$[12],
 
@@ -88,9 +102,20 @@ rem --- Retrieve parameter records
 
     aps01a_key$=firm_id$+"AP00"
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
+    find record (apsACH_dev,key=aps01a_key$,dom=*next) apsACH$
+    ach_allowed=0
+    if cvs(apsACH.bnk_acct_cd$,2)<>"" then 
+        ach_allowed=1
+        findrecord(adcBankAcctCode_dev,key=firm_id$+apsACH.bnk_acct_cd$,err=std_missing_params)adcBankAcctCode$
+        findrecord(apsReport_dev,key=firm_id$+"AP02",err=std_missing_params)apsReport$
+    endif
     call stbl("+DIR_PGM")+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
     call stbl("+DIR_PGM")+"adc_getmask.aon","","AP","A","",m1$,0,0
-    multitypes=aps01a.multi_types$="Y"
+    if aps01a.multi_types$="Y" or ach_allowed then
+        multitypes=1
+    else
+        multitypes=0
+    endif
     retention=aps01a.ret_flag$="Y"
     cashbasis=aps01a.cash_basis$="Y"
     bankrec=aps01a.br_interface$="Y"
@@ -110,7 +135,7 @@ rem --- Is General Ledger installed and being used?
 
 rem --- Initializations
 
-    headings=2
+    headings=3
     dim headings$[headings],underline$(m1*(3+retention),"-")
     dim o[11],h[11],pt[3],vt[3],at[3],rt[3]
     units=0
@@ -127,7 +152,7 @@ rem --- Initializations
     when$=sysinfo.system_date$
     clock$=""
     nf$=Translate!.getTranslation("AON_(NOT_ON_FILE)")
-    lasttype$=""
+    lastPassType$=""
     lastcode$=""
     lastvendor$=""
     taskdesc$=sysinfo.task_desc$
@@ -143,6 +168,80 @@ rem --- Initializations
     recs=0
     voids=0
     non_voids=0
+    
+    rem --- Initializations for individual ACH non-negotiable check (payment) files
+    if ach_allowed then
+        reportDir$ = stbl("+DIR_REPORTS",err=*next)
+        temp = unt
+        open (temp)reportDir$
+        reportDir$ = fid(temp)(9)+"/"
+        close (temp)
+
+        achPaymentsBaseName$ = "APChecksACH-PaymentHdr"
+        ach_payments_filename$ = reportDir$ + achPaymentsBaseName$+".jasper"
+        achPayment! = BarUtils.getBBJasperReport(ach_payments_filename$)
+        rd_doc_id$=""
+        rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+        rep_time_stamp$=date(0:"%Hz%mz%sz")
+        rd_doc_source$="E"
+        rd_doc_ext$="PDF"
+        rd_doc_path$=cvs(apsACH.ach_check_dir$,2)
+        rd_doc_path$=BBjAPI().getFileSystem().resolvePath(rd_doc_path$,err=*next)+"/"
+        mkdir rd_doc_path$,err=*next
+        rd_source_type$="O"
+        rd_source_alias$=rd_alias_id$
+        rd_source_id$="C"
+        rd_source_ref$=""
+        rd_archive_action$="DOC_ID"
+        rem rd_doc_name$
+        rem rep_title$
+        rd_doc_keywords$=""
+
+        rem --- Get logo to go on form; start w/ company logo, fall back to default logo from config if no company logo specified
+        logo_filename$=""
+        logo_filename$=func.getCompanyLogo()
+        if logo_filename$=""
+            logo_file$=stbl("+CUST_IMAGES",err=*next)+stbl("+FORM_LOGO",err=*next)
+            if logo_file$<>""
+                logo_filename$=BBjAPI().getFileSystem().resolvePath(logo_file$,err=*next)
+            endif
+        endif
+        rem --- If available, use Report Control logo file
+        reportControl!=new ReportControl()
+        reportControl!.setDocExtension("pdf")
+        rpt_ctl$=reportControl!.getReportControl("APR_CHECKS")
+        rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+        rpt_id$=iff(rpt_ctl$="YES",reportControl!.getReportID(),"")
+        rpt_logo_file$=iff(rpt_ctl$="YES",reportControl!.getLogoFile(),"")
+        logo_filename$=iff(rpt_logo_file$="",logo_filename$,rpt_logo_file$);rem doc-specific logo supersedes default or company logo
+
+        rem --- Format firm's address
+        dim firm_address$(3*30)
+        find record (arsReport_dev,key=firm_id$+"AR02",err=*next) arsReport$
+        firm_address$(1)=arsReport.addr_line_1$+arsReport.addr_line_2$+arsReport.city$+arsReport.state_code$+arsReport.zip_code$
+        call pgmdir$+"adc_address.aon",firm_address$,24,3,9,30
+    
+        call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(arsReport.phone_no$,2),"",phone_mask$
+        firm_phone_no$=str(cvs(arsReport.phone_no$,2):phone_mask$)
+        firm_fax_no$=cvs(arsReport.fax_no$,2)
+        if firm_fax_no$<>"" then firm_fax_no$=str(firm_fax_no$:phone_mask$)
+
+        rem --- Initialize document parameters used for each individaul ACH non-negotiable check (payment) file
+        params!=new HashMap()
+        if logo_filename$<>"" then params!.put("LOGO_FILE",logo_filename$)
+        params!.put("BARISTA_WD",dir(""))
+        params!.put("FIRM_ID",firm_id$)
+        params!.put("FIRM_NAME", arsReport.name$)
+        params!.put("FIRM_ADDRESS1", firm_address$(1,30))
+        params!.put("FIRM_ADDRESS2", firm_address$(31,30))
+        params!.put("FIRM_ADDRESS3", firm_address$(61,30))
+        params!.put("FIRM_PHONE_NO", firm_phone_no$)
+        params!.put("FIRM_FAX_NO", firm_fax_no$)
+        call pgmdir$+"adc_getmask.aon","","AP","I","",vendMask$,0,m1
+        params!.put("VEND_MASK",vendMask$)
+        call pgmdir$+"adc_getmask.aon","","AP","A","",amtMask$,0,m2
+        params!.put("AMT_MASK",amtMask$)
+    endif
     
 rem --- set rd_alias_id$, if needed, for DocOut Settings
     
@@ -230,234 +329,265 @@ rem --- Get user approval to proceed
     gosub disp_message
     if msg_opt$<>"Y" then goto std_exit_no_report
 
-rem --- start progress meter and position header file
+rem --- Process apw_checkinvoice (apw01_dev) twice. First for normal printed checks. Second for ACH non-negotiable checks.
+    for pass=1 to ach_allowed+1
 
-    call pgmdir$+"adc_progress.aon","NC","","","","",0,apw01_dev,1,meter_num,status
-    read (apw01_dev,key=firm_id$,dom=*next)
-
-rem --- Read next Check Detail (apw-01) record
-
-    while moreheaders
-          k$=key(apw01_dev,end=*break)
-          if pos(firm_id$=k$)<>1 break
-          recs=recs+1
-
-          read record (apw01_dev) apw01a$
-          call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-
-          rem --- Level breaks
+        rem --- start progress meter and position header file
+ 
+        call pgmdir$+"adc_progress.aon","NC","","","","",0,apw01_dev,1,meter_num,status
+        read (apw01_dev,key=firm_id$,dom=*next)
     
-          if apw01a.ap_type$<>lasttype$ gosub type_break
-
-          rem --- Voided check?
-
-          if apw01a.comp_or_void$="V"
-             gosub print_voided
-             continue
-          endif
-
-          rem --- Check transaction date if GL is being used
-
-          first=1
-          gldate$=apw01a.check_date$
-          glstatus=0
-          if gl$="Y" call pgmdir$+"glc_datecheck.aon",gldate$,"N",period$,year$,glstatus
-
-          rem --- Read next invoice detail for this check
-
-          while moredetail
-                notfound=0
-                while first
-                      dim ape04a$:fattr(ape04a$),vt[3]
-                      notfound=1
-                      k$=apw01a.firm_id$+apw01a.ap_type$+apw01a.vendor_id$+
-:                        apw01a.ap_inv_no$
-                      read record (ape04_dev,key=k$,dom=*break) ape04a$
-                      if ape04a.check_no$<>apw01a.check_no$
-                         gosub print_voided
-                         break
-                      endif
-                      notfound=0
-                      lastvendor$=ape04a.firm_id$+ape04a.ap_type$+ape04a.vendor_id$
-                      dim apm01a$:fattr(apm01a$)
-                      apm01a.firm_id$=ape04a.firm_id$
-                      apm01a.vendor_id$=ape04a.vendor_id$
-                      apm01a.vendor_name$=nf$
-                      k$=apm01a.firm_id$+apm01a.vendor_id$
-                      find record (apm01_dev,key=k$,dom=*proceed) apm01a$
-                      vendor$=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
-                      name$=apm01a.vendor_name$
-                      errors=errors+(pos(nf$=name$)=1)
-                      memo$=name$
-                      ref1$=vendor$
-                      ref2$=apw01a.ap_inv_no$
-                      ref3$=apw01a.check_no$
-                      if multitypes ref3$=ref3$+" "+apw01a.ap_type$
-                      break
-                wend
-
-                while first=0
-                      notfound=1
-                      k$=key(ape04_dev,end=*break)
-                      if pos(lastvendor$=k$)<>1 break
-                      read record (ape04_dev) ape04a$
-                      if pos("TEMP"=ape04a.vendor_id$)=1 break
-                      notfound=0
-                      ref2$=ape04a.ap_inv_no$
-                      break
-                wend
-                if notfound break
-                first=0
-
-                rem --- Accumulate totals
-
-                dim ct[3]
-                ct[0]=ape04a.invoice_amt
-                ct[1]=ape04a.discount_amt
-                ct[3]=ape04a.retention
-                ct[2]=ape04a.payment_amt; rem payment
-                for x=0 to 3
-                    vt[x]=vt[x]+ct[x]
-                    at[x]=at[x]+ct[x]
-                    rt[x]=rt[x]+ct[x]
-                next x
-
-                rem --- If GL isn't being used, we're done with this check
-
-                if gl$<>"Y" continue
-
-                rem --- Add up the original invoice amount including adjustments
-
-                dim apt01a$:fattr(apt01a$)
-                apt01a.firm_id$=apw01a.firm_id$
-                apt01a.ap_type$=apw01a.ap_type$
-                apt01a.vendor_id$=apw01a.vendor_id$
-                apt01a.ap_inv_no$=ape04a.ap_inv_no$
-                apt01a.sequence_00$="00"
-                invoice$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+
-:                        apt01a.ap_inv_no$
-                k$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+
-:                  apt01a.ap_inv_no$
-                find record (apt01_dev,key=k$) apt01a$
-                total=apt01a.invoice_amt
-                read (apt11_dev,key=invoice$,dom=*next)
+        rem --- Read next Check Detail (apw-01) record
  
-                rem --- Total up the invoice detail records
-
-                while moredetail
-                      k$=key(apt11_dev,end=*break)
-                      if pos(invoice$=k$)<>1 break
-                      read record (apt11_dev) apt11a$
-                      if pos(apt11a.trans_type$="IA") total=total+apt11a.trans_amt
-                wend
-
-                rem --- Retrieve the distribution code record for this invoice
-
-                if apt01a.ap_dist_code$<>lastcode$
-                   dim apm10b$:fattr(apm10b$)
-                   apm10b.firm_id$=apt01a.firm_id$
-                   apm10b.record_id_b$="B"
-                   apm10b.ap_dist_code$=apt01a.ap_dist_code$
-                   apm10b.code_desc$=nf$
-                   k$=apm10b.firm_id$+apm10b.record_id_b$+apm10b.ap_dist_code$
-                   find record (apm10b_dev,key=k$,dom=*proceed) apm10b$
-                   errors=errors+(pos(nf$=apm10b.code_desc$)=1)
-                   lastcode$=apm10b.ap_dist_code$
-                endif
-
-                rem --- Calculate GL distribution when operating on a cash basis
-                rem --- and update the recap file
-
-                if cashbasis then
-                      total=ape04a.payment_amt + ape04a.discount_amt
-                      posted=0
-                      factor=1
-                      if ape04a.orig_inv_amt<>0 then factor=total/ape04a.orig_inv_amt
-                      account$=""
-                      invoice$=ape04a.firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$
-                      read (apt02_dev,key=invoice$,dom=*next)
-                      while 1
-                            k$=key(apt02_dev,end=*break)
-                            if pos(invoice$=k$)<>1 break
-                            read record (apt02_dev) apt02a$
-                            account$=apt02a.gl_account$
-                            gl_post_amt=round(apt02a.gl_post_amt*factor,2)
-                            posted=posted+gl_post_amt
-                            
-                            rem --- Adjust last distribution for possible penney rounding errors
-                            apt02_key$=""
-                            apt02_key$=key(apt02_dev,end=*next)
-                            if pos(firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$=apt02_key$)<>1 then
-                                gl_post_amt=gl_post_amt+(total-posted)
-                            endif
-
-                            amount=gl_post_amt
-                            units=apt02a.units*factor
-                            gosub glrecap
-                      wend
-                endif
-
-                rem --- Generate remaining GL distribution and update the recap file
+        while moreheaders
+              k$=key(apw01_dev,end=*break)
+              if pos(firm_id$=k$)<>1 break
+              recs=recs+1
+    
+              read record (apw01_dev) apw01a$
+              call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
  
-                rem --- Cash account
+              rem --- Skip if ACH payments allowed, vendor paid via ACH and this is FIRST pass.
+              if ach_allowed and pos(apw01a.comp_or_void$="AX") and pass=1 then continue
 
-                account$=apm10b.gl_cash_acct$
-                amount=(-ape04a.payment_amt); rem payment
-                units=0
-                gosub glrecap
+              rem --- Skip if ACH payments allowed, vendor NOT paid via ACH and this is SECOND pass. 
+              if ach_allowed and pos(apw01a.comp_or_void$="CV") and pass=2 then continue
+    
+              rem --- Level breaks
+        
+              if str(pass)+apw01a.ap_type$<>lastPassType$ gosub type_break
+    
+              rem --- Voided check?
+    
+              if pos(apw01a.comp_or_void$="VX") then
+                 gosub print_voided
+                 continue
+              endif
+    
+              rem --- Check transaction date if GL is being used
+    
+              first=1
+              gldate$=apw01a.check_date$
+              glstatus=0
+              if gl$="Y" call pgmdir$+"glc_datecheck.aon",gldate$,"N",period$,year$,glstatus
+    
+              rem --- Read next invoice detail for this check
+    
+              while moredetail
+                    notfound=0
+                    while first
+                          dim ape04a$:fattr(ape04a$),vt[3]
+                          notfound=1
+                          k$=apw01a.firm_id$+apw01a.ap_type$+apw01a.vendor_id$+
+:                             apw01a.ap_inv_no$
+                          read record (ape04_dev,key=k$,dom=*break) ape04a$
+                          if ape04a.check_no$<>apw01a.check_no$
+                             gosub print_voided
+                             break
+                          endif
+                          notfound=0
+                          lastvendor$=ape04a.firm_id$+ape04a.ap_type$+ape04a.vendor_id$
+                          dim apm01a$:fattr(apm01a$)
+                          apm01a.firm_id$=ape04a.firm_id$
+                          apm01a.vendor_id$=ape04a.vendor_id$
+                          apm01a.vendor_name$=nf$
+                          k$=apm01a.firm_id$+apm01a.vendor_id$
+                          find record (apm01_dev,key=k$,dom=*proceed) apm01a$
+                          vendor$=fnmask$(apm01a.vendor_id$(1,vendor_size),m0$)
+                          name$=apm01a.vendor_name$
+                          errors=errors+(pos(nf$=name$)=1)
+                          memo$=name$
+                          ref1$=vendor$
+                          ref2$=apw01a.ap_inv_no$
+                          ref3$=apw01a.check_no$
+                          if multitypes ref3$=ref3$+" "+apw01a.ap_type$
+                          break
+                    wend
+    
+                    while first=0
+                          notfound=1
+                          k$=key(ape04_dev,end=*break)
+                          if pos(lastvendor$=k$)<>1 break
+                          read record (ape04_dev) ape04a$
+                          if pos("TEMP"=ape04a.vendor_id$)=1 break
+                          notfound=0
+                          ref2$=ape04a.ap_inv_no$
+                          break
+                    wend
+                    if notfound break
+                    first=0
+    
+                    rem --- Accumulate totals
+    
+                    dim ct[3]
+                    ct[0]=ape04a.invoice_amt
+                    ct[1]=ape04a.discount_amt
+                    ct[3]=ape04a.retention
+                    ct[2]=ape04a.payment_amt; rem payment
+                    for x=0 to 3
+                        vt[x]=vt[x]+ct[x]
+                        at[x]=at[x]+ct[x]
+                        rt[x]=rt[x]+ct[x]
+                    next x
+    
+                    rem --- If GL isn't being used, we're done with this check
+    
+                    if gl$<>"Y" continue
+    
+                    rem --- Add up the original invoice amount including adjustments
+    
+                    dim apt01a$:fattr(apt01a$)
+                    apt01a.firm_id$=apw01a.firm_id$
+                    apt01a.ap_type$=apw01a.ap_type$
+                    apt01a.vendor_id$=apw01a.vendor_id$
+                    apt01a.ap_inv_no$=ape04a.ap_inv_no$
+                    apt01a.sequence_00$="00"
+                    invoice$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+
+:                       apt01a.ap_inv_no$
+                    k$=apt01a.firm_id$+apt01a.ap_type$+apt01a.vendor_id$+
+:                       apt01a.ap_inv_no$
+                    find record (apt01_dev,key=k$) apt01a$
+                    total=apt01a.invoice_amt
+                    read (apt11_dev,key=invoice$,dom=*next)
+     
+                    rem --- Total up the invoice detail records
+    
+                    while moredetail
+                          k$=key(apt11_dev,end=*break)
+                          if pos(invoice$=k$)<>1 break
+                          read record (apt11_dev) apt11a$
+                          if pos(apt11a.trans_type$="IA") total=total+apt11a.trans_amt
+                    wend
+    
+                    rem --- Retrieve the distribution code record for this invoice
+    
+                    if apt01a.ap_dist_code$<>lastcode$
+                       dim apm10b$:fattr(apm10b$)
+                       apm10b.firm_id$=apt01a.firm_id$
+                       apm10b.record_id_b$="B"
+                       apm10b.ap_dist_code$=apt01a.ap_dist_code$
+                       apm10b.code_desc$=nf$
+                       k$=apm10b.firm_id$+apm10b.record_id_b$+apm10b.ap_dist_code$
+                       find record (apm10b_dev,key=k$,dom=*proceed) apm10b$
+                       errors=errors+(pos(nf$=apm10b.code_desc$)=1)
+                       lastcode$=apm10b.ap_dist_code$
+                    endif
+    
+                    rem --- Calculate GL distribution when operating on a cash basis
+                    rem --- and update the recap file
+    
+                    if cashbasis then
+                          total=ape04a.payment_amt + ape04a.discount_amt
+                          posted=0
+                          factor=1
+                          if ape04a.orig_inv_amt<>0 then factor=total/ape04a.orig_inv_amt
+                          account$=""
+                          invoice$=ape04a.firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$
+                          read (apt02_dev,key=invoice$,dom=*next)
+                          while 1
+                                k$=key(apt02_dev,end=*break)
+                                if pos(invoice$=k$)<>1 break
+                                read record (apt02_dev) apt02a$
+                                account$=apt02a.gl_account$
+                                gl_post_amt=round(apt02a.gl_post_amt*factor,2)
+                                posted=posted+gl_post_amt
+                                
+                                rem --- Adjust last distribution for possible penney rounding errors
+                                apt02_key$=""
+                                apt02_key$=key(apt02_dev,end=*next)
+                                if pos(firm_id$+ape04a.ap_type$+ape04a.vendor_id$+"I"+ape04a.ap_inv_no$=apt02_key$)<>1 then
+                                    gl_post_amt=gl_post_amt+(total-posted)
+                                endif
+    
+                                amount=gl_post_amt
+                                units=apt02a.units*factor
+                                gosub glrecap
+                          wend
+                    endif
+    
+                    rem --- Generate remaining GL distribution and update the recap file
+     
+                    rem --- Cash account
+    
+                    account$=apm10b.gl_cash_acct$
+                    amount=(-ape04a.payment_amt); rem payment
+                    units=0
+                    gosub glrecap
+    
+                    rem --- Payables account
+    
+                    if cashbasis=0
+                       account$=apm10b.gl_ap_acct$
+                       amount=ape04a.payment_amt+ape04a.discount_amt
+                       units=0
+                       gosub glrecap
+                    endif
+    
+                    rem --- Discount account
+    
+                    if ape04a.discount_amt<>0
+                       account$=apm10b.gl_disc_acct$
+                       amount=-ape04a.discount_amt
+                       units=0
+                       gosub glrecap
+                    endif
+    
+                    rem --- Loop back for next invoice detail for this check
+    
+              wend
+              if notfound and first continue
+    
+              rem --- Print the information for this check
+    
+              if lines+2>maxlines gosub set_linecount
+    
+              OutVect!.addItem(apw01a.check_no$)
+              OutVect!.addItem(fndate$(apw01a.check_date$))
+              OutVect!.addItem(vendor$ + " " + name$)
+              OutVect!.addItem(str(vt[0]))
+              OutVect!.addItem(str(vt[1]))
+              OutVect!.addItem(str(vt[2]))
+    
+              if retention
+                retention$=fnretention$(retention,vt[3],m1$)
+                OutVect!.addItem(retention$)
+              endif
+      
+              if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,lines,errors,status
+    
+              if stbl("+DTWARN_MSG",err=*endif)<>""
+                  xwk=fnblank(1)
+                  OutVect!.addItem(stbl("+DTWARN_MSG"))
+                  xwk=fnblank(columns-1)
+              endif
+    
+              lines=lines+1
 
-                rem --- Payables account
+            rem --- Create an individual file for each ACH non-negotiable check (payment) that lists the invoices that were paid.
+            if ach_allowed and pass=2 and apw01a.comp_or_void$="A" then 
+                rem --- Set parameters for this ACH non-negotiable check (payment) report
+                params!.put("AP_TYPE",apw01a.ap_type$)
+                params!.put("CHECK_NO",apw01a.check_no$)
+                params!.put("VENDOR_ID",apw01a.vendor_id$)
 
-                if cashbasis=0
-                   account$=apm10b.gl_ap_acct$
-                   amount=ape04a.payment_amt+ape04a.discount_amt
-                   units=0
-                   gosub glrecap
-                endif
+                rem --- Generate the report for this ACH non-negotiable check (payment)
+                achPayment!.putParams(params!)
+                achPayment!.setLocale(locale$)
+                achPayment!.fill(1)
+                
+                rem --- Save the report for this ACH non-negotiable check (payment)
+                rep_title$=ape04a.check_no$+"_"+ape04a.vendor_id$+"_ACH_Payment"
+                rd_doc_name$=rep_title$+".pdf"
+                rem --- Can't overwrite existing file when opened by other apps like a browser
+                erase rd_doc_path$+rd_doc_name$+".bak",err=*next
+                rename rd_doc_path$+rd_doc_name$ to rd_doc_path$+rd_doc_name$+".bak",err=*next
+                erase rd_doc_path$+rd_doc_name$+".bak",err=*next
+                achPayment!.exportToPDF(BBjAPI().FALSE, rd_doc_path$+rd_doc_name$)
+            endif
 
-                rem --- Discount account
-
-                if ape04a.discount_amt<>0
-                   account$=apm10b.gl_disc_acct$
-                   amount=-ape04a.discount_amt
-                   units=0
-                   gosub glrecap
-                endif
-
-                rem --- Loop back for next invoice detail for this check
-
-          wend
-          if notfound and first continue
-
-          rem --- Print the information for this check
-
-          if lines+2>maxlines gosub set_linecount
-
-          OutVect!.addItem(apw01a.check_no$)
-          OutVect!.addItem(fndate$(apw01a.check_date$))
-          OutVect!.addItem(vendor$ + " " + name$)
-          OutVect!.addItem(str(vt[0]))
-          OutVect!.addItem(str(vt[1]))
-          OutVect!.addItem(str(vt[2]))
-
-          if retention
-            retention$=fnretention$(retention,vt[3],m1$)
-            OutVect!.addItem(retention$)
-          endif
-  
-          if glstatus call pgmdir$+"glc_datewarn.aon",printer_dev,gldate$,glstatus,lines,errors,status
-
-          if stbl("+DTWARN_MSG",err=*endif)<>""
-              xwk=fnblank(1)
-              OutVect!.addItem(stbl("+DTWARN_MSG"))
-              xwk=fnblank(columns-1)
-          endif
-
-          lines=lines+1
-
-          rem --- Loop back for next Check Detail
-
-    wend
+            rem --- Loop back for next Check Detail
+        wend
+    next pass
 
 rem --- All done
 
@@ -502,6 +632,7 @@ rem --- Destroy the progress meter and run the next overlay
 
 rem --- run overlay$,err=std_exit
 
+    rep_title$=""
     out_action$="PRT-PDF"
     next_overlay$=overlay$
     goto std_exit
@@ -554,16 +685,13 @@ print_voided: rem --- Print a voided check
 
 type_break: rem --- AP Type break
 
-    while lasttype$<>""
-          if multitypes
-             total$=Translate!.getTranslation("AON_TOTAL_FOR_")+aptype$
-             for x=0 to 3
-                 pt[x]=at[x]
-             next x
-             gosub print_total
-          endif
-          break
-    wend
+    if lastPassType$<>"" and multitypes then
+       total$=Translate!.getTranslation("AON_TOTAL_FOR_")+totalFor$
+       for x=0 to 3
+           pt[x]=at[x]
+       next x
+       gosub print_total
+    endif
     if multitypes=0 return
     if done return
     dim apm10a$:fattr(apm10a$),at[3]
@@ -573,12 +701,29 @@ type_break: rem --- AP Type break
     apm10a.code_desc$=nf$
     k$=apm10a.firm_id$+apm10a.record_id_a$+apm10a.ap_type$
     find record (apm10a_dev,key=k$,dom=*next) apm10a$
-    aptype$=Translate!.getTranslation("AON_AP_TYPE_")+apm10a.ap_type$+" "+cvs(apm10a.code_desc$,2)
+    if cvs(apm10a.ap_type$,2)="" then
+        aptype$=""
+    else
+        aptype$=Translate!.getTranslation("AON_AP_TYPE_")+apm10a.ap_type$
+    endif
+    if pass=1 then
+        checks$=Translate!.getTranslation("AON_CHECKS")
+        payments$=""
+    else
+        checks$=Translate!.getTranslation("AON_ACH")
+        payments$=" "+Translate!.getTranslation("AON_PAYMENTS")
+    endif
     BrkVect!.addItem(str(OutVect!.size()/(columns+1)))
-    HdrVect!.addItem(taskdesc$+" - "+aptype$)
+    if aptype$="" then
+        HdrVect!.addItem(checks$+payments$)
+        totalFor$=checks$
+    else
+        HdrVect!.addItem(checks$+payments$+" - "+aptype$+" "+cvs(apm10a.code_desc$,2))
+        totalFor$=checks$+" - "+aptype$
+    endif
     errors=errors+(pos(nf$=apm10a.code_desc$)=1)
     lines=maxlines+1
-    lasttype$=apm10a.ap_type$
+    lastPassType$=str(pass)+apm10a.ap_type$
     return
 
 glrecap: rem --- Standard GL Recap Routine

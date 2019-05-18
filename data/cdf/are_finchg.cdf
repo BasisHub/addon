@@ -118,7 +118,7 @@ user_tpl.inv_days_due$=str(arm10a.inv_days_due$)
 user_tpl.disc_days$=str(arm10a.disc_days$)
 user_tpl.prox_days$=arm10a.prox_or_days$
 if num(callpoint!.getColumnData("ARE_FINCHG.INVOICE_AMT"))<>0
-	wk_amt=num(callpoint!.getColumnData("ARE_FINCHG.INVOICE_AMT"))*num(user_tpl.disc_pct$)/100
+	wk_amt=round(num(callpoint!.getColumnData("ARE_FINCHG.INVOICE_AMT"))*num(user_tpl.disc_pct$)/100,2)
 	callpoint!.setColumnData("ARE_FINCHG.DISCOUNT_AMT",str(wk_amt))
 	callpoint!.setColumnUndoData("ARE_FINCHG.DISCOUNT_AMT",str(wk_amt))
 	callpoint!.setStatus("REFRESH")
@@ -167,7 +167,7 @@ if cvs(callpoint!.getColumnData("ARE_FINCHG.AR_INV_NO"),2)=""
 	endif
 endif
 [[ARE_FINCHG.INVOICE_AMT.AVAL]]
-wk_amt=num(callpoint!.getUserInput())*num(user_tpl.disc_pct$)/100
+wk_amt=round(num(callpoint!.getUserInput())*num(user_tpl.disc_pct$)/100,2)
 callpoint!.setColumnData("ARE_FINCHG.DISCOUNT_AMT",str(wk_amt))
 callpoint!.setColumnUndoData("ARE_FINCHG.DISCOUNT_AMT",str(wk_amt))
 callpoint!.setStatus("REFRESH")

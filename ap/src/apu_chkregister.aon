@@ -6,6 +6,9 @@ rem --- AddonSoftware Version 8.0.0 - 01Jan2007
 rem --- Copyright BASIS International Ltd.  All Rights Reserved.
 rem --- All Rights Reserved
 
+    use java.io.File
+    use ::ado_file.src::FileObject
+
     setesc std_error
     seterr std_error
 
@@ -35,7 +38,7 @@ rem --- Retrieve sysinfo data
 
 rem --- Open/Lock files
 
-    files=16,begfile=1,endfile=files
+    files=17,begfile=1,endfile=files
     dim files$[files],options$[files],ids$[files],templates$[files],channels[files]
     files$[1]="aps_params",ids$[1]="APS_PARAMS"
     files$[3]="gls_calendar",ids$[3]="GLS_CALENDAR"
@@ -47,10 +50,11 @@ rem --- Open/Lock files
     files$[11]="apt-05",ids$[11]="APT_CHECKHISTORY"
     files$[12]="apt-11",ids$[12]="APT_INVOICEDET"
     files$[13]="apw-01",ids$[13]="APW_CHECKINVOICE"
-    files$[14]="glm-01",ids$[14]="GLM_ACCT"
-    files$[15]="glt-04",ids$[15]="GLE_DAILYDETAIL"
-    files$[16]="glt-05",ids$[16]="GLT_BANKCHECKS"
-    call pgmdir$+"adc_fileopen.aon",action,begfile,13,files$[all],options$[all],
+    files$[14]="apw_chkjasperprn",ids$[14]="APW_CHKJASPERPRN"
+    files$[15]="glm-01",ids$[15]="GLM_ACCT"
+    files$[16]="glt-04",ids$[16]="GLE_DAILYDETAIL"
+    files$[17]="glt-05",ids$[17]="GLT_BANKCHECKS"
+    call pgmdir$+"adc_fileopen.aon",action,begfile,14,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_update
     ads01_dev=channels[1]
@@ -63,6 +67,7 @@ rem --- Open/Lock files
     apt05_dev=channels[11]
     apt11_dev=channels[12]
     apw01_dev=channels[13]
+    apwChkJasperPrn_dev=channels[14]
 
 rem --- Dimension string templates
 
@@ -70,6 +75,7 @@ rem --- Dimension string templates
     dim apm01a$:templates$[5],apm02a$:templates$[6]
     dim apm10b$:templates$[8],apt01a$:templates$[9],apt02a$:templates$[10]
     dim apt05a$:templates$[11],apt11a$:templates$[12],apw01a$:templates$[13]
+    dim apwChkJasperPrn$:templates$[14]
 
 rem --- Retrieve parameter records
 
@@ -106,20 +112,21 @@ rem --- Initializations
     g8$=aps01a.cur_1099_yr$+"1231"
     prior_g8$=str(num(aps01a.cur_1099_yr$)-1:"0000")+"1231"
     more=1
+    nacha_dev=-1
 
 rem --- Additional File Opens
 
     if gl$<>"Y" goto confirm_update
-    call pgmdir$+"adc_fileopen.aon",action,14,15,files$[all],options$[all],
+    call pgmdir$+"adc_fileopen.aon",action,15,16,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_update
-    glm01_dev=channels[14];dim glm01a$:templates$[14]
-    glt04_dev=channels[15];dim glt04a$:templates$[15]
+    glm01_dev=channels[15];dim glm01a$:templates$[15]
+    glt04_dev=channels[16];dim glt04a$:templates$[16]
     if br$<>"Y" goto confirm_update
-    call pgmdir$+"adc_fileopen.aon",action,16,16,files$[all],options$[all],
+    call pgmdir$+"adc_fileopen.aon",action,17,17,files$[all],options$[all],
 :                                   ids$[all],templates$[all],channels[all],batch,status
     if status goto std_exit_no_update
-    glt05_dev=channels[16];dim glt05a$:templates$[16]
+    glt05_dev=channels[17];dim glt05a$:templates$[17]
 
 confirm_update: rem --- Run Update?
 
@@ -146,13 +153,14 @@ rem --- Main Read
         read record (apw01_dev) apw01a$
         if pos(firm_id$=apw01a.firm_id$)<>1 goto done
         call pgmdir$+"adc_progress.aon","S","","","","",0,0,1,meter_num,status
-        if apw01a.comp_or_void$="V" goto void_check
+        if pos(apw01a.comp_or_void$="VX") then goto void_check
 
 rem --- Check Detail
 
         k1$=k0$(1,4)+apw01a.vendor_id$+apw01a.ap_inv_no$
         read record (ape04_dev,key=k1$,dom=void_check) ape04a$
         if ape04a.check_no$<>apw01a.check_no$ goto void_check
+        if apw01a.comp_or_void$="A" then gosub build_NACHA_file
         goto open_invoice
 
 next_invoice: rem --- Next Invoice
@@ -236,7 +244,11 @@ open_checks: rem --- Open Checks
         apt05a.vendor_id$=ape04a.vendor_id$
         apt05a.ap_inv_no$=ape04a.ap_inv_no$
         apt05a.check_date$=apw01a.check_date$
-        apt05a.trans_type$="C"
+        if apw01a.comp_or_void$="A" then
+            apt05a.trans_type$="A"
+        else
+            apt05a.trans_type$="C"
+        endif
         apt05a.ap_dist_code$=k2$ ;rem jpb k2$?
         apt05a.invoice_amt=ape04a.payment_amt+ape04a.discount_amt+ape04a.retention
         apt05a.discount_amt=ape04a.discount_amt
@@ -279,6 +291,9 @@ done: rem --- Clear Remainder
         remove (ape04_dev,key=k$)
     wend
 
+    rem --- Finish building complete NACHA text file for ACH payments
+    if nacha_dev>-1 then gosub finish_NACHA_file
+
 rem --- All done
 
     if gl$="Y"
@@ -288,6 +303,251 @@ rem --- All done
     call pgmdir$+"adc_batchdelete.aon",err=*next,status
     goto std_exit
 
+build_NACHA_file: rem --- Build NACHA text file for financial institution to process ACH payments for all ACH non-negotiable checks
+
+    rem --- As necessary, create new NACHA text file
+    if nacha_dev=-1 then
+        rem --- Make sure ACH File Export Directory exists
+        nachaDir$=cvs(FileObject.fixPath(apsACH.ach_export_dir$, "/"),2)
+        FileObject.makeDirs(new File(nachaDir$))
+
+        rem --- Create NACHA text file
+        nacha$=nachaDir$+cvs(apsACH.bnk_acct_cd$,2)+"_NACHA_"+DATE(0:"%Yd%Mz%Dz")+"_"+DATE(0:"%Hz%mz")+".txt"
+        erase nacha$,err=*next
+        string nacha$
+        nacha_dev=unt
+        open(nacha_dev)nacha$
+        
+        rem --- Initialize NACHA data
+        nacha_recs=0
+        route_hash$=""
+        batch_hash=0
+        total_credits=0
+        total_debits=0
+        aba_no!=cvs(adcBankAcctCode.aba_no$,2)
+        aba_no$=aba_no!.replace("-",""); rem --- remove hyphens
+        bnk_acct_no!=cvs(adcBankAcctCode.bnk_acct_no$,2)
+        bnk_acct_no$=bnk_acct_no!.replace("-",""); rem --- remove hyphens
+        federal_id!=cvs(apsReport.federal_id$,2)
+        federal_id$=federal_id!.replace("-",""); rem --- remove hyphens
+        emailFax! = BBjAPI().makeVector()
+
+        rem --- NACHA File Header Record (Record Type Code 1)
+        nachaFileHdr$=""
+        nachaFileHdr$="1"; rem --- Record Type Code
+        nachaFileHdr$=nachaFileHdr$+"01";                                           rem --- Priority Code
+        nachaFileHdr$=nachaFileHdr$+pad(aba_no$,10,"R"," ");                        rem --- Immediate Destination
+        nachaFileHdr$=nachaFileHdr$+pad(federal_id$,10,"R"," ");                    rem --- Immediate Origin
+        nachaFileHdr$=nachaFileHdr$+date(0:"%Yz%Mz%Dz%Hz%mz");                      rem --- File Creation Date and Time
+        nachaFileHdr$=nachaFileHdr$+"A";                                            rem --- File ID Modifier
+        nachaFileHdr$=nachaFileHdr$+"094";                                          rem --- Record Size
+        nachaFileHdr$=nachaFileHdr$+"10";                                           rem --- Blocking Factor
+        nachaFileHdr$=nachaFileHdr$+"1";                                            rem --- Format Code
+        nachaFileHdr$=nachaFileHdr$+pad(adcBankAcctCode.bank_name$,23);             rem --- Immediate Destination Name
+        nachaFileHdr$=nachaFileHdr$+pad(apsACH.firm_name$,23);                      rem --- Immediate Origin Name
+        checkDate$=pad(apw01a.check_date$,8)
+        nachaFileHdr$=nachaFileHdr$+checkDate$;                                     rem --- Reference Code
+        write(nacha_dev)nachaFileHdr$+$0D$
+
+        rem --- NACHA Batch Header Record (Record Type Code 5)
+        nachaBatchHeader$=""
+        nachaBatchHeader$=nachaBatchHeader$+"5";                                    rem --- Record Type Code
+        nachaBatchHeader$=nachaBatchHeader$+"220";                                  rem --- Service Class Code
+        nachaBatchHeader$=nachaBatchHeader$+pad(apsACH.firm_name$,16);              rem --- Company Name
+        nachaBatchHeader$=nachaBatchHeader$+fill(20);                               rem --- Company Discretionary Data
+        nachaBatchHeader$=nachaBatchHeader$+pad(federal_id$,10,"R"," ");            rem --- Company Identification
+        nachaBatchHeader$=nachaBatchHeader$+"PPD";                                  rem --- Standard Entry Class Code
+        nachaBatchHeader$=nachaBatchHeader$+pad("PAYABLE",10);                      rem --- Company Entry Description
+        nachaBatchHeader$=nachaBatchHeader$+checkDate$(3,6);                        rem --- Company Descriptive Date
+        nachaBatchHeader$=nachaBatchHeader$+checkDate$(3,6);                        rem --- Effective Entry Date
+        nachaBatchHeader$=nachaBatchHeader$+fill(3);                                rem --- Settlement Date
+        nachaBatchHeader$=nachaBatchHeader$+"1";                                    rem --- Originator Status Code
+        nachaBatchHeader$=nachaBatchHeader$+pad(aba_no$,8);                         rem --- Originating Financial Institution
+        nachaBatchHeader$=nachaBatchHeader$+str(1,"0000000");                       rem --- Batch Number
+        write(nacha_dev)nachaBatchHeader$+$0D$
+    endif
+    
+    rem --- Get info for this vendor
+    redim apm01a$
+    findrecord(apm01_dev,key=firm_id$+apw01a.vendor_id$,dom=*next)apm01a$
+
+    rem --- Get info for this check
+    read(apwChkJasperPrn_dev,key=firm_id$+apw01a.ap_type$+apw01a.check_no$,dom=*next)
+    while 1
+        redim apwChkJasperPrn$
+        thisKey$=key(apwChkJasperPrn_dev,end=*break)
+        if pos(firm_id$+apw01a.ap_type$+apw01a.check_no$=thisKey$)<>1 then break
+        readrecord(apwChkJasperPrn_dev)apwChkJasperPrn$
+        if apwChkJasperPrn.section_type$<>"C" then continue
+        break
+    wend
+
+    rem --- NACHA Entry Detail Record (Record Type Code 6)
+    nachaEntryDetail$=""
+    nachaEntryDetail$=nachaEntryDetail$+"6";                                                rem --- Record Type Code
+    nachaEntryDetail$=nachaEntryDetail$+"22";                                               rem --- Transaction Code
+    vendor_aba_no!=cvs(apm01a.aba_no$,2)
+    vendor_aba_no$=vendor_aba_no!.replace("-",""); rem --- remove hyphens
+    nachaEntryDetail$=nachaEntryDetail$+pad(vendor_aba_no$,9);                              rem --- Receiving DFI Identification (includes Check Digit as 9th character)
+    vendor_bnk_acct_no!=cvs(apm01a.bnk_acct_no$,2)
+    vendor_bak_acct_no$=vendor_bnk_acct_no!.replace("-",""); rem --- remove hyphens
+    nachaEntryDetail$=nachaEntryDetail$+pad(vendor_bak_acct_no$,17);                        rem --- DFI Account Number
+    nachaEntryDetail$=nachaEntryDetail$+str(apwChkJasperPrn.chk_amt*100:"0000000000");      rem --- Amount
+    nachaEntryDetail$=nachaEntryDetail$+pad("AP"+apm01a.vendor_id$+apw01a.check_no$,15);    rem --- Individual Identification Number
+    nachaEntryDetail$=nachaEntryDetail$+pad(cvs(apm01a.vendor_name$,2),22);                 rem --- Individual Name
+    nachaEntryDetail$=nachaEntryDetail$+fill(2);                                            rem --- Discretionary Data
+    nachaEntryDetail$=nachaEntryDetail$+"0";                                                rem --- Addenda Record Indicator
+    nachaEntryDetail$=nachaEntryDetail$+pad(aba_no$,8)+str(nacha_recs+1:"0000000");         rem --- Trace Number
+    write(nacha_dev)nachaEntryDetail$+$0D$
+
+    rem --- NACHA Entry Detail Addenda Record (Record Type Code 7)
+    nachaEntryDetailAddenda$=""
+    rem --- Record Type Code
+    rem --- Addenda Type Code
+    rem --- Payment Related Information
+    rem --- Addenda Sequence Number
+    rem --- Entry Detail Sequence Number
+
+    rem --- Update NACHA data
+    nacha_recs=nacha_recs+1
+    route_hash$=vendor_bak_acct_no$
+    batch_hash=batch_hash+num(route_hash$)
+    if apwChkJasperPrn.chk_amt>0 then
+        total_credits=total_credits+apwChkJasperPrn.chk_amt
+    else
+        total_debits=total_debits+apwChkJasperPrn.chk_amt
+    endif
+    if apsACH.total_required$="Y" then
+        if apwChkJasperPrn.chk_amt<=0 then
+            total_credits=total_credits+apwChkJasperPrn.chk_amt
+        else
+            total_debits=total_debits+apwChkJasperPrn.chk_amt
+        endif
+    endif
+
+    rd_doc_id$=""
+    rep_date_stamp$=date(0:"%Yd%Mz%Dz")
+    rep_time_stamp$=date(0:"%Hz%mz%sz")
+    rd_doc_source$="E"
+    rd_doc_ext$="PDF"
+    rd_doc_path$=cvs(apsACH.ach_check_dir$,2)
+    rd_doc_path$=BBjAPI().getFileSystem().resolvePath(rd_doc_path$,err=*next)+"/"
+    rd_source_type$="O"
+    rem rd_source_alias$=rd_alias_id$
+    rd_source_id$="C"
+    rd_source_ref$=""
+    rd_archive_action$="DOC_ID"
+    rep_title$=apw01a.check_no$+"_"+apm01a.vendor_id$+"_ACH_Payment"
+    rd_doc_name$=rep_title$+".pdf"
+    rd_doc_keywords$=""
+    gosub document_whse
+
+    if rpt_ctl$="YES"
+        found=reportControl!.getRecipientInfo(rpt_id$,"",apm01a.vendor_id$)
+        if found         
+            if reportControl!.getEmailYN()="Y" or reportControl!.getFaxYN()="Y"
+                emailFax!.add(rpt_id$)
+                emailFax!.add(apm01a.vendor_id$)
+                emailFax!.add(rd_doc_id$)
+            endif
+        endif
+    endif
+
+    return
+    
+finish_NACHA_file: rem --- Finish building complete NACHA text file for ACH payments
+
+    if apsACH.total_required$="Y" then
+        rem --- Balance (Total) Record
+        balanceRecord$=""
+        balanceRecord$=balanceRecord$+"6";                                          rem --- Record Type Code
+        balanceRecord$=balanceRecord$+"27";                                         rem --- Transaction Code
+        balanceRecord$=balanceRecord$+pad(aba_no$,9);                               rem --- Destination ABA Number (includes Check Digit)
+        balanceRecord$=balanceRecord$+pad(bnk_acct_no$,17);                         rem --- Bank Account Number
+        balanceRecord$=balanceRecord$+str(total_debits*100:"0000000000");           rem --- Total Debit Entry Dollar Amount
+
+        balanceRecord$=balanceRecord$+pad("AP"+federal_id$,15);                     rem --- Company Identification
+        balanceRecord$=balanceRecord$+pad(cvs(apsACH.firm_name$,2),22);             rem --- Company Name
+        balanceRecord$=balanceRecord$+fill(2);                                      rem --- Bank Discretionary Data
+        balanceRecord$=balanceRecord$+"0";                                          rem --- Addenda Record Indicator
+        balanceRecord$=balanceRecord$+pad(aba_no$,8);                               rem --- Originating Financial Institution
+        balanceRecord$=balanceRecord$+str(nacha_recs+1:"0000000");                  rem --- Trace Number
+        write(nacha_dev)balanceRecord$+$0D$
+
+        nacha_recs=nacha_recs+1
+    endif
+
+    rem --- NACHA Batch Control Record (Record Type Code 8)
+    nachaBatchControl$=""
+    nachaBatchControl$=nachaBatchControl$+"8";                                      rem --- Record Type Code
+    nachaBatchControl$=nachaBatchControl$+"220";                                    rem --- Service Class Code
+    nachaBatchControl$=nachaBatchControl$+str(nacha_recs:"000000");                 rem --- Entry/Addenda Count
+    nachaBatchControl$=nachaBatchControl$+pad(str(batch_hash),10,"R","0");          rem --- Entry Hash
+    nachaBatchControl$=nachaBatchControl$+str(total_debits*100:"000000000000");     rem --- Total Debit Entry Dollar Amount
+    nachaBatchControl$=nachaBatchControl$+str(total_credits*100:"000000000000");    rem --- Total Credit Entry Dollar Amount
+    nachaBatchControl$=nachaBatchControl$+pad(federal_id$,10,"R"," ");              rem --- Company Identification
+    nachaBatchControl$=nachaBatchControl$+fill(19);                                 rem --- Message Authentication Code
+    nachaBatchControl$=nachaBatchControl$+fill(6);                                  rem --- Reserved
+    nachaBatchControl$=nachaBatchControl$+pad(aba_no$,8);                           rem --- Originating DFI Identification
+    nachaBatchControl$=nachaBatchControl$+str(1:"0000000");                         rem --- Batch Number
+    write(nacha_dev)nachaBatchControl$+$0D$
+
+    rem --- NACHA File Control Record (Record Type Code 9)
+    entry_count=(nacha_recs+2+2)
+    pad_count=10-mod(entry_count,10)
+    block_count=(entry_count+pad_count)/10
+    nachaFileControl$=""
+    nachaFileControl$=nachaFileControl$+"9";                                    rem --- Record Type Code
+    nachaFileControl$=nachaFileControl$+str(1:"000000");                        rem --- Batch Count
+    nachaFileControl$=nachaFileControl$+str(block_count:"000000");              rem --- Block Count
+    nachaFileControl$=nachaFileControl$+str(nacha_recs:"00000000");             rem --- Entry/Addenda Count
+    nachaFileControl$=nachaFileControl$+pad(str(batch_hash),10,"R","0");        rem --- Entry Hash
+    nachaFileControl$=nachaFileControl$+str(total_debits*100:"000000000000");   rem --- Total Debit Entry Dollar Amount in File
+    nachaFileControl$=nachaFileControl$+str(total_credits*100:"000000000000");  rem --- Total Credit Entry Dollar Amount in File
+    nachaFileControl$=nachaFileControl$+fill(39);                               rem --- Reserved
+    write(nacha_dev)nachaFileControl$+$0D$
+    if pad_count>0 then
+        for x=1 to pad_count
+            write(nacha_dev)fill(94,"9")+$0D$
+        next x
+    endif
+
+    close(nacha_dev)
+
+    if emailFax!.size()
+        msg_id$ = "CONF_RPTCTL"
+        gosub disp_message
+        if msg_opt$="Y"
+            for email_fax=0 to emailFax!.size()-1 step 3
+                reportControl!.addToDocQueue(emailFax!.get(email_fax),"",emailFax!.get(email_fax+1),emailFax!.get(email_fax+2))    
+            next email_fax
+        endif
+    endif    
+    reportControl!.destroy(err=*next)
+
+    return
+
+ document_whse:rem --- Write record to Barista document warehouse (ads_documents)
+
+    call stbl("+DIR_SYP")+"bac_documents.bbj",
+:       rd_doc_id$,
+:       rep_date_stamp$,
+:       rep_time_stamp$,
+:       rd_doc_source$,
+:       rd_doc_ext$,
+:       rd_doc_path$,
+:       rd_source_type$,
+:       rd_source_alias$,
+:       rd_source_id$,
+:       rd_source_ref$,
+:       rd_table_chans$[all],
+:       rd_archive_action$,
+:       rd_doc_name$,
+:       rep_title$,
+:       rd_doc_keywords$
+
+    return
+    
 update_open_invoice: rem --- update open invoice
 
     apt01_key$=firm_id$+ape04a.ap_type$+ape04a.vendor_id$+ape04a.ap_inv_no$

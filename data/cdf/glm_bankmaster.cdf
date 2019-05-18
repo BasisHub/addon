@@ -127,8 +127,20 @@ rem " --- Recalc Summary Info
 
 	gosub calc_totals
 [[GLM_BANKMASTER.ARAR]]
-rem " --- Calculate Summary info
+rem --- Display Bank Account Information
+	adcBankAcctCode_dev=fnget_dev("ADC_BANKACCTCODE")
+	dim adcBankAcctCode$:fnget_tpl$("ADC_BANKACCTCODE")
+	findrecord(adcBankAcctCode_dev,key=firm_id$+callpoint!.getColumnData("GLM_BANKMASTER.BNK_ACCT_CD"),dom=*next)adcBankAcctCode$
+	callpoint!.setColumnData("<<DISPLAY>>.BANK_NAME",adcBankAcctCode.bank_name$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_1",adcBankAcctCode.address_line_1$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_2",adcBankAcctCode.address_line_2$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_3",adcBankAcctCode.address_line_3$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.ACCT_DESC",adcBankAcctCode.acct_desc$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_TYPE",adcBankAcctCode.bnk_acct_type$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.ABA_NO",adcBankAcctCode.aba_no$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_NO",adcBankAcctCode.bnk_acct_no$,1)
 
+rem --- Calculate Summary info
   	gosub calc_totals
 [[GLM_BANKMASTER.CURSTM_DATE.AVAL]]
 rem --- Current statement date must be after prior statement end date
@@ -168,13 +180,14 @@ rem --- Open/Lock files
 	dir_pgm$=stbl("+DIR_PGM")
 	sys_pgm$=stbl("+DIR_SYP")
 
-	num_files=5
+	num_files=6
 	dim files$[num_files],options$[num_files],ids$[num_files],templates$[num_files],channels[num_files]
 	files$[1]="gls_params",ids$[1]="GLS_PARAMS",options$[1]="OTA"
 	files$[2]="glt-06",ids$[2]="GLT_TRANSDETAIL",options$[2]="OTA"; rem ars-10D
 	files$[3]="glm-02",ids$[3]="GLM_ACCTSUMMARY",options$[3]="OTA"
 	files$[4]="glt-05",ids$[4]="GLT_BANKCHECKS",options$[4]="OTA"
 	files$[5]="glt-15",ids$[5]="GLT_BANKOTHER",options$[5]="OTA"
+	files$[6]="glt-15",ids$[6]="ADC_BANKACCTCODE",options$[6]="OTA"
 	call stbl("+DIR_PGM")+"adc_fileopen.aon",action,1,num_files,files$[all],options$[all],
 :                              ids$[all],templates$[all],channels[all],batch,status
 	if status then
@@ -209,13 +222,21 @@ rem --- Set up user_tpl$
 
 rem - Set up disabled controls
 
-	dim dctl$[6]
-	dctl$[1]="<<DISPLAY>>.STMT_AMT"
-	dctl$[2]="<<DISPLAY>>.CHECKS_OUT"
-	dctl$[3]="<<DISPLAY>>.TRANS_OUT"
-	dctl$[4]="<<DISPLAY>>.END_BAL"
-	dctl$[5]="<<DISPLAY>>.NO_CHECKS"
-	dctl$[6]="<<DISPLAY>>.NO_TRANS"
+	dim dctl$[14]
+	dctl$[1]="<<DISPLAY>>.BANK_NAME"
+	dctl$[2]="<<DISPLAY>>.ADDRESS_LINE_1"
+	dctl$[3]="<<DISPLAY>>.ADDRESS_LINE_2"
+	dctl$[4]="<<DISPLAY>>.ADDRESS_LINE_3"
+	dctl$[5]="<<DISPLAY>>.ACCT_DESC"
+	dctl$[6]="<<DISPLAY>>.BNK_ACCT_TYPE"
+	dctl$[7]="<<DISPLAY>>.ABA_NO"
+	dctl$[8]="<<DISPLAY>>.BNK_ACCT_NO"
+	dctl$[9]="<<DISPLAY>>.STMT_AMT"
+	dctl$[10]="<<DISPLAY>>.CHECKS_OUT"
+	dctl$[11]="<<DISPLAY>>.TRANS_OUT"
+	dctl$[12]="<<DISPLAY>>.END_BAL"
+	dctl$[13]="<<DISPLAY>>.NO_CHECKS"
+	dctl$[14]="<<DISPLAY>>.NO_TRANS"
 	gosub disable_ctls
 [[GLM_BANKMASTER.<CUSTOM>]]
 #include std_functions.src
@@ -291,7 +312,7 @@ rem ====================================================
 disable_ctls:rem --- disable selected control
 rem ====================================================
 
-	for dctl=1 to 6
+	for dctl=1 to 14
 		dctl$=dctl$[dctl]
 		if dctl$<>""
 			wctl$=str(num(callpoint!.getTableColumnAttribute(dctl$,"CTLI")):"00000")

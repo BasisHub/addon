@@ -40,3 +40,10 @@ rem --- Retrieve parameter data
 	callpoint!.setColumnData("APR_DISBURSEMNTS.PERIOD",aps01a.current_per$,1)
 	callpoint!.setColumnData("APR_DISBURSEMNTS.YEAR",aps01a.current_year$,1)
 	callpoint!.setDevObject("tot_per",func.getNumPeriods())
+
+rem --- Initialize TYPE_BREAKS
+	if aps01a.multi_types$<>"Y" then
+		callpoint!.setColumnEnabled("APR_DISBURSEMNTS.TYPE_BREAKS",0)
+	else
+		callpoint!.setColumnData("APR_DISBURSEMNTS.TYPE_BREAKS","1",0)
+	endif

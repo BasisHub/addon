@@ -1,3 +1,112 @@
+[[APM_VENDMAST.ADIS]]
+rem --- Enable/disable and Payment Information fields
+	if callpoint!.getColumnData("APM_VENDMAST.PAYMENT_TYPE")="A" then
+		callpoint!.setColumnEnabled("APM_VENDMAST.BANK_NAME",1)
+		callpoint!.setColumnEnabled("APM_VENDMAST.ABA_NO",1)
+		callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_NO",1)
+		callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_TYPE",1)
+
+		rem --- Initialize email address and fax number from ADM_RPTCTL_RCP
+		reportControl!=new ReportControl()
+		rpt_ctl$=reportControl!.getReportControl("APR_CHECKS")
+		rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+		vendor_id$=callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID")
+		if rpt_ctl$="YES" and reportControl!.getRecipientInfo(reportControl!.getReportID(),"",vendor_id$) then
+			AdmRptctlRcp!=reportControl!.getAdmRptctlRcp()
+			if reportControl!.getEmailYN()="Y"  then
+				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL",AdmRptctlRcp!.getFieldAsString("EMAIL_TO"),1)
+			else
+				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL","",1)
+			endif
+			if reportControl!.getFaxYN()="Y" then
+				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX",AdmRptctlRcp!.getFieldAsString("FAX_TO"),1)
+			else
+				callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX","",1)
+			endif
+		endif
+	else
+		callpoint!.setColumnEnabled("APM_VENDMAST.BANK_NAME",0)
+		callpoint!.setColumnEnabled("APM_VENDMAST.ABA_NO",0)
+		callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_NO",0)
+		callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_TYPE",0)
+
+		callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX","",1)
+	endif
+[[APM_VENDMAST.PAYMENT_TYPE.AVAL]]
+rem --- Enable Payment Information fields when paying via ACH
+	payment_type$=callpoint!.getUserInput()
+	if payment_type$<>callpoint!.getColumnData("APM_VENDMAST.PAYMENT_TYPE") then
+		if payment_type$="A" then
+			callpoint!.setColumnEnabled("APM_VENDMAST.BANK_NAME",1)
+			callpoint!.setColumnEnabled("APM_VENDMAST.ABA_NO",1)
+			callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_NO",1)
+			callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_TYPE",1)
+
+			callpoint!.setColumnData("APM_VENDMAST.BNK_ACCT_TYPE","C",1)
+
+			rem --- Initialize email address and fax number from ADM_RPTCTL_RCP
+			reportControl!=new ReportControl()
+			rpt_ctl$=reportControl!.getReportControl("APR_CHECKS")
+			rpt_ctl$=iff(rpt_ctl$="","NO","YES")
+			vendor_id$=callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID")
+			if rpt_ctl$="YES" and reportControl!.getRecipientInfo(reportControl!.getReportID(),"",vendor_id$) then
+				AdmRptctlRcp!=reportControl!.getAdmRptctlRcp()
+				if reportControl!.getEmailYN()="Y"  then
+					callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL",AdmRptctlRcp!.getFieldAsString("EMAIL_TO"),1)
+				endif
+				if reportControl!.getFaxYN()="Y" then
+					callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX",AdmRptctlRcp!.getFieldAsString("FAX_TO"),1)
+				endif
+			endif
+		else
+			rem --- Don’t allow changing PAYMENT_TYPE from A to P if there are any ACH payments for the vendor.
+			achPayment=0
+			vendor_id$=callpoint!.getColumnData("APM_VENDMAST.VENDOR_ID")
+			apw01_dev=fnget_dev("APW_CHECKINVOICE")
+			dim apw01a$:fnget_tpl$("APW_CHECKINVOICE")
+			read(apw01_dev,key=firm_id$,dom=*next)
+			while 1
+				readrecord(apw01_dev,end=*break)apw01a$
+				if apw01a.firm_id$<>firm_id$ then break
+				if apw01a.vendor_id$<>vendor_id$ or apw01a.comp_or_void$<>"A" then continue
+				achPayment=1
+				break
+			wend
+			if achPayment then
+				msg_id$="AP_CHANGE_ACH"
+				gosub disp_message
+
+				rem --- Reset radio buttons and start over
+				checkPaymentType!=callpoint!.getControl("APM_VENDMAST.PAYMENT_TYPE")
+				checkPaymentType!.setSelected(SysGUI!.FALSE)
+				achPaymentType!=util.findControl(Form!,Translate!.getTranslation("DDM_ELEMENT_LDAT-PAYMENT_TYPE-A-DD_ATTR_LDAT_DS"))
+				if achPaymentType!<>null() then achPaymentType!.setSelected(SysGUI!.TRUE)
+				callpoint!.setStatus("ABORT")
+				break
+			endif
+
+			callpoint!.setColumnEnabled("APM_VENDMAST.BANK_NAME",0)
+			callpoint!.setColumnEnabled("APM_VENDMAST.ABA_NO",0)
+			callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_NO",0)
+			callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_TYPE",0)
+
+			callpoint!.setColumnData("APM_VENDMAST.BANK_NAME","",1)
+			callpoint!.setColumnData("APM_VENDMAST.ABA_NO","",1)
+			callpoint!.setColumnData("APM_VENDMAST.BNK_ACCT_NO","",1)
+			callpoint!.setColumnData("APM_VENDMAST.BNK_ACCT_TYPE","",1)
+			callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_EMAIL","",1)
+			callpoint!.setColumnData("<<DISPLAY>>.CHKSTUB_FAX","",1)
+		endif
+	endif
+[[APM_VENDMAST.AREC]]
+rem --- Disable and initialize Payment Information fields
+	callpoint!.setColumnEnabled("APM_VENDMAST.BANK_NAME",0)
+	callpoint!.setColumnEnabled("APM_VENDMAST.ABA_NO",0)
+	callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_NO",0)
+	callpoint!.setColumnEnabled("APM_VENDMAST.BNK_ACCT_TYPE",0)
+
+	callpoint!.setColumnData("APM_VENDMAST.PAYMENT_TYPE","P",1)
 [[APM_VENDMAST.AOPT-IHST]]
 rem --- Show invoices from this vendor
 
@@ -220,7 +329,10 @@ endif
 [[APM_VENDMAST.BSHO]]
 rem --- Open/Lock files
 
-	files=9,begfile=1,endfile=files
+	use ::ado_rptControl.src::ReportControl
+	use ::ado_util.src::util
+
+	files=11,begfile=1,endfile=files
 	dim files$[files],options$[files],chans$[files],templates$[files]
 	files$[1]="APE_INVOICEHDR";rem --- ape-01
 	files$[2]="APT_INVOICEHDR";rem --- apt-01
@@ -231,6 +343,8 @@ rem --- Open/Lock files
 	files$[7]="APC_TYPECODE"
 	files$[8]="APE_INVOICEDET"
 	files$[9]="GLS_CALENDAR"
+	files$[10]="ADM_RPTCTL_RCP"
+	files$[11]="APW_CHECKINVOICE"; rem --- apw-01
 
 	for wkx=begfile to endfile
 		options$[wkx]="OTA"

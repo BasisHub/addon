@@ -111,7 +111,7 @@ rem --- get Vendor address
         
     find record (apm_vendmast,key=firm_id$+vendor_id$,dom=*next)apm_vendmast$
     
-    temp_addr$ = apm_vendmast.addr_line_1$ + apm_vendmast.addr_line_2$ + apm_vendmast.city$ + apm_vendmast.state_code$ + apm_vendmast.zip_code$
+    temp_addr$ = apm_vendmast.addr_line_1$ + apm_vendmast.addr_line_2$ + apm_vendmast.city$ + apm_vendmast.state_code$ + apm_vendmast.zip_code$ + apm_vendmast.cntry_id$
     call "adc_address.aon",temp_addr$,24,3,9,vend_addrLine_len
     vend_addr$(1)=apm_vendmast.vendor_name$+temp_addr$
 

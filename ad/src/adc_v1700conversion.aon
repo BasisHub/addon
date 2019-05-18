@@ -177,105 +177,54 @@ rem --- Initialize AP data file changes implemented during minor releases of v17
 
     this_module$="AP"
     if installMap!.get(this_module$)="Y" then 
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    
         task$="1700_AP_apm-09"
         if convCtrl!.getProperty(task$)<>"Completed" then
-        rem --- As of v17.10, DataPort handles initializing APM_VENDMAST.MEMO_1024 from APM_VENDCMTS (apm-09)
+            rem --- As of v17.10, DataPort handles initializing APM_VENDMAST.MEMO_1024 from APM_VENDCMTS (apm-09)
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Increment progress meter
-                meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
-    
-                rem --- Make sure APM_VENDCMTS (apm-09) exists
+                rem --- Does APM_VENDCMTS (apm-09) exists. It was deleted in v19.
+                status=1
                 open_success=0
                 apm09_dev=unt
                 open(apm09_dev,err=*next)dataDir$+"/apm-09"; open_success=1
+                close(apm09_dev,err=*next)
                 if !open_success then
-                    rem --- Copy APM_VENDCMTS (apm-09) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": APM_VENDMAST.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"APM_VENDCMTS"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source APM_VENDCMTS file, and add it to new install
-                    oldFile$="APM_VENDCMTS"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source APM_VENDCMTS file, and add it to new install
-                    oldFile$="APM_VENDCMTS"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Initialize APM_VENDMAST.MEMO_1024 from old source APM_VENDCMTS (apm-09)
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("apm-09");tableAliasVec!.addItem("APM_VENDCMTS")
                     for source=0 to sourcefileVec!.size()-1
                         rem --- Does source file exist?
@@ -288,33 +237,60 @@ rem --- Initialize AP data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="APM_VENDMAST", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+
+                            rem --- Build new APM_VENDMAST.MEMO_1024 field from APM_VENDCMTS (apm-09) table
+                            theFirm$=""
+                            currentFirm$=""
+                            currentVendor$=""
+                            memo$=""
+                            apmVendCmts_dev=source_dev
+                            dim apmVendCmts$:fattr(source_tpl$)
+                            apmVendMast_dev=target_dev
+                            dim apmVendMast$:fattr(target_tpl$)
+                            read(apmVendCmts_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                apmVendCmts_key$=key(apmVendCmts_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=apmVendCmts_key$)<>1 then break
+                                readrecord(apmVendCmts_dev)apmVendCmts$
+                                if apmVendCmts.firm_id$+apmVendCmts.vendor_id$<>currentFirm$+currentVendor$ then
+                                    gosub writeApmVendMastMemo1024
+                                    memo$=""
+                                    currentVendor$=apmVendCmts.vendor_id$
+                                    if apmVendCmts.firm_id$<>currentFirm$ then
+                                        rem --- Log next firm processed
+                                        print(log_dev)"    APM_VENDCMTS.FIRM_ID = "+apmVendCmts.firm_id$
+                                        currentFirm$=apmVendCmts.firm_id$
+                                    endif
+                                endif
+                                memo$=memo$+cvs(apmVendCmts.std_comments$,2)+$0A$
                             wend
+                            gosub writeApmVendMastMemo1024
+                            
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": APM_VENDMAST.MEMO_1024 "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"APM_VENDCMTS"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-    
+
             rem --- Execute AP upgrade conversion utility for minor releases of v17
             theFirm$=""
             call pgmdir$+"apc_v17initMinorRev.aon",theFirm$,rdForm!,status
@@ -373,105 +349,53 @@ rem --- Initialize AR data file changes implemented during minor releases of v17
 
     this_module$="AR"
     if installMap!.get(this_module$)="Y" then 
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    
         task$="1700_AR_arm-05"
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- As of v17.10, DataPort handles initializing ARM_CUSTMAST.MEMO_1024 from ARM_CUSTCMTS (arm-05)
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Increment progress meter
-                meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
-    
-                rem --- Make sure ARM_CUSTCMTS (arm-05) exists
+                rem --- Does ARM_CUSTCMTS (arm-05) exists. It was deleted in v19.
                 open_success=0
                 arm05_dev=unt
                 open(arm05_dev,err=*next)dataDir$+"/arm-05"; open_success=1
+                close(arm05_dev,err=*next)
                 if !open_success then
-                    rem --- Copy ARM_CUSTCMTS (arm-05) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": ARM_CUSTMAST.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"ARM_CUSTCMTS"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source ARM_CUSTCMTS file, and add it to new install
-                    oldFile$="ARM_CUSTCMTS"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source ARM_CUSTCMTS file, and add it to new install
-                    oldFile$="ARM_CUSTCMTS"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Initialize ARM_CUSTMAST.MEMO_1024 from old source ARM_CUSTCMTS (arm-05)
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("arm-05");tableAliasVec!.addItem("ARM_CUSTCMTS")
                     for source=0 to sourcefileVec!.size()-1
                         rem --- Does source file exist?
@@ -484,33 +408,60 @@ rem --- Initialize AR data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="ARM_CUSTMAST", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+
+                            rem --- Build new ARM_CUSTMAST.MEMO_1024 field from ARM_CUSTCMTS (arm-05) table
+                            theFirm$=""
+                            currentFirm$=""
+                            currentCustomer$=""
+                            memo$=""
+                            armCustCmts_dev=source_dev
+                            dim armCustCmts$:fattr(source_tpl$)
+                            armCustMast_dev=target_dev
+                            dim armCustMast$:fattr(target_tpl$)
+                            read(armCustCmts_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                armCustCmts_key$=key(armCustCmts_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=armCustCmts_key$)<>1 then break
+                                readrecord(armCustCmts_dev)armCustCmts$
+                                if armCustCmts.firm_id$+armCustCmts.customer_id$<>currentFirm$+currentCustomer$ then
+                                    gosub writeArmCustMastMemo1024
+                                    memo$=""
+                                    currentCustomer$=armCustCmts.customer_id$
+                                    if armCustCmts.firm_id$<>currentFirm$ then
+                                        rem --- Log next firm processed
+                                        print(log_dev)"    ARM_CUSTCMTS.FIRM_ID = "+armCustCmts.firm_id$
+                                        currentFirm$=armCustCmts.firm_id$
+                                    endif
+                                endif
+                                memo$=memo$+cvs(armCustCmts.std_comments$,2)+$0A$
                             wend
+                            gosub writeArmCustMastMemo1024
+                            
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": ARM_CUSTMAST.MEMO_1024 "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"ARM_CUSTCMTS"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-    
+
             rem --- Execute AR upgrade conversion utility for minor releases of v17
             theFirm$=""
             call pgmdir$+"arc_v17initMinorRev.aon",theFirm$,rdForm!,status
@@ -569,105 +520,53 @@ rem --- Initialize BM data file changes implemented during minor releases of v17
 
     this_module$="BM"
     if installMap!.get(this_module$)="Y" then
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    
         task$="1700_BM_bmm-09"
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- As of v17.10, DataPort handles initializing BMM_BILLMAST.MEMO_1024 from BMM_BILLCMTS (bmm-09)
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Increment progress meter
-                meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
-    
-                rem --- Make sure BMM_BILLCMTS (bmm-09) exists
+                rem --- Does BMM_BILLCMTS (bmm-09) exists. It was deleted in v19.
                 open_success=0
                 bmm09_dev=unt
                 open(bmm09_dev,err=*next)dataDir$+"/bmm-09"; open_success=1
+                close(bmm09_dev,err=*next)
                 if !open_success then
-                    rem --- Copy BMM_BILLCMTS (bmm-09) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": BMM_BILLMAST.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"BMM_BILLCMTS"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source BMM_BILLCMTS file, and add it to new install
-                    oldFile$="BMM_BILLCMTS"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source BMM_BILLCMTS file, and add it to new install
-                    oldFile$="BMM_BILLCMTS"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Initialize BMM_BILLMAST.MEMO_1024 from old source BMM_BILLCMTS (bmm-09)
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("bmm-09");tableAliasVec!.addItem("BMM_BILLCMTS")
                     for source=0 to sourcefileVec!.size()-1
                         rem --- Does source file exist?
@@ -680,33 +579,60 @@ rem --- Initialize BM data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="BMM_BILLMAST", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+
+                            rem --- Build new BMM_BILLMAST.MEMO_1024 field from BMM_BILLCMTS (bmm-09) table
+                            theFirm$=""
+                            currentFirm$=""
+                            currentBill$=""
+                            memo$=""
+                            bmmBillCmts_dev=source_dev
+                            dim bmmBillCmts$:fattr(source_tpl$)
+                            bmmBillMast_dev=target_dev
+                            dim bmmBillMast$:fattr(target_tpl$)
+                            read(bmmBillCmts_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                bmmBillCmts_key$=key(bmmBillCmts_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=bmmBillCmts_key$)<>1 then break
+                                readrecord(bmmBillCmts_dev)bmmBillCmts$
+                                if bmmBillCmts.firm_id$+bmmBillCmts.bill_no$<>currentFirm$+currentBill$ then
+                                    gosub writeBmmBillMastMemo1024
+                                    memo$=""
+                                    currentBill$=bmmBillCmts.bill_no$
+                                    if bmmBillCmts.firm_id$<>currentFirm$ then
+                                        rem --- Log next firm processed
+                                        print(log_dev)"    BMM_BILLCMTS.FIRM_ID = "+bmmBillCmts.firm_id$
+                                        currentFirm$=bmmBillCmts.firm_id$
+                                    endif
+                                endif
+                                memo$=memo$+cvs(bmmBillCmts.std_comments$,2)+$0A$
                             wend
+                            gosub writeBmmBillMastMemo1024
+                            
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": BMM_BILLMAST.MEMO_1024 "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"BMM_BILLCMTS"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-    
+
             rem --- Execute BM upgrade conversion utility for minor releases of v17
             theFirm$=""
             call pgmdir$+"bmc_v17initMinorRev.aon",theFirm$,rdForm!,status
@@ -850,11 +776,6 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                             rem --- Required template missing
                             err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
 :                               " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                            meter_proc_recs=meter_proc_recs+1
-                            meter_action$="MTR-LST"
-                            meter_text$=err_msg$
-                            gosub disp_meter
-                            print(log_dev)meter_text$
                             goto done
                         endif
                     else
@@ -921,6 +842,8 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                         writerecord(glsCalendar_dev)glsCalendar$
                     wend
                     write(convCtrlFileChan)task$+"=Completed"
+                    
+                    close(old_glsParams_dev,err=*next)
                 else
                     rem --- Required file missing
                     msg_id$="AD_FILE_MISSING"
@@ -1206,11 +1129,6 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                             rem --- Required template missing
                             err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
 :                               " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                            meter_proc_recs=meter_proc_recs+1
-                            meter_action$="MTR-LST"
-                            meter_text$=err_msg$
-                            gosub disp_meter
-                            print(log_dev)meter_text$
                             goto done
                         endif
                     else
@@ -1275,15 +1193,12 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                         endif
     
                     wend
+                    
+                    close(old_glm02_dev,err=*next)
                 else
                     rem --- Required template missing
                     err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
 :                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    meter_text$=err_msg$
-                    gosub disp_meter
-                    print(log_dev)meter_text$
                     goto done
                 endif
             else
@@ -1514,95 +1429,42 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- Initialize GL data file changes implemented during minor releases of v17
             rem --- As of v17.10, DataPort handles initializing GLM_ACCT.MEMO_1024 from GLM_ACCTCOMMENTS (glm-09)
-    
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Make sure GLM_ACCTCOMMENTS (glm-09) exists
+                rem --- Does GLM_ACCTCOMMENTS (glm-09) exists. It was deleted in v19.
                 open_success=0
                 glm09_dev=unt
                 open(glm09_dev,err=*next)dataDir$+"/glm-09"; open_success=1
+                close(glm09_dev,err=*next)
                 if !open_success then
-                    rem --- Copy GLM_ACCTCOMMENTS (glm-09) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": GLM_ACCT.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"GLM_ACCTCOMMENTS"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source GLM_ACCTCOMMENTS file, and add it to new install
-                    oldFile$="GLM_ACCTCOMMENTS"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source GLM_ACCTCOMMENTS file, and add it to new install
-                    oldFile$="GLM_ACCTCOMMENTS"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Initialize GLM_ACCT.MEMO_1024 from old source GLM_ACCTCOMMENTS (glm-09)
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("glm-09");tableAliasVec!.addItem("GLM_ACCTCOMMENTS")
                     for source=0 to sourcefileVec!.size()-1
                         rem --- Does source file exist?
@@ -1615,33 +1477,59 @@ rem --- For version 17.00, initialize changes for Fiscal Calendars
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="GLM_ACCT", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+
+                            rem --- Build new GLM_ACCT.MEMO_1024 field from GLM_ACCTCOMMENTS (glm-09) table
+                            currentFirm$=""
+                            currentAccount$=""
+                            memo$=""
+                            glmAcctComments_dev=source_dev
+                            dim glmAcctComments$:fattr(source_tpl$)
+                            glmAcct_dev=target_dev
+                            dim glmAcct$:fattr(target_tpl$)
+                            read(glmAcctComments_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                glmAcctComments_key$=key(glmAcctComments_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=glmAcctComments_key$)<>1 then break
+                                readrecord(glmAcctComments_dev)glmAcctComments$
+                                if glmAcctComments.firm_id$+glmAcctComments.gl_account$<>currentFirm$+currentAccount$ then
+                                    gosub writeGlmAcctMemo1024
+                                    memo$=""
+                                    currentAccount$=glmAcctComments.gl_account$
+                                    if glmAcctComments.firm_id$<>currentFirm$ then
+                                        rem --- Log next firm processed
+                                        print(log_dev)"    GLM_ACCTCOMMENTS.FIRM_ID = "+glmAcctComments.firm_id$
+                                        currentFirm$=glmAcctComments.firm_id$
+                                    endif
+                                endif
+                                memo$=memo$+cvs(glmAcctComments.std_comments$,2)+$0A$
                             wend
+                            gosub writeGlmAcctMemo1024
+                            
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": GLM_ACCT.MEMO_1024 "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"GLM_ACCTCOMMENTS"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-    
+
             rem --- Execute GL upgrade conversion utility for minor releases of v17
             theFirm$=""
             call pgmdir$+"glc_v17initMinorRev.aon",theFirm$,rdForm!,status
@@ -1700,105 +1588,53 @@ rem --- Initialize IV data file changes implemented during minor releases of v17
 
     this_module$="IV"
     if installMap!.get(this_module$)="Y" then 
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:           Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+    
         task$="1700_IV_ivm-09"
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- As of v17.10, DataPort handles initializing IVM_ITEMMAST.MEMO_1024 from IVM_ITEMCMTS (ivm-09)
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Increment progress meter
-                meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
-    
-                rem --- Make sure IVM_ITEMCMTS (ivm-09) exists
+                rem --- Does IVM_ITEMCMTS (ivm-09) exists. It was deleted in v19.
                 open_success=0
                 ivm09_dev=unt
                 open(ivm09_dev,err=*next)dataDir$+"/ivm-09"; open_success=1
+                close(ivm09_dev,err=*next)
                 if !open_success then
-                    rem --- Copy IVM_ITEMCMTS (ivm-09) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": IVM_ITEMMAST.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"IVM_ITEMCMTS"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source IVM_ITEMCMTS file, and add it to new install
-                    oldFile$="IVM_ITEMCMTS"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source IVM_ITEMCMTS file, and add it to new install
-                    oldFile$="IVM_ITEMCMTS"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Initialize IVM_ITEMMAST.MEMO_1024 from old source IVM_ITEMCMTS (ivm-09)
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("ivm-09");tableAliasVec!.addItem("IVM_ITEMCMTS")
                     for source=0 to sourcefileVec!.size()-1
                         rem --- Does source file exist?
@@ -1811,33 +1647,59 @@ rem --- Initialize IV data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="IVM_ITEMMAST", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+
+                            rem --- Build new IVM_ITEMMAST.MEMO_1024 field from IVM_ITEMCMTS (ivm-09) table
+                            currentFirm$=""
+                            currentItem$=""
+                            memo$=""
+                            ivmItemCmts_dev=source_dev
+                            dim ivmItemCmts$:fattr(source_tpl$)
+                            ivmItemMast_dev=target_dev
+                            dim ivmItemMast$:fattr(target_tpl$)
+                            read(ivmItemCmts_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                ivmItemCmts_key$=key(ivmItemCmts_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=ivmItemCmts_key$)<>1 then break
+                                readrecord(ivmItemCmts_dev)ivmItemCmts$
+                                if ivmItemCmts.firm_id$+ivmItemCmts.item_id$<>currentFirm$+currentItem$ then
+                                    gosub writeIvmItemMastMemo1024
+                                    memo$=""
+                                    currentItem$=ivmItemCmts.item_id$
+                                    if ivmItemCmts.firm_id$<>currentFirm$ then
+                                        rem --- Log next firm processed
+                                        print(log_dev)"    IVM_ITEMCMTS.FIRM_ID = "+ivmItemCmts.firm_id$
+                                        currentFirm$=ivmItemCmts.firm_id$
+                                    endif
+                                endif
+                                memo$=memo$+cvs(ivmItemCmts.std_comments$,2)+$0A$
                             wend
+                            gosub writeIvmItemMastMemo1024
+                            
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": IVM_ITEMMAST.MEMO_1024 "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"IVM_ITEMCMTS"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
-    
+
             rem --- Execute IV upgrade conversion utility for minor releases of v17
             theFirm$=""
             call pgmdir$+"ivc_v17initMinorRev.aon",theFirm$,rdForm!,status
@@ -1908,129 +1770,43 @@ rem --- Initialize OP data file changes implemented during minor releases of v17
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- As of v17.10, DataPort handles initializing OPC_MESSAGE from OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14)
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Make sure OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14) are present
+                rem --- Do OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14) exists. They were deleted in v19.
                 open_success=0
                 opm04_dev=unt
                 open(opm04_dev,err=*next)dataDir$+"/opm-04"; open_success=1
                 if !open_success then
-                    rem --- Copy OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": OPC_MESSAGE "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"OPC_MSG_HDR "+
+:                       Translate!.getTranslation("AON_AND","and")+" OPC_MSG_DET"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                               Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source OPC_MSG_HDR file, and add it to new install
-                    oldFile$="OPC_MSG_HDR"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-                        
-                    rem --- Get table definition for old source OPC_MSG_DET file, and add it to new install
-                    oldFile$="OPC_MSG_DET"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source OPC_MSG_HDR file, and add it to new install
-                    oldFile$="OPC_MSG_HDR"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
-                    rem --- Get record template for old source OPC_MSG_DET file, and add it to new install
-                    oldFile$="OPC_MSG_DET"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Open old source OPC_MSG_HDR (opm-04) and OPC_MSG_DET (opm-14)
+                    opcMsgHdr_dev=0
+                    opcMsgDet_dev=0
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("opm-04");tableAliasVec!.addItem("OPC_MSG_HDR")
                     sourceFileVec!.addItem("opm-14");tableAliasVec!.addItem("OPC_MSG_DET")
                     for source=0 to sourcefileVec!.size()-1
@@ -2044,33 +1820,174 @@ rem --- Initialize OP data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+                            
+                            if tableAlias$="OPC_MSG_HDR" then
+                                opcMsgHdr_dev=source_dev
+                                dim opcMsgHdr$:fattr(source_tpl$)
+                            endif
+                            if tableAlias$="OPC_MSG_DET" then
+                                opcMsgDet_dev=source_dev
+                                dim opcMsgDet$:fattr(source_tpl$)
+                            endif
+                        endif
+                    next source
+        
+                    if opcMsgHdr_dev then
+                    rem --- Open file in new data dictionary
+                        num_files=1
+                        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                        open_tables$[1]="OPC_MESSAGE", open_opts$[1]="OTA"
+                        gosub open_tables
+                        target_dev=num(open_chans$[1])
+                        dim target_tpl$:open_tpls$[1]
+        
+                        rem --- Build new OPC_MESSAGE table from OPC_MSG_HDR and OPC_MSG_DET tables
+                        currentFirm$=""
+                        opcMessage_dev=target_dev
+                        dim opcMessage$:fattr(target_tpl$)
+                        read(opcMsgHdr_dev,key=theFirm$,dom=*next)
+                        while 1
+                            opcMsgHdr_key$=key(opcMsgHdr_dev,end=*break)
+                            if cvs(theFirm$,2)<>"" and pos(theFirm$=opcMsgHdr_key$)<>1 then break
+                            readrecord(opcMsgHdr_dev)opcMsgHdr$
+                            if opcMsgHdr.firm_id$<>currentFirm$ then
+                                rem --- Log next firm processed
+                                print(log_dev)"    OPC_MSG_HDR.FIRM_ID = "+opcMsgHdr.firm_id$
+                                currentFirm$=opcMsgHdr.firm_id$
+                            endif
+                            readrecord(opcMessage_dev,key=opcMsgHdr_key$,dom=*next); continue; rem --- Do NOT overwrite existing OPC_MESSAGE records
+                            memo$=""
+                            if opcMsgDet_dev then
+                            read(opcMsgDet_dev,key=opcMsgHdr_key$,dom=*next)
+                                while 1
+                                    readrecord(opcMsgDet_dev,end=*break)opcMsgDet$
+                                    if pos(opcMsgDet.firm_id$+opcMsgDet.message_code$=opcMsgHdr_key$)<>1 then break
+                                    memo$=memo$+cvs(opcMsgDet.message_text$,2)+$0A$
+                                wend
+                            endif
+                            redim opcMessage$
+                            opcMessage.firm_id$=opcMsgHdr.firm_id$
+                            opcMessage.message_code$=opcMsgHdr.message_code$
+                            opcMessage.code_desc$=opcMsgHdr.code_desc$
+                            opcMessage.memo_1024$=memo$
+                            writerecord(opcMessage_dev)opcMessage$
+                        wend
+                        close(opcMsgHdr_dev,err=*next)
+                        close(opcMsgDet_dev,err=*next)
+                    endif
+                endif
+
+                rem --- Does OPE_ORDCOMMENTS exists. It was deleted in v19.
+                status=1
+                open_success=0
+                apm09_dev=unt
+                open(apm09_dev,err=*next)dataDir$+"/ope_ordcomments"; open_success=1
+                close(apm09_dev,err=*next)
+                if !open_success then
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": OPT_INVHDR.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"OPE_ORDCOMMENTS"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
+    
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+                    open_success=0
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
+                        rem --- Required file missing
+                        msg_id$="AD_FILE_MISSING"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]=ddm_table_tpls$
+                        gosub disp_message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
+                        goto done
+                    endif
+
+                    rem --- Initialize OPT_INVHDR.MEMO_1024 from old OPE_ORDCOMMENTS
+                    sourceFileVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
+                    sourceFileVec!.addItem("ope_ordcomments");tableAliasVec!.addItem("OPE_ORDCOMMENTS")
+                    for source=0 to sourcefileVec!.size()-1
+                        rem --- Does source file exist?
+                        oldStbl$="+OPDATA"
+                        oldFile$=sourceFileVec!.get(source)
+                        tableAlias$=tableAliasVec!.get(source)
+                        gosub get_path_to_old_file
+                        source_file$=oldPathToFile$
+                        open_success=0
+                        source_dev=unt
+                        open(source_dev,err=*next)source_file$; open_success=1
+                        if open_success then
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="OPT_INVHDR", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+    
+                            rem --- Populate OPT_INVHDR new MEMO_1024 field from OPE_ORDCOMMENTS records
+                            currentFirm$=""
+                            currentCustomerOrder$=""
+                            memo$=""
+                            opeOrdComments_dev=source_dev
+                            dim opeOrdComments$:fattr(source_tpl$)
+                            optInvHdr_dev=target_dev
+                            dim optInvHdr$:fattr(target_tpl$)
+                            read(opeOrdComments_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                opeOrdComments_key$=key(opeOrdComments_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=opeOrdComments_key$)<>1 then break
+                                if pos(currentCustomerOrder$=opeOrdComments_key$)<>1 then
+                                    if currentCustomerOrder$<>"" then gosub writeOptInvHdrMemo1024
+                                    currentCustomerOrder$=opeOrdComments.firm_id$+opeOrdComments.ar_type$+opeOrdComments.customer_id$+opeOrdComments.order_no$
+                                    memo$=cvs(opeOrdComments.comment$,2)+$0A$
+                                endif
+                                readrecord(opeOrdComments_dev)opeOrdComments$
+                                if opeOrdComments.firm_id$<>currentFirm$ then
+                                    rem --- Log next firm processed
+                                    print(log_dev)"    OPE_ORDCOMMENTS.FIRM_ID = "+opeOrdComments.firm_id$
+                                    currentFirm$=opeOrdComments.firm_id$
+                                endif
+                                memo$=memo$+cvs(opeOrdComments.comment$,2)+$0A$
                             wend
+                            if currentCustomerOrder$<>"" then gosub writeOptInvHdrMemo1024
+
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": OPC_MESSAGE "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"OPC_MSG_HDR "+
-:               Translate!.getTranslation("AON_AND","and")+" OPC_MSG_DET"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
     
             rem --- Execute OP upgrade conversion utility for minor releases of v17
             theFirm$=""
@@ -2125,7 +2042,7 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
         task$="1700_PO_pom-04"
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- As of v17.10, DataPort handles initializing SEQUENCE_REF in PRIMARY key of POT_INVHDR (pot-05), POT_INVSEL (pot-15) and POT_INVDET (pot-25)
-            rem --- As of v17.10, DataPort handles initializing POC_MESSAGE from POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14)
+            rem --- As of v17.10, DataPort handles initializing POC_MESSAGE from POC_MSGCODE (pom-04) and POC_MSGLINE (pom-14)
             if convCtrl!.getProperty("data_source")="OCJ" then
     
                 rem --- Open ddm_tables and ddm_table_tpls in new install
@@ -2229,12 +2146,8 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
                     endif
                 else
                     rem --- Required template missing
-                    meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
 :                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
                     goto done
                 endif
     
@@ -2296,12 +2209,8 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
                     endif
                 else
                     rem --- Required template missing
-                    meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
 :                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
                     goto done
                 endif
     
@@ -2363,96 +2272,48 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
                     endif
                 else
                     rem --- Required template missing
-                    meter_text$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+                    err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
 :                       " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+ope_table$+" *****"
-                    meter_proc_recs=meter_proc_recs+1
-                    meter_action$="MTR-LST"
-                    gosub disp_meter
-                    print(log_dev)meter_text$
                     goto done
                 endif
     
-                rem --- Make sure POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14) are present
+                rem --- Do POC_MSGCODE (pom-04) and POC_MSGLINE (pom-14) exists. They were deleted in v19.
                 open_success=0
                 pom04_dev=unt
                 open(pom04_dev,err=*next)dataDir$+"/pom-04"; open_success=1
                 if !open_success then
-                    rem --- Copy POC_MSGCODE (pom-04) and PO_MSGLINE (pom-14) from old source to the new install
-        
-                    rem --- Get table definition for old source POC_MSGCODE file, and add it to new install
-                    oldFile$="POC_MSGCODE"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-                        
-                    rem --- Get table definition for old source POC_MSGLINE file, and add it to new install
-                    oldFile$="POC_MSGLINE"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source POC_MSGCODE file, and add it to new install
-                    oldFile$="POC_MSGCODE"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": POC_MESSAGE "+
+:                   Translate!.getTranslation("AON_FROM_","From ")+"POC_MSGCODE "+
+:                   Translate!.getTranslation("AON_AND","and")+" POC_MSGLINE"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Get record template for old source POC_MSGLINE file, and add it to new install
-                    oldFile$="POC_MSGLINE"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
+                    open_success=0
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
                     else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
+                        rem --- Required file missing
+                        msg_id$="AD_FILE_MISSING"
+                        dim msg_tokens$[1]
+                        msg_tokens$[1]=ddm_table_tpls$
+                        gosub disp_message
+                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
+
+                    rem --- Open old source POC_MSGCODE (pom-04) and POC_MSGLINE (pom-14)
+                    opcMsgHdr_dev=0
+                    opcMsgDet_dev=0
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
+                    tableAliasVec!=BBjAPI().makeVector()
                     sourceFileVec!.addItem("pom-04");tableAliasVec!.addItem("POC_MSGCODE")
                     sourceFileVec!.addItem("pom-14");tableAliasVec!.addItem("POC_MSGLINE")
                     for source=0 to sourcefileVec!.size()-1
@@ -2466,33 +2327,74 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
-                            rem --- Open file in new data dictionary
-                            num_files=1
-                            dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
-                            gosub open_tables
-                            target_dev=num(open_chans$[1])
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
                             
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
-                            while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
-                            wend
+                            if tableAlias$="POC_MSGCODE" then
+                                pocMsgCode_dev=source_dev
+                                dim pocMsgCode$:fattr(source_tpl$)
+                            endif
+                            if tableAlias$="POC_MSGLINE" then
+                                pocMsgLine_dev=source_dev
+                                dim pocMsgLine$:fattr(source_tpl$)
+                            endif
                         endif
                     next source
+        
+                    if opcMsgHdr_dev then
+                    rem --- Open file in new data dictionary
+                        num_files=1
+                        dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
+                        open_tables$[1]="POC_MESSAGE", open_opts$[1]="OTA"
+                        gosub open_tables
+                        target_dev=num(open_chans$[1])
+                        dim target_tpl$:open_tpls$[1]
+    
+                        rem --- Build new POC_MESSAGE table from POC_MSGCODE and POC_MSGLINE tables
+                        currentFirm$=""
+                        pocMessage_dev=target_dev
+                        dim pocMessage$:fattr(target_tpl$)
+                        read(pocMsgCode_dev,key=theFirm$,dom=*next)
+                        while 1
+                            pocMsgCode_key$=key(pocMsgCode_dev,end=*break)
+                            if cvs(theFirm$,2)<>"" and pos(theFirm$=pocMsgCode_key$)<>1 then break
+                            readrecord(pocMsgCode_dev)pocMsgCode$
+                            if pocMsgCode.firm_id$<>currentFirm$ then
+                                rem --- Log next firm processed
+                                print(log_dev)"    POC_MSGCODE.FIRM_ID = "+pocMsgCode.firm_id$
+                                currentFirm$=pocMsgCode.firm_id$
+                            endif
+                            readrecord(pocMessage_dev,key=pocMsgCode_key$,dom=*next); continue; rem --- Do NOT overwrite existing POC_MESSAGE records
+                            memo$=""
+                            read(pocMsgLine_dev,key=pocMsgCode_key$,dom=*next)
+                            while 1
+                                readrecord(pocMsgLine_dev,end=*break)pocMsgLine$
+                                if pos(pocMsgLine.firm_id$+pocMsgLine.po_msg_code$=pocMsgCode_key$)<>1 then break
+                                memo$=memo$+cvs(pocMsgLine.message_text$,2)+$0A$
+                            wend
+                            redim pocMessage$
+                            pocMessage.firm_id$=pocMsgCode.firm_id$
+                            pocMessage.po_msg_code$=pocMsgCode.po_msg_code$
+                            pocMessage.code_desc$=pocMsgCode.code_desc$
+                            pocMessage.message_type$=pocMsgCode.message_type$
+                            pocMessage.code_inactive$=pocMsgCode.code_inactive$
+                            pocMessage.memo_1024$=memo$
+                            writerecord(pocMessage_dev)pocMessage$
+                        wend
+                        close(pocMsgCode_dev_dev,err=*next)
+                        close(pocMsgLine_dev,err=*next)
+                    endif
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": POC_MESSAGE "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"POC_MSGCODE "+
-:               Translate!.getTranslation("AON_AND","and")+" POC_MSGLINE"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
     
             rem --- Execute PO upgrade conversion utility for minor releases of v17
             theFirm$=""
@@ -2532,110 +2434,58 @@ rem --- Initialize PO data file changes implemented during minor releases of v17
         print(log_dev)meter_text$
     endif
 
-rem --- Initialize GL data file changes implemented during minor releases of v17
+rem --- Initialize SF data file changes implemented during minor releases of v17
 
     this_module$="SF"
     if installMap!.get(this_module$)="Y" then 
+        rem --- Increment progress meter
+        meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
+:               Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
+        meter_proc_recs=meter_proc_recs+1
+        meter_action$="MTR-LST"
+        gosub disp_meter
+        print(log_dev)meter_text$
+
         task$="1700_SF_sfe-07"
         if convCtrl!.getProperty(task$)<>"Completed" then
             rem --- As of v17.10, DataPort handles initializing SFE_WOMASTR.MEMO_1024 from SFE_WOCOMNT (sfe-07)
             if convCtrl!.getProperty("data_source")="OCJ" then
-    
-                rem --- Increment progress meter
-                meter_text$=this_module$+" "+Translate!.getTranslation("AON_INSTALLED","Installed")+", "+
-:                   Translate!.getTranslation("AON_DO_DATA_CONV","Doing data conversion for")+" "+this_module$
-                meter_proc_recs=meter_proc_recs+1
-                meter_action$="MTR-LST"
-                gosub disp_meter
-                print(log_dev)meter_text$
-    
-                rem --- Make sure SFE_WOCOMNT (sfe-07) exists
+                rem --- Does SFE_WOCOMNT (sfe-07) exists. It was deleted in v19.
                 open_success=0
                 sfe07_dev=unt
                 open(sfe07_dev,err=*next)dataDir$+"/sfe-07"; open_success=1
+                close(sfe07_dev,err=*next)
                 if !open_success then
-                    rem --- Copy SFE_WOCOMNT (sfe-07) from old source to the new install
+                    rem --- Increment progress meter
+                    meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": SFE_WOMASTR.MEMO_1024 "+
+:                       Translate!.getTranslation("AON_FROM_","From ")+"SFE_WOCOMNT"
+                    meter_proc_recs=meter_proc_recs+1
+                    meter_action$="MTR-LST"
+                    gosub disp_meter
+                    print(log_dev)meter_text$
     
-                    rem --- Open ddm_tables and ddm_table_tpls in new install
-                    num_files=2
-                    dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                    open_tables$[1]="DDM_TABLES",open_opts$[1]="OTA"
-                    open_tables$[2]="DDM_TABLE_TPLS",open_opts$[2]="OTA"
-                    gosub open_tables
-                    new_ddmTables=num(open_chans$[1]);dim new_ddmTables$:open_tpls$[1]
-                    new_ddmTableTpls=num(open_chans$[2]);dim new_ddmTableTpls$:open_tpls$[2]
-        
-                    rem --- Open ddm_tables in old source
-                    old_ddm_table$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_tables.dat"
+                    rem --- Verify can read DDM_TABLE_TPLS for barista_source
+                    ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
                     open_success=0
-                    old_ddmTables=unt
-                    open(old_ddmTables,err=*next)old_ddm_table$; open_success=1
-                    if !open_success then
+                    ddm_table_tpls=unt
+                    open(ddm_table_tpls,err=*next)ddm_table_tpls$; open_success=1
+                    if open_success then
+                        dim ddm_table_tpls$:"table_name:c(16*),file_name:c(30*),template:c(10230*)"
+                    else
                         rem --- Required file missing
                         msg_id$="AD_FILE_MISSING"
                         dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table$
+                        msg_tokens$[1]=ddm_table_tpls$
                         gosub disp_message
                         err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table$+" *****"
+:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+ddm_table_tpls$+" *****"
                         goto done
                     endif
-    
-                    rem --- Open ddm_table_tpls in old source
-                    old_ddm_table_tpls$=convCtrl!.getProperty("barista_source")+"/barista/sys/data/ddm_table_tpls.dat"
-                    open_success=0
-                    old_ddmTableTpls=unt
-                    open(old_ddmTableTpls,err=*next)old_ddm_table_tpls$; open_success=1
-                    if !open_success then
-                        rem --- Required file missing
-                        msg_id$="AD_FILE_MISSING"
-                        dim msg_tokens$[1]
-                        msg_tokens$[1]=old_ddm_table_tpls$
-                        gosub disp_message
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+
-:                           Translate!.getTranslation("AON_FILE_NOT_FOUND","Required file not found")+": "+old_ddm_table_tpls$+" *****"
-                        goto done
-                    endif
-        
-                    rem --- Get table definition for old source SFE_WOCOMNT file, and add it to new install
-                    oldFile$="SFE_WOCOMNT"
-                    table_found=0
-                    findrecord(old_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$;table_found=1
-                    if table_found then
-                        writerecord(new_ddmTables,key=pad(cvs(oldFile$,4),16),dom=*next)table_rec$
-                    else
-                        rem --- Required table missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TABLE_NOT_FOUND","Table not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-        
-                    rem --- Get record template for old source SFE_WOCOMNT file, and add it to new install
-                    oldFile$="SFE_WOCOMNT"
-                    tpl_found=0
-                    findrecord(old_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$;tpl_found=1
-                    if tpl_found then
-                        writerecord(new_ddmTableTpls,key=pad(cvs(oldFile$,4),16),dom=*next)tpl_rec$
-                    else
-                        rem --- Required template missing
-                        err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
-:                           " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+oldFile$+" *****"
-                        meter_proc_recs=meter_proc_recs+1
-                        meter_action$="MTR-LST"
-                        meter_text$=err_msg$
-                        gosub disp_meter
-                        print(log_dev)meter_text$
-                        goto done
-                    endif
-    
+
+                    rem --- Initialize SFE_WOMASTR.MEMO_1024 from old source SFE_WOCOMNT (sfe-07)
                     sourceFileVec!=BBjAPI().makeVector()
-                    tablealiasVec!=BBjAPI().makeVector()
-                    sourceFileVec!.addItem("SFE-07");tableAliasVec!.addItem("SFE_WOCOMNT")
+                    tableAliasVec!=BBjAPI().makeVector()
+                    sourceFileVec!.addItem("sfe-07");tableAliasVec!.addItem("SFE_WOCOMNT")
                     for source=0 to sourcefileVec!.size()-1
                         rem --- Does source file exist?
                         oldStbl$="+SFDATA"
@@ -2647,32 +2497,60 @@ rem --- Initialize GL data file changes implemented during minor releases of v17
                         source_dev=unt
                         open(source_dev,err=*next)source_file$; open_success=1
                         if open_success then
-                    
+                            rem --- Get record template for source file
+                            tpl_found=0
+                            findrecord(ddm_table_tpls,key=pad(tableAlias$,16),dom=*next)ddm_table_tpls$;tpl_found=1
+                            if tpl_found then
+                                dim source_tpl$:ddm_table_tpls.template$
+                            else
+                                rem --- Required template missing
+                                err_msg$="***** "+Translate!.getTranslation("AON_ERROR","Error")+": "+Translate!.getTranslation("AON_VERSION","Verion")+" "+convCtrl!.getProperty("start_version")+
+:                                   " "+Translate!.getTranslation("AON_TEMPLATE_NOT_FOUND","Template not found")+": "+tableAlias$+" *****"
+                                goto done
+                            endif
+        
                             rem --- Open file in new data dictionary
                             num_files=1
                             dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
-                            open_tables$[1]=tableAlias$, open_opts$[1]="OTA"
+                            open_tables$[1]="SFE_WOMASTR", open_opts$[1]="OTA"
                             gosub open_tables
                             target_dev=num(open_chans$[1])
-                            
-                            rem --- Copy source records to target
-                            read(source_dev,key="",dom=*next)
+                            dim target_tpl$:open_tpls$[1]
+
+                            rem --- Build new SFE_WOMASTR.MEMO_1024 field from SFE_WOCOMNT (sfe-07) table
+                            currentFirm$=""
+                            currentLocation$=""
+                            currentWO$=""
+                            memo$=""
+                            sfeWOComnt_dev=source_dev
+                            dim sfeWOComnt$:fattr(source_tpl$)
+                            sfeWOMastr_dev=target_dev
+                            dim sfeWOMastr$:fattr(target_tpl$)
+                            read(sfeWOComnt_dev,key=theFirm$,dom=*next)
                             while 1
-                                readrecord(source_dev,end=*break)record$
-                                writerecord(target_dev)record$
+                                sfeWOComnt_key$=key(sfeWOComnt_dev,end=*break)
+                                if cvs(theFirm$,2)<>"" and pos(theFirm$=sfeWOComnt_key$)<>1 then break
+                                readrecord(sfeWOComnt_dev)sfeWOComnt$
+                                if sfeWOComnt.firm_id$+sfeWOComnt.wo_location$+sfeWOComnt.wo_no$<>currentFirm$+currentLocation$+currentWO$ then
+                                    gosub writeSfeWOMastrMemo1024
+                                    memo$=""
+                                    currentLocation$=sfeWOComnt.wo_location$
+                                    currentWO$=sfeWOComnt.wo_no$
+                                    if sfeWOComnt.firm_id$<>currentFirm$ then
+                                        rem --- Log next firm processed
+                                        print(log_dev)"    SFE_WOCOMNT.FIRM_ID = "+sfeWOComnt.firm_id$
+                                        currentFirm$=sfeWOComnt.firm_id$
+                                    endif
+                                endif
+                                memo$=memo$+cvs(sfeWOComnt.ext_comments$,2)+$0A$
                             wend
+                            gosub writeSfeWOMastrMemo1024
+                            
+                            close(source_dev,err=*next)
                         endif
                     next source
                 endif
             endif
-    
-            rem --- Increment progress meter
-            meter_text$=Translate!.getTranslation("AON_UPDATING","Updating")+": SFE_WOMASTR.MEMO_1024 "+
-:               Translate!.getTranslation("AON_FROM_","From ")+"SFE_WOCOMNT"
-            meter_proc_recs=meter_proc_recs+1
-            meter_action$="MTR-LST"
-            gosub disp_meter
-            print(log_dev)meter_text$
     
             rem --- Execute SF upgrade conversion utility for minor releases of v17
             theFirm$=""
@@ -2755,13 +2633,82 @@ done: rem --- Done, close things up
 
     rem --- Close opened files
     if ddm_table_tpls then close(ddm_table_tpls,err=*next)
-    if old_glsParams_dev then close(old_glsParams_dev,err=*next)
-    if old_glm02_dev then close(old_glm02_dev,err=*next)
     if old_ddmTables then close(old_ddmTables,err=*next)
     if old_ddmTableTpls then close(old_ddmTableTpls,err=*next)
 
     if completed_successfully then conv_status=0; rem --- no errors encountered
 	goto std_exit
+
+writeApmVendMastMemo1024: rem --- Write APM_VENDMAST new MEMO_1024 field
+
+    extractrecord(apmVendMast_dev,key=currentFirm$+currentVendor$,dom=*return)apmVendMast$
+    apmVendMast.memo_1024$=memo$
+    apmVendMast$=field(apmVendMast$)
+    writerecord(apmVendMast_dev)apmVendMast$
+
+    return
+
+writeArmCustMastMemo1024: rem --- Write ARM_CUSTMAST new MEMO_1024 field
+
+    extractrecord(armCustMast_dev,key=currentFirm$+currentCustomer$,dom=*return)armCustMast$
+    armCustMast.memo_1024$=memo$
+    armCustMast$=field(armCustMast$)
+    writerecord(armCustMast_dev)armCustMast$
+
+    return
+
+writeBmmBillMastMemo1024: rem --- Write BMM_BILLMAST new MEMO_1024 field
+
+    extractrecord(bmmBillMast_dev,key=currentFirm$+currentBill$,dom=*return)bmmBillMast$
+    bmmBillMast.memo_1024$=memo$
+    bmmBillMast$=field(bmmBillMast$)
+    writerecord(bmmBillMast_dev)bmmBillMast$
+
+    return
+    
+writeGlmAcctMemo1024: rem --- Write GLM_ACCT new MEMO_1024 field
+
+    extractrecord(glmAcct_dev,key=currentFirm$+currentAccount$,dom=*return)glmAcct$
+    glmAcct.memo_1024$=memo$
+    glmAcct$=field(glmAcct$)
+    writerecord(glmAcct_dev)glmAcct$
+
+    return
+
+writeIvmItemMastMemo1024: rem --- Write IVM_ITEMMAST new MEMO_1024 field
+
+    extractrecord(ivmItemMast_dev,key=currentFirm$+currentItem$,dom=*return)ivmItemMast$
+    ivmItemMast.memo_1024$=memo$
+    ivmItemMast$=field(ivmItemMast$)
+    writerecord(ivmItemMast_dev)ivmItemMast$
+
+    return
+
+writeOptInvHdrMemo1024: rem --- Write OPT_INVHDR new MEMO_1024 field
+
+    read(optInvHdr_dev,key=currentCustomerOrder$,dom=*next)
+    while 1
+        optInvHdr_key$=key(optInvHdr_dev,end=*break)
+        if pos(currentCustomerOrder$=optInvHdr_key$)<>1 then break
+        extractrecord(optInvHdr_dev)optInvHdr$; rem Advisory Locking
+        if cvs(optInvHdr.memo_1024$,2)="" then
+            optInvHdr.memo_1024$=memo$
+            writerecord(optInvHdr_dev)optInvHdr$
+        else
+            read(optInvHdr_dev)
+        endif
+    wend
+
+    return
+
+writeSfeWOMastrMemo1024: rem --- Write SFE_WOMASTR new MEMO_1024 field
+
+    extractrecord(sfeWOMastr_dev,key=currentFirm$+currentLocation$+currentWO$,dom=*return)sfeWOMastr$
+    sfeWOMastr.memo_1024$=memo$
+    sfeWOMastr$=field(sfeWOMastr$)
+    writerecord(sfeWOMastr_dev)sfeWOMastr$
+
+    return
 
 get_path_to_old_file: rem --- Locate data directory in old Addon installation
     rem --- IN: oldStbl$ - STBL in old addon.syn that points to the data directory where the old file is located

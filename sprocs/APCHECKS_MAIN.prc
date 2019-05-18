@@ -39,6 +39,7 @@ rem --- Get 'IN' SPROC parameters
 	firm_id$ = sp!.getParameter("FIRM_ID")
 	barista_wd$ = sp!.getParameter("BARISTA_WD")
 	ap_type$ = sp!.getParameter("AP_TYPE")
+    ach_payment$ = sp!.getParameter("ACH_PAYMENT")
 
 	chdir barista_wd$
 	
@@ -47,7 +48,7 @@ rem --- Create the memory recordset for return to jasper
 	dataTemplate$ = ""
 	dataTemplate$ = dataTemplate$ + "firm_id:C(2), ap_type:C(1*), check_num:C(1*), check_date:C(10), "
 	dataTemplate$ = dataTemplate$ + "aptype_vend_pagenum:C(3), vendor_id:C(1*), vend_name:C(30), "
-	dataTemplate$ = dataTemplate$ + "vend_addr1:C(35), vend_addr2:C(35), vend_addr3:C(35) "
+	dataTemplate$ = dataTemplate$ + "vend_addr1:C(35), vend_addr2:C(35), vend_addr3:C(35), vend_addr4:C(35)  "
 
 	rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 
@@ -98,6 +99,10 @@ rem ---           format the address.
 	sql_prep$=sql_prep$+"      ,wk.vendor_id "
 	sql_prep$=sql_prep$+"FROM APW_CHKJASPERPRN wk "
 	sql_prep$=sql_prep$+"WHERE firm_id='"+firm_id$+"' "
+
+	if cvs(ach_payment$,2)<>"" then
+	    sql_prep$=sql_prep$+"AND ach_payment='"+ach_payment$+"' "
+	endif
 	
 	sql_chan=sqlunt
 	sqlopen(sql_chan,mode="PROCEDURE",err=*next)stbl("+DBNAME")
@@ -117,17 +122,16 @@ rem --- Process SQL results
 		aptype_vend_pagenum$=  read_tpl.chk_pagenum$
 		
 		rem --- Vendor Address
-			dim address$(81)
+			dim address$(4*35)
 		   
 			find record (apm01_dev,key=firm_id$+vendor_id$,dom=*next) apm01a$
-			address$(1)=apm01a.addr_line_1$+apm01a.addr_line_2$+apm01a.city$+apm01a.state_code$+apm01a.zip_code$
+			address$(1)=apm01a.addr_line_1$+apm01a.addr_line_2$+apm01a.city$+apm01a.state_code$+apm01a.zip_code$+apm01a.cntry_id$
 			vend_name$= apm01a.vendor_name$
-
 			start_block = 1
 
 			if start_block
 				find record (apm08_dev,key=firm_id$+vendor_id$,dom=*endif) apm08a$
-				address$(1)= apm08a.addr_line_1$+apm08a.addr_line2$+apm08a.city$+apm08a.state_code$+apm08a.zip_code$
+				address$(1)= apm08a.addr_line_1$+apm08a.addr_line2$+apm08a.city$+apm08a.state_code$+apm08a.zip_code$+apm08a.cntry_id$
 				vend_name$=  apm08a.vendor_name$
 			endif
 			
@@ -145,7 +149,8 @@ rem --- Process SQL results
 			data!.setFieldValue("VEND_NAME", vend_name$)
 			data!.setFieldValue("VEND_ADDR1", address$(1,35))
 			data!.setFieldValue("VEND_ADDR2", address$(36,35))
-			data!.setFieldValue("VEND_ADDR3", address$(71))
+            data!.setFieldValue("VEND_ADDR3", address$(71,35))
+            data!.setFieldValue("VEND_ADDR4", address$(106))
 			
 			rs!.insert(data!)
 	wend

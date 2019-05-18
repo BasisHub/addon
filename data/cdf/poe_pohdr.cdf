@@ -933,6 +933,7 @@ vendor_info: rem --- get and display Vendor Information
 	else
 		callpoint!.setColumnData("<<DISPLAY>>.V_CITY","",1)
 	endif
+	callpoint!.setColumnData("<<DISPLAY>>.V_CNTRY_ID",apm01a.cntry_id$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.V_CONTACT",apm01a.contact_name$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.V_PHONE",apm01a.phone_no$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.V_FAX",apm01a.fax_no$,1)
@@ -955,6 +956,7 @@ purch_addr_info: rem --- get and display Purchase Address Info
 	callpoint!.setColumnData("<<DISPLAY>>.PA_CITY",apm05a.city$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.PA_STATE",apm05a.state_code$,1)
 	callpoint!.setColumnData("<<DISPLAY>>.PA_ZIP",apm05a.zip_code$,1)
+	callpoint!.setColumnData("<<DISPLAY>>.PA_CNTRY_ID",apm05a.cntry_id$,1)
 return
 
 whse_addr_info: rem --- get and display Warehouse Address Info when not a dropship

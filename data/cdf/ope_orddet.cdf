@@ -1524,7 +1524,7 @@ rem --- Set header order totals
 rem --- Has customer credit been exceeded?
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()
+	creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()+num(callpoint!.getDevObject("orig_net_sales"))
 	if num(callpoint!.getHeaderColumnData("<<DISPLAY>>.NET_SALES")) > creditRemaining then 
 		gosub credit_exceeded
 	endif
@@ -2449,9 +2449,9 @@ rem ==========================================================================
 			dim msg_tokens$[1]
 			msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
 			gosub disp_message
-			callpoint!.setHeaderColumnData("<<DISPLAY>>.CREDIT_HOLD", Translate!.getTranslation("AON_***_OVER_CREDIT_LIMIT_***"))
-			callpoint!.setHeaderColumnData("OPE_ORDHDR.CREDIT_FLAG","C")
 			callpoint!.setDevObject("msg_exceeded","Y")
+			callpoint!.setDevObject("msg_credit_okay","")
+			call user_tpl.pgmdir$+"opc_creditmsg.aon","D",callpoint!,UserObj!
 			user_tpl.credit_limit_warned = 1
 			callpoint!.setStatus("ACTIVATE")
 		endif
@@ -2501,7 +2501,8 @@ rem ==========================================================================
 	callpoint!.setColumnData("OPE_ORDDET.TAXABLE_AMT", "0")
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-	creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()
+	creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()+num(callpoint!.getDevObject("orig_net_sales"))
+
 	if num(callpoint!.getHeaderColumnData("<<DISPLAY>>.NET_SALES")) > creditRemaining then 
 		gosub credit_exceeded
 	endif

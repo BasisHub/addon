@@ -71,6 +71,7 @@ rem --- Assign form input values to local variables
     year$=Option!.getOptionData("YEAR")
     export_format$=Option!.getOptionData("EXPORT_FORMAT")
     vend_type$=Option!.getOptionData("VENDOR_TYPE")
+    type_breaks=num(Option!.getOptionData("TYPE_BREAKS"))
     
     if export_format$="Y"
         rd_alias_id$=Option!.getAlias()    
@@ -90,12 +91,11 @@ rem --- Retrieve parameter records
     find record (aps01_dev,key=aps01a_key$,err=std_missing_params) aps01a$
     call pgmdir$+"adc_getmask.aon","VENDOR_ID","","","",m0$,0,vendor_size
     call pgmdir$+"adc_getmask.aon","","AP","A","",m1$,0,0
-    multitypes=aps01a.multi_types$="Y"
     m0=len(m0$)
     call pgmdir$+"adc_getmask.aon","GL_ACCOUNT","","","",g0$,0,acct_length
     g0=len(g0$)
     headings=4
-    if multitypes headings=5
+    if type_breaks headings=5
 
 rem --- Is General Ledger installed?
 
@@ -164,7 +164,7 @@ rem --- Initializations
         headings$[3]=Translate!.getTranslation("AON_TEMPORARY_VENDORS_ONLY")
     endif
     
-    if multitypes headings$[4]="[HEADER]"
+    if type_breaks headings$[4]="[HEADER]"
     altseq$=""
     lasttype$=""
     lastvendor$=""
@@ -180,7 +180,7 @@ rem --- Initializations
 
 rem --- Headings and print positions
     
-    if multitypes and export_format$="Y"
+    if type_breaks and export_format$="Y"
         columns=11
         dim columns$[columns,10]
         columns$[0,0]=Translate!.getTranslation("AON_AP_TYPE"),       columns$[0,1]="C",columns$[0,2]="8"
@@ -325,7 +325,15 @@ rem --- Start progress meter and position the driver file
     total_recs=0
     read (apw05_dev,key=firm_id$,dom=*next)
     read (apt02_dev,key=firm_id$,dom=*next)
-    read (channel,key=firm_id$,dom=*next)
+    if type_breaks then
+        read (channel,key=firm_id$,dom=*next)
+    else
+        if sequence$="C" then
+            read (channel,key=firm_id$,knum="CHECK_VENDOR_INV",dom=*next)
+        else
+            read (channel,key=firm_id$,knum="ALT+VEND+CHK+INV",dom=*next)
+        endif
+    endif
 
     rem --- Read next check history or sort record
 
@@ -424,7 +432,7 @@ rem --- Start progress meter and position the driver file
 
           voided=apt05a.trans_type$="V"
           while voided
-                if multitypes and export_format$="Y"
+                if type_breaks and export_format$="Y"
                     OutVect!.addItem(lasttype$)
                 endif
                 OutVect!.addItem(check$)
@@ -441,7 +449,7 @@ rem --- Start progress meter and position the driver file
 
           rem --- Print check history record
 
-          if multitypes and export_format$="Y"
+          if type_breaks and export_format$="Y"
             OutVect!.addItem(lasttype$)
           endif
 
@@ -491,7 +499,11 @@ rem --- All done
     endif
 
     done=1
-    gosub type_break
+    if type_breaks then
+        gosub type_break
+    else
+        gosub vendor_break
+    endif
     if export_format$<>"Y"
         total$=Translate!.getTranslation("AON_TOTAL_FOR_REPORT")
         totals[0]=rt[0]
@@ -513,7 +525,7 @@ rem --- Run next overlay
 print_total: rem --- Print subtotal/total
 
     if export_format$="Y"
-        if multitypes
+        if type_breaks
             OutVect!.addItem(lasttype$)
         endif
         OutVect!.addItem(check$)
@@ -545,7 +557,7 @@ print_distribution: rem --- Print GL distribution
         detail[0]=amount
 
     if export_format$="Y" 
-        if multitypes
+        if type_breaks
             OutVect!.addItem(lasttype$)
         endif
         OutVect!.addItem(check$)
@@ -574,7 +586,7 @@ type_break: rem --- AP type break
           if sequence$="C" gosub check_break
 :                     else gosub vendor_break
           if export_format$<>"Y"
-              if multitypes
+              if type_breaks
                  total$=Translate!.getTranslation("AON_TOTAL_FOR_")+aptype$
                  totals[0]=at[0]
                  totals[1]=at[1]
@@ -585,7 +597,7 @@ type_break: rem --- AP type break
           endif
         break
     wend
-    if multitypes=0 return
+    if type_breaks=0 return
     if done return
     dim at[2]
     dim apm10a$:fattr(apm10a$)
@@ -609,7 +621,7 @@ vendor_break: rem --- Vendor break
           if sequence$="C" break
           if cprinted=0 break
           if export_format$<>"Y"
-              total$=Translate!.getTranslation("AON_TOTAL_FOR_VENDOR_")+x$
+              total$=Translate!.getTranslation("AON_TOTAL_FOR_VENDOR_")+lastvendor$
               totals[0]=vt[0]
               totals[1]=vt[1]
               totals[2]=vt[2]
@@ -664,6 +676,7 @@ check_break: rem --- Check break
     check$=lastcheck$
     paid$=fndate$(apt05a.check_date$)
     type$=Translate!.getTranslation("AON_COMPUTER")
+    if apt05a.trans_type$="A" type$=Translate!.getTranslation("AON_ACH")
     if apt05a.trans_type$="M" type$=Translate!.getTranslation("AON_MANUAL")
     if apt05a.trans_type$="R" type$=Translate!.getTranslation("AON_REVERSAL")
     if apt05a.trans_type$="V" type$=Translate!.getTranslation("AON_VOID")

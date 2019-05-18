@@ -83,8 +83,12 @@ rem --- not found in entry file, so see if in open checks
 
 			rem --- Reverse? (Check is Manual or Computer generated)
 
-			if pos(apt05a.trans_type$="CM") then
-				msg_id$="AP_REVERSE"
+			if pos(apt05a.trans_type$="ACM") then
+				if apt05a.trans_type$="A" then
+					msg_id$="AP_REVERSE_ACH"
+				else
+					msg_id$="AP_REVERSE"
+				endif
 				msg_opt$=""
 				gosub disp_message
 
@@ -113,9 +117,9 @@ rem --- not found in entry file, so see if in open checks
 				endif
 			else
 				rem --- Recycle? (check is Void or Reversed)
-				
-				if pos(apt05a.trans_type$="VR") then
 
+				if pos(apt05a.trans_type$="VR") then
+					x=num(apt05a.check_no$,err=*endif); rem --- Cannot re-use ACH check numbers, which contain an alpha character.
 					msg_id$="AP_OPEN_CHK"
 					msg_opt$=""
 					gosub disp_message

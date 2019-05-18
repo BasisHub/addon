@@ -72,12 +72,10 @@ rem --- Use statements and Declares
 	
     use ::ado_func.src::func
     use ::sys/prog/bao_option.bbj::Option
-    use ::sys/prog/bao_valid_card.bbj::CreditCard
     
     declare Option option!
     declare BBjVector custIds!
     declare BBjVector orderNos!
-    declare CreditCard credCard!
 
 rem --- Retrieve the program path
 
@@ -219,14 +217,10 @@ rem --- Main Read
 		
 		    paid_desc$ = cvs(arm10c.code_desc$,2)
 			
-			if arm10c.trans_type$="P" then
-				credCard! = new CreditCard()
-				cc_config$="BAR_CREDIT_CARD"
-				cc_no$=""
-				cc_no$=credCard!.getMaskedCardValue(credCard!.decryptCard(cvs(ope41a.credit_card_no$,2),cc_config$),err=*next)    
-				paid_text1$ = "# " + cc_no$
+			if arm10c.trans_type$="P"
+				paid_text1$ = "# " + ope41a.card_last_4$
 			else
-				if arm10c.trans_type$="C" then 
+				if arm10c.trans_type$="C"
 					paid_text1$ = "# " + ope41a.ar_check_no$ 
 				endif
 			endif

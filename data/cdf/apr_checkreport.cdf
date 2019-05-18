@@ -37,3 +37,13 @@ rem --- Retrieve parameter data
 		callpoint!.setColumnData("APR_CHECKREPORT.CHECK_DATE_1",begdate$,1)
 		callpoint!.setColumnData("APR_CHECKREPORT.CHECK_DATE_2",enddate$,1)
 	endif
+
+rem --- Initialize TYPE_BREAKS
+	if aps01a.multi_types$<>"Y" then
+		callpoint!.setColumnEnabled("APR_CHECKREPORT.TYPE_BREAKS",0)
+	else
+		callpoint!.setColumnData("APR_CHECKREPORT.TYPE_BREAKS","1",0)
+	endif
+
+rem --- Initialize ACH_PAYMENTS
+	callpoint!.setColumnData("APR_CHECKREPORT.ACH_PAYMENTS","I",0)

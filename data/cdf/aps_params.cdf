@@ -1,3 +1,173 @@
+[[APS_ACH.ACH_CHECK_DIR.AVAL]]
+rem --- Verify export directory exists
+	temp_dir$=callpoint!.getUserInput()
+
+	rem --- Flip directory path separators
+	filePath$=temp_dir$
+	gosub fix_path
+	temp_dir$=filePath$
+	rem --- Add trailing path separator
+	if pos(temp_dir$(len(temp_dir$),1)="\/")=0 then
+		temp_dir$=temp_dir$+"/"
+	endif
+
+	temp_chan=unt
+	success=0
+	open(temp_chan,err=*next)temp_dir$; success=1
+	if !success then
+		close(temp_chan)
+		msg_id$="AD_DATAPORT_DIR"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+	callpoint!.setUserInput(temp_dir$)
+[[APS_ACH.ACH_EXPORT_DIR.AVAL]]
+rem --- Verify export directory exists
+	temp_dir$=callpoint!.getUserInput()
+
+	rem --- Flip directory path separators
+	filePath$=temp_dir$
+	gosub fix_path
+	temp_dir$=filePath$
+	rem --- Add trailing path separator
+	if pos(temp_dir$(len(temp_dir$),1)="\/")=0 then
+		temp_dir$=temp_dir$+"/"
+	endif
+
+	temp_chan=unt
+	success=0
+	open(temp_chan,err=*next)temp_dir$; success=1
+	if !success then
+		close(temp_chan)
+		msg_id$="AD_DATAPORT_DIR"
+		gosub disp_message
+		callpoint!.setStatus("ABORT")
+	endif
+	callpoint!.setUserInput(temp_dir$)
+[[APS_PARAMS.BEND]]
+rem --- Check fields required for ACH Payments
+	if cvs(callpoint!.getColumnData("APS_ACH.BNK_ACCT_CD"),2)<>"" then
+		required_field$=""
+		if cvs(callpoint!.getColumnData("<<DISPLAY>>.ABA_NO"),2)="" then
+			rem --- May be blank when upgrading from pre-v19
+			required_field$="Bank Routing Number"
+		endif
+		if cvs(callpoint!.getColumnData("APS_ACH.TOTAL_REQUIRED"),2)="" then
+			required_field$="Total Record Required"
+		endif
+		if cvs(callpoint!.getColumnData("APS_ACH.FIRM_NAME"),2)="" then
+			required_field$="Federal ID"
+		endif
+		if cvs(callpoint!.getColumnData("<<DISPLAY>>.FEDERAL_ID"),2)="" then
+			required_field$="Firm Name"
+		endif
+		if cvs(callpoint!.getColumnData("APS_ACH.ACH_EXPORT_DIR"),2)="" then
+			required_field$="ACH File Export Directory"
+		endif
+		if cvs(callpoint!.getColumnData("APS_ACH.ACH_CHECK_DIR"),2)="" then
+			required_field$="ACH Check Image Directory"
+		endif
+		if cvs(required_field$,2)<>"" then
+			msg_id$="AP_REQUIRED_FOR_ACH"
+			dim msg_tokens$[1]
+			msg_tokens$[1]=required_field$
+			gosub disp_message
+		endif
+	endif
+[[APS_ACH.BNK_ACCT_CD.AVAL]]
+rem --- Initialize ACH Payment fields
+	bnk_acct_cd$=callpoint!.getUserInput()
+	if cvs(bnk_acct_cd$,2)="" then
+		rem --- Don’t allow eliminating the BNK_ACCT_CD (changing is okay) if there are any ACH payments in APW_CHECKINVOICE (apw-01)
+		if cvs(callpoint!.getColumnData("APS_ACH.BNK_ACCT_CD"),2)<>"" then
+			achPayments=0
+			apwCheckInvoice_dev=fnget_dev("APW_CHECKINVOICE")
+			dim apwCheckInvoice$:fnget_tpl$("APW_CHECKINVOICE")
+			read(apwCheckInvoice_dev,key=firm_id$,dom=*next)
+			while 1
+				readrecord(apwCheckInvoice_dev,end=*break)apwCheckInvoice$
+				if apwCheckInvoice.firm_id$<>firm_id$ then break
+				if apwCheckInvoice.comp_or_void$<>"A" then continue
+				achPayments=1
+				break
+			wend
+			if achPayments then
+				rem --- Cannot delete Bank Account Code. There are ACH Payments in Check Register that have not been updated.
+				msg_id$="AP_ACHCHK_NOT_UPDTED"
+				gosub disp_message
+				callpoint!.setColumnData("APS_ACH.BNK_ACCT_CD",callpoint!.getColumnData("APS_ACH.BNK_ACCT_CD"),1)
+				callpoint!.setStatus("ABORT")
+				break
+			endif
+		endif
+
+		rem --- Clear ACH Payment fields
+		callpoint!.setColumnData("<<DISPLAY>>.BANK_NAME","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_1","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_2","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_3","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.ACCT_DEST","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.ABA_NO","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_NO","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_TYPE","",1)
+		callpoint!.setColumnData("APS_ACH.TOTAL_REQUIRED","",1)
+		callpoint!.setColumnData("APS_ACH.FIRM_NAME","",1)
+		callpoint!.setColumnData("<<DISPLAY>>.FEDERAL_ID","",1)
+		callpoint!.setColumnData("APS_ACH.ACH_EXPORT_DIR","",1)
+		callpoint!.setColumnData("APS_ACH.ACH_CHECK_DIR","",1)
+
+		rem --- Disable non-bank account code fields
+		callpoint!.setColumnEnabled("APS_ACH.TOTAL_REQUIRED",0)
+		callpoint!.setColumnEnabled("APS_ACH.FIRM_NAME",0)
+		callpoint!.setColumnEnabled("APS_ACH.ACH_EXPORT_DIR",0)
+		callpoint!.setColumnEnabled("APS_ACH.ACH_CHECK_DIR",0)
+	else
+		rem --- Enable non-bank account code fields
+		callpoint!.setColumnEnabled("APS_ACH.TOTAL_REQUIRED",1)
+		callpoint!.setColumnEnabled("APS_ACH.FIRM_NAME",1)
+		callpoint!.setColumnEnabled("APS_ACH.ACH_EXPORT_DIR",1)
+		callpoint!.setColumnEnabled("APS_ACH.ACH_CHECK_DIR",1)
+
+		rem --- Non-bank account code fields are required
+		callpoint!.setTableColumnAttribute("APS_ACH.TOTAL_REQUIRED","MINL","1")
+		callpoint!.setTableColumnAttribute("APS_ACH.FIRM_NAME","MINL","1")
+		callpoint!.setTableColumnAttribute("APS_ACH.ACH_EXPORT_DIR","MINL","1")
+		callpoint!.setTableColumnAttribute("APS_ACH.ACH_CHECK_DIR","MINL","1")
+
+		if bnk_acct_cd$<>callpoint!.getColumnData("APS_ACH.BNK_ACCT_CD")
+			rem --- Initialize bank account code fields
+			adcBankAcctCode_dev=fnget_dev("ADC_BANKACCTCODE")
+			dim adcBankAcctCode$:fnget_tpl$("ADC_BANKACCTCODE")
+			readrecord(adcBankAcctCode_dev,key=firm_id$+bnk_acct_cd$,dom=*next)adcBankAcctCode$
+			callpoint!.setColumnData("<<DISPLAY>>.BANK_NAME",adcBankAcctCode.bank_name$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_1",adcBankAcctCode.address_line_1$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_2",adcBankAcctCode.address_line_2$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_3",adcBankAcctCode.address_line_3$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.ACCT_DEST",adcBankAcctCode.acct_desc$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.ABA_NO",adcBankAcctCode.aba_no$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_NO",adcBankAcctCode.bnk_acct_no$,1)
+			callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_TYPE",adcBankAcctCode.bnk_acct_type$,1)
+			callpoint!.setColumnData("APS_ACH.TOTAL_REQUIRED","Y",1)
+
+			rem --- Initialize Firm Name field
+			admFirms_dev=fnget_dev("ADM_FIRMS")
+			dim admFirms$:fnget_tpl$("ADM_FIRMS")
+			readrecord(admFirms_dev,key=firm_id$,dom=*next)admFirms$
+			callpoint!.setColumnData("APS_ACH.FIRM_NAME",admFirms.firm_name$,1)
+
+			rem --- Initialize Federal ID field
+			apsReport_dev=fnget_dev("APS_REPORT")
+			dim apsReport$:fnget_tpl$("APS_REPORT")
+			readrecord(apsReport_dev,key=firm_id$+"AP02",dom=*next)apsReport$
+			callpoint!.setColumnData("<<DISPLAY>>.FEDERAL_ID",apsReport.federal_id$,1)
+
+			rem --- Enable non-bank account code fields
+			callpoint!.setColumnEnabled("APS_ACH.TOTAL_REQUIRED",1)
+			callpoint!.setColumnEnabled("APS_ACH.FIRM_NAME",1)
+			callpoint!.setColumnEnabled("APS_ACH.ACH_EXPORT_DIR",1)
+			callpoint!.setColumnEnabled("APS_ACH.ACH_CHECK_DIR",1)
+		endif
+	endif
 [[APS_PARAMS.CURRENT_YEAR.AVAL]]
 rem --- Verify calendar exists for entered AP fiscal year
 	year$=callpoint!.getUserInput()
@@ -65,6 +235,12 @@ rem --- Initialize new record
 	callpoint!.setColumnData("APS_PARAMS.CUR_1099_YR",callpoint!.getColumnData("APS_PARAMS.CURRENT_YEAR"),1)
 	callpoint!.setColumnData("APS_PARAMS.MULTI_TYPES","Y",1)
 	callpoint!.setColumnData("APS_PARAMS.MULTI_DIST","Y",1)
+
+	rem --- Disable non-bank account code fields on ACH Payments tab
+	callpoint!.setColumnEnabled("APS_ACH.TOTAL_REQUIRED",0)
+	callpoint!.setColumnEnabled("APS_ACH.FIRM_NAME",0)
+	callpoint!.setColumnEnabled("APS_ACH.ACH_EXPORT_DIR",0)
+	callpoint!.setColumnEnabled("APS_ACH.ACH_CHECK_DIR",0)
 [[APS_PAYAUTH.WARN_IN_REGISTER.AVAL]]
 rem --- Disable ok_to_update if not warning in register
 	warn_in_register=num(callpoint!.getUserInput())
@@ -88,6 +264,28 @@ rem --- Display selected colors
 	valRGB!=SysGUI!.makeColor(R,G,B)
 	all_color_ctl!=callpoint!.getDevObject("all_color_ctl")
 	all_color_ctl!.setBackColor(valRGB!)
+
+	rem --- Initialize bank account code fields
+	bnk_acct_cd$=callpoint!.getColumnData("APS_ACH.BNK_ACCT_CD")
+	if cvs(bnk_acct_cd$,2)<>"" then
+		adcBankAcctCode_dev=fnget_dev("ADC_BANKACCTCODE")
+		dim adcBankAcctCode$:fnget_tpl$("ADC_BANKACCTCODE")
+		readrecord(adcBankAcctCode_dev,key=firm_id$+bnk_acct_cd$,dom=*next)adcBankAcctCode$
+		callpoint!.setColumnData("<<DISPLAY>>.BANK_NAME",adcBankAcctCode.bank_name$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_1",adcBankAcctCode.address_line_1$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_2",adcBankAcctCode.address_line_2$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.ADDRESS_LINE_3",adcBankAcctCode.address_line_3$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.ACCT_DEST",adcBankAcctCode.acct_desc$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.ABA_NO",adcBankAcctCode.aba_no$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_NO",adcBankAcctCode.bnk_acct_no$,1)
+		callpoint!.setColumnData("<<DISPLAY>>.BNK_ACCT_TYPE",adcBankAcctCode.bnk_acct_type$,1)
+
+		rem --- Initialize Federal ID field
+		apsReport_dev=fnget_dev("APS_REPORT")
+		dim apsReport$:fnget_tpl$("APS_REPORT")
+		readrecord(apsReport_dev,key=firm_id$+"AP02",dom=*next)apsReport$
+		callpoint!.setColumnData("<<DISPLAY>>.FEDERAL_ID",apsReport.federal_id$,1)
+	endif
 [[APS_PAYAUTH.ONE_AUTH_COLOR.AMOD]]
 rem --- Display selected color
 	RGB$=callpoint!.getColumnData("APS_PAYAUTH.ONE_AUTH_COLOR")
@@ -150,11 +348,15 @@ rem --- Enable/Disable Payment Authorization
 [[APS_PARAMS.BSHO]]
 rem --- Open files
 
-	num_files=3
+	num_files=7
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="APE_INVOICEHDR",open_opts$[1]="OTA"
 	open_tables$[2]="APT_INVOICEHDR",open_opts$[2]="OTA"
 	open_tables$[3]="GLS_CALENDAR",open_opts$[3]="OTA"
+	open_tables$[4]="ADC_BANKACCTCODE",open_opts$[4]="OTA"
+	open_tables$[5]="APS_REPORT",open_opts$[5]="OTA"
+	open_tables$[6]="ADM_FIRMS",open_opts$[6]="OTA"
+	open_tables$[7]="APW_CHECKINVOICE",open_opts$[7]="OTA"
 
 	gosub open_tables
 
@@ -312,6 +514,18 @@ rem =========================================================
 	R=num(RGB$(1,comma1-1))
 	G=num(RGB$(comma1+1,comma2-comma1-1))
 	B=num(RGB$(comma2+1))
+	return
+
+rem =========================================================
+fix_path: rem --- Flip directory path separators
+	rem --- input: filePath$
+rem =========================================================
+
+	pos=pos("\"=filePath$)
+	while pos
+		filePath$=filePath$(1, pos-1)+"/"+filePath$(pos+1)
+		pos=pos("\"=filePath$)
+	wend
 	return
 [[APS_PARAMS.ARAR]]
 rem --- Open/Lock files

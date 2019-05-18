@@ -1422,9 +1422,14 @@ rem ==========================================================================
 	dim art_resphdr$:fnget_tpl$("ART_RESPHDR")
 	dim art_respdet$:fnget_tpl$("ART_RESPDET")
 
+	rem --- get sequence number for response records
+	call stbl("+DIR_SYP")+"bas_sequences.bbj","CREDIT_TRANS_NO",credit_trans_no$,rd_table_chans$[all],"QUIET"
+
 	art_resphdr.firm_id$=firm_id$
+	art_resphdr.credit_trans_no$=credit_trans_no$
 	art_resphdr.customer_id$=cust_id$
 	art_resphdr.transaction_id$=trans_id$
+	art_resphdr.trans_type$="S";rem Sale
 	art_resphdr.gateway_id$=gateway_id$
 	art_resphdr.amount$=trans_amount$
 	art_resphdr.approve_decline$=trans_approved$
@@ -1447,9 +1452,10 @@ rem ==========================================================================
 			ar_inv_no$=vectInvoices!.get(inv_row+1)
 			redim art_respdet$
 			art_respdet.firm_id$=firm_id$
+			art_respdet.credit_trans_no$=credit_trans_no$
+			art_respdet.sequence_no$=str(next_seq:seq_mask$)
 			art_respdet.customer_id$=cust_id$
 			art_respdet.transaction_id$=trans_id$
-			art_respdet.sequence_no$=str(next_seq:seq_mask$)
 			art_respdet.ar_inv_no$=ar_inv_no$;rem actual invoice selected or OAymmdd
 			art_respdet.order_no$="";rem for future use by OP
 			art_respdet.apply_amt$=invoice_pay$

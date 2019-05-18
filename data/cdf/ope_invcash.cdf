@@ -110,18 +110,8 @@ rem --- Set Invoice Amount
 	invoice_amt  = user_tpl.ext_price + tax_amount - discount_amt + freight_amt
 
 	if invoice_amt <> num(callpoint!.getColumnData("OPE_INVCASH.INVOICE_AMT")) then
-		callpoint!.setColumnData("OPE_INVCASH.INVOICE_AMT", str(invoice_amt))
-		callpoint!.setStatus("MODIFIED;REFRESH")
-	endif
-
-rem --- Set customer name default
-
-	if cvs(callpoint!.getColumnData("OPE_INVCASH.CUSTOMER_NAME"), 2) = "" then
-		file_name$ = "ARM_CUSTMAST"
-		dim custmast_rec$:fnget_tpl$(file_name$)
-		find record (fnget_dev(file_name$), key=firm_id$+callpoint!.getColumnData("OPE_INVCASH.CUSTOMER_ID")) custmast_rec$
-		callpoint!.setTableColumnAttribute("OPE_INVCASH.CUSTOMER_NAME","DFLT", custmast_rec.customer_name$)
-		print "---Customer Name set: ", custmast_rec.customer_name$; rem debug
+		callpoint!.setColumnData("OPE_INVCASH.INVOICE_AMT", str(invoice_amt),1)
+		callpoint!.setStatus("MODIFIED")
 	endif
 
 rem --- Set change amount
@@ -129,9 +119,7 @@ rem --- Set change amount
 	tendered = num(callpoint!.getColumnData("OPE_INVCASH.TENDERED_AMT"))
 
 	if tendered - invoice_amt > 0 then
-		callpoint!.setColumnData("<<DISPLAY>>.CHANGE", str(tendered - invoice_amt))
-		callpoint!.setStatus("REFRESH")
-		print "---Set Change Amount:", tendered - invoice_amt; rem debug
+		callpoint!.setColumnData("<<DISPLAY>>.CHANGE", str(tendered - invoice_amt),1)
 	endif
 
 rem --- Set cash_code_type
@@ -209,18 +197,18 @@ rem --- Disable fields and set minimums by trans type
 
 	if cashcode_rec.trans_type$ = "C" then
  		callpoint!.setColumnData("OPE_INVCASH.EXPIRE_DATE","",1)
-		callpoint!.setColumnData("OPE_INVCASH.CREDIT_CARD_NO","",1)
+		callpoint!.setColumnData("OPE_INVCASH.CARD_LAST_4","",1)
 		callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 1)
 		callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 1)
 		callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 0)		
-		callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 0)
+		callpoint!.setColumnEnabled("OPE_INVCASH.CARD_LAST_4", 0)
 		callpoint!.setTableColumnAttribute("OPE_INVCASH.AR_CHECK_NO","MINL","1")
 	else
 		if cashcode_rec.trans_type$ = "P" then
  			callpoint!.setColumnData("OPE_INVCASH.AR_CHECK_NO","",1)
 			callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID","",1)
 			callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 1)
-			callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 1)		
+			callpoint!.setColumnEnabled("OPE_INVCASH.CARD_LAST_4", 1)		
 			callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 0)			
 			callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 0)
 			callpoint!.setTableColumnAttribute("OPE_INVCASH.EXPIRE_DATE","MINL","1")
@@ -229,11 +217,11 @@ rem --- Disable fields and set minimums by trans type
  				callpoint!.setColumnData("OPE_INVCASH.AR_CHECK_NO","",1)
 				callpoint!.setColumnData("OPE_INVCASH.PAYMENT_ID","",1)
  				callpoint!.setColumnData("OPE_INVCASH.EXPIRE_DATE","",1)
-				callpoint!.setColumnData("OPE_INVCASH.CREDIT_CARD_NO","",1)
+				callpoint!.setColumnData("OPE_INVCASH.CARD_LAST_4","",1)
 				callpoint!.setColumnEnabled("OPE_INVCASH.PAYMENT_ID", 0)
 				callpoint!.setColumnEnabled("OPE_INVCASH.AR_CHECK_NO", 0)
 				callpoint!.setColumnEnabled("OPE_INVCASH.EXPIRE_DATE", 0)
-				callpoint!.setColumnEnabled("OPE_INVCASH.CREDIT_CARD_NO", 0)
+				callpoint!.setColumnEnabled("OPE_INVCASH.CARD_LAST_4", 0)
 			endif
 		endif
 	endif

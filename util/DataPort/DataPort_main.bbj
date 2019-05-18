@@ -541,6 +541,24 @@ next_file:
         goto next_file
     endif
 
+    rem --- Build ADC_BANKACCTCODE from glm-05 (GLM_BANKMASTER) Bank Account Master, which is built from v6 apm-13
+    if cvs(datafile$,8)="apm-13" then
+        rem --- Open ADC_BANKACCTCODE and get record template
+        num_files=1
+        dim rd_open_tables$[1:num_files],rd_open_opts$[1:num_files],rd_open_chans$[1:num_files],rd_open_tpls$[1:num_files]
+        rd_open_tables$[1]="ADC_BANKACCTCODE",rd_open_opts$[1]="OTA"
+        
+        gosub open_tables
+    
+        adcBankAcctCode_dev=num(rd_open_chans$[1])
+        dim adcBankAcctCode$:rd_open_tpls$[1]
+
+        bnkAcctCd_mask$=fill(len(adcBankAcctCode.bnk_acct_cd$),"0")
+        next_bnkAcctCd=1
+        
+        bankAcctMap!=new java.util.HashMap()
+    endif
+
     rem --- Build ARM_CUSTMAST.MEMO_1024 (arm-01) from arm-05 (ARM_CUSTCMTS) Customer Comments
     if cvs(datafile$,8)="arm-05" then
         gosub init_arm01_memo1024
@@ -1349,6 +1367,31 @@ rem --- Initialize NS_ITEM_ID in POE_REQDET, POE_PODET, POE_QADET, POE_RECDET, a
         endif
     endif
 
+    rem --- Build ADC_BANKACCTCODE from glm-05 (GLM_BANKMASTER) Bank Account Master, which is built from v6 apm-13
+    if cvs(datafile$,8)="apm-13" then
+        rem --- For every GLM_BANKMASTER (glm-05) record, copy data to ADC_BANKACCTCODE and assign a unique BNK_ACCT_CD
+        redim adcBankAcctCode$
+        adcBankAcctCode.firm_id$=old_rec.firm_id$
+        adcBankAcctCode.bnk_acct_cd$=str(next_bnkAcctCd:bnkAcctCd_mask$)
+        adcBankAcctCode.acct_desc$=old_rec.description$
+        if cvs(adcBankAcctCode.acct_desc$,2)="" then
+            adcBankAcctCode.acct_desc$=cvs(old_rec.bnk_acct_nbr$,2)+" -- "+ cvs(old_rec.name$,2)
+        endif
+        adcBankAcctCode.bank_name$=old_rec.name$
+        adcBankAcctCode.address_line_1$=old_rec.address_line_01$
+        adcBankAcctCode.address_line_2$=old_rec.address_line_02$
+        adcBankAcctCode.address_line_3$=old_rec.address_line_03$
+        adcBankAcctCode.aba_no$=""
+        adcBankAcctCode.bnk_acct_no$=old_rec.bnk_acct_nbr$
+        adcBankAcctCode.bnk_acct_type$=""
+        adcBankAcctCode$=field(adcBankAcctCode$)
+        writerecord(adcBankAcctCode_dev)adcBankAcctCode$
+
+        rem --- Initialize GLM_BANKMASTER.BNK_ACCT_CD with the ADC_BANKACCTCODE.BNK_ACCT_CD for the matching BANK_NAME + BNK_ACCT_NO
+        new_rec.bnk_acct_cd$=adcBankAcctCode.bnk_acct_cd$
+        next_bnkAcctCd=next_bnkAcctCd+1
+    endif
+
 rem --- In ARE_INVOICEDET, ARE_RECURRINGDET and ART_INVOICEDET, convert 2-char SEQUENCE_NUM to 3-char zero filled SEQUENCE_NO.
     
     if pos(cvs(datafile$,8)="ape-11;ape-13;apt-11",7) then
@@ -1370,7 +1413,7 @@ rem --- Initialize BMM_BILLMAT.WO_REF_NUM and SFE_WOMATL.WO_REF_NUM
         new_rec.wo_ref_num$=pad(new_rec.material_seq$, dec(wk$(10,2)), "R")
     endif
 
-rem --- Initialize BMM_BILLMSUB.WO_REF_NUM and  SFE_WOSUBCNT.WO_REF_NUM
+rem --- Initialize BMM_BILLMSUB.WO_REF_NUM and SFE_WOSUBCNT.WO_REF_NUM
 
     if pos(cvs(datafile$,8)="bmm-05;woe-32",7)
         wk$=fattr(new_rec$,"wo_ref_num")

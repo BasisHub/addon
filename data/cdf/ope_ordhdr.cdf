@@ -446,6 +446,8 @@ rem --- Reset all previous values
 	freight_amt = num(callpoint!.getColumnData("OPE_ORDHDR.FREIGHT_AMT"))
 	gosub disp_totals
 
+	callpoint!.setDevObject("orig_net_sales",net_sales);rem --- used when determining if over credit limit CAH
+
 rem --- setup messages
 
 	if cvs(callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID"),2) = "" or
@@ -515,7 +517,7 @@ rem --- Credit action
 		if ordHelp!.calcOverCreditLimit() and callpoint!.getDevObject("credit_action_done") <> "Y" then
 			callpoint!.setDevObject("cred_action_from_print_now","")
 			gosub do_credit_action
-			if action$="R" then callpoint!.setStatus("SAVE")
+			if action$<>"D" then callpoint!.setStatus("SAVE")
 		endif
 	endif
 
@@ -745,6 +747,16 @@ rem --- Set customer in OrderHelper object
 
 	ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
 	ordHelp!.setCust_id(cust_id$)
+
+rem --- Display customer level credit info
+
+	over_credit_limit = ordHelp!.calcOverCreditLimit()
+	if over_credit_limit = 1
+		callpoint!.setDevObject("msg_exceeded","Y")
+	else
+		callpoint!.setDevObject("msg_credit_okay","Y")
+	endif
+	call user_tpl.pgmdir$+"opc_creditmsg.aon","H",callpoint!,UserObj!
 
 rem --- The cash customer?
 
@@ -1074,7 +1086,7 @@ rem --- Reprint order?
 	endif
 
 rem --- Show customer data
-	
+
 	cust_id$ = callpoint!.getColumnData("OPE_ORDHDR.CUSTOMER_ID")
 	order_no$ = callpoint!.getColumnData("OPE_ORDHDR.ORDER_NO")
 	gosub display_customer
@@ -2100,14 +2112,14 @@ rem ==========================================================================
 
 	if arm02a.cred_hold$<>"E"
 		ordHelp! = cast(OrderHelper, callpoint!.getDevObject("order_helper_object"))
-		creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()
+		creditRemaining = ordHelp!.getCreditLimit()-ordHelp!.getTotalAging()-ordHelp!.getOpenOrderAmount()-ordHelp!.getOpenBoAmount()-ordHelp!.getHeldOrderAmount()+num(callpoint!.getDevObject("orig_net_sales"))
 		if user_tpl.credit_limit<>0 and !user_tpl.credit_limit_warned and num(callpoint!.getColumnData("<<DISPLAY>>.NET_SALES")) > creditRemaining then
-   			if user_tpl.credit_installed$ <> "Y" then
-			      	msg_id$ = "OP_OVER_CREDIT_LIMIT"
-				dim msg_tokens$[1]
-				msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
-				gosub disp_message
-			endif  
+
+			msg_id$ = "OP_OVER_CREDIT_LIMIT"
+			dim msg_tokens$[1]
+			msg_tokens$[1] = str(user_tpl.credit_limit:user_tpl.amount_mask$)
+			gosub disp_message
+			callpoint!.setStatus("ACTIVATE")
 
 			callpoint!.setDevObject("msg_exceeded","Y")
 			user_tpl.credit_limit_warned = 1
@@ -2814,7 +2826,8 @@ rem ==========================================================================
 rem --- Should we call Credit Action?
 
 	if user_tpl.credit_installed$ = "Y" and inv_type$ <> "P" and cvs(cust_id$, 2) <> "" and cvs(order_no$, 2) <> "" and
-:			callpoint!.getColumnData("CREDIT_FLAG") <> "R" then
+:			(callpoint!.getColumnData("CREDIT_FLAG")<>"R" or (callpoint!.getColumnData("CREDIT_FLAG")="R" and user_tpl.credit_limit_warned))
+		callpoint!.setColumnData("CREDIT_FLAG","");rem - let credit action form reset the credit flag
 		callpoint!.setDevObject("run_by", "order")
 		call user_tpl.pgmdir$+"opc_creditaction.aon", cust_id$, order_no$, invoice_no$, table_chans$[all], callpoint!, action$, status
 		callpoint!.setStatus("ACTIVATE")

@@ -228,7 +228,6 @@ rem --- Set DevObjects required
 	dim open_tables$[1:num_files],open_opts$[1:num_files],open_chans$[1:num_files],open_tpls$[1:num_files]
 	open_tables$[1]="BMM_BILLMAT",open_opts$[1]="OTA"
 	open_tables$[2]="BMM_BILLOPER",open_opts$[2]="OTA"
-	open_tables$[3]="BMM_BILLCMTS",open_opts$[3]="OTA"
 	open_tables$[4]="BMM_BILLSUB",open_opts$[4]="OTA"
 	open_tables$[5]="IVM_ITEMMAST",open_opts$[5]="OTA"
 	open_tables$[6]="IVS_PARAMS",open_opts$[6]="OTA"

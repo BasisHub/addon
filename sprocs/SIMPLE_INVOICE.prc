@@ -33,7 +33,7 @@ rem --- create the in memory recordset for return
 dataTemplate$ = "firm_id:c(2),customer_id:C(1*),cust_name:C(30),address1:C(30),address2:C(30),"
 dataTemplate$ = dataTemplate$ + "address3:C(30),address4:C(30),address5:C(30),address6:C(30),"
 dataTemplate$ = dataTemplate$ + "remit1:C(30),remit2:C(30),remit3:C(30), remit4:C(30),"
-dataTemplate$ = dataTemplate$ + "ar_address1:C(30),ar_address2:C(30),ar_address3:C(30),ar_address4:C(30),ar_phone_no:C(1*),terms_desc:C(1*)"
+dataTemplate$ = dataTemplate$ + "ar_address1:C(30),ar_address2:C(30),ar_address3:C(30),ar_address4:C(30),ar_phone_no:C(1*),ar_fax_no:C(1*),terms_desc:C(1*)"
 
 rs! = BBJAPI().createMemoryRecordSet(dataTemplate$)
 
@@ -88,6 +88,7 @@ data!.setFieldValue("AR_ADDRESS2", ar_address$(31,30))
 data!.setFieldValue("AR_ADDRESS3", ar_address$(61,30))
 data!.setFieldValue("AR_ADDRESS4", ar_address$(91,30))
 data!.setFieldValue("AR_PHONE_NO", ar_phone_no$)
+data!.setFieldValue("AR_FAX_NO", ar_fax_no$)
 data!.setFieldValue("TERMS_DESC", terms_desc$)
 rs!.insert(data!)
 
@@ -125,6 +126,8 @@ format_return_remit_addresses:
 
     call stbl("+DIR_SYP")+"bac_getmask.bbj","T",cvs(ars_report.phone_no$,2),"",phone_mask$
     ar_phone_no$=str(cvs(ars_report.phone_no$,2):phone_mask$)
+    ar_fax_no$=cvs(ars_report.fax_no$,2)
+    if ar_fax_no$<>"" then ar_fax_no$=str(ar_fax_no$:phone_mask$)
     
 return
 
